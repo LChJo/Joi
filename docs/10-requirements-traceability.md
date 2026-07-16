@@ -1,0 +1,115 @@
+# README 实现追踪矩阵
+
+日期：2026-07-16
+事实源：`README.md`、`01-product-requirements.md`、`02-ux-specification.md`、`07-roadmap-and-acceptance.md`
+
+## 结论与状态定义
+
+当前仓库中 M0–M6 的 Hub 本机可实现行为已经落地，并由 domain、integration、contract、renderer、Electron E2E、构建或包审计证实。MVP 发布验收仍未完成：真实 AI Mana、第二台 LAN 设备、macOS、签名/公证、24 小时长稳和人工视觉验收属于 M7 外部门禁，不得由模拟测试替代。
+
+- `已证实`：实现和同范围自动化证据同时存在。
+- `已证实（外部待验收）`：Hub 一侧已证实，真实端点、设备或平台仍须 M7 验收。
+- `外部`：当前环境无法提供所需硬件、端点、平台、证书或持续时间。
+
+## PRD 功能需求
+
+| ID | 状态 | 实现与验证证据 | M7 / 发布备注 |
+|---|---|---|---|
+| LIFE-01 | 已证实 | Life 校验、persona version、`initialGoal`/头像/原则/角色和三步向导；`domain-validation.test.ts`、`renderer-shell.test.tsx` | 无 |
+| LIFE-02 | 已证实 | 所有连续性表按 `life_id` 隔离；主 Agent context 按 Life/Affair 持久化；memory entity/link；`event-wake-persistence.test.ts`、`a2a-gateway-lifecycle.test.ts`、`continuity-actions.test.ts` | 无 |
+| LIFE-03 | 已证实 | start/pause/resume/stop/archive/delete、删除影响摘要、活动取消及受控文件事务删除；`life-management-completeness.test.ts`、`user-attachments.test.ts`、renderer 危险操作测试 | 无 |
+| LIFE-04 | 已证实 | 暂停态换绑、4 KiB UTF-8 有界交接、Token/context 排除和新 context 隔离；`life-management-completeness.test.ts` | 无 |
+| LIFE-05 | 已证实 | 卡片投影状态、主 Agent、未处理事件、预算和下次唤醒；`life-management-completeness.test.ts`、`renderer-shell.test.tsx` | 无 |
+| AGENT-01 | 已证实（外部待验收） | 完整 Card URL + Bearer Token onboarding；`agent-onboarding.test.ts`、`onboarding.test.tsx` | 真实端点互操作 |
+| AGENT-02 | 已证实（外部待验收） | A2A 0.3、transport/auth/origin/network policy；`a2a-discovery.test.ts`、`network-policy.test.ts` | 真实 AI Mana |
+| AGENT-03 | 已证实 | Electron `safeStorage`、无明文 fallback、renderer DTO/诊断/包脱敏；auth、package、diagnostics tests | 浏览器开发工具需第二设备复核 |
+| AGENT-04 | 已证实（外部待验收） | readiness 与 `COLLABORATOR_ONLY`；`agent-onboarding.test.ts` | 配套扩展在独立仓库 |
+| AGENT-05 | 已证实（外部待验收） | 敏感 Card drift → `RECONFIRM_REQUIRED`；`agent-onboarding.test.ts` | 真实漂移 |
+| AGENT-06 | 已证实 | 测试、刷新、轮换、停用、启用、绑定影响和安全删除；`agent-onboarding.test.ts`、renderer Agents 测试 | 无 |
+| AGENT-07 | 已证实（外部待验收） | 共享持久 breaker、429/503、数字秒/HTTP-date、最长冷却、事件保留；`connection-breaker.test.ts`、`a2a-gateway-lifecycle.test.ts` | 真实 Endpoint 压测 |
+| EVENT-01 | 已证实 | UI 消息先写 `LifeEvent`，Wake 再领取；`http-api.test.ts`、`event-wake-persistence.test.ts` | 无 |
+| EVENT-02 | 已证实 | 类型、来源、优先级、时间、状态、Life/Affair/attachment 关联和安全活动摘要；`activity-pagination.test.ts` | 无 |
+| EVENT-03 | 已证实 | partial unique index、lease、单主 Wake 和运行中轻量 signal；`event-wake-persistence.test.ts` | 无 |
+| EVENT-04 | 已证实 | 优先级/去重/预算/暂停/安静时段；Hub 4、Endpoint 2、Life collaborator 4 容量门；arbiter、rhythm、capacity tests | 真实并发压测 |
+| EVENT-05 | 已证实 | 50 events / 64 KiB 有界 claim；`event-wake-persistence.test.ts`、`a2a-envelope.test.ts` | 无 |
+| EVENT-06 | 已证实 | 空 claim 回到 `SLEEPING` 且不调用 Agent；`wake-runner.test.ts`、`wake-coordinator.test.ts` | 无 |
+| EVENT-07 | 已证实 | 版本化 registry、schema、priority、merge、context、retry；未知类型 fenced；`event-type-registry.test.ts` | 无 |
+| EVENT-08 | 已证实 | eventId-only signal，下一 Turn 重新查询；`event-wake-persistence.test.ts` | 无 |
+| EVENT-09 | 已证实 | process marker、Turn heartbeat、startup grace、stale repair；`wake-liveness-retry.test.ts`、`wake-audit-repair.test.ts` | 长稳阈值校准 |
+| MEMORY-01 | 已证实 | 不可变事件/action 与 memory revision；`action-processor.test.ts`、`continuity-actions.test.ts` | 无 |
+| MEMORY-02 | 已证实 | 成功/部分成功 Wake 原子保存 consciousness residue；协议失败不伪造残留 | 无 |
+| MEMORY-03 | 已证实 | 情景/语义/Card、source event、Affair、时间、置信度、entity/link；`continuity-actions.test.ts` | 无 |
+| MEMORY-04 | 已证实 | FTS5、CJK fallback、实体标签、时间、Affair 与置信度召回；`continuity-actions.test.ts` | 无 |
+| MEMORY-05 | 已证实 | 默认 03:00 schedule 和结构化 metabolism action；schedule/continuity tests | 真实跨日长稳 |
+| MEMORY-06 | 已证实（外部待验收） | 持久主 context、128 KiB WakeEnvelope、context not-found 后一次有界重建；`a2a-gateway-lifecycle.test.ts` | 真实远端 context 清理 |
+| MEMORY-07 | 已证实 | Card 优先、原始活动不变、来源投影和可修订摘要；`continuity-actions.test.ts`、renderer memory tests | 无 |
+| RHYTHM-01 | 已证实 | 三条默认 schedule、编辑 API/UI、幂等 tick；`rhythm-settings.test.ts`、`renderer-shell.test.tsx` | 无 |
+| RHYTHM-02 | 已证实 | 用户/Agent 一次性、间隔、DAILY/WEEKDAYS/WEEKENDS/WEEKLY 闹钟，Life timezone 与 DST 校验；alarm/rhythm tests | 真实跨日 |
+| RHYTHM-03 | 已证实 | Todo 标题/状态/due/Affair/assignee 全量 API/UI，逾期事件化；todo tests | 无 |
+| RHYTHM-04 | 已证实 | per-Life quiet settings、内部维护/紧急 override、普通表达延迟、idle 禁止；quiet/alarm/rhythm tests | 真实跨夜 |
+| RHYTHM-05 | 已证实 | 24/100/3 默认值和 per-Life 持久默认编辑；`rhythm-settings.test.ts` | 无 |
+| RHYTHM-06 | 已证实 | human/auth/recovery 不耗 autonomy，仍耗 Invocation；`rhythm-policy.test.ts` | 无 |
+| RHYTHM-07 | 已证实 | `BUDGET_PAUSED`、追加、日重置；`budget-service.test.ts` | 真实跨日 |
+| RHYTHM-08 | 已证实 | occurrence unique、event 成功后推进、并发幂等和失败可重试；`alarm-scheduler.test.ts` | 无 |
+| ACTION-01 | 已证实 | 严格 action schema 与原子 ActionProcessor；`a2a-envelope.test.ts`、`action-processor.test.ts` | 无 |
+| ACTION-02 | 已证实 | `express` 独立投影，协议状态不成为正式回复；renderer/timeline tests | 无 |
+| ACTION-03 | 已证实 | delegate 有界上下文、仅显式 Artifact 转发；用户附件受控上传、消息原子绑定、hash 复验；delegation/attachment tests | 真实协作者 |
+| ACTION-04 | 已证实 | 完成/失败/input/auth/Artifact 均先生成事件；`continuity-actions.test.ts`、`interaction-service.test.ts` | 真实 stream |
+| ACTION-05 | 已证实 | Origin/MIME/大小/文件名/realpath/hash、500 MiB Affair quota、授权预览/下载/转发；artifact/attachment tests | 真实大文件压测 |
+| ACTION-06 | 已证实（外部待验收） | 无通用审批；auth 仅用户恢复并绑定原 Task；interaction service 与 renderer tests | 真实 Agent auth |
+| WEB-01 | 已证实 | Electron 与 LAN 共用 React build 和 `/api/v1`；static handler、dual listener、Electron E2E | 第二设备 |
+| WEB-02 | 已证实 | LAN password + HttpOnly session；desktop 一次性 nonce；auth contract/integration/E2E | 第二设备 |
+| WEB-03 | 已证实 | SSE sequence/cursor/replay、7 天清理、过期 cursor `stream_reset` 和快照刷新；HTTP/renderer tests | 第二设备断网 |
+| WEB-04 | 已证实 | 删除、归档、换绑、Agent 删除、恢复均展示后果并保持单次确认；renderer tests | 人工可用性复核 |
+| WEB-05 | 已证实 | 用户/表达/系统/Agent/Artifact 样式和 Wake/Turn/Flow/Delegation 安全投影；activity/renderer tests | 人工视觉复核 |
+
+## 非功能要求
+
+| 要求 | 状态 | 证据 / concern |
+|---|---|---|
+| 持久性 | 已证实 | SQLite 事务、outbox、action/Alarm 原子提交、文件删除 staging/rollback |
+| 恢复性 | 已证实（外部待验收） | messageId/taskId、get/resubscribe、unknown review、crash marker、备份 quarantine；真实强杀矩阵仍属 M7 |
+| 性能 | 已证实（本机基线） | migration 016 时间线复合索引；`activity-pagination.test.ts` 在 100,000 条活动下要求首屏 100 条查询 `< 1s`；24h/多 Life 压测仍属 M7 |
+| 资源 | 已证实 | 空队列不调用 Agent、WAL、可取消 Wake、容量门和配额 |
+| 可观察 | 已证实 | Wake/Turn/Injection/Invocation/Flow/Action 稳定 id、因果引用和安全活动投影 |
+| 隐私 | 已证实（外部待验收） | diagnostics/package/DTO/log 脱敏自动化；真实浏览器开发工具与安装日志待 M7 |
+| 可移植 | 已证实（外部待验收） | 版本化备份、Artifact hash、session revoke、Token required；跨机恢复待 M7 |
+
+## 里程碑
+
+| 里程碑 | 状态 | 结论 |
+|---|---|---|
+| M0 | 已证实（Windows） | 工程、Harness、边界、CI 命令、测试隔离、生产构建和 Windows 打包通过；macOS 打开为外部 concern |
+| M1 | 已证实 | persistence、双 listener、auth、CSRF、SSE、Life CRUD、诊断和备份均有自动化证据 |
+| M2 | 已证实（Hub） | Gateway/readiness/envelope/breaker/context/Artifact 完成；真实 AI Mana 和独立扩展待验收 |
+| M3 | 已证实 | 生命周期、事件/Wake/action/repair/audit/capacity/outbox 完成 |
+| M4 | 已证实（Hub） | continuity、memory、entity、schedule、Alarm、Todo、budget、delegate 完成；真实跨机/跨日待验收 |
+| M5 | 已证实（自动化） | 共享控制台和核心 UI 路径完成；Electron E2E 在 960/768 px 完成无溢出断言及运行时截图检查，人工键盘/对比度仍保留 concern |
+| M6 | 已证实（自动化） | marker、恢复、migration read-only mode、备份、托盘/drain、安全和诊断完成；强杀矩阵/长稳待 M7 |
+| M7 | 外部未完成 | Windows 未签名 NSIS 已构建；真实 Agents、第二设备、macOS、签名、公证、人工视觉、长稳和发布性能报告未执行 |
+
+## E2E-01 至 E2E-11
+
+`tests/e2e/electron-smoke.spec.ts` 证明真实 Electron 完成 desktop bootstrap、管理员设置、一次性 ready Agent 发现、Life 三步出生并进入详情/待办/作息；同时在 960/768 px 断言实际 viewport 与无水平溢出，并保存 768 px 运行时截图。下表中的“组件证实”表示场景不变量已由同范围自动化覆盖，不等价于真实 M7 端到端报告。
+
+| E2E | 自动化证据 | M7 未闭合项 |
+|---|---|---|
+| E2E-01 出生与首次休眠 | event/Wake/action/continuity/wake-runner integration | 真实主 Agent |
+| E2E-02 运行中插话 | persistent event + eventId signal + crash-safe claim tests | 跨进程强杀 + 真实长 stream |
+| E2E-03 跨天自我唤醒 | Alarm/schedule/recovery tests | 托盘跨夜 |
+| E2E-04 多 Agent 协作 | delegation success/failure/artifact event tests | 两个真实协作者 |
+| E2E-05 input/auth | interaction lifecycle、resume、renderer tests | 真实 Agent auth + 重启 |
+| E2E-06 远端与 Hub 崩溃 | outbox/messageId/taskId/recover/unknown tests | 四点进程强杀矩阵 |
+| E2E-07 context 过期 | bounded context rebuild integration | 真实远端清理 |
+| E2E-08 预算与安静时段 | budget/quiet/alarm/idle tests | 真实跨夜 |
+| E2E-09 LAN 控制面 | dual listener/auth/SSE/HTTP contract | 第二台 LAN 浏览器与 DevTools |
+| E2E-10 备份恢复 | online backup/hash/quarantine/session/token/unknown integration | 干净机器恢复 |
+| E2E-11 Endpoint 退避与审计 | shared breaker、Retry-After、activity projection tests | 真实网络抖动与 Agent |
+
+## 当前发布 concerns
+
+1. 提供真实 AI Mana 主 Agent、两个协作者和第二台 LAN 浏览器，执行 E2E-01 至 E2E-11。
+2. 在 macOS 构建机完成 DMG、签名、公证、安装、升级和托盘验证。
+3. 为 Windows 配置 Authenticode 证书；品牌图标已完成，当前 NSIS 仍为 `NotSigned`。
+4. 连接可用的 in-app browser，完成 768/960 px、键盘、焦点、对比度和截图验收。
+5. 执行 24 小时长稳、多 Life/Alarm 峰值、磁盘不足和真实网络故障报告。
