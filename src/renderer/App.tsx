@@ -1,7 +1,7 @@
 import { WarningCircleIcon } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
 
-import { ApiError, createApi, type DigitalLifeApi } from "./api";
+import { createApi, type DigitalLifeApi } from "./api";
 import { ConsoleApp } from "./Console";
 import { AccessScreen, SetupJourney } from "./Onboarding";
 
@@ -14,11 +14,11 @@ type BootState =
 
 function Booting() {
   return (
-    <main className="gate-shell boot-gate" role="status" aria-label="正在连接本机 Runtime">
+    <main className="gate-shell boot-gate" role="status" aria-label="joi 正在准备">
       <div className="pulse-orbit" aria-hidden><span /></div>
-      <p className="eyebrow">LOCAL RUNTIME</p>
-      <h1>正在唤醒控制台</h1>
-      <p>验证本机数据库、会话与事件流。</p>
+      <p className="eyebrow">joi 在这里</p>
+      <h1>马上就好</h1>
+      <p>joi 正在整理数据和状态。</p>
     </main>
   );
 }
@@ -27,10 +27,10 @@ function BootError({ message, retry }: { message: string; retry: () => void }) {
   return (
     <main className="gate-shell" role="alert">
       <WarningCircleIcon aria-hidden size={30} />
-      <p className="eyebrow">RUNTIME UNAVAILABLE</p>
-      <h1>暂时无法连接本机 Runtime</h1>
+      <p className="eyebrow">joi 遇到了问题</p>
+      <h1>出了点状况</h1>
       <p>{message}</p>
-      <button className="button primary" onClick={retry} type="button">重新连接</button>
+      <button className="button primary" onClick={retry} type="button">再试一次</button>
     </main>
   );
 }
@@ -45,11 +45,10 @@ export function App() {
       if (!current) return;
       setState(configured ? (desktop ? { api, kind: "ready" } : { api, kind: "login" }) : desktop
         ? { api, kind: "setup" }
-        : { api, kind: "error", message: "首次设置只能在 joi 桌面窗口完成。" });
-    }).catch((error: unknown) => {
+        : { api, kind: "error", message: "请在本机窗口完成首次设置。" });
+    }).catch(() => {
       if (!current) return;
-      const message = error instanceof ApiError ? `${error.message}（${error.code}）` : "Runtime 没有响应，请确认应用仍在运行。";
-      setState({ kind: "error", message });
+      setState({ kind: "error", message: "连不上本机服务，请确认 joi 还在运行。" });
     });
     return () => { current = false; };
   }, [attempt]);

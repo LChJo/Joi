@@ -50,10 +50,10 @@ export class DigitalLifeApi {
       method,
     });
     if (!response.ok) {
-      const failure = await response.json().catch(() => ({ code: "request_failed", message: "请求未完成。" })) as {
+      const failure = await response.json().catch(() => ({ code: "request_failed", message: "请求没成功。" })) as {
         code?: string; message?: string;
       };
-      throw new ApiError(failure.code ?? "request_failed", failure.message ?? "请求未完成。", response.status);
+      throw new ApiError(failure.code ?? "request_failed", failure.message ?? "请求没成功。", response.status);
     }
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
@@ -195,7 +195,8 @@ export class DigitalLifeApi {
 
 export async function createApi(): Promise<{ api: DigitalLifeApi; configured: boolean; desktop: boolean }> {
   const bridge = window.digitalLifeDesktop;
-  const origin = bridge === undefined ? window.location.origin : (await bridge.getRuntimeInfo()).apiOrigin;
+  const runtimeInfo = bridge === undefined ? undefined : await bridge.getRuntimeInfo();
+  const origin = import.meta.env.DEV ? window.location.origin : runtimeInfo?.apiOrigin ?? window.location.origin;
   const api = new DigitalLifeApi(origin);
   const { configured } = await api.authStatus();
   if (bridge !== undefined) {

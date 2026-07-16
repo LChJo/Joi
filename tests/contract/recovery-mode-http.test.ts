@@ -12,7 +12,11 @@ describe("read-only recovery HTTP mode", () => {
     const listeners = await startRuntimeListeners({ handler: createRecoveryModeHandler({ backups, requestRestart }), loopbackPort: 0 });
     try {
       const page = await fetch(listeners.loopback.url);
-      expect(await page.text()).toContain("READ-ONLY RECOVERY");
+      const pageSource = await page.text();
+      expect(pageSource).toContain("joi 需要先修复本机数据");
+      expect(pageSource).toContain("保存当前数据快照");
+      expect(pageSource).not.toContain("READ-ONLY RECOVERY");
+      expect(pageSource).not.toContain("Schema");
       expect(page.headers.get("content-security-policy")).toContain("default-src 'none'");
       const health = await fetch(`${listeners.loopback.url}/api/v1/health`);
       expect(await health.json()).toEqual({ database: "read-only", reason: "migration_failed", status: "recovery" });

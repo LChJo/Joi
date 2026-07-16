@@ -25,35 +25,35 @@ function formFor(element: HTMLElement) {
 }
 
 describe("application gates", () => {
-  it("reports Runtime bootstrap failure and retries", async () => {
+  it("reports a local service bootstrap failure and retries", async () => {
     vi.mocked(createApi).mockRejectedValueOnce(new ApiError("offline", "Runtime 离线", 503)).mockResolvedValueOnce({ api: readyApi(), configured: true, desktop: true });
     render(<App />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("暂时无法连接");
-    fireEvent.click(screen.getByRole("button", { name: "重新连接" }));
-    expect(await screen.findByRole("heading", { name: "你的数字生命" })).toBeInTheDocument();
+    expect(await screen.findByRole("alert")).toHaveTextContent("连不上本机服务");
+    fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
+    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
   });
 
   it("surfaces an unexpected bootstrap error without losing retry", async () => {
     vi.mocked(createApi).mockRejectedValue(new Error("unexpected bootstrap failure"));
     render(<App />);
-    expect(await screen.findByRole("alert")).toHaveTextContent("Runtime 没有响应");
-    expect(screen.getByRole("button", { name: "重新连接" })).toBeEnabled();
+    expect(await screen.findByRole("alert")).toHaveTextContent("连不上本机服务");
+    expect(screen.getByRole("button", { name: "再试一次" })).toBeEnabled();
   });
 
   it("routes LAN, desktop setup, and ready sessions to distinct surfaces", async () => {
     vi.mocked(createApi).mockResolvedValueOnce({ api: readyApi(), configured: true, desktop: false });
     const first = render(<App />);
-    expect(await screen.findByRole("heading", { name: "管理员登录" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "确认是你" })).toBeInTheDocument();
     first.unmount();
 
     vi.mocked(createApi).mockResolvedValueOnce({ api: readyApi(), configured: false, desktop: true });
     const second = render(<App />);
-    expect(await screen.findByRole("heading", { name: "先守住进入这里的门。" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "先帮 joi 设个密码。" })).toBeInTheDocument();
     second.unmount();
 
     vi.mocked(createApi).mockResolvedValueOnce({ api: readyApi(), configured: false, desktop: false });
     render(<App />);
-    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("首次设置只能"));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("请在本机窗口完成首次设置"));
   });
 
   it("enters the console after LAN login and desktop setup", async () => {
@@ -61,22 +61,22 @@ describe("application gates", () => {
     vi.spyOn(lanApi, "login").mockResolvedValue({ csrfToken: "csrf" });
     vi.mocked(createApi).mockResolvedValueOnce({ api: lanApi, configured: true, desktop: false });
     const lan = render(<App />);
-    const password = await screen.findByLabelText("管理员口令");
+    const password = await screen.findByLabelText("管理密码");
     fireEvent.change(password, { target: { value: "correct password" } });
     fireEvent.submit(formFor(password));
-    expect(await screen.findByRole("heading", { name: "你的数字生命" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
     lan.unmount();
 
     const desktopApi = readyApi();
     vi.spyOn(desktopApi, "setup").mockResolvedValue(undefined);
     vi.mocked(createApi).mockResolvedValueOnce({ api: desktopApi, configured: false, desktop: true });
     render(<App />);
-    const first = await screen.findByLabelText("管理员口令");
+    const first = await screen.findByLabelText("管理密码");
     fireEvent.change(first, { target: { value: "correct password" } });
-    fireEvent.change(screen.getByLabelText("确认口令"), { target: { value: "correct password" } });
+    fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "correct password" } });
     fireEvent.submit(formFor(first));
-    fireEvent.click(await screen.findByRole("button", { name: /保持关闭并继续/ }));
+    fireEvent.click(await screen.findByRole("button", { name: /先只用本机/ }));
     fireEvent.click(screen.getByRole("button", { name: "暂时跳过" }));
-    expect(await screen.findByRole("heading", { name: "你的数字生命" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
   });
 });

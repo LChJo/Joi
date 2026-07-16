@@ -26,7 +26,7 @@ describe("renderer edge components", () => {
     expect(isoToLocalDateTime("2026-07-16T00:30:00.000Z", "Asia/Shanghai")).toBe("2026-07-16T08:30");
     expect(() => localDateTimeToIso("2026-03-08T02:30", "America/New_York")).toThrow("do not exist");
     const view = render(<Timeline api={api} events={[]} expressions={[]} timezone="UTC" />);
-    expect(screen.getByText("活动时间线还是空的")).toBeInTheDocument();
+    expect(screen.getByText("还没有活动")).toBeInTheDocument();
     view.rerender(<Timeline api={api} events={[human]} expressions={[expression]} timezone="UTC" />);
     expect(screen.getByText("已读取")).toBeInTheDocument();
     expect(screen.getByText("稍后表达")).toBeInTheDocument();
@@ -36,29 +36,29 @@ describe("renderer edge components", () => {
       { ...human, eventId: "attachment_message", payload: { attachments: [null, [], "bad", { filename: "brief.txt", size: 1024 }], text: "附件消息" } },
     ]} expressions={[]} timezone="UTC" />);
     expect(screen.getByText("report.pdf")).toBeInTheDocument();
-    expect(screen.getByText("未命名 Artifact")).toBeInTheDocument();
-    expect(screen.getAllByText("受控存储 · 每次读取重新校验 hash")).toHaveLength(2);
+    expect(screen.getByText("未命名文件")).toBeInTheDocument();
+    expect(screen.getAllByText("由 joi 保存，每次打开会检查完整性")).toHaveLength(2);
     expect(screen.getByText(/brief.txt/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "预览" })).toHaveAttribute("href", expect.stringContaining("managed_1"));
     view.rerender(<Timeline activity={[
       { activityId: "flow_empty", details: {}, endedAt: "2026-07-15T13:00:00Z", kind: "FLOW", startedAt: "2026-07-15T12:00:00Z", status: "COMPLETED", title: "无详情活动" },
       { activityId: "flow_unknown", details: {}, kind: "FLOW", startedAt: "2026-07-15T14:00:00Z", status: "UNKNOWN", title: "未知活动" },
     ]} api={api} events={[]} expressions={[]} timezone="UTC" />);
-    expect(screen.getByText("已留下可恢复运行事实")).toBeInTheDocument();
-    expect(screen.getByText("UNKNOWN")).toBeInTheDocument();
+    expect(screen.getByText("过程已保存")).toBeInTheDocument();
+    expect(screen.getByText("待确认")).toBeInTheDocument();
   });
 
   it("renders diagnostic loading, healthy-empty interactions, and unknown schema", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "listBackups").mockResolvedValue({ items: [] });
     const view = render(<SystemPanel diagnostics={null} interactions={[]} />);
-    expect(screen.getByLabelText("正在读取控制台")).toBeInTheDocument();
+    expect(screen.getByLabelText("joi 正在整理页面")).toBeInTheDocument();
     view.rerender(<SystemPanel diagnostics={diagnostics} interactions={[]} />);
-    expect(screen.getByText("0 个等待处理")).toBeInTheDocument();
+    expect(screen.getByText("0 项待处理")).toBeInTheDocument();
     view.rerender(<SystemPanel diagnostics={{ ...diagnostics, web: { lan: { status: 42 }, sessions: 1 } }} interactions={[{ createdAt: "now", interactionId: "i", invocationId: "v", kind: "input-required", prompt: "p", status: "PENDING" }]} />);
-    expect(screen.getByText("unknown")).toBeInTheDocument();
+    expect(screen.getByText("待确认")).toBeInTheDocument();
     expect(screen.getByText("需要关注")).toBeInTheDocument();
     view.rerender(<SettingsPanel api={api} diagnostics={null} />);
-    expect(screen.getByText(/Schema v—/)).toBeInTheDocument();
+    expect(screen.getByText(/数据格式 v-/)).toBeInTheDocument();
   });
 });

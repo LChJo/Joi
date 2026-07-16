@@ -46,7 +46,7 @@ describe("renderer API client", () => {
     fetchMock.mockImplementationOnce(() => Promise.resolve({ json: () => Promise.reject(new Error("bad")), ok: false, status: 500 } as Response));
     await expect(new DigitalLifeApi("").request("/bad-json")).rejects.toMatchObject({ code: "request_failed" });
     fetchMock.mockImplementationOnce(() => response({}, 400));
-    await expect(new DigitalLifeApi("").request("/empty-error")).rejects.toMatchObject({ code: "request_failed", message: "请求未完成。" });
+    await expect(new DigitalLifeApi("").request("/empty-error")).rejects.toMatchObject({ code: "request_failed", message: "请求没成功。" });
 
     window.digitalLifeDesktop = {
       createBootstrapNonce: vi.fn(() => Promise.resolve({ expiresAt: "later", nonce: "nonce" })),
@@ -54,9 +54,24 @@ describe("renderer API client", () => {
     };
     fetchMock.mockImplementationOnce(() => response({ configured: true })).mockImplementationOnce(() => response({ csrfToken: "desktop-csrf" }));
     await expect(createApi()).resolves.toMatchObject({ configured: true, desktop: true });
+    expect(fetchMock.mock.calls.at(-2)?.[0]).toBe(`${window.location.origin}/api/v1/auth/status`);
+    expect(fetchMock.mock.calls.at(-1)?.[0]).toBe(`${window.location.origin}/api/v1/auth/bootstrap`);
     delete window.digitalLifeDesktop;
     fetchMock.mockImplementationOnce(() => response({ configured: true }));
     await expect(createApi()).resolves.toMatchObject({ configured: true, desktop: false });
+
+    vi.stubEnv("DEV", false);
+    window.digitalLifeDesktop = {
+      createBootstrapNonce: vi.fn(() => Promise.resolve({ expiresAt: "later", nonce: "nonce" })),
+      getRuntimeInfo: vi.fn(() => Promise.resolve({ apiOrigin: "http://127.0.0.1:43130", platform: "win32", productName: "joi" as const, version: "1" })),
+    };
+    fetchMock.mockImplementationOnce(() => response({ configured: true })).mockImplementationOnce(() => response({ csrfToken: "desktop-csrf" }));
+    await expect(createApi()).resolves.toMatchObject({ configured: true, desktop: true });
+    expect(fetchMock.mock.calls.at(-2)?.[0]).toBe("http://127.0.0.1:43130/api/v1/auth/status");
+    delete window.digitalLifeDesktop;
+    fetchMock.mockImplementationOnce(() => response({ configured: true }));
+    await expect(createApi()).resolves.toMatchObject({ configured: true, desktop: false });
+    vi.unstubAllEnvs();
     fetchMock.mockRestore();
   });
 });

@@ -115,10 +115,10 @@ describe("joi renderer console", () => {
     const fixture = mockApi();
     const { api } = fixture;
     render(<ConsoleApp api={api} />);
-    expect(await screen.findByRole("heading", { name: "你的数字生命" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
     expect(await screen.findByText("我会继续跟进。")).toBeInTheDocument();
-    expect(screen.getByText("用户消息")).toBeInTheDocument();
+    expect(screen.getByText("你的消息")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("回答"), { target: { value: "范围 A" } });
     fireEvent.submit(formFor(screen.getByLabelText("回答")));
@@ -128,7 +128,7 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.sendMessage).toHaveBeenCalledWith("life_1", "新的消息"));
     fixture.runtime.mockResolvedValueOnce({ ...life, state: "RUNNING" });
     fireEvent.click(screen.getByRole("button", { name: "停止运行" }));
-    fireEvent.click(screen.getByRole("button", { name: "只停止本次运行" }));
+    fireEvent.click(screen.getByRole("button", { name: "只停止这次" }));
     await waitFor(() => expect(fixture.runtime).toHaveBeenCalledWith("life_1", "cancel-run"));
     fireEvent.click(screen.getByRole("button", { name: "暂停" }));
 
@@ -159,7 +159,7 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.createAlarm).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     await waitFor(() => expect(fixture.cancelAlarm).toHaveBeenCalledWith("life_1", "alarm_1"));
-    fireEvent.click(screen.getByRole("button", { name: "追加今日预算" }));
+    fireEvent.click(screen.getByRole("button", { name: "增加今天的额度" }));
     await waitFor(() => expect(fixture.extendBudget).toHaveBeenCalled());
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "生命详情" })).getByRole("button", { name: "设置" }));
@@ -169,37 +169,37 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.updateLife).toHaveBeenCalled());
 
     fireEvent.click(screen.getByRole("button", { name: "返回全部生命" }));
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Agents" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "搭档" }));
     expect(screen.getByText("持续思考")).toBeInTheDocument();
-    expect(screen.getByText("Agent Card 未提供描述")).toBeInTheDocument();
-    fireEvent.click(first(screen.getAllByRole("button", { name: "刷新 Card" })));
-    fireEvent.click(first(screen.getAllByRole("button", { name: "轮换 Token" })));
-    fireEvent.change(screen.getByLabelText("新 Bearer Token"), { target: { value: "rotated" } });
-    fireEvent.submit(formFor(screen.getByLabelText("新 Bearer Token")));
+    expect(screen.getByText("这位搭档没留介绍")).toBeInTheDocument();
+    fireEvent.click(first(screen.getAllByRole("button", { name: "重新检查" })));
+    fireEvent.click(first(screen.getAllByRole("button", { name: "更新密钥" })));
+    fireEvent.change(screen.getByLabelText("新密钥"), { target: { value: "rotated" } });
+    fireEvent.submit(formFor(screen.getByLabelText("新密钥")));
     await waitFor(() => expect(fixture.rotateAgentToken).toHaveBeenCalledWith("agent_1", "rotated"));
     fireEvent.click(first(screen.getAllByRole("button", { name: "停用" })));
-    fireEvent.click(screen.getByRole("button", { name: "添加 Agent" }));
-    const dialog = screen.getByRole("form", { name: "添加 Agent" });
-    fireEvent.change(within(dialog).getByLabelText("Agent Card URL"), { target: { value: "http://192.168.1.2/card.json" } });
-    fireEvent.change(within(dialog).getByLabelText("Bearer Token"), { target: { value: "secret" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加搭档" }));
+    const dialog = screen.getByRole("form", { name: "添加搭档" });
+    fireEvent.change(within(dialog).getByLabelText(/Agent Card URL/), { target: { value: "http://192.168.1.2/card.json" } });
+    fireEvent.change(within(dialog).getByLabelText(/Bearer Token/), { target: { value: "secret" } });
     fireEvent.submit(dialog);
     await waitFor(() => expect(fixture.addAgent).toHaveBeenCalled());
 
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "系统活动" }));
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "状态" }));
     expect(screen.getByText("v4")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "全局紧急停止" }));
+    fireEvent.click(screen.getByRole("button", { name: "紧急暂停全部生命" }));
     await waitFor(() => expect(fixture.emergencyStopAll).toHaveBeenCalled());
     fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "设置" }));
-    expect(screen.getByText("管理员与会话")).toBeInTheDocument();
+    expect(screen.getByText("管理密码与设备")).toBeInTheDocument();
   });
 
   it("shows honest empty and unavailable-primary states", () => {
     const onCreate = vi.fn();
     const { rerender } = render(<LifeHome agents={[]} lives={[]} onCreate={onCreate} onOpen={vi.fn()} />);
-    expect(screen.getByText("还没有数字生命")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "创建第一个数字生命" })).toBeDisabled();
+    expect(screen.getByText("还没有生命，创建一个试试")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "创建第一个生命" })).toBeDisabled();
     rerender(<LifeHome agents={[agent]} lives={[]} onCreate={onCreate} onOpen={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "创建第一个数字生命" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建第一个生命" }));
     expect(onCreate).toHaveBeenCalledOnce();
   });
 
@@ -211,7 +211,7 @@ describe("joi renderer console", () => {
     };
     const view = render(<LifeHome agents={[agent]} lives={[archived]} onCreate={vi.fn()} onOpen={onOpen} />);
     expect(screen.getByText("已归档")).toBeInTheDocument();
-    expect(screen.getByText("4/30 唤醒 · 8/120 调用")).toBeInTheDocument();
+    expect(screen.getByText("主动 4/30，协作 8/120")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
     expect(onOpen).toHaveBeenCalledWith(archived);
 
@@ -222,21 +222,21 @@ describe("joi renderer console", () => {
       { lifeId: life.lifeId, name: life.name, role: "PRIMARY" }, { lifeId: life.lifeId, name: life.name, role: "COLLABORATOR" },
     ] }).mockResolvedValue({ activeInvocations: 0, bindings: [] });
     view.rerender(<AgentPanel agents={[disabled, tokenRequired]} api={fixture.api} refresh={() => Promise.resolve()} />);
-    expect(screen.getByText("最近调用 · FAILED")).toBeInTheDocument();
-    expect(screen.getByText("数据来自备份；旧加密凭据不会被使用。请重新输入 Token 并验证 Card。")).toBeInTheDocument();
+    expect(screen.getByText("最近协作：没成功")).toBeInTheDocument();
+    expect(screen.getByText("这份数据来自备份，旧密钥已失效。请重新输入密钥并检查连接。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "重新启用" }));
     await waitFor(() => expect(fixture.agentAction).toHaveBeenCalledWith("agent_2", "enable"));
     const disabledRow = screen.getByRole("heading", { name: "Researcher" }).closest("article");
     if (disabledRow === null) throw new Error("missing disabled agent row");
     fireEvent.click(within(disabledRow).getByRole("button", { name: /删除/ }));
-    expect(await screen.findByText(/必须先解除以下生命绑定/)).toBeInTheDocument();
-    expect(screen.getByText(/主 Agent：先暂停生命并完成交接/)).toBeInTheDocument();
-    expect(screen.getByText(/协作者：在生命设置中解除/)).toBeInTheDocument();
-    expect(screen.getByText(/仍有 1 个运行中的调用/)).toBeInTheDocument();
+    expect(await screen.findByText(/还在陪伴以下生命/)).toBeInTheDocument();
+    expect(screen.getByText(/主力搭档：先暂停生命再交接/)).toBeInTheDocument();
+    expect(screen.getByText(/协作搭档：在生命设置里解除/)).toBeInTheDocument();
+    expect(screen.getByText(/还有 1 项协作正在进行/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
     const tokenRow = screen.getByRole("heading", { name: "Token Agent" }).closest("article");
     if (tokenRow === null) throw new Error("missing token agent row");
-    fireEvent.click(within(tokenRow).getByRole("button", { name: "重新输入 Token" }));
+    fireEvent.click(within(tokenRow).getByRole("button", { name: "重新输入密钥" }));
     fireEvent.click(within(tokenRow).getByRole("button", { name: "取消" }));
   });
 
@@ -244,27 +244,29 @@ describe("joi renderer console", () => {
     const fixture = mockApi();
     vi.stubGlobal("confirm", vi.fn().mockReturnValueOnce(false).mockReturnValue(true));
     render(<SettingsPanel api={fixture.api} diagnostics={{ ...diagnostics, storage: { artifactsBytes: 1, backupsBytes: 2, databaseBytes: 3, diskAvailableBytes: 4, state: "low" } }} />);
-    const address = await screen.findByLabelText("地址");
-    fireEvent.click(screen.getByLabelText("启用 LAN Listener"));
+    const address = await screen.findByLabelText("这台电脑的局域网地址");
+    fireEvent.click(screen.getByLabelText("允许局域网设备访问"));
     fireEvent.change(address, { target: { value: "192.168.1.20" } });
-    fireEvent.click(screen.getByLabelText(/我理解可信局域网/));
-    fireEvent.click(screen.getByLabelText("开机时启动"));
+    fireEvent.click(screen.getByLabelText(/我明白同一网络/));
+    fireEvent.click(screen.getByLabelText("开机时启动 joi"));
     fireEvent.submit(formFor(address));
     await waitFor(() => expect(fixture.updateSettings).toHaveBeenCalledOnce());
     const submittedSettings = fixture.updateSettings.mock.calls[0]?.[0];
     expect(submittedSettings).toMatchObject({ launchAtLogin: true, lan: { enabled: true } });
-    await screen.findByText(/LAN Listener 会在应用重启后切换/);
+    await screen.findByText(/重启后其他设备的访问方式会切换/);
     fixture.updateSettings.mockResolvedValueOnce({ lan: { address: "192.168.1.20", enabled: true, port: 43130, riskAccepted: true }, launchAtLogin: true, restartRequired: false });
-    fireEvent.submit(formFor(screen.getByLabelText("地址")));
+    fireEvent.submit(formFor(screen.getByLabelText("这台电脑的局域网地址")));
     await screen.findByText("设置已保存。");
     expect(screen.getByText("磁盘空间不足")).toBeInTheDocument();
-    expect(screen.getByText(/LAN · device_2/)).toBeInTheDocument();
+    expect(screen.getByText(/局域网设备 2/)).toBeInTheDocument();
+    expect(screen.getByLabelText("当前密码")).toHaveAttribute("minLength", "6");
+    expect(screen.getByLabelText("新密码")).toHaveAttribute("minLength", "6");
 
-    fireEvent.change(screen.getByLabelText("当前口令"), { target: { value: "old password secure" } });
-    fireEvent.change(screen.getByLabelText("新口令"), { target: { value: "new password secure" } });
-    fireEvent.submit(formFor(screen.getByLabelText("当前口令")));
+    fireEvent.change(screen.getByLabelText("当前密码"), { target: { value: "old password secure" } });
+    fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "new password secure" } });
+    fireEvent.submit(formFor(screen.getByLabelText("当前密码")));
     await waitFor(() => expect(fixture.changePassword).toHaveBeenCalledWith("old password secure", "new password secure"));
-    fireEvent.click(screen.getByRole("button", { name: "退出所有 LAN 设备" }));
+    fireEvent.click(screen.getByRole("button", { name: "退出所有局域网设备" }));
     await waitFor(() => expect(fixture.logoutAllLan).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     await waitFor(() => expect(fixture.createBackup).toHaveBeenCalled());
@@ -279,21 +281,21 @@ describe("joi renderer console", () => {
     const fixture = mockApi();
     fixture.createBackup.mockRejectedValue(new ApiError("backup_failed", "备份校验失败", 409));
     fixture.updateSettings.mockRejectedValue(new Error("settings failed"));
-    fixture.changePassword.mockRejectedValue(new ApiError("password_invalid", "当前口令错误", 403));
+    fixture.changePassword.mockRejectedValue(new ApiError("password_invalid", "当前密码错误", 403));
     fixture.restoreBackup.mockRejectedValue(new Error("restore failed"));
     vi.stubGlobal("confirm", vi.fn(() => true));
     render(<SettingsPanel api={fixture.api} diagnostics={diagnostics} />);
-    const address = await screen.findByLabelText("地址");
+    const address = await screen.findByLabelText("这台电脑的局域网地址");
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     expect(await screen.findByText("备份校验失败")).toBeInTheDocument();
     fireEvent.submit(formFor(address));
     expect(await screen.findByText("设置未保存。")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("当前口令"), { target: { value: "old password secure" } });
-    fireEvent.change(screen.getByLabelText("新口令"), { target: { value: "new password secure" } });
-    fireEvent.submit(formFor(screen.getByLabelText("当前口令")));
-    expect(await screen.findByText("当前口令错误")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("当前密码"), { target: { value: "old password secure" } });
+    fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "new password secure" } });
+    fireEvent.submit(formFor(screen.getByLabelText("当前密码")));
+    expect(await screen.findByText("当前密码错误")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
-    expect(await screen.findByText("恢复未开始。")).toBeInTheDocument();
+    expect(await screen.findByText("恢复没开始。")).toBeInTheDocument();
     vi.unstubAllGlobals();
   });
 
@@ -301,8 +303,8 @@ describe("joi renderer console", () => {
     const fixture = mockApi();
     const { api } = fixture;
     render(<ConsoleApp api={api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
-    fireEvent.click(screen.getByRole("button", { name: "创建生命" }));
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
+    fireEvent.click(screen.getByRole("button", { name: "创建新生命" }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "新生命" } });
     fireEvent.change(screen.getByLabelText("人格摘要"), { target: { value: "尊重事实并保持好奇。" } });
     fireEvent.change(screen.getByLabelText("角色（可选）"), { target: { value: "观察者" } });
@@ -324,8 +326,8 @@ describe("joi renderer console", () => {
     const fixture = mockApi();
     fixture.createLife.mockRejectedValue(new ApiError("birth_failed", "主 Agent 暂不可用", 503));
     render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
-    fireEvent.click(screen.getByRole("button", { name: "创建生命" }));
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
+    fireEvent.click(screen.getByRole("button", { name: "创建新生命" }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "失败生命" } });
     fireEvent.change(screen.getByLabelText("头像 URL（可选）"), { target: { value: "https://example.test/avatar.png" } });
     fireEvent.change(screen.getByLabelText("人格摘要"), { target: { value: "保留输入" } });
@@ -337,20 +339,20 @@ describe("joi renderer console", () => {
     fireEvent.click(screen.getByRole("button", { name: /继续/ }));
     fireEvent.change(screen.getByLabelText("时区"), { target: { value: "UTC" } });
     fireEvent.click(screen.getByRole("button", { name: /让它出生/ }));
-    expect(await screen.findByText("主 Agent 暂不可用")).toBeInTheDocument();
+    expect(await screen.findByText(/没创建成功，请确认搭档仍然可用/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /让它出生/ })).toBeEnabled();
-    fireEvent.click(screen.getByRole("button", { name: "退出向导" }));
-    expect(await screen.findByRole("heading", { name: "你的数字生命" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "暂时退出" }));
+    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
   });
 
   it("renders a Life with no pending human interactions", async () => {
     const fixture = mockApi();
     vi.spyOn(fixture.api, "listInteractions").mockResolvedValue({ items: [] });
     render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
     await screen.findByText("我会继续跟进。");
-    expect(screen.queryByRole("heading", { name: "等待你的决定" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "等你决定" })).not.toBeInTheDocument();
   });
 
   it("renders sparse, stopped and auth-required states without inventing data", async () => {
@@ -369,29 +371,29 @@ describe("joi renderer console", () => {
     const sendMessage = vi.spyOn(api, "sendMessage").mockResolvedValue(event);
     const runtime = vi.spyOn(api, "runtime").mockResolvedValue({ ...stopped, state: "SLEEPING" });
     render(<ConsoleApp api={api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
-    expect(screen.getByText("连接未知")).toBeInTheDocument();
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
+    expect(screen.getByText("暂未连接")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
-    expect(await screen.findByText("需要人工授权")).toBeInTheDocument();
-    expect(screen.getByText("system.birth")).toBeInTheDocument();
+    expect(await screen.findByText("需要你完成授权")).toBeInTheDocument();
+    expect(screen.getByText("joi 的运行记录")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("输入消息"), { target: { value: "离线也保存" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
     await waitFor(() => expect(sendMessage).toHaveBeenCalled());
-    expect(screen.getByText("消息已进入本地事件队列。")).toBeInTheDocument();
+    expect(screen.getByText("消息已收下，等它行动时会看到。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "启动" }));
     await waitFor(() => expect(runtime).toHaveBeenCalledWith("life_1", "start"));
     fireEvent.click(screen.getByRole("button", { name: "事务与待办" }));
-    expect(screen.getByText("Agent 尚未建立长期事务。")).toBeInTheDocument();
+    expect(screen.getByText("还没有长期事务。")).toBeInTheDocument();
     expect(screen.getByText("暂时没有开放待办。")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "记忆" }));
     expect(screen.getAllByText("还没有这类记忆。")).toHaveLength(3);
     fireEvent.click(screen.getByRole("button", { name: "作息与闹钟" }));
-    expect(screen.getByText("生命还没有设置闹钟。")).toBeInTheDocument();
+    expect(screen.getByText("还没有闹钟。")).toBeInTheDocument();
     fireEvent.click(within(screen.getByRole("navigation", { name: "生命详情" })).getByRole("button", { name: "设置" }));
     expect(screen.getByLabelText("角色")).toHaveValue("");
     fireEvent.click(screen.getByRole("button", { name: "返回全部生命" }));
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Agents" }));
-    expect(screen.getByText("还没有 Agent 连接")).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "搭档" }));
+    expect(screen.getByText("还没有搭档")).toBeInTheDocument();
   });
 
   it("renders continuity records whose optional summary, due date and repeat are absent", async () => {
@@ -403,7 +405,7 @@ describe("joi renderer console", () => {
       todos: [{ lifeId: life.lifeId, status: "OPEN", title: "无期限待办", todoId: "todo_sparse", updatedAt: life.updatedAt }],
     });
     render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
     await screen.findByText("我会继续跟进。");
     fireEvent.click(screen.getByRole("button", { name: "事务与待办" }));
@@ -421,8 +423,8 @@ describe("joi renderer console", () => {
     vi.spyOn(api, "diagnostics").mockResolvedValue(diagnostics);
     render(<ConsoleApp api={api} />);
     expect(await screen.findByRole("alert")).toHaveTextContent("本机暂时离线");
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    expect(await screen.findByRole("heading", { name: "你的数字生命" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
+    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
   });
 
   it("reports SSE reconnect state, refreshes on events, and closes the stream", async () => {
@@ -438,14 +440,14 @@ describe("joi renderer console", () => {
     vi.stubGlobal("EventSource", FakeEventSource);
     const fixture = mockApi();
     const view = render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
     const stream = FakeEventSource.instance;
     if (stream === null) throw new Error("Expected an event stream.");
     expect(stream.url).toContain("/api/v1/stream");
     act(() => stream.onerror?.());
-    expect(screen.getByText("事件流重连中")).toBeInTheDocument();
+    expect(screen.getByText("重新连接中")).toBeInTheDocument();
     act(() => stream.onopen?.());
-    expect(screen.getByText("Runtime 已连接")).toBeInTheDocument();
+    expect(screen.getByText("已连接")).toBeInTheDocument();
     act(() => stream.listeners.get("event.created")?.());
     await waitFor(() => expect(fixture.listLives).toHaveBeenCalledTimes(2));
     act(() => stream.listeners.get("stream_reset")?.());
@@ -465,11 +467,11 @@ describe("joi renderer console", () => {
       { activityId: "delegation_2", details: { agentName: "Researcher" }, endedAt: life.updatedAt, kind: "DELEGATION", startedAt: life.createdAt, status: "COMPLETED", title: "资料调研" },
     ] });
     render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
-    expect(await screen.findByText("主 Agent Wake")).toBeInTheDocument();
-    expect(screen.getByText(/未知远端状态不会被伪装/)).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /我已在 Agent 完成授权/ }));
+    expect(await screen.findByText("一次行动")).toBeInTheDocument();
+    expect(screen.getByText(/这次结果还不能确认/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /已完成授权/ }));
     await waitFor(() => expect(fixture.resumeAuthorization).toHaveBeenCalledWith("auth_2"));
 
     const input = document.querySelector('input[type="file"]');
@@ -479,7 +481,7 @@ describe("joi renderer console", () => {
     expect(screen.getByText(/最多 8 个/)).toBeInTheDocument();
     const selected = new File(["brief"], "brief.txt", { type: "text/plain" });
     fireEvent.change(input, { target: { files: [selected] } });
-    expect(screen.getByText(/已选择 1 个附件/)).toBeInTheDocument();
+    expect(screen.getByText(/已选 1 个附件/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("输入消息"), { target: { value: "读取附件" } });
     fireEvent.click(screen.getByRole("button", { name: "发送消息" }));
     await waitFor(() => expect(fixture.uploadAttachment).toHaveBeenCalledWith("life_1", selected));
@@ -489,7 +491,7 @@ describe("joi renderer console", () => {
   it("edits Todo, schedule, rhythm defaults and calendar alarms through event-producing controls", async () => {
     const fixture = mockApi();
     render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
     await screen.findByText("我会继续跟进。");
     fireEvent.click(screen.getByRole("button", { name: "事务与待办" }));
@@ -518,15 +520,15 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.updateSchedule).toHaveBeenCalledWith("life_1", "schedule_1", "08:30", false));
     fireEvent.change(screen.getByLabelText("安静开始"), { target: { value: "22:30" } });
     fireEvent.change(screen.getByLabelText("安静结束"), { target: { value: "06:30" } });
-    fireEvent.change(screen.getByLabelText("自主唤醒"), { target: { value: "30", valueAsNumber: 30 } });
-    fireEvent.change(screen.getByLabelText("A2A 调用"), { target: { value: "120", valueAsNumber: 120 } });
-    fireEvent.change(screen.getByLabelText("空闲探索"), { target: { value: "4", valueAsNumber: 4 } });
+    fireEvent.change(screen.getByLabelText("主动行动"), { target: { value: "30", valueAsNumber: 30 } });
+    fireEvent.change(screen.getByLabelText("搭档协作"), { target: { value: "120", valueAsNumber: 120 } });
+    fireEvent.change(screen.getByLabelText("主动探索"), { target: { value: "4", valueAsNumber: 4 } });
     fireEvent.submit(formFor(screen.getByLabelText("安静开始")));
     await waitFor(() => expect(fixture.updateRhythm).toHaveBeenCalledWith("life_1", expect.objectContaining({ autonomousWakesDefault: 30, quietStart: "22:30" })));
     fireEvent.change(screen.getByLabelText("闹钟原因"), { target: { value: "工作日检查" } });
     fireEvent.change(screen.getByLabelText("闹钟时间"), { target: { value: "2026-07-17T08:00" } });
     fireEvent.change(screen.getByLabelText("重复规则"), { target: { value: "rule:WEEKDAYS" } });
-    fireEvent.click(screen.getByLabelText("允许安静时段唤醒"));
+    fireEvent.click(screen.getByLabelText("允许在安静时段行动"));
     fireEvent.submit(formFor(screen.getByLabelText("闹钟原因")));
     await waitFor(() => expect(fixture.createAlarm).toHaveBeenCalledWith("life_1", "工作日检查", expect.any(String), { allowQuietHours: true, recurrenceRule: "WEEKDAYS" }));
   });
@@ -538,7 +540,7 @@ describe("joi renderer console", () => {
     vi.spyOn(fixture.api, "listAgents").mockResolvedValue({ items: [agent, { ...collaborator, readiness: true, status: "ACTIVE" }] });
     vi.spyOn(fixture.api, "continuity").mockResolvedValue({ ...continuity, collaborators: [collaborator] });
     render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
     fireEvent.click(screen.getByRole("button", { name: "打开 栖遥" }));
     await screen.findByText("我会继续跟进。");
     fireEvent.click(within(screen.getByRole("navigation", { name: "生命详情" })).getByRole("button", { name: "设置" }));
@@ -546,10 +548,10 @@ describe("joi renderer console", () => {
     fireEvent.change(screen.getByLabelText("头像 URL"), { target: { value: "https://example.test/new.png" } });
     fireEvent.change(screen.getByLabelText("人格摘要"), { target: { value: "更新人格" } });
     fireEvent.change(screen.getByLabelText("初始目标"), { target: { value: "更新目标" } });
-    fireEvent.change(screen.getByLabelText("新的主 Agent"), { target: { value: "agent_2" } });
-    fireEvent.click(screen.getByRole("button", { name: "更换主 Agent" }));
+    fireEvent.change(screen.getByLabelText("新的主力搭档"), { target: { value: "agent_2" } });
+    fireEvent.click(screen.getByRole("button", { name: "更换主力搭档" }));
     await waitFor(() => expect(fixture.changePrimaryAgent).toHaveBeenCalledWith("life_1", "agent_2"));
-    fireEvent.click(screen.getByRole("button", { name: "解除绑定" }));
+    fireEvent.click(screen.getByRole("button", { name: "解除" }));
     await waitFor(() => expect(fixture.unbindCollaborator).toHaveBeenCalledWith("life_1", "agent_2"));
     fireEvent.click(screen.getByRole("button", { name: "归档生命" }));
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
@@ -557,7 +559,7 @@ describe("joi renderer console", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认归档" }));
     await waitFor(() => expect(fixture.archiveLife).toHaveBeenCalledWith("life_1"));
     fireEvent.click(screen.getByRole("button", { name: /删除生命/ }));
-    expect(await screen.findByText(/受控文件：1 个 Artifact/)).toBeInTheDocument();
+    expect(await screen.findByText(/还会删除 1 个文件/)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText(/输入生命名称/), { target: { value: "栖遥" } });
     fireEvent.click(screen.getByRole("button", { name: "永久删除" }));
     await waitFor(() => expect(fixture.deleteLife).toHaveBeenCalledWith("life_1"));
@@ -571,12 +573,12 @@ describe("joi renderer console", () => {
       schemaVersion: 16, sse: { events: 9 }, web: { lan: { status: "listening" }, sessions: 2 },
     });
     render(<ConsoleApp api={fixture.api} />);
-    await screen.findByRole("heading", { name: "你的数字生命" });
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "系统活动" }));
-    expect(screen.getByText("需检查")).toBeInTheDocument();
-    expect(screen.getByText("1 个陈旧 Turn")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "导出脱敏诊断" })).toHaveAttribute("download");
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Agents" }));
+    await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" });
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "状态" }));
+    expect(screen.getByText("需要检查")).toBeInTheDocument();
+    expect(screen.getByText("1 次行动需要确认")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "导出诊断" })).toHaveAttribute("download");
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "搭档" }));
     const row = screen.getByRole("heading", { name: "Mana Core" }).closest("article");
     if (row === null) throw new Error("missing agent row");
     fireEvent.click(within(row).getByRole("button", { name: /删除/ }));

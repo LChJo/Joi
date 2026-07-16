@@ -51,27 +51,27 @@ test("Electron completes setup, Life birth, and responsive shared-console paths"
   try {
     const window = await application.firstWindow();
     await expect(window).toHaveTitle("joi");
-    await expect(window.getByRole("heading", { name: "先守住进入这里的门。" })).toBeVisible();
-    await window.getByLabel("管理员口令").fill("correct horse battery staple");
-    await window.getByLabel("确认口令").fill("correct horse battery staple");
+    await expect(window.getByRole("heading", { name: "先帮 joi 设个密码。" })).toBeVisible();
+    await window.getByLabel("管理密码").fill("correct horse battery staple");
+    await window.getByLabel("确认密码").fill("correct horse battery staple");
     await window.getByRole("button", { name: /保存并继续/ }).click();
-    await window.getByRole("button", { name: /保持关闭并继续/ }).click();
+    await window.getByRole("button", { name: /先只用本机/ }).click();
     await window.getByRole("button", { name: "暂时跳过" }).click();
-    await expect(window.getByRole("heading", { name: "你的数字生命" })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeVisible();
     const userDataDirectory = await application.evaluate(({ app }) => app.getPath("userData"));
     expect(userDataDirectory).toContain("joi-e2e");
 
     seedReadyAgent(userDataDirectory);
     await window.reload();
-    await expect(window.getByRole("heading", { name: "你的数字生命" })).toBeVisible();
-    await window.getByRole("button", { name: "Agents" }).click();
+    await expect(window.getByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeVisible();
+    await window.getByRole("button", { name: "搭档" }).click();
     await expect(window.getByText("Mana E2E")).toBeVisible();
     await window.getByRole("button", { exact: true, name: "生命" }).click();
 
     await window.setViewportSize({ height: 760, width: 960 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(960);
     await expectNoHorizontalOverflow(window);
-    await window.getByRole("button", { name: "创建生命" }).click();
+    await window.getByRole("button", { name: "创建新生命" }).click();
     await window.getByLabel("名称").fill("栖光");
     await window.getByLabel("人格摘要").fill("尊重事实，持续整理长期事务。");
     await window.getByLabel("初始目标（可选）").fill("建立第一份可追踪计划。");
@@ -91,7 +91,7 @@ test("Electron completes setup, Life birth, and responsive shared-console paths"
     await window.getByRole("button", { exact: true, name: "生命" }).click();
     await window.setViewportSize({ height: 900, width: 768 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(768);
-    await expect(window.getByRole("heading", { name: "你的数字生命" })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeVisible();
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-console-768.png") });
