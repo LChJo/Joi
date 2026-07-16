@@ -6,6 +6,7 @@ import type {
   SecurityPrimitives,
   WebSessionRecord,
 } from "../ports/runtime-store.js";
+import { ADMIN_PASSWORD_MIN_LENGTH } from "../../../shared/product.js";
 
 const BOOTSTRAP_TTL_MS = 60_000;
 const SESSION_IDLE_MS = 24 * 60 * 60 * 1000;
@@ -78,7 +79,9 @@ export class AuthService {
   }) {
     const session = await this.verifyWrite({ ...input, expectedOrigin: "null" });
     if (session.kind !== "desktop") throw new AuthError("desktop_required", "Initial setup requires a desktop session.", 403);
-    if (input.password.length < 10) throw new AuthError("password_too_short", "Administrator password must contain at least 10 characters.", 400);
+    if (input.password.length < ADMIN_PASSWORD_MIN_LENGTH) {
+      throw new AuthError("password_too_short", `Administrator password must contain at least ${String(ADMIN_PASSWORD_MIN_LENGTH)} characters.`, 400);
+    }
     if (await this.isConfigured()) throw new AuthError("admin_already_configured", "Administrator password is already configured.", 409);
     const derived = await this.dependencies.security.derivePassword(input.password);
     await this.dependencies.store.saveAdminCredential({ algorithm: "scrypt", updatedAt: this.dependencies.clock.now().toISOString(), ...derived });
@@ -164,7 +167,9 @@ export class AuthService {
     sessionToken: string;
   }) {
     await this.verifyWrite(input);
-    if (input.newPassword.length < 10) throw new AuthError("password_too_short", "Administrator password must contain at least 10 characters.", 400);
+    if (input.newPassword.length < ADMIN_PASSWORD_MIN_LENGTH) {
+      throw new AuthError("password_too_short", `Administrator password must contain at least ${String(ADMIN_PASSWORD_MIN_LENGTH)} characters.`, 400);
+    }
     const credential = await this.dependencies.store.getAdminCredential();
     if (credential === null || !await this.dependencies.security.verifyPassword(input.currentPassword, credential)) {
       throw new AuthError("password_invalid", "Current administrator password is invalid.", 403);

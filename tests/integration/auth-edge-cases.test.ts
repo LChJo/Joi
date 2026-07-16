@@ -37,21 +37,21 @@ describe("administrator authentication edge cases", () => {
       const bootstrap = await fixture.auth.issueDesktopBootstrap();
       const desktop = await fixture.auth.exchangeDesktopBootstrap({ nonce: bootstrap.nonce, remoteAddress: "::ffff:127.0.0.1" });
       await expect(fixture.auth.setupPassword({
-        csrfToken: desktop.csrfToken, origin: "null", password: "too-short", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
+        csrfToken: desktop.csrfToken, origin: "null", password: "short", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
       })).rejects.toMatchObject({ code: "password_too_short" });
       await fixture.auth.setupPassword({
-        csrfToken: desktop.csrfToken, origin: "null", password: "correct horse battery staple", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
+        csrfToken: desktop.csrfToken, origin: "null", password: "sixsix", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
       });
       expect(await fixture.auth.isConfigured()).toBe(true);
       await expect(fixture.auth.setupPassword({
         csrfToken: desktop.csrfToken, origin: "null", password: "another secure password", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
       })).rejects.toMatchObject({ code: "admin_already_configured" });
       await expect(fixture.auth.login({
-        expectedOrigin: "http://192.168.1.10:43130", origin: "http://malicious.invalid", password: "correct horse battery staple", remoteAddress: "192.168.1.50",
+        expectedOrigin: "http://192.168.1.10:43130", origin: "http://malicious.invalid", password: "sixsix", remoteAddress: "192.168.1.50",
       })).rejects.toMatchObject({ code: "origin_invalid" });
 
       const lan = await fixture.auth.login({
-        expectedOrigin: "http://192.168.1.10:43130", origin: "http://192.168.1.10:43130", password: "correct horse battery staple", remoteAddress: "192.168.1.50",
+        expectedOrigin: "http://192.168.1.10:43130", origin: "http://192.168.1.10:43130", password: "sixsix", remoteAddress: "192.168.1.50",
       });
       await expect(fixture.auth.setupPassword({
         csrfToken: lan.csrfToken, origin: "null", password: "another secure password", remoteAddress: "192.168.1.50", sessionToken: lan.sessionToken,
@@ -90,15 +90,18 @@ describe("administrator authentication edge cases", () => {
       await expect(fixture.auth.changePassword({
         csrfToken: desktop.csrfToken, currentPassword: "wrong password", expectedOrigin: "http://127.0.0.1:43130", newPassword: "a different secure password", origin: "null", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
       })).rejects.toMatchObject({ code: "password_invalid" });
+      await expect(fixture.auth.changePassword({
+        csrfToken: desktop.csrfToken, currentPassword: "correct horse battery staple", expectedOrigin: "http://127.0.0.1:43130", newPassword: "short", origin: "null", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
+      })).rejects.toMatchObject({ code: "password_too_short" });
       await fixture.auth.changePassword({
-        csrfToken: desktop.csrfToken, currentPassword: "correct horse battery staple", expectedOrigin: "http://127.0.0.1:43130", newPassword: "a different secure password", origin: "null", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
+        csrfToken: desktop.csrfToken, currentPassword: "correct horse battery staple", expectedOrigin: "http://127.0.0.1:43130", newPassword: "newpwd", origin: "null", remoteAddress: "127.0.0.1", sessionToken: desktop.sessionToken,
       });
       await expect(fixture.auth.authenticate(lan.sessionToken)).rejects.toMatchObject({ code: "session_invalid" });
       await expect(fixture.auth.login({
         expectedOrigin: "http://192.168.1.10:43130", origin: "http://192.168.1.10:43130", password: "correct horse battery staple", remoteAddress: "192.168.1.51",
       })).rejects.toMatchObject({ code: "login_invalid" });
       await expect(fixture.auth.login({
-        expectedOrigin: "http://192.168.1.10:43130", origin: "http://192.168.1.10:43130", password: "a different secure password", remoteAddress: "192.168.1.51",
+        expectedOrigin: "http://192.168.1.10:43130", origin: "http://192.168.1.10:43130", password: "newpwd", remoteAddress: "192.168.1.51",
       })).resolves.toMatchObject({ kind: "lan" });
     } finally {
       await fixture.close();

@@ -1,3 +1,4 @@
+export const ADMIN_PASSWORD_MIN_LENGTH = 6;
 export const PRODUCT_NAME = "joi";
 export const RUNTIME_EXTENSION_URI = "urn:aimana:digital-life-runtime:v1";
 
