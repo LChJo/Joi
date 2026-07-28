@@ -4,6 +4,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
+import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
 
 function result(value: unknown) {
   return { content: [{ text: JSON.stringify(value), type: "text" as const }], details: {} };
@@ -11,6 +12,7 @@ function result(value: unknown) {
 
 export function createJoiReasoningTools(input: {
   avatarId: string;
+  avatarChanges: Pick<AvatarChangeService, "suggestArchive" | "suggestMerge">;
   avatars: AvatarCatalog;
   partners: Pick<PartnerRegistryService, "list">;
   turnId: string;
@@ -51,6 +53,29 @@ export function createJoiReasoningTools(input: {
     name: "work.reassign",
     parameters: workReassignParameters,
   };
+  const archiveParameters = Type.Object({ avatarId: Type.String(), reason: Type.String() });
+  const suggestArchive: AgentTool<typeof archiveParameters> = {
+    description: "Create a pending Avatar archive request. This never archives until the user confirms it.",
+    execute: async (_toolCallId, arguments_) => result(await input.avatarChanges.suggestArchive({
+      avatarId: arguments_.avatarId, reason: arguments_.reason, turnId: input.turnId,
+    })),
+    label: "Suggest Avatar archive",
+    name: "avatar.suggest_archive",
+    parameters: archiveParameters,
+  };
+  const mergeParameters = Type.Object({ reason: Type.String(), sourceAvatarId: Type.String(), targetAvatarId: Type.String() });
+  const suggestMerge: AgentTool<typeof mergeParameters> = {
+    description: "Create a pending Avatar merge request. Source facts remain intact and nothing changes until the user confirms it.",
+    execute: async (_toolCallId, arguments_) => result(await input.avatarChanges.suggestMerge({
+      reason: arguments_.reason,
+      sourceAvatarId: arguments_.sourceAvatarId,
+      targetAvatarId: arguments_.targetAvatarId,
+      turnId: input.turnId,
+    })),
+    label: "Suggest Avatar merge",
+    name: "avatar.suggest_merge",
+    parameters: mergeParameters,
+  };
   return [
     {
       description: "List redacted Avatar summaries. Does not return persona, memory, or workspace paths.",
@@ -59,6 +84,8 @@ export function createJoiReasoningTools(input: {
       name: "avatar.list_summaries",
       parameters: Type.Object({}),
     },
+    suggestMerge,
+    suggestArchive,
     {
       description: "List active partners with their public capability and active revision metadata.",
       execute: async () => result(await input.partners.list()),

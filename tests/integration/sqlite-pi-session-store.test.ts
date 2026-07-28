@@ -19,6 +19,12 @@ describe("Pi SQLite session restore", () => {
       ));
       const snapshot: JoiReasoningSessionSnapshot = {
         avatarId: "avatar-1",
+        compaction: {
+          compactedMessages: 18,
+          count: 2,
+          lastCompactedAt: "2026-07-28T10:00:30.000Z",
+          summary: "earlier bounded context",
+        },
         messages: [{ content: "scoped sentinel", role: "user", timestamp: 1 }],
         modelRevisionId: "model-revision-1",
         sessionId: "session-1",

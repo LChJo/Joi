@@ -16,6 +16,8 @@ describe("renderer API client", () => {
     api.setCsrfToken("csrf");
     await api.authStatus(); await api.bootstrap("nonce"); await api.login("password"); await api.setup("password");
     await api.logout(); await api.listSessions(); await api.logoutAllLan(); await api.changePassword("old password", "new password");
+    await api.joiSnapshot(); await api.listAvatars(); await api.createAvatar({ name: "Avatar", personaSummary: "Persona", projectLabel: "Project", scopeSummary: "Scope" });
+    await api.decideAvatarChange("change 1", "CONFIRM"); await api.listPartners(); await api.deletePartner("partner 1");
     await api.listLives(); await api.getLife("life 1"); await api.createLife({ name: "Life" }); await api.updateLife("life 1", { role: "R" });
     await api.archiveLife("life 1"); await api.getLifeDeletionImpact("life 1"); await api.changePrimaryAgent("life 1", "agent 2"); await api.deleteLife("life 1");
     await api.runtime("life 1", "pause"); await api.emergencyStopAll(); await api.sendMessage("life 1", "hello"); await api.sendMessage("life 1", "files", ["attachment 1"]); await api.listEvents("life 1"); await api.listExpressions("life 1"); await api.listActivity("life 1");

@@ -27,10 +27,22 @@ export interface AvatarDto {
   updatedAt: string;
 }
 
+export interface AvatarChangeRequestDto {
+  createdAt: string;
+  kind: "ARCHIVE" | "MERGE";
+  reason: string;
+  requestId: string;
+  sourceAvatarId: string;
+  status: "PENDING" | "CONFIRMED" | "REJECTED";
+  targetAvatarId?: string;
+}
+
 export interface PartnerDto {
   capabilities: string[];
   displayName: string;
   kind: "local-pi" | "a2a";
+  inFlightCount: number;
+  lifecyclePolicy: "DRAIN";
   partnerId: string;
   partnerRevisionId: string;
   registryRevision: number;
@@ -66,6 +78,7 @@ export interface WorkItemDto {
 }
 
 export interface JoiSnapshotDto {
+  avatarChanges: AvatarChangeRequestDto[];
   avatars: AvatarDto[];
   modelSources: ModelSourceDto[];
   partners: PartnerDto[];

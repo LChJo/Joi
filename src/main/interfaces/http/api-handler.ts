@@ -12,6 +12,7 @@ import type { OperationsService } from "../../application/operations/operations-
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { JoiInboxService } from "../../application/joi/joi-inbox-service.js";
 import type { AvatarRegistryService } from "../../application/joi/avatar-registry-service.js";
+import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { SseService } from "../../application/sse/sse-service.js";
@@ -31,6 +32,7 @@ export interface ApiDependencies {
   attachments?: UserAttachmentPort;
   artifacts?: ArtifactReadPort;
   avatarRegistry?: Pick<AvatarRegistryService, "create">;
+  avatarChanges?: Pick<AvatarChangeService, "decide" | "listPending">;
   avatars?: AvatarCatalog;
   auth: AuthService;
   budgets?: BudgetService;
@@ -47,7 +49,7 @@ export interface ApiDependencies {
   lifeRuntime?: LifeRuntimeService;
   modelSources?: Pick<ModelSourceService, "create" | "delete" | "disable" | "hasReadySource" | "list" | "setOrder" | "update" | "validate">;
   operations: OperationsService;
-  partners?: Pick<PartnerRegistryService, "add" | "disable" | "list" | "update">;
+  partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "list" | "update">;
   requestRestart?: () => void;
   sse: SseService;
   settings?: SystemSettingsPort;
@@ -108,6 +110,11 @@ function joiInboxService(dependencies: ApiDependencies): NonNullable<ApiDependen
 function partnerRegistryService(dependencies: ApiDependencies): NonNullable<ApiDependencies["partners"]> {
   if (dependencies.partners === undefined) throw new HttpError("partner_registry_unavailable", "Partner registry is unavailable.", 503);
   return dependencies.partners;
+}
+
+function avatarChangeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["avatarChanges"]> {
+  if (dependencies.avatarChanges === undefined) throw new HttpError("avatar_change_runtime_unavailable", "Avatar change runtime is unavailable.", 503);
+  return dependencies.avatarChanges;
 }
 
 function artifactDisposition(filename: string, mode: "attachment" | "inline"): string {
@@ -432,6 +439,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       if (method === "GET" && pathname === "/api/v1/joi") {
         const configured = await modelSourceService(dependencies).hasReadySource();
         sendJson(response, 200, {
+          avatarChanges: dependencies.avatarChanges === undefined ? [] : await dependencies.avatarChanges.listPending(),
           avatars: dependencies.avatars === undefined ? [] : await dependencies.avatars.listSummaries(),
           modelSources: await modelSourceService(dependencies).list(),
           partners: dependencies.partners === undefined ? [] : await dependencies.partners.list(),
@@ -465,6 +473,22 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       if (method === "GET" && pathname === "/api/v1/avatars") {
         if (dependencies.avatars === undefined) throw new HttpError("avatar_catalog_unavailable", "Avatar catalog is unavailable.", 503);
         sendJson(response, 200, { items: await dependencies.avatars.listSummaries() });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/avatar-change-requests") {
+        sendJson(response, 200, { items: await avatarChangeService(dependencies).listPending() });
+        return;
+      }
+      const avatarChangeDecisionMatch = /^\/api\/v1\/avatar-change-requests\/([^/]+)\/decision$/.exec(pathname);
+      if (method === "POST" && avatarChangeDecisionMatch !== null) {
+        await verifyWrite(dependencies, request);
+        const body = await readJson(request);
+        const decision = stringField(body, "decision");
+        if (decision !== "CONFIRM" && decision !== "REJECT") throw new HttpError("avatar_change_decision_invalid", "Decision must be CONFIRM or REJECT.", 400);
+        sendJson(response, 200, await avatarChangeService(dependencies).decide({
+          decision,
+          requestId: decodeURIComponent(avatarChangeDecisionMatch[1] ?? ""),
+        }));
         return;
       }
       if (method === "POST" && pathname === "/api/v1/avatars") {
@@ -517,6 +541,11 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
             ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
           });
         sendJson(response, 200, result);
+        return;
+      }
+      if (partnerMatch !== null && method === "DELETE") {
+        await verifyWrite(dependencies, request);
+        sendJson(response, 200, await partnerRegistryService(dependencies).delete(decodeURIComponent(partnerMatch[1] ?? "")));
         return;
       }
       if (method === "POST" && pathname === "/api/v1/joi/messages") {
@@ -626,6 +655,9 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         });
         sendEmpty(response, 204);
         return;
+      }
+      if (method !== "GET" && /^\/api\/v1\/lives(?:\/|$)/.test(pathname)) {
+        throw new HttpError("legacy_life_read_only", "Legacy Life resources are read-only. Use joi and Avatar APIs.", 410);
       }
       if (method === "GET" && pathname === "/api/v1/lives") {
         const limitValue = Number(url.searchParams.get("limit") ?? "20");

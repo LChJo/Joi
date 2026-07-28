@@ -23,6 +23,7 @@ import { JoiInboxService } from "./application/joi/joi-inbox-service.js";
 import { JoiCoordinator } from "./application/joi/joi-coordinator.js";
 import { JoiInputScheduler } from "./application/joi/joi-input-scheduler.js";
 import { AvatarRegistryService } from "./application/joi/avatar-registry-service.js";
+import { AvatarChangeService } from "./application/joi/avatar-change-service.js";
 import { PartnerRegistryService } from "./application/partners/partner-registry-service.js";
 import { WorkOrchestrationService } from "./application/work/work-orchestration-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
@@ -56,6 +57,7 @@ import { SqliteDispatchPolicyGate } from "./infrastructure/persistence/sqlite-di
 import { SqliteWorkspaceLeaseManager } from "./infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { SqlitePartnerPromptStore } from "./infrastructure/persistence/sqlite-partner-prompt-store.js";
 import { LegacyLifeStoreAdapter } from "./infrastructure/persistence/legacy-life-store-adapter.js";
+import { SqliteAvatarChangeRepository } from "./infrastructure/persistence/sqlite-avatar-change-repository.js";
 import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
 import { PiModelSourceCatalog } from "./infrastructure/pi/pi-model-source-catalog.js";
 import { PiModelSourceValidator } from "./infrastructure/pi/pi-model-source-validator.js";
@@ -206,6 +208,7 @@ async function startRuntime(): Promise<void> {
   });
   const avatars = new LegacyLifeStoreAdapter(database);
   const avatarRegistry = new AvatarRegistryService({ clock, ids, repository: avatars });
+  const avatarChanges = new AvatarChangeService({ clock, ids, repository: new SqliteAvatarChangeRepository(database) });
   const workRepository = new SqliteWorkPlanRepository(database);
   const work = new WorkOrchestrationService({
     clock,
@@ -224,7 +227,7 @@ async function startRuntime(): Promise<void> {
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     resolver: configuredModelResolver,
     sessionStore: new SqlitePiReasoningSessionStore(database),
-    tools: (turn) => createJoiReasoningTools({ avatarId: turn.avatarId, avatars, partners, turnId: turn.turnId, work }),
+    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, partners, turnId: turn.turnId, work }),
   });
   const joiCoordinator = new JoiCoordinator({
     avatars,
@@ -428,6 +431,7 @@ async function startRuntime(): Promise<void> {
     attachments: attachmentStorage,
     artifacts: artifactStorage,
     auth,
+    avatarChanges,
     avatarRegistry,
     avatars,
     budgets,

@@ -21,6 +21,12 @@ export interface StartReasoningTurnInput {
 
 export interface JoiReasoningSessionSnapshot {
   avatarId: string;
+  compaction?: {
+    compactedMessages: number;
+    count: number;
+    lastCompactedAt: string;
+    summary: string;
+  } | undefined;
   messages: unknown[];
   modelRevisionId: string;
   sessionId: string;

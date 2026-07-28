@@ -2,7 +2,7 @@
 
 ## JOI-01 当前结论
 
-本报告同时记录旧 Life/Wake 基线和 2026-07-28 的 JOI-01 自动化闭环。JOI-01 已完成唯一首页、Pi/Avatar/Partner/Work、本机与 A2A adapter、结果回流、附件与模型来源的仓库内验证，但在真实 provider/Local Pi/A2A/强杀恢复/LAN 验收以及追踪矩阵所列兼容缺口闭合前仍不宣称发布完成。
+本报告同时记录旧 Life/Wake 基线和 2026-07-28 的 JOI-01 自动化闭环。JOI-01 的仓库内验收项已经闭合：唯一首页、Pi/Avatar/Partner/Work、本机与 A2A adapter、结果回流、附件、模型来源、Pi session compaction、Avatar 破坏操作确认、搭档排空生命周期与旧 Life 只读兼容均有自动化证据。真实 provider/Local Pi/A2A/强杀恢复/LAN 与平台发布门禁仍不得用模拟测试替代。
 
 日期：2026-07-28
 版本：0.1.0
@@ -17,10 +17,10 @@ M0–M6 的可在当前仓库与单机环境完成部分已经实现并通过自
 | 门禁 | 结果 | 证据 |
 |---|---|---|
 | TypeScript / ESLint / 分层边界 | 通过 | `npm run typecheck`、`npm run lint`、architecture tests |
-| 自动化测试 | 通过 | 92 个测试文件、310 项测试；domain、persistence、Local Pi/A2A、HTTP/SSE、renderer、security/recovery 与发布命令契约 |
-| 覆盖率 | 通过 | statements 94.49%、branches 90.05%、functions 94.48%、lines 96.73% |
-| Electron E2E | 通过 | 首次桌面 bootstrap、模型连接门禁、唯一 joi 首页、A2A→Partner 镜像、Avatar/Life 兼容路径与 960/768 px 无水平溢出；一次 Windows 冷启动 30 秒超时后同命令复跑 3.5 秒通过 |
-| 生产构建与包内容 | 通过 | Vite renderer、Electron main/preload、18 个 migrations、品牌图标与静态资源检查；包内容 243 文件 |
+| 自动化测试 | 通过 | 94 个测试文件、308 项测试；domain、persistence、Pi compaction、Avatar confirmation、Partner lifecycle、Local Pi/A2A、HTTP/SSE、renderer、security/recovery 与发布命令契约 |
+| 覆盖率 | 通过 | statements 95.22%、branches 90.18%、functions 94.87%、lines 97.18% |
+| Electron E2E | 通过 | 首次桌面 bootstrap、模型连接门禁、唯一 joi 首页、原生 Avatar 创建与 960/768 px 无水平溢出；本轮 1 场景约 29.9 秒通过 |
+| 生产构建与包内容 | 通过 | Vite renderer、Electron main/preload、20 个 migrations、品牌图标与静态资源检查；包内容 249 文件 |
 | 时间线性能 | 通过（本机基线） | 100,000 条持久活动下首屏 100 条查询 `< 1s`；migration 016 提供 `(life_id, occurred_at, event_id)` 复合索引 |
 | 备份恢复 | 通过（自动化） | SQLite online backup、SHA-256、原子发布、空间检查、quarantine、Artifact 恢复、会话撤销、Token 重确认、unknown Invocation |
 | Windows unpacked | 通过 | `release-joi/win-unpacked`（本地忽略产物）；打包后 `joi.exe` 实际启动并返回标题 `joi`/私有 loopback renderer；品牌资源同时存在于 `extraResources` 与 renderer asar |
@@ -32,7 +32,11 @@ M0–M6 的可在当前仓库与单机环境完成部分已经实现并通过自
 - Pi `0.82.1` 锁版本，模型来源、安全 fallback、Avatar 稳定 session 与 SQLite restore 通过 contract/unit/integration。
 - Local Pi Coding Agent 使用受控 workspace、prompt、tool allowlist、净化 bash 环境和 workspace lease；A2A 复用既有 gateway。
 - Partner terminal result 先写不可变事件，再唤醒 joi；`work.reassign` 固定新 revision 并重新进入 outbox。
-- 首页提供消息阶段、活动、工作、统一搭档与全局附件；v18 migration、备份恢复、包内容和 960/768 Electron E2E 已验证。
+- 首页提供消息阶段、活动、工作、统一搭档与全局附件；v20 migration、备份恢复、包内容和 960/768 Electron E2E 已验证。
+- Pi session 在完整 Turn 后压缩并持久化摘要元数据，provider 摘要失败时使用有界本地 checkpoint；恢复后保留 source/model revision 与最近完整对话边界。
+- Avatar merge/archive 只形成持久待确认建议；拒绝不改事实，确认前检查非终态工作，merge 保留源记录并写重定向。
+- Partner disable 使用 DRAIN 策略，立即拒绝新派发、保留在途；delete 要求先停用且在途归零，并追加不可变 DELETED revision。
+- 旧 `/api/v1/lives` 仅保留 GET 兼容；新生产 Console 已移除 Life 写向导和详情入口，二级上下文使用原生 Avatar API。
 
 ## 安装与升级路径
 

@@ -18,7 +18,9 @@ describe("JOI-01 shared DTO contract", () => {
     const partner: PartnerDto = {
       capabilities: ["research"],
       displayName: "Researcher",
+      inFlightCount: 0,
       kind: "a2a",
+      lifecyclePolicy: "DRAIN",
       partnerId: "partner_1",
       partnerRevisionId: "partner_rev_1",
       registryRevision: 1,
@@ -38,6 +40,7 @@ describe("JOI-01 shared DTO contract", () => {
       status: "READY",
     };
     const snapshot: JoiSnapshotDto = {
+      avatarChanges: [],
       avatars: [avatar],
       modelSources: [source],
       partners: [partner],

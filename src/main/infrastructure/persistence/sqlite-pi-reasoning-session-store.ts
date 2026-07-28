@@ -9,6 +9,7 @@ interface TransactionalDatabase {
 }
 
 interface StoredMetadata {
+  compaction?: JoiReasoningSessionSnapshot["compaction"];
   modelRevisionId: string;
   sourceRevisionId: string;
   systemPrompt: string;
@@ -20,7 +21,25 @@ function metadata(value: unknown): StoredMetadata {
   const record = value as Record<string, unknown>;
   if (typeof record.modelRevisionId !== "string" || typeof record.sourceRevisionId !== "string"
     || typeof record.systemPrompt !== "string" || typeof record.updatedAt !== "string") throw new Error("pi_session_record_invalid");
+  let compaction: JoiReasoningSessionSnapshot["compaction"];
+  if (record.compaction !== undefined) {
+    if (record.compaction === null || Array.isArray(record.compaction) || typeof record.compaction !== "object") {
+      throw new Error("pi_session_record_invalid");
+    }
+    const storedCompaction = record.compaction as Record<string, unknown>;
+    if (typeof storedCompaction.compactedMessages !== "number" || typeof storedCompaction.count !== "number"
+      || typeof storedCompaction.lastCompactedAt !== "string" || typeof storedCompaction.summary !== "string") {
+      throw new Error("pi_session_record_invalid");
+    }
+    compaction = {
+      compactedMessages: storedCompaction.compactedMessages,
+      count: storedCompaction.count,
+      lastCompactedAt: storedCompaction.lastCompactedAt,
+      summary: storedCompaction.summary,
+    };
+  }
   return {
+    compaction,
     modelRevisionId: record.modelRevisionId,
     sourceRevisionId: record.sourceRevisionId,
     systemPrompt: record.systemPrompt,
@@ -43,6 +62,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
       const stored = metadata(JSON.parse(first.message_json) as unknown);
       return {
         avatarId: first.avatar_id,
+        compaction: stored.compaction,
         messages: rows.slice(1).map((row) => {
           if (typeof row.message_json !== "string") throw new Error("pi_session_record_invalid");
           return JSON.parse(row.message_json) as unknown;
@@ -64,6 +84,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
       insert.run(
         `${snapshot.sessionId}:metadata`, snapshot.sessionId, snapshot.avatarId, 0,
         JSON.stringify({
+          compaction: snapshot.compaction,
           modelRevisionId: snapshot.modelRevisionId,
           sourceRevisionId: snapshot.sourceRevisionId,
           systemPrompt: snapshot.systemPrompt,

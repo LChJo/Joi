@@ -38,7 +38,7 @@ export class PartnerRegistryService {
     });
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
     await this.#changed(revision);
-    return toPublicPartner(revision);
+    return this.#public(revision);
   }
 
   async update(partnerId: string, input: PartnerFields): Promise<PartnerDto> {
@@ -60,7 +60,7 @@ export class PartnerRegistryService {
     });
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
     await this.#changed(revision);
-    return toPublicPartner(revision);
+    return this.#public(revision);
   }
 
   async refreshA2aCard(partnerId: string, card: { capabilities: string[]; displayName: string; skills: string[]; tools?: string[]; workspaceRef?: string }): Promise<PartnerDto> {
@@ -73,11 +73,13 @@ export class PartnerRegistryService {
     });
     const saved = await this.dependencies.repository.append(withoutRegistryRevision(revision));
     await this.#changed(saved);
-    return toPublicPartner(saved);
+    return this.#public(saved);
   }
 
   async disable(partnerId: string): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
+    if (current.status === "DELETED") throw new DomainError("partner_not_found", "Partner was not found.");
+    if (current.status === "DISABLED") return this.#public(current);
     const revision = await this.dependencies.repository.append({
       ...withoutRegistryRevision(current),
       createdAt: this.dependencies.clock.now().toISOString(),
@@ -85,11 +87,29 @@ export class PartnerRegistryService {
       status: "DISABLED",
     });
     await this.#changed(revision);
-    return toPublicPartner(revision);
+    return this.#public(revision);
+  }
+
+  async delete(partnerId: string): Promise<PartnerDto> {
+    const current = await this.#active(partnerId);
+    if (current.status === "DELETED") return this.#public(current);
+    if (current.status !== "DISABLED") throw new DomainError("partner_disable_before_delete", "Partner must be disabled before deletion.");
+    const inFlightCount = await this.dependencies.repository.countInFlight(partnerId);
+    if (inFlightCount > 0) throw new DomainError("partner_delete_in_flight", "Partner still has in-flight dispatch attempts.");
+    const revision = await this.dependencies.repository.append({
+      ...withoutRegistryRevision(current),
+      createdAt: this.dependencies.clock.now().toISOString(),
+      partnerRevisionId: this.dependencies.ids.next("partner_revision"),
+      status: "DELETED",
+    });
+    await this.#changed(revision);
+    return this.#public(revision);
   }
 
   async list(): Promise<PartnerDto[]> {
-    return (await this.dependencies.repository.listActive()).map(toPublicPartner);
+    return Promise.all((await this.dependencies.repository.listActive())
+      .filter((revision) => revision.status !== "DELETED")
+      .map((revision) => this.#public(revision)));
   }
 
   async pinForDispatch(partnerId: string): Promise<{ partnerId: string; partnerRevisionId: string; registryRevision: number }> {
@@ -102,6 +122,14 @@ export class PartnerRegistryService {
     const current = await this.dependencies.repository.getActive(partnerId);
     if (current === null) throw new DomainError("partner_not_found", "Partner was not found.");
     return current;
+  }
+
+  async #public(revision: PartnerRevision): Promise<PartnerDto> {
+    return {
+      ...toPublicPartner(revision),
+      inFlightCount: await this.dependencies.repository.countInFlight(revision.partnerId),
+      lifecyclePolicy: "DRAIN",
+    };
   }
 
   async #promptRef(input: Pick<PartnerFields, "prompt" | "promptRef">, createdAt: string): Promise<string | undefined> {

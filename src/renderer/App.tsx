@@ -59,5 +59,3 @@ export function App() {
   if (state.kind === "setup") return <SetupJourney api={state.api} onComplete={() => setState({ api: state.api, kind: "ready" })} />;
   return <ConsoleApp api={state.api} />;
 }
-
-export { LifeHome } from "./Console";

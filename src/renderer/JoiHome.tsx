@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import { MODEL_SOURCE_CHOICES, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceKindDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceKindDto, type PartnerDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
@@ -56,6 +56,7 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
 export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   const [sources, setSources] = useState<JoiSnapshotDto["modelSources"]>([]);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
     try { setSources((await api.listModelSources()).items); }
@@ -71,12 +72,42 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     ids[index] = replacement; ids[target] = current;
     setSources((await api.orderModelSources(ids)).items);
   };
+  const saveEdit = async (event: SyntheticEvent<HTMLFormElement>, source: JoiSnapshotDto["modelSources"][number]) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const field = (name: string) => {
+      const value = form.get(name);
+      return typeof value === "string" ? value.trim() : "";
+    };
+    const apiKey = field("apiKey");
+    const body = {
+      ...(apiKey === "" ? {} : { apiKey }),
+      modelId: field("modelId"),
+      ...(source.kind === "generic-openai" ? {
+        baseUrl: field("baseUrl"), displayName: field("displayName"),
+      } : {}),
+    };
+    try {
+      await api.updateModelSource(source.sourceId, body);
+      setEditing(null);
+      setNotice("修改已保存为草稿 revision，请验证后启用。");
+      await load();
+    } catch (error) {
+      setNotice(error instanceof ApiError ? error.message : "模型网络修改未保存。");
+    }
+  };
   return <section className="model-source-manager">
     <header><div><h2>大模型网络</h2><p>主源和备用源按这里的顺序使用。页面不会显示已保存的密钥。</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "添加网络"}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
     <div className="model-source-list">{sources.map((source, index) => <article key={source.sourceId}>
       <div><strong>{source.displayName}</strong><span>{source.primary ? "主源" : `备用 ${String(index)}`} · {source.status} · {source.activeModel.id}</span>{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}</div>
-      <div className="row-actions"><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">上移</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">下移</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice("验证没有通过。"))} type="button">验证</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">停用</button><button className="button danger-text" onClick={() => void api.deleteModelSource(source.sourceId).then(load)} type="button">删除</button></div>
+      <div className="row-actions"><button aria-label={`编辑 ${source.displayName}`} className="button ghost" onClick={() => setEditing(source.sourceId)} type="button">编辑</button><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">上移</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">下移</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice("验证没有通过。"))} type="button">验证</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">停用</button><button className="button danger-text" onClick={() => void api.deleteModelSource(source.sourceId).then(load)} type="button">删除</button></div>
+      {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
+        {source.kind === "generic-openai" ? <><label>编辑显示名称<input defaultValue={source.displayName} name="displayName" required /></label><label>编辑 Base URL<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
+        <label>编辑 Model ID<input defaultValue={source.activeModel.id} name="modelId" required /></label>
+        <label>替换 API Key（留空则保留）<input autoComplete="off" name="apiKey" type="password" /></label>
+        <div className="row-actions"><button className="button primary" type="submit">保存修改</button><button className="button ghost" onClick={() => setEditing(null)} type="button">取消</button></div>
+      </form> : null}
     </article>)}</div>
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
   </section>;
@@ -127,7 +158,37 @@ export function PartnerManager({ api }: { api: DigitalLifeApi }) {
       <button className="button primary" type="submit">保存搭档 revision</button>
     </form> : null}
     {partners.length === 0 ? <div className="plain-empty"><h2>还没有搭档</h2><p>添加本机 Pi 或远端 A2A 搭档后，joi 才会把工作派发给它。</p></div> : null}
-    <div className="partner-list">{partners.map((partner) => <article key={partner.partnerId}><div><strong>{partner.displayName}</strong><span>{partner.kind === "local-pi" ? "本机 Pi" : "远端 A2A"} · revision {String(partner.registryRevision)} · {partner.status}</span><small>{[...partner.capabilities, ...partner.skills, ...partner.tools].join(" · ") || "尚未声明能力"}</small></div>{partner.status === "ACTIVE" ? <button className="button ghost" onClick={() => void api.disablePartner(partner.partnerId).then(load)} type="button">停用</button> : null}</article>)}</div>
+    <div className="partner-list">{partners.map((partner) => <article key={partner.partnerId}><div><strong>{partner.displayName}</strong><span>{partner.kind === "local-pi" ? "本机 Pi" : "远端 A2A"} · revision {String(partner.registryRevision)} · {partner.status}</span><small>{[...partner.capabilities, ...partner.skills, ...partner.tools].join(" · ") || "尚未声明能力"}</small>{partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}</div><div className="row-actions">{partner.status === "ACTIVE" ? <button className="button ghost" onClick={() => void api.disablePartner(partner.partnerId).then(load).catch(() => setNotice("搭档未能停用。"))} type="button">停用</button> : null}{partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(load).catch(() => setNotice("搭档还不能删除。"))} type="button">删除搭档</button> : null}</div></article>)}</div>
+    {notice === null ? null : <p className="inline-notice info">{notice}</p>}
+  </section>;
+}
+
+export function AvatarManager({ api }: { api: DigitalLifeApi }) {
+  const [avatars, setAvatars] = useState<AvatarDto[]>([]);
+  const [adding, setAdding] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const load = useCallback(async () => setAvatars((await api.listAvatars()).items), [api]);
+  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice("没能读取 Avatar 列表。")), 0); return () => clearTimeout(timer); }, [load]);
+  const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const field = (name: string) => {
+      const value = form.get(name);
+      return typeof value === "string" ? value.trim() : "";
+    };
+    await api.createAvatar({
+      name: field("name"), personaSummary: field("personaSummary"), projectLabel: field("projectLabel"), scopeSummary: field("scopeSummary"),
+    });
+    setAdding(false); setNotice("Avatar 已创建；之后的任务上下文仍由 joi 归属和管理。"); await load();
+  };
+  return <section className="partner-manager page-section">
+    <header className="page-title-row"><div><p className="eyebrow">joi 管理的上下文边界</p><h1>Avatar</h1><p>这里只保存人格、工程、记忆与任务上下文。Avatar 不拥有派发权。</p></div><button className="button primary" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建 Avatar"}</button></header>
+    {adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}>
+      <label>名称<input name="name" required /></label><label>工程名称<input name="projectLabel" required /></label>
+      <label>职责范围<textarea name="scopeSummary" required rows={3} /></label><label>人格摘要<textarea name="personaSummary" required rows={4} /></label>
+      <button className="button primary" type="submit">保存 Avatar</button>
+    </form> : null}
+    {avatars.length === 0 ? <div className="plain-empty"><h2>还没有 Avatar</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="partner-list">{avatars.map((avatar) => <article key={avatar.avatarId}><div><strong>{avatar.name}</strong><span>{avatar.scopeSummary}</span><small>更新于 {new Date(avatar.updatedAt).toLocaleString()}</small></div></article>)}</div>}
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
   </section>;
 }
@@ -138,12 +199,14 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
   const [accepted, setAccepted] = useState<JoiAcceptedMessageDto[]>([]);
   const [activity, setActivity] = useState<JoiActivityDto[]>([]);
   const [work, setWork] = useState(snapshot.work);
+  const [avatarChanges, setAvatarChanges] = useState(snapshot.avatarChanges);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     const [messages, timeline, state] = await Promise.all([api.listJoiMessages(), api.listJoiActivity(), api.joiSnapshot()]);
     setAccepted(messages.items);
     setActivity(timeline.items);
     setWork(state.work);
+    setAvatarChanges(state.avatarChanges);
   }, [api]);
   useEffect(() => {
     const initial = setTimeout(() => void Promise.all([api.listJoiMessages(), api.listJoiActivity()])
@@ -176,6 +239,10 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
     {work.length === 0 ? null : <div className="joi-active-work">{work.map((item) => <article key={item.workId}><strong>{item.title}</strong><span>{item.status} · Avatar {item.avatarId}</span></article>)}</div>}
     <ol className="joi-accepted-list" aria-label="已保存输入">{accepted.map((item) => <li key={item.inputId}><strong>{messageStage(item.status)}</strong><span>{item.status === "CLARIFICATION_REQUIRED" ? "joi 需要你补充信息" : item.status === "CONSUMED" ? "joi 已完成这轮归类和安排" : "joi 正在归类和安排"}</span></li>)}</ol>
     {activity.length === 0 ? null : <section className="joi-activity"><h2>最近活动</h2><ol>{activity.slice(0, 12).map((item) => <li key={`${item.kind}:${item.activityId}`}><strong>{activityLabel(item.kind)}</strong><span>{item.status} · {new Date(item.occurredAt).toLocaleString()}</span></li>)}</ol></section>}
+    {avatarChanges.length === 0 ? null : <section className="joi-avatar-confirmations" aria-label="Avatar 变更确认"><h2>需要你确认</h2>{avatarChanges.map((change) => <article key={change.requestId}>
+      <div><strong>{change.kind === "MERGE" ? "joi 建议合并 Avatar" : "joi 建议归档 Avatar"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceAvatarId} → ${change.targetAvatarId ?? ""}` : change.sourceAvatarId}</small></div>
+      <div className="row-actions"><button className="button ghost" onClick={() => void api.decideAvatarChange(change.requestId, "REJECT").then(refresh)} type="button">保留原样</button><button className="button danger-text" onClick={() => void api.decideAvatarChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? "确认合并" : "确认归档"}</button></div>
+    </article>)}</section>}
     <form className="joi-composer" onSubmit={(event) => void submit(event)}>
       <label htmlFor="joi-input">给 joi 输入</label>
       <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={4} value={text} />

@@ -11,7 +11,7 @@ interface TransactionalDatabase {
 
 type Row = Record<string, unknown>;
 
-const SELECT_REVISIONS = `SELECT p.partner_id, p.kind, p.status, r.partner_revision_id, r.registry_revision,
+const SELECT_REVISIONS = `SELECT p.partner_id, p.kind, r.status AS revision_status, r.partner_revision_id, r.registry_revision,
   r.display_name, r.capabilities_json, r.skills_json, r.tools_json, r.prompt_ref, r.workspace_ref,
   r.provenance_json, r.created_at
   FROM partners p JOIN partner_revisions r ON r.partner_id = p.partner_id`;
@@ -48,7 +48,7 @@ function mapRow(row: Row): PartnerRevision {
     provenance: provenance as PartnerRevision["provenance"],
     registryRevision,
     skills: stringArray(row.skills_json),
-    status: rowText(row, "status") as PartnerRevision["status"],
+    status: rowText(row, "revision_status") as PartnerRevision["status"],
     tools: stringArray(row.tools_json),
     ...(typeof workspaceRef === "string" ? { workspaceRef } : {}),
   };
@@ -71,12 +71,12 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
       );
       connection.prepare(`INSERT INTO partner_revisions
         (partner_revision_id, partner_id, registry_revision, display_name, capabilities_json, skills_json,
-         tools_json, prompt_ref, workspace_ref, execution_policy_json, provenance_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+         tools_json, prompt_ref, workspace_ref, execution_policy_json, provenance_json, status, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         input.partnerRevisionId, input.partnerId, registryRevision, input.displayName,
         JSON.stringify(input.capabilities), JSON.stringify(input.skills), JSON.stringify(input.tools),
         input.promptRef ?? null, input.workspaceRef ?? null,
-        JSON.stringify({ transport: input.kind, localOverridesWin: true }), JSON.stringify(input.provenance), input.createdAt,
+        JSON.stringify({ transport: input.kind, localOverridesWin: true }), JSON.stringify(input.provenance), input.status, input.createdAt,
       );
       connection.prepare("UPDATE partners SET active_revision_id = ? WHERE partner_id = ?").run(input.partnerRevisionId, input.partnerId);
       return { ...input, registryRevision };
@@ -90,6 +90,17 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
     return row === undefined ? null : mapRow(row);
   }
 
+  async countInFlight(partnerId: string): Promise<number> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare(`SELECT COUNT(*) AS count
+        FROM dispatch_attempts d JOIN partner_revisions r ON r.partner_revision_id = d.partner_revision_id
+        WHERE r.partner_id = ? AND d.status IN
+          ('PENDING', 'DISPATCHED', 'ACCEPTED', 'RUNNING', 'WAITING_INPUT', 'WAITING_AUTH', 'UNKNOWN')`
+      ).get(partnerId) as { count: number };
+      return row.count;
+    });
+  }
+
   async getRevision(partnerRevisionId: string): Promise<PartnerRevision | null> {
     const row = this.database.transaction((connection) => connection.prepare(
       `${SELECT_REVISIONS} WHERE r.partner_revision_id = ?`,
@@ -99,7 +110,7 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
 
   async listActive(): Promise<PartnerRevision[]> {
     return this.database.transaction((connection) => connection.prepare(
-      `${SELECT_REVISIONS} WHERE r.partner_revision_id = p.active_revision_id ORDER BY r.registry_revision`,
+      `${SELECT_REVISIONS} WHERE r.partner_revision_id = p.active_revision_id AND p.status <> 'DELETED' ORDER BY r.registry_revision`,
     ).all()).map((row) => mapRow(row as Row));
   }
 }

@@ -19,7 +19,7 @@ const readySource: ModelSourceDto = {
 
 function snapshot(modelSources: ModelSourceDto[]): JoiSnapshotDto {
   const configured = modelSources.some((source) => source.status === "READY");
-  return { avatars: [], modelSources, partners: [], runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" }, work: [] };
+  return { avatarChanges: [], avatars: [], modelSources, partners: [], runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" }, work: [] };
 }
 
 function parentForm(element: HTMLElement): HTMLFormElement {
@@ -56,6 +56,26 @@ describe("joi home single entry", () => {
     fireEvent.submit(parentForm(composer));
     await waitFor(() => expect(send).toHaveBeenCalledWith("同时整理风险"));
     expect(await screen.findAllByText("输入已保存")).toHaveLength(2);
+  });
+
+  it("shows Joi-proposed Avatar changes and requires an explicit user decision", async () => {
+    const api = new DigitalLifeApi("");
+    const pending = {
+      createdAt: "2026-07-28T10:00:00.000Z", kind: "MERGE" as const, reason: "同一工程上下文",
+      requestId: "change-1", sourceAvatarId: "avatar-old", status: "PENDING" as const, targetAvatarId: "avatar-current",
+    };
+    vi.spyOn(api, "joiSnapshot")
+      .mockResolvedValueOnce({ ...snapshot([readySource]), avatarChanges: [pending] })
+      .mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    const decide = vi.spyOn(api, "decideAvatarChange").mockResolvedValue({ ...pending, status: "CONFIRMED" });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("joi 建议合并 Avatar")).toBeInTheDocument();
+    expect(screen.getByText("同一工程上下文")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认合并" }));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith("change-1", "CONFIRM"));
+    await waitFor(() => expect(screen.queryByText("joi 建议合并 Avatar")).not.toBeInTheDocument());
   });
 
   it("saves and validates a direct source before opening the composer", async () => {
@@ -112,6 +132,29 @@ describe("joi home single entry", () => {
     expect(remove).toHaveBeenCalledWith("source-1");
     fireEvent.click(within(kimi).getByRole("button", { name: "验证" }));
     expect(await screen.findByText("验证没有通过。")).toBeInTheDocument();
+  });
+
+  it("edits model, endpoint metadata and optional replacement credentials as a new draft revision", async () => {
+    const api = new DigitalLifeApi("");
+    const generic = {
+      ...readySource, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
+      displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue({
+      ...generic, activeModel: { ...generic.activeModel, id: "new-model" }, baseUrl: "https://new.example/v1", displayName: "Private 2", status: "DRAFT",
+    });
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    fireEvent.change(screen.getByLabelText("编辑显示名称"), { target: { value: "Private 2" } });
+    fireEvent.change(screen.getByLabelText("编辑 Base URL"), { target: { value: "https://new.example/v1" } });
+    fireEvent.change(screen.getByLabelText("编辑 Model ID"), { target: { value: "new-model" } });
+    fireEvent.change(screen.getByLabelText("替换 API Key（留空则保留）"), { target: { value: "replacement-key" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", {
+      apiKey: "replacement-key", baseUrl: "https://new.example/v1", displayName: "Private 2", modelId: "new-model",
+    }));
+    expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
   });
 
   it("keeps snapshot and composer failures retryable without losing text", async () => {
@@ -208,7 +251,7 @@ describe("joi home single entry", () => {
 
   it("manages local Pi partners through the unified redacted registry", async () => {
     const api = new DigitalLifeApi("");
-    const partner = { capabilities: ["code"], displayName: "Local Coder", kind: "local-pi" as const, partnerId: "partner-1", partnerRevisionId: "revision-1", registryRevision: 1, skills: ["typescript"], status: "ACTIVE" as const, tools: ["read", "edit"] };
+    const partner = { capabilities: ["code"], displayName: "Local Coder", inFlightCount: 0, kind: "local-pi" as const, lifecyclePolicy: "DRAIN" as const, partnerId: "partner-1", partnerRevisionId: "revision-1", registryRevision: 1, skills: ["typescript"], status: "ACTIVE" as const, tools: ["read", "edit"] };
     const disabled = { ...partner, capabilities: [], skills: [], status: "DISABLED" as const, tools: [] };
     vi.spyOn(api, "listPartners").mockResolvedValueOnce({ items: [partner] }).mockResolvedValue({ items: [disabled] });
     const create = vi.spyOn(api, "createPartner").mockResolvedValue(partner);
@@ -231,6 +274,28 @@ describe("joi home single entry", () => {
       capabilities: ["code", "review"], displayName: "Writer", kind: "local-pi", prompt: "只修改任务范围内的文件",
       skills: ["typescript"], tools: ["read", "edit"], workspaceRef: "D:\\work\\writer",
     }));
+  });
+
+  it("explains Partner drain state and only deletes after in-flight work reaches zero", async () => {
+    const api = new DigitalLifeApi("");
+    const draining = {
+      capabilities: [], displayName: "Draining", inFlightCount: 1, kind: "local-pi" as const, lifecyclePolicy: "DRAIN" as const,
+      partnerId: "partner-drain", partnerRevisionId: "revision-drain", registryRevision: 2, skills: [], status: "DISABLED" as const, tools: [],
+    };
+    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [draining] });
+    const remove = vi.spyOn(api, "deletePartner").mockResolvedValue({ ...draining, inFlightCount: 0, status: "DELETED" });
+    const view = render(<PartnerManager api={api} />);
+    expect(await screen.findByText("正在排空 1 项在途工作")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除搭档" })).toBeDisabled();
+    view.unmount();
+
+    vi.restoreAllMocks();
+    vi.spyOn(api, "listPartners").mockResolvedValueOnce({ items: [{ ...draining, inFlightCount: 0 }] }).mockResolvedValue({ items: [] });
+    const deleteReady = vi.spyOn(api, "deletePartner").mockResolvedValue({ ...draining, inFlightCount: 0, status: "DELETED" });
+    render(<PartnerManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "删除搭档" }));
+    await waitFor(() => expect(deleteReady).toHaveBeenCalledWith("partner-drain"));
+    expect(remove).not.toHaveBeenCalled();
   });
 
   it("onboards remote A2A partners through the existing card and bearer path", async () => {

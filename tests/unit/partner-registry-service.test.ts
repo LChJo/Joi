@@ -8,6 +8,7 @@ import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 class MemoryPartnerRegistry implements PartnerRegistryRepository {
   readonly history: PartnerRevision[] = [];
+  readonly inFlight = new Map<string, number>();
   async append(input: AppendPartnerRevisionInput): Promise<PartnerRevision> {
     const revision = { ...structuredClone(input), registryRevision: this.history.length + 1 };
     this.history.push(revision);
@@ -16,6 +17,7 @@ class MemoryPartnerRegistry implements PartnerRegistryRepository {
   async getActive(partnerId: string) { return this.history.findLast((item) => item.partnerId === partnerId) ?? null; }
   async getRevision(partnerRevisionId: string) { return this.history.find((item) => item.partnerRevisionId === partnerRevisionId) ?? null; }
   async listActive() { return [...new Map(this.history.map((item) => [item.partnerId, item])).values()]; }
+  async countInFlight(partnerId: string) { return this.inFlight.get(partnerId) ?? 0; }
 }
 
 class MemoryPartnerPrompts implements PartnerPromptStore {
@@ -59,6 +61,35 @@ describe("partner-registry-revision-before-dispatch", () => {
     expect(await service.disable(partner.partnerId)).toMatchObject({ registryRevision: 2, status: "DISABLED" });
     await expect(service.pinForDispatch(partner.partnerId)).rejects.toMatchObject({ code: "partner_not_available" });
     await expect(service.pinForDispatch("missing")).rejects.toMatchObject({ code: "partner_not_found" });
+  });
+
+  it("drains disabled partners and refuses deletion until all pinned attempts are terminal", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
+    const partner = await service.add({ capabilities: [], displayName: "Drain", kind: "local-pi", skills: [], tools: [] });
+    repository.inFlight.set(partner.partnerId, 2);
+
+    expect(await service.disable(partner.partnerId)).toMatchObject({ inFlightCount: 2, lifecyclePolicy: "DRAIN", status: "DISABLED" });
+    await expect(service.pinForDispatch(partner.partnerId)).rejects.toMatchObject({ code: "partner_not_available" });
+    await expect(service.delete(partner.partnerId)).rejects.toMatchObject({ code: "partner_delete_in_flight" });
+
+    repository.inFlight.set(partner.partnerId, 0);
+    expect(await service.delete(partner.partnerId)).toMatchObject({ inFlightCount: 0, status: "DELETED" });
+    expect(await service.list()).toEqual([]);
+    expect(repository.history.map((revision) => revision.status)).toEqual(["ACTIVE", "DISABLED", "DELETED"]);
+  });
+
+  it("requires disable before deletion and keeps repeated lifecycle commands idempotent", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
+    const partner = await service.add({ capabilities: [], displayName: "Lifecycle", kind: "local-pi", skills: [], tools: [] });
+
+    await expect(service.delete(partner.partnerId)).rejects.toMatchObject({ code: "partner_disable_before_delete" });
+    const disabled = await service.disable(partner.partnerId);
+    expect(await service.disable(partner.partnerId)).toEqual(disabled);
+    const deleted = await service.delete(partner.partnerId);
+    expect(await service.delete(partner.partnerId)).toEqual(deleted);
+    await expect(service.disable(partner.partnerId)).rejects.toMatchObject({ code: "partner_not_found" });
   });
 
   it("rejects Card refresh for local partners and accepts explicit local override updates", async () => {

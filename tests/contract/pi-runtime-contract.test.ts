@@ -239,4 +239,63 @@ describe("Pi reasoning runtime contract", () => {
     await runtime.waitForIdle("session_abort");
     expect(runtime.isRunning("session_abort")).toBe(false);
   });
+
+  it("compacts completed turns into a bounded recoverable checkpoint", async () => {
+    const faux = fauxProvider({ provider: "joi-compaction" });
+    faux.setResponses(Array.from({ length: 6 }, (_, index) => fauxAssistantMessage([
+      fauxText(`answer-${String(index + 1)}-${"context ".repeat(10)}`),
+    ])));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const runtime = new PiReasoningRuntime({
+      compaction: { keepRecentMessages: 2, maxMessages: 6, maxSummaryCharacters: 240 },
+      model: faux.getModel(),
+      models,
+      sessionStore: store,
+      tools: [],
+    });
+
+    for (let index = 0; index < 4; index += 1) {
+      await runtime.startTurn({
+        avatarId: "avatar_1",
+        modelId: "contract-model",
+        modelRevisionId: "model_rev_1",
+        prompt: `prompt-${String(index + 1)}`,
+        sessionId: "session_compact",
+        sourceId: "contract-source",
+        sourceRevisionId: "source_rev_1",
+        systemPrompt: "You are joi.",
+        turnId: `turn-${String(index + 1)}`,
+      });
+    }
+
+    const compacted = store.snapshots.get("session_compact");
+    expect(compacted?.messages.length).toBeLessThanOrEqual(3);
+    expect(compacted?.messages[0]).toMatchObject({ role: "user" });
+    expect(JSON.stringify(compacted?.messages[0])).toContain("joi session checkpoint");
+    expect(compacted?.compaction).toMatchObject({ count: 1 });
+    expect(compacted?.compaction?.compactedMessages).toBeGreaterThanOrEqual(6);
+
+    const restored = new PiReasoningRuntime({
+      compaction: { keepRecentMessages: 2, maxMessages: 6, maxSummaryCharacters: 240 },
+      model: faux.getModel(),
+      models,
+      sessionStore: store,
+      tools: [],
+    });
+    expect(await restored.restore("session_compact")).toBe(true);
+    await restored.startTurn({
+      avatarId: "avatar_1",
+      modelId: "contract-model",
+      modelRevisionId: "model_rev_1",
+      prompt: "prompt-after-restore",
+      sessionId: "session_compact",
+      sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      turnId: "turn-after-restore",
+    });
+    expect(store.snapshots.get("session_compact")?.compaction?.count).toBe(1);
+  });
 });

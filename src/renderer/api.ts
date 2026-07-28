@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceDto, ModelSourceKindDto, PartnerDto } from "../shared/joi";
+import type { AvatarChangeRequestDto, AvatarDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceDto, ModelSourceKindDto, PartnerDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -71,6 +71,15 @@ export class DigitalLifeApi {
     return this.request<undefined>("/api/v1/auth/password", { body: { currentPassword, newPassword }, method: "POST" });
   }
   joiSnapshot() { return this.request<JoiSnapshotDto>("/api/v1/joi"); }
+  listAvatars() { return this.request<{ items: AvatarDto[] }>("/api/v1/avatars"); }
+  createAvatar(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
+    return this.request<AvatarDto>("/api/v1/avatars", { body, method: "POST" });
+  }
+  decideAvatarChange(requestId: string, decision: "CONFIRM" | "REJECT") {
+    return this.request<AvatarChangeRequestDto>(`/api/v1/avatar-change-requests/${encodeURIComponent(requestId)}/decision`, {
+      body: { decision }, method: "POST",
+    });
+  }
   listJoiMessages() { return this.request<{ items: JoiAcceptedMessageDto[] }>("/api/v1/joi/messages"); }
   listJoiActivity() { return this.request<{ items: JoiActivityDto[] }>("/api/v1/joi/activity"); }
   sendJoiMessage(text: string, attachmentIds: string[] = []) {
@@ -109,6 +118,9 @@ export class DigitalLifeApi {
   }
   disablePartner(partnerId: string) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body: { disabled: true }, method: "PATCH" });
+  }
+  deletePartner(partnerId: string) {
+    return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { method: "DELETE" });
   }
   listLives() { return this.request<{ items: LifeDto[] }>("/api/v1/lives?limit=100"); }
   getLife(lifeId: string) { return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`); }

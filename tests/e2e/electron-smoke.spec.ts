@@ -62,7 +62,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 }
 
-test("Electron completes setup, Life birth, and responsive shared-console paths", async () => {
+test("Electron completes setup, native Avatar creation, and responsive joi-console paths", async () => {
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
 
   try {
@@ -88,27 +88,19 @@ test("Electron completes setup, Life birth, and responsive shared-console paths"
     await window.setViewportSize({ height: 760, width: 960 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(960);
     await expectNoHorizontalOverflow(window);
-    await window.getByRole("button", { name: "创建新智能体" }).click();
-    await window.getByLabel("名称").fill("栖光");
-    await window.getByLabel("人格摘要").fill("尊重事实，持续整理长期事务。");
-    await window.getByLabel("初始目标（可选）").fill("建立第一份可追踪计划。");
-    await window.getByRole("button", { name: /继续/ }).click();
-    await expect(window.getByRole("radio", { name: /Mana E2E/ })).toBeChecked();
-    await window.getByRole("button", { name: /继续/ }).click();
-    await expect(window.getByText("计划一天")).toBeVisible();
-    await window.getByRole("button", { name: /让它出生/ }).click();
-    await expect(window.getByRole("navigation", { name: "智能体详情" })).toBeVisible();
+    await window.getByRole("button", { name: "创建 Avatar" }).click();
+    await window.getByLabel("名称", { exact: true }).fill("栖光");
+    await window.getByLabel("工程名称", { exact: true }).fill("长期事务");
+    await window.getByLabel("职责范围", { exact: true }).fill("整理长期计划与事实");
+    await window.getByLabel("人格摘要", { exact: true }).fill("尊重事实，持续整理长期事务。");
+    await window.getByRole("button", { name: "保存 Avatar" }).click();
+    await expect(window.getByText("栖光")).toBeVisible();
     await expectNoHorizontalOverflow(window);
-    await expect(window.getByLabel("输入消息")).toBeVisible();
-    await window.getByRole("button", { name: "事务与待办" }).click();
-    await expect(window.getByRole("heading", { name: "待办" })).toBeVisible();
-    await window.getByRole("button", { name: "作息与闹钟" }).click();
-    await expect(window.getByRole("heading", { name: "作息" })).toBeVisible();
 
     await window.getByRole("button", { exact: true, name: "Avatar" }).click();
     await window.setViewportSize({ height: 900, width: 768 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(768);
-    await expect(window.getByRole("heading", { name: "你的智能体，joi 帮你照顾" })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "Avatar" })).toBeVisible();
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-console-768.png") });

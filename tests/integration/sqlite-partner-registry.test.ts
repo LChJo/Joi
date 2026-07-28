@@ -16,13 +16,16 @@ describe("SQLite partner registry", () => {
       let service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
       const first = await service.add({ capabilities: ["research"], displayName: "Local Pi", kind: "local-pi", skills: ["web"], tools: ["read"], workspaceRef: "workspace-ref" });
       const second = await service.update(first.partnerId, { capabilities: ["research", "write"], displayName: "Local Pi", skills: ["web"], tools: ["read", "edit"] });
+      await service.disable(first.partnerId);
+      expect((await new SqlitePartnerRegistryRepository(database).getRevision(first.partnerRevisionId))?.status).toBe("ACTIVE");
+      expect((await new SqlitePartnerRegistryRepository(database).getRevision(second.partnerRevisionId))?.status).toBe("ACTIVE");
       database.close();
 
       database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
       service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
-      expect(await service.pinForDispatch(first.partnerId)).toEqual({ partnerId: first.partnerId, partnerRevisionId: second.partnerRevisionId, registryRevision: 2 });
+      await expect(service.pinForDispatch(first.partnerId)).rejects.toMatchObject({ code: "partner_not_available" });
       expect(database.transaction((connection) => connection.prepare("SELECT COUNT(*) AS count FROM partner_revisions WHERE partner_id = ?").get(first.partnerId)))
-        .toEqual({ count: 2 });
+        .toEqual({ count: 3 });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

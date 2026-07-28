@@ -8,9 +8,9 @@
 | AC-02 | 输入先持久化、300 ms accepted、可恢复 | 持久化/幂等/重启恢复已证实；真实设备 300 ms 性能待验收 |
 | AC-03 | 自动 Avatar 归属与隔离 | 已自动证实：摘要路由、一次修复、预绑定结果不重路由、Avatar session 隔离 |
 | AC-04 | Life 无损映射、主 Agent 降级首选搭档 | 已自动证实：migration 017/018、`joi-orchestration-migration.test.ts` |
-| AC-05 | Pi stream/tool/queue/abort/compaction/session restore | stream/tool/queue/abort/SQLite restore 已证实；显式 compaction 策略仍待补齐 |
+| AC-05 | Pi stream/tool/queue/abort/compaction/session restore | 已自动证实：完整 Turn 后由 Pi 生成有界摘要，失败时确定性本地 checkpoint；压缩计数、累计裁剪量、消息尾部及 source/model revision 经 SQLite 恢复 |
 | AC-06 | joi 无任意执行工具 | 已自动证实：全局 allowlist 不含 filesystem/bash/edit/write；执行工具只进 Local Pi Partner |
-| AC-07 | Partner registry/revision 后派发 | 已自动证实：不可变 registry revision、dispatch pin、Agent Connection mirror trigger |
+| AC-07 | Partner registry/revision 后派发 | 已自动证实：添加/更新/停用/删除均先追加不可变 registry revision；dispatch attempt 固定引用 revision；历史 revision 保留当时状态 |
 | AC-08 | Local Pi/A2A 统一且敏感字段脱敏 | Hub contract 已证实：统一 runner/result、prompt/workspace 脱敏；真实两类搭档待验收 |
 | AC-09 | Work DAG 与确定性并发硬边界 | 已自动证实：DAG waves、policy gate、READ/WRITE workspace lease 与到期恢复 |
 | AC-10 | 连续输入在 Turn 边界安排 | 已自动证实：唯一 `JoiInputScheduler` 串行安全边界，Work DAG 仍可并行 |
@@ -18,12 +18,12 @@
 | AC-12 | outbox 与稳定幂等 | local/A2A 均经 outbox、稳定 action/message id、terminal 去重已证实；真实四点强杀待验收 |
 | AC-13 | Pi 凭据只进 safeStorage | 已自动证实：CredentialStore adapter、DTO/diagnostics/package secret scans |
 | AC-14 | 无第三方 Pi Packages | 已自动证实：只锁定三项一方 Pi SDK；无 ResourceLoader/package discovery |
-| AC-15 | 旧 Life 只读兼容、新契约 Avatar | 新 JOI 契约已统一 Avatar；旧 Life 写 API 仍在兼容窗口，尚未收敛为只读 |
+| AC-15 | 旧 Life 只读兼容、新契约 Avatar | 已自动证实：旧 Life GET 兼容保留，所有 `/api/v1/lives` 非 GET 返回 `legacy_life_read_only`；生产 Console 使用原生 Avatar 列表/创建，不再进入 Life 写向导或详情 |
 | AC-16 | 单 scheduler、Avatar thread 隔离 | 已自动证实：生产 composition 无 WakeCoordinator/WakeRunner；每 Avatar 稳定隔离 Pi session |
-| AC-17 | 决策只修复一次，破坏操作需确认 | Avatar 路由一次修复已证实；merge/archive 确认工具尚未实现 |
+| AC-17 | 决策只修复一次，破坏操作需确认 | 已自动证实：Avatar 路由只修复一次；`avatar.suggest_merge/archive` 仅创建持久待确认事实，用户确认前不改数据；在途工作阻止确认，merge 保留源事实并写重定向 |
 | AC-18 | 复用 gateway/breaker/capacity/vault/SSE | 已自动证实：现有 gateway/outbox/vault/SSE replay；真实 breaker/结果联调待验收 |
 | AC-19 | Pi 门禁与既有 HTTP 安全 | 已自动证实：无 READY 来源门禁、CSRF/session/body 限制和离线 inbox 恢复 |
-| AC-20 | Card 本地优先与在途删除策略 | Card 不覆盖本地字段与历史 revision 已证实；在途 delete 完整策略仍待补齐 |
+| AC-20 | Card 本地优先与在途删除策略 | 已自动证实：Card 不覆盖本地字段；disable 采用 DRAIN、立即阻止新派发且保留在途；delete 要求先停用且在途为零，随后追加 DELETED revision |
 | AC-21 | Avatar 只拥有上下文 | 已自动证实：纯 domain aggregate；预算/调度/搭档策略独立关联 |
 | AC-22 | 新代码无 Life 词汇泄漏 | 已通过 architecture boundary 与目标路径静态扫描；旧兼容模块保留 Life |
 | AC-23 | 首次精确文案与 7 个入口 | 已自动证实：精确文案、恰好七卡、无转发平台 |
@@ -33,7 +33,7 @@
 | AC-27 | 首次验证和 composer 门禁 | 已自动证实：draft/验证/门禁、最小文本检查、不做 onboarding tool probe |
 | AC-28 | 确定性 fallback 分类 | 已自动证实：仅 timeout/connect/429/5xx；auth/balance/config/refusal 不切换 |
 | AC-29 | Turn 固定 revision 与安全切源 | 已自动证实：output/tool flag 持久化，副作用前才更新 source/model pin |
-| AC-30 | 来源 CRUD/排序/重启恢复与历史不漂移 | 新增/查/验证/停用/删除/排序与重启已证实；完整 credential/model 编辑 UI 尚待补齐 |
+| AC-30 | 来源 CRUD/排序/重启恢复与历史不漂移 | 已自动证实：脱敏 CRUD/验证/停用/主备排序/重启恢复；设置页可替换 model/key，通用源可改名称/Base URL，空 key 保留旧凭据且修改形成待验证 DRAFT revision |
 
 本表随 RED→GREEN 证据更新；“旧基线可复用”不等于目标 AC 已完成。
 
@@ -127,7 +127,7 @@
 
 ## E2E-01 至 E2E-11
 
-`tests/e2e/electron-smoke.spec.ts` 证明真实 Electron 完成 desktop bootstrap、管理员设置、一次性 ready Agent 发现、Life 三步出生并进入详情/待办/作息；同时在 960/768 px 断言实际 viewport 与无水平溢出，并保存 768 px 运行时截图。下表中的“组件证实”表示场景不变量已由同范围自动化覆盖，不等价于真实 M7 端到端报告。
+`tests/e2e/electron-smoke.spec.ts` 现以目标架构为准：真实 Electron 完成 desktop bootstrap、管理员设置、模型网络门禁、全局 joi 首页、统一搭档目录与原生 Avatar 创建；同时在 960/768 px 断言实际 viewport 与无水平溢出，并保存 768 px 运行时截图。旧 Life 写向导和详情不再是生产 Console 入口，历史数据只保留 GET 兼容；下表中的旧 Life/Wake 场景由底层 compatibility integration 证明，不等价于新的用户入口。
 
 | E2E | 自动化证据 | M7 未闭合项 |
 |---|---|---|
