@@ -15,11 +15,11 @@ import type { AvatarRegistryService } from "../../application/joi/avatar-registr
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { SseService } from "../../application/sse/sse-service.js";
-import type { WakeCoordinator } from "../../application/wakes/wake-coordinator.js";
 import type { BudgetService } from "../../application/rhythm/budget-service.js";
 import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
-import type { ArtifactReadPort, UserAttachmentPort } from "../../application/ports/managed-file-ports.js";
+import type { ArtifactReadPort, JoiAttachmentPort, UserAttachmentPort } from "../../application/ports/managed-file-ports.js";
 import type { WorkQuery } from "../../application/ports/work-orchestration.js";
+import type { JoiActivityDto } from "../../../shared/joi.js";
 
 const SESSION_COOKIE = "digital_life_session";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -39,6 +39,8 @@ export interface ApiDependencies {
   globalEmergencyStop?: () => Promise<void>;
   interactions?: InteractionService;
   joiInbox?: Pick<JoiInboxService, "accept" | "list">;
+  joiActivity?: { listActivity(limit?: number): Promise<JoiActivityDto[]> };
+  joiAttachments?: JoiAttachmentPort;
   onJoiMessageAccepted?: (inputId: string) => void;
   onModelSourceReady?: () => void;
   lives: LifeService;
@@ -49,7 +51,7 @@ export interface ApiDependencies {
   requestRestart?: () => void;
   sse: SseService;
   settings?: SystemSettingsPort;
-  wakeCoordinator?: WakeCoordinator;
+  wakeCoordinator?: { emergencyStop(avatarId: string): void; notify(avatarId: string): void };
   work?: WorkQuery;
 }
 
@@ -447,6 +449,15 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         sendJson(response, 200, { items: await joiInboxService(dependencies).list() });
         return;
       }
+      if (method === "GET" && pathname === "/api/v1/joi/activity") {
+        if (dependencies.joiActivity === undefined) throw new HttpError("joi_activity_unavailable", "joi activity is unavailable.", 503);
+        sendJson(response, 200, { items: await dependencies.joiActivity.listActivity(100) });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/work") {
+        sendJson(response, 200, { items: dependencies.work === undefined ? [] : await dependencies.work.listActive() });
+        return;
+      }
       if (method === "GET" && pathname === "/api/v1/partners") {
         sendJson(response, 200, { items: await partnerRegistryService(dependencies).list() });
         return;
@@ -485,7 +496,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
           kind,
           skills: optionalStringArray(body, "skills") ?? [],
           tools: optionalStringArray(body, "tools") ?? [],
-          ...(typeof body.promptRef === "string" ? { promptRef: body.promptRef } : {}),
+          ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
           ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
         }));
         return;
@@ -502,7 +513,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
             displayName: stringField(body, "displayName"),
             skills: optionalStringArray(body, "skills") ?? [],
             tools: optionalStringArray(body, "tools") ?? [],
-            ...(typeof body.promptRef === "string" ? { promptRef: body.promptRef } : {}),
+            ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
             ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
           });
         sendJson(response, 200, result);
@@ -512,12 +523,25 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         await verifyWrite(dependencies, request);
         const idempotencyKey = request.headers["idempotency-key"];
         if (typeof idempotencyKey !== "string") throw new HttpError("idempotency_key_required", "Idempotency-Key is required.", 400);
+        const body = await readJson(request);
         const accepted = await joiInboxService(dependencies).accept({
+          attachmentIds: optionalStringArray(body, "attachmentIds") ?? [],
           idempotencyKey,
-          text: stringField(await readJson(request), "text"),
+          text: stringField(body, "text"),
         });
         sendJson(response, 202, accepted);
         dependencies.onJoiMessageAccepted?.(accepted.inputId);
+        return;
+      }
+      if (method === "POST" && pathname === "/api/v1/joi/attachments") {
+        await verifyWrite(dependencies, request);
+        if (dependencies.joiAttachments === undefined) throw new HttpError("joi_attachment_service_unavailable", "joi attachment storage is unavailable.", 503);
+        const body = await readJson(request, MAX_ATTACHMENT_REQUEST_BYTES);
+        sendJson(response, 201, await dependencies.joiAttachments.upload({
+          bytes: base64Field(body, "bytes"),
+          filename: stringField(body, "filename"),
+          mimeType: stringField(body, "mimeType"),
+        }));
         return;
       }
       if (method === "POST" && pathname === "/api/v1/model-sources") {

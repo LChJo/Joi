@@ -1,12 +1,13 @@
 import { DomainError } from "../../domain/errors.js";
 import { buildWorkExecutionWaves, createWorkItem, type WorkAccessMode, type WorkDependency } from "../../domain/work/work.js";
-import type { Clock, IdGenerator } from "../ports/runtime-store.js";
+import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type {
   CommittedWorkPlan,
   DispatchPolicyGate,
   PartnerDispatchPin,
   PlannedDispatchAttempt,
   WorkPlanRepository,
+  WorkReassignmentRepository,
 } from "../ports/work-orchestration.js";
 
 interface WorkRequest {
@@ -20,9 +21,11 @@ interface WorkRequest {
 export class WorkOrchestrationService {
   constructor(private readonly dependencies: {
     clock: Clock;
+    events?: DurableUiEventEmitter;
     ids: IdGenerator;
     partners: { pinForDispatch(partnerId: string): Promise<PartnerDispatchPin> };
     policy: DispatchPolicyGate;
+    reassignment?: WorkReassignmentRepository;
     repository: WorkPlanRepository;
   }) {}
 
@@ -86,6 +89,56 @@ export class WorkOrchestrationService {
     await this.dependencies.repository.commit({
       attempts, createdAt, dependencies, dispatchPlanId, items, policyResults, turnId: input.turnId, waves,
     });
+    await this.dependencies.events?.emit("work.plan.committed", dispatchPlanId, {
+      avatarId: input.avatarId,
+      dispatchPlanId,
+      workIds: items.map((item) => item.workId),
+    });
     return { dispatchPlanId, waves };
+  }
+
+  async reassign(input: { avatarId: string; partnerId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+    const repository = this.dependencies.reassignment;
+    if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
+    const context = await repository.loadForReassignment(input.workId);
+    if (context === null) throw new DomainError("work_not_found", "Work was not found.");
+    if (context.item.avatarId !== input.avatarId) throw new DomainError("work_avatar_mismatch", "Work belongs to another Avatar.");
+    if (!(["FAILED", "WAITING", "READY"] as const).includes(context.item.status as "FAILED" | "WAITING" | "READY")) {
+      throw new DomainError("work_reassign_status_invalid", "Work cannot be reassigned in its current state.");
+    }
+    const pin = await this.dependencies.partners.pinForDispatch(input.partnerId);
+    if (pin.partnerRevisionId === context.lastPartnerRevisionId) {
+      throw new DomainError("work_reassign_same_revision", "Reassignment requires a different partner revision.");
+    }
+    const policy = await this.dependencies.policy.evaluate(context.item, pin);
+    if (!policy.allowed) throw new DomainError("work_reassign_policy_denied", policy.reason ?? "Work reassignment was denied.");
+    const createdAt = this.dependencies.clock.now().toISOString();
+    const actionId = this.dependencies.ids.next("action");
+    const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
+    const attempt: PlannedDispatchAttempt = {
+      ...pin,
+      actionId,
+      dispatchAttemptId,
+      outbox: {
+        availableAt: createdAt,
+        kind: "partner.dispatch",
+        outboxId: this.dependencies.ids.next("outbox"),
+        payload: { actionId, dispatchAttemptId, workId: input.workId },
+      },
+      workId: input.workId,
+    };
+    await repository.reassign({
+      attempt,
+      createdAt,
+      dispatchPlanId: this.dependencies.ids.next("dispatch_plan"),
+      turnId: input.turnId,
+      workId: input.workId,
+    });
+    await this.dependencies.events?.emit("work.reassigned", input.workId, {
+      avatarId: input.avatarId,
+      partnerRevisionId: attempt.partnerRevisionId,
+      workId: input.workId,
+    });
+    return attempt;
   }
 }

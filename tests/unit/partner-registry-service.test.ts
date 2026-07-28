@@ -1,6 +1,7 @@
 /* In-memory registry implements asynchronous persistence immediately. */
 /* eslint-disable @typescript-eslint/require-await */
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
+import type { PartnerPromptStore } from "../../src/main/application/ports/partner-execution.js";
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../../src/main/application/ports/partner-registry.js";
 import type { PartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
@@ -15,6 +16,12 @@ class MemoryPartnerRegistry implements PartnerRegistryRepository {
   async getActive(partnerId: string) { return this.history.findLast((item) => item.partnerId === partnerId) ?? null; }
   async getRevision(partnerRevisionId: string) { return this.history.find((item) => item.partnerRevisionId === partnerRevisionId) ?? null; }
   async listActive() { return [...new Map(this.history.map((item) => [item.partnerId, item])).values()]; }
+}
+
+class MemoryPartnerPrompts implements PartnerPromptStore {
+  readonly records = new Map<string, string>();
+  async read(promptRef: string) { return this.records.get(promptRef) ?? null; }
+  async save(input: { body: string; createdAt: string; promptRef: string }) { this.records.set(input.promptRef, input.body); }
 }
 
 describe("partner-registry-revision-before-dispatch", () => {
@@ -61,5 +68,31 @@ describe("partner-registry-revision-before-dispatch", () => {
     await expect(service.refreshA2aCard(partner.partnerId, { capabilities: [], displayName: "Card", skills: [] })).rejects.toMatchObject({ code: "partner_card_kind_invalid" });
     expect(await service.update(partner.partnerId, { capabilities: ["new"], displayName: "Updated", promptRef: "prompt", skills: ["skill"], tools: ["tool"], workspaceRef: "new" }))
       .toMatchObject({ capabilities: ["new"], displayName: "Updated", skills: ["skill"], tools: ["tool"] });
+  });
+
+  it("persists local prompt bodies behind immutable private references", async () => {
+    const prompts = new MemoryPartnerPrompts();
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), prompts, repository });
+
+    const partner = await service.add({
+      capabilities: ["code"], displayName: "Coder", kind: "local-pi", prompt: "  Work only inside the assigned repository.  ",
+      skills: [], tools: ["read"], workspaceRef: "workspace",
+    });
+
+    const privateRef = repository.history[0]?.promptRef;
+    expect(privateRef).toMatch(/^partner_prompt_/u);
+    expect(prompts.records.get(privateRef ?? "")).toBe("Work only inside the assigned repository.");
+    expect(JSON.stringify(partner)).not.toContain("Work only inside");
+    expect(JSON.stringify(partner)).not.toContain(privateRef);
+  });
+
+  it("rejects empty, oversized or unstorable prompt bodies", async () => {
+    const fields = { capabilities: [], displayName: "Local", kind: "local-pi" as const, skills: [], tools: [] };
+    const withoutStore = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new MemoryPartnerRegistry() });
+    await expect(withoutStore.add({ ...fields, prompt: "configured" })).rejects.toMatchObject({ code: "partner_prompt_store_unavailable" });
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), prompts: new MemoryPartnerPrompts(), repository: new MemoryPartnerRegistry() });
+    await expect(service.add({ ...fields, prompt: "   " })).rejects.toMatchObject({ code: "partner_prompt_empty" });
+    await expect(service.add({ ...fields, prompt: "x".repeat(32_001) })).rejects.toMatchObject({ code: "partner_prompt_too_large" });
   });
 });

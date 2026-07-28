@@ -78,6 +78,24 @@ export interface JoiSnapshotDto {
 
 export interface JoiAcceptedMessageDto {
   acceptedAt: string;
+  avatarId?: string;
   inputId: string;
-  status: "PENDING";
+  status: "PENDING" | "CLARIFICATION_REQUIRED" | "ROUTED" | "CONSUMED";
+}
+
+export interface JoiAttachmentDto {
+  attachmentId: string;
+  createdAt: string;
+  filename: string;
+  mimeType: string;
+  size: number;
+}
+
+export interface JoiActivityDto {
+  activityId: string;
+  avatarId?: string;
+  kind: "MESSAGE" | "TURN" | "WORK" | "PARTNER_RESULT";
+  occurredAt: string;
+  status: string;
+  workId?: string;
 }

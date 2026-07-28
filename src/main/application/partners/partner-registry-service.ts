@@ -7,12 +7,14 @@ import {
   type PartnerKind,
   type PartnerRevision,
 } from "../../domain/partners/partner.js";
-import type { Clock, IdGenerator } from "../ports/runtime-store.js";
+import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
+import type { PartnerPromptStore } from "../ports/partner-execution.js";
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../ports/partner-registry.js";
 
 interface PartnerFields {
   capabilities: string[];
   displayName: string;
+  prompt?: string;
   promptRef?: string;
   skills: string[];
   tools: string[];
@@ -20,36 +22,45 @@ interface PartnerFields {
 }
 
 export class PartnerRegistryService {
-  constructor(private readonly dependencies: { clock: Clock; ids: IdGenerator; repository: PartnerRegistryRepository }) {}
+  constructor(private readonly dependencies: { clock: Clock; events?: DurableUiEventEmitter; ids: IdGenerator; prompts?: PartnerPromptStore; repository: PartnerRegistryRepository }) {}
 
   async add(input: PartnerFields & { kind: PartnerKind }): Promise<PartnerDto> {
     const partnerId = this.dependencies.ids.next("partner");
+    const createdAt = this.dependencies.clock.now().toISOString();
+    const promptRef = await this.#promptRef(input, createdAt);
     const validated = createPartnerRevision({
       ...input,
-      createdAt: this.dependencies.clock.now().toISOString(),
+      createdAt,
       partnerId,
       partnerRevisionId: this.dependencies.ids.next("partner_revision"),
+      ...(promptRef === undefined ? {} : { promptRef }),
       registryRevision: 1,
     });
-    return toPublicPartner(await this.dependencies.repository.append(withoutRegistryRevision(validated)));
+    const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
+    await this.#changed(revision);
+    return toPublicPartner(revision);
   }
 
   async update(partnerId: string, input: PartnerFields): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
+    const createdAt = this.dependencies.clock.now().toISOString();
+    const promptRef = await this.#promptRef(input, createdAt) ?? current.promptRef;
     const validated = createPartnerRevision({
       capabilities: input.capabilities,
-      createdAt: this.dependencies.clock.now().toISOString(),
+      createdAt,
       displayName: input.displayName,
       kind: current.kind,
       partnerId,
       partnerRevisionId: this.dependencies.ids.next("partner_revision"),
-      ...((input.promptRef ?? current.promptRef) === undefined ? {} : { promptRef: input.promptRef ?? current.promptRef }),
+      ...(promptRef === undefined ? {} : { promptRef }),
       registryRevision: current.registryRevision + 1,
       skills: input.skills,
       tools: input.tools,
       ...((input.workspaceRef ?? current.workspaceRef) === undefined ? {} : { workspaceRef: input.workspaceRef ?? current.workspaceRef }),
     });
-    return toPublicPartner(await this.dependencies.repository.append(withoutRegistryRevision(validated)));
+    const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
+    await this.#changed(revision);
+    return toPublicPartner(revision);
   }
 
   async refreshA2aCard(partnerId: string, card: { capabilities: string[]; displayName: string; skills: string[]; tools?: string[]; workspaceRef?: string }): Promise<PartnerDto> {
@@ -60,17 +71,21 @@ export class PartnerRegistryService {
       partnerRevisionId: this.dependencies.ids.next("partner_revision"),
       registryRevision: current.registryRevision + 1,
     });
-    return toPublicPartner(await this.dependencies.repository.append(withoutRegistryRevision(revision)));
+    const saved = await this.dependencies.repository.append(withoutRegistryRevision(revision));
+    await this.#changed(saved);
+    return toPublicPartner(saved);
   }
 
   async disable(partnerId: string): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
-    return toPublicPartner(await this.dependencies.repository.append({
+    const revision = await this.dependencies.repository.append({
       ...withoutRegistryRevision(current),
       createdAt: this.dependencies.clock.now().toISOString(),
       partnerRevisionId: this.dependencies.ids.next("partner_revision"),
       status: "DISABLED",
-    }));
+    });
+    await this.#changed(revision);
+    return toPublicPartner(revision);
   }
 
   async list(): Promise<PartnerDto[]> {
@@ -87,6 +102,26 @@ export class PartnerRegistryService {
     const current = await this.dependencies.repository.getActive(partnerId);
     if (current === null) throw new DomainError("partner_not_found", "Partner was not found.");
     return current;
+  }
+
+  async #promptRef(input: Pick<PartnerFields, "prompt" | "promptRef">, createdAt: string): Promise<string | undefined> {
+    if (input.prompt === undefined) return input.promptRef;
+    const body = input.prompt.trim();
+    if (body.length === 0) throw new DomainError("partner_prompt_empty", "Partner prompt must not be empty.");
+    if (body.length > 32_000) throw new DomainError("partner_prompt_too_large", "Partner prompt is too large.");
+    if (this.dependencies.prompts === undefined) throw new DomainError("partner_prompt_store_unavailable", "Partner prompt storage is unavailable.");
+    const promptRef = this.dependencies.ids.next("partner_prompt");
+    await this.dependencies.prompts.save({ body, createdAt, promptRef });
+    return promptRef;
+  }
+
+  async #changed(revision: PartnerRevision): Promise<void> {
+    await this.dependencies.events?.emit("partner.registry.changed", revision.partnerId, {
+      partnerId: revision.partnerId,
+      partnerRevisionId: revision.partnerRevisionId,
+      registryRevision: revision.registryRevision,
+      status: revision.status,
+    });
   }
 }
 

@@ -2,7 +2,6 @@ import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
 import { randomUUID } from "node:crypto";
 import { lookup } from "node:dns/promises";
 import { rmSync } from "node:fs";
-import { statfs } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -22,6 +21,7 @@ import { ModelSourceService } from "./application/model-sources/model-source-ser
 import { ReasoningSourceSelector } from "./application/model-sources/reasoning-source-selector.js";
 import { JoiInboxService } from "./application/joi/joi-inbox-service.js";
 import { JoiCoordinator } from "./application/joi/joi-coordinator.js";
+import { JoiInputScheduler } from "./application/joi/joi-input-scheduler.js";
 import { AvatarRegistryService } from "./application/joi/avatar-registry-service.js";
 import { PartnerRegistryService } from "./application/partners/partner-registry-service.js";
 import { WorkOrchestrationService } from "./application/work/work-orchestration-service.js";
@@ -33,26 +33,18 @@ import { SseService } from "./application/sse/sse-service.js";
 import { ArtifactService } from "./infrastructure/artifacts/artifact-service.js";
 import { LifeFileDeletionService } from "./infrastructure/artifacts/life-file-deletion-service.js";
 import { AttachmentService } from "./infrastructure/artifacts/user-attachment-service.js";
+import { JoiAttachmentService } from "./infrastructure/artifacts/joi-attachment-service.js";
 import { AlarmScheduler } from "./application/rhythm/alarm-scheduler.js";
 import { ScheduleScheduler } from "./application/rhythm/schedule-scheduler.js";
 import { BudgetService } from "./application/rhythm/budget-service.js";
 import { IdleExplorationScheduler } from "./application/rhythm/idle-exploration-scheduler.js";
 import { ExpressionDeliveryScheduler } from "./application/rhythm/expression-delivery-scheduler.js";
 import { TodoScheduler } from "./application/rhythm/todo-scheduler.js";
-import { ActionProcessor } from "./application/wakes/action-processor.js";
-import { WakeArbiter } from "./application/wakes/wake-arbiter.js";
-import { WakeAuditService } from "./application/wakes/wake-audit-service.js";
-import { WakeContextAssembler } from "./application/wakes/wake-context-assembler.js";
-import { WakeCoordinator } from "./application/wakes/wake-coordinator.js";
-import { WakeRepairService } from "./application/wakes/wake-repair-service.js";
-import { WakeRecoveryService } from "./application/wakes/wake-recovery-service.js";
-import { WakeRunner } from "./application/wakes/wake-runner.js";
 import { InMemorySseBroker } from "./infrastructure/http/in-memory-sse-broker.js";
 import { A2aAgentDiscovery } from "./infrastructure/a2a/a2a-agent-discovery.js";
 import { OutboundNetworkPolicy } from "./infrastructure/a2a/outbound-network-policy.js";
 import { SdkA2aInvocationTransport } from "./infrastructure/a2a/sdk-a2a-invocation-transport.js";
 import { SecureArtifactDownloader } from "./infrastructure/a2a/secure-artifact-downloader.js";
-import { A2aWakeAgentExecutor } from "./infrastructure/a2a/a2a-wake-agent-executor.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "./infrastructure/persistence/runtime-database.js";
 import { SqliteModelSourceRepository } from "./infrastructure/persistence/sqlite-model-source-repository.js";
 import { SqlitePiCredentialRepository } from "./infrastructure/persistence/sqlite-pi-credential-repository.js";
@@ -61,6 +53,8 @@ import { SqlitePartnerRegistryRepository } from "./infrastructure/persistence/sq
 import { SqlitePiReasoningSessionStore } from "./infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
 import { SqliteWorkPlanRepository } from "./infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteDispatchPolicyGate } from "./infrastructure/persistence/sqlite-dispatch-policy-gate.js";
+import { SqliteWorkspaceLeaseManager } from "./infrastructure/persistence/sqlite-workspace-lease-manager.js";
+import { SqlitePartnerPromptStore } from "./infrastructure/persistence/sqlite-partner-prompt-store.js";
 import { LegacyLifeStoreAdapter } from "./infrastructure/persistence/legacy-life-store-adapter.js";
 import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
 import { PiModelSourceCatalog } from "./infrastructure/pi/pi-model-source-catalog.js";
@@ -71,6 +65,10 @@ import { PiAvatarRoutingRuntime } from "./infrastructure/pi/pi-avatar-routing-ru
 import { RepositoryPiConfiguredModelResolver } from "./infrastructure/pi/pi-configured-model-resolver.js";
 import { createJoiReasoningTools } from "./infrastructure/pi/joi-reasoning-tools.js";
 import { SqliteA2aPartnerDispatchHandler } from "./infrastructure/a2a/sqlite-partner-dispatch-handler.js";
+import { LocalPiPartnerAdapter } from "./infrastructure/pi/local-pi-partner-adapter.js";
+import { PiCodingPartnerRunner } from "./infrastructure/pi/pi-coding-partner-runner.js";
+import { BuiltinPiCodingToolFactory } from "./infrastructure/pi/pi-coding-tool-factory.js";
+import { PiReasoningFailureClassifier } from "./infrastructure/pi/pi-reasoning-failure-classifier.js";
 import { InMemoryEventSignal } from "./infrastructure/runtime/in-memory-event-signal.js";
 import {
   InMemoryBootstrapNonceStore,
@@ -157,6 +155,12 @@ async function startRuntime(): Promise<void> {
   }
   const broker = new InMemorySseBroker();
   const sse = new SseService({ broker, clock, store: database.store });
+  const orchestrationEvents = {
+    emit: async (type: string, entityId: string, payload: Record<string, unknown>): Promise<void> => {
+      const event = await database.store.appendSseEvent({ entityId, payload, type });
+      await Promise.resolve(sse.publish(event));
+    },
+  };
   const auth = new AuthService({
     clock,
     nonces: new InMemoryBootstrapNonceStore(),
@@ -192,9 +196,12 @@ async function startRuntime(): Promise<void> {
     repository: joiInboxRepository,
   });
   const partnerRepository = new SqlitePartnerRegistryRepository(database);
+  const partnerPrompts = new SqlitePartnerPromptStore(database);
   const partners = new PartnerRegistryService({
     clock,
+    events: orchestrationEvents,
     ids,
+    prompts: partnerPrompts,
     repository: partnerRepository,
   });
   const avatars = new LegacyLifeStoreAdapter(database);
@@ -202,9 +209,11 @@ async function startRuntime(): Promise<void> {
   const workRepository = new SqliteWorkPlanRepository(database);
   const work = new WorkOrchestrationService({
     clock,
+    events: orchestrationEvents,
     ids,
     partners,
     policy: new SqliteDispatchPolicyGate({ clock, database }),
+    reassignment: workRepository,
     repository: workRepository,
   });
   const reasoningSources = new ReasoningSourceSelector(modelSourceRepository);
@@ -221,20 +230,19 @@ async function startRuntime(): Promise<void> {
     avatars,
     avatarRegistry,
     clock,
+    failureClassifier: new PiReasoningFailureClassifier(),
     ids,
+    events: orchestrationEvents,
     router: new PiAvatarRoutingRuntime({ resolver: configuredModelResolver, sources: reasoningSources }),
     runtime: joiReasoning,
     sources: reasoningSources,
     store: joiInboxRepository,
   });
-  const activeJoiInputs = new Set<string>();
-  const processJoiInput = (inputId: string): void => {
-    if (activeJoiInputs.has(inputId)) return;
-    activeJoiInputs.add(inputId);
-    void joiCoordinator.handle(inputId)
-      .catch(() => process.stderr.write("A joi input remains available for recovery.\n"))
-      .finally(() => activeJoiInputs.delete(inputId));
-  };
+  const joiInputScheduler = new JoiInputScheduler({
+    handle: (inputId) => joiCoordinator.handle(inputId),
+    onError: () => process.stderr.write("A joi input remains available for recovery.\n"),
+  });
+  const processJoiInput = (inputId: string): void => joiInputScheduler.notify(inputId);
   const processPendingJoiInputs = (): void => {
     void joiInboxRepository.list()
       .then((records) => records.filter((record) => record.status === "PENDING").forEach((record) => processJoiInput(record.inputId)))
@@ -246,6 +254,12 @@ async function startRuntime(): Promise<void> {
     ids,
     rootDirectory: path.join(userDataDirectory, "artifacts"),
     store: database.store,
+  });
+  const joiAttachmentStorage = new JoiAttachmentService({
+    clock,
+    database,
+    ids,
+    rootDirectory: path.join(userDataDirectory, "artifacts"),
   });
   const agentOnboarding = new AgentOnboardingService({
     clock,
@@ -265,91 +279,82 @@ async function startRuntime(): Promise<void> {
     transport: new SdkA2aInvocationTransport({ policy }),
     vault,
   });
-  const recoveredWakeIds = await new WakeRecoveryService({ clock, publisher: sse, store: database.store }).recover();
   const eventSignal = new InMemoryEventSignal();
   const events = new EventService({ clock, ids, publisher: sse, signal: eventSignal, store: database.store });
   const lifeRuntime = new LifeRuntimeService({ clock, events, store: database.store });
-  const wakeRunner = new WakeRunner({
-    actions: new ActionProcessor({ clock, publisher: sse, store: database.store }),
-    arbiter: new WakeArbiter({ clock, ids, publisher: sse, store: database.store }),
-    audit: new WakeAuditService({ clock, ids, store: database.store }),
-    clock,
-    context: new WakeContextAssembler({ clock, store: database.store }),
-    executor: new A2aWakeAgentExecutor(a2aGateway, database.store, async ({ affairId, artifact, lifeId }) => {
-      await events.ingest({
-        ...(affairId === undefined ? {} : { affairId }),
-        dedupeKey: artifact.artifactId,
-        lifeId,
-        payload: {
-          agentConnectionId: (await database.store.getLife(lifeId))?.mainAgentConnectionId ?? "unknown",
-          artifactId: artifact.artifactId,
-          filename: artifact.filename,
-          invocationId: artifact.invocationId,
-          mimeType: artifact.mimeType,
-          sha256: artifact.sha256,
-          size: artifact.size,
-        },
-        source: "agent",
-        type: "agent.artifact_created",
-      });
-    }, attachmentStorage),
-    ids,
-    repair: new WakeRepairService({ clock, ids, publisher: sse, store: database.store }),
-    store: database.store,
-  });
-  const wakeCoordinator = new WakeCoordinator({
-    canRun: async () => {
-      const disk = await statfs(userDataDirectory);
-      return disk.bavail * disk.bsize >= 256 * 1024 * 1024;
-    },
-    leaseOwner: `runtime_${String(process.pid)}`,
-    onError: () => process.stderr.write("A joi Wake ended with an error.\n"),
-    runner: wakeRunner,
-  });
+  const notifyJoi = (avatarId: string, type: string): void => {
+    const signalId = ids.next("runtime_signal");
+    void joiInboxRepository.enqueueSystemSignal({ avatarId, signalId, type })
+      .then(processJoiInput)
+      .catch(() => process.stderr.write("A runtime signal remains available for recovery.\n"));
+  };
+  const legacyRunControl = {
+    emergencyStop: (avatarId: string): void => { void lifeRuntime.emergencyStop(avatarId); },
+    notify: (avatarId: string): void => notifyJoi(avatarId, "legacy.user_requested"),
+  };
   const delegations = new DelegationService({
     artifacts: artifactStorage,
     clock,
     events,
     gateway: a2aGateway,
-    notify: (lifeId) => wakeCoordinator.notify(lifeId),
+    notify: (avatarId) => notifyJoi(avatarId, "partner.delegation_changed"),
     store: database.store,
   });
-  const interactions = new InteractionService({ events, gateway: a2aGateway, notify: (lifeId) => wakeCoordinator.notify(lifeId), store: database.store });
+  const interactions = new InteractionService({ events, gateway: a2aGateway, notify: (avatarId) => notifyJoi(avatarId, "partner.interaction_changed"), store: database.store });
   const budgets = new BudgetService({
     clock,
     events,
-    notify: (lifeId) => wakeCoordinator.notify(lifeId),
+    notify: (avatarId) => notifyJoi(avatarId, "budget.changed"),
     store: database.store,
   });
   const idleExploration = new IdleExplorationScheduler({
     clock,
     events,
-    notify: (lifeId) => wakeCoordinator.notify(lifeId),
+    notify: (avatarId) => notifyJoi(avatarId, "idle.exploration_due"),
     store: database.store,
   });
   const alarmScheduler = new AlarmScheduler({
     clock,
     ids,
-    notify: (lifeId) => wakeCoordinator.notify(lifeId),
+    notify: (avatarId) => notifyJoi(avatarId, "schedule.alarm_due"),
     publisher: sse,
     store: database.store,
   });
   const scheduleScheduler = new ScheduleScheduler({
     clock,
     ids,
-    notify: (lifeId) => wakeCoordinator.notify(lifeId),
+    notify: (avatarId) => notifyJoi(avatarId, "schedule.rhythm_due"),
     publisher: sse,
     store: database.store,
   });
   const todoScheduler = new TodoScheduler({
     clock,
     ids,
-    notify: (lifeId) => wakeCoordinator.notify(lifeId),
+    notify: (avatarId) => notifyJoi(avatarId, "todo.due"),
     publisher: sse,
     store: database.store,
   });
   const expressionDelivery = new ExpressionDeliveryScheduler({ clock, publisher: sse, store: database.store });
-  const partnerDispatch = new SqliteA2aPartnerDispatchHandler({ database, gateway: a2aGateway });
+  const workspaceLeases = new SqliteWorkspaceLeaseManager({ clock, database, owner: `partner_${String(process.pid)}` });
+  const localPartner = new LocalPiPartnerAdapter(new PiCodingPartnerRunner({
+    prompts: partnerPrompts,
+    resolver: configuredModelResolver,
+    sources: reasoningSources,
+    tools: new BuiltinPiCodingToolFactory(),
+  }));
+  const partnerDispatch = new SqliteA2aPartnerDispatchHandler({
+    clock,
+    database,
+    gateway: a2aGateway,
+    leases: workspaceLeases,
+    local: localPartner,
+    onResult: async (event) => {
+      await orchestrationEvents.emit("work.partner_result", event.eventId, event);
+      const inputId = await joiInboxRepository.enqueuePartnerResult(event);
+      processJoiInput(inputId);
+    },
+    partners: partnerRepository,
+  });
   const outboxDispatcher = new OutboxDispatcher({
     clock,
     handlers: {
@@ -379,7 +384,6 @@ async function startRuntime(): Promise<void> {
     store: database.store,
   });
   drainRuntime = async () => {
-    await wakeCoordinator.shutdown(10_000);
     for (let batch = 0; batch < 10; batch += 1) {
       if (await outboxDispatcher.dispatchOnce(100) === 0) break;
     }
@@ -391,10 +395,6 @@ async function startRuntime(): Promise<void> {
   await expressionDelivery.tick();
   await budgets.tick();
   await idleExploration.tick();
-  for (const wakeId of recoveredWakeIds) {
-    const wake = await database.store.getWake(wakeId);
-    if (wake !== null) wakeCoordinator.notify(wake.lifeId);
-  }
   const lives = new LifeService({
     clock,
     files: new LifeFileDeletionService({ ids, rootDirectory: path.join(userDataDirectory, "artifacts"), store: database.store }),
@@ -435,18 +435,24 @@ async function startRuntime(): Promise<void> {
     events,
     globalEmergencyStop: async () => { await emergencyStopAll?.(); },
     interactions,
+    joiActivity: joiInboxRepository,
+    joiAttachments: joiAttachmentStorage,
     joiInbox,
     lifeRuntime,
     lives,
     modelSources,
-    onJoiMessageAccepted: processJoiInput,
+    onJoiMessageAccepted: (inputId: string) => {
+      void orchestrationEvents.emit("joi.message.accepted", inputId, { inputId })
+        .catch(() => process.stderr.write("A joi status update remains available for replay.\n"));
+      processJoiInput(inputId);
+    },
     onModelSourceReady: processPendingJoiInputs,
     operations,
     partners,
     requestRestart: () => requestApplicationRestart(),
     settings,
     sse,
-    wakeCoordinator,
+    wakeCoordinator: legacyRunControl,
     work: workRepository,
   };
   processPendingJoiInputs();
@@ -455,7 +461,7 @@ async function startRuntime(): Promise<void> {
     do {
       const page = await lives.list({ ...(after === undefined ? {} : { after }), limit: 100 });
       for (const life of page.items) {
-        wakeCoordinator.emergencyStop(life.lifeId);
+        legacyRunControl.emergencyStop(life.lifeId);
         await lifeRuntime.emergencyStop(life.lifeId);
       }
       after = page.next;

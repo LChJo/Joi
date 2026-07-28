@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { JoiAcceptedMessageDto, JoiSnapshotDto, ModelSourceDto, ModelSourceKindDto } from "../shared/joi";
+import type { JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceDto, ModelSourceKindDto, PartnerDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -72,9 +72,19 @@ export class DigitalLifeApi {
   }
   joiSnapshot() { return this.request<JoiSnapshotDto>("/api/v1/joi"); }
   listJoiMessages() { return this.request<{ items: JoiAcceptedMessageDto[] }>("/api/v1/joi/messages"); }
-  sendJoiMessage(text: string) {
+  listJoiActivity() { return this.request<{ items: JoiActivityDto[] }>("/api/v1/joi/activity"); }
+  sendJoiMessage(text: string, attachmentIds: string[] = []) {
     return this.request<JoiAcceptedMessageDto>("/api/v1/joi/messages", {
-      body: { text }, idempotencyKey: crypto.randomUUID(), method: "POST",
+      body: { text, ...(attachmentIds.length === 0 ? {} : { attachmentIds }) }, idempotencyKey: crypto.randomUUID(), method: "POST",
+    });
+  }
+  async uploadJoiAttachment(file: File) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    return this.request<JoiAttachmentDto>("/api/v1/joi/attachments", {
+      body: { bytes: btoa(binary), filename: file.name, mimeType: file.type || "application/octet-stream" },
+      method: "POST",
     });
   }
   listModelSources() { return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources"); }
@@ -92,6 +102,13 @@ export class DigitalLifeApi {
   }
   orderModelSources(sourceIds: string[]) {
     return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources/order", { body: { sourceIds }, method: "PUT" });
+  }
+  listPartners() { return this.request<{ items: PartnerDto[] }>("/api/v1/partners"); }
+  createPartner(body: { capabilities: string[]; displayName: string; kind: "a2a" | "local-pi"; prompt?: string; skills: string[]; tools: string[]; workspaceRef?: string }) {
+    return this.request<PartnerDto>("/api/v1/partners", { body, method: "POST" });
+  }
+  disablePartner(partnerId: string) {
+    return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body: { disabled: true }, method: "PATCH" });
   }
   listLives() { return this.request<{ items: LifeDto[] }>("/api/v1/lives?limit=100"); }
   getLife(lifeId: string) { return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`); }

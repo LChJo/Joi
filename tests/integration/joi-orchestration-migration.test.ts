@@ -28,7 +28,7 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(17);
+      expect(database.inspect().schemaVersion).toBe(18);
       const names = database.transaction((connection) => connection.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
       ).all().map((row) => String((row as { name: unknown }).name)));
@@ -41,8 +41,13 @@ describe("JOI-01 non-destructive migration", () => {
         "model_source_health",
         "partners",
         "partner_revisions",
+        "partner_prompts",
+        "partner_runs",
+        "partner_result_events",
         "avatar_partner_policies",
         "joi_inbox_messages",
+        "joi_attachments",
+        "joi_inbox_attachments",
         "joi_turns",
         "joi_session_messages",
         "work_items",
@@ -79,7 +84,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(17);
+      expect(upgraded.inspect().schemaVersion).toBe(18);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         avatars: (connection.prepare("SELECT COUNT(*) AS count FROM avatars").get() as { count: number }).count,

@@ -30,6 +30,10 @@ export interface SsePublisher {
   publish(event: SseEvent): void | Promise<void>;
 }
 
+export interface DurableUiEventEmitter {
+  emit(type: string, entityId: string, payload: Record<string, unknown>): Promise<void>;
+}
+
 export interface SseBroker {
   publish(event: SseEvent): void;
   subscribe(listener: (event: SseEvent) => void): () => void;

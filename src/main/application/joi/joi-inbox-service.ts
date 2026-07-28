@@ -6,14 +6,20 @@ import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 export class JoiInboxService {
   constructor(private readonly dependencies: { clock: Clock; ids: IdGenerator; repository: JoiInboxRepository }) {}
 
-  async accept(input: { idempotencyKey: string; text: string }): Promise<JoiAcceptedMessageDto> {
+  async accept(input: { attachmentIds?: string[]; idempotencyKey: string; text: string }): Promise<JoiAcceptedMessageDto> {
     const body = input.text.trim();
     const idempotencyKey = input.idempotencyKey.trim();
     if (body.length === 0 || body.length > 32_000) throw new DomainError("joi_message_invalid", "Message is invalid.");
     if (idempotencyKey.length === 0 || idempotencyKey.length > 240) throw new DomainError("idempotency_key_invalid", "Idempotency key is invalid.");
+    const attachmentIds = [...new Set(input.attachmentIds ?? [])];
+    if (attachmentIds.length !== (input.attachmentIds?.length ?? 0) || attachmentIds.length > 8
+      || attachmentIds.some((value) => value.trim() === "" || value.length > 240)) {
+      throw new DomainError("joi_attachments_invalid", "Message attachments are invalid.");
+    }
     const now = this.dependencies.clock.now().toISOString();
     return toDto(await this.dependencies.repository.create({
       body,
+      ...(attachmentIds.length === 0 ? {} : { attachmentIds }),
       createdAt: now,
       idempotencyKey,
       inputId: this.dependencies.ids.next("input"),
@@ -28,5 +34,10 @@ export class JoiInboxService {
 }
 
 function toDto(record: JoiInboxRecord): JoiAcceptedMessageDto {
-  return { acceptedAt: record.createdAt, inputId: record.inputId, status: "PENDING" };
+  return {
+    acceptedAt: record.createdAt,
+    ...(record.avatarId === undefined ? {} : { avatarId: record.avatarId }),
+    inputId: record.inputId,
+    status: record.status,
+  };
 }

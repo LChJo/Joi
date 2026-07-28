@@ -1,6 +1,7 @@
 export type JoiInboxStatus = "PENDING" | "CLARIFICATION_REQUIRED" | "ROUTED" | "CONSUMED";
 
 export interface JoiInboxRecord {
+  attachmentIds?: string[];
   avatarId?: string;
   body: string;
   createdAt: string;

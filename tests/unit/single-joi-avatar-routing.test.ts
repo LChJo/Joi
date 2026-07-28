@@ -144,4 +144,104 @@ describe("single-joi-avatar-scoped-thread-isolation", () => {
     await coordinator.handle("input-new");
     expect(reasons).toEqual(["avatar_selection_invalid"]);
   });
+
+  it("retries the same pinned turn on the next source only before output or side effects", async () => {
+    const turns: StartReasoningTurnInput[] = [];
+    const sourceUpdates: string[] = [];
+    const runtime: PrimaryReasoningRuntime = {
+      abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+      startTurn: async (turn) => {
+        turns.push(turn);
+        if (turn.sourceId === "primary") throw new Error("network timeout");
+      },
+      steer: () => undefined, waitForIdle: async () => undefined,
+    };
+    const coordinator = new JoiCoordinator({
+      avatars: { getAvatar: async () => research, listSummaries: async () => [{ avatarId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
+      clock: new TestClock(),
+      failureClassifier: { classify: () => "timeout" },
+      ids: new TestIds(),
+      router: { decide: async () => ({ action: "select", avatarId: "research" }) },
+      runtime,
+      sources: {
+        selectFallback: async () => ({ modelId: "fallback-model", modelRevisionId: "fallback-mr", sourceId: "fallback", sourceRevisionId: "fallback-sr", turnId: "turn" }),
+        selectInitial: async (turnId) => ({ modelId: "primary-model", modelRevisionId: "primary-mr", sourceId: "primary", sourceRevisionId: "primary-sr", turnId }),
+      },
+      store: {
+        completeInput: async () => undefined,
+        createTurn: async () => undefined,
+        loadInput: async () => ({ body: "research", inputId: "input-fallback", status: "PENDING" }),
+        requireClarification: async () => undefined,
+        updateTurnSource: async (_turnId, sourceRevisionId) => { sourceUpdates.push(sourceRevisionId); },
+      },
+    });
+
+    await coordinator.handle("input-fallback");
+    expect(turns.map((turn) => turn.sourceId)).toEqual(["primary", "fallback"]);
+    expect(turns[0]?.turnId).toBe(turns[1]?.turnId);
+    expect(sourceUpdates).toEqual(["fallback-sr"]);
+  });
+
+  it("reuses one Avatar-scoped Pi session across consecutive safe-boundary turns", async () => {
+    const sessions: string[] = [];
+    let input = 0;
+    const coordinator = new JoiCoordinator({
+      avatars: { getAvatar: async () => research, listSummaries: async () => [{ avatarId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => ({ action: "select", avatarId: "research" }) },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => { sessions.push(turn.sessionId); }, steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => undefined, createTurn: async () => undefined,
+        loadInput: async () => ({ body: "next", inputId: `input-${String(++input)}`, status: "PENDING" }),
+        requireClarification: async () => undefined,
+      },
+    });
+    await coordinator.handle("input-1");
+    await coordinator.handle("input-2");
+    expect(sessions).toEqual(["joi_session:research", "joi_session:research"]);
+  });
+
+  it("never falls back after formal output or a tool side effect has started", async () => {
+    const progress: { formalOutputStarted: boolean; sideEffectStarted: boolean }[] = [];
+    const fallbackInputs: unknown[] = [];
+    const failed: string[] = [];
+    const emitted: string[] = [];
+    const coordinator = new JoiCoordinator({
+      avatars: { getAvatar: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), events: { emit: async (type) => { emitted.push(type); } },
+      failureClassifier: { classify: () => "timeout" }, ids: new TestIds(),
+      router: { decide: async () => { throw new Error("pre-bound result must not route again"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          turn.onEvent?.({ delta: "", turnId: turn.turnId, type: "text_delta" });
+          turn.onEvent?.({ delta: "visible", turnId: turn.turnId, type: "text_delta" });
+          turn.onEvent?.({ toolCallId: "tool-1", toolName: "work.dispatch", turnId: turn.turnId, type: "tool_started" });
+          throw new Error("timeout after side effect");
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: {
+        selectFallback: async (input) => { fallbackInputs.push(input); return null; },
+        selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }),
+      },
+      store: {
+        completeInput: async () => undefined, createTurn: async () => undefined,
+        failTurn: async (_inputId, turnId) => { failed.push(turnId); },
+        loadInput: async () => ({ avatarId: "research", body: "partner result", inputId: "result", status: "PENDING" }),
+        recordTurnProgress: async (_turnId, value) => { progress.push(value); },
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await expect(coordinator.handle("result")).rejects.toThrow("timeout after side effect");
+    expect(fallbackInputs).toEqual([expect.objectContaining({ formalOutputStarted: true, sideEffectStarted: true })]);
+    expect(progress.at(-1)).toEqual({ formalOutputStarted: true, sideEffectStarted: true });
+    expect(failed).toHaveLength(1);
+    expect(emitted).toEqual(["joi.turn.started", "joi.turn.failed"]);
+  });
 });

@@ -5,7 +5,9 @@ import path from "node:path";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
+import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
+import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { SqliteA2aPartnerDispatchHandler } from "../../src/main/infrastructure/a2a/sqlite-partner-dispatch-handler.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
@@ -26,7 +28,8 @@ describe("SQLite work plan outbox", () => {
         connection.prepare(`INSERT INTO joi_turns
           (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at) VALUES ('turn-1', 'input-1', 'avatar-1', 'session-1', 'RUNNING', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
       });
-      const partners = new PartnerRegistryService({ clock, ids, repository: new SqlitePartnerRegistryRepository(database) });
+      const partnerRepository = new SqlitePartnerRegistryRepository(database);
+      const partners = new PartnerRegistryService({ clock, ids, repository: partnerRepository });
       const partner = await partners.add({ capabilities: ["write"], displayName: "Local", kind: "local-pi", skills: [], tools: ["edit"] });
       const repository = new SqliteWorkPlanRepository(database);
       const service = new WorkOrchestrationService({
@@ -45,9 +48,23 @@ describe("SQLite work plan outbox", () => {
       const outbox = facts.outbox[0] as { payload_json: string };
       expect(JSON.parse(outbox.payload_json)).toMatchObject({ actionId: attempt.action_id });
       const payload = JSON.parse(outbox.payload_json) as { actionId: string; dispatchAttemptId: string };
+      const inbox = new SqliteJoiInboxRepository(database);
+      let resultInputId: string | undefined;
       const handler = new SqliteA2aPartnerDispatchHandler({
+        clock,
         database,
         gateway: { recover: () => Promise.reject(new Error("must not recover")), startWithResult: () => Promise.reject(new Error("must not dispatch")) },
+        leases: new SqliteWorkspaceLeaseManager({ clock, database }),
+        local: {
+          run: (request, revision) => Promise.resolve({
+            actionId: request.actionId,
+            externalRunId: `local:${request.actionId}:${revision.partnerRevisionId}`,
+            status: "COMPLETED",
+            workId: request.workId,
+          }),
+        },
+        onResult: async (event) => { resultInputId = await inbox.enqueuePartnerResult(event); },
+        partners: partnerRepository,
       });
       await handler.handle({
         attemptCount: 0,
@@ -69,7 +86,22 @@ describe("SQLite work plan outbox", () => {
       });
       expect(await repository.listActive()).toEqual([]);
       expect(database.transaction((connection) => connection.prepare("SELECT status FROM dispatch_attempts").get()))
-        .toEqual({ status: "FAILED" });
+        .toEqual({ status: "COMPLETED" });
+      const resultEvents = database.transaction((connection) => connection.prepare(
+        "SELECT avatar_id, work_id, status FROM partner_result_events",
+      ).all()) as { avatar_id: string; status: string; work_id: string }[];
+      expect(resultEvents).toHaveLength(1);
+      expect(resultEvents[0]).toMatchObject({ avatar_id: "avatar-1", status: "COMPLETED" });
+      expect(resultEvents[0]?.work_id).toMatch(/^work_/u);
+      expect(resultInputId).toMatch(/^joi_result_input:/u);
+      expect((await inbox.loadInput(resultInputId ?? "missing"))).toMatchObject({ avatarId: "avatar-1", status: "PENDING" });
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT input_id FROM partner_result_events",
+      ).get())).toEqual({ input_id: resultInputId });
+      const signalInputId = await inbox.enqueueSystemSignal({ avatarId: "avatar-1", signalId: "alarm-1", type: "schedule.alarm_due" });
+      expect(await inbox.loadInput(signalInputId)).toMatchObject({ avatarId: "avatar-1", status: "PENDING" });
+      expect(database.transaction((connection) => connection.prepare("SELECT COUNT(*) AS count FROM workspace_leases").get()))
+        .toEqual({ count: 0 });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

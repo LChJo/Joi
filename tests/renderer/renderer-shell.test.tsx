@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api";
 import { AgentPanel, ConsoleApp, LifeHome, SettingsPanel } from "../../src/renderer/Console";
 import type { AgentDto, ContinuityDto, DiagnosticsDto, InteractionDto, LifeDto, LifeEventDto } from "../../src/renderer/types";
+import type { PartnerDto } from "../../src/shared/joi";
 
 const agent: AgentDto = {
   agentConnectionId: "agent_1", credentialVersion: 1, description: "持续思考", name: "Mana Core", readiness: true,
@@ -12,6 +13,10 @@ const agent: AgentDto = {
 const collaborator: AgentDto = {
   agentConnectionId: "agent_2", credentialVersion: 1, name: "Researcher", readiness: false,
   status: "COLLABORATOR_ONLY", updatedAt: "2026-07-15T12:00:00.000Z",
+};
+const partner: PartnerDto = {
+  capabilities: ["research", "planning"], displayName: "Mana Core", kind: "a2a", partnerId: "partner_agent_1",
+  partnerRevisionId: "partner_revision_agent_1", registryRevision: 1, skills: ["research"], status: "ACTIVE", tools: [],
 };
 const life: LifeDto = {
   createdAt: "2026-07-15T12:00:00.000Z", currentPersonaVersionId: "persona_1", lifeId: "life_1",
@@ -64,6 +69,7 @@ function mockApi() {
   const api = new DigitalLifeApi("");
   const listLives = vi.spyOn(api, "listLives").mockResolvedValue({ items: [life] });
   vi.spyOn(api, "listAgents").mockResolvedValue({ items: [agent, collaborator] });
+  vi.spyOn(api, "listPartners").mockResolvedValue({ items: [partner] });
   vi.spyOn(api, "listInteractions").mockResolvedValue({ items: [interaction] });
   vi.spyOn(api, "diagnostics").mockResolvedValue(diagnostics);
   vi.spyOn(api, "listBackups").mockResolvedValue({ items: [{ backupId: "backup_1", createdAt: life.createdAt, databaseBytes: 1024, manifestHash: "a".repeat(64), schemaVersion: 4 }] });
@@ -112,7 +118,8 @@ function mockApi() {
   vi.spyOn(api, "getLifeDeletionImpact").mockResolvedValue({ affairs: 1, alarms: 1, artifacts: 1, attachments: 1, delegations: 1, events: 2, managedBytes: 2048, memories: 3, schedules: 3, todos: 1, wakes: 1 });
   const deleteAgent = vi.spyOn(api, "deleteAgent").mockResolvedValue(undefined);
   vi.spyOn(api, "getAgentDeletionImpact").mockResolvedValue({ activeInvocations: 0, bindings: [] });
-  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createBackup, createLife, createTodo, deleteAgent, deleteLife, emergencyStopAll, extendBudget, forgetMemory, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
+  const disablePartner = vi.spyOn(api, "disablePartner").mockResolvedValue({ ...partner, status: "DISABLED" });
+  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createBackup, createLife, createTodo, deleteAgent, deleteLife, disablePartner, emergencyStopAll, extendBudget, forgetMemory, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
 }
 
 describe("joi renderer console", () => {
@@ -175,19 +182,16 @@ describe("joi renderer console", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "返回全部智能体" }));
     fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "搭档" }));
-    expect(screen.getByText("持续思考")).toBeInTheDocument();
-    expect(screen.getByText("这位搭档没留介绍")).toBeInTheDocument();
-    fireEvent.click(first(screen.getAllByRole("button", { name: "重新检查" })));
-    fireEvent.click(first(screen.getAllByRole("button", { name: "更新密钥" })));
-    fireEvent.change(screen.getByLabelText("新密钥"), { target: { value: "rotated" } });
-    fireEvent.submit(formFor(screen.getByLabelText("新密钥")));
-    await waitFor(() => expect(fixture.rotateAgentToken).toHaveBeenCalledWith("agent_1", "rotated"));
-    fireEvent.click(first(screen.getAllByRole("button", { name: "停用" })));
+    expect(await screen.findByText("Mana Core")).toBeInTheDocument();
+    expect(screen.getByText(/revision 1/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "停用" }));
+    await waitFor(() => expect(fixture.disablePartner).toHaveBeenCalledWith("partner_agent_1"));
     fireEvent.click(screen.getByRole("button", { name: "添加搭档" }));
-    const dialog = screen.getByRole("form", { name: "添加搭档" });
-    fireEvent.change(within(dialog).getByLabelText(/Agent Card URL/), { target: { value: "http://192.168.1.2/card.json" } });
-    fireEvent.change(within(dialog).getByLabelText(/Bearer Token/), { target: { value: "secret" } });
-    fireEvent.submit(dialog);
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "Remote Researcher" } });
+    fireEvent.change(screen.getByLabelText("类型"), { target: { value: "a2a" } });
+    fireEvent.change(screen.getByLabelText(/Agent Card URL/), { target: { value: "http://192.168.1.2/card.json" } });
+    fireEvent.change(screen.getByLabelText(/Bearer Token/), { target: { value: "secret" } });
+    fireEvent.submit(formFor(screen.getByLabelText("名称")));
     await waitFor(() => expect(fixture.addAgent).toHaveBeenCalled());
 
     fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "状态" }));
@@ -570,7 +574,7 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.deleteLife).toHaveBeenCalledWith("life_1"));
   });
 
-  it("shows enriched diagnostics and completes an unbound Agent deletion", async () => {
+  it("shows enriched diagnostics and the mirrored Partner registry", async () => {
     const fixture = mockApi();
     vi.spyOn(fixture.api, "diagnostics").mockResolvedValue({
       agents: { activeInvocations: 2, connections: 2, openBreakers: 1 }, database: { integrity: "corrupt", journalMode: "wal", state: "open" },
@@ -584,11 +588,7 @@ describe("joi renderer console", () => {
     expect(screen.getByText("1 次行动需要确认")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "导出诊断" })).toHaveAttribute("download");
     fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "搭档" }));
-    const row = screen.getByRole("heading", { name: "Mana Core" }).closest("article");
-    if (row === null) throw new Error("missing agent row");
-    fireEvent.click(within(row).getByRole("button", { name: /删除/ }));
-    expect(await screen.findByRole("heading", { name: "删除 Mana Core？" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "确认删除" }));
-    await waitFor(() => expect(fixture.deleteAgent).toHaveBeenCalledWith("agent_1"));
+    expect(await screen.findByText("Mana Core")).toBeInTheDocument();
+    expect(screen.getByText(/远端 A2A · revision 1 · ACTIVE/)).toBeInTheDocument();
   });
 });

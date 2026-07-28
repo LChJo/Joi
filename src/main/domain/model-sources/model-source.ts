@@ -113,8 +113,18 @@ export function reviseModelSource(
   };
 }
 
-export function pinModelSourceForTurn(source: ModelSource, turnId: string) {
+export interface ModelSourceTurnPin {
+  modelCapability?: ModelCapability;
+  modelId: string;
+  modelRevisionId: string;
+  sourceId: string;
+  sourceRevisionId: string;
+  turnId: string;
+}
+
+export function pinModelSourceForTurn(source: ModelSource, turnId: string): ModelSourceTurnPin {
   return {
+    modelCapability: source.activeModelRevision.capability,
     modelId: source.activeModelRevision.modelId,
     modelRevisionId: source.activeModelRevision.modelRevisionId,
     sourceId: source.sourceId,

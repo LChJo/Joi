@@ -40,6 +40,24 @@ export interface WorkPlanRepository {
   commit(plan: CommittedWorkPlan): Promise<void>;
 }
 
+export interface WorkReassignmentContext {
+  item: WorkItem;
+  lastPartnerRevisionId: string;
+}
+
+export interface ReassignedWorkPlan {
+  attempt: PlannedDispatchAttempt;
+  createdAt: string;
+  dispatchPlanId: string;
+  turnId: string;
+  workId: string;
+}
+
+export interface WorkReassignmentRepository {
+  loadForReassignment(workId: string): Promise<WorkReassignmentContext | null>;
+  reassign(plan: ReassignedWorkPlan): Promise<void>;
+}
+
 export interface WorkQuery {
   listActive(): Promise<WorkItemDto[]>;
 }

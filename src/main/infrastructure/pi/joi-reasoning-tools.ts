@@ -14,7 +14,7 @@ export function createJoiReasoningTools(input: {
   avatars: AvatarCatalog;
   partners: Pick<PartnerRegistryService, "list">;
   turnId: string;
-  work: Pick<WorkOrchestrationService, "plan">;
+  work: Pick<WorkOrchestrationService, "plan" | "reassign">;
 }): AgentTool[] {
   const workDispatchParameters = Type.Object({
     dependencies: Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() })),
@@ -38,6 +38,19 @@ export function createJoiReasoningTools(input: {
     name: "work.dispatch",
     parameters: workDispatchParameters,
   };
+  const workReassignParameters = Type.Object({ partnerId: Type.String(), workId: Type.String() });
+  const workReassignTool: AgentTool<typeof workReassignParameters> = {
+    description: "Reassign failed or waiting work through policy checks and a new immutable partner revision.",
+    execute: async (_toolCallId, arguments_) => result(await input.work.reassign({
+      avatarId: input.avatarId,
+      partnerId: arguments_.partnerId,
+      turnId: input.turnId,
+      workId: arguments_.workId,
+    })),
+    label: "Reassign work",
+    name: "work.reassign",
+    parameters: workReassignParameters,
+  };
   return [
     {
       description: "List redacted Avatar summaries. Does not return persona, memory, or workspace paths.",
@@ -54,5 +67,6 @@ export function createJoiReasoningTools(input: {
       parameters: Type.Object({}),
     },
     workDispatchTool,
+    workReassignTool,
   ];
 }

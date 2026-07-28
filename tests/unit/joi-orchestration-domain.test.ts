@@ -121,12 +121,26 @@ describe("JOI-01 pure domain", () => {
       modelRevisionId: "model_rev_2",
     });
     expect(pinModelSourceForTurn(revised, "turn_1")).toEqual({
+      modelCapability: "custom-unverified-tools",
       modelId: "kimi-custom",
       modelRevisionId: "model_rev_2",
       sourceId: "source_1",
       sourceRevisionId: "source_rev_2",
       turnId: "turn_1",
     });
+    expect(() => createModelSource({
+      createdAt: "2026-07-28T10:00:00.000Z", credentialRef: "credential_invalid", credentialVersion: 0,
+      displayName: "Invalid", kind: "kimi", modelCapability: "release-tested", modelId: "kimi-k2.5",
+      modelRevisionId: "model_invalid", sourceId: "source_invalid", sourceRevisionId: "source_invalid_revision",
+    })).toThrow(/Credential version is invalid/i);
+    expect(() => reviseModelSource(source, {
+      credentialVersion: 2, modelCapability: "release-tested", modelId: "kimi-k2.5", modelRevisionId: "model_rev_new",
+      sourceRevisionId: "source_rev_1", updatedAt: "2026-07-28T10:02:00.000Z",
+    })).toThrow(/revisions must be immutable/i);
+    expect(() => reviseModelSource(source, {
+      credentialVersion: 2, modelCapability: "release-tested", modelId: "kimi-k2.5", modelRevisionId: "model_rev_1",
+      sourceRevisionId: "source_rev_new", updatedAt: "2026-07-28T10:02:00.000Z",
+    })).toThrow(/revisions must be immutable/i);
   });
 
   it("classifies only recoverable infrastructure failures for deterministic fallback", () => {

@@ -23,3 +23,8 @@ export interface PartnerExecutor {
 export interface PartnerAdapterRunner {
   run(request: PartnerRunRequest, revision: PartnerRevision): Promise<{ externalRunId: string; status: PartnerRunStatus }>;
 }
+
+export interface PartnerPromptStore {
+  read(promptRef: string): Promise<string | null>;
+  save(input: { body: string; createdAt: string; promptRef: string }): Promise<void>;
+}
