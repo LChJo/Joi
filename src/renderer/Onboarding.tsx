@@ -40,7 +40,7 @@ export function AccessScreen({ api, onAuthenticated }: { api: DigitalLifeApi; on
         <div>
           <p className="eyebrow">joi 在这里</p>
           <h1>欢迎回来，joi 一直在。</h1>
-          <p>输入密码，joi 带你回到生命们身边。</p>
+          <p>输入密码，接着之前的事继续。</p>
         </div>
         <p className="security-note"><LockKeyIcon aria-hidden size={17} /> 密码只存在运行 joi 的电脑上，不会交给浏览器。</p>
       </section>

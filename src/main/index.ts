@@ -18,6 +18,13 @@ import { EventService } from "./application/events/event-service.js";
 import { LifeRuntimeService } from "./application/lives/life-runtime-service.js";
 import { LifeService } from "./application/lives/life-service.js";
 import { OperationsService } from "./application/operations/operations-service.js";
+import { ModelSourceService } from "./application/model-sources/model-source-service.js";
+import { ReasoningSourceSelector } from "./application/model-sources/reasoning-source-selector.js";
+import { JoiInboxService } from "./application/joi/joi-inbox-service.js";
+import { JoiCoordinator } from "./application/joi/joi-coordinator.js";
+import { AvatarRegistryService } from "./application/joi/avatar-registry-service.js";
+import { PartnerRegistryService } from "./application/partners/partner-registry-service.js";
+import { WorkOrchestrationService } from "./application/work/work-orchestration-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
 import { SystemSettingsService } from "./infrastructure/operations/system-settings-service.js";
 import { RuntimeMarker, type StartupEvidence } from "./infrastructure/runtime/runtime-marker.js";
@@ -47,6 +54,23 @@ import { SdkA2aInvocationTransport } from "./infrastructure/a2a/sdk-a2a-invocati
 import { SecureArtifactDownloader } from "./infrastructure/a2a/secure-artifact-downloader.js";
 import { A2aWakeAgentExecutor } from "./infrastructure/a2a/a2a-wake-agent-executor.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "./infrastructure/persistence/runtime-database.js";
+import { SqliteModelSourceRepository } from "./infrastructure/persistence/sqlite-model-source-repository.js";
+import { SqlitePiCredentialRepository } from "./infrastructure/persistence/sqlite-pi-credential-repository.js";
+import { SqliteJoiInboxRepository } from "./infrastructure/persistence/sqlite-joi-inbox-repository.js";
+import { SqlitePartnerRegistryRepository } from "./infrastructure/persistence/sqlite-partner-registry-repository.js";
+import { SqlitePiReasoningSessionStore } from "./infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
+import { SqliteWorkPlanRepository } from "./infrastructure/persistence/sqlite-work-plan-repository.js";
+import { SqliteDispatchPolicyGate } from "./infrastructure/persistence/sqlite-dispatch-policy-gate.js";
+import { LegacyLifeStoreAdapter } from "./infrastructure/persistence/legacy-life-store-adapter.js";
+import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
+import { PiModelSourceCatalog } from "./infrastructure/pi/pi-model-source-catalog.js";
+import { PiModelSourceValidator } from "./infrastructure/pi/pi-model-source-validator.js";
+import { SafeStoragePiCredentialStore } from "./infrastructure/pi/pi-credential-store-adapter.js";
+import { ConfiguredPiReasoningRuntime } from "./infrastructure/pi/configured-pi-reasoning-runtime.js";
+import { PiAvatarRoutingRuntime } from "./infrastructure/pi/pi-avatar-routing-runtime.js";
+import { RepositoryPiConfiguredModelResolver } from "./infrastructure/pi/pi-configured-model-resolver.js";
+import { createJoiReasoningTools } from "./infrastructure/pi/joi-reasoning-tools.js";
+import { SqliteA2aPartnerDispatchHandler } from "./infrastructure/a2a/sqlite-partner-dispatch-handler.js";
 import { InMemoryEventSignal } from "./infrastructure/runtime/in-memory-event-signal.js";
 import {
   InMemoryBootstrapNonceStore,
@@ -144,6 +168,78 @@ async function startRuntime(): Promise<void> {
     resolve: async (hostname) => (await lookup(hostname, { all: true, verbatim: true })).map((record) => record.address),
   });
   const vault = new ElectronCredentialVault();
+  const modelSourceNetworkPolicy = new ModelSourceNetworkPolicy({
+    resolve: async (hostname) => (await lookup(hostname, { all: true, verbatim: true })).map((record) => record.address),
+  });
+  const piCredentials = new SafeStoragePiCredentialStore({
+    records: new SqlitePiCredentialRepository(database),
+    vault,
+  });
+  const modelSourceRepository = new SqliteModelSourceRepository(database);
+  const modelSources = new ModelSourceService({
+    catalog: new PiModelSourceCatalog(),
+    clock,
+    endpointPolicy: modelSourceNetworkPolicy,
+    ids,
+    repository: modelSourceRepository,
+    secrets: piCredentials,
+    validator: new PiModelSourceValidator({ clock, credentials: piCredentials }),
+  });
+  const joiInboxRepository = new SqliteJoiInboxRepository(database);
+  const joiInbox = new JoiInboxService({
+    clock,
+    ids,
+    repository: joiInboxRepository,
+  });
+  const partnerRepository = new SqlitePartnerRegistryRepository(database);
+  const partners = new PartnerRegistryService({
+    clock,
+    ids,
+    repository: partnerRepository,
+  });
+  const avatars = new LegacyLifeStoreAdapter(database);
+  const avatarRegistry = new AvatarRegistryService({ clock, ids, repository: avatars });
+  const workRepository = new SqliteWorkPlanRepository(database);
+  const work = new WorkOrchestrationService({
+    clock,
+    ids,
+    partners,
+    policy: new SqliteDispatchPolicyGate({ clock, database }),
+    repository: workRepository,
+  });
+  const reasoningSources = new ReasoningSourceSelector(modelSourceRepository);
+  const configuredModelResolver = new RepositoryPiConfiguredModelResolver({
+    credentials: piCredentials,
+    repository: modelSourceRepository,
+  });
+  const joiReasoning = new ConfiguredPiReasoningRuntime({
+    resolver: configuredModelResolver,
+    sessionStore: new SqlitePiReasoningSessionStore(database),
+    tools: (turn) => createJoiReasoningTools({ avatarId: turn.avatarId, avatars, partners, turnId: turn.turnId, work }),
+  });
+  const joiCoordinator = new JoiCoordinator({
+    avatars,
+    avatarRegistry,
+    clock,
+    ids,
+    router: new PiAvatarRoutingRuntime({ resolver: configuredModelResolver, sources: reasoningSources }),
+    runtime: joiReasoning,
+    sources: reasoningSources,
+    store: joiInboxRepository,
+  });
+  const activeJoiInputs = new Set<string>();
+  const processJoiInput = (inputId: string): void => {
+    if (activeJoiInputs.has(inputId)) return;
+    activeJoiInputs.add(inputId);
+    void joiCoordinator.handle(inputId)
+      .catch(() => process.stderr.write("A joi input remains available for recovery.\n"))
+      .finally(() => activeJoiInputs.delete(inputId));
+  };
+  const processPendingJoiInputs = (): void => {
+    void joiInboxRepository.list()
+      .then((records) => records.filter((record) => record.status === "PENDING").forEach((record) => processJoiInput(record.inputId)))
+      .catch(() => process.stderr.write("Pending joi inputs remain available for recovery.\n"));
+  };
   const artifactStorage = new ArtifactService({ rootDirectory: path.join(userDataDirectory, "artifacts"), store: database.store });
   const attachmentStorage = new AttachmentService({
     clock,
@@ -253,6 +349,7 @@ async function startRuntime(): Promise<void> {
     store: database.store,
   });
   const expressionDelivery = new ExpressionDeliveryScheduler({ clock, publisher: sse, store: database.store });
+  const partnerDispatch = new SqliteA2aPartnerDispatchHandler({ database, gateway: a2aGateway });
   const outboxDispatcher = new OutboxDispatcher({
     clock,
     handlers: {
@@ -275,6 +372,7 @@ async function startRuntime(): Promise<void> {
         if (typeof interactionId !== "string" || typeof answer !== "string") throw new Error("Interaction outbox record is invalid.");
         await interactions.answer(interactionId, answer);
       },
+      "partner.dispatch": (record) => partnerDispatch.handle(record),
     },
     onError: () => process.stderr.write("An outbox delivery will be retried.\n"),
     owner: `outbox_${String(process.pid)}`,
@@ -330,19 +428,28 @@ async function startRuntime(): Promise<void> {
     attachments: attachmentStorage,
     artifacts: artifactStorage,
     auth,
+    avatarRegistry,
+    avatars,
     budgets,
     continuity: new ContinuityService({ clock, publisher: sse, store: database.store }),
     events,
     globalEmergencyStop: async () => { await emergencyStopAll?.(); },
     interactions,
+    joiInbox,
     lifeRuntime,
     lives,
+    modelSources,
+    onJoiMessageAccepted: processJoiInput,
+    onModelSourceReady: processPendingJoiInputs,
     operations,
+    partners,
     requestRestart: () => requestApplicationRestart(),
     settings,
     sse,
     wakeCoordinator,
+    work: workRepository,
   };
+  processPendingJoiInputs();
   emergencyStopAll = async () => {
     let after: { createdAt: string; lifeId: string } | undefined;
     do {
@@ -445,7 +552,7 @@ function rebuildTrayMenu() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { click: showMainWindow, label: "打开 joi" },
     { type: "separator" },
-    { click: () => void emergencyStopAll?.(), label: "紧急停止全部生命" },
+    { click: () => void emergencyStopAll?.(), label: "紧急停止全部智能体" },
     {
       checked: launchAtLogin,
       click: (item) => { app.setLoginItemSettings({ openAtLogin: item.checked }); rebuildTrayMenu(); },

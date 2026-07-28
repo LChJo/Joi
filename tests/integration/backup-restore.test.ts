@@ -1,5 +1,6 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 
 import { BackupService, applyPendingRestore } from "../../src/main/infrastructure/operations/backup-service";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
@@ -19,11 +20,20 @@ describe("consistent backup and quarantine restore", () => {
         .run("inv_restore", "agent_restore", "message_restore", JSON.stringify({ parts: [{ kind: "text", text: "redacted in diagnostics" }] }), "WORKING", 1, fixture.clock.now().toISOString(), fixture.clock.now().toISOString(), fixture.clock.now().toISOString());
       database.prepare("INSERT INTO web_sessions (session_hash, csrf_hash, ip_hash, kind, created_at, last_activity_at, idle_expires_at, absolute_expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
         .run("session_restore", "csrf_restore", "ip_restore", "lan", fixture.clock.now().toISOString(), fixture.clock.now().toISOString(), "2026-07-16T12:00:00.000Z", "2026-07-22T12:00:00.000Z");
+      database.prepare(`INSERT INTO model_source_credentials
+        (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES ('joi-source:backup-test', 'api_key', ?, 1, ?)`)
+        .run(new Uint8Array([9, 8, 7, 6]), fixture.clock.now().toISOString());
     });
     const service = new BackupService({ appVersion: "0.1.0", artifactsDirectory, backupsDirectory, clock: fixture.clock, database: fixture.database, userDataDirectory: fixture.root });
     const backup = await service.create();
     expect(backup.backupId).toMatch(/^backup_/);
-    expect((await service.list())[0]).toMatchObject({ backupId: backup.backupId, schemaVersion: 16 });
+    expect((await service.list())[0]).toMatchObject({ backupId: backup.backupId, schemaVersion: 17 });
+    const backupDatabase = new DatabaseSync(path.join(backupsDirectory, backup.backupId, "runtime.sqlite"), { readOnly: true });
+    try {
+      expect(backupDatabase.prepare("SELECT length(encrypted_blob) AS size FROM model_source_credentials WHERE provider_id = 'joi-source:backup-test'").get()).toEqual({ size: 0 });
+    } finally {
+      backupDatabase.close();
+    }
     await expect(service.stageRestore(backup.backupId)).rejects.toMatchObject({ code: "restore_runtime_active" });
     fixture.database.transaction((database) => database.prepare(
       "UPDATE invocations SET status = 'COMPLETED' WHERE invocation_id = 'inv_restore'").run());

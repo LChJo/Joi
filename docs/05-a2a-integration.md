@@ -1,5 +1,15 @@
 # A2A 集成协议
 
+## 0. JOI-01 Partner 适配
+
+旧主 Agent 不再拥有推理控制权；迁移后它是 Avatar 的首选搭档。统一 Partner Registry 同时接纳本机 Pi 与远端 A2A：静态能力、prompt、Skill/Tool 描述和 workspace reference 进入不可变 partner revision，健康、占用和 breaker 进入动态 presence。
+
+每次派发固定引用 `partnerRevisionId + registryRevision`。添加、更新、停用或删除必须先在事务中增加 registry revision；在途派发继续引用旧 revision。Card 刷新按字段保留 provenance，本地 workspace/prompt/tool policy 优先，不能被远端 Card 覆盖。
+
+两类搭档返回统一 `PartnerRunResult`，再持久化为 Avatar-scoped event。A2A 调用复用既有 gateway、capacity、breaker、interaction、Artifact 与 delegation 终态；不得绕过 outbox。auth-required 只能由用户处理。
+
+下文主 Agent extension/WakeEnvelope 是旧只读兼容协议，不再代表唯一全局 joi 的 Pi 工具契约。
+
 ## 1. 目的
 
 本页定义 Runtime Hub 如何发现、验证、调用和恢复局域网 A2A Agents，以及主 Agent使用的 joi 扩展。A2A 是 Hub 与推理器官之间的执行协议；Life、Event、Memory 和 Affair 仍由 Hub 持有。

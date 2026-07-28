@@ -15,6 +15,23 @@ function readyApi() {
   vi.spyOn(api, "listAgents").mockResolvedValue({ items: [] });
   vi.spyOn(api, "listInteractions").mockResolvedValue({ items: [] });
   vi.spyOn(api, "diagnostics").mockResolvedValue({ agents: { connections: 0 }, database: { journalMode: "wal", state: "open" }, runtime: { pendingOutbox: 0 }, schemaVersion: 4, sse: { events: 0 }, web: { sessions: 1 } });
+  vi.spyOn(api, "joiSnapshot").mockResolvedValue({
+    avatars: [],
+    modelSources: [{
+      activeModel: { capability: "release-tested", id: "deepseek-chat", revisionId: "model-1" },
+      activeSourceRevisionId: "source-revision-1",
+      credential: { configured: true, version: 1 },
+      displayName: "DeepSeek",
+      kind: "deepseek",
+      order: 0,
+      primary: true,
+      sourceId: "source-1",
+      status: "READY",
+    }],
+    partners: [],
+    runtime: { configured: true, status: "READY" },
+    work: [],
+  });
   return api;
 }
 
@@ -30,7 +47,7 @@ describe("application gates", () => {
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent("连不上本机服务");
     fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
-    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
   });
 
   it("surfaces an unexpected bootstrap error without losing retry", async () => {
@@ -64,7 +81,7 @@ describe("application gates", () => {
     const password = await screen.findByLabelText("管理密码");
     fireEvent.change(password, { target: { value: "correct password" } });
     fireEvent.submit(formFor(password));
-    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
     lan.unmount();
 
     const desktopApi = readyApi();
@@ -77,6 +94,6 @@ describe("application gates", () => {
     fireEvent.submit(formFor(first));
     fireEvent.click(await screen.findByRole("button", { name: /先只用本机/ }));
     fireEvent.click(screen.getByRole("button", { name: "暂时跳过" }));
-    expect(await screen.findByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
   });
 });

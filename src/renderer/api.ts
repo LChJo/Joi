@@ -14,6 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
+import type { JoiAcceptedMessageDto, JoiSnapshotDto, ModelSourceDto, ModelSourceKindDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -25,7 +26,7 @@ export class ApiError extends Error {
 interface RequestOptions {
   body?: Record<string, unknown>;
   idempotencyKey?: string;
-  method?: "DELETE" | "GET" | "PATCH" | "POST";
+  method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
 }
 
 export class DigitalLifeApi {
@@ -68,6 +69,29 @@ export class DigitalLifeApi {
   logoutAllLan() { return this.request<undefined>("/api/v1/auth/logout-all", { method: "POST" }); }
   changePassword(currentPassword: string, newPassword: string) {
     return this.request<undefined>("/api/v1/auth/password", { body: { currentPassword, newPassword }, method: "POST" });
+  }
+  joiSnapshot() { return this.request<JoiSnapshotDto>("/api/v1/joi"); }
+  listJoiMessages() { return this.request<{ items: JoiAcceptedMessageDto[] }>("/api/v1/joi/messages"); }
+  sendJoiMessage(text: string) {
+    return this.request<JoiAcceptedMessageDto>("/api/v1/joi/messages", {
+      body: { text }, idempotencyKey: crypto.randomUUID(), method: "POST",
+    });
+  }
+  listModelSources() { return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources"); }
+  createModelSource(body: { apiKey: string; baseUrl?: string; displayName?: string; kind: ModelSourceKindDto; modelId?: string }) {
+    return this.request<ModelSourceDto>("/api/v1/model-sources", { body, method: "POST" });
+  }
+  validateModelSource(sourceId: string) {
+    return this.request<ModelSourceDto>(`/api/v1/model-sources/${encodeURIComponent(sourceId)}/validate`, { method: "POST" });
+  }
+  updateModelSource(sourceId: string, body: Record<string, unknown>) {
+    return this.request<ModelSourceDto>(`/api/v1/model-sources/${encodeURIComponent(sourceId)}`, { body, method: "PATCH" });
+  }
+  deleteModelSource(sourceId: string) {
+    return this.request<undefined>(`/api/v1/model-sources/${encodeURIComponent(sourceId)}`, { method: "DELETE" });
+  }
+  orderModelSources(sourceIds: string[]) {
+    return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources/order", { body: { sourceIds }, method: "PUT" });
   }
   listLives() { return this.request<{ items: LifeDto[] }>("/api/v1/lives?limit=100"); }
   getLife(lifeId: string) { return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`); }

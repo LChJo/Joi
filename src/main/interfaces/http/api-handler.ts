@@ -9,11 +9,17 @@ import type { ContinuityService } from "../../application/continuity/continuity-
 import type { LifeRuntimeService } from "../../application/lives/life-runtime-service.js";
 import type { LifeService } from "../../application/lives/life-service.js";
 import type { OperationsService } from "../../application/operations/operations-service.js";
+import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
+import type { JoiInboxService } from "../../application/joi/joi-inbox-service.js";
+import type { AvatarRegistryService } from "../../application/joi/avatar-registry-service.js";
+import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
+import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { SseService } from "../../application/sse/sse-service.js";
 import type { WakeCoordinator } from "../../application/wakes/wake-coordinator.js";
 import type { BudgetService } from "../../application/rhythm/budget-service.js";
 import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
 import type { ArtifactReadPort, UserAttachmentPort } from "../../application/ports/managed-file-ports.js";
+import type { WorkQuery } from "../../application/ports/work-orchestration.js";
 
 const SESSION_COOKIE = "digital_life_session";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -24,19 +30,27 @@ export interface ApiDependencies {
   agents: AgentService;
   attachments?: UserAttachmentPort;
   artifacts?: ArtifactReadPort;
+  avatarRegistry?: Pick<AvatarRegistryService, "create">;
+  avatars?: AvatarCatalog;
   auth: AuthService;
   budgets?: BudgetService;
   continuity?: ContinuityService;
   events?: EventService;
   globalEmergencyStop?: () => Promise<void>;
   interactions?: InteractionService;
+  joiInbox?: Pick<JoiInboxService, "accept" | "list">;
+  onJoiMessageAccepted?: (inputId: string) => void;
+  onModelSourceReady?: () => void;
   lives: LifeService;
   lifeRuntime?: LifeRuntimeService;
+  modelSources?: Pick<ModelSourceService, "create" | "delete" | "disable" | "hasReadySource" | "list" | "setOrder" | "update" | "validate">;
   operations: OperationsService;
+  partners?: Pick<PartnerRegistryService, "add" | "disable" | "list" | "update">;
   requestRestart?: () => void;
   sse: SseService;
   settings?: SystemSettingsPort;
   wakeCoordinator?: WakeCoordinator;
+  work?: WorkQuery;
 }
 
 function onboardingService(dependencies: ApiDependencies): AgentOnboardingService {
@@ -77,6 +91,21 @@ function artifactService(dependencies: ApiDependencies): ArtifactReadPort {
 function attachmentService(dependencies: ApiDependencies): UserAttachmentPort {
   if (dependencies.attachments === undefined) throw new HttpError("attachment_service_unavailable", "Message attachment storage is unavailable.", 503);
   return dependencies.attachments;
+}
+
+function modelSourceService(dependencies: ApiDependencies): NonNullable<ApiDependencies["modelSources"]> {
+  if (dependencies.modelSources === undefined) throw new HttpError("model_source_runtime_unavailable", "Model source runtime is unavailable.", 503);
+  return dependencies.modelSources;
+}
+
+function joiInboxService(dependencies: ApiDependencies): NonNullable<ApiDependencies["joiInbox"]> {
+  if (dependencies.joiInbox === undefined) throw new HttpError("joi_runtime_unavailable", "joi runtime is unavailable.", 503);
+  return dependencies.joiInbox;
+}
+
+function partnerRegistryService(dependencies: ApiDependencies): NonNullable<ApiDependencies["partners"]> {
+  if (dependencies.partners === undefined) throw new HttpError("partner_registry_unavailable", "Partner registry is unavailable.", 503);
+  return dependencies.partners;
 }
 
 function artifactDisposition(filename: string, mode: "attachment" | "inline"): string {
@@ -393,6 +422,159 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       if (method === "GET" && pathname === "/api/v1/auth/sessions") {
         sendJson(response, 200, { items: await dependencies.auth.listSessions(sessionToken(request)) });
         return;
+      }
+      if (method === "GET" && pathname === "/api/v1/model-sources") {
+        sendJson(response, 200, { items: await modelSourceService(dependencies).list() });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/joi") {
+        const configured = await modelSourceService(dependencies).hasReadySource();
+        sendJson(response, 200, {
+          avatars: dependencies.avatars === undefined ? [] : await dependencies.avatars.listSummaries(),
+          modelSources: await modelSourceService(dependencies).list(),
+          partners: dependencies.partners === undefined ? [] : await dependencies.partners.list(),
+          runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" },
+          work: dependencies.work === undefined ? [] : await dependencies.work.listActive(),
+        });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/joi/runtime") {
+        const configured = await modelSourceService(dependencies).hasReadySource();
+        sendJson(response, 200, { configured, status: configured ? "READY" : "NOT_CONFIGURED" });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/joi/messages") {
+        sendJson(response, 200, { items: await joiInboxService(dependencies).list() });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/partners") {
+        sendJson(response, 200, { items: await partnerRegistryService(dependencies).list() });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/avatars") {
+        if (dependencies.avatars === undefined) throw new HttpError("avatar_catalog_unavailable", "Avatar catalog is unavailable.", 503);
+        sendJson(response, 200, { items: await dependencies.avatars.listSummaries() });
+        return;
+      }
+      if (method === "POST" && pathname === "/api/v1/avatars") {
+        await verifyWrite(dependencies, request);
+        if (dependencies.avatarRegistry === undefined) throw new HttpError("avatar_registry_unavailable", "Avatar registry is unavailable.", 503);
+        const body = await readJson(request);
+        const avatar = await dependencies.avatarRegistry.create({
+          name: stringField(body, "name"),
+          personaSummary: stringField(body, "personaSummary"),
+          projectLabel: stringField(body, "projectLabel"),
+          scopeSummary: stringField(body, "scopeSummary"),
+        });
+        sendJson(response, 201, {
+          avatarId: avatar.avatarId,
+          name: avatar.profile.name,
+          scopeSummary: avatar.profile.scopeSummary,
+          updatedAt: avatar.updatedAt,
+        });
+        return;
+      }
+      if (method === "POST" && pathname === "/api/v1/partners") {
+        await verifyWrite(dependencies, request);
+        const body = await readJson(request);
+        const kind = stringField(body, "kind");
+        if (kind !== "local-pi" && kind !== "a2a") throw new HttpError("partner_kind_invalid", "Partner kind is invalid.", 400);
+        sendJson(response, 201, await partnerRegistryService(dependencies).add({
+          capabilities: optionalStringArray(body, "capabilities") ?? [],
+          displayName: stringField(body, "displayName"),
+          kind,
+          skills: optionalStringArray(body, "skills") ?? [],
+          tools: optionalStringArray(body, "tools") ?? [],
+          ...(typeof body.promptRef === "string" ? { promptRef: body.promptRef } : {}),
+          ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
+        }));
+        return;
+      }
+      const partnerMatch = /^\/api\/v1\/partners\/([^/]+)$/.exec(pathname);
+      if (partnerMatch !== null && method === "PATCH") {
+        await verifyWrite(dependencies, request);
+        const partnerId = decodeURIComponent(partnerMatch[1] ?? "");
+        const body = await readJson(request);
+        const result = body.disabled === true
+          ? await partnerRegistryService(dependencies).disable(partnerId)
+          : await partnerRegistryService(dependencies).update(partnerId, {
+            capabilities: optionalStringArray(body, "capabilities") ?? [],
+            displayName: stringField(body, "displayName"),
+            skills: optionalStringArray(body, "skills") ?? [],
+            tools: optionalStringArray(body, "tools") ?? [],
+            ...(typeof body.promptRef === "string" ? { promptRef: body.promptRef } : {}),
+            ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
+          });
+        sendJson(response, 200, result);
+        return;
+      }
+      if (method === "POST" && pathname === "/api/v1/joi/messages") {
+        await verifyWrite(dependencies, request);
+        const idempotencyKey = request.headers["idempotency-key"];
+        if (typeof idempotencyKey !== "string") throw new HttpError("idempotency_key_required", "Idempotency-Key is required.", 400);
+        const accepted = await joiInboxService(dependencies).accept({
+          idempotencyKey,
+          text: stringField(await readJson(request), "text"),
+        });
+        sendJson(response, 202, accepted);
+        dependencies.onJoiMessageAccepted?.(accepted.inputId);
+        return;
+      }
+      if (method === "POST" && pathname === "/api/v1/model-sources") {
+        await verifyWrite(dependencies, request);
+        const body = await readJson(request);
+        const kind = stringField(body, "kind");
+        if (!["kimi", "glm", "qwen", "doubao", "minimax", "deepseek", "generic-openai"].includes(kind)) {
+          throw new HttpError("model_source_kind_invalid", "Model source kind is invalid.", 400);
+        }
+        const source = await modelSourceService(dependencies).create({
+          apiKey: stringField(body, "apiKey"),
+          kind: kind as Parameters<ModelSourceService["create"]>[0]["kind"],
+          ...(typeof body.baseUrl === "string" ? { baseUrl: body.baseUrl } : {}),
+          ...(typeof body.displayName === "string" ? { displayName: body.displayName } : {}),
+          ...(typeof body.modelId === "string" ? { modelId: body.modelId } : {}),
+        });
+        sendJson(response, 201, source);
+        return;
+      }
+      if (method === "PUT" && pathname === "/api/v1/model-sources/order") {
+        await verifyWrite(dependencies, request);
+        const sourceIds = optionalStringArray(await readJson(request), "sourceIds");
+        if (sourceIds === undefined) throw new HttpError("request_field_invalid", "sourceIds is required.", 400);
+        sendJson(response, 200, { items: await modelSourceService(dependencies).setOrder(sourceIds) });
+        return;
+      }
+      const modelSourceValidateMatch = /^\/api\/v1\/model-sources\/([^/]+)\/validate$/.exec(pathname);
+      if (method === "POST" && modelSourceValidateMatch !== null) {
+        await verifyWrite(dependencies, request);
+        const validated = await modelSourceService(dependencies).validate(decodeURIComponent(modelSourceValidateMatch[1] ?? ""));
+        sendJson(response, 200, validated);
+        if (validated.status === "READY") dependencies.onModelSourceReady?.();
+        return;
+      }
+      const modelSourceMatch = /^\/api\/v1\/model-sources\/([^/]+)$/.exec(pathname);
+      if (modelSourceMatch !== null) {
+        const sourceId = decodeURIComponent(modelSourceMatch[1] ?? "");
+        if (method === "PATCH") {
+          await verifyWrite(dependencies, request);
+          const body = await readJson(request);
+          const source = body.disabled === true
+            ? await modelSourceService(dependencies).disable(sourceId)
+            : await modelSourceService(dependencies).update(sourceId, {
+              ...(typeof body.apiKey === "string" ? { apiKey: body.apiKey } : {}),
+              ...(typeof body.baseUrl === "string" ? { baseUrl: body.baseUrl } : {}),
+              ...(typeof body.displayName === "string" ? { displayName: body.displayName } : {}),
+              ...(typeof body.modelId === "string" ? { modelId: body.modelId } : {}),
+            });
+          sendJson(response, 200, source);
+          return;
+        }
+        if (method === "DELETE") {
+          await verifyWrite(dependencies, request);
+          await modelSourceService(dependencies).delete(sourceId);
+          sendEmpty(response, 204);
+          return;
+        }
       }
       if (method === "POST" && pathname === "/api/v1/auth/logout") {
         await verifyWrite(dependencies, request);

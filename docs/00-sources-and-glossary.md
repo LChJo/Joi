@@ -1,5 +1,20 @@
 # 来源、事实基线与术语
 
+## 0. JOI-01 术语优先级
+
+本文件以唯一全局 joi、Pi、Avatar、Partner 和 Work 为目标术语。后文既有 Life/Wake/主 Agent 术语只描述兼容存储和历史协议；发生冲突时，本节与 ADR 0002/0003 优先。
+
+| 术语 | 目标定义 |
+|------|----------|
+| **唯一全局 joi** | 用户唯一入口、唯一 system policy 与唯一调度权威；通过 Pi 选择 Avatar、规划、派发、并发、等待和改派。 |
+| **Pi** | joi 的唯一主推理基座；SDK 只由 infrastructure adapter 使用，不直接拥有数据库、shell 或任意文件工具。 |
+| **Avatar** | 一个人格/工程领域的持久上下文投影，只拥有 profile、project reference、memory namespace 与 task context。 |
+| **Partner / 搭档** | 实际执行工作的本机 Pi 或远端 A2A 能力；旧 Life 主 Agent 迁移为对应 Avatar 的首选搭档。 |
+| **Work** | 绑定恰好一个 `avatarId` 的工作项，可形成 DAG，并受容量、预算、breaker 与 workspace lease 约束。 |
+| **Model Source** | Pi 的版本化模型连接；每个 Turn 固定 source/model revision，一个主源加用户排序备用源。 |
+
+Avatar 不是 Agent，不保存执行状态机，也不产生独立 scheduler。新代码、API、DTO、事件和工具使用 `Avatar/avatarId/avatar.*`；`Life/lifeId/life.*` 仅允许存在于旧表、迁移、旧只读 API mapper 和历史 fixture。
+
 ## 1. 文档目的
 
 本页记录 joi 文档包依赖的来源、已经验证的 A2A 能力和统一术语。后续产品、架构、协议和验收文档都以本页为词义事实源。

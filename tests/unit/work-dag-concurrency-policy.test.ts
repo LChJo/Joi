@@ -1,0 +1,24 @@
+import {
+  buildWorkExecutionWaves,
+  createWorkItem,
+  type WorkDependency,
+} from "../../src/main/domain/work/work.js";
+
+describe("joi-work-dag-concurrency-policy", () => {
+  it("runs independent work concurrently and delays dependent work", () => {
+    const a = createWorkItem({ accessMode: "READ", avatarId: "avatar-1", createdAt: "2026-07-28T10:00:00.000Z", title: "研究 A", workId: "a", workspaceRef: "workspace-1" });
+    const b = createWorkItem({ accessMode: "READ", avatarId: "avatar-1", createdAt: "2026-07-28T10:00:00.000Z", title: "研究 B", workId: "b", workspaceRef: "workspace-1" });
+    const c = createWorkItem({ accessMode: "WRITE", avatarId: "avatar-1", createdAt: "2026-07-28T10:00:00.000Z", title: "整合", workId: "c", workspaceRef: "workspace-1" });
+    const dependencies: WorkDependency[] = [{ dependsOnWorkId: "a", workId: "c" }, { dependsOnWorkId: "b", workId: "c" }];
+    expect(buildWorkExecutionWaves([a, b, c], dependencies)).toEqual([["a", "b"], ["c"]]);
+  });
+
+  it("serializes same-workspace writes and rejects cycles or cross-Avatar dependencies", () => {
+    const first = createWorkItem({ accessMode: "WRITE", avatarId: "avatar-1", createdAt: "2026-07-28T10:00:00.000Z", title: "写 A", workId: "a", workspaceRef: "workspace-1" });
+    const second = createWorkItem({ accessMode: "WRITE", avatarId: "avatar-1", createdAt: "2026-07-28T10:00:00.000Z", title: "写 B", workId: "b", workspaceRef: "workspace-1" });
+    expect(buildWorkExecutionWaves([first, second], [])).toEqual([["a"], ["b"]]);
+    expect(() => buildWorkExecutionWaves([first, second], [{ dependsOnWorkId: "b", workId: "a" }, { dependsOnWorkId: "a", workId: "b" }])).toThrow(/cycle/iu);
+    const other = createWorkItem({ accessMode: "READ", avatarId: "avatar-2", createdAt: "2026-07-28T10:00:00.000Z", title: "另一个上下文", workId: "other" });
+    expect(() => buildWorkExecutionWaves([first, other], [{ dependsOnWorkId: "other", workId: "a" }])).toThrow(/Avatar/iu);
+  });
+});

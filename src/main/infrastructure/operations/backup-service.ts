@@ -124,6 +124,15 @@ export class BackupService {
     try {
       const databasePath = path.join(temporary, "runtime.sqlite");
       await this.dependencies.database.backupTo(databasePath);
+      const sanitizedDatabase = new DatabaseSync(databasePath);
+      try {
+        const hasModelCredentials = sanitizedDatabase.prepare(
+          "SELECT 1 AS present FROM sqlite_master WHERE type = 'table' AND name = 'model_source_credentials'",
+        ).get() !== undefined;
+        if (hasModelCredentials) sanitizedDatabase.prepare("UPDATE model_source_credentials SET encrypted_blob = X''").run();
+      } finally {
+        sanitizedDatabase.close();
+      }
       const artifactTarget = path.join(temporary, "artifacts");
       await mkdir(artifactTarget, { recursive: true });
       await cp(this.dependencies.artifactsDirectory, artifactTarget, { recursive: true, force: false, errorOnExist: true }).catch((error: unknown) => {

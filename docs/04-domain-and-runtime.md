@@ -1,5 +1,15 @@
 # 领域模型与运行时
 
+## 0. JOI-01 Avatar 与工作运行时
+
+唯一全局 joi 负责决策，Avatar 负责上下文，Partner 负责执行，Work 负责生命周期。Avatar 不是 Agent，也不是 scheduler。
+
+`Avatar` aggregate 仅直接拥有 `AvatarProfile`、`AvatarProjectContext`、`AvatarMemoryNamespace` 与 `AvatarTaskContext`。budget、schedule、rhythm、partner policy、Pi thread 和 work execution 都是按 `avatarId` 关联的独立事实。任何 work item 必须恰好绑定一个 `avatarId`；跨 Avatar 检索和操作默认拒绝。
+
+输入先写全局 inbox，再由 Pi 选择 `select | create | suggest_merge | suggest_archive | clarify`。非法结构化决策只修复一次；再次失败进入澄清或安全串行降级。merge/archive 只生成建议，必须经用户确认。
+
+下文 Life/Wake 状态机继续定义旧数据兼容和恢复不变量；新运行时不得把它复制为第二条可产生副作用的调度链。
+
 ## 1. 运行时不变量
 
 1. Life 的连续性由本地持久状态建立，不由任何单个 A2A context 建立。

@@ -1,5 +1,19 @@
 # 系统架构
 
+## 0. JOI-01 目标架构
+
+系统只有一个唯一全局 joi identity、system policy 与 scheduler，即唯一调度权威。Pi routing turn 只读取 Avatar 摘要；选定后 execution turn 只装配对应 Avatar 的 persona、工程引用、任务投影、记忆与相关搭档。不同 Avatar 可拥有独立 thread 并并发工作，但不能拥有独立调度器。
+
+```text
+首页输入 -> durable joi inbox -> Pi routing -> Avatar context projection
+         -> Work DAG -> policy gate -> outbox -> Local Pi / A2A Partner
+         <- Avatar-scoped events <- result / failure / input / auth / artifact
+```
+
+分层保持不变：domain 为纯 TypeScript；application 编排 ports；infrastructure 实现 Pi、SQLite、safeStorage 与 A2A；interfaces 只映射 HTTP/SSE；renderer 只使用 shared DTO 和 `/api/v1`。Pi SDK 只能进入 `src/main/infrastructure/pi` 或 composition root。
+
+现有 Life/Wake 链只作为迁移期兼容消费者。切换时必须 stop-old-before-start-new；shadow 比对不得写 outbox、派发或正式表达。
+
 ## 1. 架构目标
 
 系统必须同时满足四个条件：桌面进程常驻、局域网浏览器可访问、生命状态可恢复、A2A Agents 可替换。架构因此采用“桌面 Runtime Hub + 同构 Web UI + 事件驱动内核”，而不是浏览器直连 Agents。

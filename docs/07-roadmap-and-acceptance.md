@@ -1,5 +1,13 @@
 # 路线图与验收
 
+## 0. JOI-01 实施路线
+
+JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1 Pi 与 provider contract；W2 Model Source/Avatar/Partner 领域及迁移；W3 首次连接、inbox 与最小首页闭环；W4 Work DAG/并发/outbox；W5 Local Pi/A2A 搭档；W6 唯一首页与次级管理 UI；W7 兼容切换、安全与发布验证。
+
+纵向里程碑为 M1=W0-W3、M2=W4-W5、M3=W6-W7。底层组件完成不能替代“首页输入 -> Avatar 归属 -> Pi -> 派发/结果”的可演示闭环。AC-01 至 AC-30 的唯一追踪矩阵位于 `docs/10-requirements-traceability.md`。
+
+旧 M0-M7 记录保留为现有 Life/Wake 运行时的已验证基线和可复用能力，不代表 JOI-01 已完成。
+
 ## 1. 当前状态
 
 | 阶段             | 状态   | 产物                          |

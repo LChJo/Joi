@@ -1,5 +1,42 @@
 # README 实现追踪矩阵
 
+## JOI-01 验收追踪（目标架构）
+
+| AC | 目标 | 当前证据 |
+|----|------|----------|
+| AC-01 | 首页唯一 joi 输入 | 待 JOI-01 实施 |
+| AC-02 | 输入先持久化、300 ms accepted、可恢复 | 待 JOI-01 实施 |
+| AC-03 | 自动 Avatar 归属与隔离 | 待 JOI-01 实施 |
+| AC-04 | Life 无损映射、主 Agent 降级首选搭档 | ADR 0003；实现待验收 |
+| AC-05 | Pi stream/tool/queue/abort/compaction/session restore | 待 JOI-01 实施 |
+| AC-06 | joi 无任意执行工具 | ADR 0002；实现待验收 |
+| AC-07 | Partner registry/revision 后派发 | 待 JOI-01 实施 |
+| AC-08 | Local Pi/A2A 统一且敏感字段脱敏 | 待 JOI-01 实施 |
+| AC-09 | Work DAG 与确定性并发硬边界 | 待 JOI-01 实施 |
+| AC-10 | 连续输入在 Turn 边界安排 | 待 JOI-01 实施 |
+| AC-11 | Partner 结果先成为 Avatar event | 待 JOI-01 实施 |
+| AC-12 | outbox 与稳定幂等 | 旧 outbox 可复用；新链待验收 |
+| AC-13 | Pi 凭据只进 safeStorage | 待 JOI-01 实施 |
+| AC-14 | 无第三方 Pi Packages | ADR 0002；包内容待验收 |
+| AC-15 | 旧 Life 只读兼容、新契约 Avatar | ADR 0003；实现待验收 |
+| AC-16 | 单 scheduler、Avatar thread 隔离 | ADR 0002；实现待验收 |
+| AC-17 | 决策只修复一次，破坏操作需确认 | 待 JOI-01 实施 |
+| AC-18 | 复用 gateway/breaker/capacity/vault/SSE | 架构已决定；实现待验收 |
+| AC-19 | Pi 门禁与既有 HTTP 安全 | 待 JOI-01 实施 |
+| AC-20 | Card 本地优先与在途删除策略 | 待 JOI-01 实施 |
+| AC-21 | Avatar 只拥有上下文 | ADR 0002/0003；实现待验收 |
+| AC-22 | 新代码无 Life 词汇泄漏 | 待 boundary scan |
+| AC-23 | 首次精确文案与 7 个入口 | UX 规格；实现待验收 |
+| AC-24 | 固定 endpoint 与通用 URL 网络策略 | 安全规格；实现待验收 |
+| AC-25 | 多来源、主备顺序、revision/credential 边界 | 待 JOI-01 实施 |
+| AC-26 | 版本化模型 preset 与自定义模型 fail closed | 待 JOI-01 实施 |
+| AC-27 | 首次验证和 composer 门禁 | 待 JOI-01 实施 |
+| AC-28 | 确定性 fallback 分类 | 待 JOI-01 实施 |
+| AC-29 | Turn 固定 revision 与安全切源 | 待 JOI-01 实施 |
+| AC-30 | 来源 CRUD/排序/重启恢复与历史不漂移 | 待 JOI-01 实施 |
+
+本表随 RED→GREEN 证据更新；“旧基线可复用”不等于目标 AC 已完成。
+
 日期：2026-07-16
 事实源：`README.md`、`01-product-requirements.md`、`02-ux-specification.md`、`07-roadmap-and-acceptance.md`
 

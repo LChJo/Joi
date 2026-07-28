@@ -48,7 +48,7 @@ describe("joi product voice", () => {
     const { container } = render(<LifeHome agents={[]} lives={[]} onCreate={vi.fn()} onOpen={vi.fn()} />);
 
     expect(screen.getByText("你好，joi 在这里")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "你的生命，joi 帮你照顾" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "你的智能体，joi 帮你照顾" })).toBeInTheDocument();
     expect(screen.getByText(/joi 需要先连一位能帮它思考和行动的搭档/)).toBeInTheDocument();
     expect(container).not.toHaveTextContent(/readiness|Agent|Wake|A2A|调用|唤醒/);
   });
