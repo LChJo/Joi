@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -61,6 +61,38 @@ describe("scenarios HTTP API", () => {
       const skillScenario = secondItems.find((item) => item.source === "skill");
       expect(skillScenario).toMatchObject({ id: "skill:claude-code/demo-skill", source: "skill", title: "演示技能" });
       expect(skillScenario?.prompt).toContain("演示技能");
+    } finally {
+      await session.close();
+      if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;
+      if (previousCodex === undefined) delete process.env.JOI_CODEX_SKILLS_DIR; else process.env.JOI_CODEX_SKILLS_DIR = previousCodex;
+      if (previousAgents === undefined) delete process.env.JOI_AGENTS_SKILLS_DIR; else process.env.JOI_AGENTS_SKILLS_DIR = previousAgents;
+    }
+  });
+
+  it("caps the skill-derived scenarios at the six most recent skills", async () => {
+    const claudeDir = mkdtempSync(join(tmpdir(), "joi-scenario-cap-"));
+    const emptyCodex = mkdtempSync(join(tmpdir(), "joi-scenario-cap-codex-"));
+    const emptyAgents = mkdtempSync(join(tmpdir(), "joi-scenario-cap-agents-"));
+    const previousAgents = process.env.JOI_AGENTS_SKILLS_DIR;
+    const previousClaude = process.env.JOI_CLAUDE_SKILLS_DIR;
+    const previousCodex = process.env.JOI_CODEX_SKILLS_DIR;
+    process.env.JOI_CLAUDE_SKILLS_DIR = claudeDir;
+    process.env.JOI_CODEX_SKILLS_DIR = emptyCodex;
+    process.env.JOI_AGENTS_SKILLS_DIR = emptyAgents;
+    const session = await createSession();
+    try {
+      for (let index = 1; index <= 7; index += 1) {
+        const dir = join(claudeDir, `skill-${String(index)}`);
+        mkdirSync(dir, { recursive: true });
+        writeFileSync(join(dir, "SKILL.md"), `---\nname: skill-${String(index)}\ndisplay_name: 技能 ${String(index)}\n---\n# 技能 ${String(index)}\nbody\n`);
+        utimesSync(dir, new Date(1_000_000 + index * 1_000), new Date(1_000_000 + index * 1_000));
+      }
+      const response = await fetch(`${session.url}/api/v1/scenarios`, { headers: session.headers });
+      const items = (await response.json() as { items: ScenarioDto[] }).items;
+      const skillItems = items.filter((item) => item.source === "skill");
+      expect(skillItems).toHaveLength(6);
+      expect(skillItems.some((item) => item.title === "技能 7")).toBe(true);
+      expect(skillItems.some((item) => item.title === "技能 1")).toBe(false);
     } finally {
       await session.close();
       if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;

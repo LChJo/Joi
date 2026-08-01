@@ -369,4 +369,41 @@ describe("partner page", () => {
     fireEvent.click(screen.getByRole("button", { name: "管理大模型网络" }));
     expect(manage).toHaveBeenCalledOnce();
   });
+
+  it("sends a chosen scenario preset to joi from the scenarios tab", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, []);
+    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
+      { blurb: "组建审查团队", id: "review-code", prompt: "审查场景提示词", source: "builtin", title: "审查一段代码" },
+    ] });
+    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "input-s", status: "PENDING" });
+    const nav = vi.fn();
+    render(<PartnerPage api={api} onNavigate={nav} onTabChange={() => undefined} tab="scenarios" />);
+    fireEvent.click(await screen.findByRole("button", { name: /审查一段代码/u }));
+    await waitFor(() => expect(send).toHaveBeenCalledWith("审查场景提示词"));
+    expect(nav).toHaveBeenCalledWith("joi");
+  });
+
+  it("switches between the scenarios and partners tabs", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [coder]);
+    const setTab = vi.fn();
+    render(<PartnerPage api={api} onTabChange={setTab} tab="partners" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "场景预设" }));
+    expect(setTab).toHaveBeenCalledWith("scenarios");
+    fireEvent.click(screen.getByRole("tab", { name: "搭档目录" }));
+    expect(setTab).toHaveBeenCalledWith("partners");
+  });
+
+  it("reports a failure when sending a scenario preset fails", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, []);
+    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
+      { blurb: "组建诊断团队", id: "diagnose-bug", prompt: "诊断场景提示词", source: "builtin", title: "诊断一个 Bug" },
+    ] });
+    vi.spyOn(api, "sendJoiMessage").mockRejectedValue(new ApiError("offline", "发送失败", 503));
+    render(<PartnerPage api={api} onNavigate={vi.fn()} onTabChange={() => undefined} tab="scenarios" />);
+    fireEvent.click(await screen.findByRole("button", { name: /诊断一个 Bug/u }));
+    expect(await screen.findByText("场景没发送成功，请重试。")).toBeInTheDocument();
+  });
 });

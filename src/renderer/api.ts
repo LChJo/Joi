@@ -87,6 +87,15 @@ export class DigitalLifeApi {
       body: { text, ...(attachmentIds.length === 0 ? {} : { attachmentIds }) }, idempotencyKey: crypto.randomUUID(), method: "POST",
     });
   }
+  clarifyJoiMessage(inputId: string, resolution: { avatarId?: string; text?: string }) {
+    return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/clarify`, {
+      body: {
+        ...(resolution.avatarId === undefined ? {} : { avatarId: resolution.avatarId }),
+        ...(resolution.text === undefined ? {} : { text: resolution.text }),
+      },
+      method: "POST",
+    });
+  }
   async uploadJoiAttachment(file: File) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = "";

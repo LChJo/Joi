@@ -4,6 +4,7 @@ export interface JoiInboxRecord {
   attachmentIds?: string[];
   avatarId?: string;
   body: string;
+  clarificationReasonCode?: string;
   createdAt: string;
   idempotencyKey: string;
   inputId: string;
@@ -12,6 +13,7 @@ export interface JoiInboxRecord {
 }
 
 export interface JoiInboxRepository {
+  clarify(inputId: string, patch: { avatarId?: string; text?: string }): Promise<JoiInboxRecord | null>;
   create(record: JoiInboxRecord): Promise<JoiInboxRecord>;
   list(): Promise<JoiInboxRecord[]>;
 }

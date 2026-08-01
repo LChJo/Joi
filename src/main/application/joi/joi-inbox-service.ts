@@ -31,13 +31,43 @@ export class JoiInboxService {
   async list(): Promise<JoiAcceptedMessageDto[]> {
     return (await this.dependencies.repository.list()).map(toDto);
   }
+
+  async clarify(input: { avatarId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
+    const inputId = input.inputId.trim();
+    if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
+    const avatarId = typeof input.avatarId === "string" ? input.avatarId.trim() : "";
+    const text = typeof input.text === "string" ? input.text.trim() : "";
+    const cleanAvatar = avatarId.length === 0 ? undefined : avatarId;
+    const cleanText = text.length === 0 ? undefined : text;
+    if (cleanAvatar === undefined && cleanText === undefined) {
+      throw new DomainError("joi_clarification_empty", "Provide an avatar or supplementary text to continue.");
+    }
+    if (cleanAvatar !== undefined && cleanAvatar.length > 160) throw new DomainError("joi_avatar_invalid", "Avatar reference is invalid.");
+    if (cleanText !== undefined && cleanText.length > 8_000) throw new DomainError("joi_clarification_invalid", "Supplementary text is too long.");
+    const record = await this.dependencies.repository.clarify(inputId, {
+      ...(cleanAvatar === undefined ? {} : { avatarId: cleanAvatar }),
+      ...(cleanText === undefined ? {} : { text: cleanText }),
+    });
+    if (record === null) throw new DomainError("joi_clarification_unavailable", "This input is not awaiting clarification.");
+    return toDto(record);
+  }
+}
+
+function textPreviewOf(record: JoiInboxRecord): string | undefined {
+  if (record.inputId.startsWith("joi_result_input:") || record.inputId.startsWith("joi_signal_input:")) return undefined;
+  const collapsed = record.body.replace(/\s+/g, " ").trim();
+  if (collapsed.length === 0) return undefined;
+  return collapsed.length > 80 ? `${collapsed.slice(0, 80)}…` : collapsed;
 }
 
 function toDto(record: JoiInboxRecord): JoiAcceptedMessageDto {
+  const preview = textPreviewOf(record);
   return {
     acceptedAt: record.createdAt,
     ...(record.avatarId === undefined ? {} : { avatarId: record.avatarId }),
+    ...(record.clarificationReasonCode === undefined ? {} : { clarificationReasonCode: record.clarificationReasonCode }),
     inputId: record.inputId,
     status: record.status,
+    ...(preview === undefined ? {} : { textPreview: preview }),
   };
 }

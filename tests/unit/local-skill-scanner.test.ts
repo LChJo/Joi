@@ -35,9 +35,10 @@ describe("local skill scanner", () => {
     withSkillDirs(root, () => {
       const listed = scanner.listForEngine("claude-code");
       expect(listed).toHaveLength(2);
+      expect(listed.every((option) => typeof option.modifiedAt === "number")).toBe(true);
       expect(listed).toEqual(expect.arrayContaining([
-        { displayName: "Heading Only", id: "claude-code/titled-skill" },
-        { displayName: "我的技能", id: "claude-code/my-skill" },
+        expect.objectContaining({ displayName: "Heading Only", id: "claude-code/titled-skill" }),
+        expect.objectContaining({ displayName: "我的技能", id: "claude-code/my-skill" }),
       ]));
       expect(scanner.listForEngine("pi-core").map((option) => option.id)).toContain("claude-code/my-skill");
       expect(scanner.listForEngine("codex")).toEqual([]);

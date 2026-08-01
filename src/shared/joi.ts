@@ -176,8 +176,10 @@ export interface JoiSnapshotDto {
 export interface JoiAcceptedMessageDto {
   acceptedAt: string;
   avatarId?: string;
+  clarificationReasonCode?: string;
   inputId: string;
   status: "PENDING" | "CLARIFICATION_REQUIRED" | "ROUTED" | "CONSUMED";
+  textPreview?: string;
 }
 
 export interface JoiAttachmentDto {
@@ -207,44 +209,44 @@ export interface ScenarioDto {
 
 export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [
   {
-    blurb: "想法还模糊时，先把它说清楚再决定分工",
+    blurb: "组建一支能把模糊目标规划清楚的搭档团队",
     id: "plan-big-goal",
-    prompt: "我有个偏大的想法还没想清楚：……（在这里补充）。请先帮我把目标和边界问清楚，判断这件事要不要拆给几位搭档分工；如果其实很小，直接答我就好，不必建团队。",
+    prompt: "我想为『把一个模糊的大目标规划清楚』这类工作组建搭档团队。请判断需要哪几位本机搭档、各自的职责与默认提示词（行为化描述、含可独立验证的验收标准与明确的范围外），用 pi-core 引擎、必要时为它们挑选合适的 READY 模型源，然后用 partner.create 创建它们。本轮只组建团队，不必执行具体的规划任务。",
     source: "builtin",
     title: "规划一个大目标",
   },
   {
-    blurb: "确认验收标准后用测试驱动做出来",
+    blurb: "组建一支用测试驱动实现功能的搭档团队",
     id: "implement-feature",
-    prompt: "我想实现：……（补充功能与约束）。先和我确认验收标准，再安排搭档用测试驱动的方式实现，完成后给我一个可验证的结论。",
+    prompt: "我想为『用测试驱动的方式实现功能』这类工作组建搭档团队。请判断需要哪几位本机搭档、各自的职责与默认提示词（行为化描述、含可独立验证的验收标准与明确的范围外），用 pi-core 引擎、必要时为它们挑选合适的 READY 模型源，然后用 partner.create 创建它们。本轮只组建团队，不必动手实现功能。",
     source: "builtin",
     title: "实现一个功能",
   },
   {
-    blurb: "从正确性与可维护性分头看",
+    blurb: "组建一支覆盖多视角的代码审查搭档团队",
     id: "review-code",
-    prompt: "请审查：……（贴代码或给出路径）。安排搭档分别从正确性、可维护性两个角度看，各自给出带证据的发现，最后由你汇总成一个有主见的结论，别只是罗列。",
+    prompt: "我想为『代码审查』这类工作组建搭档团队，至少包含分别盯正确性与可维护性的两位搭档，并把相关的本机技能挂给它们。请为每位搭档写自包含的默认提示词（行为化描述、含可独立验证的验收标准与明确的范围外），用 pi-core 引擎、必要时挑选合适的 READY 模型源，然后用 partner.create 创建它们。本轮只组建团队，不必执行具体审查。",
     source: "builtin",
     title: "审查一段代码",
   },
   {
-    blurb: "先复现定位，再谈修复",
+    blurb: "组建一支能复现并诊断缺陷的搭档团队",
     id: "diagnose-bug",
-    prompt: "我遇到的问题是：……（补充现象与复现步骤）。先复现并定位根因，给出修复方案与影响面，先别直接改代码。",
+    prompt: "我想为『复现并诊断缺陷』这类工作组建搭档团队。请判断需要哪几位本机搭档、各自的职责与默认提示词（行为化描述、含可独立验证的验收标准与明确的范围外，强调先复现定位再谈修复），用 pi-core 引擎、必要时挑选合适的 READY 模型源，然后用 partner.create 创建它们。本轮只组建团队，不必直接改代码。",
     source: "builtin",
     title: "诊断一个 Bug",
   },
   {
-    blurb: "并行调研后汇总成结论",
+    blurb: "组建一支能并行调研并汇总的搭档团队",
     id: "research-brief",
-    prompt: "我想搞清楚：……（补充研究问题）。安排并行调研，各自给出带出处的结论，再由你汇总成一份简明综述和推荐。",
+    prompt: "我想为『并行调研后汇总结论』这类工作组建搭档团队，安排几位可并行调研、各持不同视角或来源的本机搭档。请为每位搭档写自包含的默认提示词（行为化描述、含可独立验证的验收标准与明确的范围外），用 pi-core 引擎、必要时挑选合适的 READY 模型源，然后用 partner.create 创建它们。本轮只组建团队，不必执行具体调研。",
     source: "builtin",
     title: "做一次研究综述",
   },
   {
-    blurb: "评估现状与目标再决定分头设计",
+    blurb: "组建一支能评估并改进架构的搭档团队",
     id: "improve-architecture",
-    prompt: "我想改进：……（补充模块或痛点）。先评估现状与目标差距，再决定是否需要多位搭档分头给出不同取向的设计，最后由你拍板一个方案。",
+    prompt: "我想为『评估并改进代码库架构』这类工作组建搭档团队，安排几位能给出不同设计取向的本机搭档。请为每位搭档写自包含的默认提示词（行为化描述、含可独立验证的验收标准与明确的范围外），用 pi-core 引擎、必要时挑选合适的 READY 模型源，然后用 partner.create 创建它们。本轮只组建团队，不必动手重构。",
     source: "builtin",
     title: "改进代码库架构",
   },

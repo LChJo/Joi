@@ -1,6 +1,6 @@
 import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto } from "../shared/joi";
+import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 type PartnerView = { mode: "grid" } | { mode: "editor"; partner: PartnerDto | null };
@@ -178,7 +178,17 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   </div>;
 }
 
-export function PartnerPage({ api, onManageProviders }: { api: DigitalLifeApi; onManageProviders?: () => void }) {
+function ScenarioGrid({ api, onPick }: { api: DigitalLifeApi; onPick: (scenario: ScenarioDto) => void }) {
+  const [scenarios, setScenarios] = useState<ScenarioDto[]>([]);
+  useEffect(() => {
+    const timer = setTimeout(() => void api.scenarios().then((page) => setScenarios(page.items)).catch(() => setScenarios([])), 0);
+    return () => clearTimeout(timer);
+  }, [api]);
+  if (scenarios.length === 0) return <p className="field-hint">还没有可用的场景预设。</p>;
+  return <div className="scenario-group">{scenarios.map((scenario) => <button className="scenario-card" key={scenario.id} onClick={() => onPick(scenario)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>)}</div>;
+}
+
+export function PartnerPage({ api, onManageProviders, onNavigate, tab, onTabChange }: { api: DigitalLifeApi; onManageProviders?: () => void; onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void; tab?: "partners" | "scenarios"; onTabChange?: (tab: "partners" | "scenarios") => void }) {
   const [partners, setPartners] = useState<PartnerDto[]>([]);
   const [sources, setSources] = useState<ModelSourceDto[]>([]);
   const [engineStatuses, setEngineStatuses] = useState<Record<string, EngineStatus>>({});
@@ -206,27 +216,43 @@ export function PartnerPage({ api, onManageProviders }: { api: DigitalLifeApi; o
       setView(target === undefined ? { mode: "grid" } : { mode: "editor", partner: target });
     }).catch(() => setView({ mode: "grid" }));
   };
+  const currentTab = tab ?? "partners";
+  const pickScenario = (scenario: ScenarioDto) => {
+    setNotice(null);
+    void api.sendJoiMessage(scenario.prompt)
+      .then(() => { setNotice(`已把「${scenario.title}」交给 joi，正在组建团队…`); onNavigate?.("joi"); })
+      .catch(() => setNotice("场景没发送成功，请重试。"));
+  };
   if (view.mode === "editor") {
     return <section className="partner-manager page-section">
       <PartnerEditor api={api} engineStatuses={engineStatuses} onDone={finishEdit} {...(onManageProviders === undefined ? {} : { onManageProviders })} partner={view.partner} sources={sources} />
     </section>;
   }
   return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>先登记描述、提示词、知识库和工作路径，joi 会按目标把活派给合适的搭档。</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">添加搭档</button></header>
+    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>用场景预设一键组建团队，或手动登记搭档的描述、提示词、知识库和工作路径。</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">添加搭档</button></header>
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
-    {partners.length === 0 ? <div className="plain-empty"><h2>还没有搭档</h2><p>先建立 2-3 个工作搭档（本机或远端 A2A），joi 才能把你的想法派出去。</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">添加第一个搭档</button></div> : null}
-    {partners.length > 0 && partners.length < 2 ? <p className="inline-notice warning">建议先建立 2-3 个工作搭档，joi 才有得挑、有得换。</p> : null}
-    <div className="partner-grid">{partners.map((partner) => <article className="partner-card" key={partner.partnerId}>
-      <div className="partner-card-head"><strong>{partner.displayName}</strong>{partner.createdBy === "joi" ? <span className="badge-joi">joi 创建</span> : null}<span className="engine-badge">{partner.kind === "local-pi" ? "本机" : "远端 A2A"} · {ENGINE_LABELS[partner.engine]}</span></div>
-      {partner.description === undefined ? <p className="partner-card-desc muted">还没有描述。补一句，joi 才知道什么时候该找它。</p> : <p className="partner-card-desc">{partner.description}</p>}
-      <small>{[...partner.skills, ...partner.capabilities].join(" · ") || "尚未声明能力"}{partner.knowledgeDocCount > 0 ? ` · ${String(partner.knowledgeDocCount)} 篇知识库` : ""}</small>
-      {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}
-      <div className="partner-card-actions">
-        <label className="switch"><input aria-label={`启用或停用 ${partner.displayName}`} checked={partner.status === "ACTIVE"} onChange={() => void api.setPartnerEnabled(partner.partnerId, partner.status !== "ACTIVE").then(() => load()).catch(() => setNotice("搭档状态没切成。"))} type="checkbox" /><span>{partner.status === "ACTIVE" ? "已启用" : "已停用"}</span></label>
-        <button className="button ghost" onClick={() => void api.duplicatePartner(partner.partnerId).then(() => load()).then(() => setNotice("已基于这个搭档复制出新搭档。")).catch(() => setNotice("搭档没能复制。"))} type="button">复制</button>
-        <button className="button ghost" onClick={() => { setNotice(null); setView({ mode: "editor", partner }); }} type="button">编辑</button>
-        {partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(() => load()).catch(() => setNotice("搭档还不能删除。"))} type="button">删除搭档</button> : null}
-      </div>
-    </article>)}</div>
+    <div className="tab-row" role="tablist">
+      <button aria-selected={currentTab === "scenarios"} className={currentTab === "scenarios" ? "selected" : ""} onClick={() => onTabChange?.("scenarios")} role="tab" type="button">场景预设</button>
+      <button aria-selected={currentTab === "partners"} className={currentTab === "partners" ? "selected" : ""} onClick={() => onTabChange?.("partners")} role="tab" type="button">搭档目录</button>
+    </div>
+    {currentTab === "scenarios" ? <>
+      <p className="field-hint">选一个场景，joi 会据此判断要创建哪几位搭档、各自职责与默认提示词，并挑选合适的模型源（引擎用 Pi core）。点击即交给 joi，无需补充。</p>
+      <ScenarioGrid api={api} onPick={pickScenario} />
+    </> : <>
+      {partners.length === 0 ? <div className="plain-empty"><h2>还没有搭档</h2><p>先建立 2-3 个工作搭档（本机或远端 A2A），joi 才能把你的想法派出去；也可以切到上方「场景预设」一键组建团队。</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">添加第一个搭档</button></div> : null}
+      {partners.length > 0 && partners.length < 2 ? <p className="inline-notice warning">建议先建立 2-3 个工作搭档，joi 才有得挑、有得换；也可切到「场景预设」一键组建。</p> : null}
+      <div className="partner-grid">{partners.map((partner) => <article className="partner-card" key={partner.partnerId}>
+        <div className="partner-card-head"><strong>{partner.displayName}</strong>{partner.createdBy === "joi" ? <span className="badge-joi">joi 创建</span> : null}<span className="engine-badge">{partner.kind === "local-pi" ? "本机" : "远端 A2A"} · {ENGINE_LABELS[partner.engine]}</span></div>
+        {partner.description === undefined ? <p className="partner-card-desc muted">还没有描述。补一句，joi 才知道什么时候该找它。</p> : <p className="partner-card-desc">{partner.description}</p>}
+        <small>{[...partner.skills, ...partner.capabilities].join(" · ") || "尚未声明能力"}{partner.knowledgeDocCount > 0 ? ` · ${String(partner.knowledgeDocCount)} 篇知识库` : ""}</small>
+        {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}
+        <div className="partner-card-actions">
+          <label className="switch"><input aria-label={`启用或停用 ${partner.displayName}`} checked={partner.status === "ACTIVE"} onChange={() => void api.setPartnerEnabled(partner.partnerId, partner.status !== "ACTIVE").then(() => load()).catch(() => setNotice("搭档状态没切成。"))} type="checkbox" /><span>{partner.status === "ACTIVE" ? "已启用" : "已停用"}</span></label>
+          <button className="button ghost" onClick={() => void api.duplicatePartner(partner.partnerId).then(() => load()).then(() => setNotice("已基于这个搭档复制出新搭档。")).catch(() => setNotice("搭档没能复制。"))} type="button">复制</button>
+          <button className="button ghost" onClick={() => { setNotice(null); setView({ mode: "editor", partner }); }} type="button">编辑</button>
+          {partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(() => load()).catch(() => setNotice("搭档还不能删除。"))} type="button">删除搭档</button> : null}
+        </div>
+      </article>)}</div>
+    </>}
   </section>;
 }

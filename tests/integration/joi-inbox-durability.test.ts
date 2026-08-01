@@ -8,15 +8,17 @@ import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/r
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("joi-message-durable-before-reasoning", () => {
-  it("accepts idempotently and restores pending input metadata after restart without exposing the body", async () => {
+  it("accepts idempotently and restores pending input metadata after restart without exposing the full body", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-inbox-"));
     const databasePath = path.join(root, "runtime.sqlite");
+    const secret = `only-stored-in-the-inbox-${"x".repeat(120)}`;
     let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
       let service = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository: new SqliteJoiInboxRepository(database) });
       await expect(service.accept({ idempotencyKey: "", text: "valid" })).rejects.toMatchObject({ code: "idempotency_key_invalid" });
       await expect(service.accept({ idempotencyKey: "valid", text: "   " })).rejects.toMatchObject({ code: "joi_message_invalid" });
-      const accepted = await service.accept({ idempotencyKey: "input-key-1", text: "only stored in the inbox" });
+      const accepted = await service.accept({ idempotencyKey: "input-key-1", text: secret });
+      expect(accepted.textPreview).toBe(`${secret.slice(0, 80)}…`);
       expect(await service.accept({ idempotencyKey: "input-key-1", text: "must not replace original" })).toEqual(accepted);
       database.close();
 
@@ -24,9 +26,9 @@ describe("joi-message-durable-before-reasoning", () => {
       service = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository: new SqliteJoiInboxRepository(database) });
       const pending = await service.list();
       expect(pending).toEqual([accepted]);
-      expect(JSON.stringify(pending)).not.toContain("only stored in the inbox");
+      expect(JSON.stringify(pending)).not.toContain(secret);
       expect(database.transaction((connection) => connection.prepare("SELECT body FROM joi_inbox_messages WHERE input_id = ?").get(accepted.inputId)))
-        .toEqual({ body: "only stored in the inbox" });
+        .toEqual({ body: secret });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

@@ -45,7 +45,7 @@ export interface ApiDependencies {
   events?: EventService;
   globalEmergencyStop?: () => Promise<void>;
   interactions?: InteractionService;
-  joiInbox?: Pick<JoiInboxService, "accept" | "list">;
+  joiInbox?: Pick<JoiInboxService, "accept" | "clarify" | "list">;
   joiActivity?: { listActivity(limit?: number): Promise<JoiActivityDto[]> };
   joiAttachments?: JoiAttachmentPort;
   engines?: Pick<PartnerEngineCatalog, "assertAvailable" | "list">;
@@ -546,13 +546,17 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         return;
       }
       if (method === "GET" && pathname === "/api/v1/scenarios") {
-        const skillScenarios = dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code").map((skill) => ({
-          blurb: "用本机已装技能开启一件事",
-          id: `skill:${skill.id}`,
-          prompt: `本机已装技能「${skill.displayName}」（${skill.id}）。我想围绕它做一件事：……（补充目标）。请先确认我的目标，再决定是否建一位搭档并把该技能挂给它。`,
-          source: "skill" as const,
-          title: skill.displayName,
-        }));
+        const skillScenarios = (dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code"))
+          .slice()
+          .sort((left, right) => (right.modifiedAt ?? 0) - (left.modifiedAt ?? 0))
+          .slice(0, 6)
+          .map((skill) => ({
+            blurb: skill.description === undefined ? "围绕这个能力组建搭档团队" : (skill.description.length > 48 ? `${skill.description.slice(0, 48)}…` : skill.description),
+            id: `skill:${skill.id}`,
+            prompt: `我想围绕能力「${skill.displayName}」（${skill.id}）组建能运用它的搭档团队：请创建合适的本机搭档并把该技能挂给它（pi-core 引擎，必要时挑选合适的 READY 模型源）；本轮只组建团队，不必执行具体任务。`,
+            source: "skill" as const,
+            title: skill.displayName,
+          }));
         sendJson(response, 200, { items: [...BUILTIN_SCENARIOS, ...skillScenarios] });
         return;
       }
@@ -708,6 +712,19 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         });
         sendJson(response, 202, accepted);
         dependencies.onJoiMessageAccepted?.(accepted.inputId);
+        return;
+      }
+      const joiClarifyMatch = /^\/api\/v1\/joi\/messages\/([^/]+)\/clarify$/.exec(pathname);
+      if (method === "POST" && joiClarifyMatch !== null) {
+        await verifyWrite(dependencies, request);
+        const body = await readJson(request);
+        const clarified = await joiInboxService(dependencies).clarify({
+          ...(typeof body.avatarId === "string" ? { avatarId: body.avatarId } : {}),
+          inputId: decodeURIComponent(joiClarifyMatch[1] ?? ""),
+          ...(typeof body.text === "string" ? { text: body.text } : {}),
+        });
+        sendJson(response, 202, clarified);
+        dependencies.onJoiMessageAccepted?.(clarified.inputId);
         return;
       }
       if (method === "POST" && pathname === "/api/v1/joi/attachments") {

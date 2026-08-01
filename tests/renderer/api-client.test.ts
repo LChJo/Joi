@@ -18,6 +18,8 @@ describe("renderer API client", () => {
     await api.logout(); await api.listSessions(); await api.logoutAllLan(); await api.changePassword("old password", "new password");
     await api.joiSnapshot(); await api.listAvatars(); await api.createAvatar({ name: "Avatar", personaSummary: "Persona", projectLabel: "Project", scopeSummary: "Scope" });
     await api.decideAvatarChange("change 1", "CONFIRM"); await api.listPartners(); await api.deletePartner("partner 1");
+    await api.listJoiMessages(); await api.listJoiActivity(); await api.sendJoiMessage("hi"); await api.sendJoiMessage("hi", ["attachment 1"]);
+    await api.clarifyJoiMessage("input 1", { avatarId: "av-1" }); await api.clarifyJoiMessage("input 1", { text: "more" }); await api.scenarios();
     await api.listLives(); await api.getLife("life 1"); await api.createLife({ name: "Life" }); await api.updateLife("life 1", { role: "R" });
     await api.archiveLife("life 1"); await api.getLifeDeletionImpact("life 1"); await api.changePrimaryAgent("life 1", "agent 2"); await api.deleteLife("life 1");
     await api.runtime("life 1", "pause"); await api.emergencyStopAll(); await api.sendMessage("life 1", "hello"); await api.sendMessage("life 1", "files", ["attachment 1"]); await api.listEvents("life 1"); await api.listExpressions("life 1"); await api.listActivity("life 1");
@@ -36,6 +38,9 @@ describe("renderer API client", () => {
     expect(fetchMock).toHaveBeenCalled();
     const write = fetchMock.mock.calls.find((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/auth/setup"));
     expect(write?.[1]?.headers).toMatchObject({ "content-type": "application/json", "x-csrf-token": "csrf" });
+    const clarifyCalls = fetchMock.mock.calls.filter((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/joi/messages/input%201/clarify"));
+    expect(clarifyCalls.map((call) => call[1]?.body)).toEqual(expect.arrayContaining([JSON.stringify({ avatarId: "av-1" }), JSON.stringify({ text: "more" })]));
+    expect(clarifyCalls.every((call) => call[1]?.method === "POST")).toBe(true);
     fetchMock.mockRestore();
   });
 

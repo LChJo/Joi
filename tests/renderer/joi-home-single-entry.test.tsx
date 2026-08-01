@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
-import type { JoiSnapshotDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import type { AvatarDto, JoiSnapshotDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const readySource: ModelSourceDto = {
   accessMode: "api",
@@ -28,6 +28,10 @@ function parentForm(element: HTMLElement): HTMLFormElement {
   const form = element.closest("form");
   if (!(form instanceof HTMLFormElement)) throw new Error("Expected a parent form.");
   return form;
+}
+
+function av(avatarId: string, name: string): AvatarDto {
+  return { avatarId, name, scopeSummary: "scope", updatedAt: "2026-01-01T00:00:00.000Z" };
 }
 
 describe("joi home single entry", () => {
@@ -212,30 +216,52 @@ describe("joi home single entry", () => {
     fireEvent.click(screen.getByRole("button", { name: "收起" }));
   });
 
-  it("renders persisted message stages, active work and all activity kinds without message bodies", async () => {
+  it("renders one merged information stream: human-readable, deduped, with previews and no legacy eyebrow", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({
       ...snapshot([readySource]),
       work: [{ avatarId: "avatar-1", status: "RUNNING", title: "整理迁移", workId: "work-1" }],
     });
     vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
-      { acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "pending", status: "PENDING" },
+      { acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "pending", status: "PENDING", textPreview: "研究一下登录改造" },
       { acceptedAt: "2026-07-28T10:00:01.000Z", inputId: "routed", status: "ROUTED" },
-      { acceptedAt: "2026-07-28T10:00:02.000Z", inputId: "consumed", status: "CONSUMED" },
-      { acceptedAt: "2026-07-28T10:00:03.000Z", inputId: "clarify", status: "CLARIFICATION_REQUIRED" },
+      { acceptedAt: "2026-07-28T10:00:02.000Z", inputId: "consumed", status: "CONSUMED", textPreview: "把备份流程补完" },
+      { acceptedAt: "2026-07-28T10:00:03.000Z", clarificationReasonCode: "avatar_selection_invalid", inputId: "clarify", status: "CLARIFICATION_REQUIRED", textPreview: "这条到底归谁" },
     ] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [
-      { activityId: "message", kind: "MESSAGE", occurredAt: "2026-07-28T10:00:00.000Z", status: "PENDING" },
-      { activityId: "turn", kind: "TURN", occurredAt: "2026-07-28T10:00:01.000Z", status: "RUNNING" },
-      { activityId: "work", kind: "WORK", occurredAt: "2026-07-28T10:00:02.000Z", status: "RUNNING", workId: "work-1" },
-      { activityId: "result", kind: "PARTNER_RESULT", occurredAt: "2026-07-28T10:00:03.000Z", status: "COMPLETED", workId: "work-1" },
+      { activityId: "message", kind: "MESSAGE", occurredAt: "2026-07-28T10:00:00.000Z", status: "COMPLETED" },
+      { activityId: "a-running", kind: "TURN", occurredAt: "2026-07-28T10:00:10.000Z", status: "RUNNING" },
+      { activityId: "a-completed", kind: "WORK", occurredAt: "2026-07-28T10:00:11.000Z", status: "COMPLETED" },
+      { activityId: "a-failed", kind: "PARTNER_RESULT", occurredAt: "2026-07-28T10:00:12.000Z", status: "FAILED" },
+      { activityId: "a-pending", kind: "TURN", occurredAt: "2026-07-28T10:00:13.000Z", status: "PENDING" },
+      { activityId: "a-clarify", kind: "WORK", occurredAt: "2026-07-28T10:00:14.000Z", status: "CLARIFICATION_REQUIRED" },
+      { activityId: "a-routed", kind: "PARTNER_RESULT", occurredAt: "2026-07-28T10:00:15.000Z", status: "ROUTED" },
+      { activityId: "a-consumed", kind: "TURN", occurredAt: "2026-07-28T10:00:16.000Z", status: "CONSUMED" },
+      { activityId: "a-ready", kind: "WORK", occurredAt: "2026-07-28T10:00:17.000Z", status: "READY" },
+      { activityId: "a-integrated", kind: "PARTNER_RESULT", occurredAt: "2026-07-28T10:00:18.000Z", status: "INTEGRATED" },
+      { activityId: "a-waiting", kind: "TURN", occurredAt: "2026-07-28T10:00:19.000Z", status: "WAITING" },
+      { activityId: "a-weird", kind: "WORK", occurredAt: "2026-07-28T10:00:20.000Z", status: "WEIRD" },
     ] });
 
     render(<JoiHome api={api} />);
-    expect(await screen.findByText("整理迁移")).toBeInTheDocument();
-    expect(await screen.findByText("输入已保存")).toBeInTheDocument();
-    for (const stage of ["joi 已归类", "工作已安排", "需要你确认"]) expect(screen.getByText(stage)).toBeInTheDocument();
-    for (const label of ["输入状态", "joi 正在思考", "工作状态", "搭档结果"]) expect(screen.getByText(label)).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
+    expect(screen.queryByText("唯一入口")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "工作状态" })).toBeInTheDocument();
+    expect(screen.getByText("整理迁移")).toBeInTheDocument();
+    expect(await screen.findByText("研究一下登录改造")).toBeInTheDocument();
+    expect(screen.getByText("把备份流程补完")).toBeInTheDocument();
+    expect(screen.getByText("这条到底归谁")).toBeInTheDocument();
+    for (const stage of ["输入已保存", "joi 已归类", "工作已安排", "需要你确认"]) expect(screen.getByText(stage)).toBeInTheDocument();
+    for (const note of ["joi 正在归类和安排", "joi 已派给搭档处理", "joi 已完成这轮归类和安排"]) expect(screen.getByText(note)).toBeInTheDocument();
+    for (const detail of ["进行中", "已完成", "失败", "等待中", "需补充", "已派发", "已处理", "已就绪", "已整合", "等待确认", "WEIRD"]) {
+      expect(screen.getByText(detail)).toBeInTheDocument();
+    }
+    for (const label of ["joi 正在思考", "工作进展", "搭档结果"]) expect(screen.queryAllByText(label).length).toBeGreaterThan(0);
+    expect(screen.queryByText("输入状态")).not.toBeInTheDocument();
+    expect(screen.queryByText("joi 动态")).not.toBeInTheDocument();
+    expect(screen.queryByText("CLARIFICATION_REQUIRED")).not.toBeInTheDocument();
+    expect(screen.queryByText("RUNNING")).not.toBeInTheDocument();
+    expect(screen.getByText(/还没有可选的 Avatar/u)).toBeInTheDocument();
   });
 
   it("binds uploaded files to one global joi input and ignores an empty submit", async () => {
@@ -271,7 +297,8 @@ describe("joi home single entry", () => {
     }];
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(thin);
     render(<JoiHome api={api} />);
-    expect(await screen.findByText(/建立 2-3 个工作搭档/u)).toBeInTheDocument();
+    expect(await screen.findByText(/场景预设一键组建团队/u)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "看场景预设" })).toBeInTheDocument();
   });
 
   it("hides the partner nudge once at least two partners exist", async () => {
@@ -286,24 +313,66 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(enough);
     render(<JoiHome api={api} />);
     expect(await screen.findByLabelText("给 joi 输入")).toBeInTheDocument();
-    expect(screen.queryByText(/建立 2-3 个工作搭档/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "看场景预设" })).not.toBeInTheDocument();
   });
 
-  it("prefills the composer from a scenario preset without auto-sending", async () => {
+  it("shows an actionable clarification message keyed by the reason code", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "avatar_selection_invalid", inputId: "clarify-1", status: "CLARIFICATION_REQUIRED" },
+      { acceptedAt: "2026-08-01T00:00:01.000Z", clarificationReasonCode: "avatar_creation_unavailable", inputId: "clarify-2", status: "CLARIFICATION_REQUIRED" },
+      { acceptedAt: "2026-08-01T00:00:02.000Z", clarificationReasonCode: "avatar_not_found", inputId: "clarify-3", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText(/没法定位这条输入属于哪个上下文/u)).toBeInTheDocument();
+    expect(screen.getByText(/想新建一个 Avatar 来承接/u)).toBeInTheDocument();
+    expect(screen.getByText(/指向的 Avatar 已不存在/u)).toBeInTheDocument();
+  });
+
+  it("offers scenario and partner-page exits from the thin-roster nudge", async () => {
+    const api = new DigitalLifeApi("");
+    const thin = snapshot([readySource]);
+    thin.partners = [];
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(thin);
     vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
-      { blurb: "先把它说清楚", id: "plan-big-goal", prompt: "规划提示词正文", source: "builtin", title: "规划一个大目标" },
-      { blurb: "本机技能起点", id: "skill:claude-code/demo", prompt: "技能提示词正文", source: "skill", title: "演示技能" },
+    const nav = vi.fn();
+    render(<JoiHome api={api} onNavigate={nav} />);
+    fireEvent.click(await screen.findByRole("button", { name: "看场景预设" }));
+    expect(nav).toHaveBeenCalledWith("agents", "scenarios");
+    fireEvent.click(screen.getByRole("button", { name: "去搭档页创建" }));
+    expect(nav).toHaveBeenCalledWith("agents", "partners");
+  });
+
+  it("resolves a clarification in place by picking an Avatar or supplementing it", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), avatars: [av("av-1", "前端搭档")] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "avatar_selection_invalid", inputId: "clarify-x", status: "CLARIFICATION_REQUIRED" },
     ] });
-    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "input-x", status: "PENDING" });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "clarify-x", status: "PENDING" });
     render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: /规划一个大目标/u }));
-    const composer = await screen.findByLabelText("给 joi 输入");
-    await waitFor(() => expect(composer).toHaveValue("规划提示词正文"));
-    expect(screen.getByText("来自本机技能")).toBeInTheDocument();
-    expect(send).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "前端搭档" }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("clarify-x", { avatarId: "av-1" }));
+    expect(await screen.findByText("已交给 joi，正在重新安排…")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("补充信息"), { target: { value: "其实是登录模块" } });
+    fireEvent.click(screen.getByRole("button", { name: "补充并继续" }));
+    await waitFor(() => expect(clarify).toHaveBeenLastCalledWith("clarify-x", { text: "其实是登录模块" }));
+  });
+
+  it("surfaces a clarification failure inline at the card", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), avatars: [av("av-1", "前端搭档")] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "avatar_not_found", inputId: "clarify-y", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    vi.spyOn(api, "clarifyJoiMessage").mockRejectedValue(new ApiError("gone", "这条已经处理过了", 400));
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "前端搭档" }));
+    expect(await screen.findByText("这条已经处理过了")).toBeInTheDocument();
   });
 });

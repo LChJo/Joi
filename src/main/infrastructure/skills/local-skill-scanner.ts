@@ -48,6 +48,17 @@ function parseDisplayName(content: string, folderName: string): string {
   return title ?? folderName;
 }
 
+function parseDescription(content: string): string | undefined {
+  const frontmatter = /^---\r?\n([\s\S]*?)\r?\n---/u.exec(content);
+  if (frontmatter === null) return undefined;
+  const body = frontmatter[1];
+  if (typeof body !== "string") return undefined;
+  const match = /^\s*description\s*:\s*(.+?)\s*$/mu.exec(body);
+  const value = match?.[1];
+  if (typeof value !== "string" || value === "") return undefined;
+  return stripQuotes(value);
+}
+
 function parseRef(ref: string): { name: string; source: SkillSource } | null {
   const slash = ref.indexOf("/");
   if (slash <= 0) return null;
@@ -69,20 +80,25 @@ function scanSource(source: SkillSource): PartnerSkillOption[] {
   }
   for (const entry of entries) {
     const entryPath = join(dir, entry);
+    let entryStat;
     try {
-      if (!statSync(entryPath).isDirectory()) continue;
+      entryStat = statSync(entryPath);
     } catch {
       continue;
     }
+    if (!entryStat.isDirectory()) continue;
     const skillMd = join(entryPath, "SKILL.md");
     if (!existsSync(skillMd)) continue;
     let displayName = entry;
+    let description: string | undefined;
     try {
-      displayName = parseDisplayName(readFileSync(skillMd, "utf8"), entry);
+      const content = readFileSync(skillMd, "utf8");
+      displayName = parseDisplayName(content, entry);
+      description = parseDescription(content);
     } catch {
       /* unreadable skill file: keep the folder name */
     }
-    options.push({ displayName, id: `${source}/${entry}` });
+    options.push({ ...(description === undefined ? {} : { description }), displayName, id: `${source}/${entry}`, modifiedAt: entryStat.mtimeMs });
   }
   return options;
 }

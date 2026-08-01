@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type ScenarioDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
@@ -194,14 +194,46 @@ export function AvatarManager({ api }: { api: DigitalLifeApi }) {
   </section>;
 }
 
-function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnapshotDto }) {
+function ClarificationActions({ api, avatars, inputId, onResolved, reasonCode }: {
+  api: DigitalLifeApi; avatars: AvatarDto[]; inputId: string; onResolved: () => void; reasonCode: string | undefined;
+}) {
+  const [draft, setDraft] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const resolve = async (resolution: { avatarId?: string; text?: string }) => {
+    setBusy(true); setNotice(null);
+    try {
+      await api.clarifyJoiMessage(inputId, resolution);
+      setNotice("已交给 joi，正在重新安排…");
+      setDraft("");
+      onResolved();
+    } catch (error) {
+      setNotice(error instanceof ApiError ? error.message : "没能交给 joi，请重试。");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const submitDraft = () => { void resolve({ text: draft.trim() }); };
+  return <div className="joi-clarify">
+    <p className="joi-clarify-reason">{clarificationText(reasonCode)}</p>
+    {avatars.length === 0
+      ? <p className="joi-clarify-hint">还没有可选的 Avatar；先补充细节，或到「Avatar」页创建后再点选。</p>
+      : <div className="joi-clarify-chips" role="group" aria-label="点选这条输入归属的 Avatar">{avatars.map((avatar) => <button className="joi-clarify-chip" disabled={busy} key={avatar.avatarId} onClick={() => void resolve({ avatarId: avatar.avatarId })} type="button">{avatar.name}</button>)}</div>}
+    <div className="joi-clarify-add">
+      <input aria-label="补充信息" disabled={busy} onChange={(event) => setDraft(event.target.value)} placeholder="补充细节，让 joi 接着这条输入往下做…" value={draft} />
+      <button className="button quiet" disabled={busy || draft.trim() === ""} onClick={submitDraft} type="button">补充并继续</button>
+    </div>
+    {notice === null ? null : <p className="inline-notice info" role="status">{notice}</p>}
+  </div>;
+}
+
+function JoiComposer({ api, onNavigate, snapshot }: { api: DigitalLifeApi; onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void; snapshot: JoiSnapshotDto }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
   const [accepted, setAccepted] = useState<JoiAcceptedMessageDto[]>([]);
   const [activity, setActivity] = useState<JoiActivityDto[]>([]);
   const [work, setWork] = useState(snapshot.work);
   const [avatarChanges, setAvatarChanges] = useState(snapshot.avatarChanges);
-  const [scenarios, setScenarios] = useState<ScenarioDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     const [messages, timeline, state] = await Promise.all([api.listJoiMessages(), api.listJoiActivity(), api.joiSnapshot()]);
@@ -217,10 +249,6 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
     const interval = setInterval(() => void refresh().catch(() => undefined), 1_500);
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [api, refresh]);
-  useEffect(() => {
-    const timer = setTimeout(() => void api.scenarios().then((page) => setScenarios(page.items)).catch(() => setScenarios([])), 0);
-    return () => clearTimeout(timer);
-  }, [api]);
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = text.trim();
@@ -239,31 +267,34 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
       setError(reason instanceof ApiError ? reason.message : "输入没保存成功，请再试一次。");
     }
   };
+  const feed = buildFeed(accepted, activity);
   return <section className="joi-home" aria-labelledby="joi-home-title">
-    <header><p className="eyebrow">唯一入口</p><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。Avatar 归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
-    {scenarios.length === 0 ? null : <div className="joi-scenarios">
-      <p className="eyebrow">场景预设</p>
-      <div className="scenario-group">{scenarios.filter((scenario) => scenario.source === "builtin").map((scenario) => <button className="scenario-card" key={scenario.id} onClick={() => setText(scenario.prompt)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>)}</div>
-      {scenarios.some((scenario) => scenario.source === "skill") ? <>
-        <p className="scenario-sub">来自本机技能</p>
-        <div className="scenario-group">{scenarios.filter((scenario) => scenario.source === "skill").map((scenario) => <button className="scenario-card" key={scenario.id} onClick={() => setText(scenario.prompt)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>)}</div>
-      </> : null}
-    </div>}
-    <div className="joi-work-overview"><strong>全局工作状态</strong><span>{work.length === 0 ? "当前没有运行中的工作" : `${String(work.length)} 项工作正在安排`}</span></div>
-    {work.length === 0 ? null : <div className="joi-active-work">{work.map((item) => <article key={item.workId}><strong>{item.title}</strong><span>{item.status} · Avatar {item.avatarId}</span></article>)}</div>}
-    <ol className="joi-accepted-list" aria-label="已保存输入">{accepted.map((item) => <li key={item.inputId}><strong>{messageStage(item.status)}</strong><span>{item.status === "CLARIFICATION_REQUIRED" ? "joi 需要你补充信息" : item.status === "CONSUMED" ? "joi 已完成这轮归类和安排" : "joi 正在归类和安排"}</span></li>)}</ol>
-    {activity.length === 0 ? null : <section className="joi-activity"><h2>最近活动</h2><ol>{activity.slice(0, 12).map((item) => <li key={`${item.kind}:${item.activityId}`}><strong>{activityLabel(item.kind)}</strong><span>{item.status} · {new Date(item.occurredAt).toLocaleString()}</span></li>)}</ol></section>}
+    <header><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。Avatar 归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
     {avatarChanges.length === 0 ? null : <section className="joi-avatar-confirmations" aria-label="Avatar 变更确认"><h2>需要你确认</h2>{avatarChanges.map((change) => <article key={change.requestId}>
       <div><strong>{change.kind === "MERGE" ? "joi 建议合并 Avatar" : "joi 建议归档 Avatar"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceAvatarId} → ${change.targetAvatarId ?? ""}` : change.sourceAvatarId}</small></div>
       <div className="row-actions"><button className="button ghost" onClick={() => void api.decideAvatarChange(change.requestId, "REJECT").then(refresh)} type="button">保留原样</button><button className="button danger-text" onClick={() => void api.decideAvatarChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? "确认合并" : "确认归档"}</button></div>
     </article>)}</section>}
-    {snapshot.partners.length >= 2 ? null : <p className="inline-notice warning">当前只有 {String(snapshot.partners.length)} 个工作搭档。先到「搭档」页建立 2-3 个工作搭档，joi 才有得挑、有得换。</p>}
+    <div className="joi-body">
+      <div aria-label="joi 信息流" className="joi-feed">
+        {feed.length === 0 ? <p className="joi-feed-empty">还没有动态。在下方告诉 joi 一个目标，或先用场景预设组建团队。</p> : feed.map((entry) => entry.kind === "input" ? <article className={`joi-feed-item${entry.message.status === "CLARIFICATION_REQUIRED" ? " needs-you" : ""}`} key={entry.id}>
+          <div className="joi-feed-head"><span className="joi-feed-stage">{messageStage(entry.message.status)}</span><time className="joi-feed-time">{new Date(entry.message.acceptedAt).toLocaleString()}</time></div>
+          {entry.message.textPreview === undefined ? null : <p className="joi-feed-text">{entry.message.textPreview}</p>}
+          {entry.message.status === "CLARIFICATION_REQUIRED"
+            ? <ClarificationActions api={api} avatars={snapshot.avatars} inputId={entry.message.inputId} onResolved={() => { void refresh(); }} reasonCode={entry.message.clarificationReasonCode} />
+            : <p className="joi-feed-note">{entry.message.status === "CONSUMED" ? "joi 已完成这轮归类和安排" : entry.message.status === "ROUTED" ? "joi 已派给搭档处理" : "joi 正在归类和安排"}</p>}
+        </article> : <div className="joi-feed-process" key={entry.id}><strong>{entry.label}</strong><span>{entry.detail}</span><time>{new Date(entry.time).toLocaleString()}</time></div>)}
+      </div>
+      <aside aria-label="工作状态" className="joi-work-panel"><h2>工作状态</h2>{work.length === 0 ? <p className="joi-work-empty">当前没有运行中的工作</p> : <ul className="joi-active-work">{work.map((item) => <li key={item.workId}><strong>{item.title}</strong><span>{activityStatus(item.status)} · Avatar {item.avatarId}</span></li>)}</ul>}</aside>
+    </div>
+    {snapshot.partners.length >= 2 ? null : <div className="inline-notice warning"><span>{snapshot.partners.length === 0 ? "当前还没有工作搭档。" : `当前只有 ${String(snapshot.partners.length)} 个工作搭档。`}可以先用场景预设一键组建团队，或去搭档页手动创建 2-3 个。</span><span className="row-actions"><button className="button ghost" onClick={() => onNavigate?.("agents", "scenarios")} type="button">看场景预设</button><button className="button ghost" onClick={() => onNavigate?.("agents", "partners")} type="button">去搭档页创建</button></span></div>}
     <form className="joi-composer" onSubmit={(event) => void submit(event)}>
-      <label htmlFor="joi-input">给 joi 输入</label>
-      <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={4} value={text} />
-      <label className="joi-attachment-button">添加附件（最多 8 个，每个 10 MiB）<input aria-label="给 joi 添加附件" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, 8))} type="file" /></label>
-      {files.length === 0 ? null : <span className="joi-file-summary">{files.map((file) => file.name).join("、")}</span>}
-      <button className="button primary" disabled={text.trim() === ""} type="submit">交给 joi</button>
+      <label className="joi-composer-label" htmlFor="joi-input">给 joi 输入</label>
+      <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={3} value={text} />
+      <div className="joi-composer-toolbar">
+        <label className="joi-attachment-button">添加附件<input aria-label="给 joi 添加附件" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, 8))} type="file" /></label>
+        {files.length === 0 ? null : <span className="joi-file-summary">{files.map((file) => file.name).join("、")}</span>}
+        <button className="button primary" disabled={text.trim() === ""} type="submit">交给 joi</button>
+      </div>
     </form>
     {error === null ? null : <p className="inline-notice danger" role="alert">{error}</p>}
   </section>;
@@ -276,14 +307,48 @@ function messageStage(status: JoiAcceptedMessageDto["status"]): string {
   return "输入已保存";
 }
 
-function activityLabel(kind: JoiActivityDto["kind"]): string {
-  if (kind === "TURN") return "joi 正在思考";
-  if (kind === "WORK") return "工作状态";
-  if (kind === "PARTNER_RESULT") return "搭档结果";
-  return "输入状态";
+function clarificationText(code: string | undefined): string {
+  if (code === "avatar_selection_invalid") return "joi 没法定位这条输入属于哪个上下文。在下方点选它对应的 Avatar，或补充更明确的项目/角色。";
+  if (code === "avatar_creation_unavailable") return "joi 想新建一个 Avatar 来承接这条输入，但当前无法创建。请补充更明确的归属，或先到「Avatar」页手动创建。";
+  if (code === "avatar_not_found") return "这条输入指向的 Avatar 已不存在。在下方点选它应归属的 Avatar，或补充项目/角色。";
+  return "joi 需要你补充信息后才能继续。在下方补充细节，它会接着这条输入往下做。";
 }
 
-export function JoiHome({ api }: { api: DigitalLifeApi }) {
+function activityLabel(kind: JoiActivityDto["kind"]): string {
+  if (kind === "TURN") return "joi 正在思考";
+  if (kind === "WORK") return "工作进展";
+  if (kind === "PARTNER_RESULT") return "搭档结果";
+  return "joi 动态";
+}
+
+function activityStatus(status: string): string {
+  if (status === "RUNNING") return "进行中";
+  if (status === "COMPLETED") return "已完成";
+  if (status === "FAILED") return "失败";
+  if (status === "PENDING") return "等待中";
+  if (status === "CLARIFICATION_REQUIRED") return "需补充";
+  if (status === "ROUTED") return "已派发";
+  if (status === "CONSUMED") return "已处理";
+  if (status === "READY") return "已就绪";
+  if (status === "INTEGRATED") return "已整合";
+  if (status === "WAITING") return "等待确认";
+  return status;
+}
+
+type FeedEntry =
+  | { id: string; kind: "input"; message: JoiAcceptedMessageDto; time: string }
+  | { detail: string; id: string; kind: "process"; label: string; time: string };
+
+function buildFeed(messages: JoiAcceptedMessageDto[], activity: JoiActivityDto[]): FeedEntry[] {
+  const entries: FeedEntry[] = messages.map((message) => ({ id: `input:${message.inputId}`, kind: "input", message, time: message.acceptedAt }));
+  for (const item of activity) {
+    if (item.kind === "MESSAGE") continue;
+    entries.push({ detail: activityStatus(item.status), id: `act:${item.activityId}`, kind: "process", label: activityLabel(item.kind), time: item.occurredAt });
+  }
+  return entries.sort((left, right) => (left.time < right.time ? 1 : left.time > right.time ? -1 : 0));
+}
+
+export function JoiHome({ api, onNavigate }: { api: DigitalLifeApi; onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void }) {
   const [snapshot, setSnapshot] = useState<JoiSnapshotDto | null>(null);
   const [error, setError] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -293,5 +358,5 @@ export function JoiHome({ api }: { api: DigitalLifeApi }) {
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   if (error !== null) return <section className="content-state" role="alert"><p>{error}</p><button className="button quiet" onClick={() => void load()} type="button">再试一次</button></section>;
   if (snapshot === null) return <section className="content-state" role="status">joi 正在整理全局状态…</section>;
-  return snapshot.runtime.configured ? <JoiComposer api={api} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
+  return snapshot.runtime.configured ? <JoiComposer api={api} {...(onNavigate === undefined ? {} : { onNavigate })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
 }

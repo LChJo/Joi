@@ -19,14 +19,19 @@ function mapRow(row: Row): JoiInboxRecord {
   const body = row.body;
   const status = row.status;
   const avatarId = row.avatar_id;
+  const clarificationReasonCode = row.clarification_reason_code;
   const createdAt = row.created_at;
   const updatedAt = row.updated_at;
   if (typeof inputId !== "string" || typeof idempotencyKey !== "string" || typeof body !== "string"
     || typeof status !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string"
-    || (avatarId !== null && typeof avatarId !== "string")) throw new Error("joi_inbox_record_invalid");
+    || (avatarId !== null && typeof avatarId !== "string")
+    || (clarificationReasonCode !== null && clarificationReasonCode !== undefined && typeof clarificationReasonCode !== "string")) {
+    throw new Error("joi_inbox_record_invalid");
+  }
   return {
     ...(typeof avatarId === "string" ? { avatarId } : {}),
     body,
+    ...(typeof clarificationReasonCode === "string" ? { clarificationReasonCode } : {}),
     createdAt,
     idempotencyKey,
     inputId,
@@ -62,6 +67,24 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     return this.database.transaction((connection) => connection.prepare(
       "SELECT * FROM joi_inbox_messages ORDER BY created_at, input_id",
     ).all()).map((row) => mapRow(row as Row));
+  }
+
+  async clarify(inputId: string, patch: { avatarId?: string; text?: string }): Promise<JoiInboxRecord | null> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      if (row === undefined) return null;
+      const current = mapRow(row);
+      if (current.status !== "CLARIFICATION_REQUIRED") return null;
+      const now = new Date().toISOString();
+      const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
+      const nextAvatar = patch.avatarId ?? current.avatarId;
+      const result = connection.prepare(`UPDATE joi_inbox_messages
+        SET body = ?, avatar_id = ?, status = 'PENDING', clarification_reason_code = NULL, updated_at = ?
+        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextAvatar ?? null, now, inputId);
+      if (result.changes === 0) return null;
+      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      return updated === undefined ? null : mapRow(updated);
+    });
   }
 
   async listActivity(limit = 100): Promise<JoiActivityDto[]> {
