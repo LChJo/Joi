@@ -25,7 +25,7 @@ import type { BudgetService } from "../../application/rhythm/budget-service.js";
 import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
 import type { ArtifactReadPort, JoiAttachmentPort, UserAttachmentPort } from "../../application/ports/managed-file-ports.js";
 import type { WorkQuery } from "../../application/ports/work-orchestration.js";
-import type { JoiActivityDto, PartnerEngineDto } from "../../../shared/joi.js";
+import { BUILTIN_SCENARIOS, type JoiActivityDto, type PartnerEngineDto } from "../../../shared/joi.js";
 
 const SESSION_COOKIE = "digital_life_session";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -543,6 +543,17 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       if (method === "GET" && pathname === "/api/v1/system/pick-directory") {
         if (dependencies.directoryPicker === undefined) throw new HttpError("directory_picker_unavailable", "Directory picker is unavailable.", 503);
         sendJson(response, 200, { path: await dependencies.directoryPicker() });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/scenarios") {
+        const skillScenarios = dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code").map((skill) => ({
+          blurb: "用本机已装技能开启一件事",
+          id: `skill:${skill.id}`,
+          prompt: `本机已装技能「${skill.displayName}」（${skill.id}）。我想围绕它做一件事：……（补充目标）。请先确认我的目标，再决定是否建一位搭档并把该技能挂给它。`,
+          source: "skill" as const,
+          title: skill.displayName,
+        }));
+        sendJson(response, 200, { items: [...BUILTIN_SCENARIOS, ...skillScenarios] });
         return;
       }
       if (method === "GET" && pathname === "/api/v1/avatars") {

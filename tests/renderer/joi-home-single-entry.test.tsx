@@ -288,4 +288,22 @@ describe("joi home single entry", () => {
     expect(await screen.findByLabelText("给 joi 输入")).toBeInTheDocument();
     expect(screen.queryByText(/建立 2-3 个工作搭档/u)).not.toBeInTheDocument();
   });
+
+  it("prefills the composer from a scenario preset without auto-sending", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
+      { blurb: "先把它说清楚", id: "plan-big-goal", prompt: "规划提示词正文", source: "builtin", title: "规划一个大目标" },
+      { blurb: "本机技能起点", id: "skill:claude-code/demo", prompt: "技能提示词正文", source: "skill", title: "演示技能" },
+    ] });
+    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "input-x", status: "PENDING" });
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: /规划一个大目标/u }));
+    const composer = await screen.findByLabelText("给 joi 输入");
+    await waitFor(() => expect(composer).toHaveValue("规划提示词正文"));
+    expect(screen.getByText("来自本机技能")).toBeInTheDocument();
+    expect(send).not.toHaveBeenCalled();
+  });
 });

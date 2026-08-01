@@ -5,6 +5,7 @@ import type { SourceFailureKind } from "../../domain/model-sources/model-source.
 import type { PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type { AvatarRegistryService } from "./avatar-registry-service.js";
+import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
 
 interface SourcePin {
   modelCapability?: "release-tested" | "custom-unverified-tools";
@@ -138,20 +139,15 @@ export class JoiCoordinator {
             sessionId,
             sourceId: pin.sourceId,
             sourceRevisionId: pin.sourceRevisionId,
-            systemPrompt: [
-              "You are the single global joi orchestration authority.",
-              "Treat this persisted input at a safe Turn boundary: decide whether it updates current work, becomes follow-up work, starts independent work, or needs clarification.",
-              "Partners are templates; instances are running conversations. Dispatch with sessionPolicy ephemeral for one-shot bounded work; use a resident instance only when the same partner must continue an earlier conversation, and dispose it once the goal is complete.",
-              "partner.list_available includes each partner's working-memory digest and live instances; prefer reusing an IDLE instance over creating a new one.",
-              "When a dispatch failed, consult the partner memory digest before calling work.reassign.",
-              ...(pin.modelCapability === "custom-unverified-tools" ? ["This custom model is not tool-verified. Call partner.list_available before any formal response; otherwise this Turn will fail closed."] : []),
-              `Avatar: ${avatar.profile.name}`,
-              `Scope: ${avatar.profile.scopeSummary}`,
-              `Persona: ${avatar.profile.personaSummary}`,
-              `Project: ${avatar.project.label}`,
-              `Task context: ${avatar.taskContext.summary}`,
-              ...(input.attachments === undefined ? [] : [`Attachments: ${input.attachments.map((item) => `${item.attachmentId} ${item.filename} ${item.mimeType} ${String(item.size)} bytes`).join("; ")}`]),
-            ].join("\n"),
+            systemPrompt: buildJoiSystemPrompt({
+              ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
+              avatarName: avatar.profile.name,
+              ...(pin.modelCapability === undefined ? {} : { modelCapability: pin.modelCapability }),
+              personaSummary: avatar.profile.personaSummary,
+              projectLabel: avatar.project.label,
+              scopeSummary: avatar.profile.scopeSummary,
+              taskContextSummary: avatar.taskContext.summary,
+            }),
             turnId,
           });
           if (pin.modelCapability === "custom-unverified-tools" && observedToolCalls.size === 0) {

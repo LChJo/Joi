@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type ScenarioDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
@@ -201,6 +201,7 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
   const [activity, setActivity] = useState<JoiActivityDto[]>([]);
   const [work, setWork] = useState(snapshot.work);
   const [avatarChanges, setAvatarChanges] = useState(snapshot.avatarChanges);
+  const [scenarios, setScenarios] = useState<ScenarioDto[]>([]);
   const [error, setError] = useState<string | null>(null);
   const refresh = useCallback(async () => {
     const [messages, timeline, state] = await Promise.all([api.listJoiMessages(), api.listJoiActivity(), api.joiSnapshot()]);
@@ -216,6 +217,10 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
     const interval = setInterval(() => void refresh().catch(() => undefined), 1_500);
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [api, refresh]);
+  useEffect(() => {
+    const timer = setTimeout(() => void api.scenarios().then((page) => setScenarios(page.items)).catch(() => setScenarios([])), 0);
+    return () => clearTimeout(timer);
+  }, [api]);
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = text.trim();
@@ -236,6 +241,14 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
   };
   return <section className="joi-home" aria-labelledby="joi-home-title">
     <header><p className="eyebrow">唯一入口</p><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。Avatar 归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
+    {scenarios.length === 0 ? null : <div className="joi-scenarios">
+      <p className="eyebrow">场景预设</p>
+      <div className="scenario-group">{scenarios.filter((scenario) => scenario.source === "builtin").map((scenario) => <button className="scenario-card" key={scenario.id} onClick={() => setText(scenario.prompt)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>)}</div>
+      {scenarios.some((scenario) => scenario.source === "skill") ? <>
+        <p className="scenario-sub">来自本机技能</p>
+        <div className="scenario-group">{scenarios.filter((scenario) => scenario.source === "skill").map((scenario) => <button className="scenario-card" key={scenario.id} onClick={() => setText(scenario.prompt)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>)}</div>
+      </> : null}
+    </div>}
     <div className="joi-work-overview"><strong>全局工作状态</strong><span>{work.length === 0 ? "当前没有运行中的工作" : `${String(work.length)} 项工作正在安排`}</span></div>
     {work.length === 0 ? null : <div className="joi-active-work">{work.map((item) => <article key={item.workId}><strong>{item.title}</strong><span>{item.status} · Avatar {item.avatarId}</span></article>)}</div>}
     <ol className="joi-accepted-list" aria-label="已保存输入">{accepted.map((item) => <li key={item.inputId}><strong>{messageStage(item.status)}</strong><span>{item.status === "CLARIFICATION_REQUIRED" ? "joi 需要你补充信息" : item.status === "CONSUMED" ? "joi 已完成这轮归类和安排" : "joi 正在归类和安排"}</span></li>)}</ol>

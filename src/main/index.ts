@@ -271,7 +271,7 @@ async function startRuntime(): Promise<void> {
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     resolver: configuredModelResolver,
     sessionStore: new SqlitePiReasoningSessionStore(database),
-    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, instances: partnerInstances, memory: partnerMemory, partners, turnId: turn.turnId, work }),
+    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, turnId: turn.turnId, work }),
   });
   const joiCoordinator = new JoiCoordinator({
     avatars,

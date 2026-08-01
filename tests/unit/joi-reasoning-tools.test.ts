@@ -1,12 +1,19 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { createJoiReasoningTools } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
-import type { PartnerDto } from "../../src/shared/joi.js";
+import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const partnerDto: PartnerDto = {
   capabilities: ["code"], createdBy: "user", displayName: "Coder", engine: "pi-core", inFlightCount: 0,
   kind: "local-pi", knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner_1",
   partnerRevisionId: "partner_revision_1", registryRevision: 1, skills: [], status: "ACTIVE", tools: ["read"],
 };
+
+const readySource: ModelSourceDto = {
+  accessMode: "api", activeModel: { capability: "release-tested", id: "kimi-k2.5", revisionId: "model_r" },
+  activeSourceRevisionId: "source_revision_r", credential: { configured: true, version: 1 }, displayName: "Kimi",
+  kind: "kimi", order: 0, primary: true, protocol: "anthropic", sourceId: "source_ready", status: "READY",
+};
+const draftSource: ModelSourceDto = { ...readySource, displayName: "Draft", primary: false, sourceId: "source_draft", status: "DRAFT" };
 
 const instanceRecord = {
   createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core" as const, instanceId: "instance_1",
@@ -33,6 +40,7 @@ function makeTools() {
       list: async () => [instanceRecord],
     },
     memory: { digest: async () => ({ last3: [{ at: "2026-07-29T10:00:00.000Z", outcome: "COMPLETED" as const, title: "old task" }], successRate: 0.5, summary: "DIGEST_SUMMARY" }) },
+    models: { list: async () => [readySource, draftSource] },
     partners: {
       add: async (input) => { addCalls.push(input); return partnerDto; },
       inspect: async () => partnerDto,
@@ -77,6 +85,18 @@ describe("joi reasoning tools", () => {
     const created = await harness.call("partner.create", { description: "写文档", displayName: "Writer" }) as { partnerId: string };
     expect(created.partnerId).toBe("partner_1");
     expect(harness.addCalls[0]).toMatchObject({ capabilities: [], createdBy: "joi", description: "写文档", kind: "local-pi", skills: [], tools: [] });
+  });
+
+  it("pins a chosen model source when creating a partner", async () => {
+    const harness = makeTools();
+    await harness.call("partner.create", { displayName: "Writer", modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" });
+    expect(harness.addCalls[0]).toMatchObject({ createdBy: "joi", displayName: "Writer", modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" });
+  });
+
+  it("lists only READY model sources with the fields partner.create needs", async () => {
+    const harness = makeTools();
+    const sources = await harness.call("model.list_sources", {}) as unknown[];
+    expect(sources).toEqual([{ displayName: "Kimi", kind: "kimi", modelId: "kimi-k2.5", primary: true, protocol: "anthropic", sourceId: "source_ready" }]);
   });
 
   it("creates, lists and disposes partner instances with explicit session policies", async () => {

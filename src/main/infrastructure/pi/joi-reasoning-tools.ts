@@ -5,6 +5,7 @@ import type { PartnerInstanceManager } from "../../application/partners/partner-
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
+import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
 
@@ -18,6 +19,7 @@ export function createJoiReasoningTools(input: {
   avatars: AvatarCatalog;
   instances: Pick<PartnerInstanceManager, "dispose" | "ensure" | "list">;
   memory: Pick<PartnerWorkMemoryService, "digest">;
+  models: Pick<ModelSourceService, "list">;
   partners: Pick<PartnerRegistryService, "add" | "inspect" | "list">;
   turnId: string;
   work: Pick<WorkOrchestrationService, "plan" | "reassign">;
@@ -94,13 +96,15 @@ export function createJoiReasoningTools(input: {
     capabilities: Type.Optional(Type.Array(Type.String())),
     description: Type.Optional(Type.String()),
     displayName: Type.String(),
+    modelIdOverride: Type.Optional(Type.String()),
+    modelSourceId: Type.Optional(Type.String()),
     prompt: Type.Optional(Type.String()),
     skills: Type.Optional(Type.Array(Type.String())),
     tools: Type.Optional(Type.Array(Type.String())),
     workspaceRef: Type.Optional(Type.String()),
   });
   const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
-    description: "Register a new local Pi partner when no existing partner fits the work. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
+    description: "Register a new local Pi partner when no existing partner fits the work. Optionally pin a READY model source (modelSourceId from model.list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
     execute: async (_toolCallId, arguments_) => {
       const created = await input.partners.add({
         capabilities: arguments_.capabilities ?? [],
@@ -108,6 +112,8 @@ export function createJoiReasoningTools(input: {
         ...(arguments_.description === undefined ? {} : { description: arguments_.description }),
         displayName: arguments_.displayName,
         kind: "local-pi",
+        ...(arguments_.modelIdOverride === undefined ? {} : { modelIdOverride: arguments_.modelIdOverride }),
+        ...(arguments_.modelSourceId === undefined ? {} : { modelSourceId: arguments_.modelSourceId }),
         ...(arguments_.prompt === undefined ? {} : { prompt: arguments_.prompt }),
         skills: arguments_.skills ?? [],
         tools: arguments_.tools ?? [],
@@ -166,6 +172,15 @@ export function createJoiReasoningTools(input: {
       execute: async () => result(await input.avatars.listSummaries()),
       label: "List Avatar summaries",
       name: "avatar.list_summaries",
+      parameters: Type.Object({}),
+    },
+    {
+      description: "List READY model network sources assignable to a new partner. Pass a chosen sourceId as modelSourceId to partner.create (optionally modelIdOverride for its model id); omit to follow the global preferred source.",
+      execute: async () => result((await input.models.list())
+        .filter((source) => source.status === "READY")
+        .map((source) => ({ displayName: source.displayName, kind: source.kind, modelId: source.activeModel.id, primary: source.primary, protocol: source.protocol, sourceId: source.sourceId }))),
+      label: "List ready model sources",
+      name: "model.list_sources",
       parameters: Type.Object({}),
     },
     suggestMerge,

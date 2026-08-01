@@ -185,6 +185,14 @@
 .joi-activity h2 { margin: 0 0 10px; font-size: 1rem; }
 .joi-activity li { list-style: none; border-left-color: var(--line-strong); }
 
+.joi-scenarios { display: grid; gap: 10px; padding-top: 4px; }
+.joi-scenarios > .eyebrow { margin: 0; }
+.scenario-sub { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.scenario-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; }
+.scenario-card { display: grid; gap: 4px; justify-items: start; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); text-align: left; cursor: pointer; }
+.scenario-card:hover { border-color: var(--forest); background: var(--paper-strong); box-shadow: var(--shadow); }
+.scenario-card span { color: var(--muted); font-size: 13px; }
+
 .model-source-manager { display: grid; gap: 16px; }
 .model-source-manager > header,
 .model-source-list article { display: flex; justify-content: space-between; gap: 16px; align-items: center; }

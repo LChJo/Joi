@@ -243,6 +243,7 @@ describe("Pi reasoning runtime contract", () => {
       "avatar.create",
       "avatar.suggest_merge",
       "avatar.suggest_archive",
+      "model.list_sources",
       "partner.list_available",
       "partner.inspect_revision",
       "partner.create",
