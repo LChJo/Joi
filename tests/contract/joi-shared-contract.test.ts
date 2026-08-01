@@ -1,4 +1,5 @@
 import {
+  MODEL_SOURCE_CHOICES,
   MODEL_SOURCE_KINDS,
   type AvatarDto,
   type JoiSnapshotDto,
@@ -9,6 +10,19 @@ import {
 describe("JOI-01 shared DTO contract", () => {
   it("exposes Avatar, Partner and model source projections without secret or absolute-path fields", () => {
     expect(MODEL_SOURCE_KINDS).toEqual(["kimi", "glm", "qwen", "doubao", "minimax", "deepseek", "generic-openai"]);
+    expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "kimi")?.options.map((option) => option.accessMode))
+      .toEqual(["api", "coding-plan"]);
+    expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "kimi")?.options[1]?.protocols.map((option) => option.protocol))
+      .toEqual(["openai", "anthropic"]);
+    expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "qwen")?.options.map((option) => (
+      option.protocols.map((protocol) => protocol.protocol)
+    ))).toEqual([["openai", "anthropic"], ["openai", "anthropic"]]);
+    expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "deepseek")?.options.map((option) => option.accessMode))
+      .toEqual(["api"]);
+    expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "deepseek")?.options[0]?.protocols.map((option) => option.protocol))
+      .toEqual(["openai"]);
+    expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "generic-openai")?.options[0]?.protocols.map((option) => option.protocol))
+      .toEqual(["openai", "anthropic"]);
     const avatar: AvatarDto = {
       avatarId: "avatar_1",
       name: "产品工作",
@@ -29,6 +43,7 @@ describe("JOI-01 shared DTO contract", () => {
       tools: ["web.search"],
     };
     const source: ModelSourceDto = {
+      accessMode: "coding-plan",
       activeModel: { capability: "release-tested", id: "kimi-k2.5", revisionId: "model_rev_1" },
       activeSourceRevisionId: "source_rev_1",
       credential: { configured: true, version: 1 },
@@ -36,6 +51,7 @@ describe("JOI-01 shared DTO contract", () => {
       kind: "kimi",
       order: 0,
       primary: true,
+      protocol: "anthropic",
       sourceId: "source_1",
       status: "READY",
     };

@@ -15,6 +15,7 @@ function record(sourceId: string, order: number): ModelSourceRecord {
     presetVersion: "2026-07-28",
     primary: order === 0,
     source: createModelSource({
+      accessMode: order === 0 ? "coding-plan" : "api",
       createdAt,
       credentialRef: `joi-source:${sourceId}`,
       credentialVersion: 1,
@@ -23,6 +24,7 @@ function record(sourceId: string, order: number): ModelSourceRecord {
       modelCapability: "release-tested",
       modelId: order === 0 ? "kimi-k2.5" : "deepseek-chat",
       modelRevisionId: `model-${sourceId}`,
+      protocol: order === 0 ? "anthropic" : "openai",
       sourceId,
       sourceRevisionId: `revision-${sourceId}`,
     }),
@@ -62,6 +64,8 @@ describe("SqliteModelSourceRepository", () => {
       expect(restored[0]?.primary).toBe(true);
       expect(restored[1]?.source.sourceId).toBe("source-a");
       expect(restored[1]?.source.status).toBe("READY");
+      expect(restored[1]?.source.activeSourceRevision.accessMode).toBe("coding-plan");
+      expect(restored[1]?.source.activeSourceRevision.protocol).toBe("anthropic");
       expect(restored[1]?.lastValidatedAt).toBe("2026-07-28T10:01:00.000Z");
       expect(restored[1]?.order).toBe(1);
       expect(restored[1]?.primary).toBe(false);

@@ -4,11 +4,14 @@
 
 首页默认只显示唯一全局 joi 的对话时间线、输入框和当前工作状态。Avatar、搭档、模型源、任务与诊断是按需展开的次级界面；用户无需先创建或打开 Avatar。
 
-不存在 `READY` 模型源时，首页主文案必须精确显示“joi需要链接到大模型网络”，并展示恰好 7 个入口：Kimi、GLM、Qwen、Doubao、MiniMax、DeepSeek、通用平台。产品界面不出现转发或聚合平台。
+不存在 `READY` 模型源时，首页主文案必须精确显示“joi需要链接到大模型网络”，并展示恰好 7 个厂商级入口：Kimi、GLM、Qwen、Doubao、MiniMax、DeepSeek、通用平台。产品界面不出现转发或聚合平台。配置采用“厂商 → 接入方案 → 接口协议”结构：先选择普通 API 或官方 Coding Plan / Token Plan；该方案同时支持两种协议时，再选择 OpenAI-compatible 或 Anthropic-compatible，只支持一种时直接进入表单。
 
-- 六家直连仅显示 API Key、推荐模型与高级 Model ID；官方 endpoint 固定且不展示、不编辑。
-- 通用平台仅填写显示名称、Base URL、API Key、Model ID，并明确只支持 OpenAI-compatible Chat Completions；localhost/127.0.0.1 可留空 Key。
-- 验证失败时保留草稿、设置和诊断入口，但普通 composer 继续门禁；验证旁提示兜底最小文本请求可能产生极少量费用。
+- Kimi、GLM、Qwen、Doubao、MiniMax 分别提供普通 API 与 Coding/Token Plan 二级选项；DeepSeek 当前仅显示 API；通用平台直接进入自定义配置。
+- Kimi Code、GLM Coding Plan、Qwen API/Coding Plan、Doubao Coding Plan、MiniMax API/Token Plan 提供 OpenAI-compatible 与 Anthropic-compatible；Kimi API、GLM API、Doubao API、DeepSeek API 仅提供 OpenAI-compatible。
+- 官方接入方案仅显示对应 API Key、推荐模型与高级 Model ID；endpoint 由接入方案和协议共同固定且不展示、不编辑，普通 API Key 与套餐 Key 不得混用。
+- 已验证为 `READY` 的 API 与 Coding Plan 来源都可成为全局 joi 的主源或备用源；套餐表单明确提示订阅权益通常面向个人交互式使用，用户需遵守厂商条款。
+- 通用平台先选择 OpenAI-compatible Chat Completions 或 Anthropic-compatible Messages，再填写显示名称、Base URL、API Key、Model ID；明确不支持 OpenAI Responses；localhost/127.0.0.1 可留空 Key。
+- 验证失败时保留草稿、设置和诊断入口，但普通 composer 继续门禁；界面按鉴权、模型不可用、接口不可达给出可操作提示；验证旁提示兜底最小文本请求可能产生极少量费用。
 - 普通首页显示“输入已保存、joi 已归类、工作已派发、搭档已接受、结果已整合”等可核验阶段；连续输入无需用户选择串行或并发。
 
 下文“全部生命/生命创建向导”描述迁移前界面，只用于旧版本回归；JOI-01 上线后由本节替代。

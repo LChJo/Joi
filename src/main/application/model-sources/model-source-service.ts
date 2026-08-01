@@ -3,7 +3,9 @@ import { DomainError } from "../../domain/errors.js";
 import {
   createModelSource,
   reviseModelSource,
+  type ModelSourceAccessMode,
   type ModelSourceKind,
+  type ModelSourceProtocol,
 } from "../../domain/model-sources/model-source.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type {
@@ -16,11 +18,13 @@ import type {
 } from "../ports/model-source-ports.js";
 
 export interface CreateModelSourceRequest {
+  accessMode?: ModelSourceAccessMode;
   apiKey: string;
   baseUrl?: string;
   displayName?: string;
   kind: ModelSourceKind;
   modelId?: string;
+  protocol?: ModelSourceProtocol;
 }
 
 export interface UpdateModelSourceRequest {
@@ -42,7 +46,7 @@ export class ModelSourceService {
   }) {}
 
   async create(input: CreateModelSourceRequest): Promise<ModelSourceDto> {
-    const catalog = this.dependencies.catalog.resolve(input.kind, input.modelId);
+    const catalog = this.dependencies.catalog.resolve(input.kind, input.modelId, input.accessMode, input.protocol);
     let baseUrl: string | undefined;
     let local = false;
     let displayName = catalog.displayName;
@@ -68,6 +72,7 @@ export class ModelSourceService {
     const now = this.dependencies.clock.now().toISOString();
     const existing = await this.dependencies.repository.list();
     const source = createModelSource({
+      accessMode: catalog.accessMode,
       createdAt: now,
       credentialRef: providerId,
       credentialVersion,
@@ -76,6 +81,7 @@ export class ModelSourceService {
       modelCapability: catalog.capability,
       modelId: catalog.modelId,
       modelRevisionId: this.dependencies.ids.next("model_revision"),
+      protocol: catalog.protocol,
       sourceId,
       sourceRevisionId: this.dependencies.ids.next("source_revision"),
     });
@@ -103,7 +109,12 @@ export class ModelSourceService {
   async update(sourceId: string, input: UpdateModelSourceRequest): Promise<ModelSourceDto> {
     const current = await this.#get(sourceId);
     const kind = current.source.activeSourceRevision.kind;
-    const catalog = this.dependencies.catalog.resolve(kind, input.modelId ?? current.source.activeModelRevision.modelId);
+    const catalog = this.dependencies.catalog.resolve(
+      kind,
+      input.modelId ?? current.source.activeModelRevision.modelId,
+      current.source.activeSourceRevision.accessMode,
+      current.source.activeSourceRevision.protocol,
+    );
     let baseUrl = current.baseUrl;
     let local = current.local;
     let displayName = input.displayName ?? current.source.activeSourceRevision.displayName;
@@ -219,6 +230,7 @@ function withoutHealthReason(record: ModelSourceRecord): Omit<ModelSourceRecord,
 
 function toDto(record: ModelSourceRecord): ModelSourceDto {
   return {
+    accessMode: record.source.activeSourceRevision.accessMode,
     activeModel: {
       capability: record.source.activeModelRevision.capability,
       id: record.source.activeModelRevision.modelId,
@@ -232,6 +244,7 @@ function toDto(record: ModelSourceRecord): ModelSourceDto {
     ...(record.lastValidatedAt === undefined ? {} : { lastValidatedAt: record.lastValidatedAt }),
     order: record.order,
     primary: record.primary,
+    protocol: record.source.activeSourceRevision.protocol,
     ...(record.reasonCode === undefined ? {} : { reasonCode: record.reasonCode }),
     sourceId: record.source.sourceId,
     status: record.source.status,

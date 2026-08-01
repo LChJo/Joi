@@ -6,6 +6,7 @@ import { JoiHome, ModelSourceManager, PartnerManager } from "../../src/renderer/
 import type { JoiSnapshotDto, ModelSourceDto } from "../../src/shared/joi.js";
 
 const readySource: ModelSourceDto = {
+  accessMode: "api",
   activeModel: { capability: "release-tested", id: "deepseek-chat", revisionId: "model-1" },
   activeSourceRevisionId: "source-revision-1",
   credential: { configured: true, version: 1 },
@@ -13,6 +14,7 @@ const readySource: ModelSourceDto = {
   kind: "deepseek",
   order: 0,
   primary: true,
+  protocol: "openai",
   sourceId: "source-1",
   status: "READY",
 };
@@ -78,17 +80,23 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(screen.queryByText("joi 建议合并 Avatar")).not.toBeInTheDocument());
   });
 
-  it("saves and validates a direct source before opening the composer", async () => {
+  it("selects a provider access mode before saving and validating a source", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValueOnce(snapshot([])).mockResolvedValue(snapshot([readySource]));
     const create = vi.spyOn(api, "createModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
     vi.spyOn(api, "validateModelSource").mockResolvedValue(readySource);
     render(<JoiHome api={api} />);
     fireEvent.click(await screen.findByRole("button", { name: "连接 Kimi" }));
+    expect(screen.getByRole("button", { name: "开放平台 API" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Kimi Code" }));
+    expect(screen.getByRole("button", { name: "OpenAI-compatible" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic-compatible" }));
+    expect(screen.getByText(/订阅套餐仅适合个人交互使用/u)).toBeInTheDocument();
+    expect(screen.getByText(/K3 的 Model ID 是 k3，不是 kimi-k3/u)).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Model ID（可选，高级设置）"), { target: { value: "kimi-custom" } });
     fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "test-key" } });
     fireEvent.submit(parentForm(screen.getByLabelText("API Key")));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ apiKey: "test-key", kind: "kimi", modelId: "kimi-custom" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "coding-plan", apiKey: "test-key", kind: "kimi", modelId: "kimi-custom", protocol: "anthropic" }));
     expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
   });
 
@@ -100,17 +108,18 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "validateModelSource").mockResolvedValue({ ...generic, reasonCode: "endpoint_unreachable", status: "DEGRADED" });
     render(<JoiHome api={api} />);
     fireEvent.click(await screen.findByRole("button", { name: "连接 通用平台" }));
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI-compatible" }));
     fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "本机" } });
     fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "http://127.0.0.1:11434/v1" } });
     fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "local-model" } });
     fireEvent.submit(parentForm(screen.getByLabelText("API Key（本机 localhost 可留空）")));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({ apiKey: "", baseUrl: "http://127.0.0.1:11434/v1", displayName: "本机", kind: "generic-openai", modelId: "local-model" }));
-    expect(await screen.findByText(/还没有通过检查/)).toBeInTheDocument();
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "custom", apiKey: "", baseUrl: "http://127.0.0.1:11434/v1", displayName: "本机", kind: "generic-openai", modelId: "local-model", protocol: "openai" }));
+    expect(await screen.findByText(/无法访问所选接口/u)).toBeInTheDocument();
   });
 
   it("manages redacted source ordering, validation, disable and deletion", async () => {
     const api = new DigitalLifeApi("");
-    const backup = { ...readySource, activeModel: { ...readySource.activeModel, id: "kimi-k2.5" }, baseUrl: "https://api.moonshot.cn/v1", displayName: "Kimi", kind: "kimi" as const, order: 1, primary: false, sourceId: "source-2" };
+    const backup = { ...readySource, accessMode: "coding-plan" as const, activeModel: { ...readySource.activeModel, id: "kimi-for-coding" }, displayName: "Kimi Code", kind: "kimi" as const, order: 1, primary: false, protocol: "anthropic" as const, sourceId: "source-2" };
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource, backup] });
     const order = vi.spyOn(api, "orderModelSources").mockResolvedValue({ items: [{ ...backup, order: 0, primary: true }, { ...readySource, order: 1, primary: false }] });
     const validate = vi.spyOn(api, "validateModelSource").mockResolvedValueOnce(readySource).mockRejectedValueOnce(new Error("offline"));
@@ -118,7 +127,9 @@ describe("joi home single entry", () => {
     const remove = vi.spyOn(api, "deleteModelSource").mockResolvedValue(undefined);
     render(<ModelSourceManager api={api} />);
     expect(await screen.findByText("DeepSeek")).toBeInTheDocument();
-    const kimi = screen.getByText("Kimi").closest("article");
+    expect(screen.getByText(/Coding Plan/u)).toBeInTheDocument();
+    expect(screen.getByText(/Anthropic-compatible/u)).toBeInTheDocument();
+    const kimi = screen.getByText("Kimi Code").closest("article");
     if (kimi === null) throw new Error("Kimi source row missing");
     fireEvent.click(within(kimi).getByRole("button", { name: "上移" }));
     await waitFor(() => expect(order).toHaveBeenCalledWith(["source-2", "source-1"]));
@@ -137,7 +148,7 @@ describe("joi home single entry", () => {
   it("edits model, endpoint metadata and optional replacement credentials as a new draft revision", async () => {
     const api = new DigitalLifeApi("");
     const generic = {
-      ...readySource, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
+      ...readySource, accessMode: "custom" as const, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
       displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
     };
     vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
@@ -145,6 +156,7 @@ describe("joi home single entry", () => {
       ...generic, activeModel: { ...generic.activeModel, id: "new-model" }, baseUrl: "https://new.example/v1", displayName: "Private 2", status: "DRAFT",
     });
     render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText(/自定义接口/u)).toBeInTheDocument();
     fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
     fireEvent.change(screen.getByLabelText("编辑显示名称"), { target: { value: "Private 2" } });
     fireEvent.change(screen.getByLabelText("编辑 Base URL"), { target: { value: "https://new.example/v1" } });

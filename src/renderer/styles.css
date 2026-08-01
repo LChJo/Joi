@@ -71,6 +71,28 @@
   background: color-mix(in srgb, var(--forest) 9%, var(--paper));
 }
 
+.model-source-access-picker,
+.model-source-protocol-picker {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: calc(var(--radius) + 4px);
+  background: var(--paper);
+  box-shadow: var(--shadow);
+}
+
+.model-source-access-picker h2,
+.model-source-protocol-picker h2 { margin: 0; }
+.model-source-access-choices,
+.model-source-protocol-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.model-source-access-choices button,
+.model-source-protocol-choices button { display: grid; gap: 5px; padding: 15px; text-align: left; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); color: var(--ink); cursor: pointer; }
+.model-source-access-choices button:hover,
+.model-source-protocol-choices button:hover { border-color: var(--forest); }
+.model-source-access-choices span,
+.model-source-protocol-choices span { color: var(--muted); font-size: 13px; }
+
 .model-source-form,
 .joi-composer,
 .joi-work-overview,

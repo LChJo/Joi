@@ -11,12 +11,12 @@ import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistenc
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
-async function copyLegacyMigrations(destination: string): Promise<void> {
+async function copyMigrationsThrough(destination: string, maximumVersion: number): Promise<void> {
   await mkdir(destination, { recursive: true });
   const source = path.resolve("resources/migrations");
   for (const filename of await readdir(source)) {
     const version = Number.parseInt(filename.split("_", 1)[0] ?? "", 10);
-    if (Number.isSafeInteger(version) && version <= 16) await copyFile(path.join(source, filename), path.join(destination, filename));
+    if (Number.isSafeInteger(version) && version <= maximumVersion) await copyFile(path.join(source, filename), path.join(destination, filename));
   }
 }
 
@@ -28,7 +28,9 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(20);
+      expect(database.inspect().schemaVersion).toBe(22);
+      expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_revisions)").all()))
+        .toEqual(expect.arrayContaining([expect.objectContaining({ name: "access_mode" }), expect.objectContaining({ name: "protocol" })]));
       const names = database.transaction((connection) => connection.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
       ).all().map((row) => String((row as { name: unknown }).name)));
@@ -66,7 +68,7 @@ describe("JOI-01 non-destructive migration", () => {
   it("backfills legacy identities without changing old counts and maps the primary Agent to preferred Partner", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-upgrade-"));
     const legacyMigrations = path.join(root, "legacy-migrations");
-    await copyLegacyMigrations(legacyMigrations);
+    await copyMigrationsThrough(legacyMigrations, 16);
     const databasePath = path.join(root, "runtime.sqlite");
     const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: legacyMigrations });
     const clock = new TestClock();
@@ -86,7 +88,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(20);
+      expect(upgraded.inspect().schemaVersion).toBe(22);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         avatars: (connection.prepare("SELECT COUNT(*) AS count FROM avatars").get() as { count: number }).count,
@@ -139,6 +141,43 @@ describe("JOI-01 non-destructive migration", () => {
         profile: { name: "原生 Avatar", scopeSummary: "新的隔离范围" },
         project: { label: "新工程" },
       });
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("backfills existing source protocols without changing credentials", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-protocol-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 21);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-07-30T10:00:00.000Z";
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO model_source_credentials
+        (provider_id, credential_type, encrypted_blob, credential_version, updated_at)
+        VALUES ('joi-source:kimi-old', 'api_key', ?, 1, ?)`)
+        .run(new Uint8Array([7, 8, 9]), now);
+      connection.prepare(`INSERT INTO model_sources
+        (source_id, status, active_source_revision_id, active_model_revision_id, created_at, updated_at)
+        VALUES ('kimi-old', 'DRAFT', NULL, NULL, ?, ?)`)
+        .run(now, now);
+      connection.prepare(`INSERT INTO model_source_revisions
+        (source_revision_id, source_id, kind, access_mode, display_name, credential_ref, credential_version, created_at)
+        VALUES ('revision-kimi-old', 'kimi-old', 'kimi', 'coding-plan', 'Kimi Code', 'joi-source:kimi-old', 1, ?)`)
+        .run(now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT protocol FROM model_source_revisions WHERE source_revision_id = 'revision-kimi-old'",
+      ).get())).toEqual({ protocol: "anthropic" });
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT length(encrypted_blob) AS size FROM model_source_credentials WHERE provider_id = 'joi-source:kimi-old'",
+      ).get())).toEqual({ size: 3 });
     } finally {
       upgraded.close();
       await rm(root, { force: true, recursive: true });

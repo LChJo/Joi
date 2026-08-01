@@ -43,11 +43,14 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
         displayName: source.activeSourceRevision.displayName,
         kind: "generic-openai",
         modelId: input.modelId,
+        protocol: source.activeSourceRevision.protocol,
         sourceId: input.sourceId,
       }
       : {
+        accessMode: source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
         kind: source.activeSourceRevision.kind,
         modelId: input.modelId,
+        protocol: source.activeSourceRevision.protocol,
         sourceId: input.sourceId,
       });
     const models = createModels({

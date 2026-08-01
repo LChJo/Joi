@@ -10,7 +10,7 @@
 - joi 使用 Pi 作为唯一主推理基座，自身只有规划、查询和派发工具，不获得任意 shell、文件读写或编辑能力。
 - 原 Life 主 Agent 降级为对应 Avatar 的首选搭档；本机 Pi 与远端 A2A 搭档统一进入版本化搭档目录。
 - 所有输入先持久化，所有外部副作用先进入 outbox，并使用稳定幂等标识；连续输入的合并、等待或并发由 joi 在安全 Turn 边界决定。
-- 首次无可用模型源时，首页先完成大模型网络连接；首版只提供六家官方直连和一个 OpenAI-compatible 通用平台。
+- 首次无可用模型源时，首页先完成大模型网络连接；提供六家官方厂商和一个通用平台，厂商内区分普通 API 与官方 Coding/Token Plan，并在厂商支持时继续选择 OpenAI-compatible 或 Anthropic-compatible 协议。
 
 目标架构决策见 [ADR 0002](docs/adr/0002-unique-joi-pi-avatar-orchestration.md)，旧 Life 数据兼容策略见 [ADR 0003](docs/adr/0003-avatar-legacy-life-migration.md)。下文中 Life/Wake/主 Agent 描述的是现有兼容运行时，实施 JOI-01 时逐步收敛为只读兼容层，不再代表新的调度权威。
 

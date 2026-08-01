@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AvatarChangeRequestDto, AvatarDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceDto, ModelSourceKindDto, PartnerDto } from "../shared/joi";
+import type { AvatarChangeRequestDto, AvatarDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -97,7 +97,7 @@ export class DigitalLifeApi {
     });
   }
   listModelSources() { return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources"); }
-  createModelSource(body: { apiKey: string; baseUrl?: string; displayName?: string; kind: ModelSourceKindDto; modelId?: string }) {
+  createModelSource(body: { accessMode: ModelSourceAccessModeDto; apiKey: string; baseUrl?: string; displayName?: string; kind: ModelSourceKindDto; modelId?: string; protocol: ModelSourceProtocolDto }) {
     return this.request<ModelSourceDto>("/api/v1/model-sources", { body, method: "POST" });
   }
   validateModelSource(sourceId: string) {

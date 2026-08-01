@@ -580,12 +580,22 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         if (!["kimi", "glm", "qwen", "doubao", "minimax", "deepseek", "generic-openai"].includes(kind)) {
           throw new HttpError("model_source_kind_invalid", "Model source kind is invalid.", 400);
         }
+        const accessMode = typeof body.accessMode === "string" ? body.accessMode : undefined;
+        if (accessMode !== undefined && !["api", "coding-plan", "custom"].includes(accessMode)) {
+          throw new HttpError("model_source_access_mode_invalid", "Model source access mode is invalid.", 400);
+        }
+        const protocol = typeof body.protocol === "string" ? body.protocol : undefined;
+        if (protocol !== undefined && !["openai", "anthropic"].includes(protocol)) {
+          throw new HttpError("model_source_protocol_invalid", "Model source protocol is invalid.", 400);
+        }
         const source = await modelSourceService(dependencies).create({
+          ...(accessMode === undefined ? {} : { accessMode: accessMode as "api" | "coding-plan" | "custom" }),
           apiKey: stringField(body, "apiKey"),
           kind: kind as Parameters<ModelSourceService["create"]>[0]["kind"],
           ...(typeof body.baseUrl === "string" ? { baseUrl: body.baseUrl } : {}),
           ...(typeof body.displayName === "string" ? { displayName: body.displayName } : {}),
           ...(typeof body.modelId === "string" ? { modelId: body.modelId } : {}),
+          ...(protocol === undefined ? {} : { protocol: protocol as "openai" | "anthropic" }),
         });
         sendJson(response, 201, source);
         return;

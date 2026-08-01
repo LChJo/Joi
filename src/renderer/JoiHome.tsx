@@ -1,15 +1,17 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceKindDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
   const [selected, setSelected] = useState<ModelSourceKindDto | null>(null);
+  const [selectedAccessMode, setSelectedAccessMode] = useState<ModelSourceAccessModeDto | null>(null);
+  const [selectedProtocol, setSelectedProtocol] = useState<ModelSourceProtocolDto | null>(null);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (selected === null) return;
+    if (selected === null || selectedAccessMode === null || selectedProtocol === null) return;
     const form = new FormData(event.currentTarget);
     const value = (key: string) => {
       const field = form.get(key);
@@ -18,39 +20,88 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
     setBusy(true); setNotice("正在检查连接，这可能产生极少量模型费用…");
     try {
       const source = await api.createModelSource({
+        accessMode: selectedAccessMode,
         apiKey: value("apiKey"),
         kind: selected,
+        protocol: selectedProtocol,
         ...(selected === "generic-openai" ? {
           baseUrl: value("baseUrl"), displayName: value("displayName"), modelId: value("modelId"),
         } : value("modelId").trim() === "" ? {} : { modelId: value("modelId") }),
       });
       const validated = await api.validateModelSource(source.sourceId);
-      setNotice(validated.status === "READY" ? "已连接，joi 可以开始思考了。" : "连接已保存，但还没有通过检查。你可以修改后再验证。");
+      setNotice(validated.status === "READY" ? "已连接，joi 可以开始思考了。" : validationNotice(validated.reasonCode));
       await changed();
-      if (validated.status === "READY") setSelected(null);
+      if (validated.status === "READY") { setSelected(null); setSelectedAccessMode(null); setSelectedProtocol(null); }
     } catch (error) {
       setNotice(error instanceof ApiError ? error.message : "连接没检查成功，草稿仍可稍后重试。");
     } finally {
       setBusy(false);
     }
   };
+  const selectedChoice = MODEL_SOURCE_CHOICES.find((choice) => choice.kind === selected);
+  const selectedOption = selectedChoice?.options.find((option) => option.accessMode === selectedAccessMode);
+  const chooseProvider = (kind: ModelSourceKindDto) => {
+    const choice = MODEL_SOURCE_CHOICES.find((candidate) => candidate.kind === kind);
+    const defaultAccessMode = choice?.options.length === 1 ? choice.options[0].accessMode : null;
+    const defaultProtocol = choice?.options.length === 1 && choice.options[0].protocols.length === 1
+      ? choice.options[0].protocols[0].protocol
+      : null;
+    setSelected(kind);
+    setSelectedAccessMode(defaultAccessMode);
+    setSelectedProtocol(defaultProtocol);
+    setNotice(null);
+  };
+  const chooseAccessMode = (accessMode: ModelSourceAccessModeDto) => {
+    const option = selectedChoice?.options.find((candidate) => candidate.accessMode === accessMode);
+    setSelectedAccessMode(accessMode);
+    setSelectedProtocol(option?.protocols.length === 1 ? option.protocols[0].protocol : null);
+  };
+  const cancel = () => { setSelected(null); setSelectedAccessMode(null); setSelectedProtocol(null); setNotice(null); };
   return <section className="joi-network-gate" aria-labelledby="joi-network-title">
     <p className="eyebrow">第一次见面</p>
     <h1 id="joi-network-title">joi需要链接到大模型网络</h1>
     <p>选一个你已有账号的主流模型网络。密钥加密保存在本机，不会在页面再次显示。</p>
-    <div className="model-source-choices">{MODEL_SOURCE_CHOICES.map((choice) => <button className={selected === choice.kind ? "selected" : ""} key={choice.kind} onClick={() => setSelected(choice.kind)} type="button">连接 {choice.label}</button>)}</div>
-    {selected === null ? null : <form className="model-source-form" onSubmit={(event) => void submit(event)}>
-      <h2>{MODEL_SOURCE_CHOICES.find((choice) => choice.kind === selected)?.label}</h2>
+    <div className="model-source-choices">{MODEL_SOURCE_CHOICES.map((choice) => <button className={selected === choice.kind ? "selected" : ""} key={choice.kind} onClick={() => chooseProvider(choice.kind)} type="button">连接 {choice.label}</button>)}</div>
+    {selectedChoice !== undefined && selectedAccessMode === null ? <section className="model-source-access-picker" aria-label={`${selectedChoice.label} 接入方案`}>
+      <h2>{selectedChoice.label} 的接入方案</h2>
+      <div className="model-source-access-choices">{selectedChoice.options.map((option) => <button aria-label={option.label} key={option.accessMode} onClick={() => chooseAccessMode(option.accessMode)} type="button"><strong>{option.label}</strong><span>{option.description}</span></button>)}</div>
+      <button className="button ghost" onClick={cancel} type="button">取消</button>
+    </section> : null}
+    {selectedOption !== undefined && selectedProtocol === null ? <section className="model-source-protocol-picker" aria-label={`${selectedOption.label} 接口协议`}>
+      <h2>{selectedOption.label} 的接口协议</h2>
+      <div className="model-source-protocol-choices">{selectedOption.protocols.map((option) => <button aria-label={option.label} key={option.protocol} onClick={() => setSelectedProtocol(option.protocol)} type="button"><strong>{option.label}</strong><span>{option.description}</span></button>)}</div>
+      <button className="button ghost" onClick={cancel} type="button">取消</button>
+    </section> : null}
+    {selected !== null && selectedAccessMode !== null && selectedProtocol !== null ? <form className="model-source-form" onSubmit={(event) => void submit(event)}>
+      <h2>{selectedOption?.label ?? selectedChoice?.label} · {protocolLabel(selectedProtocol)}</h2>
+      {selectedAccessMode === "coding-plan" ? <p className="inline-notice warning">订阅套餐仅适合个人交互使用，请确认你的使用符合厂商条款。</p> : null}
+      {selected === "kimi" && selectedAccessMode === "coding-plan" ? <p className="model-source-hint">K3 的 Model ID 是 k3，不是 kimi-k3；留空则使用所有会员可用的 kimi-for-coding。</p> : null}
       {selected === "generic-openai" ? <>
         <label>显示名称<input name="displayName" required /></label>
         <label>Base URL<input name="baseUrl" placeholder="https://api.example.com/v1" required type="url" /></label>
         <label>Model ID<input name="modelId" required /></label>
       </> : <label>Model ID（可选，高级设置）<input name="modelId" placeholder="留空使用推荐模型" /></label>}
       <label>API Key{selected === "generic-openai" ? "（本机 localhost 可留空）" : ""}<input autoComplete="off" name="apiKey" required={selected !== "generic-openai"} type="password" /></label>
-      <div className="row-actions"><button className="button primary" disabled={busy} type="submit">{busy ? "正在检查…" : "保存并验证"}</button><button className="button ghost" onClick={() => setSelected(null)} type="button">取消</button></div>
-    </form>}
+      <div className="row-actions"><button className="button primary" disabled={busy} type="submit">{busy ? "正在检查…" : "保存并验证"}</button><button className="button ghost" onClick={cancel} type="button">取消</button></div>
+    </form> : null}
     {notice === null ? null : <p className="inline-notice info" role="status">{notice}</p>}
   </section>;
+}
+
+function validationNotice(reasonCode: string | undefined): string {
+  if (reasonCode === "auth_failed") return "API Key 与所选接入方案不匹配，或没有访问权限。请确认 Key 和套餐类型后再验证。";
+  if (reasonCode === "model_unavailable") return "所选接口找不到这个 Model ID。请留空使用推荐模型，或填写该套餐支持的模型。";
+  return "joi 无法访问所选接口。请检查网络、服务状态和套餐余额后再验证。";
+}
+
+function accessModeLabel(accessMode: ModelSourceAccessModeDto): string {
+  if (accessMode === "coding-plan") return "Coding Plan";
+  if (accessMode === "custom") return "自定义接口";
+  return "API";
+}
+
+function protocolLabel(protocol: ModelSourceProtocolDto): string {
+  return protocol === "anthropic" ? "Anthropic-compatible" : "OpenAI-compatible";
 }
 
 export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
@@ -100,7 +151,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     <header><div><h2>大模型网络</h2><p>主源和备用源按这里的顺序使用。页面不会显示已保存的密钥。</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "添加网络"}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
     <div className="model-source-list">{sources.map((source, index) => <article key={source.sourceId}>
-      <div><strong>{source.displayName}</strong><span>{source.primary ? "主源" : `备用 ${String(index)}`} · {source.status} · {source.activeModel.id}</span>{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}</div>
+      <div><strong>{source.displayName}</strong><span>{source.primary ? "主源" : `备用 ${String(index)}`} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)} · {source.status} · {source.activeModel.id}</span>{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}</div>
       <div className="row-actions"><button aria-label={`编辑 ${source.displayName}`} className="button ghost" onClick={() => setEditing(source.sourceId)} type="button">编辑</button><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">上移</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">下移</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice("验证没有通过。"))} type="button">验证</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">停用</button><button className="button danger-text" onClick={() => void api.deleteModelSource(source.sourceId).then(load)} type="button">删除</button></div>
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>编辑显示名称<input defaultValue={source.displayName} name="displayName" required /></label><label>编辑 Base URL<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}

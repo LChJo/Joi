@@ -22,9 +22,10 @@ describe("model source HTTP API", () => {
       return item;
     };
     const modelSources = {
-      create: async (input: { apiKey: string; kind: "kimi" }) => {
+      create: async (input: { accessMode?: "api" | "coding-plan" | "custom"; apiKey: string; kind: "kimi"; protocol?: "openai" | "anthropic" }) => {
         receivedKeys.push(input.apiKey);
         const source: ModelSourceDto = {
+          accessMode: input.accessMode ?? "api",
           activeModel: { capability: "release-tested", id: "kimi-k2.5", revisionId: "model-1" },
           activeSourceRevisionId: "source-revision-1",
           credential: { configured: true, version: 1 },
@@ -32,6 +33,7 @@ describe("model source HTTP API", () => {
           kind: input.kind,
           order: 0,
           primary: true,
+          protocol: input.protocol ?? "openai",
           sourceId: "source-1",
           status: "DRAFT",
         };
@@ -68,14 +70,14 @@ describe("model source HTTP API", () => {
       });
       expect(denied.status).toBe(403);
       const created = await fetch(`${listeners.loopback.url}/api/v1/model-sources`, {
-        body: JSON.stringify({ apiKey: "must-never-leak", kind: "kimi" }), headers: writeHeaders, method: "POST",
+        body: JSON.stringify({ accessMode: "coding-plan", apiKey: "must-never-leak", kind: "kimi", protocol: "anthropic" }), headers: writeHeaders, method: "POST",
       });
       expect(created.status).toBe(201);
       const listed = await fetch(`${listeners.loopback.url}/api/v1/model-sources`, { headers: { cookie } });
       const body = await listed.text();
       expect(receivedKeys).toEqual(["must-never-leak"]);
       expect(body).not.toContain("must-never-leak");
-      expect(JSON.parse(body)).toMatchObject({ items: [{ credential: { configured: true, version: 1 }, kind: "kimi" }] });
+      expect(JSON.parse(body)).toMatchObject({ items: [{ accessMode: "coding-plan", credential: { configured: true, version: 1 }, kind: "kimi", protocol: "anthropic" }] });
     } finally {
       await listeners.close();
       await fixture.close();

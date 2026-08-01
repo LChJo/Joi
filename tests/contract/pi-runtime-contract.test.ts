@@ -52,8 +52,8 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
-  it("ships exactly six direct presets plus one generic OpenAI-compatible option", () => {
-    expect(MODEL_SOURCE_OPTIONS.map((option) => option.kind)).toEqual([
+  it("ships provider-specific API and coding-plan presets plus one generic option", () => {
+    expect([...new Set(MODEL_SOURCE_OPTIONS.map((option) => option.kind))]).toEqual([
       "kimi",
       "glm",
       "qwen",
@@ -62,25 +62,31 @@ describe("Pi reasoning runtime contract", () => {
       "deepseek",
       "generic-openai",
     ]);
-    expect(MODEL_SOURCE_PRESETS).toHaveLength(6);
+    expect(MODEL_SOURCE_PRESETS).toHaveLength(18);
+    expect(MODEL_SOURCE_PRESETS.filter((preset) => preset.accessMode === "coding-plan" && preset.protocol === "anthropic").map((preset) => preset.kind))
+      .toEqual(["kimi", "glm", "qwen", "doubao", "minimax"]);
+    expect(MODEL_SOURCE_PRESETS.find((preset) => (
+      preset.kind === "kimi" && preset.accessMode === "coding-plan" && preset.protocol === "anthropic"
+    ))?.models.map((entry) => entry.id)).toEqual(["k3", "k3-256k", "kimi-for-coding", "kimi-for-coding-highspeed"]);
     for (const preset of MODEL_SOURCE_PRESETS) {
       expect(preset.endpoint).toMatch(/^https:\/\//u);
       expect(preset.defaultModelId.length).toBeGreaterThan(0);
       expect(preset.models.map((model) => model.id)).toContain(preset.defaultModelId);
       expect(preset.endpointEditable).toBe(false);
-      expect(preset.presetVersion).toBe("2026-07-28");
+      expect(preset.presetVersion).toBe("2026-07-30");
     }
     expect(JSON.stringify(MODEL_SOURCE_OPTIONS)).not.toMatch(/openrouter|siliconflow|火山引擎方舟以外的转发|聚合平台/iu);
   });
 
   it("creates isolated Pi providers whose auth resolves only from the injected credential store", async () => {
     const credentials = new MemoryCredentialStore();
-    const direct = createPiSourceProvider({ kind: "glm", modelId: "glm-4.7", sourceId: "source_a" });
+    const direct = createPiSourceProvider({ accessMode: "api", kind: "glm", modelId: "glm-4.7", protocol: "openai", sourceId: "source_a" });
     const generic = createPiSourceProvider({
       baseUrl: "http://127.0.0.1:11434/v1",
       displayName: "本机模型",
       kind: "generic-openai",
       modelId: "local-tool-model",
+      protocol: "openai",
       sourceId: "source_b",
     });
     const models = createModels({
@@ -99,6 +105,49 @@ describe("Pi reasoning runtime contract", () => {
     credentials.credentials.set(direct.id, { key: "stored-test-key", type: "api_key" });
     expect(await models.getAuth(direct.id)).toMatchObject({ auth: { apiKey: "stored-test-key" }, source: "joi credential store" });
     expect(await models.getAuth(generic.id)).toMatchObject({ auth: {}, source: "keyless local source" });
+  });
+
+  it("uses Pi's Kimi Code Anthropic transport and required client identity", () => {
+    const anthropic = createPiSourceProvider({
+      accessMode: "coding-plan",
+      kind: "kimi",
+      modelId: "kimi-for-coding",
+      protocol: "anthropic",
+      sourceId: "kimi_code",
+    });
+    const openai = createPiSourceProvider({
+      accessMode: "coding-plan",
+      kind: "kimi",
+      modelId: "kimi-for-coding",
+      protocol: "openai",
+      sourceId: "kimi_code_openai",
+    });
+
+    expect(anthropic.baseUrl).toBe("https://api.kimi.com/coding");
+    expect(anthropic.headers).toMatchObject({ "User-Agent": "KimiCLI/1.5" });
+    expect(anthropic.getModels()[0]).toMatchObject({
+      api: "anthropic-messages",
+      id: "kimi-for-coding",
+      provider: "joi-source:kimi_code",
+    });
+    expect(openai.baseUrl).toBe("https://api.kimi.com/coding/v1");
+    expect(openai.headers).toMatchObject({ "User-Agent": "KimiCLI/1.5" });
+    expect(openai.getModels()[0]).toMatchObject({ api: "openai-completions", provider: "joi-source:kimi_code_openai" });
+
+    const k3 = createPiSourceProvider({
+      accessMode: "coding-plan",
+      kind: "kimi",
+      modelId: "k3",
+      protocol: "anthropic",
+      sourceId: "kimi_k3",
+    }).getModels()[0];
+    expect(k3).toMatchObject({
+      compat: { allowEmptySignature: true, forceAdaptiveThinking: true },
+      contextWindow: 1_048_576,
+      id: "k3",
+      maxTokens: 131_072,
+      reasoning: true,
+    });
   });
 
   it("streams text, executes only registered joi tools, queues steer/follow-up, and restores the session", async () => {

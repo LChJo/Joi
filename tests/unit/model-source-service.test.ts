@@ -39,10 +39,12 @@ describe("ModelSourceService", () => {
       },
     };
     const catalog: ModelSourceCatalog = {
-      resolve: (kind, requestedModelId) => ({
+      resolve: (kind, requestedModelId, requestedAccessMode, requestedProtocol) => ({
+        accessMode: requestedAccessMode ?? (kind === "generic-openai" ? "custom" : "api"),
         capability: requestedModelId === undefined ? "release-tested" : "custom-unverified-tools",
         displayName: kind === "kimi" ? "Kimi" : "通用平台",
         modelId: requestedModelId ?? "kimi-k2.5",
+        protocol: requestedProtocol ?? "openai",
         ...(kind === "generic-openai" ? {} : { presetVersion: "2026-07-28" }),
       }),
     };
@@ -62,16 +64,17 @@ describe("ModelSourceService", () => {
       validator,
     });
 
-    const kimi = await service.create({ apiKey: "model-source-test-secret", kind: "kimi" });
+    const kimi = await service.create({ accessMode: "coding-plan", apiKey: "model-source-test-secret", kind: "kimi", protocol: "anthropic" });
     const local = await service.create({
       apiKey: "",
       baseUrl: "http://127.0.0.1:11434/v1",
       displayName: "本机模型",
       kind: "generic-openai",
       modelId: "local-tool-model",
+      protocol: "openai",
     });
-    expect(kimi).toMatchObject({ kind: "kimi", order: 0, primary: true, status: "DRAFT" });
-    expect(local).toMatchObject({ kind: "generic-openai", order: 1, primary: false, status: "DRAFT" });
+    expect(kimi).toMatchObject({ accessMode: "coding-plan", kind: "kimi", order: 0, primary: true, protocol: "anthropic", status: "DRAFT" });
+    expect(local).toMatchObject({ kind: "generic-openai", order: 1, primary: false, protocol: "openai", status: "DRAFT" });
     expect(savedSecrets).toEqual([
       { apiKey: "model-source-test-secret", providerId: `joi-source:${kimi.sourceId}` },
       { apiKey: undefined, providerId: `joi-source:${local.sourceId}` },
@@ -89,7 +92,7 @@ describe("ModelSourceService", () => {
   it("keeps composer-gating failures visible without deleting drafts or source metadata", async () => {
     const repository = new MemoryModelSourceRepository();
     const service = new ModelSourceService({
-      catalog: { resolve: () => ({ capability: "release-tested", displayName: "DeepSeek", modelId: "deepseek-chat", presetVersion: "2026-07-28" }) },
+      catalog: { resolve: () => ({ accessMode: "api", capability: "release-tested", displayName: "DeepSeek", modelId: "deepseek-chat", presetVersion: "2026-07-28", protocol: "openai" }) },
       clock: new TestClock(),
       endpointPolicy: { validate: async (url) => ({ local: false, url }) },
       ids: new TestIds(),
@@ -108,7 +111,7 @@ describe("ModelSourceService", () => {
     const deleted: string[] = [];
     let credentialVersion = 0;
     const service = new ModelSourceService({
-      catalog: { resolve: (_kind, modelId) => ({ capability: modelId === "custom-model" ? "custom-unverified-tools" : "release-tested", displayName: "DeepSeek", modelId: modelId ?? "deepseek-chat", presetVersion: "2026-07-28" }) },
+      catalog: { resolve: (_kind, modelId) => ({ accessMode: "api", capability: modelId === "custom-model" ? "custom-unverified-tools" : "release-tested", displayName: "DeepSeek", modelId: modelId ?? "deepseek-chat", presetVersion: "2026-07-28", protocol: "openai" }) },
       clock: new TestClock(),
       endpointPolicy: { validate: async (url) => ({ local: false, url }) },
       ids: new TestIds(),
@@ -136,7 +139,7 @@ describe("ModelSourceService", () => {
   it("rejects incomplete or unsafe source mutations and invalid order sets", async () => {
     const repository = new MemoryModelSourceRepository();
     const service = new ModelSourceService({
-      catalog: { resolve: (kind, modelId) => ({ capability: kind === "generic-openai" ? "custom-unverified-tools" : "release-tested", displayName: kind, modelId: modelId ?? "default" }) },
+      catalog: { resolve: (kind, modelId) => ({ accessMode: kind === "generic-openai" ? "custom" : "api", capability: kind === "generic-openai" ? "custom-unverified-tools" : "release-tested", displayName: kind, modelId: modelId ?? "default", protocol: "openai" }) },
       clock: new TestClock(),
       endpointPolicy: { validate: async (url) => ({ local: url.includes("127.0.0.1"), url }) },
       ids: new TestIds(), repository,
@@ -156,7 +159,7 @@ describe("ModelSourceService", () => {
   it("revises a keyless local generic source and normalizes remaining primary order after deletion", async () => {
     const repository = new MemoryModelSourceRepository();
     const service = new ModelSourceService({
-      catalog: { resolve: (kind, modelId) => ({ capability: kind === "generic-openai" ? "custom-unverified-tools" : "release-tested", displayName: kind, modelId: modelId ?? "default" }) },
+      catalog: { resolve: (kind, modelId) => ({ accessMode: kind === "generic-openai" ? "custom" : "api", capability: kind === "generic-openai" ? "custom-unverified-tools" : "release-tested", displayName: kind, modelId: modelId ?? "default", protocol: "openai" }) },
       clock: new TestClock(), endpointPolicy: { validate: async (url) => ({ local: url.includes("127.0.0.1"), url }) }, ids: new TestIds(), repository,
       secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
       validator: { validate: async () => ({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" }) },

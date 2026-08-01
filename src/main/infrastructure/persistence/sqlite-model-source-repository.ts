@@ -3,7 +3,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { ModelSourceRecord, ModelSourceRepository } from "../../application/ports/model-source-ports.js";
-import type { ModelCapability, ModelSourceKind, ModelSourceStatus } from "../../domain/model-sources/model-source.js";
+import type { ModelCapability, ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol, ModelSourceStatus } from "../../domain/model-sources/model-source.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -13,7 +13,7 @@ type Row = Record<string, unknown>;
 
 const SELECT_RECORDS = `
   SELECT s.source_id, s.status, s.created_at, s.updated_at,
-         sr.source_revision_id, sr.kind, sr.display_name, sr.base_url,
+         sr.source_revision_id, sr.kind, sr.access_mode, sr.protocol, sr.display_name, sr.base_url,
          sr.credential_ref, sr.credential_version, sr.created_at AS source_revision_created_at,
          mr.model_revision_id, mr.model_id, mr.capability, mr.preset_version,
          mr.created_at AS model_revision_created_at,
@@ -74,11 +74,13 @@ function mapRow(row: Row): ModelSourceRecord {
         modelRevisionId: text(row, "model_revision_id"),
       },
       activeSourceRevision: {
+        accessMode: text(row, "access_mode") as ModelSourceAccessMode,
         createdAt: text(row, "source_revision_created_at"),
         credentialRef: text(row, "credential_ref"),
         credentialVersion: integer(row, "credential_version"),
         displayName: text(row, "display_name"),
         kind: text(row, "kind") as ModelSourceKind,
+        protocol: text(row, "protocol") as ModelSourceProtocol,
         sourceRevisionId: text(row, "source_revision_id"),
       },
       createdAt: text(row, "created_at"),
@@ -99,10 +101,10 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
           (source_id, status, active_source_revision_id, active_model_revision_id, created_at, updated_at)
           VALUES (?, ?, NULL, NULL, ?, ?)`).run(source.sourceId, source.status, source.createdAt, source.updatedAt);
         connection.prepare(`INSERT INTO model_source_revisions
-          (source_revision_id, source_id, kind, display_name, base_url, credential_ref, credential_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+          (source_revision_id, source_id, kind, access_mode, protocol, display_name, base_url, credential_ref, credential_version, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           source.activeSourceRevision.sourceRevisionId, source.sourceId, source.activeSourceRevision.kind,
-          source.activeSourceRevision.displayName, record.baseUrl ?? null, source.activeSourceRevision.credentialRef,
+          source.activeSourceRevision.accessMode, source.activeSourceRevision.protocol, source.activeSourceRevision.displayName, record.baseUrl ?? null, source.activeSourceRevision.credentialRef,
           source.activeSourceRevision.credentialVersion, source.activeSourceRevision.createdAt,
         );
         connection.prepare(`INSERT INTO model_source_model_revisions
@@ -151,10 +153,10 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
     this.database.transaction((connection) => {
       const source = record.source;
       connection.prepare(`INSERT INTO model_source_revisions
-        (source_revision_id, source_id, kind, display_name, base_url, credential_ref, credential_version, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        (source_revision_id, source_id, kind, access_mode, protocol, display_name, base_url, credential_ref, credential_version, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         source.activeSourceRevision.sourceRevisionId, source.sourceId, source.activeSourceRevision.kind,
-        source.activeSourceRevision.displayName, record.baseUrl ?? null, source.activeSourceRevision.credentialRef,
+        source.activeSourceRevision.accessMode, source.activeSourceRevision.protocol, source.activeSourceRevision.displayName, record.baseUrl ?? null, source.activeSourceRevision.credentialRef,
         source.activeSourceRevision.credentialVersion, source.activeSourceRevision.createdAt,
       );
       connection.prepare(`INSERT INTO model_source_model_revisions

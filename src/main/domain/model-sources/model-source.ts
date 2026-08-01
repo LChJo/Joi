@@ -3,6 +3,8 @@ import { DomainError } from "../errors.js";
 export const MODEL_SOURCE_STATUSES = ["DRAFT", "VALIDATING", "READY", "DEGRADED", "NEEDS_AUTH", "DISABLED"] as const;
 export type ModelSourceStatus = (typeof MODEL_SOURCE_STATUSES)[number];
 export type ModelSourceKind = "kimi" | "glm" | "qwen" | "doubao" | "minimax" | "deepseek" | "generic-openai";
+export type ModelSourceAccessMode = "api" | "coding-plan" | "custom";
+export type ModelSourceProtocol = "openai" | "anthropic";
 export type ModelCapability = "release-tested" | "custom-unverified-tools";
 export type SourceFailureKind =
   | "timeout" | "connect" | "rate_limited" | "server_error"
@@ -10,11 +12,13 @@ export type SourceFailureKind =
   | "safety_refusal" | "content_refusal";
 
 export interface ModelSourceRevision {
+  accessMode: ModelSourceAccessMode;
   createdAt: string;
   credentialRef: string;
   credentialVersion: number;
   displayName: string;
   kind: ModelSourceKind;
+  protocol: ModelSourceProtocol;
   sourceRevisionId: string;
 }
 
@@ -35,6 +39,7 @@ export interface ModelSource {
 }
 
 export interface CreateModelSourceInput {
+  accessMode?: ModelSourceAccessMode;
   createdAt: string;
   credentialRef: string;
   credentialVersion: number;
@@ -43,6 +48,7 @@ export interface CreateModelSourceInput {
   modelCapability: ModelCapability;
   modelId: string;
   modelRevisionId: string;
+  protocol?: ModelSourceProtocol;
   sourceId: string;
   sourceRevisionId: string;
 }
@@ -65,11 +71,13 @@ export function createModelSource(input: CreateModelSourceInput): ModelSource {
       modelRevisionId: required(input.modelRevisionId, "model_revision_id_invalid"),
     },
     activeSourceRevision: {
+      accessMode: input.accessMode ?? (input.kind === "generic-openai" ? "custom" : "api"),
       createdAt: input.createdAt,
       credentialRef: required(input.credentialRef, "model_source_credential_ref_invalid"),
       credentialVersion: input.credentialVersion,
       displayName: required(input.displayName, "model_source_name_invalid"),
       kind: input.kind,
+      protocol: input.protocol ?? "openai",
       sourceRevisionId: required(input.sourceRevisionId, "model_source_revision_id_invalid"),
     },
     createdAt: input.createdAt,

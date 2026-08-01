@@ -1,7 +1,9 @@
 import type {
   ModelCapability,
+  ModelSourceAccessMode,
   ModelSource,
   ModelSourceKind,
+  ModelSourceProtocol,
   ModelSourceStatus,
 } from "../../domain/model-sources/model-source.js";
 
@@ -48,10 +50,12 @@ export interface ModelSourceSecretStore {
 }
 
 export interface ModelSourceCatalog {
-  resolve(kind: ModelSourceKind, requestedModelId?: string): {
+  resolve(kind: ModelSourceKind, requestedModelId?: string, requestedAccessMode?: ModelSourceAccessMode, requestedProtocol?: ModelSourceProtocol): {
+    accessMode: ModelSourceAccessMode;
     capability: ModelCapability;
     displayName: string;
     modelId: string;
+    protocol: ModelSourceProtocol;
     presetVersion?: string;
   };
 }

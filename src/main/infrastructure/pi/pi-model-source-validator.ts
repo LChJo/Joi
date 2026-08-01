@@ -46,11 +46,14 @@ export class PiModelSourceValidator implements ModelSourceValidator {
           displayName: source.activeSourceRevision.displayName,
           kind: "generic-openai",
           modelId: source.activeModelRevision.modelId,
+          protocol: source.activeSourceRevision.protocol,
           sourceId: source.sourceId,
         }
         : {
+          accessMode: source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
           kind: source.activeSourceRevision.kind,
           modelId: source.activeModelRevision.modelId,
+          protocol: source.activeSourceRevision.protocol,
           sourceId: source.sourceId,
         });
       const models = createModels({
@@ -69,7 +72,10 @@ export class PiModelSourceValidator implements ModelSourceValidator {
         const response = await models.completeSimple(model, {
           messages: [{ content: "Reply with OK.", role: "user", timestamp: Date.now() }],
         }, { maxTokens: 8, signal: controller.signal });
-        if (response.stopReason === "error" || !response.content.some((block) => block.type === "text" && block.text.length > 0)) {
+        if (response.stopReason === "error") {
+          throw new Error(response.errorMessage ?? "minimal text response failed");
+        }
+        if (!response.content.some((block) => block.type === "text" && block.text.length > 0)) {
           throw new Error("minimal text response failed");
         }
       } finally {

@@ -19,11 +19,13 @@ function readyApi() {
     avatarChanges: [],
     avatars: [],
     modelSources: [{
+      accessMode: "api",
       activeModel: { capability: "release-tested", id: "deepseek-chat", revisionId: "model-1" },
       activeSourceRevisionId: "source-revision-1",
       credential: { configured: true, version: 1 },
       displayName: "DeepSeek",
       kind: "deepseek",
+      protocol: "openai",
       order: 0,
       primary: true,
       sourceId: "source-1",
