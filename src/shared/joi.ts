@@ -101,12 +101,30 @@ export interface AvatarChangeRequestDto {
   targetAvatarId?: string;
 }
 
+export const PARTNER_ENGINES = ["claude-code", "codex", "pi-core"] as const;
+export type PartnerEngineDto = (typeof PARTNER_ENGINES)[number];
+
+export interface PartnerKnowledgeDocDto {
+  bytes: number;
+  createdAt: string;
+  docId: string;
+  filename: string;
+  sha256: string;
+}
+
 export interface PartnerDto {
   capabilities: string[];
+  createdBy: "joi" | "user";
+  description?: string;
   displayName: string;
-  kind: "local-pi" | "a2a";
+  engine: PartnerEngineDto;
+  engineModelId?: string;
   inFlightCount: number;
+  kind: "local-pi" | "a2a";
+  knowledgeDocCount: number;
   lifecyclePolicy: "DRAIN";
+  modelIdOverride?: string;
+  modelSourceId?: string;
   partnerId: string;
   partnerRevisionId: string;
   registryRevision: number;

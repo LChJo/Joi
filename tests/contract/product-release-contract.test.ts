@@ -29,6 +29,16 @@ describe("joi product and release contract", () => {
     expect(consoleSource).toContain("<strong>joi</strong>");
   });
 
+  it("removes the default native menu from the desktop window", async () => {
+    const [mainSource, uxSpecification] = await Promise.all([
+      readProjectFile("src/main/index.ts"),
+      readProjectFile("docs/02-ux-specification.md"),
+    ]);
+
+    expect(mainSource).toContain("window.setMenu(null)");
+    expect(uxSpecification).toContain("Windows 桌面窗口启动后不出现 Electron 默认原生菜单栏");
+  });
+
   it("publishes reproducible run, clean, and package commands for agents", async () => {
     const [packageSource, agentCommands, packageScript, cleanScript, ignore] = await Promise.all([
       readProjectFile("package.json"),

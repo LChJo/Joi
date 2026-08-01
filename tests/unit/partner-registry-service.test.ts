@@ -1,7 +1,11 @@
 /* In-memory registry implements asynchronous persistence immediately. */
 /* eslint-disable @typescript-eslint/require-await */
+import { createHash } from "node:crypto";
+
+import { PartnerKnowledgeService } from "../../src/main/application/partners/partner-knowledge-service.js";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import type { PartnerPromptStore } from "../../src/main/application/ports/partner-execution.js";
+import type { PartnerKnowledgeDocMeta, PartnerKnowledgeStore } from "../../src/main/application/ports/partner-knowledge.js";
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../../src/main/application/ports/partner-registry.js";
 import type { PartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
@@ -24,6 +28,34 @@ class MemoryPartnerPrompts implements PartnerPromptStore {
   readonly records = new Map<string, string>();
   async read(promptRef: string) { return this.records.get(promptRef) ?? null; }
   async save(input: { body: string; createdAt: string; promptRef: string }) { this.records.set(input.promptRef, input.body); }
+}
+
+class MemoryKnowledgeStore implements PartnerKnowledgeStore {
+  readonly docs: { body: string; bytes: number; createdAt: string; docId: string; filename: string; partnerId: string; sha256: string }[] = [];
+  async count(partnerId: string) { return this.docs.filter((doc) => doc.partnerId === partnerId).length; }
+  async copyTo(srcPartnerId: string, dstPartnerId: string, nextDocId: () => string, createdAt: string) {
+    const rows = this.docs.filter((doc) => doc.partnerId === srcPartnerId);
+    for (const row of rows) this.docs.push({ ...row, createdAt, docId: nextDocId(), partnerId: dstPartnerId });
+    return rows.length;
+  }
+  async listMeta(partnerId: string): Promise<PartnerKnowledgeDocMeta[]> {
+    return this.docs.filter((doc) => doc.partnerId === partnerId)
+      .map((doc) => ({ bytes: doc.bytes, createdAt: doc.createdAt, docId: doc.docId, filename: doc.filename, sha256: doc.sha256 }));
+  }
+  async readBodies(partnerId: string) {
+    return this.docs.filter((doc) => doc.partnerId === partnerId).map((doc) => ({ body: doc.body, filename: doc.filename }));
+  }
+  async remove(partnerId: string, docId: string) {
+    const index = this.docs.findIndex((doc) => doc.docId === docId && doc.partnerId === partnerId);
+    if (index === -1) return false;
+    this.docs.splice(index, 1);
+    return true;
+  }
+  async save(input: { body: string; bytes: number; createdAt: string; docId: string; filename: string; partnerId: string }) {
+    const sha256 = createHash("sha256").update(input.body).digest("hex");
+    this.docs.push({ ...input, sha256 });
+    return sha256;
+  }
 }
 
 describe("partner-registry-revision-before-dispatch", () => {
@@ -125,5 +157,60 @@ describe("partner-registry-revision-before-dispatch", () => {
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), prompts: new MemoryPartnerPrompts(), repository: new MemoryPartnerRegistry() });
     await expect(service.add({ ...fields, prompt: "   " })).rejects.toMatchObject({ code: "partner_prompt_empty" });
     await expect(service.add({ ...fields, prompt: "x".repeat(32_001) })).rejects.toMatchObject({ code: "partner_prompt_too_large" });
+  });
+
+  it("enables disabled partners through the same immutable revision mechanism as disable", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
+    const partner = await service.add({ capabilities: [], displayName: "Toggle", kind: "local-pi", skills: [], tools: [] });
+    await service.disable(partner.partnerId);
+    const enabled = await service.enable(partner.partnerId);
+    expect(enabled).toMatchObject({ registryRevision: 3, status: "ACTIVE" });
+    expect(await service.enable(partner.partnerId)).toEqual(enabled);
+    expect(repository.history.map((revision) => revision.status)).toEqual(["ACTIVE", "DISABLED", "ACTIVE"]);
+    await expect(service.enable("missing")).rejects.toMatchObject({ code: "partner_not_found" });
+  });
+
+  it("duplicates a partner into an independent copy with fresh prompt and knowledge rows", async () => {
+    const store = new MemoryKnowledgeStore();
+    const knowledge = new PartnerKnowledgeService({ clock: new TestClock(), ids: new TestIds(), store });
+    const prompts = new MemoryPartnerPrompts();
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), knowledge, prompts, repository });
+
+    const original = await service.add({
+      capabilities: ["code"], description: "工程搭档", displayName: "Coder", kind: "local-pi",
+      prompt: "只做小事", skills: ["typescript"], tools: ["read"], workspaceRef: "workspace",
+    });
+    await knowledge.add({ body: "# 规范\n先读后写。", filename: "guide.md", partnerId: original.partnerId });
+
+    const copy = await service.duplicate(original.partnerId);
+    expect(copy.partnerId).not.toBe(original.partnerId);
+    expect(copy.displayName).toBe("Coder（副本）");
+    expect(copy).toMatchObject({ capabilities: ["code"], createdBy: "user", description: "工程搭档", engine: "pi-core", knowledgeDocCount: 1, status: "ACTIVE" });
+    expect(copy.registryRevision).not.toBe(original.registryRevision);
+
+    const originalRevision = repository.history.find((revision) => revision.partnerId === original.partnerId);
+    const copyRevision = repository.history.find((revision) => revision.partnerId === copy.partnerId);
+    expect(copyRevision?.promptRef).not.toBe(originalRevision?.promptRef);
+    expect(prompts.records.get(copyRevision?.promptRef ?? "")).toBe("只做小事");
+    expect(prompts.records.size).toBe(2);
+    expect(store.docs.map((doc) => doc.docId)).toHaveLength(2);
+    expect(new Set(store.docs.map((doc) => doc.docId)).size).toBe(2);
+    expect(JSON.stringify(copy)).not.toContain("只做小事");
+  });
+
+  it("validates engine and description constraints on partner revisions", async () => {
+    const fields = { capabilities: [], displayName: "Local", skills: [], tools: [] };
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new MemoryPartnerRegistry() });
+    await expect(service.add({ ...fields, engine: "claude-code", kind: "a2a" })).rejects.toMatchObject({ code: "partner_engine_kind_invalid" });
+    await expect(service.add({ ...fields, description: "x".repeat(601), kind: "local-pi" })).rejects.toMatchObject({ code: "partner_description_invalid" });
+    await expect(service.add({ ...fields, engine: "claude-code", engineModelId: "x".repeat(241), kind: "local-pi" })).rejects.toMatchObject({ code: "partner_engine_model_invalid" });
+    await expect(service.add({ ...fields, kind: "local-pi", modelIdOverride: "x".repeat(241) })).rejects.toMatchObject({ code: "partner_model_override_invalid" });
+    await expect(service.add({ ...fields, kind: "local-pi", modelSourceId: "x".repeat(241) })).rejects.toMatchObject({ code: "partner_model_source_invalid" });
+    const cli = await service.add({ ...fields, engine: "claude-code", engineModelId: "claude-sonnet", kind: "local-pi" });
+    expect(cli).toMatchObject({ engine: "claude-code", engineModelId: "claude-sonnet" });
+    const codex = await service.add({ ...fields, engine: "codex", kind: "local-pi" });
+    expect(codex).toMatchObject({ engine: "codex" });
   });
 });

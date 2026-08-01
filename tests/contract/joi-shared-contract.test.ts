@@ -31,9 +31,12 @@ describe("JOI-01 shared DTO contract", () => {
     };
     const partner: PartnerDto = {
       capabilities: ["research"],
+      createdBy: "user",
       displayName: "Researcher",
+      engine: "pi-core",
       inFlightCount: 0,
       kind: "a2a",
+      knowledgeDocCount: 0,
       lifecyclePolicy: "DRAIN",
       partnerId: "partner_1",
       partnerRevisionId: "partner_rev_1",

@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
@@ -164,56 +164,6 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   </section>;
 }
 
-function values(value: FormDataEntryValue | null): string[] {
-  return typeof value === "string" ? value.split(",").map((item) => item.trim()).filter(Boolean) : [];
-}
-
-export function PartnerManager({ api }: { api: DigitalLifeApi }) {
-  const [partners, setPartners] = useState<PartnerDto[]>([]);
-  const [adding, setAdding] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
-  const load = useCallback(async () => setPartners((await api.listPartners()).items), [api]);
-  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice("没能读取统一搭档列表。")), 0); return () => clearTimeout(timer); }, [load]);
-  const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = new FormData(event.currentTarget);
-    const field = (name: string) => {
-      const value = form.get(name);
-      return typeof value === "string" ? value.trim() : "";
-    };
-    const kind = field("kind") === "a2a" ? "a2a" as const : "local-pi" as const;
-    if (kind === "a2a") {
-      await api.addAgent(field("cardUrl"), field("token"));
-    } else {
-      await api.createPartner({
-        capabilities: values(form.get("capabilities")),
-        displayName: field("displayName"),
-        kind,
-        ...(field("prompt") === "" ? {} : { prompt: field("prompt") }),
-        skills: values(form.get("skills")),
-        tools: values(form.get("tools")),
-        ...(field("workspaceRef") === "" ? {} : { workspaceRef: field("workspaceRef") }),
-      });
-    }
-    setAdding(false);
-    setNotice("搭档列表已先更新；之后的新派发会固定使用这个 revision。");
-    await load();
-  };
-  return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>本机 Pi 与远端 A2A 都先登记能力、工作目录、提示词和工具，再由 joi 派发。</p></div><button className="button primary" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "添加搭档"}</button></header>
-    {adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}>
-      <label>名称<input name="displayName" required /></label><label>类型<select name="kind"><option value="local-pi">本机 Pi</option><option value="a2a">远端 A2A</option></select></label>
-      <label>远端 Agent Card URL<input name="cardUrl" placeholder="仅远端 A2A 填写" type="url" /></label><label>远端 Bearer Token<input autoComplete="off" name="token" placeholder="仅远端 A2A 填写" type="password" /></label>
-      <label>能力标签（逗号分隔）<input name="capabilities" /></label><label>Skills（逗号分隔）<input name="skills" /></label><label>工具 allowlist（逗号分隔）<input name="tools" placeholder="read, grep, edit" /></label>
-      <label>工作目录<input name="workspaceRef" placeholder="仅本机保存，不在列表返回" /></label><label>搭档提示词<textarea name="prompt" placeholder="仅本机保存，不在列表返回" rows={4} /></label>
-      <button className="button primary" type="submit">保存搭档 revision</button>
-    </form> : null}
-    {partners.length === 0 ? <div className="plain-empty"><h2>还没有搭档</h2><p>添加本机 Pi 或远端 A2A 搭档后，joi 才会把工作派发给它。</p></div> : null}
-    <div className="partner-list">{partners.map((partner) => <article key={partner.partnerId}><div><strong>{partner.displayName}</strong><span>{partner.kind === "local-pi" ? "本机 Pi" : "远端 A2A"} · revision {String(partner.registryRevision)} · {partner.status}</span><small>{[...partner.capabilities, ...partner.skills, ...partner.tools].join(" · ") || "尚未声明能力"}</small>{partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}</div><div className="row-actions">{partner.status === "ACTIVE" ? <button className="button ghost" onClick={() => void api.disablePartner(partner.partnerId).then(load).catch(() => setNotice("搭档未能停用。"))} type="button">停用</button> : null}{partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(load).catch(() => setNotice("搭档还不能删除。"))} type="button">删除搭档</button> : null}</div></article>)}</div>
-    {notice === null ? null : <p className="inline-notice info">{notice}</p>}
-  </section>;
-}
-
 export function AvatarManager({ api }: { api: DigitalLifeApi }) {
   const [avatars, setAvatars] = useState<AvatarDto[]>([]);
   const [adding, setAdding] = useState(false);
@@ -294,6 +244,7 @@ function JoiComposer({ api, snapshot }: { api: DigitalLifeApi; snapshot: JoiSnap
       <div><strong>{change.kind === "MERGE" ? "joi 建议合并 Avatar" : "joi 建议归档 Avatar"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceAvatarId} → ${change.targetAvatarId ?? ""}` : change.sourceAvatarId}</small></div>
       <div className="row-actions"><button className="button ghost" onClick={() => void api.decideAvatarChange(change.requestId, "REJECT").then(refresh)} type="button">保留原样</button><button className="button danger-text" onClick={() => void api.decideAvatarChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? "确认合并" : "确认归档"}</button></div>
     </article>)}</section>}
+    {snapshot.partners.length >= 2 ? null : <p className="inline-notice warning">当前只有 {String(snapshot.partners.length)} 个工作搭档。先到「搭档」页建立 2-3 个工作搭档，joi 才有得挑、有得换。</p>}
     <form className="joi-composer" onSubmit={(event) => void submit(event)}>
       <label htmlFor="joi-input">给 joi 输入</label>
       <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={4} value={text} />

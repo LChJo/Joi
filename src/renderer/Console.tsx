@@ -13,8 +13,10 @@ import {
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
+import type { PartnerDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
-import { AvatarManager, JoiHome, ModelSourceManager, PartnerManager } from "./JoiHome";
+import { AvatarManager, JoiHome, ModelSourceManager } from "./JoiHome";
+import { PartnerPage } from "./PartnerPage";
 import { listenerStatusLabel } from "./copy";
 import type { DiagnosticsDto, InteractionDto } from "./types";
 
@@ -36,10 +38,47 @@ function LoadingPage() {
   return <div className="content-state" role="status" aria-label="joi 正在整理页面"><span className="load-line wide" /><span className="load-line" /><span className="load-block" /></div>;
 }
 
+function PartnerMemoryDebug({ api }: { api: DigitalLifeApi }) {
+  const [partners, setPartners] = useState<PartnerDto[]>([]);
+  const [selected, setSelected] = useState("");
+  const [memory, setMemory] = useState<Awaited<ReturnType<DigitalLifeApi["partnerMemory"]>> | null>(null);
+  const [instances, setInstances] = useState<Awaited<ReturnType<DigitalLifeApi["listPartnerInstances"]>>["items"]>([]);
+  const [notice, setNotice] = useState<string | null>(null);
+  useEffect(() => {
+    const timer = setTimeout(() => void api.listPartners().then((page) => setPartners(page.items)).catch(() => setNotice("没能读取搭档列表。")), 0);
+    return () => clearTimeout(timer);
+  }, [api]);
+  useEffect(() => {
+    if (selected === "") return;
+    const timer = setTimeout(() => void Promise.all([api.partnerMemory(selected), api.listPartnerInstances(selected)])
+      .then(([memo, page]) => { setMemory(memo); setInstances(page.items); })
+      .catch(() => setNotice("没能读取搭档工作记忆。")), 0);
+    return () => clearTimeout(timer);
+  }, [api, selected]);
+  const choosePartner = (value: string) => {
+    setSelected(value);
+    if (value === "") { setMemory(null); setInstances([]); }
+  };
+  return <section className="memory-debug-section">
+    <h2>搭档工作记忆（只读）</h2>
+    <p>joi 内部记下的每位搭档的工作台账：结果、会话真实数据源和滚动摘要。搭档本身看不到这份记忆，joi 用它决定派活。</p>
+    <label>选择搭档<select onChange={(event) => choosePartner(event.target.value)} value={selected}>
+      <option value="">尚未选择</option>
+      {partners.map((partner) => <option key={partner.partnerId} value={partner.partnerId}>{partner.displayName}</option>)}
+    </select></label>
+    {notice === null ? null : <p className="inline-notice danger">{notice}</p>}
+    {memory === null ? null : <>
+      <p className="memory-summary">{memory.summary ?? "还没有摘要。"}</p>
+      <div className="memory-rows">{memory.entries.map((entry) => <div className="memory-row" key={entry.memoryId}><strong>{entry.outcome}</strong><span>{entry.title}</span><small>{entry.sessionDataSource} · {new Date(entry.createdAt).toLocaleString()}</small></div>)}</div>
+    </>}
+    {instances.length === 0 ? null : <div className="memory-rows">{instances.map((instance) => <div className="memory-row" key={instance.instanceId}><strong>{instance.status}</strong><span>{instance.sessionPolicy === "RESIDENT" ? "常驻实例" : "单次实例"}</span><small>{instance.externalSessionRef ?? instance.instanceId} · 最近使用 {new Date(instance.lastUsedAt).toLocaleString()}</small></div>)}</div>}
+  </section>;
+}
+
 export function SystemPanel({ api, diagnostics, interactions }: { api?: DigitalLifeApi; diagnostics: DiagnosticsDto | null; interactions: InteractionDto[] }) {
   const [notice, setNotice] = useState<string | null>(null);
   const dataHealthy = diagnostics?.database.integrity === undefined || diagnostics.database.integrity === "ok";
-  return <section className="page-section"><header className="page-title-row"><div><p className="eyebrow">joi 一直在留意</p><h1>joi 的运行状态</h1><p>joi 的简要状态，不会显示消息正文、密钥或文件位置。</p></div>{api === undefined ? null : <div className="row-actions"><a className="button ghost" download href={api.diagnosticsExportUrl()}>导出诊断</a><button className="button danger" onClick={() => void api.emergencyStopAll().then(() => setNotice("所有工作已紧急暂停，未确认的搭档过程仍会保留。"))} type="button">紧急暂停全部工作</button></div>}</header>{notice === null ? null : <Notice tone="danger">{notice}</Notice>}{diagnostics === null ? <LoadingPage /> : <><div className="metric-strip"><div><span>数据版本</span><strong>v{diagnostics.schemaVersion}</strong></div><div><span>工作搭档</span><strong>{diagnostics.agents.connections}</strong></div><div><span>正在协作</span><strong>{diagnostics.agents.activeInvocations ?? 0}</strong></div><div><span>正在行动</span><strong>{diagnostics.runtime.activeWakes ?? 0}</strong></div><div><span>等待处理</span><strong>{diagnostics.runtime.pendingOutbox}</strong></div><div><span>状态更新</span><strong>{diagnostics.sse.events}</strong></div></div><div className="diagnostic-table"><div><span>本机数据</span><strong>{dataHealthy ? "数据正常" : "数据有问题"}</strong><i className={dataHealthy ? "ok" : "warn"}>{dataHealthy ? "正常" : "需要检查"}</i></div><div><span>日常安排</span><strong>{diagnostics.runtime.enabledSchedules ?? 0} 个作息 · {diagnostics.runtime.scheduledAlarms ?? 0} 个闹钟</strong><i className={(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? "warn" : "ok"}>{(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? `${String(diagnostics.runtime.staleWakeTurns)} 次行动需要确认` : "正常"}</i></div><div><span>其他设备访问</span><strong>{listenerStatusLabel(diagnostics.web.lan)}</strong><i className={diagnostics.web.lan === undefined ? "muted" : "ok"}>{diagnostics.web.lan === undefined ? "仅本机" : "已配置"}</i></div><div><span>已登录设备</span><strong>{diagnostics.web.sessions} 个活跃设备</strong><i className="ok">受保护</i></div><div><span>等你决定</span><strong>{interactions.length} 项待处理</strong><i className={interactions.length > 0 ? "warn" : "ok"}>{interactions.length > 0 ? "需要关注" : "正常"}</i></div></div></>}</section>;
+  return <section className="page-section"><header className="page-title-row"><div><p className="eyebrow">joi 一直在留意</p><h1>joi 的运行状态</h1><p>joi 的简要状态，不会显示消息正文、密钥或文件位置。</p></div>{api === undefined ? null : <div className="row-actions"><a className="button ghost" download href={api.diagnosticsExportUrl()}>导出诊断</a><button className="button danger" onClick={() => void api.emergencyStopAll().then(() => setNotice("所有工作已紧急暂停，未确认的搭档过程仍会保留。"))} type="button">紧急暂停全部工作</button></div>}</header>{notice === null ? null : <Notice tone="danger">{notice}</Notice>}{diagnostics === null ? <LoadingPage /> : <><div className="metric-strip"><div><span>数据版本</span><strong>v{diagnostics.schemaVersion}</strong></div><div><span>工作搭档</span><strong>{diagnostics.agents.connections}</strong></div><div><span>正在协作</span><strong>{diagnostics.agents.activeInvocations ?? 0}</strong></div><div><span>正在行动</span><strong>{diagnostics.runtime.activeWakes ?? 0}</strong></div><div><span>等待处理</span><strong>{diagnostics.runtime.pendingOutbox}</strong></div><div><span>状态更新</span><strong>{diagnostics.sse.events}</strong></div></div><div className="diagnostic-table"><div><span>本机数据</span><strong>{dataHealthy ? "数据正常" : "数据有问题"}</strong><i className={dataHealthy ? "ok" : "warn"}>{dataHealthy ? "正常" : "需要检查"}</i></div><div><span>日常安排</span><strong>{diagnostics.runtime.enabledSchedules ?? 0} 个作息 · {diagnostics.runtime.scheduledAlarms ?? 0} 个闹钟</strong><i className={(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? "warn" : "ok"}>{(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? `${String(diagnostics.runtime.staleWakeTurns)} 次行动需要确认` : "正常"}</i></div><div><span>其他设备访问</span><strong>{listenerStatusLabel(diagnostics.web.lan)}</strong><i className={diagnostics.web.lan === undefined ? "muted" : "ok"}>{diagnostics.web.lan === undefined ? "仅本机" : "已配置"}</i></div><div><span>已登录设备</span><strong>{diagnostics.web.sessions} 个活跃设备</strong><i className="ok">受保护</i></div><div><span>等你决定</span><strong>{interactions.length} 项待处理</strong><i className={interactions.length > 0 ? "warn" : "ok"}>{interactions.length > 0 ? "需要关注" : "正常"}</i></div></div>{api === undefined ? null : <PartnerMemoryDebug api={api} />}</>}</section>;
 }
 
 export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagnostics: DiagnosticsDto | null }) {
@@ -79,10 +118,13 @@ export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagn
     } catch (error) { setNotice(error instanceof ApiError ? error.message : "设置未保存。"); }
   };
   const changePassword = async (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
+    event.preventDefault();
+    // Capture the form element before awaiting: event.currentTarget is nulled once dispatch returns.
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const current = form.get("currentPassword"); const next = form.get("newPassword");
     const currentPassword = typeof current === "string" ? current : ""; const newPassword = typeof next === "string" ? next : "";
-    try { await api.changePassword(currentPassword, newPassword); event.currentTarget.reset(); await loadOperations(); setNotice("管理密码已更新，其他设备需要重新登录。"); }
+    try { await api.changePassword(currentPassword, newPassword); formElement.reset(); await loadOperations(); setNotice("管理密码已更新，其他设备需要重新登录。"); }
     catch (error) { setNotice(error instanceof ApiError ? error.message : "密码没更新。"); }
   };
   return <section className="page-section settings-page"><header className="page-title-row"><div><p className="eyebrow">按你的方式使用 joi</p><h1>joi 的设置</h1><p>管理模型网络、其他设备访问、管理密码和数据备份。</p></div></header>{notice === null ? null : <Notice>{notice}</Notice>}<div className="settings-sections">
@@ -116,5 +158,5 @@ export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
     for (const name of ["avatar.change.confirmed", "joi.message.accepted", "partner.registry.changed", "stream_reset", "work.status.changed"]) stream.addEventListener(name, refresh);
     return () => stream.close();
   }, [api.origin, load]);
-  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => setSection(key)} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><span className={`stream-indicator ${streamState}`} /><span>{streamState === "connected" ? "已连接" : "重新连接中"}</span><button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main">{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} /> : section === "lives" ? <AvatarManager api={api} /> : section === "agents" ? <PartnerManager api={api} /> : section === "system" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : <SettingsPanel api={api} diagnostics={diagnostics} />}</main></div>;
+  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => setSection(key)} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><span className={`stream-indicator ${streamState}`} /><span>{streamState === "connected" ? "已连接" : "重新连接中"}</span><button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main">{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} /> : section === "lives" ? <AvatarManager api={api} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} /> : section === "system" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : <SettingsPanel api={api} diagnostics={diagnostics} />}</main></div>;
 }

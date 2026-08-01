@@ -12,6 +12,14 @@
 
 分层保持不变：domain 为纯 TypeScript；application 编排 ports；infrastructure 实现 Pi、SQLite、safeStorage 与 A2A；interfaces 只映射 HTTP/SSE；renderer 只使用 shared DTO 和 `/api/v1`。Pi SDK 只能进入 `src/main/infrastructure/pi` 或 composition root。
 
+### 0.1 搭档实例与工作记忆
+
+搭档配置是不可变模板；`PartnerInstanceManager` 负责运行中的实例：一个搭档可被 joi 复数引用为多个实例，每个实例标记 `EPHEMERAL`（单次即销毁）或 `RESIDENT`（保留会话、跨应用重启可恢复）。实例行在 `partner_instances`，会话消息在 `partner_instance_messages`（镜像 `joi_session_messages` 模式），`dispatch_attempts.instance_id` 关联派发。启动时 `recoverOnBoot` 先于首次 outbox 派发：BUSY 的常驻实例回 `IDLE` 可续话，BUSY 的单次实例置 `DISPOSED`；空闲清扫逐出热 Agent（状态已每回合落库）并销毁滞留的单次实例。硬上限：常驻实例每搭档 4、全局 12、热 Agent 8。
+
+每个搭档有一份隐形工作记忆（`partner_work_memories` + `partner_work_memory_summaries`）：结果终态事件按 ground truth 追加（上限 32 条），`session_data_source` 记录会话真实数据源（`partner_instance_messages:{id}` / `local_pi:{actionId}` / `a2a_invocations:{id}`），滚动摘要按节拍刷新（模型失败退确定性摘要）。摘要只注入 `partner.list_available` 工具输出供 joi 决策，绝不进入搭档自身的提示词；状态页提供只读调试视图。
+
+joi 的结构化工具扩展为：`partner.create`（仅本机搭档，带 joi 创建标记）、`partner.create_instance`、`partner.list_instances`、`partner.dispose_instance`、`partner.inspect_revision`，`work.dispatch` 可按 `instanceId`/`sessionPolicy` 指向实例。引擎抽象为 `PartnerEngineRuntime` 端口（含 `toolOptions()` 供白名单点选），实现并存（ADR 0004）：Pi core（`infrastructure/pi/pi-partner-engine-runtime.ts`，默认）与本地 CLI 引擎（`infrastructure/mana/local-cli-partner-engine-runtime.ts`，按协议 `claude`/`codex` 各一实例，经同源 `@rd-efficiency/agentsdk` 5.9.x 驱动用户本机已安装的 Claude Code / Codex）。本地 CLI 引擎用 `local-cli-executable-resolver.ts` 探测 PATH（移植参照项目方案：含 codex 原生包解析与 macOS Codex.app），运行时**不注入** joi 的 provider/密钥，交由 CLI 自身登录/转发/订阅配置；工具白名单经 SDK `allowedTools` 生效，选中技能经扫描器 `infrastructure/skills/local-skill-scanner.ts` 注入系统提示词。存储上 `engine` 列保留 `PI_CORE`/`MANA_SDK`（SDK 驱动），新增 `cli_protocol` 列（`CLAUDE`/`CODEX`）记录所 spawn 的 CLI，领域层映射为 `pi-core`/`claude-code`/`codex` 三值，避免 SQLite 表重建（migration 026）。健康探测 fail-closed（CLI 未检测到时 409 门禁、派发 FAILED，不影响 Pi core）；常驻会话经 `createConversation(turns:'resident')` + SQLite ConversationStore（`mana_sdk_conversations`/`mana_sdk_transcript`，migration 025）跨重启恢复；`GET /api/v1/engines` 暴露各引擎可用性与工具集、`GET /api/v1/engines/:engine/skills` 暴露点选技能、`GET /api/v1/system/pick-directory` 触发原生目录选择，供页面门控与表单使用。agentsdk 与 Pi SDK 分别被 architecture-boundaries 的包限制规则锁在各自目录。
+
 现有 Life/Wake 链只作为迁移期兼容消费者。切换时必须 stop-old-before-start-new；shadow 比对不得写 outbox、派发或正式表达。
 
 ## 1. 架构目标

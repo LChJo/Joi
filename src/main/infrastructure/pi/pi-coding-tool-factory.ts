@@ -12,6 +12,7 @@ import { realpathSync, statSync } from "node:fs";
 
 export interface PiCodingToolFactory {
   create(cwd: string, names: string[]): AgentTool[];
+  readonly names: readonly string[];
 }
 
 const SAFE_ENVIRONMENT_KEYS = new Set([
@@ -35,7 +36,11 @@ const factories: Record<string, (cwd: string) => AgentTool> = {
   write: createWriteTool,
 };
 
+export const PI_CODING_TOOL_NAMES: readonly string[] = Object.keys(factories);
+
 export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
+  readonly names: readonly string[] = PI_CODING_TOOL_NAMES;
+
   create(cwd: string, names: string[]): AgentTool[] {
     const canonical = realpathSync(cwd);
     if (!statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");

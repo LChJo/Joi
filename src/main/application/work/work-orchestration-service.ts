@@ -12,8 +12,10 @@ import type {
 
 interface WorkRequest {
   accessMode: WorkAccessMode;
+  instanceId?: string;
   key: string;
   partnerId: string;
+  sessionPolicy?: "EPHEMERAL" | "RESIDENT";
   title: string;
   workspaceRef?: string;
 }
@@ -80,7 +82,13 @@ export class WorkOrchestrationService {
           availableAt: createdAt,
           kind: "partner.dispatch",
           outboxId: this.dependencies.ids.next("outbox"),
-          payload: { actionId, dispatchAttemptId, workId: item.workId },
+          payload: {
+            actionId,
+            dispatchAttemptId,
+            ...(request.instanceId === undefined ? {} : { instanceId: request.instanceId }),
+            ...(request.sessionPolicy === undefined ? {} : { sessionPolicy: request.sessionPolicy }),
+            workId: item.workId,
+          },
         },
         workId: item.workId,
       });

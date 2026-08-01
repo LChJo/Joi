@@ -38,6 +38,12 @@ const nodeBuiltinsPattern = /^(?:node:|assert(?:\/|$)|buffer(?:\/|$)|child_proce
 const sqlitePattern = /^(?:better-sqlite3|sqlite3|node:sqlite)(?:\/|$)/;
 const a2aPattern = /^@a2a-js\/sdk(?:\/|$)/;
 
+/** Engine SDKs stay inside their own infrastructure directory (plus type-only consumers are still violations). */
+const confinedPackages = [
+  { pattern: /^@rd-efficiency\/agentsdk(?:\/|$)/, prefix: "src/main/infrastructure/mana/" },
+  { pattern: /^@earendil-works\/pi-(?:agent-core|ai|coding-agent)(?:\/|$)/, prefix: "src/main/infrastructure/pi/" },
+];
+
 function normalizePath(filePath) {
   const normalized = filePath.replaceAll("\\", "/");
   const sourceIndex = normalized.lastIndexOf("/src/");
@@ -98,6 +104,12 @@ export function validateImport(sourcePath, target) {
   }
 
   if (!target.startsWith(".")) {
+    const source = normalizePath(sourcePath);
+    for (const { pattern, prefix } of confinedPackages) {
+      if (pattern.test(target) && !source.startsWith(prefix)) {
+        return { allowed: false, reason: `${target} is confined to ${prefix}` };
+      }
+    }
     return validateExternalImport(sourceLayer, target);
   }
 

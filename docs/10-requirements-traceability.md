@@ -26,7 +26,7 @@
 | AC-20 | Card 本地优先与在途删除策略 | 已自动证实：Card 不覆盖本地字段；disable 采用 DRAIN、立即阻止新派发且保留在途；delete 要求先停用且在途为零，随后追加 DELETED revision |
 | AC-21 | Avatar 只拥有上下文 | 已自动证实：纯 domain aggregate；预算/调度/搭档策略独立关联 |
 | AC-22 | 新代码无 Life 词汇泄漏 | 已通过 architecture boundary 与目标路径静态扫描；旧兼容模块保留 Life |
-| AC-23 | 首次精确文案与 7 个入口 | 已自动证实：精确文案、恰好七卡、无转发平台 |
+| AC-23 | 首次精确文案、7 个厂商入口、接入方案与协议 | 已自动证实：精确文案、恰好七个厂商入口、API/Coding Plan 与 OpenAI/Anthropic 分层选择、无转发平台 |
 | AC-24 | 固定 endpoint 与通用 URL 网络策略 | 已自动证实：官方 endpoint、localhost 例外、SSRF/DNS/redirect 检查 |
 | AC-25 | 多来源、主备顺序、revision/credential 边界 | 已自动证实：多源排序、不可变 revision、Turn pin 与 safeStorage reference |
 | AC-26 | 版本化模型 preset 与自定义模型 fail closed | preset contract 已证实；custom 首 Turn 未观察到 tool call 时 fail closed |
@@ -34,10 +34,13 @@
 | AC-28 | 确定性 fallback 分类 | 已自动证实：仅 timeout/connect/429/5xx；auth/balance/config/refusal 不切换 |
 | AC-29 | Turn 固定 revision 与安全切源 | 已自动证实：output/tool flag 持久化，副作用前才更新 source/model pin |
 | AC-30 | 来源 CRUD/排序/重启恢复与历史不漂移 | 已自动证实：脱敏 CRUD/验证/停用/主备排序/重启恢复；设置页可替换 model/key，通用源可改名称/Base URL，空 key 保留旧凭据且修改形成待验证 DRAFT revision |
+| AC-31 | 搭档配置卡片化、基础/高级页、知识库、复制与启用开关 | 已自动证实：migration 023 的 description/engine/model 列与 `partner_knowledge_docs`；PATCH 统一 disabled 开关、duplicate、知识库 CRUD 与正文脱敏；卡片网格、模式选择与 2-3 个搭档引导；基础页两列对齐（名称｜工作路径、描述｜提示词）、工作路径原生目录点选、技能按引擎扫描点选、移除能力标签，高级页工具白名单按引擎点选与供应商"管理大模型网络"跳转；`partner-config-http.test.ts`、`partner-page.test.tsx`、`sqlite-partner-knowledge.test.ts` |
+| AC-32 | 搭档实例生命周期、joi 实例工具与隐形工作记忆 | 已自动证实：migration 024 的 `partner_instances`/`partner_instance_messages`/`dispatch_attempts.instance_id`/工作记忆表；常驻实例消息持久化与驱逐后重建、崩溃恢复（常驻回 IDLE、单次置 DISPOSED）、实例上限与空闲清扫；`partner.create/create_instance/list_instances/dispose_instance/inspect_revision` 工具与 `work.dispatch` 实例透传；工作记忆 32 条上限、节拍摘要、确定性 fallback 与只读调试端点；`partner-instance-manager.test.ts`、`partner-work-memory-service.test.ts`、`joi-reasoning-tools.test.ts`、`sqlite-partner-instances.test.ts`、`sqlite-partner-work-memory.test.ts`、Pi 引擎常驻续话契约 |
+| AC-33 | 本地 CLI 搭档引擎（Claude Code / Codex，经同源 agentsdk，ADR 0004） | 已自动证实：`@rd-efficiency/agentsdk@5.9.17` 安装；`local-cli-executable-resolver.ts` 探测用户本机 PATH 上的 claude/codex（含 codex 原生包与 macOS Codex.app），运行时不注入 provider/密钥、用 CLI 自身配置；ephemeral 单次 query、resident 常驻会话复用与 resume 失败回退、CLI 未检测 fail-closed 健康门禁；工具白名单经 `allowedTools`、选中技能经扫描器注入；migration 025 的 SQLite ConversationStore round-trip 与 migration 026 的 `cli_protocol` 存储映射；`GET /api/v1/engines`（带工具集）、`/engines/:engine/skills`、`/system/pick-directory` 与创建/更新未检测引擎 409 门禁；包限制规则锁定 agentsdk/pi SDK 各自目录；`mana-executable-resolver.test.ts`、`sqlite-mana-session-store.test.ts`、`mana-engine-contract.test.ts`、架构边界测试 |
 
 本表随 RED→GREEN 证据更新；“旧基线可复用”不等于目标 AC 已完成。
 
-日期：2026-07-16
+日期：2026-08-01
 事实源：`README.md`、`01-product-requirements.md`、`02-ux-specification.md`、`07-roadmap-and-acceptance.md`
 
 ## 结论与状态定义

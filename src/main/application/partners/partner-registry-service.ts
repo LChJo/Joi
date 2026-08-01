@@ -4,16 +4,24 @@ import {
   createPartnerRevision,
   mergeA2aCardRevision,
   toPublicPartner,
+  type PartnerCreator,
+  type PartnerEngine,
   type PartnerKind,
   type PartnerRevision,
 } from "../../domain/partners/partner.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type { PartnerPromptStore } from "../ports/partner-execution.js";
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../ports/partner-registry.js";
+import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 
 interface PartnerFields {
   capabilities: string[];
+  description?: string;
   displayName: string;
+  engine?: PartnerEngine;
+  engineModelId?: string;
+  modelIdOverride?: string;
+  modelSourceId?: string;
   prompt?: string;
   promptRef?: string;
   skills: string[];
@@ -22,9 +30,16 @@ interface PartnerFields {
 }
 
 export class PartnerRegistryService {
-  constructor(private readonly dependencies: { clock: Clock; events?: DurableUiEventEmitter; ids: IdGenerator; prompts?: PartnerPromptStore; repository: PartnerRegistryRepository }) {}
+  constructor(private readonly dependencies: {
+    clock: Clock;
+    events?: DurableUiEventEmitter;
+    ids: IdGenerator;
+    knowledge?: Pick<PartnerKnowledgeService, "count" | "duplicateTo">;
+    prompts?: PartnerPromptStore;
+    repository: PartnerRegistryRepository;
+  }) {}
 
-  async add(input: PartnerFields & { kind: PartnerKind }): Promise<PartnerDto> {
+  async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind }): Promise<PartnerDto> {
     const partnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt);
@@ -45,18 +60,29 @@ export class PartnerRegistryService {
     const current = await this.#active(partnerId);
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt) ?? current.promptRef;
+    const description = input.description ?? current.description;
+    const engineModelId = input.engineModelId ?? current.engineModelId;
+    const modelIdOverride = input.modelIdOverride ?? current.modelIdOverride;
+    const modelSourceId = input.modelSourceId ?? current.modelSourceId;
+    const workspaceRef = input.workspaceRef ?? current.workspaceRef;
     const validated = createPartnerRevision({
       capabilities: input.capabilities,
       createdAt,
+      createdBy: current.createdBy,
+      ...(description === undefined ? {} : { description }),
       displayName: input.displayName,
+      engine: input.engine ?? current.engine,
+      ...(engineModelId === undefined ? {} : { engineModelId }),
       kind: current.kind,
+      ...(modelIdOverride === undefined ? {} : { modelIdOverride }),
+      ...(modelSourceId === undefined ? {} : { modelSourceId }),
       partnerId,
       partnerRevisionId: this.dependencies.ids.next("partner_revision"),
       ...(promptRef === undefined ? {} : { promptRef }),
       registryRevision: current.registryRevision + 1,
       skills: input.skills,
       tools: input.tools,
-      ...((input.workspaceRef ?? current.workspaceRef) === undefined ? {} : { workspaceRef: input.workspaceRef ?? current.workspaceRef }),
+      ...(workspaceRef === undefined ? {} : { workspaceRef }),
     });
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
     await this.#changed(revision);
@@ -74,6 +100,20 @@ export class PartnerRegistryService {
     const saved = await this.dependencies.repository.append(withoutRegistryRevision(revision));
     await this.#changed(saved);
     return this.#public(saved);
+  }
+
+  async enable(partnerId: string): Promise<PartnerDto> {
+    const current = await this.#active(partnerId);
+    if (current.status === "DELETED") throw new DomainError("partner_not_found", "Partner was not found.");
+    if (current.status === "ACTIVE") return this.#public(current);
+    const revision = await this.dependencies.repository.append({
+      ...withoutRegistryRevision(current),
+      createdAt: this.dependencies.clock.now().toISOString(),
+      partnerRevisionId: this.dependencies.ids.next("partner_revision"),
+      status: "ACTIVE",
+    });
+    await this.#changed(revision);
+    return this.#public(revision);
   }
 
   async disable(partnerId: string): Promise<PartnerDto> {
@@ -106,6 +146,49 @@ export class PartnerRegistryService {
     return this.#public(revision);
   }
 
+  async duplicate(partnerId: string): Promise<PartnerDto> {
+    const current = await this.#active(partnerId);
+    if (current.status === "DELETED") throw new DomainError("partner_not_found", "Partner was not found.");
+    const newPartnerId = this.dependencies.ids.next("partner");
+    const createdAt = this.dependencies.clock.now().toISOString();
+    let promptRef = current.promptRef;
+    if (promptRef !== undefined && this.dependencies.prompts !== undefined) {
+      const body = await this.dependencies.prompts.read(promptRef);
+      if (body !== null) {
+        const copiedRef = this.dependencies.ids.next("partner_prompt");
+        await this.dependencies.prompts.save({ body, createdAt, promptRef: copiedRef });
+        promptRef = copiedRef;
+      }
+    }
+    const validated = createPartnerRevision({
+      capabilities: [...current.capabilities],
+      createdAt,
+      createdBy: "user",
+      ...(current.description === undefined ? {} : { description: current.description }),
+      displayName: copyName(current.displayName),
+      engine: current.engine,
+      ...(current.engineModelId === undefined ? {} : { engineModelId: current.engineModelId }),
+      kind: current.kind,
+      ...(current.modelIdOverride === undefined ? {} : { modelIdOverride: current.modelIdOverride }),
+      ...(current.modelSourceId === undefined ? {} : { modelSourceId: current.modelSourceId }),
+      partnerId: newPartnerId,
+      partnerRevisionId: this.dependencies.ids.next("partner_revision"),
+      ...(promptRef === undefined ? {} : { promptRef }),
+      registryRevision: 1,
+      skills: [...current.skills],
+      tools: [...current.tools],
+      ...(current.workspaceRef === undefined ? {} : { workspaceRef: current.workspaceRef }),
+    });
+    const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
+    if (this.dependencies.knowledge !== undefined) await this.dependencies.knowledge.duplicateTo(partnerId, newPartnerId);
+    await this.#changed(revision);
+    return this.#public(revision);
+  }
+
+  async inspect(partnerId: string): Promise<PartnerDto> {
+    return this.#public(await this.#active(partnerId));
+  }
+
   async list(): Promise<PartnerDto[]> {
     return Promise.all((await this.dependencies.repository.listActive())
       .filter((revision) => revision.status !== "DELETED")
@@ -128,6 +211,7 @@ export class PartnerRegistryService {
     return {
       ...toPublicPartner(revision),
       inFlightCount: await this.dependencies.repository.countInFlight(revision.partnerId),
+      knowledgeDocCount: this.dependencies.knowledge === undefined ? 0 : await this.dependencies.knowledge.count(revision.partnerId),
       lifecyclePolicy: "DRAIN",
     };
   }
@@ -153,12 +237,23 @@ export class PartnerRegistryService {
   }
 }
 
+function copyName(displayName: string): string {
+  const marker = "（副本）";
+  return `${displayName.slice(0, 240 - marker.length)}${marker}`;
+}
+
 function withoutRegistryRevision(revision: PartnerRevision): AppendPartnerRevisionInput {
   return {
     capabilities: [...revision.capabilities],
     createdAt: revision.createdAt,
+    createdBy: revision.createdBy,
+    ...(revision.description === undefined ? {} : { description: revision.description }),
     displayName: revision.displayName,
+    engine: revision.engine,
+    ...(revision.engineModelId === undefined ? {} : { engineModelId: revision.engineModelId }),
     kind: revision.kind,
+    ...(revision.modelIdOverride === undefined ? {} : { modelIdOverride: revision.modelIdOverride }),
+    ...(revision.modelSourceId === undefined ? {} : { modelSourceId: revision.modelSourceId }),
     partnerId: revision.partnerId,
     partnerRevisionId: revision.partnerRevisionId,
     ...(revision.promptRef === undefined ? {} : { promptRef: revision.promptRef }),

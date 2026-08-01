@@ -20,7 +20,7 @@ export interface PlannedDispatchAttempt extends PartnerDispatchPin {
     availableAt: string;
     kind: "partner.dispatch";
     outboxId: string;
-    payload: { actionId: string; dispatchAttemptId: string; workId: string };
+    payload: { actionId: string; dispatchAttemptId: string; instanceId?: string; sessionPolicy?: "EPHEMERAL" | "RESIDENT"; workId: string };
   };
   workId: string;
 }

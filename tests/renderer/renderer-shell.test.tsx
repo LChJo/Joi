@@ -15,7 +15,8 @@ const collaborator: AgentDto = {
   status: "COLLABORATOR_ONLY", updatedAt: "2026-07-15T12:00:00.000Z",
 };
 const partner: PartnerDto = {
-  capabilities: ["research", "planning"], displayName: "Mana Core", inFlightCount: 0, kind: "a2a", lifecyclePolicy: "DRAIN", partnerId: "partner_agent_1",
+  capabilities: ["research", "planning"], createdBy: "user", displayName: "Mana Core", engine: "pi-core", inFlightCount: 0, kind: "a2a",
+  knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner_agent_1",
   partnerRevisionId: "partner_revision_agent_1", registryRevision: 1, skills: ["research"], status: "ACTIVE", tools: [],
 };
 const life: LifeDto = {

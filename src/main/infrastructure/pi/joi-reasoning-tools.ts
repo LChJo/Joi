@@ -1,8 +1,10 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 
-import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
+import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
+import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
+import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
 
@@ -14,7 +16,9 @@ export function createJoiReasoningTools(input: {
   avatarId: string;
   avatarChanges: Pick<AvatarChangeService, "suggestArchive" | "suggestMerge">;
   avatars: AvatarCatalog;
-  partners: Pick<PartnerRegistryService, "list">;
+  instances: Pick<PartnerInstanceManager, "dispose" | "ensure" | "list">;
+  memory: Pick<PartnerWorkMemoryService, "digest">;
+  partners: Pick<PartnerRegistryService, "add" | "inspect" | "list">;
   turnId: string;
   work: Pick<WorkOrchestrationService, "plan" | "reassign">;
 }): AgentTool[] {
@@ -22,19 +26,29 @@ export function createJoiReasoningTools(input: {
     dependencies: Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() })),
     work: Type.Array(Type.Object({
       accessMode: Type.Union([Type.Literal("READ"), Type.Literal("WRITE")]),
+      instanceId: Type.Optional(Type.String()),
       key: Type.String(),
       partnerId: Type.String(),
+      sessionPolicy: Type.Optional(Type.Union([Type.Literal("ephemeral"), Type.Literal("resident")])),
       title: Type.String(),
       workspaceRef: Type.Optional(Type.String()),
     }), { minItems: 1, maxItems: 16 }),
   });
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
-    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox.",
+    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Pass instanceId to reuse an existing partner instance, or sessionPolicy resident to continue a conversation; omit both for one-shot ephemeral work.",
     execute: async (_toolCallId, arguments_) => result(await input.work.plan({
       avatarId: input.avatarId,
       dependencies: arguments_.dependencies,
       turnId: input.turnId,
-      work: arguments_.work,
+      work: arguments_.work.map((item) => ({
+        accessMode: item.accessMode,
+        ...(item.instanceId === undefined ? {} : { instanceId: item.instanceId }),
+        key: item.key,
+        partnerId: item.partnerId,
+        ...(item.sessionPolicy === undefined ? {} : { sessionPolicy: item.sessionPolicy === "resident" ? "RESIDENT" as const : "EPHEMERAL" as const }),
+        title: item.title,
+        ...(item.workspaceRef === undefined ? {} : { workspaceRef: item.workspaceRef }),
+      })),
     })),
     label: "Plan and dispatch work",
     name: "work.dispatch",
@@ -76,6 +90,76 @@ export function createJoiReasoningTools(input: {
     name: "avatar.suggest_merge",
     parameters: mergeParameters,
   };
+  const partnerCreateParameters = Type.Object({
+    capabilities: Type.Optional(Type.Array(Type.String())),
+    description: Type.Optional(Type.String()),
+    displayName: Type.String(),
+    prompt: Type.Optional(Type.String()),
+    skills: Type.Optional(Type.Array(Type.String())),
+    tools: Type.Optional(Type.Array(Type.String())),
+    workspaceRef: Type.Optional(Type.String()),
+  });
+  const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
+    description: "Register a new local Pi partner when no existing partner fits the work. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
+    execute: async (_toolCallId, arguments_) => {
+      const created = await input.partners.add({
+        capabilities: arguments_.capabilities ?? [],
+        createdBy: "joi",
+        ...(arguments_.description === undefined ? {} : { description: arguments_.description }),
+        displayName: arguments_.displayName,
+        kind: "local-pi",
+        ...(arguments_.prompt === undefined ? {} : { prompt: arguments_.prompt }),
+        skills: arguments_.skills ?? [],
+        tools: arguments_.tools ?? [],
+        ...(arguments_.workspaceRef === undefined ? {} : { workspaceRef: arguments_.workspaceRef }),
+      });
+      return result({ partnerId: created.partnerId, partnerRevisionId: created.partnerRevisionId });
+    },
+    label: "Create a partner",
+    name: "partner.create",
+    parameters: partnerCreateParameters,
+  };
+  const createInstanceParameters = Type.Object({
+    partnerId: Type.String(),
+    sessionPolicy: Type.Optional(Type.Union([Type.Literal("ephemeral"), Type.Literal("resident")])),
+  });
+  const createInstanceTool: AgentTool<typeof createInstanceParameters> = {
+    description: "Create an instance of a partner. resident keeps the conversation alive across dispatches (bounded by instance caps); ephemeral is disposed after one turn. Prefer reusing an IDLE instance from partner.list_instances.",
+    execute: async (_toolCallId, arguments_) => result(await input.instances.ensure({
+      partnerId: arguments_.partnerId,
+      ...(arguments_.sessionPolicy === undefined ? {} : { sessionPolicy: arguments_.sessionPolicy === "resident" ? "RESIDENT" as const : "EPHEMERAL" as const }),
+    })),
+    label: "Create a partner instance",
+    name: "partner.create_instance",
+    parameters: createInstanceParameters,
+  };
+  const listInstancesParameters = Type.Object({ partnerId: Type.Optional(Type.String()) });
+  const listInstancesTool: AgentTool<typeof listInstancesParameters> = {
+    description: "List live partner instances with status, session policy and last use, so follow-up work can reuse the right conversation.",
+    execute: async (_toolCallId, arguments_) => result(await input.instances.list(arguments_.partnerId)),
+    label: "List partner instances",
+    name: "partner.list_instances",
+    parameters: listInstancesParameters,
+  };
+  const disposeInstanceParameters = Type.Object({ instanceId: Type.String(), reason: Type.Optional(Type.String()) });
+  const disposeInstanceTool: AgentTool<typeof disposeInstanceParameters> = {
+    description: "Dispose a partner instance once its goal is complete. Busy instances cannot be disposed.",
+    execute: async (_toolCallId, arguments_) => {
+      await input.instances.dispose(arguments_.instanceId, arguments_.reason ?? "joi disposed the instance");
+      return result({ disposed: true, instanceId: arguments_.instanceId });
+    },
+    label: "Dispose a partner instance",
+    name: "partner.dispose_instance",
+    parameters: disposeInstanceParameters,
+  };
+  const inspectRevisionParameters = Type.Object({ partnerId: Type.String() });
+  const inspectRevisionTool: AgentTool<typeof inspectRevisionParameters> = {
+    description: "Inspect one partner's active revision (description, engine, capabilities, knowledge count). Never returns prompt bodies or workspace paths.",
+    execute: async (_toolCallId, arguments_) => result(await input.partners.inspect(arguments_.partnerId)),
+    label: "Inspect partner revision",
+    name: "partner.inspect_revision",
+    parameters: inspectRevisionParameters,
+  };
   return [
     {
       description: "List redacted Avatar summaries. Does not return persona, memory, or workspace paths.",
@@ -87,12 +171,28 @@ export function createJoiReasoningTools(input: {
     suggestMerge,
     suggestArchive,
     {
-      description: "List active partners with their public capability and active revision metadata.",
-      execute: async () => result(await input.partners.list()),
+      description: "List active partners with public metadata, live instances and a working-memory digest (recent outcomes, success rate). Use the digest to pick and the instance list to reuse.",
+      execute: async () => {
+        const [partners, instances] = await Promise.all([input.partners.list(), input.instances.list()]);
+        const enriched = await Promise.all(partners.map(async (dto) => ({
+          ...dto,
+          activeInstanceCount: instances.filter((instance) => instance.partnerId === dto.partnerId).length,
+          instances: instances
+            .filter((instance) => instance.partnerId === dto.partnerId)
+            .map((instance) => ({ instanceId: instance.instanceId, lastUsedAt: instance.lastUsedAt, sessionPolicy: instance.sessionPolicy, status: instance.status })),
+          memoryDigest: await input.memory.digest(dto.partnerId),
+        })));
+        return result(enriched);
+      },
       label: "List available partners",
       name: "partner.list_available",
       parameters: Type.Object({}),
     },
+    inspectRevisionTool,
+    partnerCreateTool,
+    createInstanceTool,
+    listInstancesTool,
+    disposeInstanceTool,
     workDispatchTool,
     workReassignTool,
   ];

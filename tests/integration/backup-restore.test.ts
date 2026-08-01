@@ -27,7 +27,7 @@ describe("consistent backup and quarantine restore", () => {
     const service = new BackupService({ appVersion: "0.1.0", artifactsDirectory, backupsDirectory, clock: fixture.clock, database: fixture.database, userDataDirectory: fixture.root });
     const backup = await service.create();
     expect(backup.backupId).toMatch(/^backup_/);
-    expect((await service.list())[0]).toMatchObject({ backupId: backup.backupId, schemaVersion: 20 });
+    expect((await service.list())[0]).toMatchObject({ backupId: backup.backupId, schemaVersion: 26 });
     const backupDatabase = new DatabaseSync(path.join(backupsDirectory, backup.backupId, "runtime.sqlite"), { readOnly: true });
     try {
       expect(backupDatabase.prepare("SELECT length(encrypted_blob) AS size FROM model_source_credentials WHERE provider_id = 'joi-source:backup-test'").get()).toEqual({ size: 0 });

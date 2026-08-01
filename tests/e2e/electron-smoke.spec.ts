@@ -35,11 +35,11 @@ function seedReadyAgent(userDataDirectory: string): void {
       (source_id, status, active_source_revision_id, active_model_revision_id, created_at, updated_at)
       VALUES ('e2e', 'READY', NULL, NULL, ?, ?)`).run(now, now);
     database.prepare(`INSERT INTO model_source_revisions
-      (source_revision_id, source_id, kind, display_name, credential_ref, credential_version, created_at)
-      VALUES ('source-revision-e2e', 'e2e', 'deepseek', 'DeepSeek E2E', 'joi-source:e2e', 1, ?)`).run(now);
+      (source_revision_id, source_id, kind, access_mode, protocol, display_name, credential_ref, credential_version, created_at)
+      VALUES ('source-revision-e2e', 'e2e', 'deepseek', 'api', 'openai', 'DeepSeek E2E', 'joi-source:e2e', 1, ?)`).run(now);
     database.prepare(`INSERT INTO model_source_model_revisions
       (model_revision_id, source_id, model_id, capability, preset_version, created_at)
-      VALUES ('model-revision-e2e', 'e2e', 'deepseek-chat', 'release-tested', '2026-07-28', ?)`).run(now);
+      VALUES ('model-revision-e2e', 'e2e', 'deepseek-chat', 'release-tested', '2026-07-30', ?)`).run(now);
     database.prepare(`UPDATE model_sources
       SET active_source_revision_id = 'source-revision-e2e', active_model_revision_id = 'model-revision-e2e' WHERE source_id = 'e2e'`).run();
     database.prepare(`INSERT INTO model_source_health
@@ -68,6 +68,7 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
   try {
     const window = await application.firstWindow();
     await expect(window).toHaveTitle("joi");
+    expect(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMenuBarVisible())).toBe(false);
     await expect(window.getByRole("heading", { name: "先帮 joi 设个密码。" })).toBeVisible();
     await window.getByLabel("管理密码").fill("correct horse battery staple");
     await window.getByLabel("确认密码").fill("correct horse battery staple");

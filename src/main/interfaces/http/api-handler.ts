@@ -14,13 +14,18 @@ import type { JoiInboxService } from "../../application/joi/joi-inbox-service.js
 import type { AvatarRegistryService } from "../../application/joi/avatar-registry-service.js";
 import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
+import type { PartnerKnowledgeService } from "../../application/partners/partner-knowledge-service.js";
+import type { PartnerEngineCatalog } from "../../application/partners/partner-engine-catalog.js";
+import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
+import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
+import type { PartnerSkillCatalog } from "../../application/ports/partner-skills.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { SseService } from "../../application/sse/sse-service.js";
 import type { BudgetService } from "../../application/rhythm/budget-service.js";
 import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
 import type { ArtifactReadPort, JoiAttachmentPort, UserAttachmentPort } from "../../application/ports/managed-file-ports.js";
 import type { WorkQuery } from "../../application/ports/work-orchestration.js";
-import type { JoiActivityDto } from "../../../shared/joi.js";
+import type { JoiActivityDto, PartnerEngineDto } from "../../../shared/joi.js";
 
 const SESSION_COOKIE = "digital_life_session";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -43,13 +48,19 @@ export interface ApiDependencies {
   joiInbox?: Pick<JoiInboxService, "accept" | "list">;
   joiActivity?: { listActivity(limit?: number): Promise<JoiActivityDto[]> };
   joiAttachments?: JoiAttachmentPort;
+  engines?: Pick<PartnerEngineCatalog, "assertAvailable" | "list">;
+  instances?: Pick<PartnerInstanceManager, "list">;
+  knowledge?: Pick<PartnerKnowledgeService, "add" | "list" | "remove">;
+  memory?: Pick<PartnerWorkMemoryService, "debugView">;
+  skills?: Pick<PartnerSkillCatalog, "listForEngine">;
+  directoryPicker?: () => Promise<string | null>;
   onJoiMessageAccepted?: (inputId: string) => void;
   onModelSourceReady?: () => void;
   lives: LifeService;
   lifeRuntime?: LifeRuntimeService;
   modelSources?: Pick<ModelSourceService, "create" | "delete" | "disable" | "hasReadySource" | "list" | "setOrder" | "update" | "validate">;
   operations: OperationsService;
-  partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "list" | "update">;
+  partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "duplicate" | "enable" | "list" | "update">;
   requestRestart?: () => void;
   sse: SseService;
   settings?: SystemSettingsPort;
@@ -110,6 +121,49 @@ function joiInboxService(dependencies: ApiDependencies): NonNullable<ApiDependen
 function partnerRegistryService(dependencies: ApiDependencies): NonNullable<ApiDependencies["partners"]> {
   if (dependencies.partners === undefined) throw new HttpError("partner_registry_unavailable", "Partner registry is unavailable.", 503);
   return dependencies.partners;
+}
+
+function partnerKnowledgeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["knowledge"]> {
+  if (dependencies.knowledge === undefined) throw new HttpError("partner_knowledge_unavailable", "Partner knowledge is unavailable.", 503);
+  return dependencies.knowledge;
+}
+
+function partnerMemoryService(dependencies: ApiDependencies): NonNullable<ApiDependencies["memory"]> {
+  if (dependencies.memory === undefined) throw new HttpError("partner_memory_unavailable", "Partner work memory is unavailable.", 503);
+  return dependencies.memory;
+}
+
+function partnerInstanceManager(dependencies: ApiDependencies): NonNullable<ApiDependencies["instances"]> {
+  if (dependencies.instances === undefined) throw new HttpError("partner_instances_unavailable", "Partner instances are unavailable.", 503);
+  return dependencies.instances;
+}
+
+function partnerEngineCatalog(dependencies: ApiDependencies): NonNullable<ApiDependencies["engines"]> {
+  if (dependencies.engines === undefined) throw new HttpError("partner_engines_unavailable", "Partner engines are unavailable.", 503);
+  return dependencies.engines;
+}
+
+function partnerSkillCatalog(dependencies: ApiDependencies): NonNullable<ApiDependencies["skills"]> {
+  if (dependencies.skills === undefined) throw new HttpError("partner_skills_unavailable", "Partner skills are unavailable.", 503);
+  return dependencies.skills;
+}
+
+function partnerEngineParam(value: string): PartnerEngineDto {
+  if (value === "pi-core" || value === "claude-code" || value === "codex") return value;
+  throw new HttpError("partner_engine_invalid", "Partner engine is invalid.", 400);
+}
+
+async function assertLocalEngineAvailable(dependencies: ApiDependencies, engine: PartnerEngineDto | undefined): Promise<void> {
+  if (engine === undefined || engine === "pi-core") return;
+  try {
+    await partnerEngineCatalog(dependencies).assertAvailable(engine);
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    if (error instanceof Error && "code" in error && typeof error.code === "string") {
+      throw new HttpError(error.code, error.message, 409);
+    }
+    throw error;
+  }
 }
 
 function avatarChangeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["avatarChanges"]> {
@@ -218,6 +272,12 @@ function integerField(body: Record<string, unknown>, key: string): number {
   const value = body[key];
   if (!Number.isInteger(value)) throw new HttpError("request_field_invalid", `${key} must be an integer.`, 400);
   return value as number;
+}
+
+function partnerEngineField(body: Record<string, unknown>): PartnerEngineDto | undefined {
+  const value = optionalStringField(body, "engine");
+  if (value === null || value === undefined) return undefined;
+  return partnerEngineParam(value);
 }
 
 function base64Field(body: Record<string, unknown>, key: string): Uint8Array {
@@ -470,6 +530,21 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         sendJson(response, 200, { items: await partnerRegistryService(dependencies).list() });
         return;
       }
+      if (method === "GET" && pathname === "/api/v1/engines") {
+        sendJson(response, 200, { items: await partnerEngineCatalog(dependencies).list() });
+        return;
+      }
+      const engineSkillsMatch = /^\/api\/v1\/engines\/([^/]+)\/skills$/.exec(pathname);
+      if (method === "GET" && engineSkillsMatch !== null) {
+        const engine = partnerEngineParam(decodeURIComponent(engineSkillsMatch[1] ?? ""));
+        sendJson(response, 200, { items: partnerSkillCatalog(dependencies).listForEngine(engine) });
+        return;
+      }
+      if (method === "GET" && pathname === "/api/v1/system/pick-directory") {
+        if (dependencies.directoryPicker === undefined) throw new HttpError("directory_picker_unavailable", "Directory picker is unavailable.", 503);
+        sendJson(response, 200, { path: await dependencies.directoryPicker() });
+        return;
+      }
       if (method === "GET" && pathname === "/api/v1/avatars") {
         if (dependencies.avatars === undefined) throw new HttpError("avatar_catalog_unavailable", "Avatar catalog is unavailable.", 503);
         sendJson(response, 200, { items: await dependencies.avatars.listSummaries() });
@@ -514,10 +589,17 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         const body = await readJson(request);
         const kind = stringField(body, "kind");
         if (kind !== "local-pi" && kind !== "a2a") throw new HttpError("partner_kind_invalid", "Partner kind is invalid.", 400);
+        const engine = partnerEngineField(body);
+        await assertLocalEngineAvailable(dependencies, engine);
         sendJson(response, 201, await partnerRegistryService(dependencies).add({
           capabilities: optionalStringArray(body, "capabilities") ?? [],
+          ...(typeof body.description === "string" ? { description: body.description } : {}),
           displayName: stringField(body, "displayName"),
+          ...(engine === undefined ? {} : { engine }),
+          ...(typeof body.engineModelId === "string" ? { engineModelId: body.engineModelId } : {}),
           kind,
+          ...(typeof body.modelIdOverride === "string" ? { modelIdOverride: body.modelIdOverride } : {}),
+          ...(typeof body.modelSourceId === "string" ? { modelSourceId: body.modelSourceId } : {}),
           skills: optionalStringArray(body, "skills") ?? [],
           tools: optionalStringArray(body, "tools") ?? [],
           ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
@@ -530,22 +612,77 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         await verifyWrite(dependencies, request);
         const partnerId = decodeURIComponent(partnerMatch[1] ?? "");
         const body = await readJson(request);
-        const result = body.disabled === true
-          ? await partnerRegistryService(dependencies).disable(partnerId)
-          : await partnerRegistryService(dependencies).update(partnerId, {
-            capabilities: optionalStringArray(body, "capabilities") ?? [],
-            displayName: stringField(body, "displayName"),
-            skills: optionalStringArray(body, "skills") ?? [],
-            tools: optionalStringArray(body, "tools") ?? [],
-            ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
-            ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
-          });
-        sendJson(response, 200, result);
+        if (body.disabled === true) {
+          sendJson(response, 200, await partnerRegistryService(dependencies).disable(partnerId));
+          return;
+        }
+        if (body.disabled === false) {
+          sendJson(response, 200, await partnerRegistryService(dependencies).enable(partnerId));
+          return;
+        }
+        const engine = partnerEngineField(body);
+        await assertLocalEngineAvailable(dependencies, engine);
+        sendJson(response, 200, await partnerRegistryService(dependencies).update(partnerId, {
+          capabilities: optionalStringArray(body, "capabilities") ?? [],
+          ...(typeof body.description === "string" ? { description: body.description } : {}),
+          displayName: stringField(body, "displayName"),
+          ...(engine === undefined ? {} : { engine }),
+          ...(typeof body.engineModelId === "string" ? { engineModelId: body.engineModelId } : {}),
+          ...(typeof body.modelIdOverride === "string" ? { modelIdOverride: body.modelIdOverride } : {}),
+          ...(typeof body.modelSourceId === "string" ? { modelSourceId: body.modelSourceId } : {}),
+          skills: optionalStringArray(body, "skills") ?? [],
+          tools: optionalStringArray(body, "tools") ?? [],
+          ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
+          ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
+        }));
         return;
       }
       if (partnerMatch !== null && method === "DELETE") {
         await verifyWrite(dependencies, request);
         sendJson(response, 200, await partnerRegistryService(dependencies).delete(decodeURIComponent(partnerMatch[1] ?? "")));
+        return;
+      }
+      const partnerDuplicateMatch = /^\/api\/v1\/partners\/([^/]+)\/duplicate$/.exec(pathname);
+      if (partnerDuplicateMatch !== null && method === "POST") {
+        await verifyWrite(dependencies, request);
+        sendJson(response, 201, await partnerRegistryService(dependencies).duplicate(decodeURIComponent(partnerDuplicateMatch[1] ?? "")));
+        return;
+      }
+      const partnerKnowledgeMatch = /^\/api\/v1\/partners\/([^/]+)\/knowledge$/.exec(pathname);
+      if (partnerKnowledgeMatch !== null && method === "GET") {
+        sendJson(response, 200, { items: await partnerKnowledgeService(dependencies).list(decodeURIComponent(partnerKnowledgeMatch[1] ?? "")) });
+        return;
+      }
+      if (partnerKnowledgeMatch !== null && method === "POST") {
+        await verifyWrite(dependencies, request);
+        const partnerId = decodeURIComponent(partnerKnowledgeMatch[1] ?? "");
+        const body = await readJson(request);
+        sendJson(response, 201, await partnerKnowledgeService(dependencies).add({
+          body: Buffer.from(base64Field(body, "contentBase64")).toString("utf8"),
+          filename: stringField(body, "filename"),
+          partnerId,
+        }));
+        return;
+      }
+      const partnerKnowledgeDocMatch = /^\/api\/v1\/partners\/([^/]+)\/knowledge\/([^/]+)$/.exec(pathname);
+      if (partnerKnowledgeDocMatch !== null && method === "DELETE") {
+        await verifyWrite(dependencies, request);
+        const removed = await partnerKnowledgeService(dependencies).remove(
+          decodeURIComponent(partnerKnowledgeDocMatch[1] ?? ""),
+          decodeURIComponent(partnerKnowledgeDocMatch[2] ?? ""),
+        );
+        if (!removed) throw new HttpError("partner_kb_doc_not_found", "Knowledge document was not found.", 404);
+        sendEmpty(response, 204);
+        return;
+      }
+      const partnerMemoryMatch = /^\/api\/v1\/partners\/([^/]+)\/memory$/.exec(pathname);
+      if (partnerMemoryMatch !== null && method === "GET") {
+        sendJson(response, 200, await partnerMemoryService(dependencies).debugView(decodeURIComponent(partnerMemoryMatch[1] ?? "")));
+        return;
+      }
+      const partnerInstancesMatch = /^\/api\/v1\/partners\/([^/]+)\/instances$/.exec(pathname);
+      if (partnerInstancesMatch !== null && method === "GET") {
+        sendJson(response, 200, { items: await partnerInstanceManager(dependencies).list(decodeURIComponent(partnerInstancesMatch[1] ?? "")) });
         return;
       }
       if (method === "POST" && pathname === "/api/v1/joi/messages") {

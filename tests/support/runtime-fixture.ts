@@ -6,14 +6,26 @@ import { AgentService } from "../../src/main/application/agents/agent-service";
 import { AuthService } from "../../src/main/application/auth/auth-service";
 import { LifeService } from "../../src/main/application/lives/life-service";
 import { OperationsService } from "../../src/main/application/operations/operations-service";
+import { PartnerEngineCatalog } from "../../src/main/application/partners/partner-engine-catalog";
+import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager";
+import { PartnerKnowledgeService } from "../../src/main/application/partners/partner-knowledge-service";
+import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service";
+import { PartnerWorkMemoryService } from "../../src/main/application/partners/partner-work-memory-service";
 import { SseService } from "../../src/main/application/sse/sse-service";
 import { InMemorySseBroker } from "../../src/main/infrastructure/http/in-memory-sse-broker";
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
+import { SqlitePartnerInstanceMessageStore } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-message-store";
+import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository";
+import { SqlitePartnerKnowledgeStore } from "../../src/main/infrastructure/persistence/sqlite-partner-knowledge-store";
+import { SqlitePartnerPromptStore } from "../../src/main/infrastructure/persistence/sqlite-partner-prompt-store";
+import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository";
+import { SqlitePartnerWorkMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-partner-work-memory-store";
 import {
   InMemoryBootstrapNonceStore,
   LoginRateLimiter,
   NodeSecurityPrimitives,
 } from "../../src/main/infrastructure/security/security-services";
+import { LocalSkillScanner } from "../../src/main/infrastructure/skills/local-skill-scanner";
 
 export class TestClock {
   private current: Date;
@@ -42,10 +54,17 @@ export interface RuntimeFixture {
   clock: TestClock;
   close(): Promise<void>;
   database: RuntimeDatabase;
+  engines: PartnerEngineCatalog;
   ids: TestIds;
+  instances: PartnerInstanceManager;
+  knowledge: PartnerKnowledgeService;
   lives: LifeService;
+  memory: PartnerWorkMemoryService;
   operations: OperationsService;
+  partners: PartnerRegistryService;
   root: string;
+  skills: LocalSkillScanner;
+  directoryPicker: () => Promise<string | null>;
   sse: SseService;
 }
 
@@ -69,6 +88,29 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
     store: database.store,
   });
   const operations = new OperationsService({ clock, store: database.store });
+  const knowledge = new PartnerKnowledgeService({ clock, ids, store: new SqlitePartnerKnowledgeStore(database) });
+  const partnerRepository = new SqlitePartnerRegistryRepository(database);
+  const partners = new PartnerRegistryService({
+    clock,
+    ids,
+    knowledge,
+    prompts: new SqlitePartnerPromptStore(database),
+    repository: partnerRepository,
+  });
+  const skills = new LocalSkillScanner();
+  const instances = new PartnerInstanceManager({
+    clock,
+    engines: new Map(),
+    ids,
+    knowledge,
+    messages: new SqlitePartnerInstanceMessageStore(database),
+    registry: partners,
+    repository: new SqlitePartnerInstanceRepository(database),
+    revisions: partnerRepository,
+    skills,
+  });
+  const memory = new PartnerWorkMemoryService({ clock, ids, store: new SqlitePartnerWorkMemoryStore(database) });
+  const engines = new PartnerEngineCatalog(new Map());
 
   return {
     agents,
@@ -80,10 +122,17 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
       await rm(root, { force: true, recursive: true });
     },
     database,
+    engines,
     ids,
+    instances,
+    knowledge,
     lives,
+    memory,
     operations,
+    partners,
     root,
+    skills,
+    directoryPicker: () => Promise.resolve("/stub/workdir"),
     sse,
   };
 }

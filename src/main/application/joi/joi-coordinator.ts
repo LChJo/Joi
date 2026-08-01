@@ -141,6 +141,9 @@ export class JoiCoordinator {
             systemPrompt: [
               "You are the single global joi orchestration authority.",
               "Treat this persisted input at a safe Turn boundary: decide whether it updates current work, becomes follow-up work, starts independent work, or needs clarification.",
+              "Partners are templates; instances are running conversations. Dispatch with sessionPolicy ephemeral for one-shot bounded work; use a resident instance only when the same partner must continue an earlier conversation, and dispose it once the goal is complete.",
+              "partner.list_available includes each partner's working-memory digest and live instances; prefer reusing an IDLE instance over creating a new one.",
+              "When a dispatch failed, consult the partner memory digest before calling work.reassign.",
               ...(pin.modelCapability === "custom-unverified-tools" ? ["This custom model is not tool-verified. Call partner.list_available before any formal response; otherwise this Turn will fail closed."] : []),
               `Avatar: ${avatar.profile.name}`,
               `Scope: ${avatar.profile.scopeSummary}`,

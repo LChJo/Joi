@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { A2aGatewayService } from "../../application/a2a/a2a-gateway-service.js";
+import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import type { InvocationStatus } from "../../application/ports/a2a-ports.js";
 import type { PartnerExecutor, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerRegistryRepository } from "../../application/ports/partner-registry.js";
@@ -18,8 +19,10 @@ interface DispatchRow {
   agent_connection_id: string | null;
   avatar_id: string;
   dispatch_attempt_id: string;
+  instance_id: string | null;
   invocation_id: string | null;
   kind: "A2A" | "LOCAL_PI";
+  partner_id: string;
   partner_revision_id: string;
   run_id: string | null;
   run_status: PartnerRunStatus | "RUNNING" | null;
@@ -56,9 +59,10 @@ export class SqliteA2aPartnerDispatchHandler {
     clock: Clock;
     database: TransactionalDatabase;
     gateway: Pick<A2aGatewayService, "recover" | "startWithResult">;
+    instances?: Pick<PartnerInstanceManager, "dispatch">;
     leases: Pick<SqliteWorkspaceLeaseManager, "acquire" | "release">;
     local: PartnerExecutor;
-    onResult?: (event: { avatarId: string; eventId: string; status: PartnerRunStatus; workId: string }) => Promise<void>;
+    onResult?: (event: { avatarId: string; eventId: string; partnerId: string; sessionDataSource: string; status: PartnerRunStatus; title: string; workId: string }) => Promise<void>;
     partners: Pick<PartnerRegistryRepository, "getRevision">;
   }) {}
 
@@ -91,12 +95,35 @@ export class SqliteA2aPartnerDispatchHandler {
       if (row?.run_id === undefined || row.run_id === null) throw new Error("partner_run_create_failed");
     }
 
-    if (runWasPresent && row.run_status === "RUNNING" && row.kind === "LOCAL_PI") {
+    if (runWasPresent && row.run_status === "RUNNING" && row.kind === "LOCAL_PI" && row.instance_id === null) {
+      // A crashed legacy single-shot run is not resumable; instance-linked attempts resume via the manager below.
       await this.#complete(row, "UNKNOWN");
       return;
     }
 
     if (row.kind === "LOCAL_PI") {
+      const payloadInstance = record.payload.instanceId;
+      const payloadPolicy = record.payload.sessionPolicy;
+      const instanceId = typeof payloadInstance === "string" ? payloadInstance : undefined;
+      const sessionPolicy = payloadPolicy === "EPHEMERAL" || payloadPolicy === "RESIDENT" ? payloadPolicy : undefined;
+      if (this.dependencies.instances !== undefined && (instanceId !== undefined || sessionPolicy !== undefined)) {
+        try {
+          const result = await this.dependencies.instances.dispatch({
+            dispatchAttemptId: row.dispatch_attempt_id,
+            ...(instanceId === undefined ? {} : { instanceId }),
+            request: { actionId: row.action_id, avatarId: row.avatar_id, taskProjection: row.title, workId: row.work_id },
+            revision,
+            ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
+          });
+          // The instance manager links dispatch_attempts.instance_id during dispatch; reload so the
+          // result event records the real session data source instead of the pre-dispatch snapshot.
+          const linked = this.#load(row.dispatch_attempt_id);
+          await this.#complete(linked ?? row, result.status);
+        } catch {
+          await this.#complete(row, "UNKNOWN");
+        }
+        return;
+      }
       try {
         const result = await this.dependencies.local.run({
           actionId: row.action_id,
@@ -133,9 +160,9 @@ export class SqliteA2aPartnerDispatchHandler {
 
   #load(dispatchAttemptId: string): DispatchRow | undefined {
     return this.dependencies.database.transaction((connection) => connection.prepare(`
-      SELECT a.dispatch_attempt_id, a.action_id, a.status, a.partner_revision_id,
+      SELECT a.dispatch_attempt_id, a.action_id, a.status, a.partner_revision_id, a.instance_id,
              w.work_id, w.avatar_id, w.title, w.access_mode, w.workspace_ref,
-             p.kind, p.legacy_agent_connection_id AS agent_connection_id,
+             p.partner_id, p.kind, p.legacy_agent_connection_id AS agent_connection_id,
              (SELECT invocation_id FROM invocations WHERE message_id = a.action_id) AS invocation_id,
              pr.run_id, pr.status AS run_status
         FROM dispatch_attempts a
@@ -176,6 +203,17 @@ export class SqliteA2aPartnerDispatchHandler {
       ).run(eventId, runId, row.avatar_id, row.work_id, row.partner_revision_id, status, now);
     });
     await this.dependencies.leases.release(row.work_id);
-    await this.dependencies.onResult?.({ avatarId: row.avatar_id, eventId, status, workId: row.work_id });
+    const sessionDataSource = row.kind === "LOCAL_PI"
+      ? (row.instance_id !== null ? `partner_instance_messages:${row.instance_id}` : `local_pi:${row.action_id}`)
+      : (row.invocation_id !== null ? `a2a_invocations:${row.invocation_id}` : `a2a:${row.action_id}`);
+    await this.dependencies.onResult?.({
+      avatarId: row.avatar_id,
+      eventId,
+      partnerId: row.partner_id,
+      sessionDataSource,
+      status,
+      title: row.title,
+      workId: row.work_id,
+    });
   }
 }

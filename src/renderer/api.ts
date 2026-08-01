@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AvatarChangeRequestDto, AvatarDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto } from "../shared/joi";
+import type { AvatarChangeRequestDto, AvatarDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -97,6 +97,15 @@ export class DigitalLifeApi {
     });
   }
   listModelSources() { return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources"); }
+  engineCatalog() {
+    return this.request<{ items: { available: boolean; id: PartnerEngineDto; reason?: string; tools: string[] }[] }>("/api/v1/engines");
+  }
+  engineSkills(engine: PartnerEngineDto) {
+    return this.request<{ items: { displayName: string; id: string }[] }>(`/api/v1/engines/${encodeURIComponent(engine)}/skills`);
+  }
+  pickDirectory() {
+    return this.request<{ path: string | null }>("/api/v1/system/pick-directory");
+  }
   createModelSource(body: { accessMode: ModelSourceAccessModeDto; apiKey: string; baseUrl?: string; displayName?: string; kind: ModelSourceKindDto; modelId?: string; protocol: ModelSourceProtocolDto }) {
     return this.request<ModelSourceDto>("/api/v1/model-sources", { body, method: "POST" });
   }
@@ -113,14 +122,58 @@ export class DigitalLifeApi {
     return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources/order", { body: { sourceIds }, method: "PUT" });
   }
   listPartners() { return this.request<{ items: PartnerDto[] }>("/api/v1/partners"); }
-  createPartner(body: { capabilities: string[]; displayName: string; kind: "a2a" | "local-pi"; prompt?: string; skills: string[]; tools: string[]; workspaceRef?: string }) {
+  createPartner(body: {
+    capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
+    kind: "a2a" | "local-pi"; modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[];
+    tools: string[]; workspaceRef?: string;
+  }) {
     return this.request<PartnerDto>("/api/v1/partners", { body, method: "POST" });
+  }
+  updatePartner(partnerId: string, body: {
+    capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
+    modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[]; tools: string[]; workspaceRef?: string;
+  }) {
+    return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body, method: "PATCH" });
+  }
+  setPartnerEnabled(partnerId: string, enabled: boolean) {
+    return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body: { disabled: !enabled }, method: "PATCH" });
   }
   disablePartner(partnerId: string) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body: { disabled: true }, method: "PATCH" });
   }
+  duplicatePartner(partnerId: string) {
+    return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}/duplicate`, { method: "POST" });
+  }
   deletePartner(partnerId: string) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { method: "DELETE" });
+  }
+  listKnowledgeDocs(partnerId: string) {
+    return this.request<{ items: PartnerKnowledgeDocDto[] }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/knowledge`);
+  }
+  async uploadKnowledgeDoc(partnerId: string, file: File) {
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    let binary = "";
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    return this.request<PartnerKnowledgeDocDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}/knowledge`, {
+      body: { contentBase64: btoa(binary), filename: file.name },
+      method: "POST",
+    });
+  }
+  deleteKnowledgeDoc(partnerId: string, docId: string) {
+    return this.request<undefined>(`/api/v1/partners/${encodeURIComponent(partnerId)}/knowledge/${encodeURIComponent(docId)}`, { method: "DELETE" });
+  }
+  partnerMemory(partnerId: string) {
+    return this.request<{
+      entries: { createdAt: string; memoryId: string; outcome: string; partnerId: string; sessionDataSource: string; title: string; workId?: string }[];
+      summary?: string;
+      summaryUpdatedAt?: string;
+    }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/memory`);
+  }
+  listPartnerInstances(partnerId: string) {
+    return this.request<{ items: {
+      createdAt: string; engine: string; externalSessionRef?: string; instanceId: string; lastUsedAt: string;
+      partnerId: string; sessionPolicy: string; status: string;
+    }[] }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/instances`);
   }
   listLives() { return this.request<{ items: LifeDto[] }>("/api/v1/lives?limit=100"); }
   getLife(lifeId: string) { return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`); }

@@ -8,6 +8,8 @@
 
 输入先写全局 inbox，再由 Pi 选择 `select | create | suggest_merge | suggest_archive | clarify`。非法结构化决策只修复一次；再次失败进入澄清或安全串行降级。merge/archive 只生成建议，必须经用户确认。
 
+Partner 配置（revision）是模板；运行中的 `PartnerInstance` 分为 `EPHEMERAL`（单次派发后销毁、消息清除）与 `RESIDENT`（会话消息持久化、跨重启恢复、目标完成后由 joi 销毁）。一个 Partner 可同时存在多个实例；实例不跨 Partner，忙碌实例不可复用也不可销毁。每个 Partner 有一份仅 joi 可见的工作记忆：结果、会话真实数据源与滚动摘要，对 Partner 自身提示词不可见，只作为 joi 选择与复用实例的依据。
+
 下文 Life/Wake 状态机继续定义旧数据兼容和恢复不变量；新运行时不得把它复制为第二条可产生副作用的调度链。
 
 ## 1. 运行时不变量

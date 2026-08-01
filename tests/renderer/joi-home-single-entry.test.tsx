@@ -2,8 +2,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
-import { JoiHome, ModelSourceManager, PartnerManager } from "../../src/renderer/JoiHome.js";
-import type { JoiSnapshotDto, ModelSourceDto } from "../../src/shared/joi.js";
+import { JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
+import type { JoiSnapshotDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const readySource: ModelSourceDto = {
   accessMode: "api",
@@ -261,79 +261,31 @@ describe("joi home single entry", () => {
     expect(send).toHaveBeenCalledWith("按附件执行", ["attachment-1"]);
   });
 
-  it("manages local Pi partners through the unified redacted registry", async () => {
+  it("nudges the home page to build two or three partners when the roster is thin", async () => {
     const api = new DigitalLifeApi("");
-    const partner = { capabilities: ["code"], displayName: "Local Coder", inFlightCount: 0, kind: "local-pi" as const, lifecyclePolicy: "DRAIN" as const, partnerId: "partner-1", partnerRevisionId: "revision-1", registryRevision: 1, skills: ["typescript"], status: "ACTIVE" as const, tools: ["read", "edit"] };
-    const disabled = { ...partner, capabilities: [], skills: [], status: "DISABLED" as const, tools: [] };
-    vi.spyOn(api, "listPartners").mockResolvedValueOnce({ items: [partner] }).mockResolvedValue({ items: [disabled] });
-    const create = vi.spyOn(api, "createPartner").mockResolvedValue(partner);
-    const disable = vi.spyOn(api, "disablePartner").mockResolvedValue(disabled);
-    render(<PartnerManager api={api} />);
-    expect(await screen.findByText("Local Coder")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "停用" }));
-    await waitFor(() => expect(disable).toHaveBeenCalledWith("partner-1"));
-    await waitFor(() => expect(screen.queryByRole("button", { name: "停用" })).not.toBeInTheDocument());
-    expect(screen.getByText("尚未声明能力")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "添加搭档" }));
-    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "Writer" } });
-    fireEvent.change(screen.getByLabelText("能力标签（逗号分隔）"), { target: { value: "code, review" } });
-    fireEvent.change(screen.getByLabelText("Skills（逗号分隔）"), { target: { value: "typescript" } });
-    fireEvent.change(screen.getByLabelText("工具 allowlist（逗号分隔）"), { target: { value: "read, edit" } });
-    fireEvent.change(screen.getByLabelText("工作目录"), { target: { value: "D:\\work\\writer" } });
-    fireEvent.change(screen.getByLabelText("搭档提示词"), { target: { value: "只修改任务范围内的文件" } });
-    fireEvent.submit(parentForm(screen.getByLabelText("名称")));
-    await waitFor(() => expect(create).toHaveBeenCalledWith({
-      capabilities: ["code", "review"], displayName: "Writer", kind: "local-pi", prompt: "只修改任务范围内的文件",
-      skills: ["typescript"], tools: ["read", "edit"], workspaceRef: "D:\\work\\writer",
-    }));
+    const thin = snapshot([readySource]);
+    thin.partners = [{
+      capabilities: [], createdBy: "user", displayName: "Solo", engine: "pi-core", inFlightCount: 0, kind: "local-pi",
+      knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner-solo", partnerRevisionId: "revision-solo",
+      registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+    }];
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(thin);
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText(/建立 2-3 个工作搭档/u)).toBeInTheDocument();
   });
 
-  it("explains Partner drain state and only deletes after in-flight work reaches zero", async () => {
+  it("hides the partner nudge once at least two partners exist", async () => {
     const api = new DigitalLifeApi("");
-    const draining = {
-      capabilities: [], displayName: "Draining", inFlightCount: 1, kind: "local-pi" as const, lifecyclePolicy: "DRAIN" as const,
-      partnerId: "partner-drain", partnerRevisionId: "revision-drain", registryRevision: 2, skills: [], status: "DISABLED" as const, tools: [],
+    const enough = snapshot([readySource]);
+    const one: PartnerDto = {
+      capabilities: [], createdBy: "user", displayName: "Solo", engine: "pi-core", inFlightCount: 0, kind: "local-pi",
+      knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner-solo", partnerRevisionId: "revision-solo",
+      registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
     };
-    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [draining] });
-    const remove = vi.spyOn(api, "deletePartner").mockResolvedValue({ ...draining, inFlightCount: 0, status: "DELETED" });
-    const view = render(<PartnerManager api={api} />);
-    expect(await screen.findByText("正在排空 1 项在途工作")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "删除搭档" })).toBeDisabled();
-    view.unmount();
-
-    vi.restoreAllMocks();
-    vi.spyOn(api, "listPartners").mockResolvedValueOnce({ items: [{ ...draining, inFlightCount: 0 }] }).mockResolvedValue({ items: [] });
-    const deleteReady = vi.spyOn(api, "deletePartner").mockResolvedValue({ ...draining, inFlightCount: 0, status: "DELETED" });
-    render(<PartnerManager api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "删除搭档" }));
-    await waitFor(() => expect(deleteReady).toHaveBeenCalledWith("partner-drain"));
-    expect(remove).not.toHaveBeenCalled();
-  });
-
-  it("onboards remote A2A partners through the existing card and bearer path", async () => {
-    const api = new DigitalLifeApi("");
-    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [] });
-    const addAgent = vi.spyOn(api, "addAgent").mockResolvedValue({
-      agentConnectionId: "agent-remote", credentialVersion: 1, name: "Remote Researcher", readiness: true,
-      skills: ["research"], status: "ACTIVE", updatedAt: "2026-07-28T10:00:00.000Z",
-    });
-    render(<PartnerManager api={api} />);
-    expect(await screen.findByRole("heading", { name: "还没有搭档" })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "添加搭档" }));
-    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "Remote Researcher" } });
-    fireEvent.change(screen.getByLabelText("类型"), { target: { value: "a2a" } });
-    fireEvent.change(screen.getByLabelText("远端 Agent Card URL"), { target: { value: "https://agent.test/card.json" } });
-    fireEvent.change(screen.getByLabelText("远端 Bearer Token"), { target: { value: "secret" } });
-    fireEvent.submit(parentForm(screen.getByLabelText("名称")));
-    await waitFor(() => expect(addAgent).toHaveBeenCalledWith("https://agent.test/card.json", "secret"));
-    expect(await screen.findByText(/搭档列表已先更新/)).toBeInTheDocument();
-  });
-
-  it("keeps an unavailable Partner registry explicit and empty", async () => {
-    const api = new DigitalLifeApi("");
-    vi.spyOn(api, "listPartners").mockRejectedValue(new Error("offline"));
-    render(<PartnerManager api={api} />);
-    expect(await screen.findByText("没能读取统一搭档列表。")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "还没有搭档" })).toBeInTheDocument();
+    enough.partners = [one, { ...one, displayName: "Duo", partnerId: "partner-duo", partnerRevisionId: "revision-duo" }];
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(enough);
+    render(<JoiHome api={api} />);
+    expect(await screen.findByLabelText("给 joi 输入")).toBeInTheDocument();
+    expect(screen.queryByText(/建立 2-3 个工作搭档/u)).not.toBeInTheDocument();
   });
 });

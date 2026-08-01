@@ -25,6 +25,11 @@ import { JoiInputScheduler } from "./application/joi/joi-input-scheduler.js";
 import { AvatarRegistryService } from "./application/joi/avatar-registry-service.js";
 import { AvatarChangeService } from "./application/joi/avatar-change-service.js";
 import { PartnerRegistryService } from "./application/partners/partner-registry-service.js";
+import { PartnerKnowledgeService } from "./application/partners/partner-knowledge-service.js";
+import { PartnerInstanceManager } from "./application/partners/partner-instance-manager.js";
+import { PartnerEngineCatalog } from "./application/partners/partner-engine-catalog.js";
+import { PartnerWorkMemoryService } from "./application/partners/partner-work-memory-service.js";
+import type { PartnerEngineRuntime } from "./application/ports/partner-instances.js";
 import { WorkOrchestrationService } from "./application/work/work-orchestration-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
 import { SystemSettingsService } from "./infrastructure/operations/system-settings-service.js";
@@ -56,6 +61,10 @@ import { SqliteWorkPlanRepository } from "./infrastructure/persistence/sqlite-wo
 import { SqliteDispatchPolicyGate } from "./infrastructure/persistence/sqlite-dispatch-policy-gate.js";
 import { SqliteWorkspaceLeaseManager } from "./infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { SqlitePartnerPromptStore } from "./infrastructure/persistence/sqlite-partner-prompt-store.js";
+import { SqlitePartnerKnowledgeStore } from "./infrastructure/persistence/sqlite-partner-knowledge-store.js";
+import { SqlitePartnerInstanceMessageStore } from "./infrastructure/persistence/sqlite-partner-instance-message-store.js";
+import { SqlitePartnerInstanceRepository } from "./infrastructure/persistence/sqlite-partner-instance-repository.js";
+import { SqlitePartnerWorkMemoryStore } from "./infrastructure/persistence/sqlite-partner-work-memory-store.js";
 import { LegacyLifeStoreAdapter } from "./infrastructure/persistence/legacy-life-store-adapter.js";
 import { SqliteAvatarChangeRepository } from "./infrastructure/persistence/sqlite-avatar-change-repository.js";
 import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
@@ -69,6 +78,12 @@ import { createJoiReasoningTools } from "./infrastructure/pi/joi-reasoning-tools
 import { SqliteA2aPartnerDispatchHandler } from "./infrastructure/a2a/sqlite-partner-dispatch-handler.js";
 import { LocalPiPartnerAdapter } from "./infrastructure/pi/local-pi-partner-adapter.js";
 import { PiCodingPartnerRunner } from "./infrastructure/pi/pi-coding-partner-runner.js";
+import { PiPartnerEngineRuntime } from "./infrastructure/pi/pi-partner-engine-runtime.js";
+import { PiPartnerMemorySummarizer } from "./infrastructure/pi/pi-partner-memory-summarizer.js";
+import { LocalCliPartnerEngineRuntime } from "./infrastructure/mana/local-cli-partner-engine-runtime.js";
+import { ManaSdkConversationStore } from "./infrastructure/mana/mana-sdk-session-store.js";
+import { LocalSkillScanner } from "./infrastructure/skills/local-skill-scanner.js";
+import { dialog } from "electron";
 import { BuiltinPiCodingToolFactory } from "./infrastructure/pi/pi-coding-tool-factory.js";
 import { PiReasoningFailureClassifier } from "./infrastructure/pi/pi-reasoning-failure-classifier.js";
 import { InMemoryEventSignal } from "./infrastructure/runtime/in-memory-event-signal.js";
@@ -97,7 +112,8 @@ if (testUserDataPath !== undefined) {
   app.setPath("userData", testUserDataPath);
 }
 
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
+// E2E uses an isolated userData directory and must be able to run while a developer instance is open.
+const hasSingleInstanceLock = isTest || app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
   app.quit();
 }
@@ -199,10 +215,12 @@ async function startRuntime(): Promise<void> {
   });
   const partnerRepository = new SqlitePartnerRegistryRepository(database);
   const partnerPrompts = new SqlitePartnerPromptStore(database);
+  const partnerKnowledge = new PartnerKnowledgeService({ clock, ids, store: new SqlitePartnerKnowledgeStore(database) });
   const partners = new PartnerRegistryService({
     clock,
     events: orchestrationEvents,
     ids,
+    knowledge: partnerKnowledge,
     prompts: partnerPrompts,
     repository: partnerRepository,
   });
@@ -224,10 +242,36 @@ async function startRuntime(): Promise<void> {
     credentials: piCredentials,
     repository: modelSourceRepository,
   });
+  const piCodingTools = new BuiltinPiCodingToolFactory();
+  const localCliConversationStore = new ManaSdkConversationStore(database);
+  const partnerSkillCatalog = new LocalSkillScanner();
+  const partnerEngines = new Map<string, PartnerEngineRuntime>([
+    ["pi-core", new PiPartnerEngineRuntime({ prompts: partnerPrompts, resolver: configuredModelResolver, sources: reasoningSources, tools: piCodingTools })],
+    ["claude-code", new LocalCliPartnerEngineRuntime({ prompts: partnerPrompts, protocol: "claude", store: localCliConversationStore })],
+    ["codex", new LocalCliPartnerEngineRuntime({ prompts: partnerPrompts, protocol: "codex", store: localCliConversationStore })],
+  ]);
+  const engineCatalog = new PartnerEngineCatalog(partnerEngines);
+  const partnerInstances = new PartnerInstanceManager({
+    clock,
+    engines: partnerEngines,
+    ids,
+    knowledge: partnerKnowledge,
+    messages: new SqlitePartnerInstanceMessageStore(database),
+    registry: partners,
+    repository: new SqlitePartnerInstanceRepository(database),
+    revisions: partnerRepository,
+    skills: partnerSkillCatalog,
+  });
+  const partnerMemory = new PartnerWorkMemoryService({
+    clock,
+    ids,
+    store: new SqlitePartnerWorkMemoryStore(database),
+    summarizer: new PiPartnerMemorySummarizer({ resolver: configuredModelResolver, sources: reasoningSources }),
+  });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     resolver: configuredModelResolver,
     sessionStore: new SqlitePiReasoningSessionStore(database),
-    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, partners, turnId: turn.turnId, work }),
+    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, instances: partnerInstances, memory: partnerMemory, partners, turnId: turn.turnId, work }),
   });
   const joiCoordinator = new JoiCoordinator({
     avatars,
@@ -343,18 +387,27 @@ async function startRuntime(): Promise<void> {
     prompts: partnerPrompts,
     resolver: configuredModelResolver,
     sources: reasoningSources,
-    tools: new BuiltinPiCodingToolFactory(),
+    tools: piCodingTools,
   }));
   const partnerDispatch = new SqliteA2aPartnerDispatchHandler({
     clock,
     database,
     gateway: a2aGateway,
+    instances: partnerInstances,
     leases: workspaceLeases,
     local: localPartner,
     onResult: async (event) => {
       await orchestrationEvents.emit("work.partner_result", event.eventId, event);
       const inputId = await joiInboxRepository.enqueuePartnerResult(event);
       processJoiInput(inputId);
+      await partnerMemory.recordResult({
+        at: clock.now().toISOString(),
+        outcome: event.status,
+        partnerId: event.partnerId,
+        sessionDataSource: event.sessionDataSource,
+        title: event.title,
+        workId: event.workId,
+      }).catch(() => process.stderr.write("A partner work memory entry remains available for replay.\n"));
     },
     partners: partnerRepository,
   });
@@ -391,6 +444,7 @@ async function startRuntime(): Promise<void> {
       if (await outboxDispatcher.dispatchOnce(100) === 0) break;
     }
   };
+  await partnerInstances.recoverOnBoot();
   await outboxDispatcher.dispatchOnce();
   await alarmScheduler.tick();
   await scheduleScheduler.tick();
@@ -438,12 +492,26 @@ async function startRuntime(): Promise<void> {
     continuity: new ContinuityService({ clock, publisher: sse, store: database.store }),
     events,
     globalEmergencyStop: async () => { await emergencyStopAll?.(); },
+    engines: engineCatalog,
+    instances: partnerInstances,
     interactions,
     joiActivity: joiInboxRepository,
     joiAttachments: joiAttachmentStorage,
     joiInbox,
+    knowledge: partnerKnowledge,
     lifeRuntime,
     lives,
+    memory: partnerMemory,
+    directoryPicker: async () => {
+      try {
+        const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "选择搭档工作目录" });
+        if (result.canceled || result.filePaths.length === 0) return null;
+        return result.filePaths[0] ?? null;
+      } catch {
+        return null;
+      }
+    },
+    skills: partnerSkillCatalog,
     modelSources,
     onJoiMessageAccepted: (inputId: string) => {
       void orchestrationEvents.emit("joi.message.accepted", inputId, { inputId })
@@ -484,11 +552,18 @@ async function startRuntime(): Promise<void> {
     authService = auth;
     runtimeDatabase = database;
     runtimeListeners = listeners;
+    let lastInstanceSweepAt = 0;
     outboxTimer = setInterval(() => {
-      void Promise.all([
+      const cycles: Promise<unknown>[] = [
         outboxDispatcher.dispatchOnce(), alarmScheduler.tick(), scheduleScheduler.tick(), todoScheduler.tick(),
         expressionDelivery.tick(), budgets.tick(), idleExploration.tick(),
-      ])
+      ];
+      const now = clock.now();
+      if (now.getTime() - lastInstanceSweepAt >= 60_000) {
+        lastInstanceSweepAt = now.getTime();
+        cycles.push(partnerInstances.sweepIdle(now));
+      }
+      void Promise.all(cycles)
         .catch(() => process.stderr.write("Runtime background dispatch cycle failed.\n"));
     }, 2_000);
     outboxTimer.unref();
@@ -515,6 +590,7 @@ function createMainWindow() {
     },
     width: 1180,
   });
+  window.setMenu(null);
 
   window.once("ready-to-show", () => window.show());
   window.on("close", (event) => {

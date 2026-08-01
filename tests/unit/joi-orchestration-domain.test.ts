@@ -194,7 +194,9 @@ describe("JOI-01 pure domain", () => {
     });
     expect(toPublicPartner(second)).toEqual({
       capabilities: ["research", "summarize"],
+      createdBy: "user",
       displayName: "Remote renamed",
+      engine: "pi-core",
       kind: "a2a",
       partnerId: "partner_1",
       partnerRevisionId: "partner_rev_2",
