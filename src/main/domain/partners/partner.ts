@@ -25,13 +25,11 @@ export interface PartnerRevision {
     displayName: "local" | "card";
     skills: "local" | "card";
     tools: "local";
-    workspace: "local";
   };
   registryRevision: number;
   skills: string[];
   status: PartnerStatus;
   tools: string[];
-  workspaceRef?: string;
 }
 
 export interface CreatePartnerRevisionInput {
@@ -51,7 +49,6 @@ export interface CreatePartnerRevisionInput {
   registryRevision: number;
   skills: string[];
   tools: string[];
-  workspaceRef?: string;
 }
 
 function text(value: string, code: string): string {
@@ -84,7 +81,6 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
   // model id is only an optional override; pi-core takes its model from sources.
   const engineModelId = optionalText(input.engineModelId, 240, "partner_engine_model_invalid");
   const promptRef = input.promptRef?.trim();
-  const workspaceRef = input.workspaceRef?.trim();
   const description = optionalText(input.description, 600, "partner_description_invalid");
   const modelIdOverride = optionalText(input.modelIdOverride, 240, "partner_model_override_invalid");
   const modelSourceId = optionalText(input.modelSourceId, 240, "partner_model_source_invalid");
@@ -108,20 +104,18 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
       displayName: "local",
       skills: "local",
       tools: "local",
-      workspace: "local",
     },
     registryRevision: input.registryRevision,
     skills: strings(input.skills),
     status: "ACTIVE",
     tools: strings(input.tools),
-    ...(workspaceRef === undefined || workspaceRef === "" ? {} : { workspaceRef }),
   };
 }
 
 export function mergeA2aCardRevision(
   current: PartnerRevision,
   input: {
-    card: { capabilities: string[]; displayName: string; skills: string[]; tools?: string[]; workspaceRef?: string };
+    card: { capabilities: string[]; displayName: string; skills: string[]; tools?: string[] };
     createdAt: string;
     partnerRevisionId: string;
     registryRevision: number;

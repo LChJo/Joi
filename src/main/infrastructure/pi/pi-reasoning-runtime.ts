@@ -27,6 +27,7 @@ export const JOI_REASONING_TOOL_NAMES = [
   "work.create",
   "work.add_dependency",
   "work.dispatch",
+  "work.read_result",
   "work.wait",
   "work.cancel",
   "work.reassign",

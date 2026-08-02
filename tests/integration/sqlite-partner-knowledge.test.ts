@@ -17,7 +17,7 @@ describe("SQLite partner knowledge store", () => {
     try {
       const ids = new TestIds();
       let partners = new PartnerRegistryService({ clock: new TestClock(), ids, repository: new SqlitePartnerRegistryRepository(database) });
-      const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [], workspaceRef: "workspace" });
+      const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
       let store = new SqlitePartnerKnowledgeStore(database);
       let knowledge = new PartnerKnowledgeService({ clock: new TestClock(), ids, store });
 
@@ -63,7 +63,7 @@ describe("SQLite partner knowledge store", () => {
       let service = new PartnerRegistryService({ clock: new TestClock(), ids, repository });
       const created = await service.add({
         capabilities: ["code"], description: "工程搭档", displayName: "Coder", engine: "pi-core",
-        kind: "local-pi", modelIdOverride: "kimi-k2.5", skills: [], tools: ["read"], workspaceRef: "workspace",
+        kind: "local-pi", modelIdOverride: "kimi-k2.5", skills: [], tools: ["read"],
       });
       expect(created).toMatchObject({ createdBy: "user", description: "工程搭档", engine: "pi-core", modelIdOverride: "kimi-k2.5" });
 

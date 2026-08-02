@@ -190,7 +190,7 @@ describe("A2A invocation lifecycle", () => {
       ]);
       expect(await fixture.database.store.getPrimaryAgentContext({ affairKey: "system", agentConnectionId: "agent_gateway", lifeId: life.lifeId }))
         .toMatchObject({ contextId: "context_rebuilt" });
-      expect((await fixture.database.store.getRuntimeStats()).pendingOutbox).toBe(0);
+      expect((await fixture.database.store.getRuntimeStats()).pendingOutbox).toBe(1);
     } finally {
       await fixture.close();
     }

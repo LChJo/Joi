@@ -13,10 +13,11 @@ interface TransactionalDatabase {
 type Row = Record<string, unknown>;
 
 function mapRow(row: Row): PartnerInstanceRecord {
-  if (typeof row.instance_id !== "string" || typeof row.partner_id !== "string" || typeof row.partner_revision_id !== "string"
+  if (typeof row.instance_id !== "string" || typeof row.avatar_id !== "string" || typeof row.partner_id !== "string" || typeof row.partner_revision_id !== "string"
     || typeof row.session_policy !== "string" || typeof row.status !== "string" || typeof row.engine !== "string"
     || typeof row.created_at !== "string" || typeof row.last_used_at !== "string") throw new Error("partner_instance_record_invalid");
   return {
+    avatarId: row.avatar_id,
     createdAt: row.created_at,
     ...(typeof row.disposed_at === "string" ? { disposedAt: row.disposed_at } : {}),
     ...(typeof row.disposal_reason === "string" ? { disposalReason: row.disposal_reason } : {}),
@@ -31,16 +32,16 @@ function mapRow(row: Row): PartnerInstanceRecord {
   };
 }
 
-const SELECT_INSTANCES = `SELECT instance_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol,
+const SELECT_INSTANCES = `SELECT instance_id, avatar_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol,
   external_session_ref, created_at, last_used_at, disposed_at, disposal_reason FROM partner_instances`;
 
 export class SqlitePartnerInstanceRepository implements PartnerInstanceRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
-  async countActive(partnerId: string): Promise<number> {
+  async countActive(avatarId: string, partnerId: string): Promise<number> {
     const row = this.database.transaction((connection) => connection.prepare(
-      "SELECT COUNT(*) AS count FROM partner_instances WHERE partner_id = ? AND status <> 'DISPOSED'",
-    ).get(partnerId)) as { count: number };
+      "SELECT COUNT(*) AS count FROM partner_instances WHERE avatar_id = ? AND partner_id = ? AND status <> 'DISPOSED'",
+    ).get(avatarId, partnerId)) as { count: number };
     return row.count;
   }
 
@@ -51,11 +52,11 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
     return row.count;
   }
 
-  async create(input: { createdAt: string; engine: PartnerEngine; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: SessionPolicy }): Promise<PartnerInstanceRecord> {
+  async create(input: { avatarId: string; createdAt: string; engine: PartnerEngine; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: SessionPolicy }): Promise<PartnerInstanceRecord> {
     this.database.transaction((connection) => connection.prepare(`INSERT INTO partner_instances
-      (instance_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol, created_at, last_used_at)
-      VALUES (?, ?, ?, ?, 'IDLE', ?, ?, ?, ?)`).run(
-      input.instanceId, input.partnerId, input.partnerRevisionId, input.sessionPolicy,
+      (instance_id, avatar_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol, created_at, last_used_at)
+      VALUES (?, ?, ?, ?, ?, 'IDLE', ?, ?, ?, ?)`).run(
+      input.instanceId, input.avatarId, input.partnerId, input.partnerRevisionId, input.sessionPolicy,
       storageEngine(input.engine), storageCliProtocol(input.engine), input.createdAt, input.createdAt,
     ));
     const record = await this.get(input.instanceId);
@@ -76,10 +77,14 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
     ).run(instanceId, dispatchAttemptId));
   }
 
-  async listActive(partnerId?: string): Promise<PartnerInstanceRecord[]> {
-    const rows = partnerId === undefined
-      ? this.database.transaction((connection) => connection.prepare(`${SELECT_INSTANCES} WHERE status <> 'DISPOSED' ORDER BY created_at`).all())
-      : this.database.transaction((connection) => connection.prepare(`${SELECT_INSTANCES} WHERE status <> 'DISPOSED' AND partner_id = ? ORDER BY created_at`).all(partnerId));
+  async listActive(filter?: { avatarId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]> {
+    const clauses = ["status <> 'DISPOSED'"];
+    const values: string[] = [];
+    if (filter?.avatarId !== undefined) { clauses.push("avatar_id = ?"); values.push(filter.avatarId); }
+    if (filter?.partnerId !== undefined) { clauses.push("partner_id = ?"); values.push(filter.partnerId); }
+    const rows = this.database.transaction((connection) => connection.prepare(
+      `${SELECT_INSTANCES} WHERE ${clauses.join(" AND ")} ORDER BY created_at`,
+    ).all(...values));
     return rows.map((row) => mapRow(row as Row));
   }
 

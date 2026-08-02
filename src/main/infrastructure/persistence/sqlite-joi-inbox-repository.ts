@@ -139,19 +139,21 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     };
   }
 
-  async enqueuePartnerResult(event: { avatarId: string; eventId: string; status: string; workId: string }): Promise<string> {
+  async enqueuePartnerResult(event: { avatarId: string; eventId: string; resultId: string; status: string; summary: string; workId: string }): Promise<string> {
     const inputId = `joi_result_input:${event.eventId}`;
     this.database.transaction((connection) => {
-      const source = connection.prepare(`SELECT created_at FROM partner_result_events
-        WHERE event_id = ? AND avatar_id = ? AND work_id = ? AND status = ?`).get(
-        event.eventId, event.avatarId, event.workId, event.status,
+      const source = connection.prepare(`SELECT created_at FROM work_results
+        WHERE result_id = ? AND avatar_id = ? AND work_id = ? AND status = ?`).get(
+        event.resultId, event.avatarId, event.workId, event.status,
       ) as { created_at?: unknown } | undefined;
       if (typeof source?.created_at !== "string") throw new Error("partner_result_event_not_found");
       const body = [
         "A partner result is ready for orchestration.",
-        `eventId=${event.eventId}`,
+        `resultId=${event.resultId}`,
         `workId=${event.workId}`,
         `status=${event.status}`,
+        `summary=${event.summary.slice(0, 320)}`,
+        "Use work.read_result only if the bounded summary is insufficient.",
         "Decide whether to integrate, wait, ask the user, or reassign using a different partner revision.",
       ].join("\n");
       connection.prepare(`INSERT OR IGNORE INTO joi_inbox_messages

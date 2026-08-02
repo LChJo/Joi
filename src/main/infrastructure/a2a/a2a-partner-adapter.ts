@@ -11,6 +11,6 @@ export class A2aPartnerAdapter implements PartnerExecutor {
   async run(request: PartnerRunRequest, revision: PartnerRevision): Promise<PartnerRunResult> {
     if (revision.kind !== "a2a") throw new Error("A2A adapter requires an A2A partner revision");
     const result = await this.runner.dispatch(request, revision);
-    return { actionId: request.actionId, externalRunId: result.externalRunId, status: result.status, workId: request.workId };
+    return { actionId: request.actionId, artifacts: [], body: "", externalRunId: result.externalRunId, status: result.status, workId: request.workId };
   }
 }

@@ -7,8 +7,9 @@ import type {
 } from "@rd-efficiency/agentsdk";
 
 import { DomainError } from "../../domain/errors.js";
+import type { AvatarExecutionContextReader } from "../../application/ports/avatar-context.js";
 import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partner.js";
-import type { PartnerPromptStore, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
+import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import { resolveLocalCliExecutable, type LocalCliProtocol, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 
@@ -31,10 +32,11 @@ export interface LocalCliSdkSurface {
  * resume across restarts via the persisted conversation id + ConversationStore.
  */
 export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
-  readonly #warm = new Map<string, AgentConversation>();
+  readonly #warm = new Map<string, { conversation: AgentConversation; partnerRevisionId: string; workspacePath?: string }>();
   #surface: LocalCliSdkSurface | null = null;
 
   constructor(private readonly dependencies: {
+    contexts: AvatarExecutionContextReader;
     maxWarmConversations?: number;
     prompts: Pick<PartnerPromptStore, "read">;
     protocol: LocalCliProtocol;
@@ -63,37 +65,42 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   evictFromMemory(instanceId: string): void {
-    const conversation = this.#warm.get(instanceId);
+    const warm = this.#warm.get(instanceId);
     this.#warm.delete(instanceId);
-    if (conversation !== undefined) void conversation.close().catch(() => undefined);
+    if (warm !== undefined) void warm.conversation.close().catch(() => undefined);
   }
 
-  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ externalRunId: string; status: PartnerRunStatus }> {
+  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     const resolved = this.#resolve();
-    const workspaceRef = this.#readyWorkspace(revision, resolved);
+    const execution = await this.#execution(request, revision, resolved);
     const surface = await this.#sdkSurface();
-    const systemPrompt = await this.#systemPrompt(revision, request, context);
-    const status = await this.#drain(surface.query({
-      options: this.#queryOptions(revision, systemPrompt, workspaceRef, resolved),
+    const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context);
+    const drained = await this.#drain(surface.query({
+      options: this.#queryOptions(revision, systemPrompt, execution.workspacePath, resolved),
       prompt: request.taskProjection,
     }));
-    return { externalRunId: `local_cli:${request.actionId}`, status };
+    return { externalRunId: `local_cli:${request.actionId}`, output: { artifacts: [], body: drained.body }, status: drained.status };
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
     const resolved = this.#resolve();
-    const workspaceRef = this.#readyWorkspace(input.revision, resolved);
+    const execution = await this.#execution(input.request, input.revision, resolved);
     const surface = await this.#sdkSurface();
-    const systemPrompt = await this.#systemPrompt(input.revision, input.request, { knowledgeSection: input.knowledgeSection, skillSection: input.skillSection });
-    let conversation = this.#warm.get(input.instanceId);
+    const systemPrompt = await this.#systemPrompt(input.revision, input.request, execution.promptSection, { knowledgeSection: input.knowledgeSection, skillSection: input.skillSection });
+    let warm = this.#warm.get(input.instanceId);
+    if (warm !== undefined && (warm.partnerRevisionId !== input.revision.partnerRevisionId || warm.workspacePath !== execution.workspacePath)) {
+      this.evictFromMemory(input.instanceId);
+      warm = undefined;
+    }
+    let conversation = warm?.conversation;
     if (conversation === undefined) {
       const options: ConversationOptions = {
         backend: "claude",
-        cwd: workspaceRef,
+        ...(execution.workspacePath === undefined ? {} : { cwd: execution.workspacePath }),
         metadata: { instanceId: input.instanceId, surface: "joi-partner" },
         ...(input.revision.engineModelId === undefined ? {} : { model: input.revision.engineModelId }),
         projectKey: `joi:${input.revision.partnerId}`,
-        queryOptions: this.#queryOptions(input.revision, systemPrompt, workspaceRef, resolved),
+        queryOptions: this.#queryOptions(input.revision, systemPrompt, execution.workspacePath, resolved),
         store: this.dependencies.store,
         turns: "resident",
       };
@@ -105,26 +112,32 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
         }
       }
       conversation ??= await surface.createConversation(options);
-      this.#trackWarm(input.instanceId, conversation);
+      this.#trackWarm(input.instanceId, {
+        conversation,
+        partnerRevisionId: input.revision.partnerRevisionId,
+        ...(execution.workspacePath === undefined ? {} : { workspacePath: execution.workspacePath }),
+      });
     }
-    const status = await this.#drain(conversation.send(input.request.taskProjection));
+    const drained = await this.#drain(conversation.send(`${execution.promptSection}\n\nWork for this turn:\n${input.request.taskProjection}`));
     const messages = await conversation.messages();
     return {
       externalRunId: `local_cli:${input.request.actionId}`,
       externalSessionRef: conversation.id,
       messages: [messages],
-      status,
+      output: { artifacts: [], body: drained.body || extractText(messages) },
+      status: drained.status,
     };
   }
 
   /** Workspace invariant shared by both run modes (local CLI needs a cwd and a detected binary). */
-  #readyWorkspace(revision: PartnerRevision, resolved: ResolvedLocalCliExecutable): string {
+  async #execution(request: PartnerRunRequest, revision: PartnerRevision, resolved: ResolvedLocalCliExecutable) {
     if (resolved.executablePath === undefined) {
       throw new DomainError("engine_unavailable", `${resolved.commandName} 未在 PATH 中找到，无法使用本地 ${this.dependencies.protocol === "codex" ? "Codex" : "Claude Code"} 引擎。`);
     }
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Local CLI engines run local partners only.");
-    if (revision.workspaceRef === undefined) throw new DomainError("partner_workspace_required", "Local CLI partners need a workspace path.");
-    return revision.workspaceRef;
+    const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
+    if (execution === null) throw new DomainError("avatar_context_snapshot_not_found", "Avatar context snapshot is missing.");
+    return execution;
   }
 
   async #sdkSurface(): Promise<LocalCliSdkSurface> {
@@ -133,7 +146,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     return this.#surface;
   }
 
-  async #systemPrompt(revision: PartnerRevision, request: PartnerRunRequest, context: { knowledgeSection: string; skillSection: string }): Promise<string> {
+  async #systemPrompt(revision: PartnerRevision, request: PartnerRunRequest, avatarSection: string, context: { knowledgeSection: string; skillSection: string }): Promise<string> {
     const engineLabel = this.dependencies.protocol === "codex" ? "Codex" : "Claude Code";
     let configuredPrompt = `You are a local ${engineLabel} coding partner. Work only inside the assigned workspace and complete the requested work.`;
     if (revision.promptRef !== undefined) {
@@ -146,15 +159,16 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
       "Never access paths outside the assigned workspace.",
       `Avatar scope: ${request.avatarId}`,
       `Work item: ${request.workId}`,
+      avatarSection,
       ...(context.skillSection === "" ? [] : [context.skillSection]),
       ...(context.knowledgeSection === "" ? [] : [context.knowledgeSection]),
     ].join("\n");
   }
 
-  #queryOptions(revision: PartnerRevision, systemPrompt: string, workspaceRef: string, resolved: ResolvedLocalCliExecutable): Record<string, unknown> {
+  #queryOptions(revision: PartnerRevision, systemPrompt: string, workspacePath: string | undefined, resolved: ResolvedLocalCliExecutable): Record<string, unknown> {
     const options: Record<string, unknown> = {
-      cwd: workspaceRef,
-      permissionMode: "acceptEdits",
+      ...(workspacePath === undefined ? {} : { cwd: workspacePath }),
+      permissionMode: workspacePath === undefined ? "plan" : "acceptEdits",
       protocol: this.dependencies.protocol,
       systemPrompt,
     };
@@ -163,27 +177,45 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
       if (this.dependencies.protocol === "claude") options.pathToClaudeCodeExecutable = resolved.executablePath;
     }
     if (revision.engineModelId !== undefined) options.model = revision.engineModelId;
-    if (revision.tools.length > 0) options.allowedTools = [...revision.tools];
+    if (workspacePath === undefined) options.allowedTools = [];
+    else if (revision.tools.length > 0) options.allowedTools = [...revision.tools];
     return options;
   }
 
-  async #drain(stream: AsyncIterable<{ subtype?: string; type: string }>): Promise<PartnerRunStatus> {
+  async #drain(stream: AsyncIterable<{ subtype?: string; type: string }>): Promise<{ body: string; status: PartnerRunStatus }> {
     let status: PartnerRunStatus = "COMPLETED";
+    const messages: unknown[] = [];
     for await (const message of stream) {
+      messages.push(message);
       if (message.type === "result" && message.subtype !== "success") status = "FAILED";
     }
-    return status;
+    return { body: extractText(messages), status };
   }
 
-  #trackWarm(instanceId: string, conversation: AgentConversation): void {
-    this.#warm.set(instanceId, conversation);
+  #trackWarm(instanceId: string, warm: { conversation: AgentConversation; partnerRevisionId: string; workspacePath?: string }): void {
+    this.#warm.set(instanceId, warm);
     const max = this.dependencies.maxWarmConversations ?? 8;
     while (this.#warm.size > max) {
       const oldest = this.#warm.keys().next();
       if (oldest.done) break;
       const evicted = this.#warm.get(oldest.value);
       this.#warm.delete(oldest.value);
-      if (evicted !== undefined) void evicted.close().catch(() => undefined);
+      if (evicted !== undefined) void evicted.conversation.close().catch(() => undefined);
     }
   }
+}
+
+function extractText(value: unknown): string {
+  const output: string[] = [];
+  const visit = (candidate: unknown): void => {
+    if (typeof candidate === "string") { output.push(candidate); return; }
+    if (Array.isArray(candidate)) { for (const item of candidate) visit(item); return; }
+    if (candidate === null || typeof candidate !== "object") return;
+    const row = candidate as Record<string, unknown>;
+    if (typeof row.text === "string") output.push(row.text);
+    else if (typeof row.result === "string") output.push(row.result);
+    else if (row.content !== undefined) visit(row.content);
+  };
+  visit(value);
+  return output.join("\n").trim();
 }

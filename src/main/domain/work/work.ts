@@ -1,6 +1,6 @@
 import { DomainError } from "../errors.js";
 
-export type WorkAccessMode = "READ" | "WRITE";
+export type WorkAccessMode = "NONE" | "READ" | "WRITE";
 export type WorkStatus = "PLANNED" | "READY" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED";
 
 export interface WorkItem {
@@ -11,7 +11,6 @@ export interface WorkItem {
   title: string;
   updatedAt: string;
   workId: string;
-  workspaceRef?: string;
 }
 
 export interface WorkDependency {
@@ -31,9 +30,7 @@ export function createWorkItem(input: {
   createdAt: string;
   title: string;
   workId: string;
-  workspaceRef?: string;
 }): WorkItem {
-  const workspaceRef = input.workspaceRef?.trim();
   return {
     accessMode: input.accessMode,
     avatarId: required(input.avatarId, "work_avatar_invalid"),
@@ -42,13 +39,12 @@ export function createWorkItem(input: {
     title: required(input.title, "work_title_invalid"),
     updatedAt: input.createdAt,
     workId: required(input.workId, "work_id_invalid"),
-    ...(workspaceRef === undefined || workspaceRef === "" ? {} : { workspaceRef }),
   };
 }
 
 function conflicts(candidate: WorkItem, selected: WorkItem[]): boolean {
-  if (candidate.workspaceRef === undefined) return false;
-  return selected.some((item) => item.workspaceRef === candidate.workspaceRef
+  if (candidate.accessMode === "NONE") return false;
+  return selected.some((item) => item.avatarId === candidate.avatarId && item.accessMode !== "NONE"
     && (item.accessMode === "WRITE" || candidate.accessMode === "WRITE"));
 }
 

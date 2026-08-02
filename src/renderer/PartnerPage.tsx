@@ -64,7 +64,6 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const [skills, setSkills] = useState<SkillOption[]>([]);
   const [selectedSkills, setSelectedSkills] = useState<string[]>(partner?.skills ?? []);
   const [selectedTools, setSelectedTools] = useState<string[]>(partner?.tools ?? []);
-  const [workspace, setWorkspace] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -97,7 +96,6 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       ...(engine === "pi-core" ? (modelIdOverride === undefined ? {} : { modelIdOverride }) : (engineModelId === undefined ? {} : { engineModelId })),
       ...(engine === "pi-core" ? (modelSourceId === undefined ? {} : { modelSourceId }) : {}),
       ...(prompt === undefined ? {} : { prompt }),
-      ...(workspace === "" ? {} : { workspaceRef: workspace }),
     };
     try {
       if (partner === null) {
@@ -118,8 +116,6 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       onDone("远端搭档已登记，可以继续补充描述和知识库。", `partner_${agent.agentConnectionId}`);
     } catch (error) { setNotice(failureMessage(error, "远端搭档没登记成功。")); }
   };
-
-  const pickDirectory = () => void api.pickDirectory().then((result) => { if (result.path !== null) setWorkspace(result.path); }).catch(() => setNotice("没能打开目录选择器。"));
 
   const engineStatus = engineStatuses[engine];
   const localEngineReason = engine !== "pi-core" && engineStatus !== undefined && !engineStatus.available ? (engineStatus.reason ?? "未检测到该本地引擎。") : null;
@@ -147,7 +143,6 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       <div className="tab-panel" style={tab === "basic" ? undefined : { display: "none" }}>
         <div className="partner-basic-grid">
           <label>名称<input defaultValue={partner?.displayName} name="displayName" required /></label>
-          <label>工作路径（cwd）<span className="picker-field"><input aria-label="工作路径" onChange={(event) => setWorkspace(event.target.value)} placeholder={partner === null ? "点击右侧选择本机工作目录" : "留空保持当前工作路径，或点击更换"} readOnly value={workspace} /><button className="button ghost" onClick={pickDirectory} type="button">选择目录</button>{workspace === "" ? null : <button aria-label="清除工作路径" className="button ghost" onClick={() => setWorkspace("")} type="button">清除</button>}</span></label>
           <label>描述（给 joi 做参考）<textarea defaultValue={partner?.description} name="description" placeholder="一句话说清它擅长什么、什么时候该找它" rows={3} /></label>
           <label>搭档提示词<textarea name="prompt" placeholder={partner === null ? "交给它工作时附带的工作提示，仅本机保存" : "留空保持当前提示词"} rows={3} /></label>
         </div>

@@ -23,7 +23,7 @@ describe("JOI-01 pure domain", () => {
       name: "  产品工作  ",
       personaRevisionId: "persona_1",
       personaSummary: "  关注产品与交付  ",
-      project: { label: "joi", workspaceRef: "workspace_ref_1" },
+      project: { label: "joi" },
       scopeSummary: "  joi 工程  ",
       taskContext: { activeWorkIds: ["work_1"], summary: "当前里程碑" },
     });
@@ -38,7 +38,7 @@ describe("JOI-01 pure domain", () => {
         personaSummary: "关注产品与交付",
         scopeSummary: "joi 工程",
       },
-      project: { label: "joi", workspaceRef: "workspace_ref_1" },
+      project: { label: "joi" },
       taskContext: { activeWorkIds: ["work_1"], summary: "当前里程碑" },
       updatedAt: "2026-07-28T10:00:00.000Z",
     });
@@ -63,7 +63,7 @@ describe("JOI-01 pure domain", () => {
       name: "General",
       personaRevisionId: "persona_1",
       personaSummary: "General context",
-      project: { label: "Inbox", workspaceRef: "   " },
+      project: { label: "Inbox" },
       scopeSummary: "Original scope",
       taskContext: { activeWorkIds: ["work_1", "work_1"], summary: "  queued  " },
     });
@@ -167,7 +167,6 @@ describe("JOI-01 pure domain", () => {
       registryRevision: 1,
       skills: ["search"],
       tools: ["web.search"],
-      workspaceRef: "workspace_ref_local",
     });
     const second = mergeA2aCardRevision(first, {
       card: {
@@ -175,7 +174,6 @@ describe("JOI-01 pure domain", () => {
         displayName: "Remote renamed",
         skills: ["search", "summarize"],
         tools: ["remote.tool"],
-        workspaceRef: "remote-absolute-path-must-not-win",
       },
       createdAt: "2026-07-28T10:01:00.000Z",
       partnerRevisionId: "partner_rev_2",
@@ -190,7 +188,6 @@ describe("JOI-01 pure domain", () => {
       promptRef: "prompt_ref_local",
       registryRevision: 2,
       tools: ["web.search"],
-      workspaceRef: "workspace_ref_local",
     });
     expect(toPublicPartner(second)).toEqual({
       capabilities: ["research", "summarize"],

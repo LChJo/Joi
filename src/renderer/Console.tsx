@@ -13,7 +13,6 @@ import {
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
-import type { PartnerDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { AvatarManager, JoiHome, ModelSourceManager } from "./JoiHome";
 import { PartnerPage } from "./PartnerPage";
@@ -39,39 +38,10 @@ function LoadingPage() {
 }
 
 function PartnerMemoryDebug({ api }: { api: DigitalLifeApi }) {
-  const [partners, setPartners] = useState<PartnerDto[]>([]);
-  const [selected, setSelected] = useState("");
-  const [memory, setMemory] = useState<Awaited<ReturnType<DigitalLifeApi["partnerMemory"]>> | null>(null);
-  const [instances, setInstances] = useState<Awaited<ReturnType<DigitalLifeApi["listPartnerInstances"]>>["items"]>([]);
-  const [notice, setNotice] = useState<string | null>(null);
-  useEffect(() => {
-    const timer = setTimeout(() => void api.listPartners().then((page) => setPartners(page.items)).catch(() => setNotice("没能读取搭档列表。")), 0);
-    return () => clearTimeout(timer);
-  }, [api]);
-  useEffect(() => {
-    if (selected === "") return;
-    const timer = setTimeout(() => void Promise.all([api.partnerMemory(selected), api.listPartnerInstances(selected)])
-      .then(([memo, page]) => { setMemory(memo); setInstances(page.items); })
-      .catch(() => setNotice("没能读取搭档工作记忆。")), 0);
-    return () => clearTimeout(timer);
-  }, [api, selected]);
-  const choosePartner = (value: string) => {
-    setSelected(value);
-    if (value === "") { setMemory(null); setInstances([]); }
-  };
+  void api;
   return <section className="memory-debug-section">
-    <h2>搭档工作记忆（只读）</h2>
-    <p>joi 内部记下的每位搭档的工作台账：结果、会话真实数据源和滚动摘要。搭档本身看不到这份记忆，joi 用它决定派活。</p>
-    <label>选择搭档<select onChange={(event) => choosePartner(event.target.value)} value={selected}>
-      <option value="">尚未选择</option>
-      {partners.map((partner) => <option key={partner.partnerId} value={partner.partnerId}>{partner.displayName}</option>)}
-    </select></label>
-    {notice === null ? null : <p className="inline-notice danger">{notice}</p>}
-    {memory === null ? null : <>
-      <p className="memory-summary">{memory.summary ?? "还没有摘要。"}</p>
-      <div className="memory-rows">{memory.entries.map((entry) => <div className="memory-row" key={entry.memoryId}><strong>{entry.outcome}</strong><span>{entry.title}</span><small>{entry.sessionDataSource} · {new Date(entry.createdAt).toLocaleString()}</small></div>)}</div>
-    </>}
-    {instances.length === 0 ? null : <div className="memory-rows">{instances.map((instance) => <div className="memory-row" key={instance.instanceId}><strong>{instance.status}</strong><span>{instance.sessionPolicy === "RESIDENT" ? "常驻实例" : "单次实例"}</span><small>{instance.externalSessionRef ?? instance.instanceId} · 最近使用 {new Date(instance.lastUsedAt).toLocaleString()}</small></div>)}</div>}
+    <h2>私有执行上下文</h2>
+    <p>搭档实例、工作记忆和结果正文现在按 Avatar 隔离；管理页只显示安全元数据，请到 Avatar 上下文中心查看状态。</p>
   </section>;
 }
 

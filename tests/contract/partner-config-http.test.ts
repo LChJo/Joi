@@ -31,7 +31,7 @@ async function createSession() {
 }
 
 describe("partner config HTTP API", () => {
-  it("lists per-engine skills and opens the native directory picker", async () => {
+  it("lists per-engine skills and forbids the old absolute-path picker response", async () => {
     const session = await createSession();
     try {
       const skills = await fetch(`${session.url}/api/v1/engines/pi-core/skills`, { headers: session.headers });
@@ -40,8 +40,8 @@ describe("partner config HTTP API", () => {
       const badEngine = await fetch(`${session.url}/api/v1/engines/bogus/skills`, { headers: session.headers });
       expect(badEngine.status).toBe(400);
       const picked = await fetch(`${session.url}/api/v1/system/pick-directory`, { headers: session.headers });
-      expect(picked.status).toBe(200);
-      expect(await picked.json()).toMatchObject({ path: "/stub/workdir" });
+      expect(picked.status).toBe(410);
+      expect(await picked.json()).toMatchObject({ code: "absolute_path_response_forbidden" });
     } finally {
       await session.close();
     }
@@ -50,11 +50,23 @@ describe("partner config HTTP API", () => {
   it("creates partners with description and engine fields while redacting private bodies", async () => {
     const session = await createSession();
     try {
-      const created = await fetch(`${session.url}/api/v1/partners`, {
+      const forbidden = await fetch(`${session.url}/api/v1/partners`, {
         body: JSON.stringify({
           capabilities: ["code"], description: "工程搭档", displayName: "Coder", engine: "pi-core",
           kind: "local-pi", modelIdOverride: "kimi-k2.5", prompt: "只修改任务范围内的文件",
           skills: ["typescript"], tools: ["read"], workspaceRef: "D:\\work",
+        }),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(forbidden.status).toBe(400);
+      expect(await forbidden.json()).toMatchObject({ code: "partner_workspace_forbidden" });
+
+      const created = await fetch(`${session.url}/api/v1/partners`, {
+        body: JSON.stringify({
+          capabilities: ["code"], description: "工程搭档", displayName: "Coder", engine: "pi-core",
+          kind: "local-pi", modelIdOverride: "kimi-k2.5", prompt: "只修改任务范围内的文件",
+          skills: ["typescript"], tools: ["read"],
         }),
         headers: session.headers,
         method: "POST",
@@ -195,8 +207,8 @@ describe("partner config HTTP API", () => {
         headers: session.headers,
         method: "POST",
       });
-      expect(rejected.status).toBe(409);
-      expect(await rejected.json()).toMatchObject({ code: "engine_unavailable" });
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toMatchObject({ code: "partner_workspace_forbidden" });
 
       const created = await fetch(`${session.url}/api/v1/partners`, {
         body: JSON.stringify({ capabilities: [], displayName: "Local writer", engine: "pi-core", kind: "local-pi", skills: [], tools: [] }),
@@ -216,7 +228,7 @@ describe("partner config HTTP API", () => {
     }
   });
 
-  it("exposes read-only partner work memory and live instance views for the status page", async () => {
+  it("keeps partner memory private and requires Avatar scope for legacy instance views", async () => {
     const session = await createSession();
     try {
       const created = await fetch(`${session.url}/api/v1/partners`, {
@@ -227,12 +239,12 @@ describe("partner config HTTP API", () => {
       const partner = await created.json() as PartnerDto;
 
       const memory = await fetch(`${session.url}/api/v1/partners/${encodeURIComponent(partner.partnerId)}/memory`, { headers: session.headers });
-      expect(memory.status).toBe(200);
-      expect(await memory.json()).toMatchObject({ entries: [] });
+      expect(memory.status).toBe(410);
+      expect(await memory.json()).toMatchObject({ code: "partner_memory_private" });
 
       const instances = await fetch(`${session.url}/api/v1/partners/${encodeURIComponent(partner.partnerId)}/instances`, { headers: session.headers });
-      expect(instances.status).toBe(200);
-      expect((await instances.json() as { items: unknown[] }).items).toEqual([]);
+      expect(instances.status).toBe(400);
+      expect(await instances.json()).toMatchObject({ code: "avatar_id_required" });
     } finally {
       await session.close();
     }

@@ -62,7 +62,7 @@ describe("partner-registry-revision-before-dispatch", () => {
   it("increments immutable registry revisions before every new dispatch pin", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
-    const first = await service.add({ capabilities: ["research"], displayName: "本机搭档", kind: "local-pi", skills: ["web"], tools: ["read"], workspaceRef: "workspace-alias" });
+    const first = await service.add({ capabilities: ["research"], displayName: "本机搭档", kind: "local-pi", skills: ["web"], tools: ["read"] });
     const firstPin = await service.pinForDispatch(first.partnerId);
     const second = await service.update(first.partnerId, { capabilities: ["research", "write"], displayName: "本机搭档", skills: ["web"], tools: ["read", "edit"] });
     const secondPin = await service.pinForDispatch(first.partnerId);
@@ -72,23 +72,23 @@ describe("partner-registry-revision-before-dispatch", () => {
     expect(second.partnerRevisionId).not.toBe(first.partnerRevisionId);
   });
 
-  it("keeps local workspace, prompt and tools when refreshing an A2A Card and redacts them publicly", async () => {
+  it("keeps local prompt and tools when refreshing an A2A Card and redacts prompt references publicly", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
     const first = await service.add({
       capabilities: ["old"], displayName: "远端", kind: "a2a", promptRef: "secret-prompt-ref",
-      skills: ["old-skill"], tools: ["approved-local-tool"], workspaceRef: "private-workspace-ref",
+      skills: ["old-skill"], tools: ["approved-local-tool"],
     });
-    const refreshed = await service.refreshA2aCard(first.partnerId, { capabilities: ["new"], displayName: "Card Name", skills: ["card-skill"], tools: ["untrusted-tool"], workspaceRef: "untrusted-workspace" });
-    expect(repository.history[1]).toMatchObject({ promptRef: "secret-prompt-ref", tools: ["approved-local-tool"], workspaceRef: "private-workspace-ref" });
+    const refreshed = await service.refreshA2aCard(first.partnerId, { capabilities: ["new"], displayName: "Card Name", skills: ["card-skill"], tools: ["untrusted-tool"] });
+    expect(repository.history[1]).toMatchObject({ promptRef: "secret-prompt-ref", tools: ["approved-local-tool"] });
     expect(refreshed).toMatchObject({ capabilities: ["new"], displayName: "Card Name", skills: ["card-skill"], tools: ["approved-local-tool"] });
-    expect(JSON.stringify(refreshed)).not.toMatch(/secret-prompt-ref|private-workspace-ref/u);
+    expect(JSON.stringify(refreshed)).not.toMatch(/secret-prompt-ref/u);
   });
 
   it("lists and disables partners while preventing disabled or missing dispatch pins", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
-    const partner = await service.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [], workspaceRef: "workspace" });
+    const partner = await service.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
     expect(await service.list()).toEqual([partner]);
     expect(await service.disable(partner.partnerId)).toMatchObject({ registryRevision: 2, status: "DISABLED" });
     await expect(service.pinForDispatch(partner.partnerId)).rejects.toMatchObject({ code: "partner_not_available" });
@@ -127,9 +127,9 @@ describe("partner-registry-revision-before-dispatch", () => {
   it("rejects Card refresh for local partners and accepts explicit local override updates", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
-    const partner = await service.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [], workspaceRef: "old" });
+    const partner = await service.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
     await expect(service.refreshA2aCard(partner.partnerId, { capabilities: [], displayName: "Card", skills: [] })).rejects.toMatchObject({ code: "partner_card_kind_invalid" });
-    expect(await service.update(partner.partnerId, { capabilities: ["new"], displayName: "Updated", promptRef: "prompt", skills: ["skill"], tools: ["tool"], workspaceRef: "new" }))
+    expect(await service.update(partner.partnerId, { capabilities: ["new"], displayName: "Updated", promptRef: "prompt", skills: ["skill"], tools: ["tool"] }))
       .toMatchObject({ capabilities: ["new"], displayName: "Updated", skills: ["skill"], tools: ["tool"] });
   });
 
@@ -140,7 +140,7 @@ describe("partner-registry-revision-before-dispatch", () => {
 
     const partner = await service.add({
       capabilities: ["code"], displayName: "Coder", kind: "local-pi", prompt: "  Work only inside the assigned repository.  ",
-      skills: [], tools: ["read"], workspaceRef: "workspace",
+      skills: [], tools: ["read"],
     });
 
     const privateRef = repository.history[0]?.promptRef;
@@ -180,7 +180,7 @@ describe("partner-registry-revision-before-dispatch", () => {
 
     const original = await service.add({
       capabilities: ["code"], description: "工程搭档", displayName: "Coder", kind: "local-pi",
-      prompt: "只做小事", skills: ["typescript"], tools: ["read"], workspaceRef: "workspace",
+      prompt: "只做小事", skills: ["typescript"], tools: ["read"],
     });
     await knowledge.add({ body: "# 规范\n先读后写。", filename: "guide.md", partnerId: original.partnerId });
 

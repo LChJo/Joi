@@ -25,9 +25,11 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         (work_id, avatar_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
         VALUES (?, ?, ?, '{}', ?, ?, ?, ?, ?)`);
       for (const item of plan.items) insertWork.run(
-        item.workId, item.avatarId, item.title, item.accessMode, item.workspaceRef ?? null,
+        item.workId, item.avatarId, item.title, item.accessMode === "NONE" ? "READ" : item.accessMode, null,
         item.status, item.createdAt, item.updatedAt,
       );
+      const insertAccess = connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES (?, ?)");
+      for (const item of plan.items) insertAccess.run(item.workId, item.accessMode);
       const insertDependency = connection.prepare("INSERT INTO work_dependencies (work_id, depends_on_work_id) VALUES (?, ?)");
       for (const dependency of plan.dependencies) insertDependency.run(dependency.workId, dependency.dependsOnWorkId);
       connection.prepare(`INSERT INTO dispatch_plans
@@ -53,6 +55,14 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
           attempt.registryRevision, attempt.actionId, attempt.outbox.outboxId, plan.createdAt, plan.createdAt,
         );
       }
+      const avatarId = plan.items[0]?.avatarId;
+      if (avatarId !== undefined) {
+        const active = connection.prepare(`SELECT work_id AS workId, title, status FROM work_items
+          WHERE avatar_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY created_at, work_id`).all(avatarId);
+        connection.prepare(`INSERT INTO avatar_task_projections (avatar_id, active_work_json, recent_results_json, updated_at)
+          VALUES (?, ?, '[]', ?) ON CONFLICT(avatar_id) DO UPDATE SET active_work_json = excluded.active_work_json,
+            updated_at = excluded.updated_at`).run(avatarId, JSON.stringify(active), plan.createdAt);
+      }
     });
   }
 
@@ -70,9 +80,10 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
 
   async loadForReassignment(workId: string): Promise<WorkReassignmentContext | null> {
     const row = this.database.transaction((connection) => connection.prepare(`
-      SELECT w.work_id, w.avatar_id, w.title, w.access_mode, w.workspace_ref, w.status,
+      SELECT w.work_id, w.avatar_id, w.title, COALESCE(p.access_mode, w.access_mode) AS access_mode, w.status,
              w.created_at, w.updated_at, a.partner_revision_id
         FROM work_items w
+        LEFT JOIN work_access_policies p ON p.work_id = w.work_id
         JOIN dispatch_attempts a ON a.dispatch_attempt_id = (
           SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest
            WHERE latest.work_id = w.work_id ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1
@@ -90,7 +101,6 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         title: row.title as string,
         updatedAt: row.updated_at as string,
         workId: row.work_id as string,
-        ...(typeof row.workspace_ref === "string" ? { workspaceRef: row.workspace_ref } : {}),
       },
       lastPartnerRevisionId: row.partner_revision_id as string,
     };

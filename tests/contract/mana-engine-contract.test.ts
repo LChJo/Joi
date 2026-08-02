@@ -12,7 +12,7 @@ function localRevision(overrides: Partial<Parameters<typeof createPartnerRevisio
     capabilities: [], createdAt: "2026-07-30T10:00:00.000Z", displayName: "Local CLI partner",
     engine: "claude-code", engineModelId: "claude-sonnet", kind: "local-pi",
     partnerId: "partner_cli", partnerRevisionId: "revision_cli", registryRevision: 1,
-    skills: [], tools: [], workspaceRef: "workspace_cli",
+    skills: [], tools: [],
     ...overrides,
   });
 }
@@ -63,9 +63,15 @@ function resolved(available: boolean, protocol: "claude" | "codex"): ResolvedLoc
   return { commandName: protocol === "codex" ? "codex" : "claude", protocol, ...(available ? { executablePath: protocol === "codex" ? "/fake/codex" : "/fake/claude.exe" } : {}) };
 }
 
-function makeRunner(sdk: LocalCliSdkSurface, options: { available?: boolean; protocol?: "claude" | "codex" } = {}) {
+function makeRunner(sdk: LocalCliSdkSurface, options: { available?: boolean; protocol?: "claude" | "codex"; workspacePaths?: string[] } = {}) {
   const protocol = options.protocol ?? "claude";
+  let contextRead = 0;
   return new LocalCliPartnerEngineRuntime({
+    contexts: { loadForExecution: async () => {
+      const workspacePath = options.workspacePaths?.[contextRead] ?? options.workspacePaths?.at(-1) ?? "workspace_cli";
+      contextRead += 1;
+      return { promptSection: "Avatar context", sanitized: {}, workspacePath };
+    } },
     prompts: { read: async (promptRef) => (promptRef === "prompt_cli" ? "CLI_SYSTEM_SENTINEL" : null) },
     protocol,
     resolveExecutable: () => resolved(options.available ?? true, protocol),
@@ -82,14 +88,14 @@ function makeRunner(sdk: LocalCliSdkSurface, options: { available?: boolean; pro
   });
 }
 
-const request = { actionId: "action_cli_1", avatarId: "avatar_1", taskProjection: "implement the change", workId: "work_1" };
+const request = { actionId: "action_cli_1", avatarId: "avatar_1", contextSnapshotId: "context_1", taskProjection: "implement the change", workId: "work_1" };
 
 describe("local CLI partner engine", () => {
   it("runs ephemeral turns through one-shot query with the detected executable, protocol and edit permissions, no injected provider", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk);
     await expect(runner.runEphemeral(request, localRevision(), { knowledgeSection: "KB_SECTION", skillSection: "" }))
-      .resolves.toEqual({ externalRunId: "local_cli:action_cli_1", status: "COMPLETED" });
+      .resolves.toMatchObject({ externalRunId: "local_cli:action_cli_1", status: "COMPLETED" });
     const input = fake.createdOptions[0] as { options: { cwd?: string; model?: string; pathToAgentExecutable?: string; pathToClaudeCodeExecutable?: string; permissionMode?: string; protocol?: string; provider?: unknown; systemPrompt?: string }; prompt: string };
     expect(input.prompt).toBe("implement the change");
     expect(input.options).toMatchObject({ cwd: "workspace_cli", model: "claude-sonnet", pathToAgentExecutable: "/fake/claude.exe", pathToClaudeCodeExecutable: "/fake/claude.exe", permissionMode: "acceptEdits", protocol: "claude" });
@@ -134,7 +140,8 @@ describe("local CLI partner engine", () => {
 
     const second = await runner.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance_cli", knowledgeSection: "", request: { ...request, actionId: "action_cli_2" }, restoredMessages: first.messages, revision: localRevision(), skillSection: "" });
     expect(second.externalSessionRef).toBe("conversation_1");
-    expect(fake.sentTexts).toEqual(["implement the change", "implement the change"]);
+    expect(fake.sentTexts).toHaveLength(2);
+    expect(fake.sentTexts.every((text) => text.includes("Avatar context") && text.includes("implement the change"))).toBe(true);
     const created = fake.createdOptions.filter((option) => (option as { turns?: string }).turns === "resident");
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ backend: "claude", projectKey: "joi:partner_cli", turns: "resident" });
@@ -154,6 +161,15 @@ describe("local CLI partner engine", () => {
     const fresh = await runner2.runResidentTurn({ externalSessionRef: "conversation_gone", instanceId: "instance_other", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" });
     expect(fresh.externalSessionRef).toBe("conversation_1");
     expect(failing.resumedIds).toEqual(["conversation_gone"]);
+  });
+
+  it("rebuilds a warm resident conversation when the Avatar workspace changes", async () => {
+    const fake = makeFakeSdk();
+    const runner = makeRunner(fake.sdk, { workspacePaths: ["workspace_one", "workspace_two"] });
+    await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" });
+    await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request: { ...request, actionId: "action_cli_2" }, restoredMessages: null, revision: localRevision(), skillSection: "" });
+    const created = fake.createdOptions.filter((option) => (option as { turns?: string }).turns === "resident") as { cwd?: string }[];
+    expect(created.map((option) => option.cwd)).toEqual(["workspace_one", "workspace_two"]);
   });
 
   it("fails closed when the CLI is not detected and exposes the protocol as engine id", async () => {

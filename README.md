@@ -6,13 +6,16 @@
 
 - 用户只面对唯一全局 joi 和首页输入框；不需要先创建工程、管线、Avatar 或任务。
 - `Avatar` 只保存人格、工程引用、记忆命名空间和任务上下文，不是 Agent、运行时或第二个调度器。
+- Avatar 是工作目录的唯一权威：每个 ACTIVE Avatar 自动拥有受管或绑定工作区；绝对路径只保存在主进程基础设施私表中。
 - joi 自动选择或创建 Avatar，歧义时先澄清；每项工作只能属于一个 Avatar，跨 Avatar 必须由用户明确提出。
 - joi 使用 Pi 作为唯一主推理基座，自身只有规划、查询和派发工具，不获得任意 shell、文件读写或编辑能力。
 - 原 Life 主 Agent 降级为对应 Avatar 的首选搭档；本机 Pi 与远端 A2A 搭档统一进入版本化搭档目录。
+- Partner 只是全局能力模板，不保存 cwd；每个运行实例和工作记忆都绑定一个 Avatar，禁止跨 Avatar 复用。
+- 搭档输出先原子归档为 Avatar-scoped WorkResult 并更新工作/任务投影，再以有界摘要通知 joi；正文只能由当前 Avatar 通过分页工具读取。
 - 所有输入先持久化，所有外部副作用先进入 outbox，并使用稳定幂等标识；连续输入的合并、等待或并发由 joi 在安全 Turn 边界决定。
 - 首次无可用模型源时，首页先完成大模型网络连接；提供六家官方厂商和一个通用平台，厂商内区分普通 API 与官方 Coding/Token Plan，并在厂商支持时继续选择 OpenAI-compatible 或 Anthropic-compatible 协议。
 
-目标架构决策见 [ADR 0002](docs/adr/0002-unique-joi-pi-avatar-orchestration.md)，旧 Life 数据兼容策略见 [ADR 0003](docs/adr/0003-avatar-legacy-life-migration.md)。下文中 Life/Wake/主 Agent 描述的是现有兼容运行时，实施 JOI-01 时逐步收敛为只读兼容层，不再代表新的调度权威。
+目标架构决策见 [ADR 0002](docs/adr/0002-unique-joi-pi-avatar-orchestration.md)，旧 Life 数据兼容策略见 [ADR 0003](docs/adr/0003-avatar-legacy-life-migration.md)，Avatar 私有实例、工作区和结果闭环见 [ADR 0006](docs/adr/0006-avatar-private-partner-instances-and-results.md)。下文中 Life/Wake/主 Agent 描述的是现有兼容运行时，实施 JOI-01 时逐步收敛为只读兼容层，不再代表新的调度权威。
 
 ## 项目状态
 

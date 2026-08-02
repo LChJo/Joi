@@ -7,6 +7,9 @@ import { AuthService } from "../../src/main/application/auth/auth-service";
 import { LifeService } from "../../src/main/application/lives/life-service";
 import { OperationsService } from "../../src/main/application/operations/operations-service";
 import { PartnerEngineCatalog } from "../../src/main/application/partners/partner-engine-catalog";
+import { AvatarRegistryService } from "../../src/main/application/joi/avatar-registry-service";
+import { AvatarManagementService } from "../../src/main/application/joi/avatar-management-service";
+import { AvatarWorkspaceService } from "../../src/main/application/joi/avatar-workspace-service";
 import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager";
 import { PartnerKnowledgeService } from "../../src/main/application/partners/partner-knowledge-service";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service";
@@ -20,6 +23,9 @@ import { SqlitePartnerKnowledgeStore } from "../../src/main/infrastructure/persi
 import { SqlitePartnerPromptStore } from "../../src/main/infrastructure/persistence/sqlite-partner-prompt-store";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository";
 import { SqlitePartnerWorkMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-partner-work-memory-store";
+import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter";
+import { SqliteAvatarManagementRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-management-repository";
+import { SqliteAvatarWorkspaceRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-workspace-repository";
 import {
   InMemoryBootstrapNonceStore,
   LoginRateLimiter,
@@ -50,6 +56,10 @@ export class TestIds {
 export interface RuntimeFixture {
   agents: AgentService;
   auth: AuthService;
+  avatarManagement: AvatarManagementService;
+  avatarRegistry: AvatarRegistryService;
+  avatarWorkspaces: AvatarWorkspaceService;
+  avatars: LegacyLifeStoreAdapter;
   broker: InMemorySseBroker;
   clock: TestClock;
   close(): Promise<void>;
@@ -78,6 +88,10 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   const ids = new TestIds();
   const broker = new InMemorySseBroker();
   const sse = new SseService({ broker, clock, store: database.store });
+  const avatars = new LegacyLifeStoreAdapter(database);
+  const avatarRegistry = new AvatarRegistryService({ clock, ids, repository: avatars });
+  const avatarManagement = new AvatarManagementService({ clock, ids, repository: new SqliteAvatarManagementRepository(database) });
+  const avatarWorkspaces = new AvatarWorkspaceService({ avatars, clock, ids, repository: new SqliteAvatarWorkspaceRepository(database) });
   const lives = new LifeService({ clock, ids, publisher: sse, store: database.store });
   const agents = new AgentService({ clock, ids, store: database.store });
   const auth = new AuthService({
@@ -115,6 +129,10 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   return {
     agents,
     auth,
+    avatarManagement,
+    avatarRegistry,
+    avatarWorkspaces,
+    avatars,
     broker,
     clock,
     async close() {

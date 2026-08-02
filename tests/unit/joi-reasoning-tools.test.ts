@@ -16,7 +16,7 @@ const readySource: ModelSourceDto = {
 const draftSource: ModelSourceDto = { ...readySource, displayName: "Draft", primary: false, sourceId: "source_draft", status: "DRAFT" };
 
 const instanceRecord = {
-  createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core" as const, instanceId: "instance_1",
+  avatarId: "avatar_1", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core" as const, instanceId: "instance_1",
   lastUsedAt: "2026-07-29T10:00:00.000Z", partnerId: "partner_1", partnerRevisionId: "partner_revision_1",
   sessionPolicy: "RESIDENT" as const, status: "IDLE" as const,
 };
@@ -35,7 +35,7 @@ function makeTools() {
     },
     avatars: { getAvatar: async () => null, listSummaries: async () => [] },
     instances: {
-      dispose: async (instanceId, reason) => { disposeCalls.push({ instanceId, reason }); },
+      dispose: async ({ instanceId, reason }) => { disposeCalls.push({ instanceId, reason }); },
       ensure: async (input) => { ensureCalls.push(input); return instanceRecord; },
       list: async () => [instanceRecord],
     },
@@ -46,6 +46,7 @@ function makeTools() {
       inspect: async () => partnerDto,
       list: async () => [partnerDto],
     },
+    results: { read: async ({ resultId }) => ({ content: "result", resultId }) },
     turnId: "turn_1",
     work: {
       plan: async (input) => { planCalls.push(input); return { dispatchPlanId: "plan_1", waves: [] }; },

@@ -4,12 +4,16 @@ import path from "node:path";
 
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
+import { AvatarContextAssembler } from "../../src/main/application/joi/avatar-context-assembler.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { SqliteA2aPartnerDispatchHandler } from "../../src/main/infrastructure/a2a/sqlite-partner-dispatch-handler.js";
+import { SqliteAvatarContextRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-context-repository.js";
+import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
+import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("SQLite work plan outbox", () => {
@@ -27,6 +31,10 @@ describe("SQLite work plan outbox", () => {
           (input_id, idempotency_key, body, status, created_at, updated_at) VALUES ('input-1', 'key-1', 'body', 'ROUTED', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
         connection.prepare(`INSERT INTO joi_turns
           (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at) VALUES ('turn-1', 'input-1', 'avatar-1', 'session-1', 'RUNNING', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
+        connection.prepare(`UPDATE avatar_workspace_bindings SET kind = 'BOUND', status = 'READY', display_name = '工程', updated_at = ?
+          WHERE avatar_id = 'avatar-1'`).run(clock.now().toISOString());
+        connection.prepare(`INSERT INTO avatar_workspace_roots (workspace_ref, root_path, created_at, updated_at)
+          VALUES ('avatar_workspace:avatar-1', ?, ?, ?)`).run(root, clock.now().toISOString(), clock.now().toISOString());
       });
       const partnerRepository = new SqlitePartnerRegistryRepository(database);
       const partners = new PartnerRegistryService({ clock, ids, repository: partnerRepository });
@@ -49,15 +57,22 @@ describe("SQLite work plan outbox", () => {
       expect(JSON.parse(outbox.payload_json)).toMatchObject({ actionId: attempt.action_id });
       const payload = JSON.parse(outbox.payload_json) as { actionId: string; dispatchAttemptId: string };
       const inbox = new SqliteJoiInboxRepository(database);
+      const contexts = new SqliteAvatarContextRepository(database);
+      const resultRepository = new SqliteWorkResultRepository(database);
+      const privateResultBody = `bounded summary ${"x".repeat(2_000_000)} PRIVATE_RESULT_DETAIL`;
       let resultInputId: string | undefined;
       const handler = new SqliteA2aPartnerDispatchHandler({
         clock,
+        contextAssembler: new AvatarContextAssembler({ avatars: new LegacyLifeStoreAdapter(database), clock, ids, projections: contexts, snapshots: contexts }),
+        contexts,
         database,
         gateway: { recover: () => Promise.reject(new Error("must not recover")), startWithResult: () => Promise.reject(new Error("must not dispatch")) },
         leases: new SqliteWorkspaceLeaseManager({ clock, database }),
         local: {
           run: (request, revision) => Promise.resolve({
             actionId: request.actionId,
+            artifacts: [],
+            body: privateResultBody,
             externalRunId: `local:${request.actionId}:${revision.partnerRevisionId}`,
             status: "COMPLETED",
             workId: request.workId,
@@ -65,6 +80,7 @@ describe("SQLite work plan outbox", () => {
         },
         onResult: async (event) => { resultInputId = await inbox.enqueuePartnerResult(event); },
         partners: partnerRepository,
+        results: resultRepository,
       });
       await handler.handle({
         attemptCount: 0,
@@ -94,7 +110,28 @@ describe("SQLite work plan outbox", () => {
       expect(resultEvents[0]).toMatchObject({ avatar_id: "avatar-1", status: "COMPLETED" });
       expect(resultEvents[0]?.work_id).toMatch(/^work_/u);
       expect(resultInputId).toMatch(/^joi_result_input:/u);
-      expect((await inbox.loadInput(resultInputId ?? "missing"))).toMatchObject({ avatarId: "avatar-1", status: "PENDING" });
+      const resultInput = await inbox.loadInput(resultInputId ?? "missing");
+      expect(resultInput).toMatchObject({ avatarId: "avatar-1", status: "PENDING" });
+      expect(resultInput?.body).toContain("resultId=work_result:");
+      expect(resultInput?.body).not.toContain("PRIVATE_RESULT_DETAIL");
+      const projection = database.transaction((connection) => connection.prepare(
+        "SELECT active_work_json, recent_results_json FROM avatar_task_projections WHERE avatar_id = 'avatar-1'",
+      ).get()) as { active_work_json: string; recent_results_json: string };
+      expect(JSON.parse(projection.active_work_json)).toEqual([]);
+      const recent: unknown = JSON.parse(projection.recent_results_json);
+      expect(Array.isArray(recent)).toBe(true);
+      const firstRecent = (recent as Record<string, unknown>[])[0];
+      expect(firstRecent).toMatchObject({ status: "COMPLETED" });
+      expect(firstRecent?.workId).toMatch(/^work_/u);
+      const storedResult = database.transaction((connection) => connection.prepare(
+        "SELECT artifacts_json, body_ref, result_id FROM work_results",
+      ).get()) as { artifacts_json: string; body_ref: string; result_id: string };
+      expect(storedResult.body_ref).toBe(`work_result_artifact:${storedResult.result_id}`);
+      expect(JSON.parse(storedResult.artifacts_json)).toEqual([
+        expect.objectContaining({ artifactRef: storedResult.body_ref, name: "partner-result.txt", size: Buffer.byteLength(privateResultBody) }),
+      ]);
+      await expect(resultRepository.readBody({ avatarId: "avatar-1", limit: 16, offset: 0, resultId: storedResult.result_id }))
+        .resolves.toEqual({ body: privateResultBody.slice(0, 16), total: privateResultBody.length });
       expect(database.transaction((connection) => connection.prepare(
         "SELECT input_id FROM partner_result_events",
       ).get())).toEqual({ input_id: resultInputId });

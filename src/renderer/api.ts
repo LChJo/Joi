@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AvatarChangeRequestDto, AvatarDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
+import type { AvatarChangeRequestDto, AvatarDetailDto, AvatarDto, AvatarWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -75,6 +75,16 @@ export class DigitalLifeApi {
   createAvatar(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
     return this.request<AvatarDto>("/api/v1/avatars", { body, method: "POST" });
   }
+  getAvatar(avatarId: string) { return this.request<AvatarDetailDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}`); }
+  updateAvatar(avatarId: string, body: { name?: string; persona?: string; projectLabel?: string; responsibility?: string }) {
+    return this.request<AvatarDetailDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}`, { body, method: "PATCH" });
+  }
+  bindAvatarWorkspace(avatarId: string) {
+    return this.request<AvatarWorkspaceDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}/workspace/bind`, { method: "POST" });
+  }
+  rebuildAvatarWorkspace(avatarId: string) {
+    return this.request<AvatarWorkspaceDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}/workspace/rebuild`, { method: "POST" });
+  }
   decideAvatarChange(requestId: string, decision: "CONFIRM" | "REJECT") {
     return this.request<AvatarChangeRequestDto>(`/api/v1/avatar-change-requests/${encodeURIComponent(requestId)}/decision`, {
       body: { decision }, method: "POST",
@@ -112,9 +122,6 @@ export class DigitalLifeApi {
   engineSkills(engine: PartnerEngineDto) {
     return this.request<{ items: { displayName: string; id: string }[] }>(`/api/v1/engines/${encodeURIComponent(engine)}/skills`);
   }
-  pickDirectory() {
-    return this.request<{ path: string | null }>("/api/v1/system/pick-directory");
-  }
   scenarios() {
     return this.request<{ items: ScenarioDto[] }>("/api/v1/scenarios");
   }
@@ -137,13 +144,13 @@ export class DigitalLifeApi {
   createPartner(body: {
     capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
     kind: "a2a" | "local-pi"; modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[];
-    tools: string[]; workspaceRef?: string;
+    tools: string[];
   }) {
     return this.request<PartnerDto>("/api/v1/partners", { body, method: "POST" });
   }
   updatePartner(partnerId: string, body: {
     capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
-    modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[]; tools: string[]; workspaceRef?: string;
+    modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[]; tools: string[];
   }) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body, method: "PATCH" });
   }
@@ -174,18 +181,18 @@ export class DigitalLifeApi {
   deleteKnowledgeDoc(partnerId: string, docId: string) {
     return this.request<undefined>(`/api/v1/partners/${encodeURIComponent(partnerId)}/knowledge/${encodeURIComponent(docId)}`, { method: "DELETE" });
   }
-  partnerMemory(partnerId: string) {
+  partnerMemory(avatarId: string, partnerId: string) {
     return this.request<{
       entries: { createdAt: string; memoryId: string; outcome: string; partnerId: string; sessionDataSource: string; title: string; workId?: string }[];
       summary?: string;
       summaryUpdatedAt?: string;
-    }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/memory`);
+    }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/memory?avatarId=${encodeURIComponent(avatarId)}`);
   }
-  listPartnerInstances(partnerId: string) {
+  listPartnerInstances(avatarId: string, partnerId: string) {
     return this.request<{ items: {
       createdAt: string; engine: string; externalSessionRef?: string; instanceId: string; lastUsedAt: string;
       partnerId: string; sessionPolicy: string; status: string;
-    }[] }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/instances`);
+    }[] }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/instances?avatarId=${encodeURIComponent(avatarId)}`);
   }
   listLives() { return this.request<{ items: LifeDto[] }>("/api/v1/lives?limit=100"); }
   getLife(lifeId: string) { return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`); }

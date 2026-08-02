@@ -6,6 +6,19 @@ import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
+  it("rejects caller-supplied workspace refs because Avatar owns cwd", async () => {
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
+    });
+    await expect(service.plan({
+      avatarId: "avatar-1", dependencies: [], turnId: "turn", work: [
+        { accessMode: "WRITE", key: "write", partnerId: "partner", title: "写入", workspaceRef: "caller-path" },
+      ],
+    })).rejects.toMatchObject({ code: "work_workspace_forbidden" });
+  });
+
   it("persists the DAG, immutable partner pins and dispatch outbox records as one plan", async () => {
     const committed: CommittedWorkPlan[] = [];
     const repository: WorkPlanRepository = { commit: async (plan) => { committed.push(structuredClone(plan)); } };
@@ -19,8 +32,8 @@ describe("work orchestration outbox", () => {
       dependencies: [{ dependsOnKey: "research", workKey: "write" }],
       turnId: "turn-1",
       work: [
-        { accessMode: "READ", key: "research", partnerId: "partner-a", title: "研究", workspaceRef: "workspace-1" },
-        { accessMode: "WRITE", key: "write", partnerId: "partner-b", title: "写入", workspaceRef: "workspace-1" },
+        { accessMode: "READ", key: "research", partnerId: "partner-a", title: "研究" },
+        { accessMode: "WRITE", key: "write", partnerId: "partner-b", title: "写入" },
       ],
     });
     expect(result.waves).toHaveLength(2);

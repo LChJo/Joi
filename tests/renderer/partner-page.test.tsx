@@ -21,7 +21,6 @@ function mockCatalog(api: DigitalLifeApi, partners: PartnerDto[]) {
     { available: true, id: "codex", tools: ["shell", "apply_patch"] },
   ] });
   vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [] });
-  vi.spyOn(api, "pickDirectory").mockResolvedValue({ path: null });
 }
 
 describe("partner page", () => {
@@ -230,7 +229,7 @@ describe("partner page", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({ description: "远端研究员" })));
   });
 
-  it("creates a partner with prompt, workspace and provider while cards fall back for bare partners", async () => {
+  it("creates a global partner template without cwd while cards fall back for bare partners", async () => {
     const api = new DigitalLifeApi("");
     const bare: PartnerDto = {
       capabilities: [], createdBy: "user", displayName: "Bare", engine: "pi-core", inFlightCount: 0,
@@ -253,13 +252,14 @@ describe("partner page", () => {
     fireEvent.click(screen.getByRole("button", { name: "添加搭档" }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "Writer" } });
     fireEvent.change(screen.getByLabelText("搭档提示词"), { target: { value: "只写文档" } });
-    fireEvent.change(screen.getByLabelText("工作路径（cwd）"), { target: { value: "D:\\docs" } });
+    expect(screen.queryByLabelText("工作路径（cwd）")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "高级" }));
     fireEvent.change(screen.getByLabelText("供应商"), { target: { value: "source-1" } });
     fireEvent.click(screen.getByRole("button", { name: "保存搭档" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
-      displayName: "Writer", modelSourceId: "source-1", prompt: "只写文档", workspaceRef: "D:\\docs",
+      displayName: "Writer", modelSourceId: "source-1", prompt: "只写文档",
     })));
+    expect(create.mock.calls[0]?.[0]).not.toHaveProperty("workspaceRef");
   });
 
   it("labels engine options by detection status, warns on an undetected local engine and lists its tools", async () => {
@@ -345,11 +345,10 @@ describe("partner page", () => {
     expect(screen.getByText(/搭档已登记/u)).toBeInTheDocument();
   });
 
-  it("selects skills and tools via chips, picks a directory and jumps to provider management", async () => {
+  it("selects skills and tools via chips and jumps to provider management without a cwd field", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, []);
     vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ id: "claude-code/demo-skill", displayName: "Demo Skill" }] });
-    vi.spyOn(api, "pickDirectory").mockResolvedValue({ path: "/picked/dir" });
     const manage = vi.fn();
     render(<PartnerPage api={api} onManageProviders={manage} />);
     fireEvent.click(await screen.findByRole("button", { name: "添加搭档" }));
@@ -358,10 +357,7 @@ describe("partner page", () => {
     fireEvent.click(screen.getByText("Demo Skill"));
     fireEvent.click(screen.getByText("Demo Skill"));
 
-    fireEvent.click(screen.getByRole("button", { name: "选择目录" }));
-    expect(await screen.findByDisplayValue("/picked/dir")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "清除工作路径" }));
-    expect(screen.queryByDisplayValue("/picked/dir")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("工作路径")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "高级" }));
     fireEvent.click(await screen.findByText("read"));

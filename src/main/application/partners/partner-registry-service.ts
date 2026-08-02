@@ -26,6 +26,8 @@ interface PartnerFields {
   promptRef?: string;
   skills: string[];
   tools: string[];
+  /** Rejected compatibility fields; Partner templates never own cwd. */
+  cwd?: string;
   workspaceRef?: string;
 }
 
@@ -40,6 +42,7 @@ export class PartnerRegistryService {
   }) {}
 
   async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind }): Promise<PartnerDto> {
+    assertNoWorkspace(input);
     const partnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt);
@@ -57,6 +60,7 @@ export class PartnerRegistryService {
   }
 
   async update(partnerId: string, input: PartnerFields): Promise<PartnerDto> {
+    assertNoWorkspace(input);
     const current = await this.#active(partnerId);
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt) ?? current.promptRef;
@@ -64,7 +68,6 @@ export class PartnerRegistryService {
     const engineModelId = input.engineModelId ?? current.engineModelId;
     const modelIdOverride = input.modelIdOverride ?? current.modelIdOverride;
     const modelSourceId = input.modelSourceId ?? current.modelSourceId;
-    const workspaceRef = input.workspaceRef ?? current.workspaceRef;
     const validated = createPartnerRevision({
       capabilities: input.capabilities,
       createdAt,
@@ -82,14 +85,13 @@ export class PartnerRegistryService {
       registryRevision: current.registryRevision + 1,
       skills: input.skills,
       tools: input.tools,
-      ...(workspaceRef === undefined ? {} : { workspaceRef }),
     });
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
     await this.#changed(revision);
     return this.#public(revision);
   }
 
-  async refreshA2aCard(partnerId: string, card: { capabilities: string[]; displayName: string; skills: string[]; tools?: string[]; workspaceRef?: string }): Promise<PartnerDto> {
+  async refreshA2aCard(partnerId: string, card: { capabilities: string[]; displayName: string; skills: string[]; tools?: string[] }): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
     const revision = mergeA2aCardRevision(current, {
       card,
@@ -177,7 +179,6 @@ export class PartnerRegistryService {
       registryRevision: 1,
       skills: [...current.skills],
       tools: [...current.tools],
-      ...(current.workspaceRef === undefined ? {} : { workspaceRef: current.workspaceRef }),
     });
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
     if (this.dependencies.knowledge !== undefined) await this.dependencies.knowledge.duplicateTo(partnerId, newPartnerId);
@@ -261,6 +262,11 @@ function withoutRegistryRevision(revision: PartnerRevision): AppendPartnerRevisi
     skills: [...revision.skills],
     status: revision.status,
     tools: [...revision.tools],
-    ...(revision.workspaceRef === undefined ? {} : { workspaceRef: revision.workspaceRef }),
   };
+}
+
+function assertNoWorkspace(input: { cwd?: unknown; workspaceRef?: unknown }): void {
+  if (input.cwd !== undefined || input.workspaceRef !== undefined) {
+    throw new DomainError("partner_workspace_forbidden", "Partner templates cannot own a workspace.");
+  }
 }

@@ -78,7 +78,7 @@ describe("continuity Life actions", () => {
         expect.objectContaining({ delegationId: "delegation_delegate_add", status: "PENDING" }),
       ]);
       expect(await fixture.database.store.listSchedules(runtime.life.lifeId)).toHaveLength(3);
-      expect((await fixture.database.store.getRuntimeStats()).pendingOutbox).toBe(1);
+      expect((await fixture.database.store.getRuntimeStats()).pendingOutbox).toBe(2);
       expect(await fixture.database.store.recallMemories({
         affairId: "affair_plan",
         lifeId: runtime.life.lifeId,

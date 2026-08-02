@@ -91,6 +91,42 @@ export interface AvatarDto {
   updatedAt: string;
 }
 
+export interface AvatarWorkspaceDto {
+  displayName: string;
+  failureReasonCode?: string;
+  kind: "BOUND" | "MANAGED";
+  status: "FAILED" | "PROVISIONING" | "READY";
+}
+
+export interface AvatarDetailDto {
+  activeWork: WorkItemDto[];
+  avatarId: string;
+  instances: {
+    engine: PartnerEngineDto;
+    instanceId: string;
+    lastUsedAt: string;
+    partnerId: string;
+    partnerName: string;
+    sessionPolicy: "EPHEMERAL" | "RESIDENT";
+    status: "BUSY" | "IDLE";
+  }[];
+  name: string;
+  personaRevisionId: string;
+  projectLabel: string;
+  recentResults: {
+    createdAt: string;
+    isLate: boolean;
+    partnerRevisionId: string;
+    resultId: string;
+    status: "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
+    summary: string;
+    workId: string;
+  }[];
+  responsibility: string;
+  updatedAt: string;
+  workspace: AvatarWorkspaceDto;
+}
+
 export interface AvatarChangeRequestDto {
   createdAt: string;
   kind: "ARCHIVE" | "MERGE";

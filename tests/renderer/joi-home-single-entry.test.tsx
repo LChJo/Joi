@@ -2,8 +2,8 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
-import { JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
-import type { AvatarDto, JoiSnapshotDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import { AvatarManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
+import type { AvatarDetailDto, AvatarDto, JoiSnapshotDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const readySource: ModelSourceDto = {
   accessMode: "api",
@@ -23,6 +23,50 @@ function snapshot(modelSources: ModelSourceDto[]): JoiSnapshotDto {
   const configured = modelSources.some((source) => source.status === "READY");
   return { avatarChanges: [], avatars: [], modelSources, partners: [], runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" }, work: [] };
 }
+
+describe("Avatar context center", () => {
+  it("shows safe workspace, work, result and private-instance metadata and runs management actions", async () => {
+    const api = new DigitalLifeApi("");
+    const avatar = av("avatar-1", "发布 Avatar");
+    const detail: AvatarDetailDto = {
+      activeWork: [{ avatarId: avatar.avatarId, status: "RUNNING", title: "更新发布文档", workId: "work-1" }],
+      avatarId: avatar.avatarId,
+      instances: [{ engine: "pi-core", instanceId: "instance-1", lastUsedAt: avatar.updatedAt, partnerId: "partner-1", partnerName: "写作者", sessionPolicy: "RESIDENT", status: "IDLE" }],
+      name: avatar.name,
+      personaRevisionId: "persona-revision-2",
+      projectLabel: "发布工程",
+      recentResults: [{ createdAt: avatar.updatedAt, isLate: true, partnerRevisionId: "partner-revision-1", resultId: "result-1", status: "COMPLETED", summary: "发布检查完成", workId: "work-old" }],
+      responsibility: "维护发布流水线",
+      updatedAt: avatar.updatedAt,
+      workspace: { displayName: "release", kind: "BOUND", status: "READY" },
+    };
+    vi.spyOn(api, "listAvatars").mockResolvedValue({ items: [avatar] });
+    vi.spyOn(api, "getAvatar").mockResolvedValue(detail);
+    const update = vi.spyOn(api, "updateAvatar").mockResolvedValue({ ...detail, personaRevisionId: "persona-revision-3" });
+    const bind = vi.spyOn(api, "bindAvatarWorkspace").mockResolvedValue(detail.workspace);
+    const rebuild = vi.spyOn(api, "rebuildAvatarWorkspace").mockResolvedValue({ displayName: "发布 Avatar 工作区", kind: "MANAGED", status: "PROVISIONING" });
+
+    render(<AvatarManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "管理上下文" }));
+    expect(await screen.findByRole("heading", { name: "发布 Avatar" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "工作区" }).closest("article")).toHaveTextContent("release · BOUND · READY");
+    expect(screen.getByText(/更新发布文档 · RUNNING/u)).toBeInTheDocument();
+    expect(screen.getByText(/发布检查完成 · COMPLETED · 迟到/u)).toBeInTheDocument();
+    expect(screen.getByText(/写作者 · RESIDENT · IDLE/u)).toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("PRIVATE_PERSONA_BODY");
+    expect(document.body.textContent).not.toMatch(/[A-Za-z]:\\/u);
+
+    fireEvent.change(screen.getByLabelText("提交新人格 revision（留空保持当前）"), { target: { value: "NEW_PRIVATE_PERSONA" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存上下文" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(avatar.avatarId, expect.objectContaining({ persona: "NEW_PRIVATE_PERSONA" })));
+    expect(document.body.textContent).not.toContain("NEW_PRIVATE_PERSONA");
+
+    fireEvent.click(screen.getByRole("button", { name: "绑定已有目录" }));
+    await waitFor(() => expect(bind).toHaveBeenCalledWith(avatar.avatarId));
+    fireEvent.click(screen.getByRole("button", { name: "重建受管目录" }));
+    await waitFor(() => expect(rebuild).toHaveBeenCalledWith(avatar.avatarId));
+  });
+});
 
 function parentForm(element: HTMLElement): HTMLFormElement {
   const form = element.closest("form");

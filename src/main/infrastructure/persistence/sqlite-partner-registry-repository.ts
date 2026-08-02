@@ -39,7 +39,6 @@ function mapRow(row: Row): PartnerRevision {
   if (provenance === null || Array.isArray(provenance) || typeof provenance !== "object") throw new Error("partner_registry_record_invalid");
   const stored = provenance as Partial<PartnerRevision["provenance"]>;
   const promptRef = row.prompt_ref;
-  const workspaceRef = row.workspace_ref;
   const description = row.description;
   const engineModelId = row.engine_model_id;
   const modelIdOverride = row.model_id_override;
@@ -64,13 +63,11 @@ function mapRow(row: Row): PartnerRevision {
       displayName: stored.displayName ?? "local",
       skills: stored.skills ?? "local",
       tools: stored.tools ?? "local",
-      workspace: stored.workspace ?? "local",
     },
     registryRevision,
     skills: stringArray(row.skills_json),
     status: rowText(row, "revision_status") as PartnerRevision["status"],
     tools: stringArray(row.tools_json),
-    ...(typeof workspaceRef === "string" ? { workspaceRef } : {}),
   };
 }
 
@@ -97,7 +94,7 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         input.partnerRevisionId, input.partnerId, registryRevision, input.displayName,
         JSON.stringify(input.capabilities), JSON.stringify(input.skills), JSON.stringify(input.tools),
-        input.promptRef ?? null, input.workspaceRef ?? null,
+        input.promptRef ?? null, null,
         JSON.stringify({ transport: input.kind, localOverridesWin: true }), JSON.stringify(input.provenance), input.status, input.createdAt,
         input.description ?? null, storageEngine(input.engine), storageCliProtocol(input.engine),
         input.modelSourceId ?? null, input.modelIdOverride ?? null, input.engineModelId ?? null,

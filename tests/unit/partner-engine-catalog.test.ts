@@ -7,8 +7,8 @@ function fakeRuntime(available: boolean, reason?: string): PartnerEngineRuntime 
     engineOf: () => "pi-core",
     evictFromMemory: () => undefined,
     health: async () => (available ? { available: true } : { available: false, ...(reason === undefined ? {} : { reason }) }),
-    runEphemeral: async () => ({ externalRunId: "x", status: "COMPLETED" }),
-    runResidentTurn: async () => ({ externalRunId: "x", messages: [], status: "COMPLETED" }),
+    runEphemeral: async () => ({ externalRunId: "x", output: { artifacts: [], body: "" }, status: "COMPLETED" }),
+    runResidentTurn: async () => ({ externalRunId: "x", messages: [], output: { artifacts: [], body: "" }, status: "COMPLETED" }),
     toolOptions: () => ["read", "edit"],
   };
 }

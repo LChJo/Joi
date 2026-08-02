@@ -5,13 +5,22 @@ export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITI
 export interface PartnerRunRequest {
   actionId: string;
   avatarId: string;
+  contextSnapshotId: string;
   taskProjection: string;
   workId: string;
 }
 
+export interface PartnerRunOutput {
+  artifacts: { artifactRef?: string; mimeType?: string; name: string; size: number }[];
+  body: string;
+}
+
 export interface PartnerRunResult {
   actionId: string;
+  artifacts: PartnerRunOutput["artifacts"];
+  body: string;
   externalRunId: string;
+  instanceId?: string;
   status: PartnerRunStatus;
   workId: string;
 }
@@ -21,7 +30,7 @@ export interface PartnerExecutor {
 }
 
 export interface PartnerAdapterRunner {
-  run(request: PartnerRunRequest, revision: PartnerRevision): Promise<{ externalRunId: string; status: PartnerRunStatus }>;
+  run(request: PartnerRunRequest, revision: PartnerRevision): Promise<{ externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
 }
 
 export interface PartnerPromptStore {

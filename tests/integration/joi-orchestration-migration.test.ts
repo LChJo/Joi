@@ -5,9 +5,11 @@ import path from "node:path";
 import { AgentService } from "../../src/main/application/agents/agent-service.js";
 import { LifeService } from "../../src/main/application/lives/life-service.js";
 import { AvatarRegistryService } from "../../src/main/application/joi/avatar-registry-service.js";
+import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { SseService } from "../../src/main/application/sse/sse-service.js";
 import { InMemorySseBroker } from "../../src/main/infrastructure/http/in-memory-sse-broker.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
+import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -28,7 +30,7 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(26);
+      expect(database.inspect().schemaVersion).toBe(27);
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_revisions)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "access_mode" }), expect.objectContaining({ name: "protocol" })]));
       const names = database.transaction((connection) => connection.prepare(
@@ -58,6 +60,12 @@ describe("JOI-01 non-destructive migration", () => {
         "work_dependencies",
         "dispatch_attempts",
         "workspace_leases",
+        "avatar_workspace_bindings",
+        "avatar_workspace_roots",
+        "avatar_task_projections",
+        "avatar_context_snapshots",
+        "work_results",
+        "work_result_bodies",
       ]));
     } finally {
       database.close();
@@ -88,7 +96,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(26);
+      expect(upgraded.inspect().schemaVersion).toBe(27);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         avatars: (connection.prepare("SELECT COUNT(*) AS count FROM avatars").get() as { count: number }).count,
@@ -129,6 +137,9 @@ describe("JOI-01 non-destructive migration", () => {
         "SELECT avatar_id, status FROM avatars WHERE avatar_id = ?",
       ).get(mirrored.lifeId))).toEqual({ avatar_id: mirrored.lifeId, status: "ACTIVE" });
       expect(await adapter.getAvatar(mirrored.lifeId)).toMatchObject({ profile: { name: "兼容创建" } });
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT kind, status FROM avatar_workspace_bindings WHERE avatar_id = ?",
+      ).get(mirrored.lifeId))).toEqual({ kind: "MANAGED", status: "PROVISIONING" });
 
       const registry = new AvatarRegistryService({ clock, ids, repository: adapter });
       const nativeAvatar = await registry.create({
@@ -141,6 +152,13 @@ describe("JOI-01 non-destructive migration", () => {
         profile: { name: "原生 Avatar", scopeSummary: "新的隔离范围" },
         project: { label: "新工程" },
       });
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT kind, status FROM avatar_workspace_bindings WHERE avatar_id = ?",
+      ).get(nativeAvatar.avatarId))).toEqual({ kind: "MANAGED", status: "PROVISIONING" });
+      const provisioningPayload = upgraded.transaction((connection) => connection.prepare(
+        "SELECT payload_json FROM outbox WHERE outbox_id = ?",
+      ).get(`avatar_workspace_provision:${nativeAvatar.avatarId}`)) as { payload_json: string };
+      expect(provisioningPayload.payload_json).not.toContain(path.parse(databasePath).root);
     } finally {
       upgraded.close();
       await rm(root, { force: true, recursive: true });
@@ -178,6 +196,79 @@ describe("JOI-01 non-destructive migration", () => {
       expect(upgraded.transaction((connection) => connection.prepare(
         "SELECT length(encrypted_blob) AS size FROM model_source_credentials WHERE provider_id = 'joi-source:kimi-old'",
       ).get())).toEqual({ size: 3 });
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("invalidates pre-027 work and instances while provisioning every active Avatar", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-avatar-private-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 26);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-08-01T10:00:00.000Z";
+    const partners = new PartnerRegistryService({
+      clock: new TestClock(now), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(oldDatabase),
+    });
+    const partner = await partners.add({ capabilities: [], displayName: "旧搭档", kind: "local-pi", skills: [], tools: [] });
+    oldDatabase.transaction((connection) => {
+      connection.prepare("UPDATE partner_revisions SET workspace_ref = 'C:\\\\legacy\\\\must-not-run' WHERE partner_revision_id = ?")
+        .run(partner.partnerRevisionId);
+      connection.prepare(`INSERT INTO avatars
+        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
+         memory_namespace_id, task_summary, status, created_at, updated_at)
+        VALUES ('avatar-upgrade', '升级 Avatar', 'persona-upgrade', 'private persona', 'scope', 'project',
+                'memory-upgrade', '', 'ACTIVE', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+        VALUES ('input-upgrade', 'idem-upgrade', 'private body', 'ROUTED', 'avatar-upgrade', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-upgrade', 'input-upgrade', 'avatar-upgrade', 'session-upgrade', 'RUNNING', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO dispatch_plans
+        (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+        VALUES ('plan-upgrade', 'turn-upgrade', '{}', '{}', ?)`).run(now);
+      connection.prepare(`INSERT INTO work_items
+        (work_id, avatar_id, input_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
+        VALUES ('work-upgrade', 'avatar-upgrade', 'input-upgrade', 'old work', '{}', 'WRITE',
+                'C:\\\\legacy\\\\must-not-run', 'RUNNING', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO partner_instances
+        (instance_id, partner_id, partner_revision_id, session_policy, status, engine, created_at, last_used_at)
+        VALUES ('instance-upgrade', ?, ?, 'RESIDENT', 'BUSY', 'PI_CORE', ?, ?)`)
+        .run(partner.partnerId, partner.partnerRevisionId, now, now);
+      connection.prepare(`INSERT INTO dispatch_attempts
+        (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id,
+         status, instance_id, created_at, updated_at)
+        VALUES ('attempt-upgrade', 'plan-upgrade', 'work-upgrade', ?, 1, 'action-upgrade',
+                'RUNNING', 'instance-upgrade', ?, ?)`).run(partner.partnerRevisionId, now, now);
+      connection.prepare(`INSERT INTO partner_runs
+        (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind,
+         external_run_id, status, created_at, updated_at)
+        VALUES ('run-upgrade', 'attempt-upgrade', 'action-upgrade', 'avatar-upgrade', 'work-upgrade', ?,
+                'A2A', 'remote-upgrade', 'WAITING_INPUT', ?, ?)`).run(partner.partnerRevisionId, now, now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const facts = upgraded.transaction((connection) => ({
+        attempt: connection.prepare("SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt-upgrade'").get(),
+        binding: connection.prepare("SELECT kind, status FROM avatar_workspace_bindings WHERE avatar_id = 'avatar-upgrade'").get(),
+        cancel: connection.prepare("SELECT kind, payload_json, status FROM outbox WHERE outbox_id = 'partner_cancel_027:run-upgrade'").get(),
+        instance: connection.prepare("SELECT avatar_id, disposal_reason, status FROM partner_instances WHERE instance_id = 'instance-upgrade'").get(),
+        work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-upgrade'").get(),
+      }));
+      expect(facts).toEqual({
+        attempt: { status: "FAILED" },
+        binding: { kind: "MANAGED", status: "PROVISIONING" },
+        cancel: { kind: "partner.cancel", payload_json: '{"runId":"run-upgrade","actionId":"action-upgrade"}', status: "PENDING" },
+        instance: { avatar_id: null, disposal_reason: "upgrade_027", status: "DISPOSED" },
+        work: { status: "CANCELED" },
+      });
+      expect(await new SqlitePartnerRegistryRepository(upgraded).getActive(partner.partnerId))
+        .not.toHaveProperty("workspaceRef");
     } finally {
       upgraded.close();
       await rm(root, { force: true, recursive: true });

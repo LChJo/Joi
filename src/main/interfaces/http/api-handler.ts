@@ -13,6 +13,8 @@ import type { ModelSourceService } from "../../application/model-sources/model-s
 import type { JoiInboxService } from "../../application/joi/joi-inbox-service.js";
 import type { AvatarRegistryService } from "../../application/joi/avatar-registry-service.js";
 import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
+import type { AvatarManagementService } from "../../application/joi/avatar-management-service.js";
+import type { AvatarWorkspaceService } from "../../application/joi/avatar-workspace-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { PartnerKnowledgeService } from "../../application/partners/partner-knowledge-service.js";
 import type { PartnerEngineCatalog } from "../../application/partners/partner-engine-catalog.js";
@@ -37,6 +39,8 @@ export interface ApiDependencies {
   attachments?: UserAttachmentPort;
   artifacts?: ArtifactReadPort;
   avatarRegistry?: Pick<AvatarRegistryService, "create">;
+  avatarManagement?: Pick<AvatarManagementService, "get" | "update">;
+  avatarWorkspaces?: Pick<AvatarWorkspaceService, "bindExisting" | "rebuildManaged">;
   avatarChanges?: Pick<AvatarChangeService, "decide" | "listPending">;
   avatars?: AvatarCatalog;
   auth: AuthService;
@@ -123,14 +127,15 @@ function partnerRegistryService(dependencies: ApiDependencies): NonNullable<ApiD
   return dependencies.partners;
 }
 
+function rejectPartnerWorkspace(body: Record<string, unknown>): void {
+  if (body.workspaceRef !== undefined || body.cwd !== undefined) {
+    throw new HttpError("partner_workspace_forbidden", "Partner templates cannot own a workspace.", 400);
+  }
+}
+
 function partnerKnowledgeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["knowledge"]> {
   if (dependencies.knowledge === undefined) throw new HttpError("partner_knowledge_unavailable", "Partner knowledge is unavailable.", 503);
   return dependencies.knowledge;
-}
-
-function partnerMemoryService(dependencies: ApiDependencies): NonNullable<ApiDependencies["memory"]> {
-  if (dependencies.memory === undefined) throw new HttpError("partner_memory_unavailable", "Partner work memory is unavailable.", 503);
-  return dependencies.memory;
 }
 
 function partnerInstanceManager(dependencies: ApiDependencies): NonNullable<ApiDependencies["instances"]> {
@@ -322,7 +327,7 @@ function errorDetails(error: unknown, requestId: string): { body: ApiErrorBody; 
     return { body: { code: error.code, message: error.message, requestId }, status: error.status };
   }
   if (error instanceof Error && "code" in error && typeof error.code === "string") {
-    const status = error.code.endsWith("_not_found") ? 404 : 400;
+    const status = error.code.endsWith("_not_found") ? 404 : error.code === "avatar_workspace_busy" ? 409 : 400;
     return { body: { code: error.code, message: error.message, requestId }, status };
   }
   return { body: { code: "internal_error", message: "The request could not be completed.", requestId }, status: 500 };
@@ -541,9 +546,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         return;
       }
       if (method === "GET" && pathname === "/api/v1/system/pick-directory") {
-        if (dependencies.directoryPicker === undefined) throw new HttpError("directory_picker_unavailable", "Directory picker is unavailable.", 503);
-        sendJson(response, 200, { path: await dependencies.directoryPicker() });
-        return;
+        throw new HttpError("absolute_path_response_forbidden", "Directory selection is scoped to an Avatar workspace operation.", 410);
       }
       if (method === "GET" && pathname === "/api/v1/scenarios") {
         const skillScenarios = (dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code"))
@@ -563,6 +566,40 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       if (method === "GET" && pathname === "/api/v1/avatars") {
         if (dependencies.avatars === undefined) throw new HttpError("avatar_catalog_unavailable", "Avatar catalog is unavailable.", 503);
         sendJson(response, 200, { items: await dependencies.avatars.listSummaries() });
+        return;
+      }
+      const avatarMatch = /^\/api\/v1\/avatars\/([^/]+)$/.exec(pathname);
+      if (avatarMatch !== null && method === "GET") {
+        if (dependencies.avatarManagement === undefined) throw new HttpError("avatar_management_unavailable", "Avatar management is unavailable.", 503);
+        sendJson(response, 200, await dependencies.avatarManagement.get(decodeURIComponent(avatarMatch[1] ?? "")));
+        return;
+      }
+      if (avatarMatch !== null && method === "PATCH") {
+        await verifyWrite(dependencies, request);
+        if (dependencies.avatarManagement === undefined) throw new HttpError("avatar_management_unavailable", "Avatar management is unavailable.", 503);
+        const body = await readJson(request);
+        sendJson(response, 200, await dependencies.avatarManagement.update(decodeURIComponent(avatarMatch[1] ?? ""), {
+          ...(typeof body.name === "string" ? { name: body.name } : {}),
+          ...(typeof body.persona === "string" ? { persona: body.persona } : {}),
+          ...(typeof body.projectLabel === "string" ? { projectLabel: body.projectLabel } : {}),
+          ...(typeof body.responsibility === "string" ? { responsibility: body.responsibility } : {}),
+        }));
+        return;
+      }
+      const avatarWorkspaceBindMatch = /^\/api\/v1\/avatars\/([^/]+)\/workspace\/bind$/.exec(pathname);
+      if (avatarWorkspaceBindMatch !== null && method === "POST") {
+        await verifyWrite(dependencies, request);
+        if (dependencies.avatarWorkspaces === undefined || dependencies.directoryPicker === undefined) throw new HttpError("avatar_workspace_unavailable", "Avatar workspace management is unavailable.", 503);
+        const selected = await dependencies.directoryPicker();
+        if (selected === null) throw new HttpError("avatar_workspace_selection_canceled", "Directory selection was canceled.", 409);
+        sendJson(response, 200, await dependencies.avatarWorkspaces.bindExisting(decodeURIComponent(avatarWorkspaceBindMatch[1] ?? ""), selected));
+        return;
+      }
+      const avatarWorkspaceRebuildMatch = /^\/api\/v1\/avatars\/([^/]+)\/workspace\/rebuild$/.exec(pathname);
+      if (avatarWorkspaceRebuildMatch !== null && method === "POST") {
+        await verifyWrite(dependencies, request);
+        if (dependencies.avatarWorkspaces === undefined) throw new HttpError("avatar_workspace_unavailable", "Avatar workspace management is unavailable.", 503);
+        sendJson(response, 202, await dependencies.avatarWorkspaces.rebuildManaged(decodeURIComponent(avatarWorkspaceRebuildMatch[1] ?? "")));
         return;
       }
       if (method === "GET" && pathname === "/api/v1/avatar-change-requests") {
@@ -602,6 +639,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       if (method === "POST" && pathname === "/api/v1/partners") {
         await verifyWrite(dependencies, request);
         const body = await readJson(request);
+        rejectPartnerWorkspace(body);
         const kind = stringField(body, "kind");
         if (kind !== "local-pi" && kind !== "a2a") throw new HttpError("partner_kind_invalid", "Partner kind is invalid.", 400);
         const engine = partnerEngineField(body);
@@ -618,7 +656,6 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
           skills: optionalStringArray(body, "skills") ?? [],
           tools: optionalStringArray(body, "tools") ?? [],
           ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
-          ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
         }));
         return;
       }
@@ -627,6 +664,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         await verifyWrite(dependencies, request);
         const partnerId = decodeURIComponent(partnerMatch[1] ?? "");
         const body = await readJson(request);
+        rejectPartnerWorkspace(body);
         if (body.disabled === true) {
           sendJson(response, 200, await partnerRegistryService(dependencies).disable(partnerId));
           return;
@@ -648,7 +686,6 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
           skills: optionalStringArray(body, "skills") ?? [],
           tools: optionalStringArray(body, "tools") ?? [],
           ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
-          ...(typeof body.workspaceRef === "string" ? { workspaceRef: body.workspaceRef } : {}),
         }));
         return;
       }
@@ -692,12 +729,16 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       }
       const partnerMemoryMatch = /^\/api\/v1\/partners\/([^/]+)\/memory$/.exec(pathname);
       if (partnerMemoryMatch !== null && method === "GET") {
-        sendJson(response, 200, await partnerMemoryService(dependencies).debugView(decodeURIComponent(partnerMemoryMatch[1] ?? "")));
-        return;
+        throw new HttpError("partner_memory_private", "Partner work memory is private to Avatar execution context.", 410);
       }
       const partnerInstancesMatch = /^\/api\/v1\/partners\/([^/]+)\/instances$/.exec(pathname);
       if (partnerInstancesMatch !== null && method === "GET") {
-        sendJson(response, 200, { items: await partnerInstanceManager(dependencies).list(decodeURIComponent(partnerInstancesMatch[1] ?? "")) });
+        const avatarId = url.searchParams.get("avatarId");
+        if (avatarId === null || avatarId.trim() === "") throw new HttpError("avatar_id_required", "Avatar is required.", 400);
+        sendJson(response, 200, { items: await partnerInstanceManager(dependencies).list({
+          avatarId,
+          partnerId: decodeURIComponent(partnerInstancesMatch[1] ?? ""),
+        }) });
         return;
       }
       if (method === "POST" && pathname === "/api/v1/joi/messages") {

@@ -125,7 +125,7 @@ describe("joi renderer console", () => {
     const fixture = mockApi();
     render(<ConsoleApp api={fixture.api} />);
     fireEvent.click(within(await screen.findByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Avatar" }));
-    expect(await screen.findByRole("heading", { name: "Avatar" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Avatar 上下文中心" })).toBeInTheDocument();
     expect(await screen.findByText("产品工作")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "创建 Avatar" }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "研究" } });

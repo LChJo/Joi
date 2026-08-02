@@ -8,12 +8,14 @@
 |------|----------|
 | **唯一全局 joi** | 用户唯一入口、唯一 system policy 与唯一调度权威；通过 Pi 选择 Avatar、规划、派发、并发、等待和改派。 |
 | **Pi** | joi 的唯一主推理基座；SDK 只由 infrastructure adapter 使用，不直接拥有数据库、shell 或任意文件工具。 |
-| **Avatar** | 一个人格/工程领域的持久上下文投影，只拥有 profile、project reference、memory namespace 与 task context。 |
-| **Partner / 搭档** | 实际执行工作的本机 Pi 或远端 A2A 能力；旧 Life 主 Agent 迁移为对应 Avatar 的首选搭档。 |
-| **Work** | 绑定恰好一个 `avatarId` 的工作项，可形成 DAG，并受容量、预算、breaker 与 workspace lease 约束。 |
+| **Avatar** | 一个人格/工程领域的持久上下文投影，也是工作目录的唯一权威；工作区路径由基础设施私有映射保存。 |
+| **Partner / 搭档** | 全局、版本化的执行能力模板，只保存引擎、模型、提示词、技能、工具和知识库，不拥有 cwd。 |
+| **PartnerInstance** | 绑定恰好一个 `avatarId` 的搭档运行会话；默认临时，续话可常驻，但永不跨 Avatar 复用。 |
+| **Work** | 绑定恰好一个 `avatarId` 的工作项，可形成 DAG；`NONE` 无文件权限，`READ/WRITE` 自动使用该 Avatar 工作区和 lease。 |
+| **WorkResult** | 不可变、Avatar-scoped 的运行结果事实；正文受限存储，通知与管理 DTO 只携带有界摘要和元数据。 |
 | **Model Source** | Pi 的版本化模型连接；每个 Turn 固定 source/model revision，一个主源加用户排序备用源。 |
 
-Avatar 不是 Agent，不保存执行状态机，也不产生独立 scheduler。新代码、API、DTO、事件和工具使用 `Avatar/avatarId/avatar.*`；`Life/lifeId/life.*` 仅允许存在于旧表、迁移、旧只读 API mapper 和历史 fixture。
+Avatar 不是 Agent，不保存执行状态机，也不产生独立 scheduler。唯一 joi 选择 Avatar、创建 Work 并派发 PartnerInstance。新代码、API、DTO、事件和工具使用 `Avatar/avatarId/avatar.*`；`Life/lifeId/life.*` 仅允许存在于旧表、迁移、旧只读 API mapper 和历史 fixture。
 
 ## 1. 文档目的
 

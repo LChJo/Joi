@@ -17,6 +17,7 @@ interface WorkRequest {
   partnerId: string;
   sessionPolicy?: "EPHEMERAL" | "RESIDENT";
   title: string;
+  /** Rejected compatibility field; work binds the Avatar workspace automatically. */
   workspaceRef?: string;
 }
 
@@ -39,6 +40,7 @@ export class WorkOrchestrationService {
   }): Promise<{ dispatchPlanId: string; waves: string[][] }> {
     const byKey = new Map<string, WorkRequest>();
     for (const request of input.work) {
+      if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Avatar workspace automatically.");
       if (byKey.has(request.key)) throw new DomainError("work_key_duplicate", "Work keys must be unique.");
       byKey.set(request.key, request);
     }
@@ -53,7 +55,6 @@ export class WorkOrchestrationService {
         createdAt,
         title: request.title,
         workId,
-        ...(request.workspaceRef === undefined ? {} : { workspaceRef: request.workspaceRef }),
       });
     });
     const dependencies: WorkDependency[] = input.dependencies.map((dependency) => {

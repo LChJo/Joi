@@ -1,6 +1,6 @@
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import { MODEL_SOURCE_CHOICES, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AvatarDetailDto, type AvatarDto, type JoiAcceptedMessageDto, type JoiActivityDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
@@ -166,6 +166,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
 
 export function AvatarManager({ api }: { api: DigitalLifeApi }) {
   const [avatars, setAvatars] = useState<AvatarDto[]>([]);
+  const [detail, setDetail] = useState<AvatarDetailDto | null>(null);
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => setAvatars((await api.listAvatars()).items), [api]);
@@ -182,14 +183,58 @@ export function AvatarManager({ api }: { api: DigitalLifeApi }) {
     });
     setAdding(false); setNotice("Avatar 已创建；之后的任务上下文仍由 joi 归属和管理。"); await load();
   };
+  const open = async (avatarId: string) => {
+    try { setDetail(await api.getAvatar(avatarId)); setNotice(null); }
+    catch (error) { setNotice(error instanceof ApiError ? error.message : "没能读取 Avatar 上下文。"); }
+  };
+  const saveDetail = async (event: SyntheticEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (detail === null) return;
+    const form = new FormData(event.currentTarget);
+    const field = (name: string) => { const value = form.get(name); return typeof value === "string" ? value.trim() : ""; };
+    const persona = field("persona");
+    try {
+      setDetail(await api.updateAvatar(detail.avatarId, {
+        name: field("name"),
+        ...(persona === "" ? {} : { persona }),
+        projectLabel: field("projectLabel"),
+        responsibility: field("responsibility"),
+      }));
+      setNotice("Avatar 上下文已更新。");
+      await load();
+    } catch (error) { setNotice(error instanceof ApiError ? error.message : "Avatar 没保存成功。"); }
+  };
+  const workspaceAction = async (action: "bind" | "rebuild") => {
+    if (detail === null) return;
+    try {
+      if (action === "bind") await api.bindAvatarWorkspace(detail.avatarId);
+      else await api.rebuildAvatarWorkspace(detail.avatarId);
+      await open(detail.avatarId);
+      setNotice(action === "bind" ? "已绑定现有目录。" : "已重新排队创建受管目录。");
+    } catch (error) { setNotice(error instanceof ApiError ? error.message : "工作区操作没有完成。"); }
+  };
   return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">joi 管理的上下文边界</p><h1>Avatar</h1><p>这里只保存人格、工程、记忆与任务上下文。Avatar 不拥有派发权。</p></div><button className="button primary" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建 Avatar"}</button></header>
+    <header className="page-title-row"><div><p className="eyebrow">joi 管理的上下文边界</p><h1>Avatar 上下文中心</h1><p>Avatar 是工程目录与执行上下文的唯一权威；joi 仍是唯一派发者。</p></div><button className="button primary" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建 Avatar"}</button></header>
     {adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}>
       <label>名称<input name="name" required /></label><label>工程名称<input name="projectLabel" required /></label>
       <label>职责范围<textarea name="scopeSummary" required rows={3} /></label><label>人格摘要<textarea name="personaSummary" required rows={4} /></label>
       <button className="button primary" type="submit">保存 Avatar</button>
     </form> : null}
-    {avatars.length === 0 ? <div className="plain-empty"><h2>还没有 Avatar</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="partner-list">{avatars.map((avatar) => <article key={avatar.avatarId}><div><strong>{avatar.name}</strong><span>{avatar.scopeSummary}</span><small>更新于 {new Date(avatar.updatedAt).toLocaleString()}</small></div></article>)}</div>}
+    {avatars.length === 0 ? <div className="plain-empty"><h2>还没有 Avatar</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="partner-list">{avatars.map((avatar) => <article key={avatar.avatarId}><div><strong>{avatar.name}</strong><span>{avatar.scopeSummary}</span><small>更新于 {new Date(avatar.updatedAt).toLocaleString()}</small></div><button className="button ghost" onClick={() => void open(avatar.avatarId)} type="button">管理上下文</button></article>)}</div>}
+    {detail === null ? null : <div className="avatar-context-center">
+      <header className="page-title-row"><div><p className="eyebrow">当前 Avatar</p><h2>{detail.name}</h2><p>人格 revision {detail.personaRevisionId}</p></div><button className="button ghost" onClick={() => setDetail(null)} type="button">关闭</button></header>
+      <form className="partner-form" onSubmit={(event) => void saveDetail(event)}>
+        <label>名称<input defaultValue={detail.name} name="name" required /></label>
+        <label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label>
+        <label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={3} /></label>
+        <label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label>
+        <button className="button primary" type="submit">保存上下文</button>
+      </form>
+      <article className="context-card"><h3>工作区</h3><p><strong>{detail.workspace.displayName}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">重建受管目录</button></div></article>
+      <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
+      <article className="context-card"><h3>最近结果</h3>{detail.recentResults.length === 0 ? <p>还没有结果元数据。</p> : <ul>{detail.recentResults.map((item) => <li key={item.resultId}>{item.summary} · {item.status}{item.isLate ? " · 迟到" : ""}</li>)}</ul>}</article>
+      <article className="context-card"><h3>私有搭档实例</h3>{detail.instances.length === 0 ? <p>当前没有实例。</p> : <ul>{detail.instances.map((instance) => <li key={instance.instanceId}>{instance.partnerName} · {instance.sessionPolicy} · {instance.status}</li>)}</ul>}</article>
+    </div>}
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
   </section>;
 }

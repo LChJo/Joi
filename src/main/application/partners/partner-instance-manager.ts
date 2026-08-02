@@ -40,18 +40,19 @@ export class PartnerInstanceManager {
   }
 
   /** Creates a fresh instance for the partner's active revision; resident creation enforces hard caps. */
-  async ensure(input: { partnerId: string; sessionPolicy?: SessionPolicy }): Promise<PartnerInstanceRecord> {
+  async ensure(input: { avatarId: string; partnerId: string; sessionPolicy?: SessionPolicy }): Promise<PartnerInstanceRecord> {
     const policy: SessionPolicy = input.sessionPolicy ?? "RESIDENT";
     const pin = await this.dependencies.registry.pinForDispatch(input.partnerId);
     const revision = await this.dependencies.revisions.getActive(input.partnerId);
     if (revision === null) throw new DomainError("partner_not_found", "Partner was not found.");
     if (policy === "RESIDENT"
-      && (await this.dependencies.repository.countActive(input.partnerId) >= this.#limits.maxResidentPerPartner
+      && (await this.dependencies.repository.countActive(input.avatarId, input.partnerId) >= this.#limits.maxResidentPerPartner
         || await this.dependencies.repository.countActiveGlobal() >= this.#limits.maxResidentGlobal)) {
       throw new DomainError("partner_instance_cap_exceeded", "Too many resident partner instances; reuse an IDLE instance or dispose one first.");
     }
     const createdAt = this.dependencies.clock.now().toISOString();
     return this.dependencies.repository.create({
+      avatarId: input.avatarId,
       createdAt,
       engine: revision.engine,
       instanceId: this.dependencies.ids.next("partner_instance"),
@@ -77,13 +78,15 @@ export class PartnerInstanceManager {
     if (input.instanceId !== undefined) {
       const existing = await this.dependencies.repository.get(input.instanceId);
       if (existing === null || existing.status === "DISPOSED") throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
+      if (existing.avatarId !== input.request.avatarId) throw new DomainError("partner_instance_avatar_mismatch", "Partner instance belongs to another Avatar.");
       if (existing.partnerId !== input.revision.partnerId) throw new DomainError("partner_instance_partner_mismatch", "Partner instance belongs to another partner.");
       if (existing.status !== "IDLE") throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
       record = existing;
     } else if (input.sessionPolicy === "RESIDENT") {
-      record = await this.ensure({ partnerId: input.revision.partnerId });
+      record = await this.ensure({ avatarId: input.request.avatarId, partnerId: input.revision.partnerId });
     } else {
       record = await this.dependencies.repository.create({
+        avatarId: input.request.avatarId,
         createdAt: this.dependencies.clock.now().toISOString(),
         engine: input.revision.engine,
         instanceId: this.dependencies.ids.next("partner_instance"),
@@ -107,7 +110,15 @@ export class PartnerInstanceManager {
       if (record.sessionPolicy === "EPHEMERAL") {
         const result = await engine.runEphemeral(input.request, input.revision, { knowledgeSection, skillSection });
         await this.#disposeRecord(record, "ephemeral_completed");
-        return { actionId: input.request.actionId, externalRunId: result.externalRunId, status: result.status, workId: input.request.workId };
+        return {
+          actionId: input.request.actionId,
+          artifacts: result.output.artifacts,
+          body: result.output.body,
+          externalRunId: result.externalRunId,
+          instanceId: record.instanceId,
+          status: result.status,
+          workId: input.request.workId,
+        };
       }
       const restored = await this.dependencies.messages.load(record.instanceId);
       const turn = await engine.runResidentTurn({
@@ -125,7 +136,15 @@ export class PartnerInstanceManager {
         this.dependencies.clock.now().toISOString(),
         turn.externalSessionRef,
       );
-      return { actionId: input.request.actionId, externalRunId: turn.externalRunId, status: turn.status, workId: input.request.workId };
+      return {
+        actionId: input.request.actionId,
+        artifacts: turn.output.artifacts,
+        body: turn.output.body,
+        externalRunId: turn.externalRunId,
+        instanceId: record.instanceId,
+        status: turn.status,
+        workId: input.request.workId,
+      };
     } catch (error) {
       if (record.sessionPolicy === "EPHEMERAL") {
         await this.#disposeRecord(record, "ephemeral_failed");
@@ -137,15 +156,17 @@ export class PartnerInstanceManager {
     }
   }
 
-  async dispose(instanceId: string, reason: string): Promise<void> {
-    const record = await this.dependencies.repository.get(instanceId);
-    if (record === null || record.status === "DISPOSED") return;
+  async dispose(input: { avatarId: string; instanceId: string; reason: string }): Promise<void> {
+    const record = await this.dependencies.repository.get(input.instanceId);
+    if (record === null) return;
+    if (record.avatarId !== input.avatarId) throw new DomainError("partner_instance_avatar_mismatch", "Partner instance belongs to another Avatar.");
+    if (record.status === "DISPOSED") return;
     if (record.status === "BUSY") throw new DomainError("partner_instance_busy", "Partner instance is busy and cannot be disposed.");
-    await this.#disposeRecord(record, reason);
+    await this.#disposeRecord(record, input.reason);
   }
 
-  async list(partnerId?: string): Promise<PartnerInstanceRecord[]> {
-    return this.dependencies.repository.listActive(partnerId);
+  async list(filter?: { avatarId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]> {
+    return this.dependencies.repository.listActive(filter);
   }
 
   async recoverOnBoot(): Promise<{ ephemeralDisposed: number; residentRecovered: number }> {

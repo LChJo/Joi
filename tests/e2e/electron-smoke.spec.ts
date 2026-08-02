@@ -82,7 +82,7 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
     seedReadyAgent(userDataDirectory);
     await window.reload();
     await expect(window.getByRole("heading", { name: "现在想让 joi 做什么？" })).toBeVisible();
-    await window.getByRole("button", { name: "搭档" }).click();
+    await window.getByRole("button", { exact: true, name: "搭档" }).click();
     await expect(window.getByText("Mana E2E")).toBeVisible();
     await window.getByRole("button", { exact: true, name: "Avatar" }).click();
 
@@ -101,7 +101,7 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
     await window.getByRole("button", { exact: true, name: "Avatar" }).click();
     await window.setViewportSize({ height: 900, width: 768 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(768);
-    await expect(window.getByRole("heading", { name: "Avatar" })).toBeVisible();
+    await expect(window.getByRole("heading", { name: "Avatar 上下文中心" })).toBeVisible();
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-console-768.png") });

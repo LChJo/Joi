@@ -6,6 +6,8 @@ import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-codin
 import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 
+const contexts = { loadForExecution: async () => ({ promptSection: "Avatar context", sanitized: {}, workspacePath: "workspace_ref_1" }) };
+
 describe("local Pi coding partner runtime", () => {
   it("runs one isolated Pi session with the pinned workspace, prompt and tool allowlist", async () => {
     const faux = fauxProvider({ provider: "local-partner" });
@@ -14,6 +16,7 @@ describe("local Pi coding partner runtime", () => {
     models.setProvider(faux.provider);
     const toolRequests: { cwd: string; names: string[] }[] = [];
     const runner = new PiCodingPartnerRunner({
+      contexts,
       prompts: { read: async (promptRef) => promptRef === "prompt_ref_1" ? "LOCAL_PARTNER_SYSTEM_SENTINEL" : null },
       resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
@@ -33,20 +36,21 @@ describe("local Pi coding partner runtime", () => {
       registryRevision: 1,
       skills: ["typescript"],
       tools: ["read", "edit"],
-      workspaceRef: "workspace_ref_1",
     });
 
     await expect(runner.run({
       actionId: "action_1",
       avatarId: "avatar_1",
+      contextSnapshotId: "context_1",
       taskProjection: "Implement the verified change.",
       workId: "work_1",
-    }, revision)).resolves.toEqual({ externalRunId: "local_pi:action_1", status: "COMPLETED" });
+    }, revision)).resolves.toMatchObject({ externalRunId: "local_pi:action_1", output: { body: "work completed" }, status: "COMPLETED" });
     expect(toolRequests).toEqual([{ cwd: "workspace_ref_1", names: ["read", "edit"] }]);
   });
 
   it("fails closed when the prompt reference cannot be resolved", async () => {
     const runner = new PiCodingPartnerRunner({
+      contexts,
       prompts: { read: async () => null },
       resolver: { resolve: async () => { throw new Error("must not resolve"); } },
       sources: { selectInitial: async () => { throw new Error("must not select"); } },
@@ -55,9 +59,9 @@ describe("local Pi coding partner runtime", () => {
     const revision = createPartnerRevision({
       capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Local", kind: "local-pi",
       partnerId: "partner", partnerRevisionId: "revision", promptRef: "missing", registryRevision: 1,
-      skills: [], tools: [], workspaceRef: "workspace",
+      skills: [], tools: [],
     });
-    await expect(runner.run({ actionId: "action", avatarId: "avatar", taskProjection: "task", workId: "work" }, revision))
+    await expect(runner.run({ actionId: "action", avatarId: "avatar", contextSnapshotId: "context", taskProjection: "task", workId: "work" }, revision))
       .rejects.toThrow("partner_prompt_not_found");
   });
 });
@@ -74,6 +78,7 @@ describe("Pi partner engine runtime", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const runtime = new PiPartnerEngineRuntime({
+      contexts,
       prompts: { read: async () => null },
       resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
@@ -82,9 +87,9 @@ describe("Pi partner engine runtime", () => {
     const revision = createPartnerRevision({
       capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Local", kind: "local-pi",
       partnerId: "partner_local", partnerRevisionId: "partner_revision_local", registryRevision: 1,
-      skills: [], tools: [], workspaceRef: "workspace_ref_1",
+      skills: [], tools: [],
     });
-    const request = { actionId: "action_1", avatarId: "avatar_1", taskProjection: "first task", workId: "work_1" };
+    const request = { actionId: "action_1", avatarId: "avatar_1", contextSnapshotId: "context_1", taskProjection: "first task", workId: "work_1" };
 
     const first = await runtime.runResidentTurn({ instanceId: "instance_1", knowledgeSection: "KB_SECTION", request, restoredMessages: null, revision, skillSection: "" });
     expect(first.status).toBe("COMPLETED");
@@ -100,11 +105,11 @@ describe("Pi partner engine runtime", () => {
     expect(second.messages.length).toBeGreaterThan(first.messages.length);
 
     const ephemeral = await runtime.runEphemeral(
-      { actionId: "action_3", avatarId: "avatar_1", taskProjection: "one shot", workId: "work_3" },
+      { actionId: "action_3", avatarId: "avatar_1", contextSnapshotId: "context_1", taskProjection: "one shot", workId: "work_3" },
       revision,
       { knowledgeSection: "", skillSection: "" },
     );
-    expect(ephemeral).toEqual({ externalRunId: "local_pi:action_3", status: "COMPLETED" });
+    expect(ephemeral).toMatchObject({ externalRunId: "local_pi:action_3", output: { body: "ephemeral answer" }, status: "COMPLETED" });
 
     runtime.evictFromMemory("instance_1");
     const rebuilt = await runtime.runResidentTurn({

@@ -8,20 +8,20 @@ class MemoryWorkMemoryStore implements PartnerWorkMemoryStore {
   readonly entries: PartnerWorkMemoryEntry[] = [];
   summaries = new Map<string, PartnerWorkMemorySummary>();
   async append(entry: PartnerWorkMemoryEntry) { this.entries.push(entry); }
-  async count(partnerId: string) { return this.entries.filter((entry) => entry.partnerId === partnerId).length; }
-  async listEntries(partnerId: string, limit: number) {
-    return this.entries.filter((entry) => entry.partnerId === partnerId).slice(-limit).reverse();
+  async count(avatarId: string, partnerId: string) { return this.entries.filter((entry) => entry.avatarId === avatarId && entry.partnerId === partnerId).length; }
+  async listEntries(avatarId: string, partnerId: string, limit: number) {
+    return this.entries.filter((entry) => entry.avatarId === avatarId && entry.partnerId === partnerId).slice(-limit).reverse();
   }
-  async loadSummary(partnerId: string) { return this.summaries.get(partnerId) ?? null; }
-  async outcomeCounts(partnerId: string) {
-    const scoped = this.entries.filter((entry) => entry.partnerId === partnerId);
+  async loadSummary(avatarId: string, partnerId: string) { return this.summaries.get(`${avatarId}:${partnerId}`) ?? null; }
+  async outcomeCounts(avatarId: string, partnerId: string) {
+    const scoped = this.entries.filter((entry) => entry.avatarId === avatarId && entry.partnerId === partnerId);
     return { completed: scoped.filter((entry) => entry.outcome === "COMPLETED").length, total: scoped.length };
   }
-  async saveSummary(input: { entryCount: number; partnerId: string; summary: string; updatedAt: string }) {
-    this.summaries.set(input.partnerId, { entryCount: input.entryCount, summary: input.summary, updatedAt: input.updatedAt });
+  async saveSummary(input: { avatarId: string; entryCount: number; partnerId: string; summary: string; updatedAt: string }) {
+    this.summaries.set(`${input.avatarId}:${input.partnerId}`, { entryCount: input.entryCount, summary: input.summary, updatedAt: input.updatedAt });
   }
-  async trim(partnerId: string, keep: number) {
-    const scoped = this.entries.filter((entry) => entry.partnerId === partnerId);
+  async trim(avatarId: string, partnerId: string, keep: number) {
+    const scoped = this.entries.filter((entry) => entry.avatarId === avatarId && entry.partnerId === partnerId);
     const overflow = scoped.length - keep;
     if (overflow <= 0) return;
     const doomed = new Set(scoped.slice(0, overflow).map((entry) => entry.memoryId));
@@ -44,6 +44,7 @@ describe("partner-work-memory-service", () => {
     for (let index = 0; index < PARTNER_MEMORY_LIMITS.entryLimit + 3; index += 1) {
       await service.recordResult({
         at: `2026-07-29T10:${String(index).padStart(2, "0")}:00.000Z`,
+        avatarId: "avatar_1",
         outcome: index % 4 === 3 ? "FAILED" : "COMPLETED",
         partnerId: "partner_1",
         sessionDataSource: `local_pi:action_${String(index)}`,
@@ -52,7 +53,7 @@ describe("partner-work-memory-service", () => {
     }
     expect(store.entries).toHaveLength(PARTNER_MEMORY_LIMITS.entryLimit);
 
-    const summaryRow = store.summaries.get("partner_1");
+    const summaryRow = store.summaries.get("avatar_1:partner_1");
     expect(summaryRow).toBeDefined();
     expect(summaryRow?.summary).toMatch(/completed/u);
   });
@@ -65,8 +66,8 @@ describe("partner-work-memory-service", () => {
       store,
       summarizer: { summarize: async () => "MODEL_SUMMARY" },
     });
-    await withModel.recordResult({ at: "2026-07-29T10:00:00.000Z", outcome: "COMPLETED", partnerId: "partner_m", sessionDataSource: "local_pi:a1", title: "t1" });
-    expect(store.summaries.get("partner_m")?.summary).toBe("MODEL_SUMMARY");
+    await withModel.recordResult({ at: "2026-07-29T10:00:00.000Z", avatarId: "avatar_1", outcome: "COMPLETED", partnerId: "partner_m", sessionDataSource: "local_pi:a1", title: "t1" });
+    expect(store.summaries.get("avatar_1:partner_m")?.summary).toBe("MODEL_SUMMARY");
 
     const store2 = new MemoryWorkMemoryStore();
     const withNull = new PartnerWorkMemoryService({
@@ -75,8 +76,8 @@ describe("partner-work-memory-service", () => {
       store: store2,
       summarizer: { summarize: async () => null },
     });
-    await withNull.recordResult({ at: "2026-07-29T10:00:00.000Z", outcome: "FAILED", partnerId: "partner_n", sessionDataSource: "local_pi:a2", title: "t2" });
-    expect(store2.summaries.get("partner_n")?.summary).toBe(deterministicPartnerSummary(store2.entries));
+    await withNull.recordResult({ at: "2026-07-29T10:00:00.000Z", avatarId: "avatar_1", outcome: "FAILED", partnerId: "partner_n", sessionDataSource: "local_pi:a2", title: "t2" });
+    expect(store2.summaries.get("avatar_1:partner_n")?.summary).toBe(deterministicPartnerSummary(store2.entries));
   });
 
   it("feeds the previous summary into cadence refreshes", async () => {
@@ -96,6 +97,7 @@ describe("partner-work-memory-service", () => {
     for (let index = 0; index < PARTNER_MEMORY_LIMITS.summaryCadence; index += 1) {
       await service.recordResult({
         at: `2026-07-29T10:0${String(index)}:00.000Z`,
+        avatarId: "avatar_1",
         outcome: "COMPLETED",
         partnerId: "partner_c",
         sessionDataSource: `local_pi:c${String(index)}`,
@@ -105,7 +107,7 @@ describe("partner-work-memory-service", () => {
     expect(seenPrevious).toHaveLength(2);
     expect(seenPrevious[0]).toBeUndefined();
     expect(seenPrevious[1]).toBe("SUMMARY_1");
-    expect(store.summaries.get("partner_c")?.summary).toBe("SUMMARY_2");
+    expect(store.summaries.get("avatar_1:partner_c")?.summary).toBe("SUMMARY_2");
   });
 
   it("serves bounded digests with success rate, recent three and summary", async () => {
@@ -115,26 +117,27 @@ describe("partner-work-memory-service", () => {
     for (const [index, outcome] of outcomes.entries()) {
       await service.recordResult({
         at: `2026-07-29T10:0${String(index)}:00.000Z`,
+        avatarId: "avatar_1",
         outcome,
         partnerId: "partner_d",
         sessionDataSource: `partner_instance_messages:instance_${String(index)}`,
         title: entryTitle(index),
       });
     }
-    const digest = await service.digest("partner_d");
+    const digest = await service.digest("avatar_1", "partner_d");
     expect(digest.successRate).toBe(0.75);
     expect(digest.last3.map((item) => item.title)).toEqual(["task 3", "task 2", "task 1"]);
     expect(digest.summary).toMatch(/completed/u);
 
-    const empty = await service.digest("partner_missing");
+    const empty = await service.digest("avatar_1", "partner_missing");
     expect(empty).toMatchObject({ last3: [], successRate: 1 });
   });
 
   it("exposes the full ledger and summary for the read-only debug view", async () => {
     const store = new MemoryWorkMemoryStore();
     const service = new PartnerWorkMemoryService({ clock: new TestClock(), ids: new TestIds(), store });
-    await service.recordResult({ at: "2026-07-29T10:00:00.000Z", outcome: "COMPLETED", partnerId: "partner_v", sessionDataSource: "a2a_invocations:inv_1", title: "remote task" });
-    const view = await service.debugView("partner_v");
+    await service.recordResult({ at: "2026-07-29T10:00:00.000Z", avatarId: "avatar_1", outcome: "COMPLETED", partnerId: "partner_v", sessionDataSource: "a2a_invocations:inv_1", title: "remote task" });
+    const view = await service.debugView("avatar_1", "partner_v");
     expect(view.entries).toHaveLength(1);
     expect(view.entries[0]).toMatchObject({ sessionDataSource: "a2a_invocations:inv_1", title: "remote task" });
     expect(view.summary).toMatch(/completed/u);

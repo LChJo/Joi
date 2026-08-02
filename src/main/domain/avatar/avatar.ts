@@ -9,7 +9,6 @@ export interface AvatarProfile {
 
 export interface AvatarProjectContext {
   label: string;
-  workspaceRef?: string;
 }
 
 export interface AvatarMemoryNamespace {
@@ -53,7 +52,6 @@ function requiredText(value: string, maxLength: number, code: string): string {
 
 export function createAvatar(input: CreateAvatarInput): Avatar {
   const avatarId = requiredText(input.avatarId, 160, "avatar_id_invalid");
-  const workspaceRef = input.project.workspaceRef?.trim();
   return {
     avatarId,
     createdAt: input.createdAt,
@@ -66,7 +64,6 @@ export function createAvatar(input: CreateAvatarInput): Avatar {
     },
     project: {
       label: requiredText(input.project.label, 160, "avatar_project_label_invalid"),
-      ...(workspaceRef === undefined || workspaceRef === "" ? {} : { workspaceRef }),
     },
     taskContext: {
       activeWorkIds: [...new Set(input.taskContext.activeWorkIds.map((id) => requiredText(id, 160, "avatar_work_id_invalid")))],

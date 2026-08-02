@@ -253,6 +253,7 @@ describe("Pi reasoning runtime contract", () => {
       "work.create",
       "work.add_dependency",
       "work.dispatch",
+      "work.read_result",
       "work.wait",
       "work.cancel",
       "work.reassign",

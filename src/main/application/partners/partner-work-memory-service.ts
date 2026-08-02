@@ -31,8 +31,9 @@ export class PartnerWorkMemoryService {
   }) {}
 
   /** Appends one ground-truth outcome, trims the ledger and refreshes the rolling summary on cadence. */
-  async recordResult(input: { at: string; outcome: PartnerRunStatus; partnerId: string; sessionDataSource: string; title: string; workId?: string }): Promise<void> {
+  async recordResult(input: { at: string; avatarId: string; outcome: PartnerRunStatus; partnerId: string; sessionDataSource: string; title: string; workId?: string }): Promise<void> {
     await this.dependencies.store.append({
+      avatarId: input.avatarId,
       createdAt: input.at,
       memoryId: this.dependencies.ids.next("partner_work_memory"),
       outcome: input.outcome,
@@ -41,19 +42,19 @@ export class PartnerWorkMemoryService {
       title: input.title,
       ...(input.workId === undefined ? {} : { workId: input.workId }),
     });
-    await this.dependencies.store.trim(input.partnerId, PARTNER_MEMORY_LIMITS.entryLimit);
-    const count = await this.dependencies.store.count(input.partnerId);
-    const previous = await this.dependencies.store.loadSummary(input.partnerId);
+    await this.dependencies.store.trim(input.avatarId, input.partnerId, PARTNER_MEMORY_LIMITS.entryLimit);
+    const count = await this.dependencies.store.count(input.avatarId, input.partnerId);
+    const previous = await this.dependencies.store.loadSummary(input.avatarId, input.partnerId);
     if (previous === null || count % PARTNER_MEMORY_LIMITS.summaryCadence === 0) {
-      await this.#refreshSummary(input.partnerId, input.at, previous?.summary);
+      await this.#refreshSummary(input.avatarId, input.partnerId, input.at, previous?.summary);
     }
   }
 
-  async digest(partnerId: string): Promise<PartnerWorkMemoryDigest> {
+  async digest(avatarId: string, partnerId: string): Promise<PartnerWorkMemoryDigest> {
     const [summaryRow, recent, counts] = await Promise.all([
-      this.dependencies.store.loadSummary(partnerId),
-      this.dependencies.store.listEntries(partnerId, 3),
-      this.dependencies.store.outcomeCounts(partnerId),
+      this.dependencies.store.loadSummary(avatarId, partnerId),
+      this.dependencies.store.listEntries(avatarId, partnerId, 3),
+      this.dependencies.store.outcomeCounts(avatarId, partnerId),
     ]);
     return {
       last3: recent.map((entry) => ({ at: entry.createdAt, outcome: entry.outcome, title: entry.title })),
@@ -62,10 +63,10 @@ export class PartnerWorkMemoryService {
     };
   }
 
-  async debugView(partnerId: string): Promise<{ entries: PartnerWorkMemoryEntry[]; summary?: string; summaryUpdatedAt?: string }> {
+  async debugView(avatarId: string, partnerId: string): Promise<{ entries: PartnerWorkMemoryEntry[]; summary?: string; summaryUpdatedAt?: string }> {
     const [summaryRow, entries] = await Promise.all([
-      this.dependencies.store.loadSummary(partnerId),
-      this.dependencies.store.listEntries(partnerId, PARTNER_MEMORY_LIMITS.entryLimit),
+      this.dependencies.store.loadSummary(avatarId, partnerId),
+      this.dependencies.store.listEntries(avatarId, partnerId, PARTNER_MEMORY_LIMITS.entryLimit),
     ]);
     return {
       entries,
@@ -73,17 +74,18 @@ export class PartnerWorkMemoryService {
     };
   }
 
-  async #refreshSummary(partnerId: string, at: string, previous?: string): Promise<void> {
-    const entries = await this.dependencies.store.listEntries(partnerId, PARTNER_MEMORY_LIMITS.entryLimit);
+  async #refreshSummary(avatarId: string, partnerId: string, at: string, previous?: string): Promise<void> {
+    const entries = await this.dependencies.store.listEntries(avatarId, partnerId, PARTNER_MEMORY_LIMITS.entryLimit);
     let generated: string | null = null;
     if (this.dependencies.summarizer !== undefined) {
       generated = await this.dependencies.summarizer.summarize({
+        avatarId,
         entries,
         partnerId,
         ...(previous === undefined ? {} : { previousSummary: previous }),
       });
     }
     const summary = (generated ?? deterministicPartnerSummary(entries)).slice(0, PARTNER_MEMORY_LIMITS.summaryMaxCharacters);
-    await this.dependencies.store.saveSummary({ entryCount: entries.length, partnerId, summary, updatedAt: at });
+    await this.dependencies.store.saveSummary({ avatarId, entryCount: entries.length, partnerId, summary, updatedAt: at });
   }
 }

@@ -8,6 +8,7 @@ import type { WorkOrchestrationService } from "../../application/work/work-orche
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
+import type { WorkResultService } from "../../application/work/work-result-service.js";
 
 function result(value: unknown) {
   return { content: [{ text: JSON.stringify(value), type: "text" as const }], details: {} };
@@ -21,19 +22,19 @@ export function createJoiReasoningTools(input: {
   memory: Pick<PartnerWorkMemoryService, "digest">;
   models: Pick<ModelSourceService, "list">;
   partners: Pick<PartnerRegistryService, "add" | "inspect" | "list">;
+  results: Pick<WorkResultService, "read">;
   turnId: string;
   work: Pick<WorkOrchestrationService, "plan" | "reassign">;
 }): AgentTool[] {
   const workDispatchParameters = Type.Object({
     dependencies: Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() })),
     work: Type.Array(Type.Object({
-      accessMode: Type.Union([Type.Literal("READ"), Type.Literal("WRITE")]),
+      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
       instanceId: Type.Optional(Type.String()),
       key: Type.String(),
       partnerId: Type.String(),
       sessionPolicy: Type.Optional(Type.Union([Type.Literal("ephemeral"), Type.Literal("resident")])),
       title: Type.String(),
-      workspaceRef: Type.Optional(Type.String()),
     }), { minItems: 1, maxItems: 16 }),
   });
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
@@ -49,7 +50,6 @@ export function createJoiReasoningTools(input: {
         partnerId: item.partnerId,
         ...(item.sessionPolicy === undefined ? {} : { sessionPolicy: item.sessionPolicy === "resident" ? "RESIDENT" as const : "EPHEMERAL" as const }),
         title: item.title,
-        ...(item.workspaceRef === undefined ? {} : { workspaceRef: item.workspaceRef }),
       })),
     })),
     label: "Plan and dispatch work",
@@ -101,7 +101,6 @@ export function createJoiReasoningTools(input: {
     prompt: Type.Optional(Type.String()),
     skills: Type.Optional(Type.Array(Type.String())),
     tools: Type.Optional(Type.Array(Type.String())),
-    workspaceRef: Type.Optional(Type.String()),
   });
   const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
     description: "Register a new local Pi partner when no existing partner fits the work. Optionally pin a READY model source (modelSourceId from model.list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
@@ -117,7 +116,6 @@ export function createJoiReasoningTools(input: {
         ...(arguments_.prompt === undefined ? {} : { prompt: arguments_.prompt }),
         skills: arguments_.skills ?? [],
         tools: arguments_.tools ?? [],
-        ...(arguments_.workspaceRef === undefined ? {} : { workspaceRef: arguments_.workspaceRef }),
       });
       return result({ partnerId: created.partnerId, partnerRevisionId: created.partnerRevisionId });
     },
@@ -132,6 +130,7 @@ export function createJoiReasoningTools(input: {
   const createInstanceTool: AgentTool<typeof createInstanceParameters> = {
     description: "Create an instance of a partner. resident keeps the conversation alive across dispatches (bounded by instance caps); ephemeral is disposed after one turn. Prefer reusing an IDLE instance from partner.list_instances.",
     execute: async (_toolCallId, arguments_) => result(await input.instances.ensure({
+      avatarId: input.avatarId,
       partnerId: arguments_.partnerId,
       ...(arguments_.sessionPolicy === undefined ? {} : { sessionPolicy: arguments_.sessionPolicy === "resident" ? "RESIDENT" as const : "EPHEMERAL" as const }),
     })),
@@ -142,7 +141,10 @@ export function createJoiReasoningTools(input: {
   const listInstancesParameters = Type.Object({ partnerId: Type.Optional(Type.String()) });
   const listInstancesTool: AgentTool<typeof listInstancesParameters> = {
     description: "List live partner instances with status, session policy and last use, so follow-up work can reuse the right conversation.",
-    execute: async (_toolCallId, arguments_) => result(await input.instances.list(arguments_.partnerId)),
+    execute: async (_toolCallId, arguments_) => result(await input.instances.list({
+      avatarId: input.avatarId,
+      ...(arguments_.partnerId === undefined ? {} : { partnerId: arguments_.partnerId }),
+    })),
     label: "List partner instances",
     name: "partner.list_instances",
     parameters: listInstancesParameters,
@@ -151,7 +153,11 @@ export function createJoiReasoningTools(input: {
   const disposeInstanceTool: AgentTool<typeof disposeInstanceParameters> = {
     description: "Dispose a partner instance once its goal is complete. Busy instances cannot be disposed.",
     execute: async (_toolCallId, arguments_) => {
-      await input.instances.dispose(arguments_.instanceId, arguments_.reason ?? "joi disposed the instance");
+      await input.instances.dispose({
+        avatarId: input.avatarId,
+        instanceId: arguments_.instanceId,
+        reason: arguments_.reason ?? "joi disposed the instance",
+      });
       return result({ disposed: true, instanceId: arguments_.instanceId });
     },
     label: "Dispose a partner instance",
@@ -165,6 +171,18 @@ export function createJoiReasoningTools(input: {
     label: "Inspect partner revision",
     name: "partner.inspect_revision",
     parameters: inspectRevisionParameters,
+  };
+  const readResultParameters = Type.Object({ cursor: Type.Optional(Type.String()), resultId: Type.String() });
+  const readResultTool: AgentTool<typeof readResultParameters> = {
+    description: "Read one bounded chunk of a persisted work result belonging to the current Avatar. Use nextCursor to continue.",
+    execute: async (_toolCallId, arguments_) => result(await input.results.read({
+      avatarId: input.avatarId,
+      ...(arguments_.cursor === undefined ? {} : { cursor: arguments_.cursor }),
+      resultId: arguments_.resultId,
+    })),
+    label: "Read work result",
+    name: "work.read_result",
+    parameters: readResultParameters,
   };
   return [
     {
@@ -188,14 +206,14 @@ export function createJoiReasoningTools(input: {
     {
       description: "List active partners with public metadata, live instances and a working-memory digest (recent outcomes, success rate). Use the digest to pick and the instance list to reuse.",
       execute: async () => {
-        const [partners, instances] = await Promise.all([input.partners.list(), input.instances.list()]);
+        const [partners, instances] = await Promise.all([input.partners.list(), input.instances.list({ avatarId: input.avatarId })]);
         const enriched = await Promise.all(partners.map(async (dto) => ({
           ...dto,
           activeInstanceCount: instances.filter((instance) => instance.partnerId === dto.partnerId).length,
           instances: instances
             .filter((instance) => instance.partnerId === dto.partnerId)
             .map((instance) => ({ instanceId: instance.instanceId, lastUsedAt: instance.lastUsedAt, sessionPolicy: instance.sessionPolicy, status: instance.status })),
-          memoryDigest: await input.memory.digest(dto.partnerId),
+          memoryDigest: await input.memory.digest(input.avatarId, dto.partnerId),
         })));
         return result(enriched);
       },
@@ -210,5 +228,6 @@ export function createJoiReasoningTools(input: {
     disposeInstanceTool,
     workDispatchTool,
     workReassignTool,
+    readResultTool,
   ];
 }

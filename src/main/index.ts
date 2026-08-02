@@ -24,6 +24,9 @@ import { JoiCoordinator } from "./application/joi/joi-coordinator.js";
 import { JoiInputScheduler } from "./application/joi/joi-input-scheduler.js";
 import { AvatarRegistryService } from "./application/joi/avatar-registry-service.js";
 import { AvatarChangeService } from "./application/joi/avatar-change-service.js";
+import { AvatarContextAssembler } from "./application/joi/avatar-context-assembler.js";
+import { AvatarManagementService } from "./application/joi/avatar-management-service.js";
+import { AvatarWorkspaceService } from "./application/joi/avatar-workspace-service.js";
 import { PartnerRegistryService } from "./application/partners/partner-registry-service.js";
 import { PartnerKnowledgeService } from "./application/partners/partner-knowledge-service.js";
 import { PartnerInstanceManager } from "./application/partners/partner-instance-manager.js";
@@ -31,6 +34,7 @@ import { PartnerEngineCatalog } from "./application/partners/partner-engine-cata
 import { PartnerWorkMemoryService } from "./application/partners/partner-work-memory-service.js";
 import type { PartnerEngineRuntime } from "./application/ports/partner-instances.js";
 import { WorkOrchestrationService } from "./application/work/work-orchestration-service.js";
+import { WorkResultService } from "./application/work/work-result-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
 import { SystemSettingsService } from "./infrastructure/operations/system-settings-service.js";
 import { RuntimeMarker, type StartupEvidence } from "./infrastructure/runtime/runtime-marker.js";
@@ -67,6 +71,11 @@ import { SqlitePartnerInstanceRepository } from "./infrastructure/persistence/sq
 import { SqlitePartnerWorkMemoryStore } from "./infrastructure/persistence/sqlite-partner-work-memory-store.js";
 import { LegacyLifeStoreAdapter } from "./infrastructure/persistence/legacy-life-store-adapter.js";
 import { SqliteAvatarChangeRepository } from "./infrastructure/persistence/sqlite-avatar-change-repository.js";
+import { SqliteAvatarContextRepository } from "./infrastructure/persistence/sqlite-avatar-context-repository.js";
+import { SqliteAvatarManagementRepository } from "./infrastructure/persistence/sqlite-avatar-management-repository.js";
+import { SqliteAvatarWorkspaceRepository } from "./infrastructure/persistence/sqlite-avatar-workspace-repository.js";
+import { AvatarWorkspaceProvisioner } from "./infrastructure/persistence/avatar-workspace-provisioner.js";
+import { SqliteWorkResultRepository } from "./infrastructure/persistence/sqlite-work-result-repository.js";
 import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
 import { PiModelSourceCatalog } from "./infrastructure/pi/pi-model-source-catalog.js";
 import { PiModelSourceValidator } from "./infrastructure/pi/pi-model-source-validator.js";
@@ -226,6 +235,12 @@ async function startRuntime(): Promise<void> {
   });
   const avatars = new LegacyLifeStoreAdapter(database);
   const avatarRegistry = new AvatarRegistryService({ clock, ids, repository: avatars });
+  const avatarContextRepository = new SqliteAvatarContextRepository(database);
+  const avatarContextAssembler = new AvatarContextAssembler({ avatars, clock, ids, projections: avatarContextRepository, snapshots: avatarContextRepository });
+  const avatarManagement = new AvatarManagementService({ clock, events: orchestrationEvents, ids, repository: new SqliteAvatarManagementRepository(database) });
+  const avatarWorkspaceRepository = new SqliteAvatarWorkspaceRepository(database);
+  const avatarWorkspaces = new AvatarWorkspaceService({ avatars, clock, events: orchestrationEvents, ids, repository: avatarWorkspaceRepository });
+  const avatarWorkspaceProvisioner = new AvatarWorkspaceProvisioner({ database, events: orchestrationEvents, userDataDirectory });
   const avatarChanges = new AvatarChangeService({ clock, ids, repository: new SqliteAvatarChangeRepository(database) });
   const workRepository = new SqliteWorkPlanRepository(database);
   const work = new WorkOrchestrationService({
@@ -246,9 +261,9 @@ async function startRuntime(): Promise<void> {
   const localCliConversationStore = new ManaSdkConversationStore(database);
   const partnerSkillCatalog = new LocalSkillScanner();
   const partnerEngines = new Map<string, PartnerEngineRuntime>([
-    ["pi-core", new PiPartnerEngineRuntime({ prompts: partnerPrompts, resolver: configuredModelResolver, sources: reasoningSources, tools: piCodingTools })],
-    ["claude-code", new LocalCliPartnerEngineRuntime({ prompts: partnerPrompts, protocol: "claude", store: localCliConversationStore })],
-    ["codex", new LocalCliPartnerEngineRuntime({ prompts: partnerPrompts, protocol: "codex", store: localCliConversationStore })],
+    ["pi-core", new PiPartnerEngineRuntime({ contexts: avatarContextRepository, prompts: partnerPrompts, resolver: configuredModelResolver, sources: reasoningSources, tools: piCodingTools })],
+    ["claude-code", new LocalCliPartnerEngineRuntime({ contexts: avatarContextRepository, prompts: partnerPrompts, protocol: "claude", store: localCliConversationStore })],
+    ["codex", new LocalCliPartnerEngineRuntime({ contexts: avatarContextRepository, prompts: partnerPrompts, protocol: "codex", store: localCliConversationStore })],
   ]);
   const engineCatalog = new PartnerEngineCatalog(partnerEngines);
   const partnerInstances = new PartnerInstanceManager({
@@ -268,10 +283,12 @@ async function startRuntime(): Promise<void> {
     store: new SqlitePartnerWorkMemoryStore(database),
     summarizer: new PiPartnerMemorySummarizer({ resolver: configuredModelResolver, sources: reasoningSources }),
   });
+  const workResultRepository = new SqliteWorkResultRepository(database);
+  const workResults = new WorkResultService(workResultRepository);
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     resolver: configuredModelResolver,
     sessionStore: new SqlitePiReasoningSessionStore(database),
-    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, turnId: turn.turnId, work }),
+    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, results: workResults, turnId: turn.turnId, work }),
   });
   const joiCoordinator = new JoiCoordinator({
     avatars,
@@ -384,6 +401,7 @@ async function startRuntime(): Promise<void> {
   const expressionDelivery = new ExpressionDeliveryScheduler({ clock, publisher: sse, store: database.store });
   const workspaceLeases = new SqliteWorkspaceLeaseManager({ clock, database, owner: `partner_${String(process.pid)}` });
   const localPartner = new LocalPiPartnerAdapter(new PiCodingPartnerRunner({
+    contexts: avatarContextRepository,
     prompts: partnerPrompts,
     resolver: configuredModelResolver,
     sources: reasoningSources,
@@ -391,17 +409,22 @@ async function startRuntime(): Promise<void> {
   }));
   const partnerDispatch = new SqliteA2aPartnerDispatchHandler({
     clock,
+    contextAssembler: avatarContextAssembler,
+    contexts: avatarContextRepository,
     database,
     gateway: a2aGateway,
     instances: partnerInstances,
     leases: workspaceLeases,
     local: localPartner,
     onResult: async (event) => {
-      await orchestrationEvents.emit("work.partner_result", event.eventId, event);
-      const inputId = await joiInboxRepository.enqueuePartnerResult(event);
-      processJoiInput(inputId);
+      await Promise.resolve(sse.publish(event.committedEvent));
+      if (!event.isLate) {
+        const inputId = await joiInboxRepository.enqueuePartnerResult(event);
+        processJoiInput(inputId);
+      }
       await partnerMemory.recordResult({
         at: clock.now().toISOString(),
+        avatarId: event.avatarId,
         outcome: event.status,
         partnerId: event.partnerId,
         sessionDataSource: event.sessionDataSource,
@@ -410,6 +433,7 @@ async function startRuntime(): Promise<void> {
       }).catch(() => process.stderr.write("A partner work memory entry remains available for replay.\n"));
     },
     partners: partnerRepository,
+    results: workResultRepository,
   });
   const outboxDispatcher = new OutboxDispatcher({
     clock,
@@ -434,6 +458,15 @@ async function startRuntime(): Promise<void> {
         await interactions.answer(interactionId, answer);
       },
       "partner.dispatch": (record) => partnerDispatch.handle(record),
+      "avatar.workspace.provision": (record) => avatarWorkspaceProvisioner.handle(record),
+      "partner.cancel": async (record) => {
+        const actionId = record.payload.actionId;
+        if (typeof actionId !== "string") throw new Error("partner_cancel_payload_invalid");
+        const invocation = database.transaction((connection) => connection.prepare(
+          "SELECT invocation_id FROM invocations WHERE message_id = ?",
+        ).get(actionId)) as { invocation_id?: unknown } | undefined;
+        if (typeof invocation?.invocation_id === "string") await a2aGateway.cancel(invocation.invocation_id);
+      },
     },
     onError: () => process.stderr.write("An outbox delivery will be retried.\n"),
     owner: `outbox_${String(process.pid)}`,
@@ -486,7 +519,9 @@ async function startRuntime(): Promise<void> {
     artifacts: artifactStorage,
     auth,
     avatarChanges,
+    avatarManagement,
     avatarRegistry,
+    avatarWorkspaces,
     avatars,
     budgets,
     continuity: new ContinuityService({ clock, publisher: sse, store: database.store }),
@@ -504,7 +539,7 @@ async function startRuntime(): Promise<void> {
     memory: partnerMemory,
     directoryPicker: async () => {
       try {
-        const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "选择搭档工作目录" });
+        const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "绑定 Avatar 工作目录" });
         if (result.canceled || result.filePaths.length === 0) return null;
         return result.filePaths[0] ?? null;
       } catch {

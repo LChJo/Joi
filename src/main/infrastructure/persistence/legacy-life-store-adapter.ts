@@ -23,7 +23,7 @@ export class LegacyLifeStoreAdapter implements AvatarRepository, LegacyAvatarPol
   async getAvatar(avatarId: string): Promise<Avatar | null> {
     const row = this.database.transaction((connection) => connection.prepare(`
       SELECT avatar_id, name, created_at, updated_at, persona_revision_id, persona_summary,
-             scope_summary, project_label, workspace_ref, memory_namespace_id, task_summary
+             scope_summary, project_label, memory_namespace_id, task_summary
         FROM avatars WHERE avatar_id = ? AND status = 'ACTIVE'`).get(avatarId)) as Row | undefined;
     if (row === undefined) return null;
     const id = requiredText(row, "avatar_id");
@@ -35,10 +35,7 @@ export class LegacyLifeStoreAdapter implements AvatarRepository, LegacyAvatarPol
       name,
       personaRevisionId: requiredText(row, "persona_revision_id"),
       personaSummary: requiredText(row, "persona_summary"),
-      project: {
-        label: requiredText(row, "project_label"),
-        ...(typeof row.workspace_ref === "string" ? { workspaceRef: row.workspace_ref } : {}),
-      },
+      project: { label: requiredText(row, "project_label") },
       scopeSummary: requiredText(row, "scope_summary"),
       taskContext: { activeWorkIds: [], summary: requiredText(row, "task_summary") },
     });
@@ -59,15 +56,17 @@ export class LegacyLifeStoreAdapter implements AvatarRepository, LegacyAvatarPol
   }
 
   async createAvatar(avatar: Avatar): Promise<void> {
-    this.database.transaction((connection) => connection.prepare(`INSERT INTO avatars
-      (avatar_id, legacy_life_id, name, persona_revision_id, persona_summary, scope_summary,
-       project_label, workspace_ref, memory_namespace_id, task_summary, status, created_at, updated_at)
-      VALUES (?, NULL, ?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`
-    ).run(
-      avatar.avatarId, avatar.profile.name, avatar.profile.personaRevisionId, avatar.profile.personaSummary,
-      avatar.profile.scopeSummary, avatar.project.label, avatar.project.workspaceRef ?? null,
-      avatar.memory.namespaceId, avatar.taskContext.summary, avatar.createdAt, avatar.updatedAt,
-    ));
+    this.database.transaction((connection) => {
+      connection.prepare(`INSERT INTO avatars
+        (avatar_id, legacy_life_id, name, persona_revision_id, persona_summary, scope_summary,
+         project_label, workspace_ref, memory_namespace_id, task_summary, status, created_at, updated_at)
+        VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, 'ACTIVE', ?, ?)`
+      ).run(
+        avatar.avatarId, avatar.profile.name, avatar.profile.personaRevisionId, avatar.profile.personaSummary,
+        avatar.profile.scopeSummary, avatar.project.label, avatar.memory.namespaceId,
+        avatar.taskContext.summary, avatar.createdAt, avatar.updatedAt,
+      );
+    });
   }
 
   async getPreferredPartnerId(avatarId: string): Promise<string | null> {

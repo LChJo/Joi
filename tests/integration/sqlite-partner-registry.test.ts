@@ -14,7 +14,7 @@ describe("SQLite partner registry", () => {
     let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
       let service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
-      const first = await service.add({ capabilities: ["research"], displayName: "Local Pi", kind: "local-pi", skills: ["web"], tools: ["read"], workspaceRef: "workspace-ref" });
+      const first = await service.add({ capabilities: ["research"], displayName: "Local Pi", kind: "local-pi", skills: ["web"], tools: ["read"] });
       const second = await service.update(first.partnerId, { capabilities: ["research", "write"], displayName: "Local Pi", skills: ["web"], tools: ["read", "edit"] });
       await service.disable(first.partnerId);
       expect((await new SqlitePartnerRegistryRepository(database).getRevision(first.partnerRevisionId))?.status).toBe("ACTIVE");

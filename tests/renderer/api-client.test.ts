@@ -17,6 +17,8 @@ describe("renderer API client", () => {
     await api.authStatus(); await api.bootstrap("nonce"); await api.login("password"); await api.setup("password");
     await api.logout(); await api.listSessions(); await api.logoutAllLan(); await api.changePassword("old password", "new password");
     await api.joiSnapshot(); await api.listAvatars(); await api.createAvatar({ name: "Avatar", personaSummary: "Persona", projectLabel: "Project", scopeSummary: "Scope" });
+    await api.getAvatar("avatar 1"); await api.updateAvatar("avatar 1", { name: "Updated", persona: "New persona" });
+    await api.bindAvatarWorkspace("avatar 1"); await api.rebuildAvatarWorkspace("avatar 1");
     await api.decideAvatarChange("change 1", "CONFIRM"); await api.listPartners(); await api.deletePartner("partner 1");
     await api.listJoiMessages(); await api.listJoiActivity(); await api.sendJoiMessage("hi"); await api.sendJoiMessage("hi", ["attachment 1"]);
     await api.clarifyJoiMessage("input 1", { avatarId: "av-1" }); await api.clarifyJoiMessage("input 1", { text: "more" }); await api.scenarios();
