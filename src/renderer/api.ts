@@ -106,6 +106,11 @@ export class DigitalLifeApi {
       method: "POST",
     });
   }
+  cancelJoiMessage(inputId: string) {
+    return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/cancel`, {
+      method: "POST",
+    });
+  }
   async uploadJoiAttachment(file: File) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = "";

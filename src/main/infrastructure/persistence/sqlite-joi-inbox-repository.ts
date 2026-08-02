@@ -19,18 +19,21 @@ function mapRow(row: Row): JoiInboxRecord {
   const body = row.body;
   const status = row.status;
   const avatarId = row.avatar_id;
+  const canceledAt = row.canceled_at;
   const clarificationReasonCode = row.clarification_reason_code;
   const createdAt = row.created_at;
   const updatedAt = row.updated_at;
   if (typeof inputId !== "string" || typeof idempotencyKey !== "string" || typeof body !== "string"
     || typeof status !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string"
     || (avatarId !== null && typeof avatarId !== "string")
+    || (canceledAt !== null && canceledAt !== undefined && typeof canceledAt !== "string")
     || (clarificationReasonCode !== null && clarificationReasonCode !== undefined && typeof clarificationReasonCode !== "string")) {
     throw new Error("joi_inbox_record_invalid");
   }
   return {
     ...(typeof avatarId === "string" ? { avatarId } : {}),
     body,
+    ...(typeof canceledAt === "string" ? { canceledAt } : {}),
     ...(typeof clarificationReasonCode === "string" ? { clarificationReasonCode } : {}),
     createdAt,
     idempotencyKey,
@@ -81,6 +84,22 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET body = ?, avatar_id = ?, status = 'PENDING', clarification_reason_code = NULL, updated_at = ?
         WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextAvatar ?? null, now, inputId);
+      if (result.changes === 0) return null;
+      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      return updated === undefined ? null : mapRow(updated);
+    });
+  }
+
+  async cancel(inputId: string): Promise<JoiInboxRecord | null> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      if (row === undefined) return null;
+      const current = mapRow(row);
+      if (current.status !== "PENDING" && current.status !== "CLARIFICATION_REQUIRED") return null;
+      const now = new Date().toISOString();
+      const result = connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CONSUMED', canceled_at = ?, clarification_reason_code = NULL, updated_at = ?
+        WHERE input_id = ? AND status IN ('PENDING', 'CLARIFICATION_REQUIRED')`).run(now, now, inputId);
       if (result.changes === 0) return null;
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);

@@ -100,6 +100,15 @@ function accessModeLabel(accessMode: ModelSourceAccessModeDto): string {
   return "API";
 }
 
+function modelSourceStatusLabel(status: JoiSnapshotDto["modelSources"][number]["status"]): string {
+  if (status === "DRAFT") return "草稿";
+  if (status === "VALIDATING") return "正在验证";
+  if (status === "READY") return "可用";
+  if (status === "DEGRADED") return "暂时异常";
+  if (status === "NEEDS_AUTH") return "需要重新连接";
+  return "已停用";
+}
+
 function protocolLabel(protocol: ModelSourceProtocolDto): string {
   return protocol === "anthropic" ? "Anthropic-compatible" : "OpenAI-compatible";
 }
@@ -150,9 +159,9 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   return <section className="model-source-manager">
     <header><div><h2>大模型网络</h2><p>主源和备用源按这里的顺序使用。页面不会显示已保存的密钥。</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "添加网络"}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
-    <div className="model-source-list">{sources.map((source, index) => <article key={source.sourceId}>
-      <div><strong>{source.displayName}</strong><span>{source.primary ? "主源" : `备用 ${String(index)}`} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)} · {source.status} · {source.activeModel.id}</span>{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}</div>
-      <div className="row-actions"><button aria-label={`编辑 ${source.displayName}`} className="button ghost" onClick={() => setEditing(source.sourceId)} type="button">编辑</button><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">上移</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">下移</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice("验证没有通过。"))} type="button">验证</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">停用</button><button className="button danger-text" onClick={() => void api.deleteModelSource(source.sourceId).then(load)} type="button">删除</button></div>
+    <div className="model-source-list">{sources.map((source, index) => <article className="model-source-item" key={source.sourceId}>
+      <div className="model-source-summary"><div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div><span className="model-source-meta">{source.primary ? "主源" : `备用 ${String(index)}`} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span><small>模型：{source.activeModel.id}</small>{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}</div>
+      <div aria-label={`${source.displayName} 操作`} className="row-actions model-source-actions" role="group"><button aria-label={`编辑 ${source.displayName}`} className="button ghost" onClick={() => setEditing(source.sourceId)} type="button">编辑</button><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">上移</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">下移</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice("验证没有通过。"))} type="button">验证</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">停用</button><button className="button danger-text" onClick={() => void api.deleteModelSource(source.sourceId).then(load)} type="button">删除</button></div>
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>编辑显示名称<input defaultValue={source.displayName} name="displayName" required /></label><label>编辑 Base URL<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
         <label>编辑 Model ID<input defaultValue={source.activeModel.id} name="modelId" required /></label>
@@ -272,6 +281,23 @@ function ClarificationActions({ api, avatars, inputId, onResolved, reasonCode }:
   </div>;
 }
 
+function CancelInputButton({ api, inputId, onCanceled }: { api: DigitalLifeApi; inputId: string; onCanceled: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const cancel = async () => {
+    setBusy(true); setError(null);
+    try {
+      await api.cancelJoiMessage(inputId);
+      onCanceled();
+    } catch (reason) {
+      setError(reason instanceof ApiError ? reason.message : "没能取消这条任务，请重试。");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return <span className="joi-feed-cancel-wrap"><button aria-label="取消这条任务" className="button quiet joi-feed-cancel" disabled={busy} onClick={() => void cancel()} type="button">{busy ? "取消中…" : "取消"}</button>{error === null ? null : <span className="joi-feed-cancel-error" role="status">{error}</span>}</span>;
+}
+
 function JoiComposer({ api, onNavigate, snapshot }: { api: DigitalLifeApi; onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void; snapshot: JoiSnapshotDto }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
@@ -322,11 +348,11 @@ function JoiComposer({ api, onNavigate, snapshot }: { api: DigitalLifeApi; onNav
     <div className="joi-body">
       <div aria-label="joi 信息流" className="joi-feed">
         {feed.length === 0 ? <p className="joi-feed-empty">还没有动态。在下方告诉 joi 一个目标，或先用场景预设组建团队。</p> : feed.map((entry) => entry.kind === "input" ? <article className={`joi-feed-item${entry.message.status === "CLARIFICATION_REQUIRED" ? " needs-you" : ""}`} key={entry.id}>
-          <div className="joi-feed-head"><span className="joi-feed-stage">{messageStage(entry.message.status)}</span><time className="joi-feed-time">{new Date(entry.message.acceptedAt).toLocaleString()}</time></div>
+          <div className="joi-feed-head"><span className="joi-feed-stage">{messageStage(entry.message.status, entry.message.canceled)}</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(entry.message.acceptedAt).toLocaleString()}</time>{entry.message.status === "CLARIFICATION_REQUIRED" ? <CancelInputButton api={api} inputId={entry.message.inputId} onCanceled={() => { void refresh(); }} /> : null}</span></div>
           {entry.message.textPreview === undefined ? null : <p className="joi-feed-text">{entry.message.textPreview}</p>}
           {entry.message.status === "CLARIFICATION_REQUIRED"
             ? <ClarificationActions api={api} avatars={snapshot.avatars} inputId={entry.message.inputId} onResolved={() => { void refresh(); }} reasonCode={entry.message.clarificationReasonCode} />
-            : <p className="joi-feed-note">{entry.message.status === "CONSUMED" ? "joi 已完成这轮归类和安排" : entry.message.status === "ROUTED" ? "joi 已派给搭档处理" : "joi 正在归类和安排"}</p>}
+            : <p className="joi-feed-note">{entry.message.canceled === true ? "你已取消这条输入" : entry.message.status === "CONSUMED" ? "joi 已完成这轮归类和安排" : entry.message.status === "ROUTED" ? "joi 已派给搭档处理" : "joi 正在归类和安排"}</p>}
         </article> : <div className="joi-feed-process" key={entry.id}><strong>{entry.label}</strong><span>{entry.detail}</span><time>{new Date(entry.time).toLocaleString()}</time></div>)}
       </div>
       <aside aria-label="工作状态" className="joi-work-panel"><h2>工作状态</h2>{work.length === 0 ? <p className="joi-work-empty">当前没有运行中的工作</p> : <ul className="joi-active-work">{work.map((item) => <li key={item.workId}><strong>{item.title}</strong><span>{activityStatus(item.status)} · Avatar {item.avatarId}</span></li>)}</ul>}</aside>
@@ -334,7 +360,7 @@ function JoiComposer({ api, onNavigate, snapshot }: { api: DigitalLifeApi; onNav
     {snapshot.partners.length >= 2 ? null : <div className="inline-notice warning"><span>{snapshot.partners.length === 0 ? "当前还没有工作搭档。" : `当前只有 ${String(snapshot.partners.length)} 个工作搭档。`}可以先用场景预设一键组建团队，或去搭档页手动创建 2-3 个。</span><span className="row-actions"><button className="button ghost" onClick={() => onNavigate?.("agents", "scenarios")} type="button">看场景预设</button><button className="button ghost" onClick={() => onNavigate?.("agents", "partners")} type="button">去搭档页创建</button></span></div>}
     <form className="joi-composer" onSubmit={(event) => void submit(event)}>
       <label className="joi-composer-label" htmlFor="joi-input">给 joi 输入</label>
-      <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={3} value={text} />
+      <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={2} value={text} />
       <div className="joi-composer-toolbar">
         <label className="joi-attachment-button">添加附件<input aria-label="给 joi 添加附件" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, 8))} type="file" /></label>
         {files.length === 0 ? null : <span className="joi-file-summary">{files.map((file) => file.name).join("、")}</span>}
@@ -345,7 +371,8 @@ function JoiComposer({ api, onNavigate, snapshot }: { api: DigitalLifeApi; onNav
   </section>;
 }
 
-function messageStage(status: JoiAcceptedMessageDto["status"]): string {
+function messageStage(status: JoiAcceptedMessageDto["status"], canceled = false): string {
+  if (canceled) return "已取消";
   if (status === "ROUTED") return "joi 已归类";
   if (status === "CONSUMED") return "工作已安排";
   if (status === "CLARIFICATION_REQUIRED") return "需要你确认";

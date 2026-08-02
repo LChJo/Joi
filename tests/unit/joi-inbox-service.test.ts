@@ -27,6 +27,24 @@ class FakeInboxRepository implements JoiInboxRepository {
     return record;
   }
 
+  async cancel(inputId: string): Promise<JoiInboxRecord | null> {
+    const record = this.records.get(inputId);
+    if (record === undefined) return null;
+    if (record.status !== "PENDING" && record.status !== "CLARIFICATION_REQUIRED") return null;
+    const next: JoiInboxRecord = {
+      body: record.body,
+      canceledAt: "2026-08-01T00:00:02.000Z",
+      createdAt: record.createdAt,
+      idempotencyKey: record.idempotencyKey,
+      inputId: record.inputId,
+      status: "CONSUMED",
+      updatedAt: "2026-08-01T00:00:02.000Z",
+      ...(record.avatarId === undefined ? {} : { avatarId: record.avatarId }),
+    };
+    this.records.set(inputId, next);
+    return next;
+  }
+
   async list(): Promise<JoiInboxRecord[]> {
     return [...this.records.values()];
   }
@@ -85,5 +103,32 @@ describe("JoiInboxService.clarify", () => {
     const listed = await serviceWith(repository).list();
     expect(listed.find((item) => item.inputId === "joi_result_input:1")?.textPreview).toBeUndefined();
     expect(listed.find((item) => item.inputId === "blank-1")?.textPreview).toBeUndefined();
+  });
+});
+
+describe("JoiInboxService.cancel", () => {
+  it("rejects blank and oversized ids and inputs that are not cancelable", async () => {
+    const repository = new FakeInboxRepository();
+    const service = serviceWith(repository);
+    await expect(service.cancel({ inputId: "   " })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.cancel({ inputId: "x".repeat(161) })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.cancel({ inputId: "missing" })).rejects.toMatchObject({ code: "joi_cancel_unavailable" });
+    repository.records.set("done-1", record({ inputId: "done-1", status: "CONSUMED" }));
+    await expect(service.cancel({ inputId: "done-1" })).rejects.toMatchObject({ code: "joi_cancel_unavailable" });
+  });
+
+  it("cancels a clarification input and drops the reason code", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("cancel-1", record({ clarificationReasonCode: "avatar_selection_invalid", inputId: "cancel-1" }));
+    const dto = await serviceWith(repository).cancel({ inputId: "cancel-1" });
+    expect(dto).toMatchObject({ canceled: true, inputId: "cancel-1", status: "CONSUMED" });
+    expect(dto.clarificationReasonCode).toBeUndefined();
+  });
+
+  it("cancels a pending input before routing", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("pending-1", record({ inputId: "pending-1", status: "PENDING" }));
+    const dto = await serviceWith(repository).cancel({ inputId: "pending-1" });
+    expect(dto).toMatchObject({ canceled: true, status: "CONSUMED" });
   });
 });

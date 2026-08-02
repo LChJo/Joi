@@ -212,9 +212,10 @@ export interface JoiSnapshotDto {
 export interface JoiAcceptedMessageDto {
   acceptedAt: string;
   avatarId?: string;
+  canceled?: boolean;
   clarificationReasonCode?: string;
   inputId: string;
-  status: "PENDING" | "CLARIFICATION_REQUIRED" | "ROUTED" | "CONSUMED";
+  status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
   textPreview?: string;
 }
 

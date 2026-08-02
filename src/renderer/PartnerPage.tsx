@@ -165,7 +165,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
           <p className="field-hint">本地 {ENGINE_LABELS[engine]} 使用你本机的登录、转发或订阅配置运行，joi 不注入密钥。</p>
         </>}
         <div className="tool-field"><span className="kb-field-label">工具白名单（不勾选 = 不限制）</span>
-          {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">该引擎暂无可选工具。</small> : <div className="chip-group">{(engineStatus?.tools ?? []).map((tool) => <label className="chip" key={tool}><input checked={selectedTools.includes(tool)} onChange={() => setSelectedTools((current) => toggle(current, tool))} type="checkbox" />{tool}</label>)}</div>}
+          {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">该引擎暂无可选工具。</small> : <div aria-label="工具白名单" className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={selectedTools.includes(tool)} onChange={() => setSelectedTools((current) => toggle(current, tool))} type="checkbox" /><span>{tool}</span></label>)}</div>}
         </div>
         <button className="button primary" type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
       </div>

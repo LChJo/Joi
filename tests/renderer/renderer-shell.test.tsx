@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api";
 import { ConsoleApp, SettingsPanel } from "../../src/renderer/Console";
@@ -160,27 +160,31 @@ describe("joi renderer console", () => {
     const listeners = new Map<string, EventListener>();
     const close = vi.fn();
     class TestEventSource {
-      static last: TestEventSource | undefined;
+      static instances: TestEventSource[] = [];
       onerror: (() => void) | null = null;
       onopen: (() => void) | null = null;
-      constructor(readonly url: string, readonly options: EventSourceInit) { TestEventSource.last = this; }
+      constructor(readonly url: string, readonly options: EventSourceInit) { TestEventSource.instances.push(this); }
       addEventListener(name: string, listener: EventListener) { listeners.set(name, listener); }
       close = close;
     }
     vi.stubGlobal("EventSource", TestEventSource);
     const view = render(<ConsoleApp api={fixture.api} />);
     await waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce());
-    const stream = TestEventSource.last;
+    const stream = TestEventSource.instances.at(0);
     if (stream === undefined) throw new Error("Expected ConsoleApp to open its durable event stream.");
 
-    stream.onerror?.();
-    expect(await screen.findByText("重新连接中")).toBeInTheDocument();
-    stream.onopen?.();
-    expect(await screen.findByText("已连接")).toBeInTheDocument();
-    listeners.get("work.status.changed")?.(new Event("work.status.changed"));
+    act(() => stream.onerror?.());
+    expect(await screen.findByText("实时状态暂时断开")).toHaveAttribute("title", "页面仍可使用，可以手动重连状态更新。");
+    fireEvent.click(screen.getByRole("button", { name: "重新连接状态更新" }));
+    await waitFor(() => expect(TestEventSource.instances).toHaveLength(2));
+    const reconnected = TestEventSource.instances.at(1);
+    if (reconnected === undefined) throw new Error("Expected a replacement durable event stream.");
+    act(() => reconnected.onopen?.());
+    expect(await screen.findByText("实时状态已连接")).toBeInTheDocument();
+    act(() => listeners.get("work.status.changed")?.(new Event("work.status.changed")));
     await waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2));
     view.unmount();
-    expect(close).toHaveBeenCalledOnce();
+    expect(close).toHaveBeenCalledTimes(2);
     vi.unstubAllGlobals();
   });
 

@@ -21,7 +21,7 @@ describe("renderer API client", () => {
     await api.bindAvatarWorkspace("avatar 1"); await api.rebuildAvatarWorkspace("avatar 1");
     await api.decideAvatarChange("change 1", "CONFIRM"); await api.listPartners(); await api.deletePartner("partner 1");
     await api.listJoiMessages(); await api.listJoiActivity(); await api.sendJoiMessage("hi"); await api.sendJoiMessage("hi", ["attachment 1"]);
-    await api.clarifyJoiMessage("input 1", { avatarId: "av-1" }); await api.clarifyJoiMessage("input 1", { text: "more" }); await api.scenarios();
+    await api.clarifyJoiMessage("input 1", { avatarId: "av-1" }); await api.clarifyJoiMessage("input 1", { text: "more" }); await api.cancelJoiMessage("input 1"); await api.scenarios();
     await api.listLives(); await api.getLife("life 1"); await api.createLife({ name: "Life" }); await api.updateLife("life 1", { role: "R" });
     await api.archiveLife("life 1"); await api.getLifeDeletionImpact("life 1"); await api.changePrimaryAgent("life 1", "agent 2"); await api.deleteLife("life 1");
     await api.runtime("life 1", "pause"); await api.emergencyStopAll(); await api.sendMessage("life 1", "hello"); await api.sendMessage("life 1", "files", ["attachment 1"]); await api.listEvents("life 1"); await api.listExpressions("life 1"); await api.listActivity("life 1");
@@ -43,6 +43,9 @@ describe("renderer API client", () => {
     const clarifyCalls = fetchMock.mock.calls.filter((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/joi/messages/input%201/clarify"));
     expect(clarifyCalls.map((call) => call[1]?.body)).toEqual(expect.arrayContaining([JSON.stringify({ avatarId: "av-1" }), JSON.stringify({ text: "more" })]));
     expect(clarifyCalls.every((call) => call[1]?.method === "POST")).toBe(true);
+    const cancelCalls = fetchMock.mock.calls.filter((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/joi/messages/input%201/cancel"));
+    expect(cancelCalls.length).toBeGreaterThan(0);
+    expect(cancelCalls.every((call) => call[1]?.method === "POST")).toBe(true);
     fetchMock.mockRestore();
   });
 

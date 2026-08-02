@@ -13,12 +13,17 @@ function cookieFrom(response: Response) {
   return value.split(";", 1)[0] ?? "";
 }
 
-async function startSession(clarify: (input: { avatarId?: string; inputId: string; text?: string }) => Promise<JoiAcceptedMessageDto>) {
+async function startSession(
+  clarify: (input: { avatarId?: string; inputId: string; text?: string }) => Promise<JoiAcceptedMessageDto>,
+  cancel: (inputId: string) => Promise<JoiAcceptedMessageDto> = async () => DTO,
+) {
   const fixture = await createRuntimeFixture();
   const clarifyCalls: { avatarId?: string; inputId: string; text?: string }[] = [];
+  const cancelCalls: string[] = [];
   const wake = vi.fn();
   const joiInbox = {
     accept: async () => DTO,
+    cancel: async (input: { inputId: string }) => { cancelCalls.push(input.inputId); return cancel(input.inputId); },
     clarify: async (input: { avatarId?: string; inputId: string; text?: string }) => { clarifyCalls.push(input); return clarify(input); },
     list: async () => [DTO],
   };
@@ -33,6 +38,7 @@ async function startSession(clarify: (input: { avatarId?: string; inputId: strin
   const cookie = cookieFrom(authenticated);
   const { csrfToken } = await authenticated.json() as { csrfToken: string };
   return {
+    cancelCalls,
     clarifyCalls,
     async close() { await listeners.close(); await fixture.close(); },
     headers: { "content-type": "application/json", cookie, origin: "null", "x-csrf-token": csrfToken },
@@ -79,6 +85,44 @@ describe("joi clarify HTTP route", () => {
 
       const unauth = await fetch(`${session.url}/api/v1/joi/messages/input-1/clarify`, {
         body: JSON.stringify({ avatarId: "av-1" }),
+        headers: { "content-type": "application/json", origin: "null" },
+        method: "POST",
+      });
+      expect(unauth.status).toBe(401);
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+describe("joi cancel HTTP route", () => {
+  it("decodes the input id, cancels it and does not wake orchestration", async () => {
+    const session = await startSession(async () => DTO, async () => ({ ...DTO, canceled: true, status: "CONSUMED" }));
+    try {
+      const response = await fetch(`${session.url}/api/v1/joi/messages/${encodeURIComponent("input:1")}/cancel`, {
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ ...DTO, canceled: true, status: "CONSUMED" });
+      expect(session.cancelCalls).toEqual(["input:1"]);
+      expect(session.wake).not.toHaveBeenCalled();
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("maps a non-cancelable input to a 400 and rejects unauthenticated writes", async () => {
+    const session = await startSession(async () => DTO, async () => { throw new DomainError("joi_cancel_unavailable", "not cancelable"); });
+    try {
+      const rejected = await fetch(`${session.url}/api/v1/joi/messages/input-1/cancel`, {
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toMatchObject({ code: "joi_cancel_unavailable" });
+
+      const unauth = await fetch(`${session.url}/api/v1/joi/messages/input-1/cancel`, {
         headers: { "content-type": "application/json", origin: "null" },
         method: "POST",
       });

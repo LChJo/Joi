@@ -6,7 +6,7 @@ export interface JoiPendingInput {
   avatarId?: string;
   body: string;
   inputId: string;
-  status: "PENDING" | "CLARIFICATION_REQUIRED" | "ROUTED" | "CONSUMED";
+  status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
 }
 
 export interface JoiCoordinatorStore {

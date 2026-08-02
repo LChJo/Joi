@@ -49,7 +49,7 @@ export interface ApiDependencies {
   events?: EventService;
   globalEmergencyStop?: () => Promise<void>;
   interactions?: InteractionService;
-  joiInbox?: Pick<JoiInboxService, "accept" | "clarify" | "list">;
+  joiInbox?: Pick<JoiInboxService, "accept" | "cancel" | "clarify" | "list">;
   joiActivity?: { listActivity(limit?: number): Promise<JoiActivityDto[]> };
   joiAttachments?: JoiAttachmentPort;
   engines?: Pick<PartnerEngineCatalog, "assertAvailable" | "list">;
@@ -766,6 +766,15 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         });
         sendJson(response, 202, clarified);
         dependencies.onJoiMessageAccepted?.(clarified.inputId);
+        return;
+      }
+      const joiCancelMatch = /^\/api\/v1\/joi\/messages\/([^/]+)\/cancel$/.exec(pathname);
+      if (method === "POST" && joiCancelMatch !== null) {
+        await verifyWrite(dependencies, request);
+        const canceled = await joiInboxService(dependencies).cancel({
+          inputId: decodeURIComponent(joiCancelMatch[1] ?? ""),
+        });
+        sendJson(response, 200, canceled);
         return;
       }
       if (method === "POST" && pathname === "/api/v1/joi/attachments") {

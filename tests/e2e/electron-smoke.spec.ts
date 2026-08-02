@@ -63,6 +63,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 test("Electron completes setup, native Avatar creation, and responsive joi-console paths", async () => {
+  test.setTimeout(45_000);
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
 
   try {
@@ -82,11 +83,26 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
     seedReadyAgent(userDataDirectory);
     await window.reload();
     await expect(window.getByRole("heading", { name: "现在想让 joi 做什么？" })).toBeVisible();
-    await window.getByRole("button", { exact: true, name: "搭档" }).click();
-    await expect(window.getByText("Mana E2E")).toBeVisible();
-    await window.getByRole("button", { exact: true, name: "Avatar" }).click();
 
     await window.setViewportSize({ height: 760, width: 960 });
+    await window.getByRole("button", { exact: true, name: "设置" }).click();
+    const modelSource = window.locator(".model-source-item").filter({ hasText: "DeepSeek E2E" });
+    await expect(modelSource).toBeVisible();
+    expect(await modelSource.evaluate((element) => element.getBoundingClientRect().width)).toBeGreaterThan(600);
+    await expectNoHorizontalOverflow(window);
+    await mkdir(path.resolve("test-results"), { recursive: true });
+    await window.screenshot({ path: path.resolve("test-results/e2e-model-source-960.png") });
+
+    await window.getByRole("button", { exact: true, name: "搭档" }).click();
+    await expect(window.getByText("Mana E2E")).toBeVisible();
+    await window.getByRole("button", { name: "添加搭档" }).click();
+    await window.getByRole("tab", { name: "高级" }).click();
+    const toolChoices = window.getByRole("group", { name: "工具白名单" });
+    await expect(toolChoices).toBeVisible();
+    expect(await toolChoices.locator(".tool-choice").first().evaluate((element) => getComputedStyle(element).borderRadius)).toBe("8px");
+    await window.screenshot({ path: path.resolve("test-results/e2e-tool-choices-960.png") });
+    await window.getByRole("button", { exact: true, name: "Avatar" }).click();
+
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(960);
     await expectNoHorizontalOverflow(window);
     await window.getByRole("button", { name: "创建 Avatar" }).click();

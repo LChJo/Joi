@@ -179,6 +179,8 @@ describe("joi home single entry", () => {
     expect(screen.getByText(/Anthropic-compatible/u)).toBeInTheDocument();
     const kimi = screen.getByText("Kimi Code").closest("article");
     if (kimi === null) throw new Error("Kimi source row missing");
+    expect(kimi).toHaveClass("model-source-item");
+    expect(within(kimi).getByRole("group", { name: "Kimi Code 操作" })).toHaveClass("model-source-actions");
     fireEvent.click(within(kimi).getByRole("button", { name: "上移" }));
     await waitFor(() => expect(order).toHaveBeenCalledWith(["source-2", "source-1"]));
     const deepseek = screen.getByText("DeepSeek").closest("article");
@@ -215,6 +217,17 @@ describe("joi home single entry", () => {
       apiKey: "replacement-key", baseUrl: "https://new.example/v1", displayName: "Private 2", modelId: "new-model",
     }));
     expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
+  });
+
+  it("renders a human-readable label for every model-source status", async () => {
+    const api = new DigitalLifeApi("");
+    const states: ModelSourceDto["status"][] = ["DRAFT", "VALIDATING", "DEGRADED", "NEEDS_AUTH", "DISABLED"];
+    const items = states.map((status, index) => ({ ...readySource, displayName: `源 ${index}`, sourceId: `source-${index}`, status }));
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items });
+    render(<ModelSourceManager api={api} />);
+    for (const label of ["草稿", "正在验证", "暂时异常", "需要重新连接", "已停用"]) {
+      expect(await screen.findByText(label)).toBeInTheDocument();
+    }
   });
 
   it("keeps snapshot and composer failures retryable without losing text", async () => {
@@ -417,6 +430,40 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "clarifyJoiMessage").mockRejectedValue(new ApiError("gone", "这条已经处理过了", 400));
     render(<JoiHome api={api} />);
     fireEvent.click(await screen.findByRole("button", { name: "前端搭档" }));
+    expect(await screen.findByText("这条已经处理过了")).toBeInTheDocument();
+  });
+
+  it("cancels a clarification task in place and reflects the canceled state", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), avatars: [av("av-1", "前端搭档")] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages")
+      .mockResolvedValueOnce({ items: [
+        { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "avatar_selection_invalid", inputId: "cancel-1", status: "CLARIFICATION_REQUIRED" },
+      ] })
+      .mockResolvedValue({ items: [
+        { acceptedAt: "2026-08-01T00:00:00.000Z", canceled: true, inputId: "cancel-1", status: "CONSUMED" },
+      ] });
+    const cancel = vi.spyOn(api, "cancelJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", canceled: true, inputId: "cancel-1", status: "CONSUMED" });
+    render(<JoiHome api={api} />);
+    const cancelButton = await screen.findByRole("button", { name: "取消这条任务" });
+    fireEvent.click(cancelButton);
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("cancel-1"));
+    expect(await screen.findByText("已取消")).toBeInTheDocument();
+    expect(screen.getByText("你已取消这条输入")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "取消这条任务" })).not.toBeInTheDocument();
+  });
+
+  it("surfaces a cancel failure inline at the card", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "avatar_not_found", inputId: "cancel-2", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    vi.spyOn(api, "cancelJoiMessage").mockRejectedValue(new ApiError("gone", "这条已经处理过了", 400));
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "取消这条任务" }));
     expect(await screen.findByText("这条已经处理过了")).toBeInTheDocument();
   });
 });

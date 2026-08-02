@@ -1,4 +1,5 @@
 import {
+  ArrowClockwiseIcon,
   ChatsCircleIcon,
   ClockCounterClockwiseIcon,
   GearSixIcon,
@@ -113,7 +114,8 @@ export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
   const [diagnostics, setDiagnostics] = useState<DiagnosticsDto | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [streamState, setStreamState] = useState<"connected" | "reconnecting">("connected");
+  const [streamState, setStreamState] = useState<"connected" | "connecting" | "reconnecting">("connecting");
+  const [streamRevision, setStreamRevision] = useState(0);
   const load = useCallback(async () => {
     try {
       const [interactionPage, health] = await Promise.all([api.listInteractions(), api.diagnostics()]);
@@ -129,6 +131,9 @@ export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
     const refresh = () => void load();
     for (const name of ["avatar.change.confirmed", "joi.message.accepted", "partner.registry.changed", "stream_reset", "work.status.changed"]) stream.addEventListener(name, refresh);
     return () => stream.close();
-  }, [api.origin, load]);
-  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => setSection(key)} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><span className={`stream-indicator ${streamState}`} /><span>{streamState === "connected" ? "已连接" : "重新连接中"}</span><button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main">{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} onNavigate={go} /> : section === "lives" ? <AvatarManager api={api} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} onNavigate={go} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "system" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : <SettingsPanel api={api} diagnostics={diagnostics} />}</main></div>;
+  }, [api.origin, load, streamRevision]);
+  const streamLabel = streamState === "connected" ? "实时状态已连接" : streamState === "connecting" ? "正在连接实时状态" : "实时状态暂时断开";
+  const streamHint = streamState === "reconnecting" ? "页面仍可使用，可以手动重连状态更新。" : "joi 会自动接收最新状态。";
+  const reconnectStream = () => { setStreamState("connecting"); setStreamRevision((current) => current + 1); };
+  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => setSection(key)} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={streamHint}>{streamLabel}</span></div>{streamState === "reconnecting" ? <button aria-label="重新连接状态更新" className="icon-button stream-retry" onClick={reconnectStream} title="重新连接状态更新" type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}<button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main">{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} onNavigate={go} /> : section === "lives" ? <AvatarManager api={api} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} onNavigate={go} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "system" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : <SettingsPanel api={api} diagnostics={diagnostics} />}</main></div>;
 }

@@ -51,6 +51,14 @@ export class JoiInboxService {
     if (record === null) throw new DomainError("joi_clarification_unavailable", "This input is not awaiting clarification.");
     return toDto(record);
   }
+
+  async cancel(input: { inputId: string }): Promise<JoiAcceptedMessageDto> {
+    const inputId = input.inputId.trim();
+    if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
+    const record = await this.dependencies.repository.cancel(inputId);
+    if (record === null) throw new DomainError("joi_cancel_unavailable", "This input is not awaiting a decision and cannot be canceled.");
+    return toDto(record);
+  }
 }
 
 function textPreviewOf(record: JoiInboxRecord): string | undefined {
@@ -65,6 +73,7 @@ function toDto(record: JoiInboxRecord): JoiAcceptedMessageDto {
   return {
     acceptedAt: record.createdAt,
     ...(record.avatarId === undefined ? {} : { avatarId: record.avatarId }),
+    ...(record.canceledAt === undefined ? {} : { canceled: true }),
     ...(record.clarificationReasonCode === undefined ? {} : { clarificationReasonCode: record.clarificationReasonCode }),
     inputId: record.inputId,
     status: record.status,

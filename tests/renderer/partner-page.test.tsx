@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { PartnerPage } from "../../src/renderer/PartnerPage.js";
@@ -360,8 +360,12 @@ describe("partner page", () => {
     expect(screen.queryByLabelText("工作路径")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "高级" }));
-    fireEvent.click(await screen.findByText("read"));
-    fireEvent.click(screen.getByText("read"));
+    const toolChoices = await screen.findByRole("group", { name: "工具白名单" });
+    expect(toolChoices).toHaveClass("tool-choice-grid");
+    const readChoice = within(toolChoices).getByText("read").closest("label");
+    expect(readChoice).toHaveClass("tool-choice");
+    fireEvent.click(within(toolChoices).getByText("read"));
+    fireEvent.click(within(toolChoices).getByText("read"));
     fireEvent.click(screen.getByRole("button", { name: "管理大模型网络" }));
     expect(manage).toHaveBeenCalledOnce();
   });
