@@ -3,7 +3,7 @@ import { DomainError } from "../errors.js";
 export const MODEL_SOURCE_STATUSES = ["DRAFT", "VALIDATING", "READY", "DEGRADED", "NEEDS_AUTH", "DISABLED"] as const;
 export type ModelSourceStatus = (typeof MODEL_SOURCE_STATUSES)[number];
 export type ModelSourceKind = "kimi" | "glm" | "qwen" | "doubao" | "minimax" | "deepseek" | "generic-openai";
-export type ModelSourceAccessMode = "api" | "coding-plan" | "custom";
+export type ModelSourceAccessMode = "api" | "coding-plan" | "token-plan" | "custom";
 export type ModelSourceProtocol = "openai" | "anthropic";
 export type ModelCapability = "release-tested" | "custom-unverified-tools";
 export type SourceFailureKind =

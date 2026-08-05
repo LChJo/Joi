@@ -18,12 +18,16 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("HITL");
     expect(prompt).toContain("Agent-Brief skeleton");
     expect(prompt).toContain("out-of-scope");
-    expect(prompt).toContain("model.list_sources");
+    expect(prompt).toContain("model_list_sources");
     expect(prompt).toContain("pi-core engine");
     expect(prompt).toContain("sessionPolicy ephemeral");
     expect(prompt).toContain("Claim before work");
     expect(prompt).toContain("working-memory digest");
     expect(prompt).toContain("one opinionated answer");
+    expect(prompt).toContain("Team-building requests are AFK-direct");
+    expect(prompt).toContain("concrete options");
+    expect(prompt).toContain("turn_complete");
+    expect(prompt).toContain("Every Turn that uses a tool");
     expect(prompt).toContain("Avatar: Rex");
     expect(prompt).toContain("PERSONA_SENTINEL");
     expect(prompt).toContain("SCOPE_SENTINEL");

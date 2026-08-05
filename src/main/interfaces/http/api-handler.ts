@@ -15,19 +15,21 @@ import type { AvatarRegistryService } from "../../application/joi/avatar-registr
 import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
 import type { AvatarManagementService } from "../../application/joi/avatar-management-service.js";
 import type { AvatarWorkspaceService } from "../../application/joi/avatar-workspace-service.js";
+import type { JoiHomeFeedService } from "../../application/joi/joi-home-feed-service.js";
+import type { AvatarAgentService } from "../../application/partners/avatar-agent-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { PartnerKnowledgeService } from "../../application/partners/partner-knowledge-service.js";
 import type { PartnerEngineCatalog } from "../../application/partners/partner-engine-catalog.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
-import type { PartnerSkillCatalog } from "../../application/ports/partner-skills.js";
+import type { PartnerSkillCatalog, PartnerSkillOption } from "../../application/ports/partner-skills.js";
 import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
 import type { SseService } from "../../application/sse/sse-service.js";
 import type { BudgetService } from "../../application/rhythm/budget-service.js";
 import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
 import type { ArtifactReadPort, JoiAttachmentPort, UserAttachmentPort } from "../../application/ports/managed-file-ports.js";
 import type { WorkQuery } from "../../application/ports/work-orchestration.js";
-import { BUILTIN_SCENARIOS, type JoiActivityDto, type PartnerEngineDto } from "../../../shared/joi.js";
+import { BUILTIN_SCENARIOS, type JoiActivityDto, type PartnerEngineDto, type ScenarioDto } from "../../../shared/joi.js";
 
 const SESSION_COOKIE = "digital_life_session";
 const MAX_BODY_BYTES = 1024 * 1024;
@@ -41,6 +43,7 @@ export interface ApiDependencies {
   avatarRegistry?: Pick<AvatarRegistryService, "create">;
   avatarManagement?: Pick<AvatarManagementService, "get" | "update">;
   avatarWorkspaces?: Pick<AvatarWorkspaceService, "bindExisting" | "rebuildManaged">;
+  avatarAgents?: Pick<AvatarAgentService, "conversation" | "dismiss" | "list">;
   avatarChanges?: Pick<AvatarChangeService, "decide" | "listPending">;
   avatars?: AvatarCatalog;
   auth: AuthService;
@@ -49,7 +52,8 @@ export interface ApiDependencies {
   events?: EventService;
   globalEmergencyStop?: () => Promise<void>;
   interactions?: InteractionService;
-  joiInbox?: Pick<JoiInboxService, "accept" | "cancel" | "clarify" | "list">;
+  joiInbox?: Pick<JoiInboxService, "accept" | "cancel" | "clarify" | "dismiss" | "list">;
+  joiHomeFeed?: Pick<JoiHomeFeedService, "load">;
   joiActivity?: { listActivity(limit?: number): Promise<JoiActivityDto[]> };
   joiAttachments?: JoiAttachmentPort;
   engines?: Pick<PartnerEngineCatalog, "assertAvailable" | "list">;
@@ -176,6 +180,16 @@ function avatarChangeService(dependencies: ApiDependencies): NonNullable<ApiDepe
   return dependencies.avatarChanges;
 }
 
+function avatarAgentService(dependencies: ApiDependencies): NonNullable<ApiDependencies["avatarAgents"]> {
+  if (dependencies.avatarAgents === undefined) throw new HttpError("avatar_agent_runtime_unavailable", "Avatar Agent runtime is unavailable.", 503);
+  return dependencies.avatarAgents;
+}
+
+function joiHomeFeedService(dependencies: ApiDependencies): NonNullable<ApiDependencies["joiHomeFeed"]> {
+  if (dependencies.joiHomeFeed === undefined) throw new HttpError("joi_home_feed_unavailable", "joi home feed is unavailable.", 503);
+  return dependencies.joiHomeFeed;
+}
+
 function artifactDisposition(filename: string, mode: "attachment" | "inline"): string {
   const fallback = filename.replace(/[^A-Za-z0-9._-]/g, "_").slice(0, 160) || "artifact";
   return `${mode}; filename="${fallback}"; filename*=UTF-8''${encodeURIComponent(filename)}`;
@@ -273,6 +287,27 @@ function optionalStringArray(body: Record<string, unknown>, key: string): string
   return value as string[];
 }
 
+function buildScenarioList(skills: PartnerSkillOption[]): ScenarioDto[] {
+  const skillScenarios = skills
+    .slice()
+    .sort((left, right) => (right.modifiedAt ?? 0) - (left.modifiedAt ?? 0))
+    .slice(0, 6)
+    .map((skill) => ({
+      blurb: skill.description === undefined ? "围绕这个能力组建搭档团队" : (skill.description.length > 48 ? `${skill.description.slice(0, 48)}…` : skill.description),
+      id: `skill:${skill.id}`,
+      prompt: `我想围绕能力「${skill.displayName}」（${skill.id}）组建能运用它的搭档团队：请创建合适的本机搭档并把该技能挂给它（pi-core 引擎，必要时挑选合适的 READY 模型源）；本轮只组建团队，不必执行具体任务。`,
+      roles: [{
+        id: "primary",
+        prompt: `你是一位围绕能力「${skill.displayName}」（${skill.id}）开展工作的搭档。DO：接到相关工作时先读取并遵循该技能的说明，再完成行为并交付结果。验收标准：交付物体现该技能的关键约束，且可被独立验证。范围外：不做与该技能无关的工作、不修改技能本身。`,
+        skills: [skill.id],
+        title: `${skill.displayName} 搭档`,
+      }],
+      source: "skill" as const,
+      title: skill.displayName,
+    }));
+  return [...BUILTIN_SCENARIOS, ...skillScenarios];
+}
+
 function integerField(body: Record<string, unknown>, key: string): number {
   const value = body[key];
   if (!Number.isInteger(value)) throw new HttpError("request_field_invalid", `${key} must be an integer.`, 400);
@@ -307,8 +342,8 @@ function encodeCursor(sequence: number): string {
   return `sse_${Buffer.from(String(sequence)).toString("base64url")}`;
 }
 
-function decodeCursor(cursor: string | null): number {
-  if (cursor === null || cursor === "") return 0;
+function decodeCursor(cursor: string | null | undefined): number {
+  if (cursor === null || cursor === undefined || cursor === "") return 0;
   if (!cursor.startsWith("sse_")) throw new HttpError("stream_cursor_invalid", "SSE cursor is invalid.", 400);
   const decoded = Buffer.from(cursor.slice(4), "base64url").toString("utf8");
   if (!/^\d+$/.test(decoded)) throw new HttpError("stream_cursor_invalid", "SSE cursor is invalid.", 400);
@@ -327,7 +362,8 @@ function errorDetails(error: unknown, requestId: string): { body: ApiErrorBody; 
     return { body: { code: error.code, message: error.message, requestId }, status: error.status };
   }
   if (error instanceof Error && "code" in error && typeof error.code === "string") {
-    const status = error.code.endsWith("_not_found") ? 404 : error.code === "avatar_workspace_busy" ? 409 : 400;
+    const conflictCodes = ["avatar_workspace_busy", "avatar_agent_resident_delete_forbidden", "avatar_agent_not_terminal"];
+    const status = error.code.endsWith("_not_found") ? 404 : conflictCodes.includes(error.code) ? 409 : 400;
     return { body: { code: error.code, message: error.message, requestId }, status };
   }
   return { body: { code: "internal_error", message: "The request could not be completed.", requestId }, status: 500 };
@@ -527,6 +563,10 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         sendJson(response, 200, { items: await dependencies.joiActivity.listActivity(100) });
         return;
       }
+      if (method === "GET" && pathname === "/api/v1/joi/home-feed") {
+        sendJson(response, 200, await joiHomeFeedService(dependencies).load());
+        return;
+      }
       if (method === "GET" && pathname === "/api/v1/work") {
         sendJson(response, 200, { items: dependencies.work === undefined ? [] : await dependencies.work.listActive() });
         return;
@@ -549,23 +589,75 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         throw new HttpError("absolute_path_response_forbidden", "Directory selection is scoped to an Avatar workspace operation.", 410);
       }
       if (method === "GET" && pathname === "/api/v1/scenarios") {
-        const skillScenarios = (dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code"))
-          .slice()
-          .sort((left, right) => (right.modifiedAt ?? 0) - (left.modifiedAt ?? 0))
-          .slice(0, 6)
-          .map((skill) => ({
-            blurb: skill.description === undefined ? "围绕这个能力组建搭档团队" : (skill.description.length > 48 ? `${skill.description.slice(0, 48)}…` : skill.description),
-            id: `skill:${skill.id}`,
-            prompt: `我想围绕能力「${skill.displayName}」（${skill.id}）组建能运用它的搭档团队：请创建合适的本机搭档并把该技能挂给它（pi-core 引擎，必要时挑选合适的 READY 模型源）；本轮只组建团队，不必执行具体任务。`,
-            source: "skill" as const,
-            title: skill.displayName,
+        sendJson(response, 200, { items: buildScenarioList(dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code")) });
+        return;
+      }
+      const scenarioPartnersMatch = /^\/api\/v1\/scenarios\/([^/]+)\/partners$/.exec(pathname);
+      if (method === "POST" && scenarioPartnersMatch !== null) {
+        await verifyWrite(dependencies, request);
+        const scenarios = buildScenarioList(dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code"));
+        const scenario = scenarios.find((item) => item.id === decodeURIComponent(scenarioPartnersMatch[1] ?? ""));
+        if (scenario === undefined) throw new HttpError("scenario_not_found", "Scenario was not found.", 404);
+        const body = await readJson(request);
+        const requested = optionalStringArray(body, "roleIds");
+        const roles = scenario.roles ?? [];
+        const chosen = requested === undefined ? roles : roles.filter((role) => requested.includes(role.id));
+        if (requested !== undefined && (chosen.length === 0 || chosen.length !== requested.length)) {
+          throw new HttpError("scenario_role_invalid", "Scenario roles are invalid.", 400);
+        }
+        const items = [];
+        for (const role of chosen) {
+          items.push(await partnerRegistryService(dependencies).add({
+            capabilities: [],
+            ...(role.blurb === undefined ? {} : { description: role.blurb }),
+            displayName: role.title,
+            kind: "local-pi",
+            prompt: role.prompt,
+            skills: role.skills ?? [],
+            tools: [],
           }));
-        sendJson(response, 200, { items: [...BUILTIN_SCENARIOS, ...skillScenarios] });
+        }
+        sendJson(response, 201, { items });
         return;
       }
       if (method === "GET" && pathname === "/api/v1/avatars") {
         if (dependencies.avatars === undefined) throw new HttpError("avatar_catalog_unavailable", "Avatar catalog is unavailable.", 503);
         sendJson(response, 200, { items: await dependencies.avatars.listSummaries() });
+        return;
+      }
+      const avatarAgentsMatch = /^\/api\/v1\/avatars\/([^/]+)\/agents$/.exec(pathname);
+      if (avatarAgentsMatch !== null && method === "GET") {
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        const goalId = url.searchParams.get("goalId") ?? undefined;
+        const requestedLimit = Number(url.searchParams.get("limit") ?? "50");
+        sendJson(response, 200, await avatarAgentService(dependencies).list({
+          avatarId: decodeURIComponent(avatarAgentsMatch[1] ?? ""),
+          ...(cursor === undefined ? {} : { cursor }),
+          ...(goalId === undefined ? {} : { goalId }),
+          limit: Number.isFinite(requestedLimit) ? requestedLimit : 50,
+        }));
+        return;
+      }
+      const avatarAgentConversationMatch = /^\/api\/v1\/avatars\/([^/]+)\/agents\/([^/]+)\/conversation$/.exec(pathname);
+      if (avatarAgentConversationMatch !== null && method === "GET") {
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        const requestedLimit = Number(url.searchParams.get("limit") ?? "50");
+        sendJson(response, 200, await avatarAgentService(dependencies).conversation({
+          agentId: decodeURIComponent(avatarAgentConversationMatch[2] ?? ""),
+          avatarId: decodeURIComponent(avatarAgentConversationMatch[1] ?? ""),
+          ...(cursor === undefined ? {} : { cursor }),
+          limit: Number.isFinite(requestedLimit) ? requestedLimit : 50,
+        }));
+        return;
+      }
+      const avatarAgentMatch = /^\/api\/v1\/avatars\/([^/]+)\/agents\/([^/]+)$/.exec(pathname);
+      if (avatarAgentMatch !== null && method === "DELETE") {
+        await verifyWrite(dependencies, request);
+        await avatarAgentService(dependencies).dismiss({
+          agentId: decodeURIComponent(avatarAgentMatch[2] ?? ""),
+          avatarId: decodeURIComponent(avatarAgentMatch[1] ?? ""),
+        });
+        sendEmpty(response, 204);
         return;
       }
       const avatarMatch = /^\/api\/v1\/avatars\/([^/]+)$/.exec(pathname);
@@ -748,6 +840,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         const body = await readJson(request);
         const accepted = await joiInboxService(dependencies).accept({
           attachmentIds: optionalStringArray(body, "attachmentIds") ?? [],
+          ...(typeof body.avatarId === "string" ? { avatarId: body.avatarId } : {}),
           idempotencyKey,
           text: stringField(body, "text"),
         });
@@ -777,6 +870,15 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         sendJson(response, 200, canceled);
         return;
       }
+      const joiDismissMatch = /^\/api\/v1\/joi\/messages\/([^/]+)\/dismiss$/.exec(pathname);
+      if (method === "POST" && joiDismissMatch !== null) {
+        await verifyWrite(dependencies, request);
+        const dismissed = await joiInboxService(dependencies).dismiss({
+          inputId: decodeURIComponent(joiDismissMatch[1] ?? ""),
+        });
+        sendJson(response, 200, dismissed);
+        return;
+      }
       if (method === "POST" && pathname === "/api/v1/joi/attachments") {
         await verifyWrite(dependencies, request);
         if (dependencies.joiAttachments === undefined) throw new HttpError("joi_attachment_service_unavailable", "joi attachment storage is unavailable.", 503);
@@ -796,7 +898,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
           throw new HttpError("model_source_kind_invalid", "Model source kind is invalid.", 400);
         }
         const accessMode = typeof body.accessMode === "string" ? body.accessMode : undefined;
-        if (accessMode !== undefined && !["api", "coding-plan", "custom"].includes(accessMode)) {
+        if (accessMode !== undefined && !["api", "coding-plan", "token-plan", "custom"].includes(accessMode)) {
           throw new HttpError("model_source_access_mode_invalid", "Model source access mode is invalid.", 400);
         }
         const protocol = typeof body.protocol === "string" ? body.protocol : undefined;
@@ -804,7 +906,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
           throw new HttpError("model_source_protocol_invalid", "Model source protocol is invalid.", 400);
         }
         const source = await modelSourceService(dependencies).create({
-          ...(accessMode === undefined ? {} : { accessMode: accessMode as "api" | "coding-plan" | "custom" }),
+          ...(accessMode === undefined ? {} : { accessMode: accessMode as "api" | "coding-plan" | "token-plan" | "custom" }),
           apiKey: stringField(body, "apiKey"),
           kind: kind as Parameters<ModelSourceService["create"]>[0]["kind"],
           ...(typeof body.baseUrl === "string" ? { baseUrl: body.baseUrl } : {}),

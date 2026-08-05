@@ -1,5 +1,6 @@
 import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "./partner-execution.js";
+import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 
 export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
 export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE";
@@ -50,6 +51,7 @@ export interface ResidentTurnInput {
 }
 
 export interface ResidentTurnResult {
+  conversation?: AgentConversationDraft[];
   externalRunId: string;
   externalSessionRef?: string;
   messages: unknown[];
@@ -62,7 +64,7 @@ export interface PartnerEngineRuntime {
   engineOf(): PartnerEngine;
   evictFromMemory(instanceId: string): void;
   health(): Promise<{ available: boolean; reason?: string }>;
-  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
+  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
   runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult>;
   /** Selectable native tool names for this engine's whitelist picker. */
   toolOptions(): readonly string[];

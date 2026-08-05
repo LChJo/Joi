@@ -27,14 +27,21 @@ function record(): ModelSourceRecord {
 describe("PiModelSourceValidator", () => {
   it.each([
     [new Error("401 Unauthorized"), "NEEDS_AUTH", "auth_failed"],
-    [new Error("connection refused"), "DEGRADED", "endpoint_unreachable"],
+    [new Error("connection refused"), "DEGRADED", "connection_error"],
     [new Error("model not found"), "DEGRADED", "model_unavailable"],
-  ] as const)("classifies validation failures without a tool-call probe", async (failure, status, reasonCode) => {
+    [new Error("429 Too Many Requests"), "DEGRADED", "rate_limited"],
+    [new Error("500 Internal Server Error"), "DEGRADED", "server_error"],
+    [new Error("404 Not Found"), "DEGRADED", "not_found"],
+    [new Error("400 Bad Request"), "DEGRADED", "bad_request"],
+    [new Error("Connection error."), "DEGRADED", "connection_error"],
+    [new Error("validation probe timed out"), "DEGRADED", "timeout"],
+    [new Error("something completely unexpected"), "DEGRADED", "endpoint_unreachable"],
+  ] as const)("classifies validation failures and preserves the raw error", async (failure, status, reasonCode) => {
     const validator = new PiModelSourceValidator({
       clock: { now: () => new Date("2026-07-28T10:00:30.000Z") },
       probe: async () => { throw failure; },
     });
-    expect(await validator.validate(record())).toEqual({ reasonCode, status, validatedAt: "2026-07-28T10:00:30.000Z" });
+    expect(await validator.validate(record())).toEqual({ error: failure.message, reasonCode, status, validatedAt: "2026-07-28T10:00:30.000Z" });
   });
 
   it("marks a minimal fixed-text probe ready", async () => {

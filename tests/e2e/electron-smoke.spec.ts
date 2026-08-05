@@ -63,7 +63,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 }
 
 test("Electron completes setup, native Avatar creation, and responsive joi-console paths", async () => {
-  test.setTimeout(45_000);
+  test.setTimeout(60_000);
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
 
   try {
@@ -82,7 +82,9 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
 
     seedReadyAgent(userDataDirectory);
     await window.reload();
-    await expect(window.getByRole("heading", { name: "现在想让 joi 做什么？" })).toBeVisible();
+    const joiHomeTitle = window.getByRole("heading", { name: "现在想让 joi 做什么？" });
+    await expect(joiHomeTitle).toBeVisible();
+    expect((await joiHomeTitle.boundingBox())?.y).toBeGreaterThanOrEqual(16);
 
     await window.setViewportSize({ height: 760, width: 960 });
     await window.getByRole("button", { exact: true, name: "设置" }).click();
@@ -92,6 +94,15 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-model-source-960.png") });
+
+    await window.getByRole("button", { name: "添加网络" }).click();
+    const embeddedNetworkTitle = window.getByRole("heading", { name: "joi需要链接到大模型网络" });
+    await expect(embeddedNetworkTitle).toBeVisible();
+    const embeddedNetworkTitleBox = await embeddedNetworkTitle.boundingBox();
+    expect(embeddedNetworkTitleBox?.width).toBeGreaterThan(400);
+    expect(embeddedNetworkTitleBox?.height).toBeLessThan(80);
+    await expectNoHorizontalOverflow(window);
+    await window.screenshot({ path: path.resolve("test-results/e2e-model-source-setup-960.png") });
 
     await window.getByRole("button", { exact: true, name: "搭档" }).click();
     await expect(window.getByText("Mana E2E")).toBeVisible();
@@ -114,10 +125,23 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
     await expect(window.getByText("栖光")).toBeVisible();
     await expectNoHorizontalOverflow(window);
 
+    await window.getByRole("button", { exact: true, name: "joi" }).click();
+    const composer = window.locator(".joi-composer");
+    await expect(composer).toBeVisible();
+    await expect(window.getByRole("button", { name: "joi 自主分发" })).toBeVisible();
+    const composerBox = await composer.boundingBox();
+    expect(composerBox).not.toBeNull();
+    expect(760 - ((composerBox?.y ?? 0) + (composerBox?.height ?? 0))).toBeLessThanOrEqual(20);
+    await window.screenshot({ path: path.resolve("test-results/e2e-joi-composer-960.png") });
+
     await window.getByRole("button", { exact: true, name: "Avatar" }).click();
     await window.setViewportSize({ height: 900, width: 768 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(768);
-    await expect(window.getByRole("heading", { name: "Avatar 上下文中心" })).toBeVisible();
+    await expect(window.getByRole("heading", { exact: true, name: "Avatar" })).toBeVisible();
+    await window.getByRole("button", { name: /栖光/u }).click();
+    await expect(window.getByRole("heading", { name: "栖光" })).toBeVisible();
+    await expect(window.getByRole("tab", { name: /Agent/u })).toHaveAttribute("aria-selected", "true");
+    await expect(window.getByRole("heading", { name: "还没有 Agent" })).toBeVisible();
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-console-768.png") });

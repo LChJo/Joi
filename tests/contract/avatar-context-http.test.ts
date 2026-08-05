@@ -66,9 +66,15 @@ describe("Avatar context HTTP API", () => {
 
       fixture.database.transaction((connection) => {
         const now = fixture.clock.now().toISOString();
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+          VALUES ('input-busy', 'key-busy', '正在写文件', 'ROUTED', ?, ?, ?)`).run(avatar.avatarId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-busy', 'input-busy', ?, 'session-busy', 'RUNNING', ?, ?)`).run(avatar.avatarId, now, now);
         connection.prepare(`INSERT INTO work_items
-          (work_id, avatar_id, title, intent_json, access_mode, status, created_at, updated_at)
-          VALUES ('work-busy', ?, '正在写文件', '{}', 'READ', 'RUNNING', ?, ?)`).run(avatar.avatarId, now, now);
+          (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-busy', ?, 'input-busy', '正在写文件', '{}', 'READ', 'RUNNING', ?, ?)`).run(avatar.avatarId, now, now);
         connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES ('work-busy', 'READ')").run();
       });
       const rejected = await fetch(`${detailUrl}/workspace/rebuild`, { headers, method: "POST" });

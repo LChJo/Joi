@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners";
-import type { ScenarioDto } from "../../src/shared/joi";
+import type { PartnerDto, ScenarioDto } from "../../src/shared/joi";
 import { createRuntimeFixture } from "../support/runtime-fixture";
 
 function cookieFrom(response: Response) {
@@ -52,6 +52,16 @@ describe("scenarios HTTP API", () => {
       const firstItems = (await builtinOnly.json() as { items: ScenarioDto[] }).items;
       expect(firstItems.some((item) => item.id === "plan-big-goal" && item.source === "builtin")).toBe(true);
       expect(firstItems.every((item) => item.source === "builtin")).toBe(true);
+      const builtins = firstItems.filter((item) => item.source === "builtin");
+      expect(builtins).toHaveLength(6);
+      for (const item of builtins) {
+        expect(item.roles?.length ?? 0).toBeGreaterThanOrEqual(2);
+        for (const role of item.roles ?? []) {
+          expect(role.id.length).toBeGreaterThan(0);
+          expect(role.title.length).toBeGreaterThan(0);
+          expect(role.prompt.length).toBeGreaterThan(0);
+        }
+      }
 
       const skillDir = join(claudeDir, "demo-skill");
       mkdirSync(skillDir, { recursive: true });
@@ -61,6 +71,7 @@ describe("scenarios HTTP API", () => {
       const skillScenario = secondItems.find((item) => item.source === "skill");
       expect(skillScenario).toMatchObject({ id: "skill:claude-code/demo-skill", source: "skill", title: "演示技能" });
       expect(skillScenario?.prompt).toContain("演示技能");
+      expect(skillScenario?.roles).toEqual([expect.objectContaining({ skills: ["claude-code/demo-skill"] })]);
     } finally {
       await session.close();
       if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;
@@ -93,6 +104,73 @@ describe("scenarios HTTP API", () => {
       expect(skillItems).toHaveLength(6);
       expect(skillItems.some((item) => item.title === "技能 7")).toBe(true);
       expect(skillItems.some((item) => item.title === "技能 1")).toBe(false);
+    } finally {
+      await session.close();
+      if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;
+      if (previousCodex === undefined) delete process.env.JOI_CODEX_SKILLS_DIR; else process.env.JOI_CODEX_SKILLS_DIR = previousCodex;
+      if (previousAgents === undefined) delete process.env.JOI_AGENTS_SKILLS_DIR; else process.env.JOI_AGENTS_SKILLS_DIR = previousAgents;
+    }
+  });
+
+  it("creates partners deterministically from a scenario's selected roles", async () => {
+    const session = await createSession();
+    try {
+      const list = (await (await fetch(`${session.url}/api/v1/scenarios`, { headers: session.headers })).json() as { items: ScenarioDto[] }).items;
+      const review = list.find((item) => item.id === "review-code");
+      const firstRoleId = review?.roles?.[0]?.id ?? "missing";
+
+      const all = await fetch(`${session.url}/api/v1/scenarios/review-code/partners`, { body: JSON.stringify({}), headers: session.headers, method: "POST" });
+      expect(all.status).toBe(201);
+      const allItems = (await all.json() as { items: PartnerDto[] }).items;
+      expect(allItems).toHaveLength(review?.roles?.length ?? 0);
+      expect(allItems.every((item) => item.createdBy === "user" && item.engine === "pi-core" && item.kind === "local-pi")).toBe(true);
+
+      const subset = await fetch(`${session.url}/api/v1/scenarios/review-code/partners`, { body: JSON.stringify({ roleIds: [firstRoleId] }), headers: session.headers, method: "POST" });
+      expect(subset.status).toBe(201);
+      const subsetItems = (await subset.json() as { items: PartnerDto[] }).items;
+      expect(subsetItems).toHaveLength(1);
+      expect(subsetItems[0]?.displayName).toBe(review?.roles?.[0]?.title);
+
+      const badRole = await fetch(`${session.url}/api/v1/scenarios/review-code/partners`, { body: JSON.stringify({ roleIds: ["nope"] }), headers: session.headers, method: "POST" });
+      expect(badRole.status).toBe(400);
+      expect(await badRole.json()).toMatchObject({ code: "scenario_role_invalid" });
+
+      const missing = await fetch(`${session.url}/api/v1/scenarios/unknown-scenario/partners`, { body: JSON.stringify({}), headers: session.headers, method: "POST" });
+      expect(missing.status).toBe(404);
+      expect(await missing.json()).toMatchObject({ code: "scenario_not_found" });
+
+      const unauth = await fetch(`${session.url}/api/v1/scenarios/review-code/partners`, {
+        body: JSON.stringify({}),
+        headers: { "content-type": "application/json", origin: "null" },
+        method: "POST",
+      });
+      expect(unauth.status).toBe(401);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("attaches the scanned skill to the partner created from a skill scenario", async () => {
+    const claudeDir = mkdtempSync(join(tmpdir(), "joi-scenario-create-"));
+    const emptyCodex = mkdtempSync(join(tmpdir(), "joi-scenario-create-codex-"));
+    const emptyAgents = mkdtempSync(join(tmpdir(), "joi-scenario-create-agents-"));
+    const previousAgents = process.env.JOI_AGENTS_SKILLS_DIR;
+    const previousClaude = process.env.JOI_CLAUDE_SKILLS_DIR;
+    const previousCodex = process.env.JOI_CODEX_SKILLS_DIR;
+    process.env.JOI_CLAUDE_SKILLS_DIR = claudeDir;
+    process.env.JOI_CODEX_SKILLS_DIR = emptyCodex;
+    process.env.JOI_AGENTS_SKILLS_DIR = emptyAgents;
+    const skillDir = join(claudeDir, "demo-skill");
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: demo-skill\ndisplay_name: 演示技能\n---\n# Demo\nbody\n");
+    const session = await createSession();
+    try {
+      const response = await fetch(`${session.url}/api/v1/scenarios/${encodeURIComponent("skill:claude-code/demo-skill")}/partners`, { body: JSON.stringify({}), headers: session.headers, method: "POST" });
+      expect(response.status).toBe(201);
+      const items = (await response.json() as { items: PartnerDto[] }).items;
+      expect(items).toHaveLength(1);
+      expect(items[0]?.skills).toEqual(["claude-code/demo-skill"]);
+      expect(items[0]?.displayName).toContain("演示技能");
     } finally {
       await session.close();
       if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;

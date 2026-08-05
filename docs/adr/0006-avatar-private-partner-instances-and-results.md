@@ -18,7 +18,7 @@ Work 权限为 `NONE | READ | WRITE`。`NONE` 不申请工作区 lease，可派�
 
 每次派发前创建受控 `AvatarContextSnapshot`，只包含档案元数据、人格 revision 引用、工程标签、当前/活跃工作、最近结果摘要、记忆摘要引用和 opaque workspace ref。persona、记忆正文、结果正文和绝对路径不得进入 shared DTO、日志、SSE、outbox 或 A2A payload；本机引擎仅通过基础设施 resolver 得到 cwd。
 
-引擎统一返回终态、正文和 artifact 元数据。结果事务固定写入：`WorkResult` 事实与受限正文 → Work 状态 → Avatar task projection → 持久事件。事务提交后才发布 SSE、写 joi inbox 和调度。inbox 只含 `resultId/status/有界摘要`；joi 仅能用 `work.read_result(resultId, cursor?)` 在当前 Avatar 内分页读取正文。迟到结果仍归档，但不能重开已取消 Work 或自动进入 joi 整合。
+引擎统一返回终态、正文和 artifact 元数据。结果事务固定写入：`WorkResult` 事实与受限正文 → Work 状态 → Avatar task projection → 持久事件。事务提交后才发布 SSE、写 joi inbox 和调度。inbox 只含 `resultId/status/有界摘要`；joi 仅能用 `work_read_result(resultId, cursor?)` 在当前 Avatar 内分页读取正文。迟到结果仍归档，但不能重开已取消 Work 或自动进入 joi 整合。
 
 ## 迁移与后果
 

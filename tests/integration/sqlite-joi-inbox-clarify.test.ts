@@ -51,4 +51,25 @@ describe("sqlite joi inbox clarify", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("persists the question and does not consume an input that is waiting for an answer", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-question-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const repository = new SqliteJoiInboxRepository(database);
+      const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-question", text: "请规划发布" });
+      await repository.requireClarification(accepted.inputId, "question_required", "生产发布时间是什么时候？");
+      await repository.completeInput(accepted.inputId, "turn-question");
+
+      expect((await inbox.list()).find((item) => item.inputId === accepted.inputId)).toMatchObject({
+        clarificationPrompt: "生产发布时间是什么时候？",
+        clarificationReasonCode: "question_required",
+        status: "CLARIFICATION_REQUIRED",
+      });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

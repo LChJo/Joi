@@ -45,6 +45,15 @@ class FakeInboxRepository implements JoiInboxRepository {
     return next;
   }
 
+  async dismiss(inputId: string): Promise<JoiInboxRecord | null> {
+    const record = this.records.get(inputId);
+    if (record === undefined) return null;
+    if (record.status !== "CONSUMED" || record.dismissedAt !== undefined) return null;
+    const next: JoiInboxRecord = { ...record, dismissedAt: "2026-08-01T00:00:03.000Z", updatedAt: "2026-08-01T00:00:03.000Z" };
+    this.records.set(inputId, next);
+    return next;
+  }
+
   async list(): Promise<JoiInboxRecord[]> {
     return [...this.records.values()];
   }
@@ -61,13 +70,34 @@ function record(over: Partial<JoiInboxRecord> & { inputId: string }): JoiInboxRe
   };
 }
 
-function serviceWith(repository: JoiInboxRepository) {
+function serviceWith(repository: JoiInboxRepository, diagnostics: { event: string; fields: Record<string, unknown> }[] = []) {
   return new JoiInboxService({
     clock: { now: () => new Date("2026-08-01T00:00:00.000Z") },
+    diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
     ids: { next: (prefix: string) => `${prefix}-1` },
     repository,
   });
 }
+
+describe("JoiInboxService.accept", () => {
+  it("logs only persisted input identity and safe counts", async () => {
+    const repository = new FakeInboxRepository();
+    const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
+    await serviceWith(repository, diagnostics).accept({
+      attachmentIds: ["attachment-1"],
+      avatarId: "avatar-1",
+      idempotencyKey: "request-1",
+      text: "PRIVATE STOCK REQUEST",
+    });
+
+    expect(diagnostics).toEqual([{
+      event: "joi.input.accepted",
+      fields: { attachmentCount: 1, avatarBound: true, inputId: "input-1" },
+    }]);
+    expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE STOCK REQUEST");
+    expect(JSON.stringify(diagnostics)).not.toContain("request-1");
+  });
+});
 
 describe("JoiInboxService.clarify", () => {
   it("rejects empty, oversized and missing-input clarifications", async () => {
@@ -130,5 +160,26 @@ describe("JoiInboxService.cancel", () => {
     repository.records.set("pending-1", record({ inputId: "pending-1", status: "PENDING" }));
     const dto = await serviceWith(repository).cancel({ inputId: "pending-1" });
     expect(dto).toMatchObject({ canceled: true, status: "CONSUMED" });
+  });
+});
+
+describe("JoiInboxService.dismiss", () => {
+  it("rejects blank and oversized ids and inputs that are not terminal", async () => {
+    const repository = new FakeInboxRepository();
+    const service = serviceWith(repository);
+    await expect(service.dismiss({ inputId: "   " })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.dismiss({ inputId: "x".repeat(161) })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.dismiss({ inputId: "missing" })).rejects.toMatchObject({ code: "joi_dismiss_unavailable" });
+    repository.records.set("pending-1", record({ inputId: "pending-1", status: "PENDING" }));
+    await expect(service.dismiss({ inputId: "pending-1" })).rejects.toMatchObject({ code: "joi_dismiss_unavailable" });
+  });
+
+  it("dismisses a canceled input once and keeps the cancel marker in the dto", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("done-1", record({ canceledAt: "2026-08-01T00:00:02.000Z", inputId: "done-1", status: "CONSUMED" }));
+    const service = serviceWith(repository);
+    const dto = await service.dismiss({ inputId: "done-1" });
+    expect(dto).toMatchObject({ canceled: true, inputId: "done-1", status: "CONSUMED" });
+    await expect(service.dismiss({ inputId: "done-1" })).rejects.toMatchObject({ code: "joi_dismiss_unavailable" });
   });
 });

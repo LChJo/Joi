@@ -32,6 +32,8 @@ describe("JOI-01 target architecture documentation", () => {
     expect(ux).toContain("Kimi、GLM、Qwen、Doubao、MiniMax、DeepSeek、通用平台");
     expect(ux).toContain("厂商 → 接入方案");
     expect(ux).toContain("Coding Plan");
+    expect(ux).toContain("百炼 Token Plan");
+    expect(ux).toContain("token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic");
     expect(ux).toContain("OpenAI-compatible");
     expect(ux).toContain("Anthropic-compatible");
     expect(ux).toContain("不支持 OpenAI Responses");

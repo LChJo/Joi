@@ -43,13 +43,27 @@ describe("SQLite work plan outbox", () => {
       const service = new WorkOrchestrationService({
         clock, ids, partners, policy: { evaluate: () => Promise.resolve({ allowed: true }) }, repository,
       });
-      await service.plan({ avatarId: "avatar-1", dependencies: [], turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: partner.partnerId, title: "写入" }] });
+      await service.plan({ avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{
+        acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+        accessMode: "WRITE", instructions: "写入精确文本", key: "write", partnerId: partner.partnerId, title: "写入",
+      }] });
       const facts = database.transaction((connection) => ({
         attempts: connection.prepare("SELECT action_id, outbox_id, partner_revision_id, registry_revision FROM dispatch_attempts").all(),
         outbox: connection.prepare("SELECT kind, payload_json, status FROM outbox WHERE kind = 'partner.dispatch'").all(),
-        work: connection.prepare("SELECT avatar_id, status FROM work_items").all(),
+        work: connection.prepare("SELECT avatar_id, input_id, intent_json, status FROM work_items").all(),
       }));
-      expect(facts.work).toEqual([{ avatar_id: "avatar-1", status: "PLANNED" }]);
+      expect(facts.work).toEqual([{
+        avatar_id: "avatar-1", input_id: "input-1",
+        intent_json: JSON.stringify({
+          acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+          instructions: "写入精确文本",
+        }),
+        status: "PLANNED",
+      }]);
+      expect(() => database.transaction((connection) => connection.prepare(`INSERT INTO work_items
+        (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-invalid', 'avatar-1', NULL, 'invalid', '{}', 'READ', 'PLANNED', ?, ?)`)
+        .run(clock.now().toISOString(), clock.now().toISOString()))).toThrow();
       expect(facts.attempts).toEqual([expect.objectContaining({ partner_revision_id: partner.partnerRevisionId, registry_revision: 1 })]);
       expect(facts.outbox).toEqual([expect.objectContaining({ kind: "partner.dispatch", status: "PENDING" })]);
       const attempt = facts.attempts[0] as { action_id: string };
@@ -60,7 +74,8 @@ describe("SQLite work plan outbox", () => {
       const contexts = new SqliteAvatarContextRepository(database);
       const resultRepository = new SqliteWorkResultRepository(database);
       const privateResultBody = `bounded summary ${"x".repeat(2_000_000)} PRIVATE_RESULT_DETAIL`;
-      let resultInputId: string | undefined;
+      const dispatchRequests: { taskProjection: string }[] = [];
+      let resultInputId: string | null | undefined;
       const handler = new SqliteA2aPartnerDispatchHandler({
         clock,
         contextAssembler: new AvatarContextAssembler({ avatars: new LegacyLifeStoreAdapter(database), clock, ids, projections: contexts, snapshots: contexts }),
@@ -69,18 +84,22 @@ describe("SQLite work plan outbox", () => {
         gateway: { recover: () => Promise.reject(new Error("must not recover")), startWithResult: () => Promise.reject(new Error("must not dispatch")) },
         leases: new SqliteWorkspaceLeaseManager({ clock, database }),
         local: {
-          run: (request, revision) => Promise.resolve({
+          run: (request, revision) => {
+            dispatchRequests.push({ taskProjection: request.taskProjection });
+            return Promise.resolve({
             actionId: request.actionId,
             artifacts: [],
             body: privateResultBody,
             externalRunId: `local:${request.actionId}:${revision.partnerRevisionId}`,
             status: "COMPLETED",
             workId: request.workId,
-          }),
+          });
+          },
         },
         onResult: async (event) => { resultInputId = await inbox.enqueuePartnerResult(event); },
         partners: partnerRepository,
         results: resultRepository,
+        verifier: { verify: () => Promise.resolve({ status: "PASSED" }) },
       });
       await handler.handle({
         attemptCount: 0,
@@ -91,6 +110,9 @@ describe("SQLite work plan outbox", () => {
         payload,
         status: "CLAIMED",
       });
+      expect(dispatchRequests[0]?.taskProjection).toContain("Original user request (authoritative):\nbody");
+      expect(dispatchRequests[0]?.taskProjection).toContain("Additional instructions:\n写入精确文本");
+      expect(dispatchRequests[0]?.taskProjection).toContain("FILE_CONTAINS_EXACT hello.txt = hellow");
       await handler.handle({
         attemptCount: 1,
         availableAt: clock.now().toISOString(),
@@ -134,7 +156,7 @@ describe("SQLite work plan outbox", () => {
         .resolves.toEqual({ body: privateResultBody.slice(0, 16), total: privateResultBody.length });
       expect(database.transaction((connection) => connection.prepare(
         "SELECT input_id FROM partner_result_events",
-      ).get())).toEqual({ input_id: resultInputId });
+      ).get())).toEqual({ input_id: null });
       const signalInputId = await inbox.enqueueSystemSignal({ avatarId: "avatar-1", signalId: "alarm-1", type: "schedule.alarm_due" });
       expect(await inbox.loadInput(signalInputId)).toMatchObject({ avatarId: "avatar-1", status: "PENDING" });
       expect(database.transaction((connection) => connection.prepare("SELECT COUNT(*) AS count FROM workspace_leases").get()))

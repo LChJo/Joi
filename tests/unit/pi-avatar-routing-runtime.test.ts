@@ -5,10 +5,10 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "
 import { PiAvatarRoutingRuntime } from "../../src/main/infrastructure/pi/pi-avatar-routing-runtime.js";
 
 describe("Pi Avatar routing runtime", () => {
-  it("uses a constrained avatar.select tool and returns only its structured arguments", async () => {
+  it("uses a constrained avatar_select tool and returns only its structured arguments", async () => {
     const faux = fauxProvider({ provider: "routing-provider" });
     faux.setResponses([fauxAssistantMessage([
-      fauxToolCall("avatar.select", { action: "select", avatarId: "avatar_research" }),
+      fauxToolCall("avatar_select", { action: "select", avatarId: "avatar_research" }),
     ], { stopReason: "toolUse" })]);
     const models = createModels();
     models.setProvider(faux.provider);
@@ -35,7 +35,7 @@ describe("Pi Avatar routing runtime", () => {
   it("can create the first Avatar and returns null for free text", async () => {
     const faux = fauxProvider({ provider: "routing-text-provider" });
     faux.setResponses([
-      fauxAssistantMessage([fauxToolCall("avatar.create", {
+      fauxAssistantMessage([fauxToolCall("avatar_create", {
         action: "create",
         name: "New work",
         personaSummary: "A focused context",

@@ -8,6 +8,7 @@ export type PrimaryReasoningEvent =
 
 export interface StartReasoningTurnInput {
   avatarId: string;
+  inputId: string;
   modelId: string;
   modelRevisionId: string;
   onEvent?: (event: PrimaryReasoningEvent) => void;

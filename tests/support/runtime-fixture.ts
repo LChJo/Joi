@@ -10,6 +10,8 @@ import { PartnerEngineCatalog } from "../../src/main/application/partners/partne
 import { AvatarRegistryService } from "../../src/main/application/joi/avatar-registry-service";
 import { AvatarManagementService } from "../../src/main/application/joi/avatar-management-service";
 import { AvatarWorkspaceService } from "../../src/main/application/joi/avatar-workspace-service";
+import { JoiHomeFeedService } from "../../src/main/application/joi/joi-home-feed-service";
+import { AvatarAgentService } from "../../src/main/application/partners/avatar-agent-service";
 import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager";
 import { PartnerKnowledgeService } from "../../src/main/application/partners/partner-knowledge-service";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service";
@@ -26,6 +28,8 @@ import { SqlitePartnerWorkMemoryStore } from "../../src/main/infrastructure/pers
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter";
 import { SqliteAvatarManagementRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-management-repository";
 import { SqliteAvatarWorkspaceRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-workspace-repository";
+import { SqliteAvatarAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-agent-repository";
+import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository";
 import {
   InMemoryBootstrapNonceStore,
   LoginRateLimiter,
@@ -57,6 +61,7 @@ export interface RuntimeFixture {
   agents: AgentService;
   auth: AuthService;
   avatarManagement: AvatarManagementService;
+  avatarAgents: AvatarAgentService;
   avatarRegistry: AvatarRegistryService;
   avatarWorkspaces: AvatarWorkspaceService;
   avatars: LegacyLifeStoreAdapter;
@@ -67,6 +72,7 @@ export interface RuntimeFixture {
   engines: PartnerEngineCatalog;
   ids: TestIds;
   instances: PartnerInstanceManager;
+  joiHomeFeed: JoiHomeFeedService;
   knowledge: PartnerKnowledgeService;
   lives: LifeService;
   memory: PartnerWorkMemoryService;
@@ -91,6 +97,8 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   const avatars = new LegacyLifeStoreAdapter(database);
   const avatarRegistry = new AvatarRegistryService({ clock, ids, repository: avatars });
   const avatarManagement = new AvatarManagementService({ clock, ids, repository: new SqliteAvatarManagementRepository(database) });
+  const avatarAgents = new AvatarAgentService({ clock, repository: new SqliteAvatarAgentRepository(database) });
+  const joiHomeFeed = new JoiHomeFeedService({ clock, repository: new SqliteJoiHomeFeedRepository(database) });
   const avatarWorkspaces = new AvatarWorkspaceService({ avatars, clock, ids, repository: new SqliteAvatarWorkspaceRepository(database) });
   const lives = new LifeService({ clock, ids, publisher: sse, store: database.store });
   const agents = new AgentService({ clock, ids, store: database.store });
@@ -130,6 +138,7 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
     agents,
     auth,
     avatarManagement,
+    avatarAgents,
     avatarRegistry,
     avatarWorkspaces,
     avatars,
@@ -143,6 +152,7 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
     engines,
     ids,
     instances,
+    joiHomeFeed,
     knowledge,
     lives,
     memory,

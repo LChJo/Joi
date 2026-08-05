@@ -13,7 +13,7 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
     });
     await expect(service.plan({
-      avatarId: "avatar-1", dependencies: [], turnId: "turn", work: [
+      avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
         { accessMode: "WRITE", key: "write", partnerId: "partner", title: "写入", workspaceRef: "caller-path" },
       ],
     })).rejects.toMatchObject({ code: "work_workspace_forbidden" });
@@ -21,27 +21,54 @@ describe("work orchestration outbox", () => {
 
   it("persists the DAG, immutable partner pins and dispatch outbox records as one plan", async () => {
     const committed: CommittedWorkPlan[] = [];
+    const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
     const repository: WorkPlanRepository = { commit: async (plan) => { committed.push(structuredClone(plan)); } };
     const service = new WorkOrchestrationService({
       clock: new TestClock(), ids: new TestIds(),
+      diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: `${partnerId}-revision`, registryRevision: 7 }) },
       policy: { evaluate: async () => ({ allowed: true }) }, repository,
     });
     const result = await service.plan({
       avatarId: "avatar-1",
       dependencies: [{ dependsOnKey: "research", workKey: "write" }],
+      inputId: "input-1",
       turnId: "turn-1",
       work: [
         { accessMode: "READ", key: "research", partnerId: "partner-a", title: "研究" },
-        { accessMode: "WRITE", key: "write", partnerId: "partner-b", title: "写入" },
+        {
+          acceptanceChecks: [{ kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt", expectedText: "hellow" }],
+          accessMode: "WRITE", instructions: "保留原始拼写", key: "write", partnerId: "partner-b", title: "写入",
+        },
       ],
     });
     expect(result.waves).toHaveLength(2);
     expect(committed).toHaveLength(1);
+    expect(committed[0]?.inputId).toBe("input-1");
     expect(committed[0]?.attempts).toHaveLength(2);
+    expect(committed[0]?.briefs).toEqual([
+      { acceptanceChecks: [], workId: committed[0]?.items[0]?.workId },
+      {
+        acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+        instructions: "保留原始拼写",
+        workId: committed[0]?.items[1]?.workId,
+      },
+    ]);
     expect(committed[0]?.attempts[0]).toMatchObject({ partnerRevisionId: "partner-a-revision", registryRevision: 7 });
     expect(committed[0]?.attempts.map((attempt) => attempt.actionId)).toEqual(committed[0]?.attempts.map((attempt) => attempt.outbox.payload.actionId));
     expect(new Set(committed[0]?.attempts.map((attempt) => attempt.actionId)).size).toBe(2);
+    expect(diagnostics.find((entry) => entry.event === "joi.work.plan.committed")?.fields).toMatchObject({
+      attemptCount: 2,
+      avatarId: "avatar-1",
+      dependencyCount: 1,
+      dispatchPlanId: committed[0]?.dispatchPlanId,
+      inputId: "input-1",
+      turnId: "turn-1",
+      workCount: 2,
+    });
+    expect(diagnostics.filter((entry) => entry.event === "joi.work.dispatch_planned")).toHaveLength(2);
+    expect(JSON.stringify(diagnostics)).not.toContain("研究");
+    expect(JSON.stringify(diagnostics)).not.toContain("写入");
   });
 
   it("keeps denied candidates persisted without creating a side effect", async () => {
@@ -52,10 +79,26 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: false, reason: "workspace_untrusted" }) },
       repository: { commit: async (plan) => { committed.push(plan); } },
     });
-    await service.plan({ avatarId: "avatar-1", dependencies: [], turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
+    await service.plan({ avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
     expect(committed[0]?.items).toHaveLength(1);
     expect(committed[0]?.attempts).toEqual([]);
     expect(committed[0]?.policyResults).toEqual([expect.objectContaining({ allowed: false, reason: "workspace_untrusted" })]);
+  });
+
+  it("does not commit a partial plan when the Avatar workspace must be selected first", async () => {
+    const committed: CommittedWorkPlan[] = [];
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: false, reason: "avatar_workspace_not_ready" }) },
+      repository: { commit: async (plan) => { committed.push(plan); } },
+    });
+
+    await expect(service.plan({
+      avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
+      work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }],
+    })).rejects.toMatchObject({ code: "avatar_workspace_not_ready" });
+    expect(committed).toEqual([]);
   });
 
   it("rejects duplicate keys and unknown dependency keys before persistence", async () => {
@@ -64,11 +107,11 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
       policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
     });
-    await expect(service.plan({ avatarId: "avatar-1", dependencies: [], turnId: "turn", work: [
+    await expect(service.plan({ avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
       { accessMode: "READ", key: "same", partnerId: "partner", title: "A" },
       { accessMode: "READ", key: "same", partnerId: "partner", title: "B" },
     ] })).rejects.toMatchObject({ code: "work_key_duplicate" });
-    await expect(service.plan({ avatarId: "avatar-1", dependencies: [{ dependsOnKey: "missing", workKey: "a" }], turnId: "turn", work: [
+    await expect(service.plan({ avatarId: "avatar-1", dependencies: [{ dependsOnKey: "missing", workKey: "a" }], inputId: "input-1", turnId: "turn", work: [
       { accessMode: "READ", key: "a", partnerId: "partner", title: "A" },
     ] })).rejects.toMatchObject({ code: "work_dependency_unknown" });
   });

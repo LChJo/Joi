@@ -23,6 +23,16 @@ describe("SQLite dispatch policy gate", () => {
          memory_namespace_id, status, created_at, updated_at)
         VALUES ('avatar-policy', 'A', 'persona-policy', 'persona', 'scope', 'project', 'memory-policy', 'ACTIVE', ?, ?)`)
         .run(clock.now().toISOString(), clock.now().toISOString()));
+      database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+          VALUES ('input-lease', 'key-lease', 'lease owner', 'ROUTED', 'avatar-policy', ?, ?)`)
+          .run(clock.now().toISOString(), clock.now().toISOString());
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-lease', 'input-lease', 'avatar-policy', 'session-lease', 'RUNNING', ?, ?)`)
+          .run(clock.now().toISOString(), clock.now().toISOString());
+      });
       const gate = new SqliteDispatchPolicyGate({ clock, database });
       const item = (accessMode: WorkItem["accessMode"]): WorkItem => ({
         accessMode, avatarId: "avatar-policy", createdAt: clock.now().toISOString(), status: "PLANNED",
@@ -41,8 +51,8 @@ describe("SQLite dispatch policy gate", () => {
       await expect(gate.evaluate(item("READ"), localPin)).resolves.toEqual({ allowed: true });
       database.transaction((connection) => {
         connection.prepare(`INSERT INTO work_items
-          (work_id, avatar_id, title, intent_json, access_mode, status, created_at, updated_at)
-          VALUES ('lease-work', 'avatar-policy', 'lease owner', '{}', 'WRITE', 'RUNNING', ?, ?)`)
+          (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('lease-work', 'avatar-policy', 'input-lease', 'lease owner', '{}', 'WRITE', 'RUNNING', ?, ?)`)
           .run(clock.now().toISOString(), clock.now().toISOString());
         connection.prepare(`INSERT INTO workspace_leases
           (workspace_ref, work_id, access_mode, lease_owner, generation, expires_at)

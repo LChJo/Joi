@@ -25,6 +25,7 @@ export interface PiCredentialRecordStore {
 
 export interface ModelSourceRecord {
   baseUrl?: string;
+  lastError?: string;
   lastValidatedAt?: string;
   local: boolean;
   order: number;
@@ -66,6 +67,7 @@ export interface ModelSourceEndpointPolicy {
 
 export interface ModelSourceValidator {
   validate(record: ModelSourceRecord): Promise<{
+    error?: string;
     reasonCode?: string;
     status: Extract<ModelSourceStatus, "READY" | "DEGRADED" | "NEEDS_AUTH">;
     validatedAt: string;

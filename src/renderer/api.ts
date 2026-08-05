@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AvatarChangeRequestDto, AvatarDetailDto, AvatarDto, AvatarWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
+import type { AgentConversationPageDto, AvatarAgentCardDto, AvatarChangeRequestDto, AvatarDetailDto, AvatarDto, AvatarWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -82,6 +82,34 @@ export class DigitalLifeApi {
   bindAvatarWorkspace(avatarId: string) {
     return this.request<AvatarWorkspaceDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}/workspace/bind`, { method: "POST" });
   }
+  joiHomeFeed() { return this.request<JoiHomeFeedDto>("/api/v1/joi/home-feed"); }
+  listAvatarAgents(avatarId: string, options: { cursor?: string; goalId?: string; limit?: number } = {}) {
+    const query = [
+      ...(options.cursor === undefined ? [] : [`cursor=${encodeURIComponent(options.cursor)}`]),
+      ...(options.goalId === undefined ? [] : [`goalId=${encodeURIComponent(options.goalId)}`]),
+      ...(options.limit === undefined ? [] : [`limit=${encodeURIComponent(String(options.limit))}`]),
+    ];
+    const suffix = query.length === 0 ? "" : `?${query.join("&")}`;
+    return this.request<{ items: AvatarAgentCardDto[]; nextCursor?: string }>(
+      `/api/v1/avatars/${encodeURIComponent(avatarId)}/agents${suffix}`,
+    );
+  }
+  agentConversation(avatarId: string, agentId: string, options: { cursor?: string; limit?: number } = {}) {
+    const query = [
+      ...(options.cursor === undefined ? [] : [`cursor=${encodeURIComponent(options.cursor)}`]),
+      ...(options.limit === undefined ? [] : [`limit=${encodeURIComponent(String(options.limit))}`]),
+    ];
+    const suffix = query.length === 0 ? "" : `?${query.join("&")}`;
+    return this.request<AgentConversationPageDto>(
+      `/api/v1/avatars/${encodeURIComponent(avatarId)}/agents/${encodeURIComponent(agentId)}/conversation${suffix}`,
+    );
+  }
+  deleteAvatarAgent(avatarId: string, agentId: string) {
+    return this.request<undefined>(
+      `/api/v1/avatars/${encodeURIComponent(avatarId)}/agents/${encodeURIComponent(agentId)}`,
+      { method: "DELETE" },
+    );
+  }
   rebuildAvatarWorkspace(avatarId: string) {
     return this.request<AvatarWorkspaceDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}/workspace/rebuild`, { method: "POST" });
   }
@@ -92,9 +120,14 @@ export class DigitalLifeApi {
   }
   listJoiMessages() { return this.request<{ items: JoiAcceptedMessageDto[] }>("/api/v1/joi/messages"); }
   listJoiActivity() { return this.request<{ items: JoiActivityDto[] }>("/api/v1/joi/activity"); }
-  sendJoiMessage(text: string, attachmentIds: string[] = []) {
+  sendJoiMessage(text: string, options: { attachmentIds?: string[]; avatarId?: string } = {}) {
     return this.request<JoiAcceptedMessageDto>("/api/v1/joi/messages", {
-      body: { text, ...(attachmentIds.length === 0 ? {} : { attachmentIds }) }, idempotencyKey: crypto.randomUUID(), method: "POST",
+      body: {
+        text,
+        ...(options.attachmentIds === undefined || options.attachmentIds.length === 0 ? {} : { attachmentIds: options.attachmentIds }),
+        ...(options.avatarId === undefined ? {} : { avatarId: options.avatarId }),
+      },
+      idempotencyKey: crypto.randomUUID(), method: "POST",
     });
   }
   clarifyJoiMessage(inputId: string, resolution: { avatarId?: string; text?: string }) {
@@ -108,6 +141,11 @@ export class DigitalLifeApi {
   }
   cancelJoiMessage(inputId: string) {
     return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/cancel`, {
+      method: "POST",
+    });
+  }
+  dismissJoiMessage(inputId: string) {
+    return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/dismiss`, {
       method: "POST",
     });
   }
@@ -129,6 +167,11 @@ export class DigitalLifeApi {
   }
   scenarios() {
     return this.request<{ items: ScenarioDto[] }>("/api/v1/scenarios");
+  }
+  createScenarioPartners(scenarioId: string, roleIds: string[]) {
+    return this.request<{ items: PartnerDto[] }>(`/api/v1/scenarios/${encodeURIComponent(scenarioId)}/partners`, {
+      body: { roleIds }, method: "POST",
+    });
   }
   createModelSource(body: { accessMode: ModelSourceAccessModeDto; apiKey: string; baseUrl?: string; displayName?: string; kind: ModelSourceKindDto; modelId?: string; protocol: ModelSourceProtocolDto }) {
     return this.request<ModelSourceDto>("/api/v1/model-sources", { body, method: "POST" });

@@ -91,7 +91,14 @@ class FakeEngine implements PartnerEngineRuntime {
   toolOptions() { return [] as readonly string[]; }
   async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }) {
     this.ephemeralRuns.push({ knowledgeSection: context.knowledgeSection, request: runRequest });
-    return { externalRunId: `local_pi:${runRequest.actionId}`, output: { artifacts: [], body: "done" }, status: "COMPLETED" as const };
+    return {
+      conversation: [
+        { kind: "MARKDOWN" as const, role: "USER" as const, text: runRequest.taskProjection },
+        { kind: "TOOL_CALL" as const, role: "TOOL" as const, text: "read", toolName: "read" },
+        { kind: "MARKDOWN" as const, role: "AGENT" as const, text: "done" },
+      ],
+      externalRunId: `local_pi:${runRequest.actionId}`, output: { artifacts: [], body: "done" }, status: "COMPLETED" as const,
+    };
   }
   async runResidentTurn(input: ResidentTurnInput) {
     this.residentTurns.push(input);
@@ -109,11 +116,13 @@ class FakeEngine implements PartnerEngineRuntime {
 
 function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartner?: number }) {
   const clock = new TestClock();
+  const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
   const engine = new FakeEngine();
   const messages = new MemoryInstanceMessageStore();
   const repository = new MemoryInstanceRepository();
   const manager = new PartnerInstanceManager({
     clock,
+    diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
     engines: new Map([["pi-core", engine]]),
     ids: new TestIds(),
     knowledge: { readForInjection: async () => "KB_SECTION" },
@@ -124,7 +133,7 @@ function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartne
     revisions: { getActive: async () => revision },
     skills: { readInstructions: () => "" },
   });
-  return { clock, engine, manager, messages, repository };
+  return { clock, diagnostics, engine, manager, messages, repository };
 }
 
 describe("partner-instance-manager", () => {
@@ -160,14 +169,25 @@ describe("partner-instance-manager", () => {
   });
 
   it("runs ephemeral dispatches once, then disposes them and clears their messages", async () => {
-    const { engine, manager, messages, repository } = makeManager();
+    const { diagnostics, engine, manager, messages, repository } = makeManager();
     const result = await manager.dispatch({ dispatchAttemptId: "attempt_1", request, revision });
     expect(result).toMatchObject({ actionId: "action_1", externalRunId: "local_pi:action_1", status: "COMPLETED" });
+    expect(result.conversation).toEqual(expect.arrayContaining([expect.objectContaining({ kind: "TOOL_CALL", toolName: "read" })]));
     expect(engine.ephemeralRuns[0]).toMatchObject({ knowledgeSection: "KB_SECTION" });
     const record = repository.records[0];
     expect(record).toMatchObject({ disposalReason: "ephemeral_completed", sessionPolicy: "EPHEMERAL", status: "DISPOSED" });
     expect(messages.cleared).toContain(record?.instanceId);
     expect(repository.linked).toEqual([["attempt_1", record?.instanceId]]);
+    expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.started")?.fields).toMatchObject({
+      actionId: "action_1",
+      avatarId: "avatar_1",
+      dispatchAttemptId: "attempt_1",
+      instanceId: record?.instanceId,
+      sessionPolicy: "EPHEMERAL",
+      workId: "work_1",
+    });
+    expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.completed")?.fields)
+      .toMatchObject({ instanceId: record?.instanceId, status: "COMPLETED" });
   });
 
   it("keeps resident instances resumable: messages persist, status returns to IDLE and the data source is recorded", async () => {

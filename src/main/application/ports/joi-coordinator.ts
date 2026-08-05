@@ -5,12 +5,14 @@ export interface JoiPendingInput {
   attachments?: { attachmentId: string; filename: string; mimeType: string; size: number }[];
   avatarId?: string;
   body: string;
+  goalInputId?: string;
   inputId: string;
+  resultRevision?: number;
   status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
 }
 
 export interface JoiCoordinatorStore {
-  completeInput(inputId: string, turnId: string): Promise<void>;
+  completeInput(inputId: string, turnId: string, completion?: { completionSummary: string }): Promise<unknown>;
   createTurn(input: {
     avatarId: string;
     createdAt: string;
@@ -23,7 +25,7 @@ export interface JoiCoordinatorStore {
   failTurn?(inputId: string, turnId: string): Promise<void>;
   loadInput(inputId: string): Promise<JoiPendingInput | null>;
   recordTurnProgress?(turnId: string, progress: { formalOutputStarted: boolean; sideEffectStarted: boolean }): Promise<void>;
-  requireClarification(inputId: string, reasonCode: string): Promise<void>;
+  requireClarification(inputId: string, reasonCode: string, prompt?: string): Promise<void>;
   updateTurnSource?(turnId: string, sourceRevisionId: string, modelRevisionId: string): Promise<void>;
 }
 

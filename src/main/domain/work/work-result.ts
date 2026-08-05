@@ -13,6 +13,7 @@ export interface WorkResult {
   runId: string;
   status: WorkResultStatus;
   summary: string;
+  verification: { reasonCode?: string; status: "FAILED" | "NOT_REQUIRED" | "PASSED" };
   workId: string;
 }
 
@@ -34,10 +35,14 @@ export function summarizeWorkResult(body: string, status: WorkResultStatus): str
   return (compact === "" ? `Partner run ${status.toLowerCase()}.` : compact).slice(0, 320);
 }
 
-export function createWorkResult(input: Omit<WorkResult, "summary"> & { summary?: string }): WorkResult {
+export function createWorkResult(input: Omit<WorkResult, "summary" | "verification"> & {
+  summary?: string;
+  verification?: WorkResult["verification"];
+}): WorkResult {
   return {
     ...input,
     artifacts: input.artifacts.map((artifact) => ({ ...artifact })),
     summary: (input.summary === undefined ? summarizeWorkResult(input.body, input.status) : sanitizeSummary(input.summary)).slice(0, 320),
+    verification: input.verification ?? { status: "NOT_REQUIRED" },
   };
 }

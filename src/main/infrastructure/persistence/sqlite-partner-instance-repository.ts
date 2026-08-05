@@ -53,12 +53,20 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
   }
 
   async create(input: { avatarId: string; createdAt: string; engine: PartnerEngine; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: SessionPolicy }): Promise<PartnerInstanceRecord> {
-    this.database.transaction((connection) => connection.prepare(`INSERT INTO partner_instances
-      (instance_id, avatar_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol, created_at, last_used_at)
-      VALUES (?, ?, ?, ?, ?, 'IDLE', ?, ?, ?, ?)`).run(
-      input.instanceId, input.avatarId, input.partnerId, input.partnerRevisionId, input.sessionPolicy,
-      storageEngine(input.engine), storageCliProtocol(input.engine), input.createdAt, input.createdAt,
-    ));
+    this.database.transaction((connection) => {
+      connection.prepare(`INSERT INTO partner_instances
+        (instance_id, avatar_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol, created_at, last_used_at)
+        VALUES (?, ?, ?, ?, ?, 'IDLE', ?, ?, ?, ?)`).run(
+        input.instanceId, input.avatarId, input.partnerId, input.partnerRevisionId, input.sessionPolicy,
+        storageEngine(input.engine), storageCliProtocol(input.engine), input.createdAt, input.createdAt,
+      );
+      connection.prepare(`INSERT INTO avatar_agent_sessions
+        (agent_id, avatar_id, partner_id, partner_revision_id, backing_kind, backing_id, session_policy, created_at)
+        VALUES (?, ?, ?, ?, 'LOCAL_INSTANCE', ?, ?, ?)`).run(
+        input.instanceId, input.avatarId, input.partnerId, input.partnerRevisionId,
+        input.instanceId, input.sessionPolicy, input.createdAt,
+      );
+    });
     const record = await this.get(input.instanceId);
     if (record === null) throw new Error("partner_instance_create_failed");
     return record;

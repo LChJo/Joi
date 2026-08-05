@@ -1,17 +1,21 @@
 import { DomainError } from "../../domain/errors.js";
 import { buildWorkExecutionWaves, createWorkItem, type WorkAccessMode, type WorkDependency } from "../../domain/work/work.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type {
   CommittedWorkPlan,
   DispatchPolicyGate,
   PartnerDispatchPin,
   PlannedDispatchAttempt,
+  WorkAcceptanceCheck,
   WorkPlanRepository,
   WorkReassignmentRepository,
 } from "../ports/work-orchestration.js";
 
 interface WorkRequest {
+  acceptanceChecks?: WorkAcceptanceCheck[];
   accessMode: WorkAccessMode;
+  instructions?: string;
   instanceId?: string;
   key: string;
   partnerId: string;
@@ -24,6 +28,7 @@ interface WorkRequest {
 export class WorkOrchestrationService {
   constructor(private readonly dependencies: {
     clock: Clock;
+    diagnostics?: RuntimeDiagnostics;
     events?: DurableUiEventEmitter;
     ids: IdGenerator;
     partners: { pinForDispatch(partnerId: string): Promise<PartnerDispatchPin> };
@@ -35,6 +40,7 @@ export class WorkOrchestrationService {
   async plan(input: {
     avatarId: string;
     dependencies: { dependsOnKey: string; workKey: string }[];
+    inputId: string;
     turnId: string;
     work: WorkRequest[];
   }): Promise<{ dispatchPlanId: string; waves: string[][] }> {
@@ -62,6 +68,15 @@ export class WorkOrchestrationService {
       const dependsOnWorkId = workIds.get(dependency.dependsOnKey);
       if (workId === undefined || dependsOnWorkId === undefined) throw new DomainError("work_dependency_unknown", "Work dependency is unknown.");
       return { dependsOnWorkId, workId };
+    });
+    const briefs = items.map((item, index) => {
+      const request = input.work[index];
+      if (request === undefined) throw new Error("work_request_missing");
+      return {
+        acceptanceChecks: (request.acceptanceChecks ?? []).map((check) => ({ ...check })),
+        ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
+        workId: item.workId,
+      };
     });
     const waves = buildWorkExecutionWaves(items, dependencies);
     const policyResults: CommittedWorkPlan["policyResults"] = [];
@@ -94,10 +109,36 @@ export class WorkOrchestrationService {
         workId: item.workId,
       });
     }
+    if (policyResults.some((policy) => !policy.allowed && policy.reason === "avatar_workspace_not_ready")) {
+      throw new DomainError("avatar_workspace_not_ready", "Select an Avatar workspace before dispatching file work.");
+    }
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await this.dependencies.repository.commit({
-      attempts, createdAt, dependencies, dispatchPlanId, items, policyResults, turnId: input.turnId, waves,
+      attempts, briefs, createdAt, dependencies, dispatchPlanId, inputId: input.inputId, items, policyResults, turnId: input.turnId, waves,
     });
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.plan.committed", {
+      attemptCount: attempts.length,
+      avatarId: input.avatarId,
+      dependencyCount: dependencies.length,
+      dispatchPlanId,
+      inputId: input.inputId,
+      turnId: input.turnId,
+      waveCount: waves.length,
+      workCount: items.length,
+    });
+    for (const attempt of attempts) {
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {
+        actionId: attempt.actionId,
+        avatarId: input.avatarId,
+        dispatchAttemptId: attempt.dispatchAttemptId,
+        dispatchPlanId,
+        outboxId: attempt.outbox.outboxId,
+        partnerId: attempt.partnerId,
+        partnerRevisionId: attempt.partnerRevisionId,
+        turnId: input.turnId,
+        workId: attempt.workId,
+      });
+    }
     await this.dependencies.events?.emit("work.plan.committed", dispatchPlanId, {
       avatarId: input.avatarId,
       dispatchPlanId,
@@ -136,10 +177,22 @@ export class WorkOrchestrationService {
       },
       workId: input.workId,
     };
+    const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await repository.reassign({
       attempt,
       createdAt,
-      dispatchPlanId: this.dependencies.ids.next("dispatch_plan"),
+      dispatchPlanId,
+      turnId: input.turnId,
+      workId: input.workId,
+    });
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {
+      actionId: attempt.actionId,
+      avatarId: input.avatarId,
+      dispatchAttemptId: attempt.dispatchAttemptId,
+      dispatchPlanId,
+      outboxId: attempt.outbox.outboxId,
+      partnerId: attempt.partnerId,
+      partnerRevisionId: attempt.partnerRevisionId,
       turnId: input.turnId,
       workId: input.workId,
     });

@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent, type AgentMessage } from "@earendil-works/pi-agent-core";
 
+import { DomainError } from "../../domain/errors.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
@@ -9,6 +10,10 @@ import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { AvatarExecutionContextReader } from "../../application/ports/avatar-context.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
+import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
+import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
+
+const DEFAULT_RUN_TIMEOUT_MILLIS = 10 * 60_000;
 
 interface WarmAgent {
   agent: Agent;
@@ -29,6 +34,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     contexts: AvatarExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
     resolver: PiConfiguredModelResolver;
+    /** Hard deadline per engine turn; a hung provider stream must fail the run, not stall it. */
+    runTimeoutMillis?: number;
     sources: Pick<ReasoningSourceSelector, "selectInitial">;
     tools: PiCodingToolFactory;
   }) {}
@@ -49,7 +56,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     this.#warm.delete(instanceId);
   }
 
-  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new Error("avatar_context_snapshot_not_found");
@@ -67,17 +74,20 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         messages: [],
         model: resolved.model,
         systemPrompt: this.#systemPrompt(configuredPrompt, request, execution.promptSection, context.knowledgeSection, context.skillSection),
+        thinkingLevel: modelRequiresAlwaysOnThinking(resolved.model.baseUrl) ? "low" : "off",
         tools,
       },
       sessionId: externalRunId,
       streamFn: resolved.models.streamSimple.bind(resolved.models),
       toolExecution: "sequential",
     });
-    await agent.prompt(request.taskProjection);
+    await this.#promptWithDeadline(agent, request.taskProjection);
     const failed = agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error");
+    const body = assistantText(agent.state.messages);
     return {
+      conversation: draftAgentConversation(request.taskProjection, body, agent.state.messages),
       externalRunId,
-      output: { artifacts: [], body: assistantText(agent.state.messages) },
+      output: { artifacts: [], body },
       status: failed ? "FAILED" : "COMPLETED",
     };
   }
@@ -108,6 +118,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
           messages: (input.restoredMessages ?? []) as AgentMessage[],
           model: resolved.model,
           systemPrompt,
+          thinkingLevel: modelRequiresAlwaysOnThinking(resolved.model.baseUrl) ? "low" : "off",
           tools,
         },
         sessionId: `local_pi_instance:${input.instanceId}`,
@@ -122,15 +133,39 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       this.#trackWarm(input.instanceId, warm);
     }
     warm.agent.state.systemPrompt = systemPrompt;
-    await warm.agent.prompt(input.request.taskProjection);
+    const previousMessageCount = warm.agent.state.messages.length;
+    await this.#promptWithDeadline(warm.agent, input.request.taskProjection);
     const failed = warm.agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error");
+    const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
+    const body = assistantText(turnMessages);
     return {
+      conversation: draftAgentConversation(input.request.taskProjection, body, turnMessages),
       externalRunId: `local_pi:${input.request.actionId}`,
       externalSessionRef: `partner_instance_messages:${input.instanceId}`,
       messages: [...warm.agent.state.messages],
-      output: { artifacts: [], body: assistantText(warm.agent.state.messages) },
+      output: { artifacts: [], body },
       status: failed ? "FAILED" : "COMPLETED",
     };
+  }
+
+  /** Races the model stream against a deadline; a hung provider aborts the run instead of stalling it. */
+  async #promptWithDeadline(agent: Agent, text: string): Promise<void> {
+    let timedOut = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        timedOut = true;
+        reject(new DomainError("partner_run_timed_out", "The partner run exceeded its time budget and was aborted."));
+      }, this.dependencies.runTimeoutMillis ?? DEFAULT_RUN_TIMEOUT_MILLIS);
+    });
+    try {
+      await Promise.race([agent.prompt(text), deadline]);
+    } catch (error) {
+      if (timedOut) agent.abort();
+      throw error;
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+    }
   }
 
   async #configuredPrompt(revision: PartnerRevision): Promise<string> {

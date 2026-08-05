@@ -9,6 +9,11 @@ import type {
   SessionPolicy,
 } from "../ports/partner-instances.js";
 import type { PartnerRegistryRepository } from "../ports/partner-registry.js";
+import {
+  emitRuntimeDiagnostic,
+  runtimeDiagnosticErrorCode,
+  type RuntimeDiagnostics,
+} from "../ports/runtime-diagnostics.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 import type { PartnerRegistryService } from "./partner-registry-service.js";
@@ -26,6 +31,7 @@ export class PartnerInstanceManager {
 
   constructor(private readonly dependencies: {
     clock: Clock;
+    diagnostics?: RuntimeDiagnostics;
     engines: Map<string, PartnerEngineRuntime>;
     ids: IdGenerator;
     knowledge: Pick<PartnerKnowledgeService, "readForInjection">;
@@ -65,7 +71,7 @@ export class PartnerInstanceManager {
   /**
    * Runs one turn. A given instanceId must be IDLE and belong to the revision's partner.
    * Without an instanceId, ephemeral is the default policy; resident requires ensure() first
-   * (joi sees live instances through partner.list_instances and passes the id explicitly).
+   * (joi sees live instances through partner_list_instances and passes the id explicitly).
    */
   async dispatch(input: {
     dispatchAttemptId?: string;
@@ -105,15 +111,36 @@ export class PartnerInstanceManager {
       ? this.dependencies.skills.readInstructions(input.revision.skills)
       : "";
     const startedAt = this.dependencies.clock.now().toISOString();
+    const startedAtMillis = this.dependencies.clock.now().getTime();
     await this.dependencies.repository.setStatusBusy(record.instanceId, startedAt);
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.started", {
+      actionId: input.request.actionId,
+      avatarId: input.request.avatarId,
+      ...(input.dispatchAttemptId === undefined ? {} : { dispatchAttemptId: input.dispatchAttemptId }),
+      engine: record.engine,
+      instanceId: record.instanceId,
+      partnerId: record.partnerId,
+      sessionPolicy: record.sessionPolicy,
+      workId: input.request.workId,
+    });
     try {
       if (record.sessionPolicy === "EPHEMERAL") {
         const result = await engine.runEphemeral(input.request, input.revision, { knowledgeSection, skillSection });
         await this.#disposeRecord(record, "ephemeral_completed");
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.completed", {
+          actionId: input.request.actionId,
+          avatarId: input.request.avatarId,
+          ...(input.dispatchAttemptId === undefined ? {} : { dispatchAttemptId: input.dispatchAttemptId }),
+          durationMs: Math.max(0, this.dependencies.clock.now().getTime() - startedAtMillis),
+          instanceId: record.instanceId,
+          status: result.status,
+          workId: input.request.workId,
+        });
         return {
           actionId: input.request.actionId,
           artifacts: result.output.artifacts,
           body: result.output.body,
+          ...(result.conversation === undefined ? {} : { conversation: result.conversation }),
           externalRunId: result.externalRunId,
           instanceId: record.instanceId,
           status: result.status,
@@ -136,10 +163,20 @@ export class PartnerInstanceManager {
         this.dependencies.clock.now().toISOString(),
         turn.externalSessionRef,
       );
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.completed", {
+        actionId: input.request.actionId,
+        avatarId: input.request.avatarId,
+        ...(input.dispatchAttemptId === undefined ? {} : { dispatchAttemptId: input.dispatchAttemptId }),
+        durationMs: Math.max(0, this.dependencies.clock.now().getTime() - startedAtMillis),
+        instanceId: record.instanceId,
+        status: turn.status,
+        workId: input.request.workId,
+      });
       return {
         actionId: input.request.actionId,
         artifacts: turn.output.artifacts,
         body: turn.output.body,
+        ...(turn.conversation === undefined ? {} : { conversation: turn.conversation }),
         externalRunId: turn.externalRunId,
         instanceId: record.instanceId,
         status: turn.status,
@@ -152,6 +189,15 @@ export class PartnerInstanceManager {
         // A failed resident turn stays resumable: the instance returns to IDLE with its saved messages.
         await this.dependencies.repository.markTurnComplete(record.instanceId, this.dependencies.clock.now().toISOString());
       }
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.failed", {
+        actionId: input.request.actionId,
+        avatarId: input.request.avatarId,
+        ...(input.dispatchAttemptId === undefined ? {} : { dispatchAttemptId: input.dispatchAttemptId }),
+        durationMs: Math.max(0, this.dependencies.clock.now().getTime() - startedAtMillis),
+        errorCode: runtimeDiagnosticErrorCode(error),
+        instanceId: record.instanceId,
+        workId: input.request.workId,
+      });
       throw error;
     }
   }

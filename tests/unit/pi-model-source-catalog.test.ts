@@ -12,9 +12,12 @@ describe("PiModelSourceCatalog", () => {
       capability: "release-tested",
       modelId: "k3",
     });
-    expect(catalog.resolve("kimi", undefined, "coding-plan")).toMatchObject({ presetVersion: "2026-07-30" });
+    expect(catalog.resolve("kimi", undefined, "coding-plan")).toMatchObject({ presetVersion: "2026-08-02" });
     expect(catalog.resolve("glm", undefined, "coding-plan")).toMatchObject({ displayName: "GLM Coding Plan", modelId: "glm-5.2" });
     expect(catalog.resolve("qwen", undefined, "coding-plan")).toMatchObject({ displayName: "百炼 Coding Plan", modelId: "qwen3.7-plus" });
+    expect(catalog.resolve("qwen", undefined, "token-plan", "anthropic")).toMatchObject({
+      accessMode: "token-plan", displayName: "百炼 Token Plan", modelId: "qwen3.7-plus", protocol: "anthropic",
+    });
     expect(catalog.resolve("doubao", undefined, "coding-plan")).toMatchObject({ displayName: "方舟 Coding Plan", modelId: "ark-code-latest" });
     expect(catalog.resolve("minimax", undefined, "coding-plan")).toMatchObject({ displayName: "MiniMax Token Plan", modelId: "MiniMax-M2.7" });
     expect(catalog.resolve("deepseek", "deepseek-reasoner")).toMatchObject({ capability: "release-tested", modelId: "deepseek-reasoner" });

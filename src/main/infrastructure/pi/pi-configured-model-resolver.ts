@@ -47,7 +47,8 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
         sourceId: input.sourceId,
       }
       : {
-        accessMode: source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
+        accessMode: source.activeSourceRevision.accessMode === "token-plan" ? "token-plan" as const
+          : source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
         kind: source.activeSourceRevision.kind,
         modelId: input.modelId,
         protocol: source.activeSourceRevision.protocol,

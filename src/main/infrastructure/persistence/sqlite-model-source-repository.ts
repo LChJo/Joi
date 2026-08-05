@@ -17,7 +17,7 @@ const SELECT_RECORDS = `
          sr.credential_ref, sr.credential_version, sr.created_at AS source_revision_created_at,
          mr.model_revision_id, mr.model_id, mr.capability, mr.preset_version,
          mr.created_at AS model_revision_created_at,
-         h.reason_code, h.last_validated_at, o.position, o.is_primary
+         h.reason_code, h.last_error, h.last_validated_at, o.position, o.is_primary
     FROM model_sources s
     JOIN model_source_revisions sr ON sr.source_revision_id = s.active_source_revision_id
     JOIN model_source_model_revisions mr ON mr.model_revision_id = s.active_model_revision_id
@@ -55,11 +55,13 @@ function isLocal(baseUrl: string | undefined): boolean {
 
 function mapRow(row: Row): ModelSourceRecord {
   const baseUrl = optionalText(row, "base_url");
+  const lastError = optionalText(row, "last_error");
   const reasonCode = optionalText(row, "reason_code");
   const lastValidatedAt = optionalText(row, "last_validated_at");
   const presetVersion = optionalText(row, "preset_version");
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
+    ...(lastError === undefined ? {} : { lastError }),
     ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
     local: isLocal(baseUrl),
     order: integer(row, "position"),
@@ -117,8 +119,8 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
           source.activeSourceRevision.sourceRevisionId, source.activeModelRevision.modelRevisionId, source.sourceId,
         );
         connection.prepare(`INSERT INTO model_source_health
-          (source_id, status, reason_code, last_validated_at, updated_at) VALUES (?, ?, ?, ?, ?)`).run(
-          source.sourceId, source.status, record.reasonCode ?? null, record.lastValidatedAt ?? null, source.updatedAt,
+          (source_id, status, reason_code, last_error, last_validated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
+          source.sourceId, source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null, source.updatedAt,
         );
         connection.prepare(`INSERT INTO model_source_order (source_id, position, is_primary) VALUES (?, ?, ?)`).run(
           source.sourceId, record.order, record.primary ? 1 : 0,
@@ -142,8 +144,8 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         record.source.status, record.source.updatedAt, record.source.sourceId,
       );
       connection.prepare(`UPDATE model_source_health
-        SET status = ?, reason_code = ?, last_validated_at = ?, updated_at = ? WHERE source_id = ?`).run(
-        record.source.status, record.reasonCode ?? null, record.lastValidatedAt ?? null,
+        SET status = ?, reason_code = ?, last_error = ?, last_validated_at = ?, updated_at = ? WHERE source_id = ?`).run(
+        record.source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null,
         record.source.updatedAt, record.source.sourceId,
       );
     });
@@ -171,7 +173,7 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         source.updatedAt, source.sourceId,
       );
       connection.prepare(`UPDATE model_source_health
-        SET status = ?, reason_code = NULL, last_validated_at = NULL, updated_at = ? WHERE source_id = ?`).run(
+        SET status = ?, reason_code = NULL, last_error = NULL, last_validated_at = NULL, updated_at = ? WHERE source_id = ?`).run(
         source.status, source.updatedAt, source.sourceId,
       );
     });

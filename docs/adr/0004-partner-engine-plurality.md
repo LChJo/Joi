@@ -28,6 +28,6 @@ ADR 0002 确立 joi 以 Pi 为唯一主推理基座，首版不引入第二套�
 
 ## Consequences
 
-- joi 的工具面新增 `partner.create/create_instance/list_instances/dispose_instance/inspect_revision`；`work.dispatch` 可按实例与 session 策略派发。这些工具的建议权不变，硬边界（实例上限、租约、DRAIN、outbox）仍由确定性策略执行。
+- joi 的工具面新增 `partner_create/create_instance/list_instances/dispose_instance/inspect_revision`；`work_dispatch` 可按实例与 session 策略派发。这些工具的建议权不变，硬边界（实例上限、租约、DRAIN、outbox）仍由确定性策略执行。
 - 本地 CLI 搭档的会话记录进入 SDK 自有的 ConversationStore 表；joi 的搭档工作记忆以 `externalSessionRef`（`local_cli:{actionId}` 的 conversation id / `partner_instance_messages:{instanceId}` / `local_pi:{actionId}` / `a2a_invocations:{id}`）作为会话真实数据源台账。
 - 依赖来自内部 registry（`@rd-efficiency` scope）；无对应 CLI 的环境引擎显示"未检测到"，产品功能降级而不报错，用户可改回 Pi core 或安装并登录对应 CLI。

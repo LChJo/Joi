@@ -16,9 +16,17 @@ describe("workspace lease lifecycle", () => {
         connection.prepare(`INSERT INTO avatars
           (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
           VALUES ('avatar', 'Avatar', 'persona', 'Persona', 'Scope', 'Project', 'memory', '', 'ACTIVE', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+          VALUES ('input-leases', 'key-leases', 'leases', 'ROUTED', 'avatar', ?, ?)`)
+          .run(clock.now().toISOString(), clock.now().toISOString());
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-leases', 'input-leases', 'avatar', 'session-leases', 'RUNNING', ?, ?)`)
+          .run(clock.now().toISOString(), clock.now().toISOString());
         const insert = connection.prepare(`INSERT INTO work_items
-          (work_id, avatar_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
-          VALUES (?, 'avatar', ?, '{}', ?, 'workspace_ref', 'READY', ?, ?)`);
+          (work_id, avatar_id, input_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
+          VALUES (?, 'avatar', 'input-leases', ?, '{}', ?, 'workspace_ref', 'READY', ?, ?)`);
         for (const [workId, mode] of [["read_1", "READ"], ["read_2", "READ"], ["write_1", "WRITE"], ["write_2", "WRITE"]] as const) {
           insert.run(workId, workId, mode, clock.now().toISOString(), clock.now().toISOString());
         }

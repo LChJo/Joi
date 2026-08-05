@@ -173,17 +173,36 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   </div>;
 }
 
-function ScenarioGrid({ api, onPick }: { api: DigitalLifeApi; onPick: (scenario: ScenarioDto) => void }) {
+function ScenarioGrid({ api, creating, draft, onCreate, onPick, onToggleRole }: {
+  api: DigitalLifeApi;
+  creating: boolean;
+  draft: { roleIds: string[]; scenarioId: string } | null;
+  onCreate: () => void;
+  onPick: (scenario: ScenarioDto) => void;
+  onToggleRole: (roleId: string) => void;
+}) {
   const [scenarios, setScenarios] = useState<ScenarioDto[]>([]);
   useEffect(() => {
     const timer = setTimeout(() => void api.scenarios().then((page) => setScenarios(page.items)).catch(() => setScenarios([])), 0);
     return () => clearTimeout(timer);
   }, [api]);
   if (scenarios.length === 0) return <p className="field-hint">还没有可用的场景预设。</p>;
-  return <div className="scenario-group">{scenarios.map((scenario) => <button className="scenario-card" key={scenario.id} onClick={() => onPick(scenario)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>)}</div>;
+  return <div className="scenario-group">{scenarios.map((scenario) => {
+    const expanded = draft?.scenarioId === scenario.id;
+    const roles = scenario.roles ?? [];
+    return <div className="scenario-slot" key={scenario.id}>
+      <button aria-expanded={expanded} className="scenario-card" onClick={() => onPick(scenario)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>
+      {expanded ? <div className="scenario-draft">
+        {roles.length === 0
+          ? <p className="field-hint">这个场景没有声明搭档角色，将按默认组合创建。</p>
+          : <div aria-label={`${scenario.title} 依赖的搭档角色`} className="chip-group" role="group">{roles.map((role) => <label className="chip" key={role.id}><input checked={draft.roleIds.includes(role.id)} onChange={() => onToggleRole(role.id)} type="checkbox" />{role.title}</label>)}</div>}
+        <button className="button primary" disabled={creating || (roles.length > 0 && draft.roleIds.length === 0)} onClick={onCreate} type="button">{creating ? "创建中…" : "创建所选搭档"}</button>
+      </div> : null}
+    </div>;
+  })}</div>;
 }
 
-export function PartnerPage({ api, onManageProviders, onNavigate, tab, onTabChange }: { api: DigitalLifeApi; onManageProviders?: () => void; onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void; tab?: "partners" | "scenarios"; onTabChange?: (tab: "partners" | "scenarios") => void }) {
+export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api: DigitalLifeApi; onManageProviders?: () => void; tab?: "partners" | "scenarios"; onTabChange?: (tab: "partners" | "scenarios") => void }) {
   const [partners, setPartners] = useState<PartnerDto[]>([]);
   const [sources, setSources] = useState<ModelSourceDto[]>([]);
   const [engineStatuses, setEngineStatuses] = useState<Record<string, EngineStatus>>({});
@@ -211,12 +230,33 @@ export function PartnerPage({ api, onManageProviders, onNavigate, tab, onTabChan
       setView(target === undefined ? { mode: "grid" } : { mode: "editor", partner: target });
     }).catch(() => setView({ mode: "grid" }));
   };
+  const [scenarioDraft, setScenarioDraft] = useState<{ roleIds: string[]; scenarioId: string } | null>(null);
+  const [creatingScenario, setCreatingScenario] = useState(false);
   const currentTab = tab ?? "partners";
   const pickScenario = (scenario: ScenarioDto) => {
     setNotice(null);
-    void api.sendJoiMessage(scenario.prompt)
-      .then(() => { setNotice(`已把「${scenario.title}」交给 joi，正在组建团队…`); onNavigate?.("joi"); })
-      .catch(() => setNotice("场景没发送成功，请重试。"));
+    setScenarioDraft((current) => current?.scenarioId === scenario.id
+      ? null
+      : { roleIds: (scenario.roles ?? []).map((role) => role.id), scenarioId: scenario.id });
+  };
+  const toggleScenarioRole = (roleId: string) => {
+    setScenarioDraft((current) => current === null
+      ? current
+      : { ...current, roleIds: current.roleIds.includes(roleId) ? current.roleIds.filter((id) => id !== roleId) : [...current.roleIds, roleId] });
+  };
+  const createDraftPartners = () => {
+    if (scenarioDraft === null) return;
+    const { roleIds, scenarioId } = scenarioDraft;
+    setCreatingScenario(true);
+    setNotice(null);
+    void api.createScenarioPartners(scenarioId, roleIds)
+      .then((created) => {
+        setNotice(`已创建 ${String(created.items.length)} 位搭档：${created.items.map((item) => item.displayName).join("、")}`);
+        setScenarioDraft(null);
+        void load().catch(() => undefined);
+      })
+      .catch(() => setNotice("场景搭档没创建成功，请重试。"))
+      .finally(() => setCreatingScenario(false));
   };
   if (view.mode === "editor") {
     return <section className="partner-manager page-section">
@@ -224,15 +264,15 @@ export function PartnerPage({ api, onManageProviders, onNavigate, tab, onTabChan
     </section>;
   }
   return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>用场景预设一键组建团队，或手动登记搭档的描述、提示词、知识库和工作路径。</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">添加搭档</button></header>
+    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>选场景勾选角色一键创建搭档，或手动登记搭档的描述、提示词与知识库。</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">添加搭档</button></header>
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
     <div className="tab-row" role="tablist">
       <button aria-selected={currentTab === "scenarios"} className={currentTab === "scenarios" ? "selected" : ""} onClick={() => onTabChange?.("scenarios")} role="tab" type="button">场景预设</button>
       <button aria-selected={currentTab === "partners"} className={currentTab === "partners" ? "selected" : ""} onClick={() => onTabChange?.("partners")} role="tab" type="button">搭档目录</button>
     </div>
     {currentTab === "scenarios" ? <>
-      <p className="field-hint">选一个场景，joi 会据此判断要创建哪几位搭档、各自职责与默认提示词，并挑选合适的模型源（引擎用 Pi core）。点击即交给 joi，无需补充。</p>
-      <ScenarioGrid api={api} onPick={pickScenario} />
+      <p className="field-hint">选一个场景，勾选它依赖的搭档角色（默认全选）一键创建。搭档是能力模板，与环境和工作目录无关。</p>
+      <ScenarioGrid api={api} creating={creatingScenario} draft={scenarioDraft} onCreate={createDraftPartners} onPick={pickScenario} onToggleRole={toggleScenarioRole} />
     </> : <>
       {partners.length === 0 ? <div className="plain-empty"><h2>还没有搭档</h2><p>先建立 2-3 个工作搭档（本机或远端 A2A），joi 才能把你的想法派出去；也可以切到上方「场景预设」一键组建团队。</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">添加第一个搭档</button></div> : null}
       {partners.length > 0 && partners.length < 2 ? <p className="inline-notice warning">建议先建立 2-3 个工作搭档，joi 才有得挑、有得换；也可切到「场景预设」一键组建。</p> : null}

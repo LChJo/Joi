@@ -208,6 +208,11 @@ describe("partner-registry-revision-before-dispatch", () => {
     await expect(service.add({ ...fields, engine: "claude-code", engineModelId: "x".repeat(241), kind: "local-pi" })).rejects.toMatchObject({ code: "partner_engine_model_invalid" });
     await expect(service.add({ ...fields, kind: "local-pi", modelIdOverride: "x".repeat(241) })).rejects.toMatchObject({ code: "partner_model_override_invalid" });
     await expect(service.add({ ...fields, kind: "local-pi", modelSourceId: "x".repeat(241) })).rejects.toMatchObject({ code: "partner_model_source_invalid" });
+    await expect(service.add({
+      ...fields,
+      kind: "local-pi",
+      tools: Array.from({ length: 65 }, (_, index) => `tool-${String(index)}`),
+    })).rejects.toMatchObject({ code: "partner_tools_invalid" });
     const cli = await service.add({ ...fields, engine: "claude-code", engineModelId: "claude-sonnet", kind: "local-pi" });
     expect(cli).toMatchObject({ engine: "claude-code", engineModelId: "claude-sonnet" });
     const codex = await service.add({ ...fields, engine: "codex", kind: "local-pi" });

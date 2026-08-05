@@ -370,18 +370,48 @@ describe("partner page", () => {
     expect(manage).toHaveBeenCalledOnce();
   });
 
-  it("sends a chosen scenario preset to joi from the scenarios tab", async () => {
+  it("creates the selected scenario roles as partners from the scenarios tab", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, []);
     vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
-      { blurb: "组建审查团队", id: "review-code", prompt: "审查场景提示词", source: "builtin", title: "审查一段代码" },
+      {
+        blurb: "组建审查团队", id: "review-code", prompt: "审查场景提示词",
+        roles: [
+          { id: "correctness", prompt: "正确性提示词", title: "正确性审查搭档" },
+          { id: "maintainability", prompt: "可维护性提示词", title: "可维护性审查搭档" },
+        ],
+        source: "builtin", title: "审查一段代码",
+      },
     ] });
-    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "input-s", status: "PENDING" });
-    const nav = vi.fn();
-    render(<PartnerPage api={api} onNavigate={nav} onTabChange={() => undefined} tab="scenarios" />);
+    const create = vi.spyOn(api, "createScenarioPartners").mockResolvedValue({ items: [coder] });
+    render(<PartnerPage api={api} onTabChange={() => undefined} tab="scenarios" />);
     fireEvent.click(await screen.findByRole("button", { name: /审查一段代码/u }));
-    await waitFor(() => expect(send).toHaveBeenCalledWith("审查场景提示词"));
-    expect(nav).toHaveBeenCalledWith("joi");
+    const boxes = await screen.findAllByRole("checkbox");
+    expect(boxes).toHaveLength(2);
+    expect(boxes.every((box) => (box as HTMLInputElement).checked)).toBe(true);
+    const secondBox = boxes[1];
+    if (secondBox === undefined) throw new Error("expected a second role checkbox");
+    fireEvent.click(secondBox);
+    fireEvent.click(screen.getByRole("button", { name: "创建所选搭档" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith("review-code", ["correctness"]));
+    expect(await screen.findByText(/已创建 1 位搭档/u)).toBeInTheDocument();
+  });
+
+  it("reports a failure when scenario partner creation fails", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, []);
+    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
+      {
+        blurb: "组建诊断团队", id: "diagnose-bug", prompt: "诊断场景提示词",
+        roles: [{ id: "reproducer", prompt: "复现提示词", title: "复现搭档" }],
+        source: "builtin", title: "诊断一个 Bug",
+      },
+    ] });
+    vi.spyOn(api, "createScenarioPartners").mockRejectedValue(new ApiError("offline", "创建失败", 503));
+    render(<PartnerPage api={api} onTabChange={() => undefined} tab="scenarios" />);
+    fireEvent.click(await screen.findByRole("button", { name: /诊断一个 Bug/u }));
+    fireEvent.click(await screen.findByRole("button", { name: "创建所选搭档" }));
+    expect(await screen.findByText("场景搭档没创建成功，请重试。")).toBeInTheDocument();
   });
 
   it("switches between the scenarios and partners tabs", async () => {
@@ -395,15 +425,4 @@ describe("partner page", () => {
     expect(setTab).toHaveBeenCalledWith("partners");
   });
 
-  it("reports a failure when sending a scenario preset fails", async () => {
-    const api = new DigitalLifeApi("");
-    mockCatalog(api, []);
-    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
-      { blurb: "组建诊断团队", id: "diagnose-bug", prompt: "诊断场景提示词", source: "builtin", title: "诊断一个 Bug" },
-    ] });
-    vi.spyOn(api, "sendJoiMessage").mockRejectedValue(new ApiError("offline", "发送失败", 503));
-    render(<PartnerPage api={api} onNavigate={vi.fn()} onTabChange={() => undefined} tab="scenarios" />);
-    fireEvent.click(await screen.findByRole("button", { name: /诊断一个 Bug/u }));
-    expect(await screen.findByText("场景没发送成功，请重试。")).toBeInTheDocument();
-  });
 });

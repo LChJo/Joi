@@ -26,6 +26,8 @@ import { AvatarRegistryService } from "./application/joi/avatar-registry-service
 import { AvatarChangeService } from "./application/joi/avatar-change-service.js";
 import { AvatarContextAssembler } from "./application/joi/avatar-context-assembler.js";
 import { AvatarManagementService } from "./application/joi/avatar-management-service.js";
+import { JoiHomeFeedService } from "./application/joi/joi-home-feed-service.js";
+import { AvatarAgentService } from "./application/partners/avatar-agent-service.js";
 import { AvatarWorkspaceService } from "./application/joi/avatar-workspace-service.js";
 import { PartnerRegistryService } from "./application/partners/partner-registry-service.js";
 import { PartnerKnowledgeService } from "./application/partners/partner-knowledge-service.js";
@@ -33,6 +35,7 @@ import { PartnerInstanceManager } from "./application/partners/partner-instance-
 import { PartnerEngineCatalog } from "./application/partners/partner-engine-catalog.js";
 import { PartnerWorkMemoryService } from "./application/partners/partner-work-memory-service.js";
 import type { PartnerEngineRuntime } from "./application/ports/partner-instances.js";
+import { runtimeDiagnosticErrorCode } from "./application/ports/runtime-diagnostics.js";
 import { WorkOrchestrationService } from "./application/work/work-orchestration-service.js";
 import { WorkResultService } from "./application/work/work-result-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
@@ -73,9 +76,12 @@ import { LegacyLifeStoreAdapter } from "./infrastructure/persistence/legacy-life
 import { SqliteAvatarChangeRepository } from "./infrastructure/persistence/sqlite-avatar-change-repository.js";
 import { SqliteAvatarContextRepository } from "./infrastructure/persistence/sqlite-avatar-context-repository.js";
 import { SqliteAvatarManagementRepository } from "./infrastructure/persistence/sqlite-avatar-management-repository.js";
+import { SqliteAvatarAgentRepository } from "./infrastructure/persistence/sqlite-avatar-agent-repository.js";
+import { SqliteJoiHomeFeedRepository } from "./infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteAvatarWorkspaceRepository } from "./infrastructure/persistence/sqlite-avatar-workspace-repository.js";
 import { AvatarWorkspaceProvisioner } from "./infrastructure/persistence/avatar-workspace-provisioner.js";
 import { SqliteWorkResultRepository } from "./infrastructure/persistence/sqlite-work-result-repository.js";
+import { WorkspaceWorkVerifier } from "./infrastructure/workspace/workspace-work-verifier.js";
 import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
 import { PiModelSourceCatalog } from "./infrastructure/pi/pi-model-source-catalog.js";
 import { PiModelSourceValidator } from "./infrastructure/pi/pi-model-source-validator.js";
@@ -83,7 +89,7 @@ import { SafeStoragePiCredentialStore } from "./infrastructure/pi/pi-credential-
 import { ConfiguredPiReasoningRuntime } from "./infrastructure/pi/configured-pi-reasoning-runtime.js";
 import { PiAvatarRoutingRuntime } from "./infrastructure/pi/pi-avatar-routing-runtime.js";
 import { RepositoryPiConfiguredModelResolver } from "./infrastructure/pi/pi-configured-model-resolver.js";
-import { createJoiReasoningTools } from "./infrastructure/pi/joi-reasoning-tools.js";
+import { createJoiReasoningTools, selectJoiReasoningToolsForInput } from "./infrastructure/pi/joi-reasoning-tools.js";
 import { SqliteA2aPartnerDispatchHandler } from "./infrastructure/a2a/sqlite-partner-dispatch-handler.js";
 import { LocalPiPartnerAdapter } from "./infrastructure/pi/local-pi-partner-adapter.js";
 import { PiCodingPartnerRunner } from "./infrastructure/pi/pi-coding-partner-runner.js";
@@ -96,6 +102,7 @@ import { dialog } from "electron";
 import { BuiltinPiCodingToolFactory } from "./infrastructure/pi/pi-coding-tool-factory.js";
 import { PiReasoningFailureClassifier } from "./infrastructure/pi/pi-reasoning-failure-classifier.js";
 import { InMemoryEventSignal } from "./infrastructure/runtime/in-memory-event-signal.js";
+import { JsonLineRuntimeDiagnostics } from "./infrastructure/runtime/json-line-runtime-diagnostics.js";
 import {
   InMemoryBootstrapNonceStore,
   LoginRateLimiter,
@@ -144,9 +151,12 @@ let shutdownPromise: Promise<void> | null = null;
 
 const clock = { now: () => new Date() };
 const ids = { next: (prefix: string) => `${prefix}_${randomUUID()}` };
-
 async function startRuntime(): Promise<void> {
   const userDataDirectory = app.getPath("userData");
+  const runtimeDiagnostics = new JsonLineRuntimeDiagnostics({
+    clock,
+    directory: path.join(userDataDirectory, "diagnostics"),
+  });
   runtimeMarker = new RuntimeMarker(userDataDirectory);
   startupEvidence = await runtimeMarker.start(clock.now());
   const migrationsDirectory = app.isPackaged
@@ -219,6 +229,7 @@ async function startRuntime(): Promise<void> {
   const joiInboxRepository = new SqliteJoiInboxRepository(database);
   const joiInbox = new JoiInboxService({
     clock,
+    diagnostics: runtimeDiagnostics,
     ids,
     repository: joiInboxRepository,
   });
@@ -238,6 +249,9 @@ async function startRuntime(): Promise<void> {
   const avatarContextRepository = new SqliteAvatarContextRepository(database);
   const avatarContextAssembler = new AvatarContextAssembler({ avatars, clock, ids, projections: avatarContextRepository, snapshots: avatarContextRepository });
   const avatarManagement = new AvatarManagementService({ clock, events: orchestrationEvents, ids, repository: new SqliteAvatarManagementRepository(database) });
+  const avatarAgentRepository = new SqliteAvatarAgentRepository(database);
+  const avatarAgents = new AvatarAgentService({ clock, repository: avatarAgentRepository });
+  const joiHomeFeed = new JoiHomeFeedService({ clock, repository: new SqliteJoiHomeFeedRepository(database) });
   const avatarWorkspaceRepository = new SqliteAvatarWorkspaceRepository(database);
   const avatarWorkspaces = new AvatarWorkspaceService({ avatars, clock, events: orchestrationEvents, ids, repository: avatarWorkspaceRepository });
   const avatarWorkspaceProvisioner = new AvatarWorkspaceProvisioner({ database, events: orchestrationEvents, userDataDirectory });
@@ -245,6 +259,7 @@ async function startRuntime(): Promise<void> {
   const workRepository = new SqliteWorkPlanRepository(database);
   const work = new WorkOrchestrationService({
     clock,
+    diagnostics: runtimeDiagnostics,
     events: orchestrationEvents,
     ids,
     partners,
@@ -268,6 +283,7 @@ async function startRuntime(): Promise<void> {
   const engineCatalog = new PartnerEngineCatalog(partnerEngines);
   const partnerInstances = new PartnerInstanceManager({
     clock,
+    diagnostics: runtimeDiagnostics,
     engines: partnerEngines,
     ids,
     knowledge: partnerKnowledge,
@@ -288,12 +304,17 @@ async function startRuntime(): Promise<void> {
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     resolver: configuredModelResolver,
     sessionStore: new SqlitePiReasoningSessionStore(database),
-    tools: (turn) => createJoiReasoningTools({ avatarChanges, avatarId: turn.avatarId, avatars, instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, results: workResults, turnId: turn.turnId, work }),
+    tools: (turn) => selectJoiReasoningToolsForInput(createJoiReasoningTools({
+      avatarChanges, avatarId: turn.avatarId, avatars, clarifications: joiInboxRepository, inputId: turn.inputId,
+      instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, results: workResults,
+      turnId: turn.turnId, work,
+    }), turn.inputId),
   });
   const joiCoordinator = new JoiCoordinator({
     avatars,
     avatarRegistry,
     clock,
+    diagnostics: runtimeDiagnostics,
     failureClassifier: new PiReasoningFailureClassifier(),
     ids,
     events: orchestrationEvents,
@@ -304,7 +325,10 @@ async function startRuntime(): Promise<void> {
   });
   const joiInputScheduler = new JoiInputScheduler({
     handle: (inputId) => joiCoordinator.handle(inputId),
-    onError: () => process.stderr.write("A joi input remains available for recovery.\n"),
+    onError: (inputId, error) => runtimeDiagnostics.emit("joi.input.scheduler_failed", {
+      errorCode: runtimeDiagnosticErrorCode(error),
+      inputId,
+    }),
   });
   const processJoiInput = (inputId: string): void => joiInputScheduler.notify(inputId);
   const processPendingJoiInputs = (): void => {
@@ -408,10 +432,12 @@ async function startRuntime(): Promise<void> {
     tools: piCodingTools,
   }));
   const partnerDispatch = new SqliteA2aPartnerDispatchHandler({
+    agentConversations: avatarAgentRepository,
     clock,
     contextAssembler: avatarContextAssembler,
     contexts: avatarContextRepository,
     database,
+    diagnostics: runtimeDiagnostics,
     gateway: a2aGateway,
     instances: partnerInstances,
     leases: workspaceLeases,
@@ -420,7 +446,7 @@ async function startRuntime(): Promise<void> {
       await Promise.resolve(sse.publish(event.committedEvent));
       if (!event.isLate) {
         const inputId = await joiInboxRepository.enqueuePartnerResult(event);
-        processJoiInput(inputId);
+        if (inputId !== null) processJoiInput(inputId);
       }
       await partnerMemory.recordResult({
         at: clock.now().toISOString(),
@@ -434,9 +460,11 @@ async function startRuntime(): Promise<void> {
     },
     partners: partnerRepository,
     results: workResultRepository,
+    verifier: new WorkspaceWorkVerifier({ contexts: avatarContextRepository }),
   });
   const outboxDispatcher = new OutboxDispatcher({
     clock,
+    diagnostics: runtimeDiagnostics,
     handlers: {
       "a2a.send": async (record) => {
         const invocationId = record.payload.invocationId;
@@ -520,6 +548,7 @@ async function startRuntime(): Promise<void> {
     auth,
     avatarChanges,
     avatarManagement,
+    avatarAgents,
     avatarRegistry,
     avatarWorkspaces,
     avatars,
@@ -531,6 +560,7 @@ async function startRuntime(): Promise<void> {
     instances: partnerInstances,
     interactions,
     joiActivity: joiInboxRepository,
+    joiHomeFeed,
     joiAttachments: joiAttachmentStorage,
     joiInbox,
     knowledge: partnerKnowledge,

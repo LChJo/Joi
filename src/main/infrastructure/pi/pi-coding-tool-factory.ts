@@ -23,6 +23,8 @@ function safeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   return Object.fromEntries(Object.entries(environment).filter(([key]) => SAFE_ENVIRONMENT_KEYS.has(key.toUpperCase())));
 }
 
+export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "grep", "ls", "read", "write"] as const;
+
 const factories: Record<string, (cwd: string) => AgentTool> = {
   bash: (cwd) => createBashTool(cwd, {
     exposeSessionEnvironment: false,
@@ -35,8 +37,6 @@ const factories: Record<string, (cwd: string) => AgentTool> = {
   read: createReadTool,
   write: createWriteTool,
 };
-
-export const PI_CODING_TOOL_NAMES: readonly string[] = Object.keys(factories);
 
 export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
   readonly names: readonly string[] = PI_CODING_TOOL_NAMES;

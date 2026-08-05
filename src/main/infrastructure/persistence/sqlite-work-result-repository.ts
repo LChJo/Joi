@@ -27,6 +27,10 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
         .get(result.workId, result.avatarId) as { status?: unknown } | undefined;
       if (typeof current?.status !== "string") throw new Error("work_result_work_not_found");
       const isLate = current.status === "CANCELED";
+      const authoritativeTerminal = connection.prepare(`SELECT 1 FROM work_results
+        WHERE run_id = ? AND is_authoritative = 1 AND status IN ('COMPLETED', 'FAILED', 'UNKNOWN') LIMIT 1`)
+        .get(result.runId);
+      const isAuthoritative = authoritativeTerminal === undefined;
       const bodySize = Buffer.byteLength(result.body, "utf8");
       const managedBody = bodySize > MANAGED_BODY_THRESHOLD_BYTES;
       const bodyRef = `${managedBody ? "work_result_artifact" : "work_result_body"}:${result.resultId}`;
@@ -38,34 +42,43 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
       }] : result.artifacts;
       connection.prepare("INSERT INTO work_result_bodies (body_ref, body, created_at) VALUES (?, ?, ?)")
         .run(bodyRef, result.body, result.createdAt);
+      if (isAuthoritative) connection.prepare("UPDATE work_results SET is_authoritative = 0 WHERE run_id = ?")
+        .run(result.runId);
       connection.prepare(`INSERT INTO work_results
         (result_id, run_id, action_id, avatar_id, work_id, partner_revision_id, instance_id, status,
-         summary, body_ref, artifacts_json, is_late, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         summary, body_ref, artifacts_json, is_late, is_authoritative, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         result.resultId, result.runId, result.actionId, result.avatarId, result.workId, result.partnerRevisionId,
-        result.instanceId ?? null, result.status, result.summary, bodyRef, JSON.stringify(artifacts), isLate ? 1 : 0, result.createdAt,
+        result.instanceId ?? null, result.status, result.summary, bodyRef, JSON.stringify(artifacts), isLate ? 1 : 0,
+        isAuthoritative ? 1 : 0, result.createdAt,
       );
-      connection.prepare("UPDATE partner_runs SET status = ?, updated_at = ? WHERE run_id = ?").run(result.status, result.createdAt, result.runId);
-      connection.prepare("UPDATE dispatch_attempts SET status = ?, updated_at = ? WHERE action_id = ?")
-        .run(result.status, result.createdAt, result.actionId);
-      if (!isLate) connection.prepare("UPDATE work_items SET status = ?, updated_at = ? WHERE work_id = ?")
-        .run(workStatus(result.status), result.createdAt, result.workId);
+      connection.prepare(`INSERT INTO work_result_verifications
+        (result_id, status, reason_code, created_at) VALUES (?, ?, ?, ?)`)
+        .run(result.resultId, result.verification.status, result.verification.reasonCode ?? null, result.createdAt);
+      if (isAuthoritative) {
+        connection.prepare("UPDATE partner_runs SET status = ?, updated_at = ? WHERE run_id = ?").run(result.status, result.createdAt, result.runId);
+        connection.prepare("UPDATE dispatch_attempts SET status = ?, updated_at = ? WHERE action_id = ?")
+          .run(result.status, result.createdAt, result.actionId);
+        if (!isLate) connection.prepare("UPDATE work_items SET status = ?, updated_at = ? WHERE work_id = ?")
+          .run(workStatus(result.status), result.createdAt, result.workId);
+      }
       const active = connection.prepare(`SELECT work_id AS workId, title, status FROM work_items
         WHERE avatar_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY created_at, work_id`).all(result.avatarId);
       const recent = connection.prepare(`SELECT result_id AS resultId, work_id AS workId, status, summary FROM work_results
-        WHERE avatar_id = ? ORDER BY created_at DESC, result_id DESC LIMIT 10`).all(result.avatarId);
+        WHERE avatar_id = ? AND is_authoritative = 1 ORDER BY created_at DESC, result_id DESC LIMIT 10`).all(result.avatarId);
       connection.prepare(`INSERT INTO avatar_task_projections (avatar_id, active_work_json, recent_results_json, updated_at)
         VALUES (?, ?, ?, ?) ON CONFLICT(avatar_id) DO UPDATE SET active_work_json = excluded.active_work_json,
           recent_results_json = excluded.recent_results_json, updated_at = excluded.updated_at`).run(
         result.avatarId, JSON.stringify(active), JSON.stringify(recent), result.createdAt,
       );
       const eventId = `partner_result:${result.runId}:${result.status}`;
-      connection.prepare(`INSERT OR IGNORE INTO partner_result_events
-        (event_id, run_id, avatar_id, work_id, partner_revision_id, status, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?)`
-      ).run(eventId, result.runId, result.avatarId, result.workId, result.partnerRevisionId, result.status, result.createdAt);
+      if (isAuthoritative) connection.prepare(`INSERT OR IGNORE INTO partner_result_events
+          (event_id, run_id, avatar_id, work_id, partner_revision_id, status, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`
+        ).run(eventId, result.runId, result.avatarId, result.workId, result.partnerRevisionId, result.status, result.createdAt);
       const payload = {
         avatarId: result.avatarId,
+        isAuthoritative,
         isLate,
         resultId: result.resultId,
         status: result.status,
@@ -81,7 +94,7 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
         sequence: Number(info.lastInsertRowid),
         type: "work.result.recorded",
       };
-      return { event, result: { ...result, artifacts, isLate } };
+      return { event, isAuthoritative, result: { ...result, artifacts, isLate } };
     });
   }
 

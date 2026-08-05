@@ -189,6 +189,7 @@ export class ModelSourceService {
       ...withoutHealthReason(validating),
       lastValidatedAt: result.validatedAt,
       ...(result.reasonCode === undefined ? {} : { reasonCode: result.reasonCode }),
+      ...(result.error === undefined ? {} : { lastError: truncateError(result.error) }),
       source: { ...validating.source, status: result.status, updatedAt: result.validatedAt },
     };
     await this.dependencies.repository.save(updated);
@@ -216,7 +217,13 @@ export class ModelSourceService {
   }
 }
 
-function withoutHealthReason(record: ModelSourceRecord): Omit<ModelSourceRecord, "reasonCode"> {
+const MAX_LAST_ERROR = 1000;
+
+function truncateError(message: string): string {
+  return message.length > MAX_LAST_ERROR ? `${message.slice(0, MAX_LAST_ERROR)}…` : message;
+}
+
+function withoutHealthReason(record: ModelSourceRecord): Omit<ModelSourceRecord, "lastError" | "reasonCode"> {
   return {
     ...(record.baseUrl === undefined ? {} : { baseUrl: record.baseUrl }),
     ...(record.lastValidatedAt === undefined ? {} : { lastValidatedAt: record.lastValidatedAt }),
@@ -241,6 +248,7 @@ function toDto(record: ModelSourceRecord): ModelSourceDto {
     credential: { configured: true, version: record.source.activeSourceRevision.credentialVersion },
     displayName: record.source.activeSourceRevision.displayName,
     kind: record.source.activeSourceRevision.kind,
+    ...(record.lastError === undefined ? {} : { lastError: record.lastError }),
     ...(record.lastValidatedAt === undefined ? {} : { lastValidatedAt: record.lastValidatedAt }),
     order: record.order,
     primary: record.primary,

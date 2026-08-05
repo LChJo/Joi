@@ -6,6 +6,7 @@ import { createProvider, type ApiKeyAuth, type Model, type Provider } from "@ear
 
 import {
   getDirectModelSourcePreset,
+  modelRequiresAlwaysOnThinking,
   type DirectModelSourceKind,
 } from "./provider-presets.js";
 import type { ModelSourceAccessMode, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
@@ -88,9 +89,11 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
       name: label,
     });
   }
+  const alwaysOn = modelRequiresAlwaysOnThinking(baseUrl);
   const model: Model<"openai-completions"> = {
     api: "openai-completions",
     baseUrl,
+    ...(alwaysOn ? { compat: { thinkingFormat: "qwen" } } : {}),
     contextWindow: 128_000,
     cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
     id: input.modelId,
@@ -98,7 +101,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     maxTokens: 8_192,
     name: knownModel?.label ?? input.modelId,
     provider: providerId,
-    reasoning: false,
+    reasoning: alwaysOn,
     ...(headers === undefined ? {} : { headers }),
   };
 

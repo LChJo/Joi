@@ -26,7 +26,9 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
         model: resolved.model,
         models: resolved.models,
         sessionStore: this.dependencies.sessionStore,
-        tools: typeof this.dependencies.tools === "function" ? this.dependencies.tools(input) : this.dependencies.tools,
+        // Pass the factory through: PiReasoningRuntime refreshes per-turn tools on every startTurn,
+        // so cached sessions never reuse a previous turn's tool closures.
+        tools: this.dependencies.tools,
       });
       selected = { runtime, sourceRevisionId: input.sourceRevisionId };
       this.#runtimes.set(input.sessionId, selected);

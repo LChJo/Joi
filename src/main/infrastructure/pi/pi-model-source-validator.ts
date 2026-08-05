@@ -3,18 +3,40 @@ import { createModels, type CredentialStore } from "@earendil-works/pi-ai";
 import type { ModelSourceRecord, ModelSourceValidator } from "../../application/ports/model-source-ports.js";
 import type { Clock } from "../../application/ports/runtime-store.js";
 import { createPiSourceProvider } from "./source-provider-factory.js";
+import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 
 type Probe = (record: ModelSourceRecord) => Promise<void>;
 
-function failureReason(error: unknown): { reasonCode: string; status: "DEGRADED" | "NEEDS_AUTH" } {
-  const message = error instanceof Error ? error.message.toLowerCase() : "";
-  if (/\b401\b|\b403\b|unauthori[sz]ed|forbidden|api.?key|credential/u.test(message)) {
-    return { reasonCode: "auth_failed", status: "NEEDS_AUTH" };
+function failureReason(error: unknown): { error: string; reasonCode: string; status: "DEGRADED" | "NEEDS_AUTH" } {
+  const raw = error instanceof Error ? error.message : String(error);
+  const message = raw.toLowerCase();
+  let reasonCode: string;
+  let status: "DEGRADED" | "NEEDS_AUTH" = "DEGRADED";
+  if (/(^|\D)(401|403)(\D|$)|unauthori[sz]ed|forbidden|invalid[_ -]?(api[_ -]?key|x-api-key)|\bcredential\b|no api key/u.test(message)) {
+    reasonCode = "auth_failed";
+    status = "NEEDS_AUTH";
+  } else if (/(^|\D)429(\D|$)|rate[_ -]?limit|throttl|overloaded|too many requests/u.test(message)) {
+    reasonCode = "rate_limited";
+  } else if (/model.+(?:not found|missing|unknown|unavailable)|(?:not found|unknown).+model/u.test(message)) {
+    reasonCode = "model_unavailable";
+  } else if (/(^|\D)5\d\d(\D|$)|overloaded_error|internal server error|bad gateway|service unavailable|gateway timeout/u.test(message)) {
+    reasonCode = "server_error";
+  } else if (/(^|\D)404(\D|$)/u.test(message)) {
+    reasonCode = "not_found";
+  } else if (/(^|\D)400(\D|$)/u.test(message)) {
+    reasonCode = "bad_request";
+  } else if (/invalid[_ -]?parameter|invalid_request_error/u.test(message)) {
+    reasonCode = "bad_request";
+  } else if (/\bconnection\b|enotfound|econnrefused|econnreset|cert|self[- ]?signed|unable to verify|\bssl\b|\btls\b|socket hang up|fetch failed|\bnetwork\b/u.test(message)) {
+    reasonCode = "connection_error";
+  } else if (/timed? ?out|\baborted\b/u.test(message)) {
+    reasonCode = "timeout";
+  } else if (/(^|\D)\d{3}(\D|$)/u.test(message)) {
+    reasonCode = "http_error";
+  } else {
+    reasonCode = "endpoint_unreachable";
   }
-  if (/model.+(?:not found|missing|unknown|unavailable)|(?:not found|unknown).+model/u.test(message)) {
-    return { reasonCode: "model_unavailable", status: "DEGRADED" };
-  }
-  return { reasonCode: "endpoint_unreachable", status: "DEGRADED" };
+  return { error: raw.trim(), reasonCode, status };
 }
 
 export class PiModelSourceValidator implements ModelSourceValidator {
@@ -50,7 +72,8 @@ export class PiModelSourceValidator implements ModelSourceValidator {
           sourceId: source.sourceId,
         }
         : {
-          accessMode: source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
+          accessMode: source.activeSourceRevision.accessMode === "token-plan" ? "token-plan" as const
+            : source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
           kind: source.activeSourceRevision.kind,
           modelId: source.activeModelRevision.modelId,
           protocol: source.activeSourceRevision.protocol,
@@ -65,15 +88,19 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       if (auth === undefined) throw new Error("credential missing");
       const model = provider.getModels().find((candidate) => candidate.id === source.activeModelRevision.modelId);
       if (model === undefined) throw new Error("model not found");
+      const alwaysOn = modelRequiresAlwaysOnThinking(model.baseUrl);
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15_000);
+      const timer = setTimeout(() => controller.abort(), alwaysOn ? 30_000 : 15_000);
       timer.unref();
       try {
         const response = await models.completeSimple(model, {
           messages: [{ content: "Reply with OK.", role: "user", timestamp: Date.now() }],
-        }, { maxTokens: 8, signal: controller.signal });
+        }, { maxTokens: alwaysOn ? 256 : 8, signal: controller.signal, ...(alwaysOn ? { reasoning: "low" as const } : {}) });
         if (response.stopReason === "error") {
           throw new Error(response.errorMessage ?? "minimal text response failed");
+        }
+        if (controller.signal.aborted || response.stopReason === "aborted") {
+          throw new Error("validation probe timed out");
         }
         if (!response.content.some((block) => block.type === "text" && block.text.length > 0)) {
           throw new Error("minimal text response failed");

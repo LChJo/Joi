@@ -65,8 +65,13 @@ function optionalText(value: string | undefined, maxLength: number, code: string
   return normalized;
 }
 
-function strings(values: string[]): string[] {
-  return [...new Set(values.map((value) => value.trim()).filter((value) => value.length > 0))];
+function strings(values: string[], code: string): string[] {
+  if (values.length > 64) throw new DomainError(code, "Partner list is too large.");
+  const normalized = values.map((value) => value.trim()).filter((value) => value.length > 0);
+  if (normalized.some((value) => value.length > 240) || normalized.reduce((total, value) => total + value.length, 0) > 4_096) {
+    throw new DomainError(code, "Partner list value is too large.");
+  }
+  return [...new Set(normalized)];
 }
 
 export function createPartnerRevision(input: CreatePartnerRevisionInput): PartnerRevision {
@@ -85,7 +90,7 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
   const modelIdOverride = optionalText(input.modelIdOverride, 240, "partner_model_override_invalid");
   const modelSourceId = optionalText(input.modelSourceId, 240, "partner_model_source_invalid");
   return {
-    capabilities: strings(input.capabilities),
+    capabilities: strings(input.capabilities, "partner_capabilities_invalid"),
     createdAt: input.createdAt,
     createdBy: input.createdBy ?? "user",
     ...(description === undefined ? {} : { description }),
@@ -106,9 +111,9 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
       tools: "local",
     },
     registryRevision: input.registryRevision,
-    skills: strings(input.skills),
+    skills: strings(input.skills, "partner_skills_invalid"),
     status: "ACTIVE",
-    tools: strings(input.tools),
+    tools: strings(input.tools, "partner_tools_invalid"),
   };
 }
 
@@ -125,7 +130,7 @@ export function mergeA2aCardRevision(
   if (input.registryRevision <= current.registryRevision) throw new DomainError("partner_registry_revision_stale", "Partner registry revision must increase.");
   return {
     ...current,
-    capabilities: strings(input.card.capabilities),
+    capabilities: strings(input.card.capabilities, "partner_capabilities_invalid"),
     createdAt: input.createdAt,
     displayName: text(input.card.displayName, "partner_name_invalid"),
     partnerRevisionId: text(input.partnerRevisionId, "partner_revision_id_invalid"),
@@ -136,7 +141,7 @@ export function mergeA2aCardRevision(
       skills: "card",
     },
     registryRevision: input.registryRevision,
-    skills: strings(input.card.skills),
+    skills: strings(input.card.skills, "partner_skills_invalid"),
   };
 }
 

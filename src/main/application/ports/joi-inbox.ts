@@ -5,8 +5,10 @@ export interface JoiInboxRecord {
   avatarId?: string;
   body: string;
   canceledAt?: string;
+  clarificationPrompt?: string;
   clarificationReasonCode?: string;
   createdAt: string;
+  dismissedAt?: string;
   idempotencyKey: string;
   inputId: string;
   status: JoiInboxStatus;
@@ -17,5 +19,6 @@ export interface JoiInboxRepository {
   cancel(inputId: string): Promise<JoiInboxRecord | null>;
   clarify(inputId: string, patch: { avatarId?: string; text?: string }): Promise<JoiInboxRecord | null>;
   create(record: JoiInboxRecord): Promise<JoiInboxRecord>;
+  dismiss(inputId: string): Promise<JoiInboxRecord | null>;
   list(): Promise<JoiInboxRecord[]>;
 }

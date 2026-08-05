@@ -52,7 +52,7 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
-  it("ships provider-specific API and coding-plan presets plus one generic option", () => {
+  it("ships provider-specific API and subscription presets plus one generic option", () => {
     expect([...new Set(MODEL_SOURCE_OPTIONS.map((option) => option.kind))]).toEqual([
       "kimi",
       "glm",
@@ -62,18 +62,24 @@ describe("Pi reasoning runtime contract", () => {
       "deepseek",
       "generic-openai",
     ]);
-    expect(MODEL_SOURCE_PRESETS).toHaveLength(18);
+    expect(MODEL_SOURCE_PRESETS).toHaveLength(20);
     expect(MODEL_SOURCE_PRESETS.filter((preset) => preset.accessMode === "coding-plan" && preset.protocol === "anthropic").map((preset) => preset.kind))
       .toEqual(["kimi", "glm", "qwen", "doubao", "minimax"]);
     expect(MODEL_SOURCE_PRESETS.find((preset) => (
       preset.kind === "kimi" && preset.accessMode === "coding-plan" && preset.protocol === "anthropic"
     ))?.models.map((entry) => entry.id)).toEqual(["k3", "k3-256k", "kimi-for-coding", "kimi-for-coding-highspeed"]);
+    expect(MODEL_SOURCE_PRESETS.find((preset) => (
+      preset.kind === "qwen" && preset.accessMode === "token-plan" && preset.protocol === "openai"
+    ))?.endpoint).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1");
+    expect(MODEL_SOURCE_PRESETS.find((preset) => (
+      preset.kind === "qwen" && preset.accessMode === "token-plan" && preset.protocol === "anthropic"
+    ))?.endpoint).toBe("https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic");
     for (const preset of MODEL_SOURCE_PRESETS) {
       expect(preset.endpoint).toMatch(/^https:\/\//u);
       expect(preset.defaultModelId.length).toBeGreaterThan(0);
       expect(preset.models.map((model) => model.id)).toContain(preset.defaultModelId);
       expect(preset.endpointEditable).toBe(false);
-      expect(preset.presetVersion).toBe("2026-07-30");
+      expect(preset.presetVersion).toBe("2026-08-02");
     }
     expect(JSON.stringify(MODEL_SOURCE_OPTIONS)).not.toMatch(/openrouter|siliconflow|火山引擎方舟以外的转发|聚合平台/iu);
   });
@@ -163,7 +169,7 @@ describe("Pi reasoning runtime contract", () => {
     const observedToolStart = new Promise<void>((resolve) => { signalToolStarted = resolve; });
 
     faux.setResponses([
-      fauxAssistantMessage([fauxToolCall("avatar.list_summaries", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("avatar_list_summaries", {})], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("收到插话")]),
       fauxAssistantMessage([fauxText("继续处理后续")]),
     ]);
@@ -174,7 +180,7 @@ describe("Pi reasoning runtime contract", () => {
       models,
       sessionStore: store,
       tools: [{
-        name: "avatar.list_summaries",
+        name: "avatar_list_summaries",
         label: "List Avatar summaries",
         description: "Lists redacted Avatar summaries.",
         parameters: Type.Object({}),
@@ -188,6 +194,7 @@ describe("Pi reasoning runtime contract", () => {
 
     const turn = runtime.startTurn({
       avatarId: "avatar_1",
+      inputId: "input_1",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",
       onEvent: (event) => { if (event.type === "text_delta") events.push(event.delta); },
@@ -223,6 +230,7 @@ describe("Pi reasoning runtime contract", () => {
     expect(await restored.restore("session_1")).toBe(true);
     await restored.startTurn({
       avatarId: "avatar_1",
+      inputId: "input_2",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",
       onEvent: (event) => { if (event.type === "text_delta") restoredEvents.push(event.delta); },
@@ -238,29 +246,30 @@ describe("Pi reasoning runtime contract", () => {
 
   it("never exposes arbitrary execution tools and can abort an active turn", async () => {
     expect(JOI_REASONING_TOOL_NAMES).toEqual([
-      "avatar.list_summaries",
-      "avatar.select",
-      "avatar.create",
-      "avatar.suggest_merge",
-      "avatar.suggest_archive",
-      "model.list_sources",
-      "partner.list_available",
-      "partner.inspect_revision",
-      "partner.create",
-      "partner.create_instance",
-      "partner.list_instances",
-      "partner.dispose_instance",
-      "work.create",
-      "work.add_dependency",
-      "work.dispatch",
-      "work.read_result",
-      "work.wait",
-      "work.cancel",
-      "work.reassign",
-      "memory.search",
-      "memory.append_candidate",
-      "schedule.plan",
-      "user.ask",
+      "avatar_list_summaries",
+      "avatar_select",
+      "avatar_create",
+      "avatar_suggest_merge",
+      "avatar_suggest_archive",
+      "model_list_sources",
+      "partner_list_available",
+      "partner_inspect_revision",
+      "partner_create",
+      "partner_create_instance",
+      "partner_list_instances",
+      "partner_dispose_instance",
+      "work_create",
+      "work_add_dependency",
+      "work_dispatch",
+      "work_read_result",
+      "work_wait",
+      "work_cancel",
+      "work_reassign",
+      "memory_search",
+      "memory_append_candidate",
+      "schedule_plan",
+      "user_ask",
+      "turn_complete",
     ]);
     expect(JOI_REASONING_TOOL_NAMES).not.toEqual(expect.arrayContaining(["bash", "read", "write", "edit", "find", "grep", "ls"]));
 
@@ -278,6 +287,7 @@ describe("Pi reasoning runtime contract", () => {
     const started = new Promise<void>((resolve) => { signalStarted = resolve; });
     const running = runtime.startTurn({
       avatarId: "avatar_1",
+      inputId: "input_abort",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",
       onEvent: (event) => { if (event.type === "text_delta") signalStarted?.(); },
@@ -314,6 +324,7 @@ describe("Pi reasoning runtime contract", () => {
     for (let index = 0; index < 4; index += 1) {
       await runtime.startTurn({
         avatarId: "avatar_1",
+        inputId: `input-${String(index + 1)}`,
         modelId: "contract-model",
         modelRevisionId: "model_rev_1",
         prompt: `prompt-${String(index + 1)}`,
@@ -342,6 +353,7 @@ describe("Pi reasoning runtime contract", () => {
     expect(await restored.restore("session_compact")).toBe(true);
     await restored.startTurn({
       avatarId: "avatar_1",
+      inputId: "input-after-restore",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",
       prompt: "prompt-after-restore",

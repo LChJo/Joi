@@ -32,6 +32,24 @@ function record(sourceId: string, order: number): ModelSourceRecord {
 }
 
 describe("SqliteModelSourceRepository", () => {
+  it("persists the dedicated token-plan access mode", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-token-plan-source-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      database.transaction((connection) => connection.prepare(`INSERT INTO model_source_credentials
+        (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES (?, 'api_key', ?, 1, ?)`)
+        .run("joi-source:token-plan", new Uint8Array([1]), "2026-08-02T12:00:00.000Z"));
+      const source = record("token-plan", 0);
+      source.source.activeSourceRevision.accessMode = "token-plan";
+      source.source.activeSourceRevision.kind = "qwen";
+      await new SqliteModelSourceRepository(database).create(source);
+      expect((await new SqliteModelSourceRepository(database).get("token-plan"))?.source.activeSourceRevision.accessMode).toBe("token-plan");
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("restores sources, health and deterministic order after a process restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-model-sources-"));
     const databasePath = path.join(root, "runtime.sqlite");

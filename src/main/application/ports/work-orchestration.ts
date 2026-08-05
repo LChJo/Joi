@@ -25,11 +25,24 @@ export interface PlannedDispatchAttempt extends PartnerDispatchPin {
   workId: string;
 }
 
+export type WorkAcceptanceCheck =
+  | { kind: "ARTIFACT_PRESENT"; name: string }
+  | { kind: "FILE_CONTAINS_EXACT"; expectedText: string; relativePath: string }
+  | { kind: "FILE_EXISTS"; relativePath: string };
+
+export interface WorkBrief {
+  acceptanceChecks: WorkAcceptanceCheck[];
+  instructions?: string;
+  workId: string;
+}
+
 export interface CommittedWorkPlan {
   attempts: PlannedDispatchAttempt[];
+  briefs: WorkBrief[];
   createdAt: string;
   dependencies: WorkDependency[];
   dispatchPlanId: string;
+  inputId: string;
   items: WorkItem[];
   policyResults: DispatchPolicyResult[];
   turnId: string;

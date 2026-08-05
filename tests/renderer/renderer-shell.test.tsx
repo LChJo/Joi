@@ -121,11 +121,23 @@ function mockApi() {
 }
 
 describe("joi renderer console", () => {
+  it("returns the content viewport to the top when primary navigation changes", async () => {
+    const fixture = mockApi();
+    const view = render(<ConsoleApp api={fixture.api} />);
+    await waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce());
+    const main = view.container.querySelector(".console-main");
+    if (!(main instanceof HTMLElement)) throw new Error("Expected the console content viewport.");
+    main.scrollTop = 240;
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Avatar" }));
+    expect(await screen.findByRole("heading", { name: "Avatar" })).toBeInTheDocument();
+    expect(main.scrollTop).toBe(0);
+  });
+
   it("uses native Avatar records in the secondary context page", async () => {
     const fixture = mockApi();
     render(<ConsoleApp api={fixture.api} />);
     fireEvent.click(within(await screen.findByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Avatar" }));
-    expect(await screen.findByRole("heading", { name: "Avatar 上下文中心" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Avatar" })).toBeInTheDocument();
     expect(await screen.findByText("产品工作")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "创建 Avatar" }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "研究" } });

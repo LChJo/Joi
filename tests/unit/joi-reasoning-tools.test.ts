@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { createJoiReasoningTools } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
+import { createJoiReasoningTools, selectJoiReasoningToolsForInput } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
+import { DomainError } from "../../src/main/domain/errors.js";
 import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const partnerDto: PartnerDto = {
@@ -21,11 +22,12 @@ const instanceRecord = {
   sessionPolicy: "RESIDENT" as const, status: "IDLE" as const,
 };
 
-function makeTools() {
+function makeTools(options: { partners?: PartnerDto[]; workspaceBlocked?: boolean } = {}) {
   const addCalls: unknown[] = [];
   const ensureCalls: unknown[] = [];
   const disposeCalls: { instanceId: string; reason: string }[] = [];
   const planCalls: unknown[] = [];
+  const clarificationCalls: { inputId: string; prompt?: string; reasonCode: string }[] = [];
   const changeBase = { createdAt: "2026-07-29T10:00:00.000Z", requestId: "change_1", status: "PENDING" as const };
   const tools = createJoiReasoningTools({
     avatarId: "avatar_1",
@@ -33,6 +35,9 @@ function makeTools() {
       suggestArchive: async (input) => ({ ...changeBase, ...input, kind: "ARCHIVE" as const, sourceAvatarId: input.avatarId }),
       suggestMerge: async (input) => ({ ...changeBase, ...input, kind: "MERGE" as const }),
     },
+    clarifications: { requireClarification: async (inputId, reasonCode, prompt) => {
+      clarificationCalls.push({ inputId, ...(prompt === undefined ? {} : { prompt }), reasonCode });
+    } },
     avatars: { getAvatar: async () => null, listSummaries: async () => [] },
     instances: {
       dispose: async ({ instanceId, reason }) => { disposeCalls.push({ instanceId, reason }); },
@@ -40,16 +45,21 @@ function makeTools() {
       list: async () => [instanceRecord],
     },
     memory: { digest: async () => ({ last3: [{ at: "2026-07-29T10:00:00.000Z", outcome: "COMPLETED" as const, title: "old task" }], successRate: 0.5, summary: "DIGEST_SUMMARY" }) },
+    inputId: "input_1",
     models: { list: async () => [readySource, draftSource] },
     partners: {
       add: async (input) => { addCalls.push(input); return partnerDto; },
       inspect: async () => partnerDto,
-      list: async () => [partnerDto],
+      list: async () => options.partners ?? [partnerDto],
     },
     results: { read: async ({ resultId }) => ({ content: "result", resultId }) },
     turnId: "turn_1",
     work: {
-      plan: async (input) => { planCalls.push(input); return { dispatchPlanId: "plan_1", waves: [] }; },
+      plan: async (input) => {
+        planCalls.push(input);
+        if (options.workspaceBlocked === true) throw new DomainError("avatar_workspace_not_ready", "workspace required");
+        return { dispatchPlanId: "plan_1", waves: [] };
+      },
       reassign: async (input) => ({
         ...input,
         actionId: "action_r",
@@ -77,45 +87,67 @@ function makeTools() {
     disposeCalls,
     ensureCalls,
     planCalls,
+    clarificationCalls,
+    tools,
   };
 }
 
 describe("joi reasoning tools", () => {
+  it("limits goal synthesis to result reading and explicit completion", () => {
+    const tools = selectJoiReasoningToolsForInput(makeTools().tools, "joi_result_input:goal:goal-1");
+    expect(tools.map((tool) => tool.name)).toEqual(["work_read_result", "turn_complete"]);
+  });
   it("creates partners on behalf of joi with the joi creator badge", async () => {
     const harness = makeTools();
-    const created = await harness.call("partner.create", { description: "写文档", displayName: "Writer" }) as { partnerId: string };
+    const created = await harness.call("partner_create", { description: "写文档", displayName: "Writer" }) as { partnerId: string };
     expect(created.partnerId).toBe("partner_1");
     expect(harness.addCalls[0]).toMatchObject({ capabilities: [], createdBy: "joi", description: "写文档", kind: "local-pi", skills: [], tools: [] });
   });
 
   it("pins a chosen model source when creating a partner", async () => {
     const harness = makeTools();
-    await harness.call("partner.create", { displayName: "Writer", modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" });
+    await harness.call("partner_create", { displayName: "Writer", modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" });
     expect(harness.addCalls[0]).toMatchObject({ createdBy: "joi", displayName: "Writer", modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" });
   });
 
-  it("lists only READY model sources with the fields partner.create needs", async () => {
+  it("reuses an active same-name joi partner instead of creating a duplicate", async () => {
+    const existing = { ...partnerDto, createdBy: "joi" as const };
+    const harness = makeTools({ partners: [existing] });
+    const created = await harness.call("partner_create", { displayName: "  Coder  " }) as { partnerId: string; reused?: boolean };
+    expect(created).toMatchObject({ partnerId: "partner_1", partnerRevisionId: "partner_revision_1", reused: true });
+    expect(harness.addCalls).toEqual([]);
+  });
+
+  it("rejects hallucinated coding tools before persisting a partner", async () => {
     const harness = makeTools();
-    const sources = await harness.call("model.list_sources", {}) as unknown[];
+    await expect(harness.call("partner_create", {
+      displayName: "Researcher", tools: ["afs1_client", "read"],
+    })).rejects.toMatchObject({ code: "partner_tool_not_allowed" });
+    expect(harness.addCalls).toEqual([]);
+  });
+
+  it("lists only READY model sources with the fields partner_create needs", async () => {
+    const harness = makeTools();
+    const sources = await harness.call("model_list_sources", {}) as unknown[];
     expect(sources).toEqual([{ displayName: "Kimi", kind: "kimi", modelId: "kimi-k2.5", primary: true, protocol: "anthropic", sourceId: "source_ready" }]);
   });
 
   it("creates, lists and disposes partner instances with explicit session policies", async () => {
     const harness = makeTools();
-    const instance = await harness.call("partner.create_instance", { partnerId: "partner_1", sessionPolicy: "resident" });
+    const instance = await harness.call("partner_create_instance", { partnerId: "partner_1", sessionPolicy: "resident" });
     expect(harness.ensureCalls[0]).toMatchObject({ partnerId: "partner_1", sessionPolicy: "RESIDENT" });
     expect(instance).toMatchObject({ instanceId: "instance_1", sessionPolicy: "RESIDENT" });
 
-    const listed = await harness.call("partner.list_instances", { partnerId: "partner_1" }) as unknown[];
+    const listed = await harness.call("partner_list_instances", { partnerId: "partner_1" }) as unknown[];
     expect(listed).toHaveLength(1);
 
-    await harness.call("partner.dispose_instance", { instanceId: "instance_1" });
+    await harness.call("partner_dispose_instance", { instanceId: "instance_1" });
     expect(harness.disposeCalls[0]).toEqual({ instanceId: "instance_1", reason: "joi disposed the instance" });
   });
 
-  it("enriches partner.list_available with live instances and the working-memory digest", async () => {
+  it("enriches partner_list_available with live instances and the working-memory digest", async () => {
     const harness = makeTools();
-    const listed = await harness.call("partner.list_available", {}) as { activeInstanceCount: number; instances: unknown[]; memoryDigest: { summary: string } }[];
+    const listed = await harness.call("partner_list_available", {}) as { activeInstanceCount: number; instances: unknown[]; memoryDigest: { summary: string } }[];
     expect(listed[0]).toMatchObject({
       activeInstanceCount: 1,
       displayName: "Coder",
@@ -123,21 +155,62 @@ describe("joi reasoning tools", () => {
       partnerId: "partner_1",
     });
     expect(listed[0]?.instances).toHaveLength(1);
+    expect(listed[0]).toMatchObject({ toolCount: 1 });
+    expect(listed[0]).not.toHaveProperty("tools");
   });
 
   it("inspects one redacted partner revision", async () => {
     const harness = makeTools();
-    const inspected = await harness.call("partner.inspect_revision", { partnerId: "partner_1" }) as PartnerDto;
-    expect(inspected).toMatchObject({ displayName: "Coder", partnerId: "partner_1" });
+    const inspected = await harness.call("partner_inspect_revision", { partnerId: "partner_1" }) as Record<string, unknown>;
+    expect(inspected).toMatchObject({ displayName: "Coder", partnerId: "partner_1", toolCount: 1 });
+    expect(inspected).not.toHaveProperty("tools");
   });
 
-  it("forwards instance targeting from work.dispatch into the work plan", async () => {
+  it("forwards instance targeting from work_dispatch into the work plan", async () => {
     const harness = makeTools();
-    await harness.call("work.dispatch", {
+    await harness.call("work_dispatch", {
       dependencies: [],
-      work: [{ accessMode: "WRITE", instanceId: "instance_1", key: "w1", partnerId: "partner_1", sessionPolicy: "resident", title: "继续上次的会话" }],
+      work: [{
+        acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+        accessMode: "WRITE", instanceId: "instance_1", instructions: "写入用户要求的原始拼写", key: "w1",
+        partnerId: "partner_1", sessionPolicy: "resident", title: "继续上次的会话",
+      }],
     });
-    const planned = (harness.planCalls[0] as { work: { instanceId?: string; sessionPolicy?: string }[] }).work;
-    expect(planned[0]).toMatchObject({ instanceId: "instance_1", sessionPolicy: "RESIDENT" });
+    const call = harness.planCalls[0] as { inputId?: string; work: { instanceId?: string; sessionPolicy?: string }[] };
+    expect(call.inputId).toBe("input_1");
+    const planned = call.work;
+    expect(planned[0]).toMatchObject({
+      acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+      instanceId: "instance_1", instructions: "写入用户要求的原始拼写", sessionPolicy: "RESIDENT",
+    });
+  });
+
+  it("persists a concrete blocking question through user_ask", async () => {
+    const harness = makeTools();
+    await harness.call("user_ask", { question: "验收必须覆盖哪些浏览器？" });
+    expect(harness.clarificationCalls).toEqual([{
+      inputId: "input_1", prompt: "验收必须覆盖哪些浏览器？", reasonCode: "question_required",
+    }]);
+  });
+
+  it("marks a tool-using direct response as an explicit completed outcome", async () => {
+    const harness = makeTools();
+    await expect(harness.call("turn_complete", { outcome: "DIRECT_ANSWER" })).resolves.toEqual({
+      outcome: "DIRECT_ANSWER", status: "COMMITTED",
+    });
+  });
+
+  it("turns a workspace-blocked dispatch into a resumable clarification", async () => {
+    const harness = makeTools({ workspaceBlocked: true });
+    const result = await harness.call("work_dispatch", {
+      dependencies: [],
+      work: [{ accessMode: "WRITE", key: "w1", partnerId: "partner_1", title: "修改工程" }],
+    });
+    expect(result).toEqual({ reasonCode: "avatar_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
+    expect(harness.clarificationCalls).toEqual([{
+      inputId: "input_1",
+      prompt: "选择这个 Avatar 的工作目录后，我会继续派发需要读写文件的工作。",
+      reasonCode: "avatar_workspace_not_ready",
+    }]);
   });
 });

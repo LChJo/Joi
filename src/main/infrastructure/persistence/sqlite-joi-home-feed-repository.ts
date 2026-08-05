@@ -1,0 +1,130 @@
+/* SQLite is synchronous by design; this adapter keeps the async port shape. */
+/* eslint-disable @typescript-eslint/require-await */
+import type { DatabaseSync } from "node:sqlite";
+
+import type { JoiGoalCardDto, JoiGoalStatusDto, JoiHomeFeedDto } from "../../../shared/joi.js";
+import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
+import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
+
+interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
+type Row = Record<string, unknown>;
+
+function text(row: Row, key: string): string {
+  const value = row[key];
+  if (typeof value !== "string") throw new Error("joi_home_feed_record_invalid");
+  return value;
+}
+
+function number(row: Row, key: string): number {
+  const value = row[key];
+  if (typeof value !== "number") throw new Error("joi_home_feed_record_invalid");
+  return value;
+}
+
+function goalStatus(row: Row): JoiGoalStatusDto {
+  if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
+  if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined || number(row, "waiting_count") > 0) return "NEEDS_ATTENTION";
+  if (number(row, "running_count") > 0) return "RUNNING";
+  if (number(row, "arranged_count") > 0) return "ARRANGED";
+  if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
+  if (number(row, "failed_count") > 0) return "FAILED";
+  if (text(row, "inbox_status") === "CONSUMED") return "COMPLETED";
+  return "ARRANGING";
+}
+
+export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
+  constructor(private readonly database: TransactionalDatabase) {}
+
+  async load(now: Date): Promise<JoiHomeFeedDto> {
+    return this.database.transaction((connection) => {
+      const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.clarification_reason_code, i.clarification_prompt,
+        i.canceled_at, COALESCE(o.completed_at, i.updated_at) AS projection_updated_at, a.avatar_id, a.name AS avatar_name,
+        COUNT(w.work_id) AS work_total,
+        COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
+        COALESCE(SUM(CASE WHEN w.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count,
+        COALESCE(SUM(CASE WHEN w.status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failed_count,
+        COALESCE(SUM(CASE WHEN w.status = 'RUNNING' THEN 1 ELSE 0 END), 0) AS running_count,
+        COALESCE(SUM(CASE WHEN w.status = 'WAITING' THEN 1 ELSE 0 END), 0) AS waiting_count,
+        COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY') THEN 1 ELSE 0 END), 0) AS arranged_count,
+        (SELECT COUNT(DISTINCT s.agent_id) FROM avatar_agent_sessions s
+          LEFT JOIN dispatch_attempts da ON s.backing_kind = 'LOCAL_INSTANCE' AND da.instance_id = s.backing_id
+          LEFT JOIN partner_runs pr ON s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id
+          LEFT JOIN work_items aw ON aw.work_id = COALESCE(da.work_id, pr.work_id)
+          WHERE s.dismissed_at IS NULL AND aw.input_id = i.input_id) AS agent_count,
+        COALESCE(rs.revision, 0) AS result_revision,
+        CASE WHEN o.result_revision = rs.revision AND rs.revision > 0 THEN 1 ELSE 0 END AS outcome_current,
+        o.completion_summary, o.completed_at,
+        (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id
+          WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs
+        FROM joi_inbox_messages i JOIN avatars a ON a.avatar_id = i.avatar_id
+        LEFT JOIN work_items w ON w.input_id = i.input_id
+        LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
+        LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
+        WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'
+        GROUP BY i.input_id ORDER BY i.updated_at DESC, i.input_id DESC`).all() as Row[];
+      const goals: JoiGoalCardDto[] = rows.map((row) => {
+        const status = goalStatus(row);
+        const total = number(row, "work_total");
+        const active = number(row, "work_active");
+        const activeRuns = number(row, "active_runs");
+        const rawTitle = sanitizeAgentConversationText(text(row, "body")).replace(/\s+/gu, " ").trim();
+        const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}…` : rawTitle;
+        return {
+          agentCount: number(row, "agent_count"),
+          avatar: { avatarId: text(row, "avatar_id"), name: text(row, "avatar_name") },
+          canDelete: text(row, "inbox_status") === "CONSUMED" && active === 0 && activeRuns === 0
+            && (total === 0 || number(row, "outcome_current") === 1),
+          ...(status === "NEEDS_ATTENTION" && (typeof row.clarification_reason_code === "string" || typeof row.clarification_prompt === "string") ? {
+            clarification: {
+              ...(typeof row.clarification_prompt === "string" ? { prompt: row.clarification_prompt } : {}),
+              ...(typeof row.clarification_reason_code === "string" ? { reasonCode: row.clarification_reason_code } : {}),
+            },
+          } : {}),
+          goalId: text(row, "input_id"),
+          ...(typeof row.completion_summary === "string" ? { completionSummary: row.completion_summary } : {}),
+          ...(typeof row.completed_at === "string" ? { completedAt: row.completed_at } : {}),
+          status,
+          title: title === "" ? "未命名目标" : title,
+          updatedAt: text(row, "projection_updated_at"),
+          work: { active, completed: number(row, "completed_count"), failed: number(row, "failed_count"), total },
+        };
+      });
+      const cutoff = new Date(now.getTime() - 15_000).toISOString();
+      const turns = connection.prepare(`SELECT t.turn_id, COALESCE(i.goal_input_id, t.input_id) AS goal_id,
+          t.status, t.created_at, t.updated_at
+        FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id = t.input_id
+        WHERE (i.goal_input_id IS NOT NULL OR t.input_id NOT LIKE 'joi_result_input:%')
+          AND (t.status IN ('PENDING','RUNNING','WAITING') OR t.updated_at >= ?)
+        UNION ALL
+        SELECT 'pending:' || i.input_id, i.goal_input_id, 'PENDING', i.updated_at, i.updated_at
+          FROM joi_inbox_messages i
+         WHERE i.goal_input_id IS NOT NULL AND i.status = 'PENDING'
+           AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id
+             AND t.status IN ('PENDING','RUNNING','WAITING'))
+        ORDER BY 4 DESC, 1 DESC`).all(cutoff) as Row[];
+      const thinking = turns.map((row) => {
+        const active = ["PENDING", "RUNNING", "WAITING"].includes(text(row, "status"));
+        const updatedAt = text(row, "updated_at");
+        return {
+          ...(active ? {} : { expiresAt: new Date(Date.parse(updatedAt) + 15_000).toISOString() }),
+          goalId: text(row, "goal_id"),
+          phase: active ? "progressing" as const : "settled" as const,
+          startedAt: text(row, "created_at"),
+          turnId: text(row, "turn_id"),
+        };
+      }).filter((item) => item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime());
+      const unassignedActions = (connection.prepare(`SELECT input_id, avatar_id, status, clarification_reason_code,
+        clarification_prompt, body, created_at, canceled_at FROM joi_inbox_messages
+        WHERE dismissed_at IS NULL AND avatar_id IS NULL AND status = 'CLARIFICATION_REQUIRED'
+        ORDER BY created_at DESC, input_id DESC`).all() as Row[]).map((row) => ({
+        acceptedAt: text(row, "created_at"),
+        ...(typeof row.clarification_prompt === "string" ? { clarificationPrompt: row.clarification_prompt } : {}),
+        ...(typeof row.clarification_reason_code === "string" ? { clarificationReasonCode: row.clarification_reason_code } : {}),
+        inputId: text(row, "input_id"),
+        status: "CLARIFICATION_REQUIRED" as const,
+        textPreview: sanitizeAgentConversationText(text(row, "body")).slice(0, 81),
+      }));
+      return { goals, thinking, unassignedActions };
+    });
+  }
+}

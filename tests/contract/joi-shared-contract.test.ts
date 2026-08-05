@@ -16,7 +16,9 @@ describe("JOI-01 shared DTO contract", () => {
       .toEqual(["openai", "anthropic"]);
     expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "qwen")?.options.map((option) => (
       option.protocols.map((protocol) => protocol.protocol)
-    ))).toEqual([["openai", "anthropic"], ["openai", "anthropic"]]);
+    ))).toEqual([["openai", "anthropic"], ["openai", "anthropic"], ["openai", "anthropic"]]);
+    expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "qwen")?.options.map((option) => option.accessMode))
+      .toEqual(["api", "coding-plan", "token-plan"]);
     expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "deepseek")?.options.map((option) => option.accessMode))
       .toEqual(["api"]);
     expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "deepseek")?.options[0]?.protocols.map((option) => option.protocol))

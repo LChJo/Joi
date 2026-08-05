@@ -10,7 +10,9 @@ import { SqliteA2aPartnerDispatchHandler } from "../../src/main/infrastructure/a
 import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteAvatarContextRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-context-repository.js";
+import { SqliteAvatarAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-agent-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
+import { createWorkResult } from "../../src/main/domain/work/work-result.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
@@ -48,13 +50,21 @@ async function openWithPartner() {
   return { database, partner, root };
 }
 
-function makeHandler(database: RuntimeDatabase, instances: Pick<PartnerInstanceManager, "dispatch">, onResult: (event: Record<string, unknown>) => Promise<void>) {
+function makeHandler(
+  database: RuntimeDatabase,
+  instances: Pick<PartnerInstanceManager, "dispatch">,
+  onResult: (event: Record<string, unknown>) => Promise<void>,
+  diagnostics: { event: string; fields: Record<string, unknown> }[] = [],
+  verifier?: { verify(input: unknown): Promise<{ reasonCode?: string; status: "FAILED" | "NOT_REQUIRED" | "PASSED" }> },
+) {
   const contexts = new SqliteAvatarContextRepository(database);
   return new SqliteA2aPartnerDispatchHandler({
+    agentConversations: new SqliteAvatarAgentRepository(database),
     clock: new TestClock(),
     contextAssembler: new AvatarContextAssembler({ avatars: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
     contexts,
     database,
+    diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
     gateway: { recover: async () => { throw new Error("gateway must not be used for LOCAL_PI"); }, startWithResult: async () => { throw new Error("gateway must not be used for LOCAL_PI"); } },
     instances,
     leases: { acquire: async () => null, release: async () => undefined },
@@ -62,6 +72,7 @@ function makeHandler(database: RuntimeDatabase, instances: Pick<PartnerInstanceM
     onResult,
     partners: new SqlitePartnerRegistryRepository(database),
     results: new SqliteWorkResultRepository(database),
+    ...(verifier === undefined ? {} : { verifier }),
   });
 }
 
@@ -76,10 +87,86 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it("fails a candidate completion when its private acceptance checks do not pass", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'",
+      ).run(JSON.stringify({ acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }] })));
+      const handler = makeHandler(database, {
+        dispatch: async () => ({
+          actionId: "action_1", artifacts: [], body: "I wrote it", externalRunId: "local_pi:action_1",
+          status: "COMPLETED" as const, workId: "work_1",
+        }),
+      }, async () => undefined, [], {
+        verify: async () => ({ reasonCode: "verification_content_mismatch", status: "FAILED" }),
+      });
+
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", workId: "work_1" }));
+
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = 'work_1'",
+      ).get())).toEqual({ status: "FAILED" });
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT reason_code, status FROM work_result_verifications",
+      ).get())).toEqual({ reason_code: "verification_content_mismatch", status: "FAILED" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the first terminal result authoritative and archives later conflicts without changing projections", async () => {
+    const { database, partner, root } = await openWithPartner();
+    try {
+      database.transaction((connection) => connection.prepare(`INSERT INTO partner_runs
+        (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind,
+         external_run_id, status, created_at, updated_at)
+        VALUES ('partner_run:action_1', 'attempt_1', 'action_1', 'avatar_1', 'work_1', ?,
+                'LOCAL_PI', 'local_pi:action_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`)
+        .run(partner.partnerRevisionId));
+      const repository = new SqliteWorkResultRepository(database);
+      const base = {
+        actionId: "action_1", artifacts: [], avatarId: "avatar_1", body: "done",
+        createdAt: "2026-07-29T10:00:00.000Z", isLate: false,
+        partnerRevisionId: partner.partnerRevisionId, runId: "partner_run:action_1", workId: "work_1",
+      };
+      const first = await repository.record(createWorkResult({
+        ...base, resultId: "result_completed", status: "COMPLETED",
+      }));
+      const conflict = await repository.record(createWorkResult({
+        ...base, body: "conflicting failure", createdAt: "2026-07-29T10:01:00.000Z",
+        resultId: "result_failed", status: "FAILED",
+      }));
+
+      expect(first.isAuthoritative).toBe(true);
+      expect(conflict.isAuthoritative).toBe(false);
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT result_id, is_authoritative FROM work_results ORDER BY created_at, result_id",
+      ).all())).toEqual([
+        { is_authoritative: 1, result_id: "result_completed" },
+        { is_authoritative: 0, result_id: "result_failed" },
+      ]);
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = 'work_1'",
+      ).get())).toEqual({ status: "COMPLETED" });
+      const projection = database.transaction((connection) => connection.prepare(
+        "SELECT recent_results_json FROM avatar_task_projections WHERE avatar_id = 'avatar_1'",
+      ).get()) as { recent_results_json: string };
+      expect(JSON.parse(projection.recent_results_json)).toEqual([
+        expect.objectContaining({ resultId: "result_completed", status: "COMPLETED" }),
+      ]);
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("routes LOCAL_PI dispatches carrying instance fields through the instance manager and reports the real data source", async () => {
     const { database, partner, root } = await openWithPartner();
     try {
       const dispatchInputs: unknown[] = [];
+      const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
       const results: Record<string, unknown>[] = [];
       const handler = makeHandler(database, {
         dispatch: async (input) => {
@@ -89,14 +176,17 @@ describe("partner dispatch instance routing", () => {
           ).run(input.instanceId ?? "", input.dispatchAttemptId ?? ""));
           return { actionId: "action_1", artifacts: [], body: "done", externalRunId: "local_pi:action_1", status: "COMPLETED" as const, workId: "work_1" };
         },
-      }, async (event) => { results.push(event); });
+      }, async (event) => { results.push(event); }, diagnostics);
 
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", sessionPolicy: "RESIDENT", workId: "work_1" }));
 
       expect(dispatchInputs[0]).toMatchObject({
         dispatchAttemptId: "attempt_1",
         instanceId: "instance_9",
-        request: { actionId: "action_1", avatarId: "avatar_1", taskProjection: "the task", workId: "work_1" },
+        request: {
+          actionId: "action_1", avatarId: "avatar_1",
+          taskProjection: "Work title: the task\n\nOriginal user request (authoritative):\nbody", workId: "work_1",
+        },
         sessionPolicy: "RESIDENT",
       });
       const dispatched = dispatchInputs[0] as { request: { contextSnapshotId: unknown } };
@@ -111,6 +201,28 @@ describe("partner dispatch instance routing", () => {
         "SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'",
       ).get()) as { status: string };
       expect(attempt.status).toBe("COMPLETED");
+      const conversation = database.transaction((connection) => connection.prepare(`SELECT role, kind, text
+        FROM avatar_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all());
+      expect(conversation).toEqual([
+        { kind: "MARKDOWN", role: "USER", text: "Work title: the task\n\nOriginal user request (authoritative):\nbody" },
+        { kind: "MARKDOWN", role: "AGENT", text: "done" },
+      ]);
+      expect(diagnostics.find((entry) => entry.event === "joi.partner.dispatch.started")?.fields).toMatchObject({
+        actionId: "action_1",
+        avatarId: "avatar_1",
+        dispatchAttemptId: "attempt_1",
+        outboxId: "outbox_1",
+        workId: "work_1",
+      });
+      expect(diagnostics.find((entry) => entry.event === "joi.partner.run.created")?.fields)
+        .toMatchObject({ runId: "partner_run:action_1" });
+      expect(diagnostics.find((entry) => entry.event === "joi.partner.result.recorded")?.fields).toMatchObject({
+        agentId: "instance_9",
+        resultId: "work_result:partner_run:action_1:COMPLETED",
+        status: "COMPLETED",
+      });
+      expect(JSON.stringify(diagnostics)).not.toContain("the task");
+      expect(JSON.stringify(diagnostics)).not.toContain("done");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });
@@ -128,6 +240,33 @@ describe("partner dispatch instance routing", () => {
         "SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'",
       ).get()) as { status: string };
       expect(attempt.status).toBe("UNKNOWN");
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("does not replace a committed COMPLETED result with UNKNOWN when result notification fails", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      const handler = makeHandler(database, {
+        dispatch: async () => ({
+          actionId: "action_1", artifacts: [], body: "done", externalRunId: "local_pi:action_1",
+          status: "COMPLETED" as const, workId: "work_1",
+        }),
+      }, async () => { throw new Error("result notification failed"); });
+
+      await expect(handler.handle(baseRecord({
+        actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9",
+        sessionPolicy: "RESIDENT", workId: "work_1",
+      }))).rejects.toThrow("result notification failed");
+
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_results WHERE work_id = 'work_1' ORDER BY created_at, result_id",
+      ).all())).toEqual([{ status: "COMPLETED" }]);
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'",
+      ).get())).toEqual({ status: "COMPLETED" });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });
@@ -197,6 +336,55 @@ describe("partner dispatch instance routing", () => {
       expect(JSON.parse(projection.recent_results_json)).toEqual([
         expect.objectContaining({ resultId: "work_result:partner_run:action_1:COMPLETED", status: "COMPLETED" }),
       ]);
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("creates an ephemeral A2A Agent card and archives text without raw data payloads", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-dispatch-a2a-agent-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      database.transaction((connection) => connection.prepare(`INSERT INTO agent_connections
+        (agent_connection_id, name, card_url, status, created_at, updated_at)
+        VALUES ('remote_1', '远程研究员', 'http://agent.invalid/card', 'ACTIVE', ?, ?)`)
+        .run("2026-07-29T10:00:00.000Z", "2026-07-29T10:00:00.000Z"));
+      const revision = database.transaction((connection) => connection.prepare(
+        "SELECT active_revision_id FROM partners WHERE partner_id = 'partner_remote_1'",
+      ).get()) as { active_revision_id: string };
+      seedDispatchFixture(database, revision.active_revision_id);
+      const contexts = new SqliteAvatarContextRepository(database);
+      const handler = new SqliteA2aPartnerDispatchHandler({
+        agentConversations: new SqliteAvatarAgentRepository(database),
+        clock: new TestClock(),
+        contextAssembler: new AvatarContextAssembler({ avatars: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
+        contexts,
+        database,
+        gateway: {
+          recover: async () => { throw new Error("unexpected recovery"); },
+          startWithResult: async () => ({
+            invocation: {
+              agentConnectionId: "remote_1", createdAt: "2026-07-29T10:00:00.000Z", invocationId: "invocation_remote_1",
+              lastActivityAt: "2026-07-29T10:00:00.000Z", messageId: "action_1", request: { parts: [] }, sendAttempts: 1,
+              status: "COMPLETED" as const, updatedAt: "2026-07-29T10:00:00.000Z",
+            },
+            output: { artifacts: [], parts: [{ data: "远程工作完成", kind: "text" }, { data: "PRIVATE_A2A_PAYLOAD", kind: "data" }] },
+          }),
+        },
+        leases: { acquire: async () => null, release: async () => undefined },
+        local: { run: async () => { throw new Error("local runner must not be used"); } },
+        partners: new SqlitePartnerRegistryRepository(database),
+        results: new SqliteWorkResultRepository(database),
+      });
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }));
+
+      expect(database.transaction((connection) => connection.prepare(`SELECT backing_kind, session_policy
+        FROM avatar_agent_sessions WHERE avatar_id = 'avatar_1'`).get())).toEqual({ backing_kind: "A2A_RUN", session_policy: "EPHEMERAL" });
+      const displayText = database.transaction((connection) => connection.prepare(`SELECT text
+        FROM avatar_agent_conversation_entries ORDER BY sequence`).all()) as { text: string | null }[];
+      expect(displayText.map((row) => row.text).join("\n")).toContain("远程工作完成");
+      expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_A2A_PAYLOAD");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

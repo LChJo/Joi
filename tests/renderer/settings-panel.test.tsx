@@ -21,7 +21,7 @@ function mockOperations(api: DigitalLifeApi) {
   vi.spyOn(api, "listBackups").mockResolvedValue({
     items: [{ backupId: "backup_1", createdAt: "2026-07-30T10:00:00.000Z", databaseBytes: 1_048_576, manifestHash: "a".repeat(64), schemaVersion: 26 }],
   });
-  vi.spyOn(api, "listSessions").mockResolvedValue({
+  const listSessions = vi.spyOn(api, "listSessions").mockResolvedValue({
     items: [
       { createdAt: "2026-07-30T09:00:00.000Z", current: true, deviceId: "device_1", ipSummary: "", kind: "desktop", lastActivityAt: "2026-07-30T10:00:00.000Z" },
       { createdAt: "2026-07-30T09:00:00.000Z", current: false, deviceId: "device_2", ipSummary: "", kind: "lan", lastActivityAt: "2026-07-30T10:00:00.000Z" },
@@ -30,6 +30,7 @@ function mockOperations(api: DigitalLifeApi) {
   });
   vi.spyOn(api, "settings").mockResolvedValue(runtimeSettings);
   vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [] });
+  return { listSessions };
 }
 
 describe("settings panel", () => {
@@ -49,6 +50,27 @@ describe("settings panel", () => {
       launchAtLogin: false,
     }));
     expect(await screen.findByText("设置已保存，重启后其他设备的访问方式会切换。", {}, { timeout: 4_000 })).toBeInTheDocument();
+  });
+
+  it("shows at most the ten most recently active sessions", async () => {
+    const api = new DigitalLifeApi("");
+    const { listSessions } = mockOperations(api);
+    listSessions.mockResolvedValue({
+      items: Array.from({ length: 12 }, (_, index) => ({
+        createdAt: "2026-08-03T00:00:00.000Z",
+        current: index === 0,
+        deviceId: `device_${String(index + 1)}`,
+        ipSummary: "",
+        kind: index === 0 ? "desktop" as const : "lan" as const,
+        lastActivityAt: new Date(Date.UTC(2026, 7, 3, 12, 0, 0) - index * 60_000).toISOString(),
+      })),
+    });
+    const { container } = render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+
+    expect(await screen.findByText(/当前设备/u, {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(container.querySelectorAll(".session-list > span")).toHaveLength(10);
+    expect(screen.queryByText(/局域网设备 11/u)).not.toBeInTheDocument();
+    expect(screen.queryByText(/局域网设备 12/u)).not.toBeInTheDocument();
   });
 
   it("surfaces API error messages and generic failures when saving settings", async () => {

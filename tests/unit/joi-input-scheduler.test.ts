@@ -47,4 +47,23 @@ describe("continuous joi input scheduler", () => {
     expect(handled).toEqual(["bad", "good"]);
     expect(failed).toEqual(["bad"]);
   });
+
+  it("runs an active input again at the next safe boundary when clarification wakes the same id", async () => {
+    const handled: string[] = [];
+    let releaseFirst: (() => void) | undefined;
+    const scheduler = new JoiInputScheduler({
+      handle: async (inputId) => {
+        handled.push(inputId);
+        if (handled.length === 1) await new Promise<void>((resolve) => { releaseFirst = resolve; });
+      },
+    });
+
+    scheduler.notify("input-clarify");
+    await Promise.resolve();
+    scheduler.notify("input-clarify");
+    releaseFirst?.();
+    await scheduler.waitForIdle();
+
+    expect(handled).toEqual(["input-clarify", "input-clarify"]);
+  });
 });

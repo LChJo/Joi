@@ -21,13 +21,28 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
 
   async commit(plan: CommittedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
+      const avatarIds = [...new Set(plan.items.map((item) => item.avatarId))];
+      if (avatarIds.length !== 1) throw new Error("work_plan_avatar_invalid");
+      const avatarId = avatarIds[0];
+      if (avatarId === undefined) throw new Error("work_plan_avatar_invalid");
+      const binding = connection.prepare(`SELECT 1 FROM joi_turns
+        WHERE turn_id = ? AND input_id = ? AND avatar_id = ?`).get(plan.turnId, plan.inputId, avatarId);
+      if (binding === undefined) throw new Error("work_plan_goal_binding_invalid");
       const insertWork = connection.prepare(`INSERT INTO work_items
-        (work_id, avatar_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
-        VALUES (?, ?, ?, '{}', ?, ?, ?, ?, ?)`);
-      for (const item of plan.items) insertWork.run(
-        item.workId, item.avatarId, item.title, item.accessMode === "NONE" ? "READ" : item.accessMode, null,
+        (work_id, avatar_id, input_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      const briefs = new Map(plan.briefs.map((brief) => [brief.workId, brief]));
+      for (const item of plan.items) {
+        const brief = briefs.get(item.workId);
+        if (brief === undefined) throw new Error("work_brief_missing");
+        insertWork.run(
+        item.workId, item.avatarId, plan.inputId, item.title, JSON.stringify({
+          acceptanceChecks: brief.acceptanceChecks,
+          ...(brief.instructions === undefined ? {} : { instructions: brief.instructions }),
+        }), item.accessMode === "NONE" ? "READ" : item.accessMode, null,
         item.status, item.createdAt, item.updatedAt,
       );
+      }
       const insertAccess = connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES (?, ?)");
       for (const item of plan.items) insertAccess.run(item.workId, item.accessMode);
       const insertDependency = connection.prepare("INSERT INTO work_dependencies (work_id, depends_on_work_id) VALUES (?, ?)");
@@ -55,14 +70,11 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
           attempt.registryRevision, attempt.actionId, attempt.outbox.outboxId, plan.createdAt, plan.createdAt,
         );
       }
-      const avatarId = plan.items[0]?.avatarId;
-      if (avatarId !== undefined) {
-        const active = connection.prepare(`SELECT work_id AS workId, title, status FROM work_items
-          WHERE avatar_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY created_at, work_id`).all(avatarId);
-        connection.prepare(`INSERT INTO avatar_task_projections (avatar_id, active_work_json, recent_results_json, updated_at)
-          VALUES (?, ?, '[]', ?) ON CONFLICT(avatar_id) DO UPDATE SET active_work_json = excluded.active_work_json,
-            updated_at = excluded.updated_at`).run(avatarId, JSON.stringify(active), plan.createdAt);
-      }
+      const active = connection.prepare(`SELECT work_id AS workId, title, status FROM work_items
+        WHERE avatar_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY created_at, work_id`).all(avatarId);
+      connection.prepare(`INSERT INTO avatar_task_projections (avatar_id, active_work_json, recent_results_json, updated_at)
+        VALUES (?, ?, '[]', ?) ON CONFLICT(avatar_id) DO UPDATE SET active_work_json = excluded.active_work_json,
+          updated_at = excluded.updated_at`).run(avatarId, JSON.stringify(active), plan.createdAt);
     });
   }
 

@@ -23,6 +23,115 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 }
 
 describe("JOI-01 non-destructive migration", () => {
+  it("reconciles already-consumed legacy result inputs into a deletable goal outcome", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-goal-outcome-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 35);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-08-05T07:00:00.000Z";
+    const partner = await new PartnerRegistryService({
+      clock: new TestClock(now), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(oldDatabase),
+    }).add({ capabilities: [], displayName: "旧搭档", kind: "local-pi", skills: [], tools: [] });
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO avatars
+        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
+         memory_namespace_id, status, created_at, updated_at)
+        VALUES ('avatar-outcome', 'A', 'persona-outcome', 'summary', 'scope', 'project',
+                'memory-outcome', 'ACTIVE', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+        VALUES ('goal-outcome', 'key-outcome', 'legacy goal', 'CONSUMED', 'avatar-outcome', ?, ?),
+               ('joi_result_input:legacy-event', 'key-legacy-result', 'legacy result', 'CONSUMED', 'avatar-outcome', ?, ?)`)
+        .run(now, now, now, now);
+      connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-outcome', 'goal-outcome', 'avatar-outcome', 'session-outcome', 'COMPLETED', ?, ?)`)
+        .run(now, now);
+      connection.prepare(`INSERT INTO dispatch_plans
+        (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+        VALUES ('plan-outcome', 'turn-outcome', '{"workIds":["work-outcome"]}', '[]', ?)`).run(now);
+      connection.prepare(`INSERT INTO work_items
+        (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-outcome', 'avatar-outcome', 'goal-outcome', 'legacy work', '{}', 'READ', 'COMPLETED', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO dispatch_attempts
+        (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+        VALUES ('attempt-outcome', 'plan-outcome', 'work-outcome', ?, 1, 'action-outcome', 'COMPLETED', ?, ?)`)
+        .run(partner.partnerRevisionId, now, now);
+      connection.prepare(`INSERT INTO partner_runs
+        (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+        VALUES ('run-outcome', 'attempt-outcome', 'action-outcome', 'avatar-outcome', 'work-outcome', ?, 'LOCAL_PI', 'local:outcome', 'COMPLETED', ?, ?)`)
+        .run(partner.partnerRevisionId, now, now);
+      connection.prepare("INSERT INTO work_result_bodies (body_ref, body, created_at) VALUES ('body-outcome', 'private', ?)").run(now);
+      connection.prepare(`INSERT INTO work_results
+        (result_id, run_id, action_id, avatar_id, work_id, partner_revision_id, status, summary, body_ref,
+         artifacts_json, is_late, is_authoritative, created_at)
+        VALUES ('result-outcome', 'run-outcome', 'action-outcome', 'avatar-outcome', 'work-outcome', ?,
+                'COMPLETED', 'legacy summary', 'body-outcome', '[]', 0, 1, ?)`).run(partner.partnerRevisionId, now);
+      connection.prepare("INSERT INTO work_result_verifications (result_id, status, created_at) VALUES ('result-outcome', 'NOT_REQUIRED', ?)").run(now);
+      connection.prepare(`INSERT INTO partner_result_events
+        (event_id, run_id, avatar_id, work_id, partner_revision_id, status, created_at, consumed_at, input_id)
+        VALUES ('legacy-event', 'run-outcome', 'avatar-outcome', 'work-outcome', ?, 'COMPLETED', ?, ?, 'joi_result_input:legacy-event')`)
+        .run(partner.partnerRevisionId, now, now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.transaction((connection) => connection.prepare(`SELECT s.revision, s.synthesized_revision,
+        o.completion_summary FROM joi_goal_result_sets s JOIN joi_goal_outcomes o ON o.input_id = s.original_input_id
+        WHERE s.original_input_id = 'goal-outcome'`).get())).toEqual({
+        completion_summary: "历史工作已完成；Agent 结果可在 Avatar 详情中查看。", revision: 1, synthesized_revision: 1,
+      });
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("backfills a deterministic historical Work goal binding and rejects new unbound Work", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-goal-binding-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 33);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-08-05T08:00:00.000Z";
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO avatars
+        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
+         memory_namespace_id, status, created_at, updated_at)
+        VALUES ('avatar-binding', 'A', 'persona-binding', 'summary', 'scope', 'project',
+                'memory-binding', 'ACTIVE', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+        VALUES ('input-binding', 'idem-binding', 'private request', 'ROUTED', 'avatar-binding', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-binding', 'input-binding', 'avatar-binding', 'session-binding', 'COMPLETED', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO dispatch_plans
+        (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+        VALUES ('plan-binding', 'turn-binding', '{"workIds":["work-binding"]}', '[]', ?)`).run(now);
+      connection.prepare(`INSERT INTO work_items
+        (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-binding', 'avatar-binding', NULL, 'work', '{}', 'READ', 'COMPLETED', ?, ?)`).run(now, now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT input_id FROM work_items WHERE work_id = 'work-binding'",
+      ).get())).toEqual({ input_id: "input-binding" });
+      expect(() => upgraded.transaction((connection) => connection.prepare(`INSERT INTO work_items
+        (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-unbound', 'avatar-binding', NULL, 'invalid', '{}', 'READ', 'PLANNED', ?, ?)`)
+        .run(now, now))).toThrow();
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("creates the new orchestration schema on an empty database", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-empty-"));
     const database = await openRuntimeDatabase({
@@ -30,9 +139,19 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(28);
+      expect(database.inspect().schemaVersion).toBe(36);
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('avatar_agent_sessions', 'avatar_agent_conversation_entries') ORDER BY name",
+      ).all())).toEqual([
+        { name: "avatar_agent_conversation_entries" },
+        { name: "avatar_agent_sessions" },
+      ]);
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_revisions)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "access_mode" }), expect.objectContaining({ name: "protocol" })]));
+      expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_health)").all()))
+        .toEqual(expect.arrayContaining([expect.objectContaining({ name: "last_error" })]));
+      expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_inbox_messages)").all()))
+        .toEqual(expect.arrayContaining([expect.objectContaining({ name: "clarification_prompt" }), expect.objectContaining({ name: "dismissed_at" })]));
       const names = database.transaction((connection) => connection.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
       ).all().map((row) => String((row as { name: unknown }).name)));
@@ -96,7 +215,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(28);
+      expect(upgraded.inspect().schemaVersion).toBe(36);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         avatars: (connection.prepare("SELECT COUNT(*) AS count FROM avatars").get() as { count: number }).count,

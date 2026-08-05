@@ -16,6 +16,51 @@ const finance = createAvatar({
 });
 
 describe("single-joi-avatar-scoped-thread-isolation", () => {
+  it("runs result synthesis in an isolated session and persists the bounded final answer for the original goal", async () => {
+    const completions: unknown[] = [];
+    const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
+    const sessions: string[] = [];
+    const coordinator = new JoiCoordinator({
+      avatars: { getAvatar: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
+      router: { decide: async () => { throw new Error("synthesis input is pre-bound"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          sessions.push(turn.sessionId);
+          turn.onEvent?.({ delta: "两项工作已完成。 C:\\private\\file 已隐藏。", turnId: turn.turnId, type: "text_delta" });
+          turn.onEvent?.({ toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_started" });
+          turn.onEvent?.({ isError: false, toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_finished" });
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async (inputId, turnId, completion) => {
+          completions.push({ completion, inputId, turnId });
+          return { goalInputId: "goal-1", goalOutcomePersisted: true, resultRevision: 2 };
+        },
+        createTurn: async () => undefined,
+        loadInput: async () => ({
+          avatarId: "research", body: "synthesize", goalInputId: "goal-1", inputId: "joi_result_input:goal:goal-1",
+          resultRevision: 2, status: "PENDING",
+        }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await coordinator.handle("joi_result_input:goal:goal-1");
+    expect(sessions).toEqual(["joi_synthesis_session:research"]);
+    expect(completions).toEqual([expect.objectContaining({
+      completion: { completionSummary: "两项工作已完成。 [redacted-path] 已隐藏。" },
+      inputId: "joi_result_input:goal:goal-1",
+    })]);
+    expect(diagnostics.map((entry) => entry.event)).toEqual(expect.arrayContaining([
+      "joi.goal.synthesis.started", "joi.goal.synthesis.completed", "joi.goal.outcome.persisted",
+    ]));
+  });
+
   it("routes from summaries then gives the one global runtime only the selected Avatar body", async () => {
     const observedRouting: unknown[] = [];
     const turns: StartReasoningTurnInput[] = [];
@@ -126,6 +171,41 @@ describe("single-joi-avatar-scoped-thread-isolation", () => {
     expect(failed).toEqual([expect.stringMatching(/^input-new:turn_/u)]);
   });
 
+  it("bootstraps a deterministic workbench Avatar when no Avatar exists and routing cannot decide", async () => {
+    const created: unknown[] = [];
+    const turns: StartReasoningTurnInput[] = [];
+    const clarifications: string[] = [];
+    const coordinator = new JoiCoordinator({
+      avatarRegistry: { create: async (input) => { created.push(input); return research; } },
+      avatars: { getAvatar: async () => null, listSummaries: async () => [] },
+      clock: new TestClock(),
+      ids: new TestIds(),
+      router: { decide: async () => ({ action: "select", avatarId: "ghost" }) },
+      runtime: {
+        abort: () => undefined,
+        followUp: () => undefined,
+        isRunning: () => false,
+        restore: async () => false,
+        startTurn: async (turn) => { turns.push(turn); },
+        steer: () => undefined,
+        waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => undefined,
+        createTurn: async () => undefined,
+        loadInput: async () => ({ body: "我想为『复现并诊断缺陷』这类工作组建搭档团队", inputId: "input-boot", status: "PENDING" }),
+        requireClarification: async (_inputId, reason) => { clarifications.push(reason); },
+      },
+    });
+    await coordinator.handle("input-boot");
+    expect(clarifications).toEqual([]);
+    expect(created).toEqual([expect.objectContaining({ name: "joi 工作台" })]);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.avatarId).toBe("research");
+    expect(turns[0]?.systemPrompt).toContain("RESEARCH_SECRET_SENTINEL");
+  });
+
   it("does not create an Avatar when no registry is available", async () => {
     const reasons: string[] = [];
     const coordinator = new JoiCoordinator({
@@ -220,7 +300,7 @@ describe("single-joi-avatar-scoped-thread-isolation", () => {
         startTurn: async (turn) => {
           turn.onEvent?.({ delta: "", turnId: turn.turnId, type: "text_delta" });
           turn.onEvent?.({ delta: "visible", turnId: turn.turnId, type: "text_delta" });
-          turn.onEvent?.({ toolCallId: "tool-1", toolName: "work.dispatch", turnId: turn.turnId, type: "tool_started" });
+          turn.onEvent?.({ toolCallId: "tool-1", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_started" });
           throw new Error("timeout after side effect");
         },
         steer: () => undefined, waitForIdle: async () => undefined,

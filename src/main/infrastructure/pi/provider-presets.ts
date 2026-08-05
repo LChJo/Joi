@@ -23,7 +23,7 @@ export interface DirectModelSourcePreset {
 }
 
 const model = (id: string, label: string): ModelPresetEntry => ({ id, label, toolCapability: "release-tested" });
-const presetVersion = "2026-07-30";
+const presetVersion = "2026-08-02";
 
 export const MODEL_SOURCE_PRESETS = [
   {
@@ -74,6 +74,16 @@ export const MODEL_SOURCE_PRESETS = [
   {
     accessMode: "coding-plan", defaultModelId: "qwen3.7-plus", endpoint: "https://coding.dashscope.aliyuncs.com/apps/anthropic", endpointEditable: false,
     kind: "qwen", label: "百炼 Coding Plan", models: [model("qwen3.7-plus", "Qwen 3.7 Plus"), model("qwen3-coder-next", "Qwen 3 Coder Next")],
+    piProviderFamily: "anthropic-compatible", presetVersion, protocol: "anthropic",
+  },
+  {
+    accessMode: "token-plan", defaultModelId: "qwen3.7-plus", endpoint: "https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1", endpointEditable: false,
+    kind: "qwen", label: "百炼 Token Plan", models: [model("qwen3.7-plus", "Qwen 3.7 Plus")],
+    piProviderFamily: "openai-compatible", presetVersion, protocol: "openai",
+  },
+  {
+    accessMode: "token-plan", defaultModelId: "qwen3.7-plus", endpoint: "https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic", endpointEditable: false,
+    kind: "qwen", label: "百炼 Token Plan", models: [model("qwen3.7-plus", "Qwen 3.7 Plus")],
     piProviderFamily: "anthropic-compatible", presetVersion, protocol: "anthropic",
   },
   {
@@ -141,4 +151,13 @@ export function getDirectModelSourcePreset(
   ));
   if (preset === undefined) throw new Error("unknown_model_source_preset");
   return preset;
+}
+
+// 这些主机的端点强制 enable_thinking=true（百炼 token-plan / coding-plan，含 openai 与 anthropic 两协议）。
+// pi-ai 对 thinkingFormat:"qwen" 只在 per-call 带 reasoning 级别时才发 enable_thinking=true，且无 model 级"常开"开关，
+// 故运行时需要据此判断是否传级别；标准 api（dashscope.aliyuncs.com）与其它厂商不匹配，行为不变。
+const ALWAYS_ON_THINKING_HOST = /\/\/(token-plan\.|coding\.dashscope\.)/;
+
+export function modelRequiresAlwaysOnThinking(baseUrl: string | undefined): boolean {
+  return baseUrl !== undefined && ALWAYS_ON_THINKING_HOST.test(baseUrl);
 }

@@ -35,6 +35,34 @@ describe("HTTP API v1", () => {
     }
   });
 
+  it("opens a fresh SSE stream without a cursor and rejects unauthenticated streams with 401", async () => {
+    const fixture = await createRuntimeFixture();
+    const handler = createApiHandler(fixture);
+    const listeners = await startRuntimeListeners({ handler, loopbackPort: 0 });
+
+    try {
+      const bootstrap = await fixture.auth.issueDesktopBootstrap();
+      const sessionResponse = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
+        body: JSON.stringify({ nonce: bootstrap.nonce }),
+        headers: { "content-type": "application/json", origin: "null" },
+        method: "POST",
+      });
+      const cookie = cookieFrom(sessionResponse);
+
+      const unauth = await fetch(`${listeners.loopback.url}/api/v1/stream`);
+      expect(unauth.status).toBe(401);
+
+      const controller = new AbortController();
+      const fresh = await fetch(`${listeners.loopback.url}/api/v1/stream`, { headers: { cookie }, signal: controller.signal });
+      expect(fresh.status).toBe(200);
+      expect(fresh.headers.get("content-type")).toContain("text/event-stream");
+      controller.abort();
+    } finally {
+      await listeners.close();
+      await fixture.close();
+    }
+  });
+
   it("replays SSE from an opaque cursor", async () => {
     const fixture = await createRuntimeFixture();
     const handler = createApiHandler(fixture);

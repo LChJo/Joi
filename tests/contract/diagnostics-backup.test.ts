@@ -11,11 +11,11 @@ describe("safe operations projections", () => {
       expect(diagnostics).toMatchObject({
         database: { journalMode: "wal", state: "open" },
         runtime: { pendingOutbox: 0 },
-        schemaVersion: 28,
+        schemaVersion: 36,
       });
       expect(manifest).toMatchObject({
         appVersion: "0.1.0",
-        schemaVersion: 28,
+        schemaVersion: 36,
         secretsExcluded: true,
       });
       expect(manifest.manifestHash).toMatch(/^[a-f0-9]{64}$/);

@@ -3,6 +3,7 @@
 import { Agent, generateSummary, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
+import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type {
   JoiReasoningSessionSnapshot,
   PrimaryReasoningEvent,
@@ -12,29 +13,30 @@ import type {
 } from "../../application/ports/primary-reasoning-runtime.js";
 
 export const JOI_REASONING_TOOL_NAMES = [
-  "avatar.list_summaries",
-  "avatar.select",
-  "avatar.create",
-  "avatar.suggest_merge",
-  "avatar.suggest_archive",
-  "model.list_sources",
-  "partner.list_available",
-  "partner.inspect_revision",
-  "partner.create",
-  "partner.create_instance",
-  "partner.list_instances",
-  "partner.dispose_instance",
-  "work.create",
-  "work.add_dependency",
-  "work.dispatch",
-  "work.read_result",
-  "work.wait",
-  "work.cancel",
-  "work.reassign",
-  "memory.search",
-  "memory.append_candidate",
-  "schedule.plan",
-  "user.ask",
+  "avatar_list_summaries",
+  "avatar_select",
+  "avatar_create",
+  "avatar_suggest_merge",
+  "avatar_suggest_archive",
+  "model_list_sources",
+  "partner_list_available",
+  "partner_inspect_revision",
+  "partner_create",
+  "partner_create_instance",
+  "partner_list_instances",
+  "partner_dispose_instance",
+  "work_create",
+  "work_add_dependency",
+  "work_dispatch",
+  "work_read_result",
+  "work_wait",
+  "work_cancel",
+  "work_reassign",
+  "memory_search",
+  "memory_append_candidate",
+  "schedule_plan",
+  "user_ask",
+  "turn_complete",
 ] as const;
 
 const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);
@@ -48,7 +50,8 @@ interface PiReasoningRuntimeOptions {
   model: Model<Api>;
   models: Models;
   sessionStore: ReasoningSessionStore;
-  tools: AgentTool[];
+  /** Fixed tools, or a per-turn factory when tool closures bind turn context (inputId/turnId). */
+  tools: AgentTool[] | ((input: StartReasoningTurnInput) => AgentTool[]);
 }
 
 interface SessionRuntime {
@@ -81,6 +84,11 @@ function fallbackSummary(messages: AgentMessage[], maxCharacters: number): strin
   return lines.join("\n").slice(0, maxCharacters);
 }
 
+function validateToolNames(tools: AgentTool[]): void {
+  const unsafeTool = tools.find((tool) => !allowedToolNames.has(tool.name));
+  if (unsafeTool !== undefined) throw new Error("unsafe_reasoning_tool");
+}
+
 function isCheckpoint(message: AgentMessage | undefined): boolean {
   if (message === undefined) return false;
   const record = message as unknown as Record<string, unknown>;
@@ -93,11 +101,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #compaction: CompactionOptions;
   readonly #sessionStore: ReasoningSessionStore;
   readonly #sessions = new Map<string, SessionRuntime>();
-  readonly #tools: AgentTool[];
+  readonly #tools: AgentTool[] | ((input: StartReasoningTurnInput) => AgentTool[]);
 
   constructor(options: PiReasoningRuntimeOptions) {
-    const unsafeTool = options.tools.find((tool) => !allowedToolNames.has(tool.name));
-    if (unsafeTool !== undefined) throw new Error("unsafe_reasoning_tool");
+    if (Array.isArray(options.tools)) validateToolNames(options.tools);
     this.#model = options.model;
     this.#models = options.models;
     this.#compaction = options.compaction ?? DEFAULT_COMPACTION;
@@ -105,7 +112,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       || this.#compaction.maxMessages <= this.#compaction.keepRecentMessages
       || this.#compaction.maxSummaryCharacters < 80) throw new Error("reasoning_compaction_invalid");
     this.#sessionStore = options.sessionStore;
-    this.#tools = [...options.tools];
+    this.#tools = Array.isArray(options.tools) ? [...options.tools] : options.tools;
   }
 
   async startTurn(input: StartReasoningTurnInput): Promise<void> {
@@ -134,6 +141,12 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     };
     session.agent.state.systemPrompt = input.systemPrompt;
     session.agent.state.model = this.#model;
+    session.agent.state.thinkingLevel = modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off";
+    // Refresh per-turn tools: factories bind turn context (inputId/turnId) into tool closures,
+    // so a cached session must never reuse a previous turn's closures.
+    const turnTools = typeof this.#tools === "function" ? this.#tools(input) : this.#tools;
+    if (typeof this.#tools === "function") validateToolNames(turnTools);
+    session.agent.state.tools = turnTools;
     input.onEvent?.({ type: "turn_started", turnId: input.turnId });
     try {
       await session.agent.prompt(input.prompt);
@@ -194,7 +207,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         messages,
         model: this.#model,
         systemPrompt: metadata.systemPrompt,
-        tools: this.#tools,
+        thinkingLevel: modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off",
+        // Placeholder for factory-provided tools; startTurn assigns the per-turn set before prompting.
+        tools: Array.isArray(this.#tools) ? this.#tools : [],
       },
       sessionId: metadata.sessionId,
       steeringMode: "one-at-a-time",
@@ -236,6 +251,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
               undefined,
               "Preserve user intent, decisions, work status, identifiers, constraints, and unresolved questions. Do not invent facts.",
               previous?.summary,
+              modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off",
             );
             if (generated.ok) generatedSummary = generated.value;
           } catch {

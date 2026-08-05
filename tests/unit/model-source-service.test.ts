@@ -98,10 +98,10 @@ describe("ModelSourceService", () => {
       ids: new TestIds(),
       repository,
       secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
-      validator: { validate: async () => ({ reasonCode: "auth_failed", status: "NEEDS_AUTH", validatedAt: "2026-07-28T10:00:30.000Z" }) },
+      validator: { validate: async () => ({ error: "401 invalid_api_key", reasonCode: "auth_failed", status: "NEEDS_AUTH", validatedAt: "2026-07-28T10:00:30.000Z" }) },
     });
     const source = await service.create({ apiKey: "bad-key", kind: "deepseek" });
-    expect(await service.validate(source.sourceId)).toMatchObject({ reasonCode: "auth_failed", status: "NEEDS_AUTH" });
+    expect(await service.validate(source.sourceId)).toMatchObject({ lastError: "401 invalid_api_key", reasonCode: "auth_failed", status: "NEEDS_AUTH" });
     expect(await service.hasReadySource()).toBe(false);
     expect(await service.list()).toHaveLength(1);
   });
@@ -170,5 +170,29 @@ describe("ModelSourceService", () => {
       .toMatchObject({ activeModel: { id: "new" }, baseUrl: "http://127.0.0.1:11435/v1", displayName: "Local 2", status: "DRAFT" });
     await service.delete(first.sourceId);
     expect(await service.list()).toEqual([expect.objectContaining({ order: 0, primary: true, sourceId: local.sourceId })]);
+  });
+
+  it("stores the raw validation error truncated and clears it on a later ready validation", async () => {
+    const repository = new MemoryModelSourceRepository();
+    let next: { error?: string; reasonCode?: string; status: "DEGRADED" | "NEEDS_AUTH" | "READY"; validatedAt: string } = {
+      error: `500 ${"x".repeat(1200)}`, reasonCode: "server_error", status: "DEGRADED", validatedAt: "2026-07-28T10:00:30.000Z",
+    };
+    const service = new ModelSourceService({
+      catalog: { resolve: () => ({ accessMode: "api", capability: "release-tested", displayName: "Qwen", modelId: "qwen3.7-plus", presetVersion: "2026-07-28", protocol: "openai" }) },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => next },
+    });
+    const source = await service.create({ apiKey: "key", kind: "qwen" });
+    const degraded = await service.validate(source.sourceId);
+    expect(degraded).toMatchObject({ lastError: `500 ${"x".repeat(996)}…`, reasonCode: "server_error", status: "DEGRADED" });
+    next = { status: "READY", validatedAt: "2026-07-28T10:00:31.000Z" };
+    const ready = await service.validate(source.sourceId);
+    expect(ready).toMatchObject({ status: "READY" });
+    expect(ready.lastError).toBeUndefined();
+    expect(ready.reasonCode).toBeUndefined();
   });
 });

@@ -1,9 +1,9 @@
 import type { ModelSourceCatalog } from "../../application/ports/model-source-ports.js";
 import { DomainError } from "../../domain/errors.js";
-import type { ModelSourceKind, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
+import type { ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
 import { defaultModelSourceProtocol, getDirectModelSourcePreset } from "./provider-presets.js";
 
-function normalizeDirectModelId(kind: ModelSourceKind, accessMode: "api" | "coding-plan", modelId: string | undefined): string | undefined {
+function normalizeDirectModelId(kind: ModelSourceKind, accessMode: Exclude<ModelSourceAccessMode, "custom">, modelId: string | undefined): string | undefined {
   if (kind !== "kimi" || accessMode !== "coding-plan") return modelId;
   if (modelId === "kimi-k3") return "k3";
   if (modelId === "kimi-k3-256k") return "k3-256k";
@@ -14,7 +14,7 @@ export class PiModelSourceCatalog implements ModelSourceCatalog {
   resolve(
     kind: ModelSourceKind,
     requestedModelId?: string,
-    requestedAccessMode?: "api" | "coding-plan" | "custom",
+    requestedAccessMode?: ModelSourceAccessMode,
     requestedProtocol?: ModelSourceProtocol,
   ) {
     const requested = requestedModelId?.trim();

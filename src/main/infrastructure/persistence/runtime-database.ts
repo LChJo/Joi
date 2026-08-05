@@ -2907,15 +2907,22 @@ export async function applyMigrations(database: DatabaseSync, migrationsDirector
     const existing = database.prepare("SELECT 1 FROM schema_migrations WHERE version = ?").get(version);
     if (existing !== undefined) continue;
     const sql = await readFile(path.join(migrationsDirectory, entry.name), "utf8");
+    const requiresForeignKeysOff = /^-- joi:migration foreign-keys-off\b/u.test(sql);
+    if (requiresForeignKeysOff) database.exec("PRAGMA foreign_keys = OFF");
     database.exec("BEGIN IMMEDIATE");
     try {
       database.exec(sql);
+      if (requiresForeignKeysOff && database.prepare("PRAGMA foreign_key_check").all().length > 0) {
+        throw new Error("migration_foreign_key_check_failed");
+      }
       database.prepare("INSERT INTO schema_migrations (version, filename, applied_at) VALUES (?, ?, ?)")
         .run(version, entry.name, new Date().toISOString());
       database.exec("COMMIT");
     } catch (error) {
       database.exec("ROLLBACK");
       throw error;
+    } finally {
+      if (requiresForeignKeysOff) database.exec("PRAGMA foreign_keys = ON");
     }
   }
 }

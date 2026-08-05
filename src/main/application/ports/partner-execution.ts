@@ -1,4 +1,5 @@
 import type { PartnerRevision } from "../../domain/partners/partner.js";
+import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 
 export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
@@ -19,6 +20,7 @@ export interface PartnerRunResult {
   actionId: string;
   artifacts: PartnerRunOutput["artifacts"];
   body: string;
+  conversation?: AgentConversationDraft[];
   externalRunId: string;
   instanceId?: string;
   status: PartnerRunStatus;

@@ -12,6 +12,7 @@ import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partn
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import { resolveLocalCliExecutable, type LocalCliProtocol, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
+import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 
 /** Curated native tool names offered in the per-engine whitelist picker. */
 export const CLAUDE_CODE_TOOL_OPTIONS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "NotebookEdit"] as const;
@@ -70,7 +71,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     if (warm !== undefined) void warm.conversation.close().catch(() => undefined);
   }
 
-  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     const resolved = this.#resolve();
     const execution = await this.#execution(request, revision, resolved);
     const surface = await this.#sdkSurface();
@@ -79,7 +80,12 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
       options: this.#queryOptions(revision, systemPrompt, execution.workspacePath, resolved),
       prompt: request.taskProjection,
     }));
-    return { externalRunId: `local_cli:${request.actionId}`, output: { artifacts: [], body: drained.body }, status: drained.status };
+    return {
+      conversation: draftAgentConversation(request.taskProjection, drained.body, drained.messages),
+      externalRunId: `local_cli:${request.actionId}`,
+      output: { artifacts: [], body: drained.body },
+      status: drained.status,
+    };
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
@@ -121,6 +127,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     const drained = await this.#drain(conversation.send(`${execution.promptSection}\n\nWork for this turn:\n${input.request.taskProjection}`));
     const messages = await conversation.messages();
     return {
+      conversation: draftAgentConversation(input.request.taskProjection, drained.body || extractText(messages), drained.messages),
       externalRunId: `local_cli:${input.request.actionId}`,
       externalSessionRef: conversation.id,
       messages: [messages],
@@ -182,14 +189,14 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     return options;
   }
 
-  async #drain(stream: AsyncIterable<{ subtype?: string; type: string }>): Promise<{ body: string; status: PartnerRunStatus }> {
+  async #drain(stream: AsyncIterable<{ subtype?: string; type: string }>): Promise<{ body: string; messages: unknown[]; status: PartnerRunStatus }> {
     let status: PartnerRunStatus = "COMPLETED";
     const messages: unknown[] = [];
     for await (const message of stream) {
       messages.push(message);
       if (message.type === "result" && message.subtype !== "success") status = "FAILED";
     }
-    return { body: extractText(messages), status };
+    return { body: extractText(messages), messages, status };
   }
 
   #trackWarm(instanceId: string, warm: { conversation: AgentConversation; partnerRevisionId: string; workspacePath?: string }): void {

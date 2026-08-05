@@ -76,9 +76,11 @@ describe("runtime lease and outbox", () => {
         });
       }
       const handled: string[] = [];
+      const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
       const onError = vi.fn();
       const dispatcher = new OutboxDispatcher({
         clock: fixture.clock,
+        diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
         handlers: {
           "test.send": (record) => {
             handled.push(record.outboxId);
@@ -94,6 +96,54 @@ describe("runtime lease and outbox", () => {
       expect((await fixture.database.store.getRuntimeStats()).pendingOutbox).toBe(1);
       expect(onError).toHaveBeenCalledWith(expect.any(Error), expect.objectContaining({ outboxId: "outbox_retry" }));
       expect(await dispatcher.dispatchOnce()).toBe(0);
+      expect(diagnostics.map((entry) => entry.event)).toEqual(expect.arrayContaining([
+        "joi.outbox.claimed",
+        "joi.outbox.delivery_started",
+        "joi.outbox.delivery_completed",
+        "joi.outbox.delivery_released",
+      ]));
+      expect(diagnostics.filter((entry) => entry.event === "joi.outbox.claimed")).toHaveLength(1);
+      expect(diagnostics.find((entry) => entry.event === "joi.outbox.delivery_released")?.fields).toMatchObject({
+        attemptCount: 1,
+        errorCode: "Error",
+        kind: "test.send",
+        outboxId: "outbox_retry",
+      });
+      expect(JSON.stringify(diagnostics)).not.toContain("offline");
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("shares one in-flight dispatch pass after a long handler outlives its claim lease", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      await fixture.database.store.enqueueOutbox({
+        availableAt: fixture.clock.now().toISOString(), kind: "test.long", outboxId: "outbox_long", payload: {},
+      });
+      let finish!: () => void;
+      let started!: () => void;
+      const blocker = new Promise<void>((resolve) => { finish = resolve; });
+      const entered = new Promise<void>((resolve) => { started = resolve; });
+      const handled: string[] = [];
+      const dispatcher = new OutboxDispatcher({
+        clock: fixture.clock,
+        handlers: { "test.long": async (record) => { handled.push(record.outboxId); started(); await blocker; } },
+        owner: "dispatcher-long",
+        store: fixture.database.store,
+      });
+
+      const first = dispatcher.dispatchOnce();
+      await entered;
+      fixture.clock.advance(31_000);
+      const overlapping = dispatcher.dispatchOnce();
+      await Promise.resolve();
+      await Promise.resolve();
+
+      expect(handled).toEqual(["outbox_long"]);
+      finish();
+      await expect(Promise.all([first, overlapping])).resolves.toEqual([1, 1]);
+      expect(handled).toEqual(["outbox_long"]);
     } finally {
       await fixture.close();
     }

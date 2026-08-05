@@ -61,9 +61,15 @@ describe("Avatar destructive change confirmation", () => {
         connection.prepare(`INSERT INTO avatars
           (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
           VALUES ('avatar-busy', 'Busy', 'persona', 'persona', 'scope', 'project', 'memory', '', 'ACTIVE', ?, ?)`).run(now, now);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+          VALUES ('input-running', 'key-running', 'Running', 'ROUTED', 'avatar-busy', ?, ?)`).run(now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-running', 'input-running', 'avatar-busy', 'session-running', 'RUNNING', ?, ?)`).run(now, now);
         connection.prepare(`INSERT INTO work_items
-          (work_id, avatar_id, title, intent_json, access_mode, status, created_at, updated_at)
-          VALUES ('work-running', 'avatar-busy', 'Running', '{}', 'READ', 'RUNNING', ?, ?)`).run(now, now);
+          (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-running', 'avatar-busy', 'input-running', 'Running', '{}', 'READ', 'RUNNING', ?, ?)`).run(now, now);
       });
       const service = new AvatarChangeService({ clock: new TestClock(now), ids: new TestIds(), repository: new SqliteAvatarChangeRepository(database) });
       const request = await service.suggestArchive({ avatarId: "avatar-busy", reason: "cleanup", turnId: "turn" });

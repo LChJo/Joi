@@ -22,7 +22,7 @@ describe("model source HTTP API", () => {
       return item;
     };
     const modelSources = {
-      create: async (input: { accessMode?: "api" | "coding-plan" | "custom"; apiKey: string; kind: "kimi"; protocol?: "openai" | "anthropic" }) => {
+      create: async (input: { accessMode?: "api" | "coding-plan" | "token-plan" | "custom"; apiKey: string; kind: "kimi" | "qwen"; protocol?: "openai" | "anthropic" }) => {
         receivedKeys.push(input.apiKey);
         const source: ModelSourceDto = {
           accessMode: input.accessMode ?? "api",
@@ -78,6 +78,11 @@ describe("model source HTTP API", () => {
       expect(receivedKeys).toEqual(["must-never-leak"]);
       expect(body).not.toContain("must-never-leak");
       expect(JSON.parse(body)).toMatchObject({ items: [{ accessMode: "coding-plan", credential: { configured: true, version: 1 }, kind: "kimi", protocol: "anthropic" }] });
+
+      const tokenPlan = await fetch(`${listeners.loopback.url}/api/v1/model-sources`, {
+        body: JSON.stringify({ accessMode: "token-plan", apiKey: "must-never-leak", kind: "qwen", protocol: "anthropic" }), headers: writeHeaders, method: "POST",
+      });
+      expect(tokenPlan.status).toBe(201);
     } finally {
       await listeners.close();
       await fixture.close();
