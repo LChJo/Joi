@@ -7,7 +7,7 @@ import type { ReasoningSourceSelector } from "../../application/model-sources/re
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
-import type { AvatarExecutionContextReader } from "../../application/ports/avatar-context.js";
+import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
@@ -31,7 +31,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
 
   constructor(private readonly dependencies: {
     maxWarmAgents?: number;
-    contexts: AvatarExecutionContextReader;
+    contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
     resolver: PiConfiguredModelResolver;
     /** Hard deadline per engine turn; a hung provider stream must fail the run, not stall it. */
@@ -59,7 +59,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
-    if (execution === null) throw new Error("avatar_context_snapshot_not_found");
+    if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     const externalRunId = `local_pi:${request.actionId}`;
     const pin = await this.dependencies.sources.selectInitial(externalRunId);
     const resolved = await this.dependencies.resolver.resolve(pin);
@@ -96,7 +96,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const { revision } = input;
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId);
-    if (execution === null) throw new Error("avatar_context_snapshot_not_found");
+    if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     let warm = this.#warm.get(input.instanceId);
     if (warm !== undefined && (warm.partnerRevisionId !== revision.partnerRevisionId || warm.workspacePath !== execution.workspacePath)) {
       this.#warm.delete(input.instanceId);
@@ -150,19 +150,16 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
 
   /** Races the model stream against a deadline; a hung provider aborts the run instead of stalling it. */
   async #promptWithDeadline(agent: Agent, text: string): Promise<void> {
-    let timedOut = false;
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => {
-        timedOut = true;
-        reject(new DomainError("partner_run_timed_out", "The partner run exceeded its time budget and was aborted."));
-      }, this.dependencies.runTimeoutMillis ?? DEFAULT_RUN_TIMEOUT_MILLIS);
+    const deadline = new Promise<"timeout">((resolve) => {
+      timer = setTimeout(() => resolve("timeout"), this.dependencies.runTimeoutMillis ?? DEFAULT_RUN_TIMEOUT_MILLIS);
     });
     try {
-      await Promise.race([agent.prompt(text), deadline]);
-    } catch (error) {
-      if (timedOut) agent.abort();
-      throw error;
+      const winner = await Promise.race([agent.prompt(text).then(() => "done" as const), deadline]);
+      if (winner === "timeout") {
+        agent.abort();
+        throw new DomainError("partner_run_timed_out", "The partner run exceeded its time budget and was aborted.");
+      }
     } finally {
       if (timer !== undefined) clearTimeout(timer);
     }
@@ -184,13 +181,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     return revision.tools.filter((name) => known.has(name));
   }
 
-  #systemPrompt(configuredPrompt: string, request: PartnerRunRequest, avatarSection: string, knowledgeSection: string, skillSection: string): string {
+  #systemPrompt(configuredPrompt: string, request: PartnerRunRequest, workbenchSection: string, knowledgeSection: string, skillSection: string): string {
     return [
       configuredPrompt,
       "Never access paths outside the assigned workspace.",
-      `Avatar scope: ${request.avatarId}`,
+      `Workbench scope: ${request.workbenchId}`,
       `Work item: ${request.workId}`,
-      avatarSection,
+      workbenchSection,
       ...(skillSection === "" ? [] : [skillSection]),
       ...(knowledgeSection === "" ? [] : [knowledgeSection]),
     ].join("\n");

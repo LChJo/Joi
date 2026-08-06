@@ -79,7 +79,7 @@ describe("Pi reasoning runtime contract", () => {
       expect(preset.defaultModelId.length).toBeGreaterThan(0);
       expect(preset.models.map((model) => model.id)).toContain(preset.defaultModelId);
       expect(preset.endpointEditable).toBe(false);
-      expect(preset.presetVersion).toBe("2026-08-02");
+      expect(preset.presetVersion).toBe("2026-08-06");
     }
     expect(JSON.stringify(MODEL_SOURCE_OPTIONS)).not.toMatch(/openrouter|siliconflow|火山引擎方舟以外的转发|聚合平台/iu);
   });
@@ -138,7 +138,7 @@ describe("Pi reasoning runtime contract", () => {
     });
     expect(openai.baseUrl).toBe("https://api.kimi.com/coding/v1");
     expect(openai.headers).toMatchObject({ "User-Agent": "KimiCLI/1.5" });
-    expect(openai.getModels()[0]).toMatchObject({ api: "openai-completions", provider: "joi-source:kimi_code_openai" });
+    expect(openai.getModels()[0]).toMatchObject({ api: "openai-responses", provider: "joi-source:kimi_code_openai" });
 
     const k3 = createPiSourceProvider({
       accessMode: "coding-plan",
@@ -169,7 +169,7 @@ describe("Pi reasoning runtime contract", () => {
     const observedToolStart = new Promise<void>((resolve) => { signalToolStarted = resolve; });
 
     faux.setResponses([
-      fauxAssistantMessage([fauxToolCall("avatar_list_summaries", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("workbench_list_summaries", {})], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("收到插话")]),
       fauxAssistantMessage([fauxText("继续处理后续")]),
     ]);
@@ -180,9 +180,9 @@ describe("Pi reasoning runtime contract", () => {
       models,
       sessionStore: store,
       tools: [{
-        name: "avatar_list_summaries",
-        label: "List Avatar summaries",
-        description: "Lists redacted Avatar summaries.",
+        name: "workbench_list_summaries",
+        label: "List Workbench summaries",
+        description: "Lists redacted Workbench summaries.",
         parameters: Type.Object({}),
         execute: async () => {
           signalToolStarted?.();
@@ -193,12 +193,12 @@ describe("Pi reasoning runtime contract", () => {
     });
 
     const turn = runtime.startTurn({
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       inputId: "input_1",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",
       onEvent: (event) => { if (event.type === "text_delta") events.push(event.delta); },
-      prompt: "检查当前 Avatar",
+      prompt: "检查当前 Workbench",
       sessionId: "session_1",
       sourceId: "contract-source",
       sourceRevisionId: "source_rev_1",
@@ -214,7 +214,7 @@ describe("Pi reasoning runtime contract", () => {
     expect(events.join("")).toContain("收到插话");
     expect(events.join("")).toContain("继续处理后续");
     expect(store.snapshots.get("session_1")).toMatchObject({
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       modelRevisionId: "model_rev_1",
       sourceRevisionId: "source_rev_1",
     });
@@ -229,7 +229,7 @@ describe("Pi reasoning runtime contract", () => {
     });
     expect(await restored.restore("session_1")).toBe(true);
     await restored.startTurn({
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       inputId: "input_2",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",
@@ -246,11 +246,11 @@ describe("Pi reasoning runtime contract", () => {
 
   it("never exposes arbitrary execution tools and can abort an active turn", async () => {
     expect(JOI_REASONING_TOOL_NAMES).toEqual([
-      "avatar_list_summaries",
-      "avatar_select",
-      "avatar_create",
-      "avatar_suggest_merge",
-      "avatar_suggest_archive",
+      "workbench_list_summaries",
+      "workbench_select",
+      "workbench_create",
+      "workbench_suggest_merge",
+      "workbench_suggest_archive",
       "model_list_sources",
       "partner_list_available",
       "partner_inspect_revision",
@@ -270,6 +270,11 @@ describe("Pi reasoning runtime contract", () => {
       "schedule_plan",
       "user_ask",
       "turn_complete",
+      "harness_name_destination",
+      "harness_chart_path",
+      "harness_record_decision",
+      "harness_note_fog",
+      "harness_refine_workbench",
     ]);
     expect(JOI_REASONING_TOOL_NAMES).not.toEqual(expect.arrayContaining(["bash", "read", "write", "edit", "find", "grep", "ls"]));
 
@@ -286,7 +291,7 @@ describe("Pi reasoning runtime contract", () => {
     let signalStarted: (() => void) | undefined;
     const started = new Promise<void>((resolve) => { signalStarted = resolve; });
     const running = runtime.startTurn({
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       inputId: "input_abort",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",
@@ -323,7 +328,7 @@ describe("Pi reasoning runtime contract", () => {
 
     for (let index = 0; index < 4; index += 1) {
       await runtime.startTurn({
-        avatarId: "avatar_1",
+        workbenchId: "workbench_1",
         inputId: `input-${String(index + 1)}`,
         modelId: "contract-model",
         modelRevisionId: "model_rev_1",
@@ -352,7 +357,7 @@ describe("Pi reasoning runtime contract", () => {
     });
     expect(await restored.restore("session_compact")).toBe(true);
     await restored.startTurn({
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       inputId: "input-after-restore",
       modelId: "contract-model",
       modelRevisionId: "model_rev_1",

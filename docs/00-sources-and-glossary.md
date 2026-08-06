@@ -2,20 +2,22 @@
 
 ## 0. JOI-01 术语优先级
 
-本文件以唯一全局 joi、Pi、Avatar、Partner 和 Work 为目标术语。后文既有 Life/Wake/主 Agent 术语只描述兼容存储和历史协议；发生冲突时，本节与 ADR 0002/0003 优先。
+本文件以唯一全局 joi、Pi、工作台、Partner 和 Work 为目标术语。后文既有 Life/Wake/主 Agent 术语只描述兼容存储和历史协议；发生冲突时，本节与 ADR 0002/0003 优先。
 
 | 术语 | 目标定义 |
 |------|----------|
-| **唯一全局 joi** | 用户唯一入口、唯一 system policy 与唯一调度权威；通过 Pi 选择 Avatar、规划、派发、并发、等待和改派。 |
+| **唯一全局 joi** | 用户唯一入口、唯一 system policy 与唯一调度权威；通过 Pi 选择工作台、规划、派发、并发、等待和改派。 |
 | **Pi** | joi 的唯一主推理基座；SDK 只由 infrastructure adapter 使用，不直接拥有数据库、shell 或任意文件工具。 |
-| **Avatar** | 一个人格/工程领域的持久上下文投影，也是工作目录的唯一权威；工作区路径由基础设施私有映射保存。 |
+| **工作台（Workbench）** | 一个人格/工程领域的持久上下文投影，也是工作目录的唯一权威；工作区路径由基础设施私有映射保存。 |
 | **Partner / 搭档** | 全局、版本化的执行能力模板，只保存引擎、模型、提示词、技能、工具和知识库，不拥有 cwd。 |
-| **PartnerInstance** | 绑定恰好一个 `avatarId` 的搭档运行会话；默认临时，续话可常驻，但永不跨 Avatar 复用。 |
-| **Work** | 绑定恰好一个 `avatarId` 的工作项，可形成 DAG；`NONE` 无文件权限，`READ/WRITE` 自动使用该 Avatar 工作区和 lease。 |
-| **WorkResult** | 不可变、Avatar-scoped 的运行结果事实；正文受限存储，通知与管理 DTO 只携带有界摘要和元数据。 |
+| **PartnerInstance** | 绑定恰好一个 `workbenchId` 的搭档运行会话；默认临时，续话可常驻，但永不跨工作台复用。 |
+| **Work** | 绑定恰好一个 `workbenchId` 的工作项，可形成 DAG；`NONE` 无文件权限，`READ/WRITE` 自动使用该工作台工作区和 lease。 |
+| **WorkResult** | 不可变、工作台范围内 的运行结果事实；正文受限存储，通知与管理 DTO 只携带有界摘要和元数据。 |
 | **Model Source** | Pi 的版本化模型连接；每个 Turn 固定 source/model revision，一个主源加用户排序备用源。 |
+| **目标地图 / harness** | goal 的持久化推进索引（ADR 0010）：destination（最终目标）、path（每层路径，只引用 work）、decision（Decisions-so-far）、fog（待晋升的雾区）；经遍历与复盘推进，不是第二条调度链。 |
+| **harness review** | 一层结果走完后投入 inbox 的复盘系统输入；由 joi 推理 turn 经唯一串行槽位决定下一层路径、记录决策或 `MAP_CLEARED`。 |
 
-Avatar 不是 Agent，不保存执行状态机，也不产生独立 scheduler。唯一 joi 选择 Avatar、创建 Work 并派发 PartnerInstance。新代码、API、DTO、事件和工具使用 `Avatar/avatarId/avatar.*`；`Life/lifeId/life.*` 仅允许存在于旧表、迁移、旧只读 API mapper 和历史 fixture。
+工作台不是 Agent，不保存执行状态机，也不产生独立 scheduler。唯一 joi 选择工作台、创建 Work 并派发 PartnerInstance。产品文案统一使用“工作台”；代码、API、DTO、事件和工具使用 `Workbench/workbenchId/workbench.*`。`Life/lifeId/life.*` 仅允许存在于旧表、迁移、旧只读 API mapper 和历史 fixture。
 
 ## 1. 文档目的
 

@@ -16,63 +16,63 @@ export type ModelSourceProtocolDto = (typeof MODEL_SOURCE_PROTOCOLS)[number];
 export const MODEL_SOURCE_CHOICES = [
   { kind: "kimi", label: "Kimi", options: [
     { accessMode: "api", description: "开放平台按量计费", label: "开放平台 API", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
     ] },
     { accessMode: "coding-plan", description: "Kimi 会员编程权益", label: "Kimi Code", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
   ] },
   { kind: "glm", label: "GLM", options: [
     { accessMode: "api", description: "智谱开放平台按量计费", label: "开放平台 API", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
     ] },
     { accessMode: "coding-plan", description: "GLM 编程订阅套餐", label: "GLM Coding Plan", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
   ] },
   { kind: "qwen", label: "Qwen", options: [
     { accessMode: "api", description: "阿里云百炼按量计费", label: "百炼 API", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
     { accessMode: "coding-plan", description: "百炼编程订阅套餐", label: "百炼 Coding Plan", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
     { accessMode: "token-plan", description: "百炼 Credits 订阅套餐", label: "百炼 Token Plan", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
   ] },
   { kind: "doubao", label: "Doubao", options: [
     { accessMode: "api", description: "火山方舟按量计费", label: "方舟 API", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
     ] },
     { accessMode: "coding-plan", description: "火山方舟编程订阅套餐", label: "方舟 Coding Plan", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
   ] },
   { kind: "minimax", label: "MiniMax", options: [
     { accessMode: "api", description: "开放平台按量计费", label: "开放平台 API", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
     { accessMode: "coding-plan", description: "MiniMax 订阅额度", label: "MiniMax Token Plan", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
   ] },
   { kind: "deepseek", label: "DeepSeek", options: [
     { accessMode: "api", description: "DeepSeek 开放平台按量计费", label: "DeepSeek API", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
     ] },
   ] },
   { kind: "generic-openai", label: "通用平台", options: [
     { accessMode: "custom", description: "自定义兼容接口", label: "自定义接口", protocols: [
-      { description: "OpenAI Chat Completions", label: "OpenAI-compatible", protocol: "openai" },
+      { description: "OpenAI Responses", label: "OpenAI-compatible", protocol: "openai" },
       { description: "Anthropic Messages", label: "Anthropic-compatible", protocol: "anthropic" },
     ] },
   ] },
@@ -88,23 +88,23 @@ export const MODEL_SOURCE_CHOICES = [
 }[];
 export type ModelSourceStatusDto = "DRAFT" | "VALIDATING" | "READY" | "DEGRADED" | "NEEDS_AUTH" | "DISABLED";
 
-export interface AvatarDto {
-  avatarId: string;
+export interface WorkbenchDto {
+  workbenchId: string;
   name: string;
   scopeSummary: string;
   updatedAt: string;
 }
 
-export interface AvatarWorkspaceDto {
+export interface WorkbenchWorkspaceDto {
   displayName: string;
   failureReasonCode?: string;
   kind: "BOUND" | "MANAGED";
   status: "FAILED" | "PROVISIONING" | "READY";
 }
 
-export interface AvatarDetailDto {
+export interface WorkbenchDetailDto {
   activeWork: WorkItemDto[];
-  avatarId: string;
+  workbenchId: string;
   instances: {
     engine: PartnerEngineDto;
     instanceId: string;
@@ -128,17 +128,17 @@ export interface AvatarDetailDto {
   }[];
   responsibility: string;
   updatedAt: string;
-  workspace: AvatarWorkspaceDto;
+  workspace: WorkbenchWorkspaceDto;
 }
 
-export interface AvatarChangeRequestDto {
+export interface WorkbenchChangeRequestDto {
   createdAt: string;
   kind: "ARCHIVE" | "MERGE";
   reason: string;
   requestId: string;
-  sourceAvatarId: string;
+  sourceWorkbenchId: string;
   status: "PENDING" | "CONFIRMED" | "REJECTED";
-  targetAvatarId?: string;
+  targetWorkbenchId?: string;
 }
 
 export const PARTNER_ENGINES = ["claude-code", "codex", "pi-core"] as const;
@@ -196,15 +196,15 @@ export interface ModelSourceDto {
 }
 
 export interface WorkItemDto {
-  avatarId: string;
+  workbenchId: string;
   status: "PLANNED" | "READY" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED";
   title: string;
   workId: string;
 }
 
 export interface JoiSnapshotDto {
-  avatarChanges: AvatarChangeRequestDto[];
-  avatars: AvatarDto[];
+  workbenchChanges: WorkbenchChangeRequestDto[];
+  workbenches: WorkbenchDto[];
   modelSources: ModelSourceDto[];
   partners: PartnerDto[];
   runtime: {
@@ -216,7 +216,7 @@ export interface JoiSnapshotDto {
 
 export interface JoiAcceptedMessageDto {
   acceptedAt: string;
-  avatarId?: string;
+  workbenchId?: string;
   canceled?: boolean;
   clarificationPrompt?: string;
   clarificationReasonCode?: string;
@@ -235,7 +235,7 @@ export interface JoiAttachmentDto {
 
 export interface JoiActivityDto {
   activityId: string;
-  avatarId?: string;
+  workbenchId?: string;
   kind: "MESSAGE" | "TURN" | "WORK" | "PARTNER_RESULT";
   occurredAt: string;
   status: string;
@@ -244,14 +244,27 @@ export interface JoiActivityDto {
 
 export type JoiGoalStatusDto = "ARRANGING" | "ARRANGED" | "RUNNING" | "NEEDS_ATTENTION" | "FINALIZING" | "COMPLETED" | "FAILED" | "CANCELED";
 
+export interface JoiGoalHarnessDto {
+  currentLayer: number;
+  decisionCount: number;
+  destination?: string;
+  fogCount: number;
+  mapStatus: "ACTIVE" | "CLEARED";
+  openPathCount: number;
+  revision: number;
+  topFogNote?: string;
+  topPaths: { pathId: string; status: "CLOSED" | "OPEN" | "OUT_OF_SCOPE"; title: string }[];
+}
+
 export interface JoiGoalCardDto {
   agentCount: number;
-  avatar: { avatarId: string; name: string };
+  workbench: { workbenchId: string; name: string };
   canDelete: boolean;
   clarification?: { prompt?: string; reasonCode?: string };
   completedAt?: string;
   completionSummary?: string;
   goalId: string;
+  harness?: JoiGoalHarnessDto;
   status: JoiGoalStatusDto;
   title: string;
   updatedAt: string;
@@ -272,11 +285,11 @@ export interface JoiHomeFeedDto {
   unassignedActions: JoiAcceptedMessageDto[];
 }
 
-export type AvatarAgentStatusDto = "IDLE" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED" | "UNKNOWN";
+export type WorkbenchAgentStatusDto = "IDLE" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED" | "UNKNOWN";
 
-export interface AvatarAgentCardDto {
+export interface WorkbenchAgentCardDto {
   agentId: string;
-  avatarId: string;
+  workbenchId: string;
   canDelete: boolean;
   createdAt: string;
   engine: PartnerEngineDto;
@@ -284,7 +297,7 @@ export interface AvatarAgentCardDto {
   partnerId: string;
   partnerName: string;
   sessionPolicy: "EPHEMERAL" | "RESIDENT";
-  status: AvatarAgentStatusDto;
+  status: WorkbenchAgentStatusDto;
   transport: "A2A" | "LOCAL";
 }
 
@@ -300,7 +313,7 @@ export interface AgentConversationEntryDto {
 }
 
 export interface AgentConversationPageDto {
-  agent: AvatarAgentCardDto;
+  agent: WorkbenchAgentCardDto;
   items: AgentConversationEntryDto[];
   nextCursor?: string;
 }

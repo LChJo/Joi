@@ -2,7 +2,7 @@
 
 - 状态：accepted
 - 日期：2026-08-01
-- 关联：ADR 0002（唯一 joi、Pi、Avatar 与搭档编排）、ADR 0004（搭档执行引擎多元化）
+- 关联：ADR 0002（唯一 joi、Pi、工作台与搭档编排）、ADR 0004（搭档执行引擎多元化）
 
 ## Context
 
@@ -22,13 +22,15 @@
 
 **joi 显式选模型**：新增 `model_list_sources` 工具，仅返回 `READY` 模型源的安全字段（sourceId、displayName、kind、protocol、primary、activeModel.id）；`partner_create` 增可选 `modelSourceId`/`modelIdOverride` 并透传给注册服务；两者并入 `JOI_REASONING_TOOL_NAMES`。joi 建的搭档引擎固定 pi-core，不暴露 engine 字段（不建 A2A/claude/codex）。
 
-**编排提示词整体重写**：把系统提示词抽成可测纯函数 `src/main/application/joi/joi-system-prompt.ts` 的 `buildJoiSystemPrompt`，编入 wayfinder 方法论——工头不是工人；destination-first 且"目标很小就别建队、直接答或反问"（逃生舱）；HITL/AFK 分类（仅 AFK 可派发、可并行，绝不代用户回答 HITL）；组建团队时先 `partner_list_available` 复用、不合适时才 `partner_create`，并用 Agent-Brief 骨架为每位搭档写自包含提示词（贴进其所需一切）；经 `model_list_sources` 选 READY 源；ephemeral 默认、resident 仅用于续话、复用 IDLE、claim-before-work、失败先读记忆摘要再 reassign；结果聚合为一个有主见的答复。原有功能教学（Turn 边界、模板/实例、失败重派）与 custom-unverified-tools 的 fail-closed 指令、Avatar 上下文注入语义全部保留。
+**编排提示词整体重写**：把系统提示词抽成可测纯函数 `src/main/application/joi/joi-system-prompt.ts` 的 `buildJoiSystemPrompt`，编入 wayfinder 方法论——工头不是工人；destination-first 且"目标很小就别建队、直接答或反问"（逃生舱）；HITL/AFK 分类（仅 AFK 可派发、可并行，绝不代用户回答 HITL）；组建团队时先 `partner_list_available` 复用、不合适时才 `partner_create`，并用 Agent-Brief 骨架为每位搭档写自包含提示词（贴进其所需一切）；经 `model_list_sources` 选 READY 源；ephemeral 默认、resident 仅用于续话、复用 IDLE、claim-before-work、失败先读记忆摘要再 reassign；结果聚合为一个有主见的答复。原有功能教学（Turn 边界、模板/实例、失败重派）与 custom-unverified-tools 的 fail-closed 指令、工作台上下文注入语义全部保留。
 
 **明确不做**：不引入 wayfinder 的 issue-tracker / 共享 map 落库（"claim-before-work / 共享索引"以提示词纪律近似，不加新存储）；场景不做用户可编辑/落库、不做多语言。`user_ask` 的历史限制已由 ADR 0007 取代。
+
+**后记（2026-08-06）**：上条「不加新存储」不做项已被 ADR 0010 推翻，范围限 harness 目标地图四表（maps/paths/decisions/fog）；wayfinder 的 ticket/blocking/claim 图仍不引入。
 
 ## Consequences
 
 - joi 的工具面新增 `model_list_sources`，`partner_create` 获得可选模型字段；建队能力从"只能跟随全局首选"升级为"可为每位搭档显式选源"，但对用户的可见性与可撤销性不变（joi 徽章、可编辑/停用/删除）。
-- 提示词整体重写影响 joi 的**所有**回合（不仅场景），属建议性改动：以单测锁定关键不变量（`joi-system-prompt.test.ts`、`joi-reasoning-tools.test.ts`），并经 `single-joi-avatar-routing.test.ts` 确认 Avatar 上下文注入不回归；确定性硬边界兜底最坏情况。
+- 提示词整体重写影响 joi 的**所有**回合（不仅场景），属建议性改动：以单测锁定关键不变量（`joi-system-prompt.test.ts`、`joi-reasoning-tools.test.ts`），并经 `single-joi-workbench-routing.test.ts` 确认工作台上下文注入不回归；确定性硬边界兜底最坏情况。
 - 场景预设为无状态只读端点，复用既有技能扫描器与鉴权门禁，无新增迁移、无新增存储面。
 - 弱模型可能建队过猛或选源不当：由逃生舱教学、实例上限与既有源失败回退共同约束。

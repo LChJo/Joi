@@ -6,14 +6,14 @@ import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
-  it("rejects caller-supplied workspace refs because Avatar owns cwd", async () => {
+  it("rejects caller-supplied workspace refs because Workbench owns cwd", async () => {
     const service = new WorkOrchestrationService({
       clock: new TestClock(), ids: new TestIds(),
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
       policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
     });
     await expect(service.plan({
-      avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
         { accessMode: "WRITE", key: "write", partnerId: "partner", title: "写入", workspaceRef: "caller-path" },
       ],
     })).rejects.toMatchObject({ code: "work_workspace_forbidden" });
@@ -30,7 +30,7 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: true }) }, repository,
     });
     const result = await service.plan({
-      avatarId: "avatar-1",
+      workbenchId: "workbench-1",
       dependencies: [{ dependsOnKey: "research", workKey: "write" }],
       inputId: "input-1",
       turnId: "turn-1",
@@ -59,7 +59,7 @@ describe("work orchestration outbox", () => {
     expect(new Set(committed[0]?.attempts.map((attempt) => attempt.actionId)).size).toBe(2);
     expect(diagnostics.find((entry) => entry.event === "joi.work.plan.committed")?.fields).toMatchObject({
       attemptCount: 2,
-      avatarId: "avatar-1",
+      workbenchId: "workbench-1",
       dependencyCount: 1,
       dispatchPlanId: committed[0]?.dispatchPlanId,
       inputId: "input-1",
@@ -79,25 +79,25 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: false, reason: "workspace_untrusted" }) },
       repository: { commit: async (plan) => { committed.push(plan); } },
     });
-    await service.plan({ avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
+    await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
     expect(committed[0]?.items).toHaveLength(1);
     expect(committed[0]?.attempts).toEqual([]);
     expect(committed[0]?.policyResults).toEqual([expect.objectContaining({ allowed: false, reason: "workspace_untrusted" })]);
   });
 
-  it("does not commit a partial plan when the Avatar workspace must be selected first", async () => {
+  it("does not commit a partial plan when the Workbench workspace must be selected first", async () => {
     const committed: CommittedWorkPlan[] = [];
     const service = new WorkOrchestrationService({
       clock: new TestClock(), ids: new TestIds(),
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
-      policy: { evaluate: async () => ({ allowed: false, reason: "avatar_workspace_not_ready" }) },
+      policy: { evaluate: async () => ({ allowed: false, reason: "workbench_workspace_not_ready" }) },
       repository: { commit: async (plan) => { committed.push(plan); } },
     });
 
     await expect(service.plan({
-      avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
       work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }],
-    })).rejects.toMatchObject({ code: "avatar_workspace_not_ready" });
+    })).rejects.toMatchObject({ code: "workbench_workspace_not_ready" });
     expect(committed).toEqual([]);
   });
 
@@ -107,11 +107,11 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
       policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
     });
-    await expect(service.plan({ avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
+    await expect(service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
       { accessMode: "READ", key: "same", partnerId: "partner", title: "A" },
       { accessMode: "READ", key: "same", partnerId: "partner", title: "B" },
     ] })).rejects.toMatchObject({ code: "work_key_duplicate" });
-    await expect(service.plan({ avatarId: "avatar-1", dependencies: [{ dependsOnKey: "missing", workKey: "a" }], inputId: "input-1", turnId: "turn", work: [
+    await expect(service.plan({ workbenchId: "workbench-1", dependencies: [{ dependsOnKey: "missing", workKey: "a" }], inputId: "input-1", turnId: "turn", work: [
       { accessMode: "READ", key: "a", partnerId: "partner", title: "A" },
     ] })).rejects.toMatchObject({ code: "work_dependency_unknown" });
   });
@@ -124,7 +124,7 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
         loadForReassignment: async () => ({
-          item: { accessMode: "WRITE", avatarId: "avatar-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" },
+          item: { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" },
           lastPartnerRevisionId: "revision-a",
         }),
         reassign: async (plan) => { reassigned.push(plan); },
@@ -132,7 +132,7 @@ describe("work orchestration outbox", () => {
       repository: { commit: async () => undefined },
     });
 
-    await expect(service.reassign({ avatarId: "avatar-1", partnerId: "partner-b", turnId: "turn-2", workId: "work-1" }))
+    await expect(service.reassign({ workbenchId: "workbench-1", partnerId: "partner-b", turnId: "turn-2", workId: "work-1" }))
       .resolves.toMatchObject({ partnerRevisionId: "revision-b", registryRevision: 8, workId: "work-1" });
     expect(reassigned).toHaveLength(1);
     expect(reassigned[0]?.attempt.actionId).toMatch(/^action_/u);
@@ -143,7 +143,7 @@ describe("work orchestration outbox", () => {
   });
 
   it("rejects unsafe reassignment states before creating a second side effect", async () => {
-    const baseItem: WorkItem = { accessMode: "WRITE", avatarId: "avatar-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };
+    const baseItem: WorkItem = { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };
     const create = (options: {
       context?: { item: WorkItem; lastPartnerRevisionId: string } | null;
       policy?: { allowed: boolean; reason?: string };
@@ -160,12 +160,12 @@ describe("work orchestration outbox", () => {
       repository: { commit: async () => undefined },
     });
 
-    await expect(create({ reassignment: false }).reassign({ avatarId: "avatar-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassignment_unavailable" });
-    await expect(create({ context: null }).reassign({ avatarId: "avatar-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_not_found" });
-    await expect(create({ context: { item: { ...baseItem, avatarId: "avatar-2" }, lastPartnerRevisionId: "revision-old" } }).reassign({ avatarId: "avatar-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_avatar_mismatch" });
-    await expect(create({ context: { item: { ...baseItem, status: "COMPLETED" }, lastPartnerRevisionId: "revision-old" } }).reassign({ avatarId: "avatar-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_status_invalid" });
-    await expect(create({ revision: "revision-old" }).reassign({ avatarId: "avatar-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_same_revision" });
-    await expect(create({ policy: { allowed: false, reason: "capacity" } }).reassign({ avatarId: "avatar-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_policy_denied", message: "capacity" });
-    await expect(create({ policy: { allowed: false } }).reassign({ avatarId: "avatar-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_policy_denied" });
+    await expect(create({ reassignment: false }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassignment_unavailable" });
+    await expect(create({ context: null }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_not_found" });
+    await expect(create({ context: { item: { ...baseItem, workbenchId: "workbench-2" }, lastPartnerRevisionId: "revision-old" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });
+    await expect(create({ context: { item: { ...baseItem, status: "COMPLETED" }, lastPartnerRevisionId: "revision-old" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_status_invalid" });
+    await expect(create({ revision: "revision-old" }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_same_revision" });
+    await expect(create({ policy: { allowed: false, reason: "capacity" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_policy_denied", message: "capacity" });
+    await expect(create({ policy: { allowed: false } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_policy_denied" });
   });
 });

@@ -62,7 +62,7 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 }
 
-test("Electron completes setup, native Avatar creation, and responsive joi-console paths", async () => {
+test("Electron completes setup, native workbench creation, and responsive joi-console paths", async () => {
   test.setTimeout(60_000);
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
 
@@ -112,16 +112,16 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
     await expect(toolChoices).toBeVisible();
     expect(await toolChoices.locator(".tool-choice").first().evaluate((element) => getComputedStyle(element).borderRadius)).toBe("8px");
     await window.screenshot({ path: path.resolve("test-results/e2e-tool-choices-960.png") });
-    await window.getByRole("button", { exact: true, name: "Avatar" }).click();
+    await window.getByRole("button", { exact: true, name: "工作台" }).click();
 
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(960);
     await expectNoHorizontalOverflow(window);
-    await window.getByRole("button", { name: "创建 Avatar" }).click();
+    await window.getByRole("button", { name: "创建工作台" }).click();
     await window.getByLabel("名称", { exact: true }).fill("栖光");
     await window.getByLabel("工程名称", { exact: true }).fill("长期事务");
     await window.getByLabel("职责范围", { exact: true }).fill("整理长期计划与事实");
     await window.getByLabel("人格摘要", { exact: true }).fill("尊重事实，持续整理长期事务。");
-    await window.getByRole("button", { name: "保存 Avatar" }).click();
+    await window.getByRole("button", { name: "保存工作台" }).click();
     await expect(window.getByText("栖光")).toBeVisible();
     await expectNoHorizontalOverflow(window);
 
@@ -134,10 +134,10 @@ test("Electron completes setup, native Avatar creation, and responsive joi-conso
     expect(760 - ((composerBox?.y ?? 0) + (composerBox?.height ?? 0))).toBeLessThanOrEqual(20);
     await window.screenshot({ path: path.resolve("test-results/e2e-joi-composer-960.png") });
 
-    await window.getByRole("button", { exact: true, name: "Avatar" }).click();
+    await window.getByRole("button", { exact: true, name: "工作台" }).click();
     await window.setViewportSize({ height: 900, width: 768 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(768);
-    await expect(window.getByRole("heading", { exact: true, name: "Avatar" })).toBeVisible();
+    await expect(window.getByRole("heading", { exact: true, name: "工作台" })).toBeVisible();
     await window.getByRole("button", { name: /栖光/u }).click();
     await expect(window.getByRole("heading", { name: "栖光" })).toBeVisible();
     await expect(window.getByRole("tab", { name: /Agent/u })).toHaveAttribute("aria-selected", "true");

@@ -117,12 +117,9 @@ describe("persistent Life events and Wake arbitration", () => {
       await fixture.database.store.setLifeState(life.lifeId, "QUEUED", fixture.clock.now().toISOString());
       expect(await runtime.arbiter.claim(life.lifeId, "runtime-empty")).toBeNull();
       expect(await fixture.lives.get(life.lifeId)).toMatchObject({ state: "SLEEPING" });
-      const stateEvents = await fixture.database.store.listSseEvents(0, 100);
-      expect(stateEvents).toContainEqual(expect.objectContaining({
-        entityId: life.lifeId,
-        payload: { lifeId: life.lifeId, reason: "no_executable_events", state: "SLEEPING" },
-        type: "life.state.changed",
-      }));
+      // SSE projection frozen (ADR 0009): state changes are observable via the facts tables only.
+      await expect(fixture.database.store.listSseEvents(0, 100)).resolves.toEqual([]);
+      expect(await fixture.lives.get(life.lifeId)).toMatchObject({ state: "SLEEPING" });
     } finally {
       await fixture.close();
     }

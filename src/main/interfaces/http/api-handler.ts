@@ -11,20 +11,19 @@ import type { LifeService } from "../../application/lives/life-service.js";
 import type { OperationsService } from "../../application/operations/operations-service.js";
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { JoiInboxService } from "../../application/joi/joi-inbox-service.js";
-import type { AvatarRegistryService } from "../../application/joi/avatar-registry-service.js";
-import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
-import type { AvatarManagementService } from "../../application/joi/avatar-management-service.js";
-import type { AvatarWorkspaceService } from "../../application/joi/avatar-workspace-service.js";
+import type { WorkbenchRegistryService } from "../../application/joi/workbench-registry-service.js";
+import type { WorkbenchChangeService } from "../../application/joi/workbench-change-service.js";
+import type { WorkbenchManagementService } from "../../application/joi/workbench-management-service.js";
+import type { WorkbenchWorkspaceService } from "../../application/joi/workbench-workspace-service.js";
 import type { JoiHomeFeedService } from "../../application/joi/joi-home-feed-service.js";
-import type { AvatarAgentService } from "../../application/partners/avatar-agent-service.js";
+import type { WorkbenchAgentService } from "../../application/partners/workbench-agent-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { PartnerKnowledgeService } from "../../application/partners/partner-knowledge-service.js";
 import type { PartnerEngineCatalog } from "../../application/partners/partner-engine-catalog.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
 import type { PartnerSkillCatalog, PartnerSkillOption } from "../../application/ports/partner-skills.js";
-import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
-import type { SseService } from "../../application/sse/sse-service.js";
+import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
 import type { BudgetService } from "../../application/rhythm/budget-service.js";
 import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
 import type { ArtifactReadPort, JoiAttachmentPort, UserAttachmentPort } from "../../application/ports/managed-file-ports.js";
@@ -40,12 +39,12 @@ export interface ApiDependencies {
   agents: AgentService;
   attachments?: UserAttachmentPort;
   artifacts?: ArtifactReadPort;
-  avatarRegistry?: Pick<AvatarRegistryService, "create">;
-  avatarManagement?: Pick<AvatarManagementService, "get" | "update">;
-  avatarWorkspaces?: Pick<AvatarWorkspaceService, "bindExisting" | "rebuildManaged">;
-  avatarAgents?: Pick<AvatarAgentService, "conversation" | "dismiss" | "list">;
-  avatarChanges?: Pick<AvatarChangeService, "decide" | "listPending">;
-  avatars?: AvatarCatalog;
+  workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
+  workbenchManagement?: Pick<WorkbenchManagementService, "get" | "update">;
+  workbenchWorkspaces?: Pick<WorkbenchWorkspaceService, "bindExisting" | "rebuildManaged">;
+  workbenchAgents?: Pick<WorkbenchAgentService, "conversation" | "dismiss" | "list">;
+  workbenchChanges?: Pick<WorkbenchChangeService, "decide" | "listPending">;
+  workbenches?: WorkbenchCatalog;
   auth: AuthService;
   budgets?: BudgetService;
   continuity?: ContinuityService;
@@ -62,17 +61,14 @@ export interface ApiDependencies {
   memory?: Pick<PartnerWorkMemoryService, "debugView">;
   skills?: Pick<PartnerSkillCatalog, "listForEngine">;
   directoryPicker?: () => Promise<string | null>;
-  onJoiMessageAccepted?: (inputId: string) => void;
-  onModelSourceReady?: () => void;
   lives: LifeService;
   lifeRuntime?: LifeRuntimeService;
   modelSources?: Pick<ModelSourceService, "create" | "delete" | "disable" | "hasReadySource" | "list" | "setOrder" | "update" | "validate">;
   operations: OperationsService;
   partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "duplicate" | "enable" | "list" | "update">;
   requestRestart?: () => void;
-  sse: SseService;
   settings?: SystemSettingsPort;
-  wakeCoordinator?: { emergencyStop(avatarId: string): void; notify(avatarId: string): void };
+  wakeCoordinator?: { emergencyStop(workbenchId: string): void; notify(workbenchId: string): void };
   work?: WorkQuery;
 }
 
@@ -175,14 +171,14 @@ async function assertLocalEngineAvailable(dependencies: ApiDependencies, engine:
   }
 }
 
-function avatarChangeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["avatarChanges"]> {
-  if (dependencies.avatarChanges === undefined) throw new HttpError("avatar_change_runtime_unavailable", "Avatar change runtime is unavailable.", 503);
-  return dependencies.avatarChanges;
+function workbenchChangeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["workbenchChanges"]> {
+  if (dependencies.workbenchChanges === undefined) throw new HttpError("workbench_change_runtime_unavailable", "Workbench change runtime is unavailable.", 503);
+  return dependencies.workbenchChanges;
 }
 
-function avatarAgentService(dependencies: ApiDependencies): NonNullable<ApiDependencies["avatarAgents"]> {
-  if (dependencies.avatarAgents === undefined) throw new HttpError("avatar_agent_runtime_unavailable", "Avatar Agent runtime is unavailable.", 503);
-  return dependencies.avatarAgents;
+function workbenchAgentService(dependencies: ApiDependencies): NonNullable<ApiDependencies["workbenchAgents"]> {
+  if (dependencies.workbenchAgents === undefined) throw new HttpError("workbench_agent_runtime_unavailable", "Workbench Agent runtime is unavailable.", 503);
+  return dependencies.workbenchAgents;
 }
 
 function joiHomeFeedService(dependencies: ApiDependencies): NonNullable<ApiDependencies["joiHomeFeed"]> {
@@ -338,18 +334,6 @@ function sendEmpty(response: ServerResponse, status: number, headers: Record<str
   response.end();
 }
 
-function encodeCursor(sequence: number): string {
-  return `sse_${Buffer.from(String(sequence)).toString("base64url")}`;
-}
-
-function decodeCursor(cursor: string | null | undefined): number {
-  if (cursor === null || cursor === undefined || cursor === "") return 0;
-  if (!cursor.startsWith("sse_")) throw new HttpError("stream_cursor_invalid", "SSE cursor is invalid.", 400);
-  const decoded = Buffer.from(cursor.slice(4), "base64url").toString("utf8");
-  if (!/^\d+$/.test(decoded)) throw new HttpError("stream_cursor_invalid", "SSE cursor is invalid.", 400);
-  return Number(decoded);
-}
-
 class HttpError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
     super(message);
@@ -362,7 +346,7 @@ function errorDetails(error: unknown, requestId: string): { body: ApiErrorBody; 
     return { body: { code: error.code, message: error.message, requestId }, status: error.status };
   }
   if (error instanceof Error && "code" in error && typeof error.code === "string") {
-    const conflictCodes = ["avatar_workspace_busy", "avatar_agent_resident_delete_forbidden", "avatar_agent_not_terminal"];
+    const conflictCodes = ["workbench_workspace_busy", "workbench_agent_resident_delete_forbidden", "workbench_agent_not_terminal"];
     const status = error.code.endsWith("_not_found") ? 404 : conflictCodes.includes(error.code) ? 409 : 400;
     return { body: { code: error.code, message: error.message, requestId }, status };
   }
@@ -411,42 +395,6 @@ function eventCursor(value: string | null): { eventId: string; occurredAt: strin
 
 function encodeEventCursor(cursor: { eventId: string; occurredAt: string }): string {
   return Buffer.from(JSON.stringify(cursor)).toString("base64url");
-}
-
-async function streamEvents(dependencies: ApiDependencies, request: IncomingMessage, response: ServerResponse, cursor: number): Promise<void> {
-  await dependencies.auth.authenticate(sessionToken(request));
-  response.writeHead(200, {
-    "cache-control": "no-cache, no-store",
-    connection: "keep-alive",
-    "content-type": "text/event-stream; charset=utf-8",
-    "x-accel-buffering": "no",
-  });
-  response.flushHeaders();
-  const writeEvent = (event: Awaited<ReturnType<SseService["listAfter"]>>[number]) => {
-    response.write(`id: ${encodeCursor(event.sequence)}\nevent: ${event.type}\ndata: ${JSON.stringify({ createdAt: event.createdAt, entityId: event.entityId, payload: event.payload })}\n\n`);
-  };
-  const replay = await dependencies.sse.replayAfter(cursor, 1000);
-  if (replay.resetRequired) {
-    response.write(`id: ${encodeCursor(replay.latestSequence)}\nevent: stream_reset\ndata: ${JSON.stringify({
-      createdAt: new Date().toISOString(),
-      entityId: "runtime",
-      payload: {
-        reason: "cursor_expired",
-        resourcePaths: ["/api/v1/lives", "/api/v1/agents", "/api/v1/interactions", "/api/v1/diagnostics"],
-        snapshotRequired: true,
-      },
-    })}\n\n`);
-  } else {
-    for (const event of replay.events) writeEvent(event);
-  }
-  const unsubscribe = dependencies.sse.subscribe(writeEvent);
-  const keepAlive = setInterval(() => response.write(": keepalive\n\n"), 20_000);
-  keepAlive.unref();
-  request.on("close", () => {
-    clearInterval(keepAlive);
-    unsubscribe();
-    response.end();
-  });
 }
 
 export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
@@ -518,10 +466,6 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         sendEmpty(response, 204);
         return;
       }
-      if (method === "GET" && pathname === "/api/v1/stream") {
-        await streamEvents(dependencies, request, response, decodeCursor(url.searchParams.get("cursor") ?? request.headers["last-event-id"] as string | null));
-        return;
-      }
 
       await dependencies.auth.authenticate(sessionToken(request));
 
@@ -540,8 +484,8 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       if (method === "GET" && pathname === "/api/v1/joi") {
         const configured = await modelSourceService(dependencies).hasReadySource();
         sendJson(response, 200, {
-          avatarChanges: dependencies.avatarChanges === undefined ? [] : await dependencies.avatarChanges.listPending(),
-          avatars: dependencies.avatars === undefined ? [] : await dependencies.avatars.listSummaries(),
+          workbenchChanges: dependencies.workbenchChanges === undefined ? [] : await dependencies.workbenchChanges.listPending(),
+          workbenches: dependencies.workbenches === undefined ? [] : await dependencies.workbenches.listSummaries(),
           modelSources: await modelSourceService(dependencies).list(),
           partners: dependencies.partners === undefined ? [] : await dependencies.partners.list(),
           runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" },
@@ -586,7 +530,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         return;
       }
       if (method === "GET" && pathname === "/api/v1/system/pick-directory") {
-        throw new HttpError("absolute_path_response_forbidden", "Directory selection is scoped to an Avatar workspace operation.", 410);
+        throw new HttpError("absolute_path_response_forbidden", "Directory selection is scoped to a workbench workspace operation.", 410);
       }
       if (method === "GET" && pathname === "/api/v1/scenarios") {
         sendJson(response, 200, { items: buildScenarioList(dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code")) });
@@ -620,57 +564,57 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         sendJson(response, 201, { items });
         return;
       }
-      if (method === "GET" && pathname === "/api/v1/avatars") {
-        if (dependencies.avatars === undefined) throw new HttpError("avatar_catalog_unavailable", "Avatar catalog is unavailable.", 503);
-        sendJson(response, 200, { items: await dependencies.avatars.listSummaries() });
+      if (method === "GET" && pathname === "/api/v1/workbenches") {
+        if (dependencies.workbenches === undefined) throw new HttpError("workbench_catalog_unavailable", "Workbench catalog is unavailable.", 503);
+        sendJson(response, 200, { items: await dependencies.workbenches.listSummaries() });
         return;
       }
-      const avatarAgentsMatch = /^\/api\/v1\/avatars\/([^/]+)\/agents$/.exec(pathname);
-      if (avatarAgentsMatch !== null && method === "GET") {
+      const workbenchAgentsMatch = /^\/api\/v1\/workbenches\/([^/]+)\/agents$/.exec(pathname);
+      if (workbenchAgentsMatch !== null && method === "GET") {
         const cursor = url.searchParams.get("cursor") ?? undefined;
         const goalId = url.searchParams.get("goalId") ?? undefined;
         const requestedLimit = Number(url.searchParams.get("limit") ?? "50");
-        sendJson(response, 200, await avatarAgentService(dependencies).list({
-          avatarId: decodeURIComponent(avatarAgentsMatch[1] ?? ""),
+        sendJson(response, 200, await workbenchAgentService(dependencies).list({
+          workbenchId: decodeURIComponent(workbenchAgentsMatch[1] ?? ""),
           ...(cursor === undefined ? {} : { cursor }),
           ...(goalId === undefined ? {} : { goalId }),
           limit: Number.isFinite(requestedLimit) ? requestedLimit : 50,
         }));
         return;
       }
-      const avatarAgentConversationMatch = /^\/api\/v1\/avatars\/([^/]+)\/agents\/([^/]+)\/conversation$/.exec(pathname);
-      if (avatarAgentConversationMatch !== null && method === "GET") {
+      const workbenchAgentConversationMatch = /^\/api\/v1\/workbenches\/([^/]+)\/agents\/([^/]+)\/conversation$/.exec(pathname);
+      if (workbenchAgentConversationMatch !== null && method === "GET") {
         const cursor = url.searchParams.get("cursor") ?? undefined;
         const requestedLimit = Number(url.searchParams.get("limit") ?? "50");
-        sendJson(response, 200, await avatarAgentService(dependencies).conversation({
-          agentId: decodeURIComponent(avatarAgentConversationMatch[2] ?? ""),
-          avatarId: decodeURIComponent(avatarAgentConversationMatch[1] ?? ""),
+        sendJson(response, 200, await workbenchAgentService(dependencies).conversation({
+          agentId: decodeURIComponent(workbenchAgentConversationMatch[2] ?? ""),
+          workbenchId: decodeURIComponent(workbenchAgentConversationMatch[1] ?? ""),
           ...(cursor === undefined ? {} : { cursor }),
           limit: Number.isFinite(requestedLimit) ? requestedLimit : 50,
         }));
         return;
       }
-      const avatarAgentMatch = /^\/api\/v1\/avatars\/([^/]+)\/agents\/([^/]+)$/.exec(pathname);
-      if (avatarAgentMatch !== null && method === "DELETE") {
+      const workbenchAgentMatch = /^\/api\/v1\/workbenches\/([^/]+)\/agents\/([^/]+)$/.exec(pathname);
+      if (workbenchAgentMatch !== null && method === "DELETE") {
         await verifyWrite(dependencies, request);
-        await avatarAgentService(dependencies).dismiss({
-          agentId: decodeURIComponent(avatarAgentMatch[2] ?? ""),
-          avatarId: decodeURIComponent(avatarAgentMatch[1] ?? ""),
+        await workbenchAgentService(dependencies).dismiss({
+          agentId: decodeURIComponent(workbenchAgentMatch[2] ?? ""),
+          workbenchId: decodeURIComponent(workbenchAgentMatch[1] ?? ""),
         });
         sendEmpty(response, 204);
         return;
       }
-      const avatarMatch = /^\/api\/v1\/avatars\/([^/]+)$/.exec(pathname);
-      if (avatarMatch !== null && method === "GET") {
-        if (dependencies.avatarManagement === undefined) throw new HttpError("avatar_management_unavailable", "Avatar management is unavailable.", 503);
-        sendJson(response, 200, await dependencies.avatarManagement.get(decodeURIComponent(avatarMatch[1] ?? "")));
+      const workbenchMatch = /^\/api\/v1\/workbenches\/([^/]+)$/.exec(pathname);
+      if (workbenchMatch !== null && method === "GET") {
+        if (dependencies.workbenchManagement === undefined) throw new HttpError("workbench_management_unavailable", "Workbench management is unavailable.", 503);
+        sendJson(response, 200, await dependencies.workbenchManagement.get(decodeURIComponent(workbenchMatch[1] ?? "")));
         return;
       }
-      if (avatarMatch !== null && method === "PATCH") {
+      if (workbenchMatch !== null && method === "PATCH") {
         await verifyWrite(dependencies, request);
-        if (dependencies.avatarManagement === undefined) throw new HttpError("avatar_management_unavailable", "Avatar management is unavailable.", 503);
+        if (dependencies.workbenchManagement === undefined) throw new HttpError("workbench_management_unavailable", "Workbench management is unavailable.", 503);
         const body = await readJson(request);
-        sendJson(response, 200, await dependencies.avatarManagement.update(decodeURIComponent(avatarMatch[1] ?? ""), {
+        sendJson(response, 200, await dependencies.workbenchManagement.update(decodeURIComponent(workbenchMatch[1] ?? ""), {
           ...(typeof body.name === "string" ? { name: body.name } : {}),
           ...(typeof body.persona === "string" ? { persona: body.persona } : {}),
           ...(typeof body.projectLabel === "string" ? { projectLabel: body.projectLabel } : {}),
@@ -678,53 +622,53 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         }));
         return;
       }
-      const avatarWorkspaceBindMatch = /^\/api\/v1\/avatars\/([^/]+)\/workspace\/bind$/.exec(pathname);
-      if (avatarWorkspaceBindMatch !== null && method === "POST") {
+      const workbenchWorkspaceBindMatch = /^\/api\/v1\/workbenches\/([^/]+)\/workspace\/bind$/.exec(pathname);
+      if (workbenchWorkspaceBindMatch !== null && method === "POST") {
         await verifyWrite(dependencies, request);
-        if (dependencies.avatarWorkspaces === undefined || dependencies.directoryPicker === undefined) throw new HttpError("avatar_workspace_unavailable", "Avatar workspace management is unavailable.", 503);
+        if (dependencies.workbenchWorkspaces === undefined || dependencies.directoryPicker === undefined) throw new HttpError("workbench_workspace_unavailable", "Workbench workspace management is unavailable.", 503);
         const selected = await dependencies.directoryPicker();
-        if (selected === null) throw new HttpError("avatar_workspace_selection_canceled", "Directory selection was canceled.", 409);
-        sendJson(response, 200, await dependencies.avatarWorkspaces.bindExisting(decodeURIComponent(avatarWorkspaceBindMatch[1] ?? ""), selected));
+        if (selected === null) throw new HttpError("workbench_workspace_selection_canceled", "Directory selection was canceled.", 409);
+        sendJson(response, 200, await dependencies.workbenchWorkspaces.bindExisting(decodeURIComponent(workbenchWorkspaceBindMatch[1] ?? ""), selected));
         return;
       }
-      const avatarWorkspaceRebuildMatch = /^\/api\/v1\/avatars\/([^/]+)\/workspace\/rebuild$/.exec(pathname);
-      if (avatarWorkspaceRebuildMatch !== null && method === "POST") {
+      const workbenchWorkspaceRebuildMatch = /^\/api\/v1\/workbenches\/([^/]+)\/workspace\/rebuild$/.exec(pathname);
+      if (workbenchWorkspaceRebuildMatch !== null && method === "POST") {
         await verifyWrite(dependencies, request);
-        if (dependencies.avatarWorkspaces === undefined) throw new HttpError("avatar_workspace_unavailable", "Avatar workspace management is unavailable.", 503);
-        sendJson(response, 202, await dependencies.avatarWorkspaces.rebuildManaged(decodeURIComponent(avatarWorkspaceRebuildMatch[1] ?? "")));
+        if (dependencies.workbenchWorkspaces === undefined) throw new HttpError("workbench_workspace_unavailable", "Workbench workspace management is unavailable.", 503);
+        sendJson(response, 202, await dependencies.workbenchWorkspaces.rebuildManaged(decodeURIComponent(workbenchWorkspaceRebuildMatch[1] ?? "")));
         return;
       }
-      if (method === "GET" && pathname === "/api/v1/avatar-change-requests") {
-        sendJson(response, 200, { items: await avatarChangeService(dependencies).listPending() });
+      if (method === "GET" && pathname === "/api/v1/workbench-change-requests") {
+        sendJson(response, 200, { items: await workbenchChangeService(dependencies).listPending() });
         return;
       }
-      const avatarChangeDecisionMatch = /^\/api\/v1\/avatar-change-requests\/([^/]+)\/decision$/.exec(pathname);
-      if (method === "POST" && avatarChangeDecisionMatch !== null) {
+      const workbenchChangeDecisionMatch = /^\/api\/v1\/workbench-change-requests\/([^/]+)\/decision$/.exec(pathname);
+      if (method === "POST" && workbenchChangeDecisionMatch !== null) {
         await verifyWrite(dependencies, request);
         const body = await readJson(request);
         const decision = stringField(body, "decision");
-        if (decision !== "CONFIRM" && decision !== "REJECT") throw new HttpError("avatar_change_decision_invalid", "Decision must be CONFIRM or REJECT.", 400);
-        sendJson(response, 200, await avatarChangeService(dependencies).decide({
+        if (decision !== "CONFIRM" && decision !== "REJECT") throw new HttpError("workbench_change_decision_invalid", "Decision must be CONFIRM or REJECT.", 400);
+        sendJson(response, 200, await workbenchChangeService(dependencies).decide({
           decision,
-          requestId: decodeURIComponent(avatarChangeDecisionMatch[1] ?? ""),
+          requestId: decodeURIComponent(workbenchChangeDecisionMatch[1] ?? ""),
         }));
         return;
       }
-      if (method === "POST" && pathname === "/api/v1/avatars") {
+      if (method === "POST" && pathname === "/api/v1/workbenches") {
         await verifyWrite(dependencies, request);
-        if (dependencies.avatarRegistry === undefined) throw new HttpError("avatar_registry_unavailable", "Avatar registry is unavailable.", 503);
+        if (dependencies.workbenchRegistry === undefined) throw new HttpError("workbench_registry_unavailable", "Workbench registry is unavailable.", 503);
         const body = await readJson(request);
-        const avatar = await dependencies.avatarRegistry.create({
+        const workbench = await dependencies.workbenchRegistry.create({
           name: stringField(body, "name"),
           personaSummary: stringField(body, "personaSummary"),
           projectLabel: stringField(body, "projectLabel"),
           scopeSummary: stringField(body, "scopeSummary"),
         });
         sendJson(response, 201, {
-          avatarId: avatar.avatarId,
-          name: avatar.profile.name,
-          scopeSummary: avatar.profile.scopeSummary,
-          updatedAt: avatar.updatedAt,
+          workbenchId: workbench.workbenchId,
+          name: workbench.profile.name,
+          scopeSummary: workbench.profile.scopeSummary,
+          updatedAt: workbench.updatedAt,
         });
         return;
       }
@@ -821,14 +765,14 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
       }
       const partnerMemoryMatch = /^\/api\/v1\/partners\/([^/]+)\/memory$/.exec(pathname);
       if (partnerMemoryMatch !== null && method === "GET") {
-        throw new HttpError("partner_memory_private", "Partner work memory is private to Avatar execution context.", 410);
+        throw new HttpError("partner_memory_private", "Partner work memory is private to Workbench execution context.", 410);
       }
       const partnerInstancesMatch = /^\/api\/v1\/partners\/([^/]+)\/instances$/.exec(pathname);
       if (partnerInstancesMatch !== null && method === "GET") {
-        const avatarId = url.searchParams.get("avatarId");
-        if (avatarId === null || avatarId.trim() === "") throw new HttpError("avatar_id_required", "Avatar is required.", 400);
+        const workbenchId = url.searchParams.get("workbenchId");
+        if (workbenchId === null || workbenchId.trim() === "") throw new HttpError("workbench_id_required", "Workbench is required.", 400);
         sendJson(response, 200, { items: await partnerInstanceManager(dependencies).list({
-          avatarId,
+          workbenchId,
           partnerId: decodeURIComponent(partnerInstancesMatch[1] ?? ""),
         }) });
         return;
@@ -840,12 +784,11 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         const body = await readJson(request);
         const accepted = await joiInboxService(dependencies).accept({
           attachmentIds: optionalStringArray(body, "attachmentIds") ?? [],
-          ...(typeof body.avatarId === "string" ? { avatarId: body.avatarId } : {}),
+          ...(typeof body.workbenchId === "string" ? { workbenchId: body.workbenchId } : {}),
           idempotencyKey,
           text: stringField(body, "text"),
         });
         sendJson(response, 202, accepted);
-        dependencies.onJoiMessageAccepted?.(accepted.inputId);
         return;
       }
       const joiClarifyMatch = /^\/api\/v1\/joi\/messages\/([^/]+)\/clarify$/.exec(pathname);
@@ -853,12 +796,11 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         await verifyWrite(dependencies, request);
         const body = await readJson(request);
         const clarified = await joiInboxService(dependencies).clarify({
-          ...(typeof body.avatarId === "string" ? { avatarId: body.avatarId } : {}),
+          ...(typeof body.workbenchId === "string" ? { workbenchId: body.workbenchId } : {}),
           inputId: decodeURIComponent(joiClarifyMatch[1] ?? ""),
           ...(typeof body.text === "string" ? { text: body.text } : {}),
         });
         sendJson(response, 202, clarified);
-        dependencies.onJoiMessageAccepted?.(clarified.inputId);
         return;
       }
       const joiCancelMatch = /^\/api\/v1\/joi\/messages\/([^/]+)\/cancel$/.exec(pathname);
@@ -929,7 +871,6 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         await verifyWrite(dependencies, request);
         const validated = await modelSourceService(dependencies).validate(decodeURIComponent(modelSourceValidateMatch[1] ?? ""));
         sendJson(response, 200, validated);
-        if (validated.status === "READY") dependencies.onModelSourceReady?.();
         return;
       }
       const modelSourceMatch = /^\/api\/v1\/model-sources\/([^/]+)$/.exec(pathname);
@@ -984,7 +925,7 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         return;
       }
       if (method !== "GET" && /^\/api\/v1\/lives(?:\/|$)/.test(pathname)) {
-        throw new HttpError("legacy_life_read_only", "Legacy Life resources are read-only. Use joi and Avatar APIs.", 410);
+        throw new HttpError("legacy_life_read_only", "Legacy Life resources are read-only. Use joi and Workbench APIs.", 410);
       }
       if (method === "GET" && pathname === "/api/v1/lives") {
         const limitValue = Number(url.searchParams.get("limit") ?? "20");

@@ -3,7 +3,7 @@ export type WorkResultStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITI
 export interface WorkResult {
   actionId: string;
   artifacts: { artifactRef?: string; mimeType?: string; name: string; size: number }[];
-  avatarId: string;
+  workbenchId: string;
   body: string;
   createdAt: string;
   instanceId?: string;

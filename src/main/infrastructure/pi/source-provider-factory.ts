@@ -1,7 +1,7 @@
 /* Provider resolution implements an asynchronous infrastructure port. */
 /* eslint-disable @typescript-eslint/require-await */
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
-import { openAICompletionsApi } from "@earendil-works/pi-ai/api/openai-completions.lazy";
+import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
 import { createProvider, type ApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
 
 import {
@@ -90,10 +90,12 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     });
   }
   const alwaysOn = modelRequiresAlwaysOnThinking(baseUrl);
-  const model: Model<"openai-completions"> = {
-    api: "openai-completions",
+  const model: Model<"openai-responses"> = {
+    api: "openai-responses",
     baseUrl,
-    ...(alwaysOn ? { compat: { thinkingFormat: "qwen" } } : {}),
+    // Conservative gateway defaults: keep the `system` role (developer can be
+    // rejected by non-OpenAI gateways) and never emit the OpenAI-only 24h cache retention.
+    compat: { supportsDeveloperRole: false, supportsLongCacheRetention: false },
     contextWindow: 128_000,
     cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
     id: input.modelId,
@@ -106,7 +108,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   };
 
   return createProvider({
-    api: openAICompletionsApi(),
+    api: openAIResponsesApi(),
     auth: { apiKey: noAmbientCredentialAuth(allowKeyless) },
     baseUrl,
     ...(headers === undefined ? {} : { headers }),

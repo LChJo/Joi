@@ -7,13 +7,13 @@ import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 export class JoiInboxService {
   constructor(private readonly dependencies: { clock: Clock; diagnostics?: RuntimeDiagnostics; ids: IdGenerator; repository: JoiInboxRepository }) {}
 
-  async accept(input: { attachmentIds?: string[]; avatarId?: string; idempotencyKey: string; text: string }): Promise<JoiAcceptedMessageDto> {
+  async accept(input: { attachmentIds?: string[]; workbenchId?: string; idempotencyKey: string; text: string }): Promise<JoiAcceptedMessageDto> {
     const body = input.text.trim();
     const idempotencyKey = input.idempotencyKey.trim();
     if (body.length === 0 || body.length > 32_000) throw new DomainError("joi_message_invalid", "Message is invalid.");
     if (idempotencyKey.length === 0 || idempotencyKey.length > 240) throw new DomainError("idempotency_key_invalid", "Idempotency key is invalid.");
-    const avatarId = typeof input.avatarId === "string" ? input.avatarId.trim() : "";
-    if (avatarId.length > 160) throw new DomainError("joi_avatar_invalid", "Avatar reference is invalid.");
+    const workbenchId = typeof input.workbenchId === "string" ? input.workbenchId.trim() : "";
+    if (workbenchId.length > 160) throw new DomainError("joi_workbench_invalid", "Workbench reference is invalid.");
     const attachmentIds = [...new Set(input.attachmentIds ?? [])];
     if (attachmentIds.length !== (input.attachmentIds?.length ?? 0) || attachmentIds.length > 8
       || attachmentIds.some((value) => value.trim() === "" || value.length > 240)) {
@@ -23,7 +23,7 @@ export class JoiInboxService {
     const record = await this.dependencies.repository.create({
       body,
       ...(attachmentIds.length === 0 ? {} : { attachmentIds }),
-      ...(avatarId.length === 0 ? {} : { avatarId }),
+      ...(workbenchId.length === 0 ? {} : { workbenchId }),
       createdAt: now,
       idempotencyKey,
       inputId: this.dependencies.ids.next("input"),
@@ -32,7 +32,7 @@ export class JoiInboxService {
     });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.accepted", {
       attachmentCount: attachmentIds.length,
-      avatarBound: record.avatarId !== undefined,
+      workbenchBound: record.workbenchId !== undefined,
       inputId: record.inputId,
     });
     return toDto(record);
@@ -42,20 +42,20 @@ export class JoiInboxService {
     return (await this.dependencies.repository.list()).map(toDto);
   }
 
-  async clarify(input: { avatarId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
+  async clarify(input: { workbenchId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
     const inputId = input.inputId.trim();
     if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
-    const avatarId = typeof input.avatarId === "string" ? input.avatarId.trim() : "";
+    const workbenchId = typeof input.workbenchId === "string" ? input.workbenchId.trim() : "";
     const text = typeof input.text === "string" ? input.text.trim() : "";
-    const cleanAvatar = avatarId.length === 0 ? undefined : avatarId;
+    const cleanWorkbench = workbenchId.length === 0 ? undefined : workbenchId;
     const cleanText = text.length === 0 ? undefined : text;
-    if (cleanAvatar === undefined && cleanText === undefined) {
-      throw new DomainError("joi_clarification_empty", "Provide an avatar or supplementary text to continue.");
+    if (cleanWorkbench === undefined && cleanText === undefined) {
+      throw new DomainError("joi_clarification_empty", "Provide a workbench or supplementary text to continue.");
     }
-    if (cleanAvatar !== undefined && cleanAvatar.length > 160) throw new DomainError("joi_avatar_invalid", "Avatar reference is invalid.");
+    if (cleanWorkbench !== undefined && cleanWorkbench.length > 160) throw new DomainError("joi_workbench_invalid", "Workbench reference is invalid.");
     if (cleanText !== undefined && cleanText.length > 8_000) throw new DomainError("joi_clarification_invalid", "Supplementary text is too long.");
     const record = await this.dependencies.repository.clarify(inputId, {
-      ...(cleanAvatar === undefined ? {} : { avatarId: cleanAvatar }),
+      ...(cleanWorkbench === undefined ? {} : { workbenchId: cleanWorkbench }),
       ...(cleanText === undefined ? {} : { text: cleanText }),
     });
     if (record === null) throw new DomainError("joi_clarification_unavailable", "This input is not awaiting clarification.");
@@ -90,7 +90,7 @@ function toDto(record: JoiInboxRecord): JoiAcceptedMessageDto {
   const preview = textPreviewOf(record);
   return {
     acceptedAt: record.createdAt,
-    ...(record.avatarId === undefined ? {} : { avatarId: record.avatarId }),
+    ...(record.workbenchId === undefined ? {} : { workbenchId: record.workbenchId }),
     ...(record.canceledAt === undefined ? {} : { canceled: true }),
     ...(record.clarificationPrompt === undefined ? {} : { clarificationPrompt: record.clarificationPrompt }),
     ...(record.clarificationReasonCode === undefined ? {} : { clarificationReasonCode: record.clarificationReasonCode }),

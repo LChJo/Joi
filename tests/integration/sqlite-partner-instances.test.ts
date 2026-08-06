@@ -15,17 +15,17 @@ describe("SQLite partner instances", () => {
     const databasePath = path.join(root, "runtime.sqlite");
     const database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      database.transaction((connection) => connection.prepare(`INSERT INTO avatars
-        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
-        VALUES ('avatar_test', 'A', 'persona_test', 'persona', 'scope', 'project', 'memory_test', 'ACTIVE', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run());
+      database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+        VALUES ('workbench_test', 'A', 'persona_test', 'persona', 'scope', 'project', 'memory_test', 'ACTIVE', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run());
       const partners = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
       const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
       const repository = new SqlitePartnerInstanceRepository(database);
 
-      const resident = await repository.create({ avatarId: "avatar_test", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_resident", partnerId: partner.partnerId, partnerRevisionId: partner.partnerRevisionId, sessionPolicy: "RESIDENT" });
-      await repository.create({ avatarId: "avatar_test", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_ephemeral", partnerId: partner.partnerId, partnerRevisionId: partner.partnerRevisionId, sessionPolicy: "EPHEMERAL" });
+      const resident = await repository.create({ workbenchId: "workbench_test", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_resident", partnerId: partner.partnerId, partnerRevisionId: partner.partnerRevisionId, sessionPolicy: "RESIDENT" });
+      await repository.create({ workbenchId: "workbench_test", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_ephemeral", partnerId: partner.partnerId, partnerRevisionId: partner.partnerRevisionId, sessionPolicy: "EPHEMERAL" });
       expect(resident).toMatchObject({ sessionPolicy: "RESIDENT", status: "IDLE" });
-      expect(await repository.countActive("avatar_test", partner.partnerId)).toBe(2);
+      expect(await repository.countActive("workbench_test", partner.partnerId)).toBe(2);
       expect(await repository.countActiveGlobal()).toBe(2);
 
       await repository.setStatusBusy("instance_resident", "2026-07-29T10:01:00.000Z");
@@ -34,7 +34,7 @@ describe("SQLite partner instances", () => {
       expect((await repository.get("instance_resident"))?.status).toBe("IDLE");
       const recoveredEphemeral = await repository.get("instance_ephemeral");
       expect(recoveredEphemeral).toMatchObject({ disposalReason: "crash", status: "DISPOSED" });
-      expect(await repository.listActive({ avatarId: "avatar_test", partnerId: partner.partnerId })).toHaveLength(1);
+      expect(await repository.listActive({ workbenchId: "workbench_test", partnerId: partner.partnerId })).toHaveLength(1);
 
       await repository.markTurnComplete("instance_resident", "2026-07-29T10:06:00.000Z", "partner_instance_messages:instance_resident");
       expect((await repository.get("instance_resident"))?.externalSessionRef).toBe("partner_instance_messages:instance_resident");

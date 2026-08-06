@@ -65,21 +65,21 @@ describe("sqlite joi inbox dismiss", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-dismiss-work-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      database.transaction((connection) => connection.prepare(`INSERT INTO avatars
-        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
-        VALUES ('avatar-dismiss', 'A', 'persona-dismiss', 'persona', 'scope', 'project', 'memory-dismiss', 'ACTIVE', ?, ?)`)
+      database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+        VALUES ('workbench-dismiss', 'A', 'persona-dismiss', 'persona', 'scope', 'project', 'memory-dismiss', 'ACTIVE', ?, ?)`)
         .run("2026-08-03T12:00:00.000Z", "2026-08-03T12:00:00.000Z"));
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
-      const goal = await inbox.accept({ avatarId: "avatar-dismiss", idempotencyKey: "key-work", text: "仍在执行" });
+      const goal = await inbox.accept({ workbenchId: "workbench-dismiss", idempotencyKey: "key-work", text: "仍在执行" });
       database.transaction((connection) => connection.prepare(`INSERT INTO joi_turns
-        (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
-        VALUES ('turn-dismiss', ?, 'avatar-dismiss', 'session-dismiss', 'RUNNING', ?, ?)`)
+        (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-dismiss', ?, 'workbench-dismiss', 'session-dismiss', 'RUNNING', ?, ?)`)
         .run(goal.inputId, "2026-08-03T12:00:00.000Z", "2026-08-03T12:00:00.000Z"));
       await repository.completeInput(goal.inputId, "turn-dismiss");
       database.transaction((connection) => connection.prepare(`INSERT INTO work_items
-        (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
-        VALUES ('work-dismiss', 'avatar-dismiss', ?, '执行中', '{}', 'READ', 'RUNNING', ?, ?)`)
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-dismiss', 'workbench-dismiss', ?, '执行中', '{}', 'READ', 'RUNNING', ?, ?)`)
         .run(goal.inputId, "2026-08-03T12:00:00.000Z", "2026-08-03T12:00:00.000Z"));
 
       expect(await repository.dismiss(goal.inputId)).toBeNull();

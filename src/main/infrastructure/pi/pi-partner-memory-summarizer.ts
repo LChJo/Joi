@@ -15,9 +15,9 @@ export class PiPartnerMemorySummarizer implements PartnerMemorySummarizer {
     sources: Pick<ReasoningSourceSelector, "selectInitial">;
   }) {}
 
-  async summarize(input: { avatarId: string; entries: PartnerWorkMemoryEntry[]; partnerId: string; previousSummary?: string }): Promise<string | null> {
+  async summarize(input: { workbenchId: string; entries: PartnerWorkMemoryEntry[]; partnerId: string; previousSummary?: string }): Promise<string | null> {
     try {
-      const pin = await this.dependencies.sources.selectInitial(`partner_memory:${input.avatarId}:${input.partnerId}`);
+      const pin = await this.dependencies.sources.selectInitial(`partner_memory:${input.workbenchId}:${input.partnerId}`);
       const resolved = await this.dependencies.resolver.resolve(pin);
       const ledger = input.entries
         .map((entry) => `- [${entry.outcome}] ${entry.title} (source: ${entry.sessionDataSource}, at: ${entry.createdAt})`)

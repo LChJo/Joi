@@ -18,16 +18,16 @@ const revision: PartnerRevision = createPartnerRevision({
   skills: [], tools: ["read"],
 });
 
-const request: PartnerRunRequest = { actionId: "action_1", avatarId: "avatar_1", contextSnapshotId: "context_1", taskProjection: "do the work", workId: "work_1" };
+const request: PartnerRunRequest = { actionId: "action_1", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "do the work", workId: "work_1" };
 
 class MemoryInstanceRepository implements PartnerInstanceRepository {
   readonly linked: [string, string][] = [];
   readonly records: PartnerInstanceRecord[] = [];
-  async countActive(avatarId: string, partnerId: string) { return this.records.filter((record) => record.avatarId === avatarId && record.partnerId === partnerId && record.status !== "DISPOSED").length; }
+  async countActive(workbenchId: string, partnerId: string) { return this.records.filter((record) => record.workbenchId === workbenchId && record.partnerId === partnerId && record.status !== "DISPOSED").length; }
   async countActiveGlobal() { return this.records.filter((record) => record.status !== "DISPOSED").length; }
-  async create(input: { avatarId: string; createdAt: string; engine: PartnerRevision["engine"]; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: PartnerInstanceRecord["sessionPolicy"] }) {
+  async create(input: { workbenchId: string; createdAt: string; engine: PartnerRevision["engine"]; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: PartnerInstanceRecord["sessionPolicy"] }) {
     const record: PartnerInstanceRecord = {
-      avatarId: input.avatarId, createdAt: input.createdAt, engine: input.engine, instanceId: input.instanceId, lastUsedAt: input.createdAt,
+      workbenchId: input.workbenchId, createdAt: input.createdAt, engine: input.engine, instanceId: input.instanceId, lastUsedAt: input.createdAt,
       partnerId: input.partnerId, partnerRevisionId: input.partnerRevisionId, sessionPolicy: input.sessionPolicy, status: "IDLE",
     };
     this.records.push(record);
@@ -35,9 +35,9 @@ class MemoryInstanceRepository implements PartnerInstanceRepository {
   }
   async get(instanceId: string) { return this.records.find((record) => record.instanceId === instanceId) ?? null; }
   async linkDispatch(dispatchAttemptId: string, instanceId: string) { this.linked.push([dispatchAttemptId, instanceId]); }
-  async listActive(filter?: { avatarId?: string; partnerId?: string }) {
+  async listActive(filter?: { workbenchId?: string; partnerId?: string }) {
     return this.records.filter((record) => record.status !== "DISPOSED"
-      && (filter?.avatarId === undefined || record.avatarId === filter.avatarId)
+      && (filter?.workbenchId === undefined || record.workbenchId === filter.workbenchId)
       && (filter?.partnerId === undefined || record.partnerId === filter.partnerId));
   }
   async markDisposed(instanceId: string, reason: string, at: string) {
@@ -137,35 +137,35 @@ function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartne
 }
 
 describe("partner-instance-manager", () => {
-  it("binds every instance to one Avatar and rejects cross-Avatar reuse", async () => {
+  it("binds every instance to one Workbench and rejects cross-Workbench reuse", async () => {
     const { manager } = makeManager();
-    const instance = await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
-    expect(instance).toMatchObject({ avatarId: "avatar_1" });
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    expect(instance).toMatchObject({ workbenchId: "workbench_1" });
     await expect(manager.dispatch({
       instanceId: instance.instanceId,
-      request: { ...request, avatarId: "avatar_2" },
+      request: { ...request, workbenchId: "workbench_2" },
       revision,
-    })).rejects.toMatchObject({ code: "partner_instance_avatar_mismatch" });
-    await expect(manager.dispose({ avatarId: "avatar_2", instanceId: instance.instanceId, reason: "wrong scope" }))
-      .rejects.toMatchObject({ code: "partner_instance_avatar_mismatch" });
+    })).rejects.toMatchObject({ code: "partner_instance_workbench_mismatch" });
+    await expect(manager.dispose({ workbenchId: "workbench_2", instanceId: instance.instanceId, reason: "wrong scope" }))
+      .rejects.toMatchObject({ code: "partner_instance_workbench_mismatch" });
   });
 
-  it("lists instances only inside the requested Avatar", async () => {
+  it("lists instances only inside the requested Workbench", async () => {
     const { manager } = makeManager();
-    await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
-    await manager.ensure({ avatarId: "avatar_2", partnerId: "partner_1" });
-    await expect(manager.list({ avatarId: "avatar_1", partnerId: "partner_1" }))
-      .resolves.toEqual([expect.objectContaining({ avatarId: "avatar_1" })]);
+    await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    await manager.ensure({ workbenchId: "workbench_2", partnerId: "partner_1" });
+    await expect(manager.list({ workbenchId: "workbench_1", partnerId: "partner_1" }))
+      .resolves.toEqual([expect.objectContaining({ workbenchId: "workbench_1" })]);
   });
 
   it("enforces resident caps per partner and globally", async () => {
     const perPartner = makeManager({ maxResidentPerPartner: 1 });
-    await perPartner.manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
-    await expect(perPartner.manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" })).rejects.toMatchObject({ code: "partner_instance_cap_exceeded" });
+    await perPartner.manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    await expect(perPartner.manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" })).rejects.toMatchObject({ code: "partner_instance_cap_exceeded" });
 
     const global = makeManager({ maxResidentGlobal: 1, maxResidentPerPartner: 4 });
-    await global.manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
-    await expect(global.manager.ensure({ avatarId: "avatar_1", partnerId: "partner_2" })).rejects.toMatchObject({ code: "partner_instance_cap_exceeded" });
+    await global.manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    await expect(global.manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_2" })).rejects.toMatchObject({ code: "partner_instance_cap_exceeded" });
   });
 
   it("runs ephemeral dispatches once, then disposes them and clears their messages", async () => {
@@ -180,7 +180,7 @@ describe("partner-instance-manager", () => {
     expect(repository.linked).toEqual([["attempt_1", record?.instanceId]]);
     expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.started")?.fields).toMatchObject({
       actionId: "action_1",
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       dispatchAttemptId: "attempt_1",
       instanceId: record?.instanceId,
       sessionPolicy: "EPHEMERAL",
@@ -192,7 +192,7 @@ describe("partner-instance-manager", () => {
 
   it("keeps resident instances resumable: messages persist, status returns to IDLE and the data source is recorded", async () => {
     const { engine, manager, messages, repository } = makeManager();
-    const instance = await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
     expect(instance).toMatchObject({ sessionPolicy: "RESIDENT", status: "IDLE" });
 
     await manager.dispatch({ instanceId: instance.instanceId, request, revision });
@@ -207,7 +207,7 @@ describe("partner-instance-manager", () => {
 
   it("rejects instance misuse: wrong partner, busy and missing instances", async () => {
     const { manager, repository } = makeManager();
-    const instance = await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
     const otherRevision = createPartnerRevision({
       capabilities: [], createdAt: "2026-07-29T10:00:00.000Z", displayName: "Other", kind: "local-pi",
       partnerId: "partner_2", partnerRevisionId: "partner_revision_2", registryRevision: 2, skills: [], tools: [],
@@ -226,7 +226,7 @@ describe("partner-instance-manager", () => {
 
   it("returns a failed resident turn to IDLE so the conversation stays resumable", async () => {
     const { engine, manager, repository } = makeManager();
-    const instance = await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
     engine.failResident = true;
     await expect(manager.dispatch({ instanceId: instance.instanceId, request, revision })).rejects.toThrow("turn_failed");
     const record = repository.records.find((item) => item.instanceId === instance.instanceId);
@@ -235,22 +235,22 @@ describe("partner-instance-manager", () => {
 
   it("disposes instances on demand, evicting warm state and keeping resident messages", async () => {
     const { engine, manager, messages, repository } = makeManager();
-    const instance = await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
     await manager.dispatch({ instanceId: instance.instanceId, request, revision });
-    await manager.dispose({ avatarId: "avatar_1", instanceId: instance.instanceId, reason: "goal_complete" });
+    await manager.dispose({ workbenchId: "workbench_1", instanceId: instance.instanceId, reason: "goal_complete" });
     const record = repository.records.find((item) => item.instanceId === instance.instanceId);
     expect(record).toMatchObject({ disposalReason: "goal_complete", status: "DISPOSED" });
     expect(engine.evicted).toContain(instance.instanceId);
     expect(messages.saved.has(instance.instanceId)).toBe(true);
-    await expect(manager.dispose({ avatarId: "avatar_1", instanceId: instance.instanceId, reason: "again" })).resolves.toBeUndefined();
+    await expect(manager.dispose({ workbenchId: "workbench_1", instanceId: instance.instanceId, reason: "again" })).resolves.toBeUndefined();
   });
 
   it("sweeps idle ephemerals and evicts warm residents without disposing them", async () => {
     const { clock, engine, manager, repository } = makeManager();
-    await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
-    await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1", sessionPolicy: "EPHEMERAL" });
+    await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1", sessionPolicy: "EPHEMERAL" });
     clock.advance(31 * 60_000);
-    const swept = await manager.sweepIdle(clock.now());
+    const swept = await manager.sweepIdleFor("workbench_1", clock.now());
     expect(swept).toEqual({ disposed: 1, evicted: 1 });
     const statuses = repository.records.map((record) => `${record.sessionPolicy}:${record.status}`);
     expect(statuses).toContain("EPHEMERAL:DISPOSED");
@@ -261,8 +261,8 @@ describe("partner-instance-manager", () => {
 
   it("recovers crashed instances at boot: resident returns to IDLE, ephemeral is disposed", async () => {
     const { manager, repository } = makeManager();
-    const resident = await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1" });
-    const ephemeral = await manager.ensure({ avatarId: "avatar_1", partnerId: "partner_1", sessionPolicy: "EPHEMERAL" });
+    const resident = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    const ephemeral = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1", sessionPolicy: "EPHEMERAL" });
     await repository.setStatusBusy(resident.instanceId, "2026-07-29T10:00:00.000Z");
     await repository.setStatusBusy(ephemeral.instanceId, "2026-07-29T10:00:00.000Z");
     await expect(manager.recoverOnBoot()).resolves.toEqual({ ephemeralDisposed: 1, residentRecovered: 1 });

@@ -9,7 +9,7 @@ import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/r
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("global joi attachments", () => {
-  it("stages before Avatar routing and atomically binds metadata to one durable input", async () => {
+  it("stages before Workbench routing and atomically binds metadata to one durable input", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {

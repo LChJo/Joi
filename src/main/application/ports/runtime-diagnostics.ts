@@ -1,12 +1,12 @@
 export interface RuntimeDiagnosticEventMap {
   "joi.input.accepted": {
     attachmentCount: number;
-    avatarBound: boolean;
+    workbenchBound: boolean;
     inputId: string;
   };
   "joi.input.handling_started": {
     attachmentCount: number;
-    avatarBound: boolean;
+    workbenchBound: boolean;
     inputId: string;
     status: string;
   };
@@ -14,17 +14,95 @@ export interface RuntimeDiagnosticEventMap {
     errorCode: string;
     inputId: string;
   };
+  "joi.task.input_started": {
+    inputId: string;
+  };
+  "joi.task.turn_settled": {
+    durationMs: number;
+    inputId: string;
+    outcome: "failed" | "ok";
+  };
+  "joi.task.orphan_turn_recovered": {
+    inputId: string;
+    turnId: string;
+  };
+  "joi.task.input_parked": {
+    consecutiveFailures: number;
+    inputId: string;
+  };
+  "joi.harness.map_created": {
+    goalInputId: string;
+  };
+  "joi.harness.review_enqueued": {
+    goalInputId: string;
+    inputId: string;
+    resultRevision: number;
+  };
+  "joi.harness.feedback_recorded": {
+    workbenchId: string;
+    goalInputId: string;
+  };
+  "joi.harness.map_cleared_trivial": {
+    goalInputId: string;
+  };
+  "joi.harness.scan_failed": {
+    errorCode: string;
+    step: string;
+  };
+  "joi.actor.component_failed": {
+    actorId: string;
+    componentName: string;
+    errorCode: string;
+  };
+  "joi.actor.failed": {
+    actorId: string;
+    errorCode: string;
+  };
+  "joi.rhythm.tick_failed": {
+    errorCode: string;
+    service: string;
+  };
+  "joi.workbench.synthesis_enqueued": {
+    workbenchId: string;
+    eventId: string;
+    workId: string;
+  };
+  "joi.agent.run_started": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    kind: string;
+    partnerId: string;
+  };
+  "joi.agent.run_converged": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    partnerId: string;
+    status: string;
+  };
+  "joi.agent.prepare_failed": {
+    workbenchId: string;
+    errorCode: string;
+    outboxId: string;
+    partnerId: string;
+  };
+  "joi.partner.orphan_found": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    kind: string;
+    partnerId: string;
+    runId: string;
+  };
   "joi.input.waiting_clarification": {
     inputId: string;
     reasonCode: string;
   };
-  "joi.avatar.resolved": {
-    avatarId: string;
+  "joi.workbench.resolved": {
+    workbenchId: string;
     inputId: string;
     resolution: "bound" | "bootstrap" | "created" | "selected";
   };
   "joi.turn.started": {
-    avatarId: string;
+    workbenchId: string;
     inputId: string;
     modelRevisionId: string;
     sourceId: string;
@@ -32,7 +110,7 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.tool.started": {
-    avatarId: string;
+    workbenchId: string;
     inputId: string;
     sourceId: string;
     toolCallId: string;
@@ -40,7 +118,7 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.tool.finished": {
-    avatarId: string;
+    workbenchId: string;
     durationMs: number;
     inputId: string;
     isError: boolean;
@@ -50,20 +128,20 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.turn.repair_requested": {
-    avatarId: string;
+    workbenchId: string;
     inputId: string;
     observedToolCount: number;
     turnId: string;
   };
   "joi.turn.source_fallback": {
-    avatarId: string;
+    workbenchId: string;
     fromSourceId: string;
     inputId: string;
     toSourceId: string;
     turnId: string;
   };
   "joi.turn.completed": {
-    avatarId: string;
+    workbenchId: string;
     durationMs: number;
     inputId: string;
     observedToolCount: number;
@@ -73,7 +151,7 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.turn.failed": {
-    avatarId: string;
+    workbenchId: string;
     durationMs: number;
     errorCode: string;
     inputId: string;
@@ -84,27 +162,27 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.goal.synthesis.started": {
-    avatarId: string;
+    workbenchId: string;
     goalInputId: string;
     inputId: string;
     resultRevision: number;
     turnId: string;
   };
   "joi.goal.synthesis.completed": {
-    avatarId: string;
+    workbenchId: string;
     goalInputId: string;
     inputId: string;
     resultRevision: number;
     turnId: string;
   };
   "joi.goal.outcome.persisted": {
-    avatarId: string;
+    workbenchId: string;
     goalInputId: string;
     resultRevision: number;
   };
   "joi.work.plan.committed": {
     attemptCount: number;
-    avatarId: string;
+    workbenchId: string;
     dependencyCount: number;
     dispatchPlanId: string;
     inputId: string;
@@ -114,7 +192,7 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.work.dispatch_planned": {
     actionId: string;
-    avatarId: string;
+    workbenchId: string;
     dispatchAttemptId: string;
     dispatchPlanId: string;
     outboxId: string;
@@ -147,7 +225,7 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.partner.dispatch.started": {
     actionId: string;
-    avatarId: string;
+    workbenchId: string;
     dispatchAttemptId: string;
     kind: string;
     outboxId: string;
@@ -164,7 +242,7 @@ export interface RuntimeDiagnosticEventMap {
   "joi.partner.run.created": {
     actionId: string;
     agentId?: string;
-    avatarId: string;
+    workbenchId: string;
     dispatchAttemptId: string;
     kind: string;
     runId: string;
@@ -172,7 +250,7 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.partner.instance.started": {
     actionId: string;
-    avatarId: string;
+    workbenchId: string;
     dispatchAttemptId?: string;
     engine: string;
     instanceId: string;
@@ -182,7 +260,7 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.partner.instance.completed": {
     actionId: string;
-    avatarId: string;
+    workbenchId: string;
     dispatchAttemptId?: string;
     durationMs: number;
     instanceId: string;
@@ -191,7 +269,7 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.partner.instance.failed": {
     actionId: string;
-    avatarId: string;
+    workbenchId: string;
     dispatchAttemptId?: string;
     durationMs: number;
     errorCode: string;
@@ -201,7 +279,7 @@ export interface RuntimeDiagnosticEventMap {
   "joi.partner.result.recorded": {
     actionId: string;
     agentId?: string;
-    avatarId: string;
+    workbenchId: string;
     dispatchAttemptId: string;
     isLate: boolean;
     isAuthoritative: boolean;

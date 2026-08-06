@@ -5,7 +5,7 @@ import { createPartnerRevision } from "../../src/main/domain/partners/partner.js
 import { A2aPartnerAdapter } from "../../src/main/infrastructure/a2a/a2a-partner-adapter.js";
 import { LocalPiPartnerAdapter } from "../../src/main/infrastructure/pi/local-pi-partner-adapter.js";
 
-const request: PartnerRunRequest = { actionId: "action-1", avatarId: "avatar-1", contextSnapshotId: "context-1", taskProjection: "bounded task", workId: "work-1" };
+const request: PartnerRunRequest = { actionId: "action-1", workbenchId: "workbench-1", contextSnapshotId: "context-1", taskProjection: "bounded task", workId: "work-1" };
 
 describe("local-pi-and-a2a-partner-contract", () => {
   it("normalizes both adapters and pins execution to the supplied immutable revision", async () => {

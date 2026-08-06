@@ -2,11 +2,11 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
 import type { PrimaryReasoningRuntime } from "../../src/main/application/ports/primary-reasoning-runtime.js";
-import { createAvatar } from "../../src/main/domain/avatar/avatar.js";
+import { createWorkbench } from "../../src/main/domain/workbench/workbench.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
-const avatar = createAvatar({
-  avatarId: "avatar", createdAt: "2026-07-28T10:00:00.000Z", memoryNamespaceId: "memory", name: "Code",
+const workbench = createWorkbench({
+  workbenchId: "workbench", createdAt: "2026-07-28T10:00:00.000Z", memoryNamespaceId: "memory", name: "Code",
   personaRevisionId: "persona", personaSummary: "Careful", project: { label: "Repo" }, scopeSummary: "Code",
   taskContext: { activeWorkIds: [], summary: "" },
 });
@@ -23,7 +23,7 @@ function coordinator(mode: "lookup" | "none" | "outcome", completed: string[], f
     steer: () => undefined, waitForIdle: async () => undefined,
   };
   return new JoiCoordinator({
-    avatars: { getAvatar: async () => avatar, listSummaries: async () => [] },
+    workbenches: { getWorkbench: async () => workbench, listSummaries: async () => [] },
     clock: new TestClock(), ids: new TestIds(),
     diagnostics: { emit: (event) => { diagnostics.push(event); } },
     router: { decide: async () => { throw new Error("pre-bound"); } }, runtime,
@@ -34,7 +34,7 @@ function coordinator(mode: "lookup" | "none" | "outcome", completed: string[], f
     store: {
       completeInput: async (inputId) => { completed.push(inputId); }, createTurn: async () => undefined,
       failTurn: async (inputId) => { failed.push(inputId); },
-      loadInput: async () => ({ avatarId: "avatar", body: "do work", inputId: "input", status: "PENDING" }),
+      loadInput: async () => ({ workbenchId: "workbench", body: "do work", inputId: "input", status: "PENDING" }),
       requireClarification: async () => undefined,
     },
   });
@@ -60,7 +60,7 @@ describe("custom model tool capability gate", () => {
     expect(failed).toEqual(["input"]);
     expect(diagnostics).toEqual(expect.arrayContaining([
       "joi.input.handling_started",
-      "joi.avatar.resolved",
+      "joi.workbench.resolved",
       "joi.turn.started",
       "joi.tool.started",
       "joi.tool.finished",
@@ -84,7 +84,7 @@ describe("custom model tool capability gate", () => {
       steer: () => undefined, waitForIdle: async () => undefined,
     };
     const subject = new JoiCoordinator({
-      avatars: { getAvatar: async () => avatar, listSummaries: async () => [] },
+      workbenches: { getWorkbench: async () => workbench, listSummaries: async () => [] },
       clock: new TestClock(), ids: new TestIds(),
       diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
       router: { decide: async () => { throw new Error("pre-bound"); } }, runtime,
@@ -94,7 +94,7 @@ describe("custom model tool capability gate", () => {
       }) },
       store: {
         completeInput: async (inputId) => { completed.push(inputId); }, createTurn: async () => undefined,
-        loadInput: async () => ({ avatarId: "avatar", body: "analyze the stock", inputId: "input", status: "PENDING" }),
+        loadInput: async () => ({ workbenchId: "workbench", body: "analyze the stock", inputId: "input", status: "PENDING" }),
         requireClarification: async () => undefined,
       },
     });
@@ -104,7 +104,7 @@ describe("custom model tool capability gate", () => {
     expect(prompts[1]).toContain("did not commit an outcome");
     expect(completed).toEqual(["input"]);
     expect(diagnostics.find((entry) => entry.event === "joi.turn.completed")?.fields).toMatchObject({
-      avatarId: "avatar",
+      workbenchId: "workbench",
       inputId: "input",
       outcomeTools: ["work_dispatch"],
       repaired: true,

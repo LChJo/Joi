@@ -15,7 +15,7 @@ import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from "r
 
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
 import { ApiError, type DigitalLifeApi } from "./api";
-import { AvatarManager, JoiHome, ModelSourceManager } from "./JoiHome";
+import { WorkbenchManager, JoiHome, ModelSourceManager } from "./JoiHome";
 import { PartnerPage } from "./PartnerPage";
 import { listenerStatusLabel } from "./copy";
 import type { DiagnosticsDto, InteractionDto } from "./types";
@@ -26,7 +26,7 @@ const SESSION_DISPLAY_LIMIT = 10;
 
 const NAVIGATION = [
   { icon: ChatsCircleIcon, key: "joi", label: "joi" },
-  { icon: HeartbeatIcon, key: "lives", label: "Avatar" },
+  { icon: HeartbeatIcon, key: "lives", label: "工作台" },
   { icon: RobotIcon, key: "agents", label: "搭档" },
   { icon: PulseIcon, key: "system", label: "状态" },
   { icon: GearSixIcon, key: "settings", label: "设置" },
@@ -44,7 +44,7 @@ function PartnerMemoryDebug({ api }: { api: DigitalLifeApi }) {
   void api;
   return <section className="memory-debug-section">
     <h2>私有执行上下文</h2>
-    <p>搭档实例、工作记忆和结果正文现在按 Avatar 隔离；管理页只显示安全元数据，请到 Avatar 上下文中心查看状态。</p>
+    <p>搭档实例、工作记忆和结果正文现在按工作台隔离；管理页只显示安全元数据，请到工作台上下文中心查看状态。</p>
   </section>;
 }
 
@@ -110,7 +110,7 @@ export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagn
 
 export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
   const [section, setSection] = useState<Section>("joi");
-  const [selectedAvatarId, setSelectedAvatarId] = useState<string | undefined>();
+  const [selectedWorkbenchId, setSelectedWorkbenchId] = useState<string | undefined>();
   const contentRef = useRef<HTMLElement>(null);
   const [partnersTab, setPartnersTab] = useState<"partners" | "scenarios">("partners");
   const go = (next: Section, tab: "partners" | "scenarios" = "partners") => { setPartnersTab(tab); setSection(next); };
@@ -119,26 +119,22 @@ export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [streamState, setStreamState] = useState<"connected" | "connecting" | "reconnecting">("connecting");
-  const [streamRevision, setStreamRevision] = useState(0);
   const load = useCallback(async () => {
     try {
       const [interactionPage, health] = await Promise.all([api.listInteractions(), api.diagnostics()]);
-      setInteractions(interactionPage.items); setDiagnostics(health); setError(null);
-    } catch (reason) { setError(reason instanceof ApiError ? reason.message : "没能整理出最新状态。"); }
+      setInteractions(interactionPage.items); setDiagnostics(health); setError(null); setStreamState("connected");
+    } catch (reason) { setError(reason instanceof ApiError ? reason.message : "没能整理出最新状态。"); setStreamState("reconnecting"); }
     finally { setLoading(false); }
   }, [api]);
-  useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
+  // SSE transport retired (ADR 0009): the console converges state by polling.
   useEffect(() => {
-    if (typeof EventSource === "undefined") return undefined;
-    const stream = new EventSource(`${api.origin}/api/v1/stream`, { withCredentials: true });
-    stream.onopen = () => setStreamState("connected"); stream.onerror = () => setStreamState("reconnecting");
-    const refresh = () => void load();
-    for (const name of ["avatar.change.confirmed", "joi.message.accepted", "partner.registry.changed", "stream_reset", "work.status.changed"]) stream.addEventListener(name, refresh);
-    return () => stream.close();
-  }, [api.origin, load, streamRevision]);
-  const streamLabel = streamState === "connected" ? "实时状态已连接" : streamState === "connecting" ? "正在连接实时状态" : "实时状态暂时断开";
-  const streamHint = streamState === "reconnecting" ? "页面仍可使用，可以手动重连状态更新。" : "joi 会自动接收最新状态。";
-  const reconnectStream = () => { setStreamState("connecting"); setStreamRevision((current) => current + 1); };
-  useEffect(() => { if (contentRef.current !== null) contentRef.current.scrollTop = 0; }, [section, selectedAvatarId]);
-  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => { if (key === "lives") setSelectedAvatarId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={streamHint}>{streamLabel}</span></div>{streamState === "reconnecting" ? <button aria-label="重新连接状态更新" className="icon-button stream-retry" onClick={reconnectStream} title="重新连接状态更新" type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}<button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} onNavigate={go} onOpenAvatar={(avatarId) => { setSelectedAvatarId(avatarId); setSection("lives"); }} /> : section === "lives" ? <AvatarManager api={api} {...(selectedAvatarId === undefined ? {} : { initialAvatarId: selectedAvatarId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "system" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : <SettingsPanel api={api} diagnostics={diagnostics} />}</main></div>;
+    const timer = setTimeout(() => void load(), 0);
+    const interval = setInterval(() => void load(), 2_500);
+    return () => { clearTimeout(timer); clearInterval(interval); };
+  }, [load]);
+  const streamLabel = streamState === "connected" ? "状态自动刷新" : streamState === "connecting" ? "正在连接状态" : "状态刷新暂时断开";
+  const streamHint = streamState === "reconnecting" ? "页面仍可使用，可以手动刷新状态。" : "joi 会按固定节奏刷新最新状态。";
+  const reconnectStream = () => { setStreamState("connecting"); void load(); };
+  useEffect(() => { if (contentRef.current !== null) contentRef.current.scrollTop = 0; }, [section, selectedWorkbenchId]);
+  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => { if (key === "lives") setSelectedWorkbenchId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={streamHint}>{streamLabel}</span></div>{streamState === "reconnecting" ? <button aria-label="重新连接状态更新" className="icon-button stream-retry" onClick={reconnectStream} title="重新连接状态更新" type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}<button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} onNavigate={go} /> : section === "lives" ? <WorkbenchManager api={api} {...(selectedWorkbenchId === undefined ? {} : { initialWorkbenchId: selectedWorkbenchId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "system" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : <SettingsPanel api={api} diagnostics={diagnostics} />}</main></div>;
 }

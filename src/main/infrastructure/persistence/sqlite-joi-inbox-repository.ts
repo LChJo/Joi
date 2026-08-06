@@ -19,7 +19,7 @@ function mapRow(row: Row): JoiInboxRecord {
   const idempotencyKey = row.idempotency_key;
   const body = row.body;
   const status = row.status;
-  const avatarId = row.avatar_id;
+  const workbenchId = row.workbench_id;
   const canceledAt = row.canceled_at;
   const clarificationPrompt = row.clarification_prompt;
   const clarificationReasonCode = row.clarification_reason_code;
@@ -28,7 +28,7 @@ function mapRow(row: Row): JoiInboxRecord {
   const updatedAt = row.updated_at;
   if (typeof inputId !== "string" || typeof idempotencyKey !== "string" || typeof body !== "string"
     || typeof status !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string"
-    || (avatarId !== null && typeof avatarId !== "string")
+    || (workbenchId !== null && typeof workbenchId !== "string")
     || (canceledAt !== null && canceledAt !== undefined && typeof canceledAt !== "string")
     || (clarificationPrompt !== null && clarificationPrompt !== undefined && typeof clarificationPrompt !== "string")
     || (clarificationReasonCode !== null && clarificationReasonCode !== undefined && typeof clarificationReasonCode !== "string")
@@ -36,7 +36,7 @@ function mapRow(row: Row): JoiInboxRecord {
     throw new Error("joi_inbox_record_invalid");
   }
   return {
-    ...(typeof avatarId === "string" ? { avatarId } : {}),
+    ...(typeof workbenchId === "string" ? { workbenchId } : {}),
     body,
     ...(typeof canceledAt === "string" ? { canceledAt } : {}),
     ...(typeof clarificationPrompt === "string" ? { clarificationPrompt } : {}),
@@ -58,8 +58,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const existing = connection.prepare("SELECT * FROM joi_inbox_messages WHERE idempotency_key = ?").get(record.idempotencyKey) as Row | undefined;
       if (existing !== undefined) return mapRow(existing);
       connection.prepare(`INSERT INTO joi_inbox_messages
-        (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-        record.inputId, record.idempotencyKey, record.body, record.status, record.avatarId ?? null, record.createdAt, record.updatedAt,
+        (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        record.inputId, record.idempotencyKey, record.body, record.status, record.workbenchId ?? null, record.createdAt, record.updatedAt,
       );
       for (const attachmentId of record.attachmentIds ?? []) {
         const attachment = connection.prepare(`SELECT a.attachment_id,
@@ -79,7 +79,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     ).all()).map((row) => mapRow(row as Row));
   }
 
-  async clarify(inputId: string, patch: { avatarId?: string; text?: string }): Promise<JoiInboxRecord | null> {
+  async clarify(inputId: string, patch: { workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     return this.database.transaction((connection) => {
       const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       if (row === undefined) return null;
@@ -87,11 +87,11 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       if (current.status !== "CLARIFICATION_REQUIRED") return null;
       const now = new Date().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
-      const nextAvatar = patch.avatarId ?? current.avatarId;
+      const nextWorkbench = patch.workbenchId ?? current.workbenchId;
       const result = connection.prepare(`UPDATE joi_inbox_messages
-        SET body = ?, avatar_id = ?, status = 'PENDING', clarification_reason_code = NULL,
+        SET body = ?, workbench_id = ?, status = 'PENDING', clarification_reason_code = NULL,
           clarification_prompt = NULL, updated_at = ?
-        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextAvatar ?? null, now, inputId);
+        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, inputId);
       if (result.changes === 0) return null;
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
@@ -149,22 +149,22 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async listActivity(limit = 100): Promise<JoiActivityDto[]> {
     const safeLimit = Math.max(1, Math.min(200, Math.trunc(limit)));
     const rows = this.database.transaction((connection) => connection.prepare(`
-      SELECT activity_id, avatar_id, kind, occurred_at, status, work_id FROM (
-        SELECT input_id AS activity_id, avatar_id, 'MESSAGE' AS kind, created_at AS occurred_at, status, NULL AS work_id
+      SELECT activity_id, workbench_id, kind, occurred_at, status, work_id FROM (
+        SELECT input_id AS activity_id, workbench_id, 'MESSAGE' AS kind, created_at AS occurred_at, status, NULL AS work_id
           FROM joi_inbox_messages
         UNION ALL
-        SELECT turn_id, avatar_id, 'TURN', created_at, status, NULL FROM joi_turns
+        SELECT turn_id, workbench_id, 'TURN', created_at, status, NULL FROM joi_turns
         UNION ALL
-        SELECT work_id, avatar_id, 'WORK', created_at, status, work_id FROM work_items
+        SELECT work_id, workbench_id, 'WORK', created_at, status, work_id FROM work_items
         UNION ALL
-        SELECT event_id, avatar_id, 'PARTNER_RESULT', created_at, status, work_id FROM partner_result_events
+        SELECT event_id, workbench_id, 'PARTNER_RESULT', created_at, status, work_id FROM partner_result_events
       ) ORDER BY occurred_at DESC, activity_id DESC LIMIT ?`).all(safeLimit)) as Record<string, unknown>[];
     return rows.map((row) => {
       if (typeof row.activity_id !== "string" || typeof row.kind !== "string"
         || typeof row.occurred_at !== "string" || typeof row.status !== "string") throw new Error("joi_activity_record_invalid");
       return {
         activityId: row.activity_id,
-        ...(typeof row.avatar_id === "string" ? { avatarId: row.avatar_id } : {}),
+        ...(typeof row.workbench_id === "string" ? { workbenchId: row.workbench_id } : {}),
         kind: row.kind as JoiActivityDto["kind"],
         occurredAt: row.occurred_at,
         status: row.status,
@@ -175,20 +175,20 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async loadInput(inputId: string): Promise<JoiPendingInput | null> {
     const row = this.database.transaction((connection) => connection.prepare(
-      "SELECT input_id, body, status, avatar_id, goal_input_id, result_revision FROM joi_inbox_messages WHERE input_id = ?",
+      "SELECT input_id, body, status, workbench_id, goal_input_id, result_revision FROM joi_inbox_messages WHERE input_id = ?",
     ).get(inputId)) as Row | undefined;
     if (row === undefined) return null;
     if (typeof row.input_id !== "string" || typeof row.body !== "string" || typeof row.status !== "string") {
       throw new Error("joi_inbox_record_invalid");
     }
-    if (row.avatar_id !== null && typeof row.avatar_id !== "string") throw new Error("joi_inbox_record_invalid");
+    if (row.workbench_id !== null && typeof row.workbench_id !== "string") throw new Error("joi_inbox_record_invalid");
     if (row.goal_input_id !== null && row.goal_input_id !== undefined && typeof row.goal_input_id !== "string") throw new Error("joi_inbox_record_invalid");
     if (row.result_revision !== null && row.result_revision !== undefined && typeof row.result_revision !== "number") throw new Error("joi_inbox_record_invalid");
     const attachments = this.database.transaction((connection) => connection.prepare(`SELECT a.attachment_id, a.filename, a.mime_type, a.size
       FROM joi_inbox_attachments ia JOIN joi_attachments a ON a.attachment_id = ia.attachment_id
       WHERE ia.input_id = ? ORDER BY a.created_at, a.attachment_id`).all(inputId)) as Record<string, unknown>[];
     return {
-      ...(typeof row.avatar_id === "string" ? { avatarId: row.avatar_id } : {}),
+      ...(typeof row.workbench_id === "string" ? { workbenchId: row.workbench_id } : {}),
       ...(attachments.length === 0 ? {} : { attachments: attachments.map((attachment) => {
         if (typeof attachment.attachment_id !== "string" || typeof attachment.filename !== "string"
           || typeof attachment.mime_type !== "string" || typeof attachment.size !== "number") throw new Error("joi_attachment_record_invalid");
@@ -202,14 +202,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     };
   }
 
-  async enqueuePartnerResult(event: { avatarId: string; eventId: string; resultId: string; status: string; summary: string; workId: string }): Promise<string | null> {
+  async enqueuePartnerResult(event: { workbenchId: string; eventId: string; resultId: string; status: string; summary: string; workId: string }): Promise<string | null> {
     return this.database.transaction((connection) => {
       const source = connection.prepare(`SELECT r.created_at, w.input_id FROM work_results r
         JOIN work_items w ON w.work_id = r.work_id
         JOIN partner_result_events e ON e.run_id = r.run_id AND e.status = r.status
-        WHERE r.result_id = ? AND r.avatar_id = ? AND r.work_id = ? AND r.status = ?
+        WHERE r.result_id = ? AND r.workbench_id = ? AND r.work_id = ? AND r.status = ?
           AND r.is_authoritative = 1 AND e.event_id = ?`).get(
-        event.resultId, event.avatarId, event.workId, event.status,
+        event.resultId, event.workbenchId, event.workId, event.status,
         event.eventId,
       ) as { created_at?: unknown; input_id?: unknown } | undefined;
       if (typeof source?.created_at !== "string" || typeof source.input_id !== "string") throw new Error("partner_result_event_not_found");
@@ -251,12 +251,12 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         "Synthesize one concise, opinionated completion update for the user, call turn_complete with RESULT_SYNTHESIZED, and do not dump raw per-Agent output.",
       ].join("\n");
       connection.prepare(`INSERT INTO joi_inbox_messages
-        (input_id, idempotency_key, body, status, avatar_id, goal_input_id, result_revision, created_at, updated_at)
+        (input_id, idempotency_key, body, status, workbench_id, goal_input_id, result_revision, created_at, updated_at)
         VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?)
         ON CONFLICT(input_id) DO UPDATE SET body = excluded.body, status = 'PENDING',
           result_revision = excluded.result_revision, updated_at = excluded.updated_at
         WHERE excluded.result_revision > COALESCE(joi_inbox_messages.result_revision, 0)`).run(
-        inputId, `partner_result_goal:${goalInputId}`, body, event.avatarId, goalInputId, resultSet.revision,
+        inputId, `partner_result_goal:${goalInputId}`, body, event.workbenchId, goalInputId, resultSet.revision,
         source.created_at, source.created_at,
       );
       connection.prepare(`UPDATE joi_goal_result_sets SET synthetic_input_id = ? WHERE original_input_id = ?`)
@@ -265,17 +265,17 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     });
   }
 
-  async enqueueSystemSignal(input: { avatarId: string; signalId: string; type: string }): Promise<string> {
+  async enqueueSystemSignal(input: { workbenchId: string; signalId: string; type: string }): Promise<string> {
     const inputId = `joi_signal_input:${input.signalId}`;
     const now = new Date().toISOString();
     this.database.transaction((connection) => connection.prepare(`INSERT OR IGNORE INTO joi_inbox_messages
-      (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+      (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
       VALUES (?, ?, ?, 'PENDING', ?, ?, ?)`
     ).run(
       inputId,
       `system_signal:${input.signalId}`,
-      `A persisted Avatar-scoped system signal is ready for orchestration.\ntype=${input.type}\nsignalId=${input.signalId}`,
-      input.avatarId,
+      `A persisted Workbench-scoped system signal is ready for orchestration.\ntype=${input.type}\nsignalId=${input.signalId}`,
+      input.workbenchId,
       now,
       now,
     ));
@@ -293,7 +293,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   }
 
   async createTurn(input: {
-    avatarId: string;
+    workbenchId: string;
     createdAt: string;
     inputId: string;
     modelRevisionId: string;
@@ -303,13 +303,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   }): Promise<void> {
     this.database.transaction((connection) => {
       connection.prepare(`INSERT INTO joi_turns
-        (turn_id, input_id, avatar_id, session_id, source_revision_id, model_revision_id, status, created_at, updated_at)
+        (turn_id, input_id, workbench_id, session_id, source_revision_id, model_revision_id, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?)`).run(
-        input.turnId, input.inputId, input.avatarId, input.sessionId, input.sourceRevisionId,
+        input.turnId, input.inputId, input.workbenchId, input.sessionId, input.sourceRevisionId,
         input.modelRevisionId, input.createdAt, input.createdAt,
       );
-      connection.prepare(`UPDATE joi_inbox_messages SET status = 'ROUTED', avatar_id = ?, updated_at = ?
-        WHERE input_id = ? AND status <> 'CONSUMED'`).run(input.avatarId, input.createdAt, input.inputId);
+      connection.prepare(`UPDATE joi_inbox_messages SET status = 'ROUTED', workbench_id = ?, updated_at = ?
+        WHERE input_id = ? AND status <> 'CONSUMED'`).run(input.workbenchId, input.createdAt, input.inputId);
     });
   }
 

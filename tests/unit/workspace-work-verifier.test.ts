@@ -8,7 +8,7 @@ import path from "node:path";
 import { WorkspaceWorkVerifier } from "../../src/main/infrastructure/workspace/workspace-work-verifier.js";
 
 describe("workspace Work verifier", () => {
-  it("checks exact file content inside the controlled Avatar workspace", async () => {
+  it("checks exact file content inside the controlled Workbench workspace", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-verifier-"));
     try {
       await writeFile(path.join(root, "hello.txt"), "hellow", "utf8");

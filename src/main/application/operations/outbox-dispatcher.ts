@@ -13,6 +13,8 @@ export class OutboxDispatcher {
   constructor(private readonly dependencies: {
     clock: Clock;
     diagnostics?: RuntimeDiagnostics;
+    /** Kinds delivered by actors outside this dispatcher (e.g. partner.dispatch via agent actors). */
+    excludeKinds?: string[];
     handlers: Record<string, OutboxHandler>;
     onError?: (error: unknown, record: OutboxRecord) => void;
     owner: string;
@@ -34,6 +36,7 @@ export class OutboxDispatcher {
     const now = this.dependencies.clock.now();
     const records = await this.dependencies.store.claimOutbox({
       claimUntil: new Date(now.getTime() + 30_000).toISOString(),
+      ...(this.dependencies.excludeKinds === undefined ? {} : { excludeKinds: this.dependencies.excludeKinds }),
       limit,
       now: now.toISOString(),
       owner: this.dependencies.owner,

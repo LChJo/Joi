@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api";
 import { ConsoleApp, SettingsPanel } from "../../src/renderer/Console";
@@ -64,8 +64,8 @@ function first<T>(items: T[]): T {
 function mockApi() {
   const api = new DigitalLifeApi("");
   const listLives = vi.spyOn(api, "listLives").mockResolvedValue({ items: [life] });
-  vi.spyOn(api, "listAvatars").mockResolvedValue({ items: [{ avatarId: "avatar_1", name: "产品工作", scopeSummary: "joi 工程", updatedAt: life.updatedAt }] });
-  const createAvatar = vi.spyOn(api, "createAvatar").mockResolvedValue({ avatarId: "avatar_2", name: "研究", scopeSummary: "研究范围", updatedAt: life.updatedAt });
+  vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [{ workbenchId: "workbench_1", name: "产品工作", scopeSummary: "joi 工程", updatedAt: life.updatedAt }] });
+  const createWorkbench = vi.spyOn(api, "createWorkbench").mockResolvedValue({ workbenchId: "workbench_2", name: "研究", scopeSummary: "研究范围", updatedAt: life.updatedAt });
   vi.spyOn(api, "listAgents").mockResolvedValue({ items: [agent, collaborator] });
   vi.spyOn(api, "listPartners").mockResolvedValue({ items: [partner] });
   vi.spyOn(api, "listInteractions").mockResolvedValue({ items: [interaction] });
@@ -117,7 +117,7 @@ function mockApi() {
   const deleteAgent = vi.spyOn(api, "deleteAgent").mockResolvedValue(undefined);
   vi.spyOn(api, "getAgentDeletionImpact").mockResolvedValue({ activeInvocations: 0, bindings: [] });
   const disablePartner = vi.spyOn(api, "disablePartner").mockResolvedValue({ ...partner, status: "DISABLED" });
-  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createAvatar, createBackup, createLife, createTodo, deleteAgent, deleteLife, diagnosticsRequest, disablePartner, emergencyStopAll, extendBudget, forgetMemory, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
+  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createWorkbench, createBackup, createLife, createTodo, deleteAgent, deleteLife, diagnosticsRequest, disablePartner, emergencyStopAll, extendBudget, forgetMemory, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
 }
 
 describe("joi renderer console", () => {
@@ -128,24 +128,24 @@ describe("joi renderer console", () => {
     const main = view.container.querySelector(".console-main");
     if (!(main instanceof HTMLElement)) throw new Error("Expected the console content viewport.");
     main.scrollTop = 240;
-    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Avatar" }));
-    expect(await screen.findByRole("heading", { name: "Avatar" })).toBeInTheDocument();
+    fireEvent.click(within(screen.getByRole("navigation", { name: "主导航" })).getByRole("button", { name: "工作台" }));
+    expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument();
     expect(main.scrollTop).toBe(0);
   });
 
-  it("uses native Avatar records in the secondary context page", async () => {
+  it("uses native Workbench records in the secondary context page", async () => {
     const fixture = mockApi();
     render(<ConsoleApp api={fixture.api} />);
-    fireEvent.click(within(await screen.findByRole("navigation", { name: "主导航" })).getByRole("button", { name: "Avatar" }));
-    expect(await screen.findByRole("heading", { name: "Avatar" })).toBeInTheDocument();
+    fireEvent.click(within(await screen.findByRole("navigation", { name: "主导航" })).getByRole("button", { name: "工作台" }));
+    expect(await screen.findByRole("heading", { name: "工作台" })).toBeInTheDocument();
     expect(await screen.findByText("产品工作")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "创建 Avatar" }));
+    fireEvent.click(screen.getByRole("button", { name: "创建工作台" }));
     fireEvent.change(screen.getByLabelText("名称"), { target: { value: "研究" } });
     fireEvent.change(screen.getByLabelText("工程名称"), { target: { value: "研究工程" } });
     fireEvent.change(screen.getByLabelText("职责范围"), { target: { value: "研究范围" } });
     fireEvent.change(screen.getByLabelText("人格摘要"), { target: { value: "严谨研究" } });
     fireEvent.submit(formFor(screen.getByLabelText("名称")));
-    await waitFor(() => expect(fixture.createAvatar).toHaveBeenCalledWith({
+    await waitFor(() => expect(fixture.createWorkbench).toHaveBeenCalledWith({
       name: "研究", personaSummary: "严谨研究", projectLabel: "研究工程", scopeSummary: "研究范围",
     }));
   });
@@ -167,37 +167,21 @@ describe("joi renderer console", () => {
     expect(await screen.findByRole("heading", { name: "joi 的设置" })).toBeInTheDocument();
   });
 
-  it("refreshes from durable stream events and reports reconnect state", async () => {
-    const fixture = mockApi();
-    const listeners = new Map<string, EventListener>();
-    const close = vi.fn();
-    class TestEventSource {
-      static instances: TestEventSource[] = [];
-      onerror: (() => void) | null = null;
-      onopen: (() => void) | null = null;
-      constructor(readonly url: string, readonly options: EventSourceInit) { TestEventSource.instances.push(this); }
-      addEventListener(name: string, listener: EventListener) { listeners.set(name, listener); }
-      close = close;
-    }
-    vi.stubGlobal("EventSource", TestEventSource);
-    const view = render(<ConsoleApp api={fixture.api} />);
-    await waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce());
-    const stream = TestEventSource.instances.at(0);
-    if (stream === undefined) throw new Error("Expected ConsoleApp to open its durable event stream.");
+  it("polls for status updates on a fixed interval (SSE retired, ADR 0009)", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = mockApi();
+      const view = render(<ConsoleApp api={fixture.api} />);
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(screen.getByText("状态自动刷新")).toBeInTheDocument());
 
-    act(() => stream.onerror?.());
-    expect(await screen.findByText("实时状态暂时断开")).toHaveAttribute("title", "页面仍可使用，可以手动重连状态更新。");
-    fireEvent.click(screen.getByRole("button", { name: "重新连接状态更新" }));
-    await waitFor(() => expect(TestEventSource.instances).toHaveLength(2));
-    const reconnected = TestEventSource.instances.at(1);
-    if (reconnected === undefined) throw new Error("Expected a replacement durable event stream.");
-    act(() => reconnected.onopen?.());
-    expect(await screen.findByText("实时状态已连接")).toBeInTheDocument();
-    act(() => listeners.get("work.status.changed")?.(new Event("work.status.changed")));
-    await waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2));
-    view.unmount();
-    expect(close).toHaveBeenCalledTimes(2);
-    vi.unstubAllGlobals();
+      await vi.advanceTimersByTimeAsync(2_500);
+      await vi.waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2));
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("manages LAN, startup, sessions, passwords and verified backups", async () => {

@@ -2,7 +2,7 @@
 
 ## 0. JOI-01 再解释
 
-原调研中持久事件、lease、breaker、审计和 outbox 继续复用；per-Life 主脑、每工作线 scheduler 或长期双运行时不进入目标架构。唯一全局 joi 通过 Pi 调度，routing 只看目录摘要，execution 使用 Avatar-scoped context projection。旧 Life/Wake 证据是迁移基线，不是复制第二个脑的理由。
+原调研中持久事件、lease、breaker、审计和 outbox 继续复用；per-Life 主脑、每工作线 scheduler 或长期双运行时不进入目标架构。唯一全局 joi 通过 Pi 调度，routing 只看目录摘要，execution 使用工作台范围内 context projection。旧 Life/Wake 证据是迁移基线，不是复制第二个脑的理由。
 
 Partner Card、本地覆盖和 A2A transport 仍是执行层能力；调度固定引用不可变 partner revision，Card 刷新不能覆盖本地 workspace/prompt/tool policy。
 

@@ -13,11 +13,11 @@ import type {
 } from "../../application/ports/primary-reasoning-runtime.js";
 
 export const JOI_REASONING_TOOL_NAMES = [
-  "avatar_list_summaries",
-  "avatar_select",
-  "avatar_create",
-  "avatar_suggest_merge",
-  "avatar_suggest_archive",
+  "workbench_list_summaries",
+  "workbench_select",
+  "workbench_create",
+  "workbench_suggest_merge",
+  "workbench_suggest_archive",
   "model_list_sources",
   "partner_list_available",
   "partner_inspect_revision",
@@ -37,6 +37,11 @@ export const JOI_REASONING_TOOL_NAMES = [
   "schedule_plan",
   "user_ask",
   "turn_complete",
+  "harness_name_destination",
+  "harness_chart_path",
+  "harness_record_decision",
+  "harness_note_fog",
+  "harness_refine_workbench",
 ] as const;
 
 const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);
@@ -120,7 +125,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     if (session === undefined) {
       await this.restore(input.sessionId);
       session = this.#sessions.get(input.sessionId) ?? this.#createSession({
-        avatarId: input.avatarId,
+        workbenchId: input.workbenchId,
         modelRevisionId: input.modelRevisionId,
         sessionId: input.sessionId,
         sourceRevisionId: input.sourceRevisionId,
@@ -128,11 +133,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       }, []);
     }
     if (session.agent.state.isStreaming) throw new Error("reasoning_session_busy");
-    if (session.metadata.avatarId !== input.avatarId) throw new Error("reasoning_session_avatar_mismatch");
+    if (session.metadata.workbenchId !== input.workbenchId) throw new Error("reasoning_session_workbench_mismatch");
 
     session.current = input;
     session.metadata = {
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       compaction: session.metadata.compaction,
       modelRevisionId: input.modelRevisionId,
       sessionId: input.sessionId,
@@ -184,7 +189,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const snapshot = await this.#sessionStore.load(sessionId);
     if (snapshot === null) return false;
     this.#createSession({
-      avatarId: snapshot.avatarId,
+      workbenchId: snapshot.workbenchId,
       compaction: snapshot.compaction,
       modelRevisionId: snapshot.modelRevisionId,
       sessionId: snapshot.sessionId,

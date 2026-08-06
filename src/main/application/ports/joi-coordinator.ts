@@ -1,9 +1,9 @@
-import type { AvatarSummary } from "./avatar-context.js";
+import type { WorkbenchSummary } from "./workbench-context.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 
 export interface JoiPendingInput {
   attachments?: { attachmentId: string; filename: string; mimeType: string; size: number }[];
-  avatarId?: string;
+  workbenchId?: string;
   body: string;
   goalInputId?: string;
   inputId: string;
@@ -14,7 +14,7 @@ export interface JoiPendingInput {
 export interface JoiCoordinatorStore {
   completeInput(inputId: string, turnId: string, completion?: { completionSummary: string }): Promise<unknown>;
   createTurn(input: {
-    avatarId: string;
+    workbenchId: string;
     createdAt: string;
     inputId: string;
     modelRevisionId: string;
@@ -33,6 +33,6 @@ export interface ReasoningFailureClassifier {
   classify(error: unknown): SourceFailureKind | null;
 }
 
-export interface AvatarRoutingRuntime {
-  decide(input: { avatars: AvatarSummary[]; input: string; repair: boolean }): Promise<unknown>;
+export interface WorkbenchRoutingRuntime {
+  decide(input: { workbenches: WorkbenchSummary[]; input: string; repair: boolean }): Promise<unknown>;
 }

@@ -1,27 +1,27 @@
 # joi · 唯一入口的个人智能编排中枢
 
-> 唯一全局 joi 通过 Pi 思考，在彼此隔离的 Avatar 上下文中理解输入、安排工作，并把执行派给本机 Pi 或局域网 A2A 搭档。
+> 唯一全局 joi 通过 Pi 思考，在彼此隔离的工作台上下文中理解输入、安排工作，并把执行派给本机 Pi 或局域网 A2A 搭档。
 
 ## JOI-01 目标形态
 
-- 用户只面对唯一全局 joi 和首页输入框；不需要先创建工程、管线、Avatar 或任务。
-- `Avatar` 只保存人格、工程引用、记忆命名空间和任务上下文，不是 Agent、运行时或第二个调度器。
-- Avatar 是工作目录的唯一权威：每个 ACTIVE Avatar 自动拥有受管或绑定工作区；绝对路径只保存在主进程基础设施私表中。
-- joi 自动选择或创建 Avatar，歧义时先澄清；每项工作只能属于一个 Avatar，跨 Avatar 必须由用户明确提出。
+- 用户只面对唯一全局 joi 和首页输入框；不需要先创建工程、管线、工作台或任务。
+- 工作台（代码名 `Workbench`）只保存人格、工程引用、记忆命名空间和任务上下文，不是 Agent、运行时或第二个调度器。
+- 工作台是工作目录的唯一权威：每个 ACTIVE 工作台自动拥有受管或绑定工作区；绝对路径只保存在主进程基础设施私表中。
+- joi 自动选择或创建工作台，歧义时先澄清；每项工作只能属于一个工作台，跨工作台必须由用户明确提出。
 - joi 使用 Pi 作为唯一主推理基座，自身只有规划、查询和派发工具，不获得任意 shell、文件读写或编辑能力。
-- 原 Life 主 Agent 降级为对应 Avatar 的首选搭档；本机 Pi 与远端 A2A 搭档统一进入版本化搭档目录。
-- Partner 只是全局能力模板，不保存 cwd；每个运行实例和工作记忆都绑定一个 Avatar，禁止跨 Avatar 复用。
-- 搭档输出先原子归档为 Avatar-scoped WorkResult 并更新工作/任务投影，再以有界摘要通知 joi；正文只能由当前 Avatar 通过分页工具读取。
+- 原 Life 主 Agent 降级为对应工作台的首选搭档；本机 Pi 与远端 A2A 搭档统一进入版本化搭档目录。
+- Partner 只是全局能力模板，不保存 cwd；每个运行实例和工作记忆都绑定一个工作台，禁止跨工作台复用。
+- 搭档输出先原子归档为工作台范围内 WorkResult 并更新工作/任务投影，再以有界摘要通知 joi；正文只能由当前工作台通过分页工具读取。
 - 所有输入先持久化，所有外部副作用先进入 outbox，并使用稳定幂等标识；连续输入的合并、等待或并发由 joi 在安全 Turn 边界决定。
 - 首次无可用模型源时，首页先完成大模型网络连接；提供六家官方厂商和一个通用平台，厂商内区分普通 API 与官方 Coding/Token Plan，并在厂商支持时继续选择 OpenAI-compatible 或 Anthropic-compatible 协议。
 
-目标架构决策见 [ADR 0002](docs/adr/0002-unique-joi-pi-avatar-orchestration.md)，旧 Life 数据兼容策略见 [ADR 0003](docs/adr/0003-avatar-legacy-life-migration.md)，Avatar 私有实例、工作区和结果闭环见 [ADR 0006](docs/adr/0006-avatar-private-partner-instances-and-results.md)。下文中 Life/Wake/主 Agent 描述的是现有兼容运行时，实施 JOI-01 时逐步收敛为只读兼容层，不再代表新的调度权威。
+目标架构决策见 [ADR 0002](docs/adr/0002-unique-joi-pi-workbench-orchestration.md)，旧 Life 数据兼容策略见 [ADR 0003](docs/adr/0003-workbench-legacy-life-migration.md)，工作台私有实例、工作区和结果闭环见 [ADR 0006](docs/adr/0006-workbench-private-partner-instances-and-results.md)。下文中 Life/Wake/主 Agent 描述的是现有兼容运行时，实施 JOI-01 时逐步收敛为只读兼容层，不再代表新的调度权威。
 
 ## 项目状态
 
-M0–M6 的可在本机实现部分已经落地：Electron 主进程先处理 crash marker、待恢复备份与 SQLite migration，再启动 HTTP/SSE、outbox/Task/Wake 恢复和节奏调度；桌面与 LAN 共用完整 React 控制台，并具备管理员会话、加密 Agent onboarding、A2A 0.3、长期连续性、托盘生命周期、同源静态托管、在线备份和 quarantine 恢复。
+当前里程碑使用 JOI-01 的 M1–M3：M1（W0–W3）与 M2（W4–W5）已有仓库内自动化证据；M3 已完成 W6 的界面收敛，正在推进 W7 的兼容切换、安全和发布验收。旧 M0–M7 只描述 Life/Wake 兼容运行时的历史建设顺序，其“本机自动化完成”不能再作为 JOI-01 或 MVP 完成结论。
 
-自动化门禁、覆盖 960/768 px 的 Electron E2E、生产构建、包内容审计和带品牌图标的 Windows NSIS 产物已通过。当前仍不是“完整 MVP”：真实 AI Mana、第二台 LAN 设备、macOS 打包/签名/公证、Windows 签名、24 小时长稳和人工键盘/对比度视觉验收未在当前环境执行，不会标为通过。证据与 concerns 见[发布验收报告](docs/09-release-validation-report.md)，完整标准见[路线图与验收](docs/07-roadmap-and-acceptance.md)。AI Mana 配套扩展属于独立仓库。
+Electron actor 根循环、HTTP 轮询控制面、outbox、工作台/Partner/Work、旧 Life 只读兼容、恢复与打包链已有自动化覆盖。当前仍不是“完整 MVP”：真实 AI Mana、第二台 LAN 设备、macOS 打包/签名/公证、Windows 签名、24 小时长稳和人工键盘/对比度视觉验收未在当前环境执行，不会标为通过。证据与 concerns 见[发布验收报告](docs/09-release-validation-report.md)，完整标准见[路线图与验收](docs/07-roadmap-and-acceptance.md)。AI Mana 配套扩展属于独立仓库。
 
 ## 本地开发
 

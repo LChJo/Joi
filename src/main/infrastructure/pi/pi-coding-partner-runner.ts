@@ -1,7 +1,7 @@
 import { Agent } from "@earendil-works/pi-agent-core";
 
 import type { PartnerAdapterRunner, PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
-import type { AvatarExecutionContextReader } from "../../application/ports/avatar-context.js";
+import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
@@ -9,7 +9,7 @@ import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 
 export class PiCodingPartnerRunner implements PartnerAdapterRunner {
   constructor(private readonly dependencies: {
-    contexts: AvatarExecutionContextReader;
+    contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
     resolver: PiConfiguredModelResolver;
     sources: Pick<ReasoningSourceSelector, "selectInitial">;
@@ -19,7 +19,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
   async run(request: PartnerRunRequest, revision: PartnerRevision): Promise<{ externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
-    if (execution === null) throw new Error("avatar_context_snapshot_not_found");
+    if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     let configuredPrompt = "You are a local Pi coding partner. Work only inside the assigned workspace and complete the requested work.";
     if (revision.promptRef !== undefined) {
       const stored = await this.dependencies.prompts.read(revision.promptRef);
@@ -41,7 +41,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
         systemPrompt: [
           configuredPrompt,
           "Never access paths outside the assigned workspace.",
-          `Avatar scope: ${request.avatarId}`,
+          `Workbench scope: ${request.workbenchId}`,
           `Work item: ${request.workId}`,
           execution.promptSection,
         ].join("\n"),

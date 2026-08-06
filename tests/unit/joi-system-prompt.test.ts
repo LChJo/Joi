@@ -1,7 +1,7 @@
 import { buildJoiSystemPrompt } from "../../src/main/application/joi/joi-system-prompt.js";
 
 const base = {
-  avatarName: "Rex",
+  workbenchName: "Rex",
   personaSummary: "PERSONA_SENTINEL",
   projectLabel: "digital-life",
   scopeSummary: "SCOPE_SENTINEL",
@@ -9,7 +9,7 @@ const base = {
 };
 
 describe("joi system prompt", () => {
-  it("encodes the wayfinder orchestration method and injects the avatar context", () => {
+  it("encodes the wayfinder orchestration method and injects the workbench context", () => {
     const prompt = buildJoiSystemPrompt(base);
     expect(prompt).toContain("foreman, never a worker");
     expect(prompt).toContain("Name the destination first");
@@ -28,7 +28,21 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("concrete options");
     expect(prompt).toContain("turn_complete");
     expect(prompt).toContain("Every Turn that uses a tool");
-    expect(prompt).toContain("Avatar: Rex");
+    expect(prompt).toContain("Grill the spec before dispatch");
+    expect(prompt).toContain("one focused alignment question per turn");
+    expect(prompt).toContain("Every dispatched work must carry the aligned spec");
+    expect(prompt).toContain("never dispatch a bare title");
+    expect(prompt).toContain("Maintain the goal map");
+    expect(prompt).toContain("harness_name_destination");
+    expect(prompt).toContain("harness_chart_path");
+    expect(prompt).toContain("harness_record_decision");
+    expect(prompt).toContain("harness_note_fog");
+    expect(prompt).toContain("Only advance to the next layer once the current layer's paths are complete");
+    expect(prompt).toContain("Harness review turns resolve at most one decision");
+    expect(prompt).toContain("MAP_CLEARED");
+    expect(prompt).toContain("harness_refine_workbench");
+    expect(prompt).toContain("never broaden");
+    expect(prompt).toContain("Workbench: Rex");
     expect(prompt).toContain("PERSONA_SENTINEL");
     expect(prompt).toContain("SCOPE_SENTINEL");
     expect(prompt).toContain("TASK_SENTINEL");

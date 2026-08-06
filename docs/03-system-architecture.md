@@ -2,31 +2,31 @@
 
 ## 0. JOI-01 目标架构
 
-系统只有一个唯一全局 joi identity、system policy 与 scheduler，即唯一调度权威。Pi routing turn 只读取 Avatar 摘要；选定后 execution turn 只装配对应 Avatar 的 persona、工程引用、任务投影、记忆与相关搭档。不同 Avatar 可拥有独立 thread 并并发工作，但不能拥有独立调度器。
+系统只有一个唯一全局 joi identity、system policy 与 scheduler，即唯一调度权威。Pi routing turn 只读取工作台摘要；选定后 execution turn 只装配对应工作台的 persona、工程引用、任务投影、记忆与相关搭档。不同工作台可拥有独立 thread 并并发工作，但不能拥有独立调度器。
 
 ```text
-首页输入 -> durable joi inbox -> Pi routing -> Avatar context projection
+首页输入 -> durable joi inbox -> Pi routing -> Workbench context projection
          -> Work DAG -> policy gate -> outbox -> Local Pi / A2A Partner
-         <- Avatar-scoped events <- result / failure / input / auth / artifact
+         <- Workbench-scoped events <- result / failure / input / auth / artifact
 ```
 
 分层保持不变：domain 为纯 TypeScript；application 编排 ports；infrastructure 实现 Pi、SQLite、safeStorage 与 A2A；interfaces 只映射 HTTP/SSE；renderer 只使用 shared DTO 和 `/api/v1`。Pi SDK 只能进入 `src/main/infrastructure/pi` 或 composition root。
 
 ### 0.1 搭档实例与工作记忆
 
-搭档配置是无 cwd 的全局不可变模板；`PartnerInstanceManager` 负责运行中的 Avatar 私有实例。每个实例必填 `avatarId`，标记 `EPHEMERAL`（默认，单次即销毁）或 `RESIDENT`（保留会话、跨应用重启可恢复），确保、枚举、派发、复用和销毁都禁止跨 Avatar。实例行在 `partner_instances`，会话消息在 `partner_instance_messages`，`dispatch_attempts.instance_id` 关联派发。migration 027 会将升级前实例全部置为 `DISPOSED`；之后启动恢复只处理满足新不变量的实例。硬上限：常驻实例每 Avatar/搭档 4、全局 12、热 Agent 8。
+搭档配置是无 cwd 的全局不可变模板；`PartnerInstanceManager` 负责运行中的工作台私有实例。每个实例必填 `workbenchId`，标记 `EPHEMERAL`（默认，单次即销毁）或 `RESIDENT`（保留会话、跨应用重启可恢复），确保、枚举、派发、复用和销毁都禁止跨工作台。实例行在 `partner_instances`，会话消息在 `partner_instance_messages`，`dispatch_attempts.instance_id` 关联派发。migration 027 会将升级前实例全部置为 `DISPOSED`；之后启动恢复只处理满足新不变量的实例。硬上限：常驻实例每工作台/搭档 4、全局 12、热 Agent 8。
 
-搭档工作记忆按 `(avatarId, partnerId)` 存入 `avatar_partner_work_memories` 与 `avatar_partner_work_memory_summaries`：结果终态事实按 ground truth 追加，`session_data_source` 记录真实会话来源，滚动摘要按节拍刷新。内容不进入搭档自身提示词，也不由状态页或管理 API 返回；joi 只在当前 Avatar 内读取选择所需的安全摘要。
+搭档工作记忆按 `(workbenchId, partnerId)` 存入 `workbench_partner_work_memories` 与 `workbench_partner_work_memory_summaries`：结果终态事实按 ground truth 追加，`session_data_source` 记录真实会话来源，滚动摘要按节拍刷新。内容不进入搭档自身提示词，也不由状态页或管理 API 返回；joi 只在当前工作台内读取选择所需的安全摘要。
 
-joi 的结构化工具扩展为：`partner_create`（仅本机搭档，带 joi 创建标记）、Avatar-scoped 的 `partner_create_instance/list_instances/dispose_instance`、`partner_inspect_revision`、`model_list_sources`、`work_read_result` 与 `user_ask`。`user_ask` 将一个具体阻塞问题持久化为结构化澄清，而不是仅输出不可恢复的普通文本。`work_dispatch` 只接收 `NONE | READ | WRITE`、`instanceId/sessionPolicy`，不接收 workspace；文件工作自动使用 Avatar 工作区。工作区未 READY 时整个计划在提交前失败，工具把输入转为 `avatar_workspace_not_ready` 澄清，避免留下无 attempt 的半成品计划。本机引擎通过 `AvatarExecutionContextReader` 私下解析 cwd，A2A 只得到脱敏快照且一律拒绝 READ/WRITE。旧 `GET /api/v1/system/pick-directory` 返回 410；目录选择仅发生在 Avatar workspace bind 写接口内，响应不含路径。引擎多元化和 CLI 探测仍按 ADR 0004 执行，新增边界详见 ADR 0006、0007。
+joi 的结构化工具扩展为：`partner_create`（仅本机搭档，带 joi 创建标记）、工作台范围内 的 `partner_create_instance/list_instances/dispose_instance`、`partner_inspect_revision`、`model_list_sources`、`work_read_result` 与 `user_ask`。`user_ask` 将一个具体阻塞问题持久化为结构化澄清，而不是仅输出不可恢复的普通文本。`work_dispatch` 只接收 `NONE | READ | WRITE`、`instanceId/sessionPolicy`，不接收 workspace；文件工作自动使用工作台工作区。工作区未 READY 时整个计划在提交前失败，工具把输入转为 `workbench_workspace_not_ready` 澄清，避免留下无 attempt 的半成品计划。本机引擎通过 `WorkbenchExecutionContextReader` 私下解析 cwd，A2A 只得到脱敏快照且一律拒绝 READ/WRITE。旧 `GET /api/v1/system/pick-directory` 返回 410；目录选择仅发生在工作台工作区 bind 写接口内，响应不含路径。引擎多元化和 CLI 探测仍按 ADR 0004 执行，新增边界详见 ADR 0006、0007。
 
-每次派发前，`AvatarContextAssembler` 持久化只供执行链读取的安全快照。migration 034 起，所有 Work 必须强关联原始 `inputId`，且数据库同时校验 Turn、input 与 Avatar 一致；每个 run 只有最早终态结果具有权威性，后续冲突仅保留审计事实。migration 035 把展示标题与私有 Work brief 分离，派发时按原始请求引用装配完整要求；声明了文件或精确字面的任务必须先通过受控 workspace verifier，Agent 报告的 `COMPLETED` 才能成为权威完成。结构化引擎输出先在单事务内落为 `WorkResult` 受限正文和不可变事实，再更新 Work 与 Avatar task projection，最后追加 `work.result.recorded` 事件；提交后才发布 SSE 并通知 joi。通知只带 resultId、终态和有界脱敏摘要，正文由 `work_read_result` 按当前 Avatar 权限分页读取。已取消 Work 的迟到结果保留 `is_late` 事实，但不重开工作、不自动进入 joi inbox。
+每次派发前，`WorkbenchContextAssembler` 持久化只供执行链读取的安全快照。migration 034 起，所有 Work 必须强关联原始 `inputId`，且数据库同时校验 Turn、input 与工作台一致；每个 run 只有最早终态结果具有权威性，后续冲突仅保留审计事实。migration 035 把展示标题与私有 Work brief 分离，派发时按原始请求引用装配完整要求；声明了文件或精确字面的任务必须先通过受控 workspace verifier，Agent 报告的 `COMPLETED` 才能成为权威完成。结构化引擎输出先在单事务内落为 `WorkResult` 受限正文和不可变事实，再更新 Work 与工作台任务投影，最后追加 `work.result.recorded` 事件；提交后才由 workbench actor 的遍历发现并驱动 joi 综合（ADR 0009，SSE 通知已退役）。通知只带 resultId、终态和有界脱敏摘要，正文由 `work_read_result` 按当前工作台权限分页读取。已取消 Work 的迟到结果保留 `is_late` 事实，但不重开工作、不自动进入 joi inbox。
 
 ### 0.2 场景预设与 joi 编排提示词
 
-场景预设改在搭档页的"场景预设"页签呈现（不在首页铺陈），由 `GET /api/v1/scenarios` 提供。结构化澄清把 `clarification_reason_code` 与可选 `clarification_prompt` 经 record/DTO 透出；目录卡先调用 Avatar workspace bind，再恢复同一 `inputId`，接口继续隐藏绝对路径。首页投影由 `GET /api/v1/joi/home-feed` 提供：原始输入按 goal 聚合为 Avatar 卡，Turn 只投影 active `progressing` 与终态后 15 秒的低权重尾迹；合成结果输入不进入首页。migration 036 以 goal result-set revision 聚合该目标的全部权威结果，只有所有 Work 终态后才调度隔离的最小工具综合 Turn；综合输出经有界脱敏后写入目标级 outcome。综合期间卡片为 `FINALIZING` 并继续显示 progressing，只有当前 revision 的 outcome 已落库且 Work/Run 全终态后才显示完成摘要并允许软删。运行诊断同时写 stderr 与 userData 下的有界滚动 JSONL，只接受 ID、状态、计数、安全原因码和耗时。
+场景预设改在搭档页的"场景预设"页签呈现（不在首页铺陈），由 `GET /api/v1/scenarios` 提供。结构化澄清把 `clarification_reason_code` 与可选 `clarification_prompt` 经 record/DTO 透出；目录卡先调用工作台工作区 bind，再恢复同一 `inputId`，接口继续隐藏绝对路径。首页投影由 `GET /api/v1/joi/home-feed` 提供：原始输入按 goal 聚合为工作台卡，Turn 只投影 active `progressing` 与终态后 15 秒的低权重尾迹；合成结果输入不进入首页。migration 036 以 goal result-set revision 聚合该目标的全部权威结果，只有所有 Work 终态后才调度隔离的最小工具综合 Turn；综合输出经有界脱敏后写入目标级 outcome。综合期间卡片为 `FINALIZING` 并继续显示 progressing，只有当前 revision 的 outcome 已落库且 Work/Run 全终态后才显示完成摘要并允许软删。运行诊断同时写 stderr 与 userData 下的有界滚动 JSONL，只接受 ID、状态、计数、安全原因码和耗时。
 
-Migration 033 建立独立的用户展示面：`avatar_agent_sessions` 将 post-033 本机 `partner_instances` 与 A2A `partner_runs` 映射为 Avatar Agent 卡，不回填旧执行历史；`avatar_agent_conversation_entries` 保存规范化的 Markdown、工具、产物与错误条目。真实运行状态仍以原运行表为权威。执行适配器只提交安全展示草稿；`agent-conversation-presentation` 在入库前丢弃内部推理与工具参数、脱敏路径和凭据并按 32 KiB 分块，稳定 entry id 使重放幂等。A2A data part 永不进入正文。删除一次性终态 Agent 只软删 session 并清理展示 entries，WorkResult、partner run、event 和审计事实保持。读取 API 为 `/api/v1/avatars/:avatarId/agents` 与其 `/conversation` 子资源。详见 ADR 0008。
+Migration 033 建立独立的用户展示面：`workbench_agent_sessions` 将 post-033 本机 `partner_instances` 与 A2A `partner_runs` 映射为工作台 Agent 卡，不回填旧执行历史；`workbench_agent_conversation_entries` 保存规范化的 Markdown、工具、产物与错误条目。真实运行状态仍以原运行表为权威。执行适配器只提交安全展示草稿；`agent-conversation-presentation` 在入库前丢弃内部推理与工具参数、脱敏路径和凭据并按 32 KiB 分块，稳定 entry id 使重放幂等。A2A data part 永不进入正文。删除一次性终态 Agent 只软删 session 并清理展示 entries，WorkResult、partner run、event 和审计事实保持。读取 API 为 `/api/v1/workbenches/:workbenchId/agents` 与其 `/conversation` 子资源。详见 ADR 0008。
 
 现有 Life/Wake 链只作为迁移期兼容消费者。切换时必须 stop-old-before-start-new；shadow 比对不得写 outbox、派发或正式表达。
 
@@ -136,15 +136,16 @@ flowchart LR
 
 - SQLite repositories：所有持久实体与迁移。
 - Durable scheduler：只负责把到期规则写成事件，不直接调用 Agent。
+- Actor tree（ADR 0009）：唯一根 tick 按 joi → workbench → agent 顺序遍历收敛；actor 无定时器、不互发消息，协调只经 SQLite 事实表；输入串行单槽位驱动推理 turn，partner 执行在 agent 层 ack 后运行、后续 tick 收敛终态，崩溃孤儿由启动首 tick 扫描收尾。失败的 turn 在收尾时中止其推理会话，残留流状态不得毒化同会话的后续 turn；同一输入连续即时失败超过上限（默认 8）即按 028 取消设计停摆为可重发的取消态，杜绝 failTurn→重投 的崩溃环。joi actor 还挂 harness component（ADR 0010）：遍历目标地图事实表（maps/paths/decisions/fog），为建图 goal 落图、把走完一层结果的 goal 以 review 系统输入排队进同一单槽位，由 joi 推理 turn 决定下一层路径或 MAP_CLEARED；组件自身不推理、不派发，唯一调度权威不变。
 - A2A gateway：Card、Bearer、network policy、stream/get/cancel/resubscribe、Artifact。
 - Connection breaker：按 Agent Connection/凭据版本共享 429/503 冷却，不阻塞事件持久化。
-- Outbox dispatcher：事务提交后的外部调用与 SSE 发布。
+- Outbox dispatcher：事务提交后的外部调用；`partner.dispatch` 由 agent actor 领取交付（ADR 0009）。
 - Credential store：safeStorage 加解密、管理员口令与会话。
 - Diagnostics：结构化状态和脱敏日志。
 
 ### 4.4 Interface
 
-- React 只使用 `/api/v1` 和 `/api/v1/stream`，不读取数据库或 safeStorage。
+- React 只使用 `/api/v1` 轮询，不读取数据库或 safeStorage。SSE 传输已退役（ADR 0009），renderer 按固定节奏轮询收敛。
 - Electron preload 只提供一次性桌面 bootstrap、窗口控制和本机文件选择，不复制业务 API。
 - LAN 与桌面 UI 使用相同 DTO，避免双套行为。
 
@@ -268,7 +269,9 @@ API 返回 202 只表示事件已经持久化，不表示 Agent 已阅读或回�
 
 所有创建型写请求接受 `Idempotency-Key`。列表使用 opaque cursor；错误统一为 `{ code, message, requestId, details? }`，`details` 不包含敏感信息。
 
-### 7.2 SSE
+### 7.2 SSE（已退役，见 ADR 0009）
+
+> ADR 0009 起 SSE 传输退役：`/api/v1/stream` 端点删除，`sse_events` 投影冻结（表保留不重建），renderer 纯轮询。下述内容仅作历史边界记录。
 
 `GET /api/v1/stream?cursor=<opaque>` 推送用户有权看到的增量：
 

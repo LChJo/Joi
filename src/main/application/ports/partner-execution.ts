@@ -5,7 +5,7 @@ export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITI
 
 export interface PartnerRunRequest {
   actionId: string;
-  avatarId: string;
+  workbenchId: string;
   contextSnapshotId: string;
   taskProjection: string;
   workId: string;

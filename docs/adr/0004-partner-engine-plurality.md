@@ -2,7 +2,7 @@
 
 - 状态：accepted（2026-08-01 修订：Mana SDK 由"内置二进制"改为"驱动用户本机 Claude Code / Codex"）
 - 日期：2026-07-31
-- 关联：ADR 0002（唯一 joi、Pi、Avatar 与搭档编排）
+- 关联：ADR 0002（唯一 joi、Pi、工作台与搭档编排）
 
 ## Context
 
@@ -10,7 +10,7 @@ ADR 0002 确立 joi 以 Pi 为唯一主推理基座，首版不引入第二套�
 
 ## Decision
 
-**joi 的推理基座保持 Pi-only**：routing/execution turn、Avatar 路由、结构化工具集与压缩策略不变（ADR 0002 明确重申，不被本 ADR 修改）。
+**joi 的推理基座保持 Pi-only**：routing/execution turn、工作台路由、结构化工具集与压缩策略不变（ADR 0002 明确重申，不被本 ADR 修改）。
 
 **搭档执行引擎三值化**：领域 `PartnerEngine = pi-core | claude-code | codex`，由 `PartnerEngineRuntime` 端口统一抽象（含 `toolOptions()` 供白名单点选），`PartnerInstanceManager` 按 revision 的 engine 路由。实现为 Pi core（`infrastructure/pi/pi-partner-engine-runtime.ts`，默认）与本地 CLI 引擎（`infrastructure/mana/local-cli-partner-engine-runtime.ts`，按协议 `claude`/`codex` 各构造一个实例，共享同一 `ConversationStore`）。
 

@@ -16,8 +16,8 @@ function readyApi() {
   vi.spyOn(api, "listInteractions").mockResolvedValue({ items: [] });
   vi.spyOn(api, "diagnostics").mockResolvedValue({ agents: { connections: 0 }, database: { journalMode: "wal", state: "open" }, runtime: { pendingOutbox: 0 }, schemaVersion: 4, sse: { events: 0 }, web: { sessions: 1 } });
   vi.spyOn(api, "joiSnapshot").mockResolvedValue({
-    avatarChanges: [],
-    avatars: [],
+    workbenchChanges: [],
+    workbenches: [],
     modelSources: [{
       accessMode: "api",
       activeModel: { capability: "release-tested", id: "deepseek-chat", revisionId: "model-1" },

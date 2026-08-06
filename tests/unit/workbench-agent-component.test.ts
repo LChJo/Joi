@@ -1,0 +1,151 @@
+/* eslint-disable @typescript-eslint/require-await */
+import { WorkbenchAgentComponent } from "../../src/main/application/actors/components/workbench-agent-component";
+import type { ActorTickContext } from "../../src/main/application/ports/actor-runtime";
+import type {
+  WorkbenchPartnerKey,
+  WorkbenchPendingConfirmation,
+  WorkbenchUnsynthesizedResult,
+} from "../../src/main/application/ports/workbench-agent-scan";
+import type {
+  PartnerDispatchClaims,
+  PartnerDispatchDelivery,
+} from "../../src/main/application/ports/partner-dispatch-delivery";
+import type { RuntimeStore } from "../../src/main/application/ports/runtime-store";
+
+const BASE = "2026-08-05T10:00:00.000Z";
+
+function ctxAt(offsetMillis: number): ActorTickContext {
+  const now = new Date(new Date(BASE).getTime() + offsetMillis);
+  return { clock: { now: () => now }, now, tickId: 1 };
+}
+
+interface HarnessState {
+  confirmations: WorkbenchPendingConfirmation[];
+  keys: WorkbenchPartnerKey[];
+  unsynthesized: WorkbenchUnsynthesizedResult[];
+}
+
+function makeHarness(state: HarnessState, options?: {
+  memoryReject?: boolean;
+  sweepEveryMillis?: number;
+  withDispatch?: boolean;
+}) {
+  const enqueued: { eventId: string; resultId: string }[] = [];
+  const recorded: { partnerId: string; workId?: string | undefined }[] = [];
+  const sweeps: number[] = [];
+  const dispatch = {
+    claims: {
+      listClaimable: async () => [],
+      listOrphanRuns: async () => [],
+    } satisfies PartnerDispatchClaims,
+    delivery: {
+      complete: async () => ({ isAuthoritative: true, resultId: "result_unused" }),
+      finalizeOrphan: async () => "completed" as const,
+      handle: async () => undefined,
+      prepare: async () => "skipped_terminal" as const,
+      run: async () => ({ artifacts: [], body: "", kind: "terminal" as const, status: "COMPLETED" as const }),
+    } satisfies PartnerDispatchDelivery,
+    outbox: {
+      claimOutboxById: async () => null,
+      completeOutbox: async () => undefined,
+      releaseOutbox: async () => undefined,
+    } satisfies Pick<RuntimeStore, "claimOutboxById" | "completeOutbox" | "releaseOutbox">,
+    owner: "actor-test",
+  };
+  const component = new WorkbenchAgentComponent({
+    workbenchId: "workbench_1",
+    ...(options?.withDispatch === true ? { dispatch } : {}),
+    instances: { sweepIdleFor: async (workbenchId: string, now: Date) => { sweeps.push(now.getTime()); return { disposed: 0, evicted: 0 }; } },
+    memory: { recordResult: async (input: { partnerId: string; workId?: string }) => {
+      recorded.push({ partnerId: input.partnerId, workId: input.workId });
+      if (options?.memoryReject === true) throw new Error("memory_unavailable");
+    } },
+    scan: {
+      listPartnerKeys: async () => [...state.keys],
+      listPendingConfirmations: async () => [...state.confirmations],
+      listUnsynthesizedResults: async () => [...state.unsynthesized],
+    },
+    synthesis: {
+      enqueuePartnerResult: async (event: { eventId: string; resultId: string }) => {
+        enqueued.push({ eventId: event.eventId, resultId: event.resultId });
+        return "joi_result_input:goal:input_1";
+      },
+    },
+    ...(options?.sweepEveryMillis === undefined ? {} : { sweepEveryMillis: options.sweepEveryMillis }),
+  });
+  return { component, enqueued, recorded, sweeps };
+}
+
+const RESULT: WorkbenchUnsynthesizedResult = {
+  workbenchId: "workbench_1",
+  eventId: "partner_result:run_1:COMPLETED",
+  partnerId: "partner_1",
+  resultId: "work_result:run_1:COMPLETED",
+  sessionDataSource: "partner_instance_messages:inst_1",
+  status: "COMPLETED",
+  summary: "done",
+  title: "create file",
+  workId: "work_1",
+};
+
+describe("WorkbenchAgentComponent", () => {
+  it("folds unsynthesized results into synthesis and memory exactly once", async () => {
+    const state: HarnessState = { confirmations: [], keys: [], unsynthesized: [RESULT] };
+    const harness = makeHarness(state);
+    await harness.component.update(ctxAt(0));
+    expect(harness.enqueued).toEqual([{ eventId: RESULT.eventId, resultId: RESULT.resultId }]);
+    expect(harness.recorded).toEqual([{ partnerId: "partner_1", workId: "work_1" }]);
+
+    // The member row written by enqueue removes the result from the next traversal.
+    state.unsynthesized = [];
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.enqueued).toHaveLength(1);
+    expect(harness.recorded).toHaveLength(1);
+  });
+
+  it("reconciles leaf agent actors from partner keys", async () => {
+    const state: HarnessState = { confirmations: [], keys: [{ partnerId: "partner_1" }], unsynthesized: [] };
+    const harness = makeHarness(state);
+    await harness.component.update(ctxAt(0));
+    expect(harness.component.agentActors.map((actor) => actor.partnerId)).toEqual(["partner_1"]);
+
+    state.keys = [{ partnerId: "partner_2" }];
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.component.agentActors.map((actor) => actor.partnerId)).toEqual(["partner_2"]);
+  });
+
+  it("aggregates pending confirmations and throttles the idle sweep", async () => {
+    const state: HarnessState = {
+      confirmations: [{ kind: "clarification", reasonCode: "question_required", referenceId: "input_9" }],
+      keys: [],
+      unsynthesized: [],
+    };
+    const harness = makeHarness(state);
+    await harness.component.update(ctxAt(0));
+    expect(harness.component.pendingConfirmations).toEqual(state.confirmations);
+    expect(harness.sweeps).toHaveLength(1);
+
+    await harness.component.update(ctxAt(5_000));
+    expect(harness.sweeps).toHaveLength(1);
+
+    await harness.component.update(ctxAt(61_000));
+    expect(harness.sweeps).toHaveLength(2);
+  });
+
+  it("supports dispatch-enabled agents, custom sweep intervals, and best-effort memory", async () => {
+    const state: HarnessState = {
+      confirmations: [],
+      keys: [{ partnerId: "partner_1" }],
+      unsynthesized: [RESULT],
+    };
+    const harness = makeHarness(state, { memoryReject: true, sweepEveryMillis: 1, withDispatch: true });
+
+    await expect(harness.component.update(ctxAt(0))).resolves.toBeUndefined();
+    state.unsynthesized = [];
+    await harness.component.update(ctxAt(2));
+
+    expect(harness.component.agentActors.map((actor) => actor.partnerId)).toEqual(["partner_1"]);
+    expect(harness.recorded).toHaveLength(1);
+    expect(harness.sweeps).toHaveLength(2);
+  });
+});

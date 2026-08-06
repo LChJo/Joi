@@ -28,6 +28,7 @@ describe("bounded activity projections", () => {
       const second = await events.list(life.lifeId, { before: first.next, limit: 2 });
       expect(second.items).toHaveLength(2);
       expect(new Set([...first.items, ...second.items].map((event) => event.eventId)).size).toBe(4);
+      expect((await events.list(life.lifeId)).items).toHaveLength(4);
 
       const now = fixture.clock.now().toISOString();
       const claimed = await fixture.database.store.claimWake({

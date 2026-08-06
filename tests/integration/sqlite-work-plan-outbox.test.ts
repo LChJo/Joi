@@ -4,14 +4,15 @@ import path from "node:path";
 
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
-import { AvatarContextAssembler } from "../../src/main/application/joi/avatar-context-assembler.js";
+import { WorkbenchContextAssembler } from "../../src/main/application/joi/workbench-context-assembler.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
-import { SqliteA2aPartnerDispatchHandler } from "../../src/main/infrastructure/a2a/sqlite-partner-dispatch-handler.js";
-import { SqliteAvatarContextRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-context-repository.js";
+import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
+import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
+import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-context-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
@@ -24,17 +25,17 @@ describe("SQLite work plan outbox", () => {
       const clock = new TestClock();
       const ids = new TestIds();
       database.transaction((connection) => {
-        connection.prepare(`INSERT INTO avatars
-          (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
-          VALUES ('avatar-1', '研究', 'persona-1', '人格', '范围', '工程', 'memory-1', '', 'ACTIVE', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
+        connection.prepare(`INSERT INTO workbenches
+          (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
+          VALUES ('workbench-1', '研究', 'persona-1', '人格', '范围', '工程', 'memory-1', '', 'ACTIVE', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
         connection.prepare(`INSERT INTO joi_inbox_messages
           (input_id, idempotency_key, body, status, created_at, updated_at) VALUES ('input-1', 'key-1', 'body', 'ROUTED', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
         connection.prepare(`INSERT INTO joi_turns
-          (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at) VALUES ('turn-1', 'input-1', 'avatar-1', 'session-1', 'RUNNING', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
-        connection.prepare(`UPDATE avatar_workspace_bindings SET kind = 'BOUND', status = 'READY', display_name = '工程', updated_at = ?
-          WHERE avatar_id = 'avatar-1'`).run(clock.now().toISOString());
-        connection.prepare(`INSERT INTO avatar_workspace_roots (workspace_ref, root_path, created_at, updated_at)
-          VALUES ('avatar_workspace:avatar-1', ?, ?, ?)`).run(root, clock.now().toISOString(), clock.now().toISOString());
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at) VALUES ('turn-1', 'input-1', 'workbench-1', 'session-1', 'RUNNING', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
+        connection.prepare(`UPDATE workbench_workspace_bindings SET kind = 'BOUND', status = 'READY', display_name = '工程', updated_at = ?
+          WHERE workbench_id = 'workbench-1'`).run(clock.now().toISOString());
+        connection.prepare(`INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at)
+          VALUES ('workbench_workspace:workbench-1', ?, ?, ?)`).run(root, clock.now().toISOString(), clock.now().toISOString());
       });
       const partnerRepository = new SqlitePartnerRegistryRepository(database);
       const partners = new PartnerRegistryService({ clock, ids, repository: partnerRepository });
@@ -43,17 +44,17 @@ describe("SQLite work plan outbox", () => {
       const service = new WorkOrchestrationService({
         clock, ids, partners, policy: { evaluate: () => Promise.resolve({ allowed: true }) }, repository,
       });
-      await service.plan({ avatarId: "avatar-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{
+      await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{
         acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
         accessMode: "WRITE", instructions: "写入精确文本", key: "write", partnerId: partner.partnerId, title: "写入",
       }] });
       const facts = database.transaction((connection) => ({
         attempts: connection.prepare("SELECT action_id, outbox_id, partner_revision_id, registry_revision FROM dispatch_attempts").all(),
         outbox: connection.prepare("SELECT kind, payload_json, status FROM outbox WHERE kind = 'partner.dispatch'").all(),
-        work: connection.prepare("SELECT avatar_id, input_id, intent_json, status FROM work_items").all(),
+        work: connection.prepare("SELECT workbench_id, input_id, intent_json, status FROM work_items").all(),
       }));
       expect(facts.work).toEqual([{
-        avatar_id: "avatar-1", input_id: "input-1",
+        workbench_id: "workbench-1", input_id: "input-1",
         intent_json: JSON.stringify({
           acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
           instructions: "写入精确文本",
@@ -61,8 +62,8 @@ describe("SQLite work plan outbox", () => {
         status: "PLANNED",
       }]);
       expect(() => database.transaction((connection) => connection.prepare(`INSERT INTO work_items
-        (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
-        VALUES ('work-invalid', 'avatar-1', NULL, 'invalid', '{}', 'READ', 'PLANNED', ?, ?)`)
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-invalid', 'workbench-1', NULL, 'invalid', '{}', 'READ', 'PLANNED', ?, ?)`)
         .run(clock.now().toISOString(), clock.now().toISOString()))).toThrow();
       expect(facts.attempts).toEqual([expect.objectContaining({ partner_revision_id: partner.partnerRevisionId, registry_revision: 1 })]);
       expect(facts.outbox).toEqual([expect.objectContaining({ kind: "partner.dispatch", status: "PENDING" })]);
@@ -71,33 +72,33 @@ describe("SQLite work plan outbox", () => {
       expect(JSON.parse(outbox.payload_json)).toMatchObject({ actionId: attempt.action_id });
       const payload = JSON.parse(outbox.payload_json) as { actionId: string; dispatchAttemptId: string };
       const inbox = new SqliteJoiInboxRepository(database);
-      const contexts = new SqliteAvatarContextRepository(database);
+      const contexts = new SqliteWorkbenchContextRepository(database);
       const resultRepository = new SqliteWorkResultRepository(database);
       const privateResultBody = `bounded summary ${"x".repeat(2_000_000)} PRIVATE_RESULT_DETAIL`;
       const dispatchRequests: { taskProjection: string }[] = [];
       let resultInputId: string | null | undefined;
-      const handler = new SqliteA2aPartnerDispatchHandler({
+      const handler = new SqlitePartnerDispatchDelivery({
         clock,
-        contextAssembler: new AvatarContextAssembler({ avatars: new LegacyLifeStoreAdapter(database), clock, ids, projections: contexts, snapshots: contexts }),
+        contextAssembler: new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock, ids, projections: contexts, snapshots: contexts }),
         contexts,
         database,
         gateway: { recover: () => Promise.reject(new Error("must not recover")), startWithResult: () => Promise.reject(new Error("must not dispatch")) },
-        leases: new SqliteWorkspaceLeaseManager({ clock, database }),
-        local: {
-          run: (request, revision) => {
-            dispatchRequests.push({ taskProjection: request.taskProjection });
+        instances: {
+          dispatch: (input) => {
+            dispatchRequests.push({ taskProjection: input.request.taskProjection });
             return Promise.resolve({
-            actionId: request.actionId,
-            artifacts: [],
-            body: privateResultBody,
-            externalRunId: `local:${request.actionId}:${revision.partnerRevisionId}`,
-            status: "COMPLETED",
-            workId: request.workId,
-          });
+              actionId: input.request.actionId,
+              artifacts: [],
+              body: privateResultBody,
+              externalRunId: `local:${input.request.actionId}`,
+              status: "COMPLETED" as const,
+              workId: input.request.workId,
+            });
           },
         },
-        onResult: async (event) => { resultInputId = await inbox.enqueuePartnerResult(event); },
+        leases: new SqliteWorkspaceLeaseManager({ clock, database }),
         partners: partnerRepository,
+        publish: () => Promise.resolve(undefined),
         results: resultRepository,
         verifier: { verify: () => Promise.resolve({ status: "PASSED" }) },
       });
@@ -122,22 +123,34 @@ describe("SQLite work plan outbox", () => {
         payload,
         status: "CLAIMED",
       });
+      // The workbench agent component traversal folds authoritative results into goal synthesis.
+      const scan = new SqliteWorkbenchAgentScan(database);
+      for (const unsynthesized of await scan.listUnsynthesizedResults("workbench-1")) {
+        resultInputId = await inbox.enqueuePartnerResult({
+          workbenchId: unsynthesized.workbenchId,
+          eventId: unsynthesized.eventId,
+          resultId: unsynthesized.resultId,
+          status: unsynthesized.status,
+          summary: unsynthesized.summary,
+          workId: unsynthesized.workId,
+        });
+      }
       expect(await repository.listActive()).toEqual([]);
       expect(database.transaction((connection) => connection.prepare("SELECT status FROM dispatch_attempts").get()))
         .toEqual({ status: "COMPLETED" });
       const resultEvents = database.transaction((connection) => connection.prepare(
-        "SELECT avatar_id, work_id, status FROM partner_result_events",
-      ).all()) as { avatar_id: string; status: string; work_id: string }[];
+        "SELECT workbench_id, work_id, status FROM partner_result_events",
+      ).all()) as { workbench_id: string; status: string; work_id: string }[];
       expect(resultEvents).toHaveLength(1);
-      expect(resultEvents[0]).toMatchObject({ avatar_id: "avatar-1", status: "COMPLETED" });
+      expect(resultEvents[0]).toMatchObject({ workbench_id: "workbench-1", status: "COMPLETED" });
       expect(resultEvents[0]?.work_id).toMatch(/^work_/u);
       expect(resultInputId).toMatch(/^joi_result_input:/u);
       const resultInput = await inbox.loadInput(resultInputId ?? "missing");
-      expect(resultInput).toMatchObject({ avatarId: "avatar-1", status: "PENDING" });
+      expect(resultInput).toMatchObject({ workbenchId: "workbench-1", status: "PENDING" });
       expect(resultInput?.body).toContain("resultId=work_result:");
       expect(resultInput?.body).not.toContain("PRIVATE_RESULT_DETAIL");
       const projection = database.transaction((connection) => connection.prepare(
-        "SELECT active_work_json, recent_results_json FROM avatar_task_projections WHERE avatar_id = 'avatar-1'",
+        "SELECT active_work_json, recent_results_json FROM workbench_task_projections WHERE workbench_id = 'workbench-1'",
       ).get()) as { active_work_json: string; recent_results_json: string };
       expect(JSON.parse(projection.active_work_json)).toEqual([]);
       const recent: unknown = JSON.parse(projection.recent_results_json);
@@ -152,15 +165,72 @@ describe("SQLite work plan outbox", () => {
       expect(JSON.parse(storedResult.artifacts_json)).toEqual([
         expect.objectContaining({ artifactRef: storedResult.body_ref, name: "partner-result.txt", size: Buffer.byteLength(privateResultBody) }),
       ]);
-      await expect(resultRepository.readBody({ avatarId: "avatar-1", limit: 16, offset: 0, resultId: storedResult.result_id }))
+      await expect(resultRepository.readBody({ workbenchId: "workbench-1", limit: 16, offset: 0, resultId: storedResult.result_id }))
         .resolves.toEqual({ body: privateResultBody.slice(0, 16), total: privateResultBody.length });
       expect(database.transaction((connection) => connection.prepare(
         "SELECT input_id FROM partner_result_events",
       ).get())).toEqual({ input_id: null });
-      const signalInputId = await inbox.enqueueSystemSignal({ avatarId: "avatar-1", signalId: "alarm-1", type: "schedule.alarm_due" });
-      expect(await inbox.loadInput(signalInputId)).toMatchObject({ avatarId: "avatar-1", status: "PENDING" });
+      const signalInputId = await inbox.enqueueSystemSignal({ workbenchId: "workbench-1", signalId: "alarm-1", type: "schedule.alarm_due" });
+      expect(await inbox.loadInput(signalInputId)).toMatchObject({ workbenchId: "workbench-1", status: "PENDING" });
       expect(database.transaction((connection) => connection.prepare("SELECT COUNT(*) AS count FROM workspace_leases").get()))
         .toEqual({ count: 0 });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("lets a harness review turn dispatch on behalf of the original goal but rejects unrelated turns", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-plan-review-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const clock = new TestClock();
+      const ids = new TestIds();
+      const now = clock.now().toISOString();
+      database.transaction((connection) => {
+        connection.prepare(`INSERT INTO workbenches
+          (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
+          VALUES ('workbench-r', '研究', 'persona-r', '人格', '范围', '工程', 'memory-r', '', 'ACTIVE', ?, ?)`).run(now, now);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-r', 'key-goal-r', 'goal body', 'ROUTED', 'workbench-r', ?, ?)`).run(now, now);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES ('joi_harness_review:goal:goal-r:r1', 'key-review-r', 'review', 'ROUTED', 'workbench-r', 'goal-r', ?, ?)`).run(now, now);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('input-stranger', 'key-stranger', 'unrelated', 'ROUTED', 'workbench-r', ?, ?)`).run(now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-goal', 'goal-r', 'workbench-r', 'session-r', 'COMPLETED', ?, ?),
+                 ('turn-review', 'joi_harness_review:goal:goal-r:r1', 'workbench-r', 'session-r', 'RUNNING', ?, ?),
+                 ('turn-stranger', 'input-stranger', 'workbench-r', 'session-r', 'RUNNING', ?, ?)`)
+          .run(now, now, now, now, now, now);
+        connection.prepare(`UPDATE workbench_workspace_bindings SET kind = 'BOUND', status = 'READY', display_name = '工程', updated_at = ?
+          WHERE workbench_id = 'workbench-r'`).run(now);
+        connection.prepare(`INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at)
+          VALUES ('workbench_workspace:workbench-r', ?, ?, ?)`).run(root, now, now);
+      });
+      const partners = new PartnerRegistryService({
+        clock, ids, repository: new SqlitePartnerRegistryRepository(database),
+      });
+      const partner = await partners.add({ capabilities: ["write"], displayName: "Local", kind: "local-pi", skills: [], tools: ["edit"] });
+      const service = new WorkOrchestrationService({
+        clock, ids, partners, policy: { evaluate: () => Promise.resolve({ allowed: true }) }, repository: new SqliteWorkPlanRepository(database),
+      });
+      // Review turn dispatch binds back to the original goal.
+      await service.plan({
+        workbenchId: "workbench-r", dependencies: [], inputId: "goal-r", turnId: "turn-review",
+        work: [{ accessMode: "READ", instructions: "下一层工作", key: "next", partnerId: partner.partnerId, title: "下一层" }],
+      });
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT input_id, status FROM work_items",
+      ).get())).toEqual({ input_id: "goal-r", status: "PLANNED" });
+      // A turn with no goal relationship to the plan input stays rejected.
+      await expect(service.plan({
+        workbenchId: "workbench-r", dependencies: [], inputId: "goal-r", turnId: "turn-stranger",
+        work: [{ accessMode: "READ", key: "forged", partnerId: partner.partnerId, title: "冒充" }],
+      })).rejects.toThrow("work_plan_goal_binding_invalid");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

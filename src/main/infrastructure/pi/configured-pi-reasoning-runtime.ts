@@ -8,7 +8,7 @@ import type {
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import { PiReasoningRuntime } from "./pi-reasoning-runtime.js";
 
-/** One global runtime facade whose individual Avatar sessions use their pinned source revision. */
+/** One global runtime facade whose individual Workbench sessions use their pinned source revision. */
 export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #runtimes = new Map<string, { runtime: PiReasoningRuntime; sourceRevisionId: string }>();
 

@@ -2,8 +2,8 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { AvatarRepository, AvatarSummary, LegacyAvatarPolicyReader } from "../../application/ports/avatar-context.js";
-import { createAvatar, type Avatar } from "../../domain/avatar/avatar.js";
+import type { WorkbenchRepository, WorkbenchSummary, LegacyWorkbenchPolicyReader } from "../../application/ports/workbench-context.js";
+import { createWorkbench, type Workbench } from "../../domain/workbench/workbench.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -13,23 +13,23 @@ type Row = Record<string, unknown>;
 
 const requiredText = (row: Row, key: string): string => {
   const value = row[key];
-  if (typeof value !== "string") throw new Error("legacy_avatar_mapping_invalid");
+  if (typeof value !== "string") throw new Error("legacy_workbench_mapping_invalid");
   return value;
 };
 
-export class LegacyLifeStoreAdapter implements AvatarRepository, LegacyAvatarPolicyReader {
+export class LegacyLifeStoreAdapter implements WorkbenchRepository, LegacyWorkbenchPolicyReader {
   constructor(private readonly database: TransactionalDatabase) {}
 
-  async getAvatar(avatarId: string): Promise<Avatar | null> {
+  async getWorkbench(workbenchId: string): Promise<Workbench | null> {
     const row = this.database.transaction((connection) => connection.prepare(`
-      SELECT avatar_id, name, created_at, updated_at, persona_revision_id, persona_summary,
+      SELECT workbench_id, name, created_at, updated_at, persona_revision_id, persona_summary,
              scope_summary, project_label, memory_namespace_id, task_summary
-        FROM avatars WHERE avatar_id = ? AND status = 'ACTIVE'`).get(avatarId)) as Row | undefined;
+        FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'`).get(workbenchId)) as Row | undefined;
     if (row === undefined) return null;
-    const id = requiredText(row, "avatar_id");
+    const id = requiredText(row, "workbench_id");
     const name = requiredText(row, "name");
-    return createAvatar({
-      avatarId: id,
+    return createWorkbench({
+      workbenchId: id,
       createdAt: requiredText(row, "created_at"),
       memoryNamespaceId: requiredText(row, "memory_namespace_id"),
       name,
@@ -41,13 +41,13 @@ export class LegacyLifeStoreAdapter implements AvatarRepository, LegacyAvatarPol
     });
   }
 
-  async listSummaries(): Promise<AvatarSummary[]> {
+  async listSummaries(): Promise<WorkbenchSummary[]> {
     return this.database.transaction((connection) => connection.prepare(`
-      SELECT avatar_id, name, scope_summary, updated_at FROM avatars WHERE status = 'ACTIVE'
-       ORDER BY updated_at DESC, avatar_id`).all()).map((value) => {
+      SELECT workbench_id, name, scope_summary, updated_at FROM workbenches WHERE status = 'ACTIVE'
+       ORDER BY updated_at DESC, workbench_id`).all()).map((value) => {
       const row = value as Row;
       return {
-        avatarId: requiredText(row, "avatar_id"),
+        workbenchId: requiredText(row, "workbench_id"),
         name: requiredText(row, "name"),
         scopeSummary: requiredText(row, "scope_summary"),
         updatedAt: requiredText(row, "updated_at"),
@@ -55,28 +55,28 @@ export class LegacyLifeStoreAdapter implements AvatarRepository, LegacyAvatarPol
     });
   }
 
-  async createAvatar(avatar: Avatar): Promise<void> {
+  async createWorkbench(workbench: Workbench): Promise<void> {
     this.database.transaction((connection) => {
-      connection.prepare(`INSERT INTO avatars
-        (avatar_id, legacy_life_id, name, persona_revision_id, persona_summary, scope_summary,
+      connection.prepare(`INSERT INTO workbenches
+        (workbench_id, legacy_life_id, name, persona_revision_id, persona_summary, scope_summary,
          project_label, workspace_ref, memory_namespace_id, task_summary, status, created_at, updated_at)
         VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, 'ACTIVE', ?, ?)`
       ).run(
-        avatar.avatarId, avatar.profile.name, avatar.profile.personaRevisionId, avatar.profile.personaSummary,
-        avatar.profile.scopeSummary, avatar.project.label, avatar.memory.namespaceId,
-        avatar.taskContext.summary, avatar.createdAt, avatar.updatedAt,
+        workbench.workbenchId, workbench.profile.name, workbench.profile.personaRevisionId, workbench.profile.personaSummary,
+        workbench.profile.scopeSummary, workbench.project.label, workbench.memory.namespaceId,
+        workbench.taskContext.summary, workbench.createdAt, workbench.updatedAt,
       );
     });
   }
 
-  async getPreferredPartnerId(avatarId: string): Promise<string | null> {
+  async getPreferredPartnerId(workbenchId: string): Promise<string | null> {
     const mapped = this.database.transaction((connection) => connection.prepare(
-      "SELECT preferred_partner_id FROM avatar_partner_policies WHERE avatar_id = ?",
-    ).get(avatarId)) as Row | undefined;
+      "SELECT preferred_partner_id FROM workbench_partner_policies WHERE workbench_id = ?",
+    ).get(workbenchId)) as Row | undefined;
     if (typeof mapped?.preferred_partner_id === "string") return mapped.preferred_partner_id;
     const legacy = this.database.transaction((connection) => connection.prepare(
       "SELECT main_agent_connection_id FROM lives WHERE life_id = ?",
-    ).get(avatarId)) as Row | undefined;
+    ).get(workbenchId)) as Row | undefined;
     return typeof legacy?.main_agent_connection_id === "string" ? `partner_${legacy.main_agent_connection_id}` : null;
   }
 }

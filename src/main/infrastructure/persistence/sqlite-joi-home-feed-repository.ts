@@ -2,9 +2,10 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { JoiGoalCardDto, JoiGoalStatusDto, JoiHomeFeedDto } from "../../../shared/joi.js";
+import type { JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
+import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
@@ -21,6 +22,30 @@ function number(row: Row, key: string): number {
   return value;
 }
 
+function toHarnessDto(projection: {
+  currentLayer: number;
+  decisionCount: number;
+  destination: string | null;
+  fogCount: number;
+  mapStatus: JoiGoalHarnessDto["mapStatus"];
+  openPathCount: number;
+  revision: number;
+  topFogNote: string | null;
+  topPaths: JoiGoalHarnessDto["topPaths"];
+}): JoiGoalHarnessDto {
+  return {
+    currentLayer: projection.currentLayer,
+    decisionCount: projection.decisionCount,
+    ...(projection.destination === null ? {} : { destination: projection.destination }),
+    fogCount: projection.fogCount,
+    mapStatus: projection.mapStatus,
+    openPathCount: projection.openPathCount,
+    revision: projection.revision,
+    ...(projection.topFogNote === null ? {} : { topFogNote: projection.topFogNote }),
+    topPaths: projection.topPaths,
+  };
+}
+
 function goalStatus(row: Row): JoiGoalStatusDto {
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
   if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined || number(row, "waiting_count") > 0) return "NEEDS_ATTENTION";
@@ -28,7 +53,9 @@ function goalStatus(row: Row): JoiGoalStatusDto {
   if (number(row, "arranged_count") > 0) return "ARRANGED";
   if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
   if (number(row, "failed_count") > 0) return "FAILED";
-  if (text(row, "inbox_status") === "CONSUMED") return "COMPLETED";
+  // An up-to-date synthesized outcome means the goal lifecycle is done even when the
+  // orchestration turn is still open (long wait turn) or leaked (orphan not yet recovered).
+  if (text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1) return "COMPLETED";
   return "ARRANGING";
 }
 
@@ -38,7 +65,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.clarification_reason_code, i.clarification_prompt,
-        i.canceled_at, COALESCE(o.completed_at, i.updated_at) AS projection_updated_at, a.avatar_id, a.name AS avatar_name,
+        i.canceled_at, COALESCE(o.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
         COALESCE(SUM(CASE WHEN w.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count,
@@ -46,7 +73,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         COALESCE(SUM(CASE WHEN w.status = 'RUNNING' THEN 1 ELSE 0 END), 0) AS running_count,
         COALESCE(SUM(CASE WHEN w.status = 'WAITING' THEN 1 ELSE 0 END), 0) AS waiting_count,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY') THEN 1 ELSE 0 END), 0) AS arranged_count,
-        (SELECT COUNT(DISTINCT s.agent_id) FROM avatar_agent_sessions s
+        (SELECT COUNT(DISTINCT s.agent_id) FROM workbench_agent_sessions s
           LEFT JOIN dispatch_attempts da ON s.backing_kind = 'LOCAL_INSTANCE' AND da.instance_id = s.backing_id
           LEFT JOIN partner_runs pr ON s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id
           LEFT JOIN work_items aw ON aw.work_id = COALESCE(da.work_id, pr.work_id)
@@ -56,12 +83,14 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         o.completion_summary, o.completed_at,
         (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id
           WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs
-        FROM joi_inbox_messages i JOIN avatars a ON a.avatar_id = i.avatar_id
+        FROM joi_inbox_messages i JOIN workbenches a ON a.workbench_id = i.workbench_id
         LEFT JOIN work_items w ON w.input_id = i.input_id
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
         LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
         WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'
+          AND i.input_id NOT LIKE 'joi_harness_review:%'
         GROUP BY i.input_id ORDER BY i.updated_at DESC, i.input_id DESC`).all() as Row[];
+      const harnessByGoal = new Map(queryHarnessGoalProjections(connection).map((projection) => [projection.goalInputId, projection]));
       const goals: JoiGoalCardDto[] = rows.map((row) => {
         const status = goalStatus(row);
         const total = number(row, "work_total");
@@ -69,18 +98,21 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const activeRuns = number(row, "active_runs");
         const rawTitle = sanitizeAgentConversationText(text(row, "body")).replace(/\s+/gu, " ").trim();
         const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}…` : rawTitle;
+        const goalId = text(row, "input_id");
+        const harnessProjection = harnessByGoal.get(goalId);
         return {
           agentCount: number(row, "agent_count"),
-          avatar: { avatarId: text(row, "avatar_id"), name: text(row, "avatar_name") },
-          canDelete: text(row, "inbox_status") === "CONSUMED" && active === 0 && activeRuns === 0
-            && (total === 0 || number(row, "outcome_current") === 1),
+          workbench: { workbenchId: text(row, "workbench_id"), name: text(row, "workbench_name") },
+          canDelete: (text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1)
+            && active === 0 && activeRuns === 0 && (total === 0 || number(row, "outcome_current") === 1),
           ...(status === "NEEDS_ATTENTION" && (typeof row.clarification_reason_code === "string" || typeof row.clarification_prompt === "string") ? {
             clarification: {
               ...(typeof row.clarification_prompt === "string" ? { prompt: row.clarification_prompt } : {}),
               ...(typeof row.clarification_reason_code === "string" ? { reasonCode: row.clarification_reason_code } : {}),
             },
           } : {}),
-          goalId: text(row, "input_id"),
+          goalId,
+          ...(harnessProjection === undefined ? {} : { harness: toHarnessDto(harnessProjection) }),
           ...(typeof row.completion_summary === "string" ? { completionSummary: row.completion_summary } : {}),
           ...(typeof row.completed_at === "string" ? { completedAt: row.completed_at } : {}),
           status,
@@ -113,9 +145,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           turnId: text(row, "turn_id"),
         };
       }).filter((item) => item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime());
-      const unassignedActions = (connection.prepare(`SELECT input_id, avatar_id, status, clarification_reason_code,
+      const unassignedActions = (connection.prepare(`SELECT input_id, workbench_id, status, clarification_reason_code,
         clarification_prompt, body, created_at, canceled_at FROM joi_inbox_messages
-        WHERE dismissed_at IS NULL AND avatar_id IS NULL AND status = 'CLARIFICATION_REQUIRED'
+        WHERE dismissed_at IS NULL AND workbench_id IS NULL AND status = 'CLARIFICATION_REQUIRED'
         ORDER BY created_at DESC, input_id DESC`).all() as Row[]).map((row) => ({
         acceptedAt: text(row, "created_at"),
         ...(typeof row.clarification_prompt === "string" ? { clarificationPrompt: row.clarification_prompt } : {}),

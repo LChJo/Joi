@@ -3,13 +3,13 @@
 ## 0. JOI-01 新信任边界
 
 - Pi provider secret 只进入 Electron `safeStorage` 支持的 CredentialStore；SQLite 只保存 credential reference/version。renderer、HTTP/SSE、日志、诊断、备份、会话正文和安装包不得包含密钥。
-- 唯一全局 joi 只获得 Avatar、Partner、Work、Memory、Schedule 与 User 工具；不注册任意 read/bash/edit/write/grep/find/ls。
+- 唯一全局 joi 只获得工作台、Partner、Work、Memory、Schedule 与 User 工具；不注册任意 read/bash/edit/write/grep/find/ls。
 - 通用模型源仅允许公网 HTTPS，以及明确的 localhost/127.0.0.1 本机服务；拒绝其他 private/LAN、link-local、metadata、URL 内嵌凭据和跨 origin redirect。
 - URL 创建、DNS 解析、redirect 和实际连接阶段都重新校验目标，防止 DNS rebinding 与 SSRF；HTTP 仅对明确本机目标开放。
 - 自动模型 fallback 只处理 timeout、连接失败、429 与 5xx；鉴权、余额、配置和安全/内容拒绝不得通过换源绕过。
 - 所有外部副作用在 outbox 后执行并使用稳定 action id；跨 provider 恢复只能在安全 Turn 边界发生，不能重复本机命令、A2A message 或正式表达。
 
-Life 相关规则继续保护旧事实，但安全检查的新主体使用 `avatarId`、source revision 和 partner revision。
+Life 相关规则继续保护旧事实，但安全检查的新主体使用 `workbenchId`、source revision 和 partner revision。
 
 ## 1. 安全定位
 

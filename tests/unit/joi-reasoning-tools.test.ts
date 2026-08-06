@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { createJoiReasoningTools, selectJoiReasoningToolsForInput } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
+import { createJoiReasoningTools, goalFromInputIdPrefix, selectJoiReasoningToolsForInput } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
 import { DomainError } from "../../src/main/domain/errors.js";
 import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
@@ -17,35 +17,68 @@ const readySource: ModelSourceDto = {
 const draftSource: ModelSourceDto = { ...readySource, displayName: "Draft", primary: false, sourceId: "source_draft", status: "DRAFT" };
 
 const instanceRecord = {
-  avatarId: "avatar_1", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core" as const, instanceId: "instance_1",
+  workbenchId: "workbench_1", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core" as const, instanceId: "instance_1",
   lastUsedAt: "2026-07-29T10:00:00.000Z", partnerId: "partner_1", partnerRevisionId: "partner_revision_1",
   sessionPolicy: "RESIDENT" as const, status: "IDLE" as const,
 };
 
-function makeTools(options: { partners?: PartnerDto[]; workspaceBlocked?: boolean } = {}) {
+interface HarnessRecorder {
+  calls: { args: Record<string, unknown>; method: string }[];
+}
+
+function makeTools(options: {
+  goalInputId?: string;
+  harness?: HarnessRecorder;
+  inputId?: string;
+  partners?: PartnerDto[];
+  refineCalls?: { args: { workbenchId: string; input: Record<string, unknown> }[] };
+  workspaceBlocked?: boolean;
+} = {}) {
   const addCalls: unknown[] = [];
   const ensureCalls: unknown[] = [];
   const disposeCalls: { instanceId: string; reason: string }[] = [];
   const planCalls: unknown[] = [];
   const clarificationCalls: { inputId: string; prompt?: string; reasonCode: string }[] = [];
   const changeBase = { createdAt: "2026-07-29T10:00:00.000Z", requestId: "change_1", status: "PENDING" as const };
+  const harnessCalls = options.harness?.calls ?? [];
+  const push = (method: string, args: Record<string, unknown>): void => { harnessCalls.push({ args, method }); };
   const tools = createJoiReasoningTools({
-    avatarId: "avatar_1",
-    avatarChanges: {
-      suggestArchive: async (input) => ({ ...changeBase, ...input, kind: "ARCHIVE" as const, sourceAvatarId: input.avatarId }),
+    workbenchId: "workbench_1",
+    workbenchChanges: {
+      suggestArchive: async (input) => ({ ...changeBase, ...input, kind: "ARCHIVE" as const, sourceWorkbenchId: input.workbenchId }),
       suggestMerge: async (input) => ({ ...changeBase, ...input, kind: "MERGE" as const }),
+    },
+    workbenchRefine: {
+      update: async (workbenchId, input) => {
+        options.refineCalls?.args.push({ workbenchId, input });
+        return {} as never;
+      },
     },
     clarifications: { requireClarification: async (inputId, reasonCode, prompt) => {
       clarificationCalls.push({ inputId, ...(prompt === undefined ? {} : { prompt }), reasonCode });
     } },
-    avatars: { getAvatar: async () => null, listSummaries: async () => [] },
+    workbenches: { getWorkbench: async () => null, listSummaries: async () => [] },
+    ...(options.goalInputId === undefined ? {} : { goalInputId: options.goalInputId }),
+    harness: {
+      chartPath: async (args) => {
+        push("chartPath", args);
+        return args.close !== undefined
+          ? { pathId: args.close.pathId, status: args.close.status }
+          : { pathId: "path_1", status: "OPEN" as const };
+      },
+      clearMap: async (args) => { push("clearMap", args); return true; },
+      graduateFog: async (args) => { push("graduateFog", args); return { fogId: args.fogId, pathId: "path_1" }; },
+      nameDestination: async (args) => { push("nameDestination", args); return { destination: args.destination, revision: 1 }; },
+      noteFog: async (args) => { push("noteFog", args); return { fogId: "fog_1" }; },
+      recordDecision: async (args) => { push("recordDecision", args); return { decisionId: "decision_1" }; },
+    },
     instances: {
       dispose: async ({ instanceId, reason }) => { disposeCalls.push({ instanceId, reason }); },
       ensure: async (input) => { ensureCalls.push(input); return instanceRecord; },
       list: async () => [instanceRecord],
     },
     memory: { digest: async () => ({ last3: [{ at: "2026-07-29T10:00:00.000Z", outcome: "COMPLETED" as const, title: "old task" }], successRate: 0.5, summary: "DIGEST_SUMMARY" }) },
-    inputId: "input_1",
+    inputId: options.inputId ?? "input_1",
     models: { list: async () => [readySource, draftSource] },
     partners: {
       add: async (input) => { addCalls.push(input); return partnerDto; },
@@ -57,7 +90,7 @@ function makeTools(options: { partners?: PartnerDto[]; workspaceBlocked?: boolea
     work: {
       plan: async (input) => {
         planCalls.push(input);
-        if (options.workspaceBlocked === true) throw new DomainError("avatar_workspace_not_ready", "workspace required");
+        if (options.workspaceBlocked === true) throw new DomainError("workbench_workspace_not_ready", "workspace required");
         return { dispatchPlanId: "plan_1", waves: [] };
       },
       reassign: async (input) => ({
@@ -102,12 +135,21 @@ describe("joi reasoning tools", () => {
     const created = await harness.call("partner_create", { description: "写文档", displayName: "Writer" }) as { partnerId: string };
     expect(created.partnerId).toBe("partner_1");
     expect(harness.addCalls[0]).toMatchObject({ capabilities: [], createdBy: "joi", description: "写文档", kind: "local-pi", skills: [], tools: [] });
+    expect(String((harness.addCalls[0] as { prompt?: unknown }).prompt)).toContain("Writer");
   });
 
   it("pins a chosen model source when creating a partner", async () => {
     const harness = makeTools();
     await harness.call("partner_create", { displayName: "Writer", modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" });
     expect(harness.addCalls[0]).toMatchObject({ createdBy: "joi", displayName: "Writer", modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" });
+  });
+
+  it("synthesizes description and prompt when the model leaves them blank", async () => {
+    const harness = makeTools();
+    await harness.call("partner_create", { description: "  ", displayName: "股票分析搭档", prompt: "", skills: ["基本面", "技术面"] });
+    const call = harness.addCalls[0] as { description?: unknown; prompt?: unknown };
+    expect(call.description).toBe("股票分析搭档：覆盖基本面、技术面。");
+    expect(String(call.prompt)).toContain("DO：围绕被分配的目标主动推进，覆盖基本面、技术面");
   });
 
   it("reuses an active same-name joi partner instead of creating a duplicate", async () => {
@@ -206,11 +248,89 @@ describe("joi reasoning tools", () => {
       dependencies: [],
       work: [{ accessMode: "WRITE", key: "w1", partnerId: "partner_1", title: "修改工程" }],
     });
-    expect(result).toEqual({ reasonCode: "avatar_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
+    expect(result).toEqual({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
     expect(harness.clarificationCalls).toEqual([{
       inputId: "input_1",
-      prompt: "选择这个 Avatar 的工作目录后，我会继续派发需要读写文件的工作。",
-      reasonCode: "avatar_workspace_not_ready",
+      prompt: "选择这个 Workbench 的工作目录后，我会继续派发需要读写文件的工作。",
+      reasonCode: "workbench_workspace_not_ready",
     }]);
+  });
+
+  it("parses the goal input id out of synthetic input prefixes", () => {
+    expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1")).toBe("goal-1");
+    expect(goalFromInputIdPrefix("joi_harness_review:goal:goal-1:r3")).toBe("goal-1");
+    expect(goalFromInputIdPrefix("plain-input")).toBeUndefined();
+    expect(goalFromInputIdPrefix("joi_signal_input:sig-1")).toBeUndefined();
+  });
+
+  it("binds work dispatched from a review turn back to the original goal", async () => {
+    const harness = makeTools({
+      goalInputId: "goal-1",
+      inputId: "joi_harness_review:goal:goal-1:r1",
+    });
+    await harness.call("work_dispatch", {
+      dependencies: [],
+      work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "下一层工作" }],
+    });
+    const call = harness.planCalls[0] as { inputId?: string };
+    expect(call.inputId).toBe("goal-1");
+  });
+
+  it("writes harness map artifacts against the goal context", async () => {
+    const recorder: HarnessRecorder = { calls: [] };
+    const harness = makeTools({ goalInputId: "goal-1", harness: recorder, inputId: "joi_harness_review:goal:goal-1:r1" });
+    await harness.call("harness_name_destination", { destination: "完成股票分析" });
+    await harness.call("harness_chart_path", { open: { layer: 2, title: "深入财报" } });
+    await harness.call("harness_chart_path", { close: { pathId: "path_9", status: "CLOSED" } });
+    await harness.call("harness_record_decision", { closePathId: "path_9", summary: "采用财报路线" });
+    await harness.call("harness_note_fog", { note: "数据源未定" });
+    await harness.call("harness_note_fog", { graduate: { fogId: "fog_1", graduateTitle: "确认数据源" } });
+    expect(recorder.calls.map((entry) => entry.method)).toEqual([
+      "nameDestination", "chartPath", "chartPath", "recordDecision", "noteFog", "graduateFog",
+    ]);
+    for (const entry of recorder.calls) {
+      expect(entry.args.goalInputId).toBe("goal-1");
+    }
+    expect(recorder.calls[5]?.args).toMatchObject({ layer: 1, title: "确认数据源" });
+  });
+
+  it("falls back to the current input as the goal context for direct goal turns", async () => {
+    const recorder: HarnessRecorder = { calls: [] };
+    const harness = makeTools({ harness: recorder });
+    await harness.call("harness_name_destination", { destination: "首轮目标" });
+    expect(recorder.calls[0]?.args.goalInputId).toBe("input_1");
+  });
+
+  it("rejects harness chart and fog calls without exactly one mode", async () => {
+    const harness = makeTools();
+    await expect(harness.call("harness_chart_path", {})).rejects.toMatchObject({ code: "harness_path_invalid" });
+    await expect(harness.call("harness_chart_path", {
+      close: { pathId: "p", status: "CLOSED" }, open: { layer: 1, title: "t" },
+    })).rejects.toMatchObject({ code: "harness_path_invalid" });
+    await expect(harness.call("harness_note_fog", {})).rejects.toMatchObject({ code: "harness_fog_invalid" });
+  });
+
+  it("refines the Workbench through the management service and records an audit decision", async () => {
+    const recorder: HarnessRecorder = { calls: [] };
+    const refineCalls = { args: [] as { workbenchId: string; input: Record<string, unknown> }[] };
+    const harness = makeTools({ goalInputId: "goal-1", harness: recorder, refineCalls });
+    const result = await harness.call("harness_refine_workbench", { reason: "完成后收窄范围", scopeSummary: "只做股票分析" });
+    expect(result).toMatchObject({ workbenchId: "workbench_1", refined: true });
+    expect(refineCalls.args).toEqual([{ workbenchId: "workbench_1", input: { responsibility: "只做股票分析" } }]);
+    expect(recorder.calls).toEqual([
+      { args: { goalInputId: "goal-1", kind: "WORKBENCH_REFINE", summary: "完成后收窄范围", turnId: "turn_1" }, method: "recordDecision" },
+    ]);
+    await expect(harness.call("harness_refine_workbench", { reason: "缺少字段" })).rejects.toMatchObject({ code: "harness_refine_invalid" });
+  });
+
+  it("lets only a harness review turn clear the goal map", async () => {
+    const recorder: HarnessRecorder = { calls: [] };
+    const reviewHarness = makeTools({ goalInputId: "goal-1", harness: recorder, inputId: "joi_harness_review:goal:goal-1:r1" });
+    await expect(reviewHarness.call("turn_complete", { outcome: "MAP_CLEARED" }))
+      .resolves.toEqual({ cleared: true, outcome: "MAP_CLEARED", status: "COMMITTED" });
+    expect(recorder.calls).toEqual([{ args: { goalInputId: "goal-1", turnId: "turn_1" }, method: "clearMap" }]);
+    const plainHarness = makeTools({ harness: { calls: [] } });
+    await expect(plainHarness.call("turn_complete", { outcome: "MAP_CLEARED" }))
+      .rejects.toMatchObject({ code: "harness_clear_not_allowed" });
   });
 });

@@ -8,6 +8,6 @@ export interface RecordedWorkResult {
 }
 
 export interface WorkResultRepository {
-  readBody(input: { avatarId: string; limit: number; offset: number; resultId: string }): Promise<{ body: string; total: number } | null>;
+  readBody(input: { workbenchId: string; limit: number; offset: number; resultId: string }): Promise<{ body: string; total: number } | null>;
   record(result: WorkResult): Promise<RecordedWorkResult>;
 }

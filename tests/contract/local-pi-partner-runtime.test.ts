@@ -6,7 +6,7 @@ import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-codin
 import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 
-const contexts = { loadForExecution: async () => ({ promptSection: "Avatar context", sanitized: {}, workspacePath: "workspace_ref_1" }) };
+const contexts = { loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: "workspace_ref_1" }) };
 
 describe("local Pi coding partner runtime", () => {
   it("runs one isolated Pi session with the pinned workspace, prompt and tool allowlist", async () => {
@@ -40,7 +40,7 @@ describe("local Pi coding partner runtime", () => {
 
     await expect(runner.run({
       actionId: "action_1",
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       contextSnapshotId: "context_1",
       taskProjection: "Implement the verified change.",
       workId: "work_1",
@@ -61,7 +61,7 @@ describe("local Pi coding partner runtime", () => {
       partnerId: "partner", partnerRevisionId: "revision", promptRef: "missing", registryRevision: 1,
       skills: [], tools: [],
     });
-    await expect(runner.run({ actionId: "action", avatarId: "avatar", contextSnapshotId: "context", taskProjection: "task", workId: "work" }, revision))
+    await expect(runner.run({ actionId: "action", workbenchId: "workbench", contextSnapshotId: "context", taskProjection: "task", workId: "work" }, revision))
       .rejects.toThrow("partner_prompt_not_found");
   });
 });
@@ -89,7 +89,7 @@ describe("Pi partner engine runtime", () => {
       partnerId: "partner_local", partnerRevisionId: "partner_revision_local", registryRevision: 1,
       skills: [], tools: [],
     });
-    const request = { actionId: "action_1", avatarId: "avatar_1", contextSnapshotId: "context_1", taskProjection: "first task", workId: "work_1" };
+    const request = { actionId: "action_1", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "first task", workId: "work_1" };
 
     const first = await runtime.runResidentTurn({ instanceId: "instance_1", knowledgeSection: "KB_SECTION", request, restoredMessages: null, revision, skillSection: "" });
     expect(first.status).toBe("COMPLETED");
@@ -105,7 +105,7 @@ describe("Pi partner engine runtime", () => {
     expect(second.messages.length).toBeGreaterThan(first.messages.length);
 
     const ephemeral = await runtime.runEphemeral(
-      { actionId: "action_3", avatarId: "avatar_1", contextSnapshotId: "context_1", taskProjection: "one shot", workId: "work_3" },
+      { actionId: "action_3", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "one shot", workId: "work_3" },
       revision,
       { knowledgeSection: "", skillSection: "" },
     );

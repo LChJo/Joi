@@ -52,16 +52,16 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
 
   async load(sessionId: string): Promise<JoiReasoningSessionSnapshot | null> {
     return this.database.transaction((connection) => {
-      const rows = connection.prepare(`SELECT avatar_id, sequence, message_json
-        FROM joi_session_messages WHERE session_id = ? ORDER BY sequence`).all(sessionId) as { avatar_id: unknown; message_json: unknown; sequence: unknown }[];
+      const rows = connection.prepare(`SELECT workbench_id, sequence, message_json
+        FROM joi_session_messages WHERE session_id = ? ORDER BY sequence`).all(sessionId) as { workbench_id: unknown; message_json: unknown; sequence: unknown }[];
       const first = rows[0];
       if (first === undefined) return null;
-      if (typeof first.avatar_id !== "string" || typeof first.message_json !== "string" || first.sequence !== 0) {
+      if (typeof first.workbench_id !== "string" || typeof first.message_json !== "string" || first.sequence !== 0) {
         throw new Error("pi_session_record_invalid");
       }
       const stored = metadata(JSON.parse(first.message_json) as unknown);
       return {
-        avatarId: first.avatar_id,
+        workbenchId: first.workbench_id,
         compaction: stored.compaction,
         messages: rows.slice(1).map((row) => {
           if (typeof row.message_json !== "string") throw new Error("pi_session_record_invalid");
@@ -80,9 +80,9 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
     this.database.transaction((connection) => {
       connection.prepare("DELETE FROM joi_session_messages WHERE session_id = ?").run(snapshot.sessionId);
       const insert = connection.prepare(`INSERT INTO joi_session_messages
-        (message_id, session_id, avatar_id, sequence, message_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
+        (message_id, session_id, workbench_id, sequence, message_json, created_at) VALUES (?, ?, ?, ?, ?, ?)`);
       insert.run(
-        `${snapshot.sessionId}:metadata`, snapshot.sessionId, snapshot.avatarId, 0,
+        `${snapshot.sessionId}:metadata`, snapshot.sessionId, snapshot.workbenchId, 0,
         JSON.stringify({
           compaction: snapshot.compaction,
           modelRevisionId: snapshot.modelRevisionId,
@@ -92,7 +92,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
         }), snapshot.updatedAt,
       );
       snapshot.messages.forEach((message, index) => insert.run(
-        `${snapshot.sessionId}:message:${String(index + 1)}`, snapshot.sessionId, snapshot.avatarId,
+        `${snapshot.sessionId}:message:${String(index + 1)}`, snapshot.sessionId, snapshot.workbenchId,
         index + 1, JSON.stringify(message), snapshot.updatedAt,
       ));
     });

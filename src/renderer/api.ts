@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, AvatarAgentCardDto, AvatarChangeRequestDto, AvatarDetailDto, AvatarDto, AvatarWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
+import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -71,69 +71,69 @@ export class DigitalLifeApi {
     return this.request<undefined>("/api/v1/auth/password", { body: { currentPassword, newPassword }, method: "POST" });
   }
   joiSnapshot() { return this.request<JoiSnapshotDto>("/api/v1/joi"); }
-  listAvatars() { return this.request<{ items: AvatarDto[] }>("/api/v1/avatars"); }
-  createAvatar(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
-    return this.request<AvatarDto>("/api/v1/avatars", { body, method: "POST" });
+  listWorkbenches() { return this.request<{ items: WorkbenchDto[] }>("/api/v1/workbenches"); }
+  createWorkbench(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
+    return this.request<WorkbenchDto>("/api/v1/workbenches", { body, method: "POST" });
   }
-  getAvatar(avatarId: string) { return this.request<AvatarDetailDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}`); }
-  updateAvatar(avatarId: string, body: { name?: string; persona?: string; projectLabel?: string; responsibility?: string }) {
-    return this.request<AvatarDetailDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}`, { body, method: "PATCH" });
+  getWorkbench(workbenchId: string) { return this.request<WorkbenchDetailDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}`); }
+  updateWorkbench(workbenchId: string, body: { name?: string; persona?: string; projectLabel?: string; responsibility?: string }) {
+    return this.request<WorkbenchDetailDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}`, { body, method: "PATCH" });
   }
-  bindAvatarWorkspace(avatarId: string) {
-    return this.request<AvatarWorkspaceDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}/workspace/bind`, { method: "POST" });
+  bindWorkbenchWorkspace(workbenchId: string) {
+    return this.request<WorkbenchWorkspaceDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/workspace/bind`, { method: "POST" });
   }
   joiHomeFeed() { return this.request<JoiHomeFeedDto>("/api/v1/joi/home-feed"); }
-  listAvatarAgents(avatarId: string, options: { cursor?: string; goalId?: string; limit?: number } = {}) {
+  listWorkbenchAgents(workbenchId: string, options: { cursor?: string; goalId?: string; limit?: number } = {}) {
     const query = [
       ...(options.cursor === undefined ? [] : [`cursor=${encodeURIComponent(options.cursor)}`]),
       ...(options.goalId === undefined ? [] : [`goalId=${encodeURIComponent(options.goalId)}`]),
       ...(options.limit === undefined ? [] : [`limit=${encodeURIComponent(String(options.limit))}`]),
     ];
     const suffix = query.length === 0 ? "" : `?${query.join("&")}`;
-    return this.request<{ items: AvatarAgentCardDto[]; nextCursor?: string }>(
-      `/api/v1/avatars/${encodeURIComponent(avatarId)}/agents${suffix}`,
+    return this.request<{ items: WorkbenchAgentCardDto[]; nextCursor?: string }>(
+      `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents${suffix}`,
     );
   }
-  agentConversation(avatarId: string, agentId: string, options: { cursor?: string; limit?: number } = {}) {
+  agentConversation(workbenchId: string, agentId: string, options: { cursor?: string; limit?: number } = {}) {
     const query = [
       ...(options.cursor === undefined ? [] : [`cursor=${encodeURIComponent(options.cursor)}`]),
       ...(options.limit === undefined ? [] : [`limit=${encodeURIComponent(String(options.limit))}`]),
     ];
     const suffix = query.length === 0 ? "" : `?${query.join("&")}`;
     return this.request<AgentConversationPageDto>(
-      `/api/v1/avatars/${encodeURIComponent(avatarId)}/agents/${encodeURIComponent(agentId)}/conversation${suffix}`,
+      `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents/${encodeURIComponent(agentId)}/conversation${suffix}`,
     );
   }
-  deleteAvatarAgent(avatarId: string, agentId: string) {
+  deleteWorkbenchAgent(workbenchId: string, agentId: string) {
     return this.request<undefined>(
-      `/api/v1/avatars/${encodeURIComponent(avatarId)}/agents/${encodeURIComponent(agentId)}`,
+      `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents/${encodeURIComponent(agentId)}`,
       { method: "DELETE" },
     );
   }
-  rebuildAvatarWorkspace(avatarId: string) {
-    return this.request<AvatarWorkspaceDto>(`/api/v1/avatars/${encodeURIComponent(avatarId)}/workspace/rebuild`, { method: "POST" });
+  rebuildWorkbenchWorkspace(workbenchId: string) {
+    return this.request<WorkbenchWorkspaceDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/workspace/rebuild`, { method: "POST" });
   }
-  decideAvatarChange(requestId: string, decision: "CONFIRM" | "REJECT") {
-    return this.request<AvatarChangeRequestDto>(`/api/v1/avatar-change-requests/${encodeURIComponent(requestId)}/decision`, {
+  decideWorkbenchChange(requestId: string, decision: "CONFIRM" | "REJECT") {
+    return this.request<WorkbenchChangeRequestDto>(`/api/v1/workbench-change-requests/${encodeURIComponent(requestId)}/decision`, {
       body: { decision }, method: "POST",
     });
   }
   listJoiMessages() { return this.request<{ items: JoiAcceptedMessageDto[] }>("/api/v1/joi/messages"); }
   listJoiActivity() { return this.request<{ items: JoiActivityDto[] }>("/api/v1/joi/activity"); }
-  sendJoiMessage(text: string, options: { attachmentIds?: string[]; avatarId?: string } = {}) {
+  sendJoiMessage(text: string, options: { attachmentIds?: string[]; workbenchId?: string } = {}) {
     return this.request<JoiAcceptedMessageDto>("/api/v1/joi/messages", {
       body: {
         text,
         ...(options.attachmentIds === undefined || options.attachmentIds.length === 0 ? {} : { attachmentIds: options.attachmentIds }),
-        ...(options.avatarId === undefined ? {} : { avatarId: options.avatarId }),
+        ...(options.workbenchId === undefined ? {} : { workbenchId: options.workbenchId }),
       },
       idempotencyKey: crypto.randomUUID(), method: "POST",
     });
   }
-  clarifyJoiMessage(inputId: string, resolution: { avatarId?: string; text?: string }) {
+  clarifyJoiMessage(inputId: string, resolution: { workbenchId?: string; text?: string }) {
     return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/clarify`, {
       body: {
-        ...(resolution.avatarId === undefined ? {} : { avatarId: resolution.avatarId }),
+        ...(resolution.workbenchId === undefined ? {} : { workbenchId: resolution.workbenchId }),
         ...(resolution.text === undefined ? {} : { text: resolution.text }),
       },
       method: "POST",
@@ -229,18 +229,18 @@ export class DigitalLifeApi {
   deleteKnowledgeDoc(partnerId: string, docId: string) {
     return this.request<undefined>(`/api/v1/partners/${encodeURIComponent(partnerId)}/knowledge/${encodeURIComponent(docId)}`, { method: "DELETE" });
   }
-  partnerMemory(avatarId: string, partnerId: string) {
+  partnerMemory(workbenchId: string, partnerId: string) {
     return this.request<{
       entries: { createdAt: string; memoryId: string; outcome: string; partnerId: string; sessionDataSource: string; title: string; workId?: string }[];
       summary?: string;
       summaryUpdatedAt?: string;
-    }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/memory?avatarId=${encodeURIComponent(avatarId)}`);
+    }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/memory?workbenchId=${encodeURIComponent(workbenchId)}`);
   }
-  listPartnerInstances(avatarId: string, partnerId: string) {
+  listPartnerInstances(workbenchId: string, partnerId: string) {
     return this.request<{ items: {
       createdAt: string; engine: string; externalSessionRef?: string; instanceId: string; lastUsedAt: string;
       partnerId: string; sessionPolicy: string; status: string;
-    }[] }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/instances?avatarId=${encodeURIComponent(avatarId)}`);
+    }[] }>(`/api/v1/partners/${encodeURIComponent(partnerId)}/instances?workbenchId=${encodeURIComponent(workbenchId)}`);
   }
   listLives() { return this.request<{ items: LifeDto[] }>("/api/v1/lives?limit=100"); }
   getLife(lifeId: string) { return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`); }

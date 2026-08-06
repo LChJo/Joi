@@ -2,7 +2,7 @@
 
 ## 0. JOI-01 首页与首次连接
 
-首页是单栏、可持续清理的信息流，不设右侧工作状态面板。joi 尚在处理的 Turn 统一显示字面量 `progressing`；Turn 结束后只以较小字号短暂停留 15 秒，然后自动消失。具体执行不再拆成“工作进展 / 工作已安排 / 搭档结果”过程行，而是按用户最初目标聚合为 Avatar 卡片：同一 Avatar 的两个目标仍是两张卡；卡片显示 Avatar、目标、Agent 数、Work 汇总和安全结果摘要，点击进入对应 Avatar。只有所有 Work/Run 都终态的目标卡可以删除，删除后不因轮询或重启复活。需要澄清的输入仍在流里就地可操作：归属不明确时点选 Avatar；缺少工作目录时直接选择目录；joi 提出阻塞问题时显示具体问题并就地回答。Avatar、搭档、模型源与诊断是按需展开的次级界面。
+首页是单栏、可持续清理的信息流，不设右侧工作状态面板。joi 尚在处理的 Turn 统一显示字面量 `progressing`；Turn 结束后只以较小字号短暂停留 15 秒，然后自动消失。具体执行不再拆成“工作进展 / 工作已安排 / 搭档结果”过程行，而是按用户最初目标聚合为工作台卡片：同一工作台的两个目标仍是两张卡；卡片显示工作台、目标、Agent 数、Work 汇总和安全结果摘要，点击进入对应工作台。只有所有 Work/Run 都终态的目标卡可以删除，删除后不因轮询或重启复活。需要澄清的输入仍在流里就地可操作：归属不明确时点选工作台；缺少工作目录时直接选择目录；joi 提出阻塞问题时显示具体问题并就地回答。工作台、搭档、模型源与诊断是按需展开的次级界面。
 
 不存在 `READY` 模型源时，首页主文案必须精确显示“joi需要链接到大模型网络”，并展示恰好 7 个厂商级入口：Kimi、GLM、Qwen、Doubao、MiniMax、DeepSeek、通用平台。产品界面不出现转发或聚合平台。配置采用“厂商 → 接入方案 → 接口协议”结构：先选择普通 API 或官方 Coding Plan / Token Plan；该方案同时支持两种协议时，再选择 OpenAI-compatible 或 Anthropic-compatible，只支持一种时直接进入表单。
 
@@ -11,15 +11,15 @@
 - 官方接入方案仅显示对应 API Key、推荐模型与高级 Model ID；endpoint 由接入方案和协议共同固定且不展示、不编辑，普通 API Key 与套餐 Key 不得混用。
 - 百炼 Token Plan 的 OpenAI-compatible endpoint 固定为 `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`，Anthropic-compatible endpoint 固定为 `https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`；它与百炼 Coding Plan、百炼按量 API 的 Key/Base URL 完全隔离，不得混用。
 - 已验证为 `READY` 的 API、Coding Plan 与 Token Plan 来源都可成为全局 joi 的主源或备用源；套餐表单明确提示订阅权益通常面向个人交互式使用，用户需遵守厂商条款。
-- 通用平台先选择 OpenAI-compatible Chat Completions 或 Anthropic-compatible Messages，再填写显示名称、Base URL、API Key、Model ID；明确不支持 OpenAI Responses；localhost/127.0.0.1 可留空 Key。
+- 通用平台先选择 OpenAI-compatible（走 OpenAI Responses 接口）或 Anthropic-compatible Messages，再填写显示名称、Base URL、API Key、Model ID；localhost/127.0.0.1 可留空 Key。
 - 验证失败时保留草稿、设置和诊断入口，但普通 composer 继续门禁；界面按鉴权、模型不可用、接口不可达给出可操作提示；验证旁提示兜底最小文本请求可能产生极少量费用。
-- 普通首页只保留正在推进的 `progressing`、需要用户处理的澄清/确认，以及按原始目标聚合的 Avatar 卡；连续输入无需用户选择串行或并发。
+- 普通首页只保留正在推进的 `progressing`、需要用户处理的澄清/确认，以及按原始目标聚合的工作台卡；连续输入无需用户选择串行或并发。
 
 ### 0.1 搭档页与搭档配置
 
-搭档页是 joi 的统一搭档目录，顶部用“场景预设 / 搭档目录”两个页签切换；搭档目录以卡片网格展示全局能力模板。搭档少于 2 个时，首页与搭档页都提醒用户用场景预设或手动建立团队。首页输入区为融合的聊天气泡（文本框 + 底部工具行：左侧附件和分发选择、右侧“交给 joi”），随视口锚定在窗口底部并保留约 16px 安全间距。澄清卡按原因码分为 Avatar 归属、工作目录、问题回答三种操作形态，接口和页面均不暴露绝对路径。
+搭档页是 joi 的统一搭档目录，顶部用“场景预设 / 搭档目录”两个页签切换；搭档目录以卡片网格展示全局能力模板。搭档少于 2 个时，首页与搭档页都提醒用户用场景预设或手动建立团队。首页输入区为融合的聊天气泡（文本框 + 底部工具行：左侧附件和分发选择、右侧“交给 joi”），随视口锚定在窗口底部并保留约 16px 安全间距。澄清卡按原因码分为工作台归属、工作目录、问题回答三种操作形态，接口和页面均不暴露绝对路径。
 
-Avatar 详情默认展示它启动过且尚未被用户删除的全部 Agent，包括本机 Pi、Claude Code、Codex 与远端 A2A。每张 Agent 卡显示搭档名、transport、engine、会话策略、最新状态和时间。一次性 `EPHEMERAL` Agent 只有终态才出现删除按钮；`RESIDENT` Agent 永不可从这里删除。删除只清理 Agent 展示卡和展示对话，不删除 Work、Result 或审计事实。原 Avatar 人格、职责、工作区和安全结果元数据移到“上下文设置”次级页签。
+工作台详情默认展示它启动过且尚未被用户删除的全部 Agent，包括本机 Pi、Claude Code、Codex 与远端 A2A。每张 Agent 卡显示搭档名、transport、engine、会话策略、最新状态和时间。一次性 `EPHEMERAL` Agent 只有终态才出现删除按钮；`RESIDENT` Agent 永不可从这里删除。删除只清理 Agent 展示卡和展示对话，不删除 Work、Result 或审计事实。原工作台人格、职责、工作区和安全结果元数据移到“上下文设置”次级页签。
 
 点击 Agent 进入最终一级的只读对话流。对话支持 Markdown/GFM、工具调用、工具结果、产物与错误块，不提供直接输入框；用户可返回后从主页继续给 joi 输入。原始引擎消息、内部推理和 A2A data payload 不进入该投影；路径、Bearer 与命名密钥在持久化前脱敏，远程图片不加载，链接只允许显式 HTTP(S) 新窗口导航。只要用户没有删除一次性 Agent，对话可跨重启回来查看。
 

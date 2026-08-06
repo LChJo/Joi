@@ -70,7 +70,7 @@ function makeRunner(sdk: LocalCliSdkSurface, options: { available?: boolean; pro
     contexts: { loadForExecution: async () => {
       const workspacePath = options.workspacePaths?.[contextRead] ?? options.workspacePaths?.at(-1) ?? "workspace_cli";
       contextRead += 1;
-      return { promptSection: "Avatar context", sanitized: {}, workspacePath };
+      return { promptSection: "Workbench context", sanitized: {}, workspacePath };
     } },
     prompts: { read: async (promptRef) => (promptRef === "prompt_cli" ? "CLI_SYSTEM_SENTINEL" : null) },
     protocol,
@@ -88,7 +88,7 @@ function makeRunner(sdk: LocalCliSdkSurface, options: { available?: boolean; pro
   });
 }
 
-const request = { actionId: "action_cli_1", avatarId: "avatar_1", contextSnapshotId: "context_1", taskProjection: "implement the change", workId: "work_1" };
+const request = { actionId: "action_cli_1", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "implement the change", workId: "work_1" };
 
 describe("local CLI partner engine", () => {
   it("runs ephemeral turns through one-shot query with the detected executable, protocol and edit permissions, no injected provider", async () => {
@@ -141,7 +141,7 @@ describe("local CLI partner engine", () => {
     const second = await runner.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance_cli", knowledgeSection: "", request: { ...request, actionId: "action_cli_2" }, restoredMessages: first.messages, revision: localRevision(), skillSection: "" });
     expect(second.externalSessionRef).toBe("conversation_1");
     expect(fake.sentTexts).toHaveLength(2);
-    expect(fake.sentTexts.every((text) => text.includes("Avatar context") && text.includes("implement the change"))).toBe(true);
+    expect(fake.sentTexts.every((text) => text.includes("Workbench context") && text.includes("implement the change"))).toBe(true);
     const created = fake.createdOptions.filter((option) => (option as { turns?: string }).turns === "resident");
     expect(created).toHaveLength(1);
     expect(created[0]).toMatchObject({ backend: "claude", projectKey: "joi:partner_cli", turns: "resident" });
@@ -163,7 +163,7 @@ describe("local CLI partner engine", () => {
     expect(failing.resumedIds).toEqual(["conversation_gone"]);
   });
 
-  it("rebuilds a warm resident conversation when the Avatar workspace changes", async () => {
+  it("rebuilds a warm resident conversation when the Workbench workspace changes", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk, { workspacePaths: ["workspace_one", "workspace_two"] });
     await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" });

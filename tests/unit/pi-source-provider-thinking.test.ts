@@ -33,20 +33,20 @@ describe("modelRequiresAlwaysOnThinking", () => {
 });
 
 describe("createPiSourceProvider thinking config", () => {
-  it("forces qwen thinking for token-plan openai so enable_thinking can be true", () => {
+  it("marks token-plan openai reasoning on so responses sends an effort level", () => {
     expect(singleModel({ accessMode: "token-plan", kind: "qwen", modelId: "qwen3.7-plus", protocol: "openai", sourceId: "qwen_tp" }))
-      .toMatchObject({ compat: { thinkingFormat: "qwen" }, reasoning: true });
+      .toMatchObject({ api: "openai-responses", compat: { supportsDeveloperRole: false, supportsLongCacheRetention: false }, reasoning: true });
   });
 
-  it("forces qwen thinking for coding-plan openai", () => {
+  it("marks coding-plan openai reasoning on", () => {
     expect(singleModel({ accessMode: "coding-plan", kind: "qwen", modelId: "qwen3.7-plus", protocol: "openai", sourceId: "qwen_cp" }))
-      .toMatchObject({ compat: { thinkingFormat: "qwen" }, reasoning: true });
+      .toMatchObject({ api: "openai-responses", compat: { supportsDeveloperRole: false, supportsLongCacheRetention: false }, reasoning: true });
   });
 
   it("keeps the standard qwen api openai model without forced thinking", () => {
     const model = singleModel({ accessMode: "api", kind: "qwen", modelId: "qwen3.5-plus", protocol: "openai", sourceId: "qwen_api" });
     expect(model.reasoning).toBe(false);
-    expect(model.compat).toBeUndefined();
+    expect(model.compat).toMatchObject({ supportsDeveloperRole: false, supportsLongCacheRetention: false });
   });
 
   it("keeps qwen token-plan anthropic reasoning true without an openai compat override", () => {

@@ -7,17 +7,16 @@ import { AuthService } from "../../src/main/application/auth/auth-service";
 import { LifeService } from "../../src/main/application/lives/life-service";
 import { OperationsService } from "../../src/main/application/operations/operations-service";
 import { PartnerEngineCatalog } from "../../src/main/application/partners/partner-engine-catalog";
-import { AvatarRegistryService } from "../../src/main/application/joi/avatar-registry-service";
-import { AvatarManagementService } from "../../src/main/application/joi/avatar-management-service";
-import { AvatarWorkspaceService } from "../../src/main/application/joi/avatar-workspace-service";
+import { WorkbenchRegistryService } from "../../src/main/application/joi/workbench-registry-service";
+import { WorkbenchManagementService } from "../../src/main/application/joi/workbench-management-service";
+import { WorkbenchWorkspaceService } from "../../src/main/application/joi/workbench-workspace-service";
 import { JoiHomeFeedService } from "../../src/main/application/joi/joi-home-feed-service";
-import { AvatarAgentService } from "../../src/main/application/partners/avatar-agent-service";
+import { WorkbenchAgentService } from "../../src/main/application/partners/workbench-agent-service";
 import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager";
 import { PartnerKnowledgeService } from "../../src/main/application/partners/partner-knowledge-service";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service";
 import { PartnerWorkMemoryService } from "../../src/main/application/partners/partner-work-memory-service";
-import { SseService } from "../../src/main/application/sse/sse-service";
-import { InMemorySseBroker } from "../../src/main/infrastructure/http/in-memory-sse-broker";
+import type { SsePublisher } from "../../src/main/application/ports/runtime-store";
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
 import { SqlitePartnerInstanceMessageStore } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-message-store";
 import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository";
@@ -26,9 +25,9 @@ import { SqlitePartnerPromptStore } from "../../src/main/infrastructure/persiste
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository";
 import { SqlitePartnerWorkMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-partner-work-memory-store";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter";
-import { SqliteAvatarManagementRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-management-repository";
-import { SqliteAvatarWorkspaceRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-workspace-repository";
-import { SqliteAvatarAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-agent-repository";
+import { SqliteWorkbenchManagementRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-management-repository";
+import { SqliteWorkbenchWorkspaceRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-workspace-repository";
+import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository";
 import {
   InMemoryBootstrapNonceStore,
@@ -60,12 +59,11 @@ export class TestIds {
 export interface RuntimeFixture {
   agents: AgentService;
   auth: AuthService;
-  avatarManagement: AvatarManagementService;
-  avatarAgents: AvatarAgentService;
-  avatarRegistry: AvatarRegistryService;
-  avatarWorkspaces: AvatarWorkspaceService;
-  avatars: LegacyLifeStoreAdapter;
-  broker: InMemorySseBroker;
+  workbenchManagement: WorkbenchManagementService;
+  workbenchAgents: WorkbenchAgentService;
+  workbenchRegistry: WorkbenchRegistryService;
+  workbenchWorkspaces: WorkbenchWorkspaceService;
+  workbenches: LegacyLifeStoreAdapter;
   clock: TestClock;
   close(): Promise<void>;
   database: RuntimeDatabase;
@@ -81,7 +79,7 @@ export interface RuntimeFixture {
   root: string;
   skills: LocalSkillScanner;
   directoryPicker: () => Promise<string | null>;
-  sse: SseService;
+  sse: SsePublisher;
 }
 
 export async function createRuntimeFixture(): Promise<RuntimeFixture> {
@@ -92,14 +90,14 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   });
   const clock = new TestClock();
   const ids = new TestIds();
-  const broker = new InMemorySseBroker();
-  const sse = new SseService({ broker, clock, store: database.store });
-  const avatars = new LegacyLifeStoreAdapter(database);
-  const avatarRegistry = new AvatarRegistryService({ clock, ids, repository: avatars });
-  const avatarManagement = new AvatarManagementService({ clock, ids, repository: new SqliteAvatarManagementRepository(database) });
-  const avatarAgents = new AvatarAgentService({ clock, repository: new SqliteAvatarAgentRepository(database) });
+  // SSE transport retired (ADR 0009); fixture keeps a no-op publisher for legacy service ports.
+  const sse: SsePublisher = { publish: () => undefined };
+  const workbenches = new LegacyLifeStoreAdapter(database);
+  const workbenchRegistry = new WorkbenchRegistryService({ clock, ids, repository: workbenches });
+  const workbenchManagement = new WorkbenchManagementService({ clock, ids, repository: new SqliteWorkbenchManagementRepository(database) });
+  const workbenchAgents = new WorkbenchAgentService({ clock, repository: new SqliteWorkbenchAgentRepository(database) });
   const joiHomeFeed = new JoiHomeFeedService({ clock, repository: new SqliteJoiHomeFeedRepository(database) });
-  const avatarWorkspaces = new AvatarWorkspaceService({ avatars, clock, ids, repository: new SqliteAvatarWorkspaceRepository(database) });
+  const workbenchWorkspaces = new WorkbenchWorkspaceService({ workbenches, clock, ids, repository: new SqliteWorkbenchWorkspaceRepository(database) });
   const lives = new LifeService({ clock, ids, publisher: sse, store: database.store });
   const agents = new AgentService({ clock, ids, store: database.store });
   const auth = new AuthService({
@@ -137,12 +135,11 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   return {
     agents,
     auth,
-    avatarManagement,
-    avatarAgents,
-    avatarRegistry,
-    avatarWorkspaces,
-    avatars,
-    broker,
+    workbenchManagement,
+    workbenchAgents,
+    workbenchRegistry,
+    workbenchWorkspaces,
+    workbenches,
     clock,
     async close() {
       database.close();

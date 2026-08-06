@@ -22,7 +22,7 @@ describe("sqlite joi inbox cancel", () => {
       expect(typeof canceledRecord?.canceledAt).toBe("string");
       expect(await repository.cancel(accepted.inputId)).toBeNull();
 
-      await repository.requireClarification(accepted.inputId, "avatar_selection_invalid");
+      await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
       expect((await repository.loadInput(accepted.inputId))?.status).toBe("CONSUMED");
     } finally {
       database.close();

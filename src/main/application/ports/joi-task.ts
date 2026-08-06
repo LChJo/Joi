@@ -1,0 +1,25 @@
+export interface JoiTaskPendingInput {
+  createdAt: string;
+  inputId: string;
+}
+
+export interface JoiTaskStaleTurn {
+  inputId: string;
+  turnId: string;
+}
+
+/** DB-fact view the joi task component traverses; PENDING rows are the only scheduling truth. */
+export interface JoiTaskInbox {
+  cancel(inputId: string): Promise<void>;
+  listPendingInputs(): Promise<JoiTaskPendingInput[]>;
+  listStaleRunningTurns(olderThan: string): Promise<JoiTaskStaleTurn[]>;
+  failTurn(inputId: string, turnId: string): Promise<void>;
+}
+
+export interface JoiTurnDriver {
+  handle(inputId: string): Promise<void>;
+}
+
+export interface ModelSourceGate {
+  hasReadySource(): Promise<boolean>;
+}

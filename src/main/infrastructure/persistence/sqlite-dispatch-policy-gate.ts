@@ -17,14 +17,14 @@ export class SqliteDispatchPolicyGate implements DispatchPolicyGate {
     const facts = this.dependencies.database.transaction((connection) => connection.prepare(`SELECT p.kind,
       b.workspace_ref, b.status AS workspace_status
       FROM partner_revisions r JOIN partners p ON p.partner_id = r.partner_id
-      LEFT JOIN avatar_workspace_bindings b ON b.avatar_id = ?
-      WHERE r.partner_revision_id = ?`).get(item.avatarId, _pin.partnerRevisionId)) as {
+      LEFT JOIN workbench_workspace_bindings b ON b.workbench_id = ?
+      WHERE r.partner_revision_id = ?`).get(item.workbenchId, _pin.partnerRevisionId)) as {
         kind?: unknown; workspace_ref?: unknown; workspace_status?: unknown;
       } | undefined;
     if (item.accessMode === "NONE") return { allowed: true };
     if (facts?.kind === "A2A") return { allowed: false, reason: "a2a_workspace_access_forbidden" };
     if (facts?.workspace_status !== "READY" || typeof facts.workspace_ref !== "string") {
-      return { allowed: false, reason: "avatar_workspace_not_ready" };
+      return { allowed: false, reason: "workbench_workspace_not_ready" };
     }
     const workspaceRef = facts.workspace_ref;
     const conflict = this.dependencies.database.transaction((connection) => connection.prepare(`

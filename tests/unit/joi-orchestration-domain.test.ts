@@ -1,7 +1,7 @@
 import {
-  createAvatar,
-  updateAvatarProfile,
-} from "../../src/main/domain/avatar/avatar.js";
+  createWorkbench,
+  updateWorkbenchProfile,
+} from "../../src/main/domain/workbench/workbench.js";
 import {
   classifySourceFailure,
   createModelSource,
@@ -15,11 +15,11 @@ import {
 } from "../../src/main/domain/partners/partner.js";
 
 describe("JOI-01 pure domain", () => {
-  it("keeps Avatar as context only and creates immutable profile revisions", () => {
-    const avatar = createAvatar({
-      avatarId: "avatar_1",
+  it("keeps Workbench as context only and creates immutable profile revisions", () => {
+    const workbench = createWorkbench({
+      workbenchId: "workbench_1",
       createdAt: "2026-07-28T10:00:00.000Z",
-      memoryNamespaceId: "memory_avatar_1",
+      memoryNamespaceId: "memory_workbench_1",
       name: "  产品工作  ",
       personaRevisionId: "persona_1",
       personaSummary: "  关注产品与交付  ",
@@ -28,10 +28,10 @@ describe("JOI-01 pure domain", () => {
       taskContext: { activeWorkIds: ["work_1"], summary: "当前里程碑" },
     });
 
-    expect(avatar).toEqual({
-      avatarId: "avatar_1",
+    expect(workbench).toEqual({
+      workbenchId: "workbench_1",
       createdAt: "2026-07-28T10:00:00.000Z",
-      memory: { namespaceId: "memory_avatar_1" },
+      memory: { namespaceId: "memory_workbench_1" },
       profile: {
         name: "产品工作",
         personaRevisionId: "persona_1",
@@ -42,24 +42,31 @@ describe("JOI-01 pure domain", () => {
       taskContext: { activeWorkIds: ["work_1"], summary: "当前里程碑" },
       updatedAt: "2026-07-28T10:00:00.000Z",
     });
-    expect(Object.keys(avatar)).not.toEqual(expect.arrayContaining(["agent", "budget", "runtime", "scheduler", "state"]));
+    expect(Object.keys(workbench)).not.toEqual(expect.arrayContaining(["agent", "budget", "runtime", "scheduler", "state"]));
 
-    const updated = updateAvatarProfile(avatar, {
+    const updated = updateWorkbenchProfile(workbench, {
       name: "产品与工程",
       personaRevisionId: "persona_2",
       personaSummary: "关注可验证交付",
       updatedAt: "2026-07-28T10:01:00.000Z",
     });
     expect(updated.profile.personaRevisionId).toBe("persona_2");
-    expect(avatar.profile.personaRevisionId).toBe("persona_1");
-    expect(updated.project).toEqual(avatar.project);
+    expect(workbench.profile.personaRevisionId).toBe("persona_1");
+    expect(updated.project).toEqual(workbench.project);
+    expect(updateWorkbenchProfile(workbench, {
+      name: "产品与工程",
+      personaRevisionId: "persona_3",
+      personaSummary: "关注新范围",
+      scopeSummary: "发布验证",
+      updatedAt: "2026-07-28T10:02:00.000Z",
+    }).profile.scopeSummary).toBe("发布验证");
   });
 
-  it("omits blank Avatar workspace references and preserves scope when an update does not replace it", () => {
-    const avatar = createAvatar({
-      avatarId: "avatar_without_workspace",
+  it("omits blank Workbench workspace references and preserves scope when an update does not replace it", () => {
+    const workbench = createWorkbench({
+      workbenchId: "workbench_without_workspace",
       createdAt: "2026-07-28T10:00:00.000Z",
-      memoryNamespaceId: "memory_avatar_without_workspace",
+      memoryNamespaceId: "memory_workbench_without_workspace",
       name: "General",
       personaRevisionId: "persona_1",
       personaSummary: "General context",
@@ -68,26 +75,37 @@ describe("JOI-01 pure domain", () => {
       taskContext: { activeWorkIds: ["work_1", "work_1"], summary: "  queued  " },
     });
 
-    expect(avatar.project).toEqual({ label: "Inbox" });
-    expect(avatar.taskContext).toEqual({ activeWorkIds: ["work_1"], summary: "queued" });
-    expect(updateAvatarProfile(avatar, {
+    expect(workbench.project).toEqual({ label: "Inbox" });
+    expect(workbench.taskContext).toEqual({ activeWorkIds: ["work_1"], summary: "queued" });
+    expect(updateWorkbenchProfile(workbench, {
       name: "General updated",
       personaRevisionId: "persona_2",
       personaSummary: "Updated context",
       updatedAt: "2026-07-28T10:01:00.000Z",
     }).profile.scopeSummary).toBe("Original scope");
 
-    expect(() => createAvatar({
-      avatarId: " ",
+    expect(() => createWorkbench({
+      workbenchId: " ",
       createdAt: "2026-07-28T10:00:00.000Z",
       memoryNamespaceId: "memory_invalid",
       name: "Invalid",
       personaRevisionId: "persona_1",
-      personaSummary: "Invalid avatar",
+      personaSummary: "Invalid workbench",
       project: { label: "Inbox" },
       scopeSummary: "Invalid scope",
       taskContext: { activeWorkIds: [], summary: "" },
-    })).toThrow(/Avatar context value is invalid/i);
+    })).toThrow(/Workbench context value is invalid/i);
+    expect(() => createWorkbench({
+      workbenchId: "workbench_too_long_name",
+      createdAt: "2026-07-28T10:00:00.000Z",
+      memoryNamespaceId: "memory_invalid",
+      name: "x".repeat(81),
+      personaRevisionId: "persona_1",
+      personaSummary: "Invalid workbench",
+      project: { label: "Inbox" },
+      scopeSummary: "Invalid scope",
+      taskContext: { activeWorkIds: [], summary: "" },
+    })).toThrow(/Workbench context value is invalid/i);
   });
 
   it("creates immutable source/model revisions and pins both for a Turn", () => {

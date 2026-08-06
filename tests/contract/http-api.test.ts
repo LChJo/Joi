@@ -35,7 +35,7 @@ describe("HTTP API v1", () => {
     }
   });
 
-  it("opens a fresh SSE stream without a cursor and rejects unauthenticated streams with 401", async () => {
+  it("retires the SSE stream endpoint with 404 (ADR 0009)", async () => {
     const fixture = await createRuntimeFixture();
     const handler = createApiHandler(fixture);
     const listeners = await startRuntimeListeners({ handler, loopbackPort: 0 });
@@ -48,85 +48,8 @@ describe("HTTP API v1", () => {
         method: "POST",
       });
       const cookie = cookieFrom(sessionResponse);
-
-      const unauth = await fetch(`${listeners.loopback.url}/api/v1/stream`);
-      expect(unauth.status).toBe(401);
-
-      const controller = new AbortController();
-      const fresh = await fetch(`${listeners.loopback.url}/api/v1/stream`, { headers: { cookie }, signal: controller.signal });
-      expect(fresh.status).toBe(200);
-      expect(fresh.headers.get("content-type")).toContain("text/event-stream");
-      controller.abort();
-    } finally {
-      await listeners.close();
-      await fixture.close();
-    }
-  });
-
-  it("replays SSE from an opaque cursor", async () => {
-    const fixture = await createRuntimeFixture();
-    const handler = createApiHandler(fixture);
-    const listeners = await startRuntimeListeners({ handler, loopbackPort: 0 });
-
-    try {
-      const bootstrap = await fixture.auth.issueDesktopBootstrap();
-      const sessionResponse = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
-        body: JSON.stringify({ nonce: bootstrap.nonce }),
-        headers: { "content-type": "application/json", origin: "null" },
-        method: "POST",
-      });
-      const cookie = cookieFrom(sessionResponse);
-      await fixture.database.store.appendSseEvent({ entityId: "life_test", payload: { state: "STOPPED" }, type: "life.state.changed" });
-      const controller = new AbortController();
-      const response = await fetch(`${listeners.loopback.url}/api/v1/stream?cursor=sse_MA`, {
-        headers: { cookie },
-        signal: controller.signal,
-      });
-      expect(response.status).toBe(200);
-      const reader = response.body?.getReader();
-      if (reader === undefined) throw new Error("missing SSE stream");
-      const chunk = await reader.read();
-      controller.abort();
-      const text = new TextDecoder().decode(chunk.value);
-      expect(text).toContain("event: life.state.changed");
-      expect(text).toMatch(/id: sse_[A-Za-z0-9_-]+/);
-    } finally {
-      await listeners.close();
-      await fixture.close();
-    }
-  });
-
-  it("prunes SSE projections older than seven days and resets an expired cursor", async () => {
-    const fixture = await createRuntimeFixture();
-    const handler = createApiHandler(fixture);
-    const listeners = await startRuntimeListeners({ handler, loopbackPort: 0 });
-
-    try {
-      const bootstrap = await fixture.auth.issueDesktopBootstrap();
-      const sessionResponse = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
-        body: JSON.stringify({ nonce: bootstrap.nonce }),
-        headers: { "content-type": "application/json", origin: "null" },
-        method: "POST",
-      });
-      const cookie = cookieFrom(sessionResponse);
-      fixture.database.transaction((database) => {
-        database.prepare(`INSERT INTO sse_events (event_type, entity_id, payload_json, created_at) VALUES ('old.1', 'runtime', '{}', '2026-07-01T00:00:00.000Z')`).run();
-        database.prepare(`INSERT INTO sse_events (event_type, entity_id, payload_json, created_at) VALUES ('old.2', 'runtime', '{}', '2026-07-02T00:00:00.000Z')`).run();
-      });
-      await fixture.database.store.appendSseEvent({ entityId: "runtime", payload: {}, type: "current" });
-
-      const controller = new AbortController();
-      const response = await fetch(`${listeners.loopback.url}/api/v1/stream?cursor=sse_MQ`, { headers: { cookie }, signal: controller.signal });
-      const reader = response.body?.getReader();
-      if (reader === undefined) throw new Error("missing SSE stream");
-      const chunk = await reader.read();
-      controller.abort();
-      const text = new TextDecoder().decode(chunk.value);
-      expect(text).toContain("event: stream_reset");
-      expect(text).toContain('"snapshotRequired":true');
-      expect(await fixture.database.store.listSseEvents(0, 100)).toEqual([
-        expect.objectContaining({ type: "current" }),
-      ]);
+      const missing = await fetch(`${listeners.loopback.url}/api/v1/stream`, { headers: { cookie } });
+      expect(missing.status).toBe(404);
     } finally {
       await listeners.close();
       await fixture.close();

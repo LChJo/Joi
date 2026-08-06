@@ -5,7 +5,7 @@ export type WorkStatus = "PLANNED" | "READY" | "RUNNING" | "WAITING" | "COMPLETE
 
 export interface WorkItem {
   accessMode: WorkAccessMode;
-  avatarId: string;
+  workbenchId: string;
   createdAt: string;
   status: WorkStatus;
   title: string;
@@ -26,14 +26,14 @@ function required(value: string, code: string): string {
 
 export function createWorkItem(input: {
   accessMode: WorkAccessMode;
-  avatarId: string;
+  workbenchId: string;
   createdAt: string;
   title: string;
   workId: string;
 }): WorkItem {
   return {
     accessMode: input.accessMode,
-    avatarId: required(input.avatarId, "work_avatar_invalid"),
+    workbenchId: required(input.workbenchId, "work_workbench_invalid"),
     createdAt: input.createdAt,
     status: "PLANNED",
     title: required(input.title, "work_title_invalid"),
@@ -44,7 +44,7 @@ export function createWorkItem(input: {
 
 function conflicts(candidate: WorkItem, selected: WorkItem[]): boolean {
   if (candidate.accessMode === "NONE") return false;
-  return selected.some((item) => item.avatarId === candidate.avatarId && item.accessMode !== "NONE"
+  return selected.some((item) => item.workbenchId === candidate.workbenchId && item.accessMode !== "NONE"
     && (item.accessMode === "WRITE" || candidate.accessMode === "WRITE"));
 }
 
@@ -56,7 +56,7 @@ export function buildWorkExecutionWaves(items: WorkItem[], dependencies: WorkDep
     const work = byId.get(dependency.workId);
     const prerequisite = byId.get(dependency.dependsOnWorkId);
     if (work === undefined || prerequisite === undefined) throw new DomainError("work_dependency_unknown", "Work dependency is unknown.");
-    if (work.avatarId !== prerequisite.avatarId) throw new DomainError("work_dependency_cross_avatar", "Work cannot depend on another Avatar.");
+    if (work.workbenchId !== prerequisite.workbenchId) throw new DomainError("work_dependency_cross_workbench", "Work cannot depend on another Workbench.");
     prerequisites.get(work.workId)?.add(prerequisite.workId);
   }
 

@@ -21,7 +21,7 @@ interface WorkRequest {
   partnerId: string;
   sessionPolicy?: "EPHEMERAL" | "RESIDENT";
   title: string;
-  /** Rejected compatibility field; work binds the Avatar workspace automatically. */
+  /** Rejected compatibility field; work binds the workbench workspace automatically. */
   workspaceRef?: string;
 }
 
@@ -38,7 +38,7 @@ export class WorkOrchestrationService {
   }) {}
 
   async plan(input: {
-    avatarId: string;
+    workbenchId: string;
     dependencies: { dependsOnKey: string; workKey: string }[];
     inputId: string;
     turnId: string;
@@ -46,7 +46,7 @@ export class WorkOrchestrationService {
   }): Promise<{ dispatchPlanId: string; waves: string[][] }> {
     const byKey = new Map<string, WorkRequest>();
     for (const request of input.work) {
-      if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Avatar workspace automatically.");
+      if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Workbench workspace automatically.");
       if (byKey.has(request.key)) throw new DomainError("work_key_duplicate", "Work keys must be unique.");
       byKey.set(request.key, request);
     }
@@ -57,7 +57,7 @@ export class WorkOrchestrationService {
       workIds.set(request.key, workId);
       return createWorkItem({
         accessMode: request.accessMode,
-        avatarId: input.avatarId,
+        workbenchId: input.workbenchId,
         createdAt,
         title: request.title,
         workId,
@@ -109,8 +109,8 @@ export class WorkOrchestrationService {
         workId: item.workId,
       });
     }
-    if (policyResults.some((policy) => !policy.allowed && policy.reason === "avatar_workspace_not_ready")) {
-      throw new DomainError("avatar_workspace_not_ready", "Select an Avatar workspace before dispatching file work.");
+    if (policyResults.some((policy) => !policy.allowed && policy.reason === "workbench_workspace_not_ready")) {
+      throw new DomainError("workbench_workspace_not_ready", "Select a workbench workspace before dispatching file work.");
     }
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await this.dependencies.repository.commit({
@@ -118,7 +118,7 @@ export class WorkOrchestrationService {
     });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.plan.committed", {
       attemptCount: attempts.length,
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       dependencyCount: dependencies.length,
       dispatchPlanId,
       inputId: input.inputId,
@@ -129,7 +129,7 @@ export class WorkOrchestrationService {
     for (const attempt of attempts) {
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {
         actionId: attempt.actionId,
-        avatarId: input.avatarId,
+        workbenchId: input.workbenchId,
         dispatchAttemptId: attempt.dispatchAttemptId,
         dispatchPlanId,
         outboxId: attempt.outbox.outboxId,
@@ -140,19 +140,19 @@ export class WorkOrchestrationService {
       });
     }
     await this.dependencies.events?.emit("work.plan.committed", dispatchPlanId, {
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       dispatchPlanId,
       workIds: items.map((item) => item.workId),
     });
     return { dispatchPlanId, waves };
   }
 
-  async reassign(input: { avatarId: string; partnerId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+  async reassign(input: { workbenchId: string; partnerId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
     const context = await repository.loadForReassignment(input.workId);
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
-    if (context.item.avatarId !== input.avatarId) throw new DomainError("work_avatar_mismatch", "Work belongs to another Avatar.");
+    if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
     if (!(["FAILED", "WAITING", "READY"] as const).includes(context.item.status as "FAILED" | "WAITING" | "READY")) {
       throw new DomainError("work_reassign_status_invalid", "Work cannot be reassigned in its current state.");
     }
@@ -187,7 +187,7 @@ export class WorkOrchestrationService {
     });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {
       actionId: attempt.actionId,
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       dispatchAttemptId: attempt.dispatchAttemptId,
       dispatchPlanId,
       outboxId: attempt.outbox.outboxId,
@@ -197,7 +197,7 @@ export class WorkOrchestrationService {
       workId: input.workId,
     });
     await this.dependencies.events?.emit("work.reassigned", input.workId, {
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       partnerRevisionId: attempt.partnerRevisionId,
       workId: input.workId,
     });

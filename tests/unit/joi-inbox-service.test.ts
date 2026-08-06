@@ -5,7 +5,7 @@ import type { JoiInboxRecord, JoiInboxRepository } from "../../src/main/applicat
 class FakeInboxRepository implements JoiInboxRepository {
   readonly records = new Map<string, JoiInboxRecord>();
 
-  async clarify(inputId: string, patch: { avatarId?: string; text?: string }): Promise<JoiInboxRecord | null> {
+  async clarify(inputId: string, patch: { workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     const record = this.records.get(inputId);
     if (record === undefined) return null;
     if (record.status !== "CLARIFICATION_REQUIRED") return null;
@@ -16,7 +16,7 @@ class FakeInboxRepository implements JoiInboxRepository {
       inputId: record.inputId,
       status: "PENDING",
       updatedAt: "2026-08-01T00:00:01.000Z",
-      ...(patch.avatarId === undefined ? {} : { avatarId: patch.avatarId }),
+      ...(patch.workbenchId === undefined ? {} : { workbenchId: patch.workbenchId }),
     };
     this.records.set(inputId, next);
     return next;
@@ -39,7 +39,7 @@ class FakeInboxRepository implements JoiInboxRepository {
       inputId: record.inputId,
       status: "CONSUMED",
       updatedAt: "2026-08-01T00:00:02.000Z",
-      ...(record.avatarId === undefined ? {} : { avatarId: record.avatarId }),
+      ...(record.workbenchId === undefined ? {} : { workbenchId: record.workbenchId }),
     };
     this.records.set(inputId, next);
     return next;
@@ -85,17 +85,27 @@ describe("JoiInboxService.accept", () => {
     const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
     await serviceWith(repository, diagnostics).accept({
       attachmentIds: ["attachment-1"],
-      avatarId: "avatar-1",
+      workbenchId: "workbench-1",
       idempotencyKey: "request-1",
       text: "PRIVATE STOCK REQUEST",
     });
 
     expect(diagnostics).toEqual([{
       event: "joi.input.accepted",
-      fields: { attachmentCount: 1, avatarBound: true, inputId: "input-1" },
+      fields: { attachmentCount: 1, workbenchBound: true, inputId: "input-1" },
     }]);
     expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE STOCK REQUEST");
     expect(JSON.stringify(diagnostics)).not.toContain("request-1");
+  });
+
+  it("rejects duplicate attachment references", async () => {
+    const service = serviceWith(new FakeInboxRepository());
+
+    await expect(service.accept({
+      attachmentIds: ["attachment-1", "attachment-1"],
+      idempotencyKey: "request-duplicate-attachments",
+      text: "review",
+    })).rejects.toMatchObject({ code: "joi_attachments_invalid" });
   });
 });
 
@@ -105,17 +115,17 @@ describe("JoiInboxService.clarify", () => {
     const service = serviceWith(repository);
     await expect(service.clarify({ inputId: "input-1" })).rejects.toMatchObject({ code: "joi_clarification_empty" });
     await expect(service.clarify({ inputId: "input-1", text: "x".repeat(8_001) })).rejects.toMatchObject({ code: "joi_clarification_invalid" });
-    await expect(service.clarify({ avatarId: "a".repeat(161), inputId: "input-1" })).rejects.toMatchObject({ code: "joi_avatar_invalid" });
-    await expect(service.clarify({ avatarId: "av-1", inputId: "missing" })).rejects.toMatchObject({ code: "joi_clarification_unavailable" });
+    await expect(service.clarify({ workbenchId: "a".repeat(161), inputId: "input-1" })).rejects.toMatchObject({ code: "joi_workbench_invalid" });
+    await expect(service.clarify({ workbenchId: "workbench-1", inputId: "missing" })).rejects.toMatchObject({ code: "joi_clarification_unavailable" });
     repository.records.set("pending-1", record({ inputId: "pending-1", status: "PENDING" }));
-    await expect(service.clarify({ avatarId: "av-1", inputId: "pending-1" })).rejects.toMatchObject({ code: "joi_clarification_unavailable" });
+    await expect(service.clarify({ workbenchId: "workbench-1", inputId: "pending-1" })).rejects.toMatchObject({ code: "joi_clarification_unavailable" });
   });
 
-  it("assigns an Avatar and clears the clarification reason on success", async () => {
+  it("assigns a workbench and clears the clarification reason on success", async () => {
     const repository = new FakeInboxRepository();
-    repository.records.set("clarify-1", record({ body: "这条归谁", clarificationReasonCode: "avatar_selection_invalid", inputId: "clarify-1" }));
-    const dto = await serviceWith(repository).clarify({ avatarId: "av-1", inputId: "clarify-1" });
-    expect(dto).toMatchObject({ avatarId: "av-1", inputId: "clarify-1", status: "PENDING", textPreview: "这条归谁" });
+    repository.records.set("clarify-1", record({ body: "这条归谁", clarificationReasonCode: "workbench_selection_invalid", inputId: "clarify-1" }));
+    const dto = await serviceWith(repository).clarify({ workbenchId: "workbench-1", inputId: "clarify-1" });
+    expect(dto).toMatchObject({ workbenchId: "workbench-1", inputId: "clarify-1", status: "PENDING", textPreview: "这条归谁" });
     expect(dto.clarificationReasonCode).toBeUndefined();
   });
 
@@ -149,7 +159,7 @@ describe("JoiInboxService.cancel", () => {
 
   it("cancels a clarification input and drops the reason code", async () => {
     const repository = new FakeInboxRepository();
-    repository.records.set("cancel-1", record({ clarificationReasonCode: "avatar_selection_invalid", inputId: "cancel-1" }));
+    repository.records.set("cancel-1", record({ clarificationReasonCode: "workbench_selection_invalid", inputId: "cancel-1" }));
     const dto = await serviceWith(repository).cancel({ inputId: "cancel-1" });
     expect(dto).toMatchObject({ canceled: true, inputId: "cancel-1", status: "CONSUMED" });
     expect(dto.clarificationReasonCode).toBeUndefined();

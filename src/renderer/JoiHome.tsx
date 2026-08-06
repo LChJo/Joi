@@ -1,9 +1,14 @@
 import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from "react";
-import ReactMarkdown from "react-markdown";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationPageDto, type AvatarAgentCardDto, type AvatarDetailDto, type AvatarDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
+
+const SAFE_MARKDOWN_COMPONENTS: Components = {
+  a: ({ href, children }) => href !== undefined && /^https?:\/\//iu.test(href) ? <a href={href} rel="noreferrer" target="_blank">{children}</a> : <span>{children}</span>,
+  img: ({ alt }) => <span className="agent-remote-image">[图片{alt === undefined ? "" : `：${alt}`}]</span>,
+};
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
   const [selected, setSelected] = useState<ModelSourceKindDto | null>(null);
@@ -183,19 +188,19 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   </section>;
 }
 
-function AgentMessageStream({ agent, api, avatarId, live = false }: {
-  agent: AvatarAgentCardDto;
+function AgentMessageStream({ agent, api, workbenchId, live = false }: {
+  agent: WorkbenchAgentCardDto;
   api: DigitalLifeApi;
-  avatarId: string;
+  workbenchId: string;
   live?: boolean;
 }) {
   const [page, setPage] = useState<AgentConversationPageDto | null>(null);
   const [paged, setPaged] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
-    try { setPage(await api.agentConversation(avatarId, agent.agentId, { limit: 50 })); setNotice(null); }
+    try { setPage(await api.agentConversation(workbenchId, agent.agentId, { limit: 50 })); setNotice(null); }
     catch (error) { setNotice(error instanceof ApiError ? error.message : "没能读取 Agent 对话。"); }
-  }, [agent.agentId, api, avatarId]);
+  }, [agent.agentId, api, workbenchId]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   useEffect(() => {
     if (!live || paged) return undefined;
@@ -204,7 +209,7 @@ function AgentMessageStream({ agent, api, avatarId, live = false }: {
   }, [live, load, paged]);
   const loadMore = async () => {
     if (page?.nextCursor === undefined) return;
-    const next = await api.agentConversation(avatarId, agent.agentId, { cursor: page.nextCursor, limit: 50 });
+    const next = await api.agentConversation(workbenchId, agent.agentId, { cursor: page.nextCursor, limit: 50 });
     setPaged(true);
     setPage({ ...next, items: [...page.items, ...next.items] });
   };
@@ -215,66 +220,63 @@ function AgentMessageStream({ agent, api, avatarId, live = false }: {
       {entry.kind === "TOOL_CALL" ? <div className="agent-tool-block"><span>调用工具</span><code>{entry.toolName ?? "tool"}</code>{entry.text === undefined ? null : <pre>{entry.text}</pre>}</div>
         : entry.kind === "TOOL_RESULT" ? <div className="agent-tool-block result"><span>{entry.toolName ?? "工具结果"}</span><pre>{entry.text ?? ""}</pre></div>
           : entry.kind === "ARTIFACT" ? <div className="agent-artifact"><strong>{entry.artifact?.name ?? "产物"}</strong><span>{entry.artifact?.mimeType ?? "文件"} · {String(entry.artifact?.size ?? 0)} B</span></div>
-            : <ReactMarkdown components={{
-              a: ({ href, children }) => href !== undefined && /^https?:\/\//iu.test(href) ? <a href={href} rel="noreferrer" target="_blank">{children}</a> : <span>{children}</span>,
-              img: ({ alt }) => <span className="agent-remote-image">[图片{alt === undefined ? "" : `：${alt}`}]</span>,
-            }} remarkPlugins={[remarkGfm]} skipHtml>{entry.text ?? ""}</ReactMarkdown>}
+            : <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{entry.text ?? ""}</ReactMarkdown>}
     </article>)}</div>}
     {page?.nextCursor === undefined ? null : <button className="button ghost agent-load-more" onClick={() => void loadMore()} type="button">加载更早记录</button>}
   </>;
 }
 
-function AgentConversation({ agent, api, avatarId, onBack }: {
-  agent: AvatarAgentCardDto;
+function AgentConversation({ agent, api, workbenchId, onBack }: {
+  agent: WorkbenchAgentCardDto;
   api: DigitalLifeApi;
-  avatarId: string;
+  workbenchId: string;
   onBack: () => void;
 }) {
   return <section className="agent-conversation" aria-label={`${agent.partnerName} 对话`}>
     <header className="agent-detail-header"><button className="button ghost" onClick={onBack} type="button">返回 Agent 列表</button><div><p className="eyebrow">只读执行记录</p><h2>{agent.partnerName}</h2><span>{agent.transport} · {agent.sessionPolicy} · {agent.status}</span></div></header>
-    <AgentMessageStream agent={agent} api={api} avatarId={avatarId} />
+    <AgentMessageStream agent={agent} api={api} workbenchId={workbenchId} />
   </section>;
 }
 
-export function AvatarManager({ api, initialAvatarId }: { api: DigitalLifeApi; initialAvatarId?: string }) {
-  const [avatars, setAvatars] = useState<AvatarDto[]>([]);
-  const [detail, setDetail] = useState<AvatarDetailDto | null>(null);
-  const [agents, setAgents] = useState<AvatarAgentCardDto[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<AvatarAgentCardDto | null>(null);
+export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLifeApi; initialWorkbenchId?: string }) {
+  const [workbenches, setWorkbenches] = useState<WorkbenchDto[]>([]);
+  const [detail, setDetail] = useState<WorkbenchDetailDto | null>(null);
+  const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<WorkbenchAgentCardDto | null>(null);
   const [tab, setTab] = useState<"agents" | "context">("agents");
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const load = useCallback(async () => setAvatars((await api.listAvatars()).items), [api]);
-  const loadAgents = useCallback(async (avatarId: string) => {
+  const load = useCallback(async () => setWorkbenches((await api.listWorkbenches()).items), [api]);
+  const loadAgents = useCallback(async (workbenchId: string) => {
     try {
-      const page = await api.listAvatarAgents(avatarId, { limit: 100 });
+      const page = await api.listWorkbenchAgents(workbenchId, { limit: 100 });
       setAgents(Array.isArray(page.items) ? page.items : []);
     }
     catch { setAgents([]); }
   }, [api]);
-  const open = useCallback(async (avatarId: string) => {
+  const open = useCallback(async (workbenchId: string) => {
     try {
-      setDetail(await api.getAvatar(avatarId));
+      setDetail(await api.getWorkbench(workbenchId));
       setSelectedAgent(null); setTab("agents"); setNotice(null);
-      await loadAgents(avatarId);
-    } catch (error) { setNotice(error instanceof ApiError ? error.message : "没能读取 Avatar 上下文。"); }
+      await loadAgents(workbenchId);
+    } catch (error) { setNotice(error instanceof ApiError ? error.message : "没能读取工作台上下文。"); }
   }, [api, loadAgents]);
-  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice("没能读取 Avatar 列表。")), 0); return () => clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice("没能读取工作台列表。")), 0); return () => clearTimeout(timer); }, [load]);
   useEffect(() => {
-    if (initialAvatarId === undefined) return;
-    const timer = setTimeout(() => void open(initialAvatarId), 0);
+    if (initialWorkbenchId === undefined) return;
+    const timer = setTimeout(() => void open(initialWorkbenchId), 0);
     return () => clearTimeout(timer);
-  }, [initialAvatarId, open]);
+  }, [initialWorkbenchId, open]);
   useEffect(() => {
     if (detail === null || selectedAgent !== null) return undefined;
-    const timer = setInterval(() => void loadAgents(detail.avatarId), 1_500);
+    const timer = setInterval(() => void loadAgents(detail.workbenchId), 1_500);
     return () => clearInterval(timer);
   }, [detail, loadAgents, selectedAgent]);
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault(); const form = new FormData(event.currentTarget);
     const field = (name: string) => { const value = form.get(name); return typeof value === "string" ? value.trim() : ""; };
-    await api.createAvatar({ name: field("name"), personaSummary: field("personaSummary"), projectLabel: field("projectLabel"), scopeSummary: field("scopeSummary") });
-    setAdding(false); setNotice("Avatar 已创建；之后的任务上下文仍由 joi 归属和管理。"); await load();
+    await api.createWorkbench({ name: field("name"), personaSummary: field("personaSummary"), projectLabel: field("projectLabel"), scopeSummary: field("scopeSummary") });
+    setAdding(false); setNotice("工作台已创建；之后的任务上下文仍由 joi 归属和管理。"); await load();
   };
   const saveDetail = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault(); if (detail === null) return;
@@ -282,30 +284,30 @@ export function AvatarManager({ api, initialAvatarId }: { api: DigitalLifeApi; i
     const field = (name: string) => { const value = form.get(name); return typeof value === "string" ? value.trim() : ""; };
     const persona = field("persona");
     try {
-      setDetail(await api.updateAvatar(detail.avatarId, { name: field("name"), ...(persona === "" ? {} : { persona }), projectLabel: field("projectLabel"), responsibility: field("responsibility") }));
-      setNotice("Avatar 上下文已更新。"); await load();
-    } catch (error) { setNotice(error instanceof ApiError ? error.message : "Avatar 没保存成功。"); }
+      setDetail(await api.updateWorkbench(detail.workbenchId, { name: field("name"), ...(persona === "" ? {} : { persona }), projectLabel: field("projectLabel"), responsibility: field("responsibility") }));
+      setNotice("工作台上下文已更新。"); await load();
+    } catch (error) { setNotice(error instanceof ApiError ? error.message : "工作台没保存成功。"); }
   };
   const workspaceAction = async (action: "bind" | "rebuild") => {
     if (detail === null) return;
     try {
-      if (action === "bind") await api.bindAvatarWorkspace(detail.avatarId); else await api.rebuildAvatarWorkspace(detail.avatarId);
-      await open(detail.avatarId); setTab("context");
+      if (action === "bind") await api.bindWorkbenchWorkspace(detail.workbenchId); else await api.rebuildWorkbenchWorkspace(detail.workbenchId);
+      await open(detail.workbenchId); setTab("context");
       setNotice(action === "bind" ? "已绑定现有目录。" : "已重新排队创建受管目录。");
     } catch (error) { setNotice(error instanceof ApiError ? error.message : "工作区操作没有完成。"); }
   };
-  const removeAgent = async (agent: AvatarAgentCardDto) => {
+  const removeAgent = async (agent: WorkbenchAgentCardDto) => {
     if (detail === null) return;
-    try { await api.deleteAvatarAgent(detail.avatarId, agent.agentId); await loadAgents(detail.avatarId); }
+    try { await api.deleteWorkbenchAgent(detail.workbenchId, agent.agentId); await loadAgents(detail.workbenchId); }
     catch (error) { setNotice(error instanceof ApiError ? error.message : "Agent 没有删除。"); }
   };
-  if (detail !== null && selectedAgent !== null) return <AgentConversation agent={selectedAgent} api={api} avatarId={detail.avatarId} onBack={() => setSelectedAgent(null)} />;
+  if (detail !== null && selectedAgent !== null) return <AgentConversation agent={selectedAgent} api={api} workbenchId={detail.workbenchId} onBack={() => setSelectedAgent(null)} />;
   return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">Avatar / Agent</p><h1>{detail?.name ?? "Avatar"}</h1><p>{detail === null ? "每个 Avatar 保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个 Avatar 启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建 Avatar"}</button> : <button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回 Avatar 列表</button>}</header>
-    {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" required /></label><label>工程名称<input name="projectLabel" required /></label><label>职责范围<textarea name="scopeSummary" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" required rows={4} /></label><button className="button primary" type="submit">保存 Avatar</button></form> : null}
-    {detail === null ? (avatars.length === 0 ? <div className="plain-empty"><h2>还没有 Avatar</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="avatar-catalog">{avatars.map((avatar) => <button className="avatar-catalog-card" key={avatar.avatarId} onClick={() => void open(avatar.avatarId)} type="button"><span className="avatar-orb">{avatar.name.slice(0, 1)}</span><strong>{avatar.name}</strong><span>{avatar.scopeSummary}</span><small>更新于 {new Date(avatar.updatedAt).toLocaleString()}</small><i>管理上下文</i></button>)}</div>) : <>
-      <div className="avatar-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button></div>
-      {tab === "agents" ? <div className="avatar-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个 Avatar 安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="avatar-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="avatar-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-avatar">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : <div className="avatar-context-center">
+    <header className="page-title-row"><div><p className="eyebrow">工作台 / Agent</p><h1>{detail?.name ?? "工作台"}</h1><p>{detail === null ? "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建工作台"}</button> : <button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回工作台列表</button>}</header>
+    {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" required /></label><label>工程名称<input name="projectLabel" required /></label><label>职责范围<textarea name="scopeSummary" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
+    {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <button className="workbench-catalog-card" key={workbench.workbenchId} onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span><small>更新于 {new Date(workbench.updatedAt).toLocaleString()}</small><i>管理上下文</i></button>)}</div>) : <>
+      <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button></div>
+      {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
         <article className="context-card"><h3>工作区</h3><p><strong>{detail.workspace.displayName}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">重建受管目录</button></div></article>
         <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
@@ -316,10 +318,10 @@ export function AvatarManager({ api, initialAvatarId }: { api: DigitalLifeApi; i
   </section>;
 }
 
-function ClarificationActions({ api, avatarId, avatars, inputId, onResolved, prompt, reasonCode }: {
+function ClarificationActions({ api, workbenchId, workbenches, inputId, onResolved, prompt, reasonCode }: {
   api: DigitalLifeApi;
-  avatarId: string | undefined;
-  avatars: AvatarDto[];
+  workbenchId: string | undefined;
+  workbenches: WorkbenchDto[];
   inputId: string;
   onResolved: () => void;
   prompt: string | undefined;
@@ -329,10 +331,10 @@ function ClarificationActions({ api, avatarId, avatars, inputId, onResolved, pro
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const isQuestion = reasonCode === "question_required";
-  const needsWorkspace = reasonCode === "avatar_workspace_not_ready";
-  const needsAvatarChoice = reasonCode === "avatar_selection_invalid" || reasonCode === "avatar_creation_unavailable" || reasonCode === "avatar_not_found";
-  const assignedAvatar = avatars.find((avatar) => avatar.avatarId === avatarId);
-  const resolve = async (resolution: { avatarId?: string; text?: string }) => {
+  const needsWorkspace = reasonCode === "workbench_workspace_not_ready";
+  const needsWorkbenchChoice = reasonCode === "workbench_selection_invalid" || reasonCode === "workbench_creation_unavailable" || reasonCode === "workbench_not_found";
+  const assignedWorkbench = workbenches.find((workbench) => workbench.workbenchId === workbenchId);
+  const resolve = async (resolution: { workbenchId?: string; text?: string }) => {
     setBusy(true); setNotice(null);
     try {
       await api.clarifyJoiMessage(inputId, resolution);
@@ -347,14 +349,14 @@ function ClarificationActions({ api, avatarId, avatars, inputId, onResolved, pro
   };
   const submitDraft = () => { void resolve({ text: draft.trim() }); };
   const chooseWorkspace = async () => {
-    if (avatarId === undefined) {
-      setNotice("这条任务还没有关联 Avatar，暂时不能选择工作目录。");
+    if (workbenchId === undefined) {
+      setNotice("这条任务还没有关联工作台，暂时不能选择工作目录。");
       return;
     }
     setBusy(true); setNotice(null);
     try {
-      await api.bindAvatarWorkspace(avatarId);
-      await api.clarifyJoiMessage(inputId, { avatarId });
+      await api.bindWorkbenchWorkspace(workbenchId);
+      await api.clarifyJoiMessage(inputId, { workbenchId });
       setNotice("工作目录已绑定，joi 正在继续安排…");
       onResolved();
     } catch (error) {
@@ -364,13 +366,13 @@ function ClarificationActions({ api, avatarId, avatars, inputId, onResolved, pro
     }
   };
   return <div className="joi-clarify">
-    <p className="joi-clarify-reason">{clarificationText(reasonCode, prompt, assignedAvatar?.name)}</p>
-    {needsAvatarChoice && avatars.length === 0
-      ? <p className="joi-clarify-hint">还没有可选的 Avatar；先补充细节，或到「Avatar」页创建后再点选。</p>
-      : needsAvatarChoice ? <div className="joi-clarify-chips" role="group" aria-label="点选这条输入归属的 Avatar">{avatars.map((avatar) => <button className="joi-clarify-chip" disabled={busy} key={avatar.avatarId} onClick={() => void resolve({ avatarId: avatar.avatarId })} type="button">{avatar.name}</button>)}</div> : null}
+    <p className="joi-clarify-reason">{clarificationText(reasonCode, prompt, assignedWorkbench?.name)}</p>
+    {needsWorkbenchChoice && workbenches.length === 0
+      ? <p className="joi-clarify-hint">还没有可选的工作台；先补充细节，或到「工作台」页创建后再点选。</p>
+      : needsWorkbenchChoice ? <div className="joi-clarify-chips" role="group" aria-label="点选这条输入归属的工作台">{workbenches.map((workbench) => <button className="joi-clarify-chip" disabled={busy} key={workbench.workbenchId} onClick={() => void resolve({ workbenchId: workbench.workbenchId })} type="button">{workbench.name}</button>)}</div> : null}
     {needsWorkspace ? <div className="joi-clarify-workspace">
-      <div><strong>{assignedAvatar?.name ?? "当前 Avatar"}</strong><span>选择后只保存安全的工作区标识，不会在页面或接口中暴露绝对路径。</span></div>
-      <button className="button primary" disabled={busy || avatarId === undefined} onClick={() => void chooseWorkspace()} type="button">{busy ? "选择中…" : "选择工作目录"}</button>
+      <div><strong>{assignedWorkbench?.name ?? "当前工作台"}</strong><span>选择后只保存安全的工作区标识，不会在页面或接口中暴露绝对路径。</span></div>
+      <button className="button primary" disabled={busy || workbenchId === undefined} onClick={() => void chooseWorkspace()} type="button">{busy ? "选择中…" : "选择工作目录"}</button>
     </div> : <div className="joi-clarify-add">
       <input aria-label={isQuestion ? "你的回答" : "补充信息"} disabled={busy} onChange={(event) => setDraft(event.target.value)} placeholder={isQuestion ? "输入回答，joi 会接着原任务继续…" : "补充细节，让 joi 接着这条输入往下做…"} value={draft} />
       <button className="button quiet" disabled={busy || draft.trim() === ""} onClick={submitDraft} type="button">{isQuestion ? "回答并继续" : "补充并继续"}</button>
@@ -413,34 +415,34 @@ function DismissInputButton({ api, inputId, onDismissed }: { api: DigitalLifeApi
   return <span className="joi-feed-cancel-wrap"><button aria-label="移除这条卡片" className="button quiet joi-feed-dismiss" disabled={busy} onClick={() => void dismiss()} type="button">{busy ? "移除中…" : "移除"}</button>{error === null ? null : <span className="joi-feed-cancel-error" role="status">{error}</span>}</span>;
 }
 
-function ComposerAvatarPicker({ avatars, onSelect, selected }: {
-  avatars: AvatarDto[];
-  onSelect: (avatarId: string | null) => void;
-  selected: AvatarDto | undefined;
+function ComposerWorkbenchPicker({ workbenches, onSelect, selected }: {
+  workbenches: WorkbenchDto[];
+  onSelect: (workbenchId: string | null) => void;
+  selected: WorkbenchDto | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const choose = (avatarId: string | null) => { onSelect(avatarId); setOpen(false); };
-  return <div className="joi-avatar-picker">
-    <button aria-expanded={open} aria-haspopup="dialog" className="joi-avatar-button" onClick={() => setOpen((current) => !current)} type="button">
+  const choose = (workbenchId: string | null) => { onSelect(workbenchId); setOpen(false); };
+  return <div className="joi-workbench-picker">
+    <button aria-expanded={open} aria-haspopup="dialog" className="joi-workbench-button" onClick={() => setOpen((current) => !current)} type="button">
       {selected === undefined ? "joi 自主分发" : `分发给 ${selected.name}`}
     </button>
-    {open ? <div aria-label="选择这条输入的分发方式" className="joi-avatar-menu" role="dialog">
+    {open ? <div aria-label="选择这条输入的分发方式" className="joi-workbench-menu" role="dialog">
       <strong>这条输入交给谁</strong>
-      <span>不选择时由 joi 自主判断归属；选择后直接交给该 Avatar。</span>
-      <div className="joi-avatar-options">
+      <span>不选择时由 joi 自主判断归属；选择后直接交给该工作台。</span>
+      <div className="joi-workbench-options">
         <button className="button ghost" onClick={() => choose(null)} type="button">joi 自主分发（默认）</button>
-        {avatars.map((avatar) => <button className="button ghost" key={avatar.avatarId} onClick={() => choose(avatar.avatarId)} type="button">{avatar.name}</button>)}
+        {workbenches.map((workbench) => <button className="button ghost" key={workbench.workbenchId} onClick={() => choose(workbench.workbenchId)} type="button">{workbench.name}</button>)}
       </div>
-      {avatars.length === 0 ? <small>还没有 Avatar。直接提交目标，joi 会按需建立上下文。</small> : null}
+      {workbenches.length === 0 ? <small>还没有工作台。直接提交目标，joi 会按需建立上下文。</small> : null}
     </div> : null}
   </div>;
 }
 
 function legacyHomeFeed(messages: JoiAcceptedMessageDto[]): JoiHomeFeedDto {
-  const unassignedActions = messages.filter((message) => message.status === "CLARIFICATION_REQUIRED" && message.avatarId === undefined);
+  const unassignedActions = messages.filter((message) => message.status === "CLARIFICATION_REQUIRED" && message.workbenchId === undefined);
   const goals: JoiGoalCardDto[] = messages.filter((message) => !unassignedActions.includes(message)).map((message) => ({
     agentCount: 0,
-    avatar: { avatarId: message.avatarId ?? "", name: message.avatarId ?? "等待归属" },
+    workbench: { workbenchId: message.workbenchId ?? "", name: message.workbenchId ?? "等待归属" },
     canDelete: message.status === "CONSUMED",
     ...(message.status === "CLARIFICATION_REQUIRED" ? { clarification: { ...(message.clarificationPrompt === undefined ? {} : { prompt: message.clarificationPrompt }), ...(message.clarificationReasonCode === undefined ? {} : { reasonCode: message.clarificationReasonCode }) } } : {}),
     goalId: message.inputId,
@@ -472,20 +474,33 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
   </span>;
 }
 
-function GoalDetail({ api, avatars, goal, onBack, onOpenAvatar, onResolved }: {
+function HarnessPanel({ harness }: { harness: JoiGoalHarnessDto }) {
+  return <article className="joi-goal-harness">
+    <p className="joi-goal-harness-destination">
+      {harness.destination === undefined ? "目的地未命名（joi 将在复盘中命名）" : `目的地：${harness.destination}`}
+      {harness.mapStatus === "CLEARED" ? " · 地图已收官" : ""}
+    </p>
+    {harness.topPaths.length === 0 ? null : <ul className="joi-goal-harness-paths">
+      {harness.topPaths.map((pathItem) => <li className={`joi-harness-path ${pathItem.status.toLowerCase()}`} key={pathItem.pathId}>{pathItem.title}</li>)}
+    </ul>}
+    <p className="joi-goal-harness-counts">已决策 {String(harness.decisionCount)} · 雾区 {String(harness.fogCount)} · 第 {String(harness.currentLayer)} 层路径</p>
+    {harness.topFogNote === undefined ? null : <p className="joi-goal-harness-fog">雾区：{harness.topFogNote}</p>}
+  </article>;
+}
+
+function GoalDetail({ api, workbenches, goal, onBack, onResolved }: {
   api: DigitalLifeApi;
-  avatars: AvatarDto[];
+  workbenches: WorkbenchDto[];
   goal: JoiGoalCardDto;
   onBack: () => void;
-  onOpenAvatar?: (avatarId: string) => void;
   onResolved: () => void;
 }) {
-  const [agents, setAgents] = useState<AvatarAgentCardDto[]>([]);
+  const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const loadAgents = useCallback(async () => {
     try {
-      const page = await api.listAvatarAgents(goal.avatar.avatarId, { goalId: goal.goalId, limit: 100 });
+      const page = await api.listWorkbenchAgents(goal.workbench.workbenchId, { goalId: goal.goalId, limit: 100 });
       const items = Array.isArray(page.items) ? page.items : [];
       setAgents(items);
       setNotice(null);
@@ -493,57 +508,64 @@ function GoalDetail({ api, avatars, goal, onBack, onOpenAvatar, onResolved }: {
     } catch {
       setNotice("没能读取这条目标的 Agent 列表。");
     }
-  }, [api, goal.avatar.avatarId, goal.goalId]);
+  }, [api, goal.workbench.workbenchId, goal.goalId]);
   useEffect(() => {
     const initial = setTimeout(() => void loadAgents(), 0);
     const interval = setInterval(() => void loadAgents().catch(() => undefined), 1_500);
     return () => { clearTimeout(initial); clearInterval(interval); };
   }, [loadAgents]);
   const selectedAgent = agents.find((agent) => agent.agentId === selectedAgentId);
-  return <section aria-label={`${goal.avatar.name} 的目标详情`} className="joi-goal-detail">
-    <header className="joi-goal-detail-header">
-      <button className="button ghost" onClick={onBack} type="button">返回信息流</button>
-      <div className="joi-goal-detail-title">
-        <p className="eyebrow">{goal.avatar.name}</p>
-        <h1>{goal.title}</h1>
-        <span className="joi-goal-detail-meta"><span className={`joi-goal-status ${goal.status.toLowerCase()}`}>{goalStatusLabel(goal.status)}</span><GoalProgress goal={goal} /></span>
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onBack(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
+  return <div className="joi-drawer-backdrop" onClick={onBack} role="presentation">
+    <section aria-label={`${goal.workbench.name} 的目标详情`} aria-modal="true" className="joi-goal-drawer" onClick={(event) => event.stopPropagation()} role="dialog">
+      <header className="joi-goal-detail-header">
+        <div className="joi-goal-detail-title">
+          <p className="eyebrow">{goal.workbench.name}</p>
+          <h1>{goal.title}</h1>
+          <span className="joi-goal-detail-meta"><span className={`joi-goal-status ${goal.status.toLowerCase()}`}>{goalStatusLabel(goal.status)}</span><GoalProgress goal={goal} /></span>
+        </div>
+      </header>
+      <div className="joi-goal-drawer-body">
+        {goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
+        {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div></article>}
+        {goal.clarification === undefined ? null : <ClarificationActions api={api} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} />}
+        {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
+        <div className="joi-goal-detail-body">
+          <aside aria-label="这条目标的 Agent 列表" className="joi-goal-agents">
+            {agents.length === 0 ? <p className="plain-empty">joi 还没有为这条目标启动 Agent。</p> : agents.map((agent) => <button aria-pressed={agent.agentId === selectedAgentId} className={`joi-goal-agent ${agent.agentId === selectedAgentId ? "selected" : ""}`} key={agent.agentId} onClick={() => setSelectedAgentId(agent.agentId)} type="button">
+              <span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span>
+              <span className="joi-goal-agent-copy"><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine}</small></span>
+              <i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i>
+            </button>)}
+          </aside>
+          <div className="joi-goal-stream">
+            {selectedAgent === undefined
+              ? <p className="content-state">Agent 启动后，这里会直接展示它的执行数据流和结果。</p>
+              : <AgentMessageStream agent={selectedAgent} api={api} workbenchId={goal.workbench.workbenchId} key={selectedAgent.agentId} live={selectedAgent.status === "RUNNING" || selectedAgent.status === "WAITING"} />}
+          </div>
+        </div>
       </div>
-      {onOpenAvatar === undefined ? null : <button className="button quiet" onClick={() => onOpenAvatar(goal.avatar.avatarId)} type="button">管理 {goal.avatar.name} 上下文</button>}
-    </header>
-    {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><p>{goal.completionSummary}</p></article>}
-    {goal.clarification === undefined ? null : <ClarificationActions api={api} avatarId={goal.avatar.avatarId} avatars={avatars} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} />}
-    {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
-    <div className="joi-goal-detail-body">
-      <aside aria-label="这条目标的 Agent 列表" className="joi-goal-agents">
-        {agents.length === 0 ? <p className="plain-empty">joi 还没有为这条目标启动 Agent。</p> : agents.map((agent) => <button aria-pressed={agent.agentId === selectedAgentId} className={`joi-goal-agent ${agent.agentId === selectedAgentId ? "selected" : ""}`} key={agent.agentId} onClick={() => setSelectedAgentId(agent.agentId)} type="button">
-          <span className="agent-avatar">{agent.partnerName.slice(0, 1)}</span>
-          <span className="joi-goal-agent-copy"><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine}</small></span>
-          <i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i>
-        </button>)}
-      </aside>
-      <div className="joi-goal-stream">
-        {selectedAgent === undefined
-          ? <p className="content-state">Agent 启动后，这里会直接展示它的执行数据流和结果。</p>
-          : <AgentMessageStream agent={selectedAgent} api={api} avatarId={goal.avatar.avatarId} key={selectedAgent.agentId} live={selectedAgent.status === "RUNNING" || selectedAgent.status === "WAITING"} />}
-      </div>
-    </div>
-  </section>;
+    </section>
+  </div>;
 }
 
-function JoiComposer({ api, onNavigate, onOpenAvatar, snapshot }: {
+function JoiComposer({ api, onNavigate, snapshot }: {
   api: DigitalLifeApi;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
-  onOpenAvatar?: (avatarId: string) => void;
   snapshot: JoiSnapshotDto;
 }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
-  const [targetAvatarId, setTargetAvatarId] = useState<string | null>(null);
-  const targetAvatar = snapshot.avatars.find((avatar) => avatar.avatarId === targetAvatarId);
+  const [targetWorkbenchId, setTargetWorkbenchId] = useState<string | null>(null);
+  const targetWorkbench = snapshot.workbenches.find((workbench) => workbench.workbenchId === targetWorkbenchId);
   const [feed, setFeed] = useState<JoiHomeFeedDto>({ goals: [], thinking: [], unassignedActions: [] });
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
-  const [avatarChanges, setAvatarChanges] = useState(snapshot.avatarChanges);
+  const [workbenchChanges, setWorkbenchChanges] = useState(snapshot.workbenchChanges);
   const [error, setError] = useState<string | null>(null);
   const loadFeed = useCallback(async () => {
     try {
@@ -559,7 +581,7 @@ function JoiComposer({ api, onNavigate, onOpenAvatar, snapshot }: {
   const refresh = useCallback(async () => {
     const state = await api.joiSnapshot();
     await loadFeed();
-    setAvatarChanges(state.avatarChanges);
+    setWorkbenchChanges(state.workbenchChanges);
   }, [api, loadFeed]);
   useEffect(() => {
     const initial = setTimeout(() => void loadFeed().catch(() => undefined), 0);
@@ -576,7 +598,7 @@ function JoiComposer({ api, onNavigate, onOpenAvatar, snapshot }: {
       const uploaded = await Promise.all(files.map((file) => api.uploadJoiAttachment(file)));
       const saved = await api.sendJoiMessage(message, {
         ...(uploaded.length === 0 ? {} : { attachmentIds: uploaded.map((item) => item.attachmentId) }),
-        ...(targetAvatar === undefined ? {} : { avatarId: targetAvatar.avatarId }),
+        ...(targetWorkbench === undefined ? {} : { workbenchId: targetWorkbench.workbenchId }),
       });
       setFiles([]);
       setFeed((current) => ({ ...current, thinking: [{ goalId: saved.inputId, phase: "progressing", startedAt: saved.acceptedAt, turnId: `pending:${saved.inputId}` }, ...current.thinking] }));
@@ -591,30 +613,32 @@ function JoiComposer({ api, onNavigate, onOpenAvatar, snapshot }: {
   const dismissGoal = (goalId: string) => setFeed((current) => ({ ...current, goals: current.goals.filter((goal) => goal.goalId !== goalId) }));
   const dismissAction = (inputId: string) => setFeed((current) => ({ ...current, unassignedActions: current.unassignedActions.filter((item) => item.inputId !== inputId) }));
   return <section className="joi-home" aria-labelledby="joi-home-title">
-    <header><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。Avatar 归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
-    {avatarChanges.length === 0 ? null : <section className="joi-avatar-confirmations" aria-label="Avatar 变更确认"><h2>需要你确认</h2>{avatarChanges.map((change) => <article key={change.requestId}>
-      <div><strong>{change.kind === "MERGE" ? "joi 建议合并 Avatar" : "joi 建议归档 Avatar"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceAvatarId} → ${change.targetAvatarId ?? ""}` : change.sourceAvatarId}</small></div>
-      <div className="row-actions"><button className="button ghost" onClick={() => void api.decideAvatarChange(change.requestId, "REJECT").then(refresh)} type="button">保留原样</button><button className="button danger-text" onClick={() => void api.decideAvatarChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? "确认合并" : "确认归档"}</button></div>
+    <header><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。工作台归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
+    {workbenchChanges.length === 0 ? null : <section className="joi-workbench-confirmations" aria-label="工作台变更确认"><h2>需要你确认</h2>{workbenchChanges.map((change) => <article key={change.requestId}>
+      <div><strong>{change.kind === "MERGE" ? "joi 建议合并工作台" : "joi 建议归档工作台"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceWorkbenchId} → ${change.targetWorkbenchId ?? ""}` : change.sourceWorkbenchId}</small></div>
+      <div className="row-actions"><button className="button ghost" onClick={() => void api.decideWorkbenchChange(change.requestId, "REJECT").then(refresh)} type="button">保留原样</button><button className="button danger-text" onClick={() => void api.decideWorkbenchChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? "确认合并" : "确认归档"}</button></div>
     </article>)}</section>}
-    {openGoal !== undefined ? <GoalDetail api={api} avatars={snapshot.avatars} goal={openGoal} onBack={() => setOpenGoalId(null)} {...(onOpenAvatar === undefined ? {} : { onOpenAvatar })} onResolved={() => void refresh().catch(() => undefined)} /> : <div aria-label="joi 信息流" className="joi-feed joi-feed-single">
+    {openGoal === undefined ? null : <GoalDetail api={api} workbenches={snapshot.workbenches} goal={openGoal} onBack={() => setOpenGoalId(null)} onResolved={() => void refresh().catch(() => undefined)} />}
+    <div aria-label="joi 信息流" className="joi-feed joi-feed-single">
       {visibleThinking.map((item) => <div className={`joi-thinking ${item.phase}`} key={item.turnId}><span className="joi-thinking-dot" /><strong>progressing</strong></div>)}
-      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} avatarId={message.avatarId} avatars={snapshot.avatars} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} reasonCode={message.clarificationReasonCode} /></article>)}
+      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} reasonCode={message.clarificationReasonCode} /></article>)}
       {feed.goals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
-          <button className="joi-goal-open" disabled={goal.avatar.avatarId === ""} onClick={() => setOpenGoalId(goal.goalId)} type="button"><span className="avatar-orb">{goal.avatar.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.avatar.name}</small><strong>{goal.title}</strong>{goal.completionSummary === undefined ? null : <span>{goal.completionSummary}</span>}<GoalProgress goal={goal} /></span></button>
+          <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => setOpenGoalId(goal.goalId)} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong>{goal.title}</strong><GoalProgress goal={goal} /></span></button>
           <div className="joi-goal-side"><span className={`joi-goal-status ${goal.status.toLowerCase()}`}>{goalStatusLabel(goal.status)}</span>{goal.status === "NEEDS_ATTENTION" || goal.canDelete ? <div className="joi-goal-actions">{goal.status === "NEEDS_ATTENTION" ? <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} /> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div> : null}</div>
         </div>
-        {goal.clarification === undefined ? null : <ClarificationActions api={api} avatarId={goal.avatar.avatarId} avatars={snapshot.avatars} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} />}
+        {goal.completionSummary === undefined ? null : <div className="joi-goal-result-preview joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
+        {goal.clarification === undefined ? null : <ClarificationActions api={api} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} />}
       </article>)}
       {visibleThinking.length === 0 && feed.unassignedActions.length === 0 && feed.goals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}
-    </div>}
+    </div>
     {snapshot.partners.length >= 2 ? null : <div className="inline-notice warning"><span>{snapshot.partners.length === 0 ? "当前还没有工作搭档。" : `当前只有 ${String(snapshot.partners.length)} 个工作搭档。`}可以先用场景预设一键组建团队，或去搭档页手动创建 2-3 个。</span><span className="row-actions"><button className="button ghost" onClick={() => onNavigate?.("agents", "scenarios")} type="button">看场景预设</button><button className="button ghost" onClick={() => onNavigate?.("agents", "partners")} type="button">去搭档页创建</button></span></div>}
     <form className="joi-composer" onSubmit={(event) => void submit(event)}>
       <label className="joi-composer-label" htmlFor="joi-input">给 joi 输入</label>
       <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={2} value={text} />
       <div className="joi-composer-toolbar">
         <label className="joi-attachment-button">添加附件<input aria-label="给 joi 添加附件" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, 8))} type="file" /></label>
-        <ComposerAvatarPicker avatars={snapshot.avatars} onSelect={setTargetAvatarId} selected={targetAvatar} />
+        <ComposerWorkbenchPicker workbenches={snapshot.workbenches} onSelect={setTargetWorkbenchId} selected={targetWorkbench} />
         {files.length === 0 ? null : <span className="joi-file-summary">{files.map((file) => file.name).join("、")}</span>}
         <button className="button primary" disabled={text.trim() === ""} type="submit">交给 joi</button>
       </div>
@@ -623,19 +647,18 @@ function JoiComposer({ api, onNavigate, onOpenAvatar, snapshot }: {
   </section>;
 }
 
-function clarificationText(code: string | undefined, prompt?: string, avatarName?: string): string {
+function clarificationText(code: string | undefined, prompt?: string, workbenchName?: string): string {
   if (code === "question_required") return prompt ?? "joi 需要你回答一个问题，才能继续安排这条任务。";
-  if (code === "avatar_workspace_not_ready") return `“${avatarName ?? "当前 Avatar"}”还没有可用的工作目录。选择一个目录后，joi 会自动继续这条任务。`;
-  if (code === "avatar_selection_invalid") return "joi 没法定位这条输入属于哪个上下文。在下方点选它对应的 Avatar，或补充更明确的项目/角色。";
-  if (code === "avatar_creation_unavailable") return "joi 想新建一个 Avatar 来承接这条输入，但当前无法创建。请补充更明确的归属，或先到「Avatar」页手动创建。";
-  if (code === "avatar_not_found") return "这条输入指向的 Avatar 已不存在。在下方点选它应归属的 Avatar，或补充项目/角色。";
+  if (code === "workbench_workspace_not_ready") return `“${workbenchName ?? "当前工作台"}”还没有可用的工作目录。选择一个目录后，joi 会自动继续这条任务。`;
+  if (code === "workbench_selection_invalid") return "joi 没法定位这条输入属于哪个上下文。在下方点选它对应的工作台，或补充更明确的项目/角色。";
+  if (code === "workbench_creation_unavailable") return "joi 想新建一个工作台来承接这条输入，但当前无法创建。请补充更明确的归属，或先到「工作台」页手动创建。";
+  if (code === "workbench_not_found") return "这条输入指向的工作台已不存在。在下方点选它应归属的工作台，或补充项目/角色。";
   return "joi 需要你补充信息后才能继续。在下方补充细节，它会接着这条输入往下做。";
 }
 
-export function JoiHome({ api, onNavigate, onOpenAvatar }: {
+export function JoiHome({ api, onNavigate }: {
   api: DigitalLifeApi;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
-  onOpenAvatar?: (avatarId: string) => void;
 }) {
   const [snapshot, setSnapshot] = useState<JoiSnapshotDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -646,5 +669,5 @@ export function JoiHome({ api, onNavigate, onOpenAvatar }: {
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   if (error !== null) return <section className="content-state" role="alert"><p>{error}</p><button className="button quiet" onClick={() => void load()} type="button">再试一次</button></section>;
   if (snapshot === null) return <section className="content-state" role="status">joi 正在整理全局状态…</section>;
-  return snapshot.runtime.configured ? <JoiComposer api={api} {...(onNavigate === undefined ? {} : { onNavigate })} {...(onOpenAvatar === undefined ? {} : { onOpenAvatar })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
+  return snapshot.runtime.configured ? <JoiComposer api={api} {...(onNavigate === undefined ? {} : { onNavigate })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
 }

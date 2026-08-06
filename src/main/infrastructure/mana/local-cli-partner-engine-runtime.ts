@@ -7,7 +7,7 @@ import type {
 } from "@rd-efficiency/agentsdk";
 
 import { DomainError } from "../../domain/errors.js";
-import type { AvatarExecutionContextReader } from "../../application/ports/avatar-context.js";
+import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
@@ -37,7 +37,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
   #surface: LocalCliSdkSurface | null = null;
 
   constructor(private readonly dependencies: {
-    contexts: AvatarExecutionContextReader;
+    contexts: WorkbenchExecutionContextReader;
     maxWarmConversations?: number;
     prompts: Pick<PartnerPromptStore, "read">;
     protocol: LocalCliProtocol;
@@ -143,7 +143,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     }
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Local CLI engines run local partners only.");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
-    if (execution === null) throw new DomainError("avatar_context_snapshot_not_found", "Avatar context snapshot is missing.");
+    if (execution === null) throw new DomainError("workbench_context_snapshot_not_found", "Workbench context snapshot is missing.");
     return execution;
   }
 
@@ -153,7 +153,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     return this.#surface;
   }
 
-  async #systemPrompt(revision: PartnerRevision, request: PartnerRunRequest, avatarSection: string, context: { knowledgeSection: string; skillSection: string }): Promise<string> {
+  async #systemPrompt(revision: PartnerRevision, request: PartnerRunRequest, workbenchSection: string, context: { knowledgeSection: string; skillSection: string }): Promise<string> {
     const engineLabel = this.dependencies.protocol === "codex" ? "Codex" : "Claude Code";
     let configuredPrompt = `You are a local ${engineLabel} coding partner. Work only inside the assigned workspace and complete the requested work.`;
     if (revision.promptRef !== undefined) {
@@ -164,9 +164,9 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     return [
       configuredPrompt,
       "Never access paths outside the assigned workspace.",
-      `Avatar scope: ${request.avatarId}`,
+      `Workbench scope: ${request.workbenchId}`,
       `Work item: ${request.workId}`,
-      avatarSection,
+      workbenchSection,
       ...(context.skillSection === "" ? [] : [context.skillSection]),
       ...(context.knowledgeSection === "" ? [] : [context.knowledgeSection]),
     ].join("\n");

@@ -1,4 +1,4 @@
-import type { AvatarExecutionContextReader } from "./avatar-context.js";
+import type { WorkbenchExecutionContextReader } from "./workbench-context.js";
 import type { WorkAcceptanceCheck } from "./work-orchestration.js";
 
 export interface WorkVerificationInput {
@@ -16,4 +16,4 @@ export interface WorkVerifier {
   verify(input: WorkVerificationInput): Promise<WorkVerificationResult>;
 }
 
-export type WorkVerificationContextReader = Pick<AvatarExecutionContextReader, "loadForExecution">;
+export type WorkVerificationContextReader = Pick<WorkbenchExecutionContextReader, "loadForExecution">;

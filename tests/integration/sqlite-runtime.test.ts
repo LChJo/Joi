@@ -14,7 +14,7 @@ describe("SQLite runtime foundation", () => {
         busyTimeout: 5000,
         foreignKeys: true,
         journalMode: "wal",
-        schemaVersion: 36,
+        schemaVersion: 38,
       });
       const agent = await fixture.agents.createShell({ cardUrl: "http://192.168.1.20/agent-card.json", name: "主 Agent" });
       await fixture.agents.activateForReadiness(agent.agentConnectionId);
@@ -26,7 +26,6 @@ describe("SQLite runtime foundation", () => {
         timezone: "Asia/Shanghai",
       });
       expect(life.state).toBe("STOPPED");
-      expect((await fixture.sse.listAfter(0, 10)).map((event) => event.type)).toContain("life.created");
 
       fixture.database.close();
       const reopened = await openRuntimeDatabase({
@@ -43,8 +42,8 @@ describe("SQLite runtime foundation", () => {
       expect((await service.list({ limit: 20 })).items).toEqual([
         expect.objectContaining({ lifeId: life.lifeId, name: "栖遥" }),
       ]);
-      const events = await reopened.store.listSseEvents(0, 10);
-      expect(events.at(-1)?.sequence).toBeGreaterThan(0);
+      // SSE projection frozen (ADR 0009): no events are persisted anymore.
+      await expect(reopened.store.listSseEvents(0, 10)).resolves.toEqual([]);
       reopened.close();
     } finally {
       await fixture.close();

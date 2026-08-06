@@ -13,11 +13,11 @@ interface TransactionalDatabase {
 type Row = Record<string, unknown>;
 
 function mapRow(row: Row): PartnerInstanceRecord {
-  if (typeof row.instance_id !== "string" || typeof row.avatar_id !== "string" || typeof row.partner_id !== "string" || typeof row.partner_revision_id !== "string"
+  if (typeof row.instance_id !== "string" || typeof row.workbench_id !== "string" || typeof row.partner_id !== "string" || typeof row.partner_revision_id !== "string"
     || typeof row.session_policy !== "string" || typeof row.status !== "string" || typeof row.engine !== "string"
     || typeof row.created_at !== "string" || typeof row.last_used_at !== "string") throw new Error("partner_instance_record_invalid");
   return {
-    avatarId: row.avatar_id,
+    workbenchId: row.workbench_id,
     createdAt: row.created_at,
     ...(typeof row.disposed_at === "string" ? { disposedAt: row.disposed_at } : {}),
     ...(typeof row.disposal_reason === "string" ? { disposalReason: row.disposal_reason } : {}),
@@ -32,16 +32,16 @@ function mapRow(row: Row): PartnerInstanceRecord {
   };
 }
 
-const SELECT_INSTANCES = `SELECT instance_id, avatar_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol,
+const SELECT_INSTANCES = `SELECT instance_id, workbench_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol,
   external_session_ref, created_at, last_used_at, disposed_at, disposal_reason FROM partner_instances`;
 
 export class SqlitePartnerInstanceRepository implements PartnerInstanceRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
-  async countActive(avatarId: string, partnerId: string): Promise<number> {
+  async countActive(workbenchId: string, partnerId: string): Promise<number> {
     const row = this.database.transaction((connection) => connection.prepare(
-      "SELECT COUNT(*) AS count FROM partner_instances WHERE avatar_id = ? AND partner_id = ? AND status <> 'DISPOSED'",
-    ).get(avatarId, partnerId)) as { count: number };
+      "SELECT COUNT(*) AS count FROM partner_instances WHERE workbench_id = ? AND partner_id = ? AND status <> 'DISPOSED'",
+    ).get(workbenchId, partnerId)) as { count: number };
     return row.count;
   }
 
@@ -52,18 +52,18 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
     return row.count;
   }
 
-  async create(input: { avatarId: string; createdAt: string; engine: PartnerEngine; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: SessionPolicy }): Promise<PartnerInstanceRecord> {
+  async create(input: { workbenchId: string; createdAt: string; engine: PartnerEngine; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: SessionPolicy }): Promise<PartnerInstanceRecord> {
     this.database.transaction((connection) => {
       connection.prepare(`INSERT INTO partner_instances
-        (instance_id, avatar_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol, created_at, last_used_at)
+        (instance_id, workbench_id, partner_id, partner_revision_id, session_policy, status, engine, cli_protocol, created_at, last_used_at)
         VALUES (?, ?, ?, ?, ?, 'IDLE', ?, ?, ?, ?)`).run(
-        input.instanceId, input.avatarId, input.partnerId, input.partnerRevisionId, input.sessionPolicy,
+        input.instanceId, input.workbenchId, input.partnerId, input.partnerRevisionId, input.sessionPolicy,
         storageEngine(input.engine), storageCliProtocol(input.engine), input.createdAt, input.createdAt,
       );
-      connection.prepare(`INSERT INTO avatar_agent_sessions
-        (agent_id, avatar_id, partner_id, partner_revision_id, backing_kind, backing_id, session_policy, created_at)
+      connection.prepare(`INSERT INTO workbench_agent_sessions
+        (agent_id, workbench_id, partner_id, partner_revision_id, backing_kind, backing_id, session_policy, created_at)
         VALUES (?, ?, ?, ?, 'LOCAL_INSTANCE', ?, ?, ?)`).run(
-        input.instanceId, input.avatarId, input.partnerId, input.partnerRevisionId,
+        input.instanceId, input.workbenchId, input.partnerId, input.partnerRevisionId,
         input.instanceId, input.sessionPolicy, input.createdAt,
       );
     });
@@ -85,10 +85,10 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
     ).run(instanceId, dispatchAttemptId));
   }
 
-  async listActive(filter?: { avatarId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]> {
+  async listActive(filter?: { workbenchId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]> {
     const clauses = ["status <> 'DISPOSED'"];
     const values: string[] = [];
-    if (filter?.avatarId !== undefined) { clauses.push("avatar_id = ?"); values.push(filter.avatarId); }
+    if (filter?.workbenchId !== undefined) { clauses.push("workbench_id = ?"); values.push(filter.workbenchId); }
     if (filter?.partnerId !== undefined) { clauses.push("partner_id = ?"); values.push(filter.partnerId); }
     const rows = this.database.transaction((connection) => connection.prepare(
       `${SELECT_INSTANCES} WHERE ${clauses.join(" AND ")} ORDER BY created_at`,

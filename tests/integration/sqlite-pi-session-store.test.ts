@@ -7,18 +7,18 @@ import { SqlitePiReasoningSessionStore } from "../../src/main/infrastructure/per
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 
 describe("Pi SQLite session restore", () => {
-  it("restores an Avatar-scoped message tree and pinned source/model revisions after restart", async () => {
+  it("restores a workbench-scoped message tree and pinned source/model revisions after restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-pi-session-"));
     const databasePath = path.join(root, "runtime.sqlite");
     let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      database.transaction((connection) => connection.prepare(`INSERT INTO avatars
-        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
-        VALUES ('avatar-1', '研究', 'persona-1', '研究人格', '研究范围', '研究工程', 'memory-1', '', 'ACTIVE', ?, ?)`).run(
+      database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
+        VALUES ('workbench-1', '研究', 'persona-1', '研究人格', '研究范围', '研究工程', 'memory-1', '', 'ACTIVE', ?, ?)`).run(
         "2026-07-28T10:00:00.000Z", "2026-07-28T10:00:00.000Z",
       ));
       const snapshot: JoiReasoningSessionSnapshot = {
-        avatarId: "avatar-1",
+        workbenchId: "workbench-1",
         compaction: {
           compactedMessages: 18,
           count: 2,

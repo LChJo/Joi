@@ -27,9 +27,17 @@ describe("partner engine catalog", () => {
   });
 
   it("asserts availability and fails closed for missing or unhealthy engines", async () => {
-    const catalog = new PartnerEngineCatalog(new Map([["pi-core", fakeRuntime(true)], ["claude-code", fakeRuntime(false)]]));
+    const catalog = new PartnerEngineCatalog(new Map([
+      ["pi-core", fakeRuntime(true)],
+      ["claude-code", fakeRuntime(false)],
+      ["codex", fakeRuntime(false, "binary missing")],
+    ]));
     await expect(catalog.assertAvailable("pi-core")).resolves.toBeUndefined();
     await expect(catalog.assertAvailable("claude-code")).rejects.toMatchObject({ code: "engine_unavailable" });
-    await expect(catalog.assertAvailable("codex")).rejects.toMatchObject({ code: "engine_unavailable" });
+    await expect(catalog.assertAvailable("codex")).rejects.toMatchObject({
+      code: "engine_unavailable",
+      message: "Partner engine is unavailable: binary missing.",
+    });
+    await expect(new PartnerEngineCatalog(new Map()).assertAvailable("codex")).rejects.toMatchObject({ code: "engine_unavailable" });
   });
 });

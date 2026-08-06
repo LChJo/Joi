@@ -12,7 +12,7 @@ describe("WorkResult", () => {
 
   it("sanitizes an engine-supplied summary as well as a derived one", () => {
     const result = createWorkResult({
-      actionId: "action", artifacts: [], avatarId: "avatar", body: "restricted body", createdAt: "2026-08-02T00:00:00.000Z",
+      actionId: "action", artifacts: [], workbenchId: "workbench", body: "restricted body", createdAt: "2026-08-02T00:00:00.000Z",
       isLate: false, partnerRevisionId: "revision", resultId: "result", runId: "run", status: "COMPLETED",
       summary: "artifact at D:/private/out.txt api_key=private-key-value", workId: "work",
     });
@@ -23,7 +23,7 @@ describe("WorkResult", () => {
     const sourceArtifact = { artifactRef: "artifact:one", name: "report.txt", size: 12 };
     const artifacts = [sourceArtifact];
     const result = createWorkResult({
-      actionId: "action", artifacts, avatarId: "avatar", body: "   ", createdAt: "2026-08-02T00:00:00.000Z",
+      actionId: "action", artifacts, workbenchId: "workbench", body: "   ", createdAt: "2026-08-02T00:00:00.000Z",
       isLate: false, partnerRevisionId: "revision", resultId: "result", runId: "run", status: "FAILED", workId: "work",
     });
     sourceArtifact.name = "changed.txt";

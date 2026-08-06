@@ -4,10 +4,8 @@ import path from "node:path";
 
 import { AgentService } from "../../src/main/application/agents/agent-service.js";
 import { LifeService } from "../../src/main/application/lives/life-service.js";
-import { AvatarRegistryService } from "../../src/main/application/joi/avatar-registry-service.js";
+import { WorkbenchRegistryService } from "../../src/main/application/joi/workbench-registry-service.js";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
-import { SseService } from "../../src/main/application/sse/sse-service.js";
-import { InMemorySseBroker } from "../../src/main/infrastructure/http/in-memory-sse-broker.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
@@ -23,6 +21,96 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 }
 
 describe("JOI-01 non-destructive migration", () => {
+  it("renames the 037 context schema to Workbench without losing rows or stable ids", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-workbench-terminology-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 37);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-08-06T15:00:00.000Z";
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO avatars
+        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
+         memory_namespace_id, status, created_at, updated_at)
+        VALUES ('context-038', '发布台', 'persona-038', 'summary', 'scope', 'project',
+                'memory-038', 'ACTIVE', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, clarification_reason_code, avatar_id, created_at, updated_at)
+        VALUES ('goal-038', 'key-038', 'goal', 'CLARIFICATION_REQUIRED',
+                'avatar_workspace_not_ready', 'context-038', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_harness_maps
+        (goal_input_id, avatar_id, destination, status, revision, reviewed_revision, created_at, updated_at)
+        VALUES ('goal-038', 'context-038', 'ship', 'ACTIVE', 1, 0, ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_harness_decisions
+        (decision_id, goal_input_id, kind, summary, detail, created_at)
+        VALUES ('decision-038', 'goal-038', 'AVATAR_REFINE', 'narrow scope', '', ?)`).run(now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const facts = upgraded.transaction((connection) => ({
+        decision: connection.prepare("SELECT kind FROM joi_harness_decisions WHERE decision_id = 'decision-038'").get(),
+        foreignKeys: connection.prepare("PRAGMA foreign_key_check").all(),
+        inbox: connection.prepare("SELECT clarification_reason_code, workbench_id FROM joi_inbox_messages WHERE input_id = 'goal-038'").get(),
+        oldNamedObjects: connection.prepare("SELECT name FROM sqlite_master WHERE lower(name) LIKE '%avatar%' ORDER BY name").all(),
+        outbox: connection.prepare("SELECT outbox_id, kind, payload_json FROM outbox WHERE outbox_id = 'avatar_workspace_provision:context-038'").get(),
+        workbench: connection.prepare("SELECT workbench_id, name FROM workbenches WHERE workbench_id = 'context-038'").get(),
+      }));
+      expect(facts).toEqual({
+        decision: { kind: "WORKBENCH_REFINE" },
+        foreignKeys: [],
+        inbox: { clarification_reason_code: "workbench_workspace_not_ready", workbench_id: "context-038" },
+        oldNamedObjects: [],
+        outbox: {
+          kind: "workbench.workspace.provision",
+          outbox_id: "avatar_workspace_provision:context-038",
+          payload_json: '{"workspaceRef":"avatar_workspace:context-038","workbenchId":"context-038"}',
+        },
+        workbench: { name: "发布台", workbench_id: "context-038" },
+      });
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("backfills historical goals into cleared harness maps and leaves live goals untouched", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-harness-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 36);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-08-05T09:00:00.000Z";
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO avatars
+        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
+         memory_namespace_id, status, created_at, updated_at)
+        VALUES ('workbench-harness', 'A', 'persona-harness', 'summary', 'scope', 'project',
+                'memory-harness', 'ACTIVE', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
+        VALUES ('goal-history', 'key-history', 'done goal', 'CONSUMED', 'workbench-harness', ?, ?),
+               ('goal-live', 'key-live', 'live goal', 'ROUTED', 'workbench-harness', ?, ?),
+               ('joi_result_input:goal:goal-history', 'key-history-synthetic', 'synthetic', 'CONSUMED', 'workbench-harness', ?, ?)`)
+        .run(now, now, now, now, now, now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const maps = upgraded.transaction((connection) => connection.prepare(`
+        SELECT goal_input_id, status, feedback_recorded_at IS NOT NULL AS feedback_done
+          FROM joi_harness_maps ORDER BY goal_input_id`).all());
+      expect(maps).toEqual([
+        { goal_input_id: "goal-history", status: "CLEARED", feedback_done: 1 },
+      ]);
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("reconciles already-consumed legacy result inputs into a deletable goal outcome", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-goal-outcome-upgrade-"));
     const oldMigrations = path.join(root, "old-migrations");
@@ -37,41 +125,41 @@ describe("JOI-01 non-destructive migration", () => {
       connection.prepare(`INSERT INTO avatars
         (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
          memory_namespace_id, status, created_at, updated_at)
-        VALUES ('avatar-outcome', 'A', 'persona-outcome', 'summary', 'scope', 'project',
+        VALUES ('workbench-outcome', 'A', 'persona-outcome', 'summary', 'scope', 'project',
                 'memory-outcome', 'ACTIVE', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO joi_inbox_messages
         (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
-        VALUES ('goal-outcome', 'key-outcome', 'legacy goal', 'CONSUMED', 'avatar-outcome', ?, ?),
-               ('joi_result_input:legacy-event', 'key-legacy-result', 'legacy result', 'CONSUMED', 'avatar-outcome', ?, ?)`)
+        VALUES ('goal-outcome', 'key-outcome', 'legacy goal', 'CONSUMED', 'workbench-outcome', ?, ?),
+               ('joi_result_input:legacy-event', 'key-legacy-result', 'legacy result', 'CONSUMED', 'workbench-outcome', ?, ?)`)
         .run(now, now, now, now);
       connection.prepare(`INSERT INTO joi_turns
         (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
-        VALUES ('turn-outcome', 'goal-outcome', 'avatar-outcome', 'session-outcome', 'COMPLETED', ?, ?)`)
+        VALUES ('turn-outcome', 'goal-outcome', 'workbench-outcome', 'session-outcome', 'COMPLETED', ?, ?)`)
         .run(now, now);
       connection.prepare(`INSERT INTO dispatch_plans
         (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
         VALUES ('plan-outcome', 'turn-outcome', '{"workIds":["work-outcome"]}', '[]', ?)`).run(now);
       connection.prepare(`INSERT INTO work_items
         (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
-        VALUES ('work-outcome', 'avatar-outcome', 'goal-outcome', 'legacy work', '{}', 'READ', 'COMPLETED', ?, ?)`).run(now, now);
+        VALUES ('work-outcome', 'workbench-outcome', 'goal-outcome', 'legacy work', '{}', 'READ', 'COMPLETED', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO dispatch_attempts
         (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
         VALUES ('attempt-outcome', 'plan-outcome', 'work-outcome', ?, 1, 'action-outcome', 'COMPLETED', ?, ?)`)
         .run(partner.partnerRevisionId, now, now);
       connection.prepare(`INSERT INTO partner_runs
         (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
-        VALUES ('run-outcome', 'attempt-outcome', 'action-outcome', 'avatar-outcome', 'work-outcome', ?, 'LOCAL_PI', 'local:outcome', 'COMPLETED', ?, ?)`)
+        VALUES ('run-outcome', 'attempt-outcome', 'action-outcome', 'workbench-outcome', 'work-outcome', ?, 'LOCAL_PI', 'local:outcome', 'COMPLETED', ?, ?)`)
         .run(partner.partnerRevisionId, now, now);
       connection.prepare("INSERT INTO work_result_bodies (body_ref, body, created_at) VALUES ('body-outcome', 'private', ?)").run(now);
       connection.prepare(`INSERT INTO work_results
         (result_id, run_id, action_id, avatar_id, work_id, partner_revision_id, status, summary, body_ref,
          artifacts_json, is_late, is_authoritative, created_at)
-        VALUES ('result-outcome', 'run-outcome', 'action-outcome', 'avatar-outcome', 'work-outcome', ?,
+        VALUES ('result-outcome', 'run-outcome', 'action-outcome', 'workbench-outcome', 'work-outcome', ?,
                 'COMPLETED', 'legacy summary', 'body-outcome', '[]', 0, 1, ?)`).run(partner.partnerRevisionId, now);
       connection.prepare("INSERT INTO work_result_verifications (result_id, status, created_at) VALUES ('result-outcome', 'NOT_REQUIRED', ?)").run(now);
       connection.prepare(`INSERT INTO partner_result_events
         (event_id, run_id, avatar_id, work_id, partner_revision_id, status, created_at, consumed_at, input_id)
-        VALUES ('legacy-event', 'run-outcome', 'avatar-outcome', 'work-outcome', ?, 'COMPLETED', ?, ?, 'joi_result_input:legacy-event')`)
+        VALUES ('legacy-event', 'run-outcome', 'workbench-outcome', 'work-outcome', ?, 'COMPLETED', ?, ?, 'joi_result_input:legacy-event')`)
         .run(partner.partnerRevisionId, now, now);
     });
     oldDatabase.close();
@@ -81,7 +169,7 @@ describe("JOI-01 non-destructive migration", () => {
       expect(upgraded.transaction((connection) => connection.prepare(`SELECT s.revision, s.synthesized_revision,
         o.completion_summary FROM joi_goal_result_sets s JOIN joi_goal_outcomes o ON o.input_id = s.original_input_id
         WHERE s.original_input_id = 'goal-outcome'`).get())).toEqual({
-        completion_summary: "历史工作已完成；Agent 结果可在 Avatar 详情中查看。", revision: 1, synthesized_revision: 1,
+        completion_summary: "历史工作已完成；Agent 结果可在工作台详情中查看。", revision: 1, synthesized_revision: 1,
       });
     } finally {
       upgraded.close();
@@ -100,20 +188,20 @@ describe("JOI-01 non-destructive migration", () => {
       connection.prepare(`INSERT INTO avatars
         (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
          memory_namespace_id, status, created_at, updated_at)
-        VALUES ('avatar-binding', 'A', 'persona-binding', 'summary', 'scope', 'project',
+        VALUES ('workbench-binding', 'A', 'persona-binding', 'summary', 'scope', 'project',
                 'memory-binding', 'ACTIVE', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO joi_inbox_messages
         (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
-        VALUES ('input-binding', 'idem-binding', 'private request', 'ROUTED', 'avatar-binding', ?, ?)`).run(now, now);
+        VALUES ('input-binding', 'idem-binding', 'private request', 'ROUTED', 'workbench-binding', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO joi_turns
         (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
-        VALUES ('turn-binding', 'input-binding', 'avatar-binding', 'session-binding', 'COMPLETED', ?, ?)`).run(now, now);
+        VALUES ('turn-binding', 'input-binding', 'workbench-binding', 'session-binding', 'COMPLETED', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO dispatch_plans
         (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
         VALUES ('plan-binding', 'turn-binding', '{"workIds":["work-binding"]}', '[]', ?)`).run(now);
       connection.prepare(`INSERT INTO work_items
         (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
-        VALUES ('work-binding', 'avatar-binding', NULL, 'work', '{}', 'READ', 'COMPLETED', ?, ?)`).run(now, now);
+        VALUES ('work-binding', 'workbench-binding', NULL, 'work', '{}', 'READ', 'COMPLETED', ?, ?)`).run(now, now);
     });
     oldDatabase.close();
 
@@ -123,8 +211,8 @@ describe("JOI-01 non-destructive migration", () => {
         "SELECT input_id FROM work_items WHERE work_id = 'work-binding'",
       ).get())).toEqual({ input_id: "input-binding" });
       expect(() => upgraded.transaction((connection) => connection.prepare(`INSERT INTO work_items
-        (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
-        VALUES ('work-unbound', 'avatar-binding', NULL, 'invalid', '{}', 'READ', 'PLANNED', ?, ?)`)
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-unbound', 'workbench-binding', NULL, 'invalid', '{}', 'READ', 'PLANNED', ?, ?)`)
         .run(now, now))).toThrow();
     } finally {
       upgraded.close();
@@ -139,12 +227,12 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(36);
+      expect(database.inspect().schemaVersion).toBe(38);
       expect(database.transaction((connection) => connection.prepare(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('avatar_agent_sessions', 'avatar_agent_conversation_entries') ORDER BY name",
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('workbench_agent_sessions', 'workbench_agent_conversation_entries') ORDER BY name",
       ).all())).toEqual([
-        { name: "avatar_agent_conversation_entries" },
-        { name: "avatar_agent_sessions" },
+        { name: "workbench_agent_conversation_entries" },
+        { name: "workbench_agent_sessions" },
       ]);
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_revisions)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "access_mode" }), expect.objectContaining({ name: "protocol" })]));
@@ -156,9 +244,9 @@ describe("JOI-01 non-destructive migration", () => {
         "SELECT name FROM sqlite_master WHERE type = 'table' ORDER BY name",
       ).all().map((row) => String((row as { name: unknown }).name)));
       expect(names).toEqual(expect.arrayContaining([
-        "avatars",
-        "avatar_change_requests",
-        "avatar_merges",
+        "workbenches",
+        "workbench_change_requests",
+        "workbench_merges",
         "model_sources",
         "model_source_credentials",
         "model_source_revisions",
@@ -169,7 +257,7 @@ describe("JOI-01 non-destructive migration", () => {
         "partner_prompts",
         "partner_runs",
         "partner_result_events",
-        "avatar_partner_policies",
+        "workbench_partner_policies",
         "joi_inbox_messages",
         "joi_attachments",
         "joi_inbox_attachments",
@@ -179,12 +267,16 @@ describe("JOI-01 non-destructive migration", () => {
         "work_dependencies",
         "dispatch_attempts",
         "workspace_leases",
-        "avatar_workspace_bindings",
-        "avatar_workspace_roots",
-        "avatar_task_projections",
-        "avatar_context_snapshots",
+        "workbench_workspace_bindings",
+        "workbench_workspace_roots",
+        "workbench_task_projections",
+        "workbench_context_snapshots",
         "work_results",
         "work_result_bodies",
+        "joi_harness_maps",
+        "joi_harness_paths",
+        "joi_harness_decisions",
+        "joi_harness_fog",
       ]));
     } finally {
       database.close();
@@ -200,7 +292,7 @@ describe("JOI-01 non-destructive migration", () => {
     const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: legacyMigrations });
     const clock = new TestClock();
     const ids = new TestIds();
-    const sse = new SseService({ broker: new InMemorySseBroker(), clock, store: oldDatabase.store });
+    const sse = { publish: () => undefined };
     const agents = new AgentService({ clock, ids, store: oldDatabase.store });
     const lives = new LifeService({ clock, ids, publisher: sse, store: oldDatabase.store });
     const agent = await agents.createShell({ cardUrl: "http://192.168.1.20/card.json", name: "旧主 Agent" });
@@ -215,68 +307,68 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(36);
+      expect(upgraded.inspect().schemaVersion).toBe(38);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
-        avatars: (connection.prepare("SELECT COUNT(*) AS count FROM avatars").get() as { count: number }).count,
+        workbenches: (connection.prepare("SELECT COUNT(*) AS count FROM workbenches").get() as { count: number }).count,
         lives: (connection.prepare("SELECT COUNT(*) AS count FROM lives").get() as { count: number }).count,
         partners: (connection.prepare("SELECT COUNT(*) AS count FROM partners").get() as { count: number }).count,
       }));
-      expect(counts).toEqual({ agents: 1, avatars: 1, lives: 1, partners: 1 });
+      expect(counts).toEqual({ agents: 1, workbenches: 1, lives: 1, partners: 1 });
 
       const mapping = upgraded.transaction((connection) => connection.prepare(`
-        SELECT a.avatar_id, a.legacy_life_id, p.preferred_partner_id
-          FROM avatars a JOIN avatar_partner_policies p ON p.avatar_id = a.avatar_id
-         WHERE a.avatar_id = ?`).get(legacy.lifeId)) as { avatar_id: string; legacy_life_id: string; preferred_partner_id: string };
+        SELECT a.workbench_id, a.legacy_life_id, p.preferred_partner_id
+          FROM workbenches a JOIN workbench_partner_policies p ON p.workbench_id = a.workbench_id
+         WHERE a.workbench_id = ?`).get(legacy.lifeId)) as { workbench_id: string; legacy_life_id: string; preferred_partner_id: string };
       expect(mapping).toEqual({
-        avatar_id: legacy.lifeId,
+        workbench_id: legacy.lifeId,
         legacy_life_id: legacy.lifeId,
         preferred_partner_id: `partner_${agent.agentConnectionId}`,
       });
 
       const adapter = new LegacyLifeStoreAdapter(upgraded);
-      expect(await adapter.getAvatar(legacy.lifeId)).toMatchObject({
-        avatarId: legacy.lifeId,
+      expect(await adapter.getWorkbench(legacy.lifeId)).toMatchObject({
+        workbenchId: legacy.lifeId,
         profile: { name: "产品工作", personaSummary: "保留全部旧上下文" },
       });
       expect(await adapter.getPreferredPartnerId(legacy.lifeId)).toBe(`partner_${agent.agentConnectionId}`);
 
-      const upgradedSse = new SseService({ broker: new InMemorySseBroker(), clock, store: upgraded.store });
+      const upgradedSse = { publish: () => undefined };
       expect(upgraded.transaction((connection) => connection.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'trigger' ORDER BY name",
-      ).all())).toEqual(expect.arrayContaining([{ name: "mirror_new_life_as_avatar" }]));
+      ).all())).toEqual(expect.arrayContaining([{ name: "mirror_new_life_as_workbench" }]));
       const compatibilityLives = new LifeService({ clock, ids, publisher: upgradedSse, store: upgraded.store });
       const mirrored = await compatibilityLives.create({
         mainAgentConnectionId: agent.agentConnectionId,
         name: "兼容创建",
-        personaSummary: "旧 API 仍会镜像 Avatar",
+        personaSummary: "旧 API 仍会镜像 Workbench",
         timezone: "Asia/Shanghai",
       });
       expect(upgraded.transaction((connection) => connection.prepare(
-        "SELECT avatar_id, status FROM avatars WHERE avatar_id = ?",
-      ).get(mirrored.lifeId))).toEqual({ avatar_id: mirrored.lifeId, status: "ACTIVE" });
-      expect(await adapter.getAvatar(mirrored.lifeId)).toMatchObject({ profile: { name: "兼容创建" } });
+        "SELECT workbench_id, status FROM workbenches WHERE workbench_id = ?",
+      ).get(mirrored.lifeId))).toEqual({ workbench_id: mirrored.lifeId, status: "ACTIVE" });
+      expect(await adapter.getWorkbench(mirrored.lifeId)).toMatchObject({ profile: { name: "兼容创建" } });
       expect(upgraded.transaction((connection) => connection.prepare(
-        "SELECT kind, status FROM avatar_workspace_bindings WHERE avatar_id = ?",
+        "SELECT kind, status FROM workbench_workspace_bindings WHERE workbench_id = ?",
       ).get(mirrored.lifeId))).toEqual({ kind: "MANAGED", status: "PROVISIONING" });
 
-      const registry = new AvatarRegistryService({ clock, ids, repository: adapter });
-      const nativeAvatar = await registry.create({
-        name: "原生 Avatar",
+      const registry = new WorkbenchRegistryService({ clock, ids, repository: adapter });
+      const nativeWorkbench = await registry.create({
+        name: "原生 Workbench",
         personaSummary: "由唯一 joi 创建",
         projectLabel: "新工程",
         scopeSummary: "新的隔离范围",
       });
-      expect(await adapter.getAvatar(nativeAvatar.avatarId)).toMatchObject({
-        profile: { name: "原生 Avatar", scopeSummary: "新的隔离范围" },
+      expect(await adapter.getWorkbench(nativeWorkbench.workbenchId)).toMatchObject({
+        profile: { name: "原生 Workbench", scopeSummary: "新的隔离范围" },
         project: { label: "新工程" },
       });
       expect(upgraded.transaction((connection) => connection.prepare(
-        "SELECT kind, status FROM avatar_workspace_bindings WHERE avatar_id = ?",
-      ).get(nativeAvatar.avatarId))).toEqual({ kind: "MANAGED", status: "PROVISIONING" });
+        "SELECT kind, status FROM workbench_workspace_bindings WHERE workbench_id = ?",
+      ).get(nativeWorkbench.workbenchId))).toEqual({ kind: "MANAGED", status: "PROVISIONING" });
       const provisioningPayload = upgraded.transaction((connection) => connection.prepare(
         "SELECT payload_json FROM outbox WHERE outbox_id = ?",
-      ).get(`avatar_workspace_provision:${nativeAvatar.avatarId}`)) as { payload_json: string };
+      ).get(`workbench_workspace_provision:${nativeWorkbench.workbenchId}`)) as { payload_json: string };
       expect(provisioningPayload.payload_json).not.toContain(path.parse(databasePath).root);
     } finally {
       upgraded.close();
@@ -321,8 +413,8 @@ describe("JOI-01 non-destructive migration", () => {
     }
   });
 
-  it("invalidates pre-027 work and instances while provisioning every active Avatar", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-avatar-private-upgrade-"));
+  it("invalidates pre-027 work and instances while provisioning every active Workbench", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-workbench-private-upgrade-"));
     const oldMigrations = path.join(root, "old-migrations");
     await copyMigrationsThrough(oldMigrations, 26);
     const databasePath = path.join(root, "runtime.sqlite");
@@ -338,20 +430,20 @@ describe("JOI-01 non-destructive migration", () => {
       connection.prepare(`INSERT INTO avatars
         (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
          memory_namespace_id, task_summary, status, created_at, updated_at)
-        VALUES ('avatar-upgrade', '升级 Avatar', 'persona-upgrade', 'private persona', 'scope', 'project',
+        VALUES ('workbench-upgrade', '升级 Workbench', 'persona-upgrade', 'private persona', 'scope', 'project',
                 'memory-upgrade', '', 'ACTIVE', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO joi_inbox_messages
         (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
-        VALUES ('input-upgrade', 'idem-upgrade', 'private body', 'ROUTED', 'avatar-upgrade', ?, ?)`).run(now, now);
+        VALUES ('input-upgrade', 'idem-upgrade', 'private body', 'ROUTED', 'workbench-upgrade', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO joi_turns
         (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
-        VALUES ('turn-upgrade', 'input-upgrade', 'avatar-upgrade', 'session-upgrade', 'RUNNING', ?, ?)`).run(now, now);
+        VALUES ('turn-upgrade', 'input-upgrade', 'workbench-upgrade', 'session-upgrade', 'RUNNING', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO dispatch_plans
         (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
         VALUES ('plan-upgrade', 'turn-upgrade', '{}', '{}', ?)`).run(now);
       connection.prepare(`INSERT INTO work_items
         (work_id, avatar_id, input_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
-        VALUES ('work-upgrade', 'avatar-upgrade', 'input-upgrade', 'old work', '{}', 'WRITE',
+        VALUES ('work-upgrade', 'workbench-upgrade', 'input-upgrade', 'old work', '{}', 'WRITE',
                 'C:\\\\legacy\\\\must-not-run', 'RUNNING', ?, ?)`).run(now, now);
       connection.prepare(`INSERT INTO partner_instances
         (instance_id, partner_id, partner_revision_id, session_policy, status, engine, created_at, last_used_at)
@@ -365,7 +457,7 @@ describe("JOI-01 non-destructive migration", () => {
       connection.prepare(`INSERT INTO partner_runs
         (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind,
          external_run_id, status, created_at, updated_at)
-        VALUES ('run-upgrade', 'attempt-upgrade', 'action-upgrade', 'avatar-upgrade', 'work-upgrade', ?,
+        VALUES ('run-upgrade', 'attempt-upgrade', 'action-upgrade', 'workbench-upgrade', 'work-upgrade', ?,
                 'A2A', 'remote-upgrade', 'WAITING_INPUT', ?, ?)`).run(partner.partnerRevisionId, now, now);
     });
     oldDatabase.close();
@@ -374,16 +466,16 @@ describe("JOI-01 non-destructive migration", () => {
     try {
       const facts = upgraded.transaction((connection) => ({
         attempt: connection.prepare("SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt-upgrade'").get(),
-        binding: connection.prepare("SELECT kind, status FROM avatar_workspace_bindings WHERE avatar_id = 'avatar-upgrade'").get(),
+        binding: connection.prepare("SELECT kind, status FROM workbench_workspace_bindings WHERE workbench_id = 'workbench-upgrade'").get(),
         cancel: connection.prepare("SELECT kind, payload_json, status FROM outbox WHERE outbox_id = 'partner_cancel_027:run-upgrade'").get(),
-        instance: connection.prepare("SELECT avatar_id, disposal_reason, status FROM partner_instances WHERE instance_id = 'instance-upgrade'").get(),
+        instance: connection.prepare("SELECT workbench_id, disposal_reason, status FROM partner_instances WHERE instance_id = 'instance-upgrade'").get(),
         work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-upgrade'").get(),
       }));
       expect(facts).toEqual({
         attempt: { status: "FAILED" },
         binding: { kind: "MANAGED", status: "PROVISIONING" },
         cancel: { kind: "partner.cancel", payload_json: '{"runId":"run-upgrade","actionId":"action-upgrade"}', status: "PENDING" },
-        instance: { avatar_id: null, disposal_reason: "upgrade_027", status: "DISPOSED" },
+        instance: { workbench_id: null, disposal_reason: "upgrade_027", status: "DISPOSED" },
         work: { status: "CANCELED" },
       });
       expect(await new SqlitePartnerRegistryRepository(upgraded).getActive(partner.partnerId))

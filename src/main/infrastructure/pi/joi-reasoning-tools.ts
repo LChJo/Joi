@@ -6,12 +6,27 @@ import type { PartnerRegistryService } from "../../application/partners/partner-
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
-import type { AvatarCatalog } from "../../application/ports/avatar-context.js";
-import type { AvatarChangeService } from "../../application/joi/avatar-change-service.js";
+import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
+import type { WorkbenchChangeService } from "../../application/joi/workbench-change-service.js";
+import type { WorkbenchManagementService } from "../../application/joi/workbench-management-service.js";
 import type { WorkResultService } from "../../application/work/work-result-service.js";
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
+import type { JoiHarnessStore } from "../../application/ports/joi-harness.js";
 import { DomainError } from "../../domain/errors.js";
 import { PI_CODING_TOOL_NAMES } from "./pi-coding-tool-factory.js";
+
+/** Extracts the original goal input id from synthetic input ids; undefined for direct goal inputs. */
+export function goalFromInputIdPrefix(inputId: string): string | undefined {
+  const resultPrefix = "joi_result_input:goal:";
+  if (inputId.startsWith(resultPrefix)) return inputId.slice(resultPrefix.length);
+  const reviewPrefix = "joi_harness_review:goal:";
+  if (inputId.startsWith(reviewPrefix)) {
+    const remainder = inputId.slice(reviewPrefix.length);
+    const separator = remainder.lastIndexOf(":r");
+    return separator < 0 ? remainder : remainder.slice(0, separator);
+  }
+  return undefined;
+}
 
 const PI_CODING_TOOL_NAME_SET = new Set<string>(PI_CODING_TOOL_NAMES);
 
@@ -31,6 +46,20 @@ function normalizeCodingTools(values: string[] | undefined): string[] {
   return normalized;
 }
 
+function nonBlank(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
+}
+
+// Partner cards must never ship empty: when the model omits description/prompt,
+// synthesize a minimal profile in the same DO/acceptance/out-of-scope house style.
+function synthesizePartnerProfile(displayName: string, skills: string[], capabilities: string[]): { description: string; prompt: string } {
+  const focus = [...skills, ...capabilities].map((item) => item.trim()).filter((item) => item.length > 0).join("、");
+  const description = focus.length > 0 ? `${displayName}：覆盖${focus}。` : `${displayName}：由 joi 按需创建，承接目标内相应工作。`;
+  const prompt = `你是一位${displayName}搭档。DO：围绕被分配的目标主动推进${focus.length > 0 ? `，覆盖${focus}` : ""}；先给结论再给依据，标明前提与不确定性。验收标准：产出可执行、可验证，附关键证据与来源；未验证内容标注为推测。范围外：不碰与目标无关的内容，不编造数据或来源。`;
+  return { description, prompt };
+}
+
 const SYNTHESIS_TOOL_NAMES = new Set(["turn_complete", "work_read_result"]);
 
 export function selectJoiReasoningToolsForInput(tools: AgentTool[], inputId: string): AgentTool[] {
@@ -39,10 +68,14 @@ export function selectJoiReasoningToolsForInput(tools: AgentTool[], inputId: str
 }
 
 export function createJoiReasoningTools(input: {
-  avatarId: string;
-  avatarChanges: Pick<AvatarChangeService, "suggestArchive" | "suggestMerge">;
-  avatars: AvatarCatalog;
+  workbenchId: string;
+  workbenchChanges: Pick<WorkbenchChangeService, "suggestArchive" | "suggestMerge">;
+  workbenchRefine?: Pick<WorkbenchManagementService, "update">;
+  workbenches: WorkbenchCatalog;
   clarifications: Pick<JoiCoordinatorStore, "requireClarification">;
+  /** Original goal input id; harness tools and goal-binding fall back to inputId when absent. */
+  goalInputId?: string | undefined;
+  harness?: Pick<JoiHarnessStore, "chartPath" | "clearMap" | "graduateFog" | "nameDestination" | "noteFog" | "recordDecision">;
   inputId: string;
   instances: Pick<PartnerInstanceManager, "dispose" | "ensure" | "list">;
   memory: Pick<PartnerWorkMemoryService, "digest">;
@@ -52,6 +85,11 @@ export function createJoiReasoningTools(input: {
   turnId: string;
   work: Pick<WorkOrchestrationService, "plan" | "reassign">;
 }): AgentTool[] {
+  const goalContext = (): string => input.goalInputId ?? input.inputId;
+  const requireHarness = (): NonNullable<typeof input.harness> => {
+    if (input.harness === undefined) throw new DomainError("harness_map_unavailable", "The goal map is not configured.");
+    return input.harness;
+  };
   const workDispatchParameters = Type.Object({
     dependencies: Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() })),
     work: Type.Array(Type.Object({
@@ -77,9 +115,11 @@ export function createJoiReasoningTools(input: {
     execute: async (_toolCallId, arguments_) => {
       try {
         return result(await input.work.plan({
-          avatarId: input.avatarId,
+          workbenchId: input.workbenchId,
           dependencies: arguments_.dependencies,
-          inputId: input.inputId,
+          // Derived inputs (harness review) dispatch on behalf of the original goal so the
+          // result set and synthesis closure stay attached to the goal, not the review row.
+          inputId: goalContext(),
           turnId: input.turnId,
           work: arguments_.work.map((item) => ({
             ...(item.acceptanceChecks === undefined ? {} : { acceptanceChecks: item.acceptanceChecks }),
@@ -93,13 +133,13 @@ export function createJoiReasoningTools(input: {
           })),
         }));
       } catch (error) {
-        if (!(error instanceof DomainError) || error.code !== "avatar_workspace_not_ready") throw error;
+        if (!(error instanceof DomainError) || error.code !== "workbench_workspace_not_ready") throw error;
         await input.clarifications.requireClarification(
           input.inputId,
-          "avatar_workspace_not_ready",
-          "选择这个 Avatar 的工作目录后，我会继续派发需要读写文件的工作。",
+          "workbench_workspace_not_ready",
+          "选择这个 Workbench 的工作目录后，我会继续派发需要读写文件的工作。",
         );
-        return result({ reasonCode: "avatar_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
+        return result({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
       }
     },
     label: "Plan and dispatch work",
@@ -110,7 +150,7 @@ export function createJoiReasoningTools(input: {
   const workReassignTool: AgentTool<typeof workReassignParameters> = {
     description: "Reassign failed or waiting work through policy checks and a new immutable partner revision.",
     execute: async (_toolCallId, arguments_) => result(await input.work.reassign({
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       partnerId: arguments_.partnerId,
       turnId: input.turnId,
       workId: arguments_.workId,
@@ -119,36 +159,36 @@ export function createJoiReasoningTools(input: {
     name: "work_reassign",
     parameters: workReassignParameters,
   };
-  const archiveParameters = Type.Object({ avatarId: Type.String(), reason: Type.String() });
+  const archiveParameters = Type.Object({ workbenchId: Type.String(), reason: Type.String() });
   const suggestArchive: AgentTool<typeof archiveParameters> = {
-    description: "Create a pending Avatar archive request. This never archives until the user confirms it.",
-    execute: async (_toolCallId, arguments_) => result(await input.avatarChanges.suggestArchive({
-      avatarId: arguments_.avatarId, reason: arguments_.reason, turnId: input.turnId,
+    description: "Create a pending Workbench archive request. This never archives until the user confirms it.",
+    execute: async (_toolCallId, arguments_) => result(await input.workbenchChanges.suggestArchive({
+      workbenchId: arguments_.workbenchId, reason: arguments_.reason, turnId: input.turnId,
     })),
-    label: "Suggest Avatar archive",
-    name: "avatar_suggest_archive",
+    label: "Suggest Workbench archive",
+    name: "workbench_suggest_archive",
     parameters: archiveParameters,
   };
-  const mergeParameters = Type.Object({ reason: Type.String(), sourceAvatarId: Type.String(), targetAvatarId: Type.String() });
+  const mergeParameters = Type.Object({ reason: Type.String(), sourceWorkbenchId: Type.String(), targetWorkbenchId: Type.String() });
   const suggestMerge: AgentTool<typeof mergeParameters> = {
-    description: "Create a pending Avatar merge request. Source facts remain intact and nothing changes until the user confirms it.",
-    execute: async (_toolCallId, arguments_) => result(await input.avatarChanges.suggestMerge({
+    description: "Create a pending Workbench merge request. Source facts remain intact and nothing changes until the user confirms it.",
+    execute: async (_toolCallId, arguments_) => result(await input.workbenchChanges.suggestMerge({
       reason: arguments_.reason,
-      sourceAvatarId: arguments_.sourceAvatarId,
-      targetAvatarId: arguments_.targetAvatarId,
+      sourceWorkbenchId: arguments_.sourceWorkbenchId,
+      targetWorkbenchId: arguments_.targetWorkbenchId,
       turnId: input.turnId,
     })),
-    label: "Suggest Avatar merge",
-    name: "avatar_suggest_merge",
+    label: "Suggest Workbench merge",
+    name: "workbench_suggest_merge",
     parameters: mergeParameters,
   };
   const partnerCreateParameters = Type.Object({
     capabilities: Type.Optional(Type.Array(Type.String())),
-    description: Type.Optional(Type.String()),
+    description: Type.String({ description: "One-line role summary shown on the partner card; say what the partner is for, in the user's language." }),
     displayName: Type.String(),
     modelIdOverride: Type.Optional(Type.String()),
     modelSourceId: Type.Optional(Type.String()),
-    prompt: Type.Optional(Type.String()),
+    prompt: Type.String({ description: "Working directive for the partner: role, DO, acceptance criteria, out-of-scope; concrete to the current work." }),
     skills: Type.Optional(Type.Array(Type.String())),
     tools: Type.Optional(Type.Array(Type.String({ enum: [...PI_CODING_TOOL_NAMES] }), {
       maxItems: PI_CODING_TOOL_NAMES.length,
@@ -156,7 +196,7 @@ export function createJoiReasoningTools(input: {
     })),
   });
   const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
-    description: "Register a new local Pi partner when no existing partner fits the work. Reuses an active joi-created local partner with the same name. tools accepts only bash, edit, find, grep, ls, read and write; omit it or pass [] to grant all built-in Pi coding tools. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
+    description: "Register a new local Pi partner when no existing partner fits the work. Reuses an active joi-created local partner with the same name. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work; both are shown to the user on the partner card. tools accepts only bash, edit, find, grep, ls, read and write; omit it or pass [] to grant all built-in Pi coding tools. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
     execute: async (_toolCallId, arguments_) => {
       const displayName = arguments_.displayName.trim();
       const tools = normalizeCodingTools(arguments_.tools);
@@ -171,15 +211,16 @@ export function createJoiReasoningTools(input: {
       if (existing !== undefined) {
         return result({ partnerId: existing.partnerId, partnerRevisionId: existing.partnerRevisionId, reused: true });
       }
+      const profile = synthesizePartnerProfile(displayName, arguments_.skills ?? [], arguments_.capabilities ?? []);
       const created = await input.partners.add({
         capabilities: arguments_.capabilities ?? [],
         createdBy: "joi",
-        ...(arguments_.description === undefined ? {} : { description: arguments_.description }),
+        description: nonBlank(arguments_.description) ?? profile.description,
         displayName,
         kind: "local-pi",
         ...(arguments_.modelIdOverride === undefined ? {} : { modelIdOverride: arguments_.modelIdOverride }),
         ...(arguments_.modelSourceId === undefined ? {} : { modelSourceId: arguments_.modelSourceId }),
-        ...(arguments_.prompt === undefined ? {} : { prompt: arguments_.prompt }),
+        prompt: nonBlank(arguments_.prompt) ?? profile.prompt,
         skills: arguments_.skills ?? [],
         tools,
       });
@@ -196,7 +237,7 @@ export function createJoiReasoningTools(input: {
   const createInstanceTool: AgentTool<typeof createInstanceParameters> = {
     description: "Create an instance of a partner. resident keeps the conversation alive across dispatches (bounded by instance caps); ephemeral is disposed after one turn. Prefer reusing an IDLE instance from partner_list_instances.",
     execute: async (_toolCallId, arguments_) => result(await input.instances.ensure({
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       partnerId: arguments_.partnerId,
       ...(arguments_.sessionPolicy === undefined ? {} : { sessionPolicy: arguments_.sessionPolicy === "resident" ? "RESIDENT" as const : "EPHEMERAL" as const }),
     })),
@@ -208,7 +249,7 @@ export function createJoiReasoningTools(input: {
   const listInstancesTool: AgentTool<typeof listInstancesParameters> = {
     description: "List live partner instances with status, session policy and last use, so follow-up work can reuse the right conversation.",
     execute: async (_toolCallId, arguments_) => result(await input.instances.list({
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       ...(arguments_.partnerId === undefined ? {} : { partnerId: arguments_.partnerId }),
     })),
     label: "List partner instances",
@@ -220,7 +261,7 @@ export function createJoiReasoningTools(input: {
     description: "Dispose a partner instance once its goal is complete. Busy instances cannot be disposed.",
     execute: async (_toolCallId, arguments_) => {
       await input.instances.dispose({
-        avatarId: input.avatarId,
+        workbenchId: input.workbenchId,
         instanceId: arguments_.instanceId,
         reason: arguments_.reason ?? "joi disposed the instance",
       });
@@ -243,9 +284,9 @@ export function createJoiReasoningTools(input: {
   };
   const readResultParameters = Type.Object({ cursor: Type.Optional(Type.String()), resultId: Type.String() });
   const readResultTool: AgentTool<typeof readResultParameters> = {
-    description: "Read one bounded chunk of a persisted work result belonging to the current Avatar. Use nextCursor to continue.",
+    description: "Read one bounded chunk of a persisted work result belonging to the current Workbench. Use nextCursor to continue.",
     execute: async (_toolCallId, arguments_) => result(await input.results.read({
-      avatarId: input.avatarId,
+      workbenchId: input.workbenchId,
       ...(arguments_.cursor === undefined ? {} : { cursor: arguments_.cursor }),
       resultId: arguments_.resultId,
     })),
@@ -273,21 +314,171 @@ export function createJoiReasoningTools(input: {
       Type.Literal("DIRECT_ANSWER"),
       Type.Literal("TEAM_READY"),
       Type.Literal("RESULT_SYNTHESIZED"),
+      Type.Literal("MAP_CLEARED"),
     ]),
   });
   const turnCompleteTool: AgentTool<typeof turnCompleteParameters> = {
-    description: "Commit a tool-using Turn that is fully answered without dispatch or clarification. DIRECT_ANSWER is only for requests needing no execution; TEAM_READY is only for a completed team-building request; RESULT_SYNTHESIZED is only after persisted results were read and synthesized. This tool never executes work.",
-    execute: (_toolCallId, arguments_) => Promise.resolve(result({ outcome: arguments_.outcome, status: "COMMITTED" })),
+    description: "Commit a tool-using Turn that is fully answered without dispatch or clarification. DIRECT_ANSWER is only for requests needing no execution; TEAM_READY is only for a completed team-building request; RESULT_SYNTHESIZED is only after persisted results were read and synthesized; MAP_CLEARED is only when the goal's destination is reached and no way remains (never while open paths exist). This tool never executes work.",
+    execute: async (_toolCallId, arguments_) => {
+      if (arguments_.outcome === "MAP_CLEARED") {
+        const harness = requireHarness();
+        // Only a harness review turn may declare the way complete; other turns would
+        // clear maps mid-flight. Trivial goals are cleared by the traversal instead.
+        if (input.goalInputId === undefined || !input.inputId.startsWith("joi_harness_review:goal:")) {
+          throw new DomainError("harness_clear_not_allowed", "Only a harness review turn can clear the goal map.");
+        }
+        const cleared = await harness.clearMap({ goalInputId: input.goalInputId, turnId: input.turnId });
+        return result({ cleared, outcome: arguments_.outcome, status: "COMMITTED" });
+      }
+      return result({ outcome: arguments_.outcome, status: "COMMITTED" });
+    },
     label: "Complete this Turn",
     name: "turn_complete",
     parameters: turnCompleteParameters,
   };
+  const harnessDestinationParameters = Type.Object({
+    destination: Type.String({ maxLength: 240, minLength: 1 }),
+  });
+  const harnessNameDestinationTool: AgentTool<typeof harnessDestinationParameters> = {
+    description: "Name (or rename) the destination of the current goal map — the final state this goal is finding its way to. Every path and decision points at it; keep it fixed once named unless the goal itself changes.",
+    execute: async (_toolCallId, arguments_) => result(await requireHarness().nameDestination({
+      destination: arguments_.destination,
+      goalInputId: goalContext(),
+      turnId: input.turnId,
+    })),
+    label: "Name the goal destination",
+    name: "harness_name_destination",
+    parameters: harnessDestinationParameters,
+  };
+  const harnessChartPathParameters = Type.Object({
+    close: Type.Optional(Type.Object({
+      pathId: Type.String(),
+      status: Type.Union([Type.Literal("CLOSED"), Type.Literal("OUT_OF_SCOPE")]),
+    })),
+    open: Type.Optional(Type.Object({
+      layer: Type.Integer({ maximum: 32, minimum: 1 }),
+      title: Type.String({ maxLength: 160, minLength: 1 }),
+      workId: Type.Optional(Type.String()),
+    })),
+  });
+  const harnessChartPathTool: AgentTool<typeof harnessChartPathParameters> = {
+    description: "Chart one path on the goal map. Pass open to add the next layer's path (layer counts up from the completed layer; link a dispatched work by workId once created); pass close to mark an open path CLOSED (resolved) or OUT_OF_SCOPE (beyond the destination). Pass exactly one mode.",
+    execute: async (_toolCallId, arguments_) => {
+      const harness = requireHarness();
+      if (arguments_.close === undefined && arguments_.open === undefined) {
+        throw new DomainError("harness_path_invalid", "Pass exactly one of open or close.");
+      }
+      if (arguments_.close !== undefined && arguments_.open !== undefined) {
+        throw new DomainError("harness_path_invalid", "Pass exactly one of open or close.");
+      }
+      return result(await harness.chartPath({
+        ...(arguments_.close === undefined ? {} : { close: arguments_.close }),
+        goalInputId: goalContext(),
+        ...(arguments_.open === undefined ? {} : { open: arguments_.open }),
+        turnId: input.turnId,
+      }));
+    },
+    label: "Chart a goal path",
+    name: "harness_chart_path",
+    parameters: harnessChartPathParameters,
+  };
+  const harnessDecisionParameters = Type.Object({
+    closePathId: Type.Optional(Type.String()),
+    detail: Type.Optional(Type.String({ maxLength: 4_000 })),
+    kind: Type.Optional(Type.Union([
+      Type.Literal("APPROACH"),
+      Type.Literal("SCOPE"),
+      Type.Literal("OUT_OF_SCOPE"),
+      Type.Literal("WORKBENCH_REFINE"),
+    ])),
+    summary: Type.String({ maxLength: 240, minLength: 1 }),
+  });
+  const harnessRecordDecisionTool: AgentTool<typeof harnessDecisionParameters> = {
+    description: "Record one resolution on the goal map (Decisions so far): a one-line summary of what was decided; optional detail stays in the decision row, never in the map index. OUT_OF_SCOPE records work consciously ruled beyond the destination. Pass closePathId to close the path the decision resolves. Resolve at most one decision per review turn.",
+    execute: async (_toolCallId, arguments_) => result(await requireHarness().recordDecision({
+      ...(arguments_.closePathId === undefined ? {} : { closePathId: arguments_.closePathId }),
+      ...(arguments_.detail === undefined ? {} : { detail: arguments_.detail }),
+      goalInputId: goalContext(),
+      kind: arguments_.kind ?? "APPROACH",
+      summary: arguments_.summary,
+      turnId: input.turnId,
+    })),
+    label: "Record a goal decision",
+    name: "harness_record_decision",
+    parameters: harnessDecisionParameters,
+  };
+  const harnessFogParameters = Type.Object({
+    graduate: Type.Optional(Type.Object({
+      fogId: Type.String(),
+      graduateLayer: Type.Optional(Type.Integer({ maximum: 32, minimum: 1 })),
+      graduateTitle: Type.String({ maxLength: 160, minLength: 1 }),
+      graduateWorkId: Type.Optional(Type.String()),
+    })),
+    note: Type.Optional(Type.String({ maxLength: 480, minLength: 1 })),
+  });
+  const harnessNoteFogTool: AgentTool<typeof harnessFogParameters> = {
+    description: "Manage the goal's fog of war — questions you can see coming but cannot yet ticket. Pass note to park a known-but-unsharp question; pass graduate to promote a fog note into a new open path now that it is specifiable. Pass exactly one mode.",
+    execute: async (_toolCallId, arguments_) => {
+      const harness = requireHarness();
+      const hasNote = arguments_.note !== undefined;
+      const hasGraduate = arguments_.graduate !== undefined;
+      if (hasNote === hasGraduate) {
+        throw new DomainError("harness_fog_invalid", "Pass exactly one of note or graduate.");
+      }
+      if (arguments_.note !== undefined) {
+        return result(await harness.noteFog({ goalInputId: goalContext(), note: arguments_.note, turnId: input.turnId }));
+      }
+      const graduate = arguments_.graduate;
+      if (graduate === undefined) throw new DomainError("harness_fog_invalid", "Fog action is missing.");
+      return result(await harness.graduateFog({
+        fogId: graduate.fogId,
+        goalInputId: goalContext(),
+        layer: graduate.graduateLayer ?? 1,
+        title: graduate.graduateTitle,
+        turnId: input.turnId,
+        ...(graduate.graduateWorkId === undefined ? {} : { workId: graduate.graduateWorkId }),
+      }));
+    },
+    label: "Note or graduate fog",
+    name: "harness_note_fog",
+    parameters: harnessFogParameters,
+  };
+  const harnessRefineParameters = Type.Object({
+    persona: Type.Optional(Type.String({ maxLength: 4_000, minLength: 1 })),
+    reason: Type.String({ maxLength: 240, minLength: 1 }),
+    scopeSummary: Type.Optional(Type.String({ maxLength: 1_000, minLength: 1 })),
+  });
+  const harnessRefineWorkbenchTool: AgentTool<typeof harnessRefineParameters> = {
+    description: "Refine the current workbench's parameters from what completing this goal revealed: narrow its scope summary or sharpen its persona. Never broaden scope, never change name or project label, and always give the reason; the refinement is recorded as a WORKBENCH_REFINE decision.",
+    execute: async (_toolCallId, arguments_) => {
+      if (input.workbenchRefine === undefined) {
+        throw new DomainError("harness_refine_invalid", "Workbench refinement is not configured.");
+      }
+      if (arguments_.persona === undefined && arguments_.scopeSummary === undefined) {
+        throw new DomainError("harness_refine_invalid", "Pass at least one of scopeSummary or persona.");
+      }
+      await input.workbenchRefine.update(input.workbenchId, {
+        ...(arguments_.persona === undefined ? {} : { persona: arguments_.persona }),
+        ...(arguments_.scopeSummary === undefined ? {} : { responsibility: arguments_.scopeSummary }),
+      });
+      const decision = await requireHarness().recordDecision({
+        goalInputId: goalContext(),
+        kind: "WORKBENCH_REFINE",
+        summary: arguments_.reason,
+        turnId: input.turnId,
+      });
+      return result({ workbenchId: input.workbenchId, decisionId: decision.decisionId, refined: true });
+    },
+    label: "Refine Workbench parameters",
+    name: "harness_refine_workbench",
+    parameters: harnessRefineParameters,
+  };
   return [
     {
-      description: "List redacted Avatar summaries. Does not return persona, memory, or workspace paths.",
-      execute: async () => result(await input.avatars.listSummaries()),
-      label: "List Avatar summaries",
-      name: "avatar_list_summaries",
+      description: "List redacted Workbench summaries. Does not return persona, memory, or workspace paths.",
+      execute: async () => result(await input.workbenches.listSummaries()),
+      label: "List Workbench summaries",
+      name: "workbench_list_summaries",
       parameters: Type.Object({}),
     },
     {
@@ -304,7 +495,7 @@ export function createJoiReasoningTools(input: {
     {
       description: "List active partners with public metadata, live instances and a working-memory digest (recent outcomes, success rate). Use the digest to pick and the instance list to reuse.",
       execute: async () => {
-        const [partners, instances] = await Promise.all([input.partners.list(), input.instances.list({ avatarId: input.avatarId })]);
+        const [partners, instances] = await Promise.all([input.partners.list(), input.instances.list({ workbenchId: input.workbenchId })]);
         const enriched = await Promise.all(partners.map(async (dto) => {
           const { tools, ...partner } = dto;
           return {
@@ -313,7 +504,7 @@ export function createJoiReasoningTools(input: {
             instances: instances
               .filter((instance) => instance.partnerId === dto.partnerId)
               .map((instance) => ({ instanceId: instance.instanceId, lastUsedAt: instance.lastUsedAt, sessionPolicy: instance.sessionPolicy, status: instance.status })),
-            memoryDigest: await input.memory.digest(input.avatarId, dto.partnerId),
+            memoryDigest: await input.memory.digest(input.workbenchId, dto.partnerId),
             toolCount: tools.length,
           };
         }));
@@ -333,5 +524,10 @@ export function createJoiReasoningTools(input: {
     readResultTool,
     userAskTool,
     turnCompleteTool,
+    harnessNameDestinationTool,
+    harnessChartPathTool,
+    harnessRecordDecisionTool,
+    harnessNoteFogTool,
+    harnessRefineWorkbenchTool,
   ];
 }

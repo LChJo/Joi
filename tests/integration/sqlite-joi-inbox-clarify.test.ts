@@ -8,25 +8,25 @@ import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/r
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("sqlite joi inbox clarify", () => {
-  it("re-queues a clarified input with the chosen Avatar and refuses non-clarification rows", async () => {
+  it("re-queues a clarified input with the chosen Workbench and refuses non-clarification rows", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
-      database.transaction((connection) => connection.prepare(`INSERT INTO avatars
-        (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+      database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-        "av-1", "前端搭档", "pr-1", "persona", "scope", "proj", "ns-1", "ACTIVE", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z",
+        "workbench-1", "前端搭档", "pr-1", "persona", "scope", "proj", "ns-1", "ACTIVE", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z",
       ));
       const accepted = await inbox.accept({ idempotencyKey: "key-1", text: "研究登录改造" });
 
-      expect(await repository.clarify("does-not-exist", { avatarId: "av-1" })).toBeNull();
-      expect(await repository.clarify(accepted.inputId, { avatarId: "av-1" })).toBeNull();
+      expect(await repository.clarify("does-not-exist", { workbenchId: "workbench-1" })).toBeNull();
+      expect(await repository.clarify(accepted.inputId, { workbenchId: "workbench-1" })).toBeNull();
 
-      await repository.requireClarification(accepted.inputId, "avatar_selection_invalid");
-      const clarified = await repository.clarify(accepted.inputId, { avatarId: "av-1" });
-      expect(clarified).toMatchObject({ avatarId: "av-1", body: "研究登录改造", inputId: accepted.inputId, status: "PENDING" });
+      await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
+      const clarified = await repository.clarify(accepted.inputId, { workbenchId: "workbench-1" });
+      expect(clarified).toMatchObject({ workbenchId: "workbench-1", body: "研究登录改造", inputId: accepted.inputId, status: "PENDING" });
       expect(clarified?.clarificationReasonCode).toBeUndefined();
       expect(await repository.clarify(accepted.inputId, { text: "too late" })).toBeNull();
     } finally {
@@ -42,7 +42,7 @@ describe("sqlite joi inbox clarify", () => {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
       const accepted = await inbox.accept({ idempotencyKey: "key-2", text: "归属？" });
-      await repository.requireClarification(accepted.inputId, "avatar_selection_invalid");
+      await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
       const clarified = await repository.clarify(accepted.inputId, { text: "是登录模块" });
       expect(clarified?.body).toBe("归属？\n\n[用户补充] 是登录模块");
       expect(clarified?.status).toBe("PENDING");

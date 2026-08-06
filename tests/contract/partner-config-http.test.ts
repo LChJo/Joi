@@ -228,7 +228,7 @@ describe("partner config HTTP API", () => {
     }
   });
 
-  it("keeps partner memory private and requires Avatar scope for legacy instance views", async () => {
+  it("keeps partner memory private and requires Workbench scope for legacy instance views", async () => {
     const session = await createSession();
     try {
       const created = await fetch(`${session.url}/api/v1/partners`, {
@@ -244,7 +244,7 @@ describe("partner config HTTP API", () => {
 
       const instances = await fetch(`${session.url}/api/v1/partners/${encodeURIComponent(partner.partnerId)}/instances`, { headers: session.headers });
       expect(instances.status).toBe(400);
-      expect(await instances.json()).toMatchObject({ code: "avatar_id_required" });
+      expect(await instances.json()).toMatchObject({ code: "workbench_id_required" });
     } finally {
       await session.close();
     }

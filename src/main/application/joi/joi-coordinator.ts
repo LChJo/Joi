@@ -1,6 +1,6 @@
 import { DomainError } from "../../domain/errors.js";
-import type { AvatarCatalog } from "../ports/avatar-context.js";
-import type { AvatarRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
+import type { WorkbenchCatalog } from "../ports/workbench-context.js";
+import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import type { PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
 import {
@@ -9,7 +9,7 @@ import {
   type RuntimeDiagnostics,
 } from "../ports/runtime-diagnostics.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
-import type { AvatarRegistryService } from "./avatar-registry-service.js";
+import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
 import { sanitizeAgentConversationText } from "../partners/agent-conversation-presentation.js";
 
@@ -22,7 +22,7 @@ interface SourcePin {
   turnId: string;
 }
 
-type AvatarDecision = { action: "select"; avatarId: string } | {
+type WorkbenchDecision = { action: "select"; workbenchId: string } | {
   action: "create";
   name: string;
   personaSummary: string;
@@ -30,17 +30,17 @@ type AvatarDecision = { action: "select"; avatarId: string } | {
   scopeSummary: string;
 };
 
-/** Deterministic first context when no Avatar exists and routing cannot produce a valid decision. */
-const BOOTSTRAP_AVATAR = {
+/** Deterministic first context when no Workbench exists and routing cannot produce a valid decision. */
+const BOOTSTRAP_WORKBENCH = {
   name: "joi 工作台",
   personaSummary: "承接第一批输入的通用 joi 上下文；可在上下文中心改名或调整范围。",
   projectLabel: "joi 工作台",
-  scopeSummary: "尚无 Avatar 时自动创建的通用工作台；只承接不成独立目标的杂项输入，明确的新目标应创建新 Avatar。",
+  scopeSummary: "尚无 Workbench 时自动创建的通用工作台；只承接不成独立目标的杂项输入，明确的新目标应创建新 Workbench。",
 };
 
 const COMMITTED_OUTCOME_TOOL_NAMES = new Set([
-  "avatar_suggest_archive",
-  "avatar_suggest_merge",
+  "workbench_suggest_archive",
+  "workbench_suggest_merge",
   "schedule_plan",
   "turn_complete",
   "user_ask",
@@ -57,11 +57,11 @@ const OUTCOME_REPAIR_PROMPT = [
   "Only when no execution is requested and the response is already complete may you call turn_complete with the matching outcome.",
 ].join(" ");
 
-function avatarDecision(value: unknown, known: Set<string>, canCreate: boolean): AvatarDecision | null {
+function workbenchDecision(value: unknown, known: Set<string>, canCreate: boolean): WorkbenchDecision | null {
   if (value === null || Array.isArray(value) || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
-  if (record.action === "select" && typeof record.avatarId === "string" && known.has(record.avatarId)) {
-    return { action: "select", avatarId: record.avatarId };
+  if (record.action === "select" && typeof record.workbenchId === "string" && known.has(record.workbenchId)) {
+    return { action: "select", workbenchId: record.workbenchId };
   }
   if (canCreate && record.action === "create" && typeof record.name === "string"
     && typeof record.personaSummary === "string" && typeof record.projectLabel === "string"
@@ -79,14 +79,14 @@ function avatarDecision(value: unknown, known: Set<string>, canCreate: boolean):
 
 export class JoiCoordinator {
   constructor(private readonly dependencies: {
-    avatars: AvatarCatalog;
-    avatarRegistry?: Pick<AvatarRegistryService, "create">;
+    workbenches: WorkbenchCatalog;
+    workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     clock: Clock;
     diagnostics?: RuntimeDiagnostics;
     failureClassifier?: ReasoningFailureClassifier;
     ids: IdGenerator;
     events?: DurableUiEventEmitter;
-    router: AvatarRoutingRuntime;
+    router: WorkbenchRoutingRuntime;
     runtime: PrimaryReasoningRuntime;
     sources: {
       selectFallback?(input: {
@@ -108,73 +108,73 @@ export class JoiCoordinator {
     const handleStartedAt = this.dependencies.clock.now().getTime();
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.handling_started", {
       attachmentCount: input.attachments?.length ?? 0,
-      avatarBound: input.avatarId !== undefined,
+      workbenchBound: input.workbenchId !== undefined,
       inputId,
       status: input.status,
     });
-    const avatars = await this.dependencies.avatars.listSummaries();
-    let createdAvatar;
-    let avatarId = input.avatarId;
-    let avatarResolution: "bound" | "bootstrap" | "created" | "selected" = "bound";
-    if (avatarId === undefined) {
-      const known = new Set(avatars.map((avatar) => avatar.avatarId));
-      let decision: AvatarDecision | null = null;
+    const workbenches = await this.dependencies.workbenches.listSummaries();
+    let createdWorkbench;
+    let workbenchId = input.workbenchId;
+    let workbenchResolution: "bound" | "bootstrap" | "created" | "selected" = "bound";
+    if (workbenchId === undefined) {
+      const known = new Set(workbenches.map((workbench) => workbench.workbenchId));
+      let decision: WorkbenchDecision | null = null;
       for (let attempt = 0; attempt < 2 && decision === null; attempt += 1) {
-        decision = avatarDecision(
-          await this.dependencies.router.decide({ avatars, input: input.body, repair: attempt === 1 }),
+        decision = workbenchDecision(
+          await this.dependencies.router.decide({ workbenches, input: input.body, repair: attempt === 1 }),
           known,
-          this.dependencies.avatarRegistry !== undefined,
+          this.dependencies.workbenchRegistry !== undefined,
         );
       }
       if (decision === null) {
-        if (avatars.length === 0 && this.dependencies.avatarRegistry !== undefined) {
-          createdAvatar = await this.dependencies.avatarRegistry.create(BOOTSTRAP_AVATAR);
-          avatarId = createdAvatar.avatarId;
-          avatarResolution = "bootstrap";
+        if (workbenches.length === 0 && this.dependencies.workbenchRegistry !== undefined) {
+          createdWorkbench = await this.dependencies.workbenchRegistry.create(BOOTSTRAP_WORKBENCH);
+          workbenchId = createdWorkbench.workbenchId;
+          workbenchResolution = "bootstrap";
         } else {
-          await this.dependencies.store.requireClarification(inputId, "avatar_selection_invalid");
+          await this.dependencies.store.requireClarification(inputId, "workbench_selection_invalid");
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {
             inputId,
-            reasonCode: "avatar_selection_invalid",
+            reasonCode: "workbench_selection_invalid",
           });
           await this.dependencies.events?.emit("joi.message.clarification_required", inputId, { inputId });
           return;
         }
       } else {
-        createdAvatar = decision.action === "create"
-          ? await this.dependencies.avatarRegistry?.create(decision)
+        createdWorkbench = decision.action === "create"
+          ? await this.dependencies.workbenchRegistry?.create(decision)
           : undefined;
-        avatarId = decision.action === "select" ? decision.avatarId : createdAvatar?.avatarId;
-        avatarResolution = decision.action === "select" ? "selected" : "created";
+        workbenchId = decision.action === "select" ? decision.workbenchId : createdWorkbench?.workbenchId;
+        workbenchResolution = decision.action === "select" ? "selected" : "created";
       }
     }
-    if (avatarId === undefined) {
-      await this.dependencies.store.requireClarification(inputId, "avatar_creation_unavailable");
+    if (workbenchId === undefined) {
+      await this.dependencies.store.requireClarification(inputId, "workbench_creation_unavailable");
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {
         inputId,
-        reasonCode: "avatar_creation_unavailable",
+        reasonCode: "workbench_creation_unavailable",
       });
       return;
     }
-    const avatar = createdAvatar ?? await this.dependencies.avatars.getAvatar(avatarId);
-    if (avatar === null) {
-      await this.dependencies.store.requireClarification(inputId, "avatar_not_found");
+    const workbench = createdWorkbench ?? await this.dependencies.workbenches.getWorkbench(workbenchId);
+    if (workbench === null) {
+      await this.dependencies.store.requireClarification(inputId, "workbench_not_found");
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {
         inputId,
-        reasonCode: "avatar_not_found",
+        reasonCode: "workbench_not_found",
       });
       return;
     }
-    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.avatar.resolved", { avatarId, inputId, resolution: avatarResolution });
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.workbench.resolved", { workbenchId, inputId, resolution: workbenchResolution });
     const turnId = this.dependencies.ids.next("turn");
     const goalSynthesis = input.goalInputId !== undefined && input.resultRevision !== undefined
       ? { goalInputId: input.goalInputId, resultRevision: input.resultRevision }
       : null;
     const isGoalSynthesis = goalSynthesis !== null;
-    const sessionId = isGoalSynthesis ? `joi_synthesis_session:${avatarId}` : `joi_session:${avatarId}`;
+    const sessionId = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}` : `joi_session:${workbenchId}`;
     let pin = await this.dependencies.sources.selectInitial(turnId);
     await this.dependencies.store.createTurn({
-      avatarId,
+      workbenchId,
       createdAt: this.dependencies.clock.now().toISOString(),
       inputId,
       modelRevisionId: pin.modelRevisionId,
@@ -183,7 +183,7 @@ export class JoiCoordinator {
       turnId,
     });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.started", {
-      avatarId,
+      workbenchId,
       inputId,
       modelRevisionId: pin.modelRevisionId,
       sourceId: pin.sourceId,
@@ -191,13 +191,13 @@ export class JoiCoordinator {
       turnId,
     });
     if (goalSynthesis !== null) emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.synthesis.started", {
-      avatarId,
+      workbenchId,
       goalInputId: goalSynthesis.goalInputId,
       inputId,
       resultRevision: goalSynthesis.resultRevision,
       turnId,
     });
-    await this.dependencies.events?.emit("joi.turn.started", turnId, { avatarId, inputId, turnId });
+    await this.dependencies.events?.emit("joi.turn.started", turnId, { workbenchId, inputId, turnId });
     let formalOutputStarted = false;
     let sideEffectStarted = false;
     const observedToolCalls = new Set<string>();
@@ -212,7 +212,8 @@ export class JoiCoordinator {
         attemptedSources.add(pin.sourceId);
         try {
           await this.dependencies.runtime.startTurn({
-            avatarId,
+            workbenchId,
+            ...(input.goalInputId === undefined ? {} : { goalInputId: input.goalInputId }),
             inputId,
             modelId: pin.modelId,
             modelRevisionId: pin.modelRevisionId,
@@ -226,7 +227,7 @@ export class JoiCoordinator {
                 observedToolCalls.add(event.toolCallId);
                 toolStartedAt.set(event.toolCallId, this.dependencies.clock.now().getTime());
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.started", {
-                  avatarId,
+                  workbenchId,
                   inputId,
                   sourceId: pin.sourceId,
                   toolCallId: event.toolCallId,
@@ -238,7 +239,7 @@ export class JoiCoordinator {
                 const finishedAt = this.dependencies.clock.now().getTime();
                 const startedAt = toolStartedAt.get(event.toolCallId) ?? finishedAt;
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.finished", {
-                  avatarId,
+                  workbenchId,
                   durationMs: Math.max(0, finishedAt - startedAt),
                   inputId,
                   isError: event.isError,
@@ -262,12 +263,12 @@ export class JoiCoordinator {
             sourceRevisionId: pin.sourceRevisionId,
             systemPrompt: buildJoiSystemPrompt({
               ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
-              avatarName: avatar.profile.name,
+              workbenchName: workbench.profile.name,
               ...(pin.modelCapability === undefined ? {} : { modelCapability: pin.modelCapability }),
-              personaSummary: avatar.profile.personaSummary,
-              projectLabel: avatar.project.label,
-              scopeSummary: avatar.profile.scopeSummary,
-              taskContextSummary: avatar.taskContext.summary,
+              personaSummary: workbench.profile.personaSummary,
+              projectLabel: workbench.project.label,
+              scopeSummary: workbench.profile.scopeSummary,
+              taskContextSummary: workbench.taskContext.summary,
             }),
             turnId,
           });
@@ -280,7 +281,7 @@ export class JoiCoordinator {
             }
             completionRepairAttempted = true;
             emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", {
-              avatarId,
+              workbenchId,
               inputId,
               observedToolCount: observedToolCalls.size,
               turnId,
@@ -300,7 +301,7 @@ export class JoiCoordinator {
           }) ?? null;
           if (fallback === null || attemptedSources.has(fallback.sourceId)) throw error;
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.source_fallback", {
-            avatarId,
+            workbenchId,
             fromSourceId: pin.sourceId,
             inputId,
             toSourceId: fallback.sourceId,
@@ -313,12 +314,12 @@ export class JoiCoordinator {
       const completionSummary = sanitizeAgentConversationText(completionText).replace(/\s+/gu, " ").trim().slice(0, 640);
       const completion = await this.dependencies.store.completeInput(inputId, turnId, isGoalSynthesis ? {
         completionSummary: completionSummary === ""
-          ? "相关工作已完成，结果已汇总到 Avatar 的 Agent 记录。"
+          ? "相关工作已完成，结果已汇总到 Workbench 的 Agent 记录。"
           : completionSummary,
       } : undefined);
       if (goalSynthesis !== null) {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.synthesis.completed", {
-          avatarId,
+          workbenchId,
           goalInputId: goalSynthesis.goalInputId,
           inputId,
           resultRevision: goalSynthesis.resultRevision,
@@ -329,14 +330,14 @@ export class JoiCoordinator {
           && "goalInputId" in completion && typeof completion.goalInputId === "string"
           && "resultRevision" in completion && typeof completion.resultRevision === "number") {
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.outcome.persisted", {
-            avatarId,
+            workbenchId,
             goalInputId: completion.goalInputId,
             resultRevision: completion.resultRevision,
           });
         }
       }
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.completed", {
-        avatarId,
+        workbenchId,
         durationMs: Math.max(0, this.dependencies.clock.now().getTime() - handleStartedAt),
         inputId,
         observedToolCount: observedToolCalls.size,
@@ -345,11 +346,19 @@ export class JoiCoordinator {
         sourceId: pin.sourceId,
         turnId,
       });
-      await this.dependencies.events?.emit("joi.turn.completed", turnId, { avatarId, inputId, turnId });
+      await this.dependencies.events?.emit("joi.turn.completed", turnId, { workbenchId, inputId, turnId });
     } catch (error) {
+      // A failed turn must not leave its reasoning session streaming: a leftover
+      // isStreaming would make every later turn on this session fail busy at once,
+      // turning one failure into a retry crash loop.
+      try {
+        this.dependencies.runtime.abort(sessionId);
+      } catch {
+        // The session may not exist yet; nothing to abort.
+      }
       await this.dependencies.store.failTurn?.(inputId, turnId);
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.failed", {
-        avatarId,
+        workbenchId,
         durationMs: Math.max(0, this.dependencies.clock.now().getTime() - handleStartedAt),
         errorCode: runtimeDiagnosticErrorCode(error),
         inputId,
@@ -359,7 +368,7 @@ export class JoiCoordinator {
         sourceId: pin.sourceId,
         turnId,
       });
-      await this.dependencies.events?.emit("joi.turn.failed", turnId, { avatarId, inputId, turnId });
+      await this.dependencies.events?.emit("joi.turn.failed", turnId, { workbenchId, inputId, turnId });
       throw error;
     }
   }

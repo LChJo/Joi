@@ -41,7 +41,7 @@ describe("json-line runtime diagnostics", () => {
     });
 
     diagnostics.emit("joi.tool.finished", {
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       durationMs: 12,
       inputId: "input_1",
       isError: false,
@@ -55,7 +55,7 @@ describe("json-line runtime diagnostics", () => {
     expect(lines[0]?.endsWith("\n")).toBe(true);
     expect(JSON.parse(lines[0] ?? "{}")).toEqual({
       at: "2026-07-15T12:00:00.000Z",
-      avatarId: "avatar_1",
+      workbenchId: "workbench_1",
       durationMs: 12,
       event: "joi.tool.finished",
       inputId: "input_1",

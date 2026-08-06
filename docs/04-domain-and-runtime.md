@@ -1,14 +1,18 @@
 # 领域模型与运行时
 
-## 0. JOI-01 Avatar 与工作运行时
+## 0. JOI-01 工作台与工作运行时
 
-唯一全局 joi 负责决策，Avatar 负责上下文，Partner 负责执行，Work 负责生命周期。Avatar 不是 Agent，也不是 scheduler。
+唯一全局 joi 负责决策，工作台负责上下文，Partner 负责执行，Work 负责生命周期。工作台不是 Agent，也不是 scheduler。
 
-`Avatar` aggregate 仅直接拥有 `AvatarProfile`、`AvatarProjectContext`、`AvatarMemoryNamespace` 与 `AvatarTaskContext`。工作区 binding、budget、schedule、rhythm、partner policy、Pi thread 和 work execution 都是按 `avatarId` 关联的独立事实。Avatar 是 cwd 的唯一权威，但绝对路径只存在于基础设施私表。任何 work item 必须恰好绑定一个 `avatarId`；跨 Avatar 检索和操作默认拒绝。
+`Workbench` aggregate 仅直接拥有 `WorkbenchProfile`、`WorkbenchProjectContext`、`WorkbenchMemoryNamespace` 与 `WorkbenchTaskContext`。工作区 binding、budget、schedule、rhythm、partner policy、Pi thread 和 work execution 都是按 `workbenchId` 关联的独立事实。工作台是 cwd 的唯一权威，但绝对路径只存在于基础设施私表。任何 work item 必须恰好绑定一个 `workbenchId`；跨工作台检索和操作默认拒绝。
 
 输入先写全局 inbox，再由 Pi 选择 `select | create | suggest_merge | suggest_archive | clarify`。非法结构化决策只修复一次；再次失败进入澄清或安全串行降级。merge/archive 只生成建议，必须经用户确认。
 
-Partner 配置（revision）是无 cwd 的全局模板；运行中的 `PartnerInstance` 必须绑定一个 `avatarId`，分为 `EPHEMERAL`（单次派发后销毁、消息清除）与 `RESIDENT`（会话消息持久化、跨重启恢复、目标完成后由 joi 销毁）。实例既不跨 Partner，也不跨 Avatar；忙碌实例不可复用或销毁。工作记忆按 `(avatarId, partnerId)` 隔离，只向 joi 提供不含正文的选择依据；管理 API 不提供记忆正文。
+Partner 配置（revision）是无 cwd 的全局模板；运行中的 `PartnerInstance` 必须绑定一个 `workbenchId`，分为 `EPHEMERAL`（单次派发后销毁、消息清除）与 `RESIDENT`（会话消息持久化、跨重启恢复、目标完成后由 joi 销毁）。实例既不跨 Partner，也不跨工作台；忙碌实例不可复用或销毁。工作记忆按 `(workbenchId, partnerId)` 隔离，只向 joi 提供不含正文的选择依据；管理 API 不提供记忆正文。
+
+### 0.1 目标地图（harness，ADR 0010）
+
+每个 goal（原始输入）可挂一张持久化地图，词汇固定：**destination** = 这次努力的最终目标（先命名、固定 scope）；**path** = 每一层推进路径（只引用 `work_id`，不重复建模执行）；**decision** = Decisions-so-far 索引（决策记一处）；**fog** = 已知但尚不可精确表述的问题（前沿到达后晋升为 path）；out of scope 用 decision kind 或 path 状态显式排除。地图只由两处写入：joi 推理 turn 的 5 个 harness 工具（goal 语境寻址），与 harness component 的确定性遍历（建图、复盘投递、完成反哺、琐碎清空）。复盘经 inbox PENDING 行排队进唯一串行槽位——组件不推理、不派发。goal 达成由复盘 turn 以 `turn_complete(MAP_CLEARED)` 声明；完成事实经 `task_summary` 回灌工作台的 Task context，参数经 `harness_refine_workbench`（只收窄不扩宽、审计行落 decisions）。
 
 下文 Life/Wake 状态机继续定义旧数据兼容和恢复不变量；新运行时不得把它复制为第二条可产生副作用的调度链。
 

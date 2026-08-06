@@ -1,14 +1,14 @@
 import {
   MODEL_SOURCE_CHOICES,
   MODEL_SOURCE_KINDS,
-  type AvatarDto,
+  type WorkbenchDto,
   type JoiSnapshotDto,
   type ModelSourceDto,
   type PartnerDto,
 } from "../../src/shared/joi.js";
 
 describe("JOI-01 shared DTO contract", () => {
-  it("exposes Avatar, Partner and model source projections without secret or absolute-path fields", () => {
+  it("exposes Workbench, Partner and model source projections without secret or absolute-path fields", () => {
     expect(MODEL_SOURCE_KINDS).toEqual(["kimi", "glm", "qwen", "doubao", "minimax", "deepseek", "generic-openai"]);
     expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "kimi")?.options.map((option) => option.accessMode))
       .toEqual(["api", "coding-plan"]);
@@ -25,8 +25,8 @@ describe("JOI-01 shared DTO contract", () => {
       .toEqual(["openai"]);
     expect(MODEL_SOURCE_CHOICES.find((choice) => choice.kind === "generic-openai")?.options[0]?.protocols.map((option) => option.protocol))
       .toEqual(["openai", "anthropic"]);
-    const avatar: AvatarDto = {
-      avatarId: "avatar_1",
+    const workbench: WorkbenchDto = {
+      workbenchId: "workbench_1",
       name: "产品工作",
       scopeSummary: "joi 工程",
       updatedAt: "2026-07-28T10:00:00.000Z",
@@ -61,8 +61,8 @@ describe("JOI-01 shared DTO contract", () => {
       status: "READY",
     };
     const snapshot: JoiSnapshotDto = {
-      avatarChanges: [],
-      avatars: [avatar],
+      workbenchChanges: [],
+      workbenches: [workbench],
       modelSources: [source],
       partners: [partner],
       runtime: { configured: true, status: "READY" },

@@ -4,13 +4,14 @@ import os from "node:os";
 import path from "node:path";
 
 import type { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager.js";
-import { AvatarContextAssembler } from "../../src/main/application/joi/avatar-context-assembler.js";
+import { WorkbenchContextAssembler } from "../../src/main/application/joi/workbench-context-assembler.js";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
-import { SqliteA2aPartnerDispatchHandler } from "../../src/main/infrastructure/a2a/sqlite-partner-dispatch-handler.js";
+import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
+import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
 import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
-import { SqliteAvatarContextRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-context-repository.js";
-import { SqliteAvatarAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-avatar-agent-repository.js";
+import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-context-repository.js";
+import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
 import { createWorkResult } from "../../src/main/domain/work/work-result.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
@@ -19,17 +20,17 @@ import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 function seedDispatchFixture(database: RuntimeDatabase, partnerRevisionId: string): void {
   database.transaction((connection) => {
-    connection.prepare(`INSERT INTO avatars
-      (avatar_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
-      VALUES ('avatar_1', 'A', 'persona_1', 'summary', 'scope', 'project', 'memory_namespace_1', 'ACTIVE', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
-    connection.prepare(`INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, avatar_id, created_at, updated_at)
-      VALUES ('input_1', 'idem_1', 'body', 'ROUTED', 'avatar_1', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
-    connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, avatar_id, session_id, status, created_at, updated_at)
-      VALUES ('turn_1', 'input_1', 'avatar_1', 'joi_session:avatar_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO workbenches
+      (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+      VALUES ('workbench_1', 'A', 'persona_1', 'summary', 'scope', 'project', 'memory_namespace_1', 'ACTIVE', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+      VALUES ('input_1', 'idem_1', 'body', 'ROUTED', 'workbench_1', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+      VALUES ('turn_1', 'input_1', 'workbench_1', 'joi_session:workbench_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
     connection.prepare(`INSERT INTO dispatch_plans (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
       VALUES ('plan_1', 'turn_1', '{}', '{}', '2026-07-29T10:00:00.000Z')`).run();
-    connection.prepare(`INSERT INTO work_items (work_id, avatar_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
-      VALUES ('work_1', 'avatar_1', 'input_1', 'the task', '{}', 'WRITE', 'READY', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+      VALUES ('work_1', 'workbench_1', 'input_1', 'the task', '{}', 'WRITE', 'READY', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`).run();
     connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES ('work_1', 'NONE')").run();
     connection.prepare(`INSERT INTO dispatch_attempts
       (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
@@ -44,7 +45,7 @@ async function openWithPartner() {
   const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
   seedDispatchFixture(database, partner.partnerRevisionId);
   await new SqlitePartnerInstanceRepository(database).create({
-    avatarId: "avatar_1", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_9",
+    workbenchId: "workbench_1", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_9",
     partnerId: partner.partnerId, partnerRevisionId: partner.partnerRevisionId, sessionPolicy: "RESIDENT",
   });
   return { database, partner, root };
@@ -53,24 +54,23 @@ async function openWithPartner() {
 function makeHandler(
   database: RuntimeDatabase,
   instances: Pick<PartnerInstanceManager, "dispatch">,
-  onResult: (event: Record<string, unknown>) => Promise<void>,
   diagnostics: { event: string; fields: Record<string, unknown> }[] = [],
   verifier?: { verify(input: unknown): Promise<{ reasonCode?: string; status: "FAILED" | "NOT_REQUIRED" | "PASSED" }> },
+  publish: (event: unknown) => Promise<unknown> = async () => undefined,
 ) {
-  const contexts = new SqliteAvatarContextRepository(database);
-  return new SqliteA2aPartnerDispatchHandler({
-    agentConversations: new SqliteAvatarAgentRepository(database),
+  const contexts = new SqliteWorkbenchContextRepository(database);
+  return new SqlitePartnerDispatchDelivery({
+    agentConversations: new SqliteWorkbenchAgentRepository(database),
     clock: new TestClock(),
-    contextAssembler: new AvatarContextAssembler({ avatars: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
+    contextAssembler: new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
     contexts,
     database,
     diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
     gateway: { recover: async () => { throw new Error("gateway must not be used for LOCAL_PI"); }, startWithResult: async () => { throw new Error("gateway must not be used for LOCAL_PI"); } },
     instances,
     leases: { acquire: async () => null, release: async () => undefined },
-    local: { run: async () => { throw new Error("legacy local runner must not be used when instance fields are present"); } },
-    onResult,
     partners: new SqlitePartnerRegistryRepository(database),
+    publish,
     results: new SqliteWorkResultRepository(database),
     ...(verifier === undefined ? {} : { verifier }),
   });
@@ -98,7 +98,7 @@ describe("partner dispatch instance routing", () => {
           actionId: "action_1", artifacts: [], body: "I wrote it", externalRunId: "local_pi:action_1",
           status: "COMPLETED" as const, workId: "work_1",
         }),
-      }, async () => undefined, [], {
+      }, [], {
         verify: async () => ({ reasonCode: "verification_content_mismatch", status: "FAILED" }),
       });
 
@@ -120,14 +120,14 @@ describe("partner dispatch instance routing", () => {
     const { database, partner, root } = await openWithPartner();
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO partner_runs
-        (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind,
+        (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
          external_run_id, status, created_at, updated_at)
-        VALUES ('partner_run:action_1', 'attempt_1', 'action_1', 'avatar_1', 'work_1', ?,
+        VALUES ('partner_run:action_1', 'attempt_1', 'action_1', 'workbench_1', 'work_1', ?,
                 'LOCAL_PI', 'local_pi:action_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z')`)
         .run(partner.partnerRevisionId));
       const repository = new SqliteWorkResultRepository(database);
       const base = {
-        actionId: "action_1", artifacts: [], avatarId: "avatar_1", body: "done",
+        actionId: "action_1", artifacts: [], workbenchId: "workbench_1", body: "done",
         createdAt: "2026-07-29T10:00:00.000Z", isLate: false,
         partnerRevisionId: partner.partnerRevisionId, runId: "partner_run:action_1", workId: "work_1",
       };
@@ -151,7 +151,7 @@ describe("partner dispatch instance routing", () => {
         "SELECT status FROM work_items WHERE work_id = 'work_1'",
       ).get())).toEqual({ status: "COMPLETED" });
       const projection = database.transaction((connection) => connection.prepare(
-        "SELECT recent_results_json FROM avatar_task_projections WHERE avatar_id = 'avatar_1'",
+        "SELECT recent_results_json FROM workbench_task_projections WHERE workbench_id = 'workbench_1'",
       ).get()) as { recent_results_json: string };
       expect(JSON.parse(projection.recent_results_json)).toEqual([
         expect.objectContaining({ resultId: "result_completed", status: "COMPLETED" }),
@@ -167,7 +167,6 @@ describe("partner dispatch instance routing", () => {
     try {
       const dispatchInputs: unknown[] = [];
       const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
-      const results: Record<string, unknown>[] = [];
       const handler = makeHandler(database, {
         dispatch: async (input) => {
           dispatchInputs.push(input);
@@ -176,7 +175,7 @@ describe("partner dispatch instance routing", () => {
           ).run(input.instanceId ?? "", input.dispatchAttemptId ?? ""));
           return { actionId: "action_1", artifacts: [], body: "done", externalRunId: "local_pi:action_1", status: "COMPLETED" as const, workId: "work_1" };
         },
-      }, async (event) => { results.push(event); }, diagnostics);
+      }, diagnostics);
 
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", sessionPolicy: "RESIDENT", workId: "work_1" }));
 
@@ -184,14 +183,16 @@ describe("partner dispatch instance routing", () => {
         dispatchAttemptId: "attempt_1",
         instanceId: "instance_9",
         request: {
-          actionId: "action_1", avatarId: "avatar_1",
+          actionId: "action_1", workbenchId: "workbench_1",
           taskProjection: "Work title: the task\n\nOriginal user request (authoritative):\nbody", workId: "work_1",
         },
         sessionPolicy: "RESIDENT",
       });
       const dispatched = dispatchInputs[0] as { request: { contextSnapshotId: unknown } };
-      expect(dispatched.request.contextSnapshotId).toMatch(/^avatar_context_snapshot_/u);
-      expect(results[0]).toMatchObject({
+      expect(dispatched.request.contextSnapshotId).toMatch(/^workbench_context_snapshot_/u);
+      const scan = new SqliteWorkbenchAgentScan(database);
+      const [unsynthesized] = await scan.listUnsynthesizedResults("workbench_1");
+      expect(unsynthesized).toMatchObject({
         partnerId: partner.partnerId,
         sessionDataSource: "partner_instance_messages:instance_9",
         status: "COMPLETED",
@@ -202,14 +203,14 @@ describe("partner dispatch instance routing", () => {
       ).get()) as { status: string };
       expect(attempt.status).toBe("COMPLETED");
       const conversation = database.transaction((connection) => connection.prepare(`SELECT role, kind, text
-        FROM avatar_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all());
+        FROM workbench_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all());
       expect(conversation).toEqual([
         { kind: "MARKDOWN", role: "USER", text: "Work title: the task\n\nOriginal user request (authoritative):\nbody" },
         { kind: "MARKDOWN", role: "AGENT", text: "done" },
       ]);
       expect(diagnostics.find((entry) => entry.event === "joi.partner.dispatch.started")?.fields).toMatchObject({
         actionId: "action_1",
-        avatarId: "avatar_1",
+        workbenchId: "workbench_1",
         dispatchAttemptId: "attempt_1",
         outboxId: "outbox_1",
         workId: "work_1",
@@ -234,7 +235,7 @@ describe("partner dispatch instance routing", () => {
     try {
       const handler = makeHandler(database, {
         dispatch: async () => { throw new Error("partner_instance_unavailable"); },
-      }, async () => undefined);
+      });
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", sessionPolicy: "EPHEMERAL", workId: "work_1" }));
       const attempt = database.transaction((connection) => connection.prepare(
         "SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'",
@@ -254,7 +255,7 @@ describe("partner dispatch instance routing", () => {
           actionId: "action_1", artifacts: [], body: "done", externalRunId: "local_pi:action_1",
           status: "COMPLETED" as const, workId: "work_1",
         }),
-      }, async () => { throw new Error("result notification failed"); });
+      }, [], undefined, async () => { throw new Error("result notification failed"); });
 
       await expect(handler.handle(baseRecord({
         actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9",
@@ -277,13 +278,13 @@ describe("partner dispatch instance routing", () => {
     const { database, partner, root } = await openWithPartner();
     try {
       database.transaction((connection) => {
-        connection.prepare(`INSERT INTO avatar_context_snapshots
-          (context_snapshot_id, avatar_id, work_id, persona_revision_id, safe_context_json, memory_summary_refs_json, created_at)
-          VALUES ('context_existing', 'avatar_1', 'work_1', 'persona_1', '{}', '[]', '2026-07-29T10:00:00.000Z')`).run();
+        connection.prepare(`INSERT INTO workbench_context_snapshots
+          (context_snapshot_id, workbench_id, work_id, persona_revision_id, safe_context_json, memory_summary_refs_json, created_at)
+          VALUES ('context_existing', 'workbench_1', 'work_1', 'persona_1', '{}', '[]', '2026-07-29T10:00:00.000Z')`).run();
         connection.prepare("UPDATE dispatch_attempts SET instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run();
         connection.prepare(`INSERT INTO partner_runs
-          (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at, context_snapshot_id)
-          VALUES ('partner_run:action_1', 'attempt_1', 'action_1', 'avatar_1', 'work_1', ?, 'LOCAL_PI', 'local_pi:action_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z', 'context_existing')`).run(partner.partnerRevisionId);
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at, context_snapshot_id)
+          VALUES ('partner_run:action_1', 'attempt_1', 'action_1', 'workbench_1', 'work_1', ?, 'LOCAL_PI', 'local_pi:action_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z', 'context_existing')`).run(partner.partnerRevisionId);
       });
       const dispatchInputs: unknown[] = [];
       const handler = makeHandler(database, {
@@ -291,7 +292,7 @@ describe("partner dispatch instance routing", () => {
           dispatchInputs.push(input);
           return { actionId: "action_1", artifacts: [], body: "done", externalRunId: "local_pi:action_1", status: "COMPLETED" as const, workId: "work_1" };
         },
-      }, async () => undefined);
+      });
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", sessionPolicy: "RESIDENT", workId: "work_1" }));
       expect(dispatchInputs).toHaveLength(1);
       const attempt = database.transaction((connection) => connection.prepare(
@@ -308,22 +309,22 @@ describe("partner dispatch instance routing", () => {
     const { database, partner, root } = await openWithPartner();
     try {
       database.transaction((connection) => {
-        connection.prepare(`INSERT INTO avatar_context_snapshots
-          (context_snapshot_id, avatar_id, work_id, persona_revision_id, safe_context_json, memory_summary_refs_json, created_at)
-          VALUES ('context_late', 'avatar_1', 'work_1', 'persona_1', '{}', '[]', '2026-07-29T10:00:00.000Z')`).run();
+        connection.prepare(`INSERT INTO workbench_context_snapshots
+          (context_snapshot_id, workbench_id, work_id, persona_revision_id, safe_context_json, memory_summary_refs_json, created_at)
+          VALUES ('context_late', 'workbench_1', 'work_1', 'persona_1', '{}', '[]', '2026-07-29T10:00:00.000Z')`).run();
         connection.prepare("UPDATE work_items SET status = 'CANCELED' WHERE work_id = 'work_1'").run();
         connection.prepare("UPDATE dispatch_attempts SET instance_id = 'instance_9', status = 'RUNNING' WHERE dispatch_attempt_id = 'attempt_1'").run();
         connection.prepare(`INSERT INTO partner_runs
-          (run_id, dispatch_attempt_id, action_id, avatar_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at, context_snapshot_id)
-          VALUES ('partner_run:action_1', 'attempt_1', 'action_1', 'avatar_1', 'work_1', ?, 'LOCAL_PI', 'local_pi:action_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z', 'context_late')`).run(partner.partnerRevisionId);
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at, context_snapshot_id)
+          VALUES ('partner_run:action_1', 'attempt_1', 'action_1', 'workbench_1', 'work_1', ?, 'LOCAL_PI', 'local_pi:action_1', 'RUNNING', '2026-07-29T10:00:00.000Z', '2026-07-29T10:00:00.000Z', 'context_late')`).run(partner.partnerRevisionId);
       });
-      const integrationQueue: string[] = [];
       const handler = makeHandler(database, {
         dispatch: async () => ({ actionId: "action_1", artifacts: [], body: "late body", externalRunId: "local_pi:action_1", status: "COMPLETED" as const, workId: "work_1" }),
-      }, async (event) => { if (event.isLate !== true) integrationQueue.push(String(event.resultId)); });
+      });
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", sessionPolicy: "RESIDENT", workId: "work_1" }));
 
-      expect(integrationQueue).toEqual([]);
+      // Late results are non-authoritative: the workbench traversal must never fold them into synthesis.
+      await expect(new SqliteWorkbenchAgentScan(database).listUnsynthesizedResults("workbench_1")).resolves.toEqual([]);
       expect(database.transaction((connection) => connection.prepare(
         "SELECT is_late, status FROM work_results WHERE work_id = 'work_1'",
       ).get())).toEqual({ is_late: 1, status: "COMPLETED" });
@@ -331,7 +332,7 @@ describe("partner dispatch instance routing", () => {
         "SELECT status FROM work_items WHERE work_id = 'work_1'",
       ).get())).toEqual({ status: "CANCELED" });
       const projection = database.transaction((connection) => connection.prepare(
-        "SELECT recent_results_json FROM avatar_task_projections WHERE avatar_id = 'avatar_1'",
+        "SELECT recent_results_json FROM workbench_task_projections WHERE workbench_id = 'workbench_1'",
       ).get()) as { recent_results_json: string };
       expect(JSON.parse(projection.recent_results_json)).toEqual([
         expect.objectContaining({ resultId: "work_result:partner_run:action_1:COMPLETED", status: "COMPLETED" }),
@@ -354,11 +355,11 @@ describe("partner dispatch instance routing", () => {
         "SELECT active_revision_id FROM partners WHERE partner_id = 'partner_remote_1'",
       ).get()) as { active_revision_id: string };
       seedDispatchFixture(database, revision.active_revision_id);
-      const contexts = new SqliteAvatarContextRepository(database);
-      const handler = new SqliteA2aPartnerDispatchHandler({
-        agentConversations: new SqliteAvatarAgentRepository(database),
+      const contexts = new SqliteWorkbenchContextRepository(database);
+      const handler = new SqlitePartnerDispatchDelivery({
+        agentConversations: new SqliteWorkbenchAgentRepository(database),
         clock: new TestClock(),
-        contextAssembler: new AvatarContextAssembler({ avatars: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
+        contextAssembler: new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
         contexts,
         database,
         gateway: {
@@ -372,17 +373,17 @@ describe("partner dispatch instance routing", () => {
             output: { artifacts: [], parts: [{ data: "远程工作完成", kind: "text" }, { data: "PRIVATE_A2A_PAYLOAD", kind: "data" }] },
           }),
         },
+        instances: { dispatch: async () => { throw new Error("instance dispatch must not be used for A2A"); } },
         leases: { acquire: async () => null, release: async () => undefined },
-        local: { run: async () => { throw new Error("local runner must not be used"); } },
         partners: new SqlitePartnerRegistryRepository(database),
         results: new SqliteWorkResultRepository(database),
       });
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }));
 
       expect(database.transaction((connection) => connection.prepare(`SELECT backing_kind, session_policy
-        FROM avatar_agent_sessions WHERE avatar_id = 'avatar_1'`).get())).toEqual({ backing_kind: "A2A_RUN", session_policy: "EPHEMERAL" });
+        FROM workbench_agent_sessions WHERE workbench_id = 'workbench_1'`).get())).toEqual({ backing_kind: "A2A_RUN", session_policy: "EPHEMERAL" });
       const displayText = database.transaction((connection) => connection.prepare(`SELECT text
-        FROM avatar_agent_conversation_entries ORDER BY sequence`).all()) as { text: string | null }[];
+        FROM workbench_agent_conversation_entries ORDER BY sequence`).all()) as { text: string | null }[];
       expect(displayText.map((row) => row.text).join("\n")).toContain("远程工作完成");
       expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_A2A_PAYLOAD");
     } finally {

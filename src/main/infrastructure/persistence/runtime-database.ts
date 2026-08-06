@@ -2449,14 +2449,16 @@ class SqliteRuntimeStore implements RuntimeStore {
     return row === undefined ? 0 : numberValue(row, "count");
   }
 
-  async claimOutbox(input: { claimUntil: string; limit: number; now: string; owner: string }): Promise<OutboxRecord[]> {
+  async claimOutbox(input: { claimUntil: string; excludeKinds?: string[]; limit: number; now: string; owner: string }): Promise<OutboxRecord[]> {
+    const excluded = input.excludeKinds ?? [];
+    const kindFilter = excluded.length > 0 ? ` AND kind NOT IN (${excluded.map(() => "?").join(", ")})` : "";
     return this.inTransaction(() => {
       const candidates = asRows(this.database.prepare(`
         SELECT outbox_id FROM outbox
          WHERE available_at <= ?
-           AND (status = 'PENDING' OR (status = 'CLAIMED' AND claim_until <= ?))
+           AND (status = 'PENDING' OR (status = 'CLAIMED' AND claim_until <= ?))${kindFilter}
          ORDER BY created_at ASC, outbox_id ASC LIMIT ?`)
-        .all(input.now, input.now, Math.max(1, Math.min(input.limit, 100))));
+        .all(input.now, input.now, ...excluded, Math.max(1, Math.min(input.limit, 100))));
       const output: OutboxRecord[] = [];
       for (const candidate of candidates) {
         const outboxId = textValue(candidate, "outbox_id");
@@ -2791,11 +2793,9 @@ class SqliteRuntimeStore implements RuntimeStore {
         input.credentialId, input.credentialVersion, this.createManifestHash({ origin: input.card.origin }), input.now);
   }
 
+  /** SSE transport retired (ADR 0009): the projection is frozen; a synthetic event keeps port callers working. */
   private appendSseEventSync(input: Omit<SseEvent, "createdAt" | "sequence">, createdAt: string): SseEvent {
-    const result = this.database.prepare(`
-      INSERT INTO sse_events (event_type, entity_id, payload_json, created_at) VALUES (?, ?, ?, ?)`)
-      .run(input.type, input.entityId, JSON.stringify(input.payload), createdAt);
-    return { ...input, createdAt, sequence: Number(result.lastInsertRowid) };
+    return { ...input, createdAt, sequence: 0 };
   }
 
   private persistMemoryEntities(memoryId: string, lifeId: string, action: Record<string, unknown>, now: string): void {

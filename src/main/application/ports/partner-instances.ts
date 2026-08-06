@@ -6,7 +6,7 @@ export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
 export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE";
 
 export interface PartnerInstanceRecord {
-  avatarId: string;
+  workbenchId: string;
   createdAt: string;
   disposedAt?: string;
   disposalReason?: string;
@@ -21,12 +21,12 @@ export interface PartnerInstanceRecord {
 }
 
 export interface PartnerInstanceRepository {
-  countActive(avatarId: string, partnerId: string): Promise<number>;
+  countActive(workbenchId: string, partnerId: string): Promise<number>;
   countActiveGlobal(): Promise<number>;
-  create(input: { avatarId: string; createdAt: string; engine: PartnerEngine; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: SessionPolicy }): Promise<PartnerInstanceRecord>;
+  create(input: { workbenchId: string; createdAt: string; engine: PartnerEngine; instanceId: string; partnerId: string; partnerRevisionId: string; sessionPolicy: SessionPolicy }): Promise<PartnerInstanceRecord>;
   get(instanceId: string): Promise<PartnerInstanceRecord | null>;
   linkDispatch(dispatchAttemptId: string, instanceId: string): Promise<void>;
-  listActive(filter?: { avatarId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]>;
+  listActive(filter?: { workbenchId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]>;
   markDisposed(instanceId: string, reason: string, at: string): Promise<void>;
   markTurnComplete(instanceId: string, at: string, externalSessionRef?: string): Promise<void>;
   recoverCrashed(at: string): Promise<{ ephemeralDisposed: number; residentRecovered: number }>;

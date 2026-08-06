@@ -7,7 +7,9 @@ export type PrimaryReasoningEvent =
   | { type: "turn_finished"; turnId: string };
 
 export interface StartReasoningTurnInput {
-  avatarId: string;
+  workbenchId: string;
+  /** Original goal input when this turn serves a derived input (synthesis / harness review). */
+  goalInputId?: string;
   inputId: string;
   modelId: string;
   modelRevisionId: string;
@@ -21,7 +23,7 @@ export interface StartReasoningTurnInput {
 }
 
 export interface JoiReasoningSessionSnapshot {
-  avatarId: string;
+  workbenchId: string;
   compaction?: {
     compactedMessages: number;
     count: number;

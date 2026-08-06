@@ -23,7 +23,7 @@ export interface DirectModelSourcePreset {
 }
 
 const model = (id: string, label: string): ModelPresetEntry => ({ id, label, toolCapability: "release-tested" });
-const presetVersion = "2026-08-02";
+const presetVersion = "2026-08-06";
 
 export const MODEL_SOURCE_PRESETS = [
   {
@@ -153,9 +153,9 @@ export function getDirectModelSourcePreset(
   return preset;
 }
 
-// 这些主机的端点强制 enable_thinking=true（百炼 token-plan / coding-plan，含 openai 与 anthropic 两协议）。
-// pi-ai 对 thinkingFormat:"qwen" 只在 per-call 带 reasoning 级别时才发 enable_thinking=true，且无 model 级"常开"开关，
-// 故运行时需要据此判断是否传级别；标准 api（dashscope.aliyuncs.com）与其它厂商不匹配，行为不变。
+// 这些主机的端点强制常开 thinking（百炼 token-plan / coding-plan，含 openai 与 anthropic 两协议）。
+// openai 协议已走 OpenAI Responses，无 enable_thinking 对应物，该标志仅驱动 model.reasoning：
+// 运行时据此判断是否传 reasoning 级别（responses 线发 reasoning.effort）；标准 api（dashscope.aliyuncs.com）与其它厂商不匹配，行为不变。
 const ALWAYS_ON_THINKING_HOST = /\/\/(token-plan\.|coding\.dashscope\.)/;
 
 export function modelRequiresAlwaysOnThinking(baseUrl: string | undefined): boolean {
