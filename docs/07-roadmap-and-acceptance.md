@@ -18,6 +18,14 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-06 的术语迁移以 AC-45 为门禁：产品文案统一为“工作台”，代码契约统一为 `Workbench/workbenchId/workbench.*`，HTTP 统一为 `/api/v1/workbenches`；migration 038 无损升级 037 的表、列、外键、枚举和待处理 outbox。旧 migration 001–037 只作为升级事实保留旧物理名，不再定义当前产品术语。
 
+2026-08-07 的 UNKNOWN 收敛修复以 AC-41/AC-43 为门禁：只有 `WAITING_INPUT`/`WAITING_AUTH` 可保持 Work `WAITING` 并显示需要用户；不可恢复的 `UNKNOWN` 必须终结为 `FAILED`，继续 result-set 综合且不得制造无操作入口的“需要你”。migration 039 修复 schema 038 的存量错误状态、活跃任务投影与尚未综合的 UNKNOWN result member。
+
+2026-08-18 的命名与环境收敛以 AC-46 为门禁：工作台命名聚焦长期工作聚类和运行环境，Agent 命名聚焦可复用能力聚类；前端调试/分析工作创建的受管目录固定为 `aimanadebug`，角色型 `资深程序员搭档` 归类为 `编码工坊`，创建与重建必须使用同一规则。
+
+2026-08-18 的首页首问投影收敛以 AC-47 为门禁：输入持久化为 `PENDING` 后，在 Workbench 尚未绑定前也必须以 `ARRANGING`/“等待归属”目标卡进入 home-feed；绑定后沿同一 `inputId` 升级，未归属 `CLARIFICATION_REQUIRED` 只进入“需要你”列表，不能重复显示。
+
+2026-08-18 的首页进度可见性收敛以 AC-48 为门禁：`progressing` 必须同时显示由持久化事实推导的阶段、Agent 数、Work 完成/失败/总数和已用时间；只展示安全枚举和计数，不展示 ETA、原始执行消息、模型标识、路径或错误正文；继续使用 HTTP home-feed 轮询与本地操作后的即时刷新，不新增 SSE/WebSocket。
+
 ## 1. 当前状态
 
 | 阶段             | 状态   | 产物                          |

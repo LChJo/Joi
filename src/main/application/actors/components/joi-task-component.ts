@@ -11,6 +11,8 @@ const DEFAULT_STALLED_TURN_AFTER_MILLIS = 15 * 60_000;
 const DEFAULT_MAX_CONSECUTIVE_FAILURES = 8;
 
 interface InFlightTurn {
+  abortController: AbortController;
+  cancelRequested: boolean;
   errorCode?: string;
   inputId: string;
   settled: "failed" | "ok" | undefined;
@@ -54,6 +56,18 @@ export class JoiTaskComponent implements ActorComponent {
     const stalled = turn.settled === undefined
       && ctx.now.getTime() - turn.startedAt >= (this.dependencies.stalledTurnAfterMillis ?? DEFAULT_STALLED_TURN_AFTER_MILLIS);
     if (turn.settled === undefined && !stalled) return;
+    if (turn.settled === undefined && stalled) {
+      if (!turn.cancelRequested) {
+        turn.cancelRequested = true;
+        turn.abortController.abort();
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.turn_cancel_requested", {
+          inputId: turn.inputId,
+        });
+      }
+      // Keep the serial slot occupied until the driver promise settles. Releasing it
+      // here would let a retry overlap the still-running provider request.
+      return;
+    }
     this.#inFlight = null;
     const outcome = turn.settled ?? "failed";
     const errorCode = outcome === "failed" ? turn.errorCode ?? "joi_task_turn_stalled" : undefined;
@@ -92,10 +106,13 @@ export class JoiTaskComponent implements ActorComponent {
     if (!(await this.dependencies.gate.hasReadySource())) return;
     const inputId = next.inputId;
     const startedAt = ctx.now.getTime();
-    this.#inFlight = { inputId, settled: undefined, startedAt };
+    const abortController = new AbortController();
+    this.#inFlight = { abortController, cancelRequested: false, inputId, settled: undefined, startedAt };
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_started", { inputId });
-    void this.dependencies.driver.handle(inputId).then(() => {
-      if (this.#inFlight?.inputId === inputId) this.#inFlight.settled = "ok";
+    void this.dependencies.driver.handle(inputId, abortController.signal).then(() => {
+      if (this.#inFlight?.inputId !== inputId) return;
+      this.#inFlight.settled = abortController.signal.aborted ? "failed" : "ok";
+      if (abortController.signal.aborted) this.#inFlight.errorCode = "joi_task_turn_canceled";
     }).catch((error: unknown) => {
       if (this.#inFlight?.inputId !== inputId) return;
       this.#inFlight.settled = "failed";

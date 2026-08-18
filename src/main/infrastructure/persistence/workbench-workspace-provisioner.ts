@@ -4,6 +4,7 @@ import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
 import type { DurableUiEventEmitter, OutboxRecord } from "../../application/ports/runtime-store.js";
+import { workspaceDirectoryName } from "../../domain/workbench/workbench-naming.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -16,15 +17,17 @@ export class WorkbenchWorkspaceProvisioner {
     const workbenchId = record.payload.workbenchId;
     const workspaceRef = record.payload.workspaceRef;
     if (typeof workbenchId !== "string" || typeof workspaceRef !== "string") throw new Error("workbench_workspace_outbox_invalid");
-    const isCurrentManaged = (): boolean => this.dependencies.database.transaction((connection) => {
-      const binding = connection.prepare("SELECT kind FROM workbench_workspace_bindings WHERE workbench_id = ? AND workspace_ref = ?")
-        .get(workbenchId, workspaceRef) as { kind?: unknown } | undefined;
-      return binding?.kind === "MANAGED";
+    const managedDirectoryName = (): string | null => this.dependencies.database.transaction((connection) => {
+      const binding = connection.prepare("SELECT kind, display_name FROM workbench_workspace_bindings WHERE workbench_id = ? AND workspace_ref = ?")
+        .get(workbenchId, workspaceRef) as { kind?: unknown; display_name?: unknown } | undefined;
+      if (binding?.kind !== "MANAGED" || typeof binding.display_name !== "string") return null;
+      return workspaceDirectoryName(binding.display_name);
     });
-    if (!isCurrentManaged()) return;
+    const directoryName = managedDirectoryName();
+    if (directoryName === null) return;
     const key = createHash("sha256").update(workbenchId).digest("hex").slice(0, 24);
     const generation = createHash("sha256").update(record.outboxId).digest("hex").slice(0, 16);
-    const rootPath = path.join(this.dependencies.userDataDirectory, "workbenches", key, "workspaces", generation);
+    const rootPath = path.join(this.dependencies.userDataDirectory, "workbenches", key, "workspaces", generation, directoryName);
     try {
       await mkdir(rootPath, { recursive: true });
       const applied = this.dependencies.database.transaction((connection) => {

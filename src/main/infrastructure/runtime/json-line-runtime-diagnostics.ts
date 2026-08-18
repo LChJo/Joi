@@ -5,6 +5,24 @@ import type {
   RuntimeDiagnostics,
 } from "../../application/ports/runtime-diagnostics.js";
 
+let stderrWriteDisabled = false;
+let stderrErrorHandlerInstalled = false;
+
+function writeToProcessStderr(line: string): void {
+  if (stderrWriteDisabled) return;
+  if (!stderrErrorHandlerInstalled) {
+    stderrErrorHandlerInstalled = true;
+    // A Codux/terminal pipe can close asynchronously after write() returns.
+    // Consume that sink failure so diagnostics never terminate the main process.
+    process.stderr.on("error", () => { stderrWriteDisabled = true; });
+  }
+  try {
+    process.stderr.write(line);
+  } catch {
+    stderrWriteDisabled = true;
+  }
+}
+
 export class JsonLineRuntimeDiagnostics implements RuntimeDiagnostics {
   readonly #clock: Clock;
   readonly #filePath: string | undefined;
@@ -16,7 +34,7 @@ export class JsonLineRuntimeDiagnostics implements RuntimeDiagnostics {
     this.#clock = input.clock;
     this.#maxBytes = Math.max(256, Math.trunc(input.maxBytes ?? 2 * 1024 * 1024));
     this.#maxFiles = Math.max(1, Math.min(10, Math.trunc(input.maxFiles ?? 3)));
-    this.#write = input.write ?? ((line) => { process.stderr.write(line); });
+    this.#write = input.write ?? writeToProcessStderr;
     if (input.directory !== undefined) {
       mkdirSync(input.directory, { recursive: true });
       this.#filePath = path.join(input.directory, "joi-flow.jsonl");

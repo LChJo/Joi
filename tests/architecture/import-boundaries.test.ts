@@ -31,9 +31,10 @@ describe("production import boundaries", () => {
     expect(validateImport("src/main/infrastructure/pi/pi-coding-partner-runner.ts", "@earendil-works/pi-agent-core")).toMatchObject({ allowed: true });
   });
 
+  // Full-suite parallel load can starve this filesystem scan well past the default 5s.
   it("accepts the current production tree", async () => {
     const result = await scanProductionBoundaries(path.resolve("src"));
     expect(result.violations).toEqual([]);
     expect(result.unclassified).toEqual([]);
-  });
+  }, 30_000);
 });

@@ -7,7 +7,9 @@ import { LifeService } from "../../src/main/application/lives/life-service.js";
 import { WorkbenchRegistryService } from "../../src/main/application/joi/workbench-registry-service.js";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
+import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
+import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -220,6 +222,90 @@ describe("JOI-01 non-destructive migration", () => {
     }
   });
 
+  it("terminalizes schema 038 UNKNOWN Work and makes its result eligible for goal synthesis again", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-unknown-work-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 38);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-08-07T06:54:20.327Z";
+    const partner = await new PartnerRegistryService({
+      clock: new TestClock(now), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(oldDatabase),
+    }).add({ capabilities: [], displayName: "超时搭档", kind: "local-pi", skills: [], tools: [] });
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label,
+         memory_namespace_id, status, created_at, updated_at)
+        VALUES ('workbench-unknown', '排查台', 'persona-unknown', 'summary', 'scope', 'project',
+                'memory-unknown', 'ACTIVE', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+        VALUES ('goal-unknown', 'key-unknown', 'private goal', 'CONSUMED', 'workbench-unknown', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-unknown', 'goal-unknown', 'workbench-unknown', 'session-unknown', 'COMPLETED', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO dispatch_plans
+        (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+        VALUES ('plan-unknown', 'turn-unknown', '{"workIds":["work-unknown"]}', '[]', ?)`).run(now);
+      connection.prepare(`INSERT INTO work_items
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-unknown', 'workbench-unknown', 'goal-unknown', 'timeout work', '{}', 'READ', 'WAITING', ?, ?)`).run(now, now);
+      connection.prepare(`INSERT INTO dispatch_attempts
+        (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+        VALUES ('attempt-unknown', 'plan-unknown', 'work-unknown', ?, 1, 'action-unknown', 'UNKNOWN', ?, ?)`)
+        .run(partner.partnerRevisionId, now, now);
+      connection.prepare(`INSERT INTO partner_runs
+        (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
+         external_run_id, status, created_at, updated_at)
+        VALUES ('run-unknown', 'attempt-unknown', 'action-unknown', 'workbench-unknown', 'work-unknown', ?,
+                'LOCAL_PI', 'local:unknown', 'UNKNOWN', ?, ?)`).run(partner.partnerRevisionId, now, now);
+      connection.prepare("INSERT INTO work_result_bodies (body_ref, body, created_at) VALUES ('body-unknown', 'private', ?)").run(now);
+      connection.prepare(`INSERT INTO work_results
+        (result_id, run_id, action_id, workbench_id, work_id, partner_revision_id, status, summary, body_ref,
+         artifacts_json, is_late, is_authoritative, created_at)
+        VALUES ('result-unknown', 'run-unknown', 'action-unknown', 'workbench-unknown', 'work-unknown', ?,
+                'UNKNOWN', '', 'body-unknown', '[]', 0, 1, ?)`).run(partner.partnerRevisionId, now);
+      connection.prepare("INSERT INTO work_result_verifications (result_id, status, created_at) VALUES ('result-unknown', 'NOT_REQUIRED', ?)").run(now);
+      connection.prepare(`INSERT INTO partner_result_events
+        (event_id, run_id, workbench_id, work_id, partner_revision_id, status, created_at)
+        VALUES ('event-unknown', 'run-unknown', 'workbench-unknown', 'work-unknown', ?, 'UNKNOWN', ?)`)
+        .run(partner.partnerRevisionId, now);
+      connection.prepare(`INSERT INTO joi_goal_result_sets
+        (original_input_id, revision, synthesized_revision, updated_at)
+        VALUES ('goal-unknown', 1, 0, ?)`).run(now);
+      connection.prepare(`INSERT INTO joi_goal_result_members
+        (original_input_id, event_id, revision) VALUES ('goal-unknown', 'event-unknown', 1)`).run();
+      connection.prepare(`UPDATE workbench_task_projections
+        SET active_work_json = '[{"workId":"work-unknown","title":"timeout work","status":"WAITING"}]'
+        WHERE workbench_id = 'workbench-unknown'`).run();
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const facts = upgraded.transaction((connection) => ({
+        memberCount: (connection.prepare(`SELECT COUNT(*) AS count FROM joi_goal_result_members
+          WHERE event_id = 'event-unknown'`).get() as { count: number }).count,
+        projection: connection.prepare(`SELECT active_work_json FROM workbench_task_projections
+          WHERE workbench_id = 'workbench-unknown'`).get() as { active_work_json: string },
+        work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-unknown'").get(),
+      }));
+      expect(upgraded.inspect().schemaVersion).toBe(39);
+      expect(facts.work).toEqual({ status: "FAILED" });
+      expect(JSON.parse(facts.projection.active_work_json)).toEqual([]);
+      expect(facts.memberCount).toBe(0);
+
+      const [result] = await new SqliteWorkbenchAgentScan(upgraded).listUnsynthesizedResults("workbench-unknown");
+      expect(result).toMatchObject({ eventId: "event-unknown", status: "UNKNOWN", workId: "work-unknown" });
+      await expect(new SqliteJoiInboxRepository(upgraded).enqueuePartnerResult(result ?? {
+        workbenchId: "missing", eventId: "missing", resultId: "missing", status: "UNKNOWN", summary: "", workId: "missing",
+      })).resolves.toBe("joi_result_input:goal:goal-unknown");
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("creates the new orchestration schema on an empty database", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-empty-"));
     const database = await openRuntimeDatabase({
@@ -227,7 +313,7 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(38);
+      expect(database.inspect().schemaVersion).toBe(39);
       expect(database.transaction((connection) => connection.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('workbench_agent_sessions', 'workbench_agent_conversation_entries') ORDER BY name",
       ).all())).toEqual([
@@ -307,7 +393,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(38);
+      expect(upgraded.inspect().schemaVersion).toBe(39);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         workbenches: (connection.prepare("SELECT COUNT(*) AS count FROM workbenches").get() as { count: number }).count,

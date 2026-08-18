@@ -14,7 +14,7 @@ const MANAGED_BODY_THRESHOLD_BYTES = 2_000_000;
 
 function workStatus(status: WorkResult["status"]): "COMPLETED" | "FAILED" | "WAITING" {
   if (status === "COMPLETED") return "COMPLETED";
-  if (status === "FAILED") return "FAILED";
+  if (status === "FAILED" || status === "UNKNOWN") return "FAILED";
   return "WAITING";
 }
 

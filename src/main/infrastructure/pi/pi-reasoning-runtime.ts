@@ -94,6 +94,25 @@ function validateToolNames(tools: AgentTool[]): void {
   if (unsafeTool !== undefined) throw new Error("unsafe_reasoning_tool");
 }
 
+function safeToolResultReasonCode(result: unknown): string | undefined {
+  if (result === null || typeof result !== "object") return undefined;
+  const content = (result as { content?: unknown }).content;
+  if (!Array.isArray(content)) return undefined;
+  const text = content.find((item: unknown): item is { text: string } => {
+    if (item === null || typeof item !== "object") return false;
+    return typeof (item as { text?: unknown }).text === "string";
+  });
+  if (text === undefined) return undefined;
+  try {
+    const parsed: unknown = JSON.parse(text.text);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
+    const reasonCode = (parsed as { reasonCode?: unknown }).reasonCode;
+    return typeof reasonCode === "string" && /^[A-Za-z0-9_.:-]{1,80}$/u.test(reasonCode) ? reasonCode : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function isCheckpoint(message: AgentMessage | undefined): boolean {
   if (message === undefined) return false;
   const record = message as unknown as Record<string, unknown>;
@@ -297,7 +316,19 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     } else if (event.type === "tool_execution_start") {
       mapped = { type: "tool_started", toolCallId: event.toolCallId, toolName: event.toolName, turnId: active.turnId };
     } else if (event.type === "tool_execution_end") {
-      mapped = { type: "tool_finished", isError: event.isError, toolCallId: event.toolCallId, toolName: event.toolName, turnId: active.turnId };
+      const reasonCode = safeToolResultReasonCode(event.result);
+      mapped = {
+        type: "tool_finished",
+        isError: event.isError,
+        ...(reasonCode === undefined && event.isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
+        toolCallId: event.toolCallId,
+        toolName: event.toolName,
+        turnId: active.turnId,
+      };
+      // Validation errors happen before a tool's execute handler and therefore
+      // cannot return a terminating result. Stop this run at the runtime edge
+      // so the coordinator can persist one clarification instead of retrying.
+      if (event.toolName === "work_dispatch" && event.isError) runtime.agent.abort();
     }
     if (mapped !== undefined) active.onEvent(mapped);
   }

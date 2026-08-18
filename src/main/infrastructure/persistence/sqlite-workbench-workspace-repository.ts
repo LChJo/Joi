@@ -3,6 +3,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { WorkbenchWorkspaceRepository, WorkbenchWorkspaceSummary } from "../../application/ports/workbench-context.js";
+import { workbenchWorkspaceDisplayName } from "../../domain/workbench/workbench-naming.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -62,15 +63,16 @@ export class SqliteWorkbenchWorkspaceRepository implements WorkbenchWorkspaceRep
   async requestManagedRebuild(input: { workbenchId: string; outboxId: string; updatedAt: string }): Promise<WorkbenchWorkspaceSummary> {
     const ref = `workbench_workspace:${input.workbenchId}`;
     this.database.transaction((connection) => {
-      const name = connection.prepare("SELECT name FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'").get(input.workbenchId) as { name?: unknown } | undefined;
-      if (typeof name?.name !== "string") throw new Error("workbench_not_found");
+      const workbench = connection.prepare("SELECT name, project_label, scope_summary FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'").get(input.workbenchId) as { name?: unknown; project_label?: unknown; scope_summary?: unknown } | undefined;
+      if (typeof workbench?.name !== "string" || typeof workbench.project_label !== "string" || typeof workbench.scope_summary !== "string") throw new Error("workbench_not_found");
+      const displayName = workbenchWorkspaceDisplayName({ name: workbench.name, projectLabel: workbench.project_label, scopeSummary: workbench.scope_summary });
       connection.prepare("DELETE FROM workbench_workspace_roots WHERE workspace_ref = ?").run(ref);
       connection.prepare(`INSERT INTO workbench_workspace_bindings
         (workbench_id, workspace_ref, kind, status, display_name, created_at, updated_at)
         VALUES (?, ?, 'MANAGED', 'PROVISIONING', ?, ?, ?)
         ON CONFLICT(workbench_id) DO UPDATE SET kind = 'MANAGED', status = 'PROVISIONING',
           display_name = excluded.display_name, failure_reason_code = NULL, updated_at = excluded.updated_at`).run(
-        input.workbenchId, ref, `${name.name} 工作区`, input.updatedAt, input.updatedAt,
+        input.workbenchId, ref, displayName, input.updatedAt, input.updatedAt,
       );
       connection.prepare(`INSERT INTO outbox (outbox_id, kind, payload_json, status, attempt_count, available_at, created_at)
         VALUES (?, 'workbench.workspace.provision', ?, 'PENDING', 0, ?, ?)`

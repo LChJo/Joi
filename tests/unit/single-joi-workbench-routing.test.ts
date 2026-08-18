@@ -61,6 +61,148 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     ]));
   });
 
+  it("closes a failed work dispatch as clarification instead of repairing or retrying the turn", async () => {
+    let starts = 0;
+    const clarifications: string[] = [];
+    let completions = 0;
+    let failures = 0;
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route again"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          starts += 1;
+          turn.onEvent?.({ toolCallId: "dispatch", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_started" });
+          turn.onEvent?.({ isError: true, reasonCode: "tool_execution_error", toolCallId: "dispatch", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_finished" });
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => { completions += 1; },
+        createTurn: async () => undefined,
+        failTurn: async () => { failures += 1; },
+        loadInput: async () => ({ body: "派发任务", inputId: "input-dispatch-failed", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async (_inputId, reason) => { clarifications.push(reason); },
+      },
+    });
+
+    await coordinator.handle("input-dispatch-failed");
+    expect(starts).toBe(1);
+    expect(clarifications).toEqual(["work_dispatch_failed"]);
+    expect(completions).toBe(1);
+    expect(failures).toBe(0);
+  });
+
+  it("aborts a canceled turn before it can commit completion", async () => {
+    const controller = new AbortController();
+    let aborts = 0;
+    let completions = 0;
+    let failures = 0;
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route"); } },
+      runtime: {
+        abort: () => { aborts += 1; },
+        followUp: () => undefined,
+        isRunning: () => false,
+        restore: async () => false,
+        startTurn: async () => { controller.abort(); },
+        steer: () => undefined,
+        waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => { completions += 1; },
+        createTurn: async () => undefined,
+        failTurn: async () => { failures += 1; },
+        loadInput: async () => ({ body: "cancel me", inputId: "input-cancel", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await expect(coordinator.handle("input-cancel", controller.signal)).rejects.toMatchObject({ code: "joi_turn_aborted" });
+    expect(aborts).toBeGreaterThan(0);
+    expect(completions).toBe(0);
+    expect(failures).toBe(1);
+  });
+
+  it("rejects an already canceled input before loading it", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: { completeInput: async () => undefined, createTurn: async () => undefined, loadInput: async () => { throw new Error("must not load"); }, requireClarification: async () => undefined },
+    });
+
+    await expect(coordinator.handle("input-canceled-before-load", controller.signal)).rejects.toMatchObject({ code: "joi_turn_aborted" });
+  });
+
+  it("cancels an input that is aborted while its source is being selected", async () => {
+    const controller = new AbortController();
+    let aborts = 0;
+    let starts = 0;
+    let failures = 0;
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => { controller.abort(); return research; }, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route"); } },
+      runtime: {
+        abort: () => { aborts += 1; }, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async () => { starts += 1; }, steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => undefined,
+        createTurn: async () => undefined,
+        failTurn: async () => { failures += 1; },
+        loadInput: async () => ({ body: "cancel during source selection", inputId: "input-cancel-source", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await expect(coordinator.handle("input-cancel-source", controller.signal)).rejects.toMatchObject({ code: "joi_turn_aborted" });
+    expect(aborts).toBe(2);
+    expect(starts).toBe(0);
+    expect(failures).toBe(1);
+  });
+
+  it("does not commit when cancellation arrives at the result boundary", async () => {
+    let reads = 0;
+    const signal = {
+      get aborted() { reads += 1; return reads >= 5; },
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined,
+    } as unknown as AbortSignal;
+    let completions = 0;
+    let failures = 0;
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route"); } },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => { completions += 1; },
+        createTurn: async () => undefined,
+        failTurn: async () => { failures += 1; },
+        loadInput: async () => ({ body: "cancel at result boundary", inputId: "input-cancel-result", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await expect(coordinator.handle("input-cancel-result", signal)).rejects.toMatchObject({ code: "joi_turn_aborted" });
+    expect(completions).toBe(0);
+    expect(failures).toBe(1);
+  });
+
   it("routes from summaries then gives the one global runtime only the selected Workbench body", async () => {
     const observedRouting: unknown[] = [];
     const turns: StartReasoningTurnInput[] = [];

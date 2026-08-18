@@ -31,6 +31,7 @@ function makeTools(options: {
   harness?: HarnessRecorder;
   inputId?: string;
   partners?: PartnerDto[];
+  planError?: Error;
   refineCalls?: { args: { workbenchId: string; input: Record<string, unknown> }[] };
   workspaceBlocked?: boolean;
 } = {}) {
@@ -91,6 +92,7 @@ function makeTools(options: {
       plan: async (input) => {
         planCalls.push(input);
         if (options.workspaceBlocked === true) throw new DomainError("workbench_workspace_not_ready", "workspace required");
+        if (options.planError !== undefined) throw options.planError;
         return { dispatchPlanId: "plan_1", waves: [] };
       },
       reassign: async (input) => ({
@@ -136,6 +138,12 @@ describe("joi reasoning tools", () => {
     expect(created.partnerId).toBe("partner_1");
     expect(harness.addCalls[0]).toMatchObject({ capabilities: [], createdBy: "joi", description: "写文档", kind: "local-pi", skills: [], tools: [] });
     expect(String((harness.addCalls[0] as { prompt?: unknown }).prompt)).toContain("Writer");
+  });
+
+  it("uses a cluster name when joi creates a role-named senior programmer partner", async () => {
+    const harness = makeTools();
+    await harness.call("partner_create", { description: "负责前端调试分析", displayName: "资深程序员搭档" });
+    expect(harness.addCalls[0]).toMatchObject({ createdBy: "joi", displayName: "编码工坊", description: "负责前端调试分析" });
   });
 
   it("pins a chosen model source when creating a partner", async () => {
@@ -253,6 +261,20 @@ describe("joi reasoning tools", () => {
       inputId: "input_1",
       prompt: "选择这个 Workbench 的工作目录后，我会继续派发需要读写文件的工作。",
       reasonCode: "workbench_workspace_not_ready",
+    }]);
+  });
+
+  it("turns a deterministic dispatch error into a resumable clarification", async () => {
+    const harness = makeTools({ planError: new DomainError("partner_not_found", "private detail") });
+    const result = await harness.call("work_dispatch", {
+      dependencies: [],
+      work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }],
+    });
+    expect(result).toEqual({ reasonCode: "work_dispatch_failed", status: "CLARIFICATION_REQUIRED" });
+    expect(harness.clarificationCalls).toEqual([{
+      inputId: "input_1",
+      prompt: "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。",
+      reasonCode: "work_dispatch_failed",
     }]);
   });
 

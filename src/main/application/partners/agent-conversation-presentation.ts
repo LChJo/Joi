@@ -27,6 +27,33 @@ export function sanitizeAgentConversationText(value: string): string {
     .replace(NAMED_SECRET, (_match, name: string) => `${name}=[redacted]`);
 }
 
+export const COMPLETION_SUMMARY_LIMIT = 4096;
+
+/**
+ * Goal-outcome final answer. Unlike flattened feed previews this keeps markdown
+ * structure (headings, lists, GFM tables, code fences) intact so the result renders
+ * as formatted markdown downstream; over-limit text is cut at a line boundary and
+ * any dangling code fence is closed so truncation never breaks rendering.
+ */
+export function normalizeCompletionSummary(value: string): string {
+  const normalized = sanitizeAgentConversationText(value)
+    .replace(/\r\n?/gu, "\n")
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/u, ""))
+    .join("\n")
+    .replace(/\n{3,}/gu, "\n\n")
+    .trim();
+  if (normalized.length <= COMPLETION_SUMMARY_LIMIT) return normalized;
+  const sliced = normalized.slice(0, COMPLETION_SUMMARY_LIMIT);
+  const boundary = sliced.lastIndexOf("\n");
+  return closeOpenCodeFence((boundary > 0 ? sliced.slice(0, boundary) : sliced).trimEnd());
+}
+
+function closeOpenCodeFence(value: string): string {
+  const fences = value.match(/^ {0,3}```/gmu);
+  return fences !== null && fences.length % 2 === 1 ? `${value}\n\`\`\`` : value;
+}
+
 /**
  * Converts engine-owned messages to a bounded display projection. Tool payloads and
  * internal reasoning are intentionally excluded; only tool names, textual results,

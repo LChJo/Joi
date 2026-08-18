@@ -20,11 +20,11 @@
 
 joi 的结构化工具扩展为：`partner_create`（仅本机搭档，带 joi 创建标记）、工作台范围内 的 `partner_create_instance/list_instances/dispose_instance`、`partner_inspect_revision`、`model_list_sources`、`work_read_result` 与 `user_ask`。`user_ask` 将一个具体阻塞问题持久化为结构化澄清，而不是仅输出不可恢复的普通文本。`work_dispatch` 只接收 `NONE | READ | WRITE`、`instanceId/sessionPolicy`，不接收 workspace；文件工作自动使用工作台工作区。工作区未 READY 时整个计划在提交前失败，工具把输入转为 `workbench_workspace_not_ready` 澄清，避免留下无 attempt 的半成品计划。本机引擎通过 `WorkbenchExecutionContextReader` 私下解析 cwd，A2A 只得到脱敏快照且一律拒绝 READ/WRITE。旧 `GET /api/v1/system/pick-directory` 返回 410；目录选择仅发生在工作台工作区 bind 写接口内，响应不含路径。引擎多元化和 CLI 探测仍按 ADR 0004 执行，新增边界详见 ADR 0006、0007。
 
-每次派发前，`WorkbenchContextAssembler` 持久化只供执行链读取的安全快照。migration 034 起，所有 Work 必须强关联原始 `inputId`，且数据库同时校验 Turn、input 与工作台一致；每个 run 只有最早终态结果具有权威性，后续冲突仅保留审计事实。migration 035 把展示标题与私有 Work brief 分离，派发时按原始请求引用装配完整要求；声明了文件或精确字面的任务必须先通过受控 workspace verifier，Agent 报告的 `COMPLETED` 才能成为权威完成。结构化引擎输出先在单事务内落为 `WorkResult` 受限正文和不可变事实，再更新 Work 与工作台任务投影，最后追加 `work.result.recorded` 事件；提交后才由 workbench actor 的遍历发现并驱动 joi 综合（ADR 0009，SSE 通知已退役）。通知只带 resultId、终态和有界脱敏摘要，正文由 `work_read_result` 按当前工作台权限分页读取。已取消 Work 的迟到结果保留 `is_late` 事实，但不重开工作、不自动进入 joi inbox。
+每次派发前，`WorkbenchContextAssembler` 持久化只供执行链读取的安全快照。migration 034 起，所有 Work 必须强关联原始 `inputId`，且数据库同时校验 Turn、input 与工作台一致；每个 run 只有最早终态结果具有权威性，后续冲突仅保留审计事实。migration 035 把展示标题与私有 Work brief 分离，派发时按原始请求引用装配完整要求；声明了文件或精确字面的任务必须先通过受控 workspace verifier，Agent 报告的 `COMPLETED` 才能成为权威完成。结构化引擎输出先在单事务内落为 `WorkResult` 受限正文和不可变事实，再更新 Work 与工作台任务投影，最后追加 `work.result.recorded` 事件；提交后才由 workbench actor 的遍历发现并驱动 joi 综合（ADR 0009，SSE 通知已退役）。通知只带 resultId、终态和有界脱敏摘要，正文由 `work_read_result` 按当前工作台权限分页读取。`WAITING_INPUT`/`WAITING_AUTH` 保持 Work `WAITING` 并请求用户介入；不可可靠恢复的 `UNKNOWN` 是终态失败，Work 必须进入 `FAILED` 并继续目标级结果综合，不能伪装成“需要你”。migration 039 修复 schema 038 中已错误停留的 UNKNOWN Work、工作台活跃投影与尚未综合的结果成员。已取消 Work 的迟到结果保留 `is_late` 事实，但不重开工作、不自动进入 joi inbox。
 
 ### 0.2 场景预设与 joi 编排提示词
 
-场景预设改在搭档页的"场景预设"页签呈现（不在首页铺陈），由 `GET /api/v1/scenarios` 提供。结构化澄清把 `clarification_reason_code` 与可选 `clarification_prompt` 经 record/DTO 透出；目录卡先调用工作台工作区 bind，再恢复同一 `inputId`，接口继续隐藏绝对路径。首页投影由 `GET /api/v1/joi/home-feed` 提供：原始输入按 goal 聚合为工作台卡，Turn 只投影 active `progressing` 与终态后 15 秒的低权重尾迹；合成结果输入不进入首页。migration 036 以 goal result-set revision 聚合该目标的全部权威结果，只有所有 Work 终态后才调度隔离的最小工具综合 Turn；综合输出经有界脱敏后写入目标级 outcome。综合期间卡片为 `FINALIZING` 并继续显示 progressing，只有当前 revision 的 outcome 已落库且 Work/Run 全终态后才显示完成摘要并允许软删。运行诊断同时写 stderr 与 userData 下的有界滚动 JSONL，只接受 ID、状态、计数、安全原因码和耗时。
+场景预设改在搭档页的"场景预设"页签呈现（不在首页铺陈），由 `GET /api/v1/scenarios` 提供。结构化澄清把 `clarification_reason_code` 与可选 `clarification_prompt` 经 record/DTO 透出；目录卡先调用工作台工作区 bind，再恢复同一 `inputId`，接口继续隐藏绝对路径。首页投影由 `GET /api/v1/joi/home-feed` 提供：原始输入按 goal 聚合为工作台卡，Turn 只投影 active `progressing` 与终态后 15 秒的低权重尾迹；`progressing` 同时投影由 SQLite 事实推导的阶段枚举、Agent 数、Work 计数和开始时间，renderer 只映射安全文案；合成结果输入不进入首页。尚未完成 Workbench 路由的 `PENDING` 原始输入也先以 `ARRANGING`/“等待归属”目标卡进入投影，绑定后沿同一 `inputId` 升级；未归属的结构化澄清仍只进入“需要你”列表，避免重复卡片。migration 036 以 goal result-set revision 聚合该目标的全部权威结果，只有所有 Work 终态后才调度隔离的最小工具综合 Turn；综合输出经有界脱敏后写入目标级 outcome。综合期间卡片为 `FINALIZING` 并继续显示 progressing，只有当前 revision 的 outcome 已落库且 Work/Run 全终态后才显示完成摘要并允许软删。运行诊断同时写 stderr 与 userData 下的有界滚动 JSONL，只接受 ID、状态、计数、安全原因码和耗时。
 
 Migration 033 建立独立的用户展示面：`workbench_agent_sessions` 将 post-033 本机 `partner_instances` 与 A2A `partner_runs` 映射为工作台 Agent 卡，不回填旧执行历史；`workbench_agent_conversation_entries` 保存规范化的 Markdown、工具、产物与错误条目。真实运行状态仍以原运行表为权威。执行适配器只提交安全展示草稿；`agent-conversation-presentation` 在入库前丢弃内部推理与工具参数、脱敏路径和凭据并按 32 KiB 分块，稳定 entry id 使重放幂等。A2A data part 永不进入正文。删除一次性终态 Agent 只软删 session 并清理展示 entries，WorkResult、partner run、event 和审计事实保持。读取 API 为 `/api/v1/workbenches/:workbenchId/agents` 与其 `/conversation` 子资源。详见 ADR 0008。
 
@@ -337,3 +337,9 @@ API 返回 202 只表示事件已经持久化，不表示 Agent 已阅读或回�
 - LAN listener 失败不得使桌面端不可用。
 - 到期 Alarm 只有在对应 event/outbox 已持久化后才能标记 FIRED；投递失败必须保持可重试。
 - 默认采用单主进程与 per-Life lease；每 Life worker process 只能在长稳证据和 ADR 支持下作为后续隔离模式引入。
+
+## 13. 工作聚类与能力搭档命名
+
+- 工作台名称、范围和工程标签描述持久的工作聚类与运行环境，不描述某一个 Agent 的人格或职位；前端调试/分析工作自动使用受管环境目录 `aimanadebug`。
+- Agent/Partner 名称描述可复用的能力聚类，例如 `编码工坊`；能力描述只写职责边界，不重复工作台环境、目录或项目上下文。
+- 工作台创建、受管目录重建和目录 provision 共用同一命名规则。目录名只作为受控路径的最后一段，绝对路径仍只留在主进程基础设施。

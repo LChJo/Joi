@@ -1,4 +1,4 @@
-import { draftAgentConversation, normalizeAgentConversationEntries, sanitizeAgentConversationText } from "../../src/main/application/partners/agent-conversation-presentation.js";
+import { COMPLETION_SUMMARY_LIMIT, draftAgentConversation, normalizeAgentConversationEntries, normalizeCompletionSummary, sanitizeAgentConversationText } from "../../src/main/application/partners/agent-conversation-presentation.js";
 
 describe("Agent conversation presentation", () => {
   it("redacts private values, preserves display kinds and splits large markdown", () => {
@@ -66,5 +66,22 @@ describe("Agent conversation presentation", () => {
     expect(normalizeAgentConversationEntries({ agentId: "agent-empty", runId: "run-empty", startedAt: "2026-08-03T12:00:00.000Z" }, [
       { kind: "MARKDOWN", role: "SYSTEM", text: "" },
     ])).toMatchObject([{ text: "" }]);
+  });
+
+  it("keeps completion summary markdown structure instead of flattening it", () => {
+    const summary = normalizeCompletionSummary("## 结论\r\n\r\n- 甲  \n- 乙\n\n\n\n| 维度 | 结果 |\n| --- | --- |\n| 回归 | 通过 |\n");
+    expect(summary).toBe("## 结论\n\n- 甲\n- 乙\n\n| 维度 | 结果 |\n| --- | --- |\n| 回归 | 通过 |");
+    expect(normalizeCompletionSummary(" 单行结论 ")).toBe("单行结论");
+  });
+
+  it("bounds completion summaries at a line boundary and closes dangling code fences", () => {
+    const rows = Array.from({ length: 400 }, (_, index) => `| 行${String(index)} | 结果 |`).join("\n");
+    const truncated = normalizeCompletionSummary(`| 维度 | 结果 |\n| --- | --- |\n${rows}`);
+    expect(truncated.length).toBeLessThanOrEqual(COMPLETION_SUMMARY_LIMIT);
+    expect(truncated.split("\n").at(-1)).toMatch(/^\| 行\d+ \| 结果 \|$/u);
+
+    const fenced = normalizeCompletionSummary(`前置\n\n\`\`\`text\n${"代码行\n".repeat(2000)}`);
+    expect(fenced.length).toBeLessThanOrEqual(COMPLETION_SUMMARY_LIMIT + 4);
+    expect((fenced.match(/^```/gmu) ?? []).length % 2).toBe(0);
   });
 });

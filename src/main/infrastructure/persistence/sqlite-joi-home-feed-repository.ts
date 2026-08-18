@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto } from "../../../shared/joi.js";
+import type { JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
@@ -59,6 +59,16 @@ function goalStatus(row: Row): JoiGoalStatusDto {
   return "ARRANGING";
 }
 
+function thinkingStage(goal: JoiGoalCardDto | undefined, phase: JoiThinkingItemDto["phase"]): JoiThinkingItemDto["stage"] {
+  if (phase === "queued") return "ROUTING";
+  if (goal === undefined) return "PLANNING";
+  if (goal.status === "ARRANGED") return "DISPATCHING";
+  if (goal.status === "RUNNING") return "RUNNING";
+  if (goal.status === "NEEDS_ATTENTION") return "WAITING";
+  if (goal.status === "FINALIZING") return "FINALIZING";
+  return "PLANNING";
+}
+
 export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
@@ -83,12 +93,13 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         o.completion_summary, o.completed_at,
         (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id
           WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs
-        FROM joi_inbox_messages i JOIN workbenches a ON a.workbench_id = i.workbench_id
+        FROM joi_inbox_messages i LEFT JOIN workbenches a ON a.workbench_id = i.workbench_id
         LEFT JOIN work_items w ON w.input_id = i.input_id
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
         LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
         WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'
           AND i.input_id NOT LIKE 'joi_harness_review:%'
+          AND NOT (i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED')
         GROUP BY i.input_id ORDER BY i.updated_at DESC, i.input_id DESC`).all() as Row[];
       const harnessByGoal = new Map(queryHarnessGoalProjections(connection).map((projection) => [projection.goalInputId, projection]));
       const goals: JoiGoalCardDto[] = rows.map((row) => {
@@ -102,7 +113,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const harnessProjection = harnessByGoal.get(goalId);
         return {
           agentCount: number(row, "agent_count"),
-          workbench: { workbenchId: text(row, "workbench_id"), name: text(row, "workbench_name") },
+          workbench: {
+            workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",
+            name: typeof row.workbench_name === "string" ? row.workbench_name : "等待归属",
+          },
           canDelete: (text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1)
             && active === 0 && activeRuns === 0 && (total === 0 || number(row, "outcome_current") === 1),
           ...(status === "NEEDS_ATTENTION" && (typeof row.clarification_reason_code === "string" || typeof row.clarification_prompt === "string") ? {
@@ -113,14 +127,15 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           } : {}),
           goalId,
           ...(harnessProjection === undefined ? {} : { harness: toHarnessDto(harnessProjection) }),
-          ...(typeof row.completion_summary === "string" ? { completionSummary: row.completion_summary } : {}),
-          ...(typeof row.completed_at === "string" ? { completedAt: row.completed_at } : {}),
+          ...(number(row, "outcome_current") === 1 && typeof row.completion_summary === "string" ? { completionSummary: row.completion_summary } : {}),
+          ...(number(row, "outcome_current") === 1 && typeof row.completed_at === "string" ? { completedAt: row.completed_at } : {}),
           status,
           title: title === "" ? "未命名目标" : title,
           updatedAt: text(row, "projection_updated_at"),
           work: { active, completed: number(row, "completed_count"), failed: number(row, "failed_count"), total },
         };
       });
+      const goalsById = new Map(goals.map((goal) => [goal.goalId, goal]));
       const cutoff = new Date(now.getTime() - 15_000).toISOString();
       const turns = connection.prepare(`SELECT t.turn_id, COALESCE(i.goal_input_id, t.input_id) AS goal_id,
           t.status, t.created_at, t.updated_at
@@ -135,16 +150,24 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
              AND t.status IN ('PENDING','RUNNING','WAITING'))
         ORDER BY 4 DESC, 1 DESC`).all(cutoff) as Row[];
       const thinking = turns.map((row) => {
-        const active = ["PENDING", "RUNNING", "WAITING"].includes(text(row, "status"));
+        const status = text(row, "status");
+        const queued = status === "PENDING";
+        const active = queued || ["RUNNING", "WAITING"].includes(status);
         const updatedAt = text(row, "updated_at");
+        const goalId = text(row, "goal_id");
+        const goal = goalsById.get(goalId);
+        const phase = queued ? "queued" as const : active ? "progressing" as const : "settled" as const;
         return {
           ...(active ? {} : { expiresAt: new Date(Date.parse(updatedAt) + 15_000).toISOString() }),
-          goalId: text(row, "goal_id"),
-          phase: active ? "progressing" as const : "settled" as const,
+          agentCount: goal?.agentCount ?? 0,
+          goalId,
+          phase,
+          stage: thinkingStage(goal, phase),
           startedAt: text(row, "created_at"),
           turnId: text(row, "turn_id"),
+          work: goal?.work ?? { active: 0, completed: 0, failed: 0, total: 0 },
         };
-      }).filter((item) => item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime());
+      }).filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime());
       const unassignedActions = (connection.prepare(`SELECT input_id, workbench_id, status, clarification_reason_code,
         clarification_prompt, body, created_at, canceled_at FROM joi_inbox_messages
         WHERE dismissed_at IS NULL AND workbench_id IS NULL AND status = 'CLARIFICATION_REQUIRED'

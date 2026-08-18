@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { WorkbenchRepository, WorkbenchSummary, LegacyWorkbenchPolicyReader } from "../../application/ports/workbench-context.js";
 import { createWorkbench, type Workbench } from "../../domain/workbench/workbench.js";
+import { workbenchWorkspaceDisplayName } from "../../domain/workbench/workbench-naming.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -65,6 +66,14 @@ export class LegacyLifeStoreAdapter implements WorkbenchRepository, LegacyWorkbe
         workbench.workbenchId, workbench.profile.name, workbench.profile.personaRevisionId, workbench.profile.personaSummary,
         workbench.profile.scopeSummary, workbench.project.label, workbench.memory.namespaceId,
         workbench.taskContext.summary, workbench.createdAt, workbench.updatedAt,
+      );
+      connection.prepare(`UPDATE workbench_workspace_bindings SET display_name = ?, updated_at = ?
+        WHERE workbench_id = ? AND kind = 'MANAGED'`).run(
+        workbenchWorkspaceDisplayName({
+          name: workbench.profile.name,
+          projectLabel: workbench.project.label,
+          scopeSummary: workbench.profile.scopeSummary,
+        }), workbench.updatedAt, workbench.workbenchId,
       );
     });
   }

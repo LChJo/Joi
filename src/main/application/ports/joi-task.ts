@@ -17,7 +17,7 @@ export interface JoiTaskInbox {
 }
 
 export interface JoiTurnDriver {
-  handle(inputId: string): Promise<void>;
+  handle(inputId: string, signal?: AbortSignal): Promise<void>;
 }
 
 export interface ModelSourceGate {

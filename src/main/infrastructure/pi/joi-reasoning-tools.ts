@@ -12,7 +12,13 @@ import type { WorkbenchManagementService } from "../../application/joi/workbench
 import type { WorkResultService } from "../../application/work/work-result-service.js";
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
 import type { JoiHarnessStore } from "../../application/ports/joi-harness.js";
+import {
+  emitRuntimeDiagnostic,
+  runtimeDiagnosticErrorCode,
+  type RuntimeDiagnostics,
+} from "../../application/ports/runtime-diagnostics.js";
 import { DomainError } from "../../domain/errors.js";
+import { partnerClusterName } from "../../domain/workbench/workbench-naming.js";
 import { PI_CODING_TOOL_NAMES } from "./pi-coding-tool-factory.js";
 
 /** Extracts the original goal input id from synthetic input ids; undefined for direct goal inputs. */
@@ -30,8 +36,12 @@ export function goalFromInputIdPrefix(inputId: string): string | undefined {
 
 const PI_CODING_TOOL_NAME_SET = new Set<string>(PI_CODING_TOOL_NAMES);
 
-function result(value: unknown) {
-  return { content: [{ text: JSON.stringify(value), type: "text" as const }], details: {} };
+function result(value: unknown, terminate = false) {
+  return {
+    content: [{ text: JSON.stringify(value), type: "text" as const }],
+    details: {},
+    ...(terminate ? { terminate: true } : {}),
+  };
 }
 
 function normalizeCodingTools(values: string[] | undefined): string[] {
@@ -73,6 +83,7 @@ export function createJoiReasoningTools(input: {
   workbenchRefine?: Pick<WorkbenchManagementService, "update">;
   workbenches: WorkbenchCatalog;
   clarifications: Pick<JoiCoordinatorStore, "requireClarification">;
+  diagnostics?: RuntimeDiagnostics;
   /** Original goal input id; harness tools and goal-binding fall back to inputId when absent. */
   goalInputId?: string | undefined;
   harness?: Pick<JoiHarnessStore, "chartPath" | "clearMap" | "graduateFog" | "nameDestination" | "noteFog" | "recordDecision">;
@@ -133,13 +144,27 @@ export function createJoiReasoningTools(input: {
           })),
         }));
       } catch (error) {
-        if (!(error instanceof DomainError) || error.code !== "workbench_workspace_not_ready") throw error;
+        const reasonCode = runtimeDiagnosticErrorCode(error);
+        emitRuntimeDiagnostic(input.diagnostics, "joi.work.dispatch_rejected", {
+          inputId: input.inputId,
+          reasonCode,
+          turnId: input.turnId,
+          workbenchId: input.workbenchId,
+        });
+        if (error instanceof DomainError && error.code === "workbench_workspace_not_ready") {
+          await input.clarifications.requireClarification(
+            input.inputId,
+            "workbench_workspace_not_ready",
+            "选择这个 Workbench 的工作目录后，我会继续派发需要读写文件的工作。",
+          );
+          return result({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" }, true);
+        }
         await input.clarifications.requireClarification(
           input.inputId,
-          "workbench_workspace_not_ready",
-          "选择这个 Workbench 的工作目录后，我会继续派发需要读写文件的工作。",
+          "work_dispatch_failed",
+          "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。",
         );
-        return result({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
+        return result({ reasonCode: "work_dispatch_failed", status: "CLARIFICATION_REQUIRED" }, true);
       }
     },
     label: "Plan and dispatch work",
@@ -196,9 +221,9 @@ export function createJoiReasoningTools(input: {
     })),
   });
   const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
-    description: "Register a new local Pi partner when no existing partner fits the work. Reuses an active joi-created local partner with the same name. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work; both are shown to the user on the partner card. tools accepts only bash, edit, find, grep, ls, read and write; omit it or pass [] to grant all built-in Pi coding tools. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
+    description: "Register a new local Pi capability cluster when no existing partner fits the work. Name the card after a reusable work cluster, not a person or narrow role: use names like 编码工坊 instead of 资深程序员搭档. Keep description focused on the capability boundary; keep environment, workspace and directory decisions in the Workbench. Reuses an active joi-created local partner with the same normalized name. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work. tools accepts only bash, edit, find, grep, ls, read and write; omit it or pass [] to grant all built-in Pi coding tools. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
     execute: async (_toolCallId, arguments_) => {
-      const displayName = arguments_.displayName.trim();
+      const displayName = partnerClusterName(arguments_.displayName);
       const tools = normalizeCodingTools(arguments_.tools);
       const nameKey = displayName.toLocaleLowerCase();
       const existing = (await input.partners.list()).find((partner) =>

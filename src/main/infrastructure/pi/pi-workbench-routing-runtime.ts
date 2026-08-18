@@ -20,7 +20,7 @@ export class PiWorkbenchRoutingRuntime implements WorkbenchRoutingRuntime {
         content: [
           input.repair
             ? "The previous selection was invalid. Select exactly one listed Workbench."
-            : "Select exactly one Workbench for this user input. Prefer creating a new Workbench for a distinct new goal; select an existing Workbench only for a clear continuation of its scope.",
+            : "Select exactly one Workbench for this user input. Name a new Workbench after a durable work cluster and environment, not after a partner role; for frontend debugging and analysis use the frontend debugging environment label. Prefer creating a new Workbench for a distinct new goal; select an existing Workbench only for a clear continuation of its scope.",
           `Input: ${input.input}`,
           `Workbench summaries: ${JSON.stringify(input.workbenches)}`,
         ].join("\n"),
@@ -38,7 +38,7 @@ export class PiWorkbenchRoutingRuntime implements WorkbenchRoutingRuntime {
         }),
       }, {
         constrainedSampling: { strict: "prefer", type: "json_schema" },
-        description: "Create a new isolated Workbench context for a distinct new goal or project. Do not route new goals into the generic workbench Workbench.",
+        description: "Create a new isolated Workbench context for a distinct new goal or project. Use a cluster-oriented name and scope for the working environment; do not use a partner role as the Workbench name. Do not route new goals into the generic workbench Workbench.",
         name: "workbench_create",
         parameters: Type.Object({
           action: Type.Literal("create"),

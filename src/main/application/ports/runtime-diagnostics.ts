@@ -17,6 +17,9 @@ export interface RuntimeDiagnosticEventMap {
   "joi.task.input_started": {
     inputId: string;
   };
+  "joi.task.turn_cancel_requested": {
+    inputId: string;
+  };
   "joi.task.turn_settled": {
     durationMs: number;
     inputId: string;
@@ -101,6 +104,12 @@ export interface RuntimeDiagnosticEventMap {
     inputId: string;
     resolution: "bound" | "bootstrap" | "created" | "selected";
   };
+  "joi.work.dispatch_rejected": {
+    inputId: string;
+    reasonCode: string;
+    turnId: string;
+    workbenchId: string;
+  };
   "joi.turn.started": {
     workbenchId: string;
     inputId: string;
@@ -120,6 +129,7 @@ export interface RuntimeDiagnosticEventMap {
   "joi.tool.finished": {
     workbenchId: string;
     durationMs: number;
+    errorCode?: string;
     inputId: string;
     isError: boolean;
     sourceId: string;

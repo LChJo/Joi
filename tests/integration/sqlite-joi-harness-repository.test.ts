@@ -374,5 +374,20 @@ describe("SqliteJoiHarnessRepository", () => {
       ]);
       expect(projection.topPaths.every((topPath) => typeof topPath.pathId === "string" && topPath.pathId.length > 0)).toBe(true);
     });
+
+    it("shows a re-charted same-title path once, keeping the deepest layer", async () => {
+      seedGoal(fixture, { goalInputId: "goal-dedup", turn: true });
+      await repository.createMap({ workbenchId: "workbench-goal-dedup", goalInputId: "goal-dedup", now: NOW });
+      await repository.nameDestination({ destination: "目的地", goalInputId: "goal-dedup", turnId: "turn-goal-dedup" });
+      await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 1, title: "同一路径" }, turnId: "turn-goal-dedup" });
+      await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 2, title: "同一路径" }, turnId: "turn-goal-dedup" });
+      await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 2, title: "另一条" }, turnId: "turn-goal-dedup" });
+      const projection = (await repository.loadGoalProjections()).find((candidate) => candidate.goalInputId === "goal-dedup");
+      if (projection === undefined) throw new Error("projection missing");
+      expect(projection.topPaths.map((topPath) => ({ status: topPath.status, title: topPath.title }))).toEqual([
+        { status: "OPEN", title: "另一条" },
+        { status: "OPEN", title: "同一路径" },
+      ]);
+    });
   });
 });

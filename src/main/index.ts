@@ -306,6 +306,7 @@ async function startRuntime(): Promise<void> {
     tools: (turn) => selectJoiReasoningToolsForInput(createJoiReasoningTools({
       workbenchChanges, workbenchId: turn.workbenchId, workbenchRefine: workbenchManagement, workbenches,
       clarifications: joiInboxRepository,
+      diagnostics: runtimeDiagnostics,
       goalInputId: turn.goalInputId ?? goalFromInputIdPrefix(turn.inputId),
       harness: joiHarnessRepository, inputId: turn.inputId,
       instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, results: workResults,
@@ -434,7 +435,7 @@ async function startRuntime(): Promise<void> {
       workbenchComponent: new JoiWorkbenchComponent({ workbenches }),
       components: [
         new JoiTaskComponent({
-          driver: { handle: (inputId) => joiCoordinator.handle(inputId) },
+          driver: { handle: (inputId, signal) => joiCoordinator.handle(inputId, signal) },
           gate: { hasReadySource: () => modelSources.hasReadySource() },
           inbox: new SqliteJoiTaskReader({
             cancel: async (inputId) => { await joiInboxRepository.cancel(inputId); },

@@ -2,7 +2,7 @@ import { type SyntheticEvent, useCallback, useEffect, useMemo, useState } from "
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const SAFE_MARKDOWN_COMPONENTS: Components = {
@@ -304,7 +304,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
   if (detail !== null && selectedAgent !== null) return <AgentConversation agent={selectedAgent} api={api} workbenchId={detail.workbenchId} onBack={() => setSelectedAgent(null)} />;
   return <section className="partner-manager page-section">
     <header className="page-title-row"><div><p className="eyebrow">工作台 / Agent</p><h1>{detail?.name ?? "工作台"}</h1><p>{detail === null ? "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建工作台"}</button> : <button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回工作台列表</button>}</header>
-    {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" required /></label><label>工程名称<input name="projectLabel" required /></label><label>职责范围<textarea name="scopeSummary" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
+    {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" placeholder="工作聚类名称，如：前端调试分析" required /></label><label>工程名称<input name="projectLabel" placeholder="工作环境 / 工程，如：数字生活" required /></label><label>职责范围<textarea name="scopeSummary" placeholder="描述这类工作共享的环境和边界" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" placeholder="描述工作环境的长期约束，不要写单个 Agent 角色" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
     {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <button className="workbench-catalog-card" key={workbench.workbenchId} onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span><small>更新于 {new Date(workbench.updatedAt).toLocaleString()}</small><i>管理上下文</i></button>)}</div>) : <>
       <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button></div>
       {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : <div className="workbench-context-center">
@@ -451,7 +451,15 @@ function legacyHomeFeed(messages: JoiAcceptedMessageDto[]): JoiHomeFeedDto {
     updatedAt: message.acceptedAt,
     work: { active: 0, completed: 0, failed: 0, total: 0 },
   }));
-  const thinking = messages.filter((message) => message.status === "PENDING" || message.status === "ROUTED").map((message) => ({ goalId: message.inputId, phase: "progressing" as const, startedAt: message.acceptedAt, turnId: `legacy:${message.inputId}` }));
+  const thinking = messages.filter((message) => message.status === "PENDING" || message.status === "ROUTED").map((message) => ({
+    agentCount: 0,
+    goalId: message.inputId,
+    phase: message.status === "PENDING" ? "queued" as const : "progressing" as const,
+    stage: message.status === "PENDING" ? "ROUTING" as const : "PLANNING" as const,
+    startedAt: message.acceptedAt,
+    turnId: `legacy:${message.inputId}`,
+    work: { active: 0, completed: 0, failed: 0, total: 0 },
+  }));
   return { goals, thinking, unassignedActions };
 }
 
@@ -472,6 +480,41 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
     <span aria-hidden="true" className="joi-goal-progress-track"><i className={goal.work.failed > 0 ? "failed" : ""} style={{ width: `${String(percent)}%` }} /></span>
     <i>{goal.agentCount} Agent · {goal.work.completed}/{goal.work.total} 工作完成{goal.work.failed > 0 ? ` · ${String(goal.work.failed)} 失败` : ""}</i>
   </span>;
+}
+
+const THINKING_STAGE_LABELS: Record<JoiThinkingItemDto["stage"], string> = {
+  ROUTING: "正在整理任务",
+  PLANNING: "正在拆分工作",
+  DISPATCHING: "正在安排搭档",
+  RUNNING: "搭档执行中",
+  WAITING: "等待搭档回应",
+  FINALIZING: "正在汇总结果",
+};
+
+type JoiThinkingRenderItem = Omit<JoiThinkingItemDto, "agentCount" | "stage" | "work"> & Partial<Pick<JoiThinkingItemDto, "agentCount" | "stage" | "work">>;
+
+function thinkingStageLabel(stage: JoiThinkingRenderItem["stage"]): string {
+  return stage === undefined ? "正在整理任务" : THINKING_STAGE_LABELS[stage];
+}
+
+function thinkingElapsed(startedAt: string, now: number): string {
+  const elapsedSeconds = Math.max(0, Math.floor((now - Date.parse(startedAt)) / 1_000));
+  if (elapsedSeconds < 60) return `${String(elapsedSeconds)} 秒`;
+  const minutes = Math.floor(elapsedSeconds / 60);
+  if (minutes < 60) return `${String(minutes)} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  return `${String(hours)} 小时${minutes % 60 === 0 ? "" : ` ${String(minutes % 60)} 分钟`}`;
+}
+
+function thinkingWorkSummary(item: JoiThinkingRenderItem): string {
+  const work = item.work ?? { active: 0, completed: 0, failed: 0, total: 0 };
+  const agentCount = item.agentCount ?? 0;
+  const parts = [
+    agentCount > 0 ? `${String(agentCount)} Agent` : null,
+    work.total > 0 ? `${String(work.completed)}/${String(work.total)} 工作完成` : null,
+    work.failed > 0 ? `${String(work.failed)} 失败` : null,
+  ].filter((part): part is string => part !== null);
+  return parts.join(" · ");
 }
 
 function HarnessPanel({ harness }: { harness: JoiGoalHarnessDto }) {
@@ -553,6 +596,33 @@ function GoalDetail({ api, workbenches, goal, onBack, onResolved }: {
   </div>;
 }
 
+function GoalResultView({ goal, onBack, onOpenDetail }: {
+  goal: JoiGoalCardDto;
+  onBack: () => void;
+  onOpenDetail: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onBack(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack]);
+  return <div className="joi-drawer-backdrop" onClick={onBack} role="presentation">
+    <section aria-label={`${goal.workbench.name} 的最终结果`} aria-modal="true" className="joi-goal-drawer" onClick={(event) => event.stopPropagation()} role="dialog">
+      <header className="joi-goal-detail-header">
+        <div className="joi-goal-detail-title">
+          <p className="eyebrow">{goal.workbench.name}</p>
+          <h1>{goal.title}</h1>
+          <span className="joi-goal-detail-meta"><span className={`joi-goal-status ${goal.status.toLowerCase()}`}>{goalStatusLabel(goal.status)}</span>{goal.completedAt === undefined ? null : <time className="joi-feed-time">{new Date(goal.completedAt).toLocaleString()}</time>}</span>
+        </div>
+        <div className="row-actions"><button className="button ghost" disabled={goal.workbench.workbenchId === ""} onClick={onOpenDetail} type="button">查看详情</button><button className="button quiet" onClick={onBack} type="button">关闭</button></div>
+      </header>
+      <div className="joi-goal-drawer-body">
+        <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary ?? ""}</ReactMarkdown></div></article>
+      </div>
+    </section>
+  </div>;
+}
+
 function JoiComposer({ api, onNavigate, snapshot }: {
   api: DigitalLifeApi;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
@@ -564,6 +634,7 @@ function JoiComposer({ api, onNavigate, snapshot }: {
   const targetWorkbench = snapshot.workbenches.find((workbench) => workbench.workbenchId === targetWorkbenchId);
   const [feed, setFeed] = useState<JoiHomeFeedDto>({ goals: [], thinking: [], unassignedActions: [] });
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [resultGoalId, setResultGoalId] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
   const [workbenchChanges, setWorkbenchChanges] = useState(snapshot.workbenchChanges);
   const [error, setError] = useState<string | null>(null);
@@ -601,15 +672,24 @@ function JoiComposer({ api, onNavigate, snapshot }: {
         ...(targetWorkbench === undefined ? {} : { workbenchId: targetWorkbench.workbenchId }),
       });
       setFiles([]);
-      setFeed((current) => ({ ...current, thinking: [{ goalId: saved.inputId, phase: "progressing", startedAt: saved.acceptedAt, turnId: `pending:${saved.inputId}` }, ...current.thinking] }));
+      setFeed((current) => ({ ...current, thinking: [{
+        agentCount: 0,
+        goalId: saved.inputId,
+        phase: "queued",
+        stage: "ROUTING",
+        startedAt: saved.acceptedAt,
+        turnId: `pending:${saved.inputId}`,
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      }, ...current.thinking] }));
       void refresh().catch(() => undefined);
     } catch (reason) {
       setText(message);
       setError(reason instanceof ApiError ? reason.message : "输入没保存成功，请再试一次。");
     }
   };
-  const visibleThinking = useMemo(() => feed.thinking.filter((item) => item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now), [feed.thinking, now]);
+  const visibleThinking = useMemo(() => feed.thinking.filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now), [feed.thinking, now]);
   const openGoal = feed.goals.find((goal) => goal.goalId === openGoalId);
+  const resultGoal = feed.goals.find((goal) => goal.goalId === resultGoalId);
   const dismissGoal = (goalId: string) => setFeed((current) => ({ ...current, goals: current.goals.filter((goal) => goal.goalId !== goalId) }));
   const dismissAction = (inputId: string) => setFeed((current) => ({ ...current, unassignedActions: current.unassignedActions.filter((item) => item.inputId !== inputId) }));
   return <section className="joi-home" aria-labelledby="joi-home-title">
@@ -619,15 +699,35 @@ function JoiComposer({ api, onNavigate, snapshot }: {
       <div className="row-actions"><button className="button ghost" onClick={() => void api.decideWorkbenchChange(change.requestId, "REJECT").then(refresh)} type="button">保留原样</button><button className="button danger-text" onClick={() => void api.decideWorkbenchChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? "确认合并" : "确认归档"}</button></div>
     </article>)}</section>}
     {openGoal === undefined ? null : <GoalDetail api={api} workbenches={snapshot.workbenches} goal={openGoal} onBack={() => setOpenGoalId(null)} onResolved={() => void refresh().catch(() => undefined)} />}
+    {resultGoal?.completionSummary === undefined ? null : <GoalResultView goal={resultGoal} onBack={() => setResultGoalId(null)} onOpenDetail={() => { setResultGoalId(null); setOpenGoalId(resultGoal.goalId); }} />}
     <div aria-label="joi 信息流" className="joi-feed joi-feed-single">
-      {visibleThinking.map((item) => <div className={`joi-thinking ${item.phase}`} key={item.turnId}><span className="joi-thinking-dot" /><strong>progressing</strong></div>)}
+      {visibleThinking.map((item) => {
+        const renderItem = item as JoiThinkingRenderItem;
+        const isProgressing = item.phase !== "queued";
+        const stageLabel = thinkingStageLabel(renderItem.stage);
+        const workSummary = thinkingWorkSummary(renderItem);
+        const accessibleSummary = isProgressing
+          ? `${stageLabel}${workSummary === "" ? "" : `，${workSummary}`}`
+          : "queued";
+        return <div aria-label={accessibleSummary} className={`joi-thinking ${item.phase}`} key={item.turnId} role="status">
+          <span aria-hidden="true" className="joi-thinking-dot" />
+          <div className="joi-thinking-copy">
+            <strong>{item.phase === "queued" ? "queued" : "progressing"}</strong>
+            {isProgressing ? <span className="joi-thinking-summary">
+              <span className="joi-thinking-stage">{stageLabel}</span>
+              {workSummary === "" ? null : <span className="joi-thinking-meta">{workSummary}</span>}
+              <span aria-hidden="true" className="joi-thinking-elapsed"> · 已用 {thinkingElapsed(item.startedAt, now)}</span>
+            </span> : null}
+          </div>
+        </div>;
+      })}
       {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} reasonCode={message.clarificationReasonCode} /></article>)}
       {feed.goals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
-          <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => setOpenGoalId(goal.goalId)} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong>{goal.title}</strong><GoalProgress goal={goal} /></span></button>
+          <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => { setResultGoalId(null); setOpenGoalId(goal.goalId); }} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong>{goal.title}</strong><GoalProgress goal={goal} /></span></button>
           <div className="joi-goal-side"><span className={`joi-goal-status ${goal.status.toLowerCase()}`}>{goalStatusLabel(goal.status)}</span>{goal.status === "NEEDS_ATTENTION" || goal.canDelete ? <div className="joi-goal-actions">{goal.status === "NEEDS_ATTENTION" ? <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} /> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div> : null}</div>
         </div>
-        {goal.completionSummary === undefined ? null : <div className="joi-goal-result-preview joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
+        {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoalId(goal.goalId); setOpenGoalId(null); } }}><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
         {goal.clarification === undefined ? null : <ClarificationActions api={api} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} />}
       </article>)}
       {visibleThinking.length === 0 && feed.unassignedActions.length === 0 && feed.goals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}
@@ -650,6 +750,7 @@ function JoiComposer({ api, onNavigate, snapshot }: {
 function clarificationText(code: string | undefined, prompt?: string, workbenchName?: string): string {
   if (code === "question_required") return prompt ?? "joi 需要你回答一个问题，才能继续安排这条任务。";
   if (code === "workbench_workspace_not_ready") return `“${workbenchName ?? "当前工作台"}”还没有可用的工作目录。选择一个目录后，joi 会自动继续这条任务。`;
+  if (code === "work_dispatch_failed") return "joi 暂时无法把这条任务派发给搭档，任务已暂停。补充要求后可以继续重试。";
   if (code === "workbench_selection_invalid") return "joi 没法定位这条输入属于哪个上下文。在下方点选它对应的工作台，或补充更明确的项目/角色。";
   if (code === "workbench_creation_unavailable") return "joi 想新建一个工作台来承接这条输入，但当前无法创建。请补充更明确的归属，或先到「工作台」页手动创建。";
   if (code === "workbench_not_found") return "这条输入指向的工作台已不存在。在下方点选它应归属的工作台，或补充项目/角色。";

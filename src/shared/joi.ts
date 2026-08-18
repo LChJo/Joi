@@ -271,12 +271,17 @@ export interface JoiGoalCardDto {
   work: { active: number; completed: number; failed: number; total: number };
 }
 
+export type JoiThinkingStageDto = "ROUTING" | "PLANNING" | "DISPATCHING" | "RUNNING" | "WAITING" | "FINALIZING";
+
 export interface JoiThinkingItemDto {
+  agentCount: number;
   expiresAt?: string;
   goalId: string;
-  phase: "progressing" | "settled";
+  phase: "queued" | "progressing" | "settled";
+  stage: JoiThinkingStageDto;
   startedAt: string;
   turnId: string;
+  work: { active: number; completed: number; failed: number; total: number };
 }
 
 export interface JoiHomeFeedDto {
@@ -345,13 +350,13 @@ export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [
         blurb: "把模糊大目标拆成结果、里程碑与下一步动作",
         id: "goal-planner",
         prompt: "你是一位负责把模糊大目标拆成可执行计划的搭档。DO：将目标拆为结果、里程碑与下一步动作的层级，并显式标注假设与决策点。验收标准：每个里程碑有可独立验证的产出描述，且依赖顺序明确。范围外：不执行具体任务、不写代码、不做外部调研。",
-        title: "目标拆解搭档",
+        title: "目标规划工坊",
       },
       {
         blurb: "识别关键不确定性、外部依赖与兜底方向",
         id: "risk-scout",
         prompt: "你是一位负责识别计划风险与依赖的搭档。DO：列出可能推翻目标的关键不确定性及其廉价验证方式，标注外部依赖与触发信号。验收标准：每项风险都有触发信号与兜底方向，可被逐条核对。范围外：不自行制定主计划、不做最终取舍。",
-        title: "风险与依赖搭档",
+        title: "风险侦察工坊",
       },
     ],
     source: "builtin",
@@ -366,13 +371,13 @@ export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [
         blurb: "先写失败测试再实现，保持小步可验证",
         id: "tdd-implementer",
         prompt: "你是一位负责用测试驱动方式实现功能的搭档。DO：为每个行为先写失败测试，再实现最小代码使其通过，保持每次迭代可验证。验收标准：所有新行为都有对应测试，且能说清运行与验证方式。范围外：不做无关重构、不扩大功能范围。",
-        title: "测试驱动实现搭档",
+        title: "编码工坊",
       },
       {
         blurb: "对照验收标准逐项核对并跑回归",
         id: "acceptance-guard",
         prompt: "你是一位负责功能验收与回归的搭档。DO：对照验收标准逐项核对，运行相关测试与检查，如实报告失败与缺口。验收标准：验收结论与每条标准的运行证据一一对应。范围外：不直接改代码、不新增功能。",
-        title: "验收与回归搭档",
+        title: "验收回归工坊",
       },
     ],
     source: "builtin",
@@ -387,13 +392,13 @@ export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [
         blurb: "盯逻辑错误、边界条件与并发/资源问题",
         id: "correctness-reviewer",
         prompt: "你是一位负责审查代码正确性的搭档。DO：寻找逻辑错误、边界条件、并发与资源泄漏问题，按严重度给出带证据的结论。验收标准：每个问题都能复现或指出推理链条，并附修复方向。范围外：不评价风格与命名、不直接改代码。",
-        title: "正确性审查搭档",
+        title: "正确性审查工坊",
       },
       {
         blurb: "盯结构、可读性、可测试性与长期成本",
         id: "maintainability-reviewer",
         prompt: "你是一位负责审查代码可维护性的搭档。DO：评估结构、命名、重复与可测试性，优先指出会形成长期成本的问题。验收标准：建议保持行为不变且标注具体位置。范围外：不重复正确性审查、不要求大规模重写。",
-        title: "可维护性审查搭档",
+        title: "可维护性工坊",
       },
     ],
     source: "builtin",
@@ -408,13 +413,13 @@ export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [
         blurb: "先复现缺陷，产出最小复现步骤与证据",
         id: "reproducer",
         prompt: "你是一位负责复现与定位缺陷的搭档。DO：先构建最小复现步骤再谈修复，记录环境、输入与观察到的行为。验收标准：复现步骤可被他人稳定执行，并附关键证据。范围外：不改代码做修复、不在无证据时猜测根因。",
-        title: "复现与定位搭档",
+        title: "复现定位工坊",
       },
       {
         blurb: "基于复现证据给出根因与修复选项",
         id: "root-cause-analyst",
         prompt: "你是一位负责诊断缺陷根因的搭档。DO：基于复现证据提出根因假设并验证，给出最小修复选项及其风险。验收标准：根因解释能覆盖全部观察到的现象，选项可被验证。范围外：不直接做大范围重构、不跳过证据下结论。",
-        title: "根因诊断搭档",
+        title: "根因诊断工坊",
       },
     ],
     source: "builtin",
@@ -429,13 +434,13 @@ export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [
         blurb: "从一个独立视角并行调研，附来源与反例",
         id: "angle-researcher",
         prompt: "你是一位负责单一视角调研的搭档。DO：围绕指定视角收集证据与反例，区分事实与观点，附来源。验收标准：结论带来源与置信度，并说明反例检索情况。范围外：不汇总其他视角、不做最终建议。",
-        title: "多视角调研搭档",
+        title: "多视角研究工坊",
       },
       {
         blurb: "把各视角调研汇总成有立场的结论",
         id: "brief-synthesizer",
         prompt: "你是一位负责汇总结论的搭档。DO：对照各视角证据，指出一致与冲突之处，形成有立场的结论与遗留问题。验收标准：结论可追溯到各调研来源，冲突不被掩盖。范围外：不重新做一手调研、不罗列资料不给结论。",
-        title: "汇总结论搭档",
+        title: "结论汇总工坊",
       },
     ],
     source: "builtin",
@@ -450,13 +455,13 @@ export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [
         blurb: "评估现状架构痛点及其真实成本",
         id: "architecture-assessor",
         prompt: "你是一位负责评估代码库架构的搭档。DO：识别真正抬高维护成本的痛点，用代码结构证据支撑，并按影响排序。验收标准：每个痛点都有成本说明与证据，而非审美偏好。范围外：不写重构代码、不提推倒重来方案。",
-        title: "架构评估搭档",
+        title: "架构评估工坊",
       },
       {
         blurb: "把改进拆成可验证、可回滚的小步迁移",
         id: "migration-planner",
         prompt: "你是一位负责规划渐进迁移的搭档。DO：把改进方向拆成一系列可独立验证、可回滚的小步，标注每步的验证方式与回滚点。验收标准：每步完成后系统保持可运行。范围外：不亲自执行迁移、不安排需要停机的步骤。",
-        title: "渐进迁移规划搭档",
+        title: "迁移规划工坊",
       },
     ],
     source: "builtin",

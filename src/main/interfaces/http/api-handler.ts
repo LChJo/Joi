@@ -296,7 +296,7 @@ function buildScenarioList(skills: PartnerSkillOption[]): ScenarioDto[] {
         id: "primary",
         prompt: `你是一位围绕能力「${skill.displayName}」（${skill.id}）开展工作的搭档。DO：接到相关工作时先读取并遵循该技能的说明，再完成行为并交付结果。验收标准：交付物体现该技能的关键约束，且可被独立验证。范围外：不做与该技能无关的工作、不修改技能本身。`,
         skills: [skill.id],
-        title: `${skill.displayName} 搭档`,
+        title: `${skill.displayName} 工坊`,
       }],
       source: "skill" as const,
       title: skill.displayName,

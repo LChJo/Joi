@@ -18,13 +18,15 @@ interface Harness {
   calls: string[];
   component: JoiTaskComponent;
   failTurns: string[];
+  signals: Map<string, AbortSignal | undefined>;
   settle: (inputId: string, outcome?: "ok" | "fail") => void;
   state: { pending: JoiTaskPendingInput[]; stale: JoiTaskStaleTurn[] };
 }
 
-function makeHarness(options?: { ready?: boolean }): Harness {
+function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harness {
   const calls: string[] = [];
   const failTurns: string[] = [];
+  const signals = new Map<string, AbortSignal | undefined>();
   const resolvers = new Map<string, { reject: (error: Error) => void; resolve: () => void }>();
   const state = {
     pending: [] as JoiTaskPendingInput[],
@@ -32,10 +34,12 @@ function makeHarness(options?: { ready?: boolean }): Harness {
   };
   const component = new JoiTaskComponent({
     driver: {
-      handle: (inputId) => {
+      handle: (inputId, signal) => {
         calls.push(inputId);
+        signals.set(inputId, signal);
         return new Promise<void>((resolve, reject) => {
           resolvers.set(inputId, { reject, resolve });
+          if (!options?.ignoreAbort) signal?.addEventListener("abort", () => reject(new Error("turn_aborted")), { once: true });
         });
       },
     },
@@ -56,6 +60,7 @@ function makeHarness(options?: { ready?: boolean }): Harness {
     calls,
     component,
     failTurns,
+    signals,
     settle: (inputId, outcome = "ok") => {
       const entry = resolvers.get(inputId);
       if (entry === undefined) throw new Error(`no in-flight handle for ${inputId}`);
@@ -160,13 +165,34 @@ describe("JoiTaskComponent traversal scheduling", () => {
     expect(scans[0]).toBe(`scan@${new Date(new Date(BASE).getTime() - 60_000).toISOString()}`);
   });
 
-  it("clears a stalled slot so re-pended inputs can resume", async () => {
+  it("cancels a stalled slot before a re-pended input can resume", async () => {
     const harness = makeHarness();
     harness.state.pending = [{ createdAt: BASE, inputId: "input_a" }];
     await harness.component.update(ctxAt(0));
     expect(harness.calls).toEqual(["input_a"]);
 
     await harness.component.update(ctxAt(16 * 60_000));
+    expect(harness.calls).toEqual(["input_a"]);
+    expect(harness.signals.get("input_a")?.aborted).toBe(true);
+
+    await flush();
+    harness.state.pending = [{ createdAt: BASE, inputId: "input_a" }];
+    await harness.component.update(ctxAt(16 * 60_000 + 1));
+    expect(harness.calls).toEqual(["input_a", "input_a"]);
+  });
+
+  it("does not repeat cancellation or start a retry while the provider promise is still pending", async () => {
+    const harness = makeHarness({ ignoreAbort: true });
+    harness.state.pending = [{ createdAt: BASE, inputId: "input_a" }];
+    await harness.component.update(ctxAt(0));
+    await harness.component.update(ctxAt(16 * 60_000));
+    await harness.component.update(ctxAt(17 * 60_000));
+    expect(harness.calls).toEqual(["input_a"]);
+    expect(harness.signals.get("input_a")?.aborted).toBe(true);
+
+    harness.settle("input_a");
+    await flush();
+    await harness.component.update(ctxAt(18 * 60_000));
     expect(harness.calls).toEqual(["input_a", "input_a"]);
   });
 });

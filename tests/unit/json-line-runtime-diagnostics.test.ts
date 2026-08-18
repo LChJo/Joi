@@ -4,6 +4,7 @@ import {
   runtimeDiagnosticErrorCode,
 } from "../../src/main/application/ports/runtime-diagnostics.js";
 import { TestClock } from "../support/runtime-fixture.js";
+import { vi } from "vitest";
 
 describe("json-line runtime diagnostics", () => {
   it("persists a bounded rolling JSONL trail and drops unsafe fields", async () => {
@@ -83,6 +84,22 @@ describe("json-line runtime diagnostics", () => {
       "joi.outbox.claimed",
       { limit: 20, recordCount: 0 },
     )).not.toThrow();
+  });
+
+  it("disables the process stderr sink after an asynchronous broken pipe", async () => {
+    const write = vi.spyOn(process.stderr, "write").mockImplementationOnce(() => {
+      queueMicrotask(() => process.stderr.emit("error", Object.assign(new Error("broken pipe"), { code: "EPIPE" })));
+      return true;
+    });
+    try {
+      const diagnostics = new JsonLineRuntimeDiagnostics({ clock: new TestClock() });
+      expect(() => diagnostics.emit("joi.outbox.claimed", { limit: 1, recordCount: 0 })).not.toThrow();
+      await new Promise<void>((resolve) => { setImmediate(resolve); });
+      expect(() => diagnostics.emit("joi.outbox.claimed", { limit: 1, recordCount: 0 })).not.toThrow();
+      expect(write).toHaveBeenCalledTimes(1);
+    } finally {
+      write.mockRestore();
+    }
   });
 
   it("reduces errors to bounded machine identifiers without logging messages", () => {

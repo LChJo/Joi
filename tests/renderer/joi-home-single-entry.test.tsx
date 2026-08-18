@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
-import type { WorkbenchDetailDto, WorkbenchDto, JoiSnapshotDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import type { WorkbenchDetailDto, WorkbenchDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const readySource: ModelSourceDto = {
   accessMode: "api",
@@ -193,9 +193,25 @@ describe("joi home single entry", () => {
   it("uses one composer when a source is ready and keeps consecutive inputs accepted", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
-    const send = vi.spyOn(api, "sendJoiMessage")
-      .mockResolvedValueOnce({ acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "input-1", status: "PENDING" })
-      .mockResolvedValueOnce({ acceptedAt: "2026-07-28T10:00:01.000Z", inputId: "input-2", status: "PENDING" });
+    const submitted: string[] = [];
+    vi.spyOn(api, "joiHomeFeed").mockImplementation(() => Promise.resolve({
+      goals: [],
+      thinking: submitted.map((inputId, index) => ({
+        agentCount: 0,
+        goalId: inputId,
+        phase: "queued" as const,
+        stage: "ROUTING" as const,
+        startedAt: `2026-07-28T10:00:0${String(index)}.000Z`,
+        turnId: `pending:${inputId}`,
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      })),
+      unassignedActions: [],
+    }));
+    const send = vi.spyOn(api, "sendJoiMessage").mockImplementation((_message) => {
+      const inputId = `input-${String(submitted.length + 1)}`;
+      submitted.push(inputId);
+      return Promise.resolve({ acceptedAt: `2026-07-28T10:00:0${String(submitted.length - 1)}.000Z`, inputId, status: "PENDING" });
+    });
     render(<JoiHome api={api} />);
     const composer = await screen.findByLabelText("给 joi 输入");
     fireEvent.change(composer, { target: { value: "先研究方案" } });
@@ -204,7 +220,7 @@ describe("joi home single entry", () => {
     fireEvent.change(composer, { target: { value: "同时整理风险" } });
     fireEvent.submit(parentForm(composer));
     await waitFor(() => expect(send).toHaveBeenCalledWith("同时整理风险", {}));
-    expect(await screen.findAllByText("progressing")).toHaveLength(2);
+    expect(await screen.findAllByText("queued")).toHaveLength(2);
   });
 
   it("routes the composer input to the Workbench chosen in the toolbar and defaults to joi routing", async () => {
@@ -415,7 +431,15 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "登录工程")] });
     vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
       goals: [{ agentCount: 2, workbench: { workbenchId: "workbench-1", name: "登录工程" }, canDelete: false, goalId: "goal-1", status: "RUNNING", title: "研究一下登录改造", updatedAt: "2026-07-28T10:00:00.000Z", work: { active: 1, completed: 1, failed: 0, total: 2 } }],
-      thinking: [{ goalId: "goal-1", phase: "progressing", startedAt: "2026-07-28T10:00:00.000Z", turnId: "turn-1" }],
+      thinking: [{
+        agentCount: 2,
+        goalId: "goal-1",
+        phase: "progressing",
+        stage: "RUNNING",
+        startedAt: "2026-07-28T10:00:00.000Z",
+        turnId: "turn-1",
+        work: { active: 1, completed: 1, failed: 0, total: 2 },
+      }],
       unassignedActions: [{ acceptedAt: "2026-07-28T10:00:03.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "clarify", status: "CLARIFICATION_REQUIRED", textPreview: "这条到底归谁" }],
     });
     render(<JoiHome api={api} />);
@@ -423,9 +447,44 @@ describe("joi home single entry", () => {
     expect(await screen.findByText("研究一下登录改造")).toBeInTheDocument();
     expect(screen.getByText("这条到底归谁")).toBeInTheDocument();
     expect(screen.getByText("progressing")).toBeInTheDocument();
-    expect(screen.getByText(/2 Agent · 1\/2 工作完成/u)).toBeInTheDocument();
+    expect(screen.getByText("搭档执行中", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText(/已用/u, { selector: ".joi-thinking-elapsed" })).toBeInTheDocument();
+    expect(screen.getByText(/2 Agent · 1\/2 工作完成/u, { selector: ".joi-thinking-meta" })).toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "工作状态" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "登录工程" })).toBeInTheDocument();
+  });
+
+  it("shows safe stage/count summaries across elapsed-time bands and tolerates an old thinking DTO", async () => {
+    const api = new DigitalLifeApi("");
+    const now = Date.now();
+    const legacyThinking = {
+      goalId: "legacy-thinking",
+      phase: "progressing" as const,
+      startedAt: new Date(now - 5_000).toISOString(),
+      turnId: "legacy-thinking-turn",
+    } as unknown as JoiThinkingItemDto;
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [],
+      thinking: [
+        { agentCount: 0, goalId: "planning", phase: "progressing", stage: "PLANNING", startedAt: new Date(now - 5_000).toISOString(), turnId: "planning-turn", work: { active: 0, completed: 0, failed: 0, total: 0 } },
+        { agentCount: 2, goalId: "dispatching", phase: "progressing", stage: "DISPATCHING", startedAt: new Date(now - 65_000).toISOString(), turnId: "dispatching-turn", work: { active: 2, completed: 1, failed: 1, total: 3 } },
+        { agentCount: 0, goalId: "waiting", phase: "progressing", stage: "WAITING", startedAt: new Date(now - 65_000).toISOString(), turnId: "waiting-turn", work: { active: 1, completed: 0, failed: 0, total: 1 } },
+        { agentCount: 1, goalId: "finalizing", phase: "progressing", stage: "FINALIZING", startedAt: new Date(now - 2 * 60 * 60 * 1_000).toISOString(), turnId: "finalizing-turn", work: { active: 0, completed: 1, failed: 0, total: 1 } },
+        legacyThinking,
+      ],
+      unassignedActions: [],
+    });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("正在拆分工作", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("正在安排搭档", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("等待搭档回应", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("正在汇总结果", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("正在整理任务", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("2 Agent · 1/3 工作完成 · 1 失败", { selector: ".joi-thinking-meta" })).toBeInTheDocument();
+    expect(screen.getAllByText(/已用 [0-9]+ 秒/u, { selector: ".joi-thinking-elapsed" })).toHaveLength(2);
+    expect(screen.getAllByText(/已用 1 分钟/u, { selector: ".joi-thinking-elapsed" })).toHaveLength(2);
+    expect(screen.getByText(/已用 2 小时/u, { selector: ".joi-thinking-elapsed" })).toBeInTheDocument();
   });
 
   it("drills from a goal card into an inline detail with the Workbench title, agent list and live data stream", async () => {
@@ -473,6 +532,40 @@ describe("joi home single entry", () => {
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     expect(screen.getByLabelText("joi 信息流")).toBeInTheDocument();
+  });
+
+  it("opens the clean final-result drawer from the card preview and can switch into the full goal detail", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-1", "登录工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 1, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
+        completedAt: "2026-07-28T11:00:00.000Z",
+        completionSummary: "## 登录改造完成\n\n**功能** 已通过验收，完整报告如下。",
+        goalId: "goal-1", status: "COMPLETED", title: "研究一下登录改造", updatedAt: "2026-07-28T11:00:00.000Z", work: { active: 0, completed: 2, failed: 0, total: 2 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const listAgents = vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    render(<JoiHome api={api} />);
+    const preview = await screen.findByRole("button", { name: /最终结果全文/u });
+    expect(preview).toHaveTextContent("已通过验收");
+
+    fireEvent.click(preview);
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
+    expect(within(drawer).getByText("已通过验收，完整报告如下。")).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText("这条目标的 Agent 列表")).not.toBeInTheDocument();
+
+    fireEvent.click(within(drawer).getByRole("button", { name: "查看详情" }));
+    expect(await screen.findByLabelText("这条目标的 Agent 列表")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "研究一下登录改造" })).toBeInTheDocument();
+    await waitFor(() => expect(listAgents).toHaveBeenCalledWith(workbench.workbenchId, { goalId: "goal-1", limit: 100 }));
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("shows the harness map panel in the goal detail only when the feed carries a projection", async () => {
@@ -541,8 +634,8 @@ describe("joi home single entry", () => {
         work: { active: status === "RUNNING" ? 1 : 0, completed: status === "COMPLETED" ? 1 : 0, failed: status === "FAILED" ? 1 : 0, total: 1 },
       })),
       thinking: [
-        { expiresAt: "2099-01-01T00:00:00.000Z", goalId: "goal-COMPLETED", phase: "settled", startedAt: workbench.updatedAt, turnId: "settled-visible" },
-        { expiresAt: "2000-01-01T00:00:00.000Z", goalId: "goal-CANCELED", phase: "settled", startedAt: workbench.updatedAt, turnId: "settled-expired" },
+        { agentCount: 6, expiresAt: "2099-01-01T00:00:00.000Z", goalId: "goal-COMPLETED", phase: "settled", stage: "FINALIZING", startedAt: workbench.updatedAt, turnId: "settled-visible", work: { active: 0, completed: 1, failed: 0, total: 1 } },
+        { agentCount: 0, expiresAt: "2000-01-01T00:00:00.000Z", goalId: "goal-CANCELED", phase: "settled", stage: "FINALIZING", startedAt: workbench.updatedAt, turnId: "settled-expired", work: { active: 0, completed: 0, failed: 0, total: 0 } },
       ],
       unassignedActions: [],
     });
@@ -619,11 +712,13 @@ describe("joi home single entry", () => {
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "clarify-1", status: "CLARIFICATION_REQUIRED" },
       { acceptedAt: "2026-08-01T00:00:01.000Z", clarificationReasonCode: "workbench_creation_unavailable", inputId: "clarify-2", status: "CLARIFICATION_REQUIRED" },
       { acceptedAt: "2026-08-01T00:00:02.000Z", clarificationReasonCode: "workbench_not_found", inputId: "clarify-3", status: "CLARIFICATION_REQUIRED" },
+      { acceptedAt: "2026-08-01T00:00:03.000Z", clarificationReasonCode: "work_dispatch_failed", inputId: "clarify-4", status: "CLARIFICATION_REQUIRED" },
     ] });
     render(<JoiHome api={api} />);
     expect(await screen.findByText(/没法定位这条输入属于哪个上下文/u)).toBeInTheDocument();
     expect(screen.getByText(/想新建一个工作台来承接/u)).toBeInTheDocument();
     expect(screen.getByText(/指向的工作台已不存在/u)).toBeInTheDocument();
+    expect(screen.getByText(/暂时无法把这条任务派发给搭档/u)).toBeInTheDocument();
   });
 
   it("offers scenario and partner-page exits from the thin-roster nudge", async () => {

@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { WorkbenchDetailDto } from "../../../shared/joi.js";
 import type { WorkbenchManagementRepository } from "../../application/ports/workbench-context.js";
 import { mapStoredEngine } from "./partner-engine-storage.js";
+import { workbenchWorkspaceDisplayName } from "../../domain/workbench/workbench-naming.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -97,9 +98,13 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
         input.name ?? null, input.projectLabel ?? null, input.responsibility ?? null, input.personaRevisionId ?? null,
         input.personaBody ?? null, input.updatedAt, input.workbenchId,
       );
-      if (input.name !== undefined) connection.prepare(`UPDATE workbench_workspace_bindings
-        SET display_name = ? || ' 工作区', updated_at = ? WHERE workbench_id = ? AND kind = 'MANAGED'`)
-        .run(input.name, input.updatedAt, input.workbenchId);
+      if (input.name !== undefined || input.projectLabel !== undefined || input.responsibility !== undefined) {
+        const context = connection.prepare("SELECT name, project_label, scope_summary FROM workbenches WHERE workbench_id = ?").get(input.workbenchId) as { name?: unknown; project_label?: unknown; scope_summary?: unknown } | undefined;
+        if (typeof context?.name === "string" && typeof context.project_label === "string" && typeof context.scope_summary === "string") {
+          connection.prepare(`UPDATE workbench_workspace_bindings SET display_name = ?, updated_at = ?
+            WHERE workbench_id = ? AND kind = 'MANAGED'`).run(workbenchWorkspaceDisplayName({ name: context.name, projectLabel: context.project_label, scopeSummary: context.scope_summary }), input.updatedAt, input.workbenchId);
+        }
+      }
     });
     return this.getDetail(input.workbenchId);
   }

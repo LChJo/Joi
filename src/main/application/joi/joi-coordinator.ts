@@ -11,7 +11,7 @@ import {
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
-import { sanitizeAgentConversationText } from "../partners/agent-conversation-presentation.js";
+import { normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
 
 interface SourcePin {
   modelCapability?: "release-tested" | "custom-unverified-tools";
@@ -57,6 +57,8 @@ const OUTCOME_REPAIR_PROMPT = [
   "Only when no execution is requested and the response is already complete may you call turn_complete with the matching outcome.",
 ].join(" ");
 
+const WORK_DISPATCH_FAILURE_PROMPT = "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。";
+
 function workbenchDecision(value: unknown, known: Set<string>, canCreate: boolean): WorkbenchDecision | null {
   if (value === null || Array.isArray(value) || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -101,7 +103,8 @@ export class JoiCoordinator {
     store: JoiCoordinatorStore;
   }) {}
 
-  async handle(inputId: string): Promise<void> {
+  async handle(inputId: string, signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled before it started.");
     const input = await this.dependencies.store.loadInput(inputId);
     if (input === null) throw new DomainError("joi_input_not_found", "joi input was not found.");
     if (input.status === "CONSUMED") return;
@@ -172,6 +175,15 @@ export class JoiCoordinator {
       : null;
     const isGoalSynthesis = goalSynthesis !== null;
     const sessionId = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}` : `joi_session:${workbenchId}`;
+    const abortRuntime = () => {
+      try {
+        this.dependencies.runtime.abort(sessionId);
+      } catch {
+        // The session may not exist yet; the turn's catch block will retry the cleanup.
+      }
+    };
+    if (signal?.aborted) abortRuntime();
+    signal?.addEventListener("abort", abortRuntime, { once: true });
     let pin = await this.dependencies.sources.selectInitial(turnId);
     await this.dependencies.store.createTurn({
       workbenchId,
@@ -206,12 +218,14 @@ export class JoiCoordinator {
     const attemptedSources = new Set<string>();
     let completionRepairAttempted = false;
     let completionText = "";
+    let dispatchFailureReason: string | undefined;
     let prompt = input.body;
     try {
       for (;;) {
+        if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
         attemptedSources.add(pin.sourceId);
-        try {
-          await this.dependencies.runtime.startTurn({
+      try {
+        await this.dependencies.runtime.startTurn({
             workbenchId,
             ...(input.goalInputId === undefined ? {} : { goalInputId: input.goalInputId }),
             inputId,
@@ -241,6 +255,7 @@ export class JoiCoordinator {
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.finished", {
                   workbenchId,
                   durationMs: Math.max(0, finishedAt - startedAt),
+                  ...(event.reasonCode === undefined ? {} : { errorCode: event.reasonCode }),
                   inputId,
                   isError: event.isError,
                   sourceId: pin.sourceId,
@@ -249,6 +264,9 @@ export class JoiCoordinator {
                   turnId,
                 });
                 toolStartedAt.delete(event.toolCallId);
+                if (event.toolName === "work_dispatch" && (event.isError || event.reasonCode !== undefined)) {
+                  dispatchFailureReason = event.reasonCode ?? "tool_execution_error";
+                }
               }
               if (event.type === "tool_finished" && !event.isError && COMMITTED_OUTCOME_TOOL_NAMES.has(event.toolName)) {
                 committedOutcomeTools.add(event.toolName);
@@ -272,6 +290,25 @@ export class JoiCoordinator {
             }),
             turnId,
           });
+          if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
+          if (dispatchFailureReason !== undefined) {
+            if (dispatchFailureReason !== "workbench_workspace_not_ready" && dispatchFailureReason !== "work_dispatch_failed") {
+              await this.dependencies.store.requireClarification(inputId, "work_dispatch_failed", WORK_DISPATCH_FAILURE_PROMPT);
+            }
+            await this.dependencies.store.completeInput(inputId, turnId);
+            emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.completed", {
+              workbenchId,
+              durationMs: Math.max(0, this.dependencies.clock.now().getTime() - handleStartedAt),
+              inputId,
+              observedToolCount: observedToolCalls.size,
+              outcomeTools: [],
+              repaired: completionRepairAttempted,
+              sourceId: pin.sourceId,
+              turnId,
+            });
+            await this.dependencies.events?.emit("joi.turn.completed", turnId, { workbenchId, inputId, turnId });
+            return;
+          }
           if (pin.modelCapability === "custom-unverified-tools" && observedToolCalls.size === 0) {
             throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
           }
@@ -291,6 +328,7 @@ export class JoiCoordinator {
           }
           break;
         } catch (error) {
+          if (signal?.aborted) throw error;
           const failure = this.dependencies.failureClassifier?.classify(error) ?? null;
           const fallback = failure === null ? null : await this.dependencies.sources.selectFallback?.({
             currentSourceId: pin.sourceId,
@@ -311,7 +349,8 @@ export class JoiCoordinator {
           await this.dependencies.store.updateTurnSource?.(turnId, pin.sourceRevisionId, pin.modelRevisionId);
         }
       }
-      const completionSummary = sanitizeAgentConversationText(completionText).replace(/\s+/gu, " ").trim().slice(0, 640);
+      const completionSummary = normalizeCompletionSummary(completionText);
+      if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
       const completion = await this.dependencies.store.completeInput(inputId, turnId, isGoalSynthesis ? {
         completionSummary: completionSummary === ""
           ? "相关工作已完成，结果已汇总到 Workbench 的 Agent 记录。"
@@ -370,6 +409,8 @@ export class JoiCoordinator {
       });
       await this.dependencies.events?.emit("joi.turn.failed", turnId, { workbenchId, inputId, turnId });
       throw error;
+    } finally {
+      signal?.removeEventListener("abort", abortRuntime);
     }
   }
 }

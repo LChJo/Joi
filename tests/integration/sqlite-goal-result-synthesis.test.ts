@@ -81,7 +81,7 @@ describe("goal-level result synthesis", () => {
       const before = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-05T09:01:01.000Z"));
       expect(before.goals[0]).toMatchObject({ canDelete: false, goalId: "goal-stock", status: "FINALIZING" });
       expect(before.thinking).toEqual(expect.arrayContaining([
-        expect.objectContaining({ goalId: "goal-stock", phase: "progressing" }),
+        expect.objectContaining({ goalId: "goal-stock", phase: "queued" }),
       ]));
 
       fixture.database.transaction((connection) => {

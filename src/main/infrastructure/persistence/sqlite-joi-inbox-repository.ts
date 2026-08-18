@@ -6,7 +6,7 @@ import type { JoiInboxRecord, JoiInboxRepository, JoiInboxStatus } from "../../a
 import type { JoiCoordinatorStore, JoiPendingInput } from "../../application/ports/joi-coordinator.js";
 import type { JoiActivityDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
-import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
+import { normalizeCompletionSummary } from "../../application/partners/agent-conversation-presentation.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -328,7 +328,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             .run(now, inputId);
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
         }
-        const summary = sanitizeAgentConversationText(completion.completionSummary).replace(/\s+/gu, " ").trim().slice(0, 640);
+        const summary = normalizeCompletionSummary(completion.completionSummary);
         connection.prepare(`INSERT INTO joi_goal_outcomes
           (input_id, result_revision, completion_summary, completed_at, updated_at)
           VALUES (?, ?, ?, ?, ?)

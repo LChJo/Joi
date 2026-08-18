@@ -77,6 +77,37 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
+  it("shows a pending unassigned input as an arranging goal until clarification is required", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+        VALUES ('goal-pending-unassigned', 'key-pending-unassigned', '第一次提问', 'PENDING', NULL, ?, ?)`)
+        .run(now, now));
+
+      const repository = new SqliteJoiHomeFeedRepository(fixture.database);
+      expect(await repository.load(fixture.clock.now())).toEqual(expect.objectContaining({
+        goals: [expect.objectContaining({
+          goalId: "goal-pending-unassigned",
+          status: "ARRANGING",
+          title: "第一次提问",
+          workbench: { name: "等待归属", workbenchId: "" },
+        })],
+        unassignedActions: [],
+      }));
+
+      fixture.database.transaction((connection) => connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'workbench_selection_invalid', updated_at = ?
+        WHERE input_id = 'goal-pending-unassigned'`).run(fixture.clock.now().toISOString()));
+      const clarified = await repository.load(fixture.clock.now());
+      expect(clarified.goals).toEqual([]);
+      expect(clarified.unassignedActions).toEqual([expect.objectContaining({ inputId: "goal-pending-unassigned" })]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("treats a current synthesized outcome as completed even when the orchestration turn is still open", async () => {
     const fixture = await createRuntimeFixture();
     try {
@@ -145,7 +176,13 @@ describe("Workbench Agent and joi home projections", () => {
         expect.objectContaining({ canDelete: false, goalId: "goal-running", status: "RUNNING" }),
         expect.objectContaining({ canDelete: false, goalId: "goal-done", status: "FINALIZING" }),
       ]));
-      expect(feed.thinking).toEqual([expect.objectContaining({ goalId: "goal-running", phase: "progressing" })]);
+      expect(feed.thinking).toEqual([expect.objectContaining({
+        agentCount: 0,
+        goalId: "goal-running",
+        phase: "progressing",
+        stage: "RUNNING",
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      })]);
       fixture.database.transaction((connection) => connection.prepare(
         "UPDATE joi_turns SET status = 'COMPLETED', updated_at = '2026-08-03T12:00:10.000Z' WHERE turn_id = 'turn-running'",
       ).run());
@@ -153,6 +190,102 @@ describe("Workbench Agent and joi home projections", () => {
       expect(settling.thinking).toEqual([expect.objectContaining({ expiresAt: "2026-08-03T12:00:25.000Z", phase: "settled" })]);
       const expired = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-03T12:00:26.000Z"));
       expect(expired.thinking).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("projects safe thinking stages and work counts from the goal facts", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "阶段工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "阶段" });
+      const now = "2026-08-03T12:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-stage', 'key-stage', '阶段目标', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-stage', 'goal-stage', ?, 'session-stage', 'RUNNING', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-stage', ?, 'goal-stage', '阶段工作', '{}', 'READ', 'PLANNED', ?, ?)`).run(workbench.workbenchId, now, now);
+      });
+      const repository = new SqliteJoiHomeFeedRepository(fixture.database);
+      expect((await repository.load(new Date("2026-08-03T12:00:05.000Z"))).thinking).toEqual([expect.objectContaining({
+        stage: "DISPATCHING",
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      })]);
+
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET status = 'WAITING', updated_at = ? WHERE work_id = 'work-stage'",
+      ).run("2026-08-03T12:00:06.000Z"));
+      expect((await repository.load(new Date("2026-08-03T12:00:07.000Z"))).thinking).toEqual([expect.objectContaining({ stage: "WAITING" })]);
+
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET status = 'COMPLETED', updated_at = ? WHERE work_id = 'work-stage'",
+      ).run("2026-08-03T12:00:08.000Z"));
+      expect((await repository.load(new Date("2026-08-03T12:00:09.000Z"))).thinking).toEqual([expect.objectContaining({
+        stage: "FINALIZING",
+        work: { active: 0, completed: 1, failed: 0, total: 1 },
+      })]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("projects derived pending inputs as queued instead of progressing", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "队列工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "队列" });
+      const now = "2026-08-03T12:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        const insertInput = connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+        insertInput.run("goal-queued", "key-goal-queued", "目标", "CONSUMED", workbench.workbenchId, null, now, now);
+        insertInput.run("derived-queued", "key-derived-queued", "派生工作", "PENDING", workbench.workbenchId, "goal-queued", now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-03T12:00:05.000Z"));
+      expect(feed.thinking).toEqual([expect.objectContaining({
+        agentCount: 0,
+        goalId: "goal-queued",
+        phase: "queued",
+        stage: "ROUTING",
+        turnId: "pending:derived-queued",
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      })]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("does not expose a stale completion summary while result synthesis is behind", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "综合工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "综合" });
+      const now = "2026-08-03T12:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES (?, ?, ?, 'CONSUMED', ?, ?, ?)`).run("goal-stale-summary", "key-stale-summary", "综合目标", workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, 'COMPLETED', ?, ?)`).run("turn-stale-summary", "goal-stale-summary", workbench.workbenchId, "session-stale-summary", now, now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, '{}', 'READ', 'COMPLETED', ?, ?)`).run("work-stale-summary", workbench.workbenchId, "goal-stale-summary", "工作", now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets (original_input_id, revision, synthesized_revision, updated_at)
+          VALUES (?, 2, 1, ?)`).run("goal-stale-summary", now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, completion_summary, completed_at, updated_at)
+          VALUES (?, 1, ?, ?, ?)`).run("goal-stale-summary", "上一轮摘要", now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-03T12:00:05.000Z"));
+      expect(feed.goals).toEqual([expect.objectContaining({ goalId: "goal-stale-summary", status: "FINALIZING" })]);
+      expect(feed.goals[0]?.completionSummary).toBeUndefined();
     } finally {
       await fixture.close();
     }

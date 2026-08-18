@@ -91,16 +91,23 @@ export function queryHarnessGoalProjections(connection: DatabaseSync): HarnessGo
       FROM joi_harness_paths
      ORDER BY goal_input_id, layer DESC, created_at DESC, path_id DESC LIMIT 500`).all() as Row[];
   const pathsByGoal = new Map<string, HarnessGoalProjection["topPaths"]>();
+  const seenTitlesByGoal = new Map<string, Set<string>>();
   for (const pathRow of pathRows) {
     const goalInputId = textValue(pathRow, "goal_input_id");
     const list = pathsByGoal.get(goalInputId) ?? [];
     if (list.length >= 5) continue;
+    // The same work can be re-charted in deeper layers; show it once, deepest row first.
+    const title = textValue(pathRow, "title");
+    const seen = seenTitlesByGoal.get(goalInputId) ?? new Set<string>();
+    if (seen.has(title)) continue;
+    seen.add(title);
     list.push({
       pathId: textValue(pathRow, "path_id"),
       status: textValue(pathRow, "status") as HarnessPathStatus,
-      title: textValue(pathRow, "title"),
+      title,
     });
     pathsByGoal.set(goalInputId, list);
+    seenTitlesByGoal.set(goalInputId, seen);
   }
   return maps.map((row) => {
     const goalInputId = textValue(row, "goal_input_id");

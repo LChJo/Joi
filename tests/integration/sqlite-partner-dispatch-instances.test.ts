@@ -241,6 +241,31 @@ describe("partner dispatch instance routing", () => {
         "SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'",
       ).get()) as { status: string };
       expect(attempt.status).toBe("UNKNOWN");
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = 'work_1'",
+      ).get())).toEqual({ status: "FAILED" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it.each(["WAITING_INPUT", "WAITING_AUTH"] as const)("keeps %s runs actionable as waiting Work", async (status) => {
+    const { database, root } = await openWithPartner();
+    try {
+      const handler = makeHandler(database, {
+        dispatch: async () => ({
+          actionId: "action_1", artifacts: [], body: "waiting", externalRunId: "local_pi:action_1",
+          status, workId: "work_1",
+        }),
+      });
+      await handler.handle(baseRecord({
+        actionId: "action_1", dispatchAttemptId: "attempt_1", sessionPolicy: "EPHEMERAL", workId: "work_1",
+      }));
+
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = 'work_1'",
+      ).get())).toEqual({ status: "WAITING" });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });
