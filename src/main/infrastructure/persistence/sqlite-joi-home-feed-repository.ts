@@ -69,6 +69,30 @@ function thinkingStage(goal: JoiGoalCardDto | undefined, phase: JoiThinkingItemD
   return "PLANNING";
 }
 
+function thinkingPhasePriority(phase: JoiThinkingItemDto["phase"]): number {
+  if (phase === "progressing") return 2;
+  if (phase === "queued") return 1;
+  return 0;
+}
+
+/** One goal owns one visible progress row, even when recovery leaves multiple Turns active. */
+function collapseThinkingByGoal(items: JoiThinkingItemDto[]): JoiThinkingItemDto[] {
+  const byGoal = new Map<string, JoiThinkingItemDto>();
+  for (const item of items) {
+    const current = byGoal.get(item.goalId);
+    if (current === undefined) {
+      byGoal.set(item.goalId, item);
+      continue;
+    }
+    const priority = thinkingPhasePriority(item.phase);
+    const currentPriority = thinkingPhasePriority(current.phase);
+    if (priority > currentPriority || (priority === currentPriority && priority > 0 && item.startedAt < current.startedAt)) {
+      byGoal.set(item.goalId, item);
+    }
+  }
+  return [...byGoal.values()];
+}
+
 export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
@@ -149,7 +173,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
            AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id
              AND t.status IN ('PENDING','RUNNING','WAITING'))
         ORDER BY 4 DESC, 1 DESC`).all(cutoff) as Row[];
-      const thinking = turns.filter((row) => {
+      const thinking = collapseThinkingByGoal(turns.filter((row) => {
         if (text(row, "status") === "PENDING") return true;
         const goal = goalsById.get(text(row, "goal_id"));
         return goal === undefined || !["COMPLETED", "FAILED", "CANCELED"].includes(goal.status);
@@ -171,7 +195,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           turnId: text(row, "turn_id"),
           work: goal?.work ?? { active: 0, completed: 0, failed: 0, total: 0 },
         };
-      }).filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime());
+      }).filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime()));
       const unassignedActions = (connection.prepare(`SELECT input_id, workbench_id, status, clarification_reason_code,
         clarification_prompt, body, created_at, canceled_at FROM joi_inbox_messages
         WHERE dismissed_at IS NULL AND workbench_id IS NULL AND status = 'CLARIFICATION_REQUIRED'

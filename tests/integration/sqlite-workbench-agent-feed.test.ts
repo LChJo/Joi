@@ -242,6 +242,40 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
+  it("projects only one continuous thinking row when the same goal has multiple active turns", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "去重 Workbench", personaSummary: "persona", projectLabel: "joi", scopeSummary: "首页" });
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-repeated-thinking', 'key-repeated-thinking', '验证重复进度', 'CONSUMED', ?, ?, ?)`
+        ).run(workbench.workbenchId, "2026-08-03T12:00:00.000Z", "2026-08-03T12:00:04.000Z");
+        const insertTurn = connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES (?, 'goal-repeated-thinking', ?, ?, 'RUNNING', ?, ?)`);
+        insertTurn.run("turn-repeated-1", workbench.workbenchId, "session-repeated-1", "2026-08-03T12:00:00.000Z", "2026-08-03T12:00:00.000Z");
+        insertTurn.run("turn-repeated-2", workbench.workbenchId, "session-repeated-2", "2026-08-03T12:00:02.000Z", "2026-08-03T12:00:02.000Z");
+        insertTurn.run("turn-repeated-3", workbench.workbenchId, "session-repeated-3", "2026-08-03T12:00:04.000Z", "2026-08-03T12:00:04.000Z");
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-repeated-thinking', ?, 'goal-repeated-thinking', '验证重复进度', '{}', 'READ', 'RUNNING', ?, ?)`
+        ).run(workbench.workbenchId, "2026-08-03T12:00:00.000Z", "2026-08-03T12:00:04.000Z");
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-03T12:00:10.000Z"));
+      expect(feed.thinking).toEqual([expect.objectContaining({
+        goalId: "goal-repeated-thinking",
+        phase: "progressing",
+        stage: "RUNNING",
+        startedAt: "2026-08-03T12:00:00.000Z",
+        turnId: "turn-repeated-1",
+      })]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("projects safe thinking stages and work counts from the goal facts", async () => {
     const fixture = await createRuntimeFixture();
     try {
