@@ -19,6 +19,19 @@ describe("work orchestration outbox", () => {
     })).rejects.toMatchObject({ code: "work_workspace_forbidden" });
   });
 
+  it("rejects absolute acceptance paths before creating a dispatch", async () => {
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
+    });
+    await expect(service.plan({
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
+        { acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "C:\\Users\\owner\\report.md" }], accessMode: "READ", key: "read", partnerId: "partner", title: "读取" },
+      ],
+    })).rejects.toMatchObject({ code: "work_acceptance_path_invalid" });
+  });
+
   it("persists the DAG, immutable partner pins and dispatch outbox records as one plan", async () => {
     const committed: CommittedWorkPlan[] = [];
     const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];

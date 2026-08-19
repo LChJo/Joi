@@ -1,4 +1,4 @@
-import { COMPLETION_SUMMARY_LIMIT, draftAgentConversation, normalizeAgentConversationEntries, normalizeCompletionSummary, sanitizeAgentConversationText } from "../../src/main/application/partners/agent-conversation-presentation.js";
+import { COMPLETION_SUMMARY_LIMIT, draftAgentConversation, maskSecretText, normalizeAgentConversationEntries, normalizeCompletionSummary, sanitizeAgentConversationText, stripPathRedactions } from "../../src/main/application/partners/agent-conversation-presentation.js";
 
 describe("Agent conversation presentation", () => {
   it("redacts private values, preserves display kinds and splits large markdown", () => {
@@ -47,6 +47,17 @@ describe("Agent conversation presentation", () => {
     expect(draftAgentConversation("task", "  ", [null, "primitive"])).toEqual([{ kind: "MARKDOWN", role: "USER", text: "task" }]);
     expect(sanitizeAgentConversationText("https://example.com/x apiKey=abc csrf_token=def /workspace/a"))
       .toBe("https://example.com/x apiKey=[redacted] csrf_token=[redacted] [redacted-path]");
+  });
+
+  it("drops path placeholders for card-facing text while keeping secret masking", () => {
+    expect(stripPathRedactions(sanitizeAgentConversationText("C:\\work\\prd.md 审查一下这个prd方案"))).toBe("审查一下这个prd方案");
+    expect(stripPathRedactions(sanitizeAgentConversationText("done /workspace/a apiKey=abc"))).toBe("done apiKey=[redacted]");
+    expect(stripPathRedactions("## 结论\n\n[redacted-path] 已隐藏。")).toBe("## 结论\n\n已隐藏。");
+  });
+
+  it("keeps user paths visible while masking secrets for local card projections", () => {
+    expect(maskSecretText("C:\\work\\prd.md 审查一下这个prd方案")).toBe("C:\\work\\prd.md 审查一下这个prd方案");
+    expect(maskSecretText("done /workspace/a apiKey=abc Bearer abcdefghijklmnop")).toBe("done /workspace/a apiKey=[redacted] Bearer [redacted]");
   });
 
   it("ignores non-tool names, blank or non-text results and traversal beyond the display bound", () => {

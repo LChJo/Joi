@@ -26,3 +26,12 @@ export function partnerClusterName(displayName: string): string {
   const normalized = displayName.trim();
   return ROLE_NAME_PATTERN.test(normalized) ? "编码工坊" : normalized;
 }
+
+const QUOTED_SPAN_PATTERN = /「[^」]*」|『[^』]*』|“[^”]*”|‘[^’]*’|"[^"]*"|'[^']*'|\([^)]*\)|（[^）]*）|\[[^\]]*\]/gu;
+const INSTANCE_TOKEN_PATTERN = /\b[a-z]+[._-]?\d+(?:\.\d+)*\b|\bv?\d+(?:\.\d+)+\b|\b\d+\b/giu;
+
+/** Stable reuse key: strips one-off instance tokens (model names, version numbers, quoted/parenthetical notes) so task-instance names fall back to their capability cluster. */
+export function partnerClusterKey(displayName: string): string {
+  const key = partnerClusterName(displayName).replace(QUOTED_SPAN_PATTERN, " ").replace(INSTANCE_TOKEN_PATTERN, " ").replace(/\s+/gu, " ").trim().toLocaleLowerCase();
+  return key.length === 0 ? displayName.trim().toLocaleLowerCase() : key;
+}

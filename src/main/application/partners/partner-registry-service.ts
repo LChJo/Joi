@@ -12,6 +12,7 @@ import {
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type { PartnerPromptStore } from "../ports/partner-execution.js";
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../ports/partner-registry.js";
+import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
 import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 
 interface PartnerFields {
@@ -39,10 +40,12 @@ export class PartnerRegistryService {
     knowledge?: Pick<PartnerKnowledgeService, "count" | "duplicateTo">;
     prompts?: PartnerPromptStore;
     repository: PartnerRegistryRepository;
+    skills?: Pick<PartnerSkillCatalog, "listForEngine">;
   }) {}
 
   async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind }): Promise<PartnerDto> {
     assertNoWorkspace(input);
+    this.#assertLocalSkills(input.kind, input.engine ?? "pi-core", input.skills);
     const partnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt);
@@ -62,6 +65,7 @@ export class PartnerRegistryService {
   async update(partnerId: string, input: PartnerFields): Promise<PartnerDto> {
     assertNoWorkspace(input);
     const current = await this.#active(partnerId);
+    this.#assertLocalSkills(current.kind, input.engine ?? current.engine, input.skills);
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt) ?? current.promptRef;
     const description = input.description ?? current.description;
@@ -89,6 +93,40 @@ export class PartnerRegistryService {
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
     await this.#changed(revision);
     return this.#public(revision);
+  }
+
+  /** Replaces only the selected local skill references and creates a new immutable revision. */
+  async setSkills(partnerId: string, skills: string[]): Promise<PartnerDto> {
+    const current = await this.#active(partnerId);
+    if (current.kind !== "local-pi") throw new DomainError("partner_skills_not_supported", "Only local partners can use local skills.");
+    return this.update(partnerId, {
+      capabilities: [...current.capabilities],
+      ...(current.description === undefined ? {} : { description: current.description }),
+      displayName: current.displayName,
+      engine: current.engine,
+      ...(current.engineModelId === undefined ? {} : { engineModelId: current.engineModelId }),
+      ...(current.modelIdOverride === undefined ? {} : { modelIdOverride: current.modelIdOverride }),
+      ...(current.modelSourceId === undefined ? {} : { modelSourceId: current.modelSourceId }),
+      skills,
+      tools: [...current.tools],
+    });
+  }
+
+  /** Re-pins only the model source and appends a new immutable local-partner revision. */
+  async setModel(partnerId: string, model: { modelIdOverride: string; modelSourceId: string }): Promise<PartnerDto> {
+    const current = await this.#active(partnerId);
+    if (current.kind !== "local-pi") throw new DomainError("partner_model_not_supported", "Only local partners can pin a model source.");
+    return this.update(partnerId, {
+      capabilities: [...current.capabilities],
+      ...(current.description === undefined ? {} : { description: current.description }),
+      displayName: current.displayName,
+      engine: current.engine,
+      ...(current.engineModelId === undefined ? {} : { engineModelId: current.engineModelId }),
+      modelIdOverride: model.modelIdOverride,
+      modelSourceId: model.modelSourceId,
+      skills: [...current.skills],
+      tools: [...current.tools],
+    });
   }
 
   async refreshA2aCard(partnerId: string, card: { capabilities: string[]; displayName: string; skills: string[]; tools?: string[] }): Promise<PartnerDto> {
@@ -151,6 +189,7 @@ export class PartnerRegistryService {
   async duplicate(partnerId: string): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
     if (current.status === "DELETED") throw new DomainError("partner_not_found", "Partner was not found.");
+    this.#assertLocalSkills(current.kind, current.engine, current.skills);
     const newPartnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     let promptRef = current.promptRef;
@@ -206,6 +245,14 @@ export class PartnerRegistryService {
     const current = await this.dependencies.repository.getActive(partnerId);
     if (current === null) throw new DomainError("partner_not_found", "Partner was not found.");
     return current;
+  }
+
+  #assertLocalSkills(kind: PartnerKind, engine: PartnerEngine, skills: string[]): void {
+    if (kind !== "local-pi" || this.dependencies.skills === undefined) return;
+    const available = new Set(this.dependencies.skills.listForEngine(engine).map((item) => item.id));
+    if (skills.some((skill) => !available.has(skill))) {
+      throw new DomainError("partner_skill_not_available", "Selected partner skill is not available for this engine.");
+    }
   }
 
   async #public(revision: PartnerRevision): Promise<PartnerDto> {

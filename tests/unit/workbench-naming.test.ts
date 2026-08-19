@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { partnerClusterName, workbenchWorkspaceDisplayName, workspaceDirectoryName } from "../../src/main/domain/workbench/workbench-naming.js";
+import { partnerClusterKey, partnerClusterName, workbenchWorkspaceDisplayName, workspaceDirectoryName } from "../../src/main/domain/workbench/workbench-naming.js";
 
 describe("workbench and partner naming", () => {
   it("groups frontend debugging work under the aimanadebug environment", () => {
@@ -21,5 +21,12 @@ describe("workbench and partner naming", () => {
   it("groups senior programmer partners under a coding workshop", () => {
     expect(partnerClusterName("资深程序员搭档")).toBe("编码工坊");
     expect(partnerClusterName("前端分析工坊")).toBe("前端分析工坊");
+  });
+
+  it("derives a stable reuse key by stripping one-off instance tokens", () => {
+    expect(partnerClusterKey("Grok4.6 模型调研搭档")).toBe(partnerClusterKey("模型调研搭档"));
+    expect(partnerClusterKey("模型调研搭档（GPT-5 专项）")).toBe(partnerClusterKey("模型调研搭档"));
+    expect(partnerClusterKey("资深程序员搭档")).toBe(partnerClusterKey("编码工坊"));
+    expect(partnerClusterKey("前端分析工坊")).not.toBe(partnerClusterKey("模型调研搭档"));
   });
 });

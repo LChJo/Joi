@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -30,6 +30,38 @@ describe("global joi attachments", () => {
       });
       await expect(inbox.accept({ attachmentIds: [uploaded.attachmentId], idempotencyKey: "reuse-file", text: "reuse" }))
         .rejects.toMatchObject({ code: "joi_attachment_already_bound" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("reads stored attachment bytes back with verified integrity", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const attachments = new JoiAttachmentService({ clock: new TestClock(), database, ids: new TestIds(), rootDirectory: path.join(root, "artifacts") });
+      const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("round trip body"), filename: "notes.md", mimeType: "text/markdown" });
+      expect(await attachments.read(uploaded.attachmentId)).toEqual({
+        bytes: new TextEncoder().encode("round trip body"),
+        filename: "notes.md",
+        mimeType: "text/markdown",
+      });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects reads of missing attachments and tampered files", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const attachments = new JoiAttachmentService({ clock: new TestClock(), database, ids: new TestIds(), rootDirectory: path.join(root, "artifacts") });
+      await expect(attachments.read("joi_attachment_missing")).rejects.toMatchObject({ code: "joi_attachment_not_found" });
+      const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("guarded body"), filename: "brief.txt", mimeType: "text/plain" });
+      await writeFile(path.join(root, "artifacts", "joi-attachments", `${uploaded.attachmentId}.bin`), "tampered body!");
+      await expect(attachments.read(uploaded.attachmentId)).rejects.toMatchObject({ code: "joi_attachment_integrity_failed" });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

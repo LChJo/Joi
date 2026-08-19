@@ -4,6 +4,7 @@ import { join } from "node:path";
 
 import type { PartnerEngine } from "../../domain/partners/partner.js";
 import type { PartnerSkillCatalog, PartnerSkillOption } from "../../application/ports/partner-skills.js";
+import { DomainError } from "../../domain/errors.js";
 
 type SkillSource = "agents" | "claude-code" | "codex";
 
@@ -19,7 +20,7 @@ function sourceDir(source: SkillSource): string {
 const ENGINE_SOURCES: Record<PartnerEngine, readonly SkillSource[]> = {
   "claude-code": ["claude-code"],
   codex: ["agents", "codex"],
-  "pi-core": ["claude-code"],
+  "pi-core": ["agents", "claude-code", "codex"],
 };
 
 const PER_SKILL_CHARS = 6000;
@@ -68,6 +69,11 @@ function parseRef(ref: string): { name: string; source: SkillSource } | null {
   return { name, source };
 }
 
+function skillNameKey(option: PartnerSkillOption): string {
+  const slash = option.id.indexOf("/");
+  return option.id.slice(slash + 1).toLocaleLowerCase();
+}
+
 function scanSource(source: SkillSource): PartnerSkillOption[] {
   const dir = sourceDir(source);
   if (!existsSync(dir)) return [];
@@ -105,12 +111,13 @@ function scanSource(source: SkillSource): PartnerSkillOption[] {
 
 export class LocalSkillScanner implements PartnerSkillCatalog {
   listForEngine(engine: PartnerEngine): PartnerSkillOption[] {
-    const seen = new Set<string>();
+    const seenNames = new Set<string>();
     const options: PartnerSkillOption[] = [];
     for (const source of ENGINE_SOURCES[engine]) {
       for (const option of scanSource(source)) {
-        if (seen.has(option.id)) continue;
-        seen.add(option.id);
+        const nameKey = skillNameKey(option);
+        if (seenNames.has(nameKey)) continue;
+        seenNames.add(nameKey);
         options.push(option);
       }
     }
@@ -121,18 +128,17 @@ export class LocalSkillScanner implements PartnerSkillCatalog {
     const sections: string[] = [];
     let total = 0;
     for (const ref of refs) {
-      if (total >= TOTAL_CHARS) break;
       const parsed = parseRef(ref);
-      if (parsed === null) continue;
+      if (parsed === null) throw new DomainError("partner_skill_ref_invalid", "Partner skill reference is invalid.");
       const skillMd = join(sourceDir(parsed.source), parsed.name, "SKILL.md");
       let body: string;
       try {
         body = readFileSync(skillMd, "utf8");
       } catch {
-        continue;
+        throw new DomainError("partner_skill_not_found", "Selected partner skill is not available.");
       }
       const budget = Math.min(PER_SKILL_CHARS, TOTAL_CHARS - total);
-      if (budget <= 200) break;
+      if (budget <= 200) continue;
       const truncated = body.length > budget ? `${body.slice(0, budget)}\n[joi: skill truncated]` : body;
       sections.push(`## Skill: ${parsed.name}\n${truncated}`);
       total += truncated.length;

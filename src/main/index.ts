@@ -90,6 +90,7 @@ import { SqliteWorkbenchWorkspaceRepository } from "./infrastructure/persistence
 import { WorkbenchWorkspaceProvisioner } from "./infrastructure/persistence/workbench-workspace-provisioner.js";
 import { SqliteWorkResultRepository } from "./infrastructure/persistence/sqlite-work-result-repository.js";
 import { WorkspaceWorkVerifier } from "./infrastructure/workspace/workspace-work-verifier.js";
+import { WorkAttachmentStager } from "./infrastructure/workspace/workspace-attachment-stager.js";
 import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
 import { PiModelSourceCatalog } from "./infrastructure/pi/pi-model-source-catalog.js";
 import { PiModelSourceValidator } from "./infrastructure/pi/pi-model-source-validator.js";
@@ -233,6 +234,7 @@ async function startRuntime(): Promise<void> {
     ids,
     repository: joiInboxRepository,
   });
+  const partnerSkillCatalog = new LocalSkillScanner();
   const partnerRepository = new SqlitePartnerRegistryRepository(database);
   const partnerPrompts = new SqlitePartnerPromptStore(database);
   const partnerKnowledge = new PartnerKnowledgeService({ clock, ids, store: new SqlitePartnerKnowledgeStore(database) });
@@ -242,6 +244,7 @@ async function startRuntime(): Promise<void> {
     knowledge: partnerKnowledge,
     prompts: partnerPrompts,
     repository: partnerRepository,
+    skills: partnerSkillCatalog,
   });
   const workbenches = new LegacyLifeStoreAdapter(database);
   const joiHarnessRepository = new SqliteJoiHarnessRepository(database);
@@ -273,7 +276,6 @@ async function startRuntime(): Promise<void> {
   });
   const piCodingTools = new BuiltinPiCodingToolFactory();
   const localCliConversationStore = new ManaSdkConversationStore(database);
-  const partnerSkillCatalog = new LocalSkillScanner();
   const partnerEngines = new Map<string, PartnerEngineRuntime>([
     ["pi-core", new PiPartnerEngineRuntime({ contexts: workbenchContextRepository, prompts: partnerPrompts, resolver: configuredModelResolver, sources: reasoningSources, tools: piCodingTools })],
     ["claude-code", new LocalCliPartnerEngineRuntime({ contexts: workbenchContextRepository, prompts: partnerPrompts, protocol: "claude", store: localCliConversationStore })],
@@ -300,22 +302,33 @@ async function startRuntime(): Promise<void> {
   });
   const workResultRepository = new SqliteWorkResultRepository(database);
   const workResults = new WorkResultService(workResultRepository);
+  // Constructed before the reasoning runtime and coordinator: both consume it (TDZ otherwise).
+  const joiAttachmentStorage = new JoiAttachmentService({
+    clock,
+    database,
+    ids,
+    rootDirectory: path.join(userDataDirectory, "artifacts"),
+  });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     resolver: configuredModelResolver,
     sessionStore: new SqlitePiReasoningSessionStore(database),
     tools: (turn) => selectJoiReasoningToolsForInput(createJoiReasoningTools({
       workbenchChanges, workbenchId: turn.workbenchId, workbenchRefine: workbenchManagement, workbenches,
+      ...(turn.attachmentIds === undefined ? {} : { attachmentIds: turn.attachmentIds }),
+      attachments: joiAttachmentStorage,
       clarifications: joiInboxRepository,
       diagnostics: runtimeDiagnostics,
       goalInputId: turn.goalInputId ?? goalFromInputIdPrefix(turn.inputId),
-      harness: joiHarnessRepository, inputId: turn.inputId,
-      instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, results: workResults,
-      turnId: turn.turnId, work,
+       harness: joiHarnessRepository, inputId: turn.inputId,
+       instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, results: workResults,
+       skills: partnerSkillCatalog,
+       turnId: turn.turnId, work,
     }), turn.inputId),
   });
   const joiCoordinator = new JoiCoordinator({
     workbenches,
     workbenchRegistry,
+    attachments: joiAttachmentStorage,
     clock,
     diagnostics: runtimeDiagnostics,
     failureClassifier: new PiReasoningFailureClassifier(),
@@ -331,12 +344,6 @@ async function startRuntime(): Promise<void> {
     ids,
     rootDirectory: path.join(userDataDirectory, "artifacts"),
     store: database.store,
-  });
-  const joiAttachmentStorage = new JoiAttachmentService({
-    clock,
-    database,
-    ids,
-    rootDirectory: path.join(userDataDirectory, "artifacts"),
   });
   const agentOnboarding = new AgentOnboardingService({
     clock,
@@ -416,6 +423,7 @@ async function startRuntime(): Promise<void> {
   const partnerDispatchClaims = new SqlitePartnerDispatchClaims(database);
   const partnerDispatchDelivery = new SqlitePartnerDispatchDelivery({
     agentConversations: workbenchAgentRepository,
+    attachmentStager: new WorkAttachmentStager({ attachments: joiAttachmentStorage, database }),
     clock,
     contextAssembler: workbenchContextAssembler,
     contexts: workbenchContextRepository,

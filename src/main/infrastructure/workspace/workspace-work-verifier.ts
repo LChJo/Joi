@@ -26,6 +26,10 @@ export class WorkspaceWorkVerifier implements WorkVerifier {
     if (context === null) return failed("verification_context_missing");
     let canonicalRoot: string | undefined;
     for (const check of input.acceptanceChecks) {
+      if (check.kind === "BODY_PRESENT") {
+        if (input.body?.trim() === undefined || input.body.trim() === "") return failed("verification_body_missing");
+        continue;
+      }
       if (check.kind === "ARTIFACT_PRESENT") {
         if (!input.artifacts.some((artifact) => artifact.name === check.name)) return failed("verification_artifact_missing");
         continue;

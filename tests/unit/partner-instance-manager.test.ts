@@ -10,6 +10,7 @@ import type {
   ResidentTurnInput,
 } from "../../src/main/application/ports/partner-instances.js";
 import { createPartnerRevision, type PartnerRevision } from "../../src/main/domain/partners/partner.js";
+import { DomainError } from "../../src/main/domain/errors.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 const revision: PartnerRevision = createPartnerRevision({
@@ -81,7 +82,7 @@ class MemoryInstanceMessageStore implements PartnerInstanceMessageStore {
 }
 
 class FakeEngine implements PartnerEngineRuntime {
-  readonly ephemeralRuns: { knowledgeSection: string; request: PartnerRunRequest }[] = [];
+  readonly ephemeralRuns: { knowledgeSection: string; request: PartnerRunRequest; skillSection: string }[] = [];
   readonly evicted: string[] = [];
   readonly residentTurns: ResidentTurnInput[] = [];
   failResident = false;
@@ -90,7 +91,7 @@ class FakeEngine implements PartnerEngineRuntime {
   async health() { return { available: true }; }
   toolOptions() { return [] as readonly string[]; }
   async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }) {
-    this.ephemeralRuns.push({ knowledgeSection: context.knowledgeSection, request: runRequest });
+    this.ephemeralRuns.push({ knowledgeSection: context.knowledgeSection, request: runRequest, skillSection: context.skillSection });
     return {
       conversation: [
         { kind: "MARKDOWN" as const, role: "USER" as const, text: runRequest.taskProjection },
@@ -114,7 +115,7 @@ class FakeEngine implements PartnerEngineRuntime {
   }
 }
 
-function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartner?: number }) {
+function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartner?: number }, readSkills: () => string = () => "") {
   const clock = new TestClock();
   const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
   const engine = new FakeEngine();
@@ -131,7 +132,7 @@ function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartne
     registry: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "partner_revision_1", registryRevision: 1 }) },
     repository,
     revisions: { getActive: async () => revision },
-    skills: { readInstructions: () => "" },
+    skills: { readInstructions: readSkills },
   });
   return { clock, diagnostics, engine, manager, messages, repository };
 }
@@ -188,6 +189,24 @@ describe("partner-instance-manager", () => {
     });
     expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.completed")?.fields)
       .toMatchObject({ instanceId: record?.instanceId, status: "COMPLETED" });
+  });
+
+  it("injects selected skill instructions and records only redacted skill metadata", async () => {
+    const { diagnostics, engine, manager } = makeManager(undefined, () => "# Selected skills\n## Skill: demo");
+    await manager.dispatch({ request, revision: { ...revision, skills: ["claude-code/demo-skill"] } });
+    expect(engine.ephemeralRuns[0]?.skillSection).toContain("# Selected skills");
+    expect(diagnostics.find((entry) => entry.event === "joi.partner.skills.injected")?.fields).toMatchObject({
+      instanceId: "partner_instance_test_0001", skillCount: 1,
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("Selected skills");
+  });
+
+  it("fails and disposes the run when a selected skill cannot be read", async () => {
+    const { diagnostics, manager, repository } = makeManager(undefined, () => { throw new DomainError("partner_skill_not_found", "Selected partner skill is not available."); });
+    await expect(manager.dispatch({ request, revision: { ...revision, skills: ["claude-code/missing"] } }))
+      .rejects.toMatchObject({ code: "partner_skill_not_found" });
+    expect(repository.records[0]).toMatchObject({ disposalReason: "ephemeral_failed", status: "DISPOSED" });
+    expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.failed")?.fields).toMatchObject({ errorCode: "partner_skill_not_found" });
   });
 
   it("keeps resident instances resumable: messages persist, status returns to IDLE and the data source is recorded", async () => {

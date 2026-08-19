@@ -23,12 +23,14 @@ interface HarnessOptions {
   claims?: PartnerDispatchClaimRow[];
   orphans?: PartnerDispatchOrphanRow[];
   prepareResult?: PreparedDispatch | "skipped_terminal" | Error;
+  runError?: Error;
   runOutputs?: DispatchRunOutput[];
 }
 
 function makeHarness(options: HarnessOptions = {}) {
   const calls: string[] = [];
   const completed: string[] = [];
+  const completionOutputs: (DispatchRunOutput & { kind: "terminal" })[] = [];
   const finalized: string[] = [];
   const released: string[] = [];
   let runCount = 0;
@@ -41,6 +43,7 @@ function makeHarness(options: HarnessOptions = {}) {
     delivery: {
       complete: async (input) => {
         completed.push(input.prepared.dispatchAttemptId);
+        completionOutputs.push(input.output);
         calls.push("complete");
         return { isAuthoritative: true, resultId: "result_1" };
       },
@@ -57,6 +60,7 @@ function makeHarness(options: HarnessOptions = {}) {
       run: async () => {
         calls.push("run");
         runCount += 1;
+        if (options.runError !== undefined) throw options.runError;
         return (options.runOutputs ?? [TERMINAL])[Math.min(runCount - 1, (options.runOutputs ?? [TERMINAL]).length - 1)] ?? TERMINAL;
       },
     },
@@ -78,7 +82,7 @@ function makeHarness(options: HarnessOptions = {}) {
     owner: "agent_test",
     partnerId: "partner_1",
   });
-  return { calls, completed, component, finalized, released };
+  return { calls, completed, completionOutputs, component, finalized, released };
 }
 
 describe("AgentDispatchComponent", () => {
@@ -138,5 +142,42 @@ describe("AgentDispatchComponent", () => {
     await harness.component.update(ctxAt(32_000));
     expect(harness.calls.filter((call) => call === "run")).toHaveLength(3);
     expect(harness.completed).toEqual(["attempt_1"]);
+  });
+
+  it("preserves a safe, structured transient failure instead of a generic terminal-output message", async () => {
+    const runError = Object.assign(new Error("PRIVATE upstream body must never escape"), {
+      code: "ETIMEDOUT",
+      partnerRunFailure: {
+        phase: "MODEL" as const,
+        reasonCode: "ETIMEDOUT",
+        retryable: true,
+        sideEffectState: "NONE" as const,
+      },
+    });
+    const harness = makeHarness({ claims: [CLAIM], runError });
+    await harness.component.update(ctxAt(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.component.update(ctxAt(2_000));
+
+    expect(harness.completionOutputs[0]).toMatchObject({
+      failure: { phase: "MODEL", reasonCode: "ETIMEDOUT", retryable: true, sideEffectState: "NONE" },
+      kind: "terminal",
+      status: "UNKNOWN",
+    });
+    expect(harness.completionOutputs[0]?.body).toContain("ETIMEDOUT");
+    expect(harness.completionOutputs[0]?.body).not.toContain("PRIVATE upstream body");
+    expect(harness.completionOutputs[0]?.body).not.toContain("terminal output");
+  });
+
+  it("marks unclassified run failures as non-replayable with unknown side effects", async () => {
+    const harness = makeHarness({ claims: [CLAIM], runError: new Error("PRIVATE") });
+    await harness.component.update(ctxAt(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.component.update(ctxAt(2_000));
+
+    expect(harness.completionOutputs[0]).toMatchObject({
+      failure: { reasonCode: "unknown_error", retryable: false, sideEffectState: "UNKNOWN" },
+      status: "UNKNOWN",
+    });
   });
 });

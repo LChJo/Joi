@@ -4,6 +4,7 @@ import type { WorkAcceptanceCheck } from "./work-orchestration.js";
 export interface WorkVerificationInput {
   acceptanceChecks: WorkAcceptanceCheck[];
   artifacts: { name: string; size: number }[];
+  body?: string;
   contextSnapshotId: string;
 }
 

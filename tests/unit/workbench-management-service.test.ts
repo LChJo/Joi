@@ -6,7 +6,7 @@ import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 const detail: WorkbenchDetailDto = {
   activeWork: [], workbenchId: "workbench-a", instances: [], name: "A", personaRevisionId: "persona-a",
-  projectLabel: "Project", recentResults: [], responsibility: "Scope", updatedAt: "2026-08-02T00:00:00.000Z",
+  projectLabel: "Project", recentOutcomes: [], recentResults: [], responsibility: "Scope", updatedAt: "2026-08-02T00:00:00.000Z",
   workspace: { displayName: "A 工作区", kind: "MANAGED", status: "READY" },
 };
 

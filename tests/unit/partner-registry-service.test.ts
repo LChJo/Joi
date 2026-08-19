@@ -72,6 +72,25 @@ describe("partner-registry-revision-before-dispatch", () => {
     expect(second.partnerRevisionId).not.toBe(first.partnerRevisionId);
   });
 
+  it("switches only the model pin by appending a new immutable partner revision", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
+    const first = await service.add({
+      capabilities: ["code"], description: "kept", displayName: "Coder", kind: "local-pi",
+      modelSourceId: "source_old", skills: ["typescript"], tools: ["read", "edit"],
+    });
+    const switched = await service.setModel(first.partnerId, {
+      modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready",
+    });
+
+    expect(switched).toMatchObject({
+      capabilities: ["code"], description: "kept", displayName: "Coder", modelIdOverride: "kimi-k2.5",
+      modelSourceId: "source_ready", registryRevision: 2, skills: ["typescript"], tools: ["read", "edit"],
+    });
+    expect(switched.partnerRevisionId).not.toBe(first.partnerRevisionId);
+    expect(repository.history).toHaveLength(2);
+  });
+
   it("keeps local prompt and tools when refreshing an A2A Card and redacts prompt references publicly", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
@@ -217,5 +236,22 @@ describe("partner-registry-revision-before-dispatch", () => {
     expect(cli).toMatchObject({ engine: "claude-code", engineModelId: "claude-sonnet" });
     const codex = await service.add({ ...fields, engine: "codex", kind: "local-pi" });
     expect(codex).toMatchObject({ engine: "codex" });
+  });
+
+  it("validates local skills against the selected engine and updates only the skill set", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({
+      clock: new TestClock(),
+      ids: new TestIds(),
+      repository,
+      skills: { listForEngine: () => [{ displayName: "Demo", id: "claude-code/demo-skill" }] },
+    });
+    const partner = await service.add({ capabilities: ["code"], description: "Coder", displayName: "Coder", kind: "local-pi", skills: [], tools: ["read"] });
+    await expect(service.update(partner.partnerId, { capabilities: ["code"], description: "Coder", displayName: "Coder", skills: ["missing-skill"], tools: ["read"] }))
+      .rejects.toMatchObject({ code: "partner_skill_not_available" });
+    const updated = await service.setSkills(partner.partnerId, ["claude-code/demo-skill"]);
+    expect(updated).toMatchObject({ capabilities: ["code"], description: "Coder", displayName: "Coder", skills: ["claude-code/demo-skill"], tools: ["read"] });
+    expect(updated.partnerRevisionId).not.toBe(partner.partnerRevisionId);
+    expect(repository.history).toHaveLength(2);
   });
 });

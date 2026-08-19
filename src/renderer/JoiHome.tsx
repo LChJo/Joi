@@ -311,7 +311,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
         <article className="context-card"><h3>工作区</h3><p><strong>{detail.workspace.displayName}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">重建受管目录</button></div></article>
         <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
-        <article className="context-card"><h3>最近结果</h3>{detail.recentResults.length === 0 ? <p>还没有结果元数据。</p> : <ul>{detail.recentResults.map((item) => <li key={item.resultId}>{item.summary} · {item.status}{item.isLate ? " · 迟到" : ""}</li>)}</ul>}</article>
+        <article className="context-card"><h3>最近结果总结</h3>{detail.recentOutcomes.length === 0 ? <p>还没有目标级结果总结。</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{item.status} · {new Date(item.completedAt).toLocaleString()}</small></li>)}</ul>}</article>
       </div>}
     </>}
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
@@ -623,6 +623,9 @@ function GoalResultView({ goal, onBack, onOpenDetail }: {
   </div>;
 }
 
+const JOI_MAX_ATTACHMENTS = 8;
+const JOI_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+
 function JoiComposer({ api, onNavigate, snapshot }: {
   api: DigitalLifeApi;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
@@ -630,6 +633,7 @@ function JoiComposer({ api, onNavigate, snapshot }: {
 }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [dragOver, setDragOver] = useState(false);
   const [targetWorkbenchId, setTargetWorkbenchId] = useState<string | null>(null);
   const targetWorkbench = snapshot.workbenches.find((workbench) => workbench.workbenchId === targetWorkbenchId);
   const [feed, setFeed] = useState<JoiHomeFeedDto>({ goals: [], thinking: [], unassignedActions: [] });
@@ -660,6 +664,28 @@ function JoiComposer({ api, onNavigate, snapshot }: {
     const clock = setInterval(() => setNow(Date.now()), 1_000);
     return () => { clearTimeout(initial); clearInterval(interval); clearInterval(clock); };
   }, [loadFeed, refresh]);
+  const addFiles = (incoming: Iterable<File>) => {
+    const oversized: string[] = [];
+    const accepted: File[] = [];
+    let dropped = 0;
+    for (const file of incoming) {
+      if (file.size > JOI_MAX_ATTACHMENT_BYTES) {
+        oversized.push(file.name);
+        continue;
+      }
+      if (files.length + accepted.length >= JOI_MAX_ATTACHMENTS) {
+        dropped += 1;
+        continue;
+      }
+      if ([...files, ...accepted].some((existing) => existing.name === file.name && existing.size === file.size)) continue;
+      accepted.push(file);
+    }
+    if (accepted.length > 0) setFiles([...files, ...accepted]);
+    const notices: string[] = [];
+    if (oversized.length > 0) notices.push(`「${oversized.join("」「")}」超过 10 MiB，没有添加。`);
+    if (dropped > 0) notices.push(`最多只能添加 ${String(JOI_MAX_ATTACHMENTS)} 个附件，多出的没有添加。`);
+    setError(notices.length === 0 ? null : notices.join(" "));
+  };
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = text.trim();
@@ -733,17 +759,29 @@ function JoiComposer({ api, onNavigate, snapshot }: {
       {visibleThinking.length === 0 && feed.unassignedActions.length === 0 && feed.goals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}
     </div>
     {snapshot.partners.length >= 2 ? null : <div className="inline-notice warning"><span>{snapshot.partners.length === 0 ? "当前还没有工作搭档。" : `当前只有 ${String(snapshot.partners.length)} 个工作搭档。`}可以先用场景预设一键组建团队，或去搭档页手动创建 2-3 个。</span><span className="row-actions"><button className="button ghost" onClick={() => onNavigate?.("agents", "scenarios")} type="button">看场景预设</button><button className="button ghost" onClick={() => onNavigate?.("agents", "partners")} type="button">去搭档页创建</button></span></div>}
-    <form className="joi-composer" onSubmit={(event) => void submit(event)}>
-      <label className="joi-composer-label" htmlFor="joi-input">给 joi 输入</label>
-      <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} placeholder="描述目标、补充想法，或继续上一段对话…" rows={2} value={text} />
-      <div className="joi-composer-toolbar">
-        <label className="joi-attachment-button">添加附件<input aria-label="给 joi 添加附件" multiple onChange={(event) => setFiles(Array.from(event.target.files ?? []).slice(0, 8))} type="file" /></label>
-        <ComposerWorkbenchPicker workbenches={snapshot.workbenches} onSelect={setTargetWorkbenchId} selected={targetWorkbench} />
-        {files.length === 0 ? null : <span className="joi-file-summary">{files.map((file) => file.name).join("、")}</span>}
-        <button className="button primary" disabled={text.trim() === ""} type="submit">交给 joi</button>
-      </div>
-    </form>
-    {error === null ? null : <p className="inline-notice danger" role="alert">{error}</p>}
+    <div className="joi-composer-dock">
+      <form
+        className={`joi-composer${dragOver ? " drag-over" : ""}`}
+        onDragLeave={(event) => { if (event.currentTarget.contains(event.relatedTarget as Node | null)) return; setDragOver(false); }}
+        onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
+        onDrop={(event) => { event.preventDefault(); setDragOver(false); addFiles(Array.from(event.dataTransfer.files)); }}
+        onSubmit={(event) => void submit(event)}>
+        <label className="joi-composer-label" htmlFor="joi-input">给 joi 输入</label>
+        <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} onPaste={(event) => {
+          const pasted = Array.from(event.clipboardData.files);
+          if (pasted.length === 0) return;
+          event.preventDefault();
+          addFiles(pasted);
+        }} placeholder="描述目标、补充想法，或继续上一段对话…" rows={2} value={text} />
+        <div className="joi-composer-toolbar">
+          <label className="joi-attachment-button">添加附件<input aria-label="给 joi 添加附件" multiple onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} type="file" /></label>
+          <ComposerWorkbenchPicker workbenches={snapshot.workbenches} onSelect={setTargetWorkbenchId} selected={targetWorkbench} />
+          {files.length === 0 ? null : <span className="joi-file-summary">{files.map((file) => file.name).join("、")}</span>}
+          <button className="button primary" disabled={text.trim() === ""} type="submit">交给 joi</button>
+        </div>
+      </form>
+      {error === null ? null : <p className="inline-notice danger" role="alert">{error}</p>}
+    </div>
   </section>;
 }
 

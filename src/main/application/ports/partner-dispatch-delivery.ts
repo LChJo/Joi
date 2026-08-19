@@ -1,6 +1,7 @@
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 import type { OutboxRecord, SseEvent } from "./runtime-store.js";
 import type { PartnerRunOutput, PartnerRunStatus } from "./partner-execution.js";
+import type { PartnerRunFailure } from "../partners/partner-run-failure.js";
 
 export interface PartnerDispatchClaimRow {
   attemptCount: number;
@@ -22,6 +23,14 @@ export interface PartnerDispatchClaims {
   listOrphanRuns(input: { workbenchId: string; partnerId: string }): Promise<PartnerDispatchOrphanRow[]>;
 }
 
+export interface StagedAttachment {
+  filename: string;
+  mimeType: string;
+  /** Path relative to the Workbench workspace root, e.g. joi-attachments/<id>/<name>. */
+  relativePath: string;
+  size: number;
+}
+
 export interface PreparedDispatch {
   actionId: string;
   attemptCount: number;
@@ -30,11 +39,18 @@ export interface PreparedDispatch {
   kind: "A2A" | "LOCAL_PI";
   outboxId: string;
   sessionPolicy?: "EPHEMERAL" | "RESIDENT";
+  /** Attachments staged into the workspace for file-capable local work. */
+  stagedAttachments?: readonly StagedAttachment[];
 }
 
 export type DispatchRunOutput =
-  | { artifacts: PartnerRunOutput["artifacts"]; body: string; conversation?: AgentConversationDraft[]; kind: "terminal"; status: PartnerRunStatus }
+  | { artifacts: PartnerRunOutput["artifacts"]; body: string; conversation?: AgentConversationDraft[]; failure?: PartnerRunFailure; kind: "terminal"; status: PartnerRunStatus }
   | { kind: "waiting_remote" };
+
+/** Stages the attachments bound to a dispatch's source input into the Workbench workspace. */
+export interface WorkAttachmentStagerPort {
+  stage(input: { inputId: string; workspacePath: string }): Promise<StagedAttachment[]>;
+}
 
 /**
  * Split delivery lifecycle so agent actors can ack the outbox before the long

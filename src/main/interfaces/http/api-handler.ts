@@ -533,13 +533,13 @@ export function createApiHandler(dependencies: ApiDependencies): ApiHandler {
         throw new HttpError("absolute_path_response_forbidden", "Directory selection is scoped to a workbench workspace operation.", 410);
       }
       if (method === "GET" && pathname === "/api/v1/scenarios") {
-        sendJson(response, 200, { items: buildScenarioList(dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code")) });
+        sendJson(response, 200, { items: buildScenarioList(dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("pi-core")) });
         return;
       }
       const scenarioPartnersMatch = /^\/api\/v1\/scenarios\/([^/]+)\/partners$/.exec(pathname);
       if (method === "POST" && scenarioPartnersMatch !== null) {
         await verifyWrite(dependencies, request);
-        const scenarios = buildScenarioList(dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("claude-code"));
+        const scenarios = buildScenarioList(dependencies.skills === undefined ? [] : dependencies.skills.listForEngine("pi-core"));
         const scenario = scenarios.find((item) => item.id === decodeURIComponent(scenarioPartnersMatch[1] ?? ""));
         if (scenario === undefined) throw new HttpError("scenario_not_found", "Scenario was not found.", 404);
         const body = await readJson(request);

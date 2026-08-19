@@ -19,12 +19,22 @@ export interface NormalizedAgentConversationEntry extends Omit<AgentConversation
   runId: string;
 }
 
-export function sanitizeAgentConversationText(value: string): string {
+/** Masks secrets only; paths stay visible for local user-facing projections of the user's own text. */
+export function maskSecretText(value: string): string {
   return value
-    .replace(UNC_PATH, "[redacted-path]")
-    .replace(ABSOLUTE_PATH, "[redacted-path]")
     .replace(BEARER_TOKEN, "Bearer [redacted]")
     .replace(NAMED_SECRET, (_match, name: string) => `${name}=[redacted]`);
+}
+
+export function sanitizeAgentConversationText(value: string): string {
+  return maskSecretText(value)
+    .replace(UNC_PATH, "[redacted-path]")
+    .replace(ABSOLUTE_PATH, "[redacted-path]");
+}
+
+/** Card-facing projections drop the path placeholder entirely: the raw path stays hidden and secret masking is untouched. */
+export function stripPathRedactions(value: string): string {
+  return value.replace(/\[redacted-path\][ \t]?/gu, "").replace(/[ \t]{2,}/gu, " ").replace(/[ \t]+$/gmu, "").trim();
 }
 
 export const COMPLETION_SUMMARY_LIMIT = 4096;

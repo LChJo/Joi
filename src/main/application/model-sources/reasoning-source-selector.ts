@@ -13,6 +13,14 @@ export class ReasoningSourceSelector {
     return pinModelSourceForTurn(source.source, turnId);
   }
 
+  async selectById(sourceId: string, turnId: string): Promise<SourcePin> {
+    const record = (await this.#readySources()).find((candidate) => candidate.source.sourceId === sourceId);
+    if (record === undefined) {
+      throw new DomainError("partner_model_source_not_ready", "The partner model source is not ready.");
+    }
+    return pinModelSourceForTurn(record.source, turnId);
+  }
+
   async selectFallback(input: {
     currentSourceId: string;
     failure: SourceFailureKind;

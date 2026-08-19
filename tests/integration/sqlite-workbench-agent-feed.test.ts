@@ -77,6 +77,25 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
+  it("hides path redaction markers from home-feed card titles and previews", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "重构" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES (?, ?, ?, 'CONSUMED', ?, ?, ?)`).run("goal-path", "key-path", "C:\\work\\prd.md 审查一下这个prd方案", workbench.workbenchId, now, now);
+      });
+      const feed = await fixture.joiHomeFeed.load();
+      const goal = feed.goals.find((item) => item.goalId === "goal-path");
+      expect(goal?.title).toBe("C:\\work\\prd.md 审查一下这个prd方案");
+      expect(JSON.stringify(feed)).not.toContain("redacted-path");
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("shows a pending unassigned input as an arranging goal until clarification is required", async () => {
     const fixture = await createRuntimeFixture();
     try {
@@ -136,6 +155,34 @@ describe("Workbench Agent and joi home projections", () => {
         goalId: "goal-stuck",
         status: "COMPLETED",
       })]);
+      expect(feed.thinking).toEqual([]);
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_turns SET status = 'COMPLETED', updated_at = '2026-08-06T13:39:59.000Z' WHERE turn_id = 'turn-stuck'",
+      ).run());
+      const settled = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-06T13:40:05.000Z"));
+      expect(settled.thinking).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("keeps an active turn visible when its goal card is hidden", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "孤立工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "孤立" });
+      const now = "2026-08-06T13:20:21.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-hidden', 'key-hidden', '隐藏目标', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_inbox_messages SET dismissed_at = ? WHERE input_id = 'goal-hidden'").run(now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-hidden', 'goal-hidden', ?, 'session-hidden', 'RUNNING', ?, ?)`).run(workbench.workbenchId, now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-06T13:20:25.000Z"));
+      expect(feed.thinking).toEqual([expect.objectContaining({ goalId: "goal-hidden", phase: "progressing", stage: "PLANNING" })]);
     } finally {
       await fixture.close();
     }
@@ -286,6 +333,43 @@ describe("Workbench Agent and joi home projections", () => {
       const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-03T12:00:05.000Z"));
       expect(feed.goals).toEqual([expect.objectContaining({ goalId: "goal-stale-summary", status: "FINALIZING" })]);
       expect(feed.goals[0]?.completionSummary).toBeUndefined();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("projects only current synthesized goal outcomes into Workbench recent outcomes", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "结果工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "结果" });
+      const now = "2026-08-06T13:20:21.000Z";
+      fixture.database.transaction((connection) => {
+        const insertGoal = connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES (?, ?, ?, 'CONSUMED', ?, ?, ?)`);
+        insertGoal.run("goal-current", "key-current", "当前目标", workbench.workbenchId, now, now);
+        insertGoal.run("goal-old", "key-old", "旧目标", workbench.workbenchId, now, now);
+        insertGoal.run("goal-pending", "key-pending", "未合成目标", workbench.workbenchId, now, now);
+        const insertSet = connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, ?, ?, ?)`);
+        insertSet.run("goal-current", 2, 2, now);
+        insertSet.run("goal-old", 2, 1, now);
+        insertSet.run("goal-pending", 1, 0, now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, completion_summary, completed_at, updated_at)
+          VALUES ('goal-current', 2, '这是当前目标的最终综合结论。', ?, ?),
+                 ('goal-old', 1, '这是旧 revision 的结论。', ?, ?)`).run(now, now, now, now);
+      });
+
+      const detail = await fixture.workbenchManagement.get(workbench.workbenchId) as unknown as { recentOutcomes: unknown };
+      expect(detail.recentOutcomes).toEqual([{
+        completedAt: now,
+        goalId: "goal-current",
+        resultRevision: 2,
+        status: "COMPLETED",
+        summary: "这是当前目标的最终综合结论。",
+        title: "当前目标",
+      }]);
     } finally {
       await fixture.close();
     }

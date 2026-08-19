@@ -1,6 +1,8 @@
 import { DomainError } from "../../domain/errors.js";
 import type { WorkbenchCatalog } from "../ports/workbench-context.js";
+import type { JoiAttachmentPort } from "../ports/managed-file-ports.js";
 import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
+import { buildJoiAttachmentContext } from "./joi-attachment-context.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import type { PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
 import {
@@ -83,6 +85,8 @@ export class JoiCoordinator {
   constructor(private readonly dependencies: {
     workbenches: WorkbenchCatalog;
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
+    /** Verified attachment reader; without it attachments stay metadata-only. */
+    attachments?: Pick<JoiAttachmentPort, "read">;
     clock: Clock;
     diagnostics?: RuntimeDiagnostics;
     failureClassifier?: ReasoningFailureClassifier;
@@ -220,6 +224,18 @@ export class JoiCoordinator {
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = input.body;
+    let turnImages: readonly { data: string; mimeType: string }[] | undefined;
+    let turnAttachmentIds: readonly string[] | undefined;
+    if (input.attachments !== undefined && input.attachments.length > 0 && this.dependencies.attachments !== undefined) {
+      const attachments = this.dependencies.attachments;
+      const attachmentContext = await buildJoiAttachmentContext({
+        attachments: input.attachments,
+        reader: (attachmentId) => attachments.read(attachmentId),
+      });
+      if (attachmentContext.promptAddendum !== "") prompt = `${input.body}\n\n${attachmentContext.promptAddendum}`;
+      turnImages = attachmentContext.images.length === 0 ? undefined : attachmentContext.images;
+      turnAttachmentIds = attachmentContext.attachmentIds;
+    }
     try {
       for (;;) {
         if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
@@ -227,7 +243,9 @@ export class JoiCoordinator {
       try {
         await this.dependencies.runtime.startTurn({
             workbenchId,
+            ...(turnAttachmentIds === undefined ? {} : { attachmentIds: turnAttachmentIds }),
             ...(input.goalInputId === undefined ? {} : { goalInputId: input.goalInputId }),
+            ...(turnImages === undefined ? {} : { images: turnImages }),
             inputId,
             modelId: pin.modelId,
             modelRevisionId: pin.modelRevisionId,
@@ -324,6 +342,9 @@ export class JoiCoordinator {
               turnId,
             });
             prompt = OUTCOME_REPAIR_PROMPT;
+            // The repair continues the same session: the first user message already
+            // carries the attachment content, so never resend the image parts.
+            turnImages = undefined;
             continue;
           }
           break;

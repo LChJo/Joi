@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { mkdir, realpath, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, realpath, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -41,6 +41,26 @@ export class JoiAttachmentService {
       throw error;
     }
     return { attachmentId, createdAt, filename: input.filename, mimeType, size: input.bytes.byteLength };
+  }
+
+  async read(attachmentId: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }> {
+    const row = this.dependencies.database.transaction((connection) => connection.prepare(
+      "SELECT filename, mime_type, size, relative_path, sha256 FROM joi_attachments WHERE attachment_id = ?",
+    ).get(attachmentId)) as { filename?: unknown; mime_type?: unknown; relative_path?: unknown; sha256?: unknown; size?: unknown } | undefined;
+    if (row === undefined || typeof row.filename !== "string" || typeof row.mime_type !== "string"
+      || typeof row.size !== "number" || typeof row.relative_path !== "string" || typeof row.sha256 !== "string") {
+      throw new DomainError("joi_attachment_not_found", "A referenced joi attachment is unavailable.");
+    }
+    const root = await realpath(path.resolve(this.dependencies.rootDirectory));
+    const candidate = path.resolve(root, row.relative_path);
+    if (!candidate.startsWith(`${root}${path.sep}`)) throw new DomainError("joi_attachment_integrity_failed", "Attachment path escaped managed storage.");
+    const resolved = await realpath(candidate).catch(() => "");
+    if (resolved === "" || !resolved.startsWith(`${root}${path.sep}`)) throw new DomainError("joi_attachment_integrity_failed", "Attachment realpath validation failed.");
+    const metadata = await stat(resolved);
+    if (!metadata.isFile() || metadata.size !== row.size) throw new DomainError("joi_attachment_integrity_failed", "Attachment size or file type changed.");
+    const bytes = new Uint8Array(await readFile(resolved));
+    if (createHash("sha256").update(bytes).digest("hex") !== row.sha256) throw new DomainError("joi_attachment_integrity_failed", "Attachment hash validation failed.");
+    return { bytes, filename: row.filename, mimeType: row.mime_type };
   }
 
   #assertFilename(filename: string): void {

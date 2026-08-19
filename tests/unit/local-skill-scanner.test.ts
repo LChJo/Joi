@@ -4,16 +4,17 @@ import { join } from "node:path";
 
 import { LocalSkillScanner } from "../../src/main/infrastructure/skills/local-skill-scanner.js";
 
-function withSkillDirs(claudeDir: string, run: () => void): void {
-  const empty = mkdtempSync(join(tmpdir(), "joi-skills-empty-"));
+function withSkillDirs(claudeDir: string, run: (dirs: { agents: string; codex: string }) => void): void {
+  const agents = mkdtempSync(join(tmpdir(), "joi-skills-agents-"));
+  const codex = mkdtempSync(join(tmpdir(), "joi-skills-codex-"));
   const previousClaude = process.env.JOI_CLAUDE_SKILLS_DIR;
   const previousCodex = process.env.JOI_CODEX_SKILLS_DIR;
   const previousAgents = process.env.JOI_AGENTS_SKILLS_DIR;
   process.env.JOI_CLAUDE_SKILLS_DIR = claudeDir;
-  process.env.JOI_CODEX_SKILLS_DIR = empty;
-  process.env.JOI_AGENTS_SKILLS_DIR = empty;
+  process.env.JOI_CODEX_SKILLS_DIR = codex;
+  process.env.JOI_AGENTS_SKILLS_DIR = agents;
   try {
-    run();
+    run({ agents, codex });
   } finally {
     if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;
     if (previousCodex === undefined) delete process.env.JOI_CODEX_SKILLS_DIR; else process.env.JOI_CODEX_SKILLS_DIR = previousCodex;
@@ -32,7 +33,7 @@ describe("local skill scanner", () => {
     writeFileSync(join(titled, "SKILL.md"), "# Heading Only\nsome body\n");
 
     const scanner = new LocalSkillScanner();
-    withSkillDirs(root, () => {
+    withSkillDirs(root, ({ agents, codex }) => {
       const listed = scanner.listForEngine("claude-code");
       expect(listed).toHaveLength(2);
       expect(listed.every((option) => typeof option.modifiedAt === "number")).toBe(true);
@@ -40,15 +41,24 @@ describe("local skill scanner", () => {
         expect.objectContaining({ displayName: "Heading Only", id: "claude-code/titled-skill" }),
         expect.objectContaining({ displayName: "我的技能", id: "claude-code/my-skill" }),
       ]));
-      expect(scanner.listForEngine("pi-core").map((option) => option.id)).toContain("claude-code/my-skill");
-      expect(scanner.listForEngine("codex")).toEqual([]);
+      mkdirSync(join(agents, "my-skill"), { recursive: true });
+      writeFileSync(join(agents, "my-skill", "SKILL.md"), "# Agents copy\n");
+      mkdirSync(join(codex, "MY-SKILL"), { recursive: true });
+      writeFileSync(join(codex, "MY-SKILL", "SKILL.md"), "# Codex copy\n");
+      const piSkills = scanner.listForEngine("pi-core");
+      expect(piSkills.filter((option) => option.id.endsWith("/my-skill"))).toHaveLength(1);
+      expect(piSkills.map((option) => option.id)).toContain("agents/my-skill");
+      expect(scanner.listForEngine("codex").map((option) => option.id)).toEqual(["agents/my-skill"]);
 
       const instructions = scanner.readInstructions(["claude-code/my-skill"]);
       expect(instructions).toContain("## Skill: my-skill");
       expect(instructions).toContain("body text here");
-      expect(scanner.readInstructions(["claude-code/missing"])).toBe("");
-      expect(scanner.readInstructions(["not-a-ref"])).toBe("");
-      expect(scanner.readInstructions(["claude-code/../../etc"])).toBe("");
+      expect(() => scanner.readInstructions(["claude-code/missing"])).toThrow(expect.objectContaining({ code: "partner_skill_not_found" }));
+      expect(() => scanner.readInstructions(["not-a-ref"])).toThrow(expect.objectContaining({ code: "partner_skill_ref_invalid" }));
+      expect(() => scanner.readInstructions(["claude-code/../../etc"])).toThrow(expect.objectContaining({ code: "partner_skill_ref_invalid" }));
+      mkdirSync(join(root, "first"), { recursive: true });
+      writeFileSync(join(root, "first", "SKILL.md"), `# ${"x".repeat(20_000)}`);
+      expect(() => scanner.readInstructions(["claude-code/first", "claude-code/missing"])).toThrow(expect.objectContaining({ code: "partner_skill_not_found" }));
     });
   });
 });

@@ -244,6 +244,34 @@ describe("Pi reasoning runtime contract", () => {
     expect(restoredEvents.join("")).toContain("已从会话恢复");
   });
 
+  it("persists image attachment parts into the session's first user message", async () => {
+    const faux = fauxProvider({ provider: "joi-images" });
+    faux.setResponses([fauxAssistantMessage([fauxText("看到图片了")])]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+    await runtime.startTurn({
+      workbenchId: "workbench_1",
+      images: [{ data: "aGVsbG8=", mimeType: "image/png" }],
+      inputId: "input_img",
+      modelId: "contract-model",
+      modelRevisionId: "model_rev_1",
+      prompt: "看这张图",
+      sessionId: "session_images",
+      sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      turnId: "turn_img",
+    });
+    const snapshot = store.snapshots.get("session_images");
+    const userMessage = snapshot?.messages.find((message) => (message as { role?: unknown }).role === "user") as { content?: unknown } | undefined;
+    const serialized = JSON.stringify(userMessage?.content ?? null);
+    expect(serialized).toContain('"type":"image"');
+    expect(serialized).toContain("aGVsbG8=");
+    expect(serialized).toContain("看这张图");
+  });
+
   it("never exposes arbitrary execution tools and can abort an active turn", async () => {
     expect(JOI_REASONING_TOOL_NAMES).toEqual([
       "workbench_list_summaries",
@@ -252,9 +280,11 @@ describe("Pi reasoning runtime contract", () => {
       "workbench_suggest_merge",
       "workbench_suggest_archive",
       "model_list_sources",
+      "partner_list_skills",
       "partner_list_available",
       "partner_inspect_revision",
       "partner_create",
+      "partner_set_skills",
       "partner_create_instance",
       "partner_list_instances",
       "partner_dispose_instance",
@@ -262,6 +292,7 @@ describe("Pi reasoning runtime contract", () => {
       "work_add_dependency",
       "work_dispatch",
       "work_read_result",
+      "attachment_read",
       "work_wait",
       "work_cancel",
       "work_reassign",

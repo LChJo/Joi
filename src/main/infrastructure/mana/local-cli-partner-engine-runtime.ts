@@ -13,6 +13,7 @@ import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRu
 import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import { resolveLocalCliExecutable, type LocalCliProtocol, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
+import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 
 /** Curated native tool names offered in the per-engine whitelist picker. */
 export const CLAUDE_CODE_TOOL_OPTIONS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "NotebookEdit"] as const;
@@ -76,14 +77,16 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     const execution = await this.#execution(request, revision, resolved);
     const surface = await this.#sdkSurface();
     const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context);
+    const before = await captureWorkspaceSnapshot(execution.workspacePath);
     const drained = await this.#drain(surface.query({
       options: this.#queryOptions(revision, systemPrompt, execution.workspacePath, resolved),
       prompt: request.taskProjection,
     }));
+    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     return {
       conversation: draftAgentConversation(request.taskProjection, drained.body, drained.messages),
       externalRunId: `local_cli:${request.actionId}`,
-      output: { artifacts: [], body: drained.body },
+      output: { artifacts, body: drained.body },
       status: drained.status,
     };
   }
@@ -124,14 +127,16 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
         ...(execution.workspacePath === undefined ? {} : { workspacePath: execution.workspacePath }),
       });
     }
+    const before = await captureWorkspaceSnapshot(execution.workspacePath);
     const drained = await this.#drain(conversation.send(`${execution.promptSection}\n\nWork for this turn:\n${input.request.taskProjection}`));
     const messages = await conversation.messages();
+    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     return {
       conversation: draftAgentConversation(input.request.taskProjection, drained.body || extractText(messages), drained.messages),
       externalRunId: `local_cli:${input.request.actionId}`,
       externalSessionRef: conversation.id,
       messages: [messages],
-      output: { artifacts: [], body: drained.body || extractText(messages) },
+      output: { artifacts, body: drained.body || extractText(messages) },
       status: drained.status,
     };
   }

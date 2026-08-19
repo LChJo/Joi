@@ -12,14 +12,19 @@ import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.j
 import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
+import { wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
+import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 
 const DEFAULT_RUN_TIMEOUT_MILLIS = 10 * 60_000;
 
 interface WarmAgent {
   agent: Agent;
   partnerRevisionId: string;
+  sideEffectTracker: { current: { state: PartnerRunSideEffectState } };
   workspacePath?: string;
 }
+
+const MUTATING_TOOLS = new Set(["bash", "edit", "write"]);
 
 /**
  * Pi core partner engine. Ephemeral runs are single-shot Agents (today's behavior);
@@ -36,7 +41,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     resolver: PiConfiguredModelResolver;
     /** Hard deadline per engine turn; a hung provider stream must fail the run, not stall it. */
     runTimeoutMillis?: number;
-    sources: Pick<ReasoningSourceSelector, "selectInitial">;
+    sources: Pick<ReasoningSourceSelector, "selectInitial"> & Partial<Pick<ReasoningSourceSelector, "selectById">>;
     tools: PiCodingToolFactory;
   }) {}
 
@@ -57,19 +62,29 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+    const tracker = { state: "NONE" as PartnerRunSideEffectState };
+    try {
+      return await this.#runEphemeral(request, revision, context, tracker);
+    } catch (error) {
+      throw wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state });
+    }
+  }
+
+  async #runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }, tracker: { state: PartnerRunSideEffectState }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     const externalRunId = `local_pi:${request.actionId}`;
-    const pin = await this.dependencies.sources.selectInitial(externalRunId);
+    const pin = await this.#selectSource(revision, externalRunId);
     const resolved = await this.dependencies.resolver.resolve(pin);
     const configuredPrompt = await this.#configuredPrompt(revision);
     const tools = execution.workspacePath === undefined ? [] : this.dependencies.tools.create(execution.workspacePath, this.#effectiveToolNames(revision));
     const allowed = new Set(tools.map((tool) => tool.name));
     const agent = new Agent({
-      beforeToolCall: ({ toolCall }) => Promise.resolve(allowed.has(toolCall.name)
-        ? undefined
-        : { block: true, reason: "partner_tool_not_allowed" }),
+      beforeToolCall: ({ toolCall }) => {
+        if (allowed.has(toolCall.name) && MUTATING_TOOLS.has(toolCall.name)) tracker.state = "OBSERVED";
+        return Promise.resolve(allowed.has(toolCall.name) ? undefined : { block: true, reason: "partner_tool_not_allowed" });
+      },
       initialState: {
         messages: [],
         model: resolved.model,
@@ -81,18 +96,30 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       streamFn: resolved.models.streamSimple.bind(resolved.models),
       toolExecution: "sequential",
     });
+    const before = await captureWorkspaceSnapshot(execution.workspacePath);
     await this.#promptWithDeadline(agent, request.taskProjection);
-    const failed = agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error");
+    const failure = assistantFailureSignal(agent.state.messages);
+    if (failure !== null) throw failure;
     const body = assistantText(agent.state.messages);
+    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     return {
       conversation: draftAgentConversation(request.taskProjection, body, agent.state.messages),
       externalRunId,
-      output: { artifacts: [], body },
-      status: failed ? "FAILED" : "COMPLETED",
+      output: { artifacts, body },
+      status: "COMPLETED",
     };
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
+    const tracker = { state: "NONE" as PartnerRunSideEffectState };
+    try {
+      return await this.#runResidentTurn(input, tracker);
+    } catch (error) {
+      throw wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state });
+    }
+  }
+
+  async #runResidentTurn(input: ResidentTurnInput, tracker: { state: PartnerRunSideEffectState }): Promise<ResidentTurnResult> {
     const { revision } = input;
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId);
@@ -102,18 +129,21 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       this.#warm.delete(input.instanceId);
       warm = undefined;
     }
+    if (warm !== undefined) warm.sideEffectTracker.current = tracker;
     const systemPrompt = this.#systemPrompt(
       await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
     );
     if (warm === undefined) {
-      const pin = await this.dependencies.sources.selectInitial(`local_pi_instance:${input.instanceId}`);
+      const pin = await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
       const resolved = await this.dependencies.resolver.resolve(pin);
       const tools = execution.workspacePath === undefined ? [] : this.dependencies.tools.create(execution.workspacePath, this.#effectiveToolNames(revision));
       const allowed = new Set(tools.map((tool) => tool.name));
+      const sideEffectTracker = { current: tracker };
       const agent = new Agent({
-        beforeToolCall: ({ toolCall }) => Promise.resolve(allowed.has(toolCall.name)
-          ? undefined
-          : { block: true, reason: "partner_tool_not_allowed" }),
+        beforeToolCall: ({ toolCall }) => {
+          if (allowed.has(toolCall.name) && MUTATING_TOOLS.has(toolCall.name)) sideEffectTracker.current.state = "OBSERVED";
+          return Promise.resolve(allowed.has(toolCall.name) ? undefined : { block: true, reason: "partner_tool_not_allowed" });
+        },
         initialState: {
           messages: (input.restoredMessages ?? []) as AgentMessage[],
           model: resolved.model,
@@ -128,23 +158,27 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       warm = {
         agent,
         partnerRevisionId: revision.partnerRevisionId,
+        sideEffectTracker,
         ...(execution.workspacePath === undefined ? {} : { workspacePath: execution.workspacePath }),
       };
       this.#trackWarm(input.instanceId, warm);
     }
     warm.agent.state.systemPrompt = systemPrompt;
     const previousMessageCount = warm.agent.state.messages.length;
+    const before = await captureWorkspaceSnapshot(execution.workspacePath);
     await this.#promptWithDeadline(warm.agent, input.request.taskProjection);
-    const failed = warm.agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error");
     const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
+    const failure = assistantFailureSignal(turnMessages);
+    if (failure !== null) throw failure;
     const body = assistantText(turnMessages);
+    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     return {
       conversation: draftAgentConversation(input.request.taskProjection, body, turnMessages),
       externalRunId: `local_pi:${input.request.actionId}`,
       externalSessionRef: `partner_instance_messages:${input.instanceId}`,
       messages: [...warm.agent.state.messages],
-      output: { artifacts: [], body },
-      status: failed ? "FAILED" : "COMPLETED",
+      output: { artifacts, body },
+      status: "COMPLETED",
     };
   }
 
@@ -173,6 +207,18 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       configuredPrompt = stored;
     }
     return configuredPrompt;
+  }
+
+  async #selectSource(revision: PartnerRevision, turnId: string) {
+    const pin = revision.modelSourceId === undefined
+      ? await this.dependencies.sources.selectInitial(turnId)
+      : this.dependencies.sources.selectById === undefined
+        ? (() => { throw new DomainError("partner_model_source_not_ready", "The partner model source cannot be selected."); })()
+        : await this.dependencies.sources.selectById(revision.modelSourceId, turnId);
+    if (revision.modelIdOverride !== undefined && revision.modelIdOverride !== pin.modelId) {
+      throw new DomainError("partner_model_override_not_ready", "The pinned model is not active on the selected source.");
+    }
+    return pin;
   }
 
   #effectiveToolNames(revision: PartnerRevision): string[] {
@@ -215,4 +261,27 @@ function assistantText(messages: readonly unknown[]): string {
     }
   }
   return parts.join("\n").trim();
+}
+
+/** Derives only a stable classifier signal; raw provider error text never leaves this function. */
+function assistantFailureSignal(messages: readonly unknown[]): Error | null {
+  for (const candidate of messages) {
+    if (candidate === null || typeof candidate !== "object") continue;
+    const message = candidate as { errorMessage?: unknown; role?: unknown; stopReason?: unknown };
+    if (message.role !== "assistant" || message.stopReason !== "error") continue;
+    if (typeof message.errorMessage !== "string") return codedProviderError("assistant_error");
+    const knownCode = /\b(?:ECONNREFUSED|ECONNRESET|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)\b/iu.exec(message.errorMessage)?.[0];
+    if (knownCode !== undefined) return codedProviderError(knownCode.toUpperCase());
+    const statusText = /\b(?:HTTP|status)\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(message.errorMessage)?.[1];
+    if (statusText !== undefined) return Object.assign(new Error("partner_provider_failed"), { status: Number(statusText) });
+    if (/\brate[ -]?limit(?:ed|ing)?\b/iu.test(message.errorMessage)) return codedProviderError("rate_limited");
+    if (/\b(?:timed?\s*out|timeout)\b/iu.test(message.errorMessage)) return codedProviderError("timeout");
+    if (/\b(?:invalid[ _-]?api[ _-]?key|authentication|unauthorized)\b/iu.test(message.errorMessage)) return codedProviderError("invalid_api_key");
+    return codedProviderError("assistant_error");
+  }
+  return null;
+}
+
+function codedProviderError(code: string): Error & { code: string } {
+  return Object.assign(new Error("partner_provider_failed"), { code });
 }

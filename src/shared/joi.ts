@@ -117,6 +117,14 @@ export interface WorkbenchDetailDto {
   name: string;
   personaRevisionId: string;
   projectLabel: string;
+  recentOutcomes: {
+    completedAt: string;
+    goalId: string;
+    resultRevision: number;
+    status: "COMPLETED" | "FAILED" | "CANCELED";
+    summary: string;
+    title: string;
+  }[];
   recentResults: {
     createdAt: string;
     isLate: boolean;

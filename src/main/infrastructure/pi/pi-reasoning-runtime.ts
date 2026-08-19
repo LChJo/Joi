@@ -1,7 +1,7 @@
 /* Pi hooks require Promise-returning callbacks. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent, generateSummary, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import type { Api, ImageContent, Model, Models } from "@earendil-works/pi-ai";
 
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type {
@@ -19,9 +19,11 @@ export const JOI_REASONING_TOOL_NAMES = [
   "workbench_suggest_merge",
   "workbench_suggest_archive",
   "model_list_sources",
+  "partner_list_skills",
   "partner_list_available",
   "partner_inspect_revision",
   "partner_create",
+  "partner_set_skills",
   "partner_create_instance",
   "partner_list_instances",
   "partner_dispose_instance",
@@ -29,6 +31,7 @@ export const JOI_REASONING_TOOL_NAMES = [
   "work_add_dependency",
   "work_dispatch",
   "work_read_result",
+  "attachment_read",
   "work_wait",
   "work_cancel",
   "work_reassign",
@@ -173,7 +176,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     session.agent.state.tools = turnTools;
     input.onEvent?.({ type: "turn_started", turnId: input.turnId });
     try {
-      await session.agent.prompt(input.prompt);
+      const turnImages: ImageContent[] | undefined = input.images === undefined || input.images.length === 0
+        ? undefined
+        : input.images.map((image) => ({ data: image.data, mimeType: image.mimeType, type: "image" as const }));
+      await session.agent.prompt(input.prompt, turnImages);
     } finally {
       await this.#compactAndSave(session);
       input.onEvent?.({ type: "turn_finished", turnId: input.turnId });

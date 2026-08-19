@@ -20,6 +20,8 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-07 的 UNKNOWN 收敛修复以 AC-41/AC-43 为门禁：只有 `WAITING_INPUT`/`WAITING_AUTH` 可保持 Work `WAITING` 并显示需要用户；不可恢复的 `UNKNOWN` 必须终结为 `FAILED`，继续 result-set 综合且不得制造无操作入口的“需要你”。migration 039 修复 schema 038 的存量错误状态、活跃任务投影与尚未综合的 UNKNOWN result member。
 
+2026-08-19 的搭档失败恢复增量以 AC-35/AC-41/AC-43 为门禁：失败结果只公开 `phase/reasonCode/retryable/sideEffectState`；仅 timeout/connect/429/5xx 且未观察到工具或文件副作用时，Joi 可把 READY model source 固定到新的 immutable Partner revision，并以同一 Work、全新 action/dispatch attempt 重派。鉴权、余额、配置、Skill、安全拒绝及副作用 `OBSERVED/UNKNOWN` 禁止盲目重放；恢复后旧 result revision 不得提前写入目标完成 outcome。
+
 2026-08-18 的命名与环境收敛以 AC-46 为门禁：工作台命名聚焦长期工作聚类和运行环境，Agent 命名聚焦可复用能力聚类；前端调试/分析工作创建的受管目录固定为 `aimanadebug`，角色型 `资深程序员搭档` 归类为 `编码工坊`，创建与重建必须使用同一规则。
 
 2026-08-18 的首页首问投影收敛以 AC-47 为门禁：输入持久化为 `PENDING` 后，在 Workbench 尚未绑定前也必须以 `ARRANGING`/“等待归属”目标卡进入 home-feed；绑定后沿同一 `inputId` 升级，未归属 `CLARIFICATION_REQUIRED` 只进入“需要你”列表，不能重复显示。

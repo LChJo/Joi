@@ -15,11 +15,18 @@ describe("local Pi coding partner runtime", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const toolRequests: { cwd: string; names: string[] }[] = [];
+    const sourceRequests: { sourceId: string; turnId: string }[] = [];
     const runner = new PiCodingPartnerRunner({
       contexts,
       prompts: { read: async (promptRef) => promptRef === "prompt_ref_1" ? "LOCAL_PARTNER_SYSTEM_SENTINEL" : null },
       resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
-      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      sources: {
+        selectById: async (sourceId, turnId) => {
+          sourceRequests.push({ sourceId, turnId });
+          return { modelId: "faux", modelRevisionId: "mr", sourceId, sourceRevisionId: "sr", turnId };
+        },
+        selectInitial: async () => { throw new Error("global source must not be selected for a pinned partner"); },
+      },
       tools: {
         create: (cwd, names) => { toolRequests.push({ cwd, names }); return []; },
         names: ["read", "edit", "bash", "write", "grep", "find", "ls"],
@@ -30,6 +37,8 @@ describe("local Pi coding partner runtime", () => {
       createdAt: "2026-07-28T12:00:00.000Z",
       displayName: "Local coder",
       kind: "local-pi",
+      modelIdOverride: "faux",
+      modelSourceId: "source_partner",
       partnerId: "partner_local",
       partnerRevisionId: "partner_revision_local",
       promptRef: "prompt_ref_1",
@@ -46,6 +55,7 @@ describe("local Pi coding partner runtime", () => {
       workId: "work_1",
     }, revision)).resolves.toMatchObject({ externalRunId: "local_pi:action_1", output: { body: "work completed" }, status: "COMPLETED" });
     expect(toolRequests).toEqual([{ cwd: "workspace_ref_1", names: ["read", "edit"] }]);
+    expect(sourceRequests).toEqual([{ sourceId: "source_partner", turnId: "local_pi:action_1" }]);
   });
 
   it("fails closed when the prompt reference cannot be resolved", async () => {
@@ -67,6 +77,36 @@ describe("local Pi coding partner runtime", () => {
 });
 
 describe("Pi partner engine runtime", () => {
+  it("converts provider error messages into safe transient facts without returning their raw text", async () => {
+    const faux = fauxProvider({ provider: "local-partner-error" });
+    faux.setResponses([fauxAssistantMessage([], {
+      errorMessage: "HTTP 503 PRIVATE upstream payload token=secret", stopReason: "error",
+    })]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Local", kind: "local-pi",
+      partnerId: "partner_local", partnerRevisionId: "partner_revision_local", registryRevision: 1, skills: [], tools: [],
+    });
+
+    const run = runtime.runEphemeral(
+      { actionId: "action_error", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "task", workId: "work_1" },
+      revision,
+      { knowledgeSection: "", skillSection: "" },
+    );
+    await expect(run).rejects.toMatchObject({
+      partnerRunFailure: { phase: "MODEL", reasonCode: "http_503", retryable: true, sideEffectState: "NONE" },
+    });
+    await expect(run).rejects.not.toThrow("PRIVATE upstream payload");
+  });
+
   it("continues a resident conversation across turns, rebuilds after eviction and keeps ephemeral runs isolated", async () => {
     const faux = fauxProvider({ provider: "local-partner-instances" });
     faux.setResponses([

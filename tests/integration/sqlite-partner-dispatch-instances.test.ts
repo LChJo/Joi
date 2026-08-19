@@ -13,6 +13,7 @@ import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/p
 import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-context-repository.js";
 import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
+import { SqliteWorkbenchManagementRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-management-repository.js";
 import { createWorkResult } from "../../src/main/domain/work/work-result.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
@@ -116,6 +117,40 @@ describe("partner dispatch instance routing", () => {
     }
   });
 
+  it("uses the returned partner body for BODY_PRESENT acceptance", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'",
+      ).run(JSON.stringify({ acceptanceChecks: [{ kind: "BODY_PRESENT" }] })));
+      let receivedBody: string | undefined;
+      const handler = makeHandler(database, {
+        dispatch: async () => ({
+          actionId: "action_1", artifacts: [], body: "analysis complete", externalRunId: "local_pi:action_1",
+          status: "COMPLETED" as const, workId: "work_1",
+        }),
+      }, [], {
+        verify: async (input) => {
+          receivedBody = (input as { body?: string }).body;
+          return receivedBody === "analysis complete" ? { status: "PASSED" } : { reasonCode: "verification_body_missing", status: "FAILED" };
+        },
+      });
+
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", workId: "work_1" }));
+
+      expect(receivedBody).toBe("analysis complete");
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = 'work_1'",
+      ).get())).toEqual({ status: "COMPLETED" });
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT reason_code, status FROM work_result_verifications",
+      ).get())).toEqual({ reason_code: null, status: "PASSED" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("keeps the first terminal result authoritative and archives later conflicts without changing projections", async () => {
     const { database, partner, root } = await openWithPartner();
     try {
@@ -156,6 +191,8 @@ describe("partner dispatch instance routing", () => {
       expect(JSON.parse(projection.recent_results_json)).toEqual([
         expect.objectContaining({ resultId: "result_completed", status: "COMPLETED" }),
       ]);
+      const detail = await new SqliteWorkbenchManagementRepository(database).getDetail("workbench_1");
+      expect(detail?.recentResults.map((result) => result.resultId)).toEqual(["result_completed"]);
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

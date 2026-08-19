@@ -25,9 +25,12 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("working-memory digest");
     expect(prompt).toContain("one opinionated answer");
     expect(prompt).toContain("Team-building requests are AFK-direct");
+    expect(prompt).toContain("durable capability cluster");
     expect(prompt).toContain("concrete options");
     expect(prompt).toContain("turn_complete");
     expect(prompt).toContain("Every Turn that uses a tool");
+    expect(prompt).toContain("use BODY_PRESENT for a textual answer");
+    expect(prompt).toContain("never an absolute or external path");
     expect(prompt).toContain("Grill the spec before dispatch");
     expect(prompt).toContain("one focused alignment question per turn");
     expect(prompt).toContain("Every dispatched work must carry the aligned spec");
@@ -59,5 +62,14 @@ describe("joi system prompt", () => {
     });
     expect(prompt).toContain("not tool-verified");
     expect(prompt).toContain("Attachments: att_1 brief.txt text/plain 5 bytes");
+    expect(prompt).toContain("Attachment delivery: text attachments are inlined in the user message");
+    expect(prompt).toContain("attachment_read");
+    expect(prompt).toContain("Never invent attachment content");
+  });
+
+  it("tells joi that partner work auto-receives the input attachments staged in the workspace", () => {
+    const prompt = buildJoiSystemPrompt(base);
+    expect(prompt).toContain("joi-attachments/<attachmentId>/<filename>");
+    expect(prompt).toContain("read-only inputs");
   });
 });

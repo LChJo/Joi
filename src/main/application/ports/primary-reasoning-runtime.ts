@@ -8,8 +8,12 @@ export type PrimaryReasoningEvent =
 
 export interface StartReasoningTurnInput {
   workbenchId: string;
+  /** Attachment ids bound to this input; scopes tools like attachment_read. */
+  attachmentIds?: readonly string[];
   /** Original goal input when this turn serves a derived input (synthesis / harness review). */
   goalInputId?: string;
+  /** Image attachments delivered as multimodal parts alongside the prompt. */
+  images?: readonly { data: string; mimeType: string }[];
   inputId: string;
   modelId: string;
   modelRevisionId: string;

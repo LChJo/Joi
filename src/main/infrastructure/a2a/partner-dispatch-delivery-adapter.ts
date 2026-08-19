@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { A2aGatewayService } from "../../application/a2a/a2a-gateway-service.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import { normalizeAgentConversationEntries, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
+import { classifyPartnerRunFailure, safePartnerRunFailureBody } from "../../application/partners/partner-run-failure.js";
 import type { WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
 import type { InvocationStatus } from "../../application/ports/a2a-ports.js";
 import type { PartnerRunStatus } from "../../application/ports/partner-execution.js";
@@ -15,6 +16,8 @@ import type {
   PartnerDispatchDelivery,
   PartnerDispatchOrphanRow,
   PreparedDispatch,
+  StagedAttachment,
+  WorkAttachmentStagerPort,
 } from "../../application/ports/partner-dispatch-delivery.js";
 import type { PartnerRegistryRepository } from "../../application/ports/partner-registry.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
@@ -63,6 +66,7 @@ function workBrief(intentJson: string): { acceptanceChecks: WorkAcceptanceCheck[
       ? parsed.acceptanceChecks.filter((value): value is WorkAcceptanceCheck => {
         if (value === null || Array.isArray(value) || typeof value !== "object") return false;
         const candidate = value as Record<string, unknown>;
+        if (candidate.kind === "BODY_PRESENT") return true;
         if (candidate.kind === "ARTIFACT_PRESENT") return typeof candidate.name === "string";
         if (candidate.kind === "FILE_EXISTS") return typeof candidate.relativePath === "string";
         return candidate.kind === "FILE_CONTAINS_EXACT"
@@ -78,17 +82,20 @@ function workBrief(intentJson: string): { acceptanceChecks: WorkAcceptanceCheck[
   }
 }
 
-function taskProjection(row: DispatchRow): string {
+function taskProjection(row: DispatchRow, stagedAttachments?: readonly StagedAttachment[]): string {
   const brief = workBrief(row.intent_json);
   const checks = brief.acceptanceChecks.map((check) => {
-    if (check.kind === "ARTIFACT_PRESENT") return `ARTIFACT_PRESENT ${check.name}`;
+    if (check.kind === "BODY_PRESENT") return "BODY_PRESENT";
+    if (check.kind === "ARTIFACT_PRESENT") return `ARTIFACT_PRESENT ${check.name} (create a file with this exact filename in the assigned workspace)`;
     if (check.kind === "FILE_EXISTS") return `FILE_EXISTS ${check.relativePath}`;
     return `FILE_CONTAINS_EXACT ${check.relativePath} = ${check.expectedText}`;
   });
+  const stagedLines = (stagedAttachments ?? []).map((staged) => `- ${staged.relativePath} (${staged.mimeType}, ${String(staged.size)} bytes)`);
   return [
     `Work title: ${row.title}`,
     `Original user request (authoritative):\n${row.source_request}`,
     ...(brief.instructions === undefined ? [] : [`Additional instructions:\n${brief.instructions}`]),
+    ...(stagedLines.length === 0 ? [] : [`Attachments from the user's original input are staged in this workspace (read them via these relative paths; treat them as read-only inputs):\n${stagedLines.join("\n")}`]),
     ...(checks.length === 0 ? [] : [`Acceptance checks:\n${checks.join("\n")}`]),
   ].join("\n\n");
 }
@@ -157,6 +164,8 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
 export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   constructor(private readonly dependencies: {
     agentConversations?: Pick<WorkbenchAgentRepository, "append">;
+    /** Stages source-input attachments into the workspace for file-capable local work. */
+    attachmentStager?: Pick<WorkAttachmentStagerPort, "stage">;
     clock: Clock;
     contextAssembler: Pick<WorkbenchContextAssembler, "assemble">;
     contexts: WorkbenchExecutionContextReader;
@@ -202,6 +211,21 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       if (lease === null) throw new Error("workspace_lease_conflict");
     }
 
+    // Stage the source input's attachments while holding the workspace lease so
+    // file-capable local partners can read the originals from deterministic paths.
+    let stagedAttachments: readonly StagedAttachment[] | undefined;
+    if (row.access_mode !== "NONE" && row.kind === "LOCAL_PI" && row.workspace_ref !== null && this.dependencies.attachmentStager !== undefined) {
+      const workspaceRef = row.workspace_ref;
+      const inputId = row.input_id;
+      const roots = this.dependencies.database.transaction((connection) => connection.prepare(
+        "SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?",
+      ).get(workspaceRef)) as { root_path?: unknown } | undefined;
+      if (typeof roots?.root_path === "string") {
+        const staged = await this.dependencies.attachmentStager.stage({ inputId, workspacePath: roots.root_path });
+        if (staged.length > 0) stagedAttachments = staged;
+      }
+    }
+
     const runWasPresent = row.run_id !== null;
     if (!runWasPresent) {
       await this.#ensureRun(row);
@@ -238,6 +262,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       kind: row.kind,
       outboxId: claim.outboxId,
       ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
+      ...(stagedAttachments === undefined ? {} : { stagedAttachments }),
     };
   }
 
@@ -253,7 +278,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         ...(prepared.instanceId === undefined ? {} : { instanceId: prepared.instanceId }),
         request: {
           actionId: row.action_id, workbenchId: row.workbench_id, contextSnapshotId: row.context_snapshot_id ?? "",
-          taskProjection: taskProjection(row), workId: row.work_id,
+          taskProjection: taskProjection(row, prepared.stagedAttachments), workId: row.work_id,
         },
         revision,
         ...(prepared.sessionPolicy === undefined ? {} : { sessionPolicy: prepared.sessionPolicy }),
@@ -294,7 +319,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       }),
       ...started.output.artifacts.map((artifact) => artifact.text),
     ].join("\n");
-    return { artifacts: [], body, kind: "terminal", status: terminal };
+    const artifacts = started.output.artifacts.map((artifact) => ({
+      mimeType: "text/plain; charset=utf-8",
+      name: artifact.name,
+      size: Buffer.byteLength(artifact.text, "utf8"),
+    }));
+    return { artifacts, body, kind: "terminal", status: terminal };
   }
 
   async complete(input: { output: DispatchRunOutput & { kind: "terminal" }; prepared: PreparedDispatch }): Promise<{ isAuthoritative: boolean; resultId: string }> {
@@ -327,12 +357,14 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           if (output.kind === "waiting_remote") return "waiting";
           await this.complete({ output, prepared });
           return "completed";
-        } catch {
-          await this.#complete(row, "UNKNOWN", { artifacts: [], body: "The local partner run ended without a reliable terminal output." });
+        } catch (error) {
+          const failure = classifyPartnerRunFailure(error, { phase: "RECOVERY", sideEffectState: "UNKNOWN" });
+          await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
           return "completed";
         }
       }
-      await this.#complete(row, "UNKNOWN", { artifacts: [], body: "The local partner run ended without a reliable terminal output." });
+      const failure = classifyPartnerRunFailure({ code: "orphan_terminal_state_unknown" }, { phase: "RECOVERY", sideEffectState: "UNKNOWN" });
+      await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
       return "completed";
     }
     const output = await this.run(prepared);
@@ -363,10 +395,11 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     let output: DispatchRunOutput;
     try {
       output = await this.run(prepared);
-    } catch {
+    } catch (error) {
       const failedRow = this.#load(dispatchAttemptId);
       if (failedRow !== undefined) {
-        await this.#complete(failedRow, "UNKNOWN", { artifacts: [], body: "The local partner run ended without a reliable terminal output." });
+        const failure = classifyPartnerRunFailure(error, { phase: "EXECUTION", sideEffectState: "UNKNOWN" });
+        await this.#complete(failedRow, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
       }
       return;
     }
@@ -445,6 +478,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           : await this.dependencies.verifier.verify({
             acceptanceChecks: brief.acceptanceChecks,
             artifacts: output.artifacts,
+            body: output.body,
             contextSnapshotId: row.context_snapshot_id,
           });
       if (verification.status !== "PASSED") committedStatus = "FAILED";

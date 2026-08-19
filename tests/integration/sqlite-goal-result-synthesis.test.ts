@@ -92,7 +92,31 @@ describe("goal-level result synthesis", () => {
             "2026-08-05T09:01:02.000Z", "2026-08-05T09:01:02.000Z");
         connection.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED' WHERE input_id = ?").run(synthesisInputId);
       });
-      await inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis", { completionSummary: "两项分析均已完成，结论已汇总。" });
+      // A recovery tool may have reopened the same Work while this result turn was running.
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE work_items SET status = 'RUNNING' WHERE work_id = 'work-2'").run();
+      });
+      await expect(inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis", {
+        completionSummary: "旧失败已处理，正在重派。",
+      })).resolves.toMatchObject({ goalOutcomePersisted: false });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT COUNT(*) AS count FROM joi_goal_outcomes WHERE input_id = 'goal-stock'",
+      ).get())).toEqual({ count: 0 });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT synthesized_revision FROM joi_goal_result_sets WHERE original_input_id = 'goal-stock'",
+      ).get())).toEqual({ synthesized_revision: 0 });
+
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE work_items SET status = 'COMPLETED' WHERE work_id = 'work-2'").run();
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-synthesis-final', ?, ?, ?, 'RUNNING', ?, ?)`).run(
+          synthesisInputId, workbench.workbenchId, `joi_synthesis_session:${workbench.workbenchId}`,
+          "2026-08-05T09:01:03.000Z", "2026-08-05T09:01:03.000Z",
+        );
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED' WHERE input_id = ?").run(synthesisInputId);
+      });
+      await inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis-final", { completionSummary: "两项分析均已完成，结论已汇总。" });
 
       const after = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-05T09:01:03.000Z"));
       expect(after.goals[0]).toMatchObject({

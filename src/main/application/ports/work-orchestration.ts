@@ -26,6 +26,7 @@ export interface PlannedDispatchAttempt extends PartnerDispatchPin {
 }
 
 export type WorkAcceptanceCheck =
+  | { kind: "BODY_PRESENT" }
   | { kind: "ARTIFACT_PRESENT"; name: string }
   | { kind: "FILE_CONTAINS_EXACT"; expectedText: string; relativePath: string }
   | { kind: "FILE_EXISTS"; relativePath: string };

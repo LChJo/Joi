@@ -36,6 +36,7 @@ describe("Workbench context center", () => {
       personaRevisionId: "persona-revision-2",
       projectLabel: "发布工程",
       recentResults: [{ createdAt: workbench.updatedAt, isLate: true, partnerRevisionId: "partner-revision-1", resultId: "result-1", status: "COMPLETED", summary: "发布检查完成", workId: "work-old" }],
+      recentOutcomes: [{ completedAt: workbench.updatedAt, goalId: "goal-1", resultRevision: 1, status: "COMPLETED", summary: "发布文档已经完成，风险已收口。", title: "更新发布文档" }],
       responsibility: "维护发布流水线",
       updatedAt: workbench.updatedAt,
       workspace: { displayName: "release", kind: "BOUND", status: "READY" },
@@ -58,7 +59,11 @@ describe("Workbench context center", () => {
     fireEvent.click(screen.getByRole("tab", { name: "上下文设置" }));
     expect(screen.getByRole("heading", { name: "工作区" }).closest("article")).toHaveTextContent("release · BOUND · READY");
     expect(screen.getByText(/更新发布文档 · RUNNING/u)).toBeInTheDocument();
-    expect(screen.getByText(/发布检查完成 · COMPLETED · 迟到/u)).toBeInTheDocument();
+    expect(screen.getByText("发布文档已经完成，风险已收口。")).toBeInTheDocument();
+    const recentOutcomes = screen.getByRole("heading", { name: "最近结果总结" }).closest("article");
+    expect(recentOutcomes).toHaveTextContent("更新发布文档");
+    expect(recentOutcomes).toHaveTextContent("COMPLETED");
+    expect(recentOutcomes).not.toHaveTextContent("发布检查完成");
     expect(document.body.textContent).not.toContain("PRIVATE_PERSONA_BODY");
     expect(document.body.textContent).not.toMatch(/[A-Za-z]:\\/u);
 
@@ -78,7 +83,7 @@ describe("Workbench context center", () => {
     const workbench = workbenchDto("workbench-agent", "研发 Workbench");
     const detail: WorkbenchDetailDto = {
       activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name, personaRevisionId: "persona-1",
-      projectLabel: "研发", recentResults: [], responsibility: "研发", updatedAt: workbench.updatedAt,
+      projectLabel: "研发", recentOutcomes: [], recentResults: [], responsibility: "研发", updatedAt: workbench.updatedAt,
       workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
     };
     const ephemeral = {
@@ -136,7 +141,7 @@ describe("Workbench context center", () => {
     const workbench = workbenchDto("workbench-fallback", "容错 Workbench");
     const detail: WorkbenchDetailDto = {
       activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name, personaRevisionId: "persona-1",
-      projectLabel: "容错", recentResults: [], responsibility: "容错", updatedAt: workbench.updatedAt,
+      projectLabel: "容错", recentOutcomes: [], recentResults: [], responsibility: "容错", updatedAt: workbench.updatedAt,
       workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
     };
     const agent = {
@@ -553,6 +558,11 @@ describe("joi home single entry", () => {
     const preview = await screen.findByRole("button", { name: /最终结果全文/u });
     expect(preview).toHaveTextContent("已通过验收");
 
+    fireEvent.keyDown(preview, { key: "ArrowDown" });
+    fireEvent.keyDown(preview, { key: " " });
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+
     fireEvent.click(preview);
     const drawer = await screen.findByRole("dialog");
     expect(within(drawer).getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
@@ -673,6 +683,58 @@ describe("joi home single entry", () => {
     fireEvent.submit(parentForm(composer));
     await waitFor(() => expect(upload).toHaveBeenCalledOnce());
     expect(send).toHaveBeenCalledWith("按附件执行", { attachmentIds: ["attachment-1"] });
+  });
+
+  it("accepts attachments through drag-and-drop and paste and sends them with the message", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    let uploadCount = 0;
+    const upload = vi.spyOn(api, "uploadJoiAttachment").mockImplementation((file) => {
+      uploadCount += 1;
+      return Promise.resolve({ attachmentId: `attachment-${String(uploadCount)}`, createdAt: "2026-07-28T10:00:00.000Z", filename: file.name, mimeType: file.type, size: file.size });
+    });
+    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "input-drop", status: "PENDING" });
+    render(<JoiHome api={api} />);
+    const composer = await screen.findByLabelText("给 joi 输入");
+    const form = parentForm(composer);
+
+    fireEvent.drop(form, { dataTransfer: { files: [new File(["dropped"], "dropped.md", { type: "text/markdown" })] } });
+    expect(screen.getByText("dropped.md")).toBeInTheDocument();
+    fireEvent.drop(form, { dataTransfer: { files: [new File(["dropped"], "dropped.md", { type: "text/markdown" })] } });
+    expect(screen.getByText("dropped.md")).toBeInTheDocument();
+    expect(screen.queryByText("dropped.md、dropped.md")).not.toBeInTheDocument();
+
+    fireEvent.paste(composer, { clipboardData: { files: [new File(["pixels"], "shot.png", { type: "image/png" })] } });
+    expect(screen.getByText("dropped.md、shot.png")).toBeInTheDocument();
+
+    fireEvent.change(composer, { target: { value: "按拖拽附件执行" } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(send).toHaveBeenCalledWith("按拖拽附件执行", { attachmentIds: ["attachment-1", "attachment-2"] });
+  });
+
+  it("rejects oversized files and enforces the 8-file cap with visible notices", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    render(<JoiHome api={api} />);
+    const composer = await screen.findByLabelText("给 joi 输入");
+    const form = parentForm(composer);
+
+    const oversized = new File(["x"], "huge.bin", { type: "application/octet-stream" });
+    Object.defineProperty(oversized, "size", { value: 11 * 1024 * 1024 });
+    fireEvent.drop(form, { dataTransfer: { files: [oversized] } });
+    expect(screen.getByRole("alert").textContent).toContain("超过 10 MiB");
+    expect(screen.queryByText("huge.bin")).not.toBeInTheDocument();
+
+    const many = Array.from({ length: 9 }, (_, index) => new File([`f${String(index)}`], `file-${String(index)}.txt`, { type: "text/plain" }));
+    fireEvent.drop(form, { dataTransfer: { files: many } });
+    expect(screen.getByRole("alert").textContent).toContain("最多只能添加 8 个附件");
+    expect(screen.getByText(/file-0\.txt/u)).toBeInTheDocument();
+    expect(screen.queryByText(/file-8\.txt/u)).not.toBeInTheDocument();
   });
 
   it("nudges the home page to build two or three partners when the roster is thin", async () => {

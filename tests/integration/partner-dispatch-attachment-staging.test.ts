@@ -1,0 +1,151 @@
+/* eslint-disable @typescript-eslint/require-await */
+import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+import { WorkbenchContextAssembler } from "../../src/main/application/joi/workbench-context-assembler.js";
+import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
+import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
+import { JoiAttachmentService } from "../../src/main/infrastructure/artifacts/joi-attachment-service.js";
+import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
+import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
+import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository.js";
+import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-context-repository.js";
+import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
+import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
+import { WorkAttachmentStager } from "../../src/main/infrastructure/workspace/workspace-attachment-stager.js";
+import { TestClock, TestIds } from "../support/runtime-fixture.js";
+
+const NOW = "2026-07-29T10:00:00.000Z";
+
+async function openFixture() {
+  const root = await mkdtemp(path.join(os.tmpdir(), "joi-attachment-staging-"));
+  const workspaceDir = path.join(root, "workspace");
+  await mkdir(workspaceDir, { recursive: true });
+  const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+  const clock = new TestClock();
+  const ids = new TestIds();
+  const attachments = new JoiAttachmentService({ clock, database, ids, rootDirectory: path.join(root, "artifacts") });
+  const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("staged body"), filename: "brief.md", mimeType: "text/markdown" });
+  const partners = new PartnerRegistryService({ clock, ids, repository: new SqlitePartnerRegistryRepository(database) });
+  const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
+  database.transaction((connection) => {
+    connection.prepare(`INSERT INTO workbenches
+      (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+      VALUES ('workbench_1', 'A', 'persona_1', 'summary', 'scope', 'project', 'memory_namespace_1', 'ACTIVE', ?, ?)`).run(NOW, NOW);
+    connection.prepare(`UPDATE workbench_workspace_bindings SET kind = 'BOUND', status = 'READY', display_name = '工程', updated_at = ?
+      WHERE workbench_id = 'workbench_1'`).run(NOW);
+    connection.prepare(`INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at)
+      VALUES ('workbench_workspace:workbench_1', ?, ?, ?)`).run(workspaceDir, NOW, NOW);
+    connection.prepare(`INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+      VALUES ('input_1', 'idem_1', 'body', 'ROUTED', 'workbench_1', ?, ?)`).run(NOW, NOW);
+    connection.prepare("INSERT INTO joi_inbox_attachments (input_id, attachment_id) VALUES ('input_1', ?)").run(uploaded.attachmentId);
+    connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+      VALUES ('turn_1', 'input_1', 'workbench_1', 'joi_session:workbench_1', 'RUNNING', ?, ?)`).run(NOW, NOW);
+    connection.prepare(`INSERT INTO dispatch_plans (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+      VALUES ('plan_1', 'turn_1', '{}', '{}', ?)`).run(NOW);
+    connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+      VALUES ('work_1', 'workbench_1', 'input_1', 'the task', '{}', 'READ', 'READY', ?, ?),
+             ('work_2', 'workbench_1', 'input_1', 'no files', '{}', 'READ', 'READY', ?, ?)`).run(NOW, NOW, NOW, NOW);
+    connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES ('work_2', 'NONE')").run();
+    connection.prepare(`INSERT INTO outbox (outbox_id, kind, payload_json, status, attempt_count, available_at, created_at)
+      VALUES ('outbox_1', 'partner.dispatch', ?, 'PENDING', 0, ?, ?),
+             ('outbox_2', 'partner.dispatch', ?, 'PENDING', 0, ?, ?)`).run(
+      JSON.stringify({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }), NOW, NOW,
+      JSON.stringify({ actionId: "action_2", dispatchAttemptId: "attempt_2", workId: "work_2" }), NOW, NOW);
+    connection.prepare(`INSERT INTO dispatch_attempts
+      (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at, outbox_id)
+      VALUES ('attempt_1', 'plan_1', 'work_1', ?, 1, 'action_1', 'PENDING', ?, ?, 'outbox_1'),
+             ('attempt_2', 'plan_1', 'work_2', ?, 1, 'action_2', 'PENDING', ?, ?, 'outbox_2')`)
+      .run(partner.partnerRevisionId, NOW, NOW, partner.partnerRevisionId, NOW, NOW);
+  });
+  return { attachments, clock, database, ids, partner, root, uploaded, workspaceDir };
+}
+
+function makeDelivery(fixture: Awaited<ReturnType<typeof openFixture>>, dispatchSpy: { calls: unknown[] }) {
+  const contexts = new SqliteWorkbenchContextRepository(fixture.database);
+  return new SqlitePartnerDispatchDelivery({
+    agentConversations: new SqliteWorkbenchAgentRepository(fixture.database),
+    attachmentStager: new WorkAttachmentStager({ attachments: fixture.attachments, database: fixture.database }),
+    clock: fixture.clock,
+    contextAssembler: new WorkbenchContextAssembler({
+      workbenches: new LegacyLifeStoreAdapter(fixture.database), clock: fixture.clock, ids: fixture.ids, projections: contexts, snapshots: contexts,
+    }),
+    contexts,
+    database: fixture.database,
+    gateway: { recover: async () => { throw new Error("gateway unused"); }, startWithResult: async () => { throw new Error("gateway unused"); } },
+    instances: {
+      dispatch: async (input) => {
+        dispatchSpy.calls.push(input);
+        return { actionId: "action_1", artifacts: [], body: "done", externalRunId: "local_pi:action_1", status: "COMPLETED" as const, workId: "work_1" };
+      },
+    },
+    leases: new SqliteWorkspaceLeaseManager({ clock: fixture.clock, database: fixture.database, owner: "staging_test" }),
+    partners: new SqlitePartnerRegistryRepository(fixture.database),
+    results: new SqliteWorkResultRepository(fixture.database),
+  });
+}
+
+function outboxRecord(outboxId: string, dispatchAttemptId: string, workId: string) {
+  return {
+    attemptCount: 0, availableAt: NOW, createdAt: NOW, kind: "partner.dispatch", outboxId,
+    payload: { actionId: `action:${dispatchAttemptId}`, dispatchAttemptId, workId }, status: "PENDING" as const,
+  };
+}
+
+describe("partner dispatch attachment staging", () => {
+  it("stages input attachments into the workspace and lists them in the partner task", async () => {
+    const fixture = await openFixture();
+    try {
+      const spy = { calls: [] as unknown[] };
+      const delivery = makeDelivery(fixture, spy);
+      await delivery.handle(outboxRecord("outbox_1", "attempt_1", "work_1"));
+
+      const stagedPath = path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "brief.md");
+      expect(await readFile(stagedPath, "utf8")).toBe("staged body");
+      const request = spy.calls[0] as { request: { taskProjection: string } };
+      expect(request.request.taskProjection).toContain("Attachments from the user's original input are staged in this workspace");
+      expect(request.request.taskProjection).toContain(`joi-attachments/${fixture.uploaded.attachmentId}/brief.md (text/markdown, 11 bytes)`);
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("restores tampered staged files idempotently on the next staging pass", async () => {
+    const fixture = await openFixture();
+    try {
+      const stager = new WorkAttachmentStager({ attachments: fixture.attachments, database: fixture.database });
+      const first = await stager.stage({ inputId: "input_1", workspacePath: fixture.workspaceDir });
+      expect(first).toEqual([{
+        filename: "brief.md", mimeType: "text/markdown",
+        relativePath: `joi-attachments/${fixture.uploaded.attachmentId}/brief.md`, size: 11,
+      }]);
+      const stagedPath = path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "brief.md");
+      await writeFile(stagedPath, "tampered");
+      await stager.stage({ inputId: "input_1", workspacePath: fixture.workspaceDir });
+      expect(await readFile(stagedPath, "utf8")).toBe("staged body");
+      expect(await stager.stage({ inputId: "no_such_input", workspacePath: fixture.workspaceDir })).toEqual([]);
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("does not stage attachments for work without file access", async () => {
+    const fixture = await openFixture();
+    try {
+      const spy = { calls: [] as unknown[] };
+      const delivery = makeDelivery(fixture, spy);
+      await delivery.handle(outboxRecord("outbox_2", "attempt_2", "work_2"));
+      expect(spy.calls).toHaveLength(1);
+      const request = spy.calls[0] as { request: { taskProjection: string } };
+      expect(request.request.taskProjection).not.toContain("staged in this workspace");
+      await expect(stat(path.join(fixture.workspaceDir, "joi-attachments"))).rejects.toThrow();
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+});

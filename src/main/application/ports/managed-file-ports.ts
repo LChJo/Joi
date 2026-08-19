@@ -18,5 +18,6 @@ export interface UserAttachmentPort {
 }
 
 export interface JoiAttachmentPort {
+  read(attachmentId: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }>;
   upload(input: { bytes: Uint8Array; filename: string; mimeType: string }): Promise<JoiAttachmentDto>;
 }

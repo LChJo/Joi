@@ -247,6 +247,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         `goalInputId=${goalInputId}`,
         `resultRevision=${String(resultSet.revision)}`,
         ...results.map((row) => `resultId=${String(row.result_id)} workId=${String(row.work_id)} status=${String(row.status)} summary=${String(row.summary).slice(0, 320)}`),
+        "Inspect structured failure facts before completing: only retryable=true with sideEffectState=NONE permits a model switch and a fresh work_reassign attempt.",
+        "For auth, balance, configuration, skill or safety failures, or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; ask for input or report the blocker.",
         "Use work_read_result only if the bounded summary is insufficient.",
         "Synthesize one concise, opinionated completion update for the user, call turn_complete with RESULT_SYNTHESIZED, and do not dump raw per-Agent output.",
       ].join("\n");
@@ -326,6 +328,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         if (current.revision !== synthesis.result_revision || completion === undefined) {
           connection.prepare(`UPDATE joi_inbox_messages SET status = 'PENDING', updated_at = ? WHERE input_id = ?`)
             .run(now, inputId);
+          return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
+        }
+        const activeWork = connection.prepare(`SELECT 1 FROM work_items
+          WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(synthesis.goal_input_id);
+        if (activeWork !== undefined) {
+          // Recovery reopened the goal while this result Turn was running. Do not publish a
+          // stale goal outcome or advance synthesized_revision; a later result reactivates it.
+          connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
+            WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
         }
         const summary = normalizeCompletionSummary(completion.completionSummary);

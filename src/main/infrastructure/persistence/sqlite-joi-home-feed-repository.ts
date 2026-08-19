@@ -4,7 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
-import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
+import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
@@ -107,7 +107,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const total = number(row, "work_total");
         const active = number(row, "work_active");
         const activeRuns = number(row, "active_runs");
-        const rawTitle = sanitizeAgentConversationText(text(row, "body")).replace(/\s+/gu, " ").trim();
+        const rawTitle = maskSecretText(text(row, "body")).replace(/\s+/gu, " ").trim();
         const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}…` : rawTitle;
         const goalId = text(row, "input_id");
         const harnessProjection = harnessByGoal.get(goalId);
@@ -127,7 +127,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           } : {}),
           goalId,
           ...(harnessProjection === undefined ? {} : { harness: toHarnessDto(harnessProjection) }),
-          ...(number(row, "outcome_current") === 1 && typeof row.completion_summary === "string" ? { completionSummary: row.completion_summary } : {}),
+          ...(number(row, "outcome_current") === 1 && typeof row.completion_summary === "string" ? { completionSummary: stripPathRedactions(row.completion_summary) } : {}),
           ...(number(row, "outcome_current") === 1 && typeof row.completed_at === "string" ? { completedAt: row.completed_at } : {}),
           status,
           title: title === "" ? "未命名目标" : title,
@@ -149,7 +149,11 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
            AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id
              AND t.status IN ('PENDING','RUNNING','WAITING'))
         ORDER BY 4 DESC, 1 DESC`).all(cutoff) as Row[];
-      const thinking = turns.map((row) => {
+      const thinking = turns.filter((row) => {
+        if (text(row, "status") === "PENDING") return true;
+        const goal = goalsById.get(text(row, "goal_id"));
+        return goal === undefined || !["COMPLETED", "FAILED", "CANCELED"].includes(goal.status);
+      }).map((row) => {
         const status = text(row, "status");
         const queued = status === "PENDING";
         const active = queued || ["RUNNING", "WAITING"].includes(status);
@@ -177,7 +181,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         ...(typeof row.clarification_reason_code === "string" ? { clarificationReasonCode: row.clarification_reason_code } : {}),
         inputId: text(row, "input_id"),
         status: "CLARIFICATION_REQUIRED" as const,
-        textPreview: sanitizeAgentConversationText(text(row, "body")).slice(0, 81),
+        textPreview: maskSecretText(text(row, "body")).replace(/\s+/gu, " ").trim().slice(0, 81),
       }));
       return { goals, thinking, unassignedActions };
     });

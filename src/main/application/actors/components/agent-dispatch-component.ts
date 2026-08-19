@@ -10,6 +10,7 @@ import type {
   PreparedDispatch,
 } from "../../ports/partner-dispatch-delivery.js";
 import type { RuntimeStore } from "../../ports/runtime-store.js";
+import { partnerRunFailureFromError, safePartnerRunFailureBody } from "../../partners/partner-run-failure.js";
 
 const CLAIM_LEASE_MILLIS = 30_000;
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
@@ -23,8 +24,9 @@ interface InFlightRun {
   startedAt: number;
 }
 
-function unknownOutput(): DispatchRunOutput & { kind: "terminal" } {
-  return { artifacts: [], body: "The local partner run ended without a reliable terminal output.", kind: "terminal", status: "UNKNOWN" };
+function failedOutput(error: unknown): DispatchRunOutput & { kind: "terminal" } {
+  const failure = partnerRunFailureFromError(error);
+  return { artifacts: [], body: safePartnerRunFailureBody(failure), failure, kind: "terminal", status: "UNKNOWN" };
 }
 
 /**
@@ -70,8 +72,8 @@ export class AgentDispatchComponent implements ActorComponent {
       this.#nextWaitingRetryAt = ctx.now.getTime() + (this.dependencies.waitingRetryEveryMillis ?? DEFAULT_WAITING_RETRY_EVERY_MILLIS);
       try {
         output = await this.dependencies.delivery.run(run.prepared);
-      } catch {
-        output = unknownOutput();
+      } catch (error) {
+        output = failedOutput(error);
       }
       run.settled = output;
       if (output.kind === "waiting_remote") return;
@@ -159,8 +161,8 @@ export class AgentDispatchComponent implements ActorComponent {
       const attemptId = prepared.dispatchAttemptId;
       void this.dependencies.delivery.run(prepared).then((output) => {
         if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = output;
-      }).catch(() => {
-        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = unknownOutput();
+      }).catch((error: unknown) => {
+        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = failedOutput(error);
       });
       return;
     }

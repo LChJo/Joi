@@ -147,7 +147,8 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
           <label>搭档提示词<textarea name="prompt" placeholder={partner === null ? "交给它工作时附带的工作提示，仅本机保存" : "留空保持当前提示词"} rows={3} /></label>
         </div>
         <div className="kb-field"><span className="kb-field-label">知识库</span>{partner !== null && partner.kind === "local-pi" ? <KnowledgeDocList api={api} onChanged={() => undefined} partnerId={partner.partnerId} /> : <small>保存搭档后即可附加 md 文档。</small>}</div>
-        <div className="skill-field"><span className="kb-field-label">技能（点选，按引擎扫描本机已安装技能）</span>
+        <div className="skill-field"><span className="kb-field-label">技能（可选；按引擎扫描本机已安装技能）</span>
+          <small className="field-hint">不勾选表示不向搭档挂载 skill。</small>
           {skills.length === 0 ? <small className="field-hint">当前引擎还没有可点选的技能。</small> : <div className="chip-group">{skills.map((skill) => <label className="chip" key={skill.id}><input checked={selectedSkills.includes(skill.id)} onChange={() => setSelectedSkills((current) => toggle(current, skill.id))} type="checkbox" />{skill.displayName}</label>)}</div>}
         </div>
         <button className="button primary" type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>

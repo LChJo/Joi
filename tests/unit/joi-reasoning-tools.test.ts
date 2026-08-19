@@ -27,6 +27,8 @@ interface HarnessRecorder {
 }
 
 function makeTools(options: {
+  attachmentIds?: string[];
+  attachments?: { read(attachmentId: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }> };
   goalInputId?: string;
   harness?: HarnessRecorder;
   inputId?: string;
@@ -36,6 +38,8 @@ function makeTools(options: {
   workspaceBlocked?: boolean;
 } = {}) {
   const addCalls: unknown[] = [];
+  const setModelCalls: unknown[] = [];
+  const setSkillsCalls: unknown[] = [];
   const ensureCalls: unknown[] = [];
   const disposeCalls: { instanceId: string; reason: string }[] = [];
   const planCalls: unknown[] = [];
@@ -59,6 +63,8 @@ function makeTools(options: {
       clarificationCalls.push({ inputId, ...(prompt === undefined ? {} : { prompt }), reasonCode });
     } },
     workbenches: { getWorkbench: async () => null, listSummaries: async () => [] },
+    ...(options.attachmentIds === undefined ? {} : { attachmentIds: options.attachmentIds }),
+    ...(options.attachments === undefined ? {} : { attachments: options.attachments }),
     ...(options.goalInputId === undefined ? {} : { goalInputId: options.goalInputId }),
     harness: {
       chartPath: async (args) => {
@@ -85,7 +91,10 @@ function makeTools(options: {
       add: async (input) => { addCalls.push(input); return partnerDto; },
       inspect: async () => partnerDto,
       list: async () => options.partners ?? [partnerDto],
+      setModel: async (partnerId, model) => { setModelCalls.push({ model, partnerId }); return { ...partnerDto, ...model }; },
+      setSkills: async (partnerId, skills) => { setSkillsCalls.push({ partnerId, skills }); return { ...partnerDto, skills }; },
     },
+    skills: { listForEngine: () => [{ description: "演示", displayName: "演示技能", id: "claude-code/demo-skill", modifiedAt: 1 }] },
     results: { read: async ({ resultId }) => ({ content: "result", resultId }) },
     turnId: "turn_1",
     work: {
@@ -119,6 +128,8 @@ function makeTools(options: {
       return JSON.parse(output.content[0]?.text ?? "null") as unknown;
     },
     addCalls,
+    setModelCalls,
+    setSkillsCalls,
     disposeCalls,
     ensureCalls,
     planCalls,
@@ -128,9 +139,11 @@ function makeTools(options: {
 }
 
 describe("joi reasoning tools", () => {
-  it("limits goal synthesis to result reading and explicit completion", () => {
+  it("lets a goal result turn inspect a safe failure, switch a partner revision and reassign the same Work", () => {
     const tools = selectJoiReasoningToolsForInput(makeTools().tools, "joi_result_input:goal:goal-1");
-    expect(tools.map((tool) => tool.name)).toEqual(["work_read_result", "turn_complete"]);
+    expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([
+      "model_list_sources", "partner_list_available", "partner_set_model", "work_read_result", "work_reassign", "turn_complete",
+    ]));
   });
   it("creates partners on behalf of joi with the joi creator badge", async () => {
     const harness = makeTools();
@@ -138,6 +151,19 @@ describe("joi reasoning tools", () => {
     expect(created.partnerId).toBe("partner_1");
     expect(harness.addCalls[0]).toMatchObject({ capabilities: [], createdBy: "joi", description: "写文档", kind: "local-pi", skills: [], tools: [] });
     expect(String((harness.addCalls[0] as { prompt?: unknown }).prompt)).toContain("Writer");
+  });
+
+  it("lists available skills and lets joi attach only an engine-compatible skill", async () => {
+    const harness = makeTools();
+    await expect(harness.call("partner_list_skills", { engine: "pi-core" })).resolves.toEqual({
+      engine: "pi-core",
+      items: [{ description: "演示", displayName: "演示技能", id: "claude-code/demo-skill" }],
+    });
+    await expect(harness.call("partner_set_skills", { partnerId: "partner_1", skills: ["claude-code/demo-skill"] }))
+      .resolves.toMatchObject({ partnerId: "partner_1", skills: ["claude-code/demo-skill"] });
+    expect(harness.setSkillsCalls).toEqual([{ partnerId: "partner_1", skills: ["claude-code/demo-skill"] }]);
+    await expect(harness.call("partner_set_skills", { partnerId: "partner_1", skills: ["missing-skill"] }))
+      .rejects.toMatchObject({ code: "partner_skill_not_available" });
   });
 
   it("uses a cluster name when joi creates a role-named senior programmer partner", async () => {
@@ -168,6 +194,14 @@ describe("joi reasoning tools", () => {
     expect(harness.addCalls).toEqual([]);
   });
 
+  it("reuses an active partner whose cluster key matches after stripping one-off model tokens", async () => {
+    const existing = { ...partnerDto, createdBy: "user" as const, displayName: "模型调研搭档" };
+    const harness = makeTools({ partners: [existing] });
+    const created = await harness.call("partner_create", { displayName: "Grok4.6 模型调研搭档" }) as { partnerId: string; reused?: boolean };
+    expect(created).toMatchObject({ partnerId: "partner_1", partnerRevisionId: "partner_revision_1", reused: true });
+    expect(harness.addCalls).toEqual([]);
+  });
+
   it("rejects hallucinated coding tools before persisting a partner", async () => {
     const harness = makeTools();
     await expect(harness.call("partner_create", {
@@ -180,6 +214,19 @@ describe("joi reasoning tools", () => {
     const harness = makeTools();
     const sources = await harness.call("model_list_sources", {}) as unknown[];
     expect(sources).toEqual([{ displayName: "Kimi", kind: "kimi", modelId: "kimi-k2.5", primary: true, protocol: "anthropic", sourceId: "source_ready" }]);
+  });
+
+  it("switches a partner to a READY model source by creating a new immutable partner revision", async () => {
+    const harness = makeTools();
+    await expect(harness.call("partner_set_model", {
+      modelId: "kimi-k2.5", partnerId: "partner_1", sourceId: "source_ready",
+    })).resolves.toMatchObject({ modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready", partnerId: "partner_1" });
+    expect(harness.setModelCalls).toEqual([{
+      model: { modelIdOverride: "kimi-k2.5", modelSourceId: "source_ready" }, partnerId: "partner_1",
+    }]);
+    await expect(harness.call("partner_set_model", {
+      modelId: "draft", partnerId: "partner_1", sourceId: "source_draft",
+    })).rejects.toMatchObject({ code: "partner_model_source_not_ready" });
   });
 
   it("creates, lists and disposes partner instances with explicit session policies", async () => {
@@ -262,6 +309,15 @@ describe("joi reasoning tools", () => {
       prompt: "选择这个 Workbench 的工作目录后，我会继续派发需要读写文件的工作。",
       reasonCode: "workbench_workspace_not_ready",
     }]);
+  });
+
+  it("supports BODY_PRESENT for text-only partner deliverables", async () => {
+    const harness = makeTools();
+    await harness.call("work_dispatch", {
+      dependencies: [],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "research", partnerId: "partner_1", title: "研究" }],
+    });
+    expect((harness.planCalls[0] as { work?: unknown }).work).toEqual([expect.objectContaining({ acceptanceChecks: [{ kind: "BODY_PRESENT" }] })]);
   });
 
   it("turns a deterministic dispatch error into a resumable clarification", async () => {
@@ -354,5 +410,60 @@ describe("joi reasoning tools", () => {
     const plainHarness = makeTools({ harness: { calls: [] } });
     await expect(plainHarness.call("turn_complete", { outcome: "MAP_CLEARED" }))
       .rejects.toMatchObject({ code: "harness_clear_not_allowed" });
+  });
+
+  it("reads attachment text in bounded chunks with a continuation cursor", async () => {
+    const encoder = new TextEncoder();
+    const body = `${"A".repeat(8_000)}${"B".repeat(8_000)}tail`;
+    const harness = makeTools({
+      attachmentIds: ["att_1"],
+      attachments: { read: async () => ({ bytes: encoder.encode(body), filename: "long.txt", mimeType: "text/plain" }) },
+    });
+    const first = await harness.call("attachment_read", { attachmentId: "att_1" }) as Record<string, unknown>;
+    expect(first).toMatchObject({ attachmentId: "att_1", content: "A".repeat(8_000), filename: "long.txt", nextCursor: "8000" });
+    const second = await harness.call("attachment_read", { attachmentId: "att_1", cursor: "8000" }) as Record<string, unknown>;
+    expect(second).toMatchObject({ content: "B".repeat(8_000), nextCursor: "16000" });
+    const last = await harness.call("attachment_read", { attachmentId: "att_1", cursor: "16000" }) as Record<string, unknown>;
+    expect(last).toMatchObject({ attachmentId: "att_1", content: "tail" });
+    expect(last).not.toHaveProperty("nextCursor");
+  });
+
+  it("rejects out-of-scope and missing attachments with the same code and validates cursors", async () => {
+    const encoder = new TextEncoder();
+    const harness = makeTools({
+      attachmentIds: ["att_1"],
+      attachments: {
+        read: async (attachmentId) => {
+          if (attachmentId !== "att_1") throw new DomainError("joi_attachment_not_found", "missing");
+          return { bytes: encoder.encode("body"), filename: "a.txt", mimeType: "text/plain" };
+        },
+      },
+    });
+    await expect(harness.call("attachment_read", { attachmentId: "att_other" }))
+      .rejects.toMatchObject({ code: "joi_attachment_not_found" });
+    await expect(harness.call("attachment_read", { attachmentId: "att_1", cursor: "-1" }))
+      .rejects.toMatchObject({ code: "attachment_cursor_invalid" });
+    await expect(harness.call("attachment_read", { attachmentId: "att_1", cursor: "01" }))
+      .rejects.toMatchObject({ code: "attachment_cursor_invalid" });
+  });
+
+  it("reports NOT_TEXT for binary attachments instead of erroring", async () => {
+    const harness = makeTools({
+      attachmentIds: ["att_bin"],
+      attachments: { read: async () => ({ bytes: new Uint8Array([0x7b, 0x00, 0x01]), filename: "blob.bin", mimeType: "application/octet-stream" }) },
+    });
+    await expect(harness.call("attachment_read", { attachmentId: "att_bin" }))
+      .resolves.toEqual({ attachmentId: "att_bin", reasonCode: "attachment_content_not_text", status: "NOT_TEXT" });
+  });
+
+  it("registers attachment_read only when the turn input carries attachments", () => {
+    expect(makeTools().tools.map((tool) => tool.name)).not.toContain("attachment_read");
+    expect(makeTools({ attachments: { read: async () => ({ bytes: new Uint8Array(), filename: "x", mimeType: "text/plain" }) } })
+      .tools.map((tool) => tool.name)).not.toContain("attachment_read");
+    expect(makeTools({ attachmentIds: ["att_1"] }).tools.map((tool) => tool.name)).not.toContain("attachment_read");
+    expect(makeTools({
+      attachmentIds: ["att_1"],
+      attachments: { read: async () => ({ bytes: new Uint8Array(), filename: "x", mimeType: "text/plain" }) },
+    }).tools.map((tool) => tool.name)).toContain("attachment_read");
   });
 });

@@ -286,6 +286,24 @@ export interface RuntimeDiagnosticEventMap {
     instanceId: string;
     workId: string;
   };
+  "joi.partner.skills.injected": {
+    actionId: string;
+    instanceId: string;
+    instructionChars: number;
+    partnerId: string;
+    skillCount: number;
+    workbenchId: string;
+    workId: string;
+  };
+  "joi.partner.skills.failed": {
+    actionId: string;
+    errorCode: string;
+    instanceId: string;
+    partnerId: string;
+    skillCount: number;
+    workbenchId: string;
+    workId: string;
+  };
   "joi.partner.result.recorded": {
     actionId: string;
     agentId?: string;

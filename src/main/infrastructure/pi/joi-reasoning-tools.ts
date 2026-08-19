@@ -12,13 +12,15 @@ import type { WorkbenchManagementService } from "../../application/joi/workbench
 import type { WorkResultService } from "../../application/work/work-result-service.js";
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
 import type { JoiHarnessStore } from "../../application/ports/joi-harness.js";
+import type { JoiAttachmentPort } from "../../application/ports/managed-file-ports.js";
+import type { PartnerSkillCatalog } from "../../application/ports/partner-skills.js";
 import {
   emitRuntimeDiagnostic,
   runtimeDiagnosticErrorCode,
   type RuntimeDiagnostics,
 } from "../../application/ports/runtime-diagnostics.js";
 import { DomainError } from "../../domain/errors.js";
-import { partnerClusterName } from "../../domain/workbench/workbench-naming.js";
+import { partnerClusterKey, partnerClusterName } from "../../domain/workbench/workbench-naming.js";
 import { PI_CODING_TOOL_NAMES } from "./pi-coding-tool-factory.js";
 
 /** Extracts the original goal input id from synthetic input ids; undefined for direct goal inputs. */
@@ -70,7 +72,11 @@ function synthesizePartnerProfile(displayName: string, skills: string[], capabil
   return { description, prompt };
 }
 
-const SYNTHESIS_TOOL_NAMES = new Set(["turn_complete", "work_read_result"]);
+const SYNTHESIS_TOOL_NAMES = new Set([
+  "model_list_sources", "partner_list_available", "partner_set_model", "turn_complete", "work_read_result", "work_reassign",
+]);
+
+const ATTACHMENT_CHUNK_CHARS = 8_000;
 
 export function selectJoiReasoningToolsForInput(tools: AgentTool[], inputId: string): AgentTool[] {
   if (!inputId.startsWith("joi_result_input:goal:")) return tools;
@@ -82,6 +88,10 @@ export function createJoiReasoningTools(input: {
   workbenchChanges: Pick<WorkbenchChangeService, "suggestArchive" | "suggestMerge">;
   workbenchRefine?: Pick<WorkbenchManagementService, "update">;
   workbenches: WorkbenchCatalog;
+  /** Attachment ids bound to the current input; scopes attachment_read. */
+  attachmentIds?: readonly string[];
+  /** Verified attachment reader; attachment_read is only registered together with attachmentIds. */
+  attachments?: Pick<JoiAttachmentPort, "read">;
   clarifications: Pick<JoiCoordinatorStore, "requireClarification">;
   diagnostics?: RuntimeDiagnostics;
   /** Original goal input id; harness tools and goal-binding fall back to inputId when absent. */
@@ -91,8 +101,9 @@ export function createJoiReasoningTools(input: {
   instances: Pick<PartnerInstanceManager, "dispose" | "ensure" | "list">;
   memory: Pick<PartnerWorkMemoryService, "digest">;
   models: Pick<ModelSourceService, "list">;
-  partners: Pick<PartnerRegistryService, "add" | "inspect" | "list">;
+  partners: Pick<PartnerRegistryService, "add" | "inspect" | "list" | "setModel" | "setSkills">;
   results: Pick<WorkResultService, "read">;
+  skills: Pick<PartnerSkillCatalog, "listForEngine">;
   turnId: string;
   work: Pick<WorkOrchestrationService, "plan" | "reassign">;
 }): AgentTool[] {
@@ -105,6 +116,7 @@ export function createJoiReasoningTools(input: {
     dependencies: Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() })),
     work: Type.Array(Type.Object({
       acceptanceChecks: Type.Optional(Type.Array(Type.Union([
+        Type.Object({ kind: Type.Literal("BODY_PRESENT") }),
         Type.Object({ kind: Type.Literal("ARTIFACT_PRESENT"), name: Type.String({ maxLength: 240, minLength: 1 }) }),
         Type.Object({
           expectedText: Type.String({ maxLength: 8_000 }), kind: Type.Literal("FILE_CONTAINS_EXACT"),
@@ -122,7 +134,7 @@ export function createJoiReasoningTools(input: {
     }), { minItems: 1, maxItems: 16 }),
   });
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
-    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Pass instanceId to reuse an existing partner instance, or sessionPolicy resident to continue a conversation; omit both for one-shot ephemeral work.",
+    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId to reuse an existing partner instance, or sessionPolicy resident to continue a conversation; omit both for one-shot ephemeral work.",
     execute: async (_toolCallId, arguments_) => {
       try {
         return result(await input.work.plan({
@@ -207,6 +219,66 @@ export function createJoiReasoningTools(input: {
     name: "workbench_suggest_merge",
     parameters: mergeParameters,
   };
+  const partnerSkillListParameters = Type.Object({
+    engine: Type.Optional(Type.Union([Type.Literal("claude-code"), Type.Literal("codex"), Type.Literal("pi-core")])),
+  });
+  const partnerListSkillsTool: AgentTool<typeof partnerSkillListParameters> = {
+    description: "List locally installed skills available to a partner engine. Joi cannot execute these skills; use the returned ids when creating or configuring a local partner.",
+    execute: (_toolCallId, arguments_) => Promise.resolve().then(() => {
+      const engine = arguments_.engine ?? "pi-core";
+      return result({
+        engine,
+        items: input.skills.listForEngine(engine).map(({ description, displayName, id }) => ({
+          ...(description === undefined ? {} : { description }),
+          displayName,
+          id,
+        })),
+      });
+    }),
+    label: "List partner skills",
+    name: "partner_list_skills",
+    parameters: partnerSkillListParameters,
+  };
+  const partnerSetSkillsParameters = Type.Object({
+    partnerId: Type.String(),
+    skills: Type.Array(Type.String(), { maxItems: 64, uniqueItems: true }),
+  });
+  const partnerSetSkillsTool: AgentTool<typeof partnerSetSkillsParameters> = {
+    description: "Attach or clear locally installed skills on an existing local partner. First call partner_list_skills for the partner engine; passing an unavailable id fails closed. This only configures the partner, it does not execute a skill in Joi.",
+    execute: async (_toolCallId, arguments_) => {
+      const partner = await input.partners.inspect(arguments_.partnerId);
+      if (partner.kind !== "local-pi") throw new DomainError("partner_skills_not_supported", "Only local partners can use local skills.");
+      const available = new Set(input.skills.listForEngine(partner.engine).map((item) => item.id));
+      if (arguments_.skills.some((skill) => !available.has(skill))) {
+        throw new DomainError("partner_skill_not_available", "Selected partner skill is not available for this engine.");
+      }
+      return result(await input.partners.setSkills(arguments_.partnerId, arguments_.skills));
+    },
+    label: "Set partner skills",
+    name: "partner_set_skills",
+    parameters: partnerSetSkillsParameters,
+  };
+  const partnerSetModelParameters = Type.Object({
+    modelId: Type.String({ maxLength: 240, minLength: 1 }),
+    partnerId: Type.String(),
+    sourceId: Type.String({ maxLength: 240, minLength: 1 }),
+  });
+  const partnerSetModelTool: AgentTool<typeof partnerSetModelParameters> = {
+    description: "Create a new immutable revision of an existing local partner pinned to a READY model source. Use only after a safely classified retryable failure with sideEffectState NONE, then call work_reassign so the same Work gets a new action and dispatch attempt.",
+    execute: async (_toolCallId, arguments_) => {
+      const source = (await input.models.list()).find((candidate) => candidate.sourceId === arguments_.sourceId && candidate.status === "READY");
+      if (source?.activeModel.id !== arguments_.modelId) {
+        throw new DomainError("partner_model_source_not_ready", "The selected model source and active model are not ready.");
+      }
+      return result(await input.partners.setModel(arguments_.partnerId, {
+        modelIdOverride: arguments_.modelId,
+        modelSourceId: arguments_.sourceId,
+      }));
+    },
+    label: "Switch partner model",
+    name: "partner_set_model",
+    parameters: partnerSetModelParameters,
+  };
   const partnerCreateParameters = Type.Object({
     capabilities: Type.Optional(Type.Array(Type.String())),
     description: Type.String({ description: "One-line role summary shown on the partner card; say what the partner is for, in the user's language." }),
@@ -221,17 +293,16 @@ export function createJoiReasoningTools(input: {
     })),
   });
   const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
-    description: "Register a new local Pi capability cluster when no existing partner fits the work. Name the card after a reusable work cluster, not a person or narrow role: use names like 编码工坊 instead of 资深程序员搭档. Keep description focused on the capability boundary; keep environment, workspace and directory decisions in the Workbench. Reuses an active joi-created local partner with the same normalized name. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work. tools accepts only bash, edit, find, grep, ls, read and write; omit it or pass [] to grant all built-in Pi coding tools. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
+    description: "Register a new local Pi capability cluster when no existing partner fits the work. Name the card after a reusable work cluster, not a person or narrow role: use names like 编码工坊 instead of 资深程序员搭档. Never name a partner after a one-off task, model or version (bad: Grok4.6 模型调研搭档); name the durable capability cluster (good: 模型调研搭档) so the next similar goal reuses it. Keep description focused on the capability boundary; keep environment, workspace and directory decisions in the Workbench. Reuses an active local partner whose normalized cluster key matches — one-off model/version tokens and quoted or parenthetical notes are ignored when matching. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work. Call partner_list_skills before passing skills; selected ids are injected into the partner, not executed by joi. tools accepts only bash, edit, find, grep, ls, read and write; omit it or pass [] to grant all built-in Pi coding tools. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
     execute: async (_toolCallId, arguments_) => {
       const displayName = partnerClusterName(arguments_.displayName);
       const tools = normalizeCodingTools(arguments_.tools);
-      const nameKey = displayName.toLocaleLowerCase();
+      const nameKey = partnerClusterKey(displayName);
       const existing = (await input.partners.list()).find((partner) =>
-        partner.createdBy === "joi"
-        && partner.engine === "pi-core"
+        partner.engine === "pi-core"
         && partner.kind === "local-pi"
         && partner.status === "ACTIVE"
-        && partner.displayName.trim().toLocaleLowerCase() === nameKey
+        && partnerClusterKey(partner.displayName) === nameKey
       );
       if (existing !== undefined) {
         return result({ partnerId: existing.partnerId, partnerRevisionId: existing.partnerRevisionId, reused: true });
@@ -498,7 +569,56 @@ export function createJoiReasoningTools(input: {
     name: "harness_refine_workbench",
     parameters: harnessRefineParameters,
   };
+  const scopedAttachmentIds = new Set(input.attachmentIds ?? []);
+  const attachmentTextCache = new Map<string, { filename: string; mimeType: string; text: string } | "NOT_TEXT">();
+  const loadAttachmentText = async (attachmentId: string): Promise<{ filename: string; mimeType: string; text: string } | "NOT_TEXT"> => {
+    const cached = attachmentTextCache.get(attachmentId);
+    if (cached !== undefined) return cached;
+    // Out-of-scope ids report the same code as missing rows so other inputs' ids stay unenumerable.
+    if (input.attachments === undefined || !scopedAttachmentIds.has(attachmentId)) {
+      throw new DomainError("joi_attachment_not_found", "A referenced joi attachment is unavailable.");
+    }
+    const attachment = await input.attachments.read(attachmentId);
+    let text: string | null;
+    try {
+      const decoded = new TextDecoder("utf-8", { fatal: true }).decode(attachment.bytes);
+      text = decoded.includes("\u0000") ? null : decoded;
+    } catch {
+      text = null;
+    }
+    const loaded = text === null ? "NOT_TEXT" as const : { filename: attachment.filename, mimeType: attachment.mimeType, text };
+    attachmentTextCache.set(attachmentId, loaded);
+    return loaded;
+  };
+  const attachmentReadParameters = Type.Object({ attachmentId: Type.String(), cursor: Type.Optional(Type.String()) });
+  const attachmentReadTool: AgentTool<typeof attachmentReadParameters> = {
+    description: "Read one bounded chunk of the UTF-8 text content of an attachment bound to the current input. Use nextCursor to continue reading. Binary or undecodable attachments return NOT_TEXT.",
+    execute: async (_toolCallId, arguments_) => {
+      if (arguments_.cursor !== undefined && !/^(?:0|[1-9]\d*)$/u.test(arguments_.cursor)) {
+        throw new DomainError("attachment_cursor_invalid", "Attachment cursor is invalid.");
+      }
+      const offset = arguments_.cursor === undefined ? 0 : Number(arguments_.cursor);
+      const loaded = await loadAttachmentText(arguments_.attachmentId);
+      if (loaded === "NOT_TEXT") return result({ attachmentId: arguments_.attachmentId, reasonCode: "attachment_content_not_text", status: "NOT_TEXT" });
+      const chunk = loaded.text.slice(offset, offset + ATTACHMENT_CHUNK_CHARS);
+      const next = offset + chunk.length;
+      return result({
+        attachmentId: arguments_.attachmentId,
+        content: chunk,
+        filename: loaded.filename,
+        mimeType: loaded.mimeType,
+        ...(next < loaded.text.length ? { nextCursor: String(next) } : {}),
+      });
+    },
+    label: "Read attachment content",
+    name: "attachment_read",
+    parameters: attachmentReadParameters,
+  };
+  const attachmentTools = input.attachmentIds === undefined || input.attachmentIds.length === 0 || input.attachments === undefined
+    ? []
+    : [attachmentReadTool];
   return [
+    ...attachmentTools,
     {
       description: "List redacted Workbench summaries. Does not return persona, memory, or workspace paths.",
       execute: async () => result(await input.workbenches.listSummaries()),
@@ -517,6 +637,9 @@ export function createJoiReasoningTools(input: {
     },
     suggestMerge,
     suggestArchive,
+    partnerListSkillsTool,
+    partnerSetSkillsTool,
+    partnerSetModelTool,
     {
       description: "List active partners with public metadata, live instances and a working-memory digest (recent outcomes, success rate). Use the digest to pick and the instance list to reuse.",
       execute: async () => {

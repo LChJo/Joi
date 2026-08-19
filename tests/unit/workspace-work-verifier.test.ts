@@ -51,4 +51,16 @@ describe("workspace Work verifier", () => {
       artifacts: [{ name: "report.md", size: 12 }], contextSnapshotId: "context_1",
     })).resolves.toEqual({ status: "PASSED" });
   });
+
+  it("checks non-empty partner text with BODY_PRESENT", async () => {
+    const verifier = new WorkspaceWorkVerifier({
+      contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {} }) },
+    });
+    await expect(verifier.verify({
+      acceptanceChecks: [{ kind: "BODY_PRESENT" }], artifacts: [], body: "evidence", contextSnapshotId: "context_1",
+    })).resolves.toEqual({ status: "PASSED" });
+    await expect(verifier.verify({
+      acceptanceChecks: [{ kind: "BODY_PRESENT" }], artifacts: [], body: "  ", contextSnapshotId: "context_1",
+    })).resolves.toEqual({ reasonCode: "verification_body_missing", status: "FAILED" });
+  });
 });

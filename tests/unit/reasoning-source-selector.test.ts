@@ -45,4 +45,13 @@ describe("deterministic-source-fallback-classification", () => {
     await expect(selector.selectFallback({ currentSourceId: "unknown", failure: "timeout", formalOutputStarted: false, sideEffectStarted: false, turnId: "turn-1" })).resolves.toBeNull();
     await expect(selector.selectFallback({ currentSourceId: "second", failure: "timeout", formalOutputStarted: false, sideEffectStarted: false, turnId: "turn-1" })).resolves.toBeNull();
   });
+
+  it("pins the READY source selected by an immutable partner revision", async () => {
+    const selector = new ReasoningSourceSelector(repository);
+    await expect(selector.selectById("second", "partner-run-1")).resolves.toMatchObject({
+      modelId: "second-model", sourceId: "second", turnId: "partner-run-1",
+    });
+    await expect(selector.selectById("missing", "partner-run-2"))
+      .rejects.toMatchObject({ code: "partner_model_source_not_ready" });
+  });
 });

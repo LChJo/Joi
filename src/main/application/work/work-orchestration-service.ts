@@ -25,6 +25,22 @@ interface WorkRequest {
   workspaceRef?: string;
 }
 
+function invalidAcceptancePath(value: string): boolean {
+  const candidate = value.trim();
+  return candidate === ""
+    || /^[\\/]/u.test(candidate)
+    || /^[A-Za-z]:/u.test(candidate)
+    || candidate.split(/[\\/]+/u).some((segment) => segment === "..");
+}
+
+function validateAcceptanceChecks(checks: WorkAcceptanceCheck[] | undefined): void {
+  for (const check of checks ?? []) {
+    if ((check.kind === "FILE_EXISTS" || check.kind === "FILE_CONTAINS_EXACT") && invalidAcceptancePath(check.relativePath)) {
+      throw new DomainError("work_acceptance_path_invalid", "Acceptance file paths must be relative to the Workbench workspace.");
+    }
+  }
+}
+
 export class WorkOrchestrationService {
   constructor(private readonly dependencies: {
     clock: Clock;
@@ -48,6 +64,7 @@ export class WorkOrchestrationService {
     for (const request of input.work) {
       if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Workbench workspace automatically.");
       if (byKey.has(request.key)) throw new DomainError("work_key_duplicate", "Work keys must be unique.");
+      validateAcceptanceChecks(request.acceptanceChecks);
       byKey.set(request.key, request);
     }
     const createdAt = this.dependencies.clock.now().toISOString();

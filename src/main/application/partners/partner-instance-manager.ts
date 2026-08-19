@@ -107,9 +107,7 @@ export class PartnerInstanceManager {
     const knowledgeSection = input.revision.kind === "local-pi"
       ? await this.dependencies.knowledge.readForInjection(record.partnerId)
       : "";
-    const skillSection = input.revision.kind === "local-pi"
-      ? this.dependencies.skills.readInstructions(input.revision.skills)
-      : "";
+    let skillSection: string;
     const startedAt = this.dependencies.clock.now().toISOString();
     const startedAtMillis = this.dependencies.clock.now().getTime();
     await this.dependencies.repository.setStatusBusy(record.instanceId, startedAt);
@@ -124,6 +122,20 @@ export class PartnerInstanceManager {
       workId: input.request.workId,
     });
     try {
+      skillSection = input.revision.kind === "local-pi"
+        ? this.dependencies.skills.readInstructions(input.revision.skills)
+        : "";
+      if (input.revision.skills.length > 0) {
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.skills.injected", {
+          actionId: input.request.actionId,
+          instanceId: record.instanceId,
+          instructionChars: skillSection.length,
+          partnerId: record.partnerId,
+          skillCount: input.revision.skills.length,
+          workbenchId: input.request.workbenchId,
+          workId: input.request.workId,
+        });
+      }
       if (record.sessionPolicy === "EPHEMERAL") {
         const result = await engine.runEphemeral(input.request, input.revision, { knowledgeSection, skillSection });
         await this.#disposeRecord(record, "ephemeral_completed");
@@ -188,6 +200,17 @@ export class PartnerInstanceManager {
       } else {
         // A failed resident turn stays resumable: the instance returns to IDLE with its saved messages.
         await this.dependencies.repository.markTurnComplete(record.instanceId, this.dependencies.clock.now().toISOString());
+      }
+      if (input.revision.skills.length > 0) {
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.skills.failed", {
+          actionId: input.request.actionId,
+          errorCode: runtimeDiagnosticErrorCode(error),
+          instanceId: record.instanceId,
+          partnerId: record.partnerId,
+          skillCount: input.revision.skills.length,
+          workbenchId: input.request.workbenchId,
+          workId: input.request.workId,
+        });
       }
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.failed", {
         actionId: input.request.actionId,

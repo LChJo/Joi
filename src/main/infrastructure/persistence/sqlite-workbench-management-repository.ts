@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { WorkbenchDetailDto } from "../../../shared/joi.js";
 import type { WorkbenchManagementRepository } from "../../application/ports/workbench-context.js";
+import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import { mapStoredEngine } from "./partner-engine-storage.js";
 import { workbenchWorkspaceDisplayName } from "../../domain/workbench/workbench-naming.js";
 
@@ -17,6 +18,18 @@ function required(row: Row, key: string): string {
   const value = row[key];
   if (typeof value !== "string") throw new Error("workbench_detail_record_invalid");
   return value;
+}
+
+function requiredNumber(row: Row, key: string): number {
+  const value = row[key];
+  if (typeof value !== "number") throw new Error("workbench_detail_record_invalid");
+  return value;
+}
+
+function safeTitle(value: string): string {
+  const normalized = sanitizeAgentConversationText(value).replace(/\s+/gu, " ").trim();
+  if (normalized === "") return "未命名目标";
+  return normalized.length > 120 ? `${normalized.slice(0, 120)}…` : normalized;
 }
 
 export class SqliteWorkbenchManagementRepository implements WorkbenchManagementRepository {
@@ -36,7 +49,8 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
         return { workbenchId: required(item, "workbench_id"), status: required(item, "status") as WorkbenchDetailDto["activeWork"][number]["status"], title: required(item, "title"), workId: required(item, "work_id") };
       });
       const recentResults = connection.prepare(`SELECT result_id, work_id, partner_revision_id, status, summary, is_late, created_at
-        FROM work_results WHERE workbench_id = ? ORDER BY created_at DESC, result_id DESC LIMIT 10`).all(workbenchId).map((value) => {
+        FROM work_results WHERE workbench_id = ? AND is_authoritative = 1
+        ORDER BY created_at DESC, result_id DESC LIMIT 10`).all(workbenchId).map((value) => {
         const item = value as Row;
         return {
           createdAt: required(item, "created_at"),
@@ -46,6 +60,27 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
           status: required(item, "status") as WorkbenchDetailDto["recentResults"][number]["status"],
           summary: required(item, "summary"),
           workId: required(item, "work_id"),
+        };
+      });
+      const recentOutcomes = connection.prepare(`SELECT o.input_id, o.result_revision, o.completion_summary, o.completed_at,
+          i.body, i.canceled_at,
+          EXISTS (SELECT 1 FROM work_items failed WHERE failed.input_id = i.input_id AND failed.status = 'FAILED') AS has_failed_work
+        FROM joi_goal_outcomes o
+        JOIN joi_goal_result_sets rs ON rs.original_input_id = o.input_id
+        JOIN joi_inbox_messages i ON i.input_id = o.input_id
+        WHERE i.workbench_id = ? AND rs.revision > 0
+          AND o.result_revision = rs.revision AND rs.synthesized_revision = rs.revision
+        ORDER BY o.completed_at DESC, o.input_id DESC LIMIT 10`).all(workbenchId).map((value) => {
+        const item = value as Row;
+        return {
+          completedAt: required(item, "completed_at"),
+          goalId: required(item, "input_id"),
+          resultRevision: requiredNumber(item, "result_revision"),
+          status: item.canceled_at === null || item.canceled_at === undefined
+            ? item.has_failed_work === 1 ? "FAILED" as const : "COMPLETED" as const
+            : "CANCELED" as const,
+          summary: sanitizeAgentConversationText(required(item, "completion_summary")),
+          title: safeTitle(required(item, "body")),
         };
       });
       const instances = connection.prepare(`SELECT i.instance_id, i.partner_id, i.session_policy, i.status, i.engine,
@@ -71,6 +106,7 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
         name: required(row, "name"),
         personaRevisionId: required(row, "persona_revision_id"),
         projectLabel: required(row, "project_label"),
+        recentOutcomes,
         recentResults,
         responsibility: required(row, "scope_summary"),
         updatedAt: required(row, "updated_at"),

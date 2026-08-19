@@ -122,7 +122,7 @@
 .joi-goal-progress-track i.failed { background: var(--amber); }
 .joi-goal-progress > i { color: var(--faint); font-size: .74rem; font-style: normal; white-space: nowrap; }
 .joi-drawer-backdrop { position: fixed; z-index: 30; inset: 0; background: rgb(10 18 14 / 44%); animation: joi-drawer-fade .18s ease; }
-.joi-goal-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(800px, 94vw); display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); box-shadow: -18px 0 46px rgb(10 18 14 / 20%); animation: joi-drawer-in .22s ease; }
+.joi-goal-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(980px, 94vw); display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); box-shadow: -18px 0 46px rgb(10 18 14 / 20%); animation: joi-drawer-in .22s ease; }
 @keyframes joi-drawer-in { from { transform: translateX(36px); opacity: .4; } }
 @keyframes joi-drawer-fade { from { opacity: 0; } }
 .joi-goal-drawer-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; display: grid; gap: 14px; padding: 16px 20px 28px; align-content: start; }
@@ -292,13 +292,20 @@
 .joi-work-overview strong { color: var(--ink); }
 
 .joi-composer {
-  flex: 0 0 auto;
-  position: sticky;
-  bottom: 10px;
-  z-index: 4;
   padding: 10px 14px;
   display: grid;
   gap: 6px;
+}
+.joi-composer.drag-over {
+  border-color: var(--forest);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--forest) 18%, transparent);
+}
+.joi-composer-dock {
+  position: sticky;
+  bottom: 0;
+  z-index: 4;
+  background: var(--canvas);
+  padding-bottom: 10px;
 }
 
 .joi-composer-label {
@@ -547,7 +554,7 @@
 }
 
 * { box-sizing: border-box; }
-html { min-width: 768px; min-height: 100%; }
+html { min-width: 768px; min-height: 100%; scrollbar-gutter: stable; }
 body { margin: 0; min-height: 100dvh; background: var(--canvas); color: var(--ink); }
 button, input, select, textarea { font: inherit; }
 button { color: inherit; }
