@@ -50,7 +50,7 @@
 
 .joi-home {
   width: min(1080px, 100%);
-  min-height: calc(100dvh - 16px);
+  min-height: 100dvh;
   padding-top: 24px;
   justify-content: flex-start;
   gap: 14px;
@@ -647,7 +647,7 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 .stream-indicator { width: 7px; height: 7px; border-radius: 50%; background: var(--forest); box-shadow: 0 0 0 4px color-mix(in srgb, var(--forest) 12%, transparent); }
 .stream-indicator.connecting, .stream-indicator.reconnecting { background: var(--amber); animation: orbit-pulse 1.5s infinite; }
 .console-main { min-width: 0; padding: 0 34px 60px; }
-.console-main:has(.joi-home) { padding-bottom: 16px; }
+.console-main:has(.joi-home) { padding-bottom: 0; }
 .page-section { width: min(1120px, 100%); margin: 0 auto; padding-top: 50px; }
 .page-title-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 28px; padding-bottom: 30px; border-bottom: 1px solid var(--line); }
 .page-title-row > div { display: grid; max-width: 660px; gap: 9px; }
