@@ -11,6 +11,7 @@ const layerPrefixes = [
   ["src/main/application/", "application"],
   ["src/main/infrastructure/", "infrastructure"],
   ["src/main/interfaces/", "interface"],
+  ["src/main/composition/", "composition"],
   ["src/preload/", "preload"],
   ["src/renderer/", "renderer"],
   ["src/shared/", "shared"],

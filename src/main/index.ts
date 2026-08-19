@@ -1,115 +1,27 @@
-import { app, BrowserWindow, ipcMain, Menu, nativeImage, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from "electron";
 import { randomUUID } from "node:crypto";
-import { lookup } from "node:dns/promises";
 import { rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { AgentService } from "./application/agents/agent-service.js";
-import { DelegationService } from "./application/agents/delegation-service.js";
-import { InteractionService } from "./application/agents/interaction-service.js";
-import { AgentOnboardingService } from "./application/agents/agent-onboarding-service.js";
-import { A2aGatewayService } from "./application/a2a/a2a-gateway-service.js";
 import { AuthService } from "./application/auth/auth-service.js";
-import { ContinuityService } from "./application/continuity/continuity-service.js";
-import { EventService } from "./application/events/event-service.js";
-import { LifeRuntimeService } from "./application/lives/life-runtime-service.js";
 import { LifeService } from "./application/lives/life-service.js";
 import { OperationsService } from "./application/operations/operations-service.js";
-import { ModelSourceService } from "./application/model-sources/model-source-service.js";
-import { ReasoningSourceSelector } from "./application/model-sources/reasoning-source-selector.js";
-import { JoiInboxService } from "./application/joi/joi-inbox-service.js";
-import { JoiCoordinator } from "./application/joi/joi-coordinator.js";
-import { ActorTree } from "./application/actors/actor-tree.js";
-import { JoiActor } from "./application/actors/joi-actor.js";
-import { WorkbenchActor } from "./application/actors/workbench-actor.js";
-import { JoiTaskComponent } from "./application/actors/components/joi-task-component.js";
-import { JoiWorkbenchComponent } from "./application/actors/components/joi-workbench-component.js";
-import { JoiHarnessComponent } from "./application/actors/components/joi-harness-component.js";
-import { JoiRhythmComponent } from "./application/actors/components/joi-rhythm-component.js";
-import { WorkbenchAgentComponent } from "./application/actors/components/workbench-agent-component.js";
-import { SqliteJoiTaskReader } from "./infrastructure/persistence/sqlite-joi-task-reader.js";
-import { SqliteWorkbenchAgentScan } from "./infrastructure/persistence/sqlite-workbench-agent-scan.js";
-import { SqliteJoiHarnessRepository } from "./infrastructure/persistence/sqlite-joi-harness-repository.js";
-import { WorkbenchRegistryService } from "./application/joi/workbench-registry-service.js";
-import { WorkbenchChangeService } from "./application/joi/workbench-change-service.js";
-import { WorkbenchContextAssembler } from "./application/joi/workbench-context-assembler.js";
-import { WorkbenchManagementService } from "./application/joi/workbench-management-service.js";
-import { JoiHomeFeedService } from "./application/joi/joi-home-feed-service.js";
-import { WorkbenchAgentService } from "./application/partners/workbench-agent-service.js";
-import { WorkbenchWorkspaceService } from "./application/joi/workbench-workspace-service.js";
-import { PartnerRegistryService } from "./application/partners/partner-registry-service.js";
-import { PartnerKnowledgeService } from "./application/partners/partner-knowledge-service.js";
-import { PartnerInstanceManager } from "./application/partners/partner-instance-manager.js";
-import { PartnerEngineCatalog } from "./application/partners/partner-engine-catalog.js";
-import { PartnerWorkMemoryService } from "./application/partners/partner-work-memory-service.js";
-import type { PartnerEngineRuntime } from "./application/ports/partner-instances.js";
 import type { SsePublisher } from "./application/ports/runtime-store.js";
-import { WorkOrchestrationService } from "./application/work/work-orchestration-service.js";
-import { WorkResultService } from "./application/work/work-result-service.js";
+import { wirePersistence } from "./composition/wire-persistence.js";
+import { wireModelSources } from "./composition/wire-model-sources.js";
+import { wirePartners } from "./composition/wire-partners.js";
+import { wireWorkbenches } from "./composition/wire-workbenches.js";
+import { wireJoi } from "./composition/wire-joi.js";
+import { wireRuntime } from "./composition/wire-runtime.js";
+import { LifeFileDeletionService } from "./infrastructure/artifacts/life-file-deletion-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
 import { SystemSettingsService } from "./infrastructure/operations/system-settings-service.js";
-import { RuntimeMarker, type StartupEvidence } from "./infrastructure/runtime/runtime-marker.js";
-import { OutboxDispatcher } from "./application/operations/outbox-dispatcher.js";
-import { ArtifactService } from "./infrastructure/artifacts/artifact-service.js";
-import { LifeFileDeletionService } from "./infrastructure/artifacts/life-file-deletion-service.js";
-import { AttachmentService } from "./infrastructure/artifacts/user-attachment-service.js";
-import { JoiAttachmentService } from "./infrastructure/artifacts/joi-attachment-service.js";
-import { AlarmScheduler } from "./application/rhythm/alarm-scheduler.js";
-import { ScheduleScheduler } from "./application/rhythm/schedule-scheduler.js";
-import { BudgetService } from "./application/rhythm/budget-service.js";
-import { IdleExplorationScheduler } from "./application/rhythm/idle-exploration-scheduler.js";
-import { ExpressionDeliveryScheduler } from "./application/rhythm/expression-delivery-scheduler.js";
-import { TodoScheduler } from "./application/rhythm/todo-scheduler.js";
-import { A2aAgentDiscovery } from "./infrastructure/a2a/a2a-agent-discovery.js";
-import { OutboundNetworkPolicy } from "./infrastructure/a2a/outbound-network-policy.js";
-import { SdkA2aInvocationTransport } from "./infrastructure/a2a/sdk-a2a-invocation-transport.js";
-import { SecureArtifactDownloader } from "./infrastructure/a2a/secure-artifact-downloader.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "./infrastructure/persistence/runtime-database.js";
-import { SqliteModelSourceRepository } from "./infrastructure/persistence/sqlite-model-source-repository.js";
-import { SqlitePiCredentialRepository } from "./infrastructure/persistence/sqlite-pi-credential-repository.js";
-import { SqliteJoiInboxRepository } from "./infrastructure/persistence/sqlite-joi-inbox-repository.js";
-import { SqlitePartnerRegistryRepository } from "./infrastructure/persistence/sqlite-partner-registry-repository.js";
-import { SqlitePiReasoningSessionStore } from "./infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
-import { SqliteWorkPlanRepository } from "./infrastructure/persistence/sqlite-work-plan-repository.js";
-import { SqliteDispatchPolicyGate } from "./infrastructure/persistence/sqlite-dispatch-policy-gate.js";
-import { SqliteWorkspaceLeaseManager } from "./infrastructure/persistence/sqlite-workspace-lease-manager.js";
-import { SqlitePartnerPromptStore } from "./infrastructure/persistence/sqlite-partner-prompt-store.js";
-import { SqlitePartnerKnowledgeStore } from "./infrastructure/persistence/sqlite-partner-knowledge-store.js";
-import { SqlitePartnerInstanceMessageStore } from "./infrastructure/persistence/sqlite-partner-instance-message-store.js";
-import { SqlitePartnerInstanceRepository } from "./infrastructure/persistence/sqlite-partner-instance-repository.js";
-import { SqlitePartnerWorkMemoryStore } from "./infrastructure/persistence/sqlite-partner-work-memory-store.js";
-import { LegacyLifeStoreAdapter } from "./infrastructure/persistence/legacy-life-store-adapter.js";
-import { SqliteWorkbenchChangeRepository } from "./infrastructure/persistence/sqlite-workbench-change-repository.js";
-import { SqliteWorkbenchContextRepository } from "./infrastructure/persistence/sqlite-workbench-context-repository.js";
-import { SqliteWorkbenchManagementRepository } from "./infrastructure/persistence/sqlite-workbench-management-repository.js";
-import { SqliteWorkbenchAgentRepository } from "./infrastructure/persistence/sqlite-workbench-agent-repository.js";
-import { SqliteJoiHomeFeedRepository } from "./infrastructure/persistence/sqlite-joi-home-feed-repository.js";
-import { SqliteWorkbenchWorkspaceRepository } from "./infrastructure/persistence/sqlite-workbench-workspace-repository.js";
-import { WorkbenchWorkspaceProvisioner } from "./infrastructure/persistence/workbench-workspace-provisioner.js";
-import { SqliteWorkResultRepository } from "./infrastructure/persistence/sqlite-work-result-repository.js";
-import { WorkspaceWorkVerifier } from "./infrastructure/workspace/workspace-work-verifier.js";
-import { WorkAttachmentStager } from "./infrastructure/workspace/workspace-attachment-stager.js";
-import { ModelSourceNetworkPolicy } from "./infrastructure/pi/model-source-network-policy.js";
-import { PiModelSourceCatalog } from "./infrastructure/pi/pi-model-source-catalog.js";
-import { PiModelSourceValidator } from "./infrastructure/pi/pi-model-source-validator.js";
-import { SafeStoragePiCredentialStore } from "./infrastructure/pi/pi-credential-store-adapter.js";
-import { ConfiguredPiReasoningRuntime } from "./infrastructure/pi/configured-pi-reasoning-runtime.js";
-import { PiWorkbenchRoutingRuntime } from "./infrastructure/pi/pi-workbench-routing-runtime.js";
-import { RepositoryPiConfiguredModelResolver } from "./infrastructure/pi/pi-configured-model-resolver.js";
-import { createJoiReasoningTools, goalFromInputIdPrefix, selectJoiReasoningToolsForInput } from "./infrastructure/pi/joi-reasoning-tools.js";
-import { SqlitePartnerDispatchClaims, SqlitePartnerDispatchDelivery } from "./infrastructure/a2a/partner-dispatch-delivery-adapter.js";
-import { PiPartnerEngineRuntime } from "./infrastructure/pi/pi-partner-engine-runtime.js";
-import { PiPartnerMemorySummarizer } from "./infrastructure/pi/pi-partner-memory-summarizer.js";
-import { LocalCliPartnerEngineRuntime } from "./infrastructure/mana/local-cli-partner-engine-runtime.js";
-import { ManaSdkConversationStore } from "./infrastructure/mana/mana-sdk-session-store.js";
-import { LocalSkillScanner } from "./infrastructure/skills/local-skill-scanner.js";
-import { dialog } from "electron";
-import { BuiltinPiCodingToolFactory } from "./infrastructure/pi/pi-coding-tool-factory.js";
-import { PiReasoningFailureClassifier } from "./infrastructure/pi/pi-reasoning-failure-classifier.js";
-import { InMemoryEventSignal } from "./infrastructure/runtime/in-memory-event-signal.js";
 import { JsonLineRuntimeDiagnostics } from "./infrastructure/runtime/json-line-runtime-diagnostics.js";
+import { RuntimeMarker, type StartupEvidence } from "./infrastructure/runtime/runtime-marker.js";
 import {
   InMemoryBootstrapNonceStore,
   LoginRateLimiter,
@@ -206,336 +118,41 @@ async function startRuntime(): Promise<void> {
     security: new NodeSecurityPrimitives(),
     store: database.store,
   });
-  const policy = new OutboundNetworkPolicy({
-    resolve: async (hostname) => (await lookup(hostname, { all: true, verbatim: true })).map((record) => record.address),
-  });
   const vault = new ElectronCredentialVault();
-  const modelSourceNetworkPolicy = new ModelSourceNetworkPolicy({
-    resolve: async (hostname) => (await lookup(hostname, { all: true, verbatim: true })).map((record) => record.address),
-  });
-  const piCredentials = new SafeStoragePiCredentialStore({
-    records: new SqlitePiCredentialRepository(database),
-    vault,
-  });
-  const modelSourceRepository = new SqliteModelSourceRepository(database);
-  const modelSources = new ModelSourceService({
-    catalog: new PiModelSourceCatalog(),
-    clock,
-    endpointPolicy: modelSourceNetworkPolicy,
-    ids,
-    repository: modelSourceRepository,
-    secrets: piCredentials,
-    validator: new PiModelSourceValidator({ clock, credentials: piCredentials }),
-  });
-  const joiInboxRepository = new SqliteJoiInboxRepository(database);
-  const joiInbox = new JoiInboxService({
-    clock,
-    diagnostics: runtimeDiagnostics,
-    ids,
-    repository: joiInboxRepository,
-  });
-  const partnerSkillCatalog = new LocalSkillScanner();
-  const partnerRepository = new SqlitePartnerRegistryRepository(database);
-  const partnerPrompts = new SqlitePartnerPromptStore(database);
-  const partnerKnowledge = new PartnerKnowledgeService({ clock, ids, store: new SqlitePartnerKnowledgeStore(database) });
-  const partners = new PartnerRegistryService({
-    clock,
-    ids,
-    knowledge: partnerKnowledge,
-    prompts: partnerPrompts,
-    repository: partnerRepository,
-    skills: partnerSkillCatalog,
-  });
-  const workbenches = new LegacyLifeStoreAdapter(database);
-  const joiHarnessRepository = new SqliteJoiHarnessRepository(database);
-  const workbenchRegistry = new WorkbenchRegistryService({ clock, ids, repository: workbenches });
-  const workbenchContextRepository = new SqliteWorkbenchContextRepository(database);
-  const workbenchContextAssembler = new WorkbenchContextAssembler({ workbenches, clock, ids, projections: workbenchContextRepository, snapshots: workbenchContextRepository });
-  const workbenchManagement = new WorkbenchManagementService({ clock, ids, repository: new SqliteWorkbenchManagementRepository(database) });
-  const workbenchAgentRepository = new SqliteWorkbenchAgentRepository(database);
-  const workbenchAgents = new WorkbenchAgentService({ clock, repository: workbenchAgentRepository });
-  const joiHomeFeed = new JoiHomeFeedService({ clock, repository: new SqliteJoiHomeFeedRepository(database) });
-  const workbenchWorkspaceRepository = new SqliteWorkbenchWorkspaceRepository(database);
-  const workbenchWorkspaces = new WorkbenchWorkspaceService({ workbenches, clock, ids, repository: workbenchWorkspaceRepository });
-  const workbenchWorkspaceProvisioner = new WorkbenchWorkspaceProvisioner({ database, userDataDirectory });
-  const workbenchChanges = new WorkbenchChangeService({ clock, ids, repository: new SqliteWorkbenchChangeRepository(database) });
-  const workRepository = new SqliteWorkPlanRepository(database);
-  const work = new WorkOrchestrationService({
-    clock,
-    diagnostics: runtimeDiagnostics,
-    ids,
-    partners,
-    policy: new SqliteDispatchPolicyGate({ clock, database }),
-    reassignment: workRepository,
-    repository: workRepository,
-  });
-  const reasoningSources = new ReasoningSourceSelector(modelSourceRepository);
-  const configuredModelResolver = new RepositoryPiConfiguredModelResolver({
-    credentials: piCredentials,
-    repository: modelSourceRepository,
-  });
-  const piCodingTools = new BuiltinPiCodingToolFactory();
-  const localCliConversationStore = new ManaSdkConversationStore(database);
-  const partnerEngines = new Map<string, PartnerEngineRuntime>([
-    ["pi-core", new PiPartnerEngineRuntime({ contexts: workbenchContextRepository, prompts: partnerPrompts, resolver: configuredModelResolver, sources: reasoningSources, tools: piCodingTools })],
-    ["claude-code", new LocalCliPartnerEngineRuntime({ contexts: workbenchContextRepository, prompts: partnerPrompts, protocol: "claude", store: localCliConversationStore })],
-    ["codex", new LocalCliPartnerEngineRuntime({ contexts: workbenchContextRepository, prompts: partnerPrompts, protocol: "codex", store: localCliConversationStore })],
-  ]);
-  const engineCatalog = new PartnerEngineCatalog(partnerEngines);
-  const partnerInstances = new PartnerInstanceManager({
-    clock,
-    diagnostics: runtimeDiagnostics,
-    engines: partnerEngines,
-    ids,
-    knowledge: partnerKnowledge,
-    messages: new SqlitePartnerInstanceMessageStore(database),
-    registry: partners,
-    repository: new SqlitePartnerInstanceRepository(database),
-    revisions: partnerRepository,
-    skills: partnerSkillCatalog,
-  });
-  const partnerMemory = new PartnerWorkMemoryService({
-    clock,
-    ids,
-    store: new SqlitePartnerWorkMemoryStore(database),
-    summarizer: new PiPartnerMemorySummarizer({ resolver: configuredModelResolver, sources: reasoningSources }),
-  });
-  const workResultRepository = new SqliteWorkResultRepository(database);
-  const workResults = new WorkResultService(workResultRepository);
-  // Constructed before the reasoning runtime and coordinator: both consume it (TDZ otherwise).
-  const joiAttachmentStorage = new JoiAttachmentService({
+  const pid = String(process.pid);
+  const persistence = wirePersistence({ clock, database, pid, userDataDirectory });
+  const modelSourceStack = wireModelSources({ clock, ids, persistence, vault });
+  const partnerStack = wirePartners({ clock, diagnostics: runtimeDiagnostics, ids, modelSourceStack, persistence });
+  const workbenchStack = wireWorkbenches({ clock, diagnostics: runtimeDiagnostics, ids, partnerStack, persistence });
+  const joiStack = wireJoi({
     clock,
     database,
-    ids,
-    rootDirectory: path.join(userDataDirectory, "artifacts"),
-  });
-  const joiReasoning = new ConfiguredPiReasoningRuntime({
-    resolver: configuredModelResolver,
-    sessionStore: new SqlitePiReasoningSessionStore(database),
-    tools: (turn) => selectJoiReasoningToolsForInput(createJoiReasoningTools({
-      workbenchChanges, workbenchId: turn.workbenchId, workbenchRefine: workbenchManagement, workbenches,
-      ...(turn.attachmentIds === undefined ? {} : { attachmentIds: turn.attachmentIds }),
-      attachments: joiAttachmentStorage,
-      clarifications: joiInboxRepository,
-      diagnostics: runtimeDiagnostics,
-      goalInputId: turn.goalInputId ?? goalFromInputIdPrefix(turn.inputId),
-       harness: joiHarnessRepository, inputId: turn.inputId,
-       instances: partnerInstances, memory: partnerMemory, models: modelSources, partners, results: workResults,
-       skills: partnerSkillCatalog,
-       turnId: turn.turnId, work,
-    }), turn.inputId),
-  });
-  const joiCoordinator = new JoiCoordinator({
-    workbenches,
-    workbenchRegistry,
-    attachments: joiAttachmentStorage,
-    clock,
     diagnostics: runtimeDiagnostics,
-    failureClassifier: new PiReasoningFailureClassifier(),
     ids,
-    router: new PiWorkbenchRoutingRuntime({ resolver: configuredModelResolver, sources: reasoningSources }),
-    runtime: joiReasoning,
-    sources: reasoningSources,
-    store: joiInboxRepository,
+    modelSourceStack,
+    partnerStack,
+    persistence,
+    userDataDirectory,
+    workbenchStack,
   });
-  const artifactStorage = new ArtifactService({ rootDirectory: path.join(userDataDirectory, "artifacts"), store: database.store });
-  const attachmentStorage = new AttachmentService({
+  const runtimeStack = wireRuntime({
     clock,
-    ids,
-    rootDirectory: path.join(userDataDirectory, "artifacts"),
-    store: database.store,
-  });
-  const agentOnboarding = new AgentOnboardingService({
-    clock,
-    discovery: new A2aAgentDiscovery({ policy }),
-    ids,
-    store: database.store,
-    vault,
-  });
-  const a2aGateway = new A2aGatewayService({
-    artifactDownloader: new SecureArtifactDownloader({
-      policy,
-      rootDirectory: path.join(userDataDirectory, "artifacts"),
-    }),
-    clock,
-    ids,
-    store: database.store,
-    transport: new SdkA2aInvocationTransport({ policy }),
-    vault,
-  });
-  const eventSignal = new InMemoryEventSignal();
-  const events = new EventService({ clock, ids, publisher: noOpPublisher, signal: eventSignal, store: database.store });
-  const lifeRuntime = new LifeRuntimeService({ clock, events, store: database.store });
-  const notifyJoi = (workbenchId: string, type: string): void => {
-    const signalId = ids.next("runtime_signal");
-    void joiInboxRepository.enqueueSystemSignal({ workbenchId, signalId, type })
-      .catch(() => process.stderr.write("A runtime signal remains available for recovery.\n"));
-  };
-  const legacyRunControl = {
-    emergencyStop: (workbenchId: string): void => { void lifeRuntime.emergencyStop(workbenchId); },
-    notify: (workbenchId: string): void => notifyJoi(workbenchId, "legacy.user_requested"),
-  };
-  const delegations = new DelegationService({
-    artifacts: artifactStorage,
-    clock,
-    events,
-    gateway: a2aGateway,
-    notify: (workbenchId) => notifyJoi(workbenchId, "partner.delegation_changed"),
-    store: database.store,
-  });
-  const interactions = new InteractionService({ events, gateway: a2aGateway, notify: (workbenchId) => notifyJoi(workbenchId, "partner.interaction_changed"), store: database.store });
-  const budgets = new BudgetService({
-    clock,
-    events,
-    notify: (workbenchId) => notifyJoi(workbenchId, "budget.changed"),
-    store: database.store,
-  });
-  const idleExploration = new IdleExplorationScheduler({
-    clock,
-    events,
-    notify: (workbenchId) => notifyJoi(workbenchId, "idle.exploration_due"),
-    store: database.store,
-  });
-  const alarmScheduler = new AlarmScheduler({
-    clock,
-    ids,
-    notify: (workbenchId) => notifyJoi(workbenchId, "schedule.alarm_due"),
-    publisher: noOpPublisher,
-    store: database.store,
-  });
-  const scheduleScheduler = new ScheduleScheduler({
-    clock,
-    ids,
-    notify: (workbenchId) => notifyJoi(workbenchId, "schedule.rhythm_due"),
-    publisher: noOpPublisher,
-    store: database.store,
-  });
-  const todoScheduler = new TodoScheduler({
-    clock,
-    ids,
-    notify: (workbenchId) => notifyJoi(workbenchId, "todo.due"),
-    publisher: noOpPublisher,
-    store: database.store,
-  });
-  const expressionDelivery = new ExpressionDeliveryScheduler({ clock, publisher: noOpPublisher, store: database.store });
-  const workbenchAgentScan = new SqliteWorkbenchAgentScan(database);
-  const workspaceLeases = new SqliteWorkspaceLeaseManager({ clock, database, owner: `partner_${String(process.pid)}` });
-  const partnerDispatchClaims = new SqlitePartnerDispatchClaims(database);
-  const partnerDispatchDelivery = new SqlitePartnerDispatchDelivery({
-    agentConversations: workbenchAgentRepository,
-    attachmentStager: new WorkAttachmentStager({ attachments: joiAttachmentStorage, database }),
-    clock,
-    contextAssembler: workbenchContextAssembler,
-    contexts: workbenchContextRepository,
     database,
     diagnostics: runtimeDiagnostics,
-    gateway: a2aGateway,
-    instances: partnerInstances,
-    leases: workspaceLeases,
-    partners: partnerRepository,
-    results: workResultRepository,
-    verifier: new WorkspaceWorkVerifier({ contexts: workbenchContextRepository }),
+    ids,
+    joiStack,
+    modelSourceStack,
+    partnerStack,
+    persistence,
+    publisher: noOpPublisher,
+    userDataDirectory,
+    vault,
+    workbenchStack,
   });
-  const actorTree = new ActorTree({
-    clock,
-    diagnostics: runtimeDiagnostics,
-    roots: [new JoiActor({
-      workbenchComponent: new JoiWorkbenchComponent({ workbenches }),
-      components: [
-        new JoiTaskComponent({
-          driver: { handle: (inputId, signal) => joiCoordinator.handle(inputId, signal) },
-          gate: { hasReadySource: () => modelSources.hasReadySource() },
-          inbox: new SqliteJoiTaskReader({
-            cancel: async (inputId) => { await joiInboxRepository.cancel(inputId); },
-            database,
-            failTurn: (inputId, turnId) => joiInboxRepository.failTurn(inputId, turnId),
-          }),
-        }),
-        new JoiHarnessComponent({
-          reviewEnabled: true,
-          scan: joiHarnessRepository,
-          writer: joiHarnessRepository,
-        }),
-        new JoiRhythmComponent({
-          services: [
-            { name: "alarm", tick: () => alarmScheduler.tick() },
-            { name: "schedule", tick: () => scheduleScheduler.tick() },
-            { name: "todo", tick: () => todoScheduler.tick() },
-            { name: "expression", tick: () => expressionDelivery.tick() },
-            { name: "budgets", tick: () => budgets.tick() },
-            { name: "idle-exploration", tick: () => idleExploration.tick() },
-          ],
-        }),
-      ],
-      createChild: (workbenchId) => {
-        const agentComponent = new WorkbenchAgentComponent({
-          workbenchId,
-          dispatch: {
-            claims: partnerDispatchClaims,
-            delivery: partnerDispatchDelivery,
-            outbox: database.store,
-            owner: `agent_${workbenchId}_${String(process.pid)}`,
-          },
-          instances: partnerInstances,
-          memory: partnerMemory,
-          scan: workbenchAgentScan,
-          synthesis: joiInboxRepository,
-        });
-        return new WorkbenchActor({
-          workbenchId,
-          children: () => agentComponent.agentActors,
-          components: [agentComponent],
-        });
-      },
-    })],
-  });
-  const outboxDispatcher = new OutboxDispatcher({
-    clock,
-    diagnostics: runtimeDiagnostics,
-    excludeKinds: ["partner.dispatch"],
-    handlers: {
-      "a2a.send": async (record) => {
-        const invocationId = record.payload.invocationId;
-        if (typeof invocationId !== "string") throw new Error("A2A outbox record is missing invocationId.");
-        const invocation = await a2aGateway.recover(invocationId);
-        if (invocation.status === "WAITING_RETRY" || invocation.status === "SENT_NO_ACCEPT") {
-          throw new Error("A2A invocation is waiting for retry.");
-        }
-      },
-      "delegation.send": async (record) => {
-        const delegationId = record.payload.delegationId;
-        if (typeof delegationId !== "string") throw new Error("Delegation outbox record is missing delegationId.");
-        await delegations.dispatch(delegationId);
-      },
-      "interaction.answer": async (record) => {
-        const interactionId = record.payload.interactionId;
-        const answer = record.payload.answer;
-        if (typeof interactionId !== "string" || typeof answer !== "string") throw new Error("Interaction outbox record is invalid.");
-        await interactions.answer(interactionId, answer);
-      },
-      "workbench.workspace.provision": (record) => workbenchWorkspaceProvisioner.handle(record),
-      "partner.cancel": async (record) => {
-        const actionId = record.payload.actionId;
-        if (typeof actionId !== "string") throw new Error("partner_cancel_payload_invalid");
-        const invocation = database.transaction((connection) => connection.prepare(
-          "SELECT invocation_id FROM invocations WHERE message_id = ?",
-        ).get(actionId)) as { invocation_id?: unknown } | undefined;
-        if (typeof invocation?.invocation_id === "string") await a2aGateway.cancel(invocation.invocation_id);
-      },
-    },
-    onError: () => process.stderr.write("An outbox delivery will be retried.\n"),
-    owner: `outbox_${String(process.pid)}`,
-    store: database.store,
-  });
-  drainRuntime = async () => {
-    for (let batch = 0; batch < 10; batch += 1) {
-      if (await outboxDispatcher.dispatchOnce(100) === 0) break;
-    }
-    await actorTree.tick(clock.now());
-  };
-  await partnerInstances.recoverOnBoot();
-  await outboxDispatcher.dispatchOnce();
-  await actorTree.tick(clock.now());
+  drainRuntime = runtimeStack.drain;
+  await partnerStack.partnerInstances.recoverOnBoot();
+  await runtimeStack.outboxDispatcher.dispatchOnce();
+  await runtimeStack.actorTree.tick(clock.now());
   const lives = new LifeService({
     clock,
     files: new LifeFileDeletionService({ ids, rootDirectory: path.join(userDataDirectory, "artifacts"), store: database.store }),
@@ -563,33 +180,30 @@ async function startRuntime(): Promise<void> {
     }),
   });
   const dependencies = {
-    a2aGateway,
-    agentOnboarding,
+    a2aGateway: runtimeStack.a2aGateway,
+    agentOnboarding: runtimeStack.agentOnboarding,
     agents: new AgentService({ clock, ids, store: database.store }),
-    attachments: attachmentStorage,
-    artifacts: artifactStorage,
+    artifacts: runtimeStack.artifactStorage,
     auth,
-    workbenchChanges,
-    workbenchManagement,
-    workbenchAgents,
-    workbenchRegistry,
-    workbenchWorkspaces,
-    workbenches,
-    budgets,
-    continuity: new ContinuityService({ clock, publisher: noOpPublisher, store: database.store }),
-    events,
+    workbenchChanges: workbenchStack.workbenchChanges,
+    workbenchManagement: workbenchStack.workbenchManagement,
+    workbenchAgents: workbenchStack.workbenchAgents,
+    workbenchRegistry: workbenchStack.workbenchRegistry,
+    workbenchWorkspaces: workbenchStack.workbenchWorkspaces,
+    workbenches: persistence.workbenches,
+    continuity: runtimeStack.continuity,
+    events: runtimeStack.events,
     globalEmergencyStop: async () => { await emergencyStopAll?.(); },
-    engines: engineCatalog,
-    instances: partnerInstances,
-    interactions,
-    joiActivity: joiInboxRepository,
-    joiHomeFeed,
-    joiAttachments: joiAttachmentStorage,
-    joiInbox,
-    knowledge: partnerKnowledge,
-    lifeRuntime,
+    engines: partnerStack.engineCatalog,
+    instances: partnerStack.partnerInstances,
+    interactions: runtimeStack.interactions,
+    joiActivity: persistence.joiInboxRepository,
+    joiHomeFeed: workbenchStack.joiHomeFeed,
+    joiAttachments: joiStack.joiAttachmentStorage,
+    joiInbox: joiStack.joiInbox,
+    knowledge: partnerStack.partnerKnowledge,
     lives,
-    memory: partnerMemory,
+    memory: partnerStack.partnerMemory,
     directoryPicker: async () => {
       try {
         const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "绑定 Workbench 工作目录" });
@@ -599,22 +213,21 @@ async function startRuntime(): Promise<void> {
         return null;
       }
     },
-    skills: partnerSkillCatalog,
-    modelSources,
+    skills: partnerStack.partnerSkillCatalog,
+    modelSources: modelSourceStack.modelSources,
     operations,
-    partners,
+    partners: partnerStack.partners,
     requestRestart: () => requestApplicationRestart(),
     settings,
-    wakeCoordinator: legacyRunControl,
-    work: workRepository,
+    work: workbenchStack.workRepository,
   };
   emergencyStopAll = async () => {
     let after: { createdAt: string; lifeId: string } | undefined;
     do {
       const page = await lives.list({ ...(after === undefined ? {} : { after }), limit: 100 });
       for (const life of page.items) {
-        legacyRunControl.emergencyStop(life.lifeId);
-        await lifeRuntime.emergencyStop(life.lifeId);
+        runtimeStack.legacyRunControl.emergencyStop(life.lifeId);
+        await runtimeStack.lifeRuntime.emergencyStop(life.lifeId);
       }
       after = page.next;
     } while (after !== undefined);
@@ -636,8 +249,8 @@ async function startRuntime(): Promise<void> {
     outboxTimer = setInterval(() => {
       if (rootTickInFlight !== null) return;
       const pass = (async () => {
-        await actorTree.tick(clock.now());
-        await outboxDispatcher.dispatchOnce();
+        await runtimeStack.actorTree.tick(clock.now());
+        await runtimeStack.outboxDispatcher.dispatchOnce();
       })();
       rootTickInFlight = pass;
       void pass

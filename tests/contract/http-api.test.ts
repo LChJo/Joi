@@ -28,6 +28,24 @@ describe("HTTP API v1", () => {
       });
       expect(write.status).toBe(410);
       expect(await write.json()).toMatchObject({ code: "legacy_life_read_only" });
+      const legacyWriteHeaders = { "content-type": "application/json", cookie, origin: "null", "x-csrf-token": csrfToken };
+      const patch = await fetch(`${listeners.loopback.url}/api/v1/lives/life_missing`, {
+        body: JSON.stringify({ name: "legacy patch" }),
+        headers: legacyWriteHeaders,
+        method: "PATCH",
+      });
+      expect(patch.status).toBe(410);
+      const message = await fetch(`${listeners.loopback.url}/api/v1/lives/life_missing/messages`, {
+        body: JSON.stringify({ text: "legacy message" }),
+        headers: legacyWriteHeaders,
+        method: "POST",
+      });
+      expect(message.status).toBe(410);
+      const runtimeAction = await fetch(`${listeners.loopback.url}/api/v1/lives/life_missing/runtime/start`, {
+        headers: legacyWriteHeaders,
+        method: "POST",
+      });
+      expect(runtimeAction.status).toBe(410);
       expect((await fetch(`${listeners.loopback.url}/api/v1/lives`, { headers: { cookie } })).status).toBe(200);
     } finally {
       await listeners.close();

@@ -6,6 +6,11 @@ import type { A2aGatewayService } from "../../application/a2a/a2a-gateway-servic
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import { normalizeAgentConversationEntries, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { classifyPartnerRunFailure, safePartnerRunFailureBody } from "../../application/partners/partner-run-failure.js";
+import {
+  DISPATCH_POLICY_REASONS,
+  evaluateDispatchPolicy,
+  type DispatchPolicyDecision,
+} from "../../application/work/dispatch-policy.js";
 import type { WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
 import type { InvocationStatus } from "../../application/ports/a2a-ports.js";
 import type { PartnerRunStatus } from "../../application/ports/partner-execution.js";
@@ -104,6 +109,20 @@ function attemptTerminal(status: string): boolean {
   return ["COMPLETED", "FAILED", "WAITING_INPUT", "WAITING_AUTH", "UNKNOWN"].includes(status);
 }
 
+function deliveryPolicy(row: DispatchRow, leaseConflict = false): DispatchPolicyDecision {
+  return evaluateDispatchPolicy(row.access_mode, {
+    leaseConflict,
+    partnerKind: row.kind,
+    ...(row.workspace_ref === null ? {} : { workspaceRef: row.workspace_ref }),
+    ...(row.workspace_status === null ? {} : { workspaceStatus: row.workspace_status }),
+  });
+}
+
+function denialReason(decision: DispatchPolicyDecision): string {
+  if (decision.allowed || decision.reason === undefined) throw new Error("dispatch_policy_denial_reason_missing");
+  return decision.reason;
+}
+
 function terminalInvocation(status: InvocationStatus): PartnerRunStatus | null {
   switch (status) {
     case "COMPLETED": return "COMPLETED";
@@ -195,20 +214,26 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       workId: row.work_id,
     });
 
-    if (row.access_mode !== "NONE") {
-      if (row.kind === "A2A") {
+    const policy = deliveryPolicy(row);
+    if (!policy.allowed) {
+      const reason = denialReason(policy);
+      if (reason === DISPATCH_POLICY_REASONS.a2aWorkspaceAccessForbidden) {
         await this.#ensureRun(row);
         row = this.#load(claim.dispatchAttemptId) ?? row;
         await this.#complete(row, "FAILED", { artifacts: [], body: "Remote partners cannot execute Workbench file work." });
         return "skipped_terminal";
       }
-      if (row.workspace_status !== "READY" || row.workspace_ref === null) throw new Error("workbench_workspace_not_ready");
+      throw new Error(reason);
+    }
+
+    if (row.access_mode !== "NONE") {
+      if (row.workspace_ref === null) throw new Error("dispatch_policy_workspace_ref_missing");
       const lease = await this.dependencies.leases.acquire({
         accessMode: row.access_mode,
         workId: row.work_id,
         workspaceRef: row.workspace_ref,
       });
-      if (lease === null) throw new Error("workspace_lease_conflict");
+      if (lease === null) throw new Error(denialReason(deliveryPolicy(row, true)));
     }
 
     // Stage the source input's attachments while holding the workspace lease so

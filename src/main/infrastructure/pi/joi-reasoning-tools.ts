@@ -5,6 +5,7 @@ import type { PartnerInstanceManager } from "../../application/partners/partner-
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
+import { DISPATCH_POLICY_REASONS } from "../../application/work/dispatch-policy.js";
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
 import type { WorkbenchChangeService } from "../../application/joi/workbench-change-service.js";
@@ -163,13 +164,13 @@ export function createJoiReasoningTools(input: {
           turnId: input.turnId,
           workbenchId: input.workbenchId,
         });
-        if (error instanceof DomainError && error.code === "workbench_workspace_not_ready") {
+        if (error instanceof DomainError && error.code === DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady) {
           await input.clarifications.requireClarification(
             input.inputId,
-            "workbench_workspace_not_ready",
+            DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady,
             "选择这个 Workbench 的工作目录后，我会继续派发需要读写文件的工作。",
           );
-          return result({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" }, true);
+          return result({ reasonCode: DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady, status: "CLARIFICATION_REQUIRED" }, true);
         }
         await input.clarifications.requireClarification(
           input.inputId,

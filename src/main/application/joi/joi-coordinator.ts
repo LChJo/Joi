@@ -14,6 +14,7 @@ import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime
 import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
 import { normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
+import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
 
 interface SourcePin {
   modelCapability?: "release-tested" | "custom-unverified-tools";
@@ -310,7 +311,7 @@ export class JoiCoordinator {
           });
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
           if (dispatchFailureReason !== undefined) {
-            if (dispatchFailureReason !== "workbench_workspace_not_ready" && dispatchFailureReason !== "work_dispatch_failed") {
+            if (dispatchFailureReason !== DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady && dispatchFailureReason !== "work_dispatch_failed") {
               await this.dependencies.store.requireClarification(inputId, "work_dispatch_failed", WORK_DISPATCH_FAILURE_PROMPT);
             }
             await this.dependencies.store.completeInput(inputId, turnId);

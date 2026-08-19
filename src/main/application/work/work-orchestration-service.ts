@@ -1,6 +1,7 @@
 import { DomainError } from "../../domain/errors.js";
 import { buildWorkExecutionWaves, createWorkItem, type WorkAccessMode, type WorkDependency } from "../../domain/work/work.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
+import { DISPATCH_POLICY_REASONS } from "./dispatch-policy.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type {
   CommittedWorkPlan,
@@ -126,8 +127,8 @@ export class WorkOrchestrationService {
         workId: item.workId,
       });
     }
-    if (policyResults.some((policy) => !policy.allowed && policy.reason === "workbench_workspace_not_ready")) {
-      throw new DomainError("workbench_workspace_not_ready", "Select a workbench workspace before dispatching file work.");
+    if (policyResults.some((policy) => !policy.allowed && policy.reason === DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady)) {
+      throw new DomainError(DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady, "Select a workbench workspace before dispatching file work.");
     }
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await this.dependencies.repository.commit({

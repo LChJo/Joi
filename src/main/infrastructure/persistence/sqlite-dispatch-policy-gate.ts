@@ -2,8 +2,9 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { DispatchPolicyGate, PartnerDispatchPin } from "../../application/ports/work-orchestration.js";
+import type { DispatchPolicyGate, DispatchPolicyResult, PartnerDispatchPin } from "../../application/ports/work-orchestration.js";
 import type { Clock } from "../../application/ports/runtime-store.js";
+import { evaluateDispatchPolicy } from "../../application/work/dispatch-policy.js";
 import type { WorkItem } from "../../domain/work/work.js";
 
 interface TransactionalDatabase {
@@ -13,26 +14,26 @@ interface TransactionalDatabase {
 export class SqliteDispatchPolicyGate implements DispatchPolicyGate {
   constructor(private readonly dependencies: { clock: Clock; database: TransactionalDatabase }) {}
 
-  async evaluate(item: WorkItem, _pin: PartnerDispatchPin): Promise<{ allowed: boolean; reason?: string }> {
-    const facts = this.dependencies.database.transaction((connection) => connection.prepare(`SELECT p.kind,
+  async evaluate(item: WorkItem, _pin: PartnerDispatchPin): Promise<Pick<DispatchPolicyResult, "allowed" | "reason">> {
+    const row = this.dependencies.database.transaction((connection) => connection.prepare(`SELECT p.kind,
       b.workspace_ref, b.status AS workspace_status
       FROM partner_revisions r JOIN partners p ON p.partner_id = r.partner_id
       LEFT JOIN workbench_workspace_bindings b ON b.workbench_id = ?
-      WHERE r.partner_revision_id = ?`).get(item.workbenchId, _pin.partnerRevisionId)) as {
-        kind?: unknown; workspace_ref?: unknown; workspace_status?: unknown;
-      } | undefined;
-    if (item.accessMode === "NONE") return { allowed: true };
-    if (facts?.kind === "A2A") return { allowed: false, reason: "a2a_workspace_access_forbidden" };
-    if (facts?.workspace_status !== "READY" || typeof facts.workspace_ref !== "string") {
-      return { allowed: false, reason: "workbench_workspace_not_ready" };
-    }
-    const workspaceRef = facts.workspace_ref;
+      WHERE r.partner_revision_id = ?`).get(item.workbenchId, _pin.partnerRevisionId)) as { kind?: unknown; workspace_ref?: unknown; workspace_status?: unknown } | undefined;
+    const workspaceRef = typeof row?.workspace_ref === "string" ? row.workspace_ref : undefined;
+    return evaluateDispatchPolicy(item.accessMode, {
+      leaseConflict: workspaceRef !== undefined && this.leaseConflict(workspaceRef, item.accessMode),
+      partnerKind: typeof row?.kind === "string" ? row.kind : "",
+      ...(workspaceRef === undefined ? {} : { workspaceRef }),
+      ...(typeof row?.workspace_status === "string" ? { workspaceStatus: row.workspace_status } : {}),
+    });
+  }
+
+  private leaseConflict(workspaceRef: string, accessMode: WorkItem["accessMode"]): boolean {
     const conflict = this.dependencies.database.transaction((connection) => connection.prepare(`
       SELECT 1 FROM workspace_leases
        WHERE workspace_ref = ? AND expires_at > ? AND (access_mode = 'WRITE' OR ? = 'WRITE') LIMIT 1`
-    ).get(workspaceRef, this.dependencies.clock.now().toISOString(), item.accessMode));
-    return conflict === undefined
-      ? { allowed: true }
-      : { allowed: false, reason: "workspace_lease_conflict" };
+    ).get(workspaceRef, this.dependencies.clock.now().toISOString(), accessMode));
+    return conflict !== undefined;
   }
 }

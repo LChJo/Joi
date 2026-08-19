@@ -3,10 +3,13 @@ import { readFile } from "node:fs/promises";
 describe("actor tree single root tick authority", () => {
   it("composes the actor tree as the only traversal driver and retires notify callbacks and SSE", async () => {
     const composition = await readFile("src/main/index.ts", "utf8");
-    expect(composition).toContain("new ActorTree(");
+    const wiring = await readFile("src/main/composition/wire-runtime.ts", "utf8");
+    expect(wiring).toContain("new ActorTree(");
     expect(composition).toContain("actorTree.tick(");
     expect(composition).not.toContain("new JoiInputScheduler(");
     expect(composition).not.toContain("processJoiInput");
+    expect(wiring).not.toContain("new JoiInputScheduler(");
+    expect(wiring).not.toContain("processJoiInput");
   });
 
   it("removes the SSE stream endpoint from the HTTP surface", async () => {
