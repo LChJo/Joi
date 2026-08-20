@@ -23,6 +23,7 @@ export const JOI_REASONING_TOOL_NAMES = [
   "partner_list_available",
   "partner_inspect_revision",
   "partner_create",
+  "partner_set_model",
   "partner_set_skills",
   "partner_create_instance",
   "partner_list_instances",
@@ -35,6 +36,7 @@ export const JOI_REASONING_TOOL_NAMES = [
   "work_wait",
   "work_cancel",
   "work_reassign",
+  "work_resume",
   "memory_search",
   "memory_append_candidate",
   "schedule_plan",
@@ -94,7 +96,9 @@ function fallbackSummary(messages: AgentMessage[], maxCharacters: number): strin
 
 function validateToolNames(tools: AgentTool[]): void {
   const unsafeTool = tools.find((tool) => !allowedToolNames.has(tool.name));
-  if (unsafeTool !== undefined) throw new Error("unsafe_reasoning_tool");
+  if (unsafeTool !== undefined) {
+    throw Object.assign(new Error("A registered reasoning tool is not allowlisted."), { code: "unsafe_reasoning_tool" });
+  }
 }
 
 function safeToolResultReasonCode(result: unknown): string | undefined {

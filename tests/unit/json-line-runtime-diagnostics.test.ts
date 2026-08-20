@@ -2,6 +2,7 @@ import { JsonLineRuntimeDiagnostics } from "../../src/main/infrastructure/runtim
 import {
   emitRuntimeDiagnostic,
   runtimeDiagnosticErrorCode,
+  runtimeDiagnosticErrorDetail,
 } from "../../src/main/application/ports/runtime-diagnostics.js";
 import { TestClock } from "../support/runtime-fixture.js";
 import { vi } from "vitest";
@@ -104,9 +105,18 @@ describe("json-line runtime diagnostics", () => {
 
   it("reduces errors to bounded machine identifiers without logging messages", () => {
     expect(runtimeDiagnosticErrorCode({ code: "joi_turn_outcome_uncommitted" })).toBe("joi_turn_outcome_uncommitted");
+    expect(runtimeDiagnosticErrorCode(Object.assign(new Error("safe summary"), { code: "unsafe_reasoning_tool" }))).toBe("unsafe_reasoning_tool");
     expect(runtimeDiagnosticErrorCode(new Error("PRIVATE MESSAGE"))).toBe("Error");
     expect(runtimeDiagnosticErrorCode(null)).toBe("unknown_error");
     expect(runtimeDiagnosticErrorCode({ code: "private value with spaces" })).toBe("unknown_error");
+  });
+
+  it("keeps only bounded explicit diagnostic detail", () => {
+    expect(runtimeDiagnosticErrorDetail(null)).toBeUndefined();
+    expect(runtimeDiagnosticErrorDetail(new Error("private message only"))).toBeUndefined();
+    expect(runtimeDiagnosticErrorDetail({ detail: 42 })).toBeUndefined();
+    expect(runtimeDiagnosticErrorDetail({ detail: "   " })).toBeUndefined();
+    expect(runtimeDiagnosticErrorDetail({ detail: `  ${"x".repeat(300)}  ` })).toBe("x".repeat(240));
   });
 });
 import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";

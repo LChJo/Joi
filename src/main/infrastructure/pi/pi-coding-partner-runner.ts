@@ -15,7 +15,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
     contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
     resolver: PiConfiguredModelResolver;
-    skills?: Pick<PartnerSkillCatalog, "readInstructions">;
+    skills?: Pick<PartnerSkillCatalog, "resolveForPi">;
     sources: Pick<ReasoningSourceSelector, "selectInitial"> & Partial<Pick<ReasoningSourceSelector, "selectById">>;
     tools: PiCodingToolFactory;
   }) {}
@@ -24,7 +24,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
-    let configuredPrompt = "You are a local Pi coding partner. Work only inside the assigned workspace and complete the requested work.";
+    let configuredPrompt = "You are a local Pi coding partner. The assigned workspace is your home base; complete the requested work.";
     if (revision.promptRef !== undefined) {
       const stored = await this.dependencies.prompts.read(revision.promptRef);
       if (stored === null) throw new Error("partner_prompt_not_found");
@@ -38,8 +38,14 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
       throw new DomainError("partner_model_override_not_ready", "The pinned model is not active on the selected source.");
     }
     const resolved = await this.dependencies.resolver.resolve(pin);
-    const tools = execution.workspacePath === undefined ? [] : this.dependencies.tools.create(execution.workspacePath, revision.tools);
-    const skillSection = this.dependencies.skills?.readInstructions(revision.skills) ?? "";
+    const skillDispatch = this.dependencies.skills?.resolveForPi(revision.skills)
+      ?? { environmentKeys: [], promptSection: "", skillCount: 0 };
+    const tools = execution.workspacePath === undefined ? [] : this.dependencies.tools.create(
+      execution.workspacePath,
+      revision.tools,
+      { environmentKeys: skillDispatch.environmentKeys },
+    );
+    const skillSection = skillDispatch.promptSection;
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     const allowed = new Set(tools.map((tool) => tool.name));
     const agent = new Agent({
@@ -51,7 +57,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
         model: resolved.model,
         systemPrompt: [
           configuredPrompt,
-          "Never access paths outside the assigned workspace.",
+          "The assigned workspace is your home base: create work files there by default. When the task requires it, you may also read and write paths outside the workspace (for example user directories, installed skill folders, or configuration files). List every write outside the workspace (path and change) in your final reply. Placeholders like {baseDir} inside skill instructions refer to the skill's own directory.",
           `Workbench scope: ${request.workbenchId}`,
           `Work item: ${request.workId}`,
           execution.promptSection,

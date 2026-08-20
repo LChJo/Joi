@@ -23,6 +23,39 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 }
 
 describe("JOI-01 non-destructive migration", () => {
+  it("recovers legacy crash-loop parking without reclassifying real user cancellations", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-input-failure-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 39);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-08-20T05:06:00.000Z";
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, canceled_at, created_at, updated_at)
+        VALUES ('legacy-parked', 'legacy-parked-key', 'parked', 'CONSUMED', ?, ?, ?),
+               ('user-canceled', 'user-canceled-key', 'canceled', 'CONSUMED', ?, ?, ?)`).run(now, now, now, now, now, now);
+      const insertTurn = connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, session_id, status, created_at, updated_at) VALUES (?, 'legacy-parked', ?, 'FAILED', ?, ?)`);
+      for (let index = 0; index < 8; index += 1) insertTurn.run(`turn-${String(index)}`, `session-${String(index)}`, now, now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.inspect().schemaVersion).toBe(40);
+      const rows = upgraded.transaction((connection) => connection.prepare(`SELECT input_id, canceled_at, failed_at,
+        failure_count, failure_reason_code FROM joi_inbox_messages ORDER BY input_id`).all());
+      expect(rows).toEqual([
+        { canceled_at: null, failed_at: now, failure_count: 8, failure_reason_code: "legacy_scheduler_failure", input_id: "legacy-parked" },
+        { canceled_at: now, failed_at: null, failure_count: null, failure_reason_code: null, input_id: "user-canceled" },
+      ]);
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("renames the 037 context schema to Workbench without losing rows or stable ids", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workbench-terminology-upgrade-"));
     const oldMigrations = path.join(root, "old-migrations");
@@ -290,7 +323,7 @@ describe("JOI-01 non-destructive migration", () => {
           WHERE workbench_id = 'workbench-unknown'`).get() as { active_work_json: string },
         work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-unknown'").get(),
       }));
-      expect(upgraded.inspect().schemaVersion).toBe(39);
+      expect(upgraded.inspect().schemaVersion).toBe(40);
       expect(facts.work).toEqual({ status: "FAILED" });
       expect(JSON.parse(facts.projection.active_work_json)).toEqual([]);
       expect(facts.memberCount).toBe(0);
@@ -313,7 +346,7 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(39);
+      expect(database.inspect().schemaVersion).toBe(40);
       expect(database.transaction((connection) => connection.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('workbench_agent_sessions', 'workbench_agent_conversation_entries') ORDER BY name",
       ).all())).toEqual([
@@ -393,7 +426,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(39);
+      expect(upgraded.inspect().schemaVersion).toBe(40);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         workbenches: (connection.prepare("SELECT COUNT(*) AS count FROM workbenches").get() as { count: number }).count,

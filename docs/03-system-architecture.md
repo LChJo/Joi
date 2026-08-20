@@ -12,6 +12,8 @@
 
 分层保持不变：domain 为纯 TypeScript；application 编排 ports；infrastructure 实现 Pi、SQLite、safeStorage 与 A2A；interfaces 只映射 HTTP/SSE；renderer 只使用 shared DTO 和 `/api/v1`。Pi SDK 只能进入 `src/main/infrastructure/pi` 或 composition root。
 
+Pi core 的 Skill 使用 SDK 原生渐进披露：`pi-sdk-skill-catalog.ts` 从允许的本机来源递归解析 frontmatter，并以稳定的 `source/relative-directory` 引用保存选择；派发时 `includeDefaults=false` 且只加载精确选中路径。系统提示词仅含 SDK 生成的 `name/description/location` catalog，Skill 正文不预注入，由 Agent 使用 `read` 获取。`read` 的规范路径白名单为当前工作台加选中 Skill 根目录，其他绝对路径和符号链接逃逸均 fail closed。Skill 不会隐式增加工具；其 `metadata.joi_required_env` 只声明所需变量名，真正进入 bash 的敏感值还必须同时得到进程级 `JOI_PARTNER_ENV_PASSTHROUGH` 授权。
+
 ### 0.1 搭档实例与工作记忆
 
 搭档配置是无 cwd 的全局不可变模板；`PartnerInstanceManager` 负责运行中的工作台私有实例。每个实例必填 `workbenchId`，标记 `EPHEMERAL`（默认，单次即销毁）或 `RESIDENT`（保留会话、跨应用重启可恢复），确保、枚举、派发、复用和销毁都禁止跨工作台。实例行在 `partner_instances`，会话消息在 `partner_instance_messages`，`dispatch_attempts.instance_id` 关联派发。migration 027 会将升级前实例全部置为 `DISPOSED`；之后启动恢复只处理满足新不变量的实例。硬上限：常驻实例每工作台/搭档 4、全局 12、热 Agent 8。
@@ -136,7 +138,7 @@ flowchart LR
 
 - SQLite repositories：所有持久实体与迁移。
 - Durable scheduler：只负责把到期规则写成事件，不直接调用 Agent。
-- Actor tree（ADR 0009）：唯一根 tick 按 joi → workbench → agent 顺序遍历收敛；actor 无定时器、不互发消息，协调只经 SQLite 事实表；输入串行单槽位驱动推理 turn，partner 执行在 agent 层 ack 后运行、后续 tick 收敛终态，崩溃孤儿由启动首 tick 扫描收尾。失败的 turn 在收尾时中止其推理会话，残留流状态不得毒化同会话的后续 turn；同一输入连续即时失败超过上限（默认 8）即按 028 取消设计停摆为可重发的取消态，杜绝 failTurn→重投 的崩溃环。joi actor 还挂 harness component（ADR 0010）：遍历目标地图事实表（maps/paths/decisions/fog），为建图 goal 落图、把走完一层结果的 goal 以 review 系统输入排队进同一单槽位，由 joi 推理 turn 决定下一层路径或 MAP_CLEARED；组件自身不推理、不派发，唯一调度权威不变。
+- Actor tree（ADR 0009）：唯一根 tick 按 joi → workbench → agent 顺序遍历收敛；actor 无定时器、不互发消息，协调只经 SQLite 事实表；输入串行单槽位驱动推理 turn，partner 执行在 agent 层 ack 后运行、后续 tick 收敛终态，崩溃孤儿由启动首 tick 扫描收尾。失败的 turn 在收尾时中止其推理会话，残留流状态不得毒化同会话的后续 turn；同一输入连续即时失败超过上限（默认 8）即写入 migration 040 定义的独立失败事实并停摆，调度端口不具备用户取消能力。失败投影只公开有界原因码、尝试次数、是否已开始执行和枚举处理建议，杜绝 failTurn→重投 的崩溃环且不泄露原始异常。joi actor 还挂 harness component（ADR 0010）：遍历目标地图事实表（maps/paths/decisions/fog），为建图 goal 落图、把走完一层结果的 goal 以 review 系统输入排队进同一单槽位，由 joi 推理 turn 决定下一层路径或 MAP_CLEARED；组件自身不推理、不派发，唯一调度权威不变。
 - A2A gateway：Card、Bearer、network policy、stream/get/cancel/resubscribe、Artifact。
 - Connection breaker：按 Agent Connection/凭据版本共享 429/503 冷却，不阻塞事件持久化。
 - Outbox dispatcher：事务提交后的外部调用；`partner.dispatch` 由 agent actor 领取交付（ADR 0009）。

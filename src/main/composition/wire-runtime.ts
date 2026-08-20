@@ -122,6 +122,7 @@ export function wireRuntime(input: {
   const partnerDispatchDelivery = new SqlitePartnerDispatchDelivery({
     agentConversations: persistence.workbenchAgentRepository,
     attachmentStager: new WorkAttachmentStager({ attachments: joiStack.joiAttachmentStorage, database }),
+    clarifications: persistence.joiInboxRepository,
     clock,
     contextAssembler: workbenchStack.workbenchContextAssembler,
     contexts: persistence.workbenchContextRepository,
@@ -144,9 +145,9 @@ export function wireRuntime(input: {
           driver: { handle: (inputId, signal) => joiStack.joiCoordinator.handle(inputId, signal) },
           gate: { hasReadySource: () => modelSourceStack.modelSources.hasReadySource() },
           inbox: new SqliteJoiTaskReader({
-            cancel: async (inputId) => { await persistence.joiInboxRepository.cancel(inputId); },
             database,
             failTurn: (inputId, turnId) => persistence.joiInboxRepository.failTurn(inputId, turnId),
+            park: async (inputId, failure) => { await persistence.joiInboxRepository.park(inputId, failure); },
           }),
         }),
         new JoiHarnessComponent({

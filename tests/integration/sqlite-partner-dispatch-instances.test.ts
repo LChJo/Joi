@@ -18,6 +18,7 @@ import { createWorkResult } from "../../src/main/domain/work/work-result.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { wrapPartnerRunFailure } from "../../src/main/application/partners/partner-run-failure.js";
 
 function seedDispatchFixture(database: RuntimeDatabase, partnerRevisionId: string): void {
   database.transaction((connection) => {
@@ -281,6 +282,35 @@ describe("partner dispatch instance routing", () => {
       expect(database.transaction((connection) => connection.prepare(
         "SELECT status FROM work_items WHERE work_id = 'work_1'",
       ).get())).toEqual({ status: "FAILED" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("preserves pre-execution Skill failure facts and stores an actionable safe result body", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      const handler = makeHandler(database, {
+        dispatch: async () => {
+          throw wrapPartnerRunFailure(
+            Object.assign(new Error("PRIVATE selected path"), { code: "partner_skill_ref_invalid" }),
+            { phase: "CONFIGURATION", sideEffectState: "NONE" },
+          );
+        },
+      });
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", sessionPolicy: "EPHEMERAL", workId: "work_1" }));
+
+      const stored = database.transaction((connection) => connection.prepare(`SELECT b.body
+        FROM work_results r JOIN work_result_bodies b ON b.body_ref = r.body_ref
+        WHERE r.work_id = 'work_1'`).get()) as { body: string };
+      expect(stored.body).toContain("phase=CONFIGURATION");
+      expect(stored.body).toContain("reasonCode=partner_skill_ref_invalid");
+      expect(stored.body).toContain("sideEffectState=NONE");
+      expect(stored.body).toContain("No partner model or tool was started");
+      expect(stored.body).toContain("reselect an installed Skill");
+      expect(stored.body).not.toContain("PRIVATE selected path");
+      expect(stored.body).not.toContain("phase=EXECUTION");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

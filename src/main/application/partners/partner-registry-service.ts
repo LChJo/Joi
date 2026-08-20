@@ -45,7 +45,7 @@ export class PartnerRegistryService {
 
   async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind }): Promise<PartnerDto> {
     assertNoWorkspace(input);
-    this.#assertLocalSkills(input.kind, input.engine ?? "pi-core", input.skills);
+    this.#assertLocalSkills(input.kind, input.engine ?? "pi-core", input.skills, input.tools);
     const partnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt);
@@ -65,7 +65,7 @@ export class PartnerRegistryService {
   async update(partnerId: string, input: PartnerFields): Promise<PartnerDto> {
     assertNoWorkspace(input);
     const current = await this.#active(partnerId);
-    this.#assertLocalSkills(current.kind, input.engine ?? current.engine, input.skills);
+    this.#assertLocalSkills(current.kind, input.engine ?? current.engine, input.skills, input.tools);
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt) ?? current.promptRef;
     const description = input.description ?? current.description;
@@ -189,7 +189,7 @@ export class PartnerRegistryService {
   async duplicate(partnerId: string): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
     if (current.status === "DELETED") throw new DomainError("partner_not_found", "Partner was not found.");
-    this.#assertLocalSkills(current.kind, current.engine, current.skills);
+    this.#assertLocalSkills(current.kind, current.engine, current.skills, current.tools);
     const newPartnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     let promptRef = current.promptRef;
@@ -247,11 +247,14 @@ export class PartnerRegistryService {
     return current;
   }
 
-  #assertLocalSkills(kind: PartnerKind, engine: PartnerEngine, skills: string[]): void {
+  #assertLocalSkills(kind: PartnerKind, engine: PartnerEngine, skills: string[], tools: string[]): void {
     if (kind !== "local-pi" || this.dependencies.skills === undefined) return;
     const available = new Set(this.dependencies.skills.listForEngine(engine).map((item) => item.id));
     if (skills.some((skill) => !available.has(skill))) {
       throw new DomainError("partner_skill_not_available", "Selected partner skill is not available for this engine.");
+    }
+    if (engine === "pi-core" && skills.length > 0 && tools.length > 0 && !tools.includes("read")) {
+      throw new DomainError("partner_skill_requires_read", "Pi Skills require the read tool when the tool list is narrowed.");
     }
   }
 

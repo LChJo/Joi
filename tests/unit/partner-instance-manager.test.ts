@@ -1,7 +1,7 @@
 /* In-memory doubles keep instance lifecycle tests free of SQLite. */
 /* eslint-disable @typescript-eslint/require-await */
 import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager.js";
-import type { PartnerRunRequest } from "../../src/main/application/ports/partner-execution.js";
+import type { PartnerRunRequest, PartnerRunStatus } from "../../src/main/application/ports/partner-execution.js";
 import type {
   PartnerEngineRuntime,
   PartnerInstanceRecord,
@@ -82,40 +82,63 @@ class MemoryInstanceMessageStore implements PartnerInstanceMessageStore {
 }
 
 class FakeEngine implements PartnerEngineRuntime {
-  readonly ephemeralRuns: { knowledgeSection: string; request: PartnerRunRequest; skillSection: string }[] = [];
+  readonly ephemeralRuns: { knowledgeSection: string; request: PartnerRunRequest; skillEnvironmentKeys?: readonly string[]; skillSection: string }[] = [];
   readonly evicted: string[] = [];
   readonly residentTurns: ResidentTurnInput[] = [];
+  failEphemeral?: Error;
   failResident = false;
+  includeEphemeralConversation = true;
+  includeResidentConversation = false;
+  pendingQuestion?: string;
   engineOf() { return "pi-core" as const; }
   evictFromMemory(instanceId: string) { this.evicted.push(instanceId); }
   async health() { return { available: true }; }
   toolOptions() { return [] as readonly string[]; }
-  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }) {
-    this.ephemeralRuns.push({ knowledgeSection: context.knowledgeSection, request: runRequest, skillSection: context.skillSection });
+  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
+    this.ephemeralRuns.push({
+      knowledgeSection: context.knowledgeSection,
+      request: runRequest,
+      ...(context.skillEnvironmentKeys === undefined ? {} : { skillEnvironmentKeys: context.skillEnvironmentKeys }),
+      skillSection: context.skillSection,
+    });
+    if (this.failEphemeral !== undefined) throw this.failEphemeral;
+    const conversation = [
+      { kind: "MARKDOWN" as const, role: "USER" as const, text: runRequest.taskProjection },
+      { kind: "TOOL_CALL" as const, role: "TOOL" as const, text: "read", toolName: "read" },
+      { kind: "MARKDOWN" as const, role: "AGENT" as const, text: "done" },
+    ];
+    const status: PartnerRunStatus = this.pendingQuestion === undefined ? "COMPLETED" : "WAITING_INPUT";
     return {
-      conversation: [
-        { kind: "MARKDOWN" as const, role: "USER" as const, text: runRequest.taskProjection },
-        { kind: "TOOL_CALL" as const, role: "TOOL" as const, text: "read", toolName: "read" },
-        { kind: "MARKDOWN" as const, role: "AGENT" as const, text: "done" },
-      ],
-      externalRunId: `local_pi:${runRequest.actionId}`, output: { artifacts: [], body: "done" }, status: "COMPLETED" as const,
+      ...(this.includeEphemeralConversation ? { conversation } : {}),
+      externalRunId: `local_pi:${runRequest.actionId}`,
+      output: { artifacts: [], body: "done", ...(this.pendingQuestion === undefined ? {} : { pendingQuestion: this.pendingQuestion }) },
+      status,
     };
   }
   async runResidentTurn(input: ResidentTurnInput) {
     this.residentTurns.push(input);
     if (this.failResident) throw new Error("turn_failed");
     const messages = [...(input.restoredMessages ?? []), { content: input.request.taskProjection, role: "user" }];
+    const status: PartnerRunStatus = this.pendingQuestion === undefined ? "COMPLETED" : "WAITING_INPUT";
     return {
+      ...(this.includeResidentConversation ? { conversation: [{ kind: "MARKDOWN" as const, role: "AGENT" as const, text: "done" }] } : {}),
       externalRunId: `local_pi:${input.request.actionId}`,
       externalSessionRef: `partner_instance_messages:${input.instanceId}`,
       messages,
-      output: { artifacts: [], body: "done" },
-      status: "COMPLETED" as const,
+      output: { artifacts: [], body: "done", ...(this.pendingQuestion === undefined ? {} : { pendingQuestion: this.pendingQuestion }) },
+      status,
     };
   }
 }
 
-function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartner?: number }, readSkills: () => string = () => "") {
+function makeManager(
+  limits?: { maxResidentGlobal?: number; maxResidentPerPartner?: number },
+  skillOverrides?: Partial<{
+    readInstructions: () => string;
+    resolveForPi: () => { environmentKeys: readonly string[]; promptSection: string; skillCount: number };
+    validateRefs: () => void;
+  }>,
+) {
   const clock = new TestClock();
   const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
   const engine = new FakeEngine();
@@ -124,7 +147,7 @@ function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartne
   const manager = new PartnerInstanceManager({
     clock,
     diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
-    engines: new Map([["pi-core", engine]]),
+    engines: new Map([["pi-core", engine], ["claude-code", engine]]),
     ids: new TestIds(),
     knowledge: { readForInjection: async () => "KB_SECTION" },
     ...(limits === undefined ? {} : { limits }),
@@ -132,7 +155,11 @@ function makeManager(limits?: { maxResidentGlobal?: number; maxResidentPerPartne
     registry: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "partner_revision_1", registryRevision: 1 }) },
     repository,
     revisions: { getActive: async () => revision },
-    skills: { readInstructions: readSkills },
+    skills: {
+      readInstructions: skillOverrides?.readInstructions ?? (() => ""),
+      resolveForPi: skillOverrides?.resolveForPi ?? (() => ({ environmentKeys: [], promptSection: "", skillCount: 0 })),
+      validateRefs: skillOverrides?.validateRefs ?? (() => undefined),
+    },
   });
   return { clock, diagnostics, engine, manager, messages, repository };
 }
@@ -191,22 +218,110 @@ describe("partner-instance-manager", () => {
       .toMatchObject({ instanceId: record?.instanceId, status: "COMPLETED" });
   });
 
-  it("injects selected skill instructions and records only redacted skill metadata", async () => {
-    const { diagnostics, engine, manager } = makeManager(undefined, () => "# Selected skills\n## Skill: demo");
+  it("propagates credential questions and optional conversations for both session policies", async () => {
+    const { engine, manager } = makeManager();
+    engine.pendingQuestion = "configure TAVILY_API_KEY and restart";
+    engine.includeEphemeralConversation = false;
+    const ephemeral = await manager.dispatch({ request, revision });
+    expect(ephemeral).toMatchObject({ pendingQuestion: engine.pendingQuestion, status: "WAITING_INPUT" });
+    expect(ephemeral.conversation).toBeUndefined();
+
+    engine.includeResidentConversation = true;
+    const resident = await manager.dispatch({
+      dispatchAttemptId: "attempt_resident_waiting",
+      request: { ...request, actionId: "action_resident" },
+      revision,
+      sessionPolicy: "RESIDENT",
+    });
+    expect(resident).toMatchObject({ pendingQuestion: engine.pendingQuestion, status: "WAITING_INPUT" });
+    expect(resident.conversation).toEqual([expect.objectContaining({ role: "AGENT" })]);
+  });
+
+  it("disposes a failed ephemeral run and preserves bounded diagnostic detail", async () => {
+    const { diagnostics, engine, manager, repository } = makeManager();
+    engine.failEphemeral = Object.assign(new Error("partner failed"), { detail: "safe diagnostic detail" });
+    await expect(manager.dispatch({ dispatchAttemptId: "attempt_failed", request, revision })).rejects.toThrow("partner failed");
+    expect(repository.records[0]).toMatchObject({ disposalReason: "ephemeral_failed", status: "DISPOSED" });
+    expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.failed")?.fields).toMatchObject({
+      dispatchAttemptId: "attempt_failed",
+      errorDetail: "safe diagnostic detail",
+    });
+  });
+
+  it("dispatches Pi SDK Skill metadata without eagerly injecting instructions", async () => {
+    const { diagnostics, engine, manager } = makeManager(undefined, {
+      readInstructions: () => { throw new Error("Pi must not eagerly read the Skill body"); },
+      resolveForPi: () => ({ environmentKeys: ["TAVILY_API_KEY"], promptSection: "<available_skills><name>demo</name></available_skills>", skillCount: 1 }),
+    });
     await manager.dispatch({ request, revision: { ...revision, skills: ["claude-code/demo-skill"] } });
-    expect(engine.ephemeralRuns[0]?.skillSection).toContain("# Selected skills");
+    expect(engine.ephemeralRuns[0]?.skillSection).toContain("<available_skills>");
+    expect(engine.ephemeralRuns[0]?.skillEnvironmentKeys).toEqual(["TAVILY_API_KEY"]);
     expect(diagnostics.find((entry) => entry.event === "joi.partner.skills.injected")?.fields).toMatchObject({
       instanceId: "partner_instance_test_0001", skillCount: 1,
     });
     expect(JSON.stringify(diagnostics)).not.toContain("Selected skills");
+
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    await manager.dispatch({ instanceId: instance.instanceId, request: { ...request, actionId: "action_resident_skill" }, revision: { ...revision, skills: ["claude-code/demo-skill"] } });
+    expect(engine.residentTurns[0]?.skillEnvironmentKeys)
+      .toEqual(["TAVILY_API_KEY"]);
   });
 
-  it("fails and disposes the run when a selected skill cannot be read", async () => {
-    const { diagnostics, manager, repository } = makeManager(undefined, () => { throw new DomainError("partner_skill_not_found", "Selected partner skill is not available."); });
-    await expect(manager.dispatch({ request, revision: { ...revision, skills: ["claude-code/missing"] } }))
-      .rejects.toMatchObject({ code: "partner_skill_not_found" });
-    expect(repository.records[0]).toMatchObject({ disposalReason: "ephemeral_failed", status: "DISPOSED" });
+  it("classifies an invalid selected Skill before BUSY/model execution and disposes the ephemeral shell", async () => {
+    const { diagnostics, engine, manager, repository } = makeManager(undefined, {
+      validateRefs: () => { throw new DomainError("partner_skill_not_found", "Selected partner skill is not available."); },
+    });
+    await expect(manager.dispatch({ dispatchAttemptId: "attempt_invalid_skill", request, revision: { ...revision, skills: ["claude-code/missing"] } }))
+      .rejects.toMatchObject({
+        code: "partner_skill_not_found",
+        partnerRunFailure: { phase: "CONFIGURATION", sideEffectState: "NONE" },
+      });
+    expect(engine.ephemeralRuns).toHaveLength(0);
+    expect(repository.records[0]).toMatchObject({ disposalReason: "skill_configuration_failed", status: "DISPOSED" });
+    expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.started")).toBeUndefined();
     expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.failed")?.fields).toMatchObject({ errorCode: "partner_skill_not_found" });
+  });
+
+  it("keeps full Skill instruction injection for the local CLI compatibility engines", async () => {
+    const { engine, manager } = makeManager(undefined, {
+      readInstructions: () => "# Selected skills\nCLI_SKILL_BODY",
+      resolveForPi: () => { throw new Error("CLI must not use Pi dispatch metadata"); },
+    });
+    await manager.dispatch({
+      request,
+      revision: { ...revision, engine: "claude-code", skills: ["claude-code/demo"] },
+    });
+    expect(engine.ephemeralRuns[0]?.skillSection).toContain("CLI_SKILL_BODY");
+    expect(engine.ephemeralRuns[0]?.skillEnvironmentKeys).toEqual([]);
+  });
+
+  it("fails a legacy Pi revision closed when its narrowed tool allowlist omitted read", async () => {
+    const { engine, manager } = makeManager(undefined, {
+      resolveForPi: () => { throw new Error("must fail before SDK dispatch"); },
+    });
+    await expect(manager.dispatch({
+      request,
+      revision: { ...revision, skills: ["agents/demo"], tools: ["edit"] },
+    })).rejects.toMatchObject({
+      code: "partner_skill_requires_read",
+      partnerRunFailure: { phase: "CONFIGURATION", sideEffectState: "NONE" },
+    });
+    expect(engine.ephemeralRuns).toHaveLength(0);
+  });
+
+  it("keeps a resident instance IDLE when Skill configuration fails before its turn starts", async () => {
+    const { manager, repository } = makeManager(undefined, {
+      validateRefs: () => { throw new DomainError("partner_skill_ref_invalid", "Partner skill reference is invalid."); },
+    });
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    await expect(manager.dispatch({
+      instanceId: instance.instanceId,
+      request,
+      revision: { ...revision, skills: ["invalid-ref"] },
+    })).rejects.toMatchObject({
+      partnerRunFailure: { phase: "CONFIGURATION", sideEffectState: "NONE" },
+    });
+    expect(repository.records.find((record) => record.instanceId === instance.instanceId)?.status).toBe("IDLE");
   });
 
   it("keeps resident instances resumable: messages persist, status returns to IDLE and the data source is recorded", async () => {
@@ -262,6 +377,15 @@ describe("partner-instance-manager", () => {
     expect(engine.evicted).toContain(instance.instanceId);
     expect(messages.saved.has(instance.instanceId)).toBe(true);
     await expect(manager.dispose({ workbenchId: "workbench_1", instanceId: instance.instanceId, reason: "again" })).resolves.toBeUndefined();
+  });
+
+  it("treats missing disposal as idempotent and rejects disposal while busy", async () => {
+    const { manager, repository } = makeManager();
+    await expect(manager.dispose({ workbenchId: "workbench_1", instanceId: "missing", reason: "cleanup" })).resolves.toBeUndefined();
+    const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
+    await repository.setStatusBusy(instance.instanceId, "2026-07-29T10:05:00.000Z");
+    await expect(manager.dispose({ workbenchId: "workbench_1", instanceId: instance.instanceId, reason: "cleanup" }))
+      .rejects.toMatchObject({ code: "partner_instance_busy" });
   });
 
   it("sweeps idle ephemerals and evicts warm residents without disposing them", async () => {

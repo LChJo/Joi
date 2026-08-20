@@ -1,4 +1,4 @@
-export type PartnerRunFailurePhase = "ENGINE" | "EXECUTION" | "MODEL" | "RECOVERY";
+export type PartnerRunFailurePhase = "CONFIGURATION" | "ENGINE" | "EXECUTION" | "MODEL" | "RECOVERY";
 export type PartnerRunSideEffectState = "NONE" | "OBSERVED" | "UNKNOWN";
 
 export interface PartnerRunFailure {
@@ -16,7 +16,7 @@ const TRANSIENT_CODES = new Set([
   "ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT",
   "UND_ERR_CONNECT_TIMEOUT", "connect", "partner_run_timed_out", "rate_limited", "server_error", "timeout",
 ]);
-const PHASES = new Set<PartnerRunFailurePhase>(["ENGINE", "EXECUTION", "MODEL", "RECOVERY"]);
+const PHASES = new Set<PartnerRunFailurePhase>(["CONFIGURATION", "ENGINE", "EXECUTION", "MODEL", "RECOVERY"]);
 const SIDE_EFFECT_STATES = new Set<PartnerRunSideEffectState>(["NONE", "OBSERVED", "UNKNOWN"]);
 const STABLE_CODE = /^[A-Za-z0-9_.:-]{1,120}$/u;
 
@@ -33,26 +33,46 @@ export function classifyPartnerRunFailure(
   };
 }
 
-export function partnerRunFailureFromError(error: unknown): PartnerRunFailure {
+export function partnerRunFailureFromError(
+  error: unknown,
+  fallback: { phase: PartnerRunFailurePhase; sideEffectState: PartnerRunSideEffectState } = { phase: "EXECUTION", sideEffectState: "UNKNOWN" },
+): PartnerRunFailure {
   const carried = failureCarrier(error);
-  return carried ?? classifyPartnerRunFailure(error, { phase: "EXECUTION", sideEffectState: "UNKNOWN" });
+  return carried ?? classifyPartnerRunFailure(error, fallback);
 }
 
 /** Wraps an engine exception without retaining its raw message, payload, stack or credentials. */
 export function wrapPartnerRunFailure(
   error: unknown,
   context: { phase: PartnerRunFailurePhase; sideEffectState: PartnerRunSideEffectState },
-): Error & { code: string; partnerRunFailure: PartnerRunFailure } {
+): Error & { code: string; detail?: string; partnerRunFailure: PartnerRunFailure } {
   const partnerRunFailure = classifyPartnerRunFailure(error, context);
+  const detail = errorDetailOf(error);
   return Object.assign(new Error("partner_run_failed"), {
     code: partnerRunFailure.reasonCode,
+    ...(detail === undefined ? {} : { detail }),
     partnerRunFailure,
   });
 }
 
+/** Truncated engine-provided diagnostic detail; local diagnostics only, never part of the work result. */
+export function errorDetailOf(error: unknown): string | undefined {
+  if (error === null || typeof error !== "object") return undefined;
+  const detail = (error as { detail?: unknown }).detail;
+  if (typeof detail !== "string") return undefined;
+  const trimmed = detail.trim();
+  return trimmed === "" ? undefined : trimmed.slice(0, 240);
+}
+
 export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
   const facts = `phase=${failure.phase}; reasonCode=${failure.reasonCode}; retryable=${String(failure.retryable)}; sideEffectState=${failure.sideEffectState}`;
-  const next = failure.retryable
+  const next = failure.phase === "CONFIGURATION" && failure.sideEffectState === "NONE"
+    ? "No partner model or tool was started, so it is safe to retry after correction. Open Partner settings, reselect an installed Skill, and enable the read tool when using a narrowed tool list."
+    : failure.reasonCode === "context_too_large"
+    ? "The request exceeded the model route's context window. Split the Work into smaller units or shrink its inputs; do not replay it unchanged."
+    : failure.reasonCode === "model_refused"
+      ? "The model refused this request. Restate the task or ask the user for guidance; do not replay it unchanged."
+      : failure.retryable
     ? "Joi may select another READY model source, create a new immutable partner revision, and reassign this Work as a new attempt."
     : failure.sideEffectState === "NONE"
       ? "Joi must inspect configuration or request input before creating another attempt."

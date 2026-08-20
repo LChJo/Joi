@@ -65,7 +65,7 @@ describe("scenarios HTTP API", () => {
 
       const skillDir = join(claudeDir, "demo-skill");
       mkdirSync(skillDir, { recursive: true });
-      writeFileSync(join(skillDir, "SKILL.md"), "---\nname: demo-skill\ndisplay_name: 演示技能\n---\n# Demo\nbody\n");
+      writeFileSync(join(skillDir, "SKILL.md"), "---\nname: demo-skill\ndescription: 演示技能工作流\ndisplay_name: 演示技能\n---\n# Demo\nbody\n");
       const withSkill = await fetch(`${session.url}/api/v1/scenarios`, { headers: session.headers });
       const secondItems = (await withSkill.json() as { items: ScenarioDto[] }).items;
       const skillScenario = secondItems.find((item) => item.source === "skill");
@@ -95,7 +95,7 @@ describe("scenarios HTTP API", () => {
       for (let index = 1; index <= 7; index += 1) {
         const dir = join(claudeDir, `skill-${String(index)}`);
         mkdirSync(dir, { recursive: true });
-        writeFileSync(join(dir, "SKILL.md"), `---\nname: skill-${String(index)}\ndisplay_name: 技能 ${String(index)}\n---\n# 技能 ${String(index)}\nbody\n`);
+        writeFileSync(join(dir, "SKILL.md"), `---\nname: skill-${String(index)}\ndescription: 技能 ${String(index)} 工作流\ndisplay_name: 技能 ${String(index)}\n---\n# 技能 ${String(index)}\nbody\n`);
         utimesSync(dir, new Date(1_000_000 + index * 1_000), new Date(1_000_000 + index * 1_000));
       }
       const response = await fetch(`${session.url}/api/v1/scenarios`, { headers: session.headers });
@@ -162,7 +162,7 @@ describe("scenarios HTTP API", () => {
     process.env.JOI_AGENTS_SKILLS_DIR = emptyAgents;
     const skillDir = join(claudeDir, "demo-skill");
     mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: demo-skill\ndisplay_name: 演示技能\n---\n# Demo\nbody\n");
+    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: demo-skill\ndescription: 演示技能工作流\ndisplay_name: 演示技能\n---\n# Demo\nbody\n");
     const session = await createSession();
     try {
       const response = await fetch(`${session.url}/api/v1/scenarios/${encodeURIComponent("skill:claude-code/demo-skill")}/partners`, { body: JSON.stringify({}), headers: session.headers, method: "POST" });

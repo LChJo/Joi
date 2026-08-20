@@ -357,7 +357,7 @@
           <li>• 崩溃恢复：启动首 tick 孤儿扫描（UNKNOWN 终态 / RESIDENT 续跑 / A2A recover），lease + 心跳校验</li>
           <li>• 凭据隔离：safeStorage 加密、Bearer 只在主进程解密发送，永不下发 renderer 与日志</li>
           <li>• 网络 fail-closed：loopback 常开保桌面可用，LAN 绑定失败不影响；出站 DNS 策略 + breaker 冷却</li>
-          <li>• 结构化澄清：user_ask 持久可恢复；连续即时失败超阈值按取消态停摆，杜绝崩溃环（ADR 0007）</li>
+          <li>• 结构化澄清：user_ask 持久可恢复；连续即时失败写独立失败态停摆，绝不伪装成用户取消</li>
         </ul>
       </div>
 

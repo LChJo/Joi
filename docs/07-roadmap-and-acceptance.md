@@ -14,13 +14,15 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-06 的 harness 增量以 AC-44 为门禁：每个 (goal, revision) 至多一条复盘输入（水位与幂等键双保险，重启回放不重投）；CLEARED 地图的完成反哺恰好一次；`MAP_CLEARED` 只清 ACTIVE 地图且仅复盘 turn 可提交；复盘派发的工作绑回原 goal，结果闭环不断；复盘 turn 可代表 goal 提交 work（goal-binding 校验接受 goal 派生输入），无关 turn 冒充仍被拒。
 
-2026-08-06 的可靠性修复：失败 turn 收尾必须中止其推理会话（残留流状态不得毒化后续 turn）；同一输入连续即时失败超过上限即停摆为取消态（028 设计，可重发），禁止 failTurn→重投 的无限崩溃环；`joi-task-component.test.ts` 锁定停摆上限，`sqlite-work-plan-outbox.test.ts` 锁定 goal-binding 双向语义。
+2026-08-06 的可靠性修复：失败 turn 收尾必须中止其推理会话（残留流状态不得毒化后续 turn）；同一输入连续即时失败超过上限即停摆，禁止 failTurn→重投 的无限崩溃环；`joi-task-component.test.ts` 锁定停摆上限，`sqlite-work-plan-outbox.test.ts` 锁定 goal-binding 双向语义。2026-08-20 起 migration 040 将该停摆持久化为独立失败事实，不再伪造成用户取消；首页显示安全原因码、自动尝试次数、是否已启动执行和固定处理建议。
 
 2026-08-06 的术语迁移以 AC-45 为门禁：产品文案统一为“工作台”，代码契约统一为 `Workbench/workbenchId/workbench.*`，HTTP 统一为 `/api/v1/workbenches`；migration 038 无损升级 037 的表、列、外键、枚举和待处理 outbox。旧 migration 001–037 只作为升级事实保留旧物理名，不再定义当前产品术语。
 
 2026-08-07 的 UNKNOWN 收敛修复以 AC-41/AC-43 为门禁：只有 `WAITING_INPUT`/`WAITING_AUTH` 可保持 Work `WAITING` 并显示需要用户；不可恢复的 `UNKNOWN` 必须终结为 `FAILED`，继续 result-set 综合且不得制造无操作入口的“需要你”。migration 039 修复 schema 038 的存量错误状态、活跃任务投影与尚未综合的 UNKNOWN result member。
 
 2026-08-19 的搭档失败恢复增量以 AC-35/AC-41/AC-43 为门禁：失败结果只公开 `phase/reasonCode/retryable/sideEffectState`；仅 timeout/connect/429/5xx 且未观察到工具或文件副作用时，Joi 可把 READY model source 固定到新的 immutable Partner revision，并以同一 Work、全新 action/dispatch attempt 重派。鉴权、余额、配置、Skill、安全拒绝及副作用 `OBSERVED/UNKNOWN` 禁止盲目重放；恢复后旧 result revision 不得提前写入目标完成 outcome。
+
+2026-08-20 的 Pi Skill 派发修复以 AC-14/AC-33 为门禁：Skill catalog、frontmatter、递归发现和 prompt catalog 必须复用锁定版本的 Pi SDK；只向 Pi 暴露被选中 Skill 的 `name/description/location`，正文由 Agent 通过 `read` 按需加载。显式 Skill 路径加载必须关闭默认 package/project discovery；`read` 只能访问工作台与被选中 Skill 根目录。旧引用、同名碰撞、加载失败或收窄工具列表遗漏 `read` 必须在模型/工具启动前收敛为 `CONFIGURATION/NONE`，并向用户说明可安全修正后重试。bash 只继承精确非敏感运行基线；脚本型 Skill 的其他环境变量保持默认拒绝，必须由当前精确选中的 Skill 通过 `metadata.joi_required_env` 声明、由 `JOI_PARTNER_ENV_PASSTHROUGH` 按变量名授权且已被 Joi 进程继承，三项同时满足才可注入，不能泄露给其他 bash Partner。非法声明必须在启动前失败；命中缺失凭据错误必须收敛为 `WAITING_INPUT`，显示变量名、授权与完整重启动作，不得交由模型以 `BLOCKED` 文本伪装成完成。
 
 2026-08-18 的命名与环境收敛以 AC-46 为门禁：工作台命名聚焦长期工作聚类和运行环境，Agent 命名聚焦可复用能力聚类；前端调试/分析工作创建的受管目录固定为 `aimanadebug`，角色型 `资深程序员搭档` 归类为 `编码工坊`，创建与重建必须使用同一规则。
 

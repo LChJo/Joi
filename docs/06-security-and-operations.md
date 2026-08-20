@@ -77,6 +77,8 @@ MVP 不承诺防御已经控制本机 OS 账户、读取进程内存或修改应
 - `safeStorage.isEncryptionAvailable()` 为 false 时禁止保存 Token，不做明文兜底。
 - Token 不允许通过 GET、SSE、错误 details、诊断、备份或剪贴板再次读取。
 - 轮换 Token 原子替换凭据；旧 Token 不保留可恢复副本。
+
+脚本型 Partner Skill 使用宿主环境凭据时采用独立的默认拒绝边界。bash 子进程始终只继承维持命令正常工作的精确非敏感基线（例如 PATH、HOME/USERPROFILE、临时目录、locale、终端和 OS 信息），不使用通配符复制宿主环境。其他变量必须同时满足三项条件才会注入：值已被 Joi 进程继承、变量名被进程级 `JOI_PARTNER_ENV_PASSTHROUGH` 显式授权、当前精确选中的 Skill 在合法 frontmatter `metadata.joi_required_env` 中声明了该名称。进程级授权不是对所有 bash Partner 的全局暴露；未选中声明该变量的 Skill 时值保持不可见。非法声明在模型或工具启动前 fail closed。诊断、结果和日志只允许记录变量名与固定处理建议，不得记录值。新增或修改用户环境后必须完整重启 Joi，运行中的进程不会自动刷新环境快照。
 - Card Origin/认证变化时不自动转发既有 Bearer。
 
 ## 5. 网络控制

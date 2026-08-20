@@ -57,6 +57,21 @@ class FakeInboxRepository implements JoiInboxRepository {
   async list(): Promise<JoiInboxRecord[]> {
     return [...this.records.values()];
   }
+
+  async park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<JoiInboxRecord | null> {
+    const record = this.records.get(inputId);
+    if (record?.status !== "PENDING") return null;
+    const next: JoiInboxRecord = {
+      ...record,
+      failedAt: "2026-08-01T00:00:04.000Z",
+      failureCount: failure.failureCount,
+      failureReasonCode: failure.reasonCode,
+      status: "CONSUMED",
+      updatedAt: "2026-08-01T00:00:04.000Z",
+    };
+    this.records.set(inputId, next);
+    return next;
+  }
 }
 
 function record(over: Partial<JoiInboxRecord> & { inputId: string }): JoiInboxRecord {
@@ -140,9 +155,23 @@ describe("JoiInboxService.clarify", () => {
     const repository = new FakeInboxRepository();
     repository.records.set("joi_result_input:1", record({ body: "synthetic partner result", inputId: "joi_result_input:1", status: "CONSUMED" }));
     repository.records.set("blank-1", record({ body: "   ", inputId: "blank-1", status: "CONSUMED" }));
+    repository.records.set("failed-1", record({
+      failedAt: "2026-08-01T00:00:04.000Z",
+      failureCount: 8,
+      failureExecutionStarted: true,
+      failureReasonCode: "model_unavailable",
+      inputId: "failed-1",
+      status: "CONSUMED",
+    }));
     const listed = await serviceWith(repository).list();
     expect(listed.find((item) => item.inputId === "joi_result_input:1")?.textPreview).toBeUndefined();
     expect(listed.find((item) => item.inputId === "blank-1")?.textPreview).toBeUndefined();
+    expect(listed.find((item) => item.inputId === "failed-1")?.failure).toEqual({
+      attempts: 8,
+      executionStarted: true,
+      reasonCode: "model_unavailable",
+      suggestedAction: "CHECK_MODEL_SOURCE",
+    });
   });
 });
 

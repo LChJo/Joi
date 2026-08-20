@@ -50,6 +50,7 @@ const COMMITTED_OUTCOME_TOOL_NAMES = new Set([
   "work_cancel",
   "work_dispatch",
   "work_reassign",
+  "work_resume",
   "work_wait",
 ]);
 

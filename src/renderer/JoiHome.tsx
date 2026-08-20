@@ -445,8 +445,9 @@ function legacyHomeFeed(messages: JoiAcceptedMessageDto[]): JoiHomeFeedDto {
     workbench: { workbenchId: message.workbenchId ?? "", name: message.workbenchId ?? "等待归属" },
     canDelete: message.status === "CONSUMED",
     ...(message.status === "CLARIFICATION_REQUIRED" ? { clarification: { ...(message.clarificationPrompt === undefined ? {} : { prompt: message.clarificationPrompt }), ...(message.clarificationReasonCode === undefined ? {} : { reasonCode: message.clarificationReasonCode }) } } : {}),
+    ...(message.failure === undefined ? {} : { failure: message.failure }),
     goalId: message.inputId,
-    status: message.canceled === true ? "CANCELED" : message.status === "CONSUMED" ? "COMPLETED" : message.status === "CLARIFICATION_REQUIRED" ? "NEEDS_ATTENTION" : message.status === "ROUTED" ? "ARRANGED" : "ARRANGING",
+    status: message.failure !== undefined ? "FAILED" : message.canceled === true ? "CANCELED" : message.status === "CONSUMED" ? "COMPLETED" : message.status === "CLARIFICATION_REQUIRED" ? "NEEDS_ATTENTION" : message.status === "ROUTED" ? "ARRANGED" : "ARRANGING",
     title: message.textPreview ?? "正在安排的新目标",
     updatedAt: message.acceptedAt,
     work: { active: 0, completed: 0, failed: 0, total: 0 },
@@ -470,7 +471,7 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   if (status === "NEEDS_ATTENTION") return "需要你";
   if (status === "FINALIZING") return "正在总结";
   if (status === "COMPLETED") return "已完成";
-  if (status === "FAILED") return "有失败";
+  if (status === "FAILED") return "处理失败";
   return "已取消";
 }
 
@@ -480,6 +481,20 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
     <span aria-hidden="true" className="joi-goal-progress-track"><i className={goal.work.failed > 0 ? "failed" : ""} style={{ width: `${String(percent)}%` }} /></span>
     <i>{goal.agentCount} Agent · {goal.work.completed}/{goal.work.total} 工作完成{goal.work.failed > 0 ? ` · ${String(goal.work.failed)} 失败` : ""}</i>
   </span>;
+}
+
+function GoalFailureNotice({ failure }: { failure: NonNullable<JoiGoalCardDto["failure"]> }) {
+  const action = failure.suggestedAction === "RESTART_OR_UPDATE"
+    ? "这是 joi 的内部配置问题。请重启或升级 joi 后重新提交；如果再次出现，请导出诊断信息反馈。"
+    : failure.suggestedAction === "CHECK_MODEL_SOURCE"
+      ? "请在设置中检查主模型源的网络、凭证和可用状态，重新验证后再提交。"
+      : "请重新提交一次；如果再次失败，请导出诊断信息反馈。";
+  return <section className="joi-goal-failure" role="alert">
+    <strong>joi 已停止重试</strong>
+    <p>已自动尝试 {String(failure.attempts)} 次，现已停止重试。{failure.executionStarted ? "任务已经开始执行，部分工作可能已有结果。" : "尚未启动 Agent，也没有派发工作。"}</p>
+    <p>{action}</p>
+    <small>诊断编号：{failure.reasonCode}</small>
+  </section>;
 }
 
 const THINKING_STAGE_LABELS: Record<JoiThinkingItemDto["stage"], string> = {
@@ -574,6 +589,7 @@ function GoalDetail({ api, workbenches, goal, onBack, onResolved }: {
       </header>
       <div className="joi-goal-drawer-body">
         {goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
+        {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div></article>}
         {goal.clarification === undefined ? null : <ClarificationActions api={api} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} />}
         {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
@@ -754,6 +770,7 @@ function JoiComposer({ api, onNavigate, snapshot }: {
           <div className="joi-goal-side"><span className={`joi-goal-status ${goal.status.toLowerCase()}`}>{goalStatusLabel(goal.status)}</span>{goal.status === "NEEDS_ATTENTION" || goal.canDelete ? <div className="joi-goal-actions">{goal.status === "NEEDS_ATTENTION" ? <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} /> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div> : null}</div>
         </div>
         {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoalId(goal.goalId); setOpenGoalId(null); } }}><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
+        {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.clarification === undefined ? null : <ClarificationActions api={api} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} />}
       </article>)}
       {visibleThinking.length === 0 && feed.unassignedActions.length === 0 && feed.goals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}

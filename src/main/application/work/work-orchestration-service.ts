@@ -1,6 +1,7 @@
 import { DomainError } from "../../domain/errors.js";
 import { buildWorkExecutionWaves, createWorkItem, type WorkAccessMode, type WorkDependency } from "../../domain/work/work.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
+import type { PartnerInstanceRepository } from "../ports/partner-instances.js";
 import { DISPATCH_POLICY_REASONS } from "./dispatch-policy.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type {
@@ -48,6 +49,8 @@ export class WorkOrchestrationService {
     diagnostics?: RuntimeDiagnostics;
     events?: DurableUiEventEmitter;
     ids: IdGenerator;
+    /** Liveness check before a resume references a stored instance id. */
+    instances?: Pick<PartnerInstanceRepository, "get">;
     partners: { pinForDispatch(partnerId: string): Promise<PartnerDispatchPin> };
     policy: DispatchPolicyGate;
     reassignment?: WorkReassignmentRepository;
@@ -220,5 +223,89 @@ export class WorkOrchestrationService {
       workId: input.workId,
     });
     return attempt;
+  }
+
+  /**
+   * Resumes work that paused waiting for the user's answer. Unlike reassign this keeps the
+   * current partner revision: the point is to feed the answer back into the same work, and
+   * the dispatch continues in the original resident instance when it is still alive.
+   */
+  async resume(input: { workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+    const repository = this.dependencies.reassignment;
+    if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
+    const context = await repository.loadForReassignment(input.workId);
+    if (context === null) throw new DomainError("work_not_found", "Work was not found.");
+    if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
+    if (context.item.status !== "WAITING") throw new DomainError("work_resume_status_invalid", "Only waiting work can be resumed.");
+    const pin = await this.dependencies.partners.pinForDispatch(context.lastPartnerId);
+    const policy = await this.dependencies.policy.evaluate(context.item, pin);
+    if (!policy.allowed) throw new DomainError("work_resume_policy_denied", policy.reason ?? "Work resume was denied.");
+    // Continue in the instance that paused so the resident conversation keeps the question
+    // context. Never reference a disposed instance: dispatch would fail and the outbox row
+    // would retry forever. Fall back to a resident continuation when the instance is gone.
+    const lastInstance = context.lastInstanceId === undefined || this.dependencies.instances === undefined
+      ? null
+      : await this.dependencies.instances.get(context.lastInstanceId);
+    const createdAt = this.dependencies.clock.now().toISOString();
+    const actionId = this.dependencies.ids.next("action");
+    const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
+    const attempt: PlannedDispatchAttempt = {
+      ...pin,
+      actionId,
+      dispatchAttemptId,
+      outbox: {
+        availableAt: createdAt,
+        kind: "partner.dispatch",
+        outboxId: this.dependencies.ids.next("outbox"),
+        payload: {
+          actionId,
+          dispatchAttemptId,
+          ...(lastInstance !== null && lastInstance.status === "IDLE"
+            ? { instanceId: lastInstance.instanceId }
+            : { sessionPolicy: "RESIDENT" as const }),
+          workId: input.workId,
+        },
+      },
+      workId: input.workId,
+    };
+    const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
+    await repository.reassign({ attempt, createdAt, dispatchPlanId, turnId: input.turnId, workId: input.workId });
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {
+      actionId: attempt.actionId,
+      workbenchId: input.workbenchId,
+      dispatchAttemptId: attempt.dispatchAttemptId,
+      dispatchPlanId,
+      outboxId: attempt.outbox.outboxId,
+      partnerId: attempt.partnerId,
+      partnerRevisionId: attempt.partnerRevisionId,
+      turnId: input.turnId,
+      workId: input.workId,
+    });
+    await this.dependencies.events?.emit("work.resumed", input.workId, {
+      workbenchId: input.workbenchId,
+      partnerRevisionId: attempt.partnerRevisionId,
+      workId: input.workId,
+    });
+    return attempt;
+  }
+
+  /** Cancels work that is not mid-flight; a RUNNING attempt finishes on its own and arrives late. */
+  async cancel(input: { workbenchId: string; workId: string }): Promise<{ workId: string }> {
+    const repository = this.dependencies.reassignment;
+    if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work cancellation is unavailable.");
+    const context = await repository.loadForReassignment(input.workId);
+    if (context === null) throw new DomainError("work_not_found", "Work was not found.");
+    if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
+    const canceled = await repository.cancel(input.workId, this.dependencies.clock.now().toISOString());
+    if (!canceled) throw new DomainError("work_cancel_status_invalid", "Work in its current state cannot be canceled.");
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.canceled", {
+      workbenchId: input.workbenchId,
+      workId: input.workId,
+    });
+    await this.dependencies.events?.emit("work.canceled", input.workId, {
+      workbenchId: input.workbenchId,
+      workId: input.workId,
+    });
+    return { workId: input.workId };
   }
 }

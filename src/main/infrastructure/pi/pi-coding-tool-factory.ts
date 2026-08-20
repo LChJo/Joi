@@ -11,25 +11,43 @@ import {
 import { realpathSync, statSync } from "node:fs";
 
 export interface PiCodingToolFactory {
-  create(cwd: string, names: string[]): AgentTool[];
+  create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[];
   readonly names: readonly string[];
 }
 
 const SAFE_ENVIRONMENT_KEYS = new Set([
-  "COMSPEC", "LANG", "LC_ALL", "LOCALAPPDATA", "PATH", "PATHEXT", "SYSTEMROOT", "TEMP", "TMP", "WINDIR",
+  "ALLUSERSPROFILE", "APPDATA", "COLORTERM", "COMSPEC", "HOME", "HOMEDRIVE", "HOMEPATH",
+  "LANG", "LANGUAGE", "LC_ADDRESS", "LC_ALL", "LC_COLLATE", "LC_CTYPE", "LC_IDENTIFICATION",
+  "LC_MEASUREMENT", "LC_MESSAGES", "LC_MONETARY", "LC_NAME", "LC_NUMERIC", "LC_PAPER", "LC_TELEPHONE", "LC_TIME",
+  "LOCALAPPDATA", "LOGNAME", "NUMBER_OF_PROCESSORS", "OS", "PATH", "PATHEXT", "PROCESSOR_ARCHITECTURE",
+  "PROCESSOR_IDENTIFIER", "PROCESSOR_LEVEL", "PROCESSOR_REVISION", "PROGRAMDATA", "PROGRAMFILES", "PROGRAMFILES(X86)",
+  "PROGRAMW6432", "PUBLIC", "SHELL", "SYSTEMDRIVE", "SYSTEMROOT", "TEMP", "TERM", "TERM_PROGRAM",
+  "TERM_PROGRAM_VERSION", "TMP", "TMPDIR", "TZ", "USER", "USERDOMAIN", "USERDOMAIN_ROAMINGPROFILE", "USERNAME",
+  "USERPROFILE", "WINDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_RUNTIME_DIR", "XDG_STATE_HOME",
 ]);
 
-function safeEnvironment(environment: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  return Object.fromEntries(Object.entries(environment).filter(([key]) => SAFE_ENVIRONMENT_KEYS.has(key.toUpperCase())));
+/**
+ * Extra environment names partner shell commands may see, configured through
+ * JOI_PARTNER_ENV_PASSTHROUGH (comma separated, e.g. "TAVILY_API_KEY"). Everything
+ * not listed here or in the safe baseline is stripped from the child environment.
+ */
+function passthroughEnvironmentKeys(): Set<string> {
+  const configured = process.env.JOI_PARTNER_ENV_PASSTHROUGH ?? "";
+  return new Set(configured.split(",").map((key) => key.trim().toUpperCase()).filter((key) => key !== ""));
+}
+
+function safeEnvironment(environment: NodeJS.ProcessEnv, requestedKeys: readonly string[]): NodeJS.ProcessEnv {
+  const passthrough = passthroughEnvironmentKeys();
+  const requested = new Set(requestedKeys.map((key) => key.trim().toUpperCase()));
+  return Object.fromEntries(Object.entries(environment).filter(([key]) => {
+    const upper = key.toUpperCase();
+    return SAFE_ENVIRONMENT_KEYS.has(upper) || (passthrough.has(upper) && requested.has(upper));
+  }));
 }
 
 export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "grep", "ls", "read", "write"] as const;
 
 const factories: Record<string, (cwd: string) => AgentTool> = {
-  bash: (cwd) => createBashTool(cwd, {
-    exposeSessionEnvironment: false,
-    spawnHook: (context) => ({ ...context, env: safeEnvironment(context.env) }),
-  }),
   edit: createEditTool,
   find: createFindTool,
   grep: createGrepTool,
@@ -38,13 +56,25 @@ const factories: Record<string, (cwd: string) => AgentTool> = {
   write: createWriteTool,
 };
 
+/**
+ * Tools carry no path sandbox: the workspace scope is prompt governance, not tool
+ * enforcement. Partners may leave the workspace when the task requires it and must
+ * report every outside write in their final reply (see the engine system prompt).
+ */
 export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
   readonly names: readonly string[] = PI_CODING_TOOL_NAMES;
 
-  create(cwd: string, names: string[]): AgentTool[] {
+  create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[] {
     const canonical = realpathSync(cwd);
     if (!statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");
     return [...new Set(names)].map((name) => {
+      if (name === "bash") return createBashTool(canonical, {
+        exposeSessionEnvironment: false,
+        spawnHook: (context) => ({
+          ...context,
+          env: safeEnvironment(context.env, options?.environmentKeys ?? []),
+        }),
+      });
       const factory = factories[name];
       if (factory === undefined) throw new Error("partner_tool_not_allowed");
       return factory(canonical);

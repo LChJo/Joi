@@ -31,6 +31,7 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.task.input_parked": {
     consecutiveFailures: number;
+    errorCode: string;
     inputId: string;
   };
   "joi.harness.map_created": {
@@ -211,6 +212,10 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
     workId: string;
   };
+  "joi.work.canceled": {
+    workbenchId: string;
+    workId: string;
+  };
   "joi.outbox.claimed": {
     limit: number;
     recordCount: number;
@@ -283,6 +288,8 @@ export interface RuntimeDiagnosticEventMap {
     dispatchAttemptId?: string;
     durationMs: number;
     errorCode: string;
+    /** Truncated provider/engine detail for local debugging; never shown in work results. */
+    errorDetail?: string;
     instanceId: string;
     workId: string;
   };
@@ -298,6 +305,7 @@ export interface RuntimeDiagnosticEventMap {
   "joi.partner.skills.failed": {
     actionId: string;
     errorCode: string;
+    errorDetail?: string;
     instanceId: string;
     partnerId: string;
     skillCount: number;
@@ -343,4 +351,13 @@ export function runtimeDiagnosticErrorCode(error: unknown): string {
     ? error.code
     : error instanceof Error ? error.name : "unknown_error";
   return candidate.length <= 80 && /^[A-Za-z0-9_.:-]+$/u.test(candidate) ? candidate : "unknown_error";
+}
+
+/** Truncated engine-provided detail carried with an error, for local diagnostics only. */
+export function runtimeDiagnosticErrorDetail(error: unknown): string | undefined {
+  if (error === null || typeof error !== "object" || !("detail" in error)) return undefined;
+  const detail = (error as { detail?: unknown }).detail;
+  if (typeof detail !== "string") return undefined;
+  const trimmed = detail.trim();
+  return trimmed === "" ? undefined : trimmed.slice(0, 240);
 }

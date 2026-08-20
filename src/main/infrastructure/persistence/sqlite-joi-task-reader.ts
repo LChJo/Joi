@@ -18,14 +18,10 @@ function textValue(row: Row, key: string): string {
 
 export class SqliteJoiTaskReader implements JoiTaskInbox {
   constructor(private readonly dependencies: {
-    cancel: (inputId: string) => Promise<void>;
     database: TransactionalDatabase;
     failTurn: (inputId: string, turnId: string) => Promise<void>;
+    park: (inputId: string, failure: { failureCount: number; reasonCode: string }) => Promise<void>;
   }) {}
-
-  async cancel(inputId: string): Promise<void> {
-    await this.dependencies.cancel(inputId);
-  }
 
   async listPendingInputs(): Promise<JoiTaskPendingInput[]> {
     return (this.dependencies.database.transaction((connection) => connection.prepare(`
@@ -33,6 +29,10 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
        WHERE status = 'PENDING' AND dismissed_at IS NULL
        ORDER BY created_at, input_id LIMIT 50`).all()) as Row[])
       .map((row) => ({ createdAt: textValue(row, "created_at"), inputId: textValue(row, "input_id") }));
+  }
+
+  async park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<void> {
+    await this.dependencies.park(inputId, failure);
   }
 
   async listStaleRunningTurns(olderThan: string): Promise<JoiTaskStaleTurn[]> {

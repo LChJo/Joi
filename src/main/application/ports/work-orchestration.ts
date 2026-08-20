@@ -56,6 +56,9 @@ export interface WorkPlanRepository {
 
 export interface WorkReassignmentContext {
   item: WorkItem;
+  /** Instance that ran the latest attempt, when it was instance-linked; may be disposed by now. */
+  lastInstanceId?: string;
+  lastPartnerId: string;
   lastPartnerRevisionId: string;
 }
 
@@ -68,6 +71,7 @@ export interface ReassignedWorkPlan {
 }
 
 export interface WorkReassignmentRepository {
+  cancel(workId: string, at: string): Promise<boolean>;
   loadForReassignment(workId: string): Promise<WorkReassignmentContext | null>;
   reassign(plan: ReassignedWorkPlan): Promise<void>;
 }

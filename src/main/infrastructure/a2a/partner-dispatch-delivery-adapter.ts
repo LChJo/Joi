@@ -5,7 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { A2aGatewayService } from "../../application/a2a/a2a-gateway-service.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import { normalizeAgentConversationEntries, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
-import { classifyPartnerRunFailure, safePartnerRunFailureBody } from "../../application/partners/partner-run-failure.js";
+import { classifyPartnerRunFailure, partnerRunFailureFromError, safePartnerRunFailureBody } from "../../application/partners/partner-run-failure.js";
 import {
   DISPATCH_POLICY_REASONS,
   evaluateDispatchPolicy,
@@ -13,6 +13,7 @@ import {
 } from "../../application/work/dispatch-policy.js";
 import type { WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
 import type { InvocationStatus } from "../../application/ports/a2a-ports.js";
+import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
 import type { PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type {
   DispatchRunOutput,
@@ -52,6 +53,7 @@ interface DispatchRow {
   intent_json: string;
   invocation_id: string | null;
   kind: "A2A" | "LOCAL_PI";
+  partner_display_name: string;
   partner_id: string;
   partner_revision_id: string;
   run_id: string | null;
@@ -186,6 +188,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     /** Stages source-input attachments into the workspace for file-capable local work. */
     attachmentStager?: Pick<WorkAttachmentStagerPort, "stage">;
     clock: Clock;
+    /** Raises a user question card when a local partner pauses with WAITING_INPUT. */
+    clarifications?: Pick<JoiCoordinatorStore, "requireClarification">;
     contextAssembler: Pick<WorkbenchContextAssembler, "assemble">;
     contexts: WorkbenchExecutionContextReader;
     database: TransactionalDatabase;
@@ -313,6 +317,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         body: result.body,
         ...(result.conversation === undefined ? {} : { conversation: result.conversation }),
         kind: "terminal",
+        ...(result.pendingQuestion === undefined ? {} : { pendingQuestion: result.pendingQuestion }),
         status: result.status,
       };
     }
@@ -359,6 +364,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       artifacts: input.output.artifacts,
       body: input.output.body,
       ...(input.output.conversation === undefined ? {} : { conversation: input.output.conversation }),
+      ...(input.output.pendingQuestion === undefined ? {} : { pendingQuestion: input.output.pendingQuestion }),
     });
   }
 
@@ -383,7 +389,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           await this.complete({ output, prepared });
           return "completed";
         } catch (error) {
-          const failure = classifyPartnerRunFailure(error, { phase: "RECOVERY", sideEffectState: "UNKNOWN" });
+          const failure = partnerRunFailureFromError(error, { phase: "RECOVERY", sideEffectState: "UNKNOWN" });
           await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
           return "completed";
         }
@@ -423,7 +429,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     } catch (error) {
       const failedRow = this.#load(dispatchAttemptId);
       if (failedRow !== undefined) {
-        const failure = classifyPartnerRunFailure(error, { phase: "EXECUTION", sideEffectState: "UNKNOWN" });
+        const failure = partnerRunFailureFromError(error);
         await this.#complete(failedRow, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
       }
       return;
@@ -439,6 +445,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
              COALESCE(ap.access_mode, w.access_mode) AS access_mode,
              b.workspace_ref, b.status AS workspace_status,
              p.partner_id, p.kind, p.legacy_agent_connection_id AS agent_connection_id,
+             r.display_name AS partner_display_name,
              (SELECT invocation_id FROM invocations WHERE message_id = a.action_id) AS invocation_id,
              pr.run_id, pr.status AS run_status, pr.context_snapshot_id
         FROM dispatch_attempts a
@@ -486,6 +493,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     artifacts: { artifactRef?: string; mimeType?: string; name: string; size: number }[];
     body: string;
     conversation?: AgentConversationDraft[];
+    pendingQuestion?: string;
   }): Promise<{ isAuthoritative: boolean; resultId: string }> {
     const current = this.#load(row.dispatch_attempt_id);
     if (current !== undefined && attemptTerminal(current.status)) return { isAuthoritative: false, resultId: "" };
@@ -554,6 +562,15 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     await this.dependencies.leases.release(row.work_id);
     if (recorded.isAuthoritative) {
       await this.dependencies.publish?.(recorded.event);
+    }
+    // A paused partner raises a deterministic question card on the goal input; the user's
+    // answer re-PENDs the input and joi resumes the waiting work from there.
+    if (recorded.isAuthoritative && committedStatus === "WAITING_INPUT" && output.pendingQuestion !== undefined) {
+      await this.dependencies.clarifications?.requireClarification(
+        row.input_id,
+        "question_required",
+        `搭档『${row.partner_display_name}』在执行工作『${row.title}』时暂停并提问：\n${output.pendingQuestion}`,
+      );
     }
     return { isAuthoritative: recorded.isAuthoritative, resultId: recorded.result.resultId };
   }

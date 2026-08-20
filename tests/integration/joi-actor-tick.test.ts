@@ -72,9 +72,9 @@ describe("joi actor tick over persisted facts", () => {
           driver: { handle: async (inputId) => { handled.push(inputId); } },
           gate: { hasReadySource: async () => true },
           inbox: new SqliteJoiTaskReader({
-            cancel: async (inputId) => { await inboxRepository.cancel(inputId); },
             database: wrapper,
             failTurn: (inputId, turnId) => inboxRepository.failTurn(inputId, turnId),
+            park: async (inputId, failure) => { await inboxRepository.park(inputId, failure); },
           }),
         })],
         createChild: (workbenchId) => new WorkbenchActor({ workbenchId }),
@@ -127,9 +127,9 @@ describe("joi actor tick over persisted facts", () => {
             },
             gate: { hasReadySource: async () => true },
             inbox: new SqliteJoiTaskReader({
-              cancel: async (inputId) => { await inboxRepository.cancel(inputId); },
               database: wrapper,
               failTurn: (inputId, turnId) => inboxRepository.failTurn(inputId, turnId),
+              park: async (inputId, failure) => { await inboxRepository.park(inputId, failure); },
             }),
           }),
           new JoiHarnessComponent({

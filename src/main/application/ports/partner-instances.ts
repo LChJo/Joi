@@ -47,6 +47,13 @@ export interface ResidentTurnInput {
   request: PartnerRunRequest;
   restoredMessages: unknown[] | null;
   revision: PartnerRevision;
+  skillEnvironmentKeys: readonly string[];
+  skillSection: string;
+}
+
+export interface PartnerExecutionContext {
+  knowledgeSection: string;
+  skillEnvironmentKeys: readonly string[];
   skillSection: string;
 }
 
@@ -64,7 +71,7 @@ export interface PartnerEngineRuntime {
   engineOf(): PartnerEngine;
   evictFromMemory(instanceId: string): void;
   health(): Promise<{ available: boolean; reason?: string }>;
-  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
+  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
   runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult>;
   /** Selectable native tool names for this engine's whitelist picker. */
   toolOptions(): readonly string[];

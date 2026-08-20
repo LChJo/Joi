@@ -3,6 +3,7 @@ import { DomainError } from "../../domain/errors.js";
 import type { JoiInboxRecord, JoiInboxRepository } from "../ports/joi-inbox.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
+import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "./joi-input-failure.js";
 
 export class JoiInboxService {
   constructor(private readonly dependencies: { clock: Clock; diagnostics?: RuntimeDiagnostics; ids: IdGenerator; repository: JoiInboxRepository }) {}
@@ -88,12 +89,21 @@ function textPreviewOf(record: JoiInboxRecord): string | undefined {
 
 function toDto(record: JoiInboxRecord): JoiAcceptedMessageDto {
   const preview = textPreviewOf(record);
+  const failureReasonCode = normalizeJoiFailureReasonCode(record.failureReasonCode);
   return {
     acceptedAt: record.createdAt,
     ...(record.workbenchId === undefined ? {} : { workbenchId: record.workbenchId }),
     ...(record.canceledAt === undefined ? {} : { canceled: true }),
     ...(record.clarificationPrompt === undefined ? {} : { clarificationPrompt: record.clarificationPrompt }),
     ...(record.clarificationReasonCode === undefined ? {} : { clarificationReasonCode: record.clarificationReasonCode }),
+    ...(record.failedAt === undefined || record.failureCount === undefined || record.failureReasonCode === undefined ? {} : {
+      failure: {
+        attempts: record.failureCount,
+        executionStarted: record.failureExecutionStarted ?? false,
+        reasonCode: failureReasonCode,
+        suggestedAction: suggestedActionForJoiInputFailure(failureReasonCode),
+      },
+    }),
     inputId: record.inputId,
     status: record.status,
     ...(preview === undefined ? {} : { textPreview: preview }),

@@ -78,13 +78,17 @@ export class JoiTaskComponent implements ActorComponent {
       });
       // Crash-loop breaker: a poisoned session or deterministic failure would otherwise
       // re-PEND and retry every tick forever. After N consecutive failures the input is
-      // parked as canceled (028 cancel design); the user can resubmit.
+      // parked as an explicit system failure; user cancellation remains a separate fact.
       const failures = (this.#failures.get(turn.inputId) ?? 0) + 1;
       if (failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
         this.#failures.delete(turn.inputId);
-        await this.dependencies.inbox.cancel(turn.inputId);
+        await this.dependencies.inbox.park(turn.inputId, {
+          failureCount: failures,
+          reasonCode: errorCode ?? "joi_task_turn_failed",
+        });
         emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_parked", {
           consecutiveFailures: failures,
+          errorCode: errorCode ?? "joi_task_turn_failed",
           inputId: turn.inputId,
         });
       } else {

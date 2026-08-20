@@ -99,16 +99,17 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
   async loadForReassignment(workId: string): Promise<WorkReassignmentContext | null> {
     const row = this.database.transaction((connection) => connection.prepare(`
       SELECT w.work_id, w.workbench_id, w.title, COALESCE(p.access_mode, w.access_mode) AS access_mode, w.status,
-             w.created_at, w.updated_at, a.partner_revision_id
+             w.created_at, w.updated_at, a.partner_revision_id, a.instance_id, rev.partner_id
         FROM work_items w
         LEFT JOIN work_access_policies p ON p.work_id = w.work_id
         JOIN dispatch_attempts a ON a.dispatch_attempt_id = (
           SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest
            WHERE latest.work_id = w.work_id ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1
         )
+        JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
        WHERE w.work_id = ?`).get(workId)) as Record<string, unknown> | undefined;
     if (row === undefined) return null;
-    const required = ["work_id", "workbench_id", "title", "access_mode", "status", "created_at", "updated_at", "partner_revision_id"] as const;
+    const required = ["work_id", "workbench_id", "title", "access_mode", "status", "created_at", "updated_at", "partner_revision_id", "partner_id"] as const;
     if (required.some((key) => typeof row[key] !== "string")) throw new Error("work_reassignment_record_invalid");
     return {
       item: {
@@ -120,8 +121,17 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         updatedAt: row.updated_at as string,
         workId: row.work_id as string,
       },
+      ...(typeof row.instance_id === "string" ? { lastInstanceId: row.instance_id } : {}),
+      lastPartnerId: row.partner_id as string,
       lastPartnerRevisionId: row.partner_revision_id as string,
     };
+  }
+
+  /** Cancels work that is not mid-flight; running attempts finish on their own and arrive late. */
+  async cancel(workId: string, at: string): Promise<boolean> {
+    return this.database.transaction((connection) => connection.prepare(`
+      UPDATE work_items SET status = 'CANCELED', updated_at = ?
+       WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED')`).run(at, workId).changes > 0);
   }
 
   async reassign(plan: ReassignedWorkPlan): Promise<void> {

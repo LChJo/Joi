@@ -1,11 +1,18 @@
 /* Pi hooks require Promise-returning callbacks. */
 /* eslint-disable @typescript-eslint/require-await */
-import { Agent, type AgentMessage } from "@earendil-works/pi-agent-core";
+import {
+  Agent,
+  type AfterToolCallContext,
+  type AfterToolCallResult,
+  type AgentMessage,
+  type AgentTool,
+} from "@earendil-works/pi-agent-core";
+import { Type } from "@earendil-works/pi-ai";
 
 import { DomainError } from "../../domain/errors.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
-import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
+import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
@@ -17,14 +24,84 @@ import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../w
 
 const DEFAULT_RUN_TIMEOUT_MILLIS = 10 * 60_000;
 
+/** Per-run mutable facts: observed side effects and a pending question for the user. */
+interface RunTracker {
+  state: PartnerRunSideEffectState;
+  question?: string;
+}
+
 interface WarmAgent {
   agent: Agent;
   partnerRevisionId: string;
-  sideEffectTracker: { current: { state: PartnerRunSideEffectState } };
+  sideEffectTracker: { current: RunTracker };
   workspacePath?: string;
 }
 
 const MUTATING_TOOLS = new Set(["bash", "edit", "write"]);
+
+/**
+ * The partner's single channel to pause itself and ask the user. Always available
+ * regardless of the revision's narrowed tool list; the run terminates right after
+ * the call so the question reaches dispatch as WAITING_INPUT instead of more work.
+ */
+const askUserParameters = Type.Object({ question: Type.String({ maxLength: 1_000, minLength: 1 }) });
+
+function createAskUserTool(tracker: { current: RunTracker }): AgentTool<typeof askUserParameters> {
+  return {
+    description: "Ask the user one concrete blocking question when you cannot proceed without their judgement or missing information (for example a missing API key, credential or a decision only they can make). The run pauses until they answer on the workbench. Call it at most once per run, then stop.",
+    execute: async (_toolCallId, parameters) => {
+      const question = parameters.question.trim();
+      if (question.length === 0 || question.length > 1_000) {
+        throw new DomainError("partner_question_invalid", "The question for the user is invalid.");
+      }
+      tracker.current.question = question;
+      return {
+        content: [{ text: "Question recorded. The run now pauses for the user's answer. Reply with a one-line summary and stop; do not call any more tools.", type: "text" }],
+        details: {},
+        terminate: true,
+      };
+    },
+    label: "Ask the user",
+    name: "ask_user",
+    parameters: askUserParameters,
+  };
+}
+
+const ENVIRONMENT_VARIABLE_NAME = /^[A-Z][A-Z0-9_]{1,63}$/u;
+
+/**
+ * Recognizes only a stable missing-environment-variable signal from a failed
+ * shell tool. Raw command output is never retained in the question or result.
+ */
+function missingEnvironmentVariable(context: AfterToolCallContext): string | undefined {
+  if (context.toolCall.name !== "bash" || !context.isError) return undefined;
+  for (const block of context.result.content) {
+    if (block.type !== "text") continue;
+    const match = /\bMissing\s+([A-Z][A-Z0-9_]{1,63})\b[\s\S]{0,200}\bSet env var\b/u.exec(block.text);
+    const name = match?.[1];
+    if (name !== undefined && ENVIRONMENT_VARIABLE_NAME.test(name)) return name;
+  }
+  return undefined;
+}
+
+function pauseForMissingEnvironmentCredential(
+  tracker: { current: RunTracker },
+  context: AfterToolCallContext,
+): AfterToolCallResult | undefined {
+  const name = missingEnvironmentVariable(context);
+  if (name === undefined) return undefined;
+  tracker.current.question = [
+    `The selected Skill needs ${name}, but the Partner runtime cannot access it.`,
+    `Make sure ${name} exists in the Joi process environment and add ${name} to JOI_PARTNER_ENV_PASSTHROUGH.`,
+    "Fully restart Joi, then reply here to retry.",
+  ].join(" ");
+  return {
+    content: [{ text: "A required Skill credential is unavailable. The run has paused for user input.", type: "text" }],
+    details: {},
+    isError: false,
+    terminate: true,
+  };
+}
 
 /**
  * Pi core partner engine. Ephemeral runs are single-shot Agents (today's behavior);
@@ -61,8 +138,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     this.#warm.delete(instanceId);
   }
 
-  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
-    const tracker = { state: "NONE" as PartnerRunSideEffectState };
+  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+    const tracker: RunTracker = { state: "NONE" };
     try {
       return await this.#runEphemeral(request, revision, context, tracker);
     } catch (error) {
@@ -70,7 +147,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     }
   }
 
-  async #runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }, tracker: { state: PartnerRunSideEffectState }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async #runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, tracker: RunTracker): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
@@ -78,9 +155,18 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const pin = await this.#selectSource(revision, externalRunId);
     const resolved = await this.dependencies.resolver.resolve(pin);
     const configuredPrompt = await this.#configuredPrompt(revision);
-    const tools = execution.workspacePath === undefined ? [] : this.dependencies.tools.create(execution.workspacePath, this.#effectiveToolNames(revision));
+    const trackerRef = { current: tracker };
+    const tools = [
+      ...(execution.workspacePath === undefined ? [] : this.dependencies.tools.create(
+        execution.workspacePath,
+        this.#effectiveToolNames(revision),
+        { environmentKeys: context.skillEnvironmentKeys },
+      )),
+      createAskUserTool(trackerRef),
+    ];
     const allowed = new Set(tools.map((tool) => tool.name));
     const agent = new Agent({
+      afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(trackerRef, context)),
       beforeToolCall: ({ toolCall }) => {
         if (allowed.has(toolCall.name) && MUTATING_TOOLS.has(toolCall.name)) tracker.state = "OBSERVED";
         return Promise.resolve(allowed.has(toolCall.name) ? undefined : { block: true, reason: "partner_tool_not_allowed" });
@@ -105,13 +191,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     return {
       conversation: draftAgentConversation(request.taskProjection, body, agent.state.messages),
       externalRunId,
-      output: { artifacts, body },
-      status: "COMPLETED",
+      output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
+      status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
     };
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
-    const tracker = { state: "NONE" as PartnerRunSideEffectState };
+    const tracker: RunTracker = { state: "NONE" };
     try {
       return await this.#runResidentTurn(input, tracker);
     } catch (error) {
@@ -119,7 +205,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     }
   }
 
-  async #runResidentTurn(input: ResidentTurnInput, tracker: { state: PartnerRunSideEffectState }): Promise<ResidentTurnResult> {
+  async #runResidentTurn(input: ResidentTurnInput, tracker: RunTracker): Promise<ResidentTurnResult> {
     const { revision } = input;
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId);
@@ -136,10 +222,18 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     if (warm === undefined) {
       const pin = await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
       const resolved = await this.dependencies.resolver.resolve(pin);
-      const tools = execution.workspacePath === undefined ? [] : this.dependencies.tools.create(execution.workspacePath, this.#effectiveToolNames(revision));
-      const allowed = new Set(tools.map((tool) => tool.name));
       const sideEffectTracker = { current: tracker };
+      const tools = [
+        ...(execution.workspacePath === undefined ? [] : this.dependencies.tools.create(
+          execution.workspacePath,
+          this.#effectiveToolNames(revision),
+          { environmentKeys: input.skillEnvironmentKeys },
+        )),
+        createAskUserTool(sideEffectTracker),
+      ];
+      const allowed = new Set(tools.map((tool) => tool.name));
       const agent = new Agent({
+        afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(sideEffectTracker, context)),
         beforeToolCall: ({ toolCall }) => {
           if (allowed.has(toolCall.name) && MUTATING_TOOLS.has(toolCall.name)) sideEffectTracker.current.state = "OBSERVED";
           return Promise.resolve(allowed.has(toolCall.name) ? undefined : { block: true, reason: "partner_tool_not_allowed" });
@@ -177,8 +271,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       externalRunId: `local_pi:${input.request.actionId}`,
       externalSessionRef: `partner_instance_messages:${input.instanceId}`,
       messages: [...warm.agent.state.messages],
-      output: { artifacts, body },
-      status: "COMPLETED",
+      output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
+      status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
     };
   }
 
@@ -200,7 +294,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   async #configuredPrompt(revision: PartnerRevision): Promise<string> {
-    let configuredPrompt = "You are a local Pi coding partner. Work only inside the assigned workspace and complete the requested work.";
+    let configuredPrompt = "You are a local Pi coding partner. The assigned workspace is your home base; complete the requested work.";
     if (revision.promptRef !== undefined) {
       const stored = await this.dependencies.prompts.read(revision.promptRef);
       if (stored === null) throw new Error("partner_prompt_not_found");
@@ -230,7 +324,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   #systemPrompt(configuredPrompt: string, request: PartnerRunRequest, workbenchSection: string, knowledgeSection: string, skillSection: string): string {
     return [
       configuredPrompt,
-      "Never access paths outside the assigned workspace.",
+      "The assigned workspace is your home base: create work files there by default. When the task requires it, you may also read and write paths outside the workspace (for example user directories, installed skill folders, or configuration files). List every write outside the workspace (path and change) in your final reply. Placeholders like {baseDir} inside skill instructions refer to the skill's own directory.",
+      "If you are blocked because only the user can supply missing information or make a decision, call ask_user once with one concrete question and stop; otherwise complete the work without asking.",
       `Workbench scope: ${request.workbenchId}`,
       `Work item: ${request.workId}`,
       workbenchSection,
@@ -263,25 +358,36 @@ function assistantText(messages: readonly unknown[]): string {
   return parts.join("\n").trim();
 }
 
-/** Derives only a stable classifier signal; raw provider error text never leaves this function. */
+const ERROR_DETAIL_CHARS = 240;
+
+/**
+ * Derives a stable classifier signal from a failed assistant message. Raw provider
+ * text never reaches the work result; only a truncated detail travels with local
+ * diagnostics so failures like this stay debuggable without leaking full payloads.
+ */
 function assistantFailureSignal(messages: readonly unknown[]): Error | null {
   for (const candidate of messages) {
     if (candidate === null || typeof candidate !== "object") continue;
     const message = candidate as { errorMessage?: unknown; role?: unknown; stopReason?: unknown };
     if (message.role !== "assistant" || message.stopReason !== "error") continue;
-    if (typeof message.errorMessage !== "string") return codedProviderError("assistant_error");
-    const knownCode = /\b(?:ECONNREFUSED|ECONNRESET|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)\b/iu.exec(message.errorMessage)?.[0];
-    if (knownCode !== undefined) return codedProviderError(knownCode.toUpperCase());
-    const statusText = /\b(?:HTTP|status)\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(message.errorMessage)?.[1];
-    if (statusText !== undefined) return Object.assign(new Error("partner_provider_failed"), { status: Number(statusText) });
-    if (/\brate[ -]?limit(?:ed|ing)?\b/iu.test(message.errorMessage)) return codedProviderError("rate_limited");
-    if (/\b(?:timed?\s*out|timeout)\b/iu.test(message.errorMessage)) return codedProviderError("timeout");
-    if (/\b(?:invalid[ _-]?api[ _-]?key|authentication|unauthorized)\b/iu.test(message.errorMessage)) return codedProviderError("invalid_api_key");
-    return codedProviderError("assistant_error");
+    const raw = typeof message.errorMessage === "string" ? message.errorMessage : undefined;
+    if (raw === undefined) return codedProviderError("assistant_error");
+    const detail = raw.slice(0, ERROR_DETAIL_CHARS);
+    const knownCode = /\b(?:ECONNREFUSED|ECONNRESET|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)\b/iu.exec(raw)?.[0];
+    if (knownCode !== undefined) return codedProviderError(knownCode.toUpperCase(), detail);
+    if (/\b(?:prompt is too long|context length|maximum context|too many tokens)\b/iu.test(raw)) return codedProviderError("context_too_large", detail);
+    if (/\brefused to complete\b/iu.test(raw)) return codedProviderError("model_refused", detail);
+    if (/\boverloaded/iu.test(raw)) return codedProviderError("server_error", detail);
+    if (/\brate[ -]?limit(?:ed|ing)?\b/iu.test(raw)) return codedProviderError("rate_limited", detail);
+    if (/\b(?:timed?\s*out|timeout)\b/iu.test(raw)) return codedProviderError("timeout", detail);
+    if (/\b(?:invalid[ _-]?api[ _-]?key|authentication|unauthorized)\b/iu.test(raw)) return codedProviderError("invalid_api_key", detail);
+    const statusText = /\b(?:HTTP|status)\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(raw)?.[1] ?? /^\s*([1-5]\d{2})\b/u.exec(raw)?.[1];
+    if (statusText !== undefined) return Object.assign(new Error("partner_provider_failed"), { detail, status: Number(statusText) });
+    return codedProviderError("assistant_error", detail);
   }
   return null;
 }
 
-function codedProviderError(code: string): Error & { code: string } {
-  return Object.assign(new Error("partner_provider_failed"), { code });
+function codedProviderError(code: string, detail?: string): Error & { code: string; detail?: string } {
+  return Object.assign(new Error("partner_provider_failed"), { code, ...(detail === undefined ? {} : { detail }) });
 }

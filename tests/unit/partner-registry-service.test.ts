@@ -254,4 +254,17 @@ describe("partner-registry-revision-before-dispatch", () => {
     expect(updated.partnerRevisionId).not.toBe(partner.partnerRevisionId);
     expect(repository.history).toHaveLength(2);
   });
+
+  it("requires an explicitly narrowed Pi tool list to include read whenever Skills are selected", async () => {
+    const service = new PartnerRegistryService({
+      clock: new TestClock(),
+      ids: new TestIds(),
+      repository: new MemoryPartnerRegistry(),
+      skills: { listForEngine: () => [{ displayName: "Demo", id: "agents/demo" }] },
+    });
+    const fields = { capabilities: ["code"], displayName: "Pi", kind: "local-pi" as const, skills: ["agents/demo"] };
+    await expect(service.add({ ...fields, tools: ["edit"] })).rejects.toMatchObject({ code: "partner_skill_requires_read" });
+    await expect(service.add({ ...fields, tools: ["read"] })).resolves.toMatchObject({ skills: ["agents/demo"], tools: ["read"] });
+    await expect(service.add({ ...fields, tools: [] })).resolves.toMatchObject({ skills: ["agents/demo"], tools: [] });
+  });
 });

@@ -7,6 +7,7 @@ import type { JoiCoordinatorStore, JoiPendingInput } from "../../application/por
 import type { JoiActivityDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import { normalizeCompletionSummary } from "../../application/partners/agent-conversation-presentation.js";
+import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -25,6 +26,10 @@ function mapRow(row: Row): JoiInboxRecord {
   const clarificationReasonCode = row.clarification_reason_code;
   const createdAt = row.created_at;
   const dismissedAt = row.dismissed_at;
+  const failedAt = row.failed_at;
+  const failureCount = row.failure_count;
+  const failureExecutionStarted = row.failure_execution_started;
+  const failureReasonCode = row.failure_reason_code;
   const updatedAt = row.updated_at;
   if (typeof inputId !== "string" || typeof idempotencyKey !== "string" || typeof body !== "string"
     || typeof status !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string"
@@ -32,7 +37,11 @@ function mapRow(row: Row): JoiInboxRecord {
     || (canceledAt !== null && canceledAt !== undefined && typeof canceledAt !== "string")
     || (clarificationPrompt !== null && clarificationPrompt !== undefined && typeof clarificationPrompt !== "string")
     || (clarificationReasonCode !== null && clarificationReasonCode !== undefined && typeof clarificationReasonCode !== "string")
-    || (dismissedAt !== null && dismissedAt !== undefined && typeof dismissedAt !== "string")) {
+    || (dismissedAt !== null && dismissedAt !== undefined && typeof dismissedAt !== "string")
+    || (failedAt !== null && failedAt !== undefined && typeof failedAt !== "string")
+    || (failureCount !== null && failureCount !== undefined && (typeof failureCount !== "number" || !Number.isInteger(failureCount) || failureCount < 1))
+    || (failureExecutionStarted !== null && failureExecutionStarted !== undefined && failureExecutionStarted !== 0 && failureExecutionStarted !== 1)
+    || (failureReasonCode !== null && failureReasonCode !== undefined && typeof failureReasonCode !== "string")) {
     throw new Error("joi_inbox_record_invalid");
   }
   return {
@@ -43,6 +52,10 @@ function mapRow(row: Row): JoiInboxRecord {
     ...(typeof clarificationReasonCode === "string" ? { clarificationReasonCode } : {}),
     createdAt,
     ...(typeof dismissedAt === "string" ? { dismissedAt } : {}),
+    ...(typeof failedAt === "string" ? { failedAt } : {}),
+    ...(typeof failureCount === "number" ? { failureCount } : {}),
+    ...(failureExecutionStarted === 0 || failureExecutionStarted === 1 ? { failureExecutionStarted: failureExecutionStarted === 1 } : {}),
+    ...(typeof failureReasonCode === "string" ? { failureReasonCode: normalizeJoiFailureReasonCode(failureReasonCode) } : {}),
     idempotencyKey,
     inputId,
     status: status as JoiInboxStatus,
@@ -75,7 +88,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async list(): Promise<JoiInboxRecord[]> {
     return this.database.transaction((connection) => connection.prepare(
-      "SELECT * FROM joi_inbox_messages WHERE dismissed_at IS NULL ORDER BY created_at, input_id",
+      `SELECT i.*, CASE WHEN EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id) THEN 1 ELSE 0 END AS failure_execution_started
+        FROM joi_inbox_messages i WHERE i.dismissed_at IS NULL ORDER BY i.created_at, i.input_id`,
     ).all()).map((row) => mapRow(row as Row));
   }
 
@@ -109,6 +123,29 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         SET status = 'CONSUMED', canceled_at = ?, clarification_reason_code = NULL,
           clarification_prompt = NULL, updated_at = ?
         WHERE input_id = ? AND status IN ('PENDING', 'CLARIFICATION_REQUIRED')`).run(now, now, inputId);
+      if (result.changes === 0) return null;
+      // Canceling a goal also cancels its not-yet-final work; a WAITING work would
+      // otherwise block the goal's synthesis forever with nobody left to answer it.
+      connection.prepare(`UPDATE work_items SET status = 'CANCELED', updated_at = ?
+        WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING')`).run(now, inputId);
+      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      return updated === undefined ? null : mapRow(updated);
+    });
+  }
+
+  async park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<JoiInboxRecord | null> {
+    if (!Number.isInteger(failure.failureCount) || failure.failureCount < 1
+      || failure.reasonCode.length > 80 || !/^[A-Za-z0-9_.:-]+$/u.test(failure.reasonCode)) {
+      throw new Error("joi_input_failure_invalid");
+    }
+    return this.database.transaction((connection) => {
+      const now = new Date().toISOString();
+      const result = connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CONSUMED', canceled_at = NULL, failed_at = ?, failure_reason_code = ?,
+          failure_count = ?, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+        WHERE input_id = ? AND status = 'PENDING'`).run(
+        now, failure.reasonCode, failure.failureCount, now, inputId,
+      );
       if (result.changes === 0) return null;
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
@@ -286,9 +323,12 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async requireClarification(inputId: string, reasonCode: string, prompt?: string): Promise<void> {
     this.database.transaction((connection) => {
+      // Any live row may be (re-)raised into a question card, including an already
+      // CONSUMED goal input: a partner question revives the goal so the user can answer
+      // and the flow continues. Dismissed, canceled and parked rows stay untouched.
       connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = ?, clarification_prompt = ?, updated_at = ?
-        WHERE input_id = ? AND status <> 'CONSUMED'`).run(
+        WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(
         reasonCode, prompt ?? null, new Date().toISOString(), inputId,
       );
     });
@@ -389,8 +429,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     this.database.transaction((connection) => {
       const now = new Date().toISOString();
       connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
+      // Never kick a row that is waiting on the user back into the scheduler: an orphan
+      // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages
-        SET status = 'PENDING', updated_at = ? WHERE input_id = ? AND status <> 'CONSUMED'`).run(now, inputId);
+        SET status = 'PENDING', updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(now, inputId);
     });
   }
 }

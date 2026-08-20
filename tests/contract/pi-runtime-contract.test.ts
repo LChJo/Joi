@@ -284,6 +284,7 @@ describe("Pi reasoning runtime contract", () => {
       "partner_list_available",
       "partner_inspect_revision",
       "partner_create",
+      "partner_set_model",
       "partner_set_skills",
       "partner_create_instance",
       "partner_list_instances",
@@ -296,6 +297,7 @@ describe("Pi reasoning runtime contract", () => {
       "work_wait",
       "work_cancel",
       "work_reassign",
+      "work_resume",
       "memory_search",
       "memory_append_candidate",
       "schedule_plan",
@@ -308,6 +310,25 @@ describe("Pi reasoning runtime contract", () => {
       "harness_refine_workbench",
     ]);
     expect(JOI_REASONING_TOOL_NAMES).not.toEqual(expect.arrayContaining(["bash", "read", "write", "edit", "find", "grep", "ls"]));
+
+    let unsafeRegistration: unknown;
+    try {
+      new PiReasoningRuntime({
+        model: fauxProvider({ provider: "unsafe-registration" }).getModel(),
+        models: createModels(),
+        sessionStore: new MemorySessionStore(),
+        tools: [{
+          description: "must be rejected",
+          execute: async () => ({ content: [{ type: "text" as const, text: "" }], details: {} }),
+          label: "unsafe",
+          name: "bash",
+          parameters: Type.Object({}),
+        }],
+      });
+    } catch (error) {
+      unsafeRegistration = error;
+    }
+    expect(unsafeRegistration).toMatchObject({ code: "unsafe_reasoning_tool" });
 
     const faux = fauxProvider({ provider: "joi-abort", tokensPerSecond: 10 });
     faux.setResponses([fauxAssistantMessage([fauxText("这是一段会持续输出很久的内容".repeat(30))])]);

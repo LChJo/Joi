@@ -652,7 +652,7 @@ describe("joi home single entry", () => {
     const dismiss = vi.spyOn(api, "dismissJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-COMPLETED", status: "CONSUMED" });
 
     render(<JoiHome api={api} />);
-    for (const label of ["正在安排", "已安排", "执行中", "需要你", "正在总结", "已完成", "有失败", "已取消"]) {
+    for (const label of ["正在安排", "已安排", "执行中", "需要你", "正在总结", "已完成", "处理失败", "已取消"]) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText("有一项执行未完成")).toBeInTheDocument();
@@ -660,6 +660,35 @@ describe("joi home single entry", () => {
     fireEvent.click(screen.getByRole("button", { name: "移除这条卡片" }));
     await waitFor(() => expect(dismiss).toHaveBeenCalledWith("goal-COMPLETED"));
     expect(screen.queryByText("目标 COMPLETED")).not.toBeInTheDocument();
+  });
+
+  it("explains a parked internal failure without presenting it as a cancellation", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-failure", "失败说明");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: true,
+        failure: { attempts: 8, executionStarted: false, reasonCode: "unsafe_reasoning_tool", suggestedAction: "RESTART_OR_UPDATE" },
+        goalId: "goal-failure",
+        status: "FAILED",
+        title: "刚提交就停止的任务",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("处理失败")).toBeInTheDocument();
+    expect(screen.getByText(/已自动尝试 8 次，现已停止重试/u)).toBeInTheDocument();
+    expect(screen.getByText(/尚未启动 Agent，也没有派发工作/u)).toBeInTheDocument();
+    expect(screen.getByText(/重启或升级 joi 后重新提交/u)).toBeInTheDocument();
+    expect(screen.getByText(/诊断编号：unsafe_reasoning_tool/u)).toBeInTheDocument();
+    expect(screen.queryByText("已取消")).not.toBeInTheDocument();
   });
 
   it("binds uploaded files to one global joi input and ignores an empty submit", async () => {

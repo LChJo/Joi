@@ -12,12 +12,14 @@ import type { PartnerRegistryRepository } from "../ports/partner-registry.js";
 import {
   emitRuntimeDiagnostic,
   runtimeDiagnosticErrorCode,
+  runtimeDiagnosticErrorDetail,
   type RuntimeDiagnostics,
 } from "../ports/runtime-diagnostics.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 import type { PartnerRegistryService } from "./partner-registry-service.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
+import { wrapPartnerRunFailure } from "./partner-run-failure.js";
 
 const DEFAULT_LIMITS = {
   ephemeralIdleMillis: 5 * 60_000,
@@ -40,7 +42,7 @@ export class PartnerInstanceManager {
     registry: Pick<PartnerRegistryService, "pinForDispatch">;
     repository: PartnerInstanceRepository;
     revisions: Pick<PartnerRegistryRepository, "getActive">;
-    skills: Pick<PartnerSkillCatalog, "readInstructions">;
+    skills: Pick<PartnerSkillCatalog, "readInstructions" | "resolveForPi" | "validateRefs">;
   }) {
     this.#limits = { ...DEFAULT_LIMITS, ...(dependencies.limits ?? {}) };
   }
@@ -103,11 +105,54 @@ export class PartnerInstanceManager {
     }
     if (input.dispatchAttemptId !== undefined) await this.dependencies.repository.linkDispatch(input.dispatchAttemptId, record.instanceId);
 
+    let skillSection = "";
+    let skillEnvironmentKeys: readonly string[] = [];
+    try {
+      if (input.revision.kind === "local-pi") {
+        this.dependencies.skills.validateRefs(input.revision.engine, input.revision.skills);
+        if (input.revision.engine === "pi-core") {
+          if (input.revision.skills.length > 0 && input.revision.tools.length > 0 && !input.revision.tools.includes("read")) {
+            throw new DomainError("partner_skill_requires_read", "Pi Skills require the read tool when the tool list is narrowed.");
+          }
+          const dispatch = this.dependencies.skills.resolveForPi(input.revision.skills);
+          skillEnvironmentKeys = dispatch.environmentKeys;
+          skillSection = dispatch.promptSection;
+        } else {
+          skillSection = this.dependencies.skills.readInstructions(input.revision.skills);
+        }
+      }
+    } catch (error) {
+      const failure = wrapPartnerRunFailure(error, { phase: "CONFIGURATION", sideEffectState: "NONE" });
+      if (record.sessionPolicy === "EPHEMERAL") await this.#disposeRecord(record, "skill_configuration_failed");
+      if (input.revision.skills.length > 0) {
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.skills.failed", {
+          actionId: input.request.actionId,
+          errorCode: runtimeDiagnosticErrorCode(failure),
+          ...((() => { const detail = runtimeDiagnosticErrorDetail(failure); return detail === undefined ? {} : { errorDetail: detail }; })()),
+          instanceId: record.instanceId,
+          partnerId: record.partnerId,
+          skillCount: input.revision.skills.length,
+          workbenchId: input.request.workbenchId,
+          workId: input.request.workId,
+        });
+      }
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.failed", {
+        actionId: input.request.actionId,
+        workbenchId: input.request.workbenchId,
+        ...(input.dispatchAttemptId === undefined ? {} : { dispatchAttemptId: input.dispatchAttemptId }),
+        durationMs: 0,
+        errorCode: runtimeDiagnosticErrorCode(failure),
+        ...((() => { const detail = runtimeDiagnosticErrorDetail(failure); return detail === undefined ? {} : { errorDetail: detail }; })()),
+        instanceId: record.instanceId,
+        workId: input.request.workId,
+      });
+      throw failure;
+    }
+
     const engine = this.#engine(record.engine);
     const knowledgeSection = input.revision.kind === "local-pi"
       ? await this.dependencies.knowledge.readForInjection(record.partnerId)
       : "";
-    let skillSection: string;
     const startedAt = this.dependencies.clock.now().toISOString();
     const startedAtMillis = this.dependencies.clock.now().getTime();
     await this.dependencies.repository.setStatusBusy(record.instanceId, startedAt);
@@ -122,9 +167,6 @@ export class PartnerInstanceManager {
       workId: input.request.workId,
     });
     try {
-      skillSection = input.revision.kind === "local-pi"
-        ? this.dependencies.skills.readInstructions(input.revision.skills)
-        : "";
       if (input.revision.skills.length > 0) {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.skills.injected", {
           actionId: input.request.actionId,
@@ -137,7 +179,11 @@ export class PartnerInstanceManager {
         });
       }
       if (record.sessionPolicy === "EPHEMERAL") {
-        const result = await engine.runEphemeral(input.request, input.revision, { knowledgeSection, skillSection });
+        const result = await engine.runEphemeral(input.request, input.revision, {
+          knowledgeSection,
+          skillEnvironmentKeys,
+          skillSection,
+        });
         await this.#disposeRecord(record, "ephemeral_completed");
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.completed", {
           actionId: input.request.actionId,
@@ -155,6 +201,7 @@ export class PartnerInstanceManager {
           ...(result.conversation === undefined ? {} : { conversation: result.conversation }),
           externalRunId: result.externalRunId,
           instanceId: record.instanceId,
+          ...(result.output.pendingQuestion === undefined ? {} : { pendingQuestion: result.output.pendingQuestion }),
           status: result.status,
           workId: input.request.workId,
         };
@@ -167,6 +214,7 @@ export class PartnerInstanceManager {
         request: input.request,
         restoredMessages: restored,
         revision: input.revision,
+        skillEnvironmentKeys,
         skillSection,
       });
       await this.dependencies.messages.save(record.instanceId, turn.messages);
@@ -191,6 +239,7 @@ export class PartnerInstanceManager {
         ...(turn.conversation === undefined ? {} : { conversation: turn.conversation }),
         externalRunId: turn.externalRunId,
         instanceId: record.instanceId,
+        ...(turn.output.pendingQuestion === undefined ? {} : { pendingQuestion: turn.output.pendingQuestion }),
         status: turn.status,
         workId: input.request.workId,
       };
@@ -201,23 +250,13 @@ export class PartnerInstanceManager {
         // A failed resident turn stays resumable: the instance returns to IDLE with its saved messages.
         await this.dependencies.repository.markTurnComplete(record.instanceId, this.dependencies.clock.now().toISOString());
       }
-      if (input.revision.skills.length > 0) {
-        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.skills.failed", {
-          actionId: input.request.actionId,
-          errorCode: runtimeDiagnosticErrorCode(error),
-          instanceId: record.instanceId,
-          partnerId: record.partnerId,
-          skillCount: input.revision.skills.length,
-          workbenchId: input.request.workbenchId,
-          workId: input.request.workId,
-        });
-      }
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.failed", {
         actionId: input.request.actionId,
         workbenchId: input.request.workbenchId,
         ...(input.dispatchAttemptId === undefined ? {} : { dispatchAttemptId: input.dispatchAttemptId }),
         durationMs: Math.max(0, this.dependencies.clock.now().getTime() - startedAtMillis),
         errorCode: runtimeDiagnosticErrorCode(error),
+        ...((() => { const detail = runtimeDiagnosticErrorDetail(error); return detail === undefined ? {} : { errorDetail: detail }; })()),
         instanceId: record.instanceId,
         workId: input.request.workId,
       });

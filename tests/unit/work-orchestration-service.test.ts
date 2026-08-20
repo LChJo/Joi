@@ -1,7 +1,7 @@
 /* In-memory orchestration ports resolve immediately. */
 /* eslint-disable @typescript-eslint/require-await */
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
-import type { CommittedWorkPlan, ReassignedWorkPlan, WorkPlanRepository } from "../../src/main/application/ports/work-orchestration.js";
+import type { CommittedWorkPlan, ReassignedWorkPlan, WorkPlanRepository, WorkReassignmentContext } from "../../src/main/application/ports/work-orchestration.js";
 import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -136,8 +136,10 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async () => ({ partnerId: "partner-b", partnerRevisionId: "revision-b", registryRevision: 8 }) },
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
+        cancel: async () => true,
         loadForReassignment: async () => ({
           item: { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" },
+          lastPartnerId: "partner-a",
           lastPartnerRevisionId: "revision-a",
         }),
         reassign: async (plan) => { reassigned.push(plan); },
@@ -158,7 +160,7 @@ describe("work orchestration outbox", () => {
   it("rejects unsafe reassignment states before creating a second side effect", async () => {
     const baseItem: WorkItem = { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };
     const create = (options: {
-      context?: { item: WorkItem; lastPartnerRevisionId: string } | null;
+      context?: WorkReassignmentContext | null;
       policy?: { allowed: boolean; reason?: string };
       reassignment?: boolean;
       revision?: string;
@@ -167,7 +169,8 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async () => ({ partnerId: "partner", partnerRevisionId: options.revision ?? "revision-new", registryRevision: 2 }) },
       policy: { evaluate: async () => options.policy ?? { allowed: true } },
       ...(options.reassignment === false ? {} : { reassignment: {
-        loadForReassignment: async () => options.context === undefined ? { item: baseItem, lastPartnerRevisionId: "revision-old" } : options.context,
+        cancel: async () => true,
+        loadForReassignment: async () => options.context === undefined ? { item: baseItem, lastPartnerId: "partner-old", lastPartnerRevisionId: "revision-old" } : options.context,
         reassign: async () => undefined,
       } }),
       repository: { commit: async () => undefined },
@@ -175,10 +178,63 @@ describe("work orchestration outbox", () => {
 
     await expect(create({ reassignment: false }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassignment_unavailable" });
     await expect(create({ context: null }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_not_found" });
-    await expect(create({ context: { item: { ...baseItem, workbenchId: "workbench-2" }, lastPartnerRevisionId: "revision-old" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });
-    await expect(create({ context: { item: { ...baseItem, status: "COMPLETED" }, lastPartnerRevisionId: "revision-old" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_status_invalid" });
+    await expect(create({ context: { item: { ...baseItem, workbenchId: "workbench-2" }, lastPartnerId: "partner-old", lastPartnerRevisionId: "revision-old" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });
+    await expect(create({ context: { item: { ...baseItem, status: "COMPLETED" }, lastPartnerId: "partner-old", lastPartnerRevisionId: "revision-old" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_status_invalid" });
     await expect(create({ revision: "revision-old" }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_same_revision" });
     await expect(create({ policy: { allowed: false, reason: "capacity" } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_policy_denied", message: "capacity" });
     await expect(create({ policy: { allowed: false } }).reassign({ workbenchId: "workbench-1", partnerId: "partner", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_reassign_policy_denied" });
+  });
+
+  it("resumes waiting work on the same revision and only reuses a live instance", async () => {
+    const waitingItem: WorkItem = { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "WAITING", title: "待答", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };
+    const reassigned: ReassignedWorkPlan[] = [];
+    const create = (options: { instance?: { instanceId: string; status: string } | null; item?: WorkItem }) => new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      instances: { get: async () => options.instance === undefined ? null : options.instance as never },
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision-same", registryRevision: 3 }) },
+      policy: { evaluate: async () => ({ allowed: true }) },
+      reassignment: {
+        cancel: async () => true,
+        loadForReassignment: async (): Promise<WorkReassignmentContext> => ({
+          item: options.item ?? waitingItem,
+          lastInstanceId: "instance-1",
+          lastPartnerId: "partner-a",
+          lastPartnerRevisionId: "revision-same",
+        }),
+        reassign: async (plan) => { reassigned.push(plan); },
+      },
+      repository: { commit: async () => undefined },
+    });
+
+    // A live IDLE instance is referenced directly so the resident conversation continues.
+    await expect(create({ instance: { instanceId: "instance-1", status: "IDLE" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" }))
+      .resolves.toMatchObject({ outbox: { payload: { instanceId: "instance-1", workId: "work-1" } }, partnerRevisionId: "revision-same" });
+    // A disposed instance must never be referenced; the attempt falls back to a resident continuation.
+    await expect(create({ instance: { instanceId: "instance-1", status: "DISPOSED" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" }))
+      .resolves.toMatchObject({ outbox: { payload: { sessionPolicy: "RESIDENT", workId: "work-1" } } });
+    expect(reassigned).toHaveLength(2);
+
+    await expect(create({ item: { ...waitingItem, status: "COMPLETED" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_resume_status_invalid" });
+    await expect(create({ item: { ...waitingItem, workbenchId: "workbench-2" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });
+  });
+
+  it("cancels work only through the repository guard", async () => {
+    const canceled: string[] = [];
+    const waitingItem: WorkItem = { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "WAITING", title: "待答", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };
+    const create = (cancelResult: boolean) => new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) },
+      reassignment: {
+        cancel: async (workId) => { canceled.push(workId); return cancelResult; },
+        loadForReassignment: async (): Promise<WorkReassignmentContext> => ({ item: waitingItem, lastPartnerId: "partner-a", lastPartnerRevisionId: "revision" }),
+        reassign: async () => undefined,
+      },
+      repository: { commit: async () => undefined },
+    });
+
+    await expect(create(true).cancel({ workbenchId: "workbench-1", workId: "work-1" })).resolves.toMatchObject({ workId: "work-1" });
+    expect(canceled).toEqual(["work-1"]);
+    await expect(create(false).cancel({ workbenchId: "workbench-1", workId: "work-1" })).rejects.toMatchObject({ code: "work_cancel_status_invalid" });
   });
 });

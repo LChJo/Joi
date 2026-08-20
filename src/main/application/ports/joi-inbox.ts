@@ -9,6 +9,10 @@ export interface JoiInboxRecord {
   clarificationReasonCode?: string;
   createdAt: string;
   dismissedAt?: string;
+  failedAt?: string;
+  failureCount?: number;
+  failureExecutionStarted?: boolean;
+  failureReasonCode?: string;
   idempotencyKey: string;
   inputId: string;
   status: JoiInboxStatus;
@@ -21,4 +25,5 @@ export interface JoiInboxRepository {
   create(record: JoiInboxRecord): Promise<JoiInboxRecord>;
   dismiss(inputId: string): Promise<JoiInboxRecord | null>;
   list(): Promise<JoiInboxRecord[]>;
+  park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<JoiInboxRecord | null>;
 }

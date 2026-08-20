@@ -10,7 +10,7 @@ import { DomainError } from "../../domain/errors.js";
 import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
-import type { PartnerEngineRuntime, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
+import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import { resolveLocalCliExecutable, type LocalCliProtocol, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
@@ -72,7 +72,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     if (warm !== undefined) void warm.conversation.close().catch(() => undefined);
   }
 
-  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: { knowledgeSection: string; skillSection: string }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     const resolved = this.#resolve();
     const execution = await this.#execution(request, revision, resolved);
     const surface = await this.#sdkSurface();
@@ -160,7 +160,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
 
   async #systemPrompt(revision: PartnerRevision, request: PartnerRunRequest, workbenchSection: string, context: { knowledgeSection: string; skillSection: string }): Promise<string> {
     const engineLabel = this.dependencies.protocol === "codex" ? "Codex" : "Claude Code";
-    let configuredPrompt = `You are a local ${engineLabel} coding partner. Work only inside the assigned workspace and complete the requested work.`;
+    let configuredPrompt = `You are a local ${engineLabel} coding partner. The assigned workspace is your home base; complete the requested work.`;
     if (revision.promptRef !== undefined) {
       const stored = await this.dependencies.prompts.read(revision.promptRef);
       if (stored === null) throw new DomainError("partner_prompt_not_found", "Partner prompt is missing.");
@@ -168,7 +168,7 @@ export class LocalCliPartnerEngineRuntime implements PartnerEngineRuntime {
     }
     return [
       configuredPrompt,
-      "Never access paths outside the assigned workspace.",
+      "The assigned workspace is your home base: create work files there by default. When the task requires it, you may also read and write paths outside the workspace (for example user directories, installed skill folders, or configuration files). List every write outside the workspace (path and change) in your final reply.",
       `Workbench scope: ${request.workbenchId}`,
       `Work item: ${request.workId}`,
       workbenchSection,

@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { createJoiReasoningTools, goalFromInputIdPrefix, selectJoiReasoningToolsForInput } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
+import { JOI_REASONING_TOOL_NAMES } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { DomainError } from "../../src/main/domain/errors.js";
 import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
@@ -117,6 +118,21 @@ function makeTools(options: {
         partnerRevisionId: "partner_revision_1",
         registryRevision: 1,
       }),
+      resume: async (input) => ({
+        actionId: "action_resume",
+        dispatchAttemptId: "attempt_resume",
+        outbox: {
+          availableAt: "2026-07-29T10:00:00.000Z",
+          kind: "partner.dispatch" as const,
+          outboxId: "outbox_resume",
+          payload: { actionId: "action_resume", dispatchAttemptId: "attempt_resume", sessionPolicy: "RESIDENT" as const, workId: input.workId },
+        },
+        partnerId: "partner_1",
+        partnerRevisionId: "partner_revision_1",
+        registryRevision: 1,
+        workId: input.workId,
+      }),
+      cancel: async (input) => ({ workId: input.workId }),
     },
   });
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
@@ -139,6 +155,11 @@ function makeTools(options: {
 }
 
 describe("joi reasoning tools", () => {
+  it("keeps every registered reasoning tool inside the runtime allowlist", () => {
+    const allowed = new Set<string>(JOI_REASONING_TOOL_NAMES);
+    expect(makeTools().tools.map((tool) => tool.name).filter((name) => !allowed.has(name))).toEqual([]);
+  });
+
   it("lets a goal result turn inspect a safe failure, switch a partner revision and reassign the same Work", () => {
     const tools = selectJoiReasoningToolsForInput(makeTools().tools, "joi_result_input:goal:goal-1");
     expect(tools.map((tool) => tool.name)).toEqual(expect.arrayContaining([

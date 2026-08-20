@@ -18,6 +18,7 @@ interface Harness {
   calls: string[];
   component: JoiTaskComponent;
   failTurns: string[];
+  parks: { failureCount: number; inputId: string; reasonCode: string }[];
   signals: Map<string, AbortSignal | undefined>;
   settle: (inputId: string, outcome?: "ok" | "fail") => void;
   state: { pending: JoiTaskPendingInput[]; stale: JoiTaskStaleTurn[] };
@@ -26,6 +27,7 @@ interface Harness {
 function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harness {
   const calls: string[] = [];
   const failTurns: string[] = [];
+  const parks: { failureCount: number; inputId: string; reasonCode: string }[] = [];
   const signals = new Map<string, AbortSignal | undefined>();
   const resolvers = new Map<string, { reject: (error: Error) => void; resolve: () => void }>();
   const state = {
@@ -45,9 +47,9 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harn
     },
     gate: { hasReadySource: async () => options?.ready ?? true },
     inbox: {
-      cancel: async (inputId) => {
+      park: async (inputId, failure) => {
         state.pending = state.pending.filter((pending) => pending.inputId !== inputId);
-        calls.push(`cancel:${inputId}`);
+        parks.push({ inputId, ...failure });
       },
       failTurn: async (_inputId, turnId) => {
         failTurns.push(turnId);
@@ -60,12 +62,13 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harn
     calls,
     component,
     failTurns,
+    parks,
     signals,
     settle: (inputId, outcome = "ok") => {
       const entry = resolvers.get(inputId);
       if (entry === undefined) throw new Error(`no in-flight handle for ${inputId}`);
       if (outcome === "ok") entry.resolve();
-      else entry.reject(new Error("turn_boom"));
+      else entry.reject(Object.assign(new Error("safe summary"), { code: "turn_boom" }));
     },
     state,
   };
@@ -118,10 +121,9 @@ describe("JoiTaskComponent traversal scheduling", () => {
       await flush();
     }
     expect(harness.calls.filter((entry) => entry === "input_loop")).toHaveLength(8);
-    expect(harness.calls).not.toContain("cancel:input_loop");
     // The 8th consecutive failure converges here: park instead of retrying forever.
     await harness.component.update(ctxAt(16_000));
-    expect(harness.calls).toContain("cancel:input_loop");
+    expect(harness.parks).toEqual([{ failureCount: 8, inputId: "input_loop", reasonCode: "turn_boom" }]);
     await harness.component.update(ctxAt(18_000));
     expect(harness.calls.filter((entry) => entry === "input_loop")).toHaveLength(8);
   });
@@ -145,7 +147,7 @@ describe("JoiTaskComponent traversal scheduling", () => {
       driver: { handle: async () => undefined },
       gate: { hasReadySource: async () => true },
       inbox: {
-        cancel: async () => undefined,
+        park: async () => undefined,
         failTurn: async (_inputId, turnId) => {
           scans.push(turnId);
         },

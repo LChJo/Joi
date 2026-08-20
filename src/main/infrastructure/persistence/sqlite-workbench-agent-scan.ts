@@ -87,6 +87,7 @@ export class SqliteWorkbenchAgentScan implements WorkbenchAgentScan {
         JOIN partner_runs pr ON pr.run_id = r.run_id
         JOIN partner_revisions rev ON rev.partner_revision_id = pr.partner_revision_id
        WHERE r.workbench_id = ? AND r.is_authoritative = 1 AND r.is_late = 0
+         AND r.status IN ('COMPLETED', 'FAILED', 'UNKNOWN')
          AND NOT EXISTS (SELECT 1 FROM joi_goal_result_members m WHERE m.event_id = e.event_id)
        ORDER BY r.created_at, r.result_id LIMIT 50`).all(workbenchId)) as Row[])
       .map((row) => {

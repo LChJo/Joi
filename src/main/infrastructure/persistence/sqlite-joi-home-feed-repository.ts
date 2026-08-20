@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
+import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "../../application/joi/joi-input-failure.js";
 import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
 
@@ -47,6 +48,7 @@ function toHarnessDto(projection: {
 }
 
 function goalStatus(row: Row): JoiGoalStatusDto {
+  if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
   if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined || number(row, "waiting_count") > 0) return "NEEDS_ATTENTION";
   if (number(row, "running_count") > 0) return "RUNNING";
@@ -99,7 +101,8 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.clarification_reason_code, i.clarification_prompt,
-        i.canceled_at, COALESCE(o.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
+        i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
+        COALESCE(o.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
         COALESCE(SUM(CASE WHEN w.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count,
@@ -135,6 +138,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}…` : rawTitle;
         const goalId = text(row, "input_id");
         const harnessProjection = harnessByGoal.get(goalId);
+        const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code);
         return {
           agentCount: number(row, "agent_count"),
           workbench: {
@@ -150,6 +154,14 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             },
           } : {}),
           goalId,
+          ...(status === "FAILED" && typeof row.failure_reason_code === "string" && typeof row.failure_count === "number" ? {
+            failure: {
+              attempts: row.failure_count,
+              executionStarted: total > 0 || number(row, "agent_count") > 0,
+              reasonCode: failureReasonCode,
+              suggestedAction: suggestedActionForJoiInputFailure(failureReasonCode),
+            },
+          } : {}),
           ...(harnessProjection === undefined ? {} : { harness: toHarnessDto(harnessProjection) }),
           ...(number(row, "outcome_current") === 1 && typeof row.completion_summary === "string" ? { completionSummary: stripPathRedactions(row.completion_summary) } : {}),
           ...(number(row, "outcome_current") === 1 && typeof row.completed_at === "string" ? { completedAt: row.completed_at } : {}),

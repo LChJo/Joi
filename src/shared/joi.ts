@@ -228,6 +228,7 @@ export interface JoiAcceptedMessageDto {
   canceled?: boolean;
   clarificationPrompt?: string;
   clarificationReasonCode?: string;
+  failure?: JoiGoalFailureDto;
   inputId: string;
   status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
   textPreview?: string;
@@ -252,6 +253,15 @@ export interface JoiActivityDto {
 
 export type JoiGoalStatusDto = "ARRANGING" | "ARRANGED" | "RUNNING" | "NEEDS_ATTENTION" | "FINALIZING" | "COMPLETED" | "FAILED" | "CANCELED";
 
+export type JoiFailureSuggestedActionDto = "CHECK_MODEL_SOURCE" | "RESTART_OR_UPDATE" | "RETRY_OR_EXPORT_DIAGNOSTICS";
+
+export interface JoiGoalFailureDto {
+  attempts: number;
+  executionStarted: boolean;
+  reasonCode: string;
+  suggestedAction: JoiFailureSuggestedActionDto;
+}
+
 export interface JoiGoalHarnessDto {
   currentLayer: number;
   decisionCount: number;
@@ -271,6 +281,7 @@ export interface JoiGoalCardDto {
   clarification?: { prompt?: string; reasonCode?: string };
   completedAt?: string;
   completionSummary?: string;
+  failure?: JoiGoalFailureDto;
   goalId: string;
   harness?: JoiGoalHarnessDto;
   status: JoiGoalStatusDto;

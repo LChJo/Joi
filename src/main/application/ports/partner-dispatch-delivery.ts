@@ -44,7 +44,7 @@ export interface PreparedDispatch {
 }
 
 export type DispatchRunOutput =
-  | { artifacts: PartnerRunOutput["artifacts"]; body: string; conversation?: AgentConversationDraft[]; failure?: PartnerRunFailure; kind: "terminal"; status: PartnerRunStatus }
+  | { artifacts: PartnerRunOutput["artifacts"]; body: string; conversation?: AgentConversationDraft[]; failure?: PartnerRunFailure; kind: "terminal"; pendingQuestion?: string; status: PartnerRunStatus }
   | { kind: "waiting_remote" };
 
 /** Stages the attachments bound to a dispatch's source input into the Workbench workspace. */

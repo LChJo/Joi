@@ -94,7 +94,7 @@ describe("local CLI partner engine", () => {
   it("runs ephemeral turns through one-shot query with the detected executable, protocol and edit permissions, no injected provider", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk);
-    await expect(runner.runEphemeral(request, localRevision(), { knowledgeSection: "KB_SECTION", skillSection: "" }))
+    await expect(runner.runEphemeral(request, localRevision(), { knowledgeSection: "KB_SECTION", skillEnvironmentKeys: [], skillSection: "" }))
       .resolves.toMatchObject({ externalRunId: "local_cli:action_cli_1", status: "COMPLETED" });
     const input = fake.createdOptions[0] as { options: { cwd?: string; model?: string; pathToAgentExecutable?: string; pathToClaudeCodeExecutable?: string; permissionMode?: string; protocol?: string; provider?: unknown; systemPrompt?: string }; prompt: string };
     expect(input.prompt).toBe("implement the change");
@@ -106,20 +106,20 @@ describe("local CLI partner engine", () => {
   it("passes a tool whitelist through allowedTools only when tools are selected", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk);
-    await runner.runEphemeral(request, localRevision({ tools: ["Bash", "Read"] }), { knowledgeSection: "", skillSection: "" });
+    await runner.runEphemeral(request, localRevision({ tools: ["Bash", "Read"] }), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" });
     const withTools = (fake.createdOptions[0] as { options: { allowedTools?: string[] } }).options;
     expect(withTools.allowedTools).toEqual(["Bash", "Read"]);
 
     const fake2 = makeFakeSdk();
     const runner2 = makeRunner(fake2.sdk);
-    await runner2.runEphemeral(request, localRevision({ tools: [] }), { knowledgeSection: "", skillSection: "" });
+    await runner2.runEphemeral(request, localRevision({ tools: [] }), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" });
     expect((fake2.createdOptions[0] as { options: { allowedTools?: string[] } }).options.allowedTools).toBeUndefined();
   });
 
   it("injects selected skill instructions into the system prompt", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk);
-    await runner.runEphemeral(request, localRevision(), { knowledgeSection: "", skillSection: "# Selected skills\n## Skill: x" });
+    await runner.runEphemeral(request, localRevision(), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "# Selected skills\n## Skill: x" });
     const systemPrompt = (fake.createdOptions[0] as { options: { systemPrompt?: string } }).options.systemPrompt ?? "";
     expect(systemPrompt).toContain("# Selected skills");
   });
@@ -127,18 +127,18 @@ describe("local CLI partner engine", () => {
   it("reports FAILED when the result message is not a success", async () => {
     const fake = makeFakeSdk({ resultSubtype: "error_during_execution" });
     const runner = makeRunner(fake.sdk);
-    await expect(runner.runEphemeral(request, localRevision(), { knowledgeSection: "", skillSection: "" }))
+    await expect(runner.runEphemeral(request, localRevision(), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" }))
       .resolves.toMatchObject({ status: "FAILED" });
   });
 
   it("keeps one warm resident conversation per instance and resumes by stored conversation id", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk);
-    const first = await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" });
+    const first = await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" });
     expect(first).toMatchObject({ externalSessionRef: "conversation_1", status: "COMPLETED" });
     expect(first.messages).toHaveLength(1);
 
-    const second = await runner.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance_cli", knowledgeSection: "", request: { ...request, actionId: "action_cli_2" }, restoredMessages: first.messages, revision: localRevision(), skillSection: "" });
+    const second = await runner.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance_cli", knowledgeSection: "", request: { ...request, actionId: "action_cli_2" }, restoredMessages: first.messages, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" });
     expect(second.externalSessionRef).toBe("conversation_1");
     expect(fake.sentTexts).toHaveLength(2);
     expect(fake.sentTexts.every((text) => text.includes("Workbench context") && text.includes("implement the change"))).toBe(true);
@@ -150,15 +150,15 @@ describe("local CLI partner engine", () => {
   it("rebuilds through resumeConversation after eviction and falls back to a fresh conversation", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk);
-    const first = await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" });
+    const first = await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" });
     runner.evictFromMemory("instance_cli");
-    const resumed = await runner.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: first.messages, revision: localRevision(), skillSection: "" });
+    const resumed = await runner.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: first.messages, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" });
     expect(fake.resumedIds).toEqual(["conversation_1"]);
     expect(resumed.externalSessionRef).toBe("conversation_1");
 
     const failing = makeFakeSdk({ failResume: true });
     const runner2 = makeRunner(failing.sdk);
-    const fresh = await runner2.runResidentTurn({ externalSessionRef: "conversation_gone", instanceId: "instance_other", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" });
+    const fresh = await runner2.runResidentTurn({ externalSessionRef: "conversation_gone", instanceId: "instance_other", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" });
     expect(fresh.externalSessionRef).toBe("conversation_1");
     expect(failing.resumedIds).toEqual(["conversation_gone"]);
   });
@@ -166,8 +166,8 @@ describe("local CLI partner engine", () => {
   it("rebuilds a warm resident conversation when the Workbench workspace changes", async () => {
     const fake = makeFakeSdk();
     const runner = makeRunner(fake.sdk, { workspacePaths: ["workspace_one", "workspace_two"] });
-    await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" });
-    await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request: { ...request, actionId: "action_cli_2" }, restoredMessages: null, revision: localRevision(), skillSection: "" });
+    await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" });
+    await runner.runResidentTurn({ instanceId: "instance_cli", knowledgeSection: "", request: { ...request, actionId: "action_cli_2" }, restoredMessages: null, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" });
     const created = fake.createdOptions.filter((option) => (option as { turns?: string }).turns === "resident") as { cwd?: string }[];
     expect(created.map((option) => option.cwd)).toEqual(["workspace_one", "workspace_two"]);
   });
@@ -175,8 +175,8 @@ describe("local CLI partner engine", () => {
   it("fails closed when the CLI is not detected and exposes the protocol as engine id", async () => {
     const unavailable = makeRunner(makeFakeSdk().sdk, { available: false });
     expect(unavailable.engineOf()).toBe("claude-code");
-    await expect(unavailable.runEphemeral(request, localRevision(), { knowledgeSection: "", skillSection: "" })).rejects.toMatchObject({ code: "engine_unavailable" });
-    await expect(unavailable.runResidentTurn({ instanceId: "i", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillSection: "" })).rejects.toMatchObject({ code: "engine_unavailable" });
+    await expect(unavailable.runEphemeral(request, localRevision(), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" })).rejects.toMatchObject({ code: "engine_unavailable" });
+    await expect(unavailable.runResidentTurn({ instanceId: "i", knowledgeSection: "", request, restoredMessages: null, revision: localRevision(), skillEnvironmentKeys: [], skillSection: "" })).rejects.toMatchObject({ code: "engine_unavailable" });
     await expect(unavailable.health()).resolves.toMatchObject({ available: false });
 
     const codex = makeRunner(makeFakeSdk().sdk, { protocol: "codex" });

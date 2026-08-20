@@ -74,7 +74,7 @@ function synthesizePartnerProfile(displayName: string, skills: string[], capabil
 }
 
 const SYNTHESIS_TOOL_NAMES = new Set([
-  "model_list_sources", "partner_list_available", "partner_set_model", "turn_complete", "work_read_result", "work_reassign",
+  "model_list_sources", "partner_list_available", "partner_set_model", "turn_complete", "work_cancel", "work_read_result", "work_reassign", "work_resume",
 ]);
 
 const ATTACHMENT_CHUNK_CHARS = 8_000;
@@ -106,7 +106,7 @@ export function createJoiReasoningTools(input: {
   results: Pick<WorkResultService, "read">;
   skills: Pick<PartnerSkillCatalog, "listForEngine">;
   turnId: string;
-  work: Pick<WorkOrchestrationService, "plan" | "reassign">;
+  work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume">;
 }): AgentTool[] {
   const goalContext = (): string => input.goalInputId ?? input.inputId;
   const requireHarness = (): NonNullable<typeof input.harness> => {
@@ -196,6 +196,29 @@ export function createJoiReasoningTools(input: {
     label: "Reassign work",
     name: "work_reassign",
     parameters: workReassignParameters,
+  };
+  const workResumeParameters = Type.Object({ workId: Type.String() });
+  const workResumeTool: AgentTool<typeof workResumeParameters> = {
+    description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive; the user's answer is already part of the goal request text. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
+    execute: async (_toolCallId, arguments_) => result(await input.work.resume({
+      workbenchId: input.workbenchId,
+      turnId: input.turnId,
+      workId: arguments_.workId,
+    })),
+    label: "Resume waiting work",
+    name: "work_resume",
+    parameters: workResumeParameters,
+  };
+  const workCancelParameters = Type.Object({ workId: Type.String() });
+  const workCancelTool: AgentTool<typeof workCancelParameters> = {
+    description: "Cancel planned, ready, waiting or failed Work, for example waiting Work whose question the user declined to answer. A running attempt finishes on its own and arrives late. Canceled Work never dispatches again.",
+    execute: async (_toolCallId, arguments_) => result(await input.work.cancel({
+      workbenchId: input.workbenchId,
+      workId: arguments_.workId,
+    })),
+    label: "Cancel work",
+    name: "work_cancel",
+    parameters: workCancelParameters,
   };
   const archiveParameters = Type.Object({ workbenchId: Type.String(), reason: Type.String() });
   const suggestArchive: AgentTool<typeof archiveParameters> = {
@@ -670,6 +693,8 @@ export function createJoiReasoningTools(input: {
     disposeInstanceTool,
     workDispatchTool,
     workReassignTool,
+    workResumeTool,
+    workCancelTool,
     readResultTool,
     userAskTool,
     turnCompleteTool,

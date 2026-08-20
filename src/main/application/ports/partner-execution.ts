@@ -14,6 +14,8 @@ export interface PartnerRunRequest {
 export interface PartnerRunOutput {
   artifacts: { artifactRef?: string; mimeType?: string; name: string; size: number }[];
   body: string;
+  /** Blocking question the partner asked the user; present together with status WAITING_INPUT. */
+  pendingQuestion?: string;
 }
 
 export interface PartnerRunResult {
@@ -23,6 +25,7 @@ export interface PartnerRunResult {
   conversation?: AgentConversationDraft[];
   externalRunId: string;
   instanceId?: string;
+  pendingQuestion?: string;
   status: PartnerRunStatus;
   workId: string;
 }
