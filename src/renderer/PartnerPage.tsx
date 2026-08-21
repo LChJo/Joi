@@ -26,6 +26,16 @@ function toggle(list: string[], value: string): string[] {
   return list.includes(value) ? list.filter((item) => item !== value) : [...list, value];
 }
 
+function configurationMessage(reasonCodes: readonly string[]): string {
+  if (reasonCodes.includes("partner_skill_requires_read")) return "Pi core 挂载 Skill 时必须启用 read 工具。";
+  if (reasonCodes.includes("partner_skill_ref_invalid") || reasonCodes.includes("partner_skill_not_available") || reasonCodes.includes("partner_skill_not_found")) {
+    return "有技能引用已失效，请重新选择本机已安装的技能。";
+  }
+  if (reasonCodes.includes("partner_skill_collision")) return "选中的技能名称发生冲突，请只保留一个来源。";
+  if (reasonCodes.includes("partner_skill_environment_invalid")) return "技能的环境声明无效，请重新选择有效版本。";
+  return "搭档配置需要修复后才能派发。";
+}
+
 function KnowledgeDocList({ api, onChanged, partnerId }: { api: DigitalLifeApi; onChanged: () => void; partnerId: string }) {
   const [docs, setDocs] = useState<PartnerKnowledgeDocDto[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -62,6 +72,8 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const [tab, setTab] = useState<"advanced" | "basic">("basic");
   const [engine, setEngine] = useState<PartnerEngineDto>(partner?.engine ?? "pi-core");
   const [skills, setSkills] = useState<SkillOption[]>([]);
+  const [loadedSkillCatalogKey, setLoadedSkillCatalogKey] = useState<string | null>(null);
+  const initialSelectedSkills = partner?.skills ?? [];
   const [selectedSkills, setSelectedSkills] = useState<string[]>(partner?.skills ?? []);
   const [selectedTools, setSelectedTools] = useState<string[]>(partner?.tools ?? []);
   const [notice, setNotice] = useState<string | null>(null);
@@ -69,7 +81,10 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   useEffect(() => {
     if (kind !== "local-pi") return;
     let cancelled = false;
-    const timer = setTimeout(() => void api.engineSkills(engine).then((page) => { if (!cancelled) setSkills(page.items); }).catch(() => { if (!cancelled) setSkills([]); }), 0);
+    const catalogKey = `${kind}:${engine}`;
+    const timer = setTimeout(() => void api.engineSkills(engine)
+      .then((page) => { if (!cancelled) { setSkills(page.items); setLoadedSkillCatalogKey(catalogKey); } })
+      .catch(() => { if (!cancelled) { setSkills([]); setLoadedSkillCatalogKey(catalogKey); } }), 0);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [api, engine, kind]);
 
@@ -118,6 +133,21 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   };
 
   const engineStatus = engineStatuses[engine];
+  const availableSkillIds = new Set(skills.map((skill) => skill.id));
+  const skillsLoading = kind === "local-pi" && loadedSkillCatalogKey !== `${kind}:${engine}`;
+  const invalidSelectedSkills = kind !== "local-pi" || skillsLoading ? [] : selectedSkills.filter((skill) => !availableSkillIds.has(skill));
+  const missingReadForSkills = engine === "pi-core" && selectedSkills.length > 0 && selectedTools.length > 0 && !selectedTools.includes("read");
+  const skillSelectionChanged = selectedSkills.length !== initialSelectedSkills.length
+    || selectedSkills.some((skill, index) => initialSelectedSkills[index] !== skill);
+  const persistedConfigurationNeedsSkillChange = partner?.configuration?.reasonCodes.some((code) => code !== "partner_skill_requires_read") ?? false;
+  const unchangedPersistedConfiguration = partner?.configuration?.status === "ACTION_REQUIRED"
+    && persistedConfigurationNeedsSkillChange && !skillSelectionChanged && !missingReadForSkills;
+  const cannotSave = (skillsLoading && selectedSkills.length > 0) || invalidSelectedSkills.length > 0 || missingReadForSkills || unchangedPersistedConfiguration;
+  const skillContent = skillsLoading
+    ? <small className="field-hint">正在读取当前引擎的已安装技能……</small>
+    : skills.length === 0
+      ? <small className="field-hint">当前引擎还没有可点选的技能。</small>
+      : <div className="chip-group">{skills.map((skill) => <label className="chip" key={skill.id}><input checked={selectedSkills.includes(skill.id)} onChange={() => setSelectedSkills((current) => toggle(current, skill.id))} type="checkbox" />{skill.displayName}</label>)}</div>;
   const localEngineReason = engine !== "pi-core" && engineStatus !== undefined && !engineStatus.available ? (engineStatus.reason ?? "未检测到该本地引擎。") : null;
   const header = partner === null
     ? <header className="page-title-row"><div><p className="eyebrow">添加搭档</p><h1>这位搭档从哪里来？</h1><p>本机搭档在 joi 身边干活，远端搭档通过 A2A 协议协作。</p></div><button className="button ghost" onClick={() => onDone("已返回搭档列表。")} type="button">返回</button></header>
@@ -126,6 +156,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   return <div className="partner-editor">
     {header}
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
+    {partner?.configuration?.status === "ACTION_REQUIRED" ? <p className="inline-notice warning" role="alert">{configurationMessage(partner.configuration.reasonCodes)}</p> : null}
     {partner === null ? <div className="mode-cards">
       <button aria-pressed={kind === "local-pi"} className={`mode-card ${kind === "local-pi" ? "selected" : ""}`} onClick={() => setKind("local-pi")} type="button"><strong>本地搭档</strong><span>在本机运行的搭档，joi 直接派发工作给它。</span></button>
       <button aria-pressed={kind === "a2a"} className={`mode-card ${kind === "a2a" ? "selected" : ""}`} onClick={() => setKind("a2a")} type="button"><strong>远端 A2A</strong><span>通过 Agent Card 接入的远端智能体，适合跨设备协作。</span></button>
@@ -149,9 +180,13 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
         <div className="kb-field"><span className="kb-field-label">知识库</span>{partner !== null && partner.kind === "local-pi" ? <KnowledgeDocList api={api} onChanged={() => undefined} partnerId={partner.partnerId} /> : <small>保存搭档后即可附加 md 文档。</small>}</div>
         <div className="skill-field"><span className="kb-field-label">技能（可选；按引擎扫描本机已安装技能）</span>
           <small className="field-hint">不勾选表示不向搭档挂载 skill。</small>
-          {skills.length === 0 ? <small className="field-hint">当前引擎还没有可点选的技能。</small> : <div className="chip-group">{skills.map((skill) => <label className="chip" key={skill.id}><input checked={selectedSkills.includes(skill.id)} onChange={() => setSelectedSkills((current) => toggle(current, skill.id))} type="checkbox" />{skill.displayName}</label>)}</div>}
+          {invalidSelectedSkills.length > 0 ? <div className="inline-notice warning" role="alert">
+            <span>{configurationMessage(["partner_skill_ref_invalid"])} 先移除失效引用：</span>
+            <div className="chip-group">{invalidSelectedSkills.map((skill) => <button className="chip" key={skill} onClick={() => setSelectedSkills((current) => current.filter((item) => item !== skill))} type="button">{skill} ×</button>)}</div>
+          </div> : null}
+          {skillContent}
         </div>
-        <button className="button primary" type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
+        <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
       </div>
       <div className="tab-panel" style={tab === "advanced" ? undefined : { display: "none" }}>
         <label>搭档引擎<select name="engine" onChange={(event) => handleEngineChange(event.target.value as PartnerEngineDto)} value={engine}>
@@ -168,7 +203,8 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
         <div className="tool-field"><span className="kb-field-label">工具白名单（不勾选 = 不限制）</span>
           {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">该引擎暂无可选工具。</small> : <div aria-label="工具白名单" className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={selectedTools.includes(tool)} onChange={() => setSelectedTools((current) => toggle(current, tool))} type="checkbox" /><span>{tool}</span></label>)}</div>}
         </div>
-        <button className="button primary" type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
+        {missingReadForSkills ? <p className="inline-notice warning" role="alert">已选择 Skill 且收窄了工具白名单，请启用 read 后再保存。</p> : null}
+        <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
       </div>
     </form>}
   </div>;
@@ -280,6 +316,7 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
       <div className="partner-grid">{partners.map((partner) => <article className="partner-card" key={partner.partnerId}>
         <div className="partner-card-head"><strong>{partner.displayName}</strong>{partner.createdBy === "joi" ? <span className="badge-joi">joi 创建</span> : null}<span className="engine-badge">{partner.kind === "local-pi" ? "本机" : "远端 A2A"} · {ENGINE_LABELS[partner.engine]}</span></div>
         {partner.description === undefined ? <p className="partner-card-desc muted">还没有描述。补一句，joi 才知道什么时候该找它。</p> : <p className="partner-card-desc">{partner.description}</p>}
+        {partner.configuration?.status === "ACTION_REQUIRED" ? <p className="inline-notice warning" role="alert">{configurationMessage(partner.configuration.reasonCodes)}</p> : null}
         <small>{[...partner.skills, ...partner.capabilities].join(" · ") || "尚未声明能力"}{partner.knowledgeDocCount > 0 ? ` · ${String(partner.knowledgeDocCount)} 篇知识库` : ""}</small>
         {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}
         <div className="partner-card-actions">

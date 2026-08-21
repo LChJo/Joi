@@ -149,6 +149,14 @@ export class DigitalLifeApi {
       method: "POST",
     });
   }
+  retryJoiMessage(inputId: string, options: { text?: string } = {}) {
+    return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/retry`, {
+      body: {
+        ...(options.text === undefined ? {} : { text: options.text }),
+      },
+      method: "POST",
+    });
+  }
   async uploadJoiAttachment(file: File) {
     const bytes = new Uint8Array(await file.arrayBuffer());
     let binary = "";

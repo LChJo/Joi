@@ -160,8 +160,14 @@ export interface PartnerKnowledgeDocDto {
   sha256: string;
 }
 
+export interface PartnerConfigurationDto {
+  reasonCodes: string[];
+  status: "ACTION_REQUIRED";
+}
+
 export interface PartnerDto {
   capabilities: string[];
+  configuration?: PartnerConfigurationDto;
   createdBy: "joi" | "user";
   description?: string;
   displayName: string;
