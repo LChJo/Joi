@@ -36,6 +36,8 @@ function makeTools(options: {
   partners?: PartnerDto[];
   planError?: Error;
   refineCalls?: { args: { workbenchId: string; input: Record<string, unknown> }[] };
+  workspaceBindCalls?: { workbenchId: string; rootPath: string }[];
+  workspacePicker?: () => Promise<string | null>;
   workspaceBlocked?: boolean;
 } = {}) {
   const addCalls: unknown[] = [];
@@ -58,6 +60,13 @@ function makeTools(options: {
       update: async (workbenchId, input) => {
         options.refineCalls?.args.push({ workbenchId, input });
         return {} as never;
+      },
+    },
+    directoryPicker: options.workspacePicker ?? (() => Promise.resolve(null)),
+    workbenchWorkspaces: {
+      bindExisting: async (workbenchId, rootPath) => {
+        options.workspaceBindCalls?.push({ workbenchId, rootPath });
+        return { displayName: "绑定目录", kind: "BOUND", status: "READY" };
       },
     },
     clarifications: { requireClarification: async (inputId, reasonCode, prompt) => {
@@ -166,6 +175,27 @@ describe("joi reasoning tools", () => {
       "model_list_sources", "partner_list_available", "partner_set_model", "work_read_result", "work_reassign", "turn_complete",
     ]));
   });
+
+  it("lets joi bind the current Workbench through the desktop directory picker without returning its path", async () => {
+    const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
+    const harness = makeTools({
+      workspaceBindCalls,
+      workspacePicker: async () => "C:\\projects\\private-docs",
+    });
+    const result = await harness.call("workbench_bind_workspace", {});
+    expect(result).toEqual({
+      displayName: "绑定目录",
+      kind: "BOUND",
+      status: "READY",
+    });
+    expect(workspaceBindCalls).toEqual([{ rootPath: "C:\\projects\\private-docs", workbenchId: "workbench_1" }]);
+    expect(JSON.stringify(result)).not.toContain("private-docs");
+  });
+
+  it("reports a canceled desktop directory picker as a stable clarification error", async () => {
+    const harness = makeTools({ workspacePicker: async () => null });
+    await expect(harness.call("workbench_bind_workspace", {})).rejects.toMatchObject({ code: "workbench_workspace_selection_canceled" });
+  });
   it("creates partners on behalf of joi with the joi creator badge", async () => {
     const harness = makeTools();
     const created = await harness.call("partner_create", { description: "写文档", displayName: "Writer" }) as { partnerId: string };
@@ -215,6 +245,17 @@ describe("joi reasoning tools", () => {
     expect(harness.addCalls).toEqual([]);
   });
 
+  it("does not reuse a partner whose settings require repair", async () => {
+    const existing = {
+      ...partnerDto,
+      configuration: { reasonCodes: ["partner_skill_ref_invalid"], status: "ACTION_REQUIRED" as const },
+      createdBy: "joi" as const,
+    };
+    const harness = makeTools({ partners: [existing] });
+    await harness.call("partner_create", { displayName: "  Coder  " });
+    expect(harness.addCalls).toHaveLength(1);
+  });
+
   it("reuses an active partner whose cluster key matches after stripping one-off model tokens", async () => {
     const existing = { ...partnerDto, createdBy: "user" as const, displayName: "模型调研搭档" };
     const harness = makeTools({ partners: [existing] });
@@ -229,6 +270,19 @@ describe("joi reasoning tools", () => {
       displayName: "Researcher", tools: ["afs1_client", "read"],
     })).rejects.toMatchObject({ code: "partner_tool_not_allowed" });
     expect(harness.addCalls).toEqual([]);
+  });
+
+  it("allows the built-in public web tools for a research partner", async () => {
+    const harness = makeTools();
+    await harness.call("partner_create", {
+      description: "读取公开网页资料",
+      displayName: "网页调研搭档",
+      prompt: "只研究公开来源",
+      tools: ["web_search", "fetch_content", "get_search_content"],
+    });
+    expect(harness.addCalls[0]).toMatchObject({
+      tools: ["web_search", "fetch_content", "get_search_content"],
+    });
   });
 
   it("lists only READY model sources with the fields partner_create needs", async () => {

@@ -7,6 +7,7 @@ import { PartnerRegistryService } from "../../src/main/application/partners/part
 import type { PartnerPromptStore } from "../../src/main/application/ports/partner-execution.js";
 import type { PartnerKnowledgeDocMeta, PartnerKnowledgeStore } from "../../src/main/application/ports/partner-knowledge.js";
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../../src/main/application/ports/partner-registry.js";
+import { DomainError } from "../../src/main/domain/errors.js";
 import type { PartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -266,5 +267,50 @@ describe("partner-registry-revision-before-dispatch", () => {
     await expect(service.add({ ...fields, tools: ["edit"] })).rejects.toMatchObject({ code: "partner_skill_requires_read" });
     await expect(service.add({ ...fields, tools: ["read"] })).resolves.toMatchObject({ skills: ["agents/demo"], tools: ["read"] });
     await expect(service.add({ ...fields, tools: [] })).resolves.toMatchObject({ skills: ["agents/demo"], tools: [] });
+  });
+
+  it("runs the exact Skill validator before saving and reports legacy revisions as actionable configuration", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const validator = vi.fn((engine: string, refs: readonly string[]) => {
+      if (engine === "pi-core" && refs.includes("legacy label")) throw new DomainError("partner_skill_ref_invalid", "invalid");
+    });
+    const service = new PartnerRegistryService({
+      clock: new TestClock(),
+      ids: new TestIds(),
+      repository,
+      skills: { listForEngine: () => [], validateRefs: validator },
+    });
+    await expect(service.add({ capabilities: [], displayName: "New", kind: "local-pi", skills: ["legacy label"], tools: [] }))
+      .rejects.toMatchObject({ code: "partner_skill_ref_invalid" });
+
+    // Simulate a pre-validation persisted revision from an older app version.
+    repository.history.push({
+      capabilities: [], createdAt: "2026-08-20T00:00:00.000Z", createdBy: "joi", displayName: "Legacy",
+      engine: "pi-core", kind: "local-pi", partnerId: "partner_legacy", partnerRevisionId: "revision_legacy",
+      provenance: { capabilities: "local", description: "local", displayName: "local", skills: "local", tools: "local" },
+      registryRevision: 1, skills: ["legacy label"], status: "ACTIVE", tools: [],
+    });
+    const listed = await service.list();
+    expect(listed).toContainEqual(expect.objectContaining({
+      configuration: { reasonCodes: ["partner_skill_ref_invalid"], status: "ACTION_REQUIRED" },
+      partnerId: "partner_legacy",
+    }));
+    expect(validator).toHaveBeenCalledWith("pi-core", ["legacy label"]);
+    await expect(service.pinForDispatch("partner_legacy")).rejects.toMatchObject({ code: "partner_skill_ref_invalid" });
+
+    const unknownFailureRepository = new MemoryPartnerRegistry();
+    unknownFailureRepository.history.push({
+      capabilities: [], createdAt: "2026-08-20T00:00:00.000Z", createdBy: "user", displayName: "Unknown",
+      engine: "pi-core", kind: "local-pi", partnerId: "partner_unknown", partnerRevisionId: "revision_unknown",
+      provenance: { capabilities: "local", description: "local", displayName: "local", skills: "local", tools: "local" },
+      registryRevision: 1, skills: ["agents/demo"], status: "ACTIVE", tools: [],
+    });
+    const unknownFailure = new PartnerRegistryService({
+      clock: new TestClock(), ids: new TestIds(), repository: unknownFailureRepository,
+      skills: { listForEngine: () => [], validateRefs: () => { throw new Error("scanner unavailable"); } },
+    });
+    await expect(unknownFailure.list()).resolves.toContainEqual(expect.objectContaining({
+      configuration: { reasonCodes: ["partner_configuration_invalid"], status: "ACTION_REQUIRED" },
+    }));
   });
 });

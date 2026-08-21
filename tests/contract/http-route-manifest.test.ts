@@ -50,6 +50,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/joi/messages/:inputId/clarify",
   "POST /api/v1/joi/messages/:inputId/cancel",
   "POST /api/v1/joi/messages/:inputId/dismiss",
+  "POST /api/v1/joi/messages/:inputId/retry",
   "POST /api/v1/joi/attachments",
   "POST /api/v1/model-sources",
   "PUT /api/v1/model-sources/order",

@@ -17,17 +17,20 @@ async function startSession(
   clarify: (input: { workbenchId?: string; inputId: string; text?: string }) => Promise<JoiAcceptedMessageDto>,
   cancel: (inputId: string) => Promise<JoiAcceptedMessageDto> = async () => DTO,
   dismiss: (inputId: string) => Promise<JoiAcceptedMessageDto> = async () => DTO,
+  retry: (input: { inputId: string; text?: string }) => Promise<JoiAcceptedMessageDto> = async () => DTO,
 ) {
   const fixture = await createRuntimeFixture();
   const clarifyCalls: { workbenchId?: string; inputId: string; text?: string }[] = [];
   const cancelCalls: string[] = [];
   const dismissCalls: string[] = [];
+  const retryCalls: { inputId: string; text?: string }[] = [];
   const joiInbox = {
     accept: async () => DTO,
     cancel: async (input: { inputId: string }) => { cancelCalls.push(input.inputId); return cancel(input.inputId); },
     clarify: async (input: { workbenchId?: string; inputId: string; text?: string }) => { clarifyCalls.push(input); return clarify(input); },
     dismiss: async (input: { inputId: string }) => { dismissCalls.push(input.inputId); return dismiss(input.inputId); },
     list: async () => [DTO],
+    retry: async (input: { inputId: string; text?: string }) => { retryCalls.push(input); return retry(input); },
   };
   const deps = Object.assign({}, fixture, { joiInbox });
   const listeners = await startRuntimeListeners({ handler: createApiHandler(deps), loopbackPort: 0 });
@@ -45,6 +48,7 @@ async function startSession(
     async close() { await listeners.close(); await fixture.close(); },
     dismissCalls,
     headers: { "content-type": "application/json", cookie, origin: "null", "x-csrf-token": csrfToken },
+    retryCalls,
     url: listeners.loopback.url,
   };
 }
@@ -123,6 +127,53 @@ describe("joi cancel HTTP route", () => {
       expect(await rejected.json()).toMatchObject({ code: "joi_cancel_unavailable" });
 
       const unauth = await fetch(`${session.url}/api/v1/joi/messages/input-1/cancel`, {
+        headers: { "content-type": "application/json", origin: "null" },
+        method: "POST",
+      });
+      expect(unauth.status).toBe(401);
+    } finally {
+      await session.close();
+    }
+  });
+});
+
+describe("joi retry HTTP route", () => {
+  it("decodes the input id and forwards optional supplementary text; the traversal loop picks it up", async () => {
+    const session = await startSession(async () => DTO, async () => DTO, async () => DTO, async (input) => ({ ...DTO, inputId: input.inputId, status: "PENDING" }));
+    try {
+      const response = await fetch(`${session.url}/api/v1/joi/messages/${encodeURIComponent("input:1")}/retry`, {
+        body: JSON.stringify({ text: "已修复搭档技能" }),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(response.status).toBe(202);
+      expect(await response.json()).toMatchObject({ inputId: "input:1", status: "PENDING" });
+      expect(session.retryCalls).toEqual([{ inputId: "input:1", text: "已修复搭档技能" }]);
+
+      await fetch(`${session.url}/api/v1/joi/messages/input-1/retry`, {
+        body: JSON.stringify({}),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(session.retryCalls.at(-1)).toEqual({ inputId: "input-1" });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("maps a non-retryable input to a 400 and rejects unauthenticated writes", async () => {
+    const session = await startSession(async () => DTO, async () => DTO, async () => DTO, async () => { throw new DomainError("joi_retry_unavailable", "not retryable"); });
+    try {
+      const rejected = await fetch(`${session.url}/api/v1/joi/messages/input-1/retry`, {
+        body: JSON.stringify({}),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(rejected.status).toBe(400);
+      expect(await rejected.json()).toMatchObject({ code: "joi_retry_unavailable" });
+
+      const unauth = await fetch(`${session.url}/api/v1/joi/messages/input-1/retry`, {
+        body: JSON.stringify({}),
         headers: { "content-type": "application/json", origin: "null" },
         method: "POST",
       });

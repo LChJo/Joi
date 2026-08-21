@@ -64,6 +64,16 @@ describe("Workbench context HTTP API", () => {
         "SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?",
       ).get(`workbench_workspace:${workbench.workbenchId}`))).toEqual({ root_path: "/stub/workdir" });
 
+      const secondWorkbench = await fixture.workbenchRegistry.create({
+        name: "第二个 Workbench",
+        personaSummary: "PRIVATE_PERSONA_BODY",
+        projectLabel: "另一个工程",
+        scopeSummary: "另一个范围",
+      });
+      const conflictingBind = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(secondWorkbench.workbenchId)}/workspace/bind`, { headers, method: "POST" });
+      expect(conflictingBind.status).toBe(409);
+      expect(await conflictingBind.json()).toMatchObject({ code: "workbench_workspace_already_bound" });
+
       fixture.database.transaction((connection) => {
         const now = fixture.clock.now().toISOString();
         connection.prepare(`INSERT INTO joi_inbox_messages

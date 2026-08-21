@@ -72,6 +72,22 @@ class FakeInboxRepository implements JoiInboxRepository {
     this.records.set(inputId, next);
     return next;
   }
+
+  async retry(inputId: string, patch: { text?: string }): Promise<JoiInboxRecord | null> {
+    const record = this.records.get(inputId);
+    if (record?.status !== "CONSUMED" || record.dismissedAt !== undefined) return null;
+    const next: JoiInboxRecord = {
+      body: patch.text === undefined ? record.body : `${record.body}\n\n[用户补充] ${patch.text}`,
+      createdAt: record.createdAt,
+      idempotencyKey: record.idempotencyKey,
+      inputId: record.inputId,
+      status: "PENDING",
+      updatedAt: "2026-08-01T00:00:05.000Z",
+      ...(record.workbenchId === undefined ? {} : { workbenchId: record.workbenchId }),
+    };
+    this.records.set(inputId, next);
+    return next;
+  }
 }
 
 function record(over: Partial<JoiInboxRecord> & { inputId: string }): JoiInboxRecord {
@@ -199,6 +215,44 @@ describe("JoiInboxService.cancel", () => {
     repository.records.set("pending-1", record({ inputId: "pending-1", status: "PENDING" }));
     const dto = await serviceWith(repository).cancel({ inputId: "pending-1" });
     expect(dto).toMatchObject({ canceled: true, status: "CONSUMED" });
+  });
+});
+
+describe("JoiInboxService.retry", () => {
+  it("rejects blank and oversized ids and oversized supplementary text", async () => {
+    const service = serviceWith(new FakeInboxRepository());
+    await expect(service.retry({ inputId: "   " })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.retry({ inputId: "x".repeat(161) })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.retry({ inputId: "input-1", text: "x".repeat(8_001) })).rejects.toMatchObject({ code: "joi_retry_invalid" });
+  });
+
+  it("rejects inputs the repository cannot revive", async () => {
+    const repository = new FakeInboxRepository();
+    const service = serviceWith(repository);
+    await expect(service.retry({ inputId: "missing" })).rejects.toMatchObject({ code: "joi_retry_unavailable" });
+    repository.records.set("pending-1", record({ inputId: "pending-1", status: "PENDING" }));
+    await expect(service.retry({ inputId: "pending-1" })).rejects.toMatchObject({ code: "joi_retry_unavailable" });
+  });
+
+  it("re-queues a parked goal without requiring supplementary text", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("failed-1", record({
+      failedAt: "2026-08-01T00:00:04.000Z", failureCount: 8, failureReasonCode: "model_unavailable",
+      inputId: "failed-1", status: "CONSUMED", workbenchId: "workbench-1",
+    }));
+    const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
+    const dto = await serviceWith(repository, diagnostics).retry({ inputId: "failed-1" });
+    expect(dto).toMatchObject({ inputId: "failed-1", status: "PENDING", workbenchId: "workbench-1" });
+    expect(dto.failure).toBeUndefined();
+    expect(diagnostics).toEqual([{ event: "joi.input.retried", fields: { inputId: "failed-1", supplemented: false } }]);
+  });
+
+  it("appends supplementary text into the stored body before re-queueing", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("failed-2", record({ body: "分析沙堡项目", failedAt: "2026-08-01T00:00:04.000Z", failureCount: 8, failureReasonCode: "work_dispatch_failed", inputId: "failed-2", status: "CONSUMED" }));
+    const dto = await serviceWith(repository).retry({ inputId: "failed-2", text: "已修复搭档技能配置" });
+    expect(dto.textPreview).toBe("分析沙堡项目 [用户补充] 已修复搭档技能配置");
+    expect(dto.status).toBe("PENDING");
   });
 });
 

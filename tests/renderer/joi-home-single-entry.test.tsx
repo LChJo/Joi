@@ -691,6 +691,54 @@ describe("joi home single entry", () => {
     expect(screen.queryByText("已取消")).not.toBeInTheDocument();
   });
 
+  it("offers a unified continue action on every terminal goal card and re-dispatches with optional supplementary text", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-retry", "继续工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const makeGoal = (status: "CANCELED" | "COMPLETED" | "FAILED", goalId: string, title: string) => ({
+      agentCount: 0,
+      workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+      canDelete: status !== "FAILED",
+      ...(status === "FAILED" ? { failure: { attempts: 8, executionStarted: false, reasonCode: "work_dispatch_failed", suggestedAction: "RETRY_OR_EXPORT_DIAGNOSTICS" as const } } : {}),
+      ...(status === "COMPLETED" ? { completionSummary: "结果已汇总", completedAt: workbench.updatedAt } : {}),
+      goalId,
+      status,
+      title,
+      updatedAt: workbench.updatedAt,
+      work: { active: 0, completed: 0, failed: status === "FAILED" ? 1 : 0, total: 1 },
+    });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [
+        makeGoal("FAILED", "goal-failed", "失败的目标"),
+        makeGoal("CANCELED", "goal-canceled", "取消的目标"),
+        makeGoal("COMPLETED", "goal-completed", "完成的目标"),
+      ],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const retry = vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-failed", status: "PENDING" });
+
+    render(<JoiHome api={api} />);
+    // Every terminal card exposes a continue toggle; running cards do not.
+    expect(await screen.findByRole("button", { name: "继续「失败的目标」" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "继续「取消的目标」" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "继续「完成的目标」" })).toBeInTheDocument();
+
+    // Expanding the failed card shows the supplementary input and submits with text.
+    fireEvent.click(screen.getByRole("button", { name: "继续「失败的目标」" }));
+    expect(await screen.findByText(/问题处理好后，可以继续这条任务/u)).toBeInTheDocument();
+    const supplementary = screen.getByLabelText("补充说明");
+    fireEvent.change(supplementary, { target: { value: "已修复搭档技能，重新派发" } });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-failed", { text: "已修复搭档技能，重新派发" }));
+
+    // The canceled card retries with an empty body (no text field).
+    fireEvent.click(screen.getByRole("button", { name: "继续「取消的目标」" }));
+    expect(await screen.findByText(/这条任务之前被取消了/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-canceled", {}));
+  });
+
   it("binds uploaded files to one global joi input and ignores an empty submit", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));

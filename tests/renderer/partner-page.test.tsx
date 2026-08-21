@@ -35,6 +35,74 @@ describe("partner page", () => {
     expect(screen.getAllByText("本机 · Pi core")).toHaveLength(3);
   });
 
+  it("surfaces legacy Skill refs before dispatch and blocks saving until they are removed", async () => {
+    const api = new DigitalLifeApi("");
+    const legacy = {
+      ...coder,
+      configuration: { reasonCodes: ["partner_skill_ref_invalid"], status: "ACTION_REQUIRED" as const },
+      partnerId: "partner-legacy",
+      partnerRevisionId: "revision-legacy",
+      skills: ["技能调试"],
+    };
+    mockCatalog(api, [legacy]);
+    vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ displayName: "有效技能", id: "agents/valid" }] });
+    const update = vi.spyOn(api, "updatePartner").mockResolvedValue({ ...legacy, skills: [] });
+    render(<PartnerPage api={api} />);
+    expect(await screen.findByText("有技能引用已失效，请重新选择本机已安装的技能。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    const save = await screen.findByRole("button", { name: "保存修改" });
+    expect(await screen.findByText("有效技能")).toBeInTheDocument();
+    expect(save).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "技能调试 ×" }));
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-legacy", expect.objectContaining({ skills: [] })));
+  });
+
+  it("maps every safe configuration reason to a repair instruction", async () => {
+    const api = new DigitalLifeApi("");
+    const reasons = [
+      ["partner_skill_requires_read", "Pi core 挂载 Skill 时必须启用 read 工具。"],
+      ["partner_skill_collision", "选中的技能名称发生冲突，请只保留一个来源。"],
+      ["partner_skill_environment_invalid", "技能的环境声明无效，请重新选择有效版本。"],
+      ["partner_configuration_invalid", "搭档配置需要修复后才能派发。"],
+    ] as const;
+    mockCatalog(api, reasons.map(([reasonCode], index) => ({
+      ...coder,
+      configuration: { reasonCodes: [reasonCode], status: "ACTION_REQUIRED" as const },
+      displayName: `Needs repair ${String(index)}`,
+      partnerId: `partner-repair-${String(index)}`,
+      partnerRevisionId: `revision-repair-${String(index)}`,
+      skills: [],
+    })));
+    render(<PartnerPage api={api} />);
+    for (const [, message] of reasons) expect(await screen.findByText(message)).toBeInTheDocument();
+  });
+
+  it("requires read for a narrowed Pi tool list before allowing a Skill revision", async () => {
+    const api = new DigitalLifeApi("");
+    const partner = {
+      ...coder,
+      configuration: { reasonCodes: ["partner_skill_requires_read"], status: "ACTION_REQUIRED" as const },
+      partnerId: "partner-read-required",
+      partnerRevisionId: "revision-read-required",
+      skills: ["agents/valid"],
+      tools: ["edit"],
+    };
+    mockCatalog(api, [partner]);
+    vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ displayName: "有效技能", id: "agents/valid" }] });
+    const update = vi.spyOn(api, "updatePartner").mockResolvedValue({ ...partner, tools: ["read", "edit"] });
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("tab", { name: "高级" }));
+    const save = await screen.findByRole("button", { name: "保存修改" });
+    expect(save).toBeDisabled();
+    fireEvent.click(within(screen.getByRole("group", { name: "工具白名单" })).getByText("read"));
+    expect(save).not.toBeDisabled();
+    fireEvent.click(save);
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-read-required", expect.objectContaining({ tools: ["edit", "read"] })));
+  });
+
   it("shows the empty state and nudges users to create two or three partners", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, []);

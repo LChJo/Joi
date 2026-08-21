@@ -28,6 +28,8 @@ describe("WorkbenchWorkspaceService", () => {
     });
     await expect(service.get("workbench-a")).resolves.toEqual({ displayName: "A 工作区", failureReasonCode: "old_failure", kind: "MANAGED", status: "PROVISIONING" });
     await expect(service.bindExisting("workbench-a", "C:\\projects\\docs\\")).resolves.toEqual({ displayName: "docs", kind: "BOUND", status: "READY" });
+    await expect(service.bindExisting("workbench-a", "C:\\")).resolves.toEqual({ displayName: "C:", kind: "BOUND", status: "READY" });
+    await expect(service.bindExisting("workbench-a", "/")).resolves.toEqual({ displayName: "", kind: "BOUND", status: "READY" });
     await expect(service.rebuildManaged("workbench-a")).resolves.toEqual({ displayName: "A 工作区", kind: "MANAGED", status: "PROVISIONING" });
     expect(JSON.stringify(events)).not.toContain("workspaceRef");
   });
