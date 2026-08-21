@@ -127,6 +127,19 @@ export const JOI_WRITE_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "write",
+    id: "POST /api/v1/joi/messages/:inputId/retry",
+    match: pattern("POST", /^\/api\/v1\/joi\/messages\/([^/]+)\/retry$/),
+    handle: async (ctx, match) => {
+      const body = await readJson(ctx.request);
+      const retried = await joiInboxService(ctx.dependencies).retry({
+        inputId: decodeURIComponent((match as RegExpExecArray)[1] ?? ""),
+        ...(typeof body.text === "string" ? { text: body.text } : {}),
+      });
+      sendJson(ctx.response, 202, retried);
+    },
+  },
+  {
+    auth: "write",
     id: "POST /api/v1/joi/attachments",
     match: exact("POST", "/api/v1/joi/attachments"),
     handle: async (ctx) => {

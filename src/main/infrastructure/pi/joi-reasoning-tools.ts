@@ -10,6 +10,7 @@ import type { ModelSourceService } from "../../application/model-sources/model-s
 import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
 import type { WorkbenchChangeService } from "../../application/joi/workbench-change-service.js";
 import type { WorkbenchManagementService } from "../../application/joi/workbench-management-service.js";
+import type { WorkbenchWorkspaceService } from "../../application/joi/workbench-workspace-service.js";
 import type { WorkResultService } from "../../application/work/work-result-service.js";
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
 import type { JoiHarnessStore } from "../../application/ports/joi-harness.js";
@@ -22,7 +23,7 @@ import {
 } from "../../application/ports/runtime-diagnostics.js";
 import { DomainError } from "../../domain/errors.js";
 import { partnerClusterKey, partnerClusterName } from "../../domain/workbench/workbench-naming.js";
-import { PI_CODING_TOOL_NAMES } from "./pi-coding-tool-factory.js";
+import { PI_PARTNER_TOOL_NAMES } from "./pi-coding-tool-factory.js";
 
 /** Extracts the original goal input id from synthetic input ids; undefined for direct goal inputs. */
 export function goalFromInputIdPrefix(inputId: string): string | undefined {
@@ -37,7 +38,7 @@ export function goalFromInputIdPrefix(inputId: string): string | undefined {
   return undefined;
 }
 
-const PI_CODING_TOOL_NAME_SET = new Set<string>(PI_CODING_TOOL_NAMES);
+const PI_PARTNER_TOOL_NAME_SET = new Set<string>(PI_PARTNER_TOOL_NAMES);
 
 function result(value: unknown, terminate = false) {
   return {
@@ -47,14 +48,14 @@ function result(value: unknown, terminate = false) {
   };
 }
 
-function normalizeCodingTools(values: string[] | undefined): string[] {
+function normalizePartnerTools(values: string[] | undefined): string[] {
   if (values === undefined) return [];
-  if (values.length > PI_CODING_TOOL_NAMES.length) {
-    throw new DomainError("partner_tools_invalid", "Too many coding tools were requested.");
+  if (values.length > PI_PARTNER_TOOL_NAMES.length) {
+    throw new DomainError("partner_tools_invalid", "Too many partner tools were requested.");
   }
   const normalized = [...new Set(values.map((value) => value.trim()))];
-  if (normalized.some((value) => !PI_CODING_TOOL_NAME_SET.has(value))) {
-    throw new DomainError("partner_tool_not_allowed", "The requested coding tool is not available.");
+  if (normalized.some((value) => !PI_PARTNER_TOOL_NAME_SET.has(value))) {
+    throw new DomainError("partner_tool_not_allowed", "The requested partner tool is not available.");
   }
   return normalized;
 }
@@ -88,6 +89,8 @@ export function createJoiReasoningTools(input: {
   workbenchId: string;
   workbenchChanges: Pick<WorkbenchChangeService, "suggestArchive" | "suggestMerge">;
   workbenchRefine?: Pick<WorkbenchManagementService, "update">;
+  workbenchWorkspaces: Pick<WorkbenchWorkspaceService, "bindExisting">;
+  directoryPicker: () => Promise<string | null>;
   workbenches: WorkbenchCatalog;
   /** Attachment ids bound to the current input; scopes attachment_read. */
   attachmentIds?: readonly string[];
@@ -311,21 +314,22 @@ export function createJoiReasoningTools(input: {
     modelSourceId: Type.Optional(Type.String()),
     prompt: Type.String({ description: "Working directive for the partner: role, DO, acceptance criteria, out-of-scope; concrete to the current work." }),
     skills: Type.Optional(Type.Array(Type.String())),
-    tools: Type.Optional(Type.Array(Type.String({ enum: [...PI_CODING_TOOL_NAMES] }), {
-      maxItems: PI_CODING_TOOL_NAMES.length,
+    tools: Type.Optional(Type.Array(Type.String({ enum: [...PI_PARTNER_TOOL_NAMES] }), {
+      maxItems: PI_PARTNER_TOOL_NAMES.length,
       uniqueItems: true,
     })),
   });
   const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
-    description: "Register a new local Pi capability cluster when no existing partner fits the work. Name the card after a reusable work cluster, not a person or narrow role: use names like 编码工坊 instead of 资深程序员搭档. Never name a partner after a one-off task, model or version (bad: Grok4.6 模型调研搭档); name the durable capability cluster (good: 模型调研搭档) so the next similar goal reuses it. Keep description focused on the capability boundary; keep environment, workspace and directory decisions in the Workbench. Reuses an active local partner whose normalized cluster key matches — one-off model/version tokens and quoted or parenthetical notes are ignored when matching. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work. Call partner_list_skills before passing skills; selected ids are injected into the partner, not executed by joi. tools accepts only bash, edit, find, grep, ls, read and write; omit it or pass [] to grant all built-in Pi coding tools. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
+    description: "Register a new local Pi capability cluster when no existing partner fits the work. Name the card after a reusable work cluster, not a person or narrow role: use names like 编码工坊 instead of 资深程序员搭档. Never name a partner after a one-off task, model or version (bad: Grok4.6 模型调研搭档); name the durable capability cluster (good: 模型调研搭档) so the next similar goal reuses it. Keep description focused on the capability boundary; keep environment, workspace and directory decisions in the Workbench. Reuses an active local partner whose normalized cluster key matches — one-off model/version tokens and quoted or parenthetical notes are ignored when matching. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work. Call partner_list_skills before passing skills; selected ids are injected into the partner, not executed by joi. tools accepts built-in coding and public web tools: bash, edit, find, grep, ls, read, write, web_search, fetch_content and get_search_content; omit it or pass [] to grant all built-in Pi tools. Web access is read-only and bounded; it never receives cookies or credentials. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
     execute: async (_toolCallId, arguments_) => {
       const displayName = partnerClusterName(arguments_.displayName);
-      const tools = normalizeCodingTools(arguments_.tools);
+      const tools = normalizePartnerTools(arguments_.tools);
       const nameKey = partnerClusterKey(displayName);
       const existing = (await input.partners.list()).find((partner) =>
         partner.engine === "pi-core"
         && partner.kind === "local-pi"
         && partner.status === "ACTIVE"
+        && partner.configuration === undefined
         && partnerClusterKey(partner.displayName) === nameKey
       );
       if (existing !== undefined) {
@@ -593,6 +597,19 @@ export function createJoiReasoningTools(input: {
     name: "harness_refine_workbench",
     parameters: harnessRefineParameters,
   };
+  const bindWorkspaceTool: AgentTool = {
+    description: "Bind a directory selected in the desktop picker to the current Workbench. Use this when local file work needs a workspace. The picker result is kept in the main process and this tool returns only safe workspace metadata; a workspace cannot belong to another Workbench.",
+    execute: async () => {
+      const selected = await input.directoryPicker();
+      if (selected === null) {
+        throw new DomainError("workbench_workspace_selection_canceled", "Directory selection was canceled.");
+      }
+      return result(await input.workbenchWorkspaces.bindExisting(input.workbenchId, selected));
+    },
+    label: "Bind Workbench workspace",
+    name: "workbench_bind_workspace",
+    parameters: Type.Object({}),
+  };
   const scopedAttachmentIds = new Set(input.attachmentIds ?? []);
   const attachmentTextCache = new Map<string, { filename: string; mimeType: string; text: string } | "NOT_TEXT">();
   const loadAttachmentText = async (attachmentId: string): Promise<{ filename: string; mimeType: string; text: string } | "NOT_TEXT"> => {
@@ -703,5 +720,6 @@ export function createJoiReasoningTools(input: {
     harnessRecordDecisionTool,
     harnessNoteFogTool,
     harnessRefineWorkbenchTool,
+    bindWorkspaceTool,
   ];
 }

@@ -16,6 +16,7 @@ export const JOI_REASONING_TOOL_NAMES = [
   "workbench_list_summaries",
   "workbench_select",
   "workbench_create",
+  "workbench_bind_workspace",
   "workbench_suggest_merge",
   "workbench_suggest_archive",
   "model_list_sources",

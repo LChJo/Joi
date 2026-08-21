@@ -9,6 +9,7 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { realpathSync, statSync } from "node:fs";
+import { PI_WEB_ACCESS_TOOL_NAMES, PiWebAccessToolFactory } from "./pi-web-access-tools.js";
 
 export interface PiCodingToolFactory {
   create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[];
@@ -46,6 +47,7 @@ function safeEnvironment(environment: NodeJS.ProcessEnv, requestedKeys: readonly
 }
 
 export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "grep", "ls", "read", "write"] as const;
+export const PI_PARTNER_TOOL_NAMES = [...PI_CODING_TOOL_NAMES, ...PI_WEB_ACCESS_TOOL_NAMES] as const;
 
 const factories: Record<string, (cwd: string) => AgentTool> = {
   edit: createEditTool,
@@ -62,11 +64,14 @@ const factories: Record<string, (cwd: string) => AgentTool> = {
  * report every outside write in their final reply (see the engine system prompt).
  */
 export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
-  readonly names: readonly string[] = PI_CODING_TOOL_NAMES;
+  readonly names: readonly string[] = PI_PARTNER_TOOL_NAMES;
+
+  constructor(private readonly webAccess = new PiWebAccessToolFactory()) {}
 
   create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[] {
-    const canonical = realpathSync(cwd);
-    if (!statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");
+    const needsWorkspace = names.some((name) => !(PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name));
+    const canonical = needsWorkspace ? realpathSync(cwd) : cwd;
+    if (needsWorkspace && !statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");
     return [...new Set(names)].map((name) => {
       if (name === "bash") return createBashTool(canonical, {
         exposeSessionEnvironment: false,
@@ -75,6 +80,11 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
           env: safeEnvironment(context.env, options?.environmentKeys ?? []),
         }),
       });
+      if ((PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name)) {
+        const [tool] = this.webAccess.create([name]);
+        if (tool === undefined) throw new Error("partner_tool_not_allowed");
+        return tool;
+      }
       const factory = factories[name];
       if (factory === undefined) throw new Error("partner_tool_not_allowed");
       return factory(canonical);

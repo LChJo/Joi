@@ -20,7 +20,7 @@ export class WorkbenchWorkspaceService {
 
   async bindExisting(workbenchId: string, rootPath: string): Promise<WorkbenchWorkspaceDto> {
     await this.#assertSwitchable(workbenchId);
-    const normalized = rootPath.trim();
+    const normalized = normalizeWorkspaceRoot(rootPath);
     if (normalized === "") throw new DomainError("workbench_workspace_path_required", "A workspace directory is required.");
     const displayName = normalized.replace(/[\\/]+$/u, "").split(/[\\/]/u).at(-1) ?? "已绑定目录";
     const value = await this.dependencies.repository.bindExisting({
@@ -58,6 +58,14 @@ export class WorkbenchWorkspaceService {
       status: value.status,
     });
   }
+}
+
+function normalizeWorkspaceRoot(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) return "";
+  if (/^[A-Za-z]:[\\/]$/u.test(trimmed)) return trimmed;
+  if (/^[\\/]+$/u.test(trimmed)) return trimmed.slice(0, 1);
+  return trimmed.replace(/[\\/]+$/u, "");
 }
 
 function safeWorkspace(value: WorkbenchWorkspaceSummary): WorkbenchWorkspaceDto {

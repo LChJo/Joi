@@ -26,4 +26,5 @@ export interface JoiInboxRepository {
   dismiss(inputId: string): Promise<JoiInboxRecord | null>;
   list(): Promise<JoiInboxRecord[]>;
   park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<JoiInboxRecord | null>;
+  retry(inputId: string, patch: { text?: string }): Promise<JoiInboxRecord | null>;
 }

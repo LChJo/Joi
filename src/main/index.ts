@@ -124,9 +124,19 @@ async function startRuntime(): Promise<void> {
   const modelSourceStack = wireModelSources({ clock, ids, persistence, vault });
   const partnerStack = wirePartners({ clock, diagnostics: runtimeDiagnostics, ids, modelSourceStack, persistence });
   const workbenchStack = wireWorkbenches({ clock, diagnostics: runtimeDiagnostics, ids, partnerStack, persistence });
+  const directoryPicker = async () => {
+    try {
+      const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "绑定 Workbench 工作目录" });
+      if (result.canceled || result.filePaths.length === 0) return null;
+      return result.filePaths[0] ?? null;
+    } catch {
+      return null;
+    }
+  };
   const joiStack = wireJoi({
     clock,
     database,
+    directoryPicker,
     diagnostics: runtimeDiagnostics,
     ids,
     modelSourceStack,
@@ -204,15 +214,7 @@ async function startRuntime(): Promise<void> {
     knowledge: partnerStack.partnerKnowledge,
     lives,
     memory: partnerStack.partnerMemory,
-    directoryPicker: async () => {
-      try {
-        const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "绑定 Workbench 工作目录" });
-        if (result.canceled || result.filePaths.length === 0) return null;
-        return result.filePaths[0] ?? null;
-      } catch {
-        return null;
-      }
-    },
+    directoryPicker,
     skills: partnerStack.partnerSkillCatalog,
     modelSources: modelSourceStack.modelSources,
     operations,

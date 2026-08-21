@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { WorkbenchWorkspaceRepository, WorkbenchWorkspaceSummary } from "../../application/ports/workbench-context.js";
 import { workbenchWorkspaceDisplayName } from "../../domain/workbench/workbench-naming.js";
+import { DomainError } from "../../domain/errors.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -43,18 +44,31 @@ export class SqliteWorkbenchWorkspaceRepository implements WorkbenchWorkspaceRep
 
   async bindExisting(input: { workbenchId: string; displayName: string; rootPath: string; updatedAt: string }): Promise<WorkbenchWorkspaceSummary> {
     const ref = `workbench_workspace:${input.workbenchId}`;
-    this.database.transaction((connection) => {
-      connection.prepare(`INSERT INTO workbench_workspace_bindings
-        (workbench_id, workspace_ref, kind, status, display_name, created_at, updated_at)
-        VALUES (?, ?, 'BOUND', 'READY', ?, ?, ?)
-        ON CONFLICT(workbench_id) DO UPDATE SET kind = 'BOUND', status = 'READY', display_name = excluded.display_name,
-          failure_reason_code = NULL, updated_at = excluded.updated_at`).run(
-        input.workbenchId, ref, input.displayName, input.updatedAt, input.updatedAt,
-      );
-      connection.prepare(`INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at)
-        VALUES (?, ?, ?, ?) ON CONFLICT(workspace_ref) DO UPDATE SET root_path = excluded.root_path, updated_at = excluded.updated_at`
-      ).run(ref, input.rootPath, input.updatedAt, input.updatedAt);
-    });
+    try {
+      this.database.transaction((connection) => {
+        const conflict = connection.prepare(`SELECT b.workbench_id FROM workbench_workspace_roots r
+          JOIN workbench_workspace_bindings b ON b.workspace_ref = r.workspace_ref
+          WHERE r.root_path = ? AND r.workspace_ref <> ? LIMIT 1`).get(input.rootPath, ref) as { workbench_id?: unknown } | undefined;
+        if (typeof conflict?.workbench_id === "string" && conflict.workbench_id !== input.workbenchId) {
+          throw new DomainError("workbench_workspace_already_bound", "This workspace is already bound to another Workbench.");
+        }
+        connection.prepare(`INSERT INTO workbench_workspace_bindings
+          (workbench_id, workspace_ref, kind, status, display_name, created_at, updated_at)
+          VALUES (?, ?, 'BOUND', 'READY', ?, ?, ?)
+          ON CONFLICT(workbench_id) DO UPDATE SET kind = 'BOUND', status = 'READY', display_name = excluded.display_name,
+            failure_reason_code = NULL, updated_at = excluded.updated_at`).run(
+          input.workbenchId, ref, input.displayName, input.updatedAt, input.updatedAt,
+        );
+        connection.prepare(`INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at)
+          VALUES (?, ?, ?, ?) ON CONFLICT(workspace_ref) DO UPDATE SET root_path = excluded.root_path, updated_at = excluded.updated_at`
+        ).run(ref, input.rootPath, input.updatedAt, input.updatedAt);
+      });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("workbench_workspace_roots.root_path")) {
+        throw new DomainError("workbench_workspace_already_bound", "This workspace is already bound to another Workbench.");
+      }
+      throw error;
+    }
     const result = await this.getWorkspace(input.workbenchId);
     if (result === null) throw new Error("workbench_workspace_bind_failed");
     return result;

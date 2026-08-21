@@ -1,4 +1,4 @@
-import type { PartnerDto } from "../../../shared/joi.js";
+import type { PartnerConfigurationDto, PartnerDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import {
   createPartnerRevision,
@@ -40,7 +40,7 @@ export class PartnerRegistryService {
     knowledge?: Pick<PartnerKnowledgeService, "count" | "duplicateTo">;
     prompts?: PartnerPromptStore;
     repository: PartnerRegistryRepository;
-    skills?: Pick<PartnerSkillCatalog, "listForEngine">;
+    skills?: Pick<PartnerSkillCatalog, "listForEngine"> & Partial<Pick<PartnerSkillCatalog, "validateRefs">>;
   }) {}
 
   async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind }): Promise<PartnerDto> {
@@ -238,6 +238,10 @@ export class PartnerRegistryService {
   async pinForDispatch(partnerId: string): Promise<{ partnerId: string; partnerRevisionId: string; registryRevision: number }> {
     const revision = await this.#active(partnerId);
     if (revision.status !== "ACTIVE") throw new DomainError("partner_not_available", "Partner is not available.");
+    const configuration = this.#configuration(revision);
+    if (configuration !== undefined) {
+      throw new DomainError(configuration.reasonCodes[0] ?? "partner_configuration_invalid", "Partner configuration requires correction before dispatch.");
+    }
     return { partnerId, partnerRevisionId: revision.partnerRevisionId, registryRevision: revision.registryRevision };
   }
 
@@ -249,9 +253,17 @@ export class PartnerRegistryService {
 
   #assertLocalSkills(kind: PartnerKind, engine: PartnerEngine, skills: string[], tools: string[]): void {
     if (kind !== "local-pi" || this.dependencies.skills === undefined) return;
-    const available = new Set(this.dependencies.skills.listForEngine(engine).map((item) => item.id));
-    if (skills.some((skill) => !available.has(skill))) {
-      throw new DomainError("partner_skill_not_available", "Selected partner skill is not available for this engine.");
+    this.#validateLocalSkills(engine, skills, tools);
+  }
+
+  #validateLocalSkills(engine: PartnerEngine, skills: string[], tools: string[]): void {
+    if (this.dependencies.skills === undefined) return;
+    if (this.dependencies.skills.validateRefs !== undefined) this.dependencies.skills.validateRefs(engine, skills);
+    else {
+      const available = new Set(this.dependencies.skills.listForEngine(engine).map((item) => item.id));
+      if (skills.some((skill) => !available.has(skill))) {
+        throw new DomainError("partner_skill_not_available", "Selected partner skill is not available for this engine.");
+      }
     }
     if (engine === "pi-core" && skills.length > 0 && tools.length > 0 && !tools.includes("read")) {
       throw new DomainError("partner_skill_requires_read", "Pi Skills require the read tool when the tool list is narrowed.");
@@ -259,12 +271,27 @@ export class PartnerRegistryService {
   }
 
   async #public(revision: PartnerRevision): Promise<PartnerDto> {
+    const configuration = this.#configuration(revision);
     return {
       ...toPublicPartner(revision),
+      ...(configuration === undefined ? {} : { configuration }),
       inFlightCount: await this.dependencies.repository.countInFlight(revision.partnerId),
       knowledgeDocCount: this.dependencies.knowledge === undefined ? 0 : await this.dependencies.knowledge.count(revision.partnerId),
       lifecyclePolicy: "DRAIN",
     };
+  }
+
+  #configuration(revision: PartnerRevision): PartnerConfigurationDto | undefined {
+    if (revision.kind !== "local-pi" || this.dependencies.skills === undefined) return undefined;
+    try {
+      this.#validateLocalSkills(revision.engine, revision.skills, revision.tools);
+      return undefined;
+    } catch (error) {
+      const code = error instanceof DomainError && /^partner_[a-z0-9_]+$/u.test(error.code)
+        ? error.code
+        : "partner_configuration_invalid";
+      return { reasonCodes: [code], status: "ACTION_REQUIRED" };
+    }
   }
 
   async #promptRef(input: Pick<PartnerFields, "prompt" | "promptRef">, createdAt: string): Promise<string | undefined> {

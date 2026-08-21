@@ -22,6 +22,7 @@ import type { RuntimeDatabase } from "../infrastructure/persistence/runtime-data
 export function wireJoi(input: {
   clock: Clock;
   database: RuntimeDatabase;
+  directoryPicker: () => Promise<string | null>;
   diagnostics: RuntimeDiagnostics;
   ids: IdGenerator;
   modelSourceStack: ModelSourceBundle;
@@ -30,7 +31,7 @@ export function wireJoi(input: {
   userDataDirectory: string;
   workbenchStack: WorkbenchBundle;
 }) {
-  const { clock, database, diagnostics, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
+  const { clock, database, diagnostics, directoryPicker, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
   const joiInbox = new JoiInboxService({
     clock,
     diagnostics,
@@ -51,6 +52,8 @@ export function wireJoi(input: {
       workbenchChanges: workbenchStack.workbenchChanges,
       workbenchId: turn.workbenchId,
       workbenchRefine: workbenchStack.workbenchManagement,
+      workbenchWorkspaces: workbenchStack.workbenchWorkspaces,
+      directoryPicker,
       workbenches: persistence.workbenches,
       ...(turn.attachmentIds === undefined ? {} : { attachmentIds: turn.attachmentIds }),
       attachments: joiAttachmentStorage,

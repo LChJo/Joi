@@ -14,6 +14,10 @@ export interface RuntimeDiagnosticEventMap {
     errorCode: string;
     inputId: string;
   };
+  "joi.input.retried": {
+    inputId: string;
+    supplemented: boolean;
+  };
   "joi.task.input_started": {
     inputId: string;
   };

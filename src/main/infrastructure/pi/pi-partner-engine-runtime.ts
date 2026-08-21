@@ -16,7 +16,8 @@ import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, 
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
-import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
+import { type PiCodingToolFactory } from "./pi-coding-tool-factory.js";
+import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
@@ -157,11 +158,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const configuredPrompt = await this.#configuredPrompt(revision);
     const trackerRef = { current: tracker };
     const tools = [
-      ...(execution.workspacePath === undefined ? [] : this.dependencies.tools.create(
-        execution.workspacePath,
-        this.#effectiveToolNames(revision),
-        { environmentKeys: context.skillEnvironmentKeys },
-      )),
+      ...this.#toolsForRun(execution.workspacePath, this.#effectiveToolNames(revision), context.skillEnvironmentKeys),
       createAskUserTool(trackerRef),
     ];
     const allowed = new Set(tools.map((tool) => tool.name));
@@ -224,11 +221,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       const resolved = await this.dependencies.resolver.resolve(pin);
       const sideEffectTracker = { current: tracker };
       const tools = [
-        ...(execution.workspacePath === undefined ? [] : this.dependencies.tools.create(
-          execution.workspacePath,
-          this.#effectiveToolNames(revision),
-          { environmentKeys: input.skillEnvironmentKeys },
-        )),
+        ...this.#toolsForRun(execution.workspacePath, this.#effectiveToolNames(revision), input.skillEnvironmentKeys),
         createAskUserTool(sideEffectTracker),
       ];
       const allowed = new Set(tools.map((tool) => tool.name));
@@ -321,10 +314,19 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     return revision.tools.filter((name) => known.has(name));
   }
 
+  #toolsForRun(workspacePath: string | undefined, names: string[], environmentKeys: readonly string[]): AgentTool[] {
+    const selected = workspacePath === undefined
+      ? names.filter((name) => (PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name))
+      : names;
+    if (selected.length === 0) return [];
+    return this.dependencies.tools.create(workspacePath ?? process.cwd(), selected, { environmentKeys });
+  }
+
   #systemPrompt(configuredPrompt: string, request: PartnerRunRequest, workbenchSection: string, knowledgeSection: string, skillSection: string): string {
     return [
       configuredPrompt,
       "The assigned workspace is your home base: create work files there by default. When the task requires it, you may also read and write paths outside the workspace (for example user directories, installed skill folders, or configuration files). List every write outside the workspace (path and change) in your final reply. Placeholders like {baseDir} inside skill instructions refer to the skill's own directory.",
+      "For public web research, use web_search first, then fetch_content for the relevant URL and get_search_content to page a long response. Web tools are read-only, bounded, and never receive cookies, authorization headers or credentials; cite the URL in your answer and label uncertainty.",
       "If you are blocked because only the user can supply missing information or make a decision, call ask_user once with one concrete question and stop; otherwise complete the work without asking.",
       `Workbench scope: ${request.workbenchId}`,
       `Work item: ${request.workId}`,

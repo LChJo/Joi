@@ -78,6 +78,20 @@ export class JoiInboxService {
     if (record === null) throw new DomainError("joi_dismiss_unavailable", "This input is not finished and cannot be removed.");
     return toDto(record);
   }
+
+  async retry(input: { inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
+    const inputId = input.inputId.trim();
+    if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
+    const text = typeof input.text === "string" ? input.text.trim() : "";
+    if (text.length > 8_000) throw new DomainError("joi_retry_invalid", "Supplementary text is too long.");
+    const record = await this.dependencies.repository.retry(inputId, { ...(text === "" ? {} : { text }) });
+    if (record === null) throw new DomainError("joi_retry_unavailable", "This goal cannot be continued right now.");
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.retried", {
+      inputId: record.inputId,
+      supplemented: text !== "",
+    });
+    return toDto(record);
+  }
 }
 
 function textPreviewOf(record: JoiInboxRecord): string | undefined {

@@ -152,6 +152,31 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     });
   }
 
+  async retry(inputId: string, patch: { text?: string }): Promise<JoiInboxRecord | null> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      if (row === undefined) return null;
+      const current = mapRow(row);
+      if (current.status !== "CONSUMED" || current.dismissedAt !== undefined) return null;
+      // Synthetic orchestration inputs (result synthesis, harness review, system
+      // signals) are never user goals and must not be re-queued from the home feed.
+      if (inputId.startsWith("joi_result_input:") || inputId.startsWith("joi_harness_review:") || inputId.startsWith("joi_signal_input:")) return null;
+      // Reviving a goal while its work is still live would double-dispatch it.
+      const activeExecution = connection.prepare(`SELECT 1 FROM work_items
+        WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(inputId);
+      if (activeExecution !== undefined) return null;
+      const now = new Date().toISOString();
+      const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
+      const result = connection.prepare(`UPDATE joi_inbox_messages
+        SET body = ?, status = 'PENDING', canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL,
+          failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, inputId);
+      if (result.changes === 0) return null;
+      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      return updated === undefined ? null : mapRow(updated);
+    });
+  }
+
   async dismiss(inputId: string): Promise<JoiInboxRecord | null> {
     return this.database.transaction((connection) => {
       const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
