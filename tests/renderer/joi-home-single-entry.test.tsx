@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
@@ -662,6 +662,32 @@ describe("joi home single entry", () => {
     expect(screen.queryByText("目标 COMPLETED")).not.toBeInTheDocument();
   });
 
+  it("offers cancellation for an arranged goal so a stuck queue has a safe fallback", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-arranged-cancel", "排队 Workbench");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        goalId: "goal-arranged-cancel",
+        status: "ARRANGED",
+        title: "卡住的排队任务",
+        updatedAt: workbench.updatedAt,
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const cancel = vi.spyOn(api, "cancelJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, canceled: true, inputId: "goal-arranged-cancel", status: "CONSUMED" });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("已安排")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消这条任务" }));
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-arranged-cancel"));
+  });
+
   it("explains a parked internal failure without presenting it as a cancellation", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-failure", "失败说明");
@@ -723,6 +749,14 @@ describe("joi home single entry", () => {
     expect(await screen.findByRole("button", { name: "继续「失败的目标」" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续「取消的目标」" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "继续「完成的目标」" })).toBeInTheDocument();
+    const failedGoalActions = screen.getByRole("group", { name: "失败的目标 操作" });
+    expect(failedGoalActions).toHaveClass("joi-goal-actions");
+    expect(failedGoalActions.parentElement).toHaveClass("joi-goal-side");
+    const failedGoalStatus = failedGoalActions.closest(".joi-goal-row")?.querySelector(".joi-goal-status");
+    expect(failedGoalStatus).toHaveTextContent("处理失败");
+    expect(failedGoalStatus?.parentElement).toHaveClass("joi-goal-side");
+    const failedGoalTitle = failedGoalActions.closest(".joi-goal-card")?.querySelector(".joi-goal-title");
+    expect(failedGoalTitle).toHaveTextContent("失败的目标");
 
     // Expanding the failed card shows the supplementary input and submits with text.
     fireEvent.click(screen.getByRole("button", { name: "继续「失败的目标」" }));
@@ -737,6 +771,74 @@ describe("joi home single entry", () => {
     expect(await screen.findByText(/这条任务之前被取消了/u)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-canceled", {}));
+  });
+
+  it("shows a retry as arranging before the follow-up feed refresh completes", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-fast-retry", "即时反馈工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const feed = {
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: true,
+        goalId: "goal-fast-retry",
+        status: "FAILED" as const,
+        title: "马上继续的目标",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 1, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    };
+    let releaseRefresh: (() => void) | undefined;
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockImplementation(() => new Promise((resolve) => { releaseRefresh = () => resolve(feed); }));
+    vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-fast-retry", status: "PENDING" });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "继续「马上继续的目标」" }));
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "queued" })).toBeInTheDocument();
+    releaseRefresh?.();
+  });
+
+  it("does not let an older polling response overwrite an optimistic retry", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-stale-retry", "防旧响应工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const feed = {
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: true,
+        goalId: "goal-stale-retry",
+        status: "FAILED" as const,
+        title: "防旧响应目标",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 1, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    };
+    let releaseOldPoll: (() => void) | undefined;
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseOldPoll = () => resolve(feed); }))
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValue(feed);
+    vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-stale-retry", status: "PENDING" });
+
+    const view = render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "继续「防旧响应目标」" }));
+    await new Promise((resolve) => setTimeout(resolve, 1_600));
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    await act(async () => { releaseOldPoll?.(); await Promise.resolve(); });
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    view.unmount();
   });
 
   it("binds uploaded files to one global joi input and ignores an empty submit", async () => {
@@ -891,6 +993,111 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(reason).not.toBeInTheDocument());
   });
 
+  it("shows joi workbench proposals instead of a manual creation form", async () => {
+    const api = new DigitalLifeApi("");
+    const existing = workbenchDto("workbench-existing", "已有工程");
+    const created = workbenchDto("workbench-proposal", "AI 应用开发工作台");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "proposal-1", status: "CLARIFICATION_REQUIRED", textPreview: "使用 Claude Code 开发 AI 应用并排查 monitor 问题" },
+    ] });
+    const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(created);
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "proposal-1", status: "PENDING" });
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
+    expect(await screen.findByText("joi 建议了几个工作台方案")).toBeInTheDocument();
+    expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /AI 应用开发工作台/u }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "AI 应用开发工作台" })));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("proposal-1", { workbenchId: "workbench-proposal" }));
+  });
+
+  it("creates a new workbench from the clarification card and resumes the same input", async () => {
+    const api = new DigitalLifeApi("");
+    const existing = workbenchDto("workbench-existing", "已有工程");
+    const created = workbenchDto("workbench-new", "新工作台");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "create-workbench-1", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(created);
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "create-workbench-1", status: "PENDING" });
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
+    expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /AI 应用开发工作台/u }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledWith({
+      name: "AI 应用开发工作台",
+      personaSummary: "关注 SDK/API 集成、应用开发和可验证交付，保持工程上下文连续。",
+      projectLabel: "AI 应用开发",
+      scopeSummary: "Claude Code、SDK、API 集成、应用开发与调试。",
+    }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("create-workbench-1", { workbenchId: "workbench-new" }));
+    expect(clarify).not.toHaveBeenCalledWith("create-workbench-1", { text: "新增工作台" });
+  });
+
+  it("reuses a newly created workbench when the first clarification request fails", async () => {
+    const api = new DigitalLifeApi("");
+    const existing = workbenchDto("workbench-existing", "已有工程");
+    const created = workbenchDto("workbench-new-retry", "新工作台");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "create-workbench-retry", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(created);
+    const clarify = vi.spyOn(api, "clarifyJoiMessage")
+      .mockRejectedValueOnce(new ApiError("offline", "暂时无法继续，请重试", 503))
+      .mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "create-workbench-retry", status: "PENDING" });
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
+    fireEvent.click(screen.getByRole("button", { name: /当前任务 工作台/u }));
+
+    expect(await screen.findByText("暂时无法继续，请重试")).toBeInTheDocument();
+    expect(create).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "新工作台" }));
+    await waitFor(() => expect(clarify).toHaveBeenLastCalledWith("create-workbench-retry", { workbenchId: "workbench-new-retry" }));
+    expect(create).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses a safe generic error when selecting a workbench cannot be submitted", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-submit-failure", "已有工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "submit-failure", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    vi.spyOn(api, "clarifyJoiMessage").mockRejectedValue(new Error("offline"));
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "已有工程" }));
+    expect(await screen.findByText("没能交给 joi，请重试。")).toBeInTheDocument();
+  });
+
+  it("keeps the joi proposals available until the user cancels them", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-incomplete", "已有工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "create-workbench-incomplete", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
+    expect(await screen.findByText("joi 建议了几个工作台方案")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByText("joi 建议了几个工作台方案")).not.toBeInTheDocument();
+  });
+
   it("surfaces a clarification failure inline at the card", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "前端搭档")] });
@@ -933,6 +1140,8 @@ describe("joi home single entry", () => {
     const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", workbenchId: "workbench-work", inputId: "workspace-1", status: "PENDING" });
     render(<JoiHome api={api} />);
 
+    expect(await screen.findByText("joi 需要你确认")).toBeInTheDocument();
+    expect(bind).not.toHaveBeenCalled();
     fireEvent.click(await screen.findByRole("button", { name: "选择工作目录" }));
     await waitFor(() => expect(bind).toHaveBeenCalledWith("workbench-work"));
     expect(clarify).toHaveBeenCalledWith("workspace-1", { workbenchId: "workbench-work" });
