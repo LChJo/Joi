@@ -6,6 +6,7 @@ import type { Api, ImageContent, Model, Models } from "@earendil-works/pi-ai";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type {
   JoiReasoningSessionSnapshot,
+  JoiReasoningOutcome,
   PrimaryReasoningEvent,
   PrimaryReasoningRuntime,
   ReasoningSessionStore,
@@ -103,6 +104,13 @@ function validateToolNames(tools: AgentTool[]): void {
 }
 
 function safeToolResultReasonCode(result: unknown): string | undefined {
+  const parsed = safeToolResultRecord(result);
+  if (parsed === undefined) return undefined;
+  const reasonCode = parsed.reasonCode;
+  return typeof reasonCode === "string" && /^[A-Za-z0-9_.:-]{1,80}$/u.test(reasonCode) ? reasonCode : undefined;
+}
+
+function safeToolResultRecord(result: unknown): Record<string, unknown> | undefined {
   if (result === null || typeof result !== "object") return undefined;
   const content = (result as { content?: unknown }).content;
   if (!Array.isArray(content)) return undefined;
@@ -113,12 +121,20 @@ function safeToolResultReasonCode(result: unknown): string | undefined {
   if (text === undefined) return undefined;
   try {
     const parsed: unknown = JSON.parse(text.text);
-    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined;
-    const reasonCode = (parsed as { reasonCode?: unknown }).reasonCode;
-    return typeof reasonCode === "string" && /^[A-Za-z0-9_.:-]{1,80}$/u.test(reasonCode) ? reasonCode : undefined;
+    return parsed === null || typeof parsed !== "object" || Array.isArray(parsed)
+      ? undefined
+      : parsed as Record<string, unknown>;
   } catch {
     return undefined;
   }
+}
+
+function safeTurnOutcome(toolName: string, result: unknown): JoiReasoningOutcome | undefined {
+  if (toolName !== "turn_complete") return undefined;
+  const outcome = safeToolResultRecord(result)?.outcome;
+  return outcome === "DIRECT_ANSWER" || outcome === "TEAM_READY" || outcome === "RESULT_SYNTHESIZED" || outcome === "MAP_CLEARED"
+    ? outcome
+    : undefined;
 }
 
 function isCheckpoint(message: AgentMessage | undefined): boolean {
@@ -328,9 +344,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       mapped = { type: "tool_started", toolCallId: event.toolCallId, toolName: event.toolName, turnId: active.turnId };
     } else if (event.type === "tool_execution_end") {
       const reasonCode = safeToolResultReasonCode(event.result);
+      const outcome = safeTurnOutcome(event.toolName, event.result);
       mapped = {
         type: "tool_finished",
         isError: event.isError,
+        ...(outcome === undefined ? {} : { outcome }),
         ...(reasonCode === undefined && event.isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
         toolCallId: event.toolCallId,
         toolName: event.toolName,

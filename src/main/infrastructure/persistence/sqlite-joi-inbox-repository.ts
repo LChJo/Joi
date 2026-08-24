@@ -7,6 +7,7 @@ import type { JoiCoordinatorStore, JoiPendingInput } from "../../application/por
 import type { JoiActivityDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import { normalizeCompletionSummary } from "../../application/partners/agent-conversation-presentation.js";
+import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
 
 interface TransactionalDatabase {
@@ -449,17 +450,23 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     });
   }
 
-  async completeInput(inputId: string, turnId: string, completion?: { completionSummary: string }) {
+  async completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion) {
     return this.database.transaction((connection) => {
       const now = new Date().toISOString();
-      connection.prepare("UPDATE joi_turns SET status = 'COMPLETED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
+      if (completion === undefined) {
+        connection.prepare("UPDATE joi_turns SET status = 'COMPLETED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
+      } else {
+        const completedTurn = connection.prepare(`UPDATE joi_turns SET status = 'COMPLETED', updated_at = ?
+          WHERE turn_id = ? AND input_id = ?`).run(now, turnId, inputId);
+        if (completedTurn.changes !== 1) throw new Error("joi_turn_input_mismatch");
+      }
       const synthesis = connection.prepare(`SELECT goal_input_id, result_revision FROM joi_inbox_messages
         WHERE input_id = ?`).get(inputId) as { goal_input_id?: unknown; result_revision?: unknown } | undefined;
       if (typeof synthesis?.goal_input_id === "string" && typeof synthesis.result_revision === "number") {
         const current = connection.prepare(`SELECT revision FROM joi_goal_result_sets
           WHERE original_input_id = ?`).get(synthesis.goal_input_id) as { revision?: unknown } | undefined;
         if (typeof current?.revision !== "number") throw new Error("goal_result_set_invalid");
-        if (current.revision !== synthesis.result_revision || completion === undefined) {
+        if (current.revision !== synthesis.result_revision || completion?.outcome !== "RESULT_SYNTHESIZED") {
           connection.prepare(`UPDATE joi_inbox_messages SET status = 'PENDING', updated_at = ? WHERE input_id = ?`)
             .run(now, inputId);
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
@@ -493,6 +500,18 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
           WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
         return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: true, resultRevision: synthesis.result_revision };
+      }
+      if (completion?.outcome === "DIRECT_ANSWER" || completion?.outcome === "TEAM_READY") {
+        const summary = normalizeCompletionSummary(completion.completionSummary);
+        if (summary === "") throw new Error("joi_turn_completion_invalid");
+        connection.prepare(`INSERT INTO joi_turn_completions
+          (input_id, turn_id, outcome_kind, completion_summary, completed_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON CONFLICT(input_id) DO UPDATE SET turn_id = excluded.turn_id,
+            outcome_kind = excluded.outcome_kind, completion_summary = excluded.completion_summary,
+            completed_at = excluded.completed_at, updated_at = excluded.updated_at`).run(
+          inputId, turnId, completion.outcome, summary, now, now,
+        );
       }
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
         WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);

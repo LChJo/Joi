@@ -98,6 +98,7 @@ describe("goal-level result synthesis", () => {
       });
       await expect(inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis", {
         completionSummary: "旧失败已处理，正在重派。",
+        outcome: "RESULT_SYNTHESIZED",
       })).resolves.toMatchObject({ goalOutcomePersisted: false });
       expect(fixture.database.transaction((connection) => connection.prepare(
         "SELECT COUNT(*) AS count FROM joi_goal_outcomes WHERE input_id = 'goal-stock'",
@@ -116,7 +117,10 @@ describe("goal-level result synthesis", () => {
         );
         connection.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED' WHERE input_id = ?").run(synthesisInputId);
       });
-      await inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis-final", { completionSummary: "两项分析均已完成，结论已汇总。" });
+      await inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis-final", {
+        completionSummary: "两项分析均已完成，结论已汇总。",
+        outcome: "RESULT_SYNTHESIZED",
+      });
 
       const after = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-05T09:01:03.000Z"));
       expect(after.goals[0]).toMatchObject({

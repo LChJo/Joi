@@ -52,6 +52,40 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
+  it("projects only the safe committed Turn outcome from a turn_complete result", async () => {
+    const faux = fauxProvider({ provider: "joi-turn-outcome" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("turn_complete", { outcome: "DIRECT_ANSWER" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("我是 Joi。")]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const events: unknown[] = [];
+    const runtime = new PiReasoningRuntime({
+      model: faux.getModel(),
+      models,
+      sessionStore: new MemorySessionStore(),
+      tools: [{
+        description: "Commit a direct answer.",
+        execute: async () => ({ content: [{ type: "text" as const, text: JSON.stringify({ outcome: "DIRECT_ANSWER", privatePayload: "must-not-cross" }) }], details: {} }),
+        label: "Complete Turn",
+        name: "turn_complete",
+        parameters: Type.Object({ outcome: Type.Literal("DIRECT_ANSWER") }),
+      }],
+    });
+    await runtime.startTurn({
+      workbenchId: "workbench_1", inputId: "input_direct", modelId: "contract-model", modelRevisionId: "model_rev_1",
+      onEvent: (event) => { if (event.type === "tool_finished") events.push(event); }, prompt: "你是谁", sessionId: "session_direct",
+      sourceId: "contract-source", sourceRevisionId: "source_rev_1", systemPrompt: "You are joi.", turnId: "turn_direct",
+    });
+
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      isError: false, outcome: "DIRECT_ANSWER", toolName: "turn_complete", turnId: "turn_direct", type: "tool_finished",
+    });
+    expect(JSON.stringify(events)).not.toContain("privatePayload");
+  });
+
   it("ships provider-specific API and subscription presets plus one generic option", () => {
     expect([...new Set(MODEL_SOURCE_OPTIONS.map((option) => option.kind))]).toEqual([
       "kimi",

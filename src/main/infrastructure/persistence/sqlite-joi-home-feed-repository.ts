@@ -105,7 +105,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
     return this.database.transaction((connection) => {
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.clarification_reason_code, i.clarification_prompt,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
-        COALESCE(o.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
+        COALESCE(o.completed_at, tc.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
         COALESCE(SUM(CASE WHEN w.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count,
@@ -120,13 +120,15 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           WHERE s.dismissed_at IS NULL AND aw.input_id = i.input_id) AS agent_count,
         COALESCE(rs.revision, 0) AS result_revision,
         CASE WHEN o.result_revision = rs.revision AND rs.revision > 0 THEN 1 ELSE 0 END AS outcome_current,
-        o.completion_summary, o.completed_at,
+        o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
+        tc.completed_at AS turn_completed_at,
         (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id
           WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs
         FROM joi_inbox_messages i LEFT JOIN workbenches a ON a.workbench_id = i.workbench_id
         LEFT JOIN work_items w ON w.input_id = i.input_id
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
         LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
+        LEFT JOIN joi_turn_completions tc ON tc.input_id = i.input_id
         WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'
           AND i.input_id NOT LIKE 'joi_harness_review:%'
           AND NOT (i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED')
@@ -168,8 +170,16 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             },
           } : {}),
           ...(harnessProjection === undefined ? {} : { harness: toHarnessDto(harnessProjection) }),
-          ...(number(row, "outcome_current") === 1 && typeof row.completion_summary === "string" ? { completionSummary: stripPathRedactions(row.completion_summary) } : {}),
-          ...(number(row, "outcome_current") === 1 && typeof row.completed_at === "string" ? { completedAt: row.completed_at } : {}),
+          ...(number(row, "outcome_current") === 1 && typeof row.completion_summary === "string"
+            ? { completionSummary: stripPathRedactions(row.completion_summary) }
+            : number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completion_summary === "string"
+              ? { completionSummary: stripPathRedactions(row.turn_completion_summary) }
+              : {}),
+          ...(number(row, "outcome_current") === 1 && typeof row.completed_at === "string"
+            ? { completedAt: row.completed_at }
+            : number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completed_at === "string"
+              ? { completedAt: row.turn_completed_at }
+              : {}),
           status,
           title: title === "" ? "未命名目标" : title,
           updatedAt: text(row, "projection_updated_at"),

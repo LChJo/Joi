@@ -578,6 +578,29 @@ describe("joi home single entry", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("shows a persisted direct answer on a zero-Work completed card", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-direct", "问答工作台");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
+        completedAt: "2026-08-24T09:00:00.000Z", completionSummary: "## 身份\n\n我是 **Joi**，你的 AI 助手。",
+        goalId: "input-direct", status: "COMPLETED", title: "你是谁", updatedAt: "2026-08-24T09:00:00.000Z",
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    render(<JoiHome api={api} />);
+
+    const preview = await screen.findByRole("button", { name: "打开「你是谁」的最终结果全文" });
+    expect(preview).toHaveTextContent("我是 Joi，你的 AI 助手。");
+    fireEvent.click(preview);
+    expect(within(await screen.findByRole("dialog")).getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
+  });
+
   it("shows the harness map panel in the goal detail only when the feed carries a projection", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-h", "分析工程");

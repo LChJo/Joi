@@ -16,6 +16,68 @@ const finance = createWorkbench({
 });
 
 describe("single-joi-workbench-scoped-thread-isolation", () => {
+  it("persists a bounded safe completion for a no-tool direct answer", async () => {
+    const completions: unknown[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          turn.onEvent?.({ delta: "## 身份\n\n我是 Joi。 token=abcdefghijklmnop C:\\private\\answer.md", turnId: turn.turnId, type: "text_delta" });
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async (inputId, turnId, completion) => { completions.push({ completion, inputId, turnId }); },
+        createTurn: async () => undefined,
+        loadInput: async () => ({ body: "你是谁", inputId: "input-direct", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await coordinator.handle("input-direct");
+    expect(completions).toEqual([expect.objectContaining({
+      completion: {
+        completionSummary: "## 身份\n\n我是 Joi。 token=[redacted] [redacted-path]",
+        outcome: "DIRECT_ANSWER",
+      },
+      inputId: "input-direct",
+    })]);
+  });
+
+  it("repairs one empty direct response before committing a visible answer", async () => {
+    let starts = 0;
+    const completions: unknown[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          starts += 1;
+          if (starts === 2) turn.onEvent?.({ delta: "我是 Joi。", turnId: turn.turnId, type: "text_delta" });
+          turn.onEvent?.({ turnId: turn.turnId, type: "turn_finished" });
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async (_inputId, _turnId, completion) => { completions.push(completion); },
+        createTurn: async () => undefined,
+        loadInput: async () => ({ body: "你是谁", inputId: "input-empty-direct", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await coordinator.handle("input-empty-direct");
+    expect(starts).toBe(2);
+    expect(completions).toEqual([{ completionSummary: "我是 Joi。", outcome: "DIRECT_ANSWER" }]);
+  });
+
   it("runs result synthesis in an isolated session and persists the bounded final answer for the original goal", async () => {
     const completions: unknown[] = [];
     const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
@@ -53,7 +115,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     await coordinator.handle("joi_result_input:goal:goal-1");
     expect(sessions).toEqual(["joi_synthesis_session:research"]);
     expect(completions).toEqual([expect.objectContaining({
-      completion: { completionSummary: "两项工作已完成。 [redacted-path] 已隐藏。" },
+      completion: { completionSummary: "两项工作已完成。 [redacted-path] 已隐藏。", outcome: "RESULT_SYNTHESIZED" },
       inputId: "joi_result_input:goal:goal-1",
     })]);
     expect(diagnostics.map((entry) => entry.event)).toEqual(expect.arrayContaining([

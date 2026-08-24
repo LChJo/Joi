@@ -53,6 +53,7 @@
 | AC-47 | 首页首问即时目标卡与澄清卡去重 | 已自动证实：未绑定 `PENDING` 输入经 home-feed 左连接入 `ARRANGING`/“等待归属”目标卡，Workbench 绑定后同 inputId 升级；未绑定 `CLARIFICATION_REQUIRED` 排除目标列表并保留 `unassignedActions`；`sqlite-workbench-agent-feed.test.ts`、`joi-home-single-entry.test.tsx`、`workbench-agent-http.test.ts` |
 | AC-48 | `progressing` 旁安全进度摘要 | 已自动证实：home-feed 从 goal 状态与 Work 计数投影 `ROUTING/PLANNING/DISPATCHING/RUNNING/WAITING/FINALIZING`、Agent 数和 Work 完成/失败/总数；renderer 显示阶段、计数和已用时间并保留 `progressing` 闪动，禁止 ETA、原始消息、模型标识、路径和错误正文；保留 HTTP 轮询与提交后的即时刷新；`sqlite-workbench-agent-feed.test.ts`、`joi-home-single-entry.test.tsx` |
 | AC-49 | 默认 Pi core 受控网页研究能力 | 已自动证实：`BuiltinPiCodingToolFactory` 默认目录包含 `web_search`、`fetch_content`、`get_search_content`；`PiWebAccessToolFactory` 覆盖公开 URL 校验、DNS/重定向私网拒绝、超时/响应大小限制、HTML 可读性抽取、GitHub README、有限内存缓存与分页；`pi-web-access-tools.test.ts`、`pi-coding-tool-factory.test.ts`、`joi-reasoning-tools.test.ts`。适配器不动态加载第三方 Pi package，不读取 cookie/凭据，不 clone 或写 workspace。 |
+| AC-50 | 首页持久展示普通直接回答 | 已自动证实：migration 042 的 `joi_turn_completions` 以 input/turn 外键、唯一性和 outcome CHECK 保存独立展示事实；Pi runtime 仅投影 `turn_complete` 安全 outcome 枚举，Coordinator 捕获最终文本、空回答同轮只修复一次并在持久化前有界脱敏；SQLite 同事务校验 input/turn 归属并完成 Turn/Inbox，home-feed 仅对已消费且无 result-set 的输入投影，重试隐藏旧结果，当前 Goal outcome revision 始终优先；既有 renderer 使用 `completionSummary` 显示卡片 Markdown 预览和全文抽屉。`single-joi-workbench-routing.test.ts`、`pi-runtime-contract.test.ts`、`sqlite-joi-turn-completion.test.ts`、`joi-home-single-entry.test.tsx`、`joi-orchestration-migration.test.ts`。 |
 
 本表随 RED→GREEN 证据更新；“旧基线可复用”不等于目标 AC 已完成。
 

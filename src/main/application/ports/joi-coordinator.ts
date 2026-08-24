@@ -11,8 +11,15 @@ export interface JoiPendingInput {
   status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
 }
 
+export type JoiCompletionOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED";
+
+export interface JoiInputCompletion {
+  completionSummary: string;
+  outcome: JoiCompletionOutcome;
+}
+
 export interface JoiCoordinatorStore {
-  completeInput(inputId: string, turnId: string, completion?: { completionSummary: string }): Promise<unknown>;
+  completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion): Promise<unknown>;
   createTurn(input: {
     workbenchId: string;
     createdAt: string;

@@ -4,7 +4,7 @@ import type { JoiAttachmentPort } from "../ports/managed-file-ports.js";
 import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
 import { buildJoiAttachmentContext } from "./joi-attachment-context.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
-import type { PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
+import type { JoiReasoningOutcome, PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
 import {
   emitRuntimeDiagnostic,
   runtimeDiagnosticErrorCode,
@@ -13,7 +13,7 @@ import {
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
-import { normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
+import { COMPLETION_SUMMARY_LIMIT, normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
 import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
 
 interface SourcePin {
@@ -59,6 +59,12 @@ const OUTCOME_REPAIR_PROMPT = [
   "Continue the same persisted request now; do not repeat a lookup-only answer or merely describe future work.",
   "For executable AFK work, call work_dispatch. If user judgement is genuinely required, call user_ask.",
   "Only when no execution is requested and the response is already complete may you call turn_complete with the matching outcome.",
+].join(" ");
+
+const EMPTY_COMPLETION_REPAIR_PROMPT = [
+  "[joi completion repair] Your preceding direct response did not contain a visible final answer.",
+  "Continue the same persisted request without repeating side effects or lookup calls.",
+  "Emit the concise final answer for the user now; if tools were used, keep the already committed outcome.",
 ].join(" ");
 
 const WORK_DISPATCH_FAILURE_PROMPT = "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。";
@@ -221,6 +227,7 @@ export class JoiCoordinator {
     const observedToolCalls = new Set<string>();
     const toolStartedAt = new Map<string, number>();
     const committedOutcomeTools = new Set<string>();
+    let committedTurnOutcome: JoiReasoningOutcome | undefined;
     const attemptedSources = new Set<string>();
     let completionRepairAttempted = false;
     let completionText = "";
@@ -243,6 +250,8 @@ export class JoiCoordinator {
         if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
         attemptedSources.add(pin.sourceId);
       try {
+        let attemptCompletionText = "";
+        const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
             workbenchId,
             ...(turnAttachmentIds === undefined ? {} : { attachmentIds: turnAttachmentIds }),
@@ -252,9 +261,12 @@ export class JoiCoordinator {
             modelId: pin.modelId,
             modelRevisionId: pin.modelRevisionId,
             onEvent: (event) => {
+              if (event.type === "turn_finished") finishedTurnIds.add(event.turnId);
               if (event.type === "text_delta" && event.delta.length > 0) {
                 formalOutputStarted = true;
-                if (isGoalSynthesis && completionText.length < 4_000) completionText += event.delta.slice(0, 4_000 - completionText.length);
+                if (attemptCompletionText.length < COMPLETION_SUMMARY_LIMIT) {
+                  attemptCompletionText += event.delta.slice(0, COMPLETION_SUMMARY_LIMIT - attemptCompletionText.length);
+                }
               }
               if (event.type === "tool_started") {
                 sideEffectStarted = true;
@@ -290,6 +302,7 @@ export class JoiCoordinator {
               }
               if (event.type === "tool_finished" && !event.isError && COMMITTED_OUTCOME_TOOL_NAMES.has(event.toolName)) {
                 committedOutcomeTools.add(event.toolName);
+                if (event.outcome !== undefined) committedTurnOutcome = event.outcome;
               }
               if (formalOutputStarted || sideEffectStarted) {
                 void this.dependencies.store.recordTurnProgress?.(turnId, { formalOutputStarted, sideEffectStarted });
@@ -310,6 +323,7 @@ export class JoiCoordinator {
             }),
             turnId,
           });
+          if (normalizeCompletionSummary(attemptCompletionText) !== "") completionText = attemptCompletionText;
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
           if (dispatchFailureReason !== undefined) {
             if (dispatchFailureReason !== DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady && dispatchFailureReason !== "work_dispatch_failed") {
@@ -349,6 +363,28 @@ export class JoiCoordinator {
             turnImages = undefined;
             continue;
           }
+          const inferredDirectOutcome = !isGoalSynthesis && input.goalInputId === undefined
+            ? committedTurnOutcome === "DIRECT_ANSWER" || committedTurnOutcome === "TEAM_READY"
+              ? committedTurnOutcome
+              : committedOutcomeTools.has("turn_complete") || observedToolCalls.size === 0
+                ? "DIRECT_ANSWER"
+                : undefined
+            : undefined;
+          if (finishedTurnIds.has(turnId) && inferredDirectOutcome !== undefined && normalizeCompletionSummary(completionText) === "") {
+            if (completionRepairAttempted) {
+              throw new DomainError("joi_turn_completion_empty", "The reasoning Turn ended without a visible final answer.");
+            }
+            completionRepairAttempted = true;
+            emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", {
+              workbenchId,
+              inputId,
+              observedToolCount: observedToolCalls.size,
+              turnId,
+            });
+            prompt = EMPTY_COMPLETION_REPAIR_PROMPT;
+            turnImages = undefined;
+            continue;
+          }
           break;
         } catch (error) {
           if (signal?.aborted) throw error;
@@ -374,11 +410,22 @@ export class JoiCoordinator {
       }
       const completionSummary = normalizeCompletionSummary(completionText);
       if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
+      const directOutcome = completionSummary !== "" && !isGoalSynthesis && input.goalInputId === undefined
+        ? committedTurnOutcome === "DIRECT_ANSWER" || committedTurnOutcome === "TEAM_READY"
+          ? committedTurnOutcome
+          : committedOutcomeTools.has("turn_complete") || observedToolCalls.size === 0
+            ? "DIRECT_ANSWER" as const
+            : undefined
+        : undefined;
       const completion = await this.dependencies.store.completeInput(inputId, turnId, isGoalSynthesis ? {
         completionSummary: completionSummary === ""
           ? "相关工作已完成，结果已汇总到 Workbench 的 Agent 记录。"
           : completionSummary,
-      } : undefined);
+        outcome: "RESULT_SYNTHESIZED",
+      } : directOutcome === undefined ? undefined : {
+        completionSummary,
+        outcome: directOutcome,
+      });
       if (goalSynthesis !== null) {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.synthesis.completed", {
           workbenchId,

@@ -1,9 +1,11 @@
+export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "MAP_CLEARED";
+
 export type PrimaryReasoningEvent =
   | { type: "turn_started"; turnId: string }
   | { type: "text_delta"; delta: string; turnId: string }
   | { type: "thinking_delta"; delta: string; turnId: string }
   | { type: "tool_started"; toolCallId: string; toolName: string; turnId: string }
-  | { type: "tool_finished"; isError: boolean; reasonCode?: string; toolCallId: string; toolName: string; turnId: string }
+  | { type: "tool_finished"; isError: boolean; outcome?: JoiReasoningOutcome; reasonCode?: string; toolCallId: string; toolName: string; turnId: string }
   | { type: "turn_finished"; turnId: string };
 
 export interface StartReasoningTurnInput {

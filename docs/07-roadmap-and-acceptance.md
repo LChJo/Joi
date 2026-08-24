@@ -31,6 +31,8 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-18 的首页进度可见性收敛以 AC-48 为门禁：`progressing` 必须同时显示由持久化事实推导的阶段、Agent 数、Work 完成/失败/总数和已用时间；只展示安全枚举和计数，不展示 ETA、原始执行消息、模型标识、路径或错误正文；继续使用 HTTP home-feed 轮询与本地操作后的即时刷新，不新增 SSE/WebSocket。
 
+2026-08-24 的直接回答结果收敛以 AC-50 为门禁：`DIRECT_ANSWER`、`TEAM_READY` 与无工具普通回答必须把非空最终 Markdown 有界脱敏后写入独立 Turn completion；写入与 Turn/Inbox 完成同事务且校验 input/turn 归属。首页仅在输入已消费且没有 result-set 时投影该 completion；当前 revision 的 Goal outcome 始终优先，重试期间不得展示旧回答，诊断不得记录回答正文。
+
 ## 1. 当前状态
 
 | 阶段             | 状态   | 产物                          |
