@@ -15,6 +15,27 @@ interface TransactionalDatabase {
 
 type Row = Record<string, unknown>;
 
+function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string): void {
+  connection.prepare(`UPDATE work_items SET status = 'CANCELED', updated_at = ?
+    WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING')`).run(now, inputId);
+  // A canceled queued attempt must not remain claimable by a later AgentActor tick.
+  connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
+    WHERE work_id IN (SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')
+      AND status NOT IN ('COMPLETED', 'FAILED', 'UNKNOWN')`).run(now, inputId);
+  connection.prepare(`UPDATE outbox SET status = 'DONE', claim_owner = NULL, claim_until = NULL
+    WHERE outbox_id IN (
+      SELECT a.outbox_id FROM dispatch_attempts a
+      JOIN work_items w ON w.work_id = a.work_id
+      WHERE w.input_id = ? AND w.status = 'CANCELED' AND a.outbox_id IS NOT NULL
+    ) AND status IN ('PENDING', 'CLAIMED')`).run(inputId);
+  connection.prepare(`UPDATE partner_runs SET status = 'FAILED', updated_at = ?
+    WHERE status IN ('WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
+      SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(now, inputId);
+  connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
+    WHERE status IN ('WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
+      SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(now, inputId);
+}
+
 function mapRow(row: Row): JoiInboxRecord {
   const inputId = row.input_id;
   const idempotencyKey = row.idempotency_key;
@@ -117,8 +138,29 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       if (row === undefined) return null;
       const current = mapRow(row);
-      if (current.status !== "PENDING" && current.status !== "CLARIFICATION_REQUIRED") return null;
       const now = new Date().toISOString();
+      if (current.status === "CONSUMED") {
+        // A consumed goal can still hold live work: a partner may have paused with a
+        // question whose answer turn never resumed the work. The home feed shows such
+        // cards as "needs you" with a cancel affordance, so honor it: cancel the goal's
+        // not-yet-final work and terminalize the paused runs; otherwise the card could
+        // never be canceled or dismissed.
+        if (current.dismissedAt !== undefined || current.canceledAt !== undefined || current.failedAt !== undefined) return null;
+        const activeRun = connection.prepare(`SELECT 1 FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
+          WHERE w.input_id = ? AND pr.status = 'RUNNING' LIMIT 1`).get(inputId);
+        if (activeRun !== undefined) return null;
+        const cancelableWork = connection.prepare(`SELECT 1 FROM work_items
+          WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING') LIMIT 1`).get(inputId);
+        if (cancelableWork === undefined) return null;
+        const result = connection.prepare(`UPDATE joi_inbox_messages
+          SET canceled_at = ?, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+          WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(now, now, inputId);
+        if (result.changes === 0) return null;
+        cancelQueuedWork(connection, inputId, now);
+        const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+        return updated === undefined ? null : mapRow(updated);
+      }
+      if (current.status !== "PENDING" && current.status !== "CLARIFICATION_REQUIRED") return null;
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'CONSUMED', canceled_at = ?, clarification_reason_code = NULL,
           clarification_prompt = NULL, updated_at = ?
@@ -126,10 +168,37 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       if (result.changes === 0) return null;
       // Canceling a goal also cancels its not-yet-final work; a WAITING work would
       // otherwise block the goal's synthesis forever with nobody left to answer it.
-      connection.prepare(`UPDATE work_items SET status = 'CANCELED', updated_at = ?
-        WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING')`).run(now, inputId);
+      cancelQueuedWork(connection, inputId, now);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
+    });
+  }
+
+  async cancelQueued(): Promise<number> {
+    return this.database.transaction((connection) => {
+      const rows = connection.prepare(`SELECT i.input_id FROM joi_inbox_messages i
+        WHERE i.dismissed_at IS NULL AND i.canceled_at IS NULL
+          AND (i.status IN ('PENDING', 'CLARIFICATION_REQUIRED') OR (
+            i.status = 'CONSUMED'
+            AND EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status IN ('PLANNED', 'READY', 'WAITING'))
+          ))
+          AND NOT EXISTS (
+            SELECT 1 FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
+            WHERE w.input_id = i.input_id AND pr.status = 'RUNNING'
+          )`).all() as { input_id?: unknown }[];
+      const now = new Date().toISOString();
+      let canceled = 0;
+      for (const row of rows) {
+        if (typeof row.input_id !== 'string') continue;
+        const result = connection.prepare(`UPDATE joi_inbox_messages
+          SET status = 'CONSUMED', canceled_at = ?, clarification_reason_code = NULL,
+            clarification_prompt = NULL, updated_at = ?
+          WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL`).run(now, now, row.input_id);
+        if (result.changes === 0) continue;
+        cancelQueuedWork(connection, row.input_id, now);
+        canceled += 1;
+      }
+      return canceled;
     });
   }
 
@@ -192,7 +261,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         LIMIT 1`).get(inputId);
       if (activeExecution !== undefined) return null;
       const hasWork = connection.prepare("SELECT 1 FROM work_items WHERE input_id = ? LIMIT 1").get(inputId);
-      if (hasWork !== undefined) {
+      if (hasWork !== undefined && current.canceledAt === undefined) {
         const currentOutcome = connection.prepare(`SELECT 1 FROM joi_goal_result_sets s
           JOIN joi_goal_outcomes o ON o.input_id = s.original_input_id AND o.result_revision = s.revision
           WHERE s.original_input_id = ? AND s.revision > 0`).get(inputId);

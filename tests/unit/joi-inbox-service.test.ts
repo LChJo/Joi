@@ -4,6 +4,7 @@ import type { JoiInboxRecord, JoiInboxRepository } from "../../src/main/applicat
 
 class FakeInboxRepository implements JoiInboxRepository {
   readonly records = new Map<string, JoiInboxRecord>();
+  cancelQueued?: () => Promise<number>;
 
   async clarify(inputId: string, patch: { workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     const record = this.records.get(inputId);
@@ -215,6 +216,16 @@ describe("JoiInboxService.cancel", () => {
     repository.records.set("pending-1", record({ inputId: "pending-1", status: "PENDING" }));
     const dto = await serviceWith(repository).cancel({ inputId: "pending-1" });
     expect(dto).toMatchObject({ canceled: true, status: "CONSUMED" });
+  });
+});
+
+describe("JoiInboxService.emergencyStopQueued", () => {
+  it("delegates to the repository when available and remains compatible with older repositories", async () => {
+    const legacy = new FakeInboxRepository();
+    await expect(serviceWith(legacy).emergencyStopQueued()).resolves.toBe(0);
+    const repository = new FakeInboxRepository();
+    repository.cancelQueued = async () => 3;
+    await expect(serviceWith(repository).emergencyStopQueued()).resolves.toBe(3);
   });
 });
 

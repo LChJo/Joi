@@ -51,6 +51,9 @@ function goalStatus(row: Row): JoiGoalStatusDto {
   if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
   if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined || number(row, "waiting_count") > 0) return "NEEDS_ATTENTION";
+  // A retry is persisted before its new Turn exists. Keep the card in the arranging
+  // state even when the goal still owns planned work from an earlier attempt.
+  if (text(row, "inbox_status") === "PENDING") return "ARRANGING";
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0) return "ARRANGED";
   if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
@@ -145,8 +148,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",
             name: typeof row.workbench_name === "string" ? row.workbench_name : "等待归属",
           },
-          canDelete: (text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1)
-            && active === 0 && activeRuns === 0 && (total === 0 || number(row, "outcome_current") === 1),
+          canDelete: (row.canceled_at !== null && row.canceled_at !== undefined
+            || text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1)
+            && active === 0 && activeRuns === 0
+            && ((row.canceled_at !== null && row.canceled_at !== undefined) || total === 0 || number(row, "outcome_current") === 1),
           ...(status === "NEEDS_ATTENTION" && (typeof row.clarification_reason_code === "string" || typeof row.clarification_prompt === "string") ? {
             clarification: {
               ...(typeof row.clarification_prompt === "string" ? { prompt: row.clarification_prompt } : {}),
@@ -179,9 +184,14 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         WHERE (i.goal_input_id IS NOT NULL OR t.input_id NOT LIKE 'joi_result_input:%')
           AND (t.status IN ('PENDING','RUNNING','WAITING') OR t.updated_at >= ?)
         UNION ALL
-        SELECT 'pending:' || i.input_id, i.goal_input_id, 'PENDING', i.updated_at, i.updated_at
+        SELECT 'pending:' || i.input_id, COALESCE(i.goal_input_id, i.input_id), 'PENDING', i.updated_at, i.updated_at
           FROM joi_inbox_messages i
-         WHERE i.goal_input_id IS NOT NULL AND i.status = 'PENDING'
+         WHERE i.status = 'PENDING'
+           AND (i.goal_input_id IS NOT NULL OR (
+             i.input_id NOT LIKE 'joi_result_input:%'
+             AND i.input_id NOT LIKE 'joi_harness_review:%'
+             AND i.input_id NOT LIKE 'joi_signal_input:%'
+           ))
            AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id
              AND t.status IN ('PENDING','RUNNING','WAITING'))
         ORDER BY 4 DESC, 1 DESC`).all(cutoff) as Row[];

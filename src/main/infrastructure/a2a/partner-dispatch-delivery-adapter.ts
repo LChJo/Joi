@@ -64,6 +64,7 @@ interface DispatchRow {
   work_id: string;
   workspace_ref: string | null;
   workspace_status: string | null;
+  work_status: string;
 }
 
 function workBrief(intentJson: string): { acceptanceChecks: WorkAcceptanceCheck[]; instructions?: string } {
@@ -149,6 +150,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
         JOIN work_items w ON w.work_id = a.work_id
         JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
        WHERE o.kind = 'partner.dispatch' AND w.workbench_id = ? AND rev.partner_id = ?
+         AND w.status IN ('PLANNED', 'READY')
          AND o.available_at <= ?
          AND (o.status = 'PENDING' OR (o.status = 'CLAIMED' AND o.claim_until <= ?))
        ORDER BY o.created_at ASC, o.outbox_id ASC LIMIT 10`)
@@ -206,7 +208,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   async prepare(claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal"> {
     let row = this.#load(claim.dispatchAttemptId);
     if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
-    if (attemptTerminal(row.status)) return "skipped_terminal";
+    if (attemptTerminal(row.status) || (row.work_status === "CANCELED" && row.run_status === null)) return "skipped_terminal";
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.dispatch.started", {
       actionId: row.action_id,
       workbenchId: row.workbench_id,
@@ -442,6 +444,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     return this.dependencies.database.transaction((connection) => connection.prepare(`
       SELECT a.dispatch_attempt_id, a.action_id, a.status, a.partner_revision_id, a.instance_id,
              w.work_id, w.workbench_id, w.input_id, w.title, w.intent_json, i.body AS source_request,
+             w.status AS work_status,
              COALESCE(ap.access_mode, w.access_mode) AS access_mode,
              b.workspace_ref, b.status AS workspace_status,
              p.partner_id, p.kind, p.legacy_agent_connection_id AS agent_connection_id,

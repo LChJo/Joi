@@ -71,6 +71,12 @@ export class JoiInboxService {
     return toDto(record);
   }
 
+  async emergencyStopQueued(): Promise<number> {
+    return this.dependencies.repository.cancelQueued === undefined
+      ? 0
+      : this.dependencies.repository.cancelQueued();
+  }
+
   async dismiss(input: { inputId: string }): Promise<JoiAcceptedMessageDto> {
     const inputId = input.inputId.trim();
     if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");

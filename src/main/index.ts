@@ -224,6 +224,7 @@ async function startRuntime(): Promise<void> {
     work: workbenchStack.workRepository,
   };
   emergencyStopAll = async () => {
+    await joiStack.joiInbox.emergencyStopQueued();
     let after: { createdAt: string; lifeId: string } | undefined;
     do {
       const page = await lives.list({ ...(after === undefined ? {} : { after }), limit: 100 });

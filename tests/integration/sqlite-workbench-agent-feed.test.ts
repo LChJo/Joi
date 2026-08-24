@@ -342,6 +342,36 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
+  it("projects a retried original goal as arranging and queued immediately", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "重试工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "原始目标重试" });
+      const now = "2026-08-21T12:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-retried', 'key-goal-retried', '继续处理', 'PENDING', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-retried-old', 'goal-retried', ?, 'joi_session:retried', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-retried-plan', ?, 'goal-retried', '上一轮计划', '{}', 'READ', 'PLANNED', ?, ?)`).run(workbench.workbenchId, now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-21T12:00:01.000Z"));
+      expect(feed.goals).toEqual([expect.objectContaining({ goalId: "goal-retried", status: "ARRANGING" })]);
+      expect(feed.thinking).toEqual([expect.objectContaining({
+        goalId: "goal-retried",
+        phase: "queued",
+        stage: "ROUTING",
+        turnId: "pending:goal-retried",
+      })]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("does not expose a stale completion summary while result synthesis is behind", async () => {
     const fixture = await createRuntimeFixture();
     try {
