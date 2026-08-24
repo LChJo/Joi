@@ -176,25 +176,38 @@ describe("joi reasoning tools", () => {
     ]));
   });
 
-  it("lets joi bind the current Workbench through the desktop directory picker without returning its path", async () => {
+  it("turns a missing Workbench workspace into a visible clarification instead of opening the picker", async () => {
     const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
+    const workspacePicker = vi.fn(async () => "C:\\projects\\private-docs");
     const harness = makeTools({
       workspaceBindCalls,
-      workspacePicker: async () => "C:\\projects\\private-docs",
+      workspacePicker,
     });
     const result = await harness.call("workbench_bind_workspace", {});
-    expect(result).toEqual({
-      displayName: "绑定目录",
-      kind: "BOUND",
-      status: "READY",
-    });
-    expect(workspaceBindCalls).toEqual([{ rootPath: "C:\\projects\\private-docs", workbenchId: "workbench_1" }]);
-    expect(JSON.stringify(result)).not.toContain("private-docs");
+    expect(result).toEqual({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
+    expect(harness.clarificationCalls).toEqual([{
+      inputId: "input_1",
+      prompt: "这个工作需要读写文件。请先从 joi 卡片选择当前 Workbench 的工作目录，确认后我再继续派发。",
+      reasonCode: "workbench_workspace_not_ready",
+    }]);
+    expect(workspacePicker).not.toHaveBeenCalled();
+    expect(workspaceBindCalls).toEqual([]);
   });
-
-  it("reports a canceled desktop directory picker as a stable clarification error", async () => {
-    const harness = makeTools({ workspacePicker: async () => null });
-    await expect(harness.call("workbench_bind_workspace", {})).rejects.toMatchObject({ code: "workbench_workspace_selection_canceled" });
+  it("binds an explicit workspace path from the user request without another card action", async () => {
+    const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
+    const harness = makeTools({ workspaceBindCalls });
+    const result = await harness.call("workbench_bind_workspace", { workspacePath: "I:\\aimana\\manaagentsdk" });
+    expect(result).toEqual({ displayName: "绑定目录", kind: "BOUND", status: "READY" });
+    expect(JSON.stringify(result)).not.toContain("manaagentsdk");
+    expect(harness.clarificationCalls).toEqual([]);
+    expect(workspaceBindCalls).toEqual([{ workbenchId: "workbench_1", rootPath: "I:\\aimana\\manaagentsdk" }]);
+  });
+  it("rejects a relative workspace path instead of guessing its root", async () => {
+    const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
+    const harness = makeTools({ workspaceBindCalls });
+    await expect(harness.call("workbench_bind_workspace", { workspacePath: "manaagentsdk" }))
+      .rejects.toMatchObject({ code: "workbench_workspace_path_invalid" });
+    expect(workspaceBindCalls).toEqual([]);
   });
   it("creates partners on behalf of joi with the joi creator badge", async () => {
     const harness = makeTools();

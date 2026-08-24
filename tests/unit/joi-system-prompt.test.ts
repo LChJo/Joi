@@ -35,6 +35,9 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("one focused alignment question per turn");
     expect(prompt).toContain("Every dispatched work must carry the aligned spec");
     expect(prompt).toContain("never dispatch a bare title");
+    expect(prompt).toContain("copy it exactly as workspacePath");
+    expect(prompt).toContain("never invent or broaden a path");
+    expect(prompt).toContain("omit workspacePath so the tool persists a user-visible clarification");
     expect(prompt).toContain("Maintain the goal map");
     expect(prompt).toContain("harness_name_destination");
     expect(prompt).toContain("harness_chart_path");

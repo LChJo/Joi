@@ -65,6 +65,10 @@ function nonBlank(value: string | undefined): string | undefined {
   return trimmed === undefined || trimmed.length === 0 ? undefined : trimmed;
 }
 
+function isAbsoluteWorkspacePath(value: string): boolean {
+  return value.startsWith("/") || /^[A-Za-z]:[\\/]/u.test(value) || value.startsWith("\\\\");
+}
+
 // Partner cards must never ship empty: when the model omits description/prompt,
 // synthesize a minimal profile in the same DO/acceptance/out-of-scope house style.
 function synthesizePartnerProfile(displayName: string, skills: string[], capabilities: string[]): { description: string; prompt: string } {
@@ -597,18 +601,28 @@ export function createJoiReasoningTools(input: {
     name: "harness_refine_workbench",
     parameters: harnessRefineParameters,
   };
-  const bindWorkspaceTool: AgentTool = {
-    description: "Bind a directory selected in the desktop picker to the current Workbench. Use this when local file work needs a workspace. The picker result is kept in the main process and this tool returns only safe workspace metadata; a workspace cannot belong to another Workbench.",
-    execute: async () => {
-      const selected = await input.directoryPicker();
-      if (selected === null) {
-        throw new DomainError("workbench_workspace_selection_canceled", "Directory selection was canceled.");
+  const bindWorkspaceParameters = Type.Object({
+    workspacePath: Type.Optional(Type.String({ maxLength: 4_000, minLength: 1 })),
+  });
+  const bindWorkspaceTool: AgentTool<typeof bindWorkspaceParameters> = {
+    description: "Bind the current Workbench to an explicit absolute directory from the user's request when local file work needs one. Copy the path exactly; never invent or broaden it. When the user did not provide an absolute directory, omit workspacePath so joi can persist a clarification and the user can choose it on the card. The bound path is never returned to the user.",
+    execute: async (_toolCallId, arguments_) => {
+      const workspacePath = nonBlank(arguments_.workspacePath);
+      if (workspacePath !== undefined) {
+        if (!isAbsoluteWorkspacePath(workspacePath)) throw new DomainError("workbench_workspace_path_invalid", "An explicit absolute workspace directory is required.");
+        const workspace = await input.workbenchWorkspaces.bindExisting(input.workbenchId, workspacePath);
+        return result({ displayName: workspace.displayName, kind: workspace.kind, status: workspace.status });
       }
-      return result(await input.workbenchWorkspaces.bindExisting(input.workbenchId, selected));
+      await input.clarifications.requireClarification(
+        goalContext(),
+        "workbench_workspace_not_ready",
+        "这个工作需要读写文件。请先从 joi 卡片选择当前 Workbench 的工作目录，确认后我再继续派发。",
+      );
+      return result({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" }, true);
     },
     label: "Bind Workbench workspace",
     name: "workbench_bind_workspace",
-    parameters: Type.Object({}),
+    parameters: bindWorkspaceParameters,
   };
   const scopedAttachmentIds = new Set(input.attachmentIds ?? []);
   const attachmentTextCache = new Map<string, { filename: string; mimeType: string; text: string } | "NOT_TEXT">();
