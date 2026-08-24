@@ -422,6 +422,33 @@ describe("joi reasoning tools", () => {
     }]);
   });
 
+  it.each(["partner_not_available", "partner_instance_unavailable", "partner_instance_partner_mismatch"])(
+    "returns %s as a bounded retry request without creating a clarification",
+    async (reasonCode) => {
+      const harness = makeTools({ planError: new DomainError(reasonCode, "private detail") });
+      const response = await harness.call("work_dispatch", {
+        dependencies: [],
+        work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }],
+      });
+      expect(response).toEqual({ reasonCode, status: "RETRY_REQUIRED" });
+      expect(harness.clarificationCalls).toEqual([]);
+    },
+  );
+
+  it("offers at most one automatic dispatch correction in a Turn", async () => {
+    const harness = makeTools({ planError: new DomainError("partner_not_available", "private detail") });
+    const input = { dependencies: [], work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }] };
+    await expect(harness.call("work_dispatch", input)).resolves.toEqual({ reasonCode: "partner_not_available", status: "RETRY_REQUIRED" });
+    await expect(harness.call("work_dispatch", input)).resolves.toEqual({ reasonCode: "partner_not_available", status: "CLARIFICATION_REQUIRED" });
+    expect(harness.clarificationCalls).toHaveLength(1);
+  });
+
+  it("documents that instanceId is an exact queried instance and is mutually exclusive with sessionPolicy", () => {
+    const tool = makeTools().tools.find((candidate) => candidate.name === "work_dispatch");
+    expect(tool?.description).toContain("exact instance id returned by partner_list_available or partner_list_instances");
+    expect(tool?.description).toContain("Never pass instanceId together with sessionPolicy");
+  });
+
   it("parses the goal input id out of synthetic input prefixes", () => {
     expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1")).toBe("goal-1");
     expect(goalFromInputIdPrefix("joi_harness_review:goal:goal-1:r3")).toBe("goal-1");

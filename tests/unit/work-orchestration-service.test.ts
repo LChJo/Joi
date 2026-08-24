@@ -1,11 +1,71 @@
 /* In-memory orchestration ports resolve immediately. */
 /* eslint-disable @typescript-eslint/require-await */
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
+import type { PartnerInstanceRecord } from "../../src/main/application/ports/partner-instances.js";
 import type { CommittedWorkPlan, ReassignedWorkPlan, WorkPlanRepository, WorkReassignmentContext } from "../../src/main/application/ports/work-orchestration.js";
 import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
+  const idleInstance: PartnerInstanceRecord = {
+    workbenchId: "workbench-1", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance-1",
+    lastUsedAt: "2026-07-29T10:00:00.000Z", partnerId: "partner-a", partnerRevisionId: "revision",
+    sessionPolicy: "RESIDENT", status: "IDLE",
+  };
+
+  it.each([
+    { code: "partner_instance_unavailable", instance: null, label: "missing" },
+    { code: "partner_instance_workbench_mismatch", instance: { ...idleInstance, workbenchId: "workbench-2" }, label: "another Workbench" },
+    { code: "partner_instance_partner_mismatch", instance: { ...idleInstance, partnerId: "partner-b" }, label: "another partner" },
+    { code: "partner_instance_busy", instance: { ...idleInstance, status: "BUSY" as const }, label: "busy" },
+    { code: "partner_instance_unavailable", instance: { ...idleInstance, status: "DISPOSED" as const }, label: "disposed" },
+  ])("rejects a $label instance before committing the plan", async ({ code, instance }) => {
+    const committed: CommittedWorkPlan[] = [];
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(), instances: { get: async () => instance },
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) },
+      repository: { commit: async (plan) => { committed.push(plan); } },
+    });
+
+    await expect(service.plan({
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
+      work: [{ accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
+    })).rejects.toMatchObject({ code });
+    expect(committed).toEqual([]);
+  });
+
+  it("rejects ambiguous instance and session selection before repository access", async () => {
+    const get = vi.fn(async () => idleInstance);
+    const commit = vi.fn(async () => undefined);
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(), instances: { get },
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit },
+    });
+    await expect(service.plan({
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
+      work: [{ accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", sessionPolicy: "RESIDENT", title: "读取" }],
+    })).rejects.toMatchObject({ code: "partner_instance_selection_ambiguous" });
+    expect(get).not.toHaveBeenCalled();
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("commits an exact IDLE instance reference", async () => {
+    const committed: CommittedWorkPlan[] = [];
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(), instances: { get: async () => idleInstance },
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) },
+      repository: { commit: async (plan) => { committed.push(plan); } },
+    });
+    await service.plan({
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
+      work: [{ accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
+    });
+    expect(committed[0]?.attempts[0]?.outbox.payload).toMatchObject({ instanceId: "instance-1" });
+  });
+
   it("rejects caller-supplied workspace refs because Workbench owns cwd", async () => {
     const service = new WorkOrchestrationService({
       clock: new TestClock(), ids: new TestIds(),

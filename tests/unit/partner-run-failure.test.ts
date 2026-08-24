@@ -34,6 +34,12 @@ describe("partner run failure classification", () => {
     expect(classifyPartnerRunFailure({ code: "ETIMEDOUT" }, { phase: "MODEL", sideEffectState: "UNKNOWN" }).retryable).toBe(false);
   });
 
+  it("treats the provider's generic connection signal as transient before side effects", () => {
+    expect(classifyPartnerRunFailure({ code: "connection_error" }, { phase: "MODEL", sideEffectState: "NONE" })).toEqual({
+      phase: "MODEL", reasonCode: "connection_error", retryable: true, sideEffectState: "NONE",
+    });
+  });
+
   it("returns only a stable code and never includes raw error text", () => {
     const failure = classifyPartnerRunFailure(new Error("PRIVATE token and payload"), {
       phase: "EXECUTION", sideEffectState: "UNKNOWN",

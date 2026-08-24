@@ -162,7 +162,7 @@ describe("AgentDispatchComponent", () => {
     expect(harness.completionOutputs[0]).toMatchObject({
       failure: { phase: "MODEL", reasonCode: "ETIMEDOUT", retryable: true, sideEffectState: "NONE" },
       kind: "terminal",
-      status: "UNKNOWN",
+      status: "FAILED",
     });
     expect(harness.completionOutputs[0]?.body).toContain("ETIMEDOUT");
     expect(harness.completionOutputs[0]?.body).not.toContain("PRIVATE upstream body");

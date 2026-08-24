@@ -26,7 +26,10 @@ interface InFlightRun {
 
 function failedOutput(error: unknown): DispatchRunOutput & { kind: "terminal" } {
   const failure = partnerRunFailureFromError(error);
-  return { artifacts: [], body: safePartnerRunFailureBody(failure), failure, kind: "terminal", status: "UNKNOWN" };
+  return {
+    artifacts: [], body: safePartnerRunFailureBody(failure), failure, kind: "terminal",
+    status: failure.sideEffectState === "NONE" ? "FAILED" : "UNKNOWN",
+  };
 }
 
 /**

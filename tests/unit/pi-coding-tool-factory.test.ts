@@ -76,6 +76,20 @@ describe("Pi coding tool workspace scope", () => {
     expect(JSON.stringify(traversalResult.content)).toContain("external body");
   });
 
+  it("returns staged PNG files as image content for a vision-capable partner model", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "joi-pi-image-read-"));
+    writeFileSync(join(workspace, "screen.png"), Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+      "base64",
+    ));
+    const [read] = new BuiltinPiCodingToolFactory().create(workspace, ["read"]);
+    if (read === undefined) throw new Error("read tool missing");
+    const output = await read.execute("call-image", { path: "screen.png" });
+    expect(output.content).toEqual(expect.arrayContaining([
+      expect.objectContaining({ mimeType: "image/png", type: "image" }),
+    ]));
+  });
+
   it("rejects unknown tools and non-directory workspaces", () => {
     const root = mkdtempSync(join(tmpdir(), "joi-pi-open-scope-"));
     expect(() => new BuiltinPiCodingToolFactory().create(root, ["frobnicate"])).toThrow("partner_tool_not_allowed");

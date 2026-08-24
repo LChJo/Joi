@@ -773,6 +773,42 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-canceled", {}));
   });
 
+  it("shows a result-drawer retry as arranging before the follow-up feed refresh completes", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-result-retry", "结果继续工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const feed = {
+      goals: [{
+        agentCount: 0,
+        canDelete: true,
+        completionSummary: "已完成的结果",
+        completedAt: workbench.updatedAt,
+        goalId: "goal-result-retry",
+        status: "COMPLETED" as const,
+        title: "结果目标",
+        updatedAt: workbench.updatedAt,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        work: { active: 0, completed: 1, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    };
+    let releaseRefresh: (() => void) | undefined;
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockImplementation(() => new Promise((resolve) => { releaseRefresh = () => resolve(feed); }));
+    vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-result-retry", status: "PENDING" });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开「结果目标」的最终结果全文" }));
+    const drawer = await screen.findByRole("dialog", { name: "结果继续工程 的最终结果" });
+    fireEvent.change(within(drawer).getByLabelText("补充说明"), { target: { value: "补充后续要求" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "继续" }));
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "queued" })).toBeInTheDocument();
+    releaseRefresh?.();
+  });
+
   it("shows a retry as arranging before the follow-up feed refresh completes", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-fast-retry", "即时反馈工程");

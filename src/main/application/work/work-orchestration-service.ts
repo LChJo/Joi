@@ -71,6 +71,7 @@ export class WorkOrchestrationService {
       validateAcceptanceChecks(request.acceptanceChecks);
       byKey.set(request.key, request);
     }
+    for (const request of input.work) await this.#validateInstanceSelection(input.workbenchId, request);
     const createdAt = this.dependencies.clock.now().toISOString();
     const workIds = new Map<string, string>();
     const items = input.work.map((request) => {
@@ -166,6 +167,29 @@ export class WorkOrchestrationService {
       workIds: items.map((item) => item.workId),
     });
     return { dispatchPlanId, waves };
+  }
+
+  async #validateInstanceSelection(workbenchId: string, request: WorkRequest): Promise<void> {
+    if (request.instanceId !== undefined && request.sessionPolicy !== undefined) {
+      throw new DomainError("partner_instance_selection_ambiguous", "Choose either an existing partner instance or a session policy, not both.");
+    }
+    if (request.instanceId === undefined) return;
+    if (this.dependencies.instances === undefined) {
+      throw new DomainError("partner_instance_validation_unavailable", "Partner instance validation is unavailable.");
+    }
+    const instance = await this.dependencies.instances.get(request.instanceId);
+    if (instance === null || instance.status === "DISPOSED") {
+      throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
+    }
+    if (instance.workbenchId !== workbenchId) {
+      throw new DomainError("partner_instance_workbench_mismatch", "Partner instance belongs to another Workbench.");
+    }
+    if (instance.partnerId !== request.partnerId) {
+      throw new DomainError("partner_instance_partner_mismatch", "Partner instance belongs to another partner.");
+    }
+    if (instance.status !== "IDLE") {
+      throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
+    }
   }
 
   async reassign(input: { workbenchId: string; partnerId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {

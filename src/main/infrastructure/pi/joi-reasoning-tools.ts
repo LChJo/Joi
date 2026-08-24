@@ -115,6 +115,7 @@ export function createJoiReasoningTools(input: {
   turnId: string;
   work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume">;
 }): AgentTool[] {
+  let dispatchCorrectionOffered = false;
   const goalContext = (): string => input.goalInputId ?? input.inputId;
   const requireHarness = (): NonNullable<typeof input.harness> => {
     if (input.harness === undefined) throw new DomainError("harness_map_unavailable", "The goal map is not configured.");
@@ -142,7 +143,7 @@ export function createJoiReasoningTools(input: {
     }), { minItems: 1, maxItems: 16 }),
   });
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
-    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId to reuse an existing partner instance, or sessionPolicy resident to continue a conversation; omit both for one-shot ephemeral work.",
+    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
     execute: async (_toolCallId, arguments_) => {
       try {
         return result(await input.work.plan({
@@ -179,6 +180,19 @@ export function createJoiReasoningTools(input: {
           );
           return result({ reasonCode: DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady, status: "CLARIFICATION_REQUIRED" }, true);
         }
+        const correctable = reasonCode === "partner_not_available" || reasonCode.startsWith("partner_instance_");
+        if (correctable && !dispatchCorrectionOffered) {
+          dispatchCorrectionOffered = true;
+          return result({ reasonCode, status: "RETRY_REQUIRED" });
+        }
+        if (correctable) {
+          await input.clarifications.requireClarification(
+            input.inputId,
+            reasonCode,
+            `搭档或实例选择在自动纠正后仍不可用（${reasonCode}）。请确认要使用的搭档或重新发起任务。`,
+          );
+          return result({ reasonCode, status: "CLARIFICATION_REQUIRED" }, true);
+        }
         await input.clarifications.requireClarification(
           input.inputId,
           "work_dispatch_failed",
@@ -193,7 +207,7 @@ export function createJoiReasoningTools(input: {
   };
   const workReassignParameters = Type.Object({ partnerId: Type.String(), workId: Type.String() });
   const workReassignTool: AgentTool<typeof workReassignParameters> = {
-    description: "Reassign failed or waiting work through policy checks and a new immutable partner revision.",
+    description: "Reassign failed work through policy checks to a different suitable partner or a new immutable revision of the current partner.",
     execute: async (_toolCallId, arguments_) => result(await input.work.reassign({
       workbenchId: input.workbenchId,
       partnerId: arguments_.partnerId,

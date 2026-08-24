@@ -5,7 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { A2aGatewayService } from "../../application/a2a/a2a-gateway-service.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import { normalizeAgentConversationEntries, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
-import { classifyPartnerRunFailure, partnerRunFailureFromError, safePartnerRunFailureBody } from "../../application/partners/partner-run-failure.js";
+import { classifyPartnerRunFailure, partnerRunFailureFromError, safePartnerRunFailureBody, type PartnerRunFailure } from "../../application/partners/partner-run-failure.js";
 import {
   DISPATCH_POLICY_REASONS,
   evaluateDispatchPolicy,
@@ -366,6 +366,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       artifacts: input.output.artifacts,
       body: input.output.body,
       ...(input.output.conversation === undefined ? {} : { conversation: input.output.conversation }),
+      ...(input.output.failure === undefined ? {} : { failure: input.output.failure }),
       ...(input.output.pendingQuestion === undefined ? {} : { pendingQuestion: input.output.pendingQuestion }),
     });
   }
@@ -392,12 +393,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           return "completed";
         } catch (error) {
           const failure = partnerRunFailureFromError(error, { phase: "RECOVERY", sideEffectState: "UNKNOWN" });
-          await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
+          await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure), failure });
           return "completed";
         }
       }
       const failure = classifyPartnerRunFailure({ code: "orphan_terminal_state_unknown" }, { phase: "RECOVERY", sideEffectState: "UNKNOWN" });
-      await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
+      await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure), failure });
       return "completed";
     }
     const output = await this.run(prepared);
@@ -432,7 +433,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       const failedRow = this.#load(dispatchAttemptId);
       if (failedRow !== undefined) {
         const failure = partnerRunFailureFromError(error);
-        await this.#complete(failedRow, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure) });
+        const status = failure.sideEffectState === "NONE" ? "FAILED" : "UNKNOWN";
+        await this.#complete(failedRow, status, { artifacts: [], body: safePartnerRunFailureBody(failure), failure });
       }
       return;
     }
@@ -496,6 +498,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     artifacts: { artifactRef?: string; mimeType?: string; name: string; size: number }[];
     body: string;
     conversation?: AgentConversationDraft[];
+    failure?: PartnerRunFailure;
     pendingQuestion?: string;
   }): Promise<{ isAuthoritative: boolean; resultId: string }> {
     const current = this.#load(row.dispatch_attempt_id);
@@ -544,6 +547,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       isLate: recorded.result.isLate,
       isAuthoritative: recorded.isAuthoritative,
       resultId: recorded.result.resultId,
+      ...(output.failure === undefined ? {} : {
+        phase: output.failure.phase,
+        reasonCode: output.failure.reasonCode,
+        retryable: output.failure.retryable,
+        sideEffectState: output.failure.sideEffectState,
+      }),
       runId,
       status: committedStatus,
       workId: row.work_id,

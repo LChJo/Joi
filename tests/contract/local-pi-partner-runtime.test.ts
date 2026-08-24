@@ -221,6 +221,76 @@ describe("Pi partner engine runtime", () => {
     await expect(run).rejects.not.toThrow("PRIVATE upstream payload");
   });
 
+  it("continues once after a transient model disconnect without replaying completed tool calls", async () => {
+    const faux = fauxProvider({ provider: "local-partner-transient-continuation" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("bash", { command: "git diff --stat" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([], { errorMessage: "Connection error.", stopReason: "error" }),
+      fauxAssistantMessage([fauxText("review completed after reconnect")]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    let toolRuns = 0;
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "test bash",
+          execute: async () => { toolRuns += 1; return { content: [{ text: "diff inspected", type: "text" as const }], details: {} }; },
+          label: "bash",
+          name: "bash",
+          parameters: Type.Object({ command: Type.String() }),
+        }],
+        names: ["bash"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Reviewer", kind: "local-pi",
+      partnerId: "partner_review", partnerRevisionId: "partner_revision_review", registryRevision: 1,
+      skills: [], tools: ["bash"],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_review", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "review", workId: "work_review" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ output: { body: "review completed after reconnect" }, status: "COMPLETED" });
+    expect(toolRuns).toBe(1);
+    expect(faux.state.callCount).toBe(3);
+  });
+
+  it("classifies an exhausted generic connection failure as safely retryable before side effects", async () => {
+    const faux = fauxProvider({ provider: "local-partner-connection-error" });
+    faux.setResponses([
+      fauxAssistantMessage([], { errorMessage: "Connection error.", stopReason: "error" }),
+      fauxAssistantMessage([], { errorMessage: "Connection error.", stopReason: "error" }),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Local", kind: "local-pi",
+      partnerId: "partner_local", partnerRevisionId: "partner_revision_local", registryRevision: 1, skills: [], tools: [],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_connection", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "task", workId: "work_1" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).rejects.toMatchObject({
+      partnerRunFailure: { phase: "MODEL", reasonCode: "connection_error", retryable: true, sideEffectState: "NONE" },
+    });
+  });
+
   it("classifies overloaded, oversized-context and refusal failures into distinct actionable codes", async () => {
     const cases: { errorMessage: string; reasonCode: string; retryable: boolean }[] = [
       { errorMessage: "529 {\"type\":\"overloaded_error\",\"message\":\"upstream busy\"}", reasonCode: "server_error", retryable: true },

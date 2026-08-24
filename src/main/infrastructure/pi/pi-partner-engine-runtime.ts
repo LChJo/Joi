@@ -20,7 +20,7 @@ import { type PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
-import { wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
+import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 
 const DEFAULT_RUN_TIMEOUT_MILLIS = 10 * 60_000;
@@ -181,6 +181,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     });
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     await this.#promptWithDeadline(agent, request.taskProjection);
+    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0);
     const failure = assistantFailureSignal(agent.state.messages);
     if (failure !== null) throw failure;
     const body = assistantText(agent.state.messages);
@@ -254,6 +255,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const previousMessageCount = warm.agent.state.messages.length;
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     await this.#promptWithDeadline(warm.agent, input.request.taskProjection);
+    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount);
     const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
     const failure = assistantFailureSignal(turnMessages);
     if (failure !== null) throw failure;
@@ -271,12 +273,34 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
 
   /** Races the model stream against a deadline; a hung provider aborts the run instead of stalling it. */
   async #promptWithDeadline(agent: Agent, text: string): Promise<void> {
+    await this.#runWithDeadline(agent, () => agent.prompt(text));
+  }
+
+  /**
+   * A provider disconnect after tools ran cannot safely replay the whole Work. Remove only
+   * the failed assistant frame and continue from the persisted tool result once instead.
+   */
+  async #continueAfterTransientFailure(agent: Agent, messageStart: number): Promise<void> {
+    const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
+    if (failure === null || !classifyPartnerRunFailure(failure, { phase: "MODEL", sideEffectState: "NONE" }).retryable) return;
+    const failedMessage = agent.state.messages.at(-1);
+    if (!isAssistantErrorMessage(failedMessage)) return;
+    agent.state.messages = agent.state.messages.slice(0, -1);
+    try {
+      await this.#runWithDeadline(agent, () => agent.continue());
+    } catch (error) {
+      agent.state.messages = [...agent.state.messages, failedMessage];
+      throw error;
+    }
+  }
+
+  async #runWithDeadline(agent: Agent, run: () => Promise<void>): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     const deadline = new Promise<"timeout">((resolve) => {
       timer = setTimeout(() => resolve("timeout"), this.dependencies.runTimeoutMillis ?? DEFAULT_RUN_TIMEOUT_MILLIS);
     });
     try {
-      const winner = await Promise.race([agent.prompt(text).then(() => "done" as const), deadline]);
+      const winner = await Promise.race([run().then(() => "done" as const), deadline]);
       if (winner === "timeout") {
         agent.abort();
         throw new DomainError("partner_run_timed_out", "The partner run exceeded its time budget and was aborted.");
@@ -380,6 +404,7 @@ function assistantFailureSignal(messages: readonly unknown[]): Error | null {
     if (/\b(?:prompt is too long|context length|maximum context|too many tokens)\b/iu.test(raw)) return codedProviderError("context_too_large", detail);
     if (/\brefused to complete\b/iu.test(raw)) return codedProviderError("model_refused", detail);
     if (/\boverloaded/iu.test(raw)) return codedProviderError("server_error", detail);
+    if (/\b(?:connection error|connection failed|network error|fetch failed|socket hang up)\b/iu.test(raw)) return codedProviderError("connection_error", detail);
     if (/\brate[ -]?limit(?:ed|ing)?\b/iu.test(raw)) return codedProviderError("rate_limited", detail);
     if (/\b(?:timed?\s*out|timeout)\b/iu.test(raw)) return codedProviderError("timeout", detail);
     if (/\b(?:invalid[ _-]?api[ _-]?key|authentication|unauthorized)\b/iu.test(raw)) return codedProviderError("invalid_api_key", detail);
@@ -388,6 +413,12 @@ function assistantFailureSignal(messages: readonly unknown[]): Error | null {
     return codedProviderError("assistant_error", detail);
   }
   return null;
+}
+
+function isAssistantErrorMessage(candidate: unknown): candidate is AgentMessage {
+  if (candidate === null || typeof candidate !== "object") return false;
+  const message = candidate as { role?: unknown; stopReason?: unknown };
+  return message.role === "assistant" && message.stopReason === "error";
 }
 
 function codedProviderError(code: string, detail?: string): Error & { code: string; detail?: string } {

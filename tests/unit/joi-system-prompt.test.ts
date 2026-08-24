@@ -21,8 +21,13 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("model_list_sources");
     expect(prompt).toContain("pi-core engine");
     expect(prompt).toContain("sessionPolicy ephemeral");
+    expect(prompt).toContain("RETRY_REQUIRED");
+    expect(prompt).toContain("Retry work_dispatch only once in the same Turn");
+    expect(prompt).toContain("never substitute a partnerId or partnerRevisionId for instanceId");
     expect(prompt).toContain("Claim before work");
     expect(prompt).toContain("working-memory digest");
+    expect(prompt).toContain("prefer a different suitable available partner");
+    expect(prompt.indexOf("prefer a different suitable available partner")).toBeLessThan(prompt.indexOf("partner_set_model"));
     expect(prompt).toContain("one opinionated answer");
     expect(prompt).toContain("Team-building requests are AFK-direct");
     expect(prompt).toContain("durable capability cluster");

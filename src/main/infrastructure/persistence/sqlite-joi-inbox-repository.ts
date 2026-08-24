@@ -378,7 +378,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         `goalInputId=${goalInputId}`,
         `resultRevision=${String(resultSet.revision)}`,
         ...results.map((row) => `resultId=${String(row.result_id)} workId=${String(row.work_id)} status=${String(row.status)} summary=${String(row.summary).slice(0, 320)}`),
-        "Inspect structured failure facts before completing: only retryable=true with sideEffectState=NONE permits a model switch and a fresh work_reassign attempt.",
+        "Inspect structured failure facts before completing: only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Use partner_list_available and prefer a different suitable available partner; only switch the current partner's model when no suitable alternative partner exists.",
         "For auth, balance, configuration, skill or safety failures, or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; ask for input or report the blocker.",
         "Use work_read_result only if the bounded summary is insufficient.",
         "Synthesize one concise, opinionated completion update for the user, call turn_complete with RESULT_SYNTHESIZED, and do not dump raw per-Agent output.",

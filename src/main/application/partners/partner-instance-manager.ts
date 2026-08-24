@@ -19,7 +19,7 @@ import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 import type { PartnerRegistryService } from "./partner-registry-service.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
-import { wrapPartnerRunFailure } from "./partner-run-failure.js";
+import { wrapPartnerRunFailure, type PartnerRunFailure } from "./partner-run-failure.js";
 
 const DEFAULT_LIMITS = {
   ephemeralIdleMillis: 5 * 60_000,
@@ -82,18 +82,9 @@ export class PartnerInstanceManager {
     revision: PartnerRevision;
     sessionPolicy?: SessionPolicy;
   }): Promise<PartnerRunResult> {
-    let record: PartnerInstanceRecord;
-    if (input.instanceId !== undefined) {
-      const existing = await this.dependencies.repository.get(input.instanceId);
-      if (existing === null || existing.status === "DISPOSED") throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
-      if (existing.workbenchId !== input.request.workbenchId) throw new DomainError("partner_instance_workbench_mismatch", "Partner instance belongs to another Workbench.");
-      if (existing.partnerId !== input.revision.partnerId) throw new DomainError("partner_instance_partner_mismatch", "Partner instance belongs to another partner.");
-      if (existing.status !== "IDLE") throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
-      record = existing;
-    } else if (input.sessionPolicy === "RESIDENT") {
-      record = await this.ensure({ workbenchId: input.request.workbenchId, partnerId: input.revision.partnerId });
-    } else {
-      record = await this.dependencies.repository.create({
+    let createdEphemeral: PartnerInstanceRecord | undefined;
+    const createEphemeral = async (): Promise<PartnerInstanceRecord> => {
+      createdEphemeral = await this.dependencies.repository.create({
         workbenchId: input.request.workbenchId,
         createdAt: this.dependencies.clock.now().toISOString(),
         engine: input.revision.engine,
@@ -102,8 +93,37 @@ export class PartnerInstanceManager {
         partnerRevisionId: input.revision.partnerRevisionId,
         sessionPolicy: "EPHEMERAL",
       });
+      return createdEphemeral;
+    };
+    let record: PartnerInstanceRecord;
+    try {
+      if (input.instanceId !== undefined) {
+        const existing = await this.dependencies.repository.get(input.instanceId);
+        if (existing === null) throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
+        if (existing.workbenchId !== input.request.workbenchId) throw new DomainError("partner_instance_workbench_mismatch", "Partner instance belongs to another Workbench.");
+        if (existing.partnerId !== input.revision.partnerId) throw new DomainError("partner_instance_partner_mismatch", "Partner instance belongs to another partner.");
+        if (existing.status === "DISPOSED") {
+          if (existing.sessionPolicy !== "EPHEMERAL") throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
+          // Compatibility for delayed outbox rows persisted before plan-time validation existed.
+          record = await createEphemeral();
+        } else {
+          if (existing.status !== "IDLE") throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
+          record = existing;
+        }
+      } else if (input.sessionPolicy === "RESIDENT") {
+        record = await this.ensure({ workbenchId: input.request.workbenchId, partnerId: input.revision.partnerId });
+      } else {
+        record = await createEphemeral();
+      }
+      if (input.dispatchAttemptId !== undefined) await this.dependencies.repository.linkDispatch(input.dispatchAttemptId, record.instanceId);
+    } catch (error) {
+      const failure = wrapPartnerRunFailure(error, { phase: "EXECUTION", sideEffectState: "NONE" });
+      if (createdEphemeral !== undefined) {
+        try { await this.#disposeRecord(createdEphemeral, "dispatch_preflight_failed"); } catch { /* retain the original safe failure */ }
+      }
+      this.#emitPreflightFailure(input, failure.partnerRunFailure);
+      throw failure;
     }
-    if (input.dispatchAttemptId !== undefined) await this.dependencies.repository.linkDispatch(input.dispatchAttemptId, record.instanceId);
 
     let skillSection = "";
     let skillEnvironmentKeys: readonly string[] = [];
@@ -149,13 +169,24 @@ export class PartnerInstanceManager {
       throw failure;
     }
 
-    const engine = this.#engine(record.engine);
-    const knowledgeSection = input.revision.kind === "local-pi"
-      ? await this.dependencies.knowledge.readForInjection(record.partnerId)
-      : "";
-    const startedAt = this.dependencies.clock.now().toISOString();
+    let engine: PartnerEngineRuntime;
+    let knowledgeSection: string;
     const startedAtMillis = this.dependencies.clock.now().getTime();
-    await this.dependencies.repository.setStatusBusy(record.instanceId, startedAt);
+    try {
+      engine = this.#engine(record.engine);
+      knowledgeSection = input.revision.kind === "local-pi"
+        ? await this.dependencies.knowledge.readForInjection(record.partnerId)
+        : "";
+      await this.dependencies.repository.setStatusBusy(record.instanceId, this.dependencies.clock.now().toISOString());
+    } catch (error) {
+      const failure = wrapPartnerRunFailure(error, { phase: "EXECUTION", sideEffectState: "NONE" });
+      try {
+        if (record.sessionPolicy === "EPHEMERAL") await this.#disposeRecord(record, "dispatch_preflight_failed");
+        else await this.dependencies.repository.markTurnComplete(record.instanceId, this.dependencies.clock.now().toISOString());
+      } catch { /* retain the original safe failure */ }
+      this.#emitPreflightFailure(input, failure.partnerRunFailure, record, Math.max(0, this.dependencies.clock.now().getTime() - startedAtMillis));
+      throw failure;
+    }
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.started", {
       actionId: input.request.actionId,
       workbenchId: input.request.workbenchId,
@@ -271,6 +302,27 @@ export class PartnerInstanceManager {
     if (record.status === "DISPOSED") return;
     if (record.status === "BUSY") throw new DomainError("partner_instance_busy", "Partner instance is busy and cannot be disposed.");
     await this.#disposeRecord(record, input.reason);
+  }
+
+  #emitPreflightFailure(
+    input: { dispatchAttemptId?: string; instanceId?: string; request: PartnerRunRequest; revision: PartnerRevision },
+    failure: PartnerRunFailure,
+    record?: PartnerInstanceRecord,
+    durationMs = 0,
+  ): void {
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.dispatch.preflight_failed", {
+      actionId: input.request.actionId,
+      workbenchId: input.request.workbenchId,
+      ...(input.dispatchAttemptId === undefined ? {} : { dispatchAttemptId: input.dispatchAttemptId }),
+      durationMs,
+      hasRequestedInstanceId: input.instanceId !== undefined,
+      partnerId: record?.partnerId ?? input.revision.partnerId,
+      phase: failure.phase,
+      reasonCode: failure.reasonCode,
+      retryable: failure.retryable,
+      sideEffectState: failure.sideEffectState,
+      workId: input.request.workId,
+    });
   }
 
   async list(filter?: { workbenchId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]> {

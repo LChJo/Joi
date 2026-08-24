@@ -14,7 +14,7 @@ interface PartnerRunFailureCarrier {
 
 const TRANSIENT_CODES = new Set([
   "ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT",
-  "UND_ERR_CONNECT_TIMEOUT", "connect", "partner_run_timed_out", "rate_limited", "server_error", "timeout",
+  "UND_ERR_CONNECT_TIMEOUT", "connect", "connection_error", "partner_run_timed_out", "rate_limited", "server_error", "timeout",
 ]);
 const PHASES = new Set<PartnerRunFailurePhase>(["CONFIGURATION", "ENGINE", "EXECUTION", "MODEL", "RECOVERY"]);
 const SIDE_EFFECT_STATES = new Set<PartnerRunSideEffectState>(["NONE", "OBSERVED", "UNKNOWN"]);
@@ -73,7 +73,7 @@ export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
     : failure.reasonCode === "model_refused"
       ? "The model refused this request. Restate the task or ask the user for guidance; do not replay it unchanged."
       : failure.retryable
-    ? "Joi may select another READY model source, create a new immutable partner revision, and reassign this Work as a new attempt."
+    ? "Joi may reassign this Work to another suitable available partner, or select another READY model source and create a new immutable partner revision when no suitable alternative partner exists."
     : failure.sideEffectState === "NONE"
       ? "Joi must inspect configuration or request input before creating another attempt."
       : "Joi must not replay this Work automatically because side effects were observed or cannot be determined.";

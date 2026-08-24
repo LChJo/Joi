@@ -27,7 +27,8 @@ async function openFixture() {
   const clock = new TestClock();
   const ids = new TestIds();
   const attachments = new JoiAttachmentService({ clock, database, ids, rootDirectory: path.join(root, "artifacts") });
-  const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("staged body"), filename: "brief.md", mimeType: "text/markdown" });
+  const imageBytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const uploaded = await attachments.upload({ bytes: imageBytes, filename: "screen.png", mimeType: "image/png" });
   const partners = new PartnerRegistryService({ clock, ids, repository: new SqlitePartnerRegistryRepository(database) });
   const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
   database.transaction((connection) => {
@@ -102,11 +103,11 @@ describe("partner dispatch attachment staging", () => {
       const delivery = makeDelivery(fixture, spy);
       await delivery.handle(outboxRecord("outbox_1", "attempt_1", "work_1"));
 
-      const stagedPath = path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "brief.md");
-      expect(await readFile(stagedPath, "utf8")).toBe("staged body");
+      const stagedPath = path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "screen.png");
+      expect(new Uint8Array(await readFile(stagedPath))).toEqual(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
       const request = spy.calls[0] as { request: { taskProjection: string } };
       expect(request.request.taskProjection).toContain("Attachments from the user's original input are staged in this workspace");
-      expect(request.request.taskProjection).toContain(`joi-attachments/${fixture.uploaded.attachmentId}/brief.md (text/markdown, 11 bytes)`);
+      expect(request.request.taskProjection).toContain(`joi-attachments/${fixture.uploaded.attachmentId}/screen.png (image/png, 8 bytes)`);
     } finally {
       fixture.database.close();
       await rm(fixture.root, { force: true, recursive: true });
@@ -119,13 +120,13 @@ describe("partner dispatch attachment staging", () => {
       const stager = new WorkAttachmentStager({ attachments: fixture.attachments, database: fixture.database });
       const first = await stager.stage({ inputId: "input_1", workspacePath: fixture.workspaceDir });
       expect(first).toEqual([{
-        filename: "brief.md", mimeType: "text/markdown",
-        relativePath: `joi-attachments/${fixture.uploaded.attachmentId}/brief.md`, size: 11,
+        filename: "screen.png", mimeType: "image/png",
+        relativePath: `joi-attachments/${fixture.uploaded.attachmentId}/screen.png`, size: 8,
       }]);
-      const stagedPath = path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "brief.md");
+      const stagedPath = path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "screen.png");
       await writeFile(stagedPath, "tampered");
       await stager.stage({ inputId: "input_1", workspacePath: fixture.workspaceDir });
-      expect(await readFile(stagedPath, "utf8")).toBe("staged body");
+      expect(new Uint8Array(await readFile(stagedPath))).toEqual(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
       expect(await stager.stage({ inputId: "no_such_input", workspacePath: fixture.workspaceDir })).toEqual([]);
     } finally {
       fixture.database.close();

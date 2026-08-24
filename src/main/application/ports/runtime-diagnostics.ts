@@ -297,6 +297,19 @@ export interface RuntimeDiagnosticEventMap {
     instanceId: string;
     workId: string;
   };
+  "joi.partner.dispatch.preflight_failed": {
+    actionId: string;
+    workbenchId: string;
+    dispatchAttemptId?: string;
+    durationMs: number;
+    hasRequestedInstanceId: boolean;
+    partnerId: string;
+    phase: string;
+    reasonCode: string;
+    retryable: boolean;
+    sideEffectState: string;
+    workId: string;
+  };
   "joi.partner.skills.injected": {
     actionId: string;
     instanceId: string;
@@ -324,7 +337,11 @@ export interface RuntimeDiagnosticEventMap {
     isLate: boolean;
     isAuthoritative: boolean;
     resultId: string;
+    phase?: string;
+    reasonCode?: string;
+    retryable?: boolean;
     runId: string;
+    sideEffectState?: string;
     status: string;
     workId: string;
   };

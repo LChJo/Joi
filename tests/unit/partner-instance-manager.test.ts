@@ -165,6 +165,23 @@ function makeManager(
 }
 
 describe("partner-instance-manager", () => {
+  it("classifies an unavailable requested instance as a safe preflight failure", async () => {
+    const { diagnostics, engine, manager } = makeManager();
+    await expect(manager.dispatch({ dispatchAttemptId: "attempt_opaque", instanceId: "PRIVATE_INSTANCE_REFERENCE", request, revision }))
+      .rejects.toMatchObject({
+        code: "partner_instance_unavailable",
+        partnerRunFailure: { phase: "EXECUTION", reasonCode: "partner_instance_unavailable", sideEffectState: "NONE" },
+      });
+    expect(engine.ephemeralRuns).toHaveLength(0);
+    expect(diagnostics.find((entry) => entry.event === "joi.partner.dispatch.preflight_failed")?.fields).toMatchObject({
+      dispatchAttemptId: "attempt_opaque",
+      phase: "EXECUTION",
+      reasonCode: "partner_instance_unavailable",
+      sideEffectState: "NONE",
+    });
+    expect(JSON.stringify(diagnostics)).not.toContain("PRIVATE_INSTANCE_REFERENCE");
+  });
+
   it("binds every instance to one Workbench and rejects cross-Workbench reuse", async () => {
     const { manager } = makeManager();
     const instance = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1" });
@@ -216,6 +233,36 @@ describe("partner-instance-manager", () => {
     });
     expect(diagnostics.find((entry) => entry.event === "joi.partner.instance.completed")?.fields)
       .toMatchObject({ instanceId: record?.instanceId, status: "COMPLETED" });
+  });
+
+  it("replaces a disposed ephemeral instance reference with a fresh one-shot instance", async () => {
+    const { manager, repository } = makeManager();
+    const stale = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1", sessionPolicy: "EPHEMERAL" });
+    await manager.dispose({ workbenchId: "workbench_1", instanceId: stale.instanceId, reason: "idle" });
+
+    const result = await manager.dispatch({
+      dispatchAttemptId: "attempt_rebound",
+      instanceId: stale.instanceId,
+      request: { ...request, actionId: "action_rebound" },
+      revision,
+    });
+
+    expect(result).toMatchObject({ actionId: "action_rebound", status: "COMPLETED" });
+    expect(repository.records).toHaveLength(2);
+    expect(repository.records[0]).toMatchObject({ instanceId: stale.instanceId, status: "DISPOSED" });
+    expect(repository.records[1]).toMatchObject({ sessionPolicy: "EPHEMERAL", status: "DISPOSED" });
+    expect(repository.records[1]?.instanceId).not.toBe(stale.instanceId);
+    expect(repository.linked).toEqual([["attempt_rebound", repository.records[1]?.instanceId]]);
+  });
+
+  it("does not replace a disposed resident instance because its conversation is not resumable", async () => {
+    const { manager, repository } = makeManager();
+    const stale = await manager.ensure({ workbenchId: "workbench_1", partnerId: "partner_1", sessionPolicy: "RESIDENT" });
+    await manager.dispose({ workbenchId: "workbench_1", instanceId: stale.instanceId, reason: "explicit" });
+
+    await expect(manager.dispatch({ instanceId: stale.instanceId, request, revision }))
+      .rejects.toMatchObject({ code: "partner_instance_unavailable" });
+    expect(repository.records).toHaveLength(1);
   });
 
   it("propagates credential questions and optional conversations for both session policies", async () => {
