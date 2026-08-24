@@ -4,6 +4,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
+import { vi } from "vitest";
 
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
 import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
@@ -11,6 +12,7 @@ import { createPartnerRevision } from "../../src/main/domain/partners/partner.js
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
 
 const contexts = { loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: "workspace_ref_1" }) };
+const wait = async (milliseconds: number): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 describe("local Pi coding partner runtime", () => {
   it("runs one isolated Pi session with the pinned workspace, prompt and tool allowlist", async () => {
@@ -289,6 +291,199 @@ describe("Pi partner engine runtime", () => {
     )).rejects.toMatchObject({
       partnerRunFailure: { phase: "MODEL", reasonCode: "connection_error", retryable: true, sideEffectState: "NONE" },
     });
+  });
+
+  it("aborts only after the partner produces no progress for the configured idle interval", async () => {
+    const faux = fauxProvider({ provider: "local-partner-idle-timeout" });
+    faux.setResponses([
+      async () => {
+        await wait(80);
+        return fauxAssistantMessage([fauxText("too late")]);
+      },
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      runIdleTimeoutMillis: 25,
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Idle partner", kind: "local-pi",
+      partnerId: "partner_idle", partnerRevisionId: "partner_revision_idle", registryRevision: 1, skills: [], tools: [],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_idle", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "wait", workId: "work_idle" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).rejects.toMatchObject({
+      partnerRunFailure: { phase: "MODEL", reasonCode: "partner_run_idle_timed_out", sideEffectState: "NONE" },
+    });
+  });
+
+  it("allows a model stream to run longer than the idle interval while deltas keep arriving", async () => {
+    const faux = fauxProvider({ provider: "local-partner-model-progress", tokenSize: { max: 1, min: 1 }, tokensPerSecond: 100 });
+    faux.setResponses([fauxAssistantMessage([fauxText("progress ".repeat(20))])]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      runIdleTimeoutMillis: 40,
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Streaming partner", kind: "local-pi",
+      partnerId: "partner_streaming", partnerRevisionId: "partner_revision_streaming", registryRevision: 1, skills: [], tools: [],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_streaming", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "stream", workId: "work_streaming" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ status: "COMPLETED" });
+  });
+
+  it("allows a tool to run longer than the idle interval while tool updates keep arriving", async () => {
+    const faux = fauxProvider({ provider: "local-partner-tool-progress" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("bash", { command: "long task" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("tool completed")]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      runIdleTimeoutMillis: 35,
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "progressive test bash",
+          execute: async (_toolCallId, _params, _signal, onUpdate) => {
+            for (let index = 0; index < 5; index += 1) {
+              await wait(20);
+              onUpdate?.({ content: [{ text: `step ${String(index + 1)}`, type: "text" as const }], details: {} });
+            }
+            return { content: [{ text: "done", type: "text" as const }], details: {} };
+          },
+          label: "bash",
+          name: "bash",
+          parameters: Type.Object({ command: Type.String() }),
+        }],
+        names: ["bash"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Tool partner", kind: "local-pi",
+      partnerId: "partner_tool_progress", partnerRevisionId: "partner_revision_tool_progress", registryRevision: 1, skills: [], tools: ["bash"],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_tool_progress", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "run tool", workId: "work_tool_progress" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ output: { body: "tool completed" }, status: "COMPLETED" });
+  });
+
+  it("caps each tool execution independently and returns a stable timeout result to the model", async () => {
+    const faux = fauxProvider({ provider: "local-partner-tool-timeout" });
+    let sawStableToolTimeout = false;
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("bash", { command: "hang" })], { stopReason: "toolUse" }),
+      (context) => {
+        sawStableToolTimeout = JSON.stringify(context.messages).includes("partner_tool_timed_out");
+        return fauxAssistantMessage([fauxText("handled tool timeout")]);
+      },
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      runIdleTimeoutMillis: 200,
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      toolTimeoutMillis: 30,
+      tools: {
+        create: () => [{
+          description: "hanging test bash",
+          execute: async (_toolCallId, _params, signal) => await new Promise((_resolve, reject) => {
+            const rejectFromAbort = (): void => {
+              reject(signal?.reason instanceof Error ? signal.reason : new Error("aborted"));
+            };
+            if (signal?.aborted === true) rejectFromAbort();
+            else signal?.addEventListener("abort", rejectFromAbort, { once: true });
+          }),
+          label: "bash",
+          name: "bash",
+          parameters: Type.Object({ command: Type.String() }),
+        }],
+        names: ["bash"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Timed tool partner", kind: "local-pi",
+      partnerId: "partner_tool_timeout", partnerRevisionId: "partner_revision_tool_timeout", registryRevision: 1, skills: [], tools: ["bash"],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_tool_timeout", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "run hanging tool", workId: "work_tool_timeout" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ output: { body: "handled tool timeout" }, status: "COMPLETED" });
+    expect(sawStableToolTimeout).toBe(true);
+  });
+
+  it("releases the run idle deadline and tool deadline after a successful run", async () => {
+    vi.useFakeTimers({ toFake: ["clearTimeout", "setTimeout"] });
+    try {
+      const faux = fauxProvider({ provider: "local-partner-timeout-cleanup" });
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall("bash", { command: "quick" })], { stopReason: "toolUse" }),
+        fauxAssistantMessage([fauxText("finished")]),
+      ]);
+      const models = createModels();
+      models.setProvider(faux.provider);
+      const runtime = new PiPartnerEngineRuntime({
+        contexts,
+        prompts: { read: async () => null },
+        resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+        runIdleTimeoutMillis: 1_000,
+        sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+        toolTimeoutMillis: 1_000,
+        tools: {
+          create: () => [{
+            description: "quick test bash",
+            execute: async () => ({ content: [{ text: "done", type: "text" as const }], details: {} }),
+            label: "bash",
+            name: "bash",
+            parameters: Type.Object({ command: Type.String() }),
+          }],
+          names: ["bash"],
+        },
+      });
+      const revision = createPartnerRevision({
+        capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Cleanup partner", kind: "local-pi",
+        partnerId: "partner_cleanup", partnerRevisionId: "partner_revision_cleanup", registryRevision: 1, skills: [], tools: ["bash"],
+      });
+
+      await expect(runtime.runEphemeral(
+        { actionId: "action_cleanup", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "run quick tool", workId: "work_cleanup" },
+        revision,
+        { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+      )).resolves.toMatchObject({ status: "COMPLETED" });
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("classifies overloaded, oversized-context and refusal failures into distinct actionable codes", async () => {

@@ -36,6 +36,7 @@ export function wireJoi(input: {
     clock,
     diagnostics,
     ids,
+    partners: partnerStack.partners,
     repository: persistence.joiInboxRepository,
   });
   // Constructed before the reasoning runtime and coordinator: both consume it (TDZ otherwise).

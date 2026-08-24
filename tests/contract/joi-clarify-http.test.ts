@@ -14,20 +14,20 @@ function cookieFrom(response: Response) {
 }
 
 async function startSession(
-  clarify: (input: { workbenchId?: string; inputId: string; text?: string }) => Promise<JoiAcceptedMessageDto>,
+  clarify: (input: { partnerId?: string; workbenchId?: string; inputId: string; text?: string }) => Promise<JoiAcceptedMessageDto>,
   cancel: (inputId: string) => Promise<JoiAcceptedMessageDto> = async () => DTO,
   dismiss: (inputId: string) => Promise<JoiAcceptedMessageDto> = async () => DTO,
   retry: (input: { inputId: string; text?: string }) => Promise<JoiAcceptedMessageDto> = async () => DTO,
 ) {
   const fixture = await createRuntimeFixture();
-  const clarifyCalls: { workbenchId?: string; inputId: string; text?: string }[] = [];
+  const clarifyCalls: { partnerId?: string; workbenchId?: string; inputId: string; text?: string }[] = [];
   const cancelCalls: string[] = [];
   const dismissCalls: string[] = [];
   const retryCalls: { inputId: string; text?: string }[] = [];
   const joiInbox = {
     accept: async () => DTO,
     cancel: async (input: { inputId: string }) => { cancelCalls.push(input.inputId); return cancel(input.inputId); },
-    clarify: async (input: { workbenchId?: string; inputId: string; text?: string }) => { clarifyCalls.push(input); return clarify(input); },
+    clarify: async (input: { partnerId?: string; workbenchId?: string; inputId: string; text?: string }) => { clarifyCalls.push(input); return clarify(input); },
     dismiss: async (input: { inputId: string }) => { dismissCalls.push(input.inputId); return dismiss(input.inputId); },
     list: async () => [DTO],
     retry: async (input: { inputId: string; text?: string }) => { retryCalls.push(input); return retry(input); },
@@ -72,6 +72,13 @@ describe("joi clarify HTTP route", () => {
         method: "POST",
       });
       expect(session.clarifyCalls.at(-1)).toEqual({ inputId: "input-1", text: "是登录模块" });
+
+      await fetch(`${session.url}/api/v1/joi/messages/input-1/clarify`, {
+        body: JSON.stringify({ partnerId: "partner-1" }),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(session.clarifyCalls.at(-1)).toEqual({ inputId: "input-1", partnerId: "partner-1" });
     } finally {
       await session.close();
     }

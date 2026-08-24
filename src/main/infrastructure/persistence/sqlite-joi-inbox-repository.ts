@@ -115,12 +115,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     ).all()).map((row) => mapRow(row as Row));
   }
 
-  async clarify(inputId: string, patch: { workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
+  async clarify(inputId: string, patch: { expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     return this.database.transaction((connection) => {
       const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       if (row === undefined) return null;
       const current = mapRow(row);
       if (current.status !== "CLARIFICATION_REQUIRED") return null;
+      if (patch.expectedReasonCode !== undefined && current.clarificationReasonCode !== patch.expectedReasonCode) return null;
       const now = new Date().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       const nextWorkbench = patch.workbenchId ?? current.workbenchId;
@@ -336,15 +337,16 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async enqueuePartnerResult(event: { workbenchId: string; eventId: string; resultId: string; status: string; summary: string; workId: string }): Promise<string | null> {
     return this.database.transaction((connection) => {
-      const source = connection.prepare(`SELECT r.created_at, w.input_id FROM work_results r
+      const source = connection.prepare(`SELECT r.created_at, w.input_id, i.body AS goal_body FROM work_results r
         JOIN work_items w ON w.work_id = r.work_id
+        JOIN joi_inbox_messages i ON i.input_id = w.input_id
         JOIN partner_result_events e ON e.run_id = r.run_id AND e.status = r.status
         WHERE r.result_id = ? AND r.workbench_id = ? AND r.work_id = ? AND r.status = ?
           AND r.is_authoritative = 1 AND e.event_id = ?`).get(
         event.resultId, event.workbenchId, event.workId, event.status,
         event.eventId,
-      ) as { created_at?: unknown; input_id?: unknown } | undefined;
-      if (typeof source?.created_at !== "string" || typeof source.input_id !== "string") throw new Error("partner_result_event_not_found");
+      ) as { created_at?: unknown; goal_body?: unknown; input_id?: unknown } | undefined;
+      if (typeof source?.created_at !== "string" || typeof source.input_id !== "string" || typeof source.goal_body !== "string") throw new Error("partner_result_event_not_found");
       const goalInputId = source.input_id;
       connection.prepare(`INSERT OR IGNORE INTO joi_goal_result_sets
         (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 0, 0, ?)`)
@@ -367,10 +369,11 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const active = connection.prepare(`SELECT 1 FROM work_items
         WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(goalInputId);
       if (active !== undefined) return null;
-      const results = connection.prepare(`SELECT r.result_id, r.work_id, r.status, r.summary
+      const results = connection.prepare(`SELECT r.result_id, r.work_id, r.status, r.summary, w.title
         FROM joi_goal_result_members m
         JOIN partner_result_events e ON e.event_id = m.event_id
         JOIN work_results r ON r.run_id = e.run_id AND r.status = e.status AND r.is_authoritative = 1
+        JOIN work_items w ON w.work_id = r.work_id
         WHERE m.original_input_id = ? AND m.revision <= ?
         ORDER BY m.revision, m.event_id`).all(goalInputId, resultSet.revision) as Row[];
       const inputId = `joi_result_input:goal:${goalInputId}`;
@@ -378,11 +381,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         "All currently planned work for one original user goal is terminal and ready for synthesis.",
         `goalInputId=${goalInputId}`,
         `resultRevision=${String(resultSet.revision)}`,
-        ...results.map((row) => `resultId=${String(row.result_id)} workId=${String(row.work_id)} status=${String(row.status)} summary=${String(row.summary).slice(0, 320)}`),
-        "Inspect structured failure facts before completing: only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Use partner_list_available and prefer a different suitable available partner; only switch the current partner's model when no suitable alternative partner exists.",
-        "For auth, balance, configuration, skill or safety failures, or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; ask for input or report the blocker.",
+        "Original user goal (authoritative):",
+        source.goal_body.slice(0, 4_000),
+        ...results.map((row) => `resultId=${String(row.result_id)} workId=${String(row.work_id)} title=${String(row.title).slice(0, 240)} status=${String(row.status)} summary=${String(row.summary).slice(0, 320)}`),
+        "Treat COMPLETED results as verified evidence. A FAILED/UNKNOWN result is a coverage gap; it does not invalidate other evidence and must not dominate the final answer unless that missing coverage is essential to the original goal.",
+        "If verified completed results already answer the original goal, synthesize that answer, mention non-critical failures only as a brief trailing warning, and call turn_complete with RESULT_SYNTHESIZED.",
+        "If an essential gap remains, inspect structured failure facts: only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Prefer a different suitable available partner; only switch the current partner's model when no suitable alternative exists.",
+        "For an essential auth, balance, configuration, skill or safety failure, or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; explain the missing coverage and call turn_complete with RESULT_BLOCKED.",
         "Use work_read_result only if the bounded summary is insufficient.",
-        "Synthesize one concise, opinionated completion update for the user, call turn_complete with RESULT_SYNTHESIZED, and do not dump raw per-Agent output.",
+        "Do not dump raw per-Agent output.",
       ].join("\n");
       connection.prepare(`INSERT INTO joi_inbox_messages
         (input_id, idempotency_key, body, status, workbench_id, goal_input_id, result_revision, created_at, updated_at)
@@ -466,7 +473,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         const current = connection.prepare(`SELECT revision FROM joi_goal_result_sets
           WHERE original_input_id = ?`).get(synthesis.goal_input_id) as { revision?: unknown } | undefined;
         if (typeof current?.revision !== "number") throw new Error("goal_result_set_invalid");
-        if (current.revision !== synthesis.result_revision || completion?.outcome !== "RESULT_SYNTHESIZED") {
+        if (current.revision !== synthesis.result_revision
+          || completion === undefined
+          || !["RESULT_SYNTHESIZED", "RESULT_BLOCKED"].includes(completion.outcome)) {
           connection.prepare(`UPDATE joi_inbox_messages SET status = 'PENDING', updated_at = ? WHERE input_id = ?`)
             .run(now, inputId);
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
@@ -481,14 +490,23 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
         }
         const summary = normalizeCompletionSummary(completion.completionSummary);
+        if (summary === "") throw new DomainError("joi_goal_synthesis_summary_empty", "Goal synthesis must include a visible summary.");
+        const disposition = completion.outcome === "RESULT_SYNTHESIZED" ? "COMPLETED" : "BLOCKED";
+        if (disposition === "COMPLETED") {
+          const completedWork = connection.prepare(`SELECT 1 FROM work_items
+            WHERE input_id = ? AND status = 'COMPLETED' LIMIT 1`).get(synthesis.goal_input_id);
+          if (completedWork === undefined) {
+            throw new DomainError("joi_goal_synthesis_without_completed_work", "A completed goal synthesis requires verified completed Work.");
+          }
+        }
         connection.prepare(`INSERT INTO joi_goal_outcomes
-          (input_id, result_revision, completion_summary, completed_at, updated_at)
-          VALUES (?, ?, ?, ?, ?)
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?)
           ON CONFLICT(input_id) DO UPDATE SET result_revision = excluded.result_revision,
-            completion_summary = excluded.completion_summary, completed_at = excluded.completed_at,
+            disposition = excluded.disposition, completion_summary = excluded.completion_summary, completed_at = excluded.completed_at,
             updated_at = excluded.updated_at
           WHERE excluded.result_revision >= joi_goal_outcomes.result_revision`).run(
-          synthesis.goal_input_id, synthesis.result_revision, summary, now, now,
+          synthesis.goal_input_id, synthesis.result_revision, disposition, summary, now, now,
         );
         connection.prepare(`UPDATE joi_goal_result_sets SET synthesized_revision = ?, updated_at = ?
           WHERE original_input_id = ? AND revision = ?`).run(
@@ -499,7 +517,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         ) AND consumed_at IS NULL`).run(now, synthesis.goal_input_id, synthesis.result_revision);
         connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
           WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
-        return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: true, resultRevision: synthesis.result_revision };
+        return { disposition, goalInputId: synthesis.goal_input_id, goalOutcomePersisted: true, resultRevision: synthesis.result_revision };
       }
       if (completion?.outcome === "DIRECT_ANSWER" || completion?.outcome === "TEAM_READY") {
         const summary = normalizeCompletionSummary(completion.completionSummary);

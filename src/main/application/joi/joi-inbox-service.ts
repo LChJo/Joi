@@ -3,10 +3,17 @@ import { DomainError } from "../../domain/errors.js";
 import type { JoiInboxRecord, JoiInboxRepository } from "../ports/joi-inbox.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
+import type { PartnerRegistryService } from "../partners/partner-registry-service.js";
 import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "./joi-input-failure.js";
 
 export class JoiInboxService {
-  constructor(private readonly dependencies: { clock: Clock; diagnostics?: RuntimeDiagnostics; ids: IdGenerator; repository: JoiInboxRepository }) {}
+  constructor(private readonly dependencies: {
+    clock: Clock;
+    diagnostics?: RuntimeDiagnostics;
+    ids: IdGenerator;
+    partners?: Pick<PartnerRegistryService, "inspect">;
+    repository: JoiInboxRepository;
+  }) {}
 
   async accept(input: { attachmentIds?: string[]; workbenchId?: string; idempotencyKey: string; text: string }): Promise<JoiAcceptedMessageDto> {
     const body = input.text.trim();
@@ -43,22 +50,48 @@ export class JoiInboxService {
     return (await this.dependencies.repository.list()).map(toDto);
   }
 
-  async clarify(input: { workbenchId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
+  async clarify(input: { partnerId?: string; workbenchId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
     const inputId = input.inputId.trim();
     if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
     const workbenchId = typeof input.workbenchId === "string" ? input.workbenchId.trim() : "";
+    const partnerId = typeof input.partnerId === "string" ? input.partnerId.trim() : "";
     const text = typeof input.text === "string" ? input.text.trim() : "";
     const cleanWorkbench = workbenchId.length === 0 ? undefined : workbenchId;
+    const cleanPartner = partnerId.length === 0 ? undefined : partnerId;
     const cleanText = text.length === 0 ? undefined : text;
-    if (cleanWorkbench === undefined && cleanText === undefined) {
-      throw new DomainError("joi_clarification_empty", "Provide a workbench or supplementary text to continue.");
+    if (cleanPartner !== undefined && (cleanWorkbench !== undefined || cleanText !== undefined)) {
+      throw new DomainError("joi_clarification_invalid", "Choose a partner without another clarification resolution.");
+    }
+    if (cleanWorkbench === undefined && cleanPartner === undefined && cleanText === undefined) {
+      throw new DomainError("joi_clarification_empty", "Provide a workbench, partner, or supplementary text to continue.");
     }
     if (cleanWorkbench !== undefined && cleanWorkbench.length > 160) throw new DomainError("joi_workbench_invalid", "Workbench reference is invalid.");
+    if (cleanPartner !== undefined && cleanPartner.length > 160) throw new DomainError("joi_partner_selection_invalid", "Partner reference is invalid.");
     if (cleanText !== undefined && cleanText.length > 8_000) throw new DomainError("joi_clarification_invalid", "Supplementary text is too long.");
-    const record = await this.dependencies.repository.clarify(inputId, {
-      ...(cleanWorkbench === undefined ? {} : { workbenchId: cleanWorkbench }),
-      ...(cleanText === undefined ? {} : { text: cleanText }),
-    });
+    let record;
+    if (cleanPartner === undefined) {
+      record = await this.dependencies.repository.clarify(inputId, {
+        ...(cleanWorkbench === undefined ? {} : { workbenchId: cleanWorkbench }),
+        ...(cleanText === undefined ? {} : { text: cleanText }),
+      });
+    } else {
+      if (this.dependencies.partners === undefined) {
+        throw new DomainError("joi_partner_selection_unavailable", "Partner selection is unavailable.");
+      }
+      let partner;
+      try {
+        partner = await this.dependencies.partners.inspect(cleanPartner);
+      } catch {
+        throw new DomainError("joi_partner_selection_invalid", "The selected partner is unavailable.");
+      }
+      if (partner.status !== "ACTIVE" || partner.configuration !== undefined) {
+        throw new DomainError("joi_partner_selection_invalid", "The selected partner is unavailable.");
+      }
+      record = await this.dependencies.repository.clarify(inputId, {
+        expectedReasonCode: "partner_selection_required",
+        text: `[用户选择搭档] partnerId=${partner.partnerId}。请使用这个精确搭档继续原任务；一次性工作不要传 instanceId。`,
+      });
+    }
     if (record === null) throw new DomainError("joi_clarification_unavailable", "This input is not awaiting clarification.");
     return toDto(record);
   }

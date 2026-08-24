@@ -23,7 +23,8 @@ import { draftAgentConversation, type AgentConversationDraft } from "../../appli
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 
-const DEFAULT_RUN_TIMEOUT_MILLIS = 10 * 60_000;
+const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
+const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
 
 /** Per-run mutable facts: observed side effects and a pending question for the user. */
 interface RunTracker {
@@ -65,6 +66,36 @@ function createAskUserTool(tracker: { current: RunTracker }): AgentTool<typeof a
     label: "Ask the user",
     name: "ask_user",
     parameters: askUserParameters,
+  };
+}
+
+function withToolTimeout(tool: AgentTool, timeoutMillis: number): AgentTool {
+  return {
+    ...tool,
+    execute: async (toolCallId, parameters, parentSignal, onUpdate) => {
+      const controller = new AbortController();
+      const abortFromParent = (): void => { controller.abort(parentSignal?.reason); };
+      if (parentSignal?.aborted === true) abortFromParent();
+      else parentSignal?.addEventListener("abort", abortFromParent, { once: true });
+
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => {
+          const error = new DomainError("partner_tool_timed_out", "partner_tool_timed_out");
+          controller.abort(error);
+          reject(error);
+        }, timeoutMillis);
+      });
+      try {
+        return await Promise.race([
+          tool.execute(toolCallId, parameters, controller.signal, onUpdate),
+          timeout,
+        ]);
+      } finally {
+        if (timer !== undefined) clearTimeout(timer);
+        parentSignal?.removeEventListener("abort", abortFromParent);
+      }
+    },
   };
 }
 
@@ -117,9 +148,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
     resolver: PiConfiguredModelResolver;
-    /** Hard deadline per engine turn; a hung provider stream must fail the run, not stall it. */
-    runTimeoutMillis?: number;
+    /** Maximum interval without an Agent lifecycle or streaming progress event. */
+    runIdleTimeoutMillis?: number;
     sources: Pick<ReasoningSourceSelector, "selectInitial"> & Partial<Pick<ReasoningSourceSelector, "selectById">>;
+    /** Mandatory upper bound for each individual tool invocation. */
+    toolTimeoutMillis?: number;
     tools: PiCodingToolFactory;
   }) {}
 
@@ -157,10 +190,10 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const resolved = await this.dependencies.resolver.resolve(pin);
     const configuredPrompt = await this.#configuredPrompt(revision);
     const trackerRef = { current: tracker };
-    const tools = [
+    const tools = this.#toolsWithTimeout([
       ...this.#toolsForRun(execution.workspacePath, this.#effectiveToolNames(revision), context.skillEnvironmentKeys),
       createAskUserTool(trackerRef),
-    ];
+    ]);
     const allowed = new Set(tools.map((tool) => tool.name));
     const agent = new Agent({
       afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(trackerRef, context)),
@@ -180,7 +213,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       toolExecution: "sequential",
     });
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
-    await this.#promptWithDeadline(agent, request.taskProjection);
+    await this.#promptWithIdleTimeout(agent, request.taskProjection);
     if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0);
     const failure = assistantFailureSignal(agent.state.messages);
     if (failure !== null) throw failure;
@@ -221,10 +254,10 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       const pin = await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
       const resolved = await this.dependencies.resolver.resolve(pin);
       const sideEffectTracker = { current: tracker };
-      const tools = [
+      const tools = this.#toolsWithTimeout([
         ...this.#toolsForRun(execution.workspacePath, this.#effectiveToolNames(revision), input.skillEnvironmentKeys),
         createAskUserTool(sideEffectTracker),
-      ];
+      ]);
       const allowed = new Set(tools.map((tool) => tool.name));
       const agent = new Agent({
         afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(sideEffectTracker, context)),
@@ -254,7 +287,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     warm.agent.state.systemPrompt = systemPrompt;
     const previousMessageCount = warm.agent.state.messages.length;
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
-    await this.#promptWithDeadline(warm.agent, input.request.taskProjection);
+    await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection);
     if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount);
     const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
     const failure = assistantFailureSignal(turnMessages);
@@ -271,9 +304,9 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     };
   }
 
-  /** Races the model stream against a deadline; a hung provider aborts the run instead of stalling it. */
-  async #promptWithDeadline(agent: Agent, text: string): Promise<void> {
-    await this.#runWithDeadline(agent, () => agent.prompt(text));
+  /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */
+  async #promptWithIdleTimeout(agent: Agent, text: string): Promise<void> {
+    await this.#runWithIdleTimeout(agent, () => agent.prompt(text));
   }
 
   /**
@@ -287,25 +320,36 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     if (!isAssistantErrorMessage(failedMessage)) return;
     agent.state.messages = agent.state.messages.slice(0, -1);
     try {
-      await this.#runWithDeadline(agent, () => agent.continue());
+      await this.#runWithIdleTimeout(agent, () => agent.continue());
     } catch (error) {
       agent.state.messages = [...agent.state.messages, failedMessage];
       throw error;
     }
   }
 
-  async #runWithDeadline(agent: Agent, run: () => Promise<void>): Promise<void> {
+  async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<"timeout">((resolve) => {
-      timer = setTimeout(() => resolve("timeout"), this.dependencies.runTimeoutMillis ?? DEFAULT_RUN_TIMEOUT_MILLIS);
+    let signalIdle: (() => void) | undefined;
+    const idle = new Promise<"idle">((resolve) => {
+      signalIdle = () => resolve("idle");
     });
+    const refreshIdleDeadline = (): void => {
+      if (timer !== undefined) clearTimeout(timer);
+      timer = setTimeout(
+        () => signalIdle?.(),
+        this.dependencies.runIdleTimeoutMillis ?? DEFAULT_RUN_IDLE_TIMEOUT_MILLIS,
+      );
+    };
+    const unsubscribe = agent.subscribe(() => { refreshIdleDeadline(); });
+    refreshIdleDeadline();
     try {
-      const winner = await Promise.race([run().then(() => "done" as const), deadline]);
-      if (winner === "timeout") {
+      const winner = await Promise.race([run().then(() => "done" as const), idle]);
+      if (winner === "idle") {
         agent.abort();
-        throw new DomainError("partner_run_timed_out", "The partner run exceeded its time budget and was aborted.");
+        throw new DomainError("partner_run_idle_timed_out", "The partner run made no progress before its idle deadline and was aborted.");
       }
     } finally {
+      unsubscribe();
       if (timer !== undefined) clearTimeout(timer);
     }
   }
@@ -344,6 +388,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       : names;
     if (selected.length === 0) return [];
     return this.dependencies.tools.create(workspacePath ?? process.cwd(), selected, { environmentKeys });
+  }
+
+  #toolsWithTimeout(tools: AgentTool[]): AgentTool[] {
+    const timeoutMillis = this.dependencies.toolTimeoutMillis ?? DEFAULT_TOOL_TIMEOUT_MILLIS;
+    return tools.map((tool) => withToolTimeout(tool, timeoutMillis));
   }
 
   #systemPrompt(configuredPrompt: string, request: PartnerRunRequest, workbenchSection: string, knowledgeSection: string, skillSection: string): string {

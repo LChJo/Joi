@@ -1,15 +1,23 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import type { JoiInboxRecord, JoiInboxRepository } from "../../src/main/application/ports/joi-inbox.js";
+import type { PartnerDto } from "../../src/shared/joi.js";
+
+const selectablePartner: PartnerDto = {
+  capabilities: ["code"], createdBy: "user", displayName: "代码搭档", engine: "pi-core", inFlightCount: 0,
+  kind: "local-pi", knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner-1",
+  partnerRevisionId: "partner-revision-1", registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+};
 
 class FakeInboxRepository implements JoiInboxRepository {
   readonly records = new Map<string, JoiInboxRecord>();
   cancelQueued?: () => Promise<number>;
 
-  async clarify(inputId: string, patch: { workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
+  async clarify(inputId: string, patch: { expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     const record = this.records.get(inputId);
     if (record === undefined) return null;
     if (record.status !== "CLARIFICATION_REQUIRED") return null;
+    if (patch.expectedReasonCode !== undefined && record.clarificationReasonCode !== patch.expectedReasonCode) return null;
     const next: JoiInboxRecord = {
       body: patch.text === undefined ? record.body : `${record.body}\n\n[用户补充] ${patch.text}`,
       createdAt: record.createdAt,
@@ -102,11 +110,12 @@ function record(over: Partial<JoiInboxRecord> & { inputId: string }): JoiInboxRe
   };
 }
 
-function serviceWith(repository: JoiInboxRepository, diagnostics: { event: string; fields: Record<string, unknown> }[] = []) {
+function serviceWith(repository: JoiInboxRepository, diagnostics: { event: string; fields: Record<string, unknown> }[] = [], partners?: { inspect(partnerId: string): Promise<PartnerDto> }) {
   return new JoiInboxService({
     clock: { now: () => new Date("2026-08-01T00:00:00.000Z") },
     diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
     ids: { next: (prefix: string) => `${prefix}-1` },
+    ...(partners === undefined ? {} : { partners }),
     repository,
   });
 }
@@ -166,6 +175,59 @@ describe("JoiInboxService.clarify", () => {
     repository.records.set("clarify-2", record({ body: "归属？", inputId: "clarify-2" }));
     const dto = await serviceWith(repository).clarify({ inputId: "clarify-2", text: "是登录模块" });
     expect(dto.textPreview).toBe("归属？ [用户补充] 是登录模块");
+  });
+
+  it("resumes a partner-selection clarification with a validated stable partner id", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("partner-choice", record({
+      body: "分析附件", clarificationReasonCode: "partner_selection_required", inputId: "partner-choice",
+    }));
+    const service = serviceWith(repository, [], { inspect: async () => selectablePartner });
+
+    const dto = await service.clarify({ inputId: "partner-choice", partnerId: "partner-1" });
+
+    expect(dto).toMatchObject({ inputId: "partner-choice", status: "PENDING" });
+    expect(repository.records.get("partner-choice")?.body).toContain("partnerId=partner-1");
+  });
+
+  it("rejects partner selection for the wrong clarification, unavailable partners and mixed resolutions", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("wrong-reason", record({ clarificationReasonCode: "question_required", inputId: "wrong-reason" }));
+    repository.records.set("invalid-partner", record({ clarificationReasonCode: "partner_selection_required", inputId: "invalid-partner" }));
+    const unavailable = { ...selectablePartner, status: "DISABLED" as const };
+
+    await expect(serviceWith(repository, [], { inspect: async () => selectablePartner }).clarify({ inputId: "wrong-reason", partnerId: "partner-1" }))
+      .rejects.toMatchObject({ code: "joi_clarification_unavailable" });
+    await expect(serviceWith(repository, [], { inspect: async () => unavailable }).clarify({ inputId: "invalid-partner", partnerId: "partner-1" }))
+      .rejects.toMatchObject({ code: "joi_partner_selection_invalid" });
+    await expect(serviceWith(repository, [], { inspect: async () => selectablePartner }).clarify({ inputId: "invalid-partner", partnerId: "partner-1", text: "also" }))
+      .rejects.toMatchObject({ code: "joi_clarification_invalid" });
+  });
+
+  it("rejects partner selection when registry lookup is unavailable or fails", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("partner-choice", record({
+      clarificationReasonCode: "partner_selection_required", inputId: "partner-choice",
+    }));
+
+    await expect(serviceWith(repository).clarify({ inputId: "partner-choice", partnerId: "partner-1" }))
+      .rejects.toMatchObject({ code: "joi_partner_selection_unavailable" });
+    await expect(serviceWith(repository, [], { inspect: async () => { throw new Error("missing"); } }).clarify({ inputId: "partner-choice", partnerId: "missing" }))
+      .rejects.toMatchObject({ code: "joi_partner_selection_invalid" });
+  });
+
+  it("rejects an active partner whose configuration still requires action", async () => {
+    const repository = new FakeInboxRepository();
+    repository.records.set("partner-choice", record({
+      clarificationReasonCode: "partner_selection_required", inputId: "partner-choice",
+    }));
+    const misconfigured: PartnerDto = {
+      ...selectablePartner,
+      configuration: { reasonCodes: ["skill_missing"], status: "ACTION_REQUIRED" },
+    };
+
+    await expect(serviceWith(repository, [], { inspect: async () => misconfigured }).clarify({ inputId: "partner-choice", partnerId: "partner-1" }))
+      .rejects.toMatchObject({ code: "joi_partner_selection_invalid" });
   });
 
   it("omits a preview for synthetic inputs and whitespace-only bodies", async () => {

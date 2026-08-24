@@ -29,9 +29,15 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-18 的首页首问投影收敛以 AC-47 为门禁：输入持久化为 `PENDING` 后，在 Workbench 尚未绑定前也必须以 `ARRANGING`/“等待归属”目标卡进入 home-feed；绑定后沿同一 `inputId` 升级，未归属 `CLARIFICATION_REQUIRED` 只进入“需要你”列表，不能重复显示。
 
-2026-08-18 的首页进度可见性收敛以 AC-48 为门禁：`progressing` 必须同时显示由持久化事实推导的阶段、Agent 数、Work 完成/失败/总数和已用时间；只展示安全枚举和计数，不展示 ETA、原始执行消息、模型标识、路径或错误正文；继续使用 HTTP home-feed 轮询与本地操作后的即时刷新，不新增 SSE/WebSocket。
+2026-08-18 的首页进度可见性收敛以 AC-48 为门禁：`progressing` 必须同时显示由持久化事实推导的阶段、Agent 数、Work 完成/失败/总数和已用时间；只展示安全枚举和计数，不展示 ETA、原始执行消息、模型标识、路径或错误正文；继续使用 HTTP home-feed 轮询与本地操作后的即时刷新，不新增 SSE/WebSocket。终态目标提交“继续”后必须先即时显示 `正在提交继续请求`，服务端确认后再进入 `queued`/`正在安排`；接口失败时撤销提交态并保留可重试错误，提交往返本身不得形成静默 gap。
 
 2026-08-24 的直接回答结果收敛以 AC-50 为门禁：`DIRECT_ANSWER`、`TEAM_READY` 与无工具普通回答必须把非空最终 Markdown 有界脱敏后写入独立 Turn completion；写入与 Turn/Inbox 完成同事务且校验 input/turn 归属。首页仅在输入已消费且没有 result-set 时投影该 completion；当前 revision 的 Goal outcome 始终优先，重试期间不得展示旧回答，诊断不得记录回答正文。
+
+2026-08-24 的搭档选择交互收敛以 AC-51 为门禁：`instanceId/sessionPolicy` 冲突可无副作用机械修正时必须先自动修正；一次纠正后仍需用户决定搭档时持久化 `partner_selection_required`，首页只列出 ACTIVE 且配置有效的搭档卡。点击以稳定 `partnerId` 原子匹配当前澄清并继续原输入，该卡不得显示自由输入框，具体安全 prompt 不得再被通用派发文案覆盖。
+
+2026-08-24 的搭档长任务超时收敛以 AC-52 为门禁：本机 Pi 搭档不设置整次 Work/run 总时限；消息或工具事件持续产生时可一直运行，连续 20 分钟无任何进度才 abort 并返回 `partner_run_idle_timed_out`。每个工具调用独立限制为 15 分钟且不能被工具参数放宽，超时形成 `partner_tool_timed_out`；所有 timer、订阅与 AbortSignal 在终态后释放，既有副作用重放禁令保持不变。
+
+2026-08-24 的部分失败目标综合收敛继续以 AC-43 为门禁：综合 Turn 必须显式提交 `RESULT_SYNTHESIZED` 或 `RESULT_BLOCKED`；成功至少基于一个已验收完成 Work，并由 Joi 语义判断现有证据足以回答原目标。当前 COMPLETED outcome 的权威性高于失败 Work 计数，首页仍标记完成并把异常降级为可点击搭档入口；关键证据缺失才写 BLOCKED，存量 outcome 无损回填为 COMPLETED。
 
 ## 1. 当前状态
 

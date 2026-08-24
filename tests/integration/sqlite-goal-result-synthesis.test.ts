@@ -3,6 +3,51 @@ import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persiste
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("goal-level result synthesis", () => {
+  it("rejects a completed disposition without verified completed Work but allows an explicit blocked outcome", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "研究", personaSummary: "persona", projectLabel: "诊断", scopeSummary: "分析" });
+      const now = fixture.clock.now().toISOString();
+      const synthesisInputId = "joi_result_input:goal:goal-all-failed";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-all-failed', 'key-all-failed', '给出可靠结论', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-original-failed', 'goal-all-failed', ?, 'session-original-failed', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-all-failed', ?, 'goal-all-failed', '关键分析', '{}', 'READ', 'FAILED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, synthetic_input_id, updated_at)
+          VALUES ('goal-all-failed', 1, 0, ?, ?)`).run(synthesisInputId, now);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, result_revision, created_at, updated_at)
+          VALUES (?, 'key-synthesis-all-failed', 'synthesize', 'ROUTED', ?, 'goal-all-failed', 1, ?, ?)`).run(
+          synthesisInputId, workbench.workbenchId, now, now,
+        );
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-synthesis-all-failed', ?, ?, 'session-synthesis-all-failed', 'RUNNING', ?, ?)`).run(
+          synthesisInputId, workbench.workbenchId, now, now,
+        );
+      });
+      const inbox = new SqliteJoiInboxRepository(fixture.database);
+
+      await expect(inbox.completeInput(synthesisInputId, "turn-synthesis-all-failed", {
+        completionSummary: "无法可靠完成。",
+        outcome: "RESULT_SYNTHESIZED",
+      })).rejects.toMatchObject({ code: "joi_goal_synthesis_without_completed_work" });
+      await expect(inbox.completeInput(synthesisInputId, "turn-synthesis-all-failed", {
+        completionSummary: "关键分析没有得到可靠结果。",
+        outcome: "RESULT_BLOCKED",
+      })).resolves.toMatchObject({ disposition: "BLOCKED", goalOutcomePersisted: true });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("batches authoritative Agent results, shows finalizing, and completes only after a bounded goal outcome is persisted", async () => {
     const fixture = await createRuntimeFixture();
     try {

@@ -11,7 +11,9 @@ describe("partner run failure classification", () => {
     [{ code: "ECONNRESET" }, "ECONNRESET"],
     [{ status: 429 }, "http_429"],
     [{ statusCode: 503 }, "http_503"],
+    [{ code: "partner_run_idle_timed_out" }, "partner_run_idle_timed_out"],
     [{ code: "partner_run_timed_out" }, "partner_run_timed_out"],
+    [{ code: "partner_tool_timed_out" }, "partner_tool_timed_out"],
   ])("allows a fresh attempt for transient %j before side effects", (error, reasonCode) => {
     expect(classifyPartnerRunFailure(error, { phase: "MODEL", sideEffectState: "NONE" })).toEqual({
       phase: "MODEL", reasonCode, retryable: true, sideEffectState: "NONE",
@@ -30,8 +32,10 @@ describe("partner run failure classification", () => {
   });
 
   it("blocks replay when side effects were observed or cannot be determined", () => {
-    expect(classifyPartnerRunFailure({ code: "ETIMEDOUT" }, { phase: "MODEL", sideEffectState: "OBSERVED" }).retryable).toBe(false);
-    expect(classifyPartnerRunFailure({ code: "ETIMEDOUT" }, { phase: "MODEL", sideEffectState: "UNKNOWN" }).retryable).toBe(false);
+    for (const code of ["ETIMEDOUT", "partner_run_idle_timed_out", "partner_tool_timed_out"]) {
+      expect(classifyPartnerRunFailure({ code }, { phase: "MODEL", sideEffectState: "OBSERVED" }).retryable).toBe(false);
+      expect(classifyPartnerRunFailure({ code }, { phase: "MODEL", sideEffectState: "UNKNOWN" }).retryable).toBe(false);
+    }
   });
 
   it("treats the provider's generic connection signal as transient before side effects", () => {

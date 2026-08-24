@@ -93,7 +93,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
           sessions.push(turn.sessionId);
           turn.onEvent?.({ delta: "两项工作已完成。 C:\\private\\file 已隐藏。", turnId: turn.turnId, type: "text_delta" });
           turn.onEvent?.({ toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_started" });
-          turn.onEvent?.({ isError: false, toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_finished" });
+          turn.onEvent?.({ isError: false, outcome: "RESULT_SYNTHESIZED", toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_finished" });
         },
         steer: () => undefined, waitForIdle: async () => undefined,
       },
@@ -121,6 +121,79 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(diagnostics.map((entry) => entry.event)).toEqual(expect.arrayContaining([
       "joi.goal.synthesis.started", "joi.goal.synthesis.completed", "joi.goal.outcome.persisted",
     ]));
+  });
+
+  it("persists an explicit blocked synthesis disposition instead of forcing every synthesis to completed", async () => {
+    const completions: unknown[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("synthesis input is pre-bound"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          turn.onEvent?.({ delta: "关键证据缺失，当前无法给出可靠结论。", turnId: turn.turnId, type: "text_delta" });
+          turn.onEvent?.({ toolCallId: "blocked", toolName: "turn_complete", turnId: turn.turnId, type: "tool_started" });
+          turn.onEvent?.({ isError: false, outcome: "RESULT_BLOCKED", toolCallId: "blocked", toolName: "turn_complete", turnId: turn.turnId, type: "tool_finished" });
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async (_inputId, _turnId, completion) => { completions.push(completion); },
+        createTurn: async () => undefined,
+        loadInput: async () => ({
+          workbenchId: "research", body: "synthesize", goalInputId: "goal-blocked", inputId: "joi_result_input:goal:goal-blocked",
+          resultRevision: 3, status: "PENDING",
+        }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await coordinator.handle("joi_result_input:goal:goal-blocked");
+    expect(completions).toEqual([{
+      completionSummary: "关键证据缺失，当前无法给出可靠结论。",
+      outcome: "RESULT_BLOCKED",
+    }]);
+  });
+
+  it("repairs a synthesis turn that returns text without an explicit result disposition", async () => {
+    let starts = 0;
+    const prompts: string[] = [];
+    const completions: unknown[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("synthesis input is pre-bound"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          starts += 1;
+          prompts.push(turn.prompt);
+          turn.onEvent?.({ delta: starts === 1 ? "未提交的总结" : "修复后的可靠总结", turnId: turn.turnId, type: "text_delta" });
+          if (starts === 2) {
+            turn.onEvent?.({ toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_started" });
+            turn.onEvent?.({ isError: false, outcome: "RESULT_SYNTHESIZED", toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_finished" });
+          }
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async (_inputId, _turnId, completion) => { completions.push(completion); },
+        createTurn: async () => undefined,
+        loadInput: async () => ({
+          workbenchId: "research", body: "synthesize", goalInputId: "goal-repair", inputId: "joi_result_input:goal:goal-repair",
+          resultRevision: 1, status: "PENDING",
+        }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await coordinator.handle("joi_result_input:goal:goal-repair");
+    expect(starts).toBe(2);
+    expect(prompts[1]).toContain("commit an outcome");
+    expect(completions).toEqual([{ completionSummary: "修复后的可靠总结", outcome: "RESULT_SYNTHESIZED" }]);
   });
 
   it("closes a failed work dispatch as clarification instead of repairing or retrying the turn", async () => {
@@ -156,6 +229,33 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(clarifications).toEqual(["work_dispatch_failed"]);
     expect(completions).toBe(1);
     expect(failures).toBe(0);
+  });
+
+  it("preserves a partner-selection clarification already committed by the dispatch tool", async () => {
+    const clarifications: string[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route again"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async (turn) => {
+          turn.onEvent?.({ toolCallId: "dispatch", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_started" });
+          turn.onEvent?.({ isError: false, reasonCode: "partner_selection_required", toolCallId: "dispatch", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_finished" });
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => undefined,
+        createTurn: async () => undefined,
+        loadInput: async () => ({ body: "派发任务", inputId: "input-partner-choice", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async (_inputId, reason) => { clarifications.push(reason); },
+      },
+    });
+
+    await coordinator.handle("input-partner-choice");
+    expect(clarifications).toEqual([]);
   });
 
   it("aborts a canceled turn before it can commit completion", async () => {

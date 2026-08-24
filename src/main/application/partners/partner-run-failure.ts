@@ -14,7 +14,8 @@ interface PartnerRunFailureCarrier {
 
 const TRANSIENT_CODES = new Set([
   "ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "ENOTFOUND", "EAI_AGAIN", "ETIMEDOUT",
-  "UND_ERR_CONNECT_TIMEOUT", "connect", "connection_error", "partner_run_timed_out", "rate_limited", "server_error", "timeout",
+  "UND_ERR_CONNECT_TIMEOUT", "connect", "connection_error", "partner_run_idle_timed_out", "partner_run_timed_out",
+  "partner_tool_timed_out", "rate_limited", "server_error", "timeout",
 ]);
 const PHASES = new Set<PartnerRunFailurePhase>(["CONFIGURATION", "ENGINE", "EXECUTION", "MODEL", "RECOVERY"]);
 const SIDE_EFFECT_STATES = new Set<PartnerRunSideEffectState>(["NONE", "OBSERVED", "UNKNOWN"]);

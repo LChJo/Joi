@@ -127,11 +127,21 @@
 .joi-goal-actions .joi-feed-dismiss:hover:not(:disabled) { color: var(--red); }
 .joi-goal-actions .joi-feed-cancel-error { font-size: .72rem; }
 .joi-goal-card > .joi-clarify { margin: 0 18px 17px 80px; padding-top: 12px; border-top: 1px solid var(--line); }
+.joi-retry-submitting { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--forest) 18%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--forest) 5%, var(--paper)); color: var(--forest); }
+.joi-retry-submitting > span:last-child { display: grid; gap: 2px; }
+.joi-retry-submitting strong { font-size: .82rem; }
+.joi-retry-submitting small { color: var(--muted); font-size: .76rem; }
 .joi-goal-progress { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .joi-goal-progress-track { flex: 0 0 96px; height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--line) 72%, transparent); overflow: hidden; }
 .joi-goal-progress-track i { display: block; height: 100%; border-radius: inherit; background: var(--forest); transition: width .3s ease; }
 .joi-goal-progress-track i.failed { background: var(--amber); }
 .joi-goal-progress > i { color: var(--faint); font-size: .74rem; font-style: normal; white-space: nowrap; }
+.joi-goal-agent-warning {
+  width: fit-content; margin: 0 18px 12px 80px; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--amber) 28%, var(--line));
+  border-radius: 999px; background: color-mix(in srgb, var(--amber) 6%, var(--paper)); color: var(--muted); cursor: pointer; font: inherit; font-size: .72rem;
+}
+.joi-goal-agent-warning:hover { border-color: var(--amber); color: var(--ink); }
+.joi-goal-drawer-body > .joi-goal-agent-warning { margin: -2px 0 2px; }
 .joi-drawer-backdrop { position: fixed; z-index: 30; inset: 0; background: rgb(10 18 14 / 44%); animation: joi-drawer-fade .18s ease; }
 .joi-goal-drawer { position: absolute; top: 0; right: 0; bottom: 0; width: min(980px, 94vw); display: flex; flex-direction: column; background: var(--paper); border-left: 1px solid var(--line); box-shadow: -18px 0 46px rgb(10 18 14 / 20%); animation: joi-drawer-in .22s ease; }
 @keyframes joi-drawer-in { from { transform: translateX(36px); opacity: .4; } }
@@ -201,6 +211,15 @@
 }
 .joi-clarify-chip:hover:not(:disabled) { border-color: var(--moss); }
 .joi-clarify-chip:disabled { opacity: .6; cursor: default; }
+.joi-clarify-partner-list { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.joi-clarify-partner {
+  display: grid; gap: 3px; min-width: 0; padding: 10px 12px; text-align: left; cursor: pointer;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper-strong); color: var(--ink); font: inherit;
+}
+.joi-clarify-partner:hover:not(:disabled) { border-color: var(--moss); background: color-mix(in srgb, var(--forest) 5%, var(--paper)); }
+.joi-clarify-partner:disabled { opacity: .6; cursor: default; }
+.joi-clarify-partner strong { overflow: hidden; font-size: .84rem; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+.joi-clarify-partner span { color: var(--muted); font-size: .76rem; line-height: 1.4; }
 .joi-clarify-proposals { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper-strong); }
 .joi-clarify-proposals > div:first-child { display: grid; gap: 3px; }
 .joi-clarify-proposals > div:first-child strong { color: var(--ink); font-size: .86rem; }
@@ -547,6 +566,7 @@
   .joi-goal-detail-body { grid-template-columns: 1fr; }
   .joi-goal-drawer { width: 100vw; border-left: 0; }
   .joi-goal-result-preview { margin-left: 16px; }
+  .joi-goal-agent-warning { margin-left: 16px; }
   .joi-goal-failure { margin-left: 16px; }
   .joi-goal-progress-track { flex-basis: 64px; }
   .joi-goal-side { padding-right: 16px; }
@@ -555,7 +575,7 @@
   .joi-composer { grid-template-columns: 1fr; }
   .joi-composer button { grid-column: 1; }
   .joi-clarify-add, .joi-clarify-workspace { align-items: stretch; flex-direction: column; }
-  .joi-clarify-proposal-list { grid-template-columns: 1fr; }
+  .joi-clarify-partner-list, .joi-clarify-proposal-list { grid-template-columns: 1fr; }
   .joi-clarify-add button, .joi-clarify-workspace button { align-self: start; }
   .partner-form { grid-template-columns: 1fr; }
   .tab-panel, .mode-cards, .partner-basic-grid { grid-template-columns: 1fr; }

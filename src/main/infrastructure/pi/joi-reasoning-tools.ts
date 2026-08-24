@@ -156,11 +156,13 @@ export function createJoiReasoningTools(input: {
           work: arguments_.work.map((item) => ({
             ...(item.acceptanceChecks === undefined ? {} : { acceptanceChecks: item.acceptanceChecks }),
             accessMode: item.accessMode,
-            ...(item.instanceId === undefined ? {} : { instanceId: item.instanceId }),
+            ...(item.instanceId === undefined || item.sessionPolicy === "ephemeral" ? {} : { instanceId: item.instanceId }),
             key: item.key,
             ...(item.instructions === undefined ? {} : { instructions: item.instructions }),
             partnerId: item.partnerId,
-            ...(item.sessionPolicy === undefined ? {} : { sessionPolicy: item.sessionPolicy === "resident" ? "RESIDENT" as const : "EPHEMERAL" as const }),
+            ...(item.sessionPolicy === undefined || (item.instanceId !== undefined && item.sessionPolicy === "resident")
+              ? {}
+              : { sessionPolicy: item.sessionPolicy === "resident" ? "RESIDENT" as const : "EPHEMERAL" as const }),
             title: item.title,
           })),
         }));
@@ -188,10 +190,10 @@ export function createJoiReasoningTools(input: {
         if (correctable) {
           await input.clarifications.requireClarification(
             input.inputId,
-            reasonCode,
-            `搭档或实例选择在自动纠正后仍不可用（${reasonCode}）。请确认要使用的搭档或重新发起任务。`,
+            "partner_selection_required",
+            "自动纠正后仍无法确定可用搭档。请选择一个搭档继续原任务。",
           );
-          return result({ reasonCode, status: "CLARIFICATION_REQUIRED" }, true);
+          return result({ reasonCode: "partner_selection_required", status: "CLARIFICATION_REQUIRED" }, true);
         }
         await input.clarifications.requireClarification(
           input.inputId,
@@ -456,12 +458,17 @@ export function createJoiReasoningTools(input: {
       Type.Literal("DIRECT_ANSWER"),
       Type.Literal("TEAM_READY"),
       Type.Literal("RESULT_SYNTHESIZED"),
+      Type.Literal("RESULT_BLOCKED"),
       Type.Literal("MAP_CLEARED"),
     ]),
   });
   const turnCompleteTool: AgentTool<typeof turnCompleteParameters> = {
-    description: "Commit a tool-using Turn that is fully answered without dispatch or clarification. DIRECT_ANSWER is only for requests needing no execution; TEAM_READY is only for a completed team-building request; RESULT_SYNTHESIZED is only after persisted results were read and synthesized; MAP_CLEARED is only when the goal's destination is reached and no way remains (never while open paths exist). This tool never executes work.",
+    description: "Commit a tool-using Turn. DIRECT_ANSWER is only for requests needing no execution; TEAM_READY is only for a completed team-building request; RESULT_SYNTHESIZED means persisted results contain enough verified evidence to answer the original goal; RESULT_BLOCKED means a critical evidence gap remains after safe recovery is unavailable; MAP_CLEARED is only when the goal's destination is reached and no way remains (never while open paths exist). This tool never executes work.",
     execute: async (_toolCallId, arguments_) => {
+      if ((arguments_.outcome === "RESULT_SYNTHESIZED" || arguments_.outcome === "RESULT_BLOCKED")
+        && (input.goalInputId === undefined || !input.inputId.startsWith("joi_result_input:goal:"))) {
+        throw new DomainError("goal_synthesis_outcome_not_allowed", "Result dispositions are only allowed in a goal synthesis Turn.");
+      }
       if (arguments_.outcome === "MAP_CLEARED") {
         const harness = requireHarness();
         // Only a harness review turn may declare the way complete; other turns would

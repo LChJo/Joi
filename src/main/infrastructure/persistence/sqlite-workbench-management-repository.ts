@@ -62,9 +62,8 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
           workId: required(item, "work_id"),
         };
       });
-      const recentOutcomes = connection.prepare(`SELECT o.input_id, o.result_revision, o.completion_summary, o.completed_at,
-          i.body, i.canceled_at,
-          EXISTS (SELECT 1 FROM work_items failed WHERE failed.input_id = i.input_id AND failed.status = 'FAILED') AS has_failed_work
+      const recentOutcomes = connection.prepare(`SELECT o.input_id, o.result_revision, o.disposition, o.completion_summary, o.completed_at,
+          i.body, i.canceled_at
         FROM joi_goal_outcomes o
         JOIN joi_goal_result_sets rs ON rs.original_input_id = o.input_id
         JOIN joi_inbox_messages i ON i.input_id = o.input_id
@@ -77,7 +76,7 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
           goalId: required(item, "input_id"),
           resultRevision: requiredNumber(item, "result_revision"),
           status: item.canceled_at === null || item.canceled_at === undefined
-            ? item.has_failed_work === 1 ? "FAILED" as const : "COMPLETED" as const
+            ? item.disposition === "BLOCKED" ? "FAILED" as const : "COMPLETED" as const
             : "CANCELED" as const,
           summary: sanitizeAgentConversationText(required(item, "completion_summary")),
           title: safeTitle(required(item, "body")),

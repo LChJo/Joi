@@ -351,14 +351,14 @@ describe("joi reasoning tools", () => {
     expect(inspected).not.toHaveProperty("tools");
   });
 
-  it("forwards instance targeting from work_dispatch into the work plan", async () => {
+  it("forwards an existing instance without adding a competing session policy", async () => {
     const harness = makeTools();
     await harness.call("work_dispatch", {
       dependencies: [],
       work: [{
         acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
         accessMode: "WRITE", instanceId: "instance_1", instructions: "写入用户要求的原始拼写", key: "w1",
-        partnerId: "partner_1", sessionPolicy: "resident", title: "继续上次的会话",
+        partnerId: "partner_1", title: "继续上次的会话",
       }],
     });
     const call = harness.planCalls[0] as { inputId?: string; work: { instanceId?: string; sessionPolicy?: string }[] };
@@ -366,8 +366,24 @@ describe("joi reasoning tools", () => {
     const planned = call.work;
     expect(planned[0]).toMatchObject({
       acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
-      instanceId: "instance_1", instructions: "写入用户要求的原始拼写", sessionPolicy: "RESIDENT",
+      instanceId: "instance_1", instructions: "写入用户要求的原始拼写",
     });
+    expect(planned[0]).not.toHaveProperty("sessionPolicy");
+  });
+
+  it("mechanically drops an instance reference from one-shot ephemeral work", async () => {
+    const harness = makeTools();
+    await harness.call("work_dispatch", {
+      dependencies: [],
+      work: [{
+        accessMode: "READ", instanceId: "stale-instance", key: "w1", partnerId: "partner_1",
+        sessionPolicy: "ephemeral", title: "一次性分析",
+      }],
+    });
+    const planned = (harness.planCalls[0] as { work: Record<string, unknown>[] }).work[0];
+    expect(planned).toMatchObject({ partnerId: "partner_1", sessionPolicy: "EPHEMERAL" });
+    expect(planned).not.toHaveProperty("instanceId");
+    expect(harness.clarificationCalls).toEqual([]);
   });
 
   it("persists a concrete blocking question through user_ask", async () => {
@@ -422,6 +438,20 @@ describe("joi reasoning tools", () => {
     }]);
   });
 
+  it("commits an explicitly blocked goal synthesis outcome", async () => {
+    const harness = makeTools({ goalInputId: "goal-1", inputId: "joi_result_input:goal:goal-1" });
+
+    await expect(harness.call("turn_complete", { outcome: "RESULT_BLOCKED" })).resolves.toEqual({
+      outcome: "RESULT_BLOCKED",
+      status: "COMMITTED",
+    });
+  });
+
+  it("rejects result dispositions outside a goal synthesis Turn", async () => {
+    await expect(makeTools().call("turn_complete", { outcome: "RESULT_BLOCKED" }))
+      .rejects.toMatchObject({ code: "goal_synthesis_outcome_not_allowed" });
+  });
+
   it.each(["partner_not_available", "partner_instance_unavailable", "partner_instance_partner_mismatch"])(
     "returns %s as a bounded retry request without creating a clarification",
     async (reasonCode) => {
@@ -439,8 +469,10 @@ describe("joi reasoning tools", () => {
     const harness = makeTools({ planError: new DomainError("partner_not_available", "private detail") });
     const input = { dependencies: [], work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }] };
     await expect(harness.call("work_dispatch", input)).resolves.toEqual({ reasonCode: "partner_not_available", status: "RETRY_REQUIRED" });
-    await expect(harness.call("work_dispatch", input)).resolves.toEqual({ reasonCode: "partner_not_available", status: "CLARIFICATION_REQUIRED" });
-    expect(harness.clarificationCalls).toHaveLength(1);
+    await expect(harness.call("work_dispatch", input)).resolves.toEqual({ reasonCode: "partner_selection_required", status: "CLARIFICATION_REQUIRED" });
+    expect(harness.clarificationCalls).toEqual([expect.objectContaining({
+      reasonCode: "partner_selection_required",
+    })]);
   });
 
   it("documents that instanceId is an exact queried instance and is mutually exclusive with sessionPolicy", () => {

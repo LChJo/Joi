@@ -52,10 +52,10 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
-  it("projects only the safe committed Turn outcome from a turn_complete result", async () => {
+  it.each(["DIRECT_ANSWER", "RESULT_BLOCKED"] as const)("projects the safe %s Turn outcome from a turn_complete result", async (committedOutcome) => {
     const faux = fauxProvider({ provider: "joi-turn-outcome" });
     faux.setResponses([
-      fauxAssistantMessage([fauxToolCall("turn_complete", { outcome: "DIRECT_ANSWER" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("turn_complete", { outcome: committedOutcome })], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("我是 Joi。")]),
     ]);
     const models = createModels();
@@ -67,10 +67,10 @@ describe("Pi reasoning runtime contract", () => {
       sessionStore: new MemorySessionStore(),
       tools: [{
         description: "Commit a direct answer.",
-        execute: async () => ({ content: [{ type: "text" as const, text: JSON.stringify({ outcome: "DIRECT_ANSWER", privatePayload: "must-not-cross" }) }], details: {} }),
+        execute: async () => ({ content: [{ type: "text" as const, text: JSON.stringify({ outcome: committedOutcome, privatePayload: "must-not-cross" }) }], details: {} }),
         label: "Complete Turn",
         name: "turn_complete",
-        parameters: Type.Object({ outcome: Type.Literal("DIRECT_ANSWER") }),
+        parameters: Type.Object({ outcome: Type.Literal(committedOutcome) }),
       }],
     });
     await runtime.startTurn({
@@ -81,7 +81,7 @@ describe("Pi reasoning runtime contract", () => {
 
     expect(events).toHaveLength(1);
     expect(events[0]).toMatchObject({
-      isError: false, outcome: "DIRECT_ANSWER", toolName: "turn_complete", turnId: "turn_direct", type: "tool_finished",
+      isError: false, outcome: committedOutcome, toolName: "turn_complete", turnId: "turn_direct", type: "tool_finished",
     });
     expect(JSON.stringify(events)).not.toContain("privatePayload");
   });

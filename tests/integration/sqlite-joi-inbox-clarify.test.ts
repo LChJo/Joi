@@ -52,6 +52,31 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
+  it("atomically applies a partner choice only to the matching clarification reason", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-choice-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const repository = new SqliteJoiInboxRepository(database);
+      const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-partner", text: "分析任务" });
+      await repository.requireClarification(accepted.inputId, "question_required", "选择搭档？");
+      expect(await repository.clarify(accepted.inputId, {
+        expectedReasonCode: "partner_selection_required", text: "partnerId=partner-1",
+      })).toBeNull();
+      expect((await repository.list()).find((item) => item.inputId === accepted.inputId)?.status).toBe("CLARIFICATION_REQUIRED");
+
+      await repository.requireClarification(accepted.inputId, "partner_selection_required", "选择搭档继续。");
+      const clarified = await repository.clarify(accepted.inputId, {
+        expectedReasonCode: "partner_selection_required", text: "partnerId=partner-1",
+      });
+      expect(clarified).toMatchObject({ status: "PENDING" });
+      expect(clarified?.body).toContain("partnerId=partner-1");
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("persists the question and does not consume an input that is waiting for an answer", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-question-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });

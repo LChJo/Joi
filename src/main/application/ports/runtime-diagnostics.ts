@@ -184,6 +184,7 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.goal.synthesis.completed": {
+    disposition: "BLOCKED" | "COMPLETED";
     workbenchId: string;
     goalInputId: string;
     inputId: string;
@@ -191,6 +192,7 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.goal.outcome.persisted": {
+    disposition: "BLOCKED" | "COMPLETED";
     workbenchId: string;
     goalInputId: string;
     resultRevision: number;

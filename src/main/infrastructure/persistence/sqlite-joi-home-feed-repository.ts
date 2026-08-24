@@ -57,10 +57,10 @@ function goalStatus(row: Row): JoiGoalStatusDto {
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0) return "ARRANGED";
   if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
-  if (number(row, "failed_count") > 0) return "FAILED";
   // An up-to-date synthesized outcome means the goal lifecycle is done even when the
   // orchestration turn is still open (long wait turn) or leaked (orphan not yet recovered).
-  if (text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1) return "COMPLETED";
+  if (number(row, "outcome_current") === 1) return row.outcome_disposition === "BLOCKED" ? "FAILED" : "COMPLETED";
+  if (text(row, "inbox_status") === "CONSUMED") return "COMPLETED";
   return "ARRANGING";
 }
 
@@ -120,7 +120,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           WHERE s.dismissed_at IS NULL AND aw.input_id = i.input_id) AS agent_count,
         COALESCE(rs.revision, 0) AS result_revision,
         CASE WHEN o.result_revision = rs.revision AND rs.revision > 0 THEN 1 ELSE 0 END AS outcome_current,
-        o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
+        o.disposition AS outcome_disposition, o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
         tc.completed_at AS turn_completed_at,
         (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id
           WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs

@@ -3,6 +3,74 @@ import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persi
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("Workbench Agent and joi home projections", () => {
+  it("keeps a current completed goal outcome authoritative when one terminal Work failed", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "分析", personaSummary: "persona", projectLabel: "joi", scopeSummary: "综合" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-partial', 'key-partial', '综合多个搭档的结论', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-partial', 'goal-partial', ?, 'session-partial', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        const insertWork = connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES (?, ?, 'goal-partial', ?, '{}', 'READ', ?, ?, ?)`);
+        insertWork.run("work-success", workbench.workbenchId, "成功分析", "COMPLETED", now, now);
+        insertWork.run("work-failed", workbench.workbenchId, "异常分析", "FAILED", now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES ('goal-partial', 2, 2, ?)`).run(now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES ('goal-partial', 2, 'COMPLETED', '现有证据已经足够形成结论。', ?, ?)`).run(now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+      expect(feed.goals[0]).toMatchObject({
+        completionSummary: "现有证据已经足够形成结论。",
+        status: "COMPLETED",
+        work: { active: 0, completed: 1, failed: 1, total: 2 },
+      });
+      expect((await fixture.workbenchManagement.get(workbench.workbenchId)).recentOutcomes[0])
+        .toMatchObject({ goalId: "goal-partial", status: "COMPLETED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("projects a blocked current outcome as failed even when some Work completed", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "分析", personaSummary: "persona", projectLabel: "joi", scopeSummary: "综合" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-blocked', 'key-blocked', '必须覆盖关键证据', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-blocked', 'goal-blocked', ?, 'session-blocked', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-partial', ?, 'goal-blocked', '已有分析', '{}', 'READ', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES ('goal-blocked', 1, 1, ?)`).run(now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES ('goal-blocked', 1, 'BLOCKED', '关键证据仍然缺失。', ?, ?)`).run(now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+      expect(feed.goals[0]).toMatchObject({ completionSummary: "关键证据仍然缺失。", status: "FAILED" });
+      expect((await fixture.workbenchManagement.get(workbench.workbenchId)).recentOutcomes[0])
+        .toMatchObject({ goalId: "goal-blocked", status: "FAILED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("creates cards only for new local instances and keeps resident cards non-deletable", async () => {
     const fixture = await createRuntimeFixture();
     try {

@@ -68,6 +68,11 @@ const EMPTY_COMPLETION_REPAIR_PROMPT = [
 ].join(" ");
 
 const WORK_DISPATCH_FAILURE_PROMPT = "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。";
+const DISPATCH_CLARIFICATION_REASONS = new Set([
+  DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady,
+  "partner_selection_required",
+  "work_dispatch_failed",
+]);
 
 function workbenchDecision(value: unknown, known: Set<string>, canCreate: boolean): WorkbenchDecision | null {
   if (value === null || Array.isArray(value) || typeof value !== "object") return null;
@@ -326,7 +331,7 @@ export class JoiCoordinator {
           if (normalizeCompletionSummary(attemptCompletionText) !== "") completionText = attemptCompletionText;
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
           if (dispatchFailureReason !== undefined) {
-            if (dispatchFailureReason !== DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady && dispatchFailureReason !== "work_dispatch_failed") {
+            if (!DISPATCH_CLARIFICATION_REASONS.has(dispatchFailureReason)) {
               await this.dependencies.store.requireClarification(inputId, "work_dispatch_failed", WORK_DISPATCH_FAILURE_PROMPT);
             }
             await this.dependencies.store.completeInput(inputId, turnId);
@@ -346,7 +351,8 @@ export class JoiCoordinator {
           if (pin.modelCapability === "custom-unverified-tools" && observedToolCalls.size === 0) {
             throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
           }
-          if (observedToolCalls.size > 0 && committedOutcomeTools.size === 0) {
+          const synthesisOutcomeCommitted = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_BLOCKED";
+          if (observedToolCalls.size > 0 && committedOutcomeTools.size === 0 || isGoalSynthesis && !synthesisOutcomeCommitted) {
             if (completionRepairAttempted) {
               throw new DomainError("joi_turn_outcome_uncommitted", "The reasoning Turn ended without a committed outcome.");
             }
@@ -370,7 +376,8 @@ export class JoiCoordinator {
                 ? "DIRECT_ANSWER"
                 : undefined
             : undefined;
-          if (finishedTurnIds.has(turnId) && inferredDirectOutcome !== undefined && normalizeCompletionSummary(completionText) === "") {
+          if ((finishedTurnIds.has(turnId) && inferredDirectOutcome !== undefined || isGoalSynthesis && synthesisOutcomeCommitted)
+            && normalizeCompletionSummary(completionText) === "") {
             if (completionRepairAttempted) {
               throw new DomainError("joi_turn_completion_empty", "The reasoning Turn ended without a visible final answer.");
             }
@@ -410,6 +417,12 @@ export class JoiCoordinator {
       }
       const completionSummary = normalizeCompletionSummary(completionText);
       if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
+      const synthesisOutcome = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_BLOCKED"
+        ? committedTurnOutcome
+        : undefined;
+      if (isGoalSynthesis && synthesisOutcome === undefined) {
+        throw new DomainError("joi_goal_synthesis_outcome_uncommitted", "Goal synthesis ended without a committed disposition.");
+      }
       const directOutcome = completionSummary !== "" && !isGoalSynthesis && input.goalInputId === undefined
         ? committedTurnOutcome === "DIRECT_ANSWER" || committedTurnOutcome === "TEAM_READY"
           ? committedTurnOutcome
@@ -418,16 +431,16 @@ export class JoiCoordinator {
             : undefined
         : undefined;
       const completion = await this.dependencies.store.completeInput(inputId, turnId, isGoalSynthesis ? {
-        completionSummary: completionSummary === ""
-          ? "相关工作已完成，结果已汇总到 Workbench 的 Agent 记录。"
-          : completionSummary,
-        outcome: "RESULT_SYNTHESIZED",
+        completionSummary,
+        outcome: synthesisOutcome ?? "RESULT_BLOCKED",
       } : directOutcome === undefined ? undefined : {
         completionSummary,
         outcome: directOutcome,
       });
       if (goalSynthesis !== null) {
+        const disposition = synthesisOutcome === "RESULT_SYNTHESIZED" ? "COMPLETED" as const : "BLOCKED" as const;
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.synthesis.completed", {
+          disposition,
           workbenchId,
           goalInputId: goalSynthesis.goalInputId,
           inputId,
@@ -439,6 +452,7 @@ export class JoiCoordinator {
           && "goalInputId" in completion && typeof completion.goalInputId === "string"
           && "resultRevision" in completion && typeof completion.resultRevision === "number") {
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.outcome.persisted", {
+            disposition,
             workbenchId,
             goalInputId: completion.goalInputId,
             resultRevision: completion.resultRevision,

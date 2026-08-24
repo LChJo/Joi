@@ -1,4 +1,4 @@
-export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "MAP_CLEARED";
+export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_BLOCKED" | "MAP_CLEARED";
 
 export type PrimaryReasoningEvent =
   | { type: "turn_started"; turnId: string }

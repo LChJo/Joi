@@ -46,6 +46,9 @@ function seed(database: DatabaseSync): void {
   database.prepare("INSERT INTO partner_instances VALUES ('inst_1', 'workbench_1', 'partner_1', 'IDLE')").run();
   database.prepare("INSERT INTO workbench_agent_sessions VALUES ('agent_1', 'workbench_1', 'partner_1', NULL)").run();
   database.prepare(`INSERT INTO joi_inbox_messages
+    (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+    VALUES ('input_goal', 'key_goal', 'original goal', 'CONSUMED', 'workbench_1', ?, ?)`).run(NOW, NOW);
+  database.prepare(`INSERT INTO joi_inbox_messages
     (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at, clarification_prompt, clarification_reason_code)
     VALUES ('input_c', 'key_c', 'question', 'CLARIFICATION_REQUIRED', 'workbench_1', ?, ?, 'which one?', 'question_required')`).run(NOW, NOW);
   database.prepare(`INSERT INTO workbench_change_requests VALUES

@@ -130,9 +130,10 @@ export class DigitalLifeApi {
       idempotencyKey: crypto.randomUUID(), method: "POST",
     });
   }
-  clarifyJoiMessage(inputId: string, resolution: { workbenchId?: string; text?: string }) {
+  clarifyJoiMessage(inputId: string, resolution: { partnerId?: string; workbenchId?: string; text?: string }) {
     return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/clarify`, {
       body: {
+        ...(resolution.partnerId === undefined ? {} : { partnerId: resolution.partnerId }),
         ...(resolution.workbenchId === undefined ? {} : { workbenchId: resolution.workbenchId }),
         ...(resolution.text === undefined ? {} : { text: resolution.text }),
       },
