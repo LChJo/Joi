@@ -33,9 +33,14 @@ export class SqliteWorkspaceLeaseManager {
     const owner = this.dependencies.owner ?? `joi:${input.workId}`;
     return this.dependencies.database.transaction((connection) => {
       connection.prepare("DELETE FROM workspace_leases WHERE expires_at <= ?").run(nowText);
-      const conflict = connection.prepare(`SELECT 1 FROM workspace_leases
-        WHERE workspace_ref = ? AND work_id <> ? AND (access_mode = 'WRITE' OR ? = 'WRITE') LIMIT 1`
-      ).get(input.workspaceRef, input.workId, input.accessMode);
+      const conflict = connection.prepare(`SELECT 1 FROM workspace_leases held
+        WHERE held.work_id <> ? AND (held.access_mode = 'WRITE' OR ? = 'WRITE')
+          AND (held.workspace_ref = ? OR EXISTS (
+            SELECT 1 FROM workbench_workspace_roots requested
+            JOIN workbench_workspace_roots occupied ON occupied.root_path = requested.root_path
+            WHERE requested.workspace_ref = ? AND occupied.workspace_ref = held.workspace_ref
+          ))
+        LIMIT 1`).get(input.workId, input.accessMode, input.workspaceRef, input.workspaceRef);
       if (conflict !== undefined) return null;
       const current = connection.prepare("SELECT generation FROM workspace_leases WHERE workspace_ref = ? AND work_id = ?")
         .get(input.workspaceRef, input.workId) as { generation?: unknown } | undefined;

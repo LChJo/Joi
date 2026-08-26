@@ -29,3 +29,9 @@ renderer 纯轮询（1.5s/2.5s），SSE 传输退役：删除 `/api/v1/stream` �
 - AC-10 串行边界由 task component 单槽位表达；AC-39 rerun 等价由「clarify/failTurn 置回 PENDING → 下 tick 重取」表达。
 - 新增 `src/main/application/actors/` 目录纳入分层边界检查；application 层覆盖率门槛（≥90%）适用于 actor/component 代码。
 - 旧 Wake/SSE 读取测试改写为事实表断言或 404 契约；契约测试 `actor-runtime-authority` 锁定 `new ActorTree(`/`actorTree.tick(`、无 `new JoiInputScheduler(`、无 `/api/v1/stream`。
+
+## 2026-08-25 补充：动作与投影收敛
+
+每轮工作台 actor 先从权威 Work/Run 事实修复缺失的用户动作，再由首页和 Agent 查询投影状态。首页只有存在具体 clarification/action 时才能显示 `NEEDS_ATTENTION`；孤立 WAITING 在修复窗口内仍是后台 RUNNING。常驻实例的 IDLE 只是引擎空闲事实，若其关联 run 正在 RUNNING/WAITING，Agent 卡必须以后者为准。
+
+“长 async 不 await”同样适用于 waiting-remote retry 与 orphan finalize：组件只登记 in-flight/settled，Promise 在后续 tick 收敛；进行孤儿收尾时暂停同 Agent 新 claim，但不能阻塞根 actor 遍历其他组件。

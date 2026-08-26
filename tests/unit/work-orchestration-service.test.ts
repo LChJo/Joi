@@ -278,6 +278,42 @@ describe("work orchestration outbox", () => {
     await expect(create({ item: { ...waitingItem, workbenchId: "workbench-2" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });
   });
 
+  it("reuses the dispatch committed for the same persisted user action after a crash", async () => {
+    const existing = {
+      actionId: "attention-1",
+      dispatchAttemptId: "attempt-existing",
+      outbox: {
+        availableAt: "2026-07-16T00:00:00.000Z",
+        kind: "partner.dispatch" as const,
+        outboxId: "outbox-existing",
+        payload: { actionId: "attention-1", dispatchAttemptId: "attempt-existing", workId: "work-1" },
+      },
+      partnerId: "partner-a",
+      partnerRevisionId: "revision-same",
+      registryRevision: 3,
+      workId: "work-1",
+    };
+    const loadForReassignment = vi.fn(async () => { throw new Error("must not rebuild an applied resume"); });
+    const reassign = vi.fn(async () => undefined);
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async () => { throw new Error("must not repin"); } },
+      policy: { evaluate: async () => ({ allowed: true }) },
+      reassignment: {
+        cancel: async () => true,
+        loadAttemptForAction: async (workId, actionId) => workId === "work-1" && actionId === "attention-1" ? existing : null,
+        loadForReassignment,
+        reassign,
+      },
+      repository: { commit: async () => undefined },
+    });
+
+    await expect(service.resume({ actionId: "attention-1", workbenchId: "workbench-1", turnId: "turn-retry", workId: "work-1" }))
+      .resolves.toEqual(existing);
+    expect(loadForReassignment).not.toHaveBeenCalled();
+    expect(reassign).not.toHaveBeenCalled();
+  });
+
   it("cancels work only through the repository guard", async () => {
     const canceled: string[] = [];
     const waitingItem: WorkItem = { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "WAITING", title: "待答", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };

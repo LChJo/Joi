@@ -39,6 +39,11 @@ function makeDatabase(): DatabaseSync {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE joi_user_action_requests (
+      action_id TEXT PRIMARY KEY,
+      input_id TEXT NOT NULL,
+      status TEXT NOT NULL
+    );
   `);
   return database;
 }

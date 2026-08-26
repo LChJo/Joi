@@ -155,6 +155,8 @@ describe("JoiInboxService.clarify", () => {
     const repository = new FakeInboxRepository();
     const service = serviceWith(repository);
     await expect(service.clarify({ inputId: "input-1" })).rejects.toMatchObject({ code: "joi_clarification_empty" });
+    await expect(service.clarify({ actionChoice: "RETRY", inputId: "input-1" })).rejects.toMatchObject({ code: "joi_clarification_invalid" });
+    await expect(service.clarify({ actionChoice: "RESUME", inputId: "input-1", text: "mixed" })).rejects.toMatchObject({ code: "joi_clarification_invalid" });
     await expect(service.clarify({ inputId: "input-1", text: "x".repeat(8_001) })).rejects.toMatchObject({ code: "joi_clarification_invalid" });
     await expect(service.clarify({ workbenchId: "a".repeat(161), inputId: "input-1" })).rejects.toMatchObject({ code: "joi_workbench_invalid" });
     await expect(service.clarify({ workbenchId: "workbench-1", inputId: "missing" })).rejects.toMatchObject({ code: "joi_clarification_unavailable" });

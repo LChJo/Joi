@@ -43,7 +43,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(43);
+      expect(upgraded.inspect().schemaVersion).toBe(45);
       const rows = upgraded.transaction((connection) => connection.prepare(`SELECT input_id, canceled_at, failed_at,
         failure_count, failure_reason_code FROM joi_inbox_messages ORDER BY input_id`).all());
       expect(rows).toEqual([
@@ -56,7 +56,7 @@ describe("JOI-01 non-destructive migration", () => {
     }
   });
 
-  it("repairs legacy shared workspace roots before enforcing one Workbench owner", async () => {
+  it("preserves the historical 041 repair and removes its ownership index in 045", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-ownership-upgrade-"));
     const oldMigrations = path.join(root, "old-migrations");
     await copyMigrationsThrough(oldMigrations, 40);
@@ -95,7 +95,15 @@ describe("JOI-01 non-destructive migration", () => {
       });
       expect(upgraded.transaction((connection) => connection.prepare(
         "SELECT 1 FROM pragma_index_list('workbench_workspace_roots') WHERE name = 'idx_workbench_workspace_roots_root_path'",
+      ).get())).toBeUndefined();
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT 1 FROM pragma_index_list('workbench_workspace_roots') WHERE name = 'idx_workbench_workspace_roots_path'",
       ).get())).toEqual({ 1: 1 });
+      upgraded.transaction((connection) => connection.prepare(`INSERT INTO workbench_workspace_roots
+        (workspace_ref, root_path, created_at, updated_at) VALUES (?, '/legacy/shared', ?, ?)`)
+        .run(`workbench_workspace:${second.workbenchId}`, now, now));
+      expect(upgraded.transaction((connection) => connection.prepare(`SELECT COUNT(*) AS count
+        FROM workbench_workspace_roots WHERE root_path = '/legacy/shared'`).get())).toEqual({ count: 2 });
     } finally {
       upgraded.close();
       await rm(root, { force: true, recursive: true });
@@ -369,7 +377,7 @@ describe("JOI-01 non-destructive migration", () => {
           WHERE workbench_id = 'workbench-unknown'`).get() as { active_work_json: string },
         work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-unknown'").get(),
       }));
-      expect(upgraded.inspect().schemaVersion).toBe(43);
+      expect(upgraded.inspect().schemaVersion).toBe(45);
       expect(facts.work).toEqual({ status: "FAILED" });
       expect(JSON.parse(facts.projection.active_work_json)).toEqual([]);
       expect(facts.memberCount).toBe(0);
@@ -392,7 +400,7 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(43);
+      expect(database.inspect().schemaVersion).toBe(45);
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_goal_outcomes)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "disposition", notnull: 1 })]));
       expect(database.transaction((connection) => connection.prepare(
@@ -474,7 +482,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(43);
+      expect(upgraded.inspect().schemaVersion).toBe(45);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         workbenches: (connection.prepare("SELECT COUNT(*) AS count FROM workbenches").get() as { count: number }).count,

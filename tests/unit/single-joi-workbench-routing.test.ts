@@ -16,6 +16,45 @@ const finance = createWorkbench({
 });
 
 describe("single-joi-workbench-scoped-thread-isolation", () => {
+  it("resumes a resolved partner action deterministically without asking the model to rediscover the Work", async () => {
+    const resumed: unknown[] = [];
+    const completedActions: unknown[] = [];
+    let reasoningStarts = 0;
+    let sourceSelections = 0;
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        startTurn: async () => { reasoningStarts += 1; },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => { sourceSelections += 1; return { modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }; } },
+      store: {
+        completeInput: async () => undefined,
+        completeResolvedAction: async (input) => { completedActions.push(input); },
+        createTurn: async () => undefined,
+        loadInput: async () => ({
+          body: "原始要求\n\n[用户补充] 使用现有配置",
+          inputId: "input-resume",
+          resolvedAction: { actionId: "attention-run-1", decision: "RESUME", workId: "work-1" },
+          status: "PENDING",
+          workbenchId: "research",
+        }),
+        requireClarification: async () => undefined,
+      },
+      work: { resume: async (input) => { resumed.push(input); return {} as never; } },
+    });
+
+    await coordinator.handle("input-resume");
+
+    expect(reasoningStarts).toBe(0);
+    expect(sourceSelections).toBe(0);
+    expect(resumed).toEqual([expect.objectContaining({ workbenchId: "research", workId: "work-1" })]);
+    expect(completedActions).toEqual([expect.objectContaining({ actionId: "attention-run-1", inputId: "input-resume" })]);
+  });
+
   it("persists a bounded safe completion for a no-tool direct answer", async () => {
     const completions: unknown[] = [];
     const coordinator = new JoiCoordinator({

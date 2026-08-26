@@ -1,6 +1,8 @@
 export interface JoiTaskPendingInput {
   createdAt: string;
   inputId: string;
+  /** Persisted user actions are deterministic and do not require a model source. */
+  requiresModelSource?: boolean;
 }
 
 export interface JoiTaskStaleTurn {

@@ -37,6 +37,12 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-24 的搭档长任务超时收敛以 AC-52 为门禁：本机 Pi 搭档不设置整次 Work/run 总时限；消息或工具事件持续产生时可一直运行，连续 20 分钟无任何进度才 abort 并返回 `partner_run_idle_timed_out`。每个工具调用独立限制为 15 分钟且不能被工具参数放宽，超时形成 `partner_tool_timed_out`；所有 timer、订阅与 AbortSignal 在终态后释放，既有副作用重放禁令保持不变。
 
+2026-08-25 的等待动作与 Actor 状态收敛以 AC-53 为门禁：搭档进入 `WAITING_INPUT` 时必须同时持久化绑定精确 input/Work/run 的用户动作；问题回答或恢复决策原子解析为 `RESOLVED`，无需模型源即可用同一稳定 action id 恢复原 Work，崩溃重试不得生成第二次派发。无动作的孤立 WAITING 由工作台 actor 修复为一键“继续原工作”卡，在修复窗口内不得谎报“需要你”；Agent 展示状态同时读取权威 run，不能被 resident instance 的 IDLE 覆盖。所有远端重试和孤儿收尾跨 tick 收敛，根 tick 不等待长 I/O。
+
+2026-08-25 的共享工作目录收敛以 AC-54 为门禁：工作台 workspace binding 仍是各自 cwd 权威，但不得对物理 root 建立跨工作台排他所有权；多个工作台绑定同一目录必须成功，绝对路径仍不得进入 DTO/诊断。不同 workspace ref 指向同一 root 时，READ/WRITE lease 必须落入同一冲突域，保持多读并发、写与其他活动访问互斥。
+
+2026-08-25 的搭档模型配置与连通性收敛以 AC-55 为门禁：本机 Pi 搭档切换模型源时必须同步显示该来源的 active model，更新接口以显式 `null` 清除旧 pin，保存成功后读取最新 immutable revision；应用层在追加 revision 前拒绝非 READY 来源或来源/模型不匹配。搭档卡可发起固定极小、无工具、无 Work/run、无工作区副作用的模型验证，并仅展示持久化的安全状态、来源/模型、时间和稳定原因码；A2A 与本地 CLI 不提供伪连通测试。
+
 2026-08-24 的部分失败目标综合收敛继续以 AC-43 为门禁：综合 Turn 必须显式提交 `RESULT_SYNTHESIZED` 或 `RESULT_BLOCKED`；成功至少基于一个已验收完成 Work，并由 Joi 语义判断现有证据足以回答原目标。当前 COMPLETED outcome 的权威性高于失败 Work 计数，首页仍标记完成并把异常降级为可点击搭档入口；关键证据缺失才写 BLOCKED，存量 outcome 无损回填为 COMPLETED。
 
 ## 1. 当前状态

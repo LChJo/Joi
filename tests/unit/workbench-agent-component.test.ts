@@ -3,7 +3,6 @@ import { WorkbenchAgentComponent } from "../../src/main/application/actors/compo
 import type { ActorTickContext } from "../../src/main/application/ports/actor-runtime";
 import type {
   WorkbenchPartnerKey,
-  WorkbenchPendingConfirmation,
   WorkbenchUnsynthesizedResult,
 } from "../../src/main/application/ports/workbench-agent-scan";
 import type {
@@ -20,7 +19,6 @@ function ctxAt(offsetMillis: number): ActorTickContext {
 }
 
 interface HarnessState {
-  confirmations: WorkbenchPendingConfirmation[];
   keys: WorkbenchPartnerKey[];
   unsynthesized: WorkbenchUnsynthesizedResult[];
 }
@@ -33,6 +31,7 @@ function makeHarness(state: HarnessState, options?: {
   const enqueued: { eventId: string; resultId: string }[] = [];
   const recorded: { partnerId: string; workId?: string | undefined }[] = [];
   const sweeps: number[] = [];
+  const attentionRepairs: string[] = [];
   const dispatch = {
     claims: {
       listClaimable: async () => [],
@@ -53,6 +52,7 @@ function makeHarness(state: HarnessState, options?: {
     owner: "actor-test",
   };
   const component = new WorkbenchAgentComponent({
+    attention: { reconcile: async (input) => { attentionRepairs.push(input.reasonCode); return 0; } },
     workbenchId: "workbench_1",
     ...(options?.withDispatch === true ? { dispatch } : {}),
     instances: { sweepIdleFor: async (workbenchId: string, now: Date) => { sweeps.push(now.getTime()); return { disposed: 0, evicted: 0 }; } },
@@ -62,7 +62,6 @@ function makeHarness(state: HarnessState, options?: {
     } },
     scan: {
       listPartnerKeys: async () => [...state.keys],
-      listPendingConfirmations: async () => [...state.confirmations],
       listUnsynthesizedResults: async () => [...state.unsynthesized],
     },
     synthesis: {
@@ -73,7 +72,7 @@ function makeHarness(state: HarnessState, options?: {
     },
     ...(options?.sweepEveryMillis === undefined ? {} : { sweepEveryMillis: options.sweepEveryMillis }),
   });
-  return { component, enqueued, recorded, sweeps };
+  return { attentionRepairs, component, enqueued, recorded, sweeps };
 }
 
 const RESULT: WorkbenchUnsynthesizedResult = {
@@ -90,7 +89,7 @@ const RESULT: WorkbenchUnsynthesizedResult = {
 
 describe("WorkbenchAgentComponent", () => {
   it("folds unsynthesized results into synthesis and memory exactly once", async () => {
-    const state: HarnessState = { confirmations: [], keys: [], unsynthesized: [RESULT] };
+    const state: HarnessState = { keys: [], unsynthesized: [RESULT] };
     const harness = makeHarness(state);
     await harness.component.update(ctxAt(0));
     expect(harness.enqueued).toEqual([{ eventId: RESULT.eventId, resultId: RESULT.resultId }]);
@@ -104,7 +103,7 @@ describe("WorkbenchAgentComponent", () => {
   });
 
   it("reconciles leaf agent actors from partner keys", async () => {
-    const state: HarnessState = { confirmations: [], keys: [{ partnerId: "partner_1" }], unsynthesized: [] };
+    const state: HarnessState = { keys: [{ partnerId: "partner_1" }], unsynthesized: [] };
     const harness = makeHarness(state);
     await harness.component.update(ctxAt(0));
     expect(harness.component.agentActors.map((actor) => actor.partnerId)).toEqual(["partner_1"]);
@@ -114,15 +113,11 @@ describe("WorkbenchAgentComponent", () => {
     expect(harness.component.agentActors.map((actor) => actor.partnerId)).toEqual(["partner_2"]);
   });
 
-  it("aggregates pending confirmations and throttles the idle sweep", async () => {
-    const state: HarnessState = {
-      confirmations: [{ kind: "clarification", reasonCode: "question_required", referenceId: "input_9" }],
-      keys: [],
-      unsynthesized: [],
-    };
+  it("reconciles durable attention requests and throttles the idle sweep", async () => {
+    const state: HarnessState = { keys: [], unsynthesized: [] };
     const harness = makeHarness(state);
     await harness.component.update(ctxAt(0));
-    expect(harness.component.pendingConfirmations).toEqual(state.confirmations);
+    expect(harness.attentionRepairs).toEqual(["partner_waiting_recovery_required"]);
     expect(harness.sweeps).toHaveLength(1);
 
     await harness.component.update(ctxAt(5_000));
@@ -134,7 +129,6 @@ describe("WorkbenchAgentComponent", () => {
 
   it("supports dispatch-enabled agents, custom sweep intervals, and best-effort memory", async () => {
     const state: HarnessState = {
-      confirmations: [],
       keys: [{ partnerId: "partner_1" }],
       unsynthesized: [RESULT],
     };

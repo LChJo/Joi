@@ -162,6 +162,7 @@ describe("agent dispatch crash recovery", () => {
       const component = makeComponent(database, partner.partnerId, spy);
 
       await component.update(ctxAt(0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
 
       expect(spy.calls).toHaveLength(1);
       expect(database.transaction((connection) => connection.prepare(

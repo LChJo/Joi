@@ -96,6 +96,7 @@ export const JOI_WRITE_ROUTES: RouteDefinition[] = [
     handle: async (ctx, match) => {
       const body = await readJson(ctx.request);
       const clarified = await joiInboxService(ctx.dependencies).clarify({
+        ...(typeof body.actionChoice === "string" ? { actionChoice: body.actionChoice } : {}),
         ...(typeof body.partnerId === "string" ? { partnerId: body.partnerId } : {}),
         ...(typeof body.workbenchId === "string" ? { workbenchId: body.workbenchId } : {}),
         inputId: decodeURIComponent((match as RegExpExecArray)[1] ?? ""),

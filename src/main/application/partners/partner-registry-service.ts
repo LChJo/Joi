@@ -1,4 +1,4 @@
-import type { PartnerConfigurationDto, PartnerDto } from "../../../shared/joi.js";
+import type { ModelSourceDto, PartnerConfigurationDto, PartnerDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import {
   createPartnerRevision,
@@ -32,12 +32,19 @@ interface PartnerFields {
   workspaceRef?: string;
 }
 
+interface PartnerUpdateFields extends Omit<PartnerFields, "engineModelId" | "modelIdOverride" | "modelSourceId"> {
+  engineModelId?: string | null;
+  modelIdOverride?: string | null;
+  modelSourceId?: string | null;
+}
+
 export class PartnerRegistryService {
   constructor(private readonly dependencies: {
     clock: Clock;
     events?: DurableUiEventEmitter;
     ids: IdGenerator;
     knowledge?: Pick<PartnerKnowledgeService, "count" | "duplicateTo">;
+    modelSources?: { list(): Promise<ModelSourceDto[]> };
     prompts?: PartnerPromptStore;
     repository: PartnerRegistryRepository;
     skills?: Pick<PartnerSkillCatalog, "listForEngine"> & Partial<Pick<PartnerSkillCatalog, "validateRefs">>;
@@ -46,6 +53,7 @@ export class PartnerRegistryService {
   async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind }): Promise<PartnerDto> {
     assertNoWorkspace(input);
     this.#assertLocalSkills(input.kind, input.engine ?? "pi-core", input.skills, input.tools);
+    await this.#assertModelConfiguration(input.kind, input.engine ?? "pi-core", input.modelSourceId, input.modelIdOverride);
     const partnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt);
@@ -62,23 +70,25 @@ export class PartnerRegistryService {
     return this.#public(revision);
   }
 
-  async update(partnerId: string, input: PartnerFields): Promise<PartnerDto> {
+  async update(partnerId: string, input: PartnerUpdateFields): Promise<PartnerDto> {
     assertNoWorkspace(input);
     const current = await this.#active(partnerId);
     this.#assertLocalSkills(current.kind, input.engine ?? current.engine, input.skills, input.tools);
+    const engine = input.engine ?? current.engine;
+    const engineModelId = explicitValue(input.engineModelId, current.engineModelId);
+    const modelIdOverride = explicitValue(input.modelIdOverride, current.modelIdOverride);
+    const modelSourceId = explicitValue(input.modelSourceId, current.modelSourceId);
+    await this.#assertModelConfiguration(current.kind, engine, modelSourceId, modelIdOverride);
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt) ?? current.promptRef;
     const description = input.description ?? current.description;
-    const engineModelId = input.engineModelId ?? current.engineModelId;
-    const modelIdOverride = input.modelIdOverride ?? current.modelIdOverride;
-    const modelSourceId = input.modelSourceId ?? current.modelSourceId;
     const validated = createPartnerRevision({
       capabilities: input.capabilities,
       createdAt,
       createdBy: current.createdBy,
       ...(description === undefined ? {} : { description }),
       displayName: input.displayName,
-      engine: input.engine ?? current.engine,
+      engine,
       ...(engineModelId === undefined ? {} : { engineModelId }),
       kind: current.kind,
       ...(modelIdOverride === undefined ? {} : { modelIdOverride }),
@@ -256,6 +266,19 @@ export class PartnerRegistryService {
     this.#validateLocalSkills(engine, skills, tools);
   }
 
+  async #assertModelConfiguration(kind: PartnerKind, engine: PartnerEngine, sourceId?: string, modelId?: string): Promise<void> {
+    if (kind !== "local-pi" || engine !== "pi-core" || this.dependencies.modelSources === undefined) return;
+    if (sourceId === undefined && modelId === undefined) return;
+    const ready = (await this.dependencies.modelSources.list())
+      .filter((source) => source.status === "READY")
+      .sort((left, right) => left.order - right.order);
+    const source = sourceId === undefined ? ready[0] : ready.find((candidate) => candidate.sourceId === sourceId);
+    if (source === undefined) throw new DomainError("partner_model_source_not_ready", "The selected partner model source is not ready.");
+    if (modelId !== undefined && modelId !== source.activeModel.id) {
+      throw new DomainError("partner_model_override_not_ready", "The selected model is not active on the partner model source.");
+    }
+  }
+
   #validateLocalSkills(engine: PartnerEngine, skills: string[], tools: string[]): void {
     if (this.dependencies.skills === undefined) return;
     if (this.dependencies.skills.validateRefs !== undefined) this.dependencies.skills.validateRefs(engine, skills);
@@ -346,4 +369,9 @@ function assertNoWorkspace(input: { cwd?: unknown; workspaceRef?: unknown }): vo
   if (input.cwd !== undefined || input.workspaceRef !== undefined) {
     throw new DomainError("partner_workspace_forbidden", "Partner templates cannot own a workspace.");
   }
+}
+
+function explicitValue(value: string | null | undefined, fallback: string | undefined): string | undefined {
+  if (value === null) return undefined;
+  return value ?? fallback;
 }

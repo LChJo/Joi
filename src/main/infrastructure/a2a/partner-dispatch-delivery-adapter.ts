@@ -582,6 +582,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         row.input_id,
         "question_required",
         `搭档『${row.partner_display_name}』在执行工作『${row.title}』时暂停并提问：\n${output.pendingQuestion}`,
+        {
+          actionId: `joi_action:question:${runId}`,
+          kind: "PARTNER_QUESTION",
+          runId,
+          workId: row.work_id,
+        },
       );
     }
     return { isAuthoritative: recorded.isAuthoritative, resultId: recorded.result.resultId };

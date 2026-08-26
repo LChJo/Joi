@@ -5,6 +5,7 @@ import path from "node:path";
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
+import { SqliteWorkbenchAttentionReconciler } from "../../src/main/infrastructure/persistence/sqlite-workbench-attention-reconciler.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -181,9 +182,16 @@ describe("sqlite joi inbox cancel", () => {
           VALUES (?, 1, '初步分析已汇总。', ?, ?)`).run(accepted.inputId, now, now);
       });
 
-      // The feed shows the zombie as "needs you" and offers cancel; the cancel must now succeed.
+      await new SqliteWorkbenchAttentionReconciler(fixture.database).reconcile({
+        prompt: "点击继续原工作。",
+        reasonCode: "partner_waiting_recovery_required",
+        workbenchId: workbench.workbenchId,
+      });
+      // A waiting goal must never claim to need the user without explaining the action.
       const feedBefore = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-21T04:00:00.000Z"));
       expect(feedBefore.goals[0]).toMatchObject({ goalId: accepted.inputId, status: "NEEDS_ATTENTION" });
+      expect(feedBefore.goals[0]?.clarification?.reasonCode).toBe("partner_waiting_recovery_required");
+      expect(typeof feedBefore.goals[0]?.clarification?.prompt).toBe("string");
 
       const canceled = await inbox.cancel({ inputId: accepted.inputId });
       expect(canceled).toMatchObject({ canceled: true, status: "CONSUMED" });

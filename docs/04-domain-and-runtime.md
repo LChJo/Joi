@@ -4,11 +4,13 @@
 
 唯一全局 joi 负责决策，工作台负责上下文，Partner 负责执行，Work 负责生命周期。工作台不是 Agent，也不是 scheduler。
 
-`Workbench` aggregate 仅直接拥有 `WorkbenchProfile`、`WorkbenchProjectContext`、`WorkbenchMemoryNamespace` 与 `WorkbenchTaskContext`。工作区 binding、budget、schedule、rhythm、partner policy、Pi thread 和 work execution 都是按 `workbenchId` 关联的独立事实。工作台是 cwd 的唯一权威，但绝对路径只存在于基础设施私表。任何 work item 必须恰好绑定一个 `workbenchId`；跨工作台检索和操作默认拒绝。
+`Workbench` aggregate 仅直接拥有 `WorkbenchProfile`、`WorkbenchProjectContext`、`WorkbenchMemoryNamespace` 与 `WorkbenchTaskContext`。工作区 binding、budget、schedule、rhythm、partner policy、Pi thread 和 work execution 都是按 `workbenchId` 关联的独立事实。每个工作台的 binding 是其 cwd 权威，但物理 root 可以被多个工作台共享；绝对路径只存在于基础设施私表。任何 work item 必须恰好绑定一个 `workbenchId`；跨工作台检索和操作默认拒绝。
 
 输入先写全局 inbox，再由 Pi 选择 `select | create | suggest_merge | suggest_archive | clarify`。非法结构化决策只修复一次；再次失败进入澄清或安全串行降级。merge/archive 只生成建议，必须经用户确认。
 
 Partner 配置（revision）是无 cwd 的全局模板；运行中的 `PartnerInstance` 必须绑定一个 `workbenchId`，分为 `EPHEMERAL`（单次派发后销毁、消息清除）与 `RESIDENT`（会话消息持久化、跨重启恢复、目标完成后由 joi 销毁）。实例既不跨 Partner，也不跨工作台；忙碌实例不可复用或销毁。工作记忆按 `(workbenchId, partnerId)` 隔离，只向 joi 提供不含正文的选择依据；管理 API 不提供记忆正文。
+
+本机 Pi Partner revision 可固定 READY model source 及其 active model；保存前必须校验二者匹配，显式空值表示清除 pin 并恢复全局顺序选择。搭档页的模型测试只调用 Model Source 的固定极小验证路径，不创建 Work、Partner run、工具或工作区副作用；公开投影只包含安全状态、稳定原因码、来源/模型标识和验证时间。
 
 ### 0.1 目标地图（harness，ADR 0010）
 

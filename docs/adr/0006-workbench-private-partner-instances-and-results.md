@@ -10,7 +10,7 @@
 
 ## 决策
 
-Partner revision 只表达全局能力模板：引擎、模型、提示词、技能、工具和知识库。新 revision 不读写 cwd；旧 `partner_revisions.workspace_ref` 仅留作审计。工作台是 cwd 唯一权威，每个 ACTIVE 工作台具有 opaque workspace binding，实际根路径只在基础设施私表中。创建受管目录通过稳定 outbox 副作用执行，状态为 `PROVISIONING → READY | FAILED`。
+Partner revision 只表达全局能力模板：引擎、模型、提示词、技能、工具和知识库。新 revision 不读写 cwd；旧 `partner_revisions.workspace_ref` 仅留作审计。每个 ACTIVE 工作台具有自己的 opaque workspace binding，作为该工作台的 cwd 权威；实际根路径只在基础设施私表中。创建受管目录通过稳定 outbox 副作用执行，状态为 `PROVISIONING → READY | FAILED`。
 
 每个 `PartnerInstance` 必须绑定 `workbenchId`。确保、枚举、派发、续话和销毁都校验工作台；跨工作台使用统一返回 `partner_instance_workbench_mismatch`。默认派发创建临时实例，常驻实例仅供同一工作台续话。工作记忆按 `(workbenchId, partnerId)` 隔离。
 
@@ -25,3 +25,9 @@ Work 权限为 `NONE | READ | WRITE`。`NONE` 不申请工作区 lease，可派�
 Migration 027 新增 workspace binding/root、task projection、context snapshot、工作台范围内 memory 和 WorkResult 表，为实例增加 `workbench_id`，并给所有 ACTIVE 工作台排队创建受管目录。升级时旧非终态 Work、dispatch、run 和实例统一失效；旧远端 RUNNING run 通过稳定 cancellation outbox 尝试取消。历史 Partner cwd 不回填。
 
 管理面新增工作台上下文中心和安全工作区操作。Partner 编辑页、创建工具和 API 删除 cwd；继续提交 `cwd/workspaceRef` 明确返回 `partner_workspace_forbidden`。工作记忆、persona 和结果正文不再由管理 UI/API 返回。
+
+## 2026-08-25 补充：物理目录可共享
+
+工作台隔离的是 persona、thread、memory、Work 与 opaque workspace ref，不拥有物理目录的排他权。Migration 045 移除 migration 041 的 `root_path` 唯一索引；多个工作台可以显式绑定同一 root，且 API/DTO 仍不返回绝对路径。
+
+共享目录不等于放弃执行协调。Workspace lease 在判断 READ/WRITE 冲突时，通过私有 root 映射把指向同一物理目录的不同 workspace ref 视为一个冲突域：READ 可并发，任何 WRITE 与其他活动 lease 互斥。工作台之间的结果、会话和上下文访问控制保持不变。

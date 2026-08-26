@@ -20,6 +20,8 @@ function required(row: Row, key: string): string {
 
 function mapStatus(row: Row): WorkbenchAgentStatusDto {
   if (row.backing_kind === "LOCAL_INSTANCE") {
+    if (row.execution_status === "RUNNING") return "RUNNING";
+    if (row.execution_status === "WAITING_INPUT" || row.execution_status === "WAITING_AUTH") return "WAITING";
     if (row.runtime_status === "BUSY") return "RUNNING";
     if (row.runtime_status === "IDLE") return "IDLE";
     const reason = typeof row.disposal_reason === "string" ? row.disposal_reason : "";
@@ -70,7 +72,21 @@ function decodeCursor(cursor: string | undefined): number {
 const CARD_SELECT = `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_kind, s.backing_id,
   s.session_policy, s.created_at, r.display_name AS partner_name,
   i.status AS runtime_status, i.engine, i.cli_protocol, i.last_used_at, i.disposal_reason,
-  pr.updated_at AS run_updated_at
+  pr.updated_at AS run_updated_at,
+  CASE
+    WHEN s.backing_kind = 'LOCAL_INSTANCE' AND EXISTS (
+      SELECT 1 FROM partner_runs lr JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
+      WHERE la.instance_id = s.backing_id AND lr.status = 'RUNNING'
+    ) THEN 'RUNNING'
+    WHEN s.backing_kind = 'LOCAL_INSTANCE' AND EXISTS (
+      SELECT 1 FROM partner_runs lr JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
+      WHERE la.instance_id = s.backing_id AND lr.status IN ('WAITING_INPUT', 'WAITING_AUTH')
+    ) THEN 'WAITING_INPUT'
+    ELSE NULL
+  END AS execution_status,
+  (SELECT MAX(lr.updated_at) FROM partner_runs lr
+    JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
+    WHERE s.backing_kind = 'LOCAL_INSTANCE' AND la.instance_id = s.backing_id) AS execution_updated_at
   FROM workbench_agent_sessions s
   JOIN partner_revisions r ON r.partner_revision_id = s.partner_revision_id
   LEFT JOIN partner_instances i ON s.backing_kind = 'LOCAL_INSTANCE' AND i.instance_id = s.backing_id
@@ -93,7 +109,8 @@ function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, 
   return rows.map((row) => ({
     ...row,
     last_activity_at: typeof row.last_used_at === "string" ? row.last_used_at
-      : typeof row.run_updated_at === "string" ? row.run_updated_at : row.created_at,
+      : typeof row.execution_updated_at === "string" ? row.execution_updated_at
+        : typeof row.run_updated_at === "string" ? row.run_updated_at : row.created_at,
   }));
 }
 

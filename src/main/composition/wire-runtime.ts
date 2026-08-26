@@ -12,6 +12,7 @@ import { JoiHarnessComponent } from "../application/actors/components/joi-harnes
 import { JoiRhythmComponent } from "../application/actors/components/joi-rhythm-component.js";
 import { WorkbenchAgentComponent } from "../application/actors/components/workbench-agent-component.js";
 import { SqliteJoiTaskReader } from "../infrastructure/persistence/sqlite-joi-task-reader.js";
+import { SqliteWorkbenchAttentionReconciler } from "../infrastructure/persistence/sqlite-workbench-attention-reconciler.js";
 import { A2aGatewayService } from "../application/a2a/a2a-gateway-service.js";
 import { AgentOnboardingService } from "../application/agents/agent-onboarding-service.js";
 import { DelegationService } from "../application/agents/delegation-service.js";
@@ -168,6 +169,7 @@ export function wireRuntime(input: {
       ],
       createChild: (workbenchId) => {
         const agentComponent = new WorkbenchAgentComponent({
+          attention: new SqliteWorkbenchAttentionReconciler(database),
           workbenchId,
           dispatch: {
             claims: persistence.dispatchClaims,

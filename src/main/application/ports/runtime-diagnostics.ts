@@ -75,6 +75,10 @@ export interface RuntimeDiagnosticEventMap {
     eventId: string;
     workId: string;
   };
+  "joi.workbench.attention_repaired": {
+    repaired: number;
+    workbenchId: string;
+  };
   "joi.agent.run_started": {
     workbenchId: string;
     dispatchAttemptId: string;
@@ -100,6 +104,13 @@ export interface RuntimeDiagnosticEventMap {
     partnerId: string;
     runId: string;
   };
+  "joi.partner.orphan_finalize_failed": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    errorCode: string;
+    partnerId: string;
+    runId: string;
+  };
   "joi.input.waiting_clarification": {
     inputId: string;
     reasonCode: string;
@@ -118,10 +129,17 @@ export interface RuntimeDiagnosticEventMap {
   "joi.turn.started": {
     workbenchId: string;
     inputId: string;
-    modelRevisionId: string;
-    sourceId: string;
-    sourceRevisionId: string;
+    modelRevisionId?: string;
+    sourceId?: string;
+    sourceRevisionId?: string;
     turnId: string;
+  };
+  "joi.action.applied": {
+    actionId: string;
+    inputId: string;
+    turnId: string;
+    workbenchId: string;
+    workId: string;
   };
   "joi.tool.started": {
     workbenchId: string;

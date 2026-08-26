@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
-import type { WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import type { WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const readySource: ModelSourceDto = {
   accessMode: "api",
@@ -695,17 +695,21 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
     const statuses = ["ARRANGING", "ARRANGED", "RUNNING", "NEEDS_ATTENTION", "FINALIZING", "COMPLETED", "FAILED", "CANCELED"] as const;
     vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
-      goals: statuses.map((status, index) => ({
-        agentCount: index,
-        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
-        canDelete: status === "COMPLETED",
-        goalId: `goal-${status}`,
-        ...(status === "FAILED" ? { completionSummary: "有一项执行未完成" } : {}),
-        status,
-        title: `目标 ${status}`,
-        updatedAt: workbench.updatedAt,
-        work: { active: status === "RUNNING" ? 1 : 0, completed: status === "COMPLETED" ? 1 : 0, failed: status === "FAILED" ? 1 : 0, total: 1 },
-      })),
+      goals: statuses.map((status, index): JoiGoalCardDto => {
+        const base = {
+          agentCount: index,
+          workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+          canDelete: status === "COMPLETED",
+          goalId: `goal-${status}`,
+          ...(status === "FAILED" ? { completionSummary: "有一项执行未完成" } : {}),
+          title: `目标 ${status}`,
+          updatedAt: workbench.updatedAt,
+          work: { active: status === "RUNNING" ? 1 : 0, completed: status === "COMPLETED" ? 1 : 0, failed: status === "FAILED" ? 1 : 0, total: 1 },
+        };
+        return status === "NEEDS_ATTENTION"
+          ? { ...base, clarification: { reasonCode: "question_required" }, status }
+          : { ...base, status };
+      }),
       thinking: [
         { agentCount: 6, expiresAt: "2099-01-01T00:00:00.000Z", goalId: "goal-COMPLETED", phase: "settled", stage: "FINALIZING", startedAt: workbench.updatedAt, turnId: "settled-visible", work: { active: 0, completed: 1, failed: 0, total: 1 } },
         { agentCount: 0, expiresAt: "2000-01-01T00:00:00.000Z", goalId: "goal-CANCELED", phase: "settled", stage: "FINALIZING", startedAt: workbench.updatedAt, turnId: "settled-expired", work: { active: 0, completed: 0, failed: 0, total: 0 } },
@@ -1160,6 +1164,52 @@ describe("joi home single entry", () => {
 
     expect(clarify).toHaveBeenCalledWith("partner-choice", { partnerId: "partner-ready" });
     expect(screen.queryByRole("button", { name: /待修复搭档/u })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
+  it("offers one-click recovery for a waiting Work whose original question linkage was lost", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationPrompt: "检测到一项等待中的原工作。",
+      clarificationReasonCode: "partner_waiting_recovery_required",
+      inputId: "waiting-recovery",
+      status: "CLARIFICATION_REQUIRED",
+      workbenchId: "workbench-recovery",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "waiting-recovery", status: "PENDING",
+    });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "继续原工作" }));
+
+    expect(clarify).toHaveBeenCalledWith("waiting-recovery", { actionChoice: "RESUME" });
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
+  it("shows authorization repair as an explicit one-click recovery instead of a blank input", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationReasonCode: "partner_auth_required",
+      inputId: "waiting-auth",
+      status: "CLARIFICATION_REQUIRED",
+      workbenchId: "workbench-auth",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "waiting-auth", status: "PENDING",
+    });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText(/需要重新授权/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续原工作" }));
+
+    expect(clarify).toHaveBeenCalledWith("waiting-auth", { actionChoice: "RESUME" });
     expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
   });
 

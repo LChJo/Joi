@@ -32,9 +32,9 @@ describe("partner api client", () => {
     expect(sentBody(calls, 0)).toMatchObject({ description: "工程搭档", kind: "local-pi" });
 
     fetchMock.mockResolvedValueOnce(jsonResponse(created));
-    await api.updatePartner("partner-1", { capabilities: [], displayName: "Coder", modelIdOverride: "kimi-k2.5", skills: [], tools: [] });
+    await api.updatePartner("partner-1", { capabilities: [], displayName: "Coder", modelIdOverride: null, modelSourceId: null, skills: [], tools: [] });
     expect(sentUrl(calls, 1)).toContain("/api/v1/partners/partner-1");
-    expect(sentBody(calls, 1)).toMatchObject({ modelIdOverride: "kimi-k2.5" });
+    expect(sentBody(calls, 1)).toMatchObject({ modelIdOverride: null, modelSourceId: null });
 
     fetchMock.mockResolvedValueOnce(jsonResponse(created));
     await api.setPartnerEnabled("partner-1", false);
@@ -58,6 +58,14 @@ describe("partner api client", () => {
     fetchMock.mockResolvedValueOnce({ ok: true, status: 204 });
     expect(await api.deleteKnowledgeDoc("partner-1", "doc-1")).toBeUndefined();
     expect(calls[6]?.[1]).toMatchObject({ method: "DELETE" });
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({
+      modelId: "gpt-5.6-sol-sub", partnerId: "partner-1", sourceDisplayName: "gpt-sub", sourceId: "source-ready",
+      status: "READY", testedAt: "2026-08-25T08:00:00.000Z",
+    }));
+    await api.testPartnerModel("partner-1");
+    expect(sentUrl(calls, 7)).toContain("/api/v1/partners/partner-1/test-model");
+    expect(calls[7]?.[1]).toMatchObject({ method: "POST" });
 
     vi.unstubAllGlobals();
   });

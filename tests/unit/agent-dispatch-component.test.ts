@@ -25,6 +25,7 @@ interface HarnessOptions {
   prepareResult?: PreparedDispatch | "skipped_terminal" | Error;
   runError?: Error;
   runOutputs?: DispatchRunOutput[];
+  runOverride?: () => Promise<DispatchRunOutput>;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -61,6 +62,7 @@ function makeHarness(options: HarnessOptions = {}) {
         calls.push("run");
         runCount += 1;
         if (options.runError !== undefined) throw options.runError;
+        if (options.runOverride !== undefined) return options.runOverride();
         return (options.runOutputs ?? [TERMINAL])[Math.min(runCount - 1, (options.runOutputs ?? [TERMINAL]).length - 1)] ?? TERMINAL;
       },
     },
@@ -118,8 +120,11 @@ describe("AgentDispatchComponent", () => {
     });
     await harness.component.update(ctxAt(0));
     expect(harness.finalized).toEqual(["attempt_orphan"]);
-    expect(harness.calls[0]).toBe("claim:outbox_1");
     expect(harness.finalized.length).toBe(1);
+    expect(harness.calls).not.toContain("claim:outbox_1");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.calls[0]).toBe("claim:outbox_1");
   });
 
   it("retries waiting remote runs on a throttle until terminal", async () => {
@@ -141,7 +146,34 @@ describe("AgentDispatchComponent", () => {
 
     await harness.component.update(ctxAt(32_000));
     expect(harness.calls.filter((call) => call === "run")).toHaveLength(3);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.component.update(ctxAt(34_000));
     expect(harness.completed).toEqual(["attempt_1"]);
+  });
+
+  it("starts a waiting-remote retry without awaiting external I/O in the actor tick", async () => {
+    let resolveRetry: ((value: DispatchRunOutput) => void) | undefined;
+    let calls = 0;
+    const harness = makeHarness({
+      claims: [CLAIM],
+      runOverride: async () => {
+        calls += 1;
+        if (calls === 1) return { kind: "waiting_remote" };
+        return new Promise<DispatchRunOutput>((resolve) => { resolveRetry = resolve; });
+      },
+    });
+    await harness.component.update(ctxAt(0));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const retryTick = harness.component.update(ctxAt(1_000));
+    const outcome = await Promise.race([
+      retryTick.then(() => "returned"),
+      new Promise<string>((resolve) => setTimeout(() => resolve("blocked"), 25)),
+    ]);
+    expect(outcome).toBe("returned");
+
+    resolveRetry?.(TERMINAL);
+    await retryTick;
   });
 
   it("preserves a safe, structured transient failure instead of a generic terminal-output message", async () => {

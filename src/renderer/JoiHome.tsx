@@ -2,7 +2,7 @@ import { type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState 
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardBaseDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const SAFE_MARKDOWN_COMPONENTS: Components = {
@@ -372,6 +372,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const [createdWorkbench, setCreatedWorkbench] = useState<WorkbenchDto | null>(null);
   const isQuestion = reasonCode === "question_required";
   const needsPartnerChoice = reasonCode === "partner_selection_required";
+  const needsWaitingRecovery = reasonCode === "partner_waiting_recovery_required" || reasonCode === "partner_auth_required";
   const needsWorkspace = reasonCode === "workbench_workspace_not_ready";
   const needsWorkbenchChoice = reasonCode === "workbench_selection_invalid" || reasonCode === "workbench_creation_unavailable" || reasonCode === "workbench_not_found";
   const assignedWorkbench = workbenches.find((workbench) => workbench.workbenchId === workbenchId);
@@ -380,7 +381,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     ? workbenches
     : [...workbenches, createdWorkbench];
   const selectablePartners = partners.filter((partner) => partner.status === "ACTIVE" && partner.configuration === undefined);
-  const resolve = async (resolution: { partnerId?: string; workbenchId?: string; text?: string }) => {
+  const resolve = async (resolution: { actionChoice?: "RESUME"; partnerId?: string; workbenchId?: string; text?: string }) => {
     setBusy(true); setNotice(null);
     try {
       await api.clarifyJoiMessage(inputId, resolution);
@@ -465,7 +466,10 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
         </div>
       </section> : null}
     </> : null}
-    {needsPartnerChoice ? null : needsWorkspace ? <div className="joi-clarify-workspace">
+    {needsPartnerChoice ? null : needsWaitingRecovery ? <div className="joi-clarify-workspace">
+      <div><strong>恢复原工作</strong><span>joi 会使用已保存的 Work 和搭档会话继续，不会重新创建一份任务。</span></div>
+      <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "RESUME" })} type="button">{busy ? "恢复中…" : "继续原工作"}</button>
+    </div> : needsWorkspace ? <div className="joi-clarify-workspace">
       <div><strong>{assignedWorkbench?.name ?? "当前工作台"}</strong><span>选择后只保存安全的工作区标识，不会在页面或接口中暴露绝对路径。</span></div>
       <button className="button primary" disabled={busy || workbenchId === undefined} onClick={() => void chooseWorkspace()} type="button">{busy ? "选择中…" : "选择工作目录"}</button>
     </div> : creatingWorkbench ? null : <div className="joi-clarify-add">
@@ -535,18 +539,30 @@ function ComposerWorkbenchPicker({ workbenches, onSelect, selected }: {
 
 function legacyHomeFeed(messages: JoiAcceptedMessageDto[]): JoiHomeFeedDto {
   const unassignedActions = messages.filter((message) => message.status === "CLARIFICATION_REQUIRED" && message.workbenchId === undefined);
-  const goals: JoiGoalCardDto[] = messages.filter((message) => !unassignedActions.includes(message)).map((message) => ({
-    agentCount: 0,
-    workbench: { workbenchId: message.workbenchId ?? "", name: message.workbenchId ?? "等待归属" },
-    canDelete: message.status === "CONSUMED",
-    ...(message.status === "CLARIFICATION_REQUIRED" ? { clarification: { ...(message.clarificationPrompt === undefined ? {} : { prompt: message.clarificationPrompt }), ...(message.clarificationReasonCode === undefined ? {} : { reasonCode: message.clarificationReasonCode }) } } : {}),
-    ...(message.failure === undefined ? {} : { failure: message.failure }),
-    goalId: message.inputId,
-    status: message.failure !== undefined ? "FAILED" : message.canceled === true ? "CANCELED" : message.status === "CONSUMED" ? "COMPLETED" : message.status === "CLARIFICATION_REQUIRED" ? "NEEDS_ATTENTION" : message.status === "ROUTED" ? "ARRANGED" : "ARRANGING",
-    title: message.textPreview ?? "正在安排的新目标",
-    updatedAt: message.acceptedAt,
-    work: { active: 0, completed: 0, failed: 0, total: 0 },
-  }));
+  const goals: JoiGoalCardDto[] = messages.filter((message) => !unassignedActions.includes(message)).map((message) => {
+    const status = message.failure !== undefined ? "FAILED" as const : message.canceled === true ? "CANCELED" as const
+      : message.status === "CONSUMED" ? "COMPLETED" as const : message.status === "CLARIFICATION_REQUIRED" ? "NEEDS_ATTENTION" as const
+        : message.status === "ROUTED" ? "ARRANGED" as const : "ARRANGING" as const;
+    const base: JoiGoalCardBaseDto = {
+      agentCount: 0,
+      workbench: { workbenchId: message.workbenchId ?? "", name: message.workbenchId ?? "等待归属" },
+      canDelete: message.status === "CONSUMED",
+      ...(message.failure === undefined ? {} : { failure: message.failure }),
+      goalId: message.inputId,
+      title: message.textPreview ?? "正在安排的新目标",
+      updatedAt: message.acceptedAt,
+      work: { active: 0, completed: 0, failed: 0, total: 0 },
+    };
+    if (status === "NEEDS_ATTENTION") return {
+      ...base,
+      clarification: {
+        ...(message.clarificationPrompt === undefined ? {} : { prompt: message.clarificationPrompt }),
+        reasonCode: message.clarificationReasonCode ?? "clarification_required",
+      },
+      status,
+    };
+    return { ...base, status };
+  });
   const thinking = messages.filter((message) => message.status === "PENDING" || message.status === "ROUTED").map((message) => ({
     agentCount: 0,
     goalId: message.inputId,
@@ -1014,6 +1030,8 @@ function JoiComposer({ api, onNavigate, snapshot }: {
 
 function clarificationText(code: string | undefined, prompt?: string, workbenchName?: string): string {
   if (code === "question_required") return prompt ?? "joi 需要你回答一个问题，才能继续安排这条任务。";
+  if (code === "partner_waiting_recovery_required") return prompt ?? "一项搭档工作仍在等待。点击继续原工作即可恢复。";
+  if (code === "partner_auth_required") return prompt ?? "搭档需要重新授权。请先在搭档设置完成授权，然后点击继续原工作。";
   if (code === "workbench_workspace_not_ready") return `“${workbenchName ?? "当前工作台"}”还没有可用的工作目录。选择一个目录后，joi 会自动继续这条任务。`;
   if (code === "partner_selection_required") return prompt ?? "请选择一个可用搭档继续这条任务。";
   if (code === "work_dispatch_failed") return prompt ?? "joi 暂时无法把这条任务派发给搭档，任务已暂停。修复搭档配置后可以继续重试。";

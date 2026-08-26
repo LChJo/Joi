@@ -145,6 +145,45 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
+  it("projects a resident Agent as waiting when its goal-scoped run waits even though the instance is idle", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "等待回答" });
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "实现搭档", kind: "local-pi", skills: [], tools: [] });
+      const resident = await fixture.instances.ensure({ workbenchId: workbench.workbenchId, partnerId: partner.partnerId, sessionPolicy: "RESIDENT" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-waiting-agent', 'key-waiting-agent', '继续实现', 'CLARIFICATION_REQUIRED', ?, ?, ?)`)
+          .run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-waiting-agent', 'goal-waiting-agent', ?, 'session-waiting-agent', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO dispatch_plans
+          (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+          VALUES ('plan-waiting-agent', 'turn-waiting-agent', '{}', '[]', ?)`).run(now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-waiting-agent', ?, 'goal-waiting-agent', '继续实现', '{}', 'READ', 'WAITING', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, instance_id, status, created_at, updated_at)
+          VALUES ('attempt-waiting-agent', 'plan-waiting-agent', 'work-waiting-agent', ?, 1, 'action-waiting-agent', ?, 'WAITING_INPUT', ?, ?)`)
+          .run(partner.partnerRevisionId, resident.instanceId, now, now);
+        connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          VALUES ('run-waiting-agent', 'attempt-waiting-agent', 'action-waiting-agent', ?, 'work-waiting-agent', ?, 'LOCAL_PI', ?, 'WAITING_INPUT', ?, ?)`)
+          .run(workbench.workbenchId, partner.partnerRevisionId, `local:${resident.instanceId}`, now, now);
+      });
+
+      const repository = new SqliteWorkbenchAgentRepository(fixture.database);
+      const agents = await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-waiting-agent", limit: 50 });
+      expect(agents.items).toEqual([expect.objectContaining({ agentId: resident.instanceId, status: "WAITING" })]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("hides path redaction markers from home-feed card titles and previews", async () => {
     const fixture = await createRuntimeFixture();
     try {
@@ -369,7 +408,7 @@ describe("Workbench Agent and joi home projections", () => {
       fixture.database.transaction((connection) => connection.prepare(
         "UPDATE work_items SET status = 'WAITING', updated_at = ? WHERE work_id = 'work-stage'",
       ).run("2026-08-03T12:00:06.000Z"));
-      expect((await repository.load(new Date("2026-08-03T12:00:07.000Z"))).thinking).toEqual([expect.objectContaining({ stage: "WAITING" })]);
+      expect((await repository.load(new Date("2026-08-03T12:00:07.000Z"))).thinking).toEqual([expect.objectContaining({ stage: "RUNNING" })]);
 
       fixture.database.transaction((connection) => connection.prepare(
         "UPDATE work_items SET status = 'COMPLETED', updated_at = ? WHERE work_id = 'work-stage'",

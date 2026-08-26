@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type {
   CommittedWorkPlan,
+  PlannedDispatchAttempt,
   ReassignedWorkPlan,
   WorkPlanRepository,
   WorkQuery,
@@ -14,6 +15,39 @@ import type { WorkItemDto } from "../../../shared/joi.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
+}
+
+function plannedAttemptFromRow(row: Record<string, unknown> | undefined, workId: string): PlannedDispatchAttempt | null {
+  if (row === undefined) return null;
+  if (typeof row.action_id !== "string" || typeof row.dispatch_attempt_id !== "string"
+    || typeof row.partner_revision_id !== "string" || typeof row.registry_revision !== "number"
+    || typeof row.available_at !== "string" || row.kind !== "partner.dispatch"
+    || typeof row.outbox_id !== "string" || typeof row.payload_json !== "string"
+    || typeof row.partner_id !== "string") throw new Error("work_resume_attempt_invalid");
+  const payload = JSON.parse(row.payload_json) as Record<string, unknown>;
+  if (payload.actionId !== row.action_id || payload.dispatchAttemptId !== row.dispatch_attempt_id || payload.workId !== workId) {
+    throw new Error("work_resume_attempt_invalid");
+  }
+  return {
+    actionId: row.action_id,
+    dispatchAttemptId: row.dispatch_attempt_id,
+    outbox: {
+      availableAt: row.available_at,
+      kind: "partner.dispatch",
+      outboxId: row.outbox_id,
+      payload: {
+        actionId: row.action_id,
+        dispatchAttemptId: row.dispatch_attempt_id,
+        ...(typeof payload.instanceId === "string" ? { instanceId: payload.instanceId } : {}),
+        ...(payload.sessionPolicy === "EPHEMERAL" || payload.sessionPolicy === "RESIDENT" ? { sessionPolicy: payload.sessionPolicy } : {}),
+        workId,
+      },
+    },
+    partnerId: row.partner_id,
+    partnerRevisionId: row.partner_revision_id,
+    registryRevision: row.registry_revision,
+    workId,
+  };
 }
 
 export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, WorkReassignmentRepository {
@@ -134,8 +168,39 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
        WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED')`).run(at, workId).changes > 0);
   }
 
+  async loadAttemptForTurn(workId: string, turnId: string): Promise<PlannedDispatchAttempt | null> {
+    const row = this.database.transaction((connection) => connection.prepare(`SELECT
+      a.action_id, a.dispatch_attempt_id, a.partner_revision_id, a.registry_revision,
+      o.available_at, o.kind, o.outbox_id, o.payload_json, rev.partner_id
+      FROM dispatch_attempts a
+      JOIN dispatch_plans p ON p.dispatch_plan_id = a.dispatch_plan_id
+      JOIN outbox o ON o.outbox_id = a.outbox_id
+      JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
+      WHERE a.work_id = ? AND p.turn_id = ?
+      ORDER BY a.created_at DESC, a.dispatch_attempt_id DESC LIMIT 1`).get(workId, turnId)) as Record<string, unknown> | undefined;
+    return plannedAttemptFromRow(row, workId);
+  }
+
+  async loadAttemptForAction(workId: string, actionId: string): Promise<PlannedDispatchAttempt | null> {
+    const row = this.database.transaction((connection) => connection.prepare(`SELECT
+      a.action_id, a.dispatch_attempt_id, a.partner_revision_id, a.registry_revision,
+      o.available_at, o.kind, o.outbox_id, o.payload_json, rev.partner_id
+      FROM dispatch_attempts a
+      JOIN outbox o ON o.outbox_id = a.outbox_id
+      JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
+      WHERE a.work_id = ? AND a.action_id = ?
+      ORDER BY a.created_at DESC, a.dispatch_attempt_id DESC LIMIT 1`).get(workId, actionId)) as Record<string, unknown> | undefined;
+    return plannedAttemptFromRow(row, workId);
+  }
+
   async reassign(plan: ReassignedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
+      // A resumed/reassigned Work supersedes its paused run. Leaving the old run in
+      // WAITING_INPUT would keep Agent and goal projections permanently active.
+      connection.prepare(`UPDATE partner_runs SET status = 'FAILED', updated_at = ?
+        WHERE work_id = ? AND status IN ('WAITING_INPUT', 'WAITING_AUTH')`).run(plan.createdAt, plan.workId);
+      connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
+        WHERE work_id = ? AND status IN ('WAITING_INPUT', 'WAITING_AUTH')`).run(plan.createdAt, plan.workId);
       connection.prepare(`INSERT INTO dispatch_plans
         (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at) VALUES (?, ?, ?, ?, ?)`).run(
         plan.dispatchPlanId, plan.turnId, JSON.stringify({ reassignWorkId: plan.workId }),

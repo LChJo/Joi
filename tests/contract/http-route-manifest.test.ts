@@ -38,6 +38,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/workbenches",
   "POST /api/v1/scenarios/:scenarioId/partners",
   "POST /api/v1/partners",
+  "POST /api/v1/partners/:partnerId/test-model",
   "PATCH /api/v1/partners/:partnerId",
   "DELETE /api/v1/partners/:partnerId",
   "POST /api/v1/partners/:partnerId/duplicate",

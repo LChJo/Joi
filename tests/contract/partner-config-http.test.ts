@@ -1,4 +1,5 @@
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler";
+import type { ApiDependencies } from "../../src/main/interfaces/http/api-dependencies";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners";
 import type { PartnerDto, PartnerKnowledgeDocDto } from "../../src/shared/joi";
 import { createRuntimeFixture } from "../support/runtime-fixture";
@@ -9,9 +10,9 @@ function cookieFrom(response: Response) {
   return value.split(";", 1)[0] ?? "";
 }
 
-async function createSession() {
+async function createSession(overrides: Partial<ApiDependencies> = {}) {
   const fixture = await createRuntimeFixture();
-  const listeners = await startRuntimeListeners({ handler: createApiHandler(fixture), loopbackPort: 0 });
+  const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, ...overrides }), loopbackPort: 0 });
   const bootstrap = await fixture.auth.issueDesktopBootstrap();
   const authenticated = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
     body: JSON.stringify({ nonce: bootstrap.nonce }),
@@ -31,6 +32,45 @@ async function createSession() {
 }
 
 describe("partner config HTTP API", () => {
+  it("clears model pins with explicit nulls and exposes a safe partner model probe contract", async () => {
+    const test = vi.fn().mockResolvedValue({
+      modelId: "gpt-5.6-sol-sub", partnerId: "partner-test", sourceDisplayName: "gpt-sub", sourceId: "source-ready",
+      status: "READY", testedAt: "2026-08-25T08:00:00.000Z",
+    });
+    const session = await createSession({ partnerModelProbe: { test } });
+    try {
+      const createdResponse = await fetch(`${session.url}/api/v1/partners`, {
+        body: JSON.stringify({
+          capabilities: [], displayName: "Model tester", kind: "local-pi", skills: [], tools: [],
+        }),
+        headers: session.headers,
+        method: "POST",
+      });
+      const createdBody = await createdResponse.json() as PartnerDto | { code: string; message: string };
+      expect(createdResponse.status).toBe(201);
+      const created = createdBody as PartnerDto;
+      const partnerUrl = `${session.url}/api/v1/partners/${encodeURIComponent(created.partnerId)}`;
+      const clearedResponse = await fetch(partnerUrl, {
+        body: JSON.stringify({
+          capabilities: [], displayName: "Model tester", modelIdOverride: null, modelSourceId: null, skills: [], tools: [],
+        }),
+        headers: session.headers,
+        method: "PATCH",
+      });
+      expect(clearedResponse.status).toBe(200);
+      const cleared = await clearedResponse.json() as PartnerDto;
+      expect(cleared).not.toHaveProperty("modelIdOverride");
+      expect(cleared).not.toHaveProperty("modelSourceId");
+
+      const tested = await fetch(`${partnerUrl}/test-model`, { headers: session.headers, method: "POST" });
+      expect(tested.status).toBe(200);
+      expect(await tested.json()).toMatchObject({ status: "READY", sourceId: "source-ready" });
+      expect(test).toHaveBeenCalledWith(created.partnerId);
+    } finally {
+      await session.close();
+    }
+  });
+
   it("lists per-engine skills and forbids the old absolute-path picker response", async () => {
     const session = await createSession();
     try {

@@ -15,6 +15,7 @@ import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
 import { COMPLETION_SUMMARY_LIMIT, normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
 import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
+import type { WorkOrchestrationService } from "../work/work-orchestration-service.js";
 
 interface SourcePin {
   modelCapability?: "release-tested" | "custom-unverified-tools";
@@ -118,6 +119,7 @@ export class JoiCoordinator {
       selectInitial(turnId: string): Promise<SourcePin>;
     };
     store: JoiCoordinatorStore;
+    work?: Pick<WorkOrchestrationService, "resume">;
   }) {}
 
   async handle(inputId: string, signal?: AbortSignal): Promise<void> {
@@ -192,6 +194,55 @@ export class JoiCoordinator {
       : null;
     const isGoalSynthesis = goalSynthesis !== null;
     const sessionId = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}` : `joi_session:${workbenchId}`;
+    if (input.resolvedAction !== undefined) {
+      if (this.dependencies.work === undefined || this.dependencies.store.completeResolvedAction === undefined) {
+        throw new DomainError("joi_action_resume_unavailable", "The persisted user action cannot be resumed right now.");
+      }
+      await this.dependencies.store.createTurn({
+        workbenchId,
+        createdAt: this.dependencies.clock.now().toISOString(),
+        inputId,
+        sessionId,
+        turnId,
+      });
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.started", { workbenchId, inputId, turnId });
+      await this.dependencies.events?.emit("joi.turn.started", turnId, { workbenchId, inputId, turnId });
+      try {
+        await this.dependencies.work.resume({
+          actionId: input.resolvedAction.actionId,
+          workbenchId,
+          turnId,
+          workId: input.resolvedAction.workId,
+        });
+        await this.dependencies.store.completeResolvedAction({
+          actionId: input.resolvedAction.actionId,
+          inputId,
+          turnId,
+        });
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.action.applied", {
+          actionId: input.resolvedAction.actionId,
+          inputId,
+          turnId,
+          workbenchId,
+          workId: input.resolvedAction.workId,
+        });
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.completed", {
+          workbenchId,
+          durationMs: Math.max(0, this.dependencies.clock.now().getTime() - handleStartedAt),
+          inputId,
+          observedToolCount: 0,
+          outcomeTools: ["work_resume"],
+          repaired: false,
+          sourceId: "persisted-user-action",
+          turnId,
+        });
+        await this.dependencies.events?.emit("joi.turn.completed", turnId, { workbenchId, inputId, turnId });
+        return;
+      } catch (error) {
+        await this.dependencies.store.failTurn?.(inputId, turnId);
+        throw error;
+      }
+    }
     const abortRuntime = () => {
       try {
         this.dependencies.runtime.abort(sessionId);

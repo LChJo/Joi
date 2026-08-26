@@ -42,6 +42,7 @@ export class AgentDispatchComponent implements ActorComponent {
   #inFlight: InFlightRun | null = null;
   #lastOrphanScanAt = 0;
   #nextWaitingRetryAt = 0;
+  readonly #orphanInFlight = new Set<string>();
   #retryAvailableAt = 0;
 
   constructor(private readonly dependencies: {
@@ -62,24 +63,25 @@ export class AgentDispatchComponent implements ActorComponent {
   async update(ctx: ActorTickContext): Promise<void> {
     await this.#converge(ctx);
     await this.#scanOrphans(ctx);
-    if (this.#inFlight !== null || ctx.now.getTime() < this.#retryAvailableAt) return;
+    if (this.#inFlight !== null || this.#orphanInFlight.size > 0 || ctx.now.getTime() < this.#retryAvailableAt) return;
     await this.#claimAndStart(ctx);
   }
 
   async #converge(ctx: ActorTickContext): Promise<void> {
     const run = this.#inFlight;
     if (run?.settled === undefined) return;
-    let output = run.settled;
+    const output = run.settled;
     if (output.kind === "waiting_remote") {
       if (ctx.now.getTime() < this.#nextWaitingRetryAt) return;
       this.#nextWaitingRetryAt = ctx.now.getTime() + (this.dependencies.waitingRetryEveryMillis ?? DEFAULT_WAITING_RETRY_EVERY_MILLIS);
-      try {
-        output = await this.dependencies.delivery.run(run.prepared);
-      } catch (error) {
-        output = failedOutput(error);
-      }
-      run.settled = output;
-      if (output.kind === "waiting_remote") return;
+      run.settled = undefined;
+      const attemptId = run.dispatchAttemptId;
+      void this.dependencies.delivery.run(run.prepared).then((next) => {
+        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = next;
+      }).catch((error: unknown) => {
+        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = failedOutput(error);
+      });
+      return;
     }
     await this.dependencies.delivery.complete({ output, prepared: run.prepared });
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.run_converged", {
@@ -100,6 +102,7 @@ export class AgentDispatchComponent implements ActorComponent {
     });
     for (const orphan of orphans) {
       if (orphan.dispatchAttemptId === this.#inFlight?.dispatchAttemptId) continue;
+      if (this.#orphanInFlight.has(orphan.dispatchAttemptId)) continue;
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.partner.orphan_found", {
         workbenchId: this.dependencies.workbenchId,
         dispatchAttemptId: orphan.dispatchAttemptId,
@@ -107,7 +110,18 @@ export class AgentDispatchComponent implements ActorComponent {
         partnerId: this.dependencies.partnerId,
         runId: orphan.runId,
       });
-      await this.dependencies.delivery.finalizeOrphan(orphan);
+      this.#orphanInFlight.add(orphan.dispatchAttemptId);
+      void this.dependencies.delivery.finalizeOrphan(orphan).catch((error: unknown) => {
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.partner.orphan_finalize_failed", {
+          workbenchId: this.dependencies.workbenchId,
+          dispatchAttemptId: orphan.dispatchAttemptId,
+          errorCode: runtimeDiagnosticErrorCode(error),
+          partnerId: this.dependencies.partnerId,
+          runId: orphan.runId,
+        });
+      }).finally(() => {
+        this.#orphanInFlight.delete(orphan.dispatchAttemptId);
+      });
     }
   }
 

@@ -70,9 +70,11 @@ describe("Workbench context HTTP API", () => {
         projectLabel: "另一个工程",
         scopeSummary: "另一个范围",
       });
-      const conflictingBind = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(secondWorkbench.workbenchId)}/workspace/bind`, { headers, method: "POST" });
-      expect(conflictingBind.status).toBe(409);
-      expect(await conflictingBind.json()).toMatchObject({ code: "workbench_workspace_already_bound" });
+      const sharedBind = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(secondWorkbench.workbenchId)}/workspace/bind`, { headers, method: "POST" });
+      expect(sharedBind.status).toBe(200);
+      expect(await sharedBind.json()).toEqual({ displayName: "workdir", kind: "BOUND", status: "READY" });
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT COUNT(*) AS count
+        FROM workbench_workspace_roots WHERE root_path = '/stub/workdir'`).get())).toEqual({ count: 2 });
 
       fixture.database.transaction((connection) => {
         const now = fixture.clock.now().toISOString();

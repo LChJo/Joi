@@ -187,6 +187,16 @@ export interface PartnerDto {
   tools: string[];
 }
 
+export interface PartnerModelTestDto {
+  modelId?: string;
+  partnerId: string;
+  reasonCode?: string;
+  sourceDisplayName?: string;
+  sourceId?: string;
+  status: "FAILED" | "READY";
+  testedAt: string;
+}
+
 export interface ModelSourceDto {
   accessMode: ModelSourceAccessModeDto;
   activeModel: {
@@ -280,21 +290,24 @@ export interface JoiGoalHarnessDto {
   topPaths: { pathId: string; status: "CLOSED" | "OPEN" | "OUT_OF_SCOPE"; title: string }[];
 }
 
-export interface JoiGoalCardDto {
+export interface JoiGoalCardBaseDto {
   agentCount: number;
   workbench: { workbenchId: string; name: string };
   canDelete: boolean;
-  clarification?: { prompt?: string; reasonCode?: string };
   completedAt?: string;
   completionSummary?: string;
   failure?: JoiGoalFailureDto;
   goalId: string;
   harness?: JoiGoalHarnessDto;
-  status: JoiGoalStatusDto;
   title: string;
   updatedAt: string;
   work: { active: number; completed: number; failed: number; total: number };
 }
+
+export type JoiGoalCardDto = JoiGoalCardBaseDto & (
+  | { clarification: { prompt?: string; reasonCode: string }; status: "NEEDS_ATTENTION" }
+  | { clarification?: never; status: Exclude<JoiGoalStatusDto, "NEEDS_ATTENTION"> }
+);
 
 export type JoiThinkingStageDto = "ROUTING" | "PLANNING" | "DISPATCHING" | "RUNNING" | "WAITING" | "FINALIZING";
 

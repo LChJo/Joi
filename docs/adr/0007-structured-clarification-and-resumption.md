@@ -19,3 +19,9 @@
 ## 后果
 
 Migration 029 只新增可空问题字段；旧澄清记录保持兼容。首页不再用一种通用控件覆盖所有 HITL：目录卡、问答卡和工作台归属卡各自只呈现完成当前阻塞所需的操作。merge/archive 仍使用独立的持久确认卡，不并入自由文本澄清。
+
+## 2026-08-25 补充：等待必须带可执行动作
+
+`WAITING_INPUT` 不能只靠 Work/Run 状态和一段提示文案表达。Migration 044 增加 `joi_user_action_requests`，把问题或恢复决策绑定到精确的 input、Work 和 partner run；OPEN → RESOLVED → APPLIED 是恢复的权威事实。用户回答问题时继续使用文本，存量断链等待则展示单一“继续原工作”动作，不要求用户猜测需要补充什么。
+
+RESOLVED 动作属于确定性命令：task actor 即使没有 READY model source 也会执行，Coordinator 不调用路由或推理模型。其稳定 action id 同时作为恢复 dispatch 的幂等 id；若进程在 dispatch 事务后、动作完成事务前崩溃，重试读取已有 attempt，不创建第二个外部副作用。新 attempt 提交时必须终结被取代的 WAITING run/attempt。

@@ -1,6 +1,6 @@
 import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
+import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 type PartnerView = { mode: "grid" } | { mode: "editor"; partner: PartnerDto | null };
@@ -34,6 +34,41 @@ function configurationMessage(reasonCodes: readonly string[]): string {
   if (reasonCodes.includes("partner_skill_collision")) return "选中的技能名称发生冲突，请只保留一个来源。";
   if (reasonCodes.includes("partner_skill_environment_invalid")) return "技能的环境声明无效，请重新选择有效版本。";
   return "搭档配置需要修复后才能派发。";
+}
+
+function modelTestMessage(result: PartnerModelTestDto): string {
+  if (result.status === "READY") return "模型可用";
+  if (result.reasonCode === "partner_model_override_not_ready") return "模型名与供应商当前模型不一致";
+  if (result.reasonCode === "partner_model_source_not_ready") return "供应商尚未就绪";
+  return "模型连接失败";
+}
+
+function PartnerModelStatus({ result }: { result: PartnerModelTestDto | "TESTING" | undefined }) {
+  if (result === "TESTING") return <div className="partner-model-status" role="status"><span>正在测试模型…</span></div>;
+  if (result === undefined) return <div className="partner-model-status" role="status"><span>模型状态尚未测试</span></div>;
+  const detail = [result.sourceDisplayName, result.modelId].filter(Boolean).join(" · ");
+  return <div className="partner-model-status" role="status">
+    <span>{modelTestMessage(result)}</span>
+    <small>{detail}{detail === "" ? "" : " · "}{new Date(result.testedAt).toLocaleString("zh-CN")}</small>
+  </div>;
+}
+
+function persistedModelTest(partner: PartnerDto, sources: ModelSourceDto[]): PartnerModelTestDto | undefined {
+  const ordered = [...sources].filter((source) => source.status !== "DISABLED").sort((left, right) => left.order - right.order);
+  const source = partner.modelSourceId === undefined
+    ? ordered.find((candidate) => candidate.status === "READY") ?? ordered[0]
+    : sources.find((candidate) => candidate.sourceId === partner.modelSourceId);
+  if (source?.lastValidatedAt === undefined) return undefined;
+  const modelMismatch = partner.modelIdOverride !== undefined && partner.modelIdOverride !== source.activeModel.id;
+  return {
+    modelId: partner.modelIdOverride ?? source.activeModel.id,
+    partnerId: partner.partnerId,
+    ...(modelMismatch ? { reasonCode: "partner_model_override_not_ready" } : source.reasonCode === undefined ? {} : { reasonCode: source.reasonCode }),
+    sourceDisplayName: source.displayName,
+    sourceId: source.sourceId,
+    status: source.status === "READY" && !modelMismatch ? "READY" : "FAILED",
+    testedAt: source.lastValidatedAt,
+  };
 }
 
 function KnowledgeDocList({ api, onChanged, partnerId }: { api: DigitalLifeApi; onChanged: () => void; partnerId: string }) {
@@ -76,6 +111,8 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const initialSelectedSkills = partner?.skills ?? [];
   const [selectedSkills, setSelectedSkills] = useState<string[]>(partner?.skills ?? []);
   const [selectedTools, setSelectedTools] = useState<string[]>(partner?.tools ?? []);
+  const [modelIdOverride, setModelIdOverride] = useState(partner?.modelIdOverride ?? "");
+  const [modelSourceId, setModelSourceId] = useState(partner?.modelSourceId ?? "");
   const [notice, setNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -99,8 +136,8 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     const form = new FormData(event.currentTarget);
     const description = textValue(form.get("description"));
     const engineModelId = textValue(form.get("engineModelId"));
-    const modelIdOverride = textValue(form.get("modelIdOverride"));
-    const modelSourceId = textValue(form.get("modelSourceId"));
+    const normalizedModelId = modelIdOverride.trim();
+    const normalizedSourceId = modelSourceId.trim();
     const prompt = textValue(form.get("prompt"));
     const fields = {
       displayName: fieldName(form.get("displayName")),
@@ -108,17 +145,32 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       tools: selectedTools,
       ...(description === undefined ? {} : { description }),
       ...(engine === "pi-core" ? {} : { engine }),
-      ...(engine === "pi-core" ? (modelIdOverride === undefined ? {} : { modelIdOverride }) : (engineModelId === undefined ? {} : { engineModelId })),
-      ...(engine === "pi-core" ? (modelSourceId === undefined ? {} : { modelSourceId }) : {}),
       ...(prompt === undefined ? {} : { prompt }),
     };
     try {
       if (partner === null) {
-        const created = await api.createPartner({ ...fields, kind: "local-pi" });
+        const created = await api.createPartner({
+          ...fields,
+          ...(engine === "pi-core"
+            ? {
+              ...(normalizedModelId === "" ? {} : { modelIdOverride: normalizedModelId }),
+              ...(normalizedSourceId === "" ? {} : { modelSourceId: normalizedSourceId }),
+            }
+            : engineModelId === undefined ? {} : { engineModelId }),
+          kind: "local-pi",
+        });
         onDone("搭档已登记。可以继续补充知识库，再交给 joi。", created.partnerId);
       } else {
-        await api.updatePartner(partner.partnerId, fields);
-        onDone("修改已保存为新的搭档 revision。");
+        await api.updatePartner(partner.partnerId, {
+          ...fields,
+          ...(engine === "pi-core"
+            ? {
+              modelIdOverride: normalizedModelId === "" ? null : normalizedModelId,
+              modelSourceId: normalizedSourceId === "" ? null : normalizedSourceId,
+            }
+            : { engineModelId: engineModelId ?? null }),
+        });
+        onDone("修改已保存为新的搭档 revision。", partner.partnerId);
       }
     } catch (error) { setNotice(failureMessage(error, "搭档没保存成功。")); }
   };
@@ -139,7 +191,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const missingReadForSkills = engine === "pi-core" && selectedSkills.length > 0 && selectedTools.length > 0 && !selectedTools.includes("read");
   const skillSelectionChanged = selectedSkills.length !== initialSelectedSkills.length
     || selectedSkills.some((skill, index) => initialSelectedSkills[index] !== skill);
-  const persistedConfigurationNeedsSkillChange = partner?.configuration?.reasonCodes.some((code) => code !== "partner_skill_requires_read") ?? false;
+  const persistedConfigurationNeedsSkillChange = partner?.configuration?.reasonCodes.some((code) => code.startsWith("partner_skill_") && code !== "partner_skill_requires_read") ?? false;
   const unchangedPersistedConfiguration = partner?.configuration?.status === "ACTION_REQUIRED"
     && persistedConfigurationNeedsSkillChange && !skillSelectionChanged && !missingReadForSkills;
   const cannotSave = (skillsLoading && selectedSkills.length > 0) || invalidSelectedSkills.length > 0 || missingReadForSkills || unchangedPersistedConfiguration;
@@ -194,8 +246,13 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
         </select></label>
         {localEngineReason === null ? null : <p className="inline-notice warning" role="status">{localEngineReason} 安装并登录后即可使用，或改回 Pi core。</p>}
         {engine === "pi-core" ? <>
-          <label>模型名<input defaultValue={partner?.modelIdOverride} name="modelIdOverride" placeholder="留空使用全局首选模型" /></label>
-          <label>供应商<span className="picker-field"><select defaultValue={partner?.modelSourceId ?? ""} name="modelSourceId"><option value="">跟随全局首选大模型网络</option>{sources.map((source) => <option key={source.sourceId} value={source.sourceId}>{source.displayName}（{source.kind}）</option>)}</select><button className="button ghost" onClick={() => onManageProviders?.()} type="button">管理大模型网络</button></span></label>
+          <label>模型名<input name="modelIdOverride" onChange={(event) => setModelIdOverride(event.target.value)} placeholder="留空使用全局首选模型" value={modelIdOverride} /></label>
+          <label>供应商<span className="picker-field"><select name="modelSourceId" onChange={(event) => {
+            const nextSourceId = event.target.value;
+            setModelSourceId(nextSourceId);
+            const selected = sources.find((source) => source.sourceId === nextSourceId);
+            setModelIdOverride(selected?.activeModel.id ?? "");
+          }} value={modelSourceId}><option value="">跟随全局首选大模型网络</option>{sources.map((source) => <option disabled={source.status !== "READY"} key={source.sourceId} value={source.sourceId}>{source.displayName}（{source.kind}）{source.status === "READY" ? "" : " · 未就绪"}</option>)}</select><button className="button ghost" onClick={() => onManageProviders?.()} type="button">管理大模型网络</button></span></label>
         </> : <>
           <label>模型名（可选覆盖）<input defaultValue={partner?.engineModelId} name="engineModelId" placeholder="留空使用本机 Claude/Codex 自己的配置" /></label>
           <p className="field-hint">本地 {ENGINE_LABELS[engine]} 使用你本机的登录、转发或订阅配置运行，joi 不注入密钥。</p>
@@ -245,6 +302,7 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
   const [engineStatuses, setEngineStatuses] = useState<Record<string, EngineStatus>>({});
   const [view, setView] = useState<PartnerView>({ mode: "grid" });
   const [notice, setNotice] = useState<string | null>(null);
+  const [modelTests, setModelTests] = useState<Record<string, PartnerModelTestDto | "TESTING">>({});
   const load = useCallback(async () => {
     const [partnerPage, sourcePage, enginePage] = await Promise.all([
       api.listPartners(),
@@ -252,7 +310,7 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
       api.engineCatalog().catch(() => null),
     ]);
     setPartners(partnerPage.items);
-    setSources(sourcePage.items.filter((source) => source.status === "READY"));
+    setSources(sourcePage.items);
     const statuses: Record<string, EngineStatus> = {};
     for (const item of enginePage?.items ?? []) statuses[item.id] = { available: item.available, tools: item.tools, ...(item.reason === undefined ? {} : { reason: item.reason }) };
     setEngineStatuses(statuses);
@@ -295,9 +353,18 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
       .catch(() => setNotice("场景搭档没创建成功，请重试。"))
       .finally(() => setCreatingScenario(false));
   };
+  const testPartnerModel = (partnerId: string) => {
+    setModelTests((current) => ({ ...current, [partnerId]: "TESTING" }));
+    void api.testPartnerModel(partnerId)
+      .then((result) => setModelTests((current) => ({ ...current, [partnerId]: result })))
+      .catch(() => setModelTests((current) => ({
+        ...current,
+        [partnerId]: { partnerId, reasonCode: "partner_model_test_failed", status: "FAILED", testedAt: new Date().toISOString() },
+      })));
+  };
   if (view.mode === "editor") {
     return <section className="partner-manager page-section">
-      <PartnerEditor api={api} engineStatuses={engineStatuses} onDone={finishEdit} {...(onManageProviders === undefined ? {} : { onManageProviders })} partner={view.partner} sources={sources} />
+      <PartnerEditor api={api} engineStatuses={engineStatuses} key={view.partner?.partnerRevisionId ?? "new"} onDone={finishEdit} {...(onManageProviders === undefined ? {} : { onManageProviders })} partner={view.partner} sources={sources} />
     </section>;
   }
   return <section className="partner-manager page-section">
@@ -319,9 +386,11 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
         {partner.configuration?.status === "ACTION_REQUIRED" ? <p className="inline-notice warning" role="alert">{configurationMessage(partner.configuration.reasonCodes)}</p> : null}
         <small>{[...partner.skills, ...partner.capabilities].join(" · ") || "尚未声明能力"}{partner.knowledgeDocCount > 0 ? ` · ${String(partner.knowledgeDocCount)} 篇知识库` : ""}</small>
         {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}
+        {partner.kind === "local-pi" && partner.engine === "pi-core" ? <PartnerModelStatus result={modelTests[partner.partnerId] ?? persistedModelTest(partner, sources)} /> : null}
         <div className="partner-card-actions">
           <label className="switch"><input aria-label={`启用或停用 ${partner.displayName}`} checked={partner.status === "ACTIVE"} onChange={() => void api.setPartnerEnabled(partner.partnerId, partner.status !== "ACTIVE").then(() => load()).catch(() => setNotice("搭档状态没切成。"))} type="checkbox" /><span>{partner.status === "ACTIVE" ? "已启用" : "已停用"}</span></label>
           <button className="button ghost" onClick={() => void api.duplicatePartner(partner.partnerId).then(() => load()).then(() => setNotice("已基于这个搭档复制出新搭档。")).catch(() => setNotice("搭档没能复制。"))} type="button">复制</button>
+          {partner.kind === "local-pi" && partner.engine === "pi-core" ? <button className="button ghost" disabled={modelTests[partner.partnerId] === "TESTING"} onClick={() => testPartnerModel(partner.partnerId)} type="button">测试模型</button> : null}
           <button className="button ghost" onClick={() => { setNotice(null); setView({ mode: "editor", partner }); }} type="button">编辑</button>
           {partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(() => load()).catch(() => setNotice("搭档还不能删除。"))} type="button">删除搭档</button> : null}
         </div>

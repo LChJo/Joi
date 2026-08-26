@@ -2,6 +2,7 @@ import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import type { RuntimeDiagnostics } from "../application/ports/runtime-diagnostics.js";
 import type { PartnerEngineRuntime } from "../application/ports/partner-instances.js";
 import { PartnerKnowledgeService } from "../application/partners/partner-knowledge-service.js";
+import { PartnerModelProbeService } from "../application/partners/partner-model-probe-service.js";
 import { PartnerRegistryService } from "../application/partners/partner-registry-service.js";
 import { PartnerEngineCatalog } from "../application/partners/partner-engine-catalog.js";
 import { PartnerInstanceManager } from "../application/partners/partner-instance-manager.js";
@@ -28,6 +29,7 @@ export function wirePartners(input: {
     clock,
     ids,
     knowledge: partnerKnowledge,
+    modelSources: modelSourceStack.modelSources,
     prompts: persistence.partnerPromptStore,
     repository: persistence.partnerRegistryRepository,
     skills: partnerSkillCatalog,
@@ -68,6 +70,7 @@ export function wirePartners(input: {
       skills: partnerSkillCatalog,
     }),
     partnerKnowledge,
+    partnerModelProbe: new PartnerModelProbeService({ clock, partners, sources: modelSourceStack.modelSources }),
     partnerMemory: new PartnerWorkMemoryService({
       clock,
       ids,

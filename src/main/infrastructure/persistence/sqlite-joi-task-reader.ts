@@ -25,10 +25,19 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
 
   async listPendingInputs(): Promise<JoiTaskPendingInput[]> {
     return (this.dependencies.database.transaction((connection) => connection.prepare(`
-      SELECT input_id, created_at FROM joi_inbox_messages
-       WHERE status = 'PENDING' AND dismissed_at IS NULL
-       ORDER BY created_at, input_id LIMIT 50`).all()) as Row[])
-      .map((row) => ({ createdAt: textValue(row, "created_at"), inputId: textValue(row, "input_id") }));
+      SELECT i.input_id, i.created_at,
+             CASE WHEN EXISTS (
+               SELECT 1 FROM joi_user_action_requests action
+                WHERE action.input_id = i.input_id AND action.status = 'RESOLVED'
+             ) THEN 0 ELSE 1 END AS requires_model_source
+        FROM joi_inbox_messages i
+       WHERE i.status = 'PENDING' AND i.dismissed_at IS NULL
+       ORDER BY i.created_at, i.input_id LIMIT 50`).all()) as Row[])
+      .map((row) => ({
+        createdAt: textValue(row, "created_at"),
+        inputId: textValue(row, "input_id"),
+        requiresModelSource: row.requires_model_source !== 0,
+      }));
   }
 
   async park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<void> {

@@ -16,6 +16,7 @@ import type { JoiHomeFeedService } from "../../application/joi/joi-home-feed-ser
 import type { WorkbenchAgentService } from "../../application/partners/workbench-agent-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
 import type { PartnerKnowledgeService } from "../../application/partners/partner-knowledge-service.js";
+import type { PartnerModelProbeService } from "../../application/partners/partner-model-probe-service.js";
 import type { PartnerEngineCatalog } from "../../application/partners/partner-engine-catalog.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
@@ -50,6 +51,7 @@ export interface ApiDependencies {
   engines?: Pick<PartnerEngineCatalog, "assertAvailable" | "list">;
   instances?: Pick<PartnerInstanceManager, "list">;
   knowledge?: Pick<PartnerKnowledgeService, "add" | "list" | "remove">;
+  partnerModelProbe?: Pick<PartnerModelProbeService, "test">;
   memory?: Pick<PartnerWorkMemoryService, "debugView">;
   skills?: Pick<PartnerSkillCatalog, "listForEngine">;
   directoryPicker?: () => Promise<string | null>;
@@ -110,6 +112,11 @@ export function joiInboxService(dependencies: ApiDependencies): NonNullable<ApiD
 export function partnerRegistryService(dependencies: ApiDependencies): NonNullable<ApiDependencies["partners"]> {
   if (dependencies.partners === undefined) throw new HttpError("partner_registry_unavailable", "Partner registry is unavailable.", 503);
   return dependencies.partners;
+}
+
+export function partnerModelProbeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["partnerModelProbe"]> {
+  if (dependencies.partnerModelProbe === undefined) throw new HttpError("partner_model_probe_unavailable", "Partner model probe is unavailable.", 503);
+  return dependencies.partnerModelProbe;
 }
 
 export function rejectPartnerWorkspace(body: Record<string, unknown>): void {

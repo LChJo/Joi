@@ -3,11 +3,102 @@ import os from "node:os";
 import path from "node:path";
 
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
+import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
+import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
-import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("sqlite joi inbox clarify", () => {
+  it("resolves a persisted partner question to the exact waiting Work", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "恢复", personaSummary: "persona", projectLabel: "joi", scopeSummary: "恢复等待工作" });
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "实现搭档", kind: "local-pi", skills: [], tools: [] });
+      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-action-question", text: "继续实现", workbenchId: workbench.workbenchId });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-action-question', ?, ?, 'session-action-question', 'COMPLETED', ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO dispatch_plans
+          (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+          VALUES ('plan-action-question', 'turn-action-question', '{}', '[]', ?)`).run(now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-action-question', ?, ?, '继续实现', '{}', 'READ', 'WAITING', ?, ?)`).run(workbench.workbenchId, accepted.inputId, now, now);
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+          VALUES ('attempt-action-question', 'plan-action-question', 'work-action-question', ?, 1, 'dispatch-action-question', 'WAITING_INPUT', ?, ?)`)
+          .run(partner.partnerRevisionId, now, now);
+        connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          VALUES ('run-action-question', 'attempt-action-question', 'dispatch-action-question', ?, 'work-action-question', ?, 'LOCAL_PI', 'local:action-question', 'WAITING_INPUT', ?, ?)`)
+          .run(workbench.workbenchId, partner.partnerRevisionId, now, now);
+      });
+      await repository.requireClarification(accepted.inputId, "question_required", "使用哪个配置？", {
+        actionId: "attention-action-question",
+        kind: "PARTNER_QUESTION",
+        runId: "run-action-question",
+        workId: "work-action-question",
+      });
+
+      await inbox.clarify({ inputId: accepted.inputId, text: "使用现有配置" });
+
+      expect(await repository.loadInput(accepted.inputId)).toMatchObject({
+        resolvedAction: { actionId: "attention-action-question", decision: "RESUME", workId: "work-action-question" },
+        status: "PENDING",
+      });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, decision FROM joi_user_action_requests WHERE action_id = 'attention-action-question'",
+      ).get())).toEqual({ decision: "RESUME", status: "RESOLVED" });
+
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-action-retry-1', ?, ?, 'session-action-retry', 'RUNNING', ?, ?),
+               ('turn-action-retry-2', ?, ?, 'session-action-retry', 'RUNNING', ?, ?)`)
+        .run(accepted.inputId, workbench.workbenchId, now, now, accepted.inputId, workbench.workbenchId, now, now));
+      const workRepository = new SqliteWorkPlanRepository(fixture.database);
+      const work = new WorkOrchestrationService({
+        clock: fixture.clock,
+        ids: fixture.ids,
+        partners: fixture.partners,
+        policy: { evaluate: () => Promise.resolve({ allowed: true }) },
+        reassignment: workRepository,
+        repository: workRepository,
+      });
+      const firstResume = await work.resume({
+        actionId: "attention-action-question",
+        turnId: "turn-action-retry-1",
+        workId: "work-action-question",
+        workbenchId: workbench.workbenchId,
+      });
+      const retriedResume = await work.resume({
+        actionId: "attention-action-question",
+        turnId: "turn-action-retry-2",
+        workId: "work-action-question",
+        workbenchId: workbench.workbenchId,
+      });
+      expect(retriedResume).toEqual(firstResume);
+      expect(fixture.database.transaction((connection) => ({
+        activeAttempts: connection.prepare(`SELECT COUNT(*) AS count FROM dispatch_attempts
+          WHERE work_id = 'work-action-question' AND status = 'PENDING'`).get(),
+        oldAttempt: connection.prepare(`SELECT status FROM dispatch_attempts
+          WHERE dispatch_attempt_id = 'attempt-action-question'`).get(),
+        oldRun: connection.prepare(`SELECT status FROM partner_runs
+          WHERE run_id = 'run-action-question'`).get(),
+      }))).toEqual({
+        activeAttempts: { count: 1 },
+        oldAttempt: { status: "FAILED" },
+        oldRun: { status: "FAILED" },
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("re-queues a clarified input with the chosen Workbench and refuses non-clarification rows", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });

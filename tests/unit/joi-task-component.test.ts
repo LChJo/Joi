@@ -100,6 +100,14 @@ describe("JoiTaskComponent traversal scheduling", () => {
     expect(harness.calls).toEqual([]);
   });
 
+  it("applies a resolved user action even while no model source is READY", async () => {
+    const harness = makeHarness({ ready: false });
+    harness.state.pending = [{ createdAt: BASE, inputId: "input_action", requiresModelSource: false }];
+    await harness.component.update(ctxAt(0));
+    await flush();
+    expect(harness.calls).toEqual(["input_action"]);
+  });
+
   it("converges a failed turn and picks the next pending input", async () => {
     const harness = makeHarness();
     harness.state.pending = [{ createdAt: BASE, inputId: "input_a" }];

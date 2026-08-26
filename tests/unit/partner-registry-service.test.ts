@@ -9,6 +9,7 @@ import type { PartnerKnowledgeDocMeta, PartnerKnowledgeStore } from "../../src/m
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../../src/main/application/ports/partner-registry.js";
 import { DomainError } from "../../src/main/domain/errors.js";
 import type { PartnerRevision } from "../../src/main/domain/partners/partner.js";
+import type { ModelSourceDto } from "../../src/shared/joi.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 class MemoryPartnerRegistry implements PartnerRegistryRepository {
@@ -60,6 +61,20 @@ class MemoryKnowledgeStore implements PartnerKnowledgeStore {
 }
 
 describe("partner-registry-revision-before-dispatch", () => {
+  const readySource: ModelSourceDto = {
+    accessMode: "api",
+    activeModel: { capability: "release-tested", id: "gpt-5.6-sol-sub", revisionId: "model-revision-1" },
+    activeSourceRevisionId: "source-revision-1",
+    credential: { configured: true, version: 1 },
+    displayName: "gpt-sub",
+    kind: "generic-openai",
+    order: 0,
+    primary: true,
+    protocol: "openai",
+    sourceId: "source-ready",
+    status: "READY",
+  };
+
   it("increments immutable registry revisions before every new dispatch pin", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
@@ -89,6 +104,29 @@ describe("partner-registry-revision-before-dispatch", () => {
       modelSourceId: "source_ready", registryRevision: 2, skills: ["typescript"], tools: ["read", "edit"],
     });
     expect(switched.partnerRevisionId).not.toBe(first.partnerRevisionId);
+    expect(repository.history).toHaveLength(2);
+  });
+
+  it("clears an existing model pin explicitly and rejects a model override that is not active on its source", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({
+      clock: new TestClock(), ids: new TestIds(), modelSources: { list: async () => [readySource] }, repository,
+    });
+    const first = await service.add({
+      capabilities: [], displayName: "Coder", kind: "local-pi", modelIdOverride: readySource.activeModel.id,
+      modelSourceId: readySource.sourceId, skills: [], tools: [],
+    });
+
+    const cleared = await service.update(first.partnerId, {
+      capabilities: [], displayName: "Coder", modelIdOverride: null, modelSourceId: null, skills: [], tools: [],
+    });
+    expect(cleared).not.toHaveProperty("modelIdOverride");
+    expect(cleared).not.toHaveProperty("modelSourceId");
+
+    await expect(service.update(first.partnerId, {
+      capabilities: [], displayName: "Coder", modelIdOverride: "DeepSeek-V4-Pro",
+      modelSourceId: readySource.sourceId, skills: [], tools: [],
+    })).rejects.toMatchObject({ code: "partner_model_override_not_ready" });
     expect(repository.history).toHaveLength(2);
   });
 

@@ -15,6 +15,7 @@ import {
   partnerEngineParam,
   partnerInstanceManager,
   partnerKnowledgeService,
+  partnerModelProbeService,
   partnerRegistryService,
   partnerSkillCatalog,
   rejectPartnerWorkspace,
@@ -124,6 +125,14 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "write",
+    id: "POST /api/v1/partners/:partnerId/test-model",
+    match: pattern("POST", /^\/api\/v1\/partners\/([^/]+)\/test-model$/),
+    handle: async (ctx, match) => {
+      sendJson(ctx.response, 200, await partnerModelProbeService(ctx.dependencies).test(decodeURIComponent((match as RegExpExecArray)[1] ?? "")));
+    },
+  },
+  {
+    auth: "write",
     id: "PATCH /api/v1/partners/:partnerId",
     match: pattern("PATCH", /^\/api\/v1\/partners\/([^/]+)$/),
     handle: async (ctx, match) => {
@@ -145,9 +154,9 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
         ...(typeof body.description === "string" ? { description: body.description } : {}),
         displayName: stringField(body, "displayName"),
         ...(engine === undefined ? {} : { engine }),
-        ...(typeof body.engineModelId === "string" ? { engineModelId: body.engineModelId } : {}),
-        ...(typeof body.modelIdOverride === "string" ? { modelIdOverride: body.modelIdOverride } : {}),
-        ...(typeof body.modelSourceId === "string" ? { modelSourceId: body.modelSourceId } : {}),
+        ...(body.engineModelId === null ? { engineModelId: null } : typeof body.engineModelId === "string" ? { engineModelId: body.engineModelId } : {}),
+        ...(body.modelIdOverride === null ? { modelIdOverride: null } : typeof body.modelIdOverride === "string" ? { modelIdOverride: body.modelIdOverride } : {}),
+        ...(body.modelSourceId === null ? { modelSourceId: null } : typeof body.modelSourceId === "string" ? { modelSourceId: body.modelSourceId } : {}),
         skills: optionalStringArray(body, "skills") ?? [],
         tools: optionalStringArray(body, "tools") ?? [],
         ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),

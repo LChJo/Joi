@@ -1,7 +1,7 @@
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
-describe("Workbench workspace ownership", () => {
-  it("rejects binding one workspace root to more than one Workbench", async () => {
+describe("Workbench workspace sharing", () => {
+  it("allows more than one Workbench to bind the same workspace root", async () => {
     const fixture = await createRuntimeFixture();
     try {
       const first = await fixture.workbenchRegistry.create({
@@ -19,7 +19,12 @@ describe("Workbench workspace ownership", () => {
 
       await fixture.workbenchWorkspaces.bindExisting(first.workbenchId, "C:\\projects\\shared\\");
       await expect(fixture.workbenchWorkspaces.bindExisting(second.workbenchId, "C:\\projects\\shared"))
-        .rejects.toMatchObject({ code: "workbench_workspace_already_bound" });
+        .resolves.toMatchObject({ kind: "BOUND", status: "READY" });
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT root_path FROM workbench_workspace_roots
+        WHERE workspace_ref IN (?, ?) ORDER BY workspace_ref`).all(
+        `workbench_workspace:${first.workbenchId}`,
+        `workbench_workspace:${second.workbenchId}`,
+      ))).toEqual([{ root_path: "C:\\projects\\shared" }, { root_path: "C:\\projects\\shared" }]);
     } finally {
       await fixture.close();
     }

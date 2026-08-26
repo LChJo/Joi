@@ -254,9 +254,15 @@ export class WorkOrchestrationService {
    * current partner revision: the point is to feed the answer back into the same work, and
    * the dispatch continues in the original resident instance when it is still alive.
    */
-  async resume(input: { workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+  async resume(input: { actionId?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
+    const existingForAction = input.actionId === undefined
+      ? null
+      : await repository.loadAttemptForAction?.(input.workId, input.actionId) ?? null;
+    if (existingForAction !== null) return existingForAction;
+    const existing = await repository.loadAttemptForTurn?.(input.workId, input.turnId) ?? null;
+    if (existing !== null) return existing;
     const context = await repository.loadForReassignment(input.workId);
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
@@ -271,7 +277,7 @@ export class WorkOrchestrationService {
       ? null
       : await this.dependencies.instances.get(context.lastInstanceId);
     const createdAt = this.dependencies.clock.now().toISOString();
-    const actionId = this.dependencies.ids.next("action");
+    const actionId = input.actionId ?? this.dependencies.ids.next("action");
     const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
     const attempt: PlannedDispatchAttempt = {
       ...pin,

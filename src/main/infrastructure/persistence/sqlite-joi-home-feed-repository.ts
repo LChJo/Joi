@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
+import type { JoiGoalCardBaseDto, JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
 import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "../../application/joi/joi-input-failure.js";
 import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
@@ -50,7 +50,10 @@ function toHarnessDto(projection: {
 function goalStatus(row: Row): JoiGoalStatusDto {
   if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
-  if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined || number(row, "waiting_count") > 0) return "NEEDS_ATTENTION";
+  if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined) return "NEEDS_ATTENTION";
+  // A transient invariant-repair window is active backend work, not a user request.
+  // The Workbench actor will either restore an OPEN action or advance the Work.
+  if (number(row, "waiting_count") > 0) return "RUNNING";
   // A retry is persisted before its new Turn exists. Keep the card in the arranging
   // state even when the goal still owns planned work from an earlier attempt.
   if (text(row, "inbox_status") === "PENDING") return "ARRANGING";
@@ -144,7 +147,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const goalId = text(row, "input_id");
         const harnessProjection = harnessByGoal.get(goalId);
         const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code);
-        return {
+        const base: JoiGoalCardBaseDto = {
           agentCount: number(row, "agent_count"),
           workbench: {
             workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",
@@ -154,12 +157,6 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             || text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1)
             && active === 0 && activeRuns === 0
             && ((row.canceled_at !== null && row.canceled_at !== undefined) || total === 0 || number(row, "outcome_current") === 1),
-          ...(status === "NEEDS_ATTENTION" && (typeof row.clarification_reason_code === "string" || typeof row.clarification_prompt === "string") ? {
-            clarification: {
-              ...(typeof row.clarification_prompt === "string" ? { prompt: row.clarification_prompt } : {}),
-              ...(typeof row.clarification_reason_code === "string" ? { reasonCode: row.clarification_reason_code } : {}),
-            },
-          } : {}),
           goalId,
           ...(status === "FAILED" && typeof row.failure_reason_code === "string" && typeof row.failure_count === "number" ? {
             failure: {
@@ -180,11 +177,22 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             : number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completed_at === "string"
               ? { completedAt: row.turn_completed_at }
               : {}),
-          status,
           title: title === "" ? "未命名目标" : title,
           updatedAt: text(row, "projection_updated_at"),
           work: { active, completed: number(row, "completed_count"), failed: number(row, "failed_count"), total },
         };
+        if (status === "NEEDS_ATTENTION") {
+          if (typeof row.clarification_reason_code !== "string") throw new Error("joi_home_feed_attention_invalid");
+          return {
+            ...base,
+            clarification: {
+              ...(typeof row.clarification_prompt === "string" ? { prompt: row.clarification_prompt } : {}),
+              reasonCode: row.clarification_reason_code,
+            },
+            status,
+          };
+        }
+        return { ...base, status };
       });
       const goalsById = new Map(goals.map((goal) => [goal.goalId, goal]));
       const cutoff = new Date(now.getTime() - 15_000).toISOString();

@@ -500,6 +500,8 @@
 .partner-card-head strong { font-size: 16px; }
 .partner-card-desc { margin: 0; color: var(--ink); }
 .partner-card-desc.muted { color: var(--faint); }
+.partner-model-status { display: grid; gap: 2px; color: var(--muted); }
+.partner-model-status > small { color: var(--faint); }
 .engine-badge { padding: 2px 8px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--muted); font-size: 12px; }
 .engine-badge.unavailable { border-color: var(--amber); color: var(--amber); }
 .badge-joi { padding: 2px 8px; border-radius: 999px; background: var(--forest); color: var(--paper-strong); font-size: 12px; }

@@ -493,4 +493,94 @@ describe("partner page", () => {
     expect(setTab).toHaveBeenCalledWith("partners");
   });
 
+  it("synchronizes the editable model name when the provider changes and reloads the saved revision", async () => {
+    const api = new DigitalLifeApi("");
+    const revised = { ...coder, modelIdOverride: "gpt-5.6-sol-sub", modelSourceId: "source-ready", partnerRevisionId: "revision-2", registryRevision: 2 };
+    vi.spyOn(api, "listPartners").mockResolvedValueOnce({ items: [coder] }).mockResolvedValue({ items: [revised] });
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [{
+      accessMode: "api", activeModel: { capability: "release-tested", id: "gpt-5.6-sol-sub", revisionId: "model-1" },
+      activeSourceRevisionId: "source-revision-1", credential: { configured: true, version: 1 }, displayName: "gpt-sub",
+      kind: "generic-openai", order: 0, primary: true, protocol: "openai", sourceId: "source-ready", status: "READY",
+    }] });
+    vi.spyOn(api, "engineCatalog").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ displayName: "TypeScript", id: "typescript" }] });
+    const update = vi.spyOn(api, "updatePartner").mockResolvedValue(revised);
+    render(<PartnerPage api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    expect(await screen.findByText("TypeScript")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "高级" }));
+    fireEvent.change(screen.getByLabelText("供应商"), { target: { value: "source-ready" } });
+    expect(screen.getByLabelText("模型名")).toHaveValue("gpt-5.6-sol-sub");
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({
+      modelIdOverride: "gpt-5.6-sol-sub", modelSourceId: "source-ready",
+    })));
+    expect(await screen.findByRole("heading", { name: "Local Coder" })).toBeInTheDocument();
+  });
+
+  it("tests a Pi partner model from its status area and shows the persisted safe result", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [coder]);
+    vi.spyOn(api, "testPartnerModel").mockResolvedValue({
+      modelId: "gpt-5.6-sol-sub", partnerId: "partner-1", sourceDisplayName: "gpt-sub", sourceId: "source-ready",
+      status: "READY", testedAt: "2026-08-25T08:00:00.000Z",
+    });
+    render(<PartnerPage api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "测试模型" }));
+    expect(await screen.findByText(/模型可用/u)).toBeInTheDocument();
+    expect(screen.getByText(/gpt-sub · gpt-5\.6-sol-sub/u)).toBeInTheDocument();
+  });
+
+  it("shows a safe actionable reason when a Pi partner model test fails", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [coder]);
+    vi.spyOn(api, "testPartnerModel").mockResolvedValue({
+      modelId: "DeepSeek-V4-Pro", partnerId: "partner-1", reasonCode: "partner_model_override_not_ready",
+      sourceDisplayName: "gpt-sub", sourceId: "source-ready", status: "FAILED", testedAt: "2026-08-25T08:00:00.000Z",
+    });
+    render(<PartnerPage api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "测试模型" }));
+    expect(await screen.findByText("模型名与供应商当前模型不一致")).toBeInTheDocument();
+  });
+
+  it("restores persisted provider validation status and detects a stale partner override", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [
+      { ...coder, displayName: "Ready Coder", modelIdOverride: "gpt-5.6-sol-sub", modelSourceId: "source-ready" },
+      { ...coder, displayName: "Stale Coder", modelIdOverride: "DeepSeek-V4-Pro", modelSourceId: "source-ready", partnerId: "partner-2", partnerRevisionId: "revision-2" },
+    ]);
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [{
+      accessMode: "api", activeModel: { capability: "release-tested", id: "gpt-5.6-sol-sub", revisionId: "model-1" },
+      activeSourceRevisionId: "source-revision-1", credential: { configured: true, version: 1 }, displayName: "gpt-sub",
+      kind: "generic-openai", lastValidatedAt: "2026-08-25T08:00:00.000Z", order: 0, primary: true,
+      protocol: "openai", sourceId: "source-ready", status: "READY",
+    }] });
+    render(<PartnerPage api={api} />);
+
+    expect((await screen.findAllByText("模型可用")).length).toBeGreaterThan(0);
+    expect(screen.getByText("模型名与供应商当前模型不一致")).toBeInTheDocument();
+  });
+
+  it("maps model-source readiness failures and rejected requests to safe card states", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [coder]);
+    vi.spyOn(api, "testPartnerModel")
+      .mockResolvedValueOnce({
+        partnerId: "partner-1", reasonCode: "partner_model_source_not_ready", status: "FAILED",
+        testedAt: "2026-08-25T08:00:00.000Z",
+      })
+      .mockRejectedValueOnce(new Error("private failure"));
+    render(<PartnerPage api={api} />);
+
+    const button = await screen.findByRole("button", { name: "测试模型" });
+    fireEvent.click(button);
+    expect(await screen.findByText("供应商尚未就绪")).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(await screen.findByText("模型连接失败")).toBeInTheDocument();
+    expect(screen.queryByText("private failure")).not.toBeInTheDocument();
+  });
+
 });

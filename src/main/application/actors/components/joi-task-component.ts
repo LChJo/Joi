@@ -107,7 +107,7 @@ export class JoiTaskComponent implements ActorComponent {
   async #startNext(ctx: ActorTickContext): Promise<void> {
     const [next] = await this.dependencies.inbox.listPendingInputs();
     if (next === undefined) return;
-    if (!(await this.dependencies.gate.hasReadySource())) return;
+    if (next.requiresModelSource !== false && !(await this.dependencies.gate.hasReadySource())) return;
     const inputId = next.inputId;
     const startedAt = ctx.now.getTime();
     const abortController = new AbortController();

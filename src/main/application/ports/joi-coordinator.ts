@@ -8,6 +8,7 @@ export interface JoiPendingInput {
   goalInputId?: string;
   inputId: string;
   resultRevision?: number;
+  resolvedAction?: { actionId: string; decision: "RESUME"; workId: string };
   status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
 }
 
@@ -19,20 +20,26 @@ export interface JoiInputCompletion {
 }
 
 export interface JoiCoordinatorStore {
+  completeResolvedAction?(input: { actionId: string; inputId: string; turnId: string }): Promise<void>;
   completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion): Promise<unknown>;
   createTurn(input: {
     workbenchId: string;
     createdAt: string;
     inputId: string;
-    modelRevisionId: string;
+    modelRevisionId?: string;
     sessionId: string;
-    sourceRevisionId: string;
+    sourceRevisionId?: string;
     turnId: string;
   }): Promise<void>;
   failTurn?(inputId: string, turnId: string): Promise<void>;
   loadInput(inputId: string): Promise<JoiPendingInput | null>;
   recordTurnProgress?(turnId: string, progress: { formalOutputStarted: boolean; sideEffectStarted: boolean }): Promise<void>;
-  requireClarification(inputId: string, reasonCode: string, prompt?: string): Promise<void>;
+  requireClarification(inputId: string, reasonCode: string, prompt?: string, action?: {
+    actionId: string;
+    kind: "PARTNER_QUESTION";
+    runId: string;
+    workId: string;
+  }): Promise<void>;
   updateTurnSource?(turnId: string, sourceRevisionId: string, modelRevisionId: string): Promise<void>;
 }
 

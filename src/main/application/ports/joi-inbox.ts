@@ -23,7 +23,7 @@ export interface JoiInboxRepository {
   cancel(inputId: string): Promise<JoiInboxRecord | null>;
   /** Stops queued goals without touching partner runs already in flight. */
   cancelQueued?(): Promise<number>;
-  clarify(inputId: string, patch: { expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null>;
+  clarify(inputId: string, patch: { actionChoice?: "RESUME"; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null>;
   create(record: JoiInboxRecord): Promise<JoiInboxRecord>;
   dismiss(inputId: string): Promise<JoiInboxRecord | null>;
   list(): Promise<JoiInboxRecord[]>;

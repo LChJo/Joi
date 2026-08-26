@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, ScenarioDto } from "../shared/joi";
+import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -130,9 +130,10 @@ export class DigitalLifeApi {
       idempotencyKey: crypto.randomUUID(), method: "POST",
     });
   }
-  clarifyJoiMessage(inputId: string, resolution: { partnerId?: string; workbenchId?: string; text?: string }) {
+  clarifyJoiMessage(inputId: string, resolution: { actionChoice?: "RESUME"; partnerId?: string; workbenchId?: string; text?: string }) {
     return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/clarify`, {
       body: {
+        ...(resolution.actionChoice === undefined ? {} : { actionChoice: resolution.actionChoice }),
         ...(resolution.partnerId === undefined ? {} : { partnerId: resolution.partnerId }),
         ...(resolution.workbenchId === undefined ? {} : { workbenchId: resolution.workbenchId }),
         ...(resolution.text === undefined ? {} : { text: resolution.text }),
@@ -206,10 +207,13 @@ export class DigitalLifeApi {
     return this.request<PartnerDto>("/api/v1/partners", { body, method: "POST" });
   }
   updatePartner(partnerId: string, body: {
-    capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
-    modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[]; tools: string[];
+    capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string | null;
+    modelIdOverride?: string | null; modelSourceId?: string | null; prompt?: string; skills: string[]; tools: string[];
   }) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body, method: "PATCH" });
+  }
+  testPartnerModel(partnerId: string) {
+    return this.request<PartnerModelTestDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}/test-model`, { method: "POST" });
   }
   setPartnerEnabled(partnerId: string, enabled: boolean) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body: { disabled: !enabled }, method: "PATCH" });

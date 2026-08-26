@@ -212,6 +212,7 @@ async function startRuntime(): Promise<void> {
     joiAttachments: joiStack.joiAttachmentStorage,
     joiInbox: joiStack.joiInbox,
     knowledge: partnerStack.partnerKnowledge,
+    partnerModelProbe: partnerStack.partnerModelProbe,
     lives,
     memory: partnerStack.partnerMemory,
     directoryPicker,

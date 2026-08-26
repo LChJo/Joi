@@ -72,6 +72,8 @@ export interface ReassignedWorkPlan {
 
 export interface WorkReassignmentRepository {
   cancel(workId: string, at: string): Promise<boolean>;
+  loadAttemptForAction?(workId: string, actionId: string): Promise<PlannedDispatchAttempt | null>;
+  loadAttemptForTurn?(workId: string, turnId: string): Promise<PlannedDispatchAttempt | null>;
   loadForReassignment(workId: string): Promise<WorkReassignmentContext | null>;
   reassign(plan: ReassignedWorkPlan): Promise<void>;
 }

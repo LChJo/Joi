@@ -50,19 +50,27 @@ export class JoiInboxService {
     return (await this.dependencies.repository.list()).map(toDto);
   }
 
-  async clarify(input: { partnerId?: string; workbenchId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
+  async clarify(input: { actionChoice?: string; partnerId?: string; workbenchId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
     const inputId = input.inputId.trim();
     if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
     const workbenchId = typeof input.workbenchId === "string" ? input.workbenchId.trim() : "";
     const partnerId = typeof input.partnerId === "string" ? input.partnerId.trim() : "";
     const text = typeof input.text === "string" ? input.text.trim() : "";
+    const actionChoice = typeof input.actionChoice === "string" ? input.actionChoice.trim() : "";
     const cleanWorkbench = workbenchId.length === 0 ? undefined : workbenchId;
     const cleanPartner = partnerId.length === 0 ? undefined : partnerId;
     const cleanText = text.length === 0 ? undefined : text;
+    const cleanActionChoice = actionChoice === "" ? undefined : actionChoice;
+    if (cleanActionChoice !== undefined && cleanActionChoice !== "RESUME") {
+      throw new DomainError("joi_clarification_invalid", "The selected action is invalid.");
+    }
+    if (cleanActionChoice !== undefined && (cleanPartner !== undefined || cleanWorkbench !== undefined || cleanText !== undefined)) {
+      throw new DomainError("joi_clarification_invalid", "Choose one clarification resolution.");
+    }
     if (cleanPartner !== undefined && (cleanWorkbench !== undefined || cleanText !== undefined)) {
       throw new DomainError("joi_clarification_invalid", "Choose a partner without another clarification resolution.");
     }
-    if (cleanWorkbench === undefined && cleanPartner === undefined && cleanText === undefined) {
+    if (cleanWorkbench === undefined && cleanPartner === undefined && cleanText === undefined && cleanActionChoice === undefined) {
       throw new DomainError("joi_clarification_empty", "Provide a workbench, partner, or supplementary text to continue.");
     }
     if (cleanWorkbench !== undefined && cleanWorkbench.length > 160) throw new DomainError("joi_workbench_invalid", "Workbench reference is invalid.");
@@ -71,6 +79,7 @@ export class JoiInboxService {
     let record;
     if (cleanPartner === undefined) {
       record = await this.dependencies.repository.clarify(inputId, {
+        ...(cleanActionChoice === undefined ? {} : { actionChoice: cleanActionChoice }),
         ...(cleanWorkbench === undefined ? {} : { workbenchId: cleanWorkbench }),
         ...(cleanText === undefined ? {} : { text: cleanText }),
       });

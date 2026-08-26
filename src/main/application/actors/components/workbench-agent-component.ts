@@ -2,10 +2,7 @@ import { emitRuntimeDiagnostic } from "../../ports/runtime-diagnostics.js";
 import { AgentActor } from "../agent-actor.js";
 import { AgentDispatchComponent } from "./agent-dispatch-component.js";
 import type { ActorComponent, ActorTickContext } from "../../ports/actor-runtime.js";
-import type {
-  WorkbenchAgentScan,
-  WorkbenchPendingConfirmation,
-} from "../../ports/workbench-agent-scan.js";
+import type { WorkbenchAgentScan } from "../../ports/workbench-agent-scan.js";
 import type {
   PartnerDispatchClaims,
   PartnerDispatchDelivery,
@@ -14,21 +11,24 @@ import type { PartnerRunStatus } from "../../ports/partner-execution.js";
 import type { RuntimeStore } from "../../ports/runtime-store.js";
 import type { PartnerWorkMemoryService } from "../../partners/partner-work-memory-service.js";
 import type { PartnerInstanceManager } from "../../partners/partner-instance-manager.js";
+import type { WorkbenchAttentionReconciler } from "../../ports/workbench-attention.js";
 
 const DEFAULT_SWEEP_EVERY_MILLIS = 60_000;
+const WAITING_RECOVERY_REASON = "partner_waiting_recovery_required";
+const WAITING_RECOVERY_PROMPT = "一项搭档工作仍在等待，但原来的提问卡已经失去关联。点击“继续原工作”可从已保存的上下文恢复；如果不希望继续，可以取消这条任务。";
 
 /**
  * Per-Workbench traversal over agent facts: reconciles leaf AgentActors, aggregates
- * pending confirmations, sweeps idle instances and folds authoritative terminal
+ * repairs actionable attention, sweeps idle instances and folds authoritative terminal
  * results into the joi goal synthesis (replacing the onResult callback).
  */
 export class WorkbenchAgentComponent implements ActorComponent {
   readonly componentName = "workbench-agent";
   readonly #agentActors = new Map<string, AgentActor>();
   #lastSweepAt = 0;
-  #pendingConfirmations: WorkbenchPendingConfirmation[] = [];
 
   constructor(private readonly dependencies: {
+    attention: WorkbenchAttentionReconciler;
     workbenchId: string;
     dispatch?: {
       claims: PartnerDispatchClaims;
@@ -49,14 +49,18 @@ export class WorkbenchAgentComponent implements ActorComponent {
     return [...this.#agentActors.values()];
   }
 
-  get pendingConfirmations(): readonly WorkbenchPendingConfirmation[] {
-    return this.#pendingConfirmations;
-  }
-
   async update(ctx: ActorTickContext): Promise<void> {
+    const repaired = await this.dependencies.attention.reconcile({
+      prompt: WAITING_RECOVERY_PROMPT,
+      reasonCode: WAITING_RECOVERY_REASON,
+      workbenchId: this.dependencies.workbenchId,
+    });
+    if (repaired > 0) emitRuntimeDiagnostic(ctx.diagnostics, "joi.workbench.attention_repaired", {
+      repaired,
+      workbenchId: this.dependencies.workbenchId,
+    });
     await this.#synthesize(ctx);
     await this.#sweep(ctx);
-    this.#pendingConfirmations = await this.dependencies.scan.listPendingConfirmations(this.dependencies.workbenchId);
     await this.#reconcile();
   }
 

@@ -86,6 +86,7 @@ export function wireJoi(input: {
     runtime: joiReasoning,
     sources: modelSourceStack.reasoningSources,
     store: persistence.joiInboxRepository,
+    work: workbenchStack.work,
     workbenchRegistry: workbenchStack.workbenchRegistry,
     workbenches: persistence.workbenches,
   });
