@@ -145,7 +145,7 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
-  it("projects a resident Agent as waiting when its goal-scoped run waits even though the instance is idle", async () => {
+  it("projects a resident Agent from its goal-scoped run while the global card keeps instance availability", async () => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "等待回答" });
@@ -179,6 +179,16 @@ describe("Workbench Agent and joi home projections", () => {
       const repository = new SqliteWorkbenchAgentRepository(fixture.database);
       const agents = await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-waiting-agent", limit: 50 });
       expect(agents.items).toEqual([expect.objectContaining({ agentId: resident.instanceId, status: "WAITING" })]);
+
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE work_items SET status = 'COMPLETED', updated_at = ? WHERE work_id = 'work-waiting-agent'").run(now);
+        connection.prepare("UPDATE dispatch_attempts SET status = 'COMPLETED', updated_at = ? WHERE dispatch_attempt_id = 'attempt-waiting-agent'").run(now);
+        connection.prepare("UPDATE partner_runs SET status = 'COMPLETED', updated_at = ? WHERE run_id = 'run-waiting-agent'").run(now);
+      });
+      expect((await repository.listAgents({ workbenchId: workbench.workbenchId, limit: 50 })).items)
+        .toEqual([expect.objectContaining({ agentId: resident.instanceId, status: "IDLE" })]);
+      expect((await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-waiting-agent", limit: 50 })).items)
+        .toEqual([expect.objectContaining({ agentId: resident.instanceId, status: "COMPLETED" })]);
     } finally {
       await fixture.close();
     }

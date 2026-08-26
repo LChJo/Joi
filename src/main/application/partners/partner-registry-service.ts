@@ -50,11 +50,11 @@ export class PartnerRegistryService {
     skills?: Pick<PartnerSkillCatalog, "listForEngine"> & Partial<Pick<PartnerSkillCatalog, "validateRefs">>;
   }) {}
 
-  async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind }): Promise<PartnerDto> {
+  async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind; partnerId?: string }): Promise<PartnerDto> {
     assertNoWorkspace(input);
     this.#assertLocalSkills(input.kind, input.engine ?? "pi-core", input.skills, input.tools);
     await this.#assertModelConfiguration(input.kind, input.engine ?? "pi-core", input.modelSourceId, input.modelIdOverride);
-    const partnerId = this.dependencies.ids.next("partner");
+    const partnerId = input.partnerId ?? this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt);
     const validated = createPartnerRevision({

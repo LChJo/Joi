@@ -477,6 +477,9 @@ export function createJoiReasoningTools(input: {
           throw new DomainError("harness_clear_not_allowed", "Only a harness review turn can clear the goal map.");
         }
         const cleared = await harness.clearMap({ goalInputId: input.goalInputId, turnId: input.turnId });
+        if (!cleared) {
+          throw new DomainError("harness_clear_preconditions_unmet", "The goal map cannot be cleared until its review and execution facts are complete.");
+        }
         return result({ cleared, outcome: arguments_.outcome, status: "COMMITTED" });
       }
       return result({ outcome: arguments_.outcome, status: "COMMITTED" });

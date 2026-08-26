@@ -263,6 +263,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
         WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, inputId);
       if (result.changes === 0) return null;
+      connection.prepare(`UPDATE joi_harness_maps
+        SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,
+          revision = revision + 1, updated_at = ?
+        WHERE goal_input_id = ? AND status = 'CLEARED'`).run(now, inputId);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });

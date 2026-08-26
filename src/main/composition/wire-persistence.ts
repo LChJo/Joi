@@ -11,6 +11,7 @@ import { SqlitePartnerInstanceRepository } from "../infrastructure/persistence/s
 import { SqlitePartnerKnowledgeStore } from "../infrastructure/persistence/sqlite-partner-knowledge-store.js";
 import { SqlitePartnerPromptStore } from "../infrastructure/persistence/sqlite-partner-prompt-store.js";
 import { SqlitePartnerRegistryRepository } from "../infrastructure/persistence/sqlite-partner-registry-repository.js";
+import { SqliteScenarioPackRepository } from "../infrastructure/persistence/sqlite-scenario-pack-repository.js";
 import { SqlitePartnerWorkMemoryStore } from "../infrastructure/persistence/sqlite-partner-work-memory-store.js";
 import { SqlitePiCredentialRepository } from "../infrastructure/persistence/sqlite-pi-credential-repository.js";
 import { SqlitePiReasoningSessionStore } from "../infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
@@ -50,6 +51,7 @@ export function wirePersistence(input: {
     partnerKnowledgeStore: new SqlitePartnerKnowledgeStore(database),
     partnerPromptStore: new SqlitePartnerPromptStore(database),
     partnerRegistryRepository: new SqlitePartnerRegistryRepository(database),
+    scenarioPackRepository: new SqliteScenarioPackRepository(database),
     partnerWorkMemoryStore: new SqlitePartnerWorkMemoryStore(database),
     piCredentialRepository: new SqlitePiCredentialRepository(database),
     piReasoningSessionStore: new SqlitePiReasoningSessionStore(database),

@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { PartnerPage } from "../../src/renderer/PartnerPage.js";
-import type { PartnerDto } from "../../src/shared/joi.js";
+import type { PartnerDto, ScenarioPackDto } from "../../src/shared/joi.js";
 
 const coder: PartnerDto = {
   capabilities: ["code"], createdBy: "user", description: "写代码的搭档", displayName: "Local Coder",
@@ -463,6 +463,49 @@ describe("partner page", () => {
     fireEvent.click(screen.getByRole("button", { name: "创建所选搭档" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith("review-code", ["correctness"]));
     expect(await screen.findByText(/已创建 1 位搭档/u)).toBeInTheDocument();
+  });
+
+  it("expands the AI Berkshire package and installs a team without manual role input", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, []);
+    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [] });
+    const initial: ScenarioPackDto = {
+      blurb: "完整价值投资协作套件", definitionVersion: 1, id: "ai-berkshire-value-research",
+      installedRoleCount: 0, source: { license: "MIT", repository: "xbtlin/ai-berkshire", revision: "2760dc48" },
+      status: "NOT_INSTALLED", title: "AI Berkshire 价值研究套件", totalRoleCount: 15,
+      teams: [{
+        blurb: "把证据整理为长篇研究", id: "research-publishing", title: "研究发布",
+        roles: [
+          { blurb: "写作", id: "longform-writer", roleId: "longform-writer", status: "NOT_INSTALLED", title: "长篇研究作者" },
+          { blurb: "审校", id: "editorial-reviewer", roleId: "editorial-reviewer", status: "NOT_INSTALLED", title: "编辑与读者评审" },
+        ],
+      }],
+    };
+    const active: ScenarioPackDto = {
+      ...initial, installedRoleCount: 2, status: "ACTIVE",
+      teams: initial.teams.map((team) => ({ ...team, roles: team.roles.map((role) => ({ ...role, partnerId: `partner-${role.id}`, status: "ACTIVE" as const })) })),
+    };
+    vi.spyOn(api, "scenarioPacks").mockResolvedValueOnce({ items: [initial] }).mockResolvedValue({ items: [active] });
+    const install = vi.spyOn(api, "installScenarioPack").mockResolvedValueOnce({
+      installedRoleCount: 2,
+      outcomes: [
+        { outcome: "CREATED", partnerId: "partner-longform", roleId: "longform-writer" },
+        { outcome: "REUSED", partnerId: "partner-editor", roleId: "editorial-reviewer" },
+      ],
+      packId: initial.id, status: "ACTIVE",
+    }).mockRejectedValueOnce(new ApiError("scenario_pack_action_required", "套件配置需要处理。", 400));
+
+    render(<PartnerPage api={api} onTabChange={() => undefined} tab="scenarios" />);
+    fireEvent.click(await screen.findByRole("button", { name: /AI Berkshire 价值研究套件/u }));
+    expect(screen.getByText("长篇研究作者")).toBeInTheDocument();
+    expect(screen.getAllByText("未安装").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "安装研究发布" }));
+    await waitFor(() => expect(install).toHaveBeenCalledWith(initial.id, ["research-publishing"]));
+    expect(await screen.findByText(/新建 1 位，复用 1 位/u)).toBeInTheDocument();
+    expect((await screen.findAllByText("已启用")).length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: "安装完整套件" }));
+    await waitFor(() => expect(install).toHaveBeenLastCalledWith(initial.id, undefined));
+    expect(await screen.findByText("套件配置需要处理。")).toBeInTheDocument();
   });
 
   it("reports a failure when scenario partner creation fails", async () => {

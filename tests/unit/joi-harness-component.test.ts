@@ -28,6 +28,7 @@ function makeHarness(options?: { reviewEnabled?: boolean; scanEveryMillis?: numb
   const feedbackEntries: { entry: string; goalInputId: string }[] = [];
   const clearedTrivial: string[] = [];
   const enqueuedReviews: string[] = [];
+  let pathSync = { closed: 0, created: 0 };
   let failStep: string | null = null;
   const scan = {
     listFeedbackTargets: async () => [...feedbackTargets],
@@ -62,6 +63,7 @@ function makeHarness(options?: { reviewEnabled?: boolean; scanEveryMillis?: numb
       feedbackEntries.push({ entry: input.entry, goalInputId: input.goalInputId });
       return true;
     },
+    synchronizeWorkPaths: async () => pathSync,
   };
   const component = new JoiHarnessComponent({
     ...(options?.reviewEnabled === undefined ? {} : { reviewEnabled: options.reviewEnabled }),
@@ -78,6 +80,7 @@ function makeHarness(options?: { reviewEnabled?: boolean; scanEveryMillis?: numb
     feedbackEntries,
     feedbackTargets,
     reviewDigests,
+    setPathSync: (value: { closed: number; created: number }) => { pathSync = value; },
     seeds,
     setFailStep: (step: string | null) => { failStep = step; },
     trivialCandidates,
@@ -151,6 +154,16 @@ describe("JoiHarnessComponent", () => {
     expect(harness.enqueuedReviews).toEqual(["goal-8"]);
   });
 
+  it("reports deterministic Work-path synchronization", async () => {
+    const harness = makeHarness();
+    harness.setPathSync({ closed: 2, created: 3 });
+    const ctx = ctxAt(0);
+    await harness.component.update({ ...ctx, diagnostics: { emit: (name, payload) => harness.diagnostics.events.push({ name, payload }) } });
+    expect(harness.diagnostics.events).toContainEqual({
+      name: "joi.harness.paths_synchronized", payload: { closed: 2, created: 3 },
+    });
+  });
+
   it("isolates a failing step and reports it without breaking the traversal", async () => {
     const harness = makeHarness({ reviewEnabled: true });
     harness.setFailStep("adopt");
@@ -177,6 +190,7 @@ describe("JoiHarnessComponent", () => {
         createMap: async () => false,
         enqueueReview: async () => null,
         recordCompletionFeedback: async () => false,
+        synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
       },
     });
     const ctx = ctxAt(0);
@@ -204,6 +218,7 @@ describe("JoiHarnessComponent", () => {
         createMap: async () => false,
         enqueueReview: async () => null,
         recordCompletionFeedback: async () => false,
+        synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
       },
     });
     const ctx = ctxAt(0);

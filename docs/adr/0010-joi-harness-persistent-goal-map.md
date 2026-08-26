@@ -20,6 +20,8 @@ ADR 0005 把 wayfinder 方法论落为提示词纪律：destination-first、分�
 4. **工作台双通道反哺**：记录通道为确定性遍历写入（CLEARED ∧ 未反哺 → `task_summary` 追加「达成」行，经 `Task context:` 进入后续每个 turn）；参数通道为复盘 turn 工具 `harness_refine_workbench`（走既有 `WorkbenchManagementService.update` 的 COALESCE patch；禁 name/projectLabel；只收窄不扩宽；reason 必填；审计行 = decisions kind=WORKBENCH_REFINE）。
 5. **幂等水位**：复盘投递 = 三重门槛（rs.revision 前进 ∧ 合成完成 ∧ 无活跃 work）+ 投递与抬 `reviewed_revision` 同事务 + input_id 内嵌 revision 的 INSERT OR IGNORE——每 (goal, revision) 至多一条 review；CLEARED 单跃迁 + `feedback_recorded_at` 水位使反哺恰好一次且崩溃可重试。
 6. **UI**：home-feed goal 卡扩 `harness?` 有界投影（destination/topPaths/计数/雾区），不加新端点；GoalDetail 渲染路径推进区块；goal 查询排除 review 前缀防冒充。
+7. **执行路径机械同步（2026-08-26 增补）**：harness component 在 adopt 后按稳定 workId 为 goal-bound Work 幂等建立 path，按此前 review input 数计算层级，并以 Work 权威终态关闭 path。模型不再负责为已派发 Work 重复建 path；`harness_chart_path` 保留给不绑定 Work 的显式探索路径。
+8. **终态与评审投影（2026-08-26 增补）**：result outcome 是当前证据层总结，不等于 goal terminal。map ACTIVE 时 home-feed 投影 `REVIEWING`，复盘后存在活跃 Work 时投影 `EXTENDING`；只有 `MAP_CLEARED` 事务重验 review turn、最新综合水位、Work-path 覆盖和无开放路径后，当前 outcome 才作为最终结果开放完成操作。
 
 ## 后果
 

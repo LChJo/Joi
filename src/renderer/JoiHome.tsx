@@ -579,6 +579,8 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   if (status === "ARRANGING") return "正在安排";
   if (status === "ARRANGED") return "已安排";
   if (status === "RUNNING") return "执行中";
+  if (status === "REVIEWING") return "正在评审";
+  if (status === "EXTENDING") return "评审后补充执行";
   if (status === "NEEDS_ATTENTION") return "需要你";
   if (status === "FINALIZING") return "正在总结";
   if (status === "COMPLETED") return "已完成";
@@ -586,7 +588,7 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   return "已取消";
 }
 
-const ACTIVE_GOAL_STATUSES: ReadonlySet<JoiGoalCardDto["status"]> = new Set(["ARRANGING", "ARRANGED", "RUNNING", "FINALIZING"]);
+const ACTIVE_GOAL_STATUSES: ReadonlySet<JoiGoalCardDto["status"]> = new Set(["ARRANGING", "ARRANGED", "RUNNING", "REVIEWING", "EXTENDING", "FINALIZING"]);
 
 function GoalStatusBadge({ status }: { status: JoiGoalCardDto["status"] }) {
   return <span className={`joi-goal-status ${status.toLowerCase()}`}>{ACTIVE_GOAL_STATUSES.has(status) ? <i aria-hidden="true" className="joi-goal-status-dot" /> : null}{goalStatusLabel(status)}</span>;
@@ -701,6 +703,8 @@ const THINKING_STAGE_LABELS: Record<JoiThinkingItemDto["stage"], string> = {
   RUNNING: "搭档执行中",
   WAITING: "等待搭档回应",
   FINALIZING: "正在汇总结果",
+  REVIEWING: "正在评审结果",
+  EXTENDING: "评审后补充执行",
 };
 
 type JoiThinkingRenderItem = Omit<JoiThinkingItemDto, "agentCount" | "stage" | "work"> & Partial<Pick<JoiThinkingItemDto, "agentCount" | "stage" | "work">>;

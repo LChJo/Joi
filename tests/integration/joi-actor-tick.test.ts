@@ -159,6 +159,7 @@ describe("joi actor tick over persisted facts", () => {
                 return inputId;
               },
               recordCompletionFeedback: async () => false,
+              synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
             },
           }),
         ],

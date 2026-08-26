@@ -14,6 +14,10 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-06 的 harness 增量以 AC-44 为门禁：每个 (goal, revision) 至多一条复盘输入（水位与幂等键双保险，重启回放不重投）；CLEARED 地图的完成反哺恰好一次；`MAP_CLEARED` 只清 ACTIVE 地图且仅复盘 turn 可提交；复盘派发的工作绑回原 goal，结果闭环不断；复盘 turn 可代表 goal 提交 work（goal-binding 校验接受 goal 派生输入），无关 turn 冒充仍被拒。
 
+2026-08-26 的 Wayfinder 状态链修复继续以 AC-44/AC-48 为门禁：当前层 outcome 在 map ACTIVE 时只能投影为 `REVIEWING`，复盘新增 Work 后为 `EXTENDING`，不得短暂标记最终完成；每个 goal-bound Work 由 harness component 以稳定 workId 幂等建立 path，并由 Work 终态闭路；`MAP_CLEARED` 在存储事务内重验复盘 turn、最新综合水位、无活跃/未建图 Work 和无 OPEN path。只有 map CLEARED 后首页才显示最终结果并开放继续/删除。
+
+2026-08-26 的目标 Agent 终态投影以 AC-40/AC-53 为门禁：工作台全局 Agent 页继续用 `IDLE/BUSY` 表示 resident instance availability；从目标详情携带 `goalId` 查询时，卡片必须显示该 session 在该 goal 中的活跃或最新 partner run 状态。已完成 run 必须保持 `COMPLETED`，不能因实例已回到可复用 IDLE 而伪装成尚无执行结果。
+
 2026-08-06 的可靠性修复：失败 turn 收尾必须中止其推理会话（残留流状态不得毒化后续 turn）；同一输入连续即时失败超过上限即停摆，禁止 failTurn→重投 的无限崩溃环；`joi-task-component.test.ts` 锁定停摆上限，`sqlite-work-plan-outbox.test.ts` 锁定 goal-binding 双向语义。2026-08-20 起 migration 040 将该停摆持久化为独立失败事实，不再伪造成用户取消；首页显示安全原因码、自动尝试次数、是否已启动执行和固定处理建议。
 
 2026-08-06 的术语迁移以 AC-45 为门禁：产品文案统一为“工作台”，代码契约统一为 `Workbench/workbenchId/workbench.*`，HTTP 统一为 `/api/v1/workbenches`；migration 038 无损升级 037 的表、列、外键、枚举和待处理 outbox。旧 migration 001–037 只作为升级事实保留旧物理名，不再定义当前产品术语。
@@ -44,6 +48,8 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 2026-08-25 的搭档模型配置与连通性收敛以 AC-55 为门禁：本机 Pi 搭档切换模型源时必须同步显示该来源的 active model，更新接口以显式 `null` 清除旧 pin，保存成功后读取最新 immutable revision；应用层在追加 revision 前拒绝非 READY 来源或来源/模型不匹配。搭档卡可发起固定极小、无工具、无 Work/run、无工作区副作用的模型验证，并仅展示持久化的安全状态、来源/模型、时间和稳定原因码；A2A 与本地 CLI 不提供伪连通测试。
 
 2026-08-24 的部分失败目标综合收敛继续以 AC-43 为门禁：综合 Turn 必须显式提交 `RESULT_SYNTHESIZED` 或 `RESULT_BLOCKED`；成功至少基于一个已验收完成 Work，并由 Joi 语义判断现有证据足以回答原目标。当前 COMPLETED outcome 的权威性高于失败 Work 计数，首页仍标记完成并把异常降级为可点击搭档入口；关键证据缺失才写 BLOCKED，存量 outcome 无损回填为 COMPLETED。
+
+2026-08-26 的 AI Berkshire 大型场景预设包以 AC-56 为门禁：内置快照必须可脱离来源 checkout 运行，二十个 canonical workflow 与写作 overlay 收敛为六个子团队、十五位共享搭档；安装以 pack/role 稳定绑定并可从部分失败继续，重复安装不得覆盖用户 revision、启用停用搭档或产生重复角色。搭档页提供子团队和完整套件的一键安装；财务计算与研究审计只通过固定、有界、不可执行任意代码的工具完成。
 
 ## 1. 当前状态
 

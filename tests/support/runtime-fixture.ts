@@ -15,6 +15,7 @@ import { WorkbenchAgentService } from "../../src/main/application/partners/workb
 import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager";
 import { PartnerKnowledgeService } from "../../src/main/application/partners/partner-knowledge-service";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service";
+import { ScenarioPackService } from "../../src/main/application/partners/scenario-pack-service";
 import { PartnerWorkMemoryService } from "../../src/main/application/partners/partner-work-memory-service";
 import type { SsePublisher } from "../../src/main/application/ports/runtime-store";
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
@@ -23,6 +24,7 @@ import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/p
 import { SqlitePartnerKnowledgeStore } from "../../src/main/infrastructure/persistence/sqlite-partner-knowledge-store";
 import { SqlitePartnerPromptStore } from "../../src/main/infrastructure/persistence/sqlite-partner-prompt-store";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository";
+import { SqliteScenarioPackRepository } from "../../src/main/infrastructure/persistence/sqlite-scenario-pack-repository";
 import { SqlitePartnerWorkMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-partner-work-memory-store";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter";
 import { SqliteWorkbenchManagementRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-management-repository";
@@ -76,6 +78,7 @@ export interface RuntimeFixture {
   memory: PartnerWorkMemoryService;
   operations: OperationsService;
   partners: PartnerRegistryService;
+  scenarioPacks: ScenarioPackService;
   root: string;
   skills: LocalSkillScanner;
   directoryPicker: () => Promise<string | null>;
@@ -117,6 +120,7 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
     prompts: new SqlitePartnerPromptStore(database),
     repository: partnerRepository,
   });
+  const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: new SqliteScenarioPackRepository(database) });
   const skills = new LocalSkillScanner();
   const instances = new PartnerInstanceManager({
     clock,
@@ -155,6 +159,7 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
     memory,
     operations,
     partners,
+    scenarioPacks,
     root,
     skills,
     directoryPicker: () => Promise.resolve("/stub/workdir"),

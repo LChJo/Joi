@@ -44,6 +44,7 @@ export interface HarnessGoalProjection {
   goalInputId: string;
   mapStatus: HarnessMapStatus;
   openPathCount: number;
+  reviewedRevision: number;
   revision: number;
   topFogNote: string | null;
   topPaths: { pathId: string; status: HarnessPathStatus; title: string }[];
@@ -64,6 +65,7 @@ export interface JoiHarnessWriter {
   createMap(input: { workbenchId: string; goalInputId: string; now: string }): Promise<boolean>;
   enqueueReview(input: { digest: HarnessReviewDigest; now: string }): Promise<string | null>;
   recordCompletionFeedback(input: { workbenchId: string; entry: string; goalInputId: string; now: string }): Promise<boolean>;
+  synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }>;
 }
 
 /** Reasoning-side write surface injected into the harness tools; always goal-scoped. */

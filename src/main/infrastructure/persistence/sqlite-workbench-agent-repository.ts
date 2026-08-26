@@ -19,6 +19,11 @@ function required(row: Row, key: string): string {
 }
 
 function mapStatus(row: Row): WorkbenchAgentStatusDto {
+  if (row.goal_execution_status === "RUNNING") return "RUNNING";
+  if (row.goal_execution_status === "WAITING_INPUT" || row.goal_execution_status === "WAITING_AUTH") return "WAITING";
+  if (row.goal_execution_status === "COMPLETED") return "COMPLETED";
+  if (row.goal_execution_status === "FAILED") return "FAILED";
+  if (row.goal_execution_status === "UNKNOWN") return "UNKNOWN";
   if (row.backing_kind === "LOCAL_INSTANCE") {
     if (row.execution_status === "RUNNING") return "RUNNING";
     if (row.execution_status === "WAITING_INPUT" || row.execution_status === "WAITING_AUTH") return "WAITING";
@@ -69,7 +74,8 @@ function decodeCursor(cursor: string | undefined): number {
   return parsed;
 }
 
-const CARD_SELECT = `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_kind, s.backing_id,
+function cardSelect(goalScoped: boolean): string {
+  return `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_kind, s.backing_id,
   s.session_policy, s.created_at, r.display_name AS partner_name,
   i.status AS runtime_status, i.engine, i.cli_protocol, i.last_used_at, i.disposal_reason,
   pr.updated_at AS run_updated_at,
@@ -86,11 +92,21 @@ const CARD_SELECT = `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_
   END AS execution_status,
   (SELECT MAX(lr.updated_at) FROM partner_runs lr
     JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
-    WHERE s.backing_kind = 'LOCAL_INSTANCE' AND la.instance_id = s.backing_id) AS execution_updated_at
+    WHERE s.backing_kind = 'LOCAL_INSTANCE' AND la.instance_id = s.backing_id) AS execution_updated_at,
+  ${goalScoped ? `(SELECT gr.status FROM partner_runs gr
+    JOIN dispatch_attempts ga ON ga.dispatch_attempt_id = gr.dispatch_attempt_id
+    JOIN work_items gw ON gw.work_id = gr.work_id
+    WHERE gw.input_id = ? AND (
+      (s.backing_kind = 'LOCAL_INSTANCE' AND ga.instance_id = s.backing_id)
+      OR (s.backing_kind = 'A2A_RUN' AND gr.run_id = s.backing_id)
+    )
+    ORDER BY CASE WHEN gr.status IN ('RUNNING', 'WAITING_INPUT', 'WAITING_AUTH') THEN 0 ELSE 1 END,
+      gr.created_at DESC, gr.run_id DESC LIMIT 1)` : "NULL"} AS goal_execution_status
   FROM workbench_agent_sessions s
   JOIN partner_revisions r ON r.partner_revision_id = s.partner_revision_id
   LEFT JOIN partner_instances i ON s.backing_kind = 'LOCAL_INSTANCE' AND i.instance_id = s.backing_id
   LEFT JOIN partner_runs pr ON s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id`;
+}
 
 function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, offset: number, agentId?: string, goalId?: string): Row[] {
   const clause = `${agentId === undefined ? "" : " AND s.agent_id = ?"}${goalId === undefined ? "" : ` AND EXISTS (
@@ -99,11 +115,13 @@ function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, 
     UNION ALL
     SELECT 1 FROM partner_runs pr JOIN work_items pw ON pw.work_id = pr.work_id
       WHERE s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id AND pw.input_id = ?)`}`;
-  const values: (number | string)[] = [workbenchId];
+  const values: (number | string)[] = [];
+  if (goalId !== undefined) values.push(goalId);
+  values.push(workbenchId);
   if (agentId !== undefined) values.push(agentId);
   if (goalId !== undefined) values.push(goalId, goalId);
   values.push(limit, offset);
-  const rows = connection.prepare(`${CARD_SELECT}
+  const rows = connection.prepare(`${cardSelect(goalId !== undefined)}
     WHERE s.workbench_id = ? AND s.dismissed_at IS NULL${clause}
     ORDER BY s.created_at DESC, s.agent_id DESC LIMIT ? OFFSET ?`).all(...values) as Row[];
   return rows.map((row) => ({

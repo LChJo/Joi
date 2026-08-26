@@ -75,10 +75,24 @@ describe("sqlite joi inbox retry", () => {
           (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
           VALUES ('turn_retry_done', ?, ?, 'joi_session:test', 'COMPLETED', '2026-08-20T09:00:00.000Z', '2026-08-20T09:00:00.000Z')`).run(completed.inputId, workbench.workbenchId);
         connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(completed.inputId);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, revision, reviewed_revision,
+           cleared_at, feedback_recorded_at, created_at, updated_at)
+          VALUES (?, ?, '完成第二阶段', 'CLEARED', 4, 2,
+                  '2026-08-20T09:00:00.000Z', '2026-08-20T09:00:00.000Z',
+                  '2026-08-20T09:00:00.000Z', '2026-08-20T09:00:00.000Z')`)
+          .run(completed.inputId, workbench.workbenchId);
       });
       const followedUp = await repository.retry(completed.inputId, { text: "接着做第二阶段" });
       expect(followedUp).toMatchObject({ status: "PENDING" });
       expect(followedUp?.body).toContain("[用户补充] 接着做第二阶段");
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT status, reviewed_revision,
+        cleared_at, feedback_recorded_at FROM joi_harness_maps WHERE goal_input_id = ?`).get(completed.inputId))).toEqual({
+        cleared_at: null,
+        feedback_recorded_at: null,
+        reviewed_revision: 2,
+        status: "ACTIVE",
+      });
     } finally {
       await fixture.close();
     }

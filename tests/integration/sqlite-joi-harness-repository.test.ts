@@ -51,6 +51,12 @@ function seedCompletedLayer(fixture: RuntimeFixture, goalInputId: string, revisi
   });
 }
 
+function forceMapCleared(fixture: RuntimeFixture, goalInputId: string): void {
+  fixture.database.transaction((connection) => connection.prepare(`UPDATE joi_harness_maps
+    SET status = 'CLEARED', cleared_at = ?, updated_at = ? WHERE goal_input_id = ?`)
+    .run(NOW, NOW, goalInputId));
+}
+
 describe("SqliteJoiHarnessRepository", () => {
   let fixture: RuntimeFixture;
   let repository: SqliteJoiHarnessRepository;
@@ -97,7 +103,7 @@ describe("SqliteJoiHarnessRepository", () => {
     it("appends one entry to the workbench task summary exactly once per cleared map", async () => {
       seedGoal(fixture, { goalInputId: "goal-feedback", turn: true });
       await repository.createMap({ workbenchId: "workbench-goal-feedback", goalInputId: "goal-feedback", now: NOW });
-      await repository.clearMap({ goalInputId: "goal-feedback", turnId: "turn-goal-feedback" });
+      forceMapCleared(fixture, "goal-feedback");
       expect(await repository.listFeedbackTargets()).toEqual([{
         workbenchId: "workbench-goal-feedback",
         completionSummary: "",
@@ -123,7 +129,7 @@ describe("SqliteJoiHarnessRepository", () => {
         "UPDATE workbenches SET task_summary = ? WHERE workbench_id = 'workbench-goal-trim'",
       ).run("A".repeat(2_500)));
       await repository.createMap({ workbenchId: "workbench-goal-trim", goalInputId: "goal-trim", now: NOW });
-      await repository.clearMap({ goalInputId: "goal-trim", turnId: "turn-goal-trim" });
+      forceMapCleared(fixture, "goal-trim");
       await repository.recordCompletionFeedback({
         workbenchId: "workbench-goal-trim", entry: "TAIL", goalInputId: "goal-trim", now: NOW,
       });
@@ -249,8 +255,7 @@ describe("SqliteJoiHarnessRepository", () => {
     it("refuses map writes once the map is cleared", async () => {
       seedGoal(fixture, { goalInputId: "goal-cleared", turn: true });
       await repository.createMap({ workbenchId: "workbench-goal-cleared", goalInputId: "goal-cleared", now: NOW });
-      expect(await repository.clearMap({ goalInputId: "goal-cleared", turnId: "turn-goal-cleared" })).toBe(true);
-      expect(await repository.clearMap({ goalInputId: "goal-cleared", turnId: "turn-goal-cleared" })).toBe(false);
+      forceMapCleared(fixture, "goal-cleared");
       await expect(repository.noteFog({
         goalInputId: "goal-cleared", note: "清空后不应再记录", turnId: "turn-goal-cleared",
       })).rejects.toBeInstanceOf(DomainError);
@@ -316,6 +321,97 @@ describe("SqliteJoiHarnessRepository", () => {
         VALUES ('work-active', ?, 'goal-gates', 'active', '{}', 'READ', 'RUNNING', ?, ?)`)
         .run(workbenchId, NOW, NOW));
       expect(await repository.listReviewDigests()).toEqual([]);
+    });
+  });
+
+  describe("wayfinder-driven goal lifecycle", () => {
+    it("projects a synthesized active map as review instead of a terminal goal", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-state", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-review-state", now: NOW });
+      seedCompletedLayer(fixture, "goal-review-state", 1);
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      await repository.enqueueReview({ digest, now: NOW });
+
+      let feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+      expect(feed.goals[0]).toMatchObject({ canDelete: false, goalId: "goal-review-state", status: "REVIEWING" });
+      expect(feed.goals[0]?.completionSummary).toBeUndefined();
+      expect(feed.thinking).toEqual([expect.objectContaining({
+        goalId: "goal-review-state", stage: "REVIEWING",
+      })]);
+
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO work_items
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-review-extension', ?, 'goal-review-state', '补充验证', '{}', 'READ', 'PLANNED', ?, ?)`)
+        .run(workbenchId, NOW, NOW));
+      feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+      expect(feed.goals[0]).toMatchObject({ canDelete: false, goalId: "goal-review-state", status: "EXTENDING" });
+      expect(feed.thinking).toEqual([expect.objectContaining({
+        goalId: "goal-review-state", stage: "EXTENDING",
+      })]);
+    });
+
+    it("synchronizes goal Work into deterministic path facts and closes paths from Work truth", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-path-sync", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-path-sync", now: NOW });
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO work_items
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-path-sync', ?, 'goal-path-sync', '核对证据', '{}', 'READ', 'RUNNING', ?, ?)`)
+        .run(workbenchId, NOW, NOW));
+
+      const synchronizer = repository as unknown as {
+        synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }>;
+      };
+      await expect(synchronizer.synchronizeWorkPaths({ now: NOW })).resolves.toEqual({ closed: 0, created: 1 });
+      expect((await repository.loadGoalProjections())[0]).toMatchObject({
+        currentLayer: 1,
+        openPathCount: 1,
+        topPaths: [expect.objectContaining({ status: "OPEN", title: "核对证据" })],
+      });
+
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET status = 'COMPLETED', updated_at = ? WHERE work_id = 'work-path-sync'",
+      ).run(NOW));
+      await expect(synchronizer.synchronizeWorkPaths({ now: NOW })).resolves.toEqual({ closed: 1, created: 0 });
+      expect((await repository.loadGoalProjections())[0]).toMatchObject({ openPathCount: 0 });
+    });
+
+    it("clears a map only from its active review turn after all mechanical gates pass", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-clear-gates", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-clear-gates", now: NOW });
+      seedCompletedLayer(fixture, "goal-clear-gates", 1);
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-review-clear', ?, ?, 'review-session', 'RUNNING', ?, ?)`)
+        .run(reviewInputId, workbenchId, NOW, NOW));
+
+      expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-goal-clear-gates" })).toBe(false);
+      seedCompletedLayer(fixture, "goal-clear-gates", 2);
+      const [nextDigest] = await repository.listReviewDigests();
+      if (nextDigest === undefined) throw new Error("next review digest missing");
+      const nextReviewInputId = await repository.enqueueReview({ digest: nextDigest, now: NOW });
+      if (nextReviewInputId === null) throw new Error("next review input missing");
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-review-clear-current', ?, ?, 'review-session-current', 'RUNNING', ?, ?)`)
+        .run(nextReviewInputId, workbenchId, NOW, NOW));
+      expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-review-clear" })).toBe(false);
+      const path = await repository.chartPath({
+        goalInputId: "goal-clear-gates", open: { layer: 1, title: "仍未闭合" }, turnId: "turn-review-clear-current",
+      });
+      expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current" })).toBe(false);
+      await repository.chartPath({
+        close: { pathId: path.pathId, status: "CLOSED" }, goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current",
+      });
+      expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current" })).toBe(true);
+      expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current" })).toBe(false);
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+      expect(feed.goals[0]).toMatchObject({ canDelete: true, status: "COMPLETED" });
+      expect(feed.goals[0]?.completionSummary).toBe("一层完成");
     });
   });
 

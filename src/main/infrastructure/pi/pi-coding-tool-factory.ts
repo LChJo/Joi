@@ -10,6 +10,7 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { realpathSync, statSync } from "node:fs";
 import { PI_WEB_ACCESS_TOOL_NAMES, PiWebAccessToolFactory } from "./pi-web-access-tools.js";
+import { PI_FINANCIAL_RESEARCH_TOOL_NAMES, PiFinancialResearchToolFactory } from "./pi-financial-research-tools.js";
 
 export interface PiCodingToolFactory {
   create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[];
@@ -47,7 +48,7 @@ function safeEnvironment(environment: NodeJS.ProcessEnv, requestedKeys: readonly
 }
 
 export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "grep", "ls", "read", "write"] as const;
-export const PI_PARTNER_TOOL_NAMES = [...PI_CODING_TOOL_NAMES, ...PI_WEB_ACCESS_TOOL_NAMES] as const;
+export const PI_PARTNER_TOOL_NAMES = [...PI_CODING_TOOL_NAMES, ...PI_WEB_ACCESS_TOOL_NAMES, ...PI_FINANCIAL_RESEARCH_TOOL_NAMES] as const;
 
 const factories: Record<string, (cwd: string) => AgentTool> = {
   edit: createEditTool,
@@ -66,7 +67,10 @@ const factories: Record<string, (cwd: string) => AgentTool> = {
 export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
   readonly names: readonly string[] = PI_PARTNER_TOOL_NAMES;
 
-  constructor(private readonly webAccess = new PiWebAccessToolFactory()) {}
+  constructor(
+    private readonly webAccess = new PiWebAccessToolFactory(),
+    private readonly financialResearch = new PiFinancialResearchToolFactory(),
+  ) {}
 
   create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[] {
     const needsWorkspace = names.some((name) => !(PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name));
@@ -82,6 +86,11 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
       });
       if ((PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name)) {
         const [tool] = this.webAccess.create([name]);
+        if (tool === undefined) throw new Error("partner_tool_not_allowed");
+        return tool;
+      }
+      if ((PI_FINANCIAL_RESEARCH_TOOL_NAMES as readonly string[]).includes(name)) {
+        const [tool] = this.financialResearch.create([name]);
         if (tool === undefined) throw new Error("partner_tool_not_allowed");
         return tool;
       }

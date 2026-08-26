@@ -1,6 +1,6 @@
 import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto } from "../shared/joi";
+import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto, ScenarioPackDto, ScenarioPackRoleStateDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 type PartnerView = { mode: "grid" } | { mode: "editor"; partner: PartnerDto | null };
@@ -276,12 +276,59 @@ function ScenarioGrid({ api, creating, draft, onCreate, onPick, onToggleRole }: 
   onToggleRole: (roleId: string) => void;
 }) {
   const [scenarios, setScenarios] = useState<ScenarioDto[]>([]);
+  const [packs, setPacks] = useState<ScenarioPackDto[]>([]);
+  const [expandedPackId, setExpandedPackId] = useState<string | null>(null);
+  const [installing, setInstalling] = useState<string | null>(null);
+  const [packNotice, setPackNotice] = useState<string | null>(null);
+  const loadPacks = useCallback(async () => setPacks((await api.scenarioPacks()).items), [api]);
   useEffect(() => {
-    const timer = setTimeout(() => void api.scenarios().then((page) => setScenarios(page.items)).catch(() => setScenarios([])), 0);
+    const timer = setTimeout(() => {
+      void api.scenarios().then((page) => setScenarios(page.items)).catch(() => setScenarios([]));
+      void loadPacks().catch(() => setPacks([]));
+    }, 0);
     return () => clearTimeout(timer);
-  }, [api]);
-  if (scenarios.length === 0) return <p className="field-hint">还没有可用的场景预设。</p>;
-  return <div className="scenario-group">{scenarios.map((scenario) => {
+  }, [api, loadPacks]);
+  const install = (packId: string, teamIds?: string[]) => {
+    const key = teamIds?.[0] ?? "full";
+    setInstalling(`${packId}:${key}`);
+    setPackNotice(null);
+    void api.installScenarioPack(packId, teamIds).then(async (result) => {
+      const created = result.outcomes.filter((item) => item.outcome === "CREATED").length;
+      const reused = result.outcomes.filter((item) => item.outcome === "REUSED").length;
+      const actionRequired = result.outcomes.filter((item) => item.outcome === "ACTION_REQUIRED").length;
+      setPackNotice(`预设包已处理：新建 ${String(created)} 位，复用 ${String(reused)} 位${actionRequired === 0 ? "" : `，${String(actionRequired)} 位需要处理`}。`);
+      await loadPacks();
+    }).catch((error: unknown) => setPackNotice(failureMessage(error, "预设包没安装成功，请稍后重试。")))
+      .finally(() => setInstalling(null));
+  };
+  if (scenarios.length === 0 && packs.length === 0) return <p className="field-hint">还没有可用的场景预设。</p>;
+  return <div className="scenario-catalog">
+    {packs.length === 0 ? null : <section aria-label="场景预设包" className="scenario-pack-group">
+      {packNotice === null ? null : <p className="inline-notice info" role="status">{packNotice}</p>}
+      {packs.map((pack) => {
+        const expanded = expandedPackId === pack.id;
+        const fullKey = `${pack.id}:full`;
+        return <article className="scenario-pack" key={pack.id}>
+          <button aria-expanded={expanded} className="scenario-pack-summary" onClick={() => setExpandedPackId(expanded ? null : pack.id)} type="button">
+            <span><strong>{pack.title}</strong><small>{pack.blurb}</small></span>
+            <span className={`scenario-pack-state ${pack.status.toLowerCase()}`}>{pack.installedRoleCount}/{pack.totalRoleCount} 位 · {packStatusLabel(pack.status)}</span>
+          </button>
+          {expanded ? <div className="scenario-pack-body">
+            <div className="scenario-pack-meta"><span>来源 {pack.source.repository}@{pack.source.revision}</span><span>{pack.source.license}</span></div>
+            <div className="scenario-team-grid">{pack.teams.map((team) => {
+              const teamKey = `${pack.id}:${team.id}`;
+              return <article className="scenario-team" key={team.id}>
+                <div><strong>{team.title}</strong><p>{team.blurb}</p></div>
+                <div aria-label={`${team.title} 搭档`} className="scenario-role-list">{team.roles.map((role) => <span className="scenario-role" key={role.id} title={role.reasonCode}><span>{role.title}</span><small className={`role-state ${role.status.toLowerCase()}`}>{roleStateLabel(role.status)}</small></span>)}</div>
+                <button className="button ghost" disabled={installing !== null} onClick={() => install(pack.id, [team.id])} type="button">{installing === teamKey ? "安装中…" : `安装${team.title}`}</button>
+              </article>;
+            })}</div>
+            <button className="button primary" disabled={installing !== null} onClick={() => install(pack.id)} type="button">{installing === fullKey ? "安装中…" : "安装完整套件"}</button>
+          </div> : null}
+        </article>;
+      })}
+    </section>}
+    {scenarios.length === 0 ? null : <div className="scenario-group">{scenarios.map((scenario) => {
     const expanded = draft?.scenarioId === scenario.id;
     const roles = scenario.roles ?? [];
     return <div className="scenario-slot" key={scenario.id}>
@@ -293,7 +340,23 @@ function ScenarioGrid({ api, creating, draft, onCreate, onPick, onToggleRole }: 
         <button className="button primary" disabled={creating || (roles.length > 0 && draft.roleIds.length === 0)} onClick={onCreate} type="button">{creating ? "创建中…" : "创建所选搭档"}</button>
       </div> : null}
     </div>;
-  })}</div>;
+  })}</div>}
+  </div>;
+}
+
+function packStatusLabel(status: ScenarioPackDto["status"]): string {
+  if (status === "NOT_INSTALLED") return "未安装";
+  if (status === "ACTIVE") return "已启用";
+  if (status === "OUTDATED") return "有更新";
+  return "需要处理";
+}
+
+function roleStateLabel(status: ScenarioPackRoleStateDto): string {
+  if (status === "NOT_INSTALLED") return "未安装";
+  if (status === "ACTIVE") return "已启用";
+  if (status === "DISABLED") return "已停用";
+  if (status === "OUTDATED") return "有更新";
+  return "需要处理";
 }
 
 export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api: DigitalLifeApi; onManageProviders?: () => void; tab?: "partners" | "scenarios"; onTabChange?: (tab: "partners" | "scenarios") => void }) {

@@ -14,7 +14,7 @@ Partner 配置（revision）是无 cwd 的全局模板；运行中的 `PartnerIn
 
 ### 0.1 目标地图（harness，ADR 0010）
 
-每个 goal（原始输入）可挂一张持久化地图，词汇固定：**destination** = 这次努力的最终目标（先命名、固定 scope）；**path** = 每一层推进路径（只引用 `work_id`，不重复建模执行）；**decision** = Decisions-so-far 索引（决策记一处）；**fog** = 已知但尚不可精确表述的问题（前沿到达后晋升为 path）；out of scope 用 decision kind 或 path 状态显式排除。地图只由两处写入：joi 推理 turn 的 5 个 harness 工具（goal 语境寻址），与 harness component 的确定性遍历（建图、复盘投递、完成反哺、琐碎清空）。复盘经 inbox PENDING 行排队进唯一串行槽位——组件不推理、不派发。goal 达成由复盘 turn 以 `turn_complete(MAP_CLEARED)` 声明；完成事实经 `task_summary` 回灌工作台的 Task context，参数经 `harness_refine_workbench`（只收窄不扩宽、审计行落 decisions）。
+每个 goal（原始输入）可挂一张持久化地图，词汇固定：**destination** = 这次努力的最终目标（先命名、固定 scope）；**path** = 每一层推进路径（只引用 `work_id`，不重复建模执行）；**decision** = Decisions-so-far 索引（决策记一处）；**fog** = 已知但尚不可精确表述的问题（前沿到达后晋升为 path）；out of scope 用 decision kind 或 path 状态显式排除。地图只由两处写入：joi 推理 turn 的 5 个 harness 工具（goal 语境寻址），与 harness component 的确定性遍历（建图、Work→path 幂等同步、Work 终态闭路、复盘投递、完成反哺、琐碎清空）。复盘经 inbox PENDING 行排队进唯一串行槽位——组件不推理、不派发。result outcome 只代表当前证据层已综合；ACTIVE map 继续进入复盘，goal 达成必须由对应复盘 turn 以 `turn_complete(MAP_CLEARED)` 声明。清图事务重验 review/goal 归属、最新综合水位、无活跃 Work、无 OPEN path 且所有 Work 均有 path；完成事实再经 `task_summary` 回灌工作台的 Task context，参数经 `harness_refine_workbench`（只收窄不扩宽、审计行落 decisions）。用户对已完成 goal 提交“继续”时，inbox 重排与 CLEARED map 重开在同一事务发生；历史路径、决策和 `reviewed_revision` 保留，清图/反哺水位复位，新增证据必须再次经过综合与复盘。
 
 下文 Life/Wake 状态机继续定义旧数据兼容和恢复不变量；新运行时不得把它复制为第二条可产生副作用的调度链。
 
@@ -361,3 +361,12 @@ sequenceDiagram
 - 删除 Life 先暂停、处理活动 Invocation，再删除本地数据和托管 Artifact；不声称删除远端 Task/history。
 - 导出的备份不包含可移植明文 Token。
 - MVP 默认永久保留生命数据；用户可手动删除，不做静默 TTL 清理。
+
+## 12. 场景预设包
+
+- `ScenarioPack` 是版本化的内置目录定义，包含稳定 pack id、role id、子团队映射、可移植 prompt、能力与获准工具；它不是工作台，也不拥有 cwd。
+- `ScenarioPackBinding(packId, roleId, partnerId, definitionVersion)` 是安装事实。同一角色跨多个子团队共享一个全局 Partner，重复安装返回 `REUSED`。
+- ACTIVE 绑定保留用户新增的 immutable Partner revision；DISABLED、配置异常和 OUTDATED 返回 `ACTION_REQUIRED`，不自动修复；DELETED 角色只有在用户再次安装时才建立替代 Partner。
+- 首次 Partner id 可由 pack/role 稳定推导，使“Partner 已创建、绑定尚未落库”的中断可在下一次安装中收敛，不重复创建搭档。
+- AI Berkshire 内置快照归因到 `xbtlin/ai-berkshire@2760dc48`（MIT），覆盖二十个 canonical workflow 与一个 Codex 写作 overlay；运行时不依赖来源目录或外部 Python 脚本。
+- `financial_calculate` 只接受固定 operation 和十进制定点输入，禁止表达式求值；`research_audit` 只返回有界聚合审计结果，不回显研究正文。

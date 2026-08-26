@@ -267,7 +267,7 @@ export interface JoiActivityDto {
   workId?: string;
 }
 
-export type JoiGoalStatusDto = "ARRANGING" | "ARRANGED" | "RUNNING" | "NEEDS_ATTENTION" | "FINALIZING" | "COMPLETED" | "FAILED" | "CANCELED";
+export type JoiGoalStatusDto = "ARRANGING" | "ARRANGED" | "RUNNING" | "REVIEWING" | "EXTENDING" | "NEEDS_ATTENTION" | "FINALIZING" | "COMPLETED" | "FAILED" | "CANCELED";
 
 export type JoiFailureSuggestedActionDto = "CHECK_MODEL_SOURCE" | "RESTART_OR_UPDATE" | "RETRY_OR_EXPORT_DIAGNOSTICS";
 
@@ -285,6 +285,7 @@ export interface JoiGoalHarnessDto {
   fogCount: number;
   mapStatus: "ACTIVE" | "CLEARED";
   openPathCount: number;
+  reviewedRevision: number;
   revision: number;
   topFogNote?: string;
   topPaths: { pathId: string; status: "CLOSED" | "OPEN" | "OUT_OF_SCOPE"; title: string }[];
@@ -309,7 +310,7 @@ export type JoiGoalCardDto = JoiGoalCardBaseDto & (
   | { clarification?: never; status: Exclude<JoiGoalStatusDto, "NEEDS_ATTENTION"> }
 );
 
-export type JoiThinkingStageDto = "ROUTING" | "PLANNING" | "DISPATCHING" | "RUNNING" | "WAITING" | "FINALIZING";
+export type JoiThinkingStageDto = "ROUTING" | "PLANNING" | "DISPATCHING" | "RUNNING" | "WAITING" | "FINALIZING" | "REVIEWING" | "EXTENDING";
 
 export interface JoiThinkingItemDto {
   agentCount: number;
@@ -376,6 +377,55 @@ export interface ScenarioDto {
   roles?: ScenarioRoleDto[];
   source: "builtin" | "skill";
   title: string;
+}
+
+export type ScenarioPackStatusDto = "NOT_INSTALLED" | "ACTIVE" | "ACTION_REQUIRED" | "OUTDATED";
+export type ScenarioPackRoleStateDto = "NOT_INSTALLED" | "ACTIVE" | "DISABLED" | "ACTION_REQUIRED" | "OUTDATED";
+
+export interface ScenarioPackRoleStatusDto {
+  partnerId?: string;
+  reasonCode?: string;
+  roleId: string;
+  status: ScenarioPackRoleStateDto;
+}
+
+export interface ScenarioPackRoleDto extends ScenarioPackRoleStatusDto {
+  blurb: string;
+  id: string;
+  title: string;
+}
+
+export interface ScenarioPackTeamDto {
+  blurb: string;
+  id: string;
+  roles: ScenarioPackRoleDto[];
+  title: string;
+}
+
+export interface ScenarioPackDto {
+  blurb: string;
+  definitionVersion: number;
+  id: string;
+  installedRoleCount: number;
+  source: { license: string; repository: string; revision: string };
+  status: ScenarioPackStatusDto;
+  teams: ScenarioPackTeamDto[];
+  title: string;
+  totalRoleCount: number;
+}
+
+export interface ScenarioPackRoleInstallOutcomeDto {
+  outcome: "CREATED" | "REUSED" | "ACTION_REQUIRED";
+  partnerId: string;
+  reasonCode?: string;
+  roleId: string;
+}
+
+export interface ScenarioPackInstallResultDto {
+  installedRoleCount: number;
+  outcomes: ScenarioPackRoleInstallOutcomeDto[];
+  packId: string;
+  status: ScenarioPackStatusDto;
 }
 
 export const BUILTIN_SCENARIOS: readonly ScenarioDto[] = [

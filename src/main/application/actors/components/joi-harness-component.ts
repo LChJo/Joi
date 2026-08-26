@@ -32,10 +32,18 @@ export class JoiHarnessComponent implements ActorComponent {
     if (ctx.now.getTime() - this.#lastScanAt < everyMillis) return;
     this.#lastScanAt = ctx.now.getTime();
     await this.#step(ctx, "adopt", () => this.#adoptNewGoals(ctx));
+    await this.#step(ctx, "paths", () => this.#synchronizeWorkPaths(ctx));
     await this.#step(ctx, "feedback", () => this.#recordCompletionFeedback(ctx));
     await this.#step(ctx, "trivial_clear", () => this.#clearTrivialMaps(ctx));
     if (this.dependencies.reviewEnabled === true) {
       await this.#step(ctx, "review", () => this.#enqueueReviews(ctx));
+    }
+  }
+
+  async #synchronizeWorkPaths(ctx: ActorTickContext): Promise<void> {
+    const result = await this.dependencies.writer.synchronizeWorkPaths({ now: ctx.now.toISOString() });
+    if (result.created > 0 || result.closed > 0) {
+      emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.paths_synchronized", result);
     }
   }
 

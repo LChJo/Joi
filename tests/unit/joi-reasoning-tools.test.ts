@@ -32,6 +32,7 @@ function makeTools(options: {
   attachments?: { read(attachmentId: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }> };
   goalInputId?: string;
   harness?: HarnessRecorder;
+  clearMapResult?: boolean;
   inputId?: string;
   partners?: PartnerDto[];
   planError?: Error;
@@ -83,7 +84,7 @@ function makeTools(options: {
           ? { pathId: args.close.pathId, status: args.close.status }
           : { pathId: "path_1", status: "OPEN" as const };
       },
-      clearMap: async (args) => { push("clearMap", args); return true; },
+      clearMap: async (args) => { push("clearMap", args); return options.clearMapResult ?? true; },
       graduateFog: async (args) => { push("graduateFog", args); return { fogId: args.fogId, pathId: "path_1" }; },
       nameDestination: async (args) => { push("nameDestination", args); return { destination: args.destination, revision: 1 }; },
       noteFog: async (args) => { push("noteFog", args); return { fogId: "fog_1" }; },
@@ -557,6 +558,9 @@ describe("joi reasoning tools", () => {
     const plainHarness = makeTools({ harness: { calls: [] } });
     await expect(plainHarness.call("turn_complete", { outcome: "MAP_CLEARED" }))
       .rejects.toMatchObject({ code: "harness_clear_not_allowed" });
+    const incompleteHarness = makeTools({ clearMapResult: false, goalInputId: "goal-1", harness: { calls: [] }, inputId: "joi_harness_review:goal:goal-1:r1" });
+    await expect(incompleteHarness.call("turn_complete", { outcome: "MAP_CLEARED" }))
+      .rejects.toMatchObject({ code: "harness_clear_preconditions_unmet" });
   });
 
   it("reads attachment text in bounded chunks with a continuation cursor", async () => {

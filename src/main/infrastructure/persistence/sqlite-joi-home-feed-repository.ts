@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { JoiGoalCardBaseDto, JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
+import type { HarnessGoalProjection } from "../../application/ports/joi-harness.js";
 import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "../../application/joi/joi-input-failure.js";
 import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
@@ -30,6 +31,7 @@ function toHarnessDto(projection: {
   fogCount: number;
   mapStatus: JoiGoalHarnessDto["mapStatus"];
   openPathCount: number;
+  reviewedRevision: number;
   revision: number;
   topFogNote: string | null;
   topPaths: JoiGoalHarnessDto["topPaths"];
@@ -41,13 +43,14 @@ function toHarnessDto(projection: {
     fogCount: projection.fogCount,
     mapStatus: projection.mapStatus,
     openPathCount: projection.openPathCount,
+    reviewedRevision: projection.reviewedRevision,
     revision: projection.revision,
     ...(projection.topFogNote === null ? {} : { topFogNote: projection.topFogNote }),
     topPaths: projection.topPaths,
   };
 }
 
-function goalStatus(row: Row): JoiGoalStatusDto {
+function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGoalStatusDto {
   if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
   if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined) return "NEEDS_ATTENTION";
@@ -57,9 +60,14 @@ function goalStatus(row: Row): JoiGoalStatusDto {
   // A retry is persisted before its new Turn exists. Keep the card in the arranging
   // state even when the goal still owns planned work from an earlier attempt.
   if (text(row, "inbox_status") === "PENDING") return "ARRANGING";
+  const activeMap = harness?.mapStatus === "ACTIVE";
+  if (activeMap && harness.reviewedRevision > 0 && number(row, "work_active") > 0) return "EXTENDING";
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0) return "ARRANGED";
   if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
+  // A synthesized result is one completed Wayfinder layer. It becomes the goal's
+  // terminal outcome only after the active map is explicitly cleared by review.
+  if (number(row, "outcome_current") === 1 && activeMap) return "REVIEWING";
   // An up-to-date synthesized outcome means the goal lifecycle is done even when the
   // orchestration turn is still open (long wait turn) or leaked (orphan not yet recovered).
   if (number(row, "outcome_current") === 1) return row.outcome_disposition === "BLOCKED" ? "FAILED" : "COMPLETED";
@@ -67,11 +75,14 @@ function goalStatus(row: Row): JoiGoalStatusDto {
   return "ARRANGING";
 }
 
-function thinkingStage(goal: JoiGoalCardDto | undefined, phase: JoiThinkingItemDto["phase"]): JoiThinkingItemDto["stage"] {
+function thinkingStage(goal: JoiGoalCardDto | undefined, phase: JoiThinkingItemDto["phase"], inputId: string): JoiThinkingItemDto["stage"] {
+  if (inputId.startsWith("joi_harness_review:goal:")) return goal?.status === "EXTENDING" ? "EXTENDING" : "REVIEWING";
   if (phase === "queued") return "ROUTING";
   if (goal === undefined) return "PLANNING";
   if (goal.status === "ARRANGED") return "DISPATCHING";
   if (goal.status === "RUNNING") return "RUNNING";
+  if (goal.status === "REVIEWING") return "REVIEWING";
+  if (goal.status === "EXTENDING") return "EXTENDING";
   if (goal.status === "NEEDS_ATTENTION") return "WAITING";
   if (goal.status === "FINALIZING") return "FINALIZING";
   return "PLANNING";
@@ -138,14 +149,16 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         GROUP BY i.input_id ORDER BY i.updated_at DESC, i.input_id DESC`).all() as Row[];
       const harnessByGoal = new Map(queryHarnessGoalProjections(connection).map((projection) => [projection.goalInputId, projection]));
       const goals: JoiGoalCardDto[] = rows.map((row) => {
-        const status = goalStatus(row);
+        const goalId = text(row, "input_id");
+        const harnessProjection = harnessByGoal.get(goalId);
+        const status = goalStatus(row, harnessProjection);
         const total = number(row, "work_total");
         const active = number(row, "work_active");
         const activeRuns = number(row, "active_runs");
         const rawTitle = maskSecretText(text(row, "body")).replace(/\s+/gu, " ").trim();
         const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}…` : rawTitle;
-        const goalId = text(row, "input_id");
-        const harnessProjection = harnessByGoal.get(goalId);
+        const finalOutcome = number(row, "outcome_current") === 1 && harnessProjection?.mapStatus !== "ACTIVE";
+        const terminalStatus = ["COMPLETED", "FAILED", "CANCELED"].includes(status);
         const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code);
         const base: JoiGoalCardBaseDto = {
           agentCount: number(row, "agent_count"),
@@ -153,10 +166,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",
             name: typeof row.workbench_name === "string" ? row.workbench_name : "等待归属",
           },
-          canDelete: (row.canceled_at !== null && row.canceled_at !== undefined
-            || text(row, "inbox_status") === "CONSUMED" || number(row, "outcome_current") === 1)
+          canDelete: terminalStatus && (row.canceled_at !== null && row.canceled_at !== undefined
+            || text(row, "inbox_status") === "CONSUMED" || finalOutcome)
             && active === 0 && activeRuns === 0
-            && ((row.canceled_at !== null && row.canceled_at !== undefined) || total === 0 || number(row, "outcome_current") === 1),
+            && ((row.canceled_at !== null && row.canceled_at !== undefined) || total === 0 || finalOutcome),
           goalId,
           ...(status === "FAILED" && typeof row.failure_reason_code === "string" && typeof row.failure_count === "number" ? {
             failure: {
@@ -167,12 +180,12 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             },
           } : {}),
           ...(harnessProjection === undefined ? {} : { harness: toHarnessDto(harnessProjection) }),
-          ...(number(row, "outcome_current") === 1 && typeof row.completion_summary === "string"
+          ...(finalOutcome && typeof row.completion_summary === "string"
             ? { completionSummary: stripPathRedactions(row.completion_summary) }
             : number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completion_summary === "string"
               ? { completionSummary: stripPathRedactions(row.turn_completion_summary) }
               : {}),
-          ...(number(row, "outcome_current") === 1 && typeof row.completed_at === "string"
+          ...(finalOutcome && typeof row.completed_at === "string"
             ? { completedAt: row.completed_at }
             : number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED" && typeof row.turn_completed_at === "string"
               ? { completedAt: row.turn_completed_at }
@@ -196,13 +209,13 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
       });
       const goalsById = new Map(goals.map((goal) => [goal.goalId, goal]));
       const cutoff = new Date(now.getTime() - 15_000).toISOString();
-      const turns = connection.prepare(`SELECT t.turn_id, COALESCE(i.goal_input_id, t.input_id) AS goal_id,
+       const turns = connection.prepare(`SELECT t.turn_id, t.input_id AS activity_input_id, COALESCE(i.goal_input_id, t.input_id) AS goal_id,
           t.status, t.created_at, t.updated_at
         FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id = t.input_id
         WHERE (i.goal_input_id IS NOT NULL OR t.input_id NOT LIKE 'joi_result_input:%')
           AND (t.status IN ('PENDING','RUNNING','WAITING') OR t.updated_at >= ?)
         UNION ALL
-        SELECT 'pending:' || i.input_id, COALESCE(i.goal_input_id, i.input_id), 'PENDING', i.updated_at, i.updated_at
+         SELECT 'pending:' || i.input_id, i.input_id, COALESCE(i.goal_input_id, i.input_id), 'PENDING', i.updated_at, i.updated_at
           FROM joi_inbox_messages i
          WHERE i.status = 'PENDING'
            AND (i.goal_input_id IS NOT NULL OR (
@@ -219,8 +232,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         return goal === undefined || !["COMPLETED", "FAILED", "CANCELED"].includes(goal.status);
       }).map((row) => {
         const status = text(row, "status");
-        const queued = status === "PENDING";
-        const active = queued || ["RUNNING", "WAITING"].includes(status);
+        const activityInputId = text(row, "activity_input_id");
+        const review = activityInputId.startsWith("joi_harness_review:goal:");
+        const queued = status === "PENDING" && !review;
+        const active = review || queued || ["RUNNING", "WAITING"].includes(status);
         const updatedAt = text(row, "updated_at");
         const goalId = text(row, "goal_id");
         const goal = goalsById.get(goalId);
@@ -230,7 +245,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           agentCount: goal?.agentCount ?? 0,
           goalId,
           phase,
-          stage: thinkingStage(goal, phase),
+          stage: thinkingStage(goal, phase, activityInputId),
           startedAt: text(row, "created_at"),
           turnId: text(row, "turn_id"),
           work: goal?.work ?? { active: 0, completed: 0, failed: 0, total: 0 },

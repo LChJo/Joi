@@ -72,7 +72,7 @@ function requireText(value: string, limit: number, code: string): string {
  */
 export function queryHarnessGoalProjections(connection: DatabaseSync): HarnessGoalProjection[] {
   const maps = connection.prepare(`
-    SELECT m.goal_input_id, m.destination, m.status, m.revision,
+    SELECT m.goal_input_id, m.destination, m.status, m.revision, m.reviewed_revision,
            (SELECT COUNT(*) FROM joi_harness_decisions d
              WHERE d.goal_input_id = m.goal_input_id) AS decision_count,
            (SELECT COUNT(*) FROM joi_harness_fog f
@@ -119,6 +119,7 @@ export function queryHarnessGoalProjections(connection: DatabaseSync): HarnessGo
       goalInputId,
       mapStatus: textValue(row, "status") as HarnessMapStatus,
       openPathCount: numberValue(row, "open_path_count"),
+      reviewedRevision: numberValue(row, "reviewed_revision"),
       revision: numberValue(row, "revision"),
       topFogNote: optionalText(row, "top_fog_note"),
       topPaths: pathsByGoal.get(goalInputId) ?? [],
@@ -243,6 +244,45 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       INSERT OR IGNORE INTO joi_harness_maps
         (goal_input_id, workbench_id, status, created_at, updated_at)
       VALUES (?, ?, 'ACTIVE', ?, ?)`).run(input.goalInputId, input.workbenchId, input.now, input.now).changes > 0);
+  }
+
+  async synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }> {
+    return this.database.transaction((connection) => {
+      const missing = connection.prepare(`
+        SELECT w.work_id, w.input_id AS goal_input_id, w.title, w.status, w.created_at,
+               1 + (SELECT COUNT(*) FROM joi_inbox_messages r
+                     WHERE r.goal_input_id = w.input_id
+                       AND r.input_id LIKE 'joi_harness_review:goal:%'
+                       AND r.created_at <= w.created_at) AS layer
+          FROM work_items w
+          JOIN joi_harness_maps m ON m.goal_input_id = w.input_id AND m.status = 'ACTIVE'
+         WHERE NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id)
+         ORDER BY w.created_at, w.work_id LIMIT 100`).all() as Row[];
+      const insert = connection.prepare(`INSERT OR IGNORE INTO joi_harness_paths
+        (path_id, goal_input_id, layer, title, status, work_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`);
+      let created = 0;
+      for (const row of missing) {
+        const workId = textValue(row, "work_id");
+        const workStatus = textValue(row, "status");
+        created += Number(insert.run(
+          `harness_path:work:${workId}`,
+          textValue(row, "goal_input_id"),
+          Math.min(LAYER_MAX, numberValue(row, "layer")),
+          textValue(row, "title").slice(0, PATH_TITLE_LIMIT),
+          ["COMPLETED", "FAILED", "CANCELED"].includes(workStatus) ? "CLOSED" : "OPEN",
+          workId,
+          textValue(row, "created_at"),
+          input.now,
+        ).changes);
+      }
+      const closed = Number(connection.prepare(`UPDATE joi_harness_paths AS p
+           SET status = 'CLOSED', updated_at = ?
+         WHERE p.status = 'OPEN' AND p.work_id IS NOT NULL
+           AND EXISTS (SELECT 1 FROM work_items w WHERE w.work_id = p.work_id
+                        AND w.status IN ('COMPLETED', 'FAILED', 'CANCELED'))`).run(input.now).changes);
+      return { closed, created };
+    });
   }
 
   async enqueueReview(input: { digest: HarnessReviewDigest; now: string }): Promise<string | null> {
@@ -474,10 +514,34 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     return this.database.transaction((connection) => {
       const now = new Date().toISOString();
       return connection.prepare(`
-        UPDATE joi_harness_maps
+        UPDATE joi_harness_maps AS m
            SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
-         WHERE goal_input_id = ? AND status = 'ACTIVE'`)
-        .run(now, now, input.goalInputId).changes > 0;
+         WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
+           AND EXISTS (
+             SELECT 1 FROM joi_turns t
+             JOIN joi_inbox_messages r ON r.input_id = t.input_id
+             JOIN joi_goal_result_sets current_rs ON current_rs.original_input_id = m.goal_input_id
+              WHERE t.turn_id = ? AND t.status IN ('RUNNING', 'WAITING')
+                AND r.goal_input_id = m.goal_input_id
+                AND r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || current_rs.revision
+                AND current_rs.revision = m.reviewed_revision
+           )
+           AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                            AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+           AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.goal_input_id = m.goal_input_id
+                            AND p.status = 'OPEN')
+           AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                            AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))
+           AND EXISTS (
+             SELECT 1 FROM joi_goal_result_sets rs
+             JOIN joi_goal_outcomes o ON o.input_id = rs.original_input_id
+                                      AND o.result_revision = rs.revision
+              WHERE rs.original_input_id = m.goal_input_id
+                AND rs.revision > 0
+                AND rs.synthesized_revision = rs.revision
+                AND m.reviewed_revision = rs.revision
+           )`)
+        .run(now, now, input.goalInputId, input.turnId).changes > 0;
     });
   }
 

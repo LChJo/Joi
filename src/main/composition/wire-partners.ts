@@ -4,6 +4,7 @@ import type { PartnerEngineRuntime } from "../application/ports/partner-instance
 import { PartnerKnowledgeService } from "../application/partners/partner-knowledge-service.js";
 import { PartnerModelProbeService } from "../application/partners/partner-model-probe-service.js";
 import { PartnerRegistryService } from "../application/partners/partner-registry-service.js";
+import { ScenarioPackService } from "../application/partners/scenario-pack-service.js";
 import { PartnerEngineCatalog } from "../application/partners/partner-engine-catalog.js";
 import { PartnerInstanceManager } from "../application/partners/partner-instance-manager.js";
 import { PartnerWorkMemoryService } from "../application/partners/partner-work-memory-service.js";
@@ -55,6 +56,7 @@ export function wirePartners(input: {
       store: persistence.localCliConversationStore,
     })],
   ]);
+  const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: persistence.scenarioPackRepository });
   return {
     engineCatalog: new PartnerEngineCatalog(partnerEngines),
     partnerInstances: new PartnerInstanceManager({
@@ -82,6 +84,7 @@ export function wirePartners(input: {
     }),
     partnerSkillCatalog,
     partners,
+    scenarioPacks,
   };
 }
 

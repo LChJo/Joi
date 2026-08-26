@@ -220,6 +220,7 @@ async function startRuntime(): Promise<void> {
     modelSources: modelSourceStack.modelSources,
     operations,
     partners: partnerStack.partners,
+    scenarioPacks: partnerStack.scenarioPacks,
     requestRestart: () => requestApplicationRestart(),
     settings,
     work: workbenchStack.workRepository,

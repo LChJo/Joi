@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners";
-import type { PartnerDto, ScenarioDto } from "../../src/shared/joi";
+import type { PartnerDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../../src/shared/joi";
 import { createRuntimeFixture } from "../support/runtime-fixture";
 
 function cookieFrom(response: Response) {
@@ -35,6 +35,33 @@ async function createSession() {
 }
 
 describe("scenarios HTTP API", () => {
+  it("lists and installs the AI Berkshire pack without exposing embedded prompts", async () => {
+    const session = await createSession();
+    try {
+      const listed = await fetch(`${session.url}/api/v1/scenario-packs`, { headers: session.headers });
+      expect(listed.status).toBe(200);
+      const body = await listed.json() as { items: ScenarioPackDto[] };
+      expect(body.items).toHaveLength(1);
+      expect(body.items[0]).toMatchObject({ id: "ai-berkshire-value-research", installedRoleCount: 0, status: "NOT_INSTALLED", totalRoleCount: 15 });
+      expect(JSON.stringify(body)).not.toContain("你的职责");
+      expect(body.items[0]?.teams).toHaveLength(6);
+
+      const installed = await fetch(`${session.url}/api/v1/scenario-packs/ai-berkshire-value-research/install`, {
+        body: JSON.stringify({ teamIds: ["research-publishing"] }), headers: session.headers, method: "POST",
+      });
+      expect(installed.status).toBe(201);
+      expect(await installed.json() as ScenarioPackInstallResultDto).toMatchObject({ installedRoleCount: 3, packId: "ai-berkshire-value-research", status: "ACTIVE" });
+
+      const invalid = await fetch(`${session.url}/api/v1/scenario-packs/ai-berkshire-value-research/install`, {
+        body: JSON.stringify({ teamIds: [] }), headers: session.headers, method: "POST",
+      });
+      expect(invalid.status).toBe(400);
+      expect(await invalid.json()).toMatchObject({ code: "scenario_pack_team_selection_empty" });
+    } finally {
+      await session.close();
+    }
+  });
+
   it("serves built-in scenarios and maps scanned local skills into supplementary ones", async () => {
     const claudeDir = mkdtempSync(join(tmpdir(), "joi-scenario-claude-"));
     const emptyCodex = mkdtempSync(join(tmpdir(), "joi-scenario-codex-"));

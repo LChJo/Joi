@@ -30,7 +30,9 @@ joi 的结构化工具扩展为：`partner_create`（仅本机搭档，带 joi �
 
 场景预设改在搭档页的"场景预设"页签呈现（不在首页铺陈），由 `GET /api/v1/scenarios` 提供。结构化澄清把 `clarification_reason_code` 与可选 `clarification_prompt` 经 record/DTO 透出；当原始输入已经给出绝对目录时，joi 工具先自动绑定工作台再恢复同一 `inputId`，否则目录卡才调用工作台工作区 bind，接口继续隐藏绝对路径。`partner_selection_required` 卡从既有 snapshot 过滤 ACTIVE、无 ACTION_REQUIRED 的搭档；点击经 `/clarify` 提交稳定 `partnerId`，应用层再次检查搭档状态并以 `expectedReasonCode` 原子守卫当前澄清，再追加有界结构化选择、恢复原输入。首页投影由 `GET /api/v1/joi/home-feed` 提供：原始输入按 goal 聚合为工作台卡，Turn 只投影 active `progressing` 与终态后 15 秒的低权重尾迹；`progressing` 同时投影由 SQLite 事实推导的阶段枚举、Agent 数、Work 计数和开始时间，renderer 只映射安全文案；合成结果输入不进入首页。尚未完成 Workbench 路由的 `PENDING` 原始输入也先以 `ARRANGING`/“等待归属”目标卡进入投影，绑定后沿同一 `inputId` 升级；未归属的结构化澄清仍只进入“需要你”列表，避免重复卡片。migration 036 以 goal result-set revision 聚合该目标的全部权威结果，只有所有 Work 终态后才调度隔离的最小工具综合 Turn；migration 043 为目标 outcome 增加 `COMPLETED/BLOCKED` disposition。综合 Turn 必须显式提交 `RESULT_SYNTHESIZED` 或 `RESULT_BLOCKED`，成功 disposition 至少要求一个已验收完成 Work；非关键失败只作为覆盖缺口和可下钻警告，不能覆盖足够证据形成的完成结论。migration 042 为 `DIRECT_ANSWER`/`TEAM_READY` 建立独立 `joi_turn_completions` 展示事实，由 Coordinator 捕获最终文本、在持久化前有界脱敏，并与 Turn/Inbox 完成置于同一事务；home-feed 只对已消费且无 result-set 的输入读取它，有当前 revision 的 Goal outcome 始终优先。综合期间卡片为 `FINALIZING` 并继续显示 progressing，当前 outcome 的 disposition 决定“已完成/处理失败”，Work 失败计数不再反向覆盖 outcome。运行诊断同时写 stderr 与 userData 下的有界滚动 JSONL，只接受 ID、状态、计数、安全原因码和耗时，绝不记录 completion 正文。
 
-Migration 033 建立独立的用户展示面：`workbench_agent_sessions` 将 post-033 本机 `partner_instances` 与 A2A `partner_runs` 映射为工作台 Agent 卡，不回填旧执行历史；`workbench_agent_conversation_entries` 保存规范化的 Markdown、工具、产物与错误条目。真实运行状态仍以原运行表为权威。执行适配器只提交安全展示草稿；`agent-conversation-presentation` 在入库前丢弃内部推理与工具参数、脱敏路径和凭据并按 32 KiB 分块，稳定 entry id 使重放幂等。A2A data part 永不进入正文。删除一次性终态 Agent 只软删 session 并清理展示 entries，WorkResult、partner run、event 和审计事实保持。读取 API 为 `/api/v1/workbenches/:workbenchId/agents` 与其 `/conversation` 子资源。详见 ADR 0008。
+2026-08-26 起，上一段的“当前 outcome 决定终态”只适用于无 ACTIVE harness map 的兼容目标。Wayfinder goal 的 result outcome 是当前证据层总结：map ACTIVE 时 home-feed 必须投影 `REVIEWING`，review 派生 Work 活跃时投影 `EXTENDING`；只有 `MAP_CLEARED` 的存储事务验证最新综合水位、Work-path 覆盖、无活跃 Work 和无 OPEN path 后，当前 outcome 才晋升为首页最终结果并开放继续/删除。harness component 负责以 workId 幂等建立路径并由 Work 权威终态闭路。
+
+Migration 033 建立独立的用户展示面：`workbench_agent_sessions` 将 post-033 本机 `partner_instances` 与 A2A `partner_runs` 映射为工作台 Agent 卡，不回填旧执行历史；`workbench_agent_conversation_entries` 保存规范化的 Markdown、工具、产物与错误条目。真实运行状态仍以原运行表为权威。未指定 goal 时 Agent 卡展示 instance availability；指定 `goalId` 时，查询在同一 session 下优先选择该 goal 的活跃 partner run，否则选择最新 partner run，并将其状态作为目标执行状态，不能让 resident instance 完成后回落的 IDLE 覆盖 COMPLETED/FAILED。执行适配器只提交安全展示草稿；`agent-conversation-presentation` 在入库前丢弃内部推理与工具参数、脱敏路径和凭据并按 32 KiB 分块，稳定 entry id 使重放幂等。A2A data part 永不进入正文。删除一次性终态 Agent 只软删 session 并清理展示 entries，WorkResult、partner run、event 和审计事实保持。读取 API 为 `/api/v1/workbenches/:workbenchId/agents` 与其 `/conversation` 子资源。详见 ADR 0008。
 
 现有 Life/Wake 链只作为迁移期兼容消费者。切换时必须 stop-old-before-start-new；shadow 比对不得写 outbox、派发或正式表达。
 
@@ -265,6 +267,8 @@ API 返回 202 只表示事件已经持久化，不表示 Agent 已阅读或回�
 /api/v1/lives/{lifeId}/schedules
 /api/v1/lives/{lifeId}/memories
 /api/v1/agents
+/api/v1/scenario-packs
+/api/v1/scenario-packs/{packId}/install
 /api/v1/interactions
 /api/v1/artifacts
 /api/v1/backups
@@ -272,6 +276,8 @@ API 返回 202 只表示事件已经持久化，不表示 Agent 已阅读或回�
 ```
 
 所有创建型写请求接受 `Idempotency-Key`。列表使用 opaque cursor；错误统一为 `{ code, message, requestId, details? }`，`details` 不包含敏感信息。
+
+场景预设包安装在 application 层按稳定 `(packId, roleId)` 编排 Partner registry，在 infrastructure 层持久化绑定。内置定义只保存经过移植的角色职责和安全工具引用，不在运行时读取来源 checkout；重新安装只补齐缺失角色，并保留用户对既有 Partner revision 的修改。
 
 ### 7.2 SSE（已退役，见 ADR 0009）
 

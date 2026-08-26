@@ -53,6 +53,10 @@ export interface RuntimeDiagnosticEventMap {
   "joi.harness.map_cleared_trivial": {
     goalInputId: string;
   };
+  "joi.harness.paths_synchronized": {
+    closed: number;
+    created: number;
+  };
   "joi.harness.scan_failed": {
     errorCode: string;
     step: string;

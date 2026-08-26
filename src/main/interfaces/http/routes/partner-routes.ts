@@ -19,6 +19,7 @@ import {
   partnerRegistryService,
   partnerSkillCatalog,
   rejectPartnerWorkspace,
+  scenarioPackService,
 } from "../api-dependencies.js";
 import { exact, pattern, type RouteDefinition } from "../route-types.js";
 
@@ -58,6 +59,14 @@ export const PARTNER_CATALOG_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "read",
+    id: "GET /api/v1/scenario-packs",
+    match: exact("GET", "/api/v1/scenario-packs"),
+    handle: async (ctx) => {
+      sendJson(ctx.response, 200, { items: await scenarioPackService(ctx.dependencies).list() });
+    },
+  },
+  {
+    auth: "read",
     id: "GET /api/v1/scenarios",
     match: exact("GET", "/api/v1/scenarios"),
     handle: (ctx) => {
@@ -67,6 +76,20 @@ export const PARTNER_CATALOG_ROUTES: RouteDefinition[] = [
 ];
 
 export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
+  {
+    auth: "write",
+    id: "POST /api/v1/scenario-packs/:packId/install",
+    match: pattern("POST", /^\/api\/v1\/scenario-packs\/([^/]+)\/install$/),
+    handle: async (ctx, match) => {
+      const body = await readJson(ctx.request);
+      const teamIds = optionalStringArray(body, "teamIds");
+      const result = await scenarioPackService(ctx.dependencies).install(
+        decodeURIComponent((match as RegExpExecArray)[1] ?? ""),
+        teamIds === undefined ? {} : { teamIds },
+      );
+      sendJson(ctx.response, 201, result);
+    },
+  },
   {
     auth: "write",
     id: "POST /api/v1/scenarios/:scenarioId/partners",

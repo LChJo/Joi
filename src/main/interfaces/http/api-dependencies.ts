@@ -15,6 +15,7 @@ import type { WorkbenchWorkspaceService } from "../../application/joi/workbench-
 import type { JoiHomeFeedService } from "../../application/joi/joi-home-feed-service.js";
 import type { WorkbenchAgentService } from "../../application/partners/workbench-agent-service.js";
 import type { PartnerRegistryService } from "../../application/partners/partner-registry-service.js";
+import type { ScenarioPackService } from "../../application/partners/scenario-pack-service.js";
 import type { PartnerKnowledgeService } from "../../application/partners/partner-knowledge-service.js";
 import type { PartnerModelProbeService } from "../../application/partners/partner-model-probe-service.js";
 import type { PartnerEngineCatalog } from "../../application/partners/partner-engine-catalog.js";
@@ -59,6 +60,7 @@ export interface ApiDependencies {
   modelSources?: Pick<ModelSourceService, "create" | "delete" | "disable" | "hasReadySource" | "list" | "setOrder" | "update" | "validate">;
   operations: OperationsService;
   partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "duplicate" | "enable" | "list" | "update">;
+  scenarioPacks?: Pick<ScenarioPackService, "install" | "list">;
   requestRestart?: () => void;
   settings?: SystemSettingsPort;
   work?: WorkQuery;
@@ -112,6 +114,11 @@ export function joiInboxService(dependencies: ApiDependencies): NonNullable<ApiD
 export function partnerRegistryService(dependencies: ApiDependencies): NonNullable<ApiDependencies["partners"]> {
   if (dependencies.partners === undefined) throw new HttpError("partner_registry_unavailable", "Partner registry is unavailable.", 503);
   return dependencies.partners;
+}
+
+export function scenarioPackService(dependencies: ApiDependencies): NonNullable<ApiDependencies["scenarioPacks"]> {
+  if (dependencies.scenarioPacks === undefined) throw new HttpError("scenario_pack_runtime_unavailable", "Scenario pack runtime is unavailable.", 503);
+  return dependencies.scenarioPacks;
 }
 
 export function partnerModelProbeService(dependencies: ApiDependencies): NonNullable<ApiDependencies["partnerModelProbe"]> {

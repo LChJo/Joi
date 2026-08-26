@@ -40,6 +40,7 @@
     "@phosphor-icons/react": "2.1.10",
     "@radix-ui/themes": "3.3.0",
     "@rd-efficiency/agentsdk": "5.9.17",
+    "decimal.js": "^10.6.0",
     "linkedom": "^0.18.12",
     "react": "19.2.7",
     "react-dom": "19.2.7",

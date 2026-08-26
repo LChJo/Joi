@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto } from "../shared/joi";
+import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -177,6 +177,14 @@ export class DigitalLifeApi {
   }
   scenarios() {
     return this.request<{ items: ScenarioDto[] }>("/api/v1/scenarios");
+  }
+  scenarioPacks() {
+    return this.request<{ items: ScenarioPackDto[] }>("/api/v1/scenario-packs");
+  }
+  installScenarioPack(packId: string, teamIds?: string[]) {
+    return this.request<ScenarioPackInstallResultDto>(`/api/v1/scenario-packs/${encodeURIComponent(packId)}/install`, {
+      body: teamIds === undefined ? {} : { teamIds }, method: "POST",
+    });
   }
   createScenarioPartners(scenarioId: string, roleIds: string[]) {
     return this.request<{ items: PartnerDto[] }>(`/api/v1/scenarios/${encodeURIComponent(scenarioId)}/partners`, {

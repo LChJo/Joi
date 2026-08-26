@@ -652,7 +652,7 @@ describe("joi home single entry", () => {
           goalId: "goal-h",
           harness: {
             currentLayer: 2, decisionCount: 3, destination: "完成 688141 分析", fogCount: 1, mapStatus: "ACTIVE",
-            openPathCount: 1, revision: 5, topFogNote: "数据源未定",
+            openPathCount: 1, reviewedRevision: 1, revision: 5, topFogNote: "数据源未定",
             topPaths: [
               { pathId: "p2", status: "OPEN", title: "深入财报" },
               { pathId: "p1", status: "CLOSED", title: "收集资料" },
@@ -693,7 +693,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-phases", "阶段 Workbench");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
-    const statuses = ["ARRANGING", "ARRANGED", "RUNNING", "NEEDS_ATTENTION", "FINALIZING", "COMPLETED", "FAILED", "CANCELED"] as const;
+    const statuses = ["ARRANGING", "ARRANGED", "RUNNING", "REVIEWING", "EXTENDING", "NEEDS_ATTENTION", "FINALIZING", "COMPLETED", "FAILED", "CANCELED"] as const;
     vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
       goals: statuses.map((status, index): JoiGoalCardDto => {
         const base = {
@@ -719,6 +719,8 @@ describe("joi home single entry", () => {
     const dismiss = vi.spyOn(api, "dismissJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-COMPLETED", status: "CONSUMED" });
 
     render(<JoiHome api={api} />);
+    expect(await screen.findByText("正在评审")).toBeInTheDocument();
+    expect(screen.getByText("评审后补充执行")).toBeInTheDocument();
     for (const label of ["正在安排", "已安排", "执行中", "需要你", "正在总结", "已完成", "处理失败", "已取消"]) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }

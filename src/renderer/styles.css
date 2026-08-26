@@ -111,7 +111,7 @@
 .joi-goal-copy i { color: var(--faint); font-size: .74rem; font-style: normal; }
 .joi-goal-status { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .68rem; font-weight: 650; white-space: nowrap; }
 .joi-goal-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent); animation: joi-pulse 1.4s ease-in-out infinite; }
-.joi-goal-status.running, .joi-goal-status.arranging { border-color: color-mix(in srgb, var(--forest) 40%, var(--line)); color: var(--forest); }
+.joi-goal-status.running, .joi-goal-status.arranging, .joi-goal-status.reviewing, .joi-goal-status.extending { border-color: color-mix(in srgb, var(--forest) 40%, var(--line)); color: var(--forest); }
 .joi-goal-status.needs_attention, .joi-goal-status.failed { border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); color: var(--amber); }
 .joi-goal-side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; align-self: stretch; padding: 14px 18px 14px 8px; }
 .joi-goal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
@@ -423,6 +423,26 @@
 .scenario-card { display: grid; gap: 4px; justify-items: start; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper); text-align: left; cursor: pointer; }
 .scenario-card:hover { border-color: var(--forest); background: var(--paper-strong); box-shadow: var(--shadow); }
 .scenario-card span { color: var(--muted); font-size: 13px; }
+.scenario-catalog { display: grid; gap: 20px; }
+.scenario-pack-group { display: grid; gap: 10px; }
+.scenario-pack { overflow: hidden; border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper); box-shadow: var(--shadow); }
+.scenario-pack-summary { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; }
+.scenario-pack-summary > span:first-child { display: grid; gap: 4px; }
+.scenario-pack-summary small, .scenario-pack-meta { color: var(--muted); }
+.scenario-pack-state { flex: 0 0 auto; padding: 5px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; }
+.scenario-pack-state.active { border-color: color-mix(in srgb, var(--forest) 45%, var(--line)); color: var(--forest); }
+.scenario-pack-state.action_required, .scenario-pack-state.outdated { border-color: var(--amber); color: var(--amber); }
+.scenario-pack-body { display: grid; gap: 14px; padding: 0 18px 18px; border-top: 1px solid var(--line); }
+.scenario-pack-meta { display: flex; flex-wrap: wrap; gap: 12px; padding-top: 12px; font-size: 12px; }
+.scenario-team-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 10px; }
+.scenario-team { display: grid; align-content: start; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--paper-strong); }
+.scenario-team p { margin: 4px 0 0; color: var(--muted); font-size: 13px; }
+.scenario-team > .button { justify-self: start; }
+.scenario-role-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.scenario-role { display: inline-flex; align-items: center; gap: 5px; padding: 5px 7px; border: 1px solid var(--line); border-radius: 999px; font-size: 12px; }
+.role-state { color: var(--faint); }
+.role-state.active { color: var(--forest); }
+.role-state.disabled, .role-state.action_required, .role-state.outdated { color: var(--amber); }
 .scenario-slot { display: grid; gap: 8px; }
 .scenario-slot:has(.scenario-draft) { grid-column: 1 / -1; }
 .scenario-draft { border: 1px dashed var(--line-strong); border-radius: var(--radius); padding: 10px 12px; display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
