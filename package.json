@@ -22,7 +22,10 @@
     "test:e2e": "npm run build:prod && playwright test",
     "build:renderer": "vite build",
     "build:electron": "tsc -p tsconfig.electron.json",
-    "build:prod": "rimraf dist && npm run build:renderer && npm run build:electron",
+    "build:prod": "rimraf dist && npm run build:renderer && npm run build:electron && npm run build:relay",
+    "build:relay": "tsc -p tsconfig.relay.json",
+    "remote:relay": "node dist/remote-relay/relay/index.js",
+    "remote:relay:package": "npm run build:prod && node scripts/package-remote-relay.mjs",
     "package": "node scripts/package-app.mjs",
     "package:win": "node scripts/package-app.mjs --target win",
     "package:mac": "node scripts/package-app.mjs --target mac",
@@ -42,10 +45,12 @@
     "@rd-efficiency/agentsdk": "5.9.17",
     "decimal.js": "^10.6.0",
     "linkedom": "^0.18.12",
+    "qrcode.react": "^4.2.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1"
+    "remark-gfm": "^4.0.1",
+    "ws": "^8.18.3"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
@@ -55,6 +60,7 @@
     "@types/node": "26.1.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
+    "@types/ws": "^8.18.1",
     "@vitejs/plugin-react": "6.0.3",
     "@vitest/coverage-v8": "4.1.10",
     "concurrently": "10.0.3",
@@ -91,6 +97,7 @@
     },
     "files": [
       "dist/**/*",
+      "!dist/remote-relay/**/*",
       "package.json"
     ],
     "extraResources": [

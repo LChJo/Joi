@@ -2,7 +2,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
-import { ConsoleApp, SettingsPanel } from "../../src/renderer/Console.js";
+import { ConsoleApp, RemoteAccessSettings, SettingsPanel } from "../../src/renderer/Console.js";
 import type { DiagnosticsDto } from "../../src/renderer/types";
 
 const diagnostics: DiagnosticsDto = {
@@ -29,11 +29,45 @@ function mockOperations(api: DigitalLifeApi) {
     ],
   });
   vi.spyOn(api, "settings").mockResolvedValue(runtimeSettings);
+  vi.spyOn(api, "remoteAccessStatus").mockResolvedValue({
+    devices: [], enabled: false, hostId: "host-test", relayAuthenticationConfigured: false,
+    relayUrl: "", status: "disabled",
+  });
   vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [] });
   return { listSessions };
 }
 
 describe("settings panel", () => {
+  it("configures browser relay access, generates a QR code and revokes paired browsers", async () => {
+    const api = new DigitalLifeApi("");
+    const status = {
+      devices: [{ createdAt: "2026-08-26T00:00:00.000Z", deviceId: "device-1", lastSeenAt: "2026-08-26T00:10:00.000Z", name: "手机浏览器" }],
+      enabled: true, hostId: "host-1", relayAuthenticationConfigured: true,
+      relayUrl: "https://remote.joilab.top", status: "connected" as const,
+    };
+    vi.spyOn(api, "remoteAccessStatus").mockResolvedValue(status);
+    const update = vi.spyOn(api, "updateRemoteAccess").mockResolvedValue(status);
+    const pairing = vi.spyOn(api, "createRemotePairing").mockResolvedValue({ ...status, pairing: {
+      expiresAt: "2026-08-26T00:20:00.000Z", pairingId: "pair-1",
+      qrUrl: "https://remote.joilab.top/remote/#v=1&host=host-1&pairing=pair-1&device=device-1&secret=hidden",
+    } });
+    const revoke = vi.spyOn(api, "revokeRemoteDevice").mockResolvedValue({ ...status, devices: [] });
+
+    render(<RemoteAccessSettings api={api} />);
+    expect(await screen.findByText("已安全连接")).toBeInTheDocument();
+    expect(screen.getByText("手机浏览器")).toBeInTheDocument();
+    expect(screen.queryByText("hidden")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("浏览器网关地址"), { target: { value: "https://new.example.com" } });
+    fireEvent.change(screen.getByLabelText("中继主机令牌"), { target: { value: "new-relay-token-that-is-long-enough" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存远程设置" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(expect.objectContaining({ enabled: true, relayAuthentication: "new-relay-token-that-is-long-enough", relayUrl: "https://new.example.com" })));
+    fireEvent.click(screen.getByRole("button", { name: "生成绑定二维码" }));
+    await waitFor(() => expect(pairing).toHaveBeenCalledOnce());
+    expect(await screen.findByLabelText("远程浏览器绑定二维码")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "移除 手机浏览器" }));
+    await waitFor(() => expect(revoke).toHaveBeenCalledWith("device-1"));
+  });
+
   it("saves LAN settings, reports restart requirements and labels session devices", async () => {
     const api = new DigitalLifeApi("");
     mockOperations(api);

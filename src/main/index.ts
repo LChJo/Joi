@@ -9,6 +9,8 @@ import { AgentService } from "./application/agents/agent-service.js";
 import { AuthService } from "./application/auth/auth-service.js";
 import { LifeService } from "./application/lives/life-service.js";
 import { OperationsService } from "./application/operations/operations-service.js";
+import { RemoteCommandService } from "./application/remote/remote-command-service.js";
+import type { RemoteAccessControl } from "./application/ports/remote-access.js";
 import type { SsePublisher } from "./application/ports/runtime-store.js";
 import { wirePersistence } from "./composition/wire-persistence.js";
 import { wireModelSources } from "./composition/wire-model-sources.js";
@@ -21,6 +23,8 @@ import { applyPendingRestore, BackupService } from "./infrastructure/operations/
 import { SystemSettingsService } from "./infrastructure/operations/system-settings-service.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "./infrastructure/persistence/runtime-database.js";
 import { JsonLineRuntimeDiagnostics } from "./infrastructure/runtime/json-line-runtime-diagnostics.js";
+import { FileRemoteAccessStore } from "./infrastructure/remote/file-remote-access-store.js";
+import { RemoteAccessHost } from "./infrastructure/remote/remote-access-host.js";
 import { RuntimeMarker, type StartupEvidence } from "./infrastructure/runtime/runtime-marker.js";
 import {
   InMemoryBootstrapNonceStore,
@@ -60,6 +64,7 @@ let runtimeListeners: RuntimeListeners | null = null;
 let outboxTimer: NodeJS.Timeout | null = null;
 let tray: Tray | null = null;
 let runtimeMarker: RuntimeMarker | null = null;
+let remoteAccessHost: RemoteAccessControl | null = null;
 let startupEvidence: StartupEvidence | undefined;
 let emergencyStopAll: (() => Promise<void>) | null = null;
 let drainRuntime: (() => Promise<void>) | null = null;
@@ -163,6 +168,14 @@ async function startRuntime(): Promise<void> {
   await partnerStack.partnerInstances.recoverOnBoot();
   await runtimeStack.outboxDispatcher.dispatchOnce();
   await runtimeStack.actorTree.tick(clock.now());
+  const remoteAccess = new RemoteAccessHost({
+    clock,
+    commands: new RemoteCommandService({ homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox }),
+    store: new FileRemoteAccessStore(path.join(userDataDirectory, "remote-access.json")),
+    vault,
+  });
+  await remoteAccess.start();
+  remoteAccessHost = remoteAccess;
   const lives = new LifeService({
     clock,
     files: new LifeFileDeletionService({ ids, rootDirectory: path.join(userDataDirectory, "artifacts"), store: database.store }),
@@ -222,6 +235,7 @@ async function startRuntime(): Promise<void> {
     partners: partnerStack.partners,
     scenarioPacks: partnerStack.scenarioPacks,
     requestRestart: () => requestApplicationRestart(),
+    remoteAccess,
     settings,
     work: workbenchStack.workRepository,
   };
@@ -365,6 +379,8 @@ async function shutdownRuntime(): Promise<void> {
   const listeners = runtimeListeners;
   runtimeListeners = null;
   if (listeners !== null) await listeners.close();
+  await remoteAccessHost?.close();
+  remoteAccessHost = null;
   await drainRuntime?.();
   drainRuntime = null;
   runtimeDatabase?.close();

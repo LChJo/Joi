@@ -6,6 +6,7 @@ import { MODEL_SOURCE_READ_ROUTES, MODEL_SOURCE_WRITE_ROUTES } from "./model-sou
 import { PARTNER_CATALOG_ROUTES, PARTNER_MUTATION_ROUTES } from "./partner-routes.js";
 import { PUBLIC_ROUTES } from "./public-routes.js";
 import { AGENT_ROUTES, SYSTEM_ROUTES } from "./system-routes.js";
+import { REMOTE_ROUTES } from "./remote-routes.js";
 import { WORKBENCH_ROUTES } from "./workbench-routes.js";
 
 /**
@@ -22,6 +23,7 @@ export const AUTHENTICATED_ROUTES: RouteDefinition[] = [
   ...JOI_WRITE_ROUTES,
   ...MODEL_SOURCE_WRITE_ROUTES,
   ...AUTH_MUTATION_ROUTES,
+  ...REMOTE_ROUTES,
   ...LEGACY_LIFE_ROUTES,
   ...AGENT_ROUTES,
   ...SYSTEM_ROUTES,

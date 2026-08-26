@@ -86,6 +86,10 @@ flowchart TB
 - LAN listener 可选，只绑定用户明确选择的 RFC1918 地址。
 - 禁止以 `0.0.0.0` 作为便捷回退；LAN 绑定失败不影响 loopback。
 
+浏览器远程入口是第三条独立边界（ADR 0012），不复用 LAN listener，也不把 `/api/v1` 暴露到公网。桌面主进程通过 `RemoteAccessHost` 主动建立到公网 WebSocket 网关的出站连接；浏览器从同一网关加载 `/remote/` 静态页并建立 WebSocket。网关只按随机 `hostId/connectionId` 转发握手与密文帧，不能调用 application service。主进程解密后由 `RemoteCommandService` 显式映射到 `home-feed` 读取和文字 inbox 提交，所有其他命令 fail closed。
+
+现有 Codux `iroh-relay` 使用原生 iroh 协议和自定义 ALPN，普通浏览器不能直接接入。JOI 的浏览器网关因此是可同机部署的独立 HTTPS/WebSocket 服务，不替换、不代理 iroh 节点；推荐以独立 TLS 端口或独立 SNI 入口共存。部署见 `docs/11-browser-remote-relay-deployment.md`。
+
 关闭窗口只隐藏到托盘；显式“退出 joi”才停止 Runtime。开机启动是用户可选设置。
 
 ## 4. 逻辑分层
@@ -303,6 +307,8 @@ API 返回 202 只表示事件已经持久化，不表示 Agent 已阅读或回�
 - LAN 使用可信私网 HTTP，MVP 不提供 TLS；UI 必须明确风险，不允许公网地址。
 - CSRF 防护使用 SameSite Cookie + 每会话 CSRF token；所有写请求校验 Origin 与 token。
 - A2A Bearer 只在主进程内解密并发送，绝不下发浏览器。
+- 浏览器远程中继令牌只在主进程内解密并用于 `/host` 出站握手；远程浏览器永远不取得该令牌、桌面 Cookie、CSRF 或 `/api/v1` 访问权。
+- 浏览器远程设备使用独立端到端设备密钥和每连接会话密钥；中继只看见连接元数据和不透明帧。二维码 fragment 不进入 HTTP。
 - 配套 joi 扩展提供受信任运行时指令；事件正文、记忆和协作者结果仍按不可信数据处理。
 
 ## 9. 并发与租约

@@ -780,6 +780,17 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 
 .metric-strip { display: grid; grid-template-columns: repeat(4, 1fr); border-bottom: 1px solid var(--line); }.metric-strip div { display: grid; gap: 6px; padding: 30px 20px 30px 0; }.metric-strip span { color: var(--muted); font-size: 11px; }.metric-strip strong { font-size: 28px; font-weight: 580; }.diagnostic-table { display: grid; }.diagnostic-table div { display: grid; grid-template-columns: 180px minmax(0, 1fr) auto; align-items: center; gap: 16px; padding: 17px 0; border-bottom: 1px solid var(--line); }.diagnostic-table span { color: var(--muted); font-size: 12px; }.diagnostic-table strong { font-size: 12px; }.diagnostic-table i { font-size: 10px; font-style: normal; }.diagnostic-table i.ok { color: var(--forest); }.diagnostic-table i.warn { color: var(--amber); }.settings-sections { display: grid; }.settings-sections > section { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; gap: 18px; align-items: center; padding: 25px 0; border-bottom: 1px solid var(--line); }.settings-sections > section > svg { color: var(--forest); }.settings-sections > section > div { display: grid; gap: 5px; }.settings-sections h2 { font-size: 16px; }.settings-sections p { color: var(--muted); font-size: 12px; }.settings-sections .status-dot { justify-self: start; }
 .inline-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 12px; margin-top: 8px; }.inline-settings > label:first-child, .inline-settings > label:nth-last-child(2), .inline-settings > .row-actions { grid-column: 1 / -1; }.inline-settings label:has(input[type="checkbox"]) { display: flex; align-items: center; gap: 8px; }.inline-settings input[type="checkbox"] { width: auto; }.session-list { display: flex; flex-wrap: wrap; gap: 5px; }.session-list span { padding: 4px 7px; border: 1px solid var(--line); border-radius: 99px; color: var(--muted); font-size: 10px; }.backup-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 5px; }
+.settings-sections > .remote-access-settings { align-items: start; }
+.remote-access-settings > div { gap: 9px !important; }
+.remote-access-form { width: min(720px, 100%); }
+.remote-pairing { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 18px; margin-top: 8px; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--paper-strong); }
+.remote-pairing > div:first-child { display: grid; width: 200px; height: 200px; place-items: center; border-radius: 12px; background: #f3f8f4; color: #153524; }
+.remote-pairing > div:last-child { display: grid; gap: 6px; }
+.remote-device-list { display: grid; gap: 0; margin-top: 4px; }
+.remote-device-list > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.remote-device-list span { display: grid; gap: 3px; }
+.remote-device-list strong { font-size: 12px; }
+.remote-settings-notice { color: var(--muted); font-size: 11px; }
 
 .settings-sections > .model-source-manager { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
 .model-source-manager > .joi-network-gate {
@@ -817,3 +828,38 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; } }
+
+/* Browser-only remote surface: intentionally isolated from the desktop shell. */
+html:has(.remote-joi-shell) { min-width: 0; background: #0d1511; scrollbar-gutter: auto; }
+body:has(.remote-joi-shell) { min-width: 0; background: radial-gradient(circle at 50% -10%, #203a2c 0, #111b16 36%, #0d1511 72%); }
+.remote-joi-shell { --remote-card: rgb(27 40 32 / 92%); display: grid; width: min(100%, 540px); min-height: 100dvh; grid-template-rows: auto 1fr auto; margin: auto; color: #eef5f0; }
+.remote-joi-header { position: sticky; z-index: 4; top: 0; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: max(18px, env(safe-area-inset-top)) 18px 14px; border-bottom: 1px solid rgb(196 221 204 / 10%); background: rgb(13 21 17 / 82%); backdrop-filter: blur(18px); }
+.remote-joi-header > div { display: grid; gap: 3px; }
+.remote-joi-mark { color: #b8e3c7; font-size: 24px; font-weight: 760; letter-spacing: -.05em; }
+.remote-joi-header p { color: #94a79b; font-size: 11px; line-height: 1.4; }
+.remote-connection { display: inline-flex; align-items: center; gap: 7px; color: #9eb0a4; font-size: 10px; white-space: nowrap; }
+.remote-connection i { width: 7px; height: 7px; border-radius: 50%; background: #67786d; }
+.remote-connection.connected i { background: #7fc596; box-shadow: 0 0 0 4px rgb(127 197 150 / 12%); }
+.remote-connection.connecting i { background: #d9a65b; animation: joi-pulse 1.4s ease-in-out infinite; }
+.remote-goal-list { display: grid; align-content: start; gap: 12px; padding: 18px 14px 190px; }
+.remote-goal-card { display: grid; gap: 10px; padding: 18px; border: 1px solid rgb(196 221 204 / 12%); border-radius: 18px; background: var(--remote-card); box-shadow: 0 18px 45px rgb(0 0 0 / 18%); }
+.remote-goal-card h1 { font-size: clamp(21px, 6vw, 29px); line-height: 1.2; letter-spacing: -.035em; }
+.remote-goal-card > p { color: #9db0a3; font-size: 12px; }
+.remote-goal-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.remote-goal-top span { overflow: hidden; color: #82958a; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.remote-goal-top strong { padding: 4px 8px; border: 1px solid rgb(127 197 150 / 25%); border-radius: 999px; color: #9bd4ae; font-size: 10px; font-weight: 680; }
+.remote-goal-card.failed .remote-goal-top strong, .remote-goal-card.needs_attention .remote-goal-top strong { border-color: rgb(222 166 91 / 30%); color: #e2b474; }
+.remote-goal-result, .remote-goal-attention { display: grid; grid-template-columns: auto 1fr; gap: 9px; margin-top: 2px; padding-top: 12px; border-top: 1px solid rgb(196 221 204 / 10%); color: #c7d5cc; font-size: 12px; line-height: 1.55; }
+.remote-goal-result svg { color: #7fc596; }
+.remote-goal-attention svg { color: #e2b474; }
+.remote-empty { display: grid; min-height: 46dvh; place-items: center; align-content: center; gap: 10px; padding: 30px; color: #83958a; text-align: center; }
+.remote-empty svg { width: 30px; height: 30px; color: #7fc596; animation: orbit-pulse 1.6s ease-in-out infinite; }
+.remote-empty h1 { color: #e8f0eb; font-size: 22px; }
+.remote-empty p { font-size: 12px; }
+.remote-composer-wrap { position: fixed; z-index: 5; right: 0; bottom: 0; left: 0; display: grid; width: min(100%, 540px); gap: 7px; margin: auto; padding: 10px 14px max(12px, env(safe-area-inset-bottom)); background: linear-gradient(180deg, transparent, rgb(13 21 17 / 90%) 20%, #0d1511 48%); }
+.remote-composer { display: grid; grid-template-columns: minmax(0, 1fr) 46px; align-items: end; gap: 8px; padding: 9px 9px 9px 14px; border: 1px solid rgb(196 221 204 / 18%); border-radius: 18px; background: rgb(28 41 33 / 96%); box-shadow: 0 18px 50px rgb(0 0 0 / 32%); }
+.remote-composer textarea { min-height: 46px; max-height: 130px; padding: 8px 0; border: 0; background: transparent; color: #eef5f0; resize: none; }
+.remote-composer textarea:focus { outline: 0; }
+.remote-composer button { display: grid; width: 46px; height: 46px; place-items: center; border: 0; border-radius: 14px; background: #a9d8b9; color: #12301f; cursor: pointer; }
+.remote-composer button:disabled { opacity: .38; }
+.remote-composer-notice, .remote-composer-wrap > p { color: #819388; font-size: 10px; text-align: center; }

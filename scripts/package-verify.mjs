@@ -25,6 +25,7 @@ const relativeFiles = absoluteFiles.map((file) => path.relative(process.cwd(), f
 const requiredFiles = [
   "dist/electron/main/index.js",
   "dist/electron/preload/index.cjs",
+  "dist/remote-relay/relay/index.js",
   "dist/renderer/icon.png",
   "dist/renderer/index.html",
 ];

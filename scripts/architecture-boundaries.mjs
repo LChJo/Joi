@@ -14,6 +14,7 @@ const layerPrefixes = [
   ["src/main/composition/", "composition"],
   ["src/preload/", "preload"],
   ["src/renderer/", "renderer"],
+  ["src/relay/", "relay"],
   ["src/shared/", "shared"],
 ];
 
@@ -32,6 +33,7 @@ const allowedLocalLayers = {
   interface: new Set(["application", "interface", "shared"]),
   preload: new Set(["preload", "shared"]),
   renderer: new Set(["renderer", "shared"]),
+  relay: new Set(["relay", "shared"]),
   shared: new Set(["shared"]),
 };
 

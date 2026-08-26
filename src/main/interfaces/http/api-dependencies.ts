@@ -24,6 +24,7 @@ import type { PartnerWorkMemoryService } from "../../application/partners/partne
 import type { PartnerSkillCatalog } from "../../application/ports/partner-skills.js";
 import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
 import type { SystemSettingsPort } from "../../application/ports/system-settings.js";
+import type { RemoteAccessControl } from "../../application/ports/remote-access.js";
 import type { ArtifactReadPort, JoiAttachmentPort } from "../../application/ports/managed-file-ports.js";
 import type { WorkQuery } from "../../application/ports/work-orchestration.js";
 import type { JoiActivityDto, PartnerEngineDto } from "../../../shared/joi.js";
@@ -62,6 +63,7 @@ export interface ApiDependencies {
   partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "duplicate" | "enable" | "list" | "update">;
   scenarioPacks?: Pick<ScenarioPackService, "install" | "list">;
   requestRestart?: () => void;
+  remoteAccess?: RemoteAccessControl;
   settings?: SystemSettingsPort;
   work?: WorkQuery;
 }

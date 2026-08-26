@@ -15,6 +15,7 @@ import type {
   UserAttachmentDto,
 } from "./types";
 import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
+import type { RemoteAccessStatusDto } from "../shared/remote";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -380,6 +381,14 @@ export class DigitalLifeApi {
   diagnosticsExportUrl() { return `${this.origin}/api/v1/diagnostics/export`; }
   settings() { return this.request<SystemSettingsDto>("/api/v1/settings"); }
   updateSettings(body: Record<string, unknown>) { return this.request<SystemSettingsDto>("/api/v1/settings", { body, method: "POST" }); }
+  remoteAccessStatus() { return this.request<RemoteAccessStatusDto>("/api/v1/remote"); }
+  updateRemoteAccess(body: { enabled?: boolean; relayAuthentication?: string | null; relayUrl?: string }) {
+    return this.request<RemoteAccessStatusDto>("/api/v1/remote", { body, method: "POST" });
+  }
+  createRemotePairing() { return this.request<RemoteAccessStatusDto>("/api/v1/remote/pairings", { method: "POST" }); }
+  revokeRemoteDevice(deviceId: string) {
+    return this.request<RemoteAccessStatusDto>(`/api/v1/remote/devices/${encodeURIComponent(deviceId)}`, { method: "DELETE" });
+  }
   listBackups() { return this.request<{ items: BackupDto[] }>("/api/v1/backups"); }
   createBackup() { return this.request<BackupDto>("/api/v1/backups", { method: "POST" }); }
   restoreBackup(backupId: string) {
