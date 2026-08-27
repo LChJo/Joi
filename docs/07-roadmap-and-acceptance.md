@@ -51,7 +51,7 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-26 的 AI Berkshire 大型场景预设包以 AC-56 为门禁：内置快照必须可脱离来源 checkout 运行，二十个 canonical workflow 与写作 overlay 收敛为六个子团队、十五位共享搭档；安装以 pack/role 稳定绑定并可从部分失败继续，重复安装不得覆盖用户 revision、启用停用搭档或产生重复角色。搭档页提供子团队和完整套件的一键安装；财务计算与研究审计只通过固定、有界、不可执行任意代码的工具完成。
 
-2026-08-27 的 Android 原生远程入口以 AC-57 为门禁：桌面与 Android 使用独立实现的 iroh transport，同网优先点对点直连、失败后自动走 `cudex.joilab.top` 中继；`joi://pair` 票据十分钟且一次有效。应用层继续使用 HMAC/HKDF/AES-GCM、严格递增序号和 `feed.get/message.send` allowlist；每台 App 有独立设备密钥，可同时连接并逐台撤销。App 只提供竖屏首页任务卡与文字提交，不依赖浏览器、Cloudflare、DCDN 或额外 WebSocket 网关。详见 ADR 0013。
+2026-08-27 的 Android 原生远程入口以 AC-57 为门禁：桌面与 Android 使用独立实现的 iroh transport，同网优先点对点直连、失败后自动走默认的 `remote.joilab.top` 中继，同时允许手动配置其他 HTTPS relay；`joi://pair` 票据十分钟且一次有效。应用层继续使用 HMAC/HKDF/AES-GCM、严格递增序号和 `feed.get/message.send` allowlist；每台 App 有独立设备密钥，可同时连接并逐台撤销。App 只提供竖屏首页任务卡与文字提交，不依赖浏览器、Cloudflare、DCDN 或额外 WebSocket 网关。详见 ADR 0013。
 
 ## 1. 当前状态
 

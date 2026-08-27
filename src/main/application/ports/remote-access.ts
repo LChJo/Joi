@@ -15,7 +15,7 @@ export interface RemoteAccessStoredState {
   encryptedRelayAuthentication?: Uint8Array;
   hostId: string;
   relayUrl: string;
-  version: 2;
+  version: 3;
 }
 
 export interface RemoteAccessStore {

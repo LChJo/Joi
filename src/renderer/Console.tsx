@@ -107,7 +107,7 @@ export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
       <span className={`status-dot ${status.status === "connected" ? "ok" : status.status === "error" ? "warn" : "muted"}`}>{remoteStatusLabel(status.status)}</span>
       <form className="inline-settings remote-access-form" key={`${status.hostId}:${status.relayUrl}`} onSubmit={(event) => void save(event)}>
         <label><input defaultChecked={status.enabled} name="enabled" type="checkbox" />允许已绑定的 Joi Android App 连接</label>
-        <label>iroh 中继地址<input defaultValue={status.relayUrl} name="relayUrl" placeholder="https://cudex.joilab.top" required type="url" /></label>
+        <label>iroh 中继地址<input defaultValue={status.relayUrl} name="relayUrl" placeholder="https://remote.joilab.top" required type="url" /></label>
         <div className="row-actions"><button className="button quiet" type="submit">保存远程设置</button><button className="button primary" disabled={!status.enabled || status.status !== "connected"} onClick={() => void createPairing()} type="button">生成绑定二维码</button></div>
       </form>
       {status.pairing === undefined ? null : <div className="remote-pairing"><div aria-label="Joi Android App 绑定二维码"><QRCodeSVG bgColor="transparent" fgColor="currentColor" level="M" marginSize={2} size={184} value={status.pairing.qrUrl} /></div><div><strong>在 Joi App 中扫码</strong><span>{new Date(status.pairing.expiresAt).toLocaleTimeString()} 前有效 · 仅可绑定一次</span><small>配对密钥只存在于二维码与两端安全存储中，中继无法读取会话内容。</small></div></div>}

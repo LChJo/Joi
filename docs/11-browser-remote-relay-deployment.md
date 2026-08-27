@@ -1,6 +1,7 @@
 # 浏览器远程中继部署
 
-> 已由 ADR 0013 取代。本页仅用于 Android 真机验收前的旧方案回退，不再是正式部署路径；正式方案复用 `cudex.joilab.top` iroh relay，不需要本页的域名、DCDN、Cloudflare、Nginx 或 Node 服务。
+> 已由 ADR 0013 取代。本页仅用于 Android 真机验收前的旧方案回退，不再是正式部署路径；正式方案默认使用 `remote.joilab.top` iroh relay，不需要 DCDN、Cloudflare 或 Node WebSocket 网关。
+> 原生 iroh 中继的正式配置见 `docs/12-native-iroh-relay-deployment.md`。
 
 本页部署 ADR 0012 的 JOI 浏览器网关。它与 Codux 的 `iroh-relay` 是两个服务：保留现有 `cudex.joilab.top`、TCP 443/80 和 UDP 7824，不把浏览器 WebSocket 接到 iroh 端口。
 

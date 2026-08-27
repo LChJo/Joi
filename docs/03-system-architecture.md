@@ -88,7 +88,7 @@ flowchart TB
 
 Android 原生远程是第三条独立边界（ADR 0013），不复用 LAN listener，也不把 `/api/v1` 暴露到公网。Electron 通过受控 sidecar 承载 iroh host；Android Rust FFI 控制端使用二维码中的 endpoint ticket 优先建立局域网直连，失败时走既有 iroh relay。sidecar 只按 connection id 转发有界不透明帧，不能调用 application service。主进程解密后由 `RemoteCommandService` 显式映射到 `home-feed` 读取和文字 inbox 提交，所有其他命令 fail closed。
 
-Joi 使用独立 ALPN `/joi/remote/1` 和独立节点密钥，但可复用 `cudex.joilab.top` 的标准 iroh relay。该路径不需要 `remote.joilab.top`、Cloudflare、DCDN、Node WebSocket 网关或新增 ECS 端口。
+Joi 使用独立 ALPN `/joi/remote/1` 和独立节点密钥，默认使用 `remote.joilab.top` 的标准 iroh relay；该域名与 `cudex.joilab.top` 可由同一 iroh 实例和多域名证书承载。原生链路不依赖 Cloudflare、DCDN、Node WebSocket 网关或新增 ECS 端口。
 
 关闭窗口只隐藏到托盘；显式“退出 joi”才停止 Runtime。开机启动是用户可选设置。
 

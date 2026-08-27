@@ -246,7 +246,7 @@ Card Origin、协议、transport 或认证发生变化时，卡片进入“需�
 
 ### 9.5 Android 原生远程访问
 
-- 桌面设置只配置 iroh 中继 HTTPS URL 和启用开关；默认使用 `https://cudex.joilab.top`。
+- 桌面设置只配置 iroh 中继 HTTPS URL 和启用开关；默认使用 `https://remote.joilab.top`，也允许用户手动填写其他受信任的 HTTPS relay。
 - “生成二维码”创建十分钟、一次有效的 `joi://pair` 绑定票据，包含应用层设备密钥和 iroh endpoint ticket；绑定成功后 App 只在系统安全存储中保存可恢复凭据。
 - 已绑定设备显示名称、首次绑定时间、最近活动时间和撤销按钮。撤销后该设备不能恢复连接，重新使用必须再次扫码。
 - App 只有 joi 标识、直连/中继/重连状态、首页任务卡和底部文字输入。它不提供设置、搭档管理、附件、文件、备份、诊断、删除、暂停或紧急操作。

@@ -18,13 +18,16 @@ interface SerializedState {
   encryptedRelayAuthentication?: string;
   hostId: string;
   relayUrl: string;
-  version: 1 | 2;
+  version: 1 | 2 | 3;
 }
+
+const DEFAULT_IROH_RELAY_URL = "https://remote.joilab.top";
+const PREVIOUS_DEFAULT_IROH_RELAY_URL = "https://cudex.joilab.top";
 
 function parseState(value: unknown): RemoteAccessStoredState {
   if (value === null || Array.isArray(value) || typeof value !== "object") throw new Error("remote_access_state_invalid");
   const state = value as Partial<SerializedState>;
-  if ((state.version !== 1 && state.version !== 2) || typeof state.enabled !== "boolean" || typeof state.hostId !== "string"
+  if ((state.version !== 1 && state.version !== 2 && state.version !== 3) || typeof state.enabled !== "boolean" || typeof state.hostId !== "string"
     || typeof state.relayUrl !== "string" || !Array.isArray(state.devices)) throw new Error("remote_access_state_invalid");
   const devices = (state.devices as unknown[]).map((device) => {
     if (device === null || typeof device !== "object") throw new Error("remote_access_state_invalid");
@@ -48,6 +51,8 @@ function parseState(value: unknown): RemoteAccessStoredState {
     throw new Error("remote_access_state_invalid");
   }
   const legacyBrowserState = state.version === 1;
+  const previousNativeDefault = state.version === 2
+    && state.relayUrl.replace(/\/$/u, "") === PREVIOUS_DEFAULT_IROH_RELAY_URL;
   return {
     devices,
     enabled: state.enabled,
@@ -58,8 +63,8 @@ function parseState(value: unknown): RemoteAccessStoredState {
       encryptedRelayAuthentication: Buffer.from(state.encryptedRelayAuthentication, "base64"),
     }),
     hostId: state.hostId,
-    relayUrl: legacyBrowserState ? "https://cudex.joilab.top" : state.relayUrl,
-    version: 2,
+    relayUrl: legacyBrowserState || previousNativeDefault ? DEFAULT_IROH_RELAY_URL : state.relayUrl,
+    version: 3,
   };
 }
 
@@ -75,7 +80,7 @@ function serializeState(state: RemoteAccessStoredState): SerializedState {
     }),
     hostId: state.hostId,
     relayUrl: state.relayUrl,
-    version: 2,
+    version: 3,
   };
 }
 

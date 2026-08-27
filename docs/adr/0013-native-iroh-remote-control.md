@@ -7,7 +7,7 @@
 
 ## Context
 
-浏览器入口依赖额外的 HTTPS/WSS 网关、域名和移动运营商链路可达性，实际发布路径复杂且不稳定。产品目标改为提供 Android App，并采用与 Codux 相同的连接行为：同一网络内优先点对点直连，无法直连时自动回退到既有 `cudex.joilab.top` iroh 中继。同一桌面 Joi 必须允许多台独立手机同时绑定和恢复连接。
+浏览器入口依赖额外的 HTTPS/WSS 网关、域名和移动运营商链路可达性，实际发布路径复杂且不稳定。产品目标改为提供 Android App，并采用与 Codux 相同的连接行为：同一网络内优先点对点直连，无法直连时自动回退到 Joi 自有的 `remote.joilab.top` iroh 中继。同一桌面 Joi 必须允许多台独立手机同时绑定和恢复连接。
 
 本实现只参考连接行为与公开 iroh API，独立编写 Joi 协议和界面，不复制 Codux 的 GPL 源代码。
 
@@ -19,6 +19,7 @@
 4. 保留 Joi 已有的双向 HMAC-SHA-256 证明、HKDF-SHA-256 会话派生、AES-256-GCM、严格递增序号和 `connectionId + sequence` AAD。iroh 的加密传输不替代应用层设备授权。
 5. Android 凭据存入系统安全存储。App 只展示竖屏任务卡、链路状态和文字输入；主机 allowlist 仍只有 `feed.get` 与 `message.send`。
 6. 旧浏览器远程源码和已部署网关在 Android 真机验收前保留作回退；验收通过后删除 WebSocket relay、`/remote/` renderer 和相关部署资产。
+7. 默认中继为 `https://remote.joilab.top`，用户仍可手动配置其他 HTTPS relay。ECS 上同一 iroh 1.0.x 实例以多域名证书同时服务 `remote` 与兼容保留的 `cudex`；默认客户端不内置共享 Bearer，公开 relay 必须配置连接与单客户端流量上限。
 
 ## Consequences
 
@@ -27,3 +28,4 @@
 - Android APK 需要交叉编译并打包 Rust `arm64-v8a` 动态库；桌面安装包必须携带对应平台的 sidecar。
 - 中继仍可观察流量时间与大小并拒绝服务，但不能读取任务或消息正文。已接管手机系统、桌面系统或二维码现场的攻击不在本方案防御范围内。
 - AC-57 的自动化证据不能替代 Android 真机在 Wi-Fi 与移动网络上的扫码、恢复、直连/中继切换和撤销验收。
+- ECS 的部署、验证和回滚方法见 `docs/12-native-iroh-relay-deployment.md`。

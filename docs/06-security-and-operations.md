@@ -125,6 +125,8 @@ breaker 与每 Life 预算分别计数、分别展示。数据库不可用时 Ru
 ### 5.4 Android iroh 传输
 
 - joi 和 Android 都使用 iroh endpoint；同网可打洞时直接传输，否则通过配置的标准 iroh relay。无需开放 Joi 本机 TCP 监听或公网管理 API。
+- 默认 relay 是 `https://remote.joilab.top`，设置页可改为其他 HTTPS relay。默认服务不把共享 Bearer 打包进桌面或 APK；ECS 采用公开 relay 模式，并以连接速率、单客户端带宽和突发配额限制资源滥用。
+- `remote.joilab.top` 与兼容保留的 `cudex.joilab.top` 共用 iroh 多域名证书和数据面。中继指标只监听 loopback，TLS 私钥、ACME 缓存和任何历史访问令牌不得进入仓库、诊断或部署输出。
 - sidecar 只允许有界 NDJSON 控制帧，节点私钥只经 stdin 传入；不得在参数、日志或诊断中记录节点私钥、device id、二维码、正文或密文。
 - iroh TLS 身份之后仍必须完成 Joi 应用层双向证明；中继不能伪造已绑定设备或解密业务帧。
 - 主机侧命令 allowlist 固定为 `feed.get` 和 `message.send`。文字提交沿既有 inbox 和稳定 idempotency key；未知、超长或畸形命令立即断开。

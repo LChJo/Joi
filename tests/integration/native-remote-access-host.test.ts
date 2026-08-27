@@ -33,12 +33,12 @@ class FakePeerTransport implements RemotePeerTransport {
   async disconnect(connectionId: string) { this.listener?.({ connectionId, type: "peerClose" }); }
   emit(event: RemotePeerTransportEvent) { this.listener?.(event); }
   async send(connectionId: string, frame: unknown) { this.sent.push({ connectionId, frame }); }
-  async start(input: unknown) {
+  async start(input: { nodeSecret: string; relayAuthentication?: string; relayUrl: string }) {
     this.starts.push(input);
     return {
       directAddresses: ["192.0.2.10:49152"],
       endpointId: "ep_native_1",
-      relayUrls: ["https://cudex.joilab.top/"],
+      relayUrls: [`${input.relayUrl}/`],
       version: 1 as const,
     };
   }
@@ -60,6 +60,26 @@ function pairingFields(value: string): Record<string, string> {
 }
 
 describe("native RemoteAccessHost", () => {
+  it("uses the Joi-owned relay by default while keeping the relay editable", async () => {
+    const store = new MemoryRemoteStore();
+    const host = new RemoteAccessHost({
+      clock: { now: () => new Date("2026-08-27T00:00:00.000Z") },
+      commands: { handle: vi.fn() },
+      store,
+      transport: new FakePeerTransport(),
+      vault,
+    });
+
+    await host.start();
+
+    await expect(host.status()).resolves.toEqual(expect.objectContaining({
+      enabled: false,
+      relayUrl: "https://remote.joilab.top",
+    }));
+    expect(store.state).toEqual(expect.objectContaining({ version: 3 }));
+    await host.close();
+  });
+
   it("publishes an iroh ticket and keeps independent encrypted sessions for multiple devices", async () => {
     const transport = new FakePeerTransport();
     const store = new MemoryRemoteStore();

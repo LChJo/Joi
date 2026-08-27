@@ -113,8 +113,8 @@ export class RemoteAccessHost implements RemoteAccessControl {
       devices: [],
       enabled: false,
       hostId: `host_${randomUUID()}`,
-      relayUrl: "https://cudex.joilab.top",
-      version: 2,
+      relayUrl: "https://remote.joilab.top",
+      version: 3,
     };
     if (loaded === null) await this.#store.save(this.#state);
     this.#stopped = false;
