@@ -45,10 +45,10 @@ function LoadingPage() {
 }
 
 function remoteStatusLabel(status: "connected" | "connecting" | "disabled" | "error"): string {
-  if (status === "connected") return "已安全连接";
-  if (status === "connecting") return "正在连接中继";
+  if (status === "connected") return "手机链路已就绪";
+  if (status === "connecting") return "正在建立安全链路";
   if (status === "disabled") return "尚未开启";
-  return "中继暂时不可用";
+  return "原生链路暂时不可用";
 }
 
 export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
@@ -70,7 +70,7 @@ export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
       if (refreshing) return;
       refreshing = true;
       void load()
-        .then((next) => { if (next.status === "connected") setNotice("远程浏览器连接已就绪。"); })
+        .then((next) => { if (next.status === "connected") setNotice("Joi 手机链路已就绪。"); })
         .catch(() => setNotice("没能读取远程连接状态。"))
         .finally(() => { refreshing = false; });
     }, REMOTE_STATUS_REFRESH_MS);
@@ -81,17 +81,14 @@ export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
     const formElement = event.currentTarget;
     const form = new FormData(formElement);
     const relayUrl = form.get("relayUrl");
-    const relayAuthentication = form.get("relayAuthentication");
     setNotice("正在保存远程设置…");
     try {
       const next = await api.updateRemoteAccess({
         enabled: form.get("enabled") === "on",
-        ...(typeof relayAuthentication === "string" && relayAuthentication !== "" ? { relayAuthentication } : {}),
         relayUrl: typeof relayUrl === "string" ? relayUrl : "",
       });
       setStatus(next);
-      formElement.querySelector<HTMLInputElement>('input[name="relayAuthentication"]')?.setAttribute("value", "");
-      setNotice(next.status === "connected" ? "远程浏览器连接已就绪。" : "设置已保存，joi 正在连接中继。");
+      setNotice(next.status === "connected" ? "Joi 手机链路已就绪。" : "设置已保存，Joi 正在建立安全链路。");
     } catch (error) { setNotice(error instanceof ApiError ? error.message : "远程设置未保存。"); }
   };
   const createPairing = async () => {
@@ -100,22 +97,21 @@ export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
     catch (error) { setNotice(error instanceof ApiError ? error.message : "没能生成绑定二维码。"); }
   };
   const revoke = async (deviceId: string) => {
-    try { setStatus(await api.revokeRemoteDevice(deviceId)); setNotice("这个浏览器已移除。"); }
-    catch (error) { setNotice(error instanceof ApiError ? error.message : "没能移除这个浏览器。"); }
+    try { setStatus(await api.revokeRemoteDevice(deviceId)); setNotice("这台手机已移除。"); }
+    catch (error) { setNotice(error instanceof ApiError ? error.message : "没能移除这台手机。"); }
   };
   return <section className="remote-access-settings"><DeviceMobileIcon aria-hidden /><div>
-    <h2>远程浏览器</h2>
-    <p>扫码后直接在手机浏览器查看 joi 主界面、任务卡片并发送文字。中继只转发端到端密文，不开放设置、文件或危险操作。</p>
+    <h2>Joi 手机</h2>
+    <p>Android App 会优先局域网直连，离开局域网后自动通过 iroh 中继继续连接。只开放任务卡片与文字输入，不开放设置、文件或危险操作。</p>
     {status === null ? <span className="status-dot muted">正在读取</span> : <>
       <span className={`status-dot ${status.status === "connected" ? "ok" : status.status === "error" ? "warn" : "muted"}`}>{remoteStatusLabel(status.status)}</span>
       <form className="inline-settings remote-access-form" key={`${status.hostId}:${status.relayUrl}`} onSubmit={(event) => void save(event)}>
-        <label><input defaultChecked={status.enabled} name="enabled" type="checkbox" />允许扫码后的浏览器远程访问</label>
-        <label>浏览器网关地址<input defaultValue={status.relayUrl} name="relayUrl" placeholder="https://remote.example.com" required type="url" /></label>
-        <label>中继主机令牌<input autoComplete="off" name="relayAuthentication" placeholder={status.relayAuthenticationConfigured ? "已安全保存；留空保持不变" : "输入中继主机令牌"} type="password" /></label>
+        <label><input defaultChecked={status.enabled} name="enabled" type="checkbox" />允许已绑定的 Joi Android App 连接</label>
+        <label>iroh 中继地址<input defaultValue={status.relayUrl} name="relayUrl" placeholder="https://cudex.joilab.top" required type="url" /></label>
         <div className="row-actions"><button className="button quiet" type="submit">保存远程设置</button><button className="button primary" disabled={!status.enabled || status.status !== "connected"} onClick={() => void createPairing()} type="button">生成绑定二维码</button></div>
       </form>
-      {status.pairing === undefined ? null : <div className="remote-pairing"><div aria-label="远程浏览器绑定二维码"><QRCodeSVG bgColor="transparent" fgColor="currentColor" level="M" marginSize={2} size={184} value={status.pairing.qrUrl} /></div><div><strong>用手机相机扫码</strong><span>{new Date(status.pairing.expiresAt).toLocaleTimeString()} 前有效 · 仅可绑定一次</span><small>配对密钥只在二维码的 URL fragment 中，不会发送给网页服务器。</small></div></div>}
-      {status.devices.length === 0 ? <small>还没有绑定浏览器。</small> : <div className="remote-device-list">{status.devices.map((device) => <div key={device.deviceId}><span><strong>{device.name}</strong><small>最近连接 {new Date(device.lastSeenAt).toLocaleString()}</small></span><button aria-label={`移除 ${device.name}`} className="icon-button danger" onClick={() => void revoke(device.deviceId)} type="button"><TrashIcon aria-hidden /></button></div>)}</div>}
+      {status.pairing === undefined ? null : <div className="remote-pairing"><div aria-label="Joi Android App 绑定二维码"><QRCodeSVG bgColor="transparent" fgColor="currentColor" level="M" marginSize={2} size={184} value={status.pairing.qrUrl} /></div><div><strong>在 Joi App 中扫码</strong><span>{new Date(status.pairing.expiresAt).toLocaleTimeString()} 前有效 · 仅可绑定一次</span><small>配对密钥只存在于二维码与两端安全存储中，中继无法读取会话内容。</small></div></div>}
+      {status.devices.length === 0 ? <small>还没有绑定手机。</small> : <div className="remote-device-list">{status.devices.map((device) => <div key={device.deviceId}><span><strong>{device.name}</strong><small>最近连接 {new Date(device.lastSeenAt).toLocaleString()}</small></span><button aria-label={`移除 ${device.name}`} className="icon-button danger" onClick={() => void revoke(device.deviceId)} type="button"><TrashIcon aria-hidden /></button></div>)}</div>}
     </>}
     {notice === null ? null : <div className="remote-settings-notice" role="status">{notice}</div>}
   </div></section>;

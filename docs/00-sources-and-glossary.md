@@ -16,7 +16,7 @@
 | **Model Source** | Pi 的版本化模型连接；每个 Turn 固定 source/model revision，一个主源加用户排序备用源。 |
 | **目标地图 / harness** | goal 的持久化推进索引（ADR 0010）：destination（最终目标）、path（每层路径，只引用 work）、decision（Decisions-so-far）、fog（待晋升的雾区）；经遍历与复盘推进，不是第二条调度链。 |
 | **harness review** | 一层结果走完后投入 inbox 的复盘系统输入；由 joi 推理 turn 经唯一串行槽位决定下一层路径、记录决策或 `MAP_CLEARED`。 |
-| **浏览器远程中继** | ADR 0012 的受限公网传输：桌面 joi 主动出站连接盲转发 WebSocket 网关，浏览器通过二维码一次性绑定，只能读取首页投影和提交文字；不是 LAN API、云同步或远程桌面。 |
+| **Android 原生远程** | ADR 0013 的受限传输：桌面与 Android App 通过 iroh 同网直连或中继，二维码一次性绑定，只能读取首页投影和提交文字；不是 LAN API、云同步或远程桌面。 |
 
 工作台不是 Agent，不保存执行状态机，也不产生独立 scheduler。唯一 joi 选择工作台、创建 Work 并派发 PartnerInstance。产品文案统一使用“工作台”；代码、API、DTO、事件和工具使用 `Workbench/workbenchId/workbench.*`。`Life/lifeId/life.*` 仅允许存在于旧表、迁移、旧只读 API mapper 和历史 fixture。
 

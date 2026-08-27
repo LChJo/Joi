@@ -11,10 +11,11 @@ export interface RemoteAccessStoredDevice {
 export interface RemoteAccessStoredState {
   devices: RemoteAccessStoredDevice[];
   enabled: boolean;
+  encryptedNodeSecret?: Uint8Array;
   encryptedRelayAuthentication?: Uint8Array;
   hostId: string;
   relayUrl: string;
-  version: 1;
+  version: 2;
 }
 
 export interface RemoteAccessStore {
@@ -33,4 +34,25 @@ export interface RemoteAccessControl {
 
 export interface RemoteCommandHandler {
   handle(command: RemoteCommand): Promise<RemoteCommandResponse>;
+}
+
+export interface RemoteTransportTicket {
+  directAddresses: string[];
+  endpointId: string;
+  relayUrls: string[];
+  version: 1;
+}
+
+export type RemotePeerTransportEvent =
+  | { connectionId: string; type: "peerOpen" }
+  | { connectionId: string; frame: unknown; type: "peerFrame" }
+  | { connectionId: string; type: "peerClose" }
+  | { code: string; type: "error" };
+
+export interface RemotePeerTransport {
+  close(): Promise<void>;
+  disconnect(connectionId: string): Promise<void>;
+  send(connectionId: string, frame: unknown): Promise<void>;
+  start(input: { nodeSecret: string; relayAuthentication?: string; relayUrl: string }): Promise<RemoteTransportTicket>;
+  subscribe(listener: (event: RemotePeerTransportEvent) => void): () => void;
 }

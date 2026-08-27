@@ -1,6 +1,4 @@
-import { randomUUID } from "node:crypto";
-
-import WebSocket from "ws";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import type { CredentialVault } from "../../application/ports/a2a-ports.js";
 import type {
@@ -9,10 +7,12 @@ import type {
   RemoteAccessStoredState,
   RemoteAccessStore,
   RemoteCommandHandler,
+  RemotePeerTransport,
+  RemotePeerTransportEvent,
+  RemoteTransportTicket,
 } from "../../application/ports/remote-access.js";
 import type { Clock } from "../../application/ports/runtime-store.js";
 import {
-  REMOTE_MAX_FRAME_BYTES,
   REMOTE_PAIRING_TTL_MS,
   REMOTE_PROTOCOL_VERSION,
   type RemoteAccessStatusDto,
@@ -40,23 +40,12 @@ interface ActivePairing {
   secret: string;
 }
 
-interface BrowserSession {
+interface PeerSession {
   connectionId: string;
   deviceId?: string;
   inbound: RemoteReplayGuard;
   key?: Buffer;
   outboundSequence: number;
-}
-
-function relayWebSocketUrl(relayUrl: string): string {
-  const url = new URL(relayUrl);
-  if (url.protocol === "https:") url.protocol = "wss:";
-  else if (url.protocol === "http:") url.protocol = "ws:";
-  else throw new Error("remote_relay_url_invalid");
-  url.pathname = `${url.pathname.replace(/\/$/u, "")}/host`;
-  url.search = "";
-  url.hash = "";
-  return url.toString();
 }
 
 function assertRelayUrl(value: string): string {
@@ -96,40 +85,57 @@ function isRemoteCommand(value: unknown): value is RemoteCommand {
 export class RemoteAccessHost implements RemoteAccessControl {
   readonly #clock: Clock;
   readonly #commands: RemoteCommandHandler;
-  readonly #sessions = new Map<string, BrowserSession>();
+  readonly #sessions = new Map<string, PeerSession>();
   readonly #store: RemoteAccessStore;
+  readonly #transport: RemotePeerTransport;
   readonly #vault: CredentialVault;
   #pairing: ActivePairing | undefined;
   #reconnectTimer: NodeJS.Timeout | undefined;
-  #socket: WebSocket | undefined;
   #state: RemoteAccessStoredState | undefined;
   #status: RemoteAccessStatusDto["status"] = "disabled";
   #stopped = false;
+  #ticket: RemoteTransportTicket | undefined;
+  #transportStarted = false;
+  #transportGeneration = 0;
+  #unsubscribe: (() => void) | undefined;
 
-  constructor(input: { clock: Clock; commands: RemoteCommandHandler; store: RemoteAccessStore; vault: CredentialVault }) {
+  constructor(input: { clock: Clock; commands: RemoteCommandHandler; store: RemoteAccessStore; transport: RemotePeerTransport; vault: CredentialVault }) {
     this.#clock = input.clock;
     this.#commands = input.commands;
     this.#store = input.store;
+    this.#transport = input.transport;
     this.#vault = input.vault;
   }
 
   async start(): Promise<void> {
     const loaded = await this.#store.load();
-    this.#state = loaded ?? { devices: [], enabled: false, hostId: `host_${randomUUID()}`, relayUrl: "", version: 1 };
+    this.#state = loaded ?? {
+      devices: [],
+      enabled: false,
+      hostId: `host_${randomUUID()}`,
+      relayUrl: "https://cudex.joilab.top",
+      version: 2,
+    };
     if (loaded === null) await this.#store.save(this.#state);
     this.#stopped = false;
-    if (this.#state.enabled) this.#connect();
+    this.#unsubscribe = this.#transport.subscribe((event) => {
+      void this.#handleTransportEvent(event).catch(() => undefined);
+    });
+    if (this.#state.enabled) await this.#connect();
   }
 
-  close(): Promise<void> {
+  async close(): Promise<void> {
     this.#stopped = true;
+    this.#transportGeneration += 1;
     if (this.#reconnectTimer !== undefined) clearTimeout(this.#reconnectTimer);
     this.#reconnectTimer = undefined;
-    this.#socket?.terminate();
-    this.#socket = undefined;
+    this.#unsubscribe?.();
+    this.#unsubscribe = undefined;
+    await this.#transport.close();
+    this.#transportStarted = false;
+    this.#ticket = undefined;
     this.#sessions.clear();
     this.#status = this.#state?.enabled === true ? "error" : "disabled";
-    return Promise.resolve();
   }
 
   status(): Promise<RemoteAccessStatusDto> {
@@ -162,7 +168,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       encryptedRelayAuthentication = await this.#vault.encrypt(clean);
     }
     const enabled = input.enabled ?? current.enabled;
-    if (enabled && (relayUrl === "" || encryptedRelayAuthentication === undefined)) throw new Error("remote_relay_configuration_incomplete");
+    if (enabled && relayUrl === "") throw new Error("remote_relay_configuration_incomplete");
     this.#state = {
       ...current,
       enabled,
@@ -171,26 +177,30 @@ export class RemoteAccessHost implements RemoteAccessControl {
     };
     if (encryptedRelayAuthentication === undefined) delete this.#state.encryptedRelayAuthentication;
     await this.#store.save(this.#state);
-    this.#socket?.terminate();
-    this.#socket = undefined;
-    if (enabled) this.#connect();
+    this.#transportGeneration += 1;
+    if (this.#transportStarted) await this.#transport.close();
+    this.#transportStarted = false;
+    this.#ticket = undefined;
+    this.#sessions.clear();
+    if (enabled) await this.#connect();
     else this.#status = "disabled";
     return this.status();
   }
 
   createPairing(): Promise<RemotePairingDto> {
     const state = this.#requireState();
-    if (!state.enabled || state.relayUrl === "") throw new Error("remote_access_disabled");
+    if (!state.enabled || this.#ticket === undefined) throw new Error("remote_access_disabled");
     const pairingId = `pair_${randomUUID()}`;
     const deviceId = `device_${randomUUID()}`;
     const secret = createRemoteSecret();
     const expiresAt = new Date(this.#clock.now().getTime() + REMOTE_PAIRING_TTL_MS).toISOString();
-    const qrUrl = new URL("/remote/", state.relayUrl);
-    qrUrl.hash = new URLSearchParams({
+    const qrUrl = new URL("joi://pair");
+    qrUrl.search = new URLSearchParams({
       device: deviceId,
       host: state.hostId,
       pairing: pairingId,
       secret,
+      ticket: Buffer.from(JSON.stringify(this.#ticket), "utf8").toString("base64url"),
       v: String(REMOTE_PROTOCOL_VERSION),
     }).toString();
     this.#pairing = { deviceId, expiresAt, pairingId, qrUrl: qrUrl.toString(), secret };
@@ -213,72 +223,79 @@ export class RemoteAccessHost implements RemoteAccessControl {
     return this.#state;
   }
 
-  #connect(): void {
-    if (this.#stopped || this.#socket !== undefined) return;
+  async #connect(): Promise<void> {
+    if (this.#stopped || this.#transportStarted) return;
+    const generation = this.#transportGeneration;
     const state = this.#requireState();
-    if (!state.enabled || state.encryptedRelayAuthentication === undefined) return;
+    if (!state.enabled || state.relayUrl === "") return;
     this.#status = "connecting";
-    void this.#vault.decrypt(state.encryptedRelayAuthentication).then((relayAuthentication) => {
-      if (this.#stopped || this.#socket !== undefined) return;
-      const socket = new WebSocket(relayWebSocketUrl(state.relayUrl), {
-        headers: { authorization: `Bearer ${relayAuthentication}` },
-        maxPayload: REMOTE_MAX_FRAME_BYTES,
+    try {
+      if (!this.#vault.isAvailable()) throw new Error("remote_credential_encryption_unavailable");
+      let nodeSecret: string;
+      if (state.encryptedNodeSecret === undefined) {
+        nodeSecret = randomBytes(32).toString("base64");
+        this.#state = { ...state, encryptedNodeSecret: await this.#vault.encrypt(nodeSecret) };
+        await this.#store.save(this.#state);
+      } else {
+        nodeSecret = await this.#vault.decrypt(state.encryptedNodeSecret);
+      }
+      const relayAuthentication = state.encryptedRelayAuthentication === undefined
+        ? undefined
+        : await this.#vault.decrypt(state.encryptedRelayAuthentication);
+      if (generation !== this.#transportGeneration) return;
+      this.#ticket = await this.#transport.start({
+        nodeSecret,
+        ...(relayAuthentication === undefined ? {} : { relayAuthentication }),
+        relayUrl: state.relayUrl,
       });
-      this.#socket = socket;
-      socket.on("open", () => socket.send(JSON.stringify({ hostId: state.hostId, kind: "host.register" })));
-      socket.on("message", (data) => {
-        void this.#handleRelayMessage(data).catch(() => undefined);
-      });
-      socket.on("error", () => undefined);
-      socket.on("close", () => {
-        if (this.#socket === socket) this.#socket = undefined;
-        this.#sessions.clear();
-        this.#status = "error";
-        this.#scheduleReconnect();
-      });
-    }).catch(() => {
+      this.#transportStarted = true;
+      this.#status = "connected";
+    } catch {
+      this.#transportStarted = false;
+      this.#ticket = undefined;
       this.#status = "error";
       this.#scheduleReconnect();
-    });
+    }
   }
 
   #scheduleReconnect(): void {
     if (this.#stopped || this.#state?.enabled !== true || this.#reconnectTimer !== undefined) return;
     this.#reconnectTimer = setTimeout(() => {
       this.#reconnectTimer = undefined;
-      this.#connect();
+      void this.#connect();
     }, 2_000);
     this.#reconnectTimer.unref();
   }
 
-  async #handleRelayMessage(data: WebSocket.RawData): Promise<void> {
-    const text = Buffer.isBuffer(data) ? data.toString("utf8") : Buffer.from(data as ArrayBuffer).toString("utf8");
-    const message = JSON.parse(text) as Record<string, unknown>;
-    if (message.kind === "host.registered") {
-      this.#status = "connected";
+  async #handleTransportEvent(event: RemotePeerTransportEvent): Promise<void> {
+    if (event.type === "error") {
+      this.#status = "error";
+      this.#sessions.clear();
+      await this.#transport.close();
+      this.#transportStarted = false;
+      this.#ticket = undefined;
+      this.#scheduleReconnect();
       return;
     }
-    if (typeof message.connectionId !== "string") return;
-    if (message.kind === "browser.open") {
-      this.#sessions.set(message.connectionId, {
-        connectionId: message.connectionId,
+    if (event.type === "peerOpen") {
+      this.#sessions.set(event.connectionId, {
+        connectionId: event.connectionId,
         inbound: new RemoteReplayGuard(),
         outboundSequence: 0,
       });
       return;
     }
-    if (message.kind === "browser.close") {
-      this.#sessions.delete(message.connectionId);
+    if (event.type === "peerClose") {
+      this.#sessions.delete(event.connectionId);
       return;
     }
-    if (message.kind !== "browser.frame") return;
-    const session = this.#sessions.get(message.connectionId);
+    const session = this.#sessions.get(event.connectionId);
     if (session === undefined) return;
-    if (session.key === undefined) await this.#handleHandshake(session, message.frame);
-    else await this.#handleEncryptedCommand(session, message.frame);
+    if (session.key === undefined) await this.#handleHandshake(session, event.frame);
+    else await this.#handleEncryptedCommand(session, event.frame);
   }
 
-  async #handleHandshake(session: BrowserSession, value: unknown): Promise<void> {
+  async #handleHandshake(session: PeerSession, value: unknown): Promise<void> {
     if (!isHandshake(value)) { this.#reject(session.connectionId); return; }
     const state = this.#requireState();
     if (value.hostId !== state.hostId || value.deviceId.length > 160 || value.deviceName.length > 80) {
@@ -314,7 +331,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
         deviceId: value.deviceId,
         encryptedSecret: await this.#vault.encrypt(secret),
         lastSeenAt: now,
-        name: value.deviceName.trim() || "浏览器设备",
+        name: value.deviceName.trim() || "Android 设备",
       };
       this.#state = { ...state, devices: [...state.devices.filter((item) => item.deviceId !== device.deviceId), device] };
       await this.#store.save(this.#state);
@@ -322,19 +339,15 @@ export class RemoteAccessHost implements RemoteAccessControl {
     } else {
       await this.#touchDevice(value.deviceId);
     }
-    this.#send({
-      connectionId: session.connectionId,
-      frame: {
-        hostNonce,
-        kind: "handshake.ready",
-        proof: remoteReadyProof(secret, context, hostNonce),
-        version: REMOTE_PROTOCOL_VERSION,
-      },
-      kind: "host.frame",
+    this.#send(session.connectionId, {
+      hostNonce,
+      kind: "handshake.ready",
+      proof: remoteReadyProof(secret, context, hostNonce),
+      version: REMOTE_PROTOCOL_VERSION,
     });
   }
 
-  async #handleEncryptedCommand(session: BrowserSession, value: unknown): Promise<void> {
+  async #handleEncryptedCommand(session: PeerSession, value: unknown): Promise<void> {
     if (!isEncryptedFrame(value) || session.key === undefined) { this.#reject(session.connectionId); return; }
     try {
       session.inbound.accept(value.seq);
@@ -342,11 +355,10 @@ export class RemoteAccessHost implements RemoteAccessControl {
       if (!isRemoteCommand(command)) { this.#reject(session.connectionId); return; }
       const response = await this.#commands.handle(command);
       session.outboundSequence += 1;
-      this.#send({
-        connectionId: session.connectionId,
-        frame: encryptRemotePayload(session.key, session.outboundSequence, response, session.connectionId),
-        kind: "host.frame",
-      });
+      this.#send(
+        session.connectionId,
+        encryptRemotePayload(session.key, session.outboundSequence, response, session.connectionId),
+      );
     } catch {
       this.#reject(session.connectionId);
     }
@@ -359,12 +371,12 @@ export class RemoteAccessHost implements RemoteAccessControl {
     await this.#store.save(this.#state);
   }
 
-  #send(message: unknown): void {
-    if (this.#socket?.readyState === WebSocket.OPEN) this.#socket.send(JSON.stringify(message));
+  #send(connectionId: string, frame: unknown): void {
+    void this.#transport.send(connectionId, frame).catch(() => this.#reject(connectionId));
   }
 
   #reject(connectionId: string): void {
-    this.#send({ connectionId, kind: "host.close" });
     this.#sessions.delete(connectionId);
+    void this.#transport.disconnect(connectionId).catch(() => undefined);
   }
 }

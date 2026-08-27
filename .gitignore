@@ -10,6 +10,9 @@ blob-report/
 test-results/
 tmp/
 temp/
+native/**/target/
+resources/native/
+apps/joi_mobile/android/app/src/main/jniLibs/
 .harnesslite/
 *.log
 *.dmp

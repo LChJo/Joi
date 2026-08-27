@@ -21,6 +21,17 @@ npm run check:boundaries
 npm run test:e2e
 ```
 
+原生远程与 Android App 另外执行：
+
+```powershell
+cargo test --manifest-path native/joi-remote/Cargo.toml
+cd apps/joi_mobile
+flutter analyze
+flutter test
+cd ../..
+npm run build:mobile:android
+```
+
 ## 打包
 
 ```powershell
@@ -32,6 +43,7 @@ npm run package:dir
 - `npm run package:win`：在 Windows 生成 x64 NSIS 安装包。
 - `npm run package:mac`：必须在 macOS 主机生成 DMG。
 - `npm run package:dir`：生成当前平台的 unpacked 应用。
+- `npm run build:mobile:android`：交叉编译 arm64 iroh 核心，验证 Flutter，并生成 Android release APK。
 - `npm run package`：按当前平台选择 Windows NSIS、macOS DMG 或其他平台 unpacked 输出。
 - 统一入口为 `node scripts/package-app.mjs --target <current|win|mac|dir> [--output <repo-relative-dir>]`。
 - 打包入口会重新生成品牌图标、生产构建、执行包内容审计，并清理目标输出目录，默认产物位于 `release-joi/`。

@@ -2,7 +2,19 @@ import { readdir, rm } from "node:fs/promises";
 import path from "node:path";
 
 const projectRoot = path.resolve(".");
-const fixedArtifacts = [".cache", ".vite", "coverage", "dist", "playwright-report", "test-results", "tmp", "temp"];
+const fixedArtifacts = [
+  ".cache",
+  ".vite",
+  "apps/joi_mobile/android/app/src/main/jniLibs",
+  "apps/joi_mobile/build",
+  "coverage",
+  "dist",
+  "playwright-report",
+  "resources/native",
+  "test-results",
+  "tmp",
+  "temp",
+];
 const rootEntries = await readdir(projectRoot, { withFileTypes: true });
 const generatedArtifacts = rootEntries
   .filter((entry) => (entry.isDirectory() && (entry.name === "release" || entry.name.startsWith("release-")))

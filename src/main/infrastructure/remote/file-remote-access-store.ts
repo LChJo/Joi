@@ -14,16 +14,17 @@ interface SerializedDevice {
 interface SerializedState {
   devices: SerializedDevice[];
   enabled: boolean;
+  encryptedNodeSecret?: string;
   encryptedRelayAuthentication?: string;
   hostId: string;
   relayUrl: string;
-  version: 1;
+  version: 1 | 2;
 }
 
 function parseState(value: unknown): RemoteAccessStoredState {
   if (value === null || Array.isArray(value) || typeof value !== "object") throw new Error("remote_access_state_invalid");
   const state = value as Partial<SerializedState>;
-  if (state.version !== 1 || typeof state.enabled !== "boolean" || typeof state.hostId !== "string"
+  if ((state.version !== 1 && state.version !== 2) || typeof state.enabled !== "boolean" || typeof state.hostId !== "string"
     || typeof state.relayUrl !== "string" || !Array.isArray(state.devices)) throw new Error("remote_access_state_invalid");
   const devices = (state.devices as unknown[]).map((device) => {
     if (device === null || typeof device !== "object") throw new Error("remote_access_state_invalid");
@@ -43,15 +44,22 @@ function parseState(value: unknown): RemoteAccessStoredState {
   if (state.encryptedRelayAuthentication !== undefined && typeof state.encryptedRelayAuthentication !== "string") {
     throw new Error("remote_access_state_invalid");
   }
+  if (state.encryptedNodeSecret !== undefined && typeof state.encryptedNodeSecret !== "string") {
+    throw new Error("remote_access_state_invalid");
+  }
+  const legacyBrowserState = state.version === 1;
   return {
     devices,
     enabled: state.enabled,
-    ...(state.encryptedRelayAuthentication === undefined ? {} : {
+    ...(state.encryptedNodeSecret === undefined ? {} : {
+      encryptedNodeSecret: Buffer.from(state.encryptedNodeSecret, "base64"),
+    }),
+    ...(legacyBrowserState || state.encryptedRelayAuthentication === undefined ? {} : {
       encryptedRelayAuthentication: Buffer.from(state.encryptedRelayAuthentication, "base64"),
     }),
     hostId: state.hostId,
-    relayUrl: state.relayUrl,
-    version: 1,
+    relayUrl: legacyBrowserState ? "https://cudex.joilab.top" : state.relayUrl,
+    version: 2,
   };
 }
 
@@ -59,12 +67,15 @@ function serializeState(state: RemoteAccessStoredState): SerializedState {
   return {
     devices: state.devices.map((device) => ({ ...device, encryptedSecret: Buffer.from(device.encryptedSecret).toString("base64") })),
     enabled: state.enabled,
+    ...(state.encryptedNodeSecret === undefined ? {} : {
+      encryptedNodeSecret: Buffer.from(state.encryptedNodeSecret).toString("base64"),
+    }),
     ...(state.encryptedRelayAuthentication === undefined ? {} : {
       encryptedRelayAuthentication: Buffer.from(state.encryptedRelayAuthentication).toString("base64"),
     }),
     hostId: state.hostId,
     relayUrl: state.relayUrl,
-    version: 1,
+    version: 2,
   };
 }
 

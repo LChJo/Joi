@@ -1,4 +1,4 @@
-import { readdir, readFile } from "node:fs/promises";
+import { access, readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
 import { validatePackageContents } from "./package-contents.mjs";
@@ -37,6 +37,10 @@ const textContents = await Promise.all(
 );
 const result = validatePackageContents(relativeFiles, textContents);
 const violations = [...missing.map((file) => `missing required file: ${file}`), ...result.violations];
+const sidecarName = `joi-remote-sidecar${process.platform === "win32" ? ".exe" : ""}`;
+const sidecarPath = path.resolve("resources", "native", process.platform, sidecarName);
+try { await access(sidecarPath); }
+catch { violations.push(`missing native remote sidecar: resources/native/${process.platform}/${sidecarName}`); }
 
 if (violations.length > 0) {
   process.stderr.write(`${violations.join("\n")}\n`);

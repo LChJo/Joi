@@ -24,6 +24,7 @@ import { SystemSettingsService } from "./infrastructure/operations/system-settin
 import { openRuntimeDatabase, type RuntimeDatabase } from "./infrastructure/persistence/runtime-database.js";
 import { JsonLineRuntimeDiagnostics } from "./infrastructure/runtime/json-line-runtime-diagnostics.js";
 import { FileRemoteAccessStore } from "./infrastructure/remote/file-remote-access-store.js";
+import { IrohSidecarTransport } from "./infrastructure/remote/iroh-sidecar-transport.js";
 import { RemoteAccessHost } from "./infrastructure/remote/remote-access-host.js";
 import { RuntimeMarker, type StartupEvidence } from "./infrastructure/runtime/runtime-marker.js";
 import {
@@ -172,6 +173,9 @@ async function startRuntime(): Promise<void> {
     clock,
     commands: new RemoteCommandService({ homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox }),
     store: new FileRemoteAccessStore(path.join(userDataDirectory, "remote-access.json")),
+    transport: new IrohSidecarTransport(app.isPackaged
+      ? path.join(process.resourcesPath, "resources", "native", process.platform, `joi-remote-sidecar${process.platform === "win32" ? ".exe" : ""}`)
+      : path.resolve("native", "joi-remote", "target", "release", `joi-remote-sidecar${process.platform === "win32" ? ".exe" : ""}`)),
     vault,
   });
   await remoteAccess.start();
