@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { ConsoleApp, RemoteAccessSettings, SettingsPanel } from "../../src/renderer/Console.js";
@@ -66,6 +66,41 @@ describe("settings panel", () => {
     expect(await screen.findByLabelText("远程浏览器绑定二维码")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "移除 手机浏览器" }));
     await waitFor(() => expect(revoke).toHaveBeenCalledWith("device-1"));
+  });
+
+  it("refreshes a transient remote connection status and stops polling once connected", async () => {
+    const api = new DigitalLifeApi("");
+    const disabled = {
+      devices: [], enabled: false, hostId: "host-refresh", relayAuthenticationConfigured: false,
+      relayUrl: "", status: "disabled" as const,
+    };
+    const connecting = {
+      ...disabled, enabled: true, relayAuthenticationConfigured: true,
+      relayUrl: "https://relay.example.com", status: "connecting" as const,
+    };
+    const connected = { ...connecting, status: "connected" as const };
+    const readStatus = vi.spyOn(api, "remoteAccessStatus")
+      .mockResolvedValueOnce(disabled)
+      .mockResolvedValueOnce(connected);
+    vi.spyOn(api, "updateRemoteAccess").mockResolvedValue(connecting);
+
+    render(<RemoteAccessSettings api={api} />);
+    expect(await screen.findByText("尚未开启")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByLabelText("允许扫码后的浏览器远程访问"));
+    fireEvent.change(screen.getByLabelText("浏览器网关地址"), { target: { value: "https://relay.example.com" } });
+    fireEvent.change(screen.getByLabelText("中继主机令牌"), { target: { value: "relay-token-that-is-long-enough" } });
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "保存远程设置" }));
+      await Promise.resolve();
+    });
+    expect(screen.getByText("正在连接中继")).toBeInTheDocument();
+
+    expect(await screen.findByText("已安全连接", {}, { timeout: 2_500 })).toBeInTheDocument();
+    expect(readStatus).toHaveBeenCalledTimes(2);
+
+    await new Promise((resolve) => setTimeout(resolve, 2_500));
+    expect(readStatus).toHaveBeenCalledTimes(2);
   });
 
   it("saves LAN settings, reports restart requirements and labels session devices", async () => {

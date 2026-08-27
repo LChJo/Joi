@@ -26,6 +26,7 @@ import type { DiagnosticsDto, InteractionDto } from "./types";
 type Section = "agents" | "joi" | "lives" | "settings" | "system";
 
 const SESSION_DISPLAY_LIMIT = 10;
+const REMOTE_STATUS_REFRESH_MS = 1_000;
 
 const NAVIGATION = [
   { icon: ChatsCircleIcon, key: "joi", label: "joi" },
@@ -53,11 +54,28 @@ function remoteStatusLabel(status: "connected" | "connecting" | "disabled" | "er
 export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
   const [status, setStatus] = useState<Awaited<ReturnType<DigitalLifeApi["remoteAccessStatus"]>> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const load = useCallback(async () => setStatus(await api.remoteAccessStatus()), [api]);
+  const load = useCallback(async () => {
+    const next = await api.remoteAccessStatus();
+    setStatus(next);
+    return next;
+  }, [api]);
   useEffect(() => {
     const timer = setTimeout(() => void load().catch(() => setNotice("没能读取远程连接状态。")), 0);
     return () => clearTimeout(timer);
   }, [load]);
+  useEffect(() => {
+    if (status?.enabled !== true || status.status === "connected") return;
+    let refreshing = false;
+    const timer = setInterval(() => {
+      if (refreshing) return;
+      refreshing = true;
+      void load()
+        .then((next) => { if (next.status === "connected") setNotice("远程浏览器连接已就绪。"); })
+        .catch(() => setNotice("没能读取远程连接状态。"))
+        .finally(() => { refreshing = false; });
+    }, REMOTE_STATUS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load, status?.enabled, status?.status]);
   const save = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formElement = event.currentTarget;
