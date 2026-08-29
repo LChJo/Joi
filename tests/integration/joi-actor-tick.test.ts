@@ -7,7 +7,7 @@ import { JoiActor } from "../../src/main/application/actors/joi-actor";
 import { JoiWorkbenchComponent } from "../../src/main/application/actors/components/joi-workbench-component";
 import { JoiHarnessComponent } from "../../src/main/application/actors/components/joi-harness-component";
 import { JoiTaskComponent } from "../../src/main/application/actors/components/joi-task-component";
-import type { HarnessReviewDigest } from "../../src/main/application/ports/joi-harness";
+import type { HarnessReviewDigest, HarnessReviewRecoveryCandidate } from "../../src/main/application/ports/joi-harness";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository";
 import { SqliteJoiTaskReader } from "../../src/main/infrastructure/persistence/sqlite-joi-task-reader";
 
@@ -143,6 +143,7 @@ describe("joi actor tick over persisted facts", () => {
               listFeedbackTargets: async () => [],
               listGoalsWithoutMap: async () => [],
               listReviewDigests: async () => (digestPending ? [digest] : []),
+              listReviewRecoveries: async () => [],
               listTrivialMapCandidates: async () => [],
               loadGoalProjections: async () => [],
             },
@@ -159,6 +160,7 @@ describe("joi actor tick over persisted facts", () => {
                 return inputId;
               },
               recordCompletionFeedback: async () => false,
+              reconcileReview: async () => null,
               synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
             },
           }),
@@ -174,5 +176,72 @@ describe("joi actor tick over persisted facts", () => {
     await tree.tick(new Date(NOW));
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(handled).toEqual(["input_goal", "joi_harness_review:goal:input_goal:r1"]);
+  });
+
+  it("reconciles a stale review from the root actor tick exactly once", async () => {
+    const database = makeDatabase();
+    const wrapper = { transaction: <T,>(operation: (connection: DatabaseSync) => T): T => operation(database) };
+    const candidate: HarnessReviewRecoveryCandidate = {
+      action: "REQUEUE",
+      digest: {
+        workbenchId: "workbench_h",
+        completionSummary: "一层完成",
+        decisionCount: 0,
+        decisions: [],
+        destination: "目的地",
+        fogNotes: [],
+        goalInputId: "input_goal",
+        openPaths: [],
+        resultRevision: 1,
+      },
+      reasonCode: "review_turn_failed_without_side_effect",
+    };
+    let pending = true;
+    let reconciled = 0;
+    const tree = new ActorTree({
+      clock: { now: () => new Date(NOW) },
+      roots: [new JoiActor({
+        workbenchComponent: new JoiWorkbenchComponent({ workbenches: { listSummaries: async () => [] } }),
+        components: [
+          new JoiTaskComponent({
+            driver: { handle: async () => undefined },
+            gate: { hasReadySource: async () => true },
+            inbox: new SqliteJoiTaskReader({
+              database: wrapper,
+              failTurn: async () => undefined,
+              park: async () => undefined,
+            }),
+          }),
+          new JoiHarnessComponent({
+            reviewEnabled: true,
+            scan: {
+              listFeedbackTargets: async () => [],
+              listGoalsWithoutMap: async () => [],
+              listReviewDigests: async () => [],
+              listReviewRecoveries: async () => pending ? [candidate] : [],
+              listTrivialMapCandidates: async () => [],
+              loadGoalProjections: async () => [],
+            },
+            writer: {
+              clearTrivialMap: async () => false,
+              createMap: async () => false,
+              enqueueReview: async () => null,
+              reconcileReview: async () => {
+                pending = false;
+                reconciled += 1;
+                return { action: "REQUEUED" as const, inputId: "joi_harness_review:goal:input_goal:r1" };
+              },
+              recordCompletionFeedback: async () => false,
+              synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
+            },
+          }),
+        ],
+        createChild: (workbenchId) => new WorkbenchActor({ workbenchId }),
+      })],
+    });
+
+    await tree.tick(new Date(NOW));
+    await tree.tick(new Date(new Date(NOW).getTime() + 10_000));
+    expect(reconciled).toBe(1);
   });
 });

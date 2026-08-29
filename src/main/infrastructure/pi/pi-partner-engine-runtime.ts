@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import {
   Agent,
+  type AgentEvent,
   type AfterToolCallContext,
   type AfterToolCallResult,
   type AgentMessage,
@@ -25,6 +26,7 @@ import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../w
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
+const LIVE_CONVERSATION_INTERVAL_MILLIS = 250;
 
 /** Per-run mutable facts: observed side effects and a pending question for the user. */
 interface RunTracker {
@@ -40,6 +42,70 @@ interface WarmAgent {
 }
 
 const MUTATING_TOOLS = new Set(["bash", "edit", "write"]);
+
+/**
+ * Builds a user-facing run snapshot from safe lifecycle facts only. Text deltas
+ * are visible, while thinking, tool arguments and raw tool results never enter
+ * this object. Persistence failures are deliberately non-fatal to the Work run.
+ */
+class LiveConversationPublisher {
+  readonly #toolEvents: AgentConversationDraft[] = [];
+  readonly #toolIds = new Set<string>();
+  #lastFingerprint = "";
+  #lastPublishedAt = 0;
+  #visibleText = "";
+
+  constructor(
+    private readonly taskProjection: string,
+    private readonly publish: (conversation: AgentConversationDraft[]) => Promise<void>,
+  ) {}
+
+  async start(): Promise<void> {
+    await this.#publish(true);
+  }
+
+  async handle(event: AgentEvent): Promise<void> {
+    let force = false;
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+      this.#visibleText += event.assistantMessageEvent.delta;
+    } else if (event.type === "tool_execution_start" && !this.#toolIds.has(`start:${event.toolCallId}`)) {
+      this.#toolIds.add(`start:${event.toolCallId}`);
+      this.#toolEvents.push({ kind: "TOOL_CALL", role: "TOOL", toolName: event.toolName });
+      force = true;
+    } else if (event.type === "tool_execution_end" && !this.#toolIds.has(`end:${event.toolCallId}`)) {
+      this.#toolIds.add(`end:${event.toolCallId}`);
+      this.#toolEvents.push({
+        kind: "TOOL_RESULT",
+        role: "TOOL",
+        text: event.isError ? "执行失败" : "执行完成",
+        toolName: event.toolName,
+      });
+      force = true;
+    } else if (event.type === "message_end" || event.type === "agent_end") {
+      force = true;
+    }
+    await this.#publish(force);
+  }
+
+  async #publish(force: boolean): Promise<void> {
+    const now = Date.now();
+    if (!force && now - this.#lastPublishedAt < LIVE_CONVERSATION_INTERVAL_MILLIS) return;
+    const conversation: AgentConversationDraft[] = [
+      { kind: "MARKDOWN", role: "USER", text: this.taskProjection },
+      ...this.#toolEvents,
+      ...(this.#visibleText.trim() === "" ? [] : [{ kind: "MARKDOWN" as const, role: "AGENT" as const, text: this.#visibleText }]),
+    ];
+    const fingerprint = JSON.stringify(conversation);
+    if (fingerprint === this.#lastFingerprint) return;
+    this.#lastFingerprint = fingerprint;
+    this.#lastPublishedAt = now;
+    try {
+      await this.publish(conversation);
+    } catch {
+      // The conversation is a non-authoritative display projection; execution must continue.
+    }
+  }
+}
 
 /**
  * The partner's single channel to pause itself and ask the user. Always available
@@ -212,9 +278,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       streamFn: resolved.models.streamSimple.bind(resolved.models),
       toolExecution: "sequential",
     });
+    const live = context.onConversation === undefined ? undefined : new LiveConversationPublisher(request.taskProjection, context.onConversation);
+    await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
-    await this.#promptWithIdleTimeout(agent, request.taskProjection);
-    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0);
+    await this.#promptWithIdleTimeout(agent, request.taskProjection, live);
+    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0, live);
     const failure = assistantFailureSignal(agent.state.messages);
     if (failure !== null) throw failure;
     const body = assistantText(agent.state.messages);
@@ -286,9 +354,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     }
     warm.agent.state.systemPrompt = systemPrompt;
     const previousMessageCount = warm.agent.state.messages.length;
+    const live = input.onConversation === undefined ? undefined : new LiveConversationPublisher(input.request.taskProjection, input.onConversation);
+    await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
-    await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection);
-    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount);
+    await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live);
+    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live);
     const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
     const failure = assistantFailureSignal(turnMessages);
     if (failure !== null) throw failure;
@@ -305,29 +375,29 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */
-  async #promptWithIdleTimeout(agent: Agent, text: string): Promise<void> {
-    await this.#runWithIdleTimeout(agent, () => agent.prompt(text));
+  async #promptWithIdleTimeout(agent: Agent, text: string, live?: LiveConversationPublisher): Promise<void> {
+    await this.#runWithIdleTimeout(agent, () => agent.prompt(text), live);
   }
 
   /**
    * A provider disconnect after tools ran cannot safely replay the whole Work. Remove only
    * the failed assistant frame and continue from the persisted tool result once instead.
    */
-  async #continueAfterTransientFailure(agent: Agent, messageStart: number): Promise<void> {
+  async #continueAfterTransientFailure(agent: Agent, messageStart: number, live?: LiveConversationPublisher): Promise<void> {
     const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
     if (failure === null || !classifyPartnerRunFailure(failure, { phase: "MODEL", sideEffectState: "NONE" }).retryable) return;
     const failedMessage = agent.state.messages.at(-1);
     if (!isAssistantErrorMessage(failedMessage)) return;
     agent.state.messages = agent.state.messages.slice(0, -1);
     try {
-      await this.#runWithIdleTimeout(agent, () => agent.continue());
+      await this.#runWithIdleTimeout(agent, () => agent.continue(), live);
     } catch (error) {
       agent.state.messages = [...agent.state.messages, failedMessage];
       throw error;
     }
   }
 
-  async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>): Promise<void> {
+  async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>, live?: LiveConversationPublisher): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let signalIdle: (() => void) | undefined;
     const idle = new Promise<"idle">((resolve) => {
@@ -340,7 +410,10 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         this.dependencies.runIdleTimeoutMillis ?? DEFAULT_RUN_IDLE_TIMEOUT_MILLIS,
       );
     };
-    const unsubscribe = agent.subscribe(() => { refreshIdleDeadline(); });
+    const unsubscribe = agent.subscribe(async (event) => {
+      refreshIdleDeadline();
+      await live?.handle(event);
+    });
     refreshIdleDeadline();
     try {
       const winner = await Promise.race([run().then(() => "done" as const), idle]);

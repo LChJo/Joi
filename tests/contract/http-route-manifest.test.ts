@@ -41,6 +41,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/scenarios/:scenarioId/partners",
   "POST /api/v1/partners",
   "POST /api/v1/partners/:partnerId/test-model",
+  "POST /api/v1/partners/:partnerId/prompt/reveal",
   "PATCH /api/v1/partners/:partnerId",
   "DELETE /api/v1/partners/:partnerId",
   "POST /api/v1/partners/:partnerId/duplicate",
@@ -53,6 +54,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/joi/messages/:inputId/clarify",
   "POST /api/v1/joi/messages/:inputId/cancel",
   "POST /api/v1/joi/messages/:inputId/dismiss",
+  "POST /api/v1/joi/messages/:inputId/close-historical-review",
   "POST /api/v1/joi/messages/:inputId/retry",
   "POST /api/v1/joi/attachments",
   "POST /api/v1/model-sources",
@@ -106,6 +108,7 @@ describe("HTTP route manifest", () => {
     for (const route of AUTHENTICATED_ROUTES) {
       expect(["read", "write"]).toContain(route.auth);
     }
+    expect(AUTHENTICATED_ROUTES.find((route) => route.id === "POST /api/v1/partners/:partnerId/prompt/reveal")?.auth).toBe("write");
     expect(PUBLIC_ROUTES.length).toBe(6);
   });
 });

@@ -12,7 +12,7 @@ const COMPLETION_SUMMARY_LIMIT = 320;
  */
 export function composeReviewBody(digest: HarnessReviewDigest): string {
   const lines: string[] = [
-    "Harness review: one layer of this goal's way is complete; chart the next.",
+    "Harness review: one layer of this goal's way is complete; decide whether the original goal is finished.",
     `goalInputId=${digest.goalInputId}`,
     `resultRevision=${String(digest.resultRevision)}`,
   ];
@@ -43,7 +43,7 @@ export function composeReviewBody(digest: HarnessReviewDigest): string {
   }
   lines.push(`Latest completion: ${digest.completionSummary.slice(0, COMPLETION_SUMMARY_LIMIT)}`);
   lines.push(
-    "Discipline: resolve at most ONE decision with harness_record_decision; dispatch the next evidence layer with work_dispatch (its Work facts are mirrored into paths automatically, so do not chart the same Work again); use harness_chart_path only for a non-Work path; send new fog to harness_note_fog and graduate now-specifiable fog; if the destination is reached and no way remains, call turn_complete with MAP_CLEARED.",
+    "Close-first rule: if the latest completion satisfies the original goal and there is no active or open path to pursue, call turn_complete with MAP_CLEARED immediately; do not use DIRECT_ANSWER for a review. Otherwise resolve at most ONE decision with harness_record_decision; dispatch the next evidence layer with work_dispatch (its Work facts are mirrored into paths automatically, so do not chart the same Work again); use harness_chart_path only for a non-Work path; send new fog to harness_note_fog and graduate now-specifiable fog.",
   );
   return lines.join("\n");
 }

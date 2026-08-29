@@ -156,6 +156,14 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "write",
+    id: "POST /api/v1/partners/:partnerId/prompt/reveal",
+    match: pattern("POST", /^\/api\/v1\/partners\/([^/]+)\/prompt\/reveal$/),
+    handle: async (ctx, match) => {
+      sendJson(ctx.response, 200, await partnerRegistryService(ctx.dependencies).revealPrompt(decodeURIComponent((match as RegExpExecArray)[1] ?? "")));
+    },
+  },
+  {
+    auth: "write",
     id: "PATCH /api/v1/partners/:partnerId",
     match: pattern("PATCH", /^\/api\/v1\/partners\/([^/]+)$/),
     handle: async (ctx, match) => {
@@ -171,6 +179,7 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
         return;
       }
       const engine = partnerEngineField(body);
+      const promptMode = partnerPromptMode(body.promptMode);
       await assertLocalEngineAvailable(ctx.dependencies, engine);
       sendJson(ctx.response, 200, await partnerRegistryService(ctx.dependencies).update(partnerId, {
         capabilities: optionalStringArray(body, "capabilities") ?? [],
@@ -183,6 +192,7 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
         skills: optionalStringArray(body, "skills") ?? [],
         tools: optionalStringArray(body, "tools") ?? [],
         ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
+        ...(promptMode === undefined ? {} : { promptMode }),
       }));
     },
   },
@@ -260,3 +270,9 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
     },
   },
 ];
+
+function partnerPromptMode(value: unknown): "APPEND" | "REPLACE" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "APPEND" || value === "REPLACE") return value;
+  throw new HttpError("partner_prompt_mode_invalid", "Partner prompt mode is invalid.", 400);
+}

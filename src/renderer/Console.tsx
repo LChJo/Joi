@@ -13,7 +13,7 @@ import {
   DeviceMobileIcon,
   TrashIcon,
 } from "@phosphor-icons/react";
-import { type SyntheticEvent, useCallback, useEffect, useRef, useState } from "react";
+import { type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useRef, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
@@ -24,9 +24,17 @@ import { listenerStatusLabel } from "./copy";
 import type { DiagnosticsDto, InteractionDto } from "./types";
 
 type Section = "agents" | "joi" | "lives" | "settings" | "system";
+type SettingsTab = "connections" | "data" | "models" | "security";
 
 const SESSION_DISPLAY_LIMIT = 10;
 const REMOTE_STATUS_REFRESH_MS = 1_000;
+
+const SETTINGS_TABS = [
+  { key: "models", label: "模型网络" },
+  { key: "connections", label: "设备连接" },
+  { key: "security", label: "安全" },
+  { key: "data", label: "数据" },
+] as const satisfies readonly { key: SettingsTab; label: string }[];
 
 const NAVIGATION = [
   { icon: ChatsCircleIcon, key: "joi", label: "joi" },
@@ -132,6 +140,7 @@ export function SystemPanel({ api, diagnostics, interactions }: { api?: DigitalL
 }
 
 export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagnostics: DiagnosticsDto | null }) {
+  const [activeTab, setActiveTab] = useState<SettingsTab>("models");
   const [backups, setBackups] = useState<Awaited<ReturnType<DigitalLifeApi["listBackups"]>>["items"]>([]);
   const [sessions, setSessions] = useState<Awaited<ReturnType<DigitalLifeApi["listSessions"]>>["items"]>([]);
   const [settings, setSettings] = useState<Awaited<ReturnType<DigitalLifeApi["settings"]>> | null>(null);
@@ -177,13 +186,53 @@ export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagn
     try { await api.changePassword(currentPassword, newPassword); formElement.reset(); await loadOperations(); setNotice("管理密码已更新，其他设备需要重新登录。"); }
     catch (error) { setNotice(error instanceof ApiError ? error.message : "密码没更新。"); }
   };
-  return <section className="page-section settings-page"><header className="page-title-row"><div><p className="eyebrow">按你的方式使用 joi</p><h1>joi 的设置</h1><p>管理模型网络、其他设备访问、管理密码和数据备份。</p></div></header>{notice === null ? null : <Notice>{notice}</Notice>}<div className="settings-sections">
-    <ModelSourceManager api={api} />
-    <RemoteAccessSettings api={api} />
-    <section><NetworkIcon aria-hidden /><div><h2>其他设备访问</h2><p>同一可信网络里的设备可以找到 joi。joi 不会自动改网络设置。</p>{settings === null ? <span className="status-dot muted">正在读取</span> : <form className="inline-settings" key={JSON.stringify(settings)} onSubmit={(event) => void updateRuntimeSettings(event)}><label><input defaultChecked={settings.lan.enabled} name="enabled" type="checkbox" />允许局域网设备访问</label><label>这台电脑的局域网地址<input defaultValue={settings.lan.address} name="address" placeholder="192.168.1.20" /></label><label>访问端口<input defaultValue={settings.lan.port} min="1024" name="port" type="number" /></label><label><input defaultChecked={settings.lan.riskAccepted} name="riskAccepted" type="checkbox" />我明白同一网络中的其他人可能看到未加密的连接内容</label><label><input defaultChecked={settings.launchAtLogin} name="launchAtLogin" type="checkbox" />开机时启动 joi</label><button className="button quiet" type="submit">保存访问设置</button></form>}</div></section>
-    <section><ShieldWarningIcon aria-hidden /><div><h2>管理密码与设备</h2><p>joi 只显示设备类型和最近活动时间。改了密码后其他设备需要重新登录，本机不受影响。</p><div className="session-list">{sessions.slice(0, SESSION_DISPLAY_LIMIT).map((session, index) => <span key={session.deviceId}>{session.current ? "当前设备" : session.kind === "desktop" ? "另一台本机窗口" : `局域网设备 ${String(index + 1)}`} · {new Date(session.lastActivityAt).toLocaleString()}</span>)}</div><form className="inline-settings" onSubmit={(event) => void changePassword(event)}><label>当前密码<input autoComplete="current-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="currentPassword" required type="password" /></label><label>新密码<input autoComplete="new-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="newPassword" required type="password" /></label><div className="row-actions"><button className="button quiet" type="submit">修改密码</button><button className="button ghost" onClick={() => void api.logoutAllLan().then(loadOperations).then(() => setNotice("所有局域网设备已退出。"))} type="button">退出所有局域网设备</button></div></form><span className={`status-dot ${diagnostics?.storage?.state === "low" ? "warn" : "ok"}`}>{diagnostics?.storage?.state === "low" ? "磁盘空间不足" : "密钥已隔离保存"}</span></div></section>
-    <section className="backup-settings"><ClockCounterClockwiseIcon aria-hidden /><div><h2>备份与恢复</h2><p>备份不含搭档密钥。恢复后其他设备需要重新登录，未完成的协作会等你确认。</p><span className="status-dot muted">数据格式 v{diagnostics?.schemaVersion ?? "-"} · {backups.length} 份可用备份</span>{backups.slice(0, 3).map((backup) => <div className="backup-row" key={backup.backupId}><span>{new Date(backup.createdAt).toLocaleString()} · {(backup.databaseBytes / 1024 / 1024).toFixed(1)} MB</span><button className="button ghost" onClick={() => void restore(backup.backupId)} type="button">恢复</button></div>)}</div><button className="button quiet" onClick={() => void createBackup()} type="button">创建备份</button></section>
-  </div></section>;
+  const handleTabKeyDown = (event: ReactKeyboardEvent<HTMLButtonElement>, index: number) => {
+    const tabCount = SETTINGS_TABS.length;
+    let nextIndex: number | null = null;
+    if (event.key === "ArrowRight") nextIndex = (index + 1) % tabCount;
+    if (event.key === "ArrowLeft") nextIndex = (index - 1 + tabCount) % tabCount;
+    if (event.key === "Home") nextIndex = 0;
+    if (event.key === "End") nextIndex = tabCount - 1;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    const nextTab = SETTINGS_TABS[nextIndex];
+    if (nextTab === undefined) return;
+    setActiveTab(nextTab.key);
+    event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]').item(nextIndex).focus();
+  };
+  const selectedTab = SETTINGS_TABS.find((tab) => tab.key === activeTab) ?? SETTINGS_TABS[0];
+  return <section className="page-section settings-page">
+    <header className="page-title-row"><div><p className="eyebrow">按你的方式使用 joi</p><h1>joi 的设置</h1><p>管理模型网络、设备连接、安全和数据。</p></div></header>
+    {notice === null ? null : <Notice>{notice}</Notice>}
+    <div aria-label="设置分类" className="settings-tabs" role="tablist">
+      {SETTINGS_TABS.map((tab, index) => <button
+        aria-controls={`settings-panel-${tab.key}`}
+        aria-selected={activeTab === tab.key}
+        id={`settings-tab-${tab.key}`}
+        key={tab.key}
+        onClick={() => setActiveTab(tab.key)}
+        onKeyDown={(event) => handleTabKeyDown(event, index)}
+        role="tab"
+        tabIndex={activeTab === tab.key ? 0 : -1}
+        type="button"
+      >{tab.label}</button>)}
+    </div>
+    <div
+      aria-labelledby={`settings-tab-${selectedTab.key}`}
+      className="settings-sections settings-tab-panel"
+      id={`settings-panel-${selectedTab.key}`}
+      role="tabpanel"
+      tabIndex={0}
+    >
+      {activeTab === "models" ? <ModelSourceManager api={api} /> : null}
+      {activeTab === "connections" ? <>
+        <RemoteAccessSettings api={api} />
+        <section><NetworkIcon aria-hidden /><div><h2>其他设备访问</h2><p>同一可信网络里的设备可以找到 joi。joi 不会自动改网络设置。</p>{settings === null ? <span className="status-dot muted">正在读取</span> : <form className="inline-settings" key={JSON.stringify(settings)} onSubmit={(event) => void updateRuntimeSettings(event)}><label><input defaultChecked={settings.lan.enabled} name="enabled" type="checkbox" />允许局域网设备访问</label><label>这台电脑的局域网地址<input defaultValue={settings.lan.address} name="address" placeholder="192.168.1.20" /></label><label>访问端口<input defaultValue={settings.lan.port} min="1024" name="port" type="number" /></label><label><input defaultChecked={settings.lan.riskAccepted} name="riskAccepted" type="checkbox" />我明白同一网络中的其他人可能看到未加密的连接内容</label><label><input defaultChecked={settings.launchAtLogin} name="launchAtLogin" type="checkbox" />开机时启动 joi</label><button className="button quiet" type="submit">保存访问设置</button></form>}</div></section>
+      </> : null}
+      {activeTab === "security" ? <section><ShieldWarningIcon aria-hidden /><div><h2>管理密码与设备</h2><p>joi 只显示设备类型和最近活动时间。改了密码后其他设备需要重新登录，本机不受影响。</p><div className="session-list">{sessions.slice(0, SESSION_DISPLAY_LIMIT).map((session, index) => <span key={session.deviceId}>{session.current ? "当前设备" : session.kind === "desktop" ? "另一台本机窗口" : `局域网设备 ${String(index + 1)}`} · {new Date(session.lastActivityAt).toLocaleString()}</span>)}</div><form className="inline-settings" onSubmit={(event) => void changePassword(event)}><label>当前密码<input autoComplete="current-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="currentPassword" required type="password" /></label><label>新密码<input autoComplete="new-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="newPassword" required type="password" /></label><div className="row-actions"><button className="button quiet" type="submit">修改密码</button><button className="button ghost" onClick={() => void api.logoutAllLan().then(loadOperations).then(() => setNotice("所有局域网设备已退出。"))} type="button">退出所有局域网设备</button></div></form><span className={`status-dot ${diagnostics?.storage?.state === "low" ? "warn" : "ok"}`}>{diagnostics?.storage?.state === "low" ? "磁盘空间不足" : "密钥已隔离保存"}</span></div></section> : null}
+      {activeTab === "data" ? <section className="backup-settings"><ClockCounterClockwiseIcon aria-hidden /><div><h2>备份与恢复</h2><p>备份不含搭档密钥。恢复后其他设备需要重新登录，未完成的协作会等你确认。</p><span className="status-dot muted">数据格式 v{diagnostics?.schemaVersion ?? "-"} · {backups.length} 份可用备份</span>{backups.slice(0, 3).map((backup) => <div className="backup-row" key={backup.backupId}><span>{new Date(backup.createdAt).toLocaleString()} · {(backup.databaseBytes / 1024 / 1024).toFixed(1)} MB</span><button className="button ghost" onClick={() => void restore(backup.backupId)} type="button">恢复</button></div>)}</div><button className="button quiet" onClick={() => void createBackup()} type="button">创建备份</button></section> : null}
+    </div>
+  </section>;
 }
 
 export function ConsoleApp({ api }: { api: DigitalLifeApi }) {

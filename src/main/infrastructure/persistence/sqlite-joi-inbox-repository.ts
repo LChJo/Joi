@@ -9,6 +9,7 @@ import { DomainError } from "../../domain/errors.js";
 import { normalizeCompletionSummary } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
+import { closeHistoricalReviewInTransaction } from "./sqlite-joi-harness-review-closure.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -37,6 +38,43 @@ function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string
   connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
     WHERE status IN ('WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
       SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(now, inputId);
+}
+
+/**
+ * A review is a derived input, so its successful Turn must close the goal map in
+ * the same transaction that consumes the review row. The checks mirror the harness
+ * store's clearMap guard and deliberately remain false when the review opened work
+ * or left an unresolved path behind.
+ */
+function clearCompletedReviewMap(connection: DatabaseSync, goalInputId: string, turnId: string, now: string): boolean {
+  return connection.prepare(`
+    UPDATE joi_harness_maps AS m
+       SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
+     WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
+       AND EXISTS (
+         SELECT 1 FROM joi_turns t
+         JOIN joi_inbox_messages r ON r.input_id = t.input_id
+         JOIN joi_goal_result_sets current_rs ON current_rs.original_input_id = m.goal_input_id
+          WHERE t.turn_id = ? AND t.status IN ('RUNNING', 'WAITING')
+            AND r.goal_input_id = m.goal_input_id
+            AND r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || current_rs.revision
+            AND current_rs.revision = m.reviewed_revision
+       )
+       AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                        AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+       AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.goal_input_id = m.goal_input_id
+                        AND p.status = 'OPEN')
+       AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                        AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))
+       AND EXISTS (
+         SELECT 1 FROM joi_goal_result_sets rs
+         JOIN joi_goal_outcomes o ON o.input_id = rs.original_input_id
+                                  AND o.result_revision = rs.revision
+          WHERE rs.original_input_id = m.goal_input_id
+            AND rs.revision > 0
+            AND rs.synthesized_revision = rs.revision
+            AND m.reviewed_revision = rs.revision
+       )`).run(now, now, goalInputId, turnId).changes > 0;
 }
 
 function mapRow(row: Row): JoiInboxRecord {
@@ -194,6 +232,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });
+  }
+
+  async closeHistoricalReview(inputId: string): Promise<JoiInboxRecord | null> {
+    return this.database.transaction((connection) => closeHistoricalReviewInTransaction(connection, inputId));
   }
 
   async cancelQueued(): Promise<number> {
@@ -532,6 +574,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion) {
     return this.database.transaction((connection) => {
       const now = new Date().toISOString();
+      const review = connection.prepare(`SELECT goal_input_id FROM joi_inbox_messages
+        WHERE input_id = ? AND input_id LIKE 'joi_harness_review:goal:%'`).get(inputId) as Row | undefined;
+      if (typeof review?.goal_input_id === "string") {
+        // This is intentionally inferred from mechanical facts rather than from the
+        // model's prose: a normal completed review must not leave an ACTIVE map that
+        // the periodic recovery pass later mislabels as historical corruption.
+        clearCompletedReviewMap(connection, review.goal_input_id, turnId, now);
+      }
       if (completion === undefined) {
         connection.prepare("UPDATE joi_turns SET status = 'COMPLETED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
       } else {

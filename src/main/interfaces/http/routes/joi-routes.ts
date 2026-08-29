@@ -129,6 +129,17 @@ export const JOI_WRITE_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "write",
+    id: "POST /api/v1/joi/messages/:inputId/close-historical-review",
+    match: pattern("POST", /^\/api\/v1\/joi\/messages\/([^/]+)\/close-historical-review$/),
+    handle: async (ctx, match) => {
+      const closed = await joiInboxService(ctx.dependencies).closeHistoricalReview({
+        inputId: decodeURIComponent((match as RegExpExecArray)[1] ?? ""),
+      });
+      sendJson(ctx.response, 200, closed);
+    },
+  },
+  {
+    auth: "write",
     id: "POST /api/v1/joi/messages/:inputId/retry",
     match: pattern("POST", /^\/api\/v1\/joi\/messages\/([^/]+)\/retry$/),
     handle: async (ctx, match) => {

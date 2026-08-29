@@ -2,6 +2,7 @@ import { DomainError } from "../../domain/errors.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerRunRequest, PartnerRunResult } from "../ports/partner-execution.js";
 import type {
+  PartnerConversationProgress,
   PartnerEngineRuntime,
   PartnerInstanceMessageStore,
   PartnerInstanceRecord,
@@ -78,6 +79,7 @@ export class PartnerInstanceManager {
   async dispatch(input: {
     dispatchAttemptId?: string;
     instanceId?: string;
+    onConversation?: (progress: PartnerConversationProgress) => Promise<void>;
     request: PartnerRunRequest;
     revision: PartnerRevision;
     sessionPolicy?: SessionPolicy;
@@ -212,6 +214,7 @@ export class PartnerInstanceManager {
       if (record.sessionPolicy === "EPHEMERAL") {
         const result = await engine.runEphemeral(input.request, input.revision, {
           knowledgeSection,
+          ...(input.onConversation === undefined ? {} : { onConversation: async (conversation) => input.onConversation?.({ conversation, instanceId: record.instanceId }) }),
           skillEnvironmentKeys,
           skillSection,
         });
@@ -242,6 +245,7 @@ export class PartnerInstanceManager {
         ...(record.externalSessionRef === undefined ? {} : { externalSessionRef: record.externalSessionRef }),
         instanceId: record.instanceId,
         knowledgeSection,
+        ...(input.onConversation === undefined ? {} : { onConversation: async (conversation) => input.onConversation?.({ conversation, instanceId: record.instanceId }) }),
         request: input.request,
         restoredMessages: restored,
         revision: input.revision,

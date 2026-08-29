@@ -181,10 +181,15 @@ export interface PartnerDto {
   modelSourceId?: string;
   partnerId: string;
   partnerRevisionId: string;
+  promptConfigured?: boolean;
   registryRevision: number;
   skills: string[];
   status: "ACTIVE" | "DISABLED" | "DELETED";
   tools: string[];
+}
+
+export interface PartnerPromptDto {
+  prompt: string | null;
 }
 
 export interface PartnerModelTestDto {

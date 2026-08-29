@@ -215,6 +215,7 @@ describe("JOI-01 pure domain", () => {
       kind: "a2a",
       partnerId: "partner_1",
       partnerRevisionId: "partner_rev_2",
+      promptConfigured: true,
       registryRevision: 2,
       skills: ["search", "summarize"],
       status: "ACTIVE",

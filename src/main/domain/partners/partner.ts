@@ -158,6 +158,7 @@ export function toPublicPartner(revision: PartnerRevision) {
     ...(revision.modelSourceId === undefined ? {} : { modelSourceId: revision.modelSourceId }),
     partnerId: revision.partnerId,
     partnerRevisionId: revision.partnerRevisionId,
+    promptConfigured: revision.promptRef !== undefined,
     registryRevision: revision.registryRevision,
     skills: [...revision.skills],
     status: revision.status,

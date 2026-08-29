@@ -197,14 +197,23 @@ function AgentMessageStream({ agent, api, workbenchId, live = false }: {
   const [page, setPage] = useState<AgentConversationPageDto | null>(null);
   const [paged, setPaged] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const loadRevision = useRef(0);
   const load = useCallback(async () => {
-    try { setPage(await api.agentConversation(workbenchId, agent.agentId, { limit: 50 })); setNotice(null); }
-    catch (error) { setNotice(error instanceof ApiError ? error.message : "没能读取 Agent 对话。"); }
+    const revision = loadRevision.current + 1;
+    loadRevision.current = revision;
+    try {
+      const next = await api.agentConversation(workbenchId, agent.agentId, { limit: 50 });
+      if (revision !== loadRevision.current) return;
+      setPage(next);
+      setNotice(null);
+    } catch (error) {
+      if (revision === loadRevision.current) setNotice(error instanceof ApiError ? error.message : "没能读取 Agent 对话。");
+    }
   }, [agent.agentId, api, workbenchId]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   useEffect(() => {
     if (!live || paged) return undefined;
-    const interval = setInterval(() => void load().catch(() => undefined), 2_500);
+    const interval = setInterval(() => void load().catch(() => undefined), 750);
     return () => clearInterval(interval);
   }, [live, load, paged]);
   const loadMore = async () => {
@@ -234,7 +243,7 @@ function AgentConversation({ agent, api, workbenchId, onBack }: {
 }) {
   return <section className="agent-conversation" aria-label={`${agent.partnerName} 对话`}>
     <header className="agent-detail-header"><button className="button ghost" onClick={onBack} type="button">返回 Agent 列表</button><div><p className="eyebrow">只读执行记录</p><h2>{agent.partnerName}</h2><span>{agent.transport} · {agent.sessionPolicy} · {agent.status}</span></div></header>
-    <AgentMessageStream agent={agent} api={api} workbenchId={workbenchId} />
+    <AgentMessageStream agent={agent} api={api} workbenchId={workbenchId} live={agent.status === "RUNNING" || agent.status === "WAITING"} />
   </section>;
 }
 
@@ -375,6 +384,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const needsWaitingRecovery = reasonCode === "partner_waiting_recovery_required" || reasonCode === "partner_auth_required";
   const needsWorkspace = reasonCode === "workbench_workspace_not_ready";
   const needsWorkbenchChoice = reasonCode === "workbench_selection_invalid" || reasonCode === "workbench_creation_unavailable" || reasonCode === "workbench_not_found";
+  const needsHistoricalReview = reasonCode === "harness_review_unrecoverable";
   const assignedWorkbench = workbenches.find((workbench) => workbench.workbenchId === workbenchId);
   const proposals = workbenchProposals(suggestionSeed);
   const selectableWorkbenches = createdWorkbench === null || workbenches.some((workbench) => workbench.workbenchId === createdWorkbench.workbenchId)
@@ -438,9 +448,11 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     }
   };
   return <div className="joi-clarify">
-    <p className="joi-clarify-label">joi 需要你确认</p>
+    <p className="joi-clarify-label">{needsHistoricalReview ? "joi 正在整理历史状态" : "joi 需要你确认"}</p>
     <p className="joi-clarify-reason">{clarificationText(reasonCode, prompt, assignedWorkbench?.name)}</p>
-    {needsPartnerChoice ? <>
+    {needsHistoricalReview ? <div className="joi-clarify-workspace">
+      <div><strong>已交给 joi 自动校正</strong><span>Joi 会依据已完成的 Work 和闭合路径收敛状态，不会重放历史评审。若事实仍不足以证明完成，请取消这条任务，并用新的输入重新描述后续要求。</span></div>
+    </div> : needsPartnerChoice ? <>
       {selectablePartners.length === 0 ? <p className="joi-clarify-hint">当前没有可用搭档。请先到「搭档」页修复或创建搭档。</p> : null}
       {selectablePartners.length === 0 ? null : <div className="joi-clarify-partner-list" role="group" aria-label="选择一个搭档继续任务">
         {selectablePartners.map((partner) => <button className="joi-clarify-partner" disabled={busy} key={partner.partnerId} onClick={() => void resolve({ partnerId: partner.partnerId })} type="button">
@@ -466,7 +478,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
         </div>
       </section> : null}
     </> : null}
-    {needsPartnerChoice ? null : needsWaitingRecovery ? <div className="joi-clarify-workspace">
+    {needsHistoricalReview || needsPartnerChoice ? null : needsWaitingRecovery ? <div className="joi-clarify-workspace">
       <div><strong>恢复原工作</strong><span>joi 会使用已保存的 Work 和搭档会话继续，不会重新创建一份任务。</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "RESUME" })} type="button">{busy ? "恢复中…" : "继续原工作"}</button>
     </div> : needsWorkspace ? <div className="joi-clarify-workspace">

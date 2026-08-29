@@ -204,8 +204,44 @@ describe("partner-registry-revision-before-dispatch", () => {
     const privateRef = repository.history[0]?.promptRef;
     expect(privateRef).toMatch(/^partner_prompt_/u);
     expect(prompts.records.get(privateRef ?? "")).toBe("Work only inside the assigned repository.");
+    expect(partner).toMatchObject({ promptConfigured: true });
+    expect(await service.revealPrompt(partner.partnerId)).toEqual({ prompt: "Work only inside the assigned repository." });
     expect(JSON.stringify(partner)).not.toContain("Work only inside");
     expect(JSON.stringify(partner)).not.toContain(privateRef);
+  });
+
+  it("reveals only on request and appends or replaces prompts through new immutable revisions", async () => {
+    const prompts = new MemoryPartnerPrompts();
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), prompts, repository });
+    const partner = await service.add({
+      capabilities: [], displayName: "Researcher", kind: "local-pi", prompt: "先核对事实。", skills: [], tools: [],
+    });
+
+    const appended = await service.update(partner.partnerId, {
+      capabilities: [], displayName: "Researcher", prompt: "再列出反证。", promptMode: "APPEND", skills: [], tools: [],
+    });
+    expect(appended).toMatchObject({ promptConfigured: true, registryRevision: 2 });
+    expect(await service.revealPrompt(partner.partnerId)).toEqual({ prompt: "先核对事实。\n\n再列出反证。" });
+    expect(repository.history[1]?.promptRef).not.toBe(repository.history[0]?.promptRef);
+
+    await service.update(partner.partnerId, {
+      capabilities: [], displayName: "Researcher", prompt: "完全替换。", promptMode: "REPLACE", skills: [], tools: [],
+    });
+    expect(await service.revealPrompt(partner.partnerId)).toEqual({ prompt: "完全替换。" });
+
+    const blank = await service.add({ capabilities: [], displayName: "Blank", kind: "local-pi", skills: [], tools: [] });
+    expect(blank).toMatchObject({ promptConfigured: false });
+    expect(await service.revealPrompt(blank.partnerId)).toEqual({ prompt: null });
+  });
+
+  it("fails closed when a configured prompt record cannot be revealed", async () => {
+    const prompts = new MemoryPartnerPrompts();
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), prompts, repository });
+    const partner = await service.add({ capabilities: [], displayName: "Lost", kind: "local-pi", prompt: "private", skills: [], tools: [] });
+    prompts.records.clear();
+    await expect(service.revealPrompt(partner.partnerId)).rejects.toMatchObject({ code: "partner_prompt_not_found" });
   });
 
   it("rejects empty, oversized or unstorable prompt bodies", async () => {
@@ -215,6 +251,9 @@ describe("partner-registry-revision-before-dispatch", () => {
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), prompts: new MemoryPartnerPrompts(), repository: new MemoryPartnerRegistry() });
     await expect(service.add({ ...fields, prompt: "   " })).rejects.toMatchObject({ code: "partner_prompt_empty" });
     await expect(service.add({ ...fields, prompt: "x".repeat(32_001) })).rejects.toMatchObject({ code: "partner_prompt_too_large" });
+    const partner = await service.add({ ...fields, prompt: "configured" });
+    await expect(service.update(partner.partnerId, { ...fields, prompt: "   ", promptMode: "APPEND" }))
+      .rejects.toMatchObject({ code: "partner_prompt_empty" });
   });
 
   it("enables disabled partners through the same immutable revision mechanism as disable", async () => {

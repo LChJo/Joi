@@ -188,6 +188,7 @@ describe("joi renderer console", () => {
     const fixture = mockApi();
     vi.stubGlobal("confirm", vi.fn().mockReturnValueOnce(false).mockReturnValue(true));
     render(<SettingsPanel api={fixture.api} diagnostics={{ ...diagnostics, storage: { artifactsBytes: 1, backupsBytes: 2, databaseBytes: 3, diskAvailableBytes: 4, state: "low" } }} />);
+    fireEvent.click(screen.getByRole("tab", { name: "设备连接" }));
     const address = await screen.findByLabelText("这台电脑的局域网地址");
     fireEvent.click(screen.getByLabelText("允许局域网设备访问"));
     fireEvent.change(address, { target: { value: "192.168.1.20" } });
@@ -201,6 +202,7 @@ describe("joi renderer console", () => {
     fixture.updateSettings.mockResolvedValueOnce({ lan: { address: "192.168.1.20", enabled: true, port: 43130, riskAccepted: true }, launchAtLogin: true, restartRequired: false });
     fireEvent.submit(formFor(screen.getByLabelText("这台电脑的局域网地址")));
     await screen.findByText("设置已保存。");
+    fireEvent.click(screen.getByRole("tab", { name: "安全" }));
     expect(screen.getByText("磁盘空间不足")).toBeInTheDocument();
     expect(screen.getByText(/局域网设备 2/)).toBeInTheDocument();
     expect(screen.getByLabelText("当前密码")).toHaveAttribute("minLength", "6");
@@ -212,6 +214,7 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.changePassword).toHaveBeenCalledWith("old password secure", "new password secure"));
     fireEvent.click(screen.getByRole("button", { name: "退出所有局域网设备" }));
     await waitFor(() => expect(fixture.logoutAllLan).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     await waitFor(() => expect(fixture.createBackup).toHaveBeenCalled());
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
@@ -229,15 +232,19 @@ describe("joi renderer console", () => {
     fixture.restoreBackup.mockRejectedValue(new Error("restore failed"));
     vi.stubGlobal("confirm", vi.fn(() => true));
     render(<SettingsPanel api={fixture.api} diagnostics={diagnostics} />);
-    const address = await screen.findByLabelText("这台电脑的局域网地址");
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     expect(await screen.findByText("备份校验失败")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "设备连接" }));
+    const address = await screen.findByLabelText("这台电脑的局域网地址");
     fireEvent.submit(formFor(address));
     expect(await screen.findByText("设置未保存。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "安全" }));
     fireEvent.change(screen.getByLabelText("当前密码"), { target: { value: "old password secure" } });
     fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "new password secure" } });
     fireEvent.submit(formFor(screen.getByLabelText("当前密码")));
     expect(await screen.findByText("当前密码错误")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     fireEvent.click(screen.getByRole("button", { name: "恢复" }));
     expect(await screen.findByText("恢复没开始。")).toBeInTheDocument();
     vi.unstubAllGlobals();

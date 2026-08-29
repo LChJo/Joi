@@ -21,6 +21,8 @@ export interface JoiInboxRecord {
 
 export interface JoiInboxRepository {
   cancel(inputId: string): Promise<JoiInboxRecord | null>;
+  /** Compatibility closure for a historical review after deterministic facts prove completion. */
+  closeHistoricalReview?(inputId: string): Promise<JoiInboxRecord | null>;
   /** Stops queued goals without touching partner runs already in flight. */
   cancelQueued?(): Promise<number>;
   clarify(inputId: string, patch: { actionChoice?: "RESUME"; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null>;

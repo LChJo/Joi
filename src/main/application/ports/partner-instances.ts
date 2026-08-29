@@ -44,6 +44,7 @@ export interface ResidentTurnInput {
   externalSessionRef?: string;
   instanceId: string;
   knowledgeSection: string;
+  onConversation?: (conversation: AgentConversationDraft[]) => Promise<void>;
   request: PartnerRunRequest;
   restoredMessages: unknown[] | null;
   revision: PartnerRevision;
@@ -53,8 +54,14 @@ export interface ResidentTurnInput {
 
 export interface PartnerExecutionContext {
   knowledgeSection: string;
+  onConversation?: (conversation: AgentConversationDraft[]) => Promise<void>;
   skillEnvironmentKeys: readonly string[];
   skillSection: string;
+}
+
+export interface PartnerConversationProgress {
+  conversation: AgentConversationDraft[];
+  instanceId: string;
 }
 
 export interface ResidentTurnResult {

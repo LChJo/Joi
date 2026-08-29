@@ -115,7 +115,7 @@ describe("partner config HTTP API", () => {
       const partner = await created.json() as PartnerDto;
       expect(partner).toMatchObject({
         createdBy: "user", description: "工程搭档", displayName: "Coder", engine: "pi-core",
-        knowledgeDocCount: 0, modelIdOverride: "kimi-k2.5",
+        knowledgeDocCount: 0, modelIdOverride: "kimi-k2.5", promptConfigured: true,
       });
       const serialized = JSON.stringify(partner);
       expect(serialized).not.toContain("只修改任务范围内的文件");
@@ -126,6 +126,57 @@ describe("partner config HTTP API", () => {
       const { items } = await list.json() as { items: PartnerDto[] };
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({ description: "工程搭档", engine: "pi-core" });
+    } finally {
+      await session.close();
+    }
+  });
+
+  it("reveals a prompt explicitly and supports append or replace without exposing it in partner lists", async () => {
+    const session = await createSession();
+    try {
+      const createdResponse = await fetch(`${session.url}/api/v1/partners`, {
+        body: JSON.stringify({ capabilities: [], displayName: "Researcher", kind: "local-pi", prompt: "先核对事实。", skills: [], tools: [] }),
+        headers: session.headers,
+        method: "POST",
+      });
+      const partner = await createdResponse.json() as PartnerDto;
+      const partnerUrl = `${session.url}/api/v1/partners/${encodeURIComponent(partner.partnerId)}`;
+
+      const revealed = await fetch(`${partnerUrl}/prompt/reveal`, { headers: session.headers, method: "POST" });
+      expect(revealed.status).toBe(200);
+      expect(revealed.headers.get("cache-control")).toBe("no-store");
+      expect(await revealed.json()).toEqual({ prompt: "先核对事实。" });
+
+      const appended = await fetch(partnerUrl, {
+        body: JSON.stringify({ capabilities: [], displayName: "Researcher", prompt: "再列出反证。", promptMode: "APPEND", skills: [], tools: [] }),
+        headers: session.headers,
+        method: "PATCH",
+      });
+      expect(appended.status).toBe(200);
+      const revealedAppend = await fetch(`${partnerUrl}/prompt/reveal`, { headers: session.headers, method: "POST" });
+      expect(await revealedAppend.json()).toEqual({ prompt: "先核对事实。\n\n再列出反证。" });
+
+      const replaced = await fetch(partnerUrl, {
+        body: JSON.stringify({ capabilities: [], displayName: "Researcher", prompt: "完全替换。", promptMode: "REPLACE", skills: [], tools: [] }),
+        headers: session.headers,
+        method: "PATCH",
+      });
+      expect(replaced.status).toBe(200);
+      const revealedReplace = await fetch(`${partnerUrl}/prompt/reveal`, { headers: session.headers, method: "POST" });
+      expect(await revealedReplace.json()).toEqual({ prompt: "完全替换。" });
+
+      const invalid = await fetch(partnerUrl, {
+        body: JSON.stringify({ capabilities: [], displayName: "Researcher", prompt: "bad", promptMode: "MERGE", skills: [], tools: [] }),
+        headers: session.headers,
+        method: "PATCH",
+      });
+      expect(invalid.status).toBe(400);
+      expect(await invalid.json()).toMatchObject({ code: "partner_prompt_mode_invalid" });
+
+      const listed = await fetch(`${session.url}/api/v1/partners`, { headers: session.headers });
+      const serialized = JSON.stringify(await listed.json());
+      expect(serialized).not.toContain("完全替换。");
+      expect(serialized).not.toContain("promptRef");
     } finally {
       await session.close();
     }

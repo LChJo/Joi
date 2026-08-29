@@ -186,7 +186,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
 
 export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   constructor(private readonly dependencies: {
-    agentConversations?: Pick<WorkbenchAgentRepository, "append">;
+    agentConversations?: Pick<WorkbenchAgentRepository, "replaceRun">;
     /** Stages source-input attachments into the workspace for file-capable local work. */
     attachmentStager?: Pick<WorkAttachmentStagerPort, "stage">;
     clock: Clock;
@@ -304,9 +304,18 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     if (revision === null) throw new Error("partner_revision_unavailable");
 
     if (row.kind === "LOCAL_PI") {
+      const runId = row.run_id ?? `partner_run:${row.action_id}`;
+      const progressStartedAt = this.dependencies.clock.now().toISOString();
       const result = await this.dependencies.instances.dispatch({
         dispatchAttemptId: row.dispatch_attempt_id,
         ...(prepared.instanceId === undefined ? {} : { instanceId: prepared.instanceId }),
+        ...(this.dependencies.agentConversations === undefined ? {} : {
+          onConversation: async ({ conversation, instanceId }) => {
+            await this.dependencies.agentConversations?.replaceRun(instanceId, runId, normalizeAgentConversationEntries(
+              { agentId: instanceId, runId, startedAt: progressStartedAt }, conversation,
+            ));
+          },
+        }),
         request: {
           actionId: row.action_id, workbenchId: row.workbench_id, contextSnapshotId: row.context_snapshot_id ?? "",
           taskProjection: taskProjection(row, prepared.stagedAttachments), workId: row.work_id,
@@ -567,7 +576,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           kind: "ARTIFACT" as const,
           role: "AGENT" as const,
         }));
-      await this.dependencies.agentConversations.append(agentId, normalizeAgentConversationEntries(
+      await this.dependencies.agentConversations.replaceRun(agentId, runId, normalizeAgentConversationEntries(
         { agentId, runId, startedAt: now }, [...(output.conversation ?? fallback), ...artifacts],
       ));
     }

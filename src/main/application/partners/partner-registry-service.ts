@@ -1,4 +1,4 @@
-import type { ModelSourceDto, PartnerConfigurationDto, PartnerDto } from "../../../shared/joi.js";
+import type { ModelSourceDto, PartnerConfigurationDto, PartnerDto, PartnerPromptDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import {
   createPartnerRevision,
@@ -36,6 +36,7 @@ interface PartnerUpdateFields extends Omit<PartnerFields, "engineModelId" | "mod
   engineModelId?: string | null;
   modelIdOverride?: string | null;
   modelSourceId?: string | null;
+  promptMode?: "APPEND" | "REPLACE";
 }
 
 export class PartnerRegistryService {
@@ -80,7 +81,7 @@ export class PartnerRegistryService {
     const modelSourceId = explicitValue(input.modelSourceId, current.modelSourceId);
     await this.#assertModelConfiguration(current.kind, engine, modelSourceId, modelIdOverride);
     const createdAt = this.dependencies.clock.now().toISOString();
-    const promptRef = await this.#promptRef(input, createdAt) ?? current.promptRef;
+    const promptRef = await this.#updatedPromptRef(current, input, createdAt) ?? current.promptRef;
     const description = input.description ?? current.description;
     const validated = createPartnerRevision({
       capabilities: input.capabilities,
@@ -239,6 +240,12 @@ export class PartnerRegistryService {
     return this.#public(await this.#active(partnerId));
   }
 
+  async revealPrompt(partnerId: string): Promise<PartnerPromptDto> {
+    const revision = await this.#active(partnerId);
+    if (revision.status === "DELETED") throw new DomainError("partner_not_found", "Partner was not found.");
+    return { prompt: await this.#readPrompt(revision) };
+  }
+
   async list(): Promise<PartnerDto[]> {
     return Promise.all((await this.dependencies.repository.listActive())
       .filter((revision) => revision.status !== "DELETED")
@@ -326,6 +333,27 @@ export class PartnerRegistryService {
     const promptRef = this.dependencies.ids.next("partner_prompt");
     await this.dependencies.prompts.save({ body, createdAt, promptRef });
     return promptRef;
+  }
+
+  async #readPrompt(revision: PartnerRevision): Promise<string | null> {
+    if (revision.promptRef === undefined) return null;
+    if (this.dependencies.prompts === undefined) throw new DomainError("partner_prompt_store_unavailable", "Partner prompt storage is unavailable.");
+    const body = await this.dependencies.prompts.read(revision.promptRef);
+    if (body === null) throw new DomainError("partner_prompt_not_found", "Partner prompt was not found.");
+    return body;
+  }
+
+  async #updatedPromptRef(current: PartnerRevision, input: PartnerUpdateFields, createdAt: string): Promise<string | undefined> {
+    if (input.prompt === undefined) {
+      if (input.promptMode !== undefined) throw new DomainError("partner_prompt_required", "A prompt is required for this prompt update mode.");
+      return input.promptRef;
+    }
+    if (input.promptMode !== "APPEND") return this.#promptRef(input, createdAt);
+    const existing = await this.#readPrompt(current);
+    const addition = input.prompt.trim();
+    if (addition.length === 0) throw new DomainError("partner_prompt_empty", "Partner prompt must not be empty.");
+    const prompt = existing === null ? addition : `${existing.trimEnd()}\n\n${addition}`;
+    return this.#promptRef({ prompt }, createdAt);
   }
 
   async #changed(revision: PartnerRevision): Promise<void> {

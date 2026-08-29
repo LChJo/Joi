@@ -54,6 +54,17 @@ export class IrohSidecarTransport implements RemotePeerTransport {
         clearTimeout(startTimer);
         reject(new Error("remote_transport_start_failed"));
       };
+      child.stdin.on("error", () => {
+        if (!settled) {
+          this.#stopping = true;
+          failStart();
+          try { child.kill(); } catch { /* Process is already gone. */ }
+          return;
+        }
+        if (this.#stopping) return;
+        this.#stopping = true;
+        this.#emit({ code: "remote_transport_write_failed", type: "error" });
+      });
       child.once("error", failStart);
       child.once("exit", () => {
         this.#resetChild(child);

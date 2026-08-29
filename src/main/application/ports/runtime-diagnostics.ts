@@ -46,6 +46,25 @@ export interface RuntimeDiagnosticEventMap {
     inputId: string;
     resultRevision: number;
   };
+  "joi.harness.review_requeued": {
+    goalInputId: string;
+    inputId: string;
+    reasonCode: string;
+    resultRevision: number;
+  };
+  "joi.harness.review_quarantined": {
+    goalInputId: string;
+    reasonCode: string;
+    resultRevision: number;
+  };
+  "joi.harness.review_auto_cleared": {
+    goalInputId: string;
+    reasonCode: string;
+    resultRevision: number;
+  };
+  "joi.harness.review_historically_closed": {
+    inputId: string;
+  };
   "joi.harness.feedback_recorded": {
     workbenchId: string;
     goalInputId: string;

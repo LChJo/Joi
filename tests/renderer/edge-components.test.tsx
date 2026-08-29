@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 import { SettingsPanel, SystemPanel } from "../../src/renderer/Console";
 import { DigitalLifeApi } from "../../src/renderer/api";
@@ -31,6 +31,7 @@ describe("renderer edge components", () => {
     expect(screen.getByText("待确认")).toBeInTheDocument();
     expect(screen.getByText("需要关注")).toBeInTheDocument();
     view.rerender(<SettingsPanel api={api} diagnostics={null} />);
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     expect(screen.getByText(/数据格式 v-/)).toBeInTheDocument();
   });
 });

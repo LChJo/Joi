@@ -8,7 +8,7 @@ import type { PartnerDto, ScenarioPackDto } from "../../src/shared/joi.js";
 const coder: PartnerDto = {
   capabilities: ["code"], createdBy: "user", description: "写代码的搭档", displayName: "Local Coder",
   engine: "pi-core", inFlightCount: 0, kind: "local-pi", knowledgeDocCount: 0, lifecyclePolicy: "DRAIN",
-  partnerId: "partner-1", partnerRevisionId: "revision-1", registryRevision: 1, skills: ["typescript"],
+  partnerId: "partner-1", partnerRevisionId: "revision-1", promptConfigured: true, registryRevision: 1, skills: ["typescript"],
   status: "ACTIVE", tools: ["read"],
 };
 
@@ -174,6 +174,74 @@ describe("partner page", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({
       description: "擅长重构", displayName: "Local Coder", modelIdOverride: "kimi-k2.5",
     })));
+  });
+
+  it("reveals a configured prompt only after an explicit click and appends new instructions", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [coder]);
+    vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ displayName: "TypeScript", id: "typescript" }] });
+    const reveal = vi.fn().mockResolvedValue({ prompt: "先核对事实。" });
+    Object.assign(api, { revealPartnerPrompt: reveal });
+    const update = vi.spyOn(api, "updatePartner").mockResolvedValue({ ...coder, registryRevision: 2 });
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+
+    expect(screen.queryByDisplayValue("先核对事实。")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看提示词" }));
+    expect(await screen.findByDisplayValue("先核对事实。")).toBeInTheDocument();
+    expect(reveal).toHaveBeenCalledWith("partner-1");
+
+    fireEvent.click(screen.getByRole("radio", { name: "追加" }));
+    fireEvent.change(screen.getByLabelText("追加内容"), { target: { value: "再列出反证。" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({
+      prompt: "再列出反证。", promptMode: "APPEND",
+    })));
+  });
+
+  it("replaces a revealed prompt and reports reveal failures without leaking private errors", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [coder]);
+    vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ displayName: "TypeScript", id: "typescript" }] });
+    const reveal = vi.fn()
+      .mockResolvedValueOnce({ prompt: "旧提示词" })
+      .mockRejectedValueOnce(new Error("private database path"));
+    Object.assign(api, { revealPartnerPrompt: reveal });
+    const update = vi.spyOn(api, "updatePartner").mockResolvedValue({ ...coder, registryRevision: 2 });
+    const { unmount } = render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看提示词" }));
+    const editor = await screen.findByLabelText("替换内容");
+    fireEvent.change(editor, { target: { value: "新提示词" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({
+      prompt: "新提示词", promptMode: "REPLACE",
+    })));
+
+    unmount();
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看提示词" }));
+    expect(await screen.findByText("提示词没能读取，请重试。")).toBeInTheDocument();
+    expect(screen.queryByText("private database path")).not.toBeInTheDocument();
+  });
+
+  it("does not rewrite a prompt when it was only revealed", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [coder]);
+    vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ displayName: "TypeScript", id: "typescript" }] });
+    Object.assign(api, { revealPartnerPrompt: vi.fn().mockResolvedValue({ prompt: "保持原样" }) });
+    const update = vi.spyOn(api, "updatePartner").mockResolvedValue({ ...coder, registryRevision: 2 });
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看提示词" }));
+    expect(await screen.findByLabelText("替换内容")).toHaveValue("保持原样");
+    const save = screen.getByRole("button", { name: "保存修改" });
+    await waitFor(() => expect(save).not.toBeDisabled());
+    fireEvent.click(save);
+    await waitFor(() => expect(update).toHaveBeenCalledOnce());
+    expect(update.mock.calls[0]?.[1]).not.toHaveProperty("prompt");
+    expect(update.mock.calls[0]?.[1]).not.toHaveProperty("promptMode");
   });
 
   it("onboards remote A2A partners through the card and bearer branch", async () => {
@@ -438,33 +506,6 @@ describe("partner page", () => {
     expect(manage).toHaveBeenCalledOnce();
   });
 
-  it("creates the selected scenario roles as partners from the scenarios tab", async () => {
-    const api = new DigitalLifeApi("");
-    mockCatalog(api, []);
-    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
-      {
-        blurb: "组建审查团队", id: "review-code", prompt: "审查场景提示词",
-        roles: [
-          { id: "correctness", prompt: "正确性提示词", title: "正确性审查搭档" },
-          { id: "maintainability", prompt: "可维护性提示词", title: "可维护性审查搭档" },
-        ],
-        source: "builtin", title: "审查一段代码",
-      },
-    ] });
-    const create = vi.spyOn(api, "createScenarioPartners").mockResolvedValue({ items: [coder] });
-    render(<PartnerPage api={api} onTabChange={() => undefined} tab="scenarios" />);
-    fireEvent.click(await screen.findByRole("button", { name: /审查一段代码/u }));
-    const boxes = await screen.findAllByRole("checkbox");
-    expect(boxes).toHaveLength(2);
-    expect(boxes.every((box) => (box as HTMLInputElement).checked)).toBe(true);
-    const secondBox = boxes[1];
-    if (secondBox === undefined) throw new Error("expected a second role checkbox");
-    fireEvent.click(secondBox);
-    fireEvent.click(screen.getByRole("button", { name: "创建所选搭档" }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith("review-code", ["correctness"]));
-    expect(await screen.findByText(/已创建 1 位搭档/u)).toBeInTheDocument();
-  });
-
   it("expands the AI Berkshire package and installs a team without manual role input", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, []);
@@ -508,21 +549,42 @@ describe("partner page", () => {
     expect(await screen.findByText("套件配置需要处理。")).toBeInTheDocument();
   });
 
-  it("reports a failure when scenario partner creation fails", async () => {
+  it("renders programming, research and built-in Skills as suites without flat scenario cards", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, []);
-    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [
-      {
-        blurb: "组建诊断团队", id: "diagnose-bug", prompt: "诊断场景提示词",
-        roles: [{ id: "reproducer", prompt: "复现提示词", title: "复现搭档" }],
-        source: "builtin", title: "诊断一个 Bug",
-      },
+    vi.spyOn(api, "scenarios").mockResolvedValue({ items: [{
+      blurb: "旧平铺入口", id: "implement-feature", prompt: "旧提示词",
+      roles: [{ id: "coder", prompt: "编码", title: "编码搭档" }], source: "builtin", title: "旧平铺功能卡",
+    }] });
+    const suite = (id: string, title: string): ScenarioPackDto => ({
+      blurb: `${title}说明`, definitionVersion: 1, id, installedRoleCount: 0,
+      source: { license: "内置", repository: "joi/builtin", revision: "builtin1" },
+      status: "NOT_INSTALLED", teams: [], title, totalRoleCount: 0,
+    });
+    vi.spyOn(api, "scenarioPacks").mockResolvedValue({ items: [
+      suite("programming", "编程套件"),
+      suite("research-analysis", "调研分析套件"),
+      suite("builtin-skills", "内置 Skills 套件"),
     ] });
-    vi.spyOn(api, "createScenarioPartners").mockRejectedValue(new ApiError("offline", "创建失败", 503));
+
     render(<PartnerPage api={api} onTabChange={() => undefined} tab="scenarios" />);
-    fireEvent.click(await screen.findByRole("button", { name: /诊断一个 Bug/u }));
-    fireEvent.click(await screen.findByRole("button", { name: "创建所选搭档" }));
-    expect(await screen.findByText("场景搭档没创建成功，请重试。")).toBeInTheDocument();
+
+    expect(await screen.findByRole("button", { name: /编程套件/u })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /调研分析套件/u })).toBeInTheDocument();
+    const skillsSuite = screen.getByRole("button", { name: /内置 Skills 套件/u });
+    expect(skillsSuite).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /旧平铺功能卡/u })).not.toBeInTheDocument();
+    fireEvent.click(skillsSuite);
+    expect(screen.getByRole("button", { name: "暂无可安装项" })).toBeDisabled();
+  });
+
+  it("reports a safe failure when the suite catalog cannot be loaded", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, []);
+    vi.spyOn(api, "scenarioPacks").mockRejectedValue(new Error("private catalog failure"));
+    render(<PartnerPage api={api} onTabChange={() => undefined} tab="scenarios" />);
+    expect(await screen.findByText("场景套件没能读取，请稍后重试。")).toBeInTheDocument();
+    expect(screen.queryByText("private catalog failure")).not.toBeInTheDocument();
   });
 
   it("switches between the scenarios and partners tabs", async () => {

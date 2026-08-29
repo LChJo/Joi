@@ -160,6 +160,25 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
     });
   }
 
+  async replaceRun(agentId: string, runId: string, entries: NormalizedAgentConversationEntry[]): Promise<void> {
+    this.database.transaction((connection) => {
+      connection.prepare("DELETE FROM workbench_agent_conversation_entries WHERE agent_id = ? AND run_id = ?")
+        .run(agentId, runId);
+      if (entries.length === 0) return;
+      const base = connection.prepare("SELECT COALESCE(MAX(sequence), -1) AS value FROM workbench_agent_conversation_entries WHERE agent_id = ?")
+        .get(agentId) as { value?: unknown } | undefined;
+      const start = typeof base?.value === "number" ? base.value + 1 : 0;
+      const insert = connection.prepare(`INSERT INTO workbench_agent_conversation_entries
+        (entry_id, agent_id, run_id, sequence, role, kind, text, tool_name, artifact_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      for (const entry of entries) insert.run(
+        entry.entryId, agentId, runId, start + entry.order,
+        entry.role, entry.kind, entry.text ?? null, entry.toolName ?? null,
+        entry.artifact === undefined ? null : JSON.stringify(entry.artifact), entry.createdAt,
+      );
+    });
+  }
+
   async conversation(input: { agentId: string; workbenchId: string; cursor?: string; limit: number }): Promise<AgentConversationPageDto> {
     const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)));
     const offset = decodeCursor(input.cursor);

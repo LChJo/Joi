@@ -268,6 +268,62 @@ describe("partner dispatch instance routing", () => {
     }
   });
 
+  it("replaces one live run snapshot in place and commits the terminal conversation without duplicates", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      let liveRows: unknown[] = [];
+      const handler = makeHandler(database, {
+        dispatch: async (rawInput) => {
+          const input = rawInput as typeof rawInput & {
+            onConversation?: (event: { conversation: { kind: "MARKDOWN"; role: "AGENT" | "USER"; text: string }[]; instanceId: string }) => Promise<void>;
+          };
+          database.transaction((connection) => connection.prepare(
+            "UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = ?",
+          ).run("instance_9", input.dispatchAttemptId ?? ""));
+          expect(input.onConversation).toBeTypeOf("function");
+          await input.onConversation?.({
+            conversation: [
+              { kind: "MARKDOWN", role: "USER", text: "the task" },
+              { kind: "MARKDOWN", role: "AGENT", text: "正在生成" },
+            ],
+            instanceId: "instance_9",
+          });
+          await input.onConversation?.({
+            conversation: [
+              { kind: "MARKDOWN", role: "USER", text: "the task" },
+              { kind: "MARKDOWN", role: "AGENT", text: "正在生成安全结论" },
+            ],
+            instanceId: "instance_9",
+          });
+          liveRows = database.transaction((connection) => connection.prepare(`SELECT role, kind, text
+            FROM workbench_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all());
+          return {
+            actionId: "action_1", artifacts: [], body: "最终结论", conversation: [
+              { kind: "MARKDOWN" as const, role: "USER" as const, text: "the task" },
+              { kind: "MARKDOWN" as const, role: "AGENT" as const, text: "最终结论" },
+            ],
+            externalRunId: "local_pi:action_1", instanceId: "instance_9", status: "COMPLETED" as const, workId: "work_1",
+          };
+        },
+      });
+
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", workId: "work_1" }));
+
+      expect(liveRows).toEqual([
+        { kind: "MARKDOWN", role: "USER", text: "the task" },
+        { kind: "MARKDOWN", role: "AGENT", text: "正在生成安全结论" },
+      ]);
+      expect(database.transaction((connection) => connection.prepare(`SELECT role, kind, text
+        FROM workbench_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all())).toEqual([
+        { kind: "MARKDOWN", role: "USER", text: "the task" },
+        { kind: "MARKDOWN", role: "AGENT", text: "最终结论" },
+      ]);
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("records a safe FAILED result when instance preflight rejects the dispatch", async () => {
     const { database, root } = await openWithPartner();
     try {

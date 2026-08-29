@@ -667,4 +667,39 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(failed).toHaveLength(1);
     expect(emitted).toEqual(["joi.turn.started", "joi.turn.failed"]);
   });
+
+  it("does not classify a read-only tool as a replay-unsafe side effect", async () => {
+    const fallbackInputs: unknown[] = [];
+    const progress: { formalOutputStarted: boolean; sideEffectStarted: boolean }[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(),
+      failureClassifier: { classify: () => "timeout" }, ids: new TestIds(),
+      router: { decide: async () => { throw new Error("pre-bound result must not route again"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false,
+        restore: async () => false,
+        startTurn: async (turn) => {
+          turn.onEvent?.({ toolCallId: "read-1", toolName: "work_read_result", turnId: turn.turnId, type: "tool_started" });
+          throw new Error("timeout after read");
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: {
+        selectFallback: async (input) => { fallbackInputs.push(input); return null; },
+        selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }),
+      },
+      store: {
+        completeInput: async () => undefined, createTurn: async () => undefined,
+        failTurn: async () => undefined,
+        loadInput: async () => ({ body: "review", goalInputId: "goal-read", inputId: "joi_harness_review:goal:goal-read:r1", status: "PENDING" as const, workbenchId: "research" }),
+        recordTurnProgress: async (_turnId, value) => { progress.push(value); },
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await expect(coordinator.handle("joi_harness_review:goal:goal-read:r1")).rejects.toThrow("timeout after read");
+    expect(fallbackInputs).toEqual([expect.objectContaining({ formalOutputStarted: false, sideEffectStarted: false })]);
+    expect(progress).toEqual([]);
+  });
 });

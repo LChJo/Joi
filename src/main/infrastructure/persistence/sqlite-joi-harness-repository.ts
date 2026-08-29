@@ -11,6 +11,8 @@ import type {
   HarnessMapStatus,
   HarnessPathStatus,
   HarnessReviewDigest,
+  HarnessReviewRecoveryCandidate,
+  HarnessReviewRecoveryResult,
   JoiHarnessScan,
   JoiHarnessStore,
   JoiHarnessWriter,
@@ -64,6 +66,47 @@ function requireText(value: string, limit: number, code: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > limit) throw new DomainError(code, "Harness map entry is out of bounds.");
   return trimmed;
+}
+
+function reviewInputId(goalInputId: string, resultRevision: number): string {
+  return `joi_harness_review:goal:${goalInputId}:r${String(resultRevision)}`;
+}
+
+function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
+  const goalInputId = textValue(row, "goal_input_id");
+  const decisions = (connection.prepare(`
+    SELECT kind, summary FROM joi_harness_decisions
+     WHERE goal_input_id = ?
+     ORDER BY created_at DESC, decision_id DESC LIMIT 8`).all(goalInputId) as Row[])
+    .map((decisionRow) => ({ kind: decisionKind(decisionRow.kind), summary: textValue(decisionRow, "summary") }))
+    .reverse();
+  const decisionCount = numberValue(connection.prepare(`
+    SELECT COUNT(*) AS n FROM joi_harness_decisions WHERE goal_input_id = ?`).get(goalInputId) as Row, "n");
+  const fogNotes = (connection.prepare(`
+    SELECT note FROM joi_harness_fog
+     WHERE goal_input_id = ? AND status = 'ACTIVE'
+     ORDER BY created_at, fog_id LIMIT 6`).all(goalInputId) as Row[])
+    .map((fogRow) => textValue(fogRow, "note"));
+  const openPaths = (connection.prepare(`
+    SELECT path_id, layer, title FROM joi_harness_paths
+     WHERE goal_input_id = ? AND status = 'OPEN'
+     ORDER BY layer, created_at, path_id LIMIT 6`).all(goalInputId) as Row[])
+    .map((pathRow) => ({
+      layer: numberValue(pathRow, "layer"),
+      pathId: textValue(pathRow, "path_id"),
+      title: textValue(pathRow, "title"),
+    }));
+  return {
+    workbenchId: textValue(row, "workbench_id"),
+    completionSummary: optionalText(row, "completion_summary") ?? "",
+    decisionCount,
+    decisions,
+    destination: optionalText(row, "destination"),
+    fogNotes,
+    goalInputId,
+    openPaths,
+    resultRevision: numberValue(row, "result_revision"),
+  };
 }
 
 /**
@@ -156,46 +199,97 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.status = 'ACTIVE'
            AND rs.revision > m.reviewed_revision
            AND rs.synthesized_revision = rs.revision
-           AND g.canceled_at IS NULL AND g.dismissed_at IS NULL
+           AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM work_items w
                             WHERE w.input_id = m.goal_input_id
                               AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
          ORDER BY m.updated_at, m.goal_input_id LIMIT 10`).all() as Row[];
-      return candidates.map((row): HarnessReviewDigest => {
-        const goalInputId = textValue(row, "goal_input_id");
-        const decisions = (connection.prepare(`
-          SELECT kind, summary FROM joi_harness_decisions
-           WHERE goal_input_id = ?
-           ORDER BY created_at DESC, decision_id DESC LIMIT 8`).all(goalInputId) as Row[])
-          .map((decisionRow) => ({ kind: decisionKind(decisionRow.kind), summary: textValue(decisionRow, "summary") }))
-          .reverse();
-        const decisionCount = numberValue(connection.prepare(`
-          SELECT COUNT(*) AS n FROM joi_harness_decisions WHERE goal_input_id = ?`).get(goalInputId) as Row, "n");
-        const fogNotes = (connection.prepare(`
-          SELECT note FROM joi_harness_fog
-           WHERE goal_input_id = ? AND status = 'ACTIVE'
-           ORDER BY created_at, fog_id LIMIT 6`).all(goalInputId) as Row[])
-          .map((fogRow) => textValue(fogRow, "note"));
-        const openPaths = (connection.prepare(`
-          SELECT path_id, layer, title FROM joi_harness_paths
-           WHERE goal_input_id = ? AND status = 'OPEN'
-           ORDER BY layer, created_at, path_id LIMIT 6`).all(goalInputId) as Row[])
-          .map((pathRow) => ({
-            layer: numberValue(pathRow, "layer"),
-            pathId: textValue(pathRow, "path_id"),
-            title: textValue(pathRow, "title"),
-          }));
-        return {
-          workbenchId: textValue(row, "workbench_id"),
-          completionSummary: optionalText(row, "completion_summary") ?? "",
-          decisionCount,
-          decisions,
-          destination: optionalText(row, "destination"),
-          fogNotes,
-          goalInputId,
-          openPaths,
-          resultRevision: numberValue(row, "result_revision"),
-        };
+      return candidates.map((row) => reviewDigest(connection, row));
+    });
+  }
+
+  async listReviewRecoveries(): Promise<HarnessReviewRecoveryCandidate[]> {
+    return this.database.transaction((connection) => {
+      const candidates = connection.prepare(`
+        SELECT m.goal_input_id, m.workbench_id, m.destination, rs.revision AS result_revision,
+               o.completion_summary, o.disposition AS outcome_disposition, r.input_id AS review_input_id,
+               (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id) AS review_turn_count,
+               (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1) AS side_effect_turn_count,
+               (SELECT COUNT(*) FROM work_items w
+                 WHERE w.input_id = m.goal_input_id AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')) AS active_work_count,
+               (SELECT COUNT(*) FROM joi_harness_paths p
+                 WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN') AS open_path_count,
+               (SELECT COUNT(*) FROM work_items w
+                 WHERE w.input_id = m.goal_input_id
+                   AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id)) AS missing_path_count
+          FROM joi_harness_maps m
+          JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+          JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+          JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
+          LEFT JOIN joi_inbox_messages r
+            ON r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || rs.revision
+         WHERE m.status IN ('ACTIVE', 'CLEARED')
+           AND rs.revision > 0
+           AND rs.synthesized_revision = rs.revision
+           AND m.reviewed_revision = rs.revision
+           AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+           AND (
+             g.status = 'CONSUMED'
+             OR (g.status = 'CLARIFICATION_REQUIRED'
+                 AND g.clarification_reason_code = 'harness_review_unrecoverable'
+                 AND o.disposition = 'COMPLETED'
+                 AND NOT EXISTS (SELECT 1 FROM work_items w
+                                  WHERE w.input_id = m.goal_input_id
+                                    AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+                 AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
+                                  WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
+                 AND NOT EXISTS (SELECT 1 FROM work_items w
+                                  WHERE w.input_id = m.goal_input_id
+                                    AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id)))
+           )
+           AND NOT EXISTS (SELECT 1 FROM work_items w
+                            WHERE w.input_id = m.goal_input_id
+                              AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+            AND (r.input_id IS NULL OR (
+              r.status IN ('CONSUMED', 'ROUTED')
+              AND (r.failed_at IS NOT NULL OR EXISTS (
+                SELECT 1 FROM joi_turns failed_review
+                 WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
+              ))
+              AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
+                               WHERE live_review.input_id = r.input_id
+                                 AND live_review.status IN ('PENDING', 'RUNNING', 'WAITING'))
+            ) OR (
+              g.status = 'CLARIFICATION_REQUIRED' AND r.status IN ('PENDING', 'FAILED', 'CLARIFICATION_REQUIRED', 'CONSUMED', 'ROUTED')
+              AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
+                               WHERE live_review.input_id = r.input_id
+                                 AND live_review.status IN ('PENDING', 'RUNNING', 'WAITING'))
+            ))
+         ORDER BY m.updated_at, m.goal_input_id LIMIT 20`).all() as Row[];
+      return candidates.map((row): HarnessReviewRecoveryCandidate => {
+        const reviewInput = optionalText(row, "review_input_id");
+        const turnCount = numberValue(row, "review_turn_count");
+        const sideEffectTurns = numberValue(row, "side_effect_turn_count");
+        const activeWork = numberValue(row, "active_work_count");
+        const openPaths = numberValue(row, "open_path_count");
+        const missingPaths = numberValue(row, "missing_path_count");
+        const factsComplete = activeWork === 0 && openPaths === 0 && missingPaths === 0;
+        const outcomeCompleted = optionalText(row, "outcome_disposition") === "COMPLETED";
+        const action = factsComplete && outcomeCompleted
+          ? "AUTO_CLEAR" as const
+          : reviewInput === null || turnCount === 0 || sideEffectTurns > 0 || activeWork > 0 || openPaths > 0 || missingPaths > 0
+          ? "QUARANTINE" as const
+          : "REQUEUE" as const;
+        const reasonCode = factsComplete && outcomeCompleted
+          ? "review_facts_complete"
+          : reviewInput === null
+          ? "review_row_missing"
+          : turnCount === 0
+            ? "review_turn_missing"
+            : sideEffectTurns > 0 || activeWork > 0 || openPaths > 0 || missingPaths > 0
+              ? "review_side_effect_unknown"
+              : "review_turn_failed_without_side_effect";
+        return { action, digest: reviewDigest(connection, row), reasonCode };
       });
     });
   }
@@ -328,6 +422,111 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         resultRevision, now, digest.goalInputId, resultRevision,
       );
       return inputId;
+    });
+  }
+
+  async reconcileReview(input: { candidate: HarnessReviewRecoveryCandidate; now: string }): Promise<HarnessReviewRecoveryResult | null> {
+    return this.database.transaction((connection) => {
+      const { candidate, now } = input;
+      const { goalInputId, resultRevision } = candidate.digest;
+      const reviewId = reviewInputId(goalInputId, resultRevision);
+      const current = connection.prepare(`
+        SELECT m.reviewed_revision, m.status AS map_status, o.disposition AS outcome_disposition, rs.revision AS result_revision
+          FROM joi_harness_maps m
+          JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+          JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+          JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
+          LEFT JOIN joi_inbox_messages r ON r.input_id = ?
+         WHERE m.goal_input_id = ? AND m.status IN ('ACTIVE', 'CLEARED')
+           AND rs.synthesized_revision = rs.revision
+           AND rs.revision = ? AND m.reviewed_revision = rs.revision
+           AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+           AND (g.status = 'CONSUMED' OR (g.status = 'CLARIFICATION_REQUIRED'
+             AND g.clarification_reason_code = 'harness_review_unrecoverable'))
+           AND (r.input_id IS NULL OR (
+             r.status IN ('CONSUMED', 'ROUTED')
+             AND (r.failed_at IS NOT NULL OR EXISTS (
+               SELECT 1 FROM joi_turns failed_review
+                WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
+             ))
+             AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
+                              WHERE live_review.input_id = r.input_id
+                                AND live_review.status IN ('PENDING', 'RUNNING', 'WAITING'))
+           ) OR (g.status = 'CLARIFICATION_REQUIRED' AND r.status IN ('PENDING', 'FAILED', 'CLARIFICATION_REQUIRED', 'CONSUMED', 'ROUTED')
+             AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
+                              WHERE live_review.input_id = r.input_id
+                                AND live_review.status IN ('PENDING', 'RUNNING', 'WAITING')))
+           )
+           AND NOT EXISTS (SELECT 1 FROM work_items w
+                            WHERE w.input_id = m.goal_input_id
+                              AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(
+        reviewId, goalInputId, resultRevision,
+      ) as Row | undefined;
+      if (current === undefined) return null;
+
+      if (candidate.action === "AUTO_CLEAR") {
+        if (optionalText(current, "outcome_disposition") !== "COMPLETED") return null;
+        const safe = connection.prepare(`
+          SELECT 1
+            FROM joi_harness_maps m
+           WHERE m.goal_input_id = ?
+             AND NOT EXISTS (SELECT 1 FROM work_items w
+                              WHERE w.input_id = m.goal_input_id
+                                AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+             AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
+                              WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
+             AND NOT EXISTS (SELECT 1 FROM work_items w
+                              WHERE w.input_id = m.goal_input_id
+                                AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`).get(goalInputId);
+        if (safe === undefined) return null;
+        connection.prepare(`UPDATE joi_harness_maps
+          SET status = 'CLEARED', cleared_at = COALESCE(cleared_at, ?), revision = revision + 1, updated_at = ?
+          WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, now, goalInputId);
+        connection.prepare(`UPDATE joi_inbox_messages
+          SET status = 'CONSUMED', failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
+              clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+          WHERE input_id = ? AND (status = 'CONSUMED' OR
+            (status = 'CLARIFICATION_REQUIRED' AND clarification_reason_code = 'harness_review_unrecoverable'))`).run(now, goalInputId);
+        connection.prepare(`UPDATE joi_inbox_messages
+          SET status = 'CONSUMED', failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
+              clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+          WHERE input_id = ? AND status IN ('PENDING', 'FAILED', 'CLARIFICATION_REQUIRED', 'ROUTED', 'CONSUMED')
+            AND NOT EXISTS (SELECT 1 FROM joi_turns t
+                            WHERE t.input_id = joi_inbox_messages.input_id
+                              AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))`).run(now, reviewId);
+        return { action: "AUTO_CLEARED" as const };
+      }
+
+      if (candidate.action === "REQUEUE") {
+        const safe = connection.prepare(`
+          SELECT 1
+            FROM joi_inbox_messages r
+           WHERE r.input_id = ? AND r.status IN ('CONSUMED', 'ROUTED')
+             AND EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id)
+             AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))
+             AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1)
+             AND NOT EXISTS (SELECT 1 FROM work_items w
+                              WHERE w.input_id = ? AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+             AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
+                              WHERE p.goal_input_id = ? AND p.status = 'OPEN')
+             AND NOT EXISTS (SELECT 1 FROM work_items w
+                              WHERE w.input_id = ?
+                                AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`).get(
+          reviewId, goalInputId, goalInputId, goalInputId,
+        );
+        if (safe === undefined) return null;
+        const updated = connection.prepare(`UPDATE joi_inbox_messages
+          SET status = 'PENDING', failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
+              canceled_at = NULL, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+          WHERE input_id = ? AND status IN ('CONSUMED', 'ROUTED')`).run(now, reviewId);
+        return updated.changes === 1 ? { action: "REQUEUED" as const, inputId: reviewId } : null;
+      }
+
+      const quarantined = connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'harness_review_unrecoverable',
+            clarification_prompt = '历史评审记录无法安全恢复。请补充新的要求后继续，或取消这条任务。', updated_at = ?
+        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(now, goalInputId);
+      return quarantined.changes === 1 ? { action: "QUARANTINED" as const } : null;
     });
   }
 

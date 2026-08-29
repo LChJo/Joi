@@ -55,6 +55,19 @@ const COMMITTED_OUTCOME_TOOL_NAMES = new Set([
   "work_wait",
 ]);
 
+// A lookup does not make replay unsafe. Keep this classification at the coordinator
+// boundary so recovery can distinguish read-only inspection from durable mutations.
+const REPLAY_SAFE_TOOL_NAMES = new Set([
+  "attachment_read",
+  "model_list_sources",
+  "partner_inspect_revision",
+  "partner_list_available",
+  "partner_list_instances",
+  "partner_list_skills",
+  "work_read_result",
+  "workbench_list_summaries",
+]);
+
 const OUTCOME_REPAIR_PROMPT = [
   "[joi completion repair] Your preceding response used tools but did not commit an outcome.",
   "Continue the same persisted request now; do not repeat a lookup-only answer or merely describe future work.",
@@ -325,7 +338,7 @@ export class JoiCoordinator {
                 }
               }
               if (event.type === "tool_started") {
-                sideEffectStarted = true;
+                sideEffectStarted = sideEffectStarted || !REPLAY_SAFE_TOOL_NAMES.has(event.toolName);
                 observedToolCalls.add(event.toolCallId);
                 toolStartedAt.set(event.toolCallId, this.dependencies.clock.now().getTime());
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.started", {

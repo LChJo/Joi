@@ -11,10 +11,13 @@ const FEEDBACK_ENTRY_SUMMARY_LIMIT = 160;
 /**
  * Traversal over harness map facts: adopts goals into maps on their first turn,
  * records completion feedback into the workbench task context once a map clears,
- * silently clears trivial maps, and — once review is enabled — posts exactly one
- * review input per completed result layer. Never calls an LLM and never
- * dispatches: progression is delegated to joi reasoning turns via PENDING rows
- * in joi_inbox_messages (single scheduling authority stays with the task slot).
+ * silently clears trivial maps, posts exactly one review input per completed result
+ * layer, and reconciles historical review rows. Terminal Work/path facts can
+ * close a stale review without replaying its model turn; only incomplete facts
+ * remain quarantined for an explicit user decision.
+ * Never calls an LLM and never dispatches: progression is delegated to joi reasoning
+ * turns via PENDING rows in joi_inbox_messages (single scheduling authority stays
+ * with the task slot).
  */
 export class JoiHarnessComponent implements ActorComponent {
   readonly componentName = "joi-harness";
@@ -37,6 +40,7 @@ export class JoiHarnessComponent implements ActorComponent {
     await this.#step(ctx, "trivial_clear", () => this.#clearTrivialMaps(ctx));
     if (this.dependencies.reviewEnabled === true) {
       await this.#step(ctx, "review", () => this.#enqueueReviews(ctx));
+      await this.#step(ctx, "review_recovery", () => this.#reconcileReviews(ctx));
     }
   }
 
@@ -106,6 +110,24 @@ export class JoiHarnessComponent implements ActorComponent {
           resultRevision: digest.resultRevision,
         });
       }
+    }
+  }
+
+  async #reconcileReviews(ctx: ActorTickContext): Promise<void> {
+    for (const candidate of await this.dependencies.scan.listReviewRecoveries()) {
+      const result = await this.dependencies.writer.reconcileReview({ candidate, now: ctx.now.toISOString() });
+      if (result === null) continue;
+      const diagnostic = result.action === "REQUEUED"
+        ? "joi.harness.review_requeued"
+        : result.action === "AUTO_CLEARED"
+          ? "joi.harness.review_auto_cleared"
+          : "joi.harness.review_quarantined";
+      emitRuntimeDiagnostic(ctx.diagnostics, diagnostic, {
+        goalInputId: candidate.digest.goalInputId,
+        reasonCode: candidate.reasonCode,
+        ...(result.inputId === undefined ? {} : { inputId: result.inputId }),
+        resultRevision: candidate.digest.resultRevision,
+      });
     }
   }
 }

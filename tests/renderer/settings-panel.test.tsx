@@ -38,6 +38,40 @@ function mockOperations(api: DigitalLifeApi) {
 }
 
 describe("settings panel", () => {
+  it("groups settings into four accessible tabs with keyboard navigation", async () => {
+    const api = new DigitalLifeApi("");
+    mockOperations(api);
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+
+    const tabs = await screen.findAllByRole("tab");
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["模型网络", "设备连接", "安全", "数据"]);
+    expect(screen.getByRole("tab", { name: "模型网络" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "模型网络" })).toBeInTheDocument();
+    expect(screen.queryByText("其他设备访问")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "设备连接" }));
+    expect(screen.getByRole("tabpanel", { name: "设备连接" })).toBeInTheDocument();
+    expect(await screen.findByText("其他设备访问")).toBeInTheDocument();
+    expect(screen.getByText("Joi 手机")).toBeInTheDocument();
+    expect(screen.queryByText("管理密码与设备")).not.toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: "设备连接" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "安全" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: "安全" })).toHaveFocus();
+    expect(await screen.findByText("管理密码与设备")).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: "安全" }), { key: "End" });
+    expect(screen.getByRole("tab", { name: "数据" })).toHaveFocus();
+    expect(await screen.findByText("备份与恢复")).toBeInTheDocument();
+
+    fireEvent.keyDown(screen.getByRole("tab", { name: "数据" }), { key: "ArrowRight" });
+    expect(screen.getByRole("tab", { name: "模型网络" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "模型网络" }), { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: "数据" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "数据" }), { key: "Home" });
+    expect(screen.getByRole("tab", { name: "模型网络" })).toHaveFocus();
+  });
+
   it("configures native relay access, generates a QR code and revokes paired phones", async () => {
     const api = new DigitalLifeApi("");
     const status = {
@@ -107,11 +141,13 @@ describe("settings panel", () => {
     const update = vi.spyOn(api, "updateSettings").mockResolvedValue({ ...runtimeSettings, restartRequired: true });
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
+    fireEvent.click(screen.getByRole("tab", { name: "安全" }));
     expect(await screen.findByText(/当前设备/u, {}, { timeout: 4_000 })).toBeInTheDocument();
     expect(screen.getByText(/另一台本机窗口/u)).toBeInTheDocument();
     expect(screen.getByText(/局域网设备 2/u)).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
+    fireEvent.click(screen.getByRole("tab", { name: "设备连接" }));
+    fireEvent.click(await screen.findByRole("button", { name: "保存访问设置" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith({
       lan: { address: "192.168.1.20", enabled: false, port: 43130, riskAccepted: false },
       launchAtLogin: false,
@@ -134,6 +170,7 @@ describe("settings panel", () => {
     });
     const { container } = render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
+    fireEvent.click(screen.getByRole("tab", { name: "安全" }));
     expect(await screen.findByText(/当前设备/u, {}, { timeout: 4_000 })).toBeInTheDocument();
     expect(container.querySelectorAll(".session-list > span")).toHaveLength(10);
     expect(screen.queryByText(/局域网设备 11/u)).not.toBeInTheDocument();
@@ -145,6 +182,7 @@ describe("settings panel", () => {
     mockOperations(api);
     const update = vi.spyOn(api, "updateSettings").mockRejectedValue(new ApiError("settings_invalid", "端口不合法。", 400));
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(screen.getByRole("tab", { name: "设备连接" }));
     fireEvent.click(await screen.findByRole("button", { name: "保存访问设置" }, { timeout: 4_000 }));
     expect(await screen.findByText("端口不合法。", {}, { timeout: 4_000 })).toBeInTheDocument();
 
@@ -162,12 +200,14 @@ describe("settings panel", () => {
     });
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
+    fireEvent.click(screen.getByRole("tab", { name: "安全" }));
     fireEvent.change(await screen.findByLabelText("当前密码", {}, { timeout: 4_000 }), { target: { value: "current-pass-1" } });
     fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "next-pass-22" } });
     fireEvent.click(screen.getByRole("button", { name: "修改密码" }));
     await waitFor(() => expect(changePassword).toHaveBeenCalledWith("current-pass-1", "next-pass-22"));
     expect(await screen.findByText("管理密码已更新，其他设备需要重新登录。", {}, { timeout: 4_000 })).toBeInTheDocument();
 
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     fireEvent.click(screen.getByRole("button", { name: "创建备份" }));
     await waitFor(() => expect(createBackup).toHaveBeenCalledOnce());
     expect(await screen.findByText("备份已完成，joi 检查过了。", {}, { timeout: 4_000 })).toBeInTheDocument();
@@ -179,6 +219,7 @@ describe("settings panel", () => {
     const changePassword = vi.spyOn(api, "changePassword").mockRejectedValue(new ApiError("password_invalid", "当前密码不对。", 400));
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
+    fireEvent.click(screen.getByRole("tab", { name: "安全" }));
     fireEvent.change(await screen.findByLabelText("当前密码", {}, { timeout: 4_000 }), { target: { value: "wrong-pass-1" } });
     fireEvent.change(screen.getByLabelText("新密码"), { target: { value: "next-pass-22" } });
     fireEvent.click(screen.getByRole("button", { name: "修改密码" }));

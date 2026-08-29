@@ -113,6 +113,15 @@ export class JoiInboxService {
     return toDto(record);
   }
 
+  async closeHistoricalReview(input: { inputId: string }): Promise<JoiAcceptedMessageDto> {
+    const inputId = input.inputId.trim();
+    if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
+    const record = await this.dependencies.repository.closeHistoricalReview?.(inputId) ?? null;
+    if (record === null) throw new DomainError("joi_historical_review_unavailable", "This historical review cannot be closed safely.");
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.harness.review_historically_closed", { inputId });
+    return toDto(record);
+  }
+
   async emergencyStopQueued(): Promise<number> {
     return this.dependencies.repository.cancelQueued === undefined
       ? 0

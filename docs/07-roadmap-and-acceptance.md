@@ -53,6 +53,12 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-27 的 Android 原生远程入口以 AC-57 为门禁：桌面与 Android 使用独立实现的 iroh transport，同网优先点对点直连、失败后自动走默认的 `remote.joilab.top` 中继，同时允许手动配置其他 HTTPS relay；`joi://pair` 票据十分钟且一次有效。应用层继续使用 HMAC/HKDF/AES-GCM、严格递增序号和 `feed.get/message.send` allowlist；每台 App 有独立设备密钥，可同时连接并逐台撤销。App 只提供竖屏首页任务卡与文字提交，不依赖浏览器、Cloudflare、DCDN 或额外 WebSocket 网关。详见 ADR 0013。
 
+2026-08-28 的多场景套件目录以 AC-58 为门禁：价值研究套件继续保留，原六个内置场景分别收敛为编程与调研分析套件，Pi core 最近六个可用本机 Skill 动态收敛为内置 Skills 套件。所有套件复用稳定 pack/role 绑定、子团队和完整安装语义，重复安装不得覆盖用户 revision 或产生重复角色；主目录退役平铺场景卡，但旧 scenario HTTP 契约继续兼容。无 Skill、加载失败和安装中状态必须可解释且不得触发空安装。
+
+2026-08-29 的搭档提示词查看与编辑以 AC-59 为门禁：普通搭档列表不得返回提示词正文或私有引用，只返回是否已配置。编辑页必须由用户显式点击后，才通过受 session、Origin 与 CSRF 保护且禁止缓存的接口读取当前提示词；读取失败不得显示内部异常。用户可选择完整替换或仅追加新指令，追加必须由服务端基于当前活跃 revision 合并并以空行分隔，两种操作都生成新的私有 prompt row 与不可变 Partner revision，未实际修改提示词时保存其他字段不得重写提示词。
+
+2026-08-29 的 Agent 运行时消息流以 AC-60 为门禁：本机 pi-core Agent 启动后必须立即写入任务展示快照，并把 assistant `text_delta`、工具名和工具完成/失败状态按有界节奏更新到同一 run；thinking、工具参数、原始工具结果、A2A payload、路径和凭据不得进入 live DTO。流式快照和终态完整投影都按 `(agentId, runId)` 事务替换，不得按 token 无限追加或重复内容；展示写入失败不得改变 Work/run 权威结果。renderer 只对当前选中的 RUNNING/WAITING Agent 做 750 ms HTTP 轮询并拒绝迟到响应，终态停止，不恢复 SSE/WebSocket。
+
 ## 1. 当前状态
 
 | 阶段             | 状态   | 产物                          |

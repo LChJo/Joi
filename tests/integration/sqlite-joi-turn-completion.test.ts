@@ -86,6 +86,50 @@ describe("persisted joi Turn completions", () => {
     }
   });
 
+  it("atomically closes a completed harness review when its mechanical gates pass", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "评审收官", personaSummary: "private", projectLabel: "joi", scopeSummary: "评审收官" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES ('goal-review-close', 'key-goal-review-close', '完成目标', 'CONSUMED', ?, NULL, ?, ?),
+                 ('joi_harness_review:goal:goal-review-close:r1', 'key-review-close', 'review', 'ROUTED', ?, 'goal-review-close', ?, ?)`)
+          .run(workbench.workbenchId, now, now, workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-review-close', 'joi_harness_review:goal:goal-review-close:r1', ?, 'session-review-close', 'RUNNING', ?, ?)`)
+          .run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, status, revision, reviewed_revision, created_at, updated_at)
+          VALUES ('goal-review-close', ?, 'ACTIVE', 1, 1, ?, ?)`)
+          .run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at)
+          VALUES ('goal-review-close', 1, 1, ?)`)
+          .run(now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, completion_summary, completed_at, updated_at)
+          VALUES ('goal-review-close', 1, '任务已完成', ?, ?)`)
+          .run(now, now);
+      });
+
+      await new SqliteJoiInboxRepository(fixture.database).completeInput(
+        "joi_harness_review:goal:goal-review-close:r1",
+        "turn-review-close",
+      );
+
+      expect(fixture.database.transaction((connection) => connection.prepare(`
+        SELECT status FROM joi_harness_maps WHERE goal_input_id = 'goal-review-close'`).get())).toEqual({ status: "CLEARED" });
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now())).goals[0]).toMatchObject({
+        goalId: "goal-review-close", status: "COMPLETED",
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("rejects a completion whose Turn belongs to another input", async () => {
     const fixture = await createRuntimeFixture();
     try {

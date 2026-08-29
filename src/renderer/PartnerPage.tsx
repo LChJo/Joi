@@ -1,6 +1,6 @@
 import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto, ScenarioPackDto, ScenarioPackRoleStateDto } from "../shared/joi";
+import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 type PartnerView = { mode: "grid" } | { mode: "editor"; partner: PartnerDto | null };
@@ -114,6 +114,11 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const [modelIdOverride, setModelIdOverride] = useState(partner?.modelIdOverride ?? "");
   const [modelSourceId, setModelSourceId] = useState(partner?.modelSourceId ?? "");
   const [notice, setNotice] = useState<string | null>(null);
+  const [promptDraft, setPromptDraft] = useState("");
+  const [promptMode, setPromptMode] = useState<"APPEND" | "REPLACE">("REPLACE");
+  const [promptTouched, setPromptTouched] = useState(false);
+  const [promptRevealState, setPromptRevealState] = useState<"failed" | "hidden" | "loading" | "visible">("hidden");
+  const [revealedPrompt, setRevealedPrompt] = useState<string | null>(null);
 
   useEffect(() => {
     if (kind !== "local-pi") return;
@@ -131,6 +136,27 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     setSelectedSkills([]);
   };
 
+  const revealPrompt = async () => {
+    if (partner === null) return;
+    setPromptRevealState("loading");
+    try {
+      const result = await api.revealPartnerPrompt(partner.partnerId);
+      setRevealedPrompt(result.prompt);
+      setPromptDraft(result.prompt ?? "");
+      setPromptMode("REPLACE");
+      setPromptTouched(false);
+      setPromptRevealState("visible");
+    } catch {
+      setPromptRevealState("failed");
+    }
+  };
+
+  const selectPromptMode = (next: "APPEND" | "REPLACE") => {
+    setPromptMode(next);
+    setPromptDraft(next === "REPLACE" ? (revealedPrompt ?? "") : "");
+    setPromptTouched(false);
+  };
+
   const submitLocal = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
@@ -138,7 +164,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     const engineModelId = textValue(form.get("engineModelId"));
     const normalizedModelId = modelIdOverride.trim();
     const normalizedSourceId = modelSourceId.trim();
-    const prompt = textValue(form.get("prompt"));
+    const prompt = partner === null ? textValue(form.get("prompt")) : promptTouched ? textValue(promptDraft) : undefined;
     const fields = {
       displayName: fieldName(form.get("displayName")),
       skills: selectedSkills,
@@ -163,6 +189,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       } else {
         await api.updatePartner(partner.partnerId, {
           ...fields,
+          ...(prompt === undefined ? {} : { promptMode }),
           ...(engine === "pi-core"
             ? {
               modelIdOverride: normalizedModelId === "" ? null : normalizedModelId,
@@ -227,7 +254,29 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
         <div className="partner-basic-grid">
           <label>名称<input defaultValue={partner?.displayName} name="displayName" placeholder="能力聚类名称，如：编码工坊" required /></label>
           <label>描述（给 joi 做参考）<textarea defaultValue={partner?.description} name="description" placeholder="能力范围：一句话说清它擅长什么；不要重复工作区环境" rows={3} /></label>
-          <label>搭档提示词<textarea name="prompt" placeholder={partner === null ? "交给它工作时附带的工作提示，仅本机保存" : "留空保持当前提示词"} rows={3} /></label>
+          {partner === null ? <label>搭档提示词<textarea name="prompt" placeholder="交给它工作时附带的工作提示，仅本机保存" rows={5} /></label> : <div className="prompt-editor-field">
+            <div className="prompt-editor-heading">
+              <span>搭档提示词</span>
+              <button className="button ghost" disabled={promptRevealState === "loading"} onClick={() => void revealPrompt()} type="button">{promptRevealState === "loading" ? "读取中…" : promptRevealState === "visible" ? "重新读取" : "查看提示词"}</button>
+            </div>
+            <small className="field-hint">{partner.promptConfigured ? "已配置，正文默认隐藏；查看后可替换或追加。" : "尚未配置提示词；查看后可新增。"}</small>
+            {promptRevealState === "failed" ? <p className="inline-notice warning" role="alert">提示词没能读取，请重试。</p> : null}
+            {promptRevealState === "visible" ? <>
+              <div aria-label="提示词修改方式" className="prompt-mode-row" role="radiogroup">
+                <label><input checked={promptMode === "REPLACE"} name="promptMode" onChange={() => selectPromptMode("REPLACE")} type="radio" />替换</label>
+                <label><input checked={promptMode === "APPEND"} name="promptMode" onChange={() => selectPromptMode("APPEND")} type="radio" />追加</label>
+              </div>
+              {promptMode === "APPEND" && revealedPrompt !== null ? <label>当前提示词<textarea aria-label="当前提示词" readOnly rows={5} value={revealedPrompt} /></label> : null}
+              <label>{promptMode === "APPEND" ? "追加内容" : "替换内容"}<textarea
+                aria-label={promptMode === "APPEND" ? "追加内容" : "替换内容"}
+                onChange={(event) => { setPromptDraft(event.target.value); setPromptTouched(true); }}
+                placeholder={promptMode === "APPEND" ? "输入要追加到当前提示词末尾的内容" : "输入完整的新提示词"}
+                rows={6}
+                value={promptDraft}
+              /></label>
+              <small className="field-hint">{promptMode === "APPEND" ? "保存后会用一个空行连接当前提示词与追加内容。" : "保存后会以这里的完整内容替换当前提示词。未改动则保持原内容。"}</small>
+            </> : null}
+          </div>}
         </div>
         <div className="kb-field"><span className="kb-field-label">知识库</span>{partner !== null && partner.kind === "local-pi" ? <KnowledgeDocList api={api} onChanged={() => undefined} partnerId={partner.partnerId} /> : <small>保存搭档后即可附加 md 文档。</small>}</div>
         <div className="skill-field"><span className="kb-field-label">技能（可选；按引擎扫描本机已安装技能）</span>
@@ -267,27 +316,25 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   </div>;
 }
 
-function ScenarioGrid({ api, creating, draft, onCreate, onPick, onToggleRole }: {
-  api: DigitalLifeApi;
-  creating: boolean;
-  draft: { roleIds: string[]; scenarioId: string } | null;
-  onCreate: () => void;
-  onPick: (scenario: ScenarioDto) => void;
-  onToggleRole: (roleId: string) => void;
-}) {
-  const [scenarios, setScenarios] = useState<ScenarioDto[]>([]);
+function ScenarioGrid({ api }: { api: DigitalLifeApi }) {
   const [packs, setPacks] = useState<ScenarioPackDto[]>([]);
   const [expandedPackId, setExpandedPackId] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [packNotice, setPackNotice] = useState<string | null>(null);
-  const loadPacks = useCallback(async () => setPacks((await api.scenarioPacks()).items), [api]);
+  const [catalogState, setCatalogState] = useState<"loading" | "ready" | "failed">("loading");
+  const loadPacks = useCallback(async () => {
+    try {
+      setPacks((await api.scenarioPacks()).items);
+      setCatalogState("ready");
+    } catch {
+      setPacks([]);
+      setCatalogState("failed");
+    }
+  }, [api]);
   useEffect(() => {
-    const timer = setTimeout(() => {
-      void api.scenarios().then((page) => setScenarios(page.items)).catch(() => setScenarios([]));
-      void loadPacks().catch(() => setPacks([]));
-    }, 0);
+    const timer = setTimeout(() => void loadPacks(), 0);
     return () => clearTimeout(timer);
-  }, [api, loadPacks]);
+  }, [loadPacks]);
   const install = (packId: string, teamIds?: string[]) => {
     const key = teamIds?.[0] ?? "full";
     setInstalling(`${packId}:${key}`);
@@ -301,9 +348,11 @@ function ScenarioGrid({ api, creating, draft, onCreate, onPick, onToggleRole }: 
     }).catch((error: unknown) => setPackNotice(failureMessage(error, "预设包没安装成功，请稍后重试。")))
       .finally(() => setInstalling(null));
   };
-  if (scenarios.length === 0 && packs.length === 0) return <p className="field-hint">还没有可用的场景预设。</p>;
+  if (catalogState === "loading") return <div aria-label="正在读取场景套件" className="scenario-pack-loading"><span /><span /><span /></div>;
+  if (catalogState === "failed") return <p className="inline-notice warning" role="alert">场景套件没能读取，请稍后重试。</p>;
+  if (packs.length === 0) return <div className="plain-empty"><h2>还没有场景套件</h2><p>你仍可手动添加搭档；套件目录恢复后会显示在这里。</p></div>;
   return <div className="scenario-catalog">
-    {packs.length === 0 ? null : <section aria-label="场景预设包" className="scenario-pack-group">
+    <section aria-label="场景套件" className="scenario-pack-group">
       {packNotice === null ? null : <p className="inline-notice info" role="status">{packNotice}</p>}
       {packs.map((pack) => {
         const expanded = expandedPackId === pack.id;
@@ -311,36 +360,23 @@ function ScenarioGrid({ api, creating, draft, onCreate, onPick, onToggleRole }: 
         return <article className="scenario-pack" key={pack.id}>
           <button aria-expanded={expanded} className="scenario-pack-summary" onClick={() => setExpandedPackId(expanded ? null : pack.id)} type="button">
             <span><strong>{pack.title}</strong><small>{pack.blurb}</small></span>
-            <span className={`scenario-pack-state ${pack.status.toLowerCase()}`}>{pack.installedRoleCount}/{pack.totalRoleCount} 位 · {packStatusLabel(pack.status)}</span>
+            <span className={`scenario-pack-state ${pack.status.toLowerCase()}`}>{pack.totalRoleCount === 0 ? "暂无可用项" : `${String(pack.installedRoleCount)}/${String(pack.totalRoleCount)} 位`} · {packStatusLabel(pack.status)}</span>
           </button>
           {expanded ? <div className="scenario-pack-body">
             <div className="scenario-pack-meta"><span>来源 {pack.source.repository}@{pack.source.revision}</span><span>{pack.source.license}</span></div>
-            <div className="scenario-team-grid">{pack.teams.map((team) => {
+            {pack.teams.length === 0 ? <div className="scenario-pack-empty"><strong>还没有可安装的 Skill</strong><p>在本机安装 Skill 后重新打开此页，最近使用的能力会自动出现在这里。</p></div> : <div className="scenario-team-grid">{pack.teams.map((team) => {
               const teamKey = `${pack.id}:${team.id}`;
               return <article className="scenario-team" key={team.id}>
                 <div><strong>{team.title}</strong><p>{team.blurb}</p></div>
                 <div aria-label={`${team.title} 搭档`} className="scenario-role-list">{team.roles.map((role) => <span className="scenario-role" key={role.id} title={role.reasonCode}><span>{role.title}</span><small className={`role-state ${role.status.toLowerCase()}`}>{roleStateLabel(role.status)}</small></span>)}</div>
                 <button className="button ghost" disabled={installing !== null} onClick={() => install(pack.id, [team.id])} type="button">{installing === teamKey ? "安装中…" : `安装${team.title}`}</button>
               </article>;
-            })}</div>
-            <button className="button primary" disabled={installing !== null} onClick={() => install(pack.id)} type="button">{installing === fullKey ? "安装中…" : "安装完整套件"}</button>
+            })}</div>}
+            <button className="button primary" disabled={installing !== null || pack.totalRoleCount === 0} onClick={() => install(pack.id)} type="button">{installing === fullKey ? "安装中…" : pack.totalRoleCount === 0 ? "暂无可安装项" : "安装完整套件"}</button>
           </div> : null}
         </article>;
       })}
-    </section>}
-    {scenarios.length === 0 ? null : <div className="scenario-group">{scenarios.map((scenario) => {
-    const expanded = draft?.scenarioId === scenario.id;
-    const roles = scenario.roles ?? [];
-    return <div className="scenario-slot" key={scenario.id}>
-      <button aria-expanded={expanded} className="scenario-card" onClick={() => onPick(scenario)} type="button"><strong>{scenario.title}</strong><span>{scenario.blurb}</span></button>
-      {expanded ? <div className="scenario-draft">
-        {roles.length === 0
-          ? <p className="field-hint">这个场景没有声明搭档角色，将按默认组合创建。</p>
-          : <div aria-label={`${scenario.title} 依赖的搭档角色`} className="chip-group" role="group">{roles.map((role) => <label className="chip" key={role.id}><input checked={draft.roleIds.includes(role.id)} onChange={() => onToggleRole(role.id)} type="checkbox" />{role.title}</label>)}</div>}
-        <button className="button primary" disabled={creating || (roles.length > 0 && draft.roleIds.length === 0)} onClick={onCreate} type="button">{creating ? "创建中…" : "创建所选搭档"}</button>
-      </div> : null}
-    </div>;
-  })}</div>}
+    </section>
   </div>;
 }
 
@@ -388,34 +424,7 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
       setView(target === undefined ? { mode: "grid" } : { mode: "editor", partner: target });
     }).catch(() => setView({ mode: "grid" }));
   };
-  const [scenarioDraft, setScenarioDraft] = useState<{ roleIds: string[]; scenarioId: string } | null>(null);
-  const [creatingScenario, setCreatingScenario] = useState(false);
   const currentTab = tab ?? "partners";
-  const pickScenario = (scenario: ScenarioDto) => {
-    setNotice(null);
-    setScenarioDraft((current) => current?.scenarioId === scenario.id
-      ? null
-      : { roleIds: (scenario.roles ?? []).map((role) => role.id), scenarioId: scenario.id });
-  };
-  const toggleScenarioRole = (roleId: string) => {
-    setScenarioDraft((current) => current === null
-      ? current
-      : { ...current, roleIds: current.roleIds.includes(roleId) ? current.roleIds.filter((id) => id !== roleId) : [...current.roleIds, roleId] });
-  };
-  const createDraftPartners = () => {
-    if (scenarioDraft === null) return;
-    const { roleIds, scenarioId } = scenarioDraft;
-    setCreatingScenario(true);
-    setNotice(null);
-    void api.createScenarioPartners(scenarioId, roleIds)
-      .then((created) => {
-        setNotice(`已创建 ${String(created.items.length)} 位搭档：${created.items.map((item) => item.displayName).join("、")}`);
-        setScenarioDraft(null);
-        void load().catch(() => undefined);
-      })
-      .catch(() => setNotice("场景搭档没创建成功，请重试。"))
-      .finally(() => setCreatingScenario(false));
-  };
   const testPartnerModel = (partnerId: string) => {
     setModelTests((current) => ({ ...current, [partnerId]: "TESTING" }));
     void api.testPartnerModel(partnerId)
@@ -431,15 +440,15 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
     </section>;
   }
   return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>选场景勾选角色一键创建搭档，或手动登记搭档的描述、提示词与知识库。</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">添加搭档</button></header>
+    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>按套件组建一支可复用的协作团队，或手动登记搭档的描述、提示词与知识库。</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">添加搭档</button></header>
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
     <div className="tab-row" role="tablist">
       <button aria-selected={currentTab === "scenarios"} className={currentTab === "scenarios" ? "selected" : ""} onClick={() => onTabChange?.("scenarios")} role="tab" type="button">场景预设</button>
       <button aria-selected={currentTab === "partners"} className={currentTab === "partners" ? "selected" : ""} onClick={() => onTabChange?.("partners")} role="tab" type="button">搭档目录</button>
     </div>
     {currentTab === "scenarios" ? <>
-      <p className="field-hint">选一个场景，勾选它依赖的搭档角色（默认全选）一键创建。搭档是能力模板，与环境和工作目录无关。</p>
-      <ScenarioGrid api={api} creating={creatingScenario} draft={scenarioDraft} onCreate={createDraftPartners} onPick={pickScenario} onToggleRole={toggleScenarioRole} />
+      <p className="field-hint">展开套件后可安装一个子团队，也可一次安装完整套件。重复安装会复用现有搭档，不覆盖你的修改。</p>
+      <ScenarioGrid api={api} />
     </> : <>
       {partners.length === 0 ? <div className="plain-empty"><h2>还没有搭档</h2><p>先建立 2-3 个工作搭档（本机或远端 A2A），joi 才能把你的想法派出去；也可以切到上方「场景预设」一键组建团队。</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">添加第一个搭档</button></div> : null}
       {partners.length > 0 && partners.length < 2 ? <p className="inline-notice warning">建议先建立 2-3 个工作搭档，joi 才有得挑、有得换；也可切到「场景预设」一键组建。</p> : null}

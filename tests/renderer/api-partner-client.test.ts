@@ -32,9 +32,9 @@ describe("partner api client", () => {
     expect(sentBody(calls, 0)).toMatchObject({ description: "工程搭档", kind: "local-pi" });
 
     fetchMock.mockResolvedValueOnce(jsonResponse(created));
-    await api.updatePartner("partner-1", { capabilities: [], displayName: "Coder", modelIdOverride: null, modelSourceId: null, skills: [], tools: [] });
+    await api.updatePartner("partner-1", { capabilities: [], displayName: "Coder", modelIdOverride: null, modelSourceId: null, prompt: "补充规则", promptMode: "APPEND", skills: [], tools: [] });
     expect(sentUrl(calls, 1)).toContain("/api/v1/partners/partner-1");
-    expect(sentBody(calls, 1)).toMatchObject({ modelIdOverride: null, modelSourceId: null });
+    expect(sentBody(calls, 1)).toMatchObject({ modelIdOverride: null, modelSourceId: null, prompt: "补充规则", promptMode: "APPEND" });
 
     fetchMock.mockResolvedValueOnce(jsonResponse(created));
     await api.setPartnerEnabled("partner-1", false);
@@ -66,6 +66,11 @@ describe("partner api client", () => {
     await api.testPartnerModel("partner-1");
     expect(sentUrl(calls, 7)).toContain("/api/v1/partners/partner-1/test-model");
     expect(calls[7]?.[1]).toMatchObject({ method: "POST" });
+
+    fetchMock.mockResolvedValueOnce(jsonResponse({ prompt: "当前提示词" }));
+    expect(await api.revealPartnerPrompt("partner-1")).toEqual({ prompt: "当前提示词" });
+    expect(sentUrl(calls, 8)).toContain("/api/v1/partners/partner-1/prompt/reveal");
+    expect(calls[8]?.[1]).toMatchObject({ method: "POST" });
 
     vi.unstubAllGlobals();
   });

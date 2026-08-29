@@ -5,6 +5,7 @@ import type {
   HarnessFeedbackTarget,
   HarnessGoalSeed,
   HarnessReviewDigest,
+  HarnessReviewRecoveryCandidate,
 } from "../../src/main/application/ports/joi-harness";
 
 const BASE = "2026-08-05T10:00:00.000Z";
@@ -18,12 +19,13 @@ interface Diagnostics {
   events: { name: string; payload: Record<string, unknown> }[];
 }
 
-function makeHarness(options?: { reviewEnabled?: boolean; scanEveryMillis?: number }) {
+function makeHarness(options?: { reconcileReturnsNull?: boolean; reviewEnabled?: boolean; scanEveryMillis?: number }) {
   const diagnostics: Diagnostics = { events: [] };
   const seeds: HarnessGoalSeed[] = [];
   const feedbackTargets: HarnessFeedbackTarget[] = [];
   const trivialCandidates: { goalInputId: string }[] = [];
   const reviewDigests: HarnessReviewDigest[] = [];
+  const reviewRecoveries: HarnessReviewRecoveryCandidate[] = [];
   const createdMaps: string[] = [];
   const feedbackEntries: { entry: string; goalInputId: string }[] = [];
   const clearedTrivial: string[] = [];
@@ -40,6 +42,7 @@ function makeHarness(options?: { reviewEnabled?: boolean; scanEveryMillis?: numb
       if (failStep === "review") throw new Error("review_boom");
       return [...reviewDigests];
     },
+    listReviewRecoveries: async () => [...reviewRecoveries],
     listTrivialMapCandidates: async () => [...trivialCandidates],
     loadGoalProjections: async () => [],
   };
@@ -58,6 +61,16 @@ function makeHarness(options?: { reviewEnabled?: boolean; scanEveryMillis?: numb
     enqueueReview: async (input: { digest: HarnessReviewDigest }) => {
       enqueuedReviews.push(input.digest.goalInputId);
       return `joi_harness_review:goal:${input.digest.goalInputId}:r${String(input.digest.resultRevision)}`;
+    },
+    reconcileReview: async (input: { candidate: HarnessReviewRecoveryCandidate }) => {
+      if (options?.reconcileReturnsNull === true) return null;
+      const index = reviewRecoveries.indexOf(input.candidate);
+      if (index >= 0) reviewRecoveries.splice(index, 1);
+      return input.candidate.action === "AUTO_CLEAR"
+        ? { action: "AUTO_CLEARED" as const }
+        : input.candidate.action === "REQUEUE"
+        ? { action: "REQUEUED" as const, inputId: `joi_harness_review:goal:${input.candidate.digest.goalInputId}:r${String(input.candidate.digest.resultRevision)}` }
+        : { action: "QUARANTINED" as const };
     },
     recordCompletionFeedback: async (input: { entry: string; goalInputId: string }) => {
       feedbackEntries.push({ entry: input.entry, goalInputId: input.goalInputId });
@@ -80,6 +93,7 @@ function makeHarness(options?: { reviewEnabled?: boolean; scanEveryMillis?: numb
     feedbackEntries,
     feedbackTargets,
     reviewDigests,
+    reviewRecoveries,
     setPathSync: (value: { closed: number; created: number }) => { pathSync = value; },
     seeds,
     setFailStep: (step: string | null) => { failStep = step; },
@@ -154,6 +168,53 @@ describe("JoiHarnessComponent", () => {
     expect(harness.enqueuedReviews).toEqual(["goal-8"]);
   });
 
+  it("reconciles stale reviews once and keeps bounded diagnostics", async () => {
+    const harness = makeHarness({ reviewEnabled: true });
+    harness.reviewRecoveries.push({ action: "REQUEUE", digest: digest("goal-recover"), reasonCode: "review_turn_failed_without_side_effect" });
+    const ctx = ctxAt(0);
+    await harness.component.update({ ...ctx, diagnostics: { emit: (name, payload) => harness.diagnostics.events.push({ name, payload }) } });
+    expect(harness.reviewRecoveries).toEqual([]);
+    expect(harness.diagnostics.events).toContainEqual({
+      name: "joi.harness.review_requeued",
+      payload: {
+        goalInputId: "goal-recover",
+        inputId: "joi_harness_review:goal:goal-recover:r1",
+        reasonCode: "review_turn_failed_without_side_effect",
+        resultRevision: 1,
+      },
+    });
+  });
+
+  it("quarantines unsafe stale reviews without exposing an input id", async () => {
+    const harness = makeHarness({ reviewEnabled: true });
+    harness.reviewRecoveries.push({ action: "QUARANTINE", digest: digest("goal-unsafe"), reasonCode: "review_side_effect_unknown" });
+    const ctx = ctxAt(0);
+    await harness.component.update({ ...ctx, diagnostics: { emit: (name, payload) => harness.diagnostics.events.push({ name, payload }) } });
+    expect(harness.diagnostics.events).toContainEqual({
+      name: "joi.harness.review_quarantined",
+      payload: { goalInputId: "goal-unsafe", reasonCode: "review_side_effect_unknown", resultRevision: 1 },
+    });
+  });
+
+  it("emits an automatic convergence diagnostic for completed historical facts", async () => {
+    const harness = makeHarness({ reviewEnabled: true });
+    harness.reviewRecoveries.push({ action: "AUTO_CLEAR", digest: digest("goal-auto-clear"), reasonCode: "review_facts_complete" });
+    const ctx = ctxAt(0);
+    await harness.component.update({ ...ctx, diagnostics: { emit: (name, payload) => harness.diagnostics.events.push({ name, payload }) } });
+    expect(harness.diagnostics.events).toContainEqual({
+      name: "joi.harness.review_auto_cleared",
+      payload: { goalInputId: "goal-auto-clear", reasonCode: "review_facts_complete", resultRevision: 1 },
+    });
+  });
+
+  it("ignores a recovery that loses its transaction race", async () => {
+    const harness = makeHarness({ reconcileReturnsNull: true, reviewEnabled: true });
+    harness.reviewRecoveries.push({ action: "REQUEUE", digest: digest("goal-race"), reasonCode: "review_turn_failed_without_side_effect" });
+    const ctx = ctxAt(0);
+    await harness.component.update({ ...ctx, diagnostics: { emit: (name, payload) => harness.diagnostics.events.push({ name, payload }) } });
+    expect(harness.diagnostics.events).toEqual([]);
+  });
+
   it("reports deterministic Work-path synchronization", async () => {
     const harness = makeHarness();
     harness.setPathSync({ closed: 2, created: 3 });
@@ -182,6 +243,7 @@ describe("JoiHarnessComponent", () => {
         listFeedbackTargets: async () => [],
         listGoalsWithoutMap: async () => { throw new Error("adopt_boom"); },
         listReviewDigests: async () => [],
+        listReviewRecoveries: async () => [],
         listTrivialMapCandidates: async () => [],
         loadGoalProjections: async () => [],
       },
@@ -189,6 +251,7 @@ describe("JoiHarnessComponent", () => {
         clearTrivialMap: async () => false,
         createMap: async () => false,
         enqueueReview: async () => null,
+        reconcileReview: async () => null,
         recordCompletionFeedback: async () => false,
         synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
       },
@@ -210,6 +273,7 @@ describe("JoiHarnessComponent", () => {
         }],
         listGoalsWithoutMap: async () => [{ workbenchId: "workbench-1", goalInputId: "goal-duplicate" }],
         listReviewDigests: async () => [digest("goal-duplicate")],
+        listReviewRecoveries: async () => [],
         listTrivialMapCandidates: async () => [{ goalInputId: "goal-duplicate" }],
         loadGoalProjections: async () => [],
       },
@@ -217,6 +281,7 @@ describe("JoiHarnessComponent", () => {
         clearTrivialMap: async () => false,
         createMap: async () => false,
         enqueueReview: async () => null,
+        reconcileReview: async () => null,
         recordCompletionFeedback: async () => false,
         synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
       },

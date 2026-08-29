@@ -35,16 +35,45 @@ async function createSession() {
 }
 
 describe("scenarios HTTP API", () => {
-  it("lists and installs the AI Berkshire pack without exposing embedded prompts", async () => {
+  it("lists the multi-suite catalog and installs built-in teams without exposing embedded prompts", async () => {
+    const emptyClaude = mkdtempSync(join(tmpdir(), "joi-suite-empty-claude-"));
+    const emptyCodex = mkdtempSync(join(tmpdir(), "joi-suite-empty-codex-"));
+    const emptyAgents = mkdtempSync(join(tmpdir(), "joi-suite-empty-agents-"));
+    const previousAgents = process.env.JOI_AGENTS_SKILLS_DIR;
+    const previousClaude = process.env.JOI_CLAUDE_SKILLS_DIR;
+    const previousCodex = process.env.JOI_CODEX_SKILLS_DIR;
+    process.env.JOI_CLAUDE_SKILLS_DIR = emptyClaude;
+    process.env.JOI_CODEX_SKILLS_DIR = emptyCodex;
+    process.env.JOI_AGENTS_SKILLS_DIR = emptyAgents;
     const session = await createSession();
     try {
       const listed = await fetch(`${session.url}/api/v1/scenario-packs`, { headers: session.headers });
       expect(listed.status).toBe(200);
       const body = await listed.json() as { items: ScenarioPackDto[] };
-      expect(body.items).toHaveLength(1);
+      expect(body.items.map((item) => item.id)).toEqual([
+        "ai-berkshire-value-research",
+        "programming",
+        "research-analysis",
+        "builtin-skills",
+      ]);
       expect(body.items[0]).toMatchObject({ id: "ai-berkshire-value-research", installedRoleCount: 0, status: "NOT_INSTALLED", totalRoleCount: 15 });
+      expect(body.items.find((item) => item.id === "programming")).toMatchObject({ status: "NOT_INSTALLED", title: "编程套件", totalRoleCount: 8 });
+      expect(body.items.find((item) => item.id === "research-analysis")).toMatchObject({ status: "NOT_INSTALLED", title: "调研分析套件", totalRoleCount: 4 });
+      expect(body.items.find((item) => item.id === "builtin-skills")).toMatchObject({ status: "NOT_INSTALLED", title: "内置 Skills 套件", totalRoleCount: 0 });
       expect(JSON.stringify(body)).not.toContain("你的职责");
       expect(body.items[0]?.teams).toHaveLength(6);
+
+      const programmed = await fetch(`${session.url}/api/v1/scenario-packs/programming/install`, {
+        body: JSON.stringify({ teamIds: ["implement-feature"] }), headers: session.headers, method: "POST",
+      });
+      expect(programmed.status).toBe(201);
+      expect(await programmed.json() as ScenarioPackInstallResultDto).toMatchObject({ installedRoleCount: 2, packId: "programming", status: "ACTIVE" });
+
+      const emptySkillsInstall = await fetch(`${session.url}/api/v1/scenario-packs/builtin-skills/install`, {
+        body: JSON.stringify({}), headers: session.headers, method: "POST",
+      });
+      expect(emptySkillsInstall.status).toBe(400);
+      expect(await emptySkillsInstall.json()).toMatchObject({ code: "scenario_pack_empty" });
 
       const installed = await fetch(`${session.url}/api/v1/scenario-packs/ai-berkshire-value-research/install`, {
         body: JSON.stringify({ teamIds: ["research-publishing"] }), headers: session.headers, method: "POST",
@@ -59,6 +88,9 @@ describe("scenarios HTTP API", () => {
       expect(await invalid.json()).toMatchObject({ code: "scenario_pack_team_selection_empty" });
     } finally {
       await session.close();
+      if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;
+      if (previousCodex === undefined) delete process.env.JOI_CODEX_SKILLS_DIR; else process.env.JOI_CODEX_SKILLS_DIR = previousCodex;
+      if (previousAgents === undefined) delete process.env.JOI_AGENTS_SKILLS_DIR; else process.env.JOI_AGENTS_SKILLS_DIR = previousAgents;
     }
   });
 
@@ -99,6 +131,23 @@ describe("scenarios HTTP API", () => {
       expect(skillScenario).toMatchObject({ id: "skill:claude-code/demo-skill", source: "skill", title: "演示技能" });
       expect(skillScenario?.prompt).toContain("演示技能");
       expect(skillScenario?.roles).toEqual([expect.objectContaining({ skills: ["claude-code/demo-skill"] })]);
+
+      const packsResponse = await fetch(`${session.url}/api/v1/scenario-packs`, { headers: session.headers });
+      const packs = (await packsResponse.json() as { items: ScenarioPackDto[] }).items;
+      const skillsPack = packs.find((item) => item.id === "builtin-skills");
+      expect(skillsPack).toMatchObject({ title: "内置 Skills 套件", totalRoleCount: 1 });
+      expect(skillsPack?.teams).toEqual([
+        expect.objectContaining({ title: "演示技能", roles: [expect.objectContaining({ title: "演示技能工坊" })] }),
+      ]);
+
+      const installed = await fetch(`${session.url}/api/v1/scenario-packs/builtin-skills/install`, {
+        body: JSON.stringify({ teamIds: [skillsPack?.teams[0]?.id] }), headers: session.headers, method: "POST",
+      });
+      expect(installed.status).toBe(201);
+      const installedResult = await installed.json() as ScenarioPackInstallResultDto;
+      expect(installedResult).toMatchObject({ installedRoleCount: 1, packId: "builtin-skills", status: "ACTIVE" });
+      const partners = (await (await fetch(`${session.url}/api/v1/partners`, { headers: session.headers })).json() as { items: PartnerDto[] }).items;
+      expect(partners.some((partner) => partner.skills.includes("claude-code/demo-skill"))).toBe(true);
     } finally {
       await session.close();
       if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;
@@ -131,6 +180,11 @@ describe("scenarios HTTP API", () => {
       expect(skillItems).toHaveLength(6);
       expect(skillItems.some((item) => item.title === "技能 7")).toBe(true);
       expect(skillItems.some((item) => item.title === "技能 1")).toBe(false);
+      const packs = (await (await fetch(`${session.url}/api/v1/scenario-packs`, { headers: session.headers })).json() as { items: ScenarioPackDto[] }).items;
+      const skillsPack = packs.find((item) => item.id === "builtin-skills");
+      expect(skillsPack?.totalRoleCount).toBe(6);
+      expect(skillsPack?.teams.some((team) => team.title === "技能 7")).toBe(true);
+      expect(skillsPack?.teams.some((team) => team.title === "技能 1")).toBe(false);
     } finally {
       await session.close();
       if (previousClaude === undefined) delete process.env.JOI_CLAUDE_SKILLS_DIR; else process.env.JOI_CLAUDE_SKILLS_DIR = previousClaude;

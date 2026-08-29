@@ -3,7 +3,7 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, Type } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
 
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
@@ -87,6 +87,65 @@ describe("local Pi coding partner runtime", () => {
 });
 
 describe("Pi partner engine runtime", () => {
+  it("publishes bounded visible text and tool lifecycle snapshots while a run is active", async () => {
+    const faux = fauxProvider({ provider: "local-partner-live-conversation", tokenSize: { max: 1, min: 1 }, tokensPerSecond: 100 });
+    faux.setResponses([
+      fauxAssistantMessage([fauxThinking("PRIVATE_REASONING"), fauxToolCall("read", { path: "/PRIVATE/live-secret.txt", token: "PRIVATE_TOOL_ARGUMENT" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("正在整理可见结论。")]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "read a bounded test value",
+          execute: async () => ({ content: [{ text: "PRIVATE_TOOL_RESULT /PRIVATE/result.txt", type: "text" as const }], details: {} }),
+          label: "read",
+          name: "read",
+          parameters: Type.Object({ path: Type.String(), token: Type.String() }),
+        }],
+        names: ["read"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-08-29T09:00:00.000Z", displayName: "Live partner", kind: "local-pi",
+      partnerId: "partner_live", partnerRevisionId: "partner_revision_live", registryRevision: 1, skills: [], tools: ["read"],
+    });
+    const snapshots: unknown[] = [];
+    let publishAttempts = 0;
+    const context = {
+      knowledgeSection: "",
+      onConversation: async (drafts: unknown[]) => {
+        publishAttempts += 1;
+        if (publishAttempts === 1) throw new Error("display projection temporarily unavailable");
+        snapshots.push(drafts);
+      },
+      skillEnvironmentKeys: [],
+      skillSection: "",
+    };
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_live", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "分析公开资料", workId: "work_live" },
+      revision,
+      context,
+    )).resolves.toMatchObject({ status: "COMPLETED" });
+
+    const serialized = JSON.stringify(snapshots);
+    expect(snapshots.length).toBeGreaterThan(2);
+    expect(serialized).toContain("分析公开资料");
+    expect(serialized).toContain("正在整理可见结论");
+    expect(serialized).toContain('"toolName":"read"');
+    expect(serialized).toContain("执行完成");
+    expect(serialized).not.toContain("PRIVATE_TOOL_ARGUMENT");
+    expect(serialized).not.toContain("PRIVATE_TOOL_RESULT");
+    expect(serialized).not.toContain("PRIVATE_REASONING");
+    expect(serialized).not.toContain("live-secret");
+  });
+
   it("pauses with actionable input when a Skill command cannot access its credential environment variable", async () => {
     const faux = fauxProvider({ provider: "local-partner-missing-skill-credential" });
     let firstSystemPrompt = "";

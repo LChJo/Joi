@@ -6,27 +6,26 @@ import type {
 } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
+import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
 import type { ScenarioPackBinding, ScenarioPackRepository } from "../ports/scenario-packs.js";
-import { AI_BERKSHIRE_SCENARIO_PACK, type ScenarioPackDefinition, type ScenarioPackRoleDefinition } from "./ai-berkshire-scenario-pack.js";
+import type { ScenarioPackDefinition, ScenarioPackRoleDefinition } from "./ai-berkshire-scenario-pack.js";
+import { defaultScenarioPacks } from "./builtin-scenario-packs.js";
 import type { PartnerRegistryService } from "./partner-registry-service.js";
 
 type PartnerAccess = Pick<PartnerRegistryService, "add" | "inspect">;
 
 export class ScenarioPackService {
-  readonly #packs: readonly ScenarioPackDefinition[];
-
   constructor(private readonly dependencies: {
     clock: Clock;
     ids: IdGenerator;
     partners: PartnerAccess;
     repository: ScenarioPackRepository;
     packs?: readonly ScenarioPackDefinition[];
-  }) {
-    this.#packs = dependencies.packs ?? [AI_BERKSHIRE_SCENARIO_PACK];
-  }
+    skills?: Pick<PartnerSkillCatalog, "listForEngine">;
+  }) {}
 
   async list(): Promise<ScenarioPackDto[]> {
-    return Promise.all(this.#packs.map(async (pack) => this.#toDto(pack, await this.dependencies.repository.list(pack.id))));
+    return Promise.all(this.#packs().map(async (pack) => this.#toDto(pack, await this.dependencies.repository.list(pack.id))));
   }
 
   async install(packId: string, input: { teamIds?: string[] }): Promise<ScenarioPackInstallResultDto> {
@@ -43,12 +42,18 @@ export class ScenarioPackService {
   }
 
   #pack(packId: string): ScenarioPackDefinition {
-    const pack = this.#packs.find((candidate) => candidate.id === packId);
+    const pack = this.#packs().find((candidate) => candidate.id === packId);
     if (pack === undefined) throw new DomainError("scenario_pack_not_found", "Scenario pack was not found.");
     return pack;
   }
 
+  #packs(): readonly ScenarioPackDefinition[] {
+    if (this.dependencies.packs !== undefined) return this.dependencies.packs;
+    return defaultScenarioPacks(this.dependencies.skills?.listForEngine("pi-core") ?? []);
+  }
+
   #selectedRoleIds(pack: ScenarioPackDefinition, teamIds: string[] | undefined): string[] {
+    if (pack.roles.length === 0) throw new DomainError("scenario_pack_empty", "Scenario pack has no installable roles.");
     if (teamIds === undefined) return pack.roles.map((role) => role.id);
     if (teamIds.length === 0) throw new DomainError("scenario_pack_team_selection_empty", "Select at least one scenario pack team.");
     const uniqueTeamIds = [...new Set(teamIds)];

@@ -113,6 +113,7 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   const operations = new OperationsService({ clock, store: database.store });
   const knowledge = new PartnerKnowledgeService({ clock, ids, store: new SqlitePartnerKnowledgeStore(database) });
   const partnerRepository = new SqlitePartnerRegistryRepository(database);
+  const skills = new LocalSkillScanner();
   const partners = new PartnerRegistryService({
     clock,
     ids,
@@ -120,8 +121,7 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
     prompts: new SqlitePartnerPromptStore(database),
     repository: partnerRepository,
   });
-  const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: new SqliteScenarioPackRepository(database) });
-  const skills = new LocalSkillScanner();
+  const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: new SqliteScenarioPackRepository(database), skills });
   const instances = new PartnerInstanceManager({
     clock,
     engines: new Map(),

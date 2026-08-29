@@ -19,6 +19,7 @@ describe("SQLite scenario pack installer", () => {
 
   it("installs one team, reuses shared stable roles, and completes the full suite", async () => {
     const packs = await service().list();
+    expect(packs.map((pack) => pack.id)).toEqual(["ai-berkshire-value-research", "programming", "research-analysis", "builtin-skills"]);
     expect(packs[0]).toMatchObject({ id: "ai-berkshire-value-research", installedRoleCount: 0, status: "NOT_INSTALLED", totalRoleCount: 15 });
 
     const first = await service().install("ai-berkshire-value-research", { teamIds: ["opportunity-screening"] });

@@ -539,6 +539,39 @@ describe("joi home single entry", () => {
     expect(screen.getByLabelText("joi 信息流")).toBeInTheDocument();
   });
 
+  it("refreshes the selected running Agent quickly enough to reveal an incoming visible message", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-live", "实时分析");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 1, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: false,
+        goalId: "goal-live", status: "RUNNING", title: "跟踪分析过程", updatedAt: workbench.updatedAt,
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const agent = {
+      agentId: "agent-live", workbenchId: workbench.workbenchId, canDelete: false, createdAt: workbench.updatedAt,
+      engine: "pi-core" as const, lastActivityAt: workbench.updatedAt, partnerId: "partner-live", partnerName: "分析搭档",
+      sessionPolicy: "EPHEMERAL" as const, status: "RUNNING" as const, transport: "LOCAL" as const,
+    };
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent] });
+    const conversation = vi.spyOn(api, "agentConversation")
+      .mockResolvedValueOnce({ agent, items: [] })
+      .mockResolvedValue({
+        agent,
+        items: [{ createdAt: workbench.updatedAt, entryId: "entry-live", kind: "MARKDOWN", role: "AGENT", sequence: 0, text: "正在流式整理证据" }],
+      });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByText("跟踪分析过程"));
+    expect(await screen.findByText("这位 Agent 还没有可展示的执行消息。")).toBeInTheDocument();
+    expect(await screen.findByText("正在流式整理证据", {}, { timeout: 1_400 })).toBeInTheDocument();
+    expect(conversation.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
   it("downgrades a failed partner to a clickable warning on a completed goal and opens its error stream", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-partial", "综合工程");
@@ -1138,6 +1171,24 @@ describe("joi home single entry", () => {
     expect(screen.getByText(/想新建一个工作台来承接/u)).toBeInTheDocument();
     expect(screen.getByText(/指向的工作台已不存在/u)).toBeInTheDocument();
     expect(screen.getByText("搭档配置暂不可用，请先检查设置。")).toBeInTheDocument();
+  });
+
+  it("does not ask the user to assert completion for an unrecoverable historical review", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationPrompt: "历史评审记录无法安全恢复。",
+      clarificationReasonCode: "harness_review_unrecoverable",
+      inputId: "history-review-1",
+      status: "CLARIFICATION_REQUIRED",
+    }] });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("已交给 joi 自动校正")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认完成并收官" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
   });
 
   it("offers available partner cards and resumes with a stable partner id without free text", async () => {

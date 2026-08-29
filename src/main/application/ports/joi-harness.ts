@@ -28,6 +28,20 @@ export interface HarnessReviewDigest {
   resultRevision: number;
 }
 
+export type HarnessReviewRecoveryAction = "AUTO_CLEAR" | "REQUEUE" | "QUARANTINE";
+
+/** A bounded historical review candidate for deterministic recovery. */
+export interface HarnessReviewRecoveryCandidate {
+  action: HarnessReviewRecoveryAction;
+  digest: HarnessReviewDigest;
+  reasonCode: string;
+}
+
+export interface HarnessReviewRecoveryResult {
+  action: "AUTO_CLEARED" | "REQUEUED" | "QUARANTINED";
+  inputId?: string;
+}
+
 export interface HarnessFeedbackTarget {
   workbenchId: string;
   completionSummary: string;
@@ -55,6 +69,7 @@ export interface JoiHarnessScan {
   listFeedbackTargets(): Promise<HarnessFeedbackTarget[]>;
   listGoalsWithoutMap(): Promise<HarnessGoalSeed[]>;
   listReviewDigests(): Promise<HarnessReviewDigest[]>;
+  listReviewRecoveries(): Promise<HarnessReviewRecoveryCandidate[]>;
   listTrivialMapCandidates(): Promise<{ goalInputId: string }[]>;
   loadGoalProjections(): Promise<HarnessGoalProjection[]>;
 }
@@ -64,6 +79,7 @@ export interface JoiHarnessWriter {
   clearTrivialMap(input: { goalInputId: string; now: string }): Promise<boolean>;
   createMap(input: { workbenchId: string; goalInputId: string; now: string }): Promise<boolean>;
   enqueueReview(input: { digest: HarnessReviewDigest; now: string }): Promise<string | null>;
+  reconcileReview(input: { candidate: HarnessReviewRecoveryCandidate; now: string }): Promise<HarnessReviewRecoveryResult | null>;
   recordCompletionFeedback(input: { workbenchId: string; entry: string; goalInputId: string; now: string }): Promise<boolean>;
   synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }>;
 }

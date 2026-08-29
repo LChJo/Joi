@@ -46,7 +46,7 @@ export interface ApiDependencies {
   events?: EventService;
   globalEmergencyStop?: () => Promise<void>;
   interactions?: InteractionService;
-  joiInbox?: Pick<JoiInboxService, "accept" | "cancel" | "clarify" | "dismiss" | "list" | "retry">;
+  joiInbox?: Pick<JoiInboxService, "accept" | "cancel" | "clarify" | "closeHistoricalReview" | "dismiss" | "list" | "retry">;
   joiHomeFeed?: Pick<JoiHomeFeedService, "load">;
   joiActivity?: { listActivity(limit?: number): Promise<JoiActivityDto[]> };
   joiAttachments?: JoiAttachmentPort;
@@ -60,7 +60,7 @@ export interface ApiDependencies {
   lives: LifeService;
   modelSources?: Pick<ModelSourceService, "create" | "delete" | "disable" | "hasReadySource" | "list" | "setOrder" | "update" | "validate">;
   operations: OperationsService;
-  partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "duplicate" | "enable" | "list" | "update">;
+  partners?: Pick<PartnerRegistryService, "add" | "delete" | "disable" | "duplicate" | "enable" | "list" | "revealPrompt" | "update">;
   scenarioPacks?: Pick<ScenarioPackService, "install" | "list">;
   requestRestart?: () => void;
   remoteAccess?: RemoteAccessControl;

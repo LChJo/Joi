@@ -56,7 +56,7 @@ export function wirePartners(input: {
       store: persistence.localCliConversationStore,
     })],
   ]);
-  const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: persistence.scenarioPackRepository });
+  const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: persistence.scenarioPackRepository, skills: partnerSkillCatalog });
   return {
     engineCatalog: new PartnerEngineCatalog(partnerEngines),
     partnerInstances: new PartnerInstanceManager({

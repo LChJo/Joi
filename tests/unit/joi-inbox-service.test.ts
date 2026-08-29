@@ -12,6 +12,7 @@ const selectablePartner: PartnerDto = {
 class FakeInboxRepository implements JoiInboxRepository {
   readonly records = new Map<string, JoiInboxRecord>();
   cancelQueued?: () => Promise<number>;
+  closeHistoricalReview?: (inputId: string) => Promise<JoiInboxRecord | null>;
 
   async clarify(inputId: string, patch: { expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     const record = this.records.get(inputId);
@@ -147,6 +148,24 @@ describe("JoiInboxService.accept", () => {
       idempotencyKey: "request-duplicate-attachments",
       text: "review",
     })).rejects.toMatchObject({ code: "joi_attachments_invalid" });
+  });
+});
+
+describe("JoiInboxService.closeHistoricalReview", () => {
+  it("rejects invalid ids and repositories that cannot close the history", async () => {
+    const service = serviceWith(new FakeInboxRepository());
+    await expect(service.closeHistoricalReview({ inputId: "   " })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.closeHistoricalReview({ inputId: "x".repeat(161) })).rejects.toMatchObject({ code: "joi_input_invalid" });
+    await expect(service.closeHistoricalReview({ inputId: "missing" })).rejects.toMatchObject({ code: "joi_historical_review_unavailable" });
+  });
+
+  it("returns the consumed original goal and emits only its safe identity", async () => {
+    const repository = new FakeInboxRepository();
+    repository.closeHistoricalReview = async (inputId) => record({ inputId, status: "CONSUMED" });
+    const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
+    const dto = await serviceWith(repository, diagnostics).closeHistoricalReview({ inputId: "goal-history" });
+    expect(dto).toMatchObject({ inputId: "goal-history", status: "CONSUMED", textPreview: "body" });
+    expect(diagnostics).toEqual([{ event: "joi.harness.review_historically_closed", fields: { inputId: "goal-history" } }]);
   });
 });
 

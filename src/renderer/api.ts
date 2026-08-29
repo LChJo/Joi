@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
+import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
 import type { RemoteAccessStatusDto } from "../shared/remote";
 
 export class ApiError extends Error {
@@ -147,6 +147,11 @@ export class DigitalLifeApi {
       method: "POST",
     });
   }
+  closeHistoricalReview(inputId: string) {
+    return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/close-historical-review`, {
+      method: "POST",
+    });
+  }
   dismissJoiMessage(inputId: string) {
     return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/dismiss`, {
       method: "POST",
@@ -217,9 +222,12 @@ export class DigitalLifeApi {
   }
   updatePartner(partnerId: string, body: {
     capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string | null;
-    modelIdOverride?: string | null; modelSourceId?: string | null; prompt?: string; skills: string[]; tools: string[];
+    modelIdOverride?: string | null; modelSourceId?: string | null; prompt?: string; promptMode?: "APPEND" | "REPLACE"; skills: string[]; tools: string[];
   }) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body, method: "PATCH" });
+  }
+  revealPartnerPrompt(partnerId: string) {
+    return this.request<PartnerPromptDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}/prompt/reveal`, { method: "POST" });
   }
   testPartnerModel(partnerId: string) {
     return this.request<PartnerModelTestDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}/test-model`, { method: "POST" });
