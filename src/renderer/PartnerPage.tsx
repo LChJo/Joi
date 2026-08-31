@@ -1,6 +1,6 @@
 import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import type { ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto } from "../shared/joi";
+import type { CodexPermissionsDto, ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 type PartnerView = { mode: "grid" } | { mode: "editor"; partner: PartnerDto | null };
@@ -36,19 +36,28 @@ function configurationMessage(reasonCodes: readonly string[]): string {
   return "搭档配置需要修复后才能派发。";
 }
 
-function modelTestMessage(result: PartnerModelTestDto): string {
-  if (result.status === "READY") return "模型可用";
+function modelTestMessage(result: PartnerModelTestDto, engine: PartnerEngineDto): string {
+  if (result.status === "READY") return engine === "pi-core" ? "模型可用" : "搭档可用";
   if (result.reasonCode === "partner_model_override_not_ready") return "模型名与供应商当前模型不一致";
   if (result.reasonCode === "partner_model_source_not_ready") return "供应商尚未就绪";
-  return "模型连接失败";
+  if (result.reasonCode === "partner_cli_probe_timed_out") return "搭档调用超时";
+  if (result.reasonCode === "partner_cli_auth_required") return engine === "claude-code" ? "Claude Code 缺少 ANTHROPIC_API_KEY" : `${ENGINE_LABELS[engine]} 尚未登录，请先完成登录`;
+  if (result.reasonCode === "partner_cli_model_unsupported") return "当前本地 CLI 或账户不支持这个模型，请更新 CLI 或检查模型权限";
+  if (result.reasonCode === "partner_cli_rate_limited") return "调用过于频繁，请稍后重试";
+  if (result.reasonCode === "partner_cli_provider_unavailable") return "模型服务暂时不可用，请稍后重试";
+  if (result.reasonCode === "partner_cli_process_failed") return "本地搭档进程启动失败";
+  if (result.reasonCode === "partner_cli_store_failed") return "本地会话记录失败";
+  if (result.reasonCode === "engine_unavailable") return "本地引擎未就绪";
+  return engine === "pi-core" ? "模型连接失败" : "搭档调用失败";
 }
 
-function PartnerModelStatus({ result }: { result: PartnerModelTestDto | "TESTING" | undefined }) {
-  if (result === "TESTING") return <div className="partner-model-status" role="status"><span>正在测试模型…</span></div>;
-  if (result === undefined) return <div className="partner-model-status" role="status"><span>模型状态尚未测试</span></div>;
+function PartnerModelStatus({ engine, result }: { engine: PartnerEngineDto; result: PartnerModelTestDto | "TESTING" | undefined }) {
+  const modelManaged = engine === "pi-core";
+  if (result === "TESTING") return <div className="partner-model-status" role="status"><span>{modelManaged ? "正在测试模型…" : "正在真实调用搭档…"}</span></div>;
+  if (result === undefined) return <div className="partner-model-status" role="status"><span>{modelManaged ? "模型状态尚未测试" : "搭档可用性尚未测试"}</span></div>;
   const detail = [result.sourceDisplayName, result.modelId].filter(Boolean).join(" · ");
   return <div className="partner-model-status" role="status">
-    <span>{modelTestMessage(result)}</span>
+    <span>{modelTestMessage(result, engine)}</span>
     <small>{detail}{detail === "" ? "" : " · "}{new Date(result.testedAt).toLocaleString("zh-CN")}</small>
   </div>;
 }
@@ -111,6 +120,12 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const initialSelectedSkills = partner?.skills ?? [];
   const [selectedSkills, setSelectedSkills] = useState<string[]>(partner?.skills ?? []);
   const [selectedTools, setSelectedTools] = useState<string[]>(partner?.tools ?? []);
+  const [codexPermissions, setCodexPermissions] = useState<CodexPermissionsDto>(partner?.codexPermissions ?? {
+    approvalPolicy: "never",
+    networkAccessEnabled: false,
+    sandboxMode: "workspace-write",
+    webSearchMode: "disabled",
+  });
   const [modelIdOverride, setModelIdOverride] = useState(partner?.modelIdOverride ?? "");
   const [modelSourceId, setModelSourceId] = useState(partner?.modelSourceId ?? "");
   const [notice, setNotice] = useState<string | null>(null);
@@ -169,6 +184,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       displayName: fieldName(form.get("displayName")),
       skills: selectedSkills,
       tools: selectedTools,
+      ...(engine === "codex" ? { codexPermissions } : {}),
       ...(description === undefined ? {} : { description }),
       ...(engine === "pi-core" ? {} : { engine }),
       ...(prompt === undefined ? {} : { prompt }),
@@ -293,7 +309,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
         <label>搭档引擎<select name="engine" onChange={(event) => handleEngineChange(event.target.value as PartnerEngineDto)} value={engine}>
           {ENGINE_ORDER.map((id) => { const status = engineStatuses[id]; const suffix = id === "pi-core" ? "" : status === undefined ? "" : status.available ? "（已检测到）" : "（未检测到）"; return <option key={id} value={id}>{ENGINE_LABELS[id]}{suffix}</option>; })}
         </select></label>
-        {localEngineReason === null ? null : <p className="inline-notice warning" role="status">{localEngineReason} 安装并登录后即可使用，或改回 Pi core。</p>}
+        {localEngineReason === null ? null : <p className="inline-notice warning" role="status">{localEngineReason} 按提示完成本机配置后即可使用，或改回 Pi core。</p>}
         {engine === "pi-core" ? <>
           <label>模型名<input name="modelIdOverride" onChange={(event) => setModelIdOverride(event.target.value)} placeholder="留空使用全局首选模型" value={modelIdOverride} /></label>
           <label>供应商<span className="picker-field"><select name="modelSourceId" onChange={(event) => {
@@ -304,11 +320,22 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
           }} value={modelSourceId}><option value="">跟随全局首选大模型网络</option>{sources.map((source) => <option disabled={source.status !== "READY"} key={source.sourceId} value={source.sourceId}>{source.displayName}（{source.kind}）{source.status === "READY" ? "" : " · 未就绪"}</option>)}</select><button className="button ghost" onClick={() => onManageProviders?.()} type="button">管理大模型网络</button></span></label>
         </> : <>
           <label>模型名（可选覆盖）<input defaultValue={partner?.engineModelId} name="engineModelId" placeholder="留空使用本机 Claude/Codex 自己的配置" /></label>
-          <p className="field-hint">本地 {ENGINE_LABELS[engine]} 使用你本机的登录、转发或订阅配置运行，joi 不注入密钥。</p>
+          <p className="field-hint">{engine === "claude-code"
+            ? "Claude Code 使用 Joi 进程环境中的 ANTHROPIC_API_KEY，并调用你安装的 Claude 可执行文件。"
+            : "Codex 使用你本机 Codex CLI 的登录与配置；模型名会原样传递。"}</p>
         </>}
-        <div className="tool-field"><span className="kb-field-label">工具白名单（不勾选 = 不限制）</span>
+        {engine === "codex" ? <div className="tool-field"><span className="kb-field-label">Codex 权限</span>
+          <label>工作区权限<select aria-label="Codex 工作区权限" onChange={(event) => setCodexPermissions((current) => ({ ...current, sandboxMode: event.target.value as CodexPermissionsDto["sandboxMode"] }))} value={codexPermissions.sandboxMode}>
+            <option value="workspace-write">可写工作区</option><option value="read-only">只读</option>
+          </select></label>
+          <label>网页搜索<select aria-label="Codex 网页搜索" onChange={(event) => setCodexPermissions((current) => ({ ...current, webSearchMode: event.target.value as CodexPermissionsDto["webSearchMode"] }))} value={codexPermissions.webSearchMode}>
+            <option value="disabled">关闭</option><option value="cached">缓存结果</option><option value="live">实时搜索</option>
+          </select></label>
+          <label className="tool-choice"><input checked={codexPermissions.networkAccessEnabled} onChange={(event) => setCodexPermissions((current) => ({ ...current, networkAccessEnabled: event.target.checked }))} type="checkbox" /><span>允许网络访问</span></label>
+          <small className="field-hint">审批策略固定为 never；不提供 danger-full-access。</small>
+        </div> : <div className="tool-field"><span className="kb-field-label">工具白名单（不勾选 = 不限制）</span>
           {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">该引擎暂无可选工具。</small> : <div aria-label="工具白名单" className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={selectedTools.includes(tool)} onChange={() => setSelectedTools((current) => toggle(current, tool))} type="checkbox" /><span>{tool}</span></label>)}</div>}
-        </div>
+        </div>}
         {missingReadForSkills ? <p className="inline-notice warning" role="alert">已选择 Skill 且收窄了工具白名单，请启用 read 后再保存。</p> : null}
         <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
       </div>
@@ -458,11 +485,11 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
         {partner.configuration?.status === "ACTION_REQUIRED" ? <p className="inline-notice warning" role="alert">{configurationMessage(partner.configuration.reasonCodes)}</p> : null}
         <small>{[...partner.skills, ...partner.capabilities].join(" · ") || "尚未声明能力"}{partner.knowledgeDocCount > 0 ? ` · ${String(partner.knowledgeDocCount)} 篇知识库` : ""}</small>
         {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}
-        {partner.kind === "local-pi" && partner.engine === "pi-core" ? <PartnerModelStatus result={modelTests[partner.partnerId] ?? persistedModelTest(partner, sources)} /> : null}
+        {partner.kind === "local-pi" ? <PartnerModelStatus engine={partner.engine} result={modelTests[partner.partnerId] ?? (partner.engine === "pi-core" ? persistedModelTest(partner, sources) : undefined)} /> : null}
         <div className="partner-card-actions">
           <label className="switch"><input aria-label={`启用或停用 ${partner.displayName}`} checked={partner.status === "ACTIVE"} onChange={() => void api.setPartnerEnabled(partner.partnerId, partner.status !== "ACTIVE").then(() => load()).catch(() => setNotice("搭档状态没切成。"))} type="checkbox" /><span>{partner.status === "ACTIVE" ? "已启用" : "已停用"}</span></label>
           <button className="button ghost" onClick={() => void api.duplicatePartner(partner.partnerId).then(() => load()).then(() => setNotice("已基于这个搭档复制出新搭档。")).catch(() => setNotice("搭档没能复制。"))} type="button">复制</button>
-          {partner.kind === "local-pi" && partner.engine === "pi-core" ? <button className="button ghost" disabled={modelTests[partner.partnerId] === "TESTING"} onClick={() => testPartnerModel(partner.partnerId)} type="button">测试模型</button> : null}
+          {partner.kind === "local-pi" ? <button className="button ghost" disabled={modelTests[partner.partnerId] === "TESTING"} onClick={() => testPartnerModel(partner.partnerId)} type="button">{partner.engine === "pi-core" ? "测试模型" : "测试可用性"}</button> : null}
           <button className="button ghost" onClick={() => { setNotice(null); setView({ mode: "editor", partner }); }} type="button">编辑</button>
           {partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(() => load()).catch(() => setNotice("搭档还不能删除。"))} type="button">删除搭档</button> : null}
         </div>

@@ -18,16 +18,17 @@ describe("production import boundaries", () => {
     ["src/main/domain/life.ts", "@a2a-js/sdk"],
     ["src/renderer/App.tsx", "node:fs"],
     ["src/main/interfaces/http/router.ts", "../../domain/life.js"],
-    ["src/main/infrastructure/pi/runner.ts", "@rd-efficiency/agentsdk"],
-    ["src/main/application/partners/service.ts", "@rd-efficiency/agentsdk/types"],
+    ["src/main/infrastructure/pi/runner.ts", "@openai/codex-sdk"],
+    ["src/main/application/partners/service.ts", "@anthropic-ai/claude-agent-sdk"],
     ["src/main/infrastructure/mana/runner.ts", "@earendil-works/pi-agent-core"],
-    ["src/renderer/App.tsx", "@rd-efficiency/agentsdk"],
+    ["src/renderer/App.tsx", "@openai/codex-sdk"],
   ])("rejects forbidden import from %s to %s", (source, target) => {
     expect(validateImport(source, target)).toMatchObject({ allowed: false });
   });
 
   it("confines each engine SDK to its own infrastructure directory", () => {
-    expect(validateImport("src/main/infrastructure/mana/local-cli-partner-engine-runtime.ts", "@rd-efficiency/agentsdk")).toMatchObject({ allowed: true });
+    expect(validateImport("src/main/infrastructure/mana/claude-agent-sdk-partner-engine-runtime.ts", "@anthropic-ai/claude-agent-sdk")).toMatchObject({ allowed: true });
+    expect(validateImport("src/main/infrastructure/mana/codex-agent-sdk-partner-engine-runtime.ts", "@openai/codex-sdk")).toMatchObject({ allowed: true });
     expect(validateImport("src/main/infrastructure/pi/pi-coding-partner-runner.ts", "@earendil-works/pi-agent-core")).toMatchObject({ allowed: true });
   });
 

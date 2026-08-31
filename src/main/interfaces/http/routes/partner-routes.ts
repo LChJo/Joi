@@ -22,6 +22,7 @@ import {
   scenarioPackService,
 } from "../api-dependencies.js";
 import { exact, pattern, type RouteDefinition } from "../route-types.js";
+import type { CodexPermissionsDto } from "../../../../shared/joi.js";
 
 export const PARTNER_CATALOG_ROUTES: RouteDefinition[] = [
   {
@@ -130,9 +131,11 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
       const kind = stringField(body, "kind");
       if (kind !== "local-pi" && kind !== "a2a") throw new HttpError("partner_kind_invalid", "Partner kind is invalid.", 400);
       const engine = partnerEngineField(body);
+      const permissions = codexPermissions(body.codexPermissions);
       await assertLocalEngineAvailable(ctx.dependencies, engine);
       sendJson(ctx.response, 201, await partnerRegistryService(ctx.dependencies).add({
         capabilities: optionalStringArray(body, "capabilities") ?? [],
+        ...(permissions === undefined ? {} : { codexPermissions: permissions }),
         ...(typeof body.description === "string" ? { description: body.description } : {}),
         displayName: stringField(body, "displayName"),
         ...(engine === undefined ? {} : { engine }),
@@ -180,9 +183,11 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
       }
       const engine = partnerEngineField(body);
       const promptMode = partnerPromptMode(body.promptMode);
+      const permissions = codexPermissions(body.codexPermissions);
       await assertLocalEngineAvailable(ctx.dependencies, engine);
       sendJson(ctx.response, 200, await partnerRegistryService(ctx.dependencies).update(partnerId, {
         capabilities: optionalStringArray(body, "capabilities") ?? [],
+        ...(permissions === undefined ? {} : { codexPermissions: permissions }),
         ...(typeof body.description === "string" ? { description: body.description } : {}),
         displayName: stringField(body, "displayName"),
         ...(engine === undefined ? {} : { engine }),
@@ -270,6 +275,26 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
     },
   },
 ];
+
+function codexPermissions(value: unknown): CodexPermissionsDto | undefined {
+  if (value === undefined) return undefined;
+  if (value === null || Array.isArray(value) || typeof value !== "object") {
+    throw new HttpError("partner_codex_permissions_invalid", "Codex permissions are invalid.", 400);
+  }
+  const row = value as Record<string, unknown>;
+  if (row.approvalPolicy !== "never"
+    || (row.sandboxMode !== "read-only" && row.sandboxMode !== "workspace-write")
+    || (row.webSearchMode !== "disabled" && row.webSearchMode !== "cached" && row.webSearchMode !== "live")
+    || typeof row.networkAccessEnabled !== "boolean") {
+    throw new HttpError("partner_codex_permissions_invalid", "Codex permissions are invalid.", 400);
+  }
+  return {
+    approvalPolicy: "never" as const,
+    networkAccessEnabled: row.networkAccessEnabled,
+    sandboxMode: row.sandboxMode,
+    webSearchMode: row.webSearchMode,
+  };
+}
 
 function partnerPromptMode(value: unknown): "APPEND" | "REPLACE" | undefined {
   if (value === undefined) return undefined;

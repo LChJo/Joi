@@ -398,7 +398,7 @@ describe("partner page", () => {
     expect(create.mock.calls[0]?.[0]).not.toHaveProperty("workspaceRef");
   });
 
-  it("labels engine options by detection status, warns on an undetected local engine and lists its tools", async () => {
+  it("labels engine options by detection status and shows Codex permission controls instead of tools", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, [coder]);
     vi.spyOn(api, "engineCatalog").mockResolvedValue({ items: [
@@ -415,7 +415,33 @@ describe("partner page", () => {
 
     fireEvent.change(screen.getByLabelText("搭档引擎"), { target: { value: "codex" } });
     expect(await screen.findByText(/codex 未在 PATH 中找到/u)).toBeInTheDocument();
-    expect(screen.getByText("apply_patch")).toBeInTheDocument();
+    expect(screen.getByText("Codex 权限")).toBeInTheDocument();
+    expect(screen.getByLabelText("Codex 工作区权限")).toHaveValue("workspace-write");
+    expect(screen.queryByText("apply_patch")).not.toBeInTheDocument();
+  });
+
+  it("submits explicit safe Codex permissions", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, []);
+    const create = vi.spyOn(api, "createPartner").mockResolvedValue({
+      ...coder, codexPermissions: { approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "read-only", webSearchMode: "live" },
+      displayName: "Codex worker", engine: "codex", partnerId: "partner-codex", partnerRevisionId: "revision-codex", skills: [], tools: [],
+    });
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "添加搭档" }));
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "Codex worker" } });
+    fireEvent.click(screen.getByRole("tab", { name: "高级" }));
+    fireEvent.change(screen.getByLabelText("搭档引擎"), { target: { value: "codex" } });
+    fireEvent.change(screen.getByLabelText("Codex 工作区权限"), { target: { value: "read-only" } });
+    fireEvent.change(screen.getByLabelText("Codex 网页搜索"), { target: { value: "live" } });
+    fireEvent.click(screen.getByText("允许网络访问"));
+    fireEvent.click(screen.getByRole("button", { name: "保存搭档" }));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      codexPermissions: { approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "read-only", webSearchMode: "live" },
+      displayName: "Codex worker",
+      engine: "codex",
+      tools: [],
+    })));
   });
 
   it("switches back to the basic tab and leaves the add editor without saving", async () => {
@@ -649,6 +675,57 @@ describe("partner page", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "测试模型" }));
     expect(await screen.findByText("模型名与供应商当前模型不一致")).toBeInTheDocument();
+  });
+
+  it("offers real availability tests for Codex and Claude Code and shows safe invocation outcomes", async () => {
+    const api = new DigitalLifeApi("");
+    const codex = { ...coder, displayName: "Local Codex", engine: "codex" as const, engineModelId: "gpt-5.6-codex", partnerId: "partner-codex", partnerRevisionId: "revision-codex" };
+    const claude = { ...coder, displayName: "Local Claude", engine: "claude-code" as const, partnerId: "partner-claude", partnerRevisionId: "revision-claude" };
+    mockCatalog(api, [codex, claude]);
+    const test = vi.spyOn(api, "testPartnerModel")
+      .mockResolvedValueOnce({ modelId: "gpt-5.6-codex", partnerId: "partner-codex", status: "READY", testedAt: "2026-08-30T03:00:00.000Z" })
+      .mockResolvedValueOnce({ partnerId: "partner-claude", reasonCode: "partner_cli_probe_timed_out", status: "FAILED", testedAt: "2026-08-30T03:01:00.000Z" });
+    render(<PartnerPage api={api} />);
+
+    const buttons = await screen.findAllByRole("button", { name: "测试可用性" });
+    expect(buttons).toHaveLength(2);
+    const [codexButton, claudeButton] = buttons;
+    if (codexButton === undefined || claudeButton === undefined) throw new Error("expected both local CLI test buttons");
+    fireEvent.click(codexButton);
+    expect(await screen.findByText("搭档可用")).toBeInTheDocument();
+    expect(test).toHaveBeenCalledWith("partner-codex");
+
+    fireEvent.click(claudeButton);
+    expect(await screen.findByText("搭档调用超时")).toBeInTheDocument();
+    expect(test).toHaveBeenCalledWith("partner-claude");
+  });
+
+  it("maps local CLI probe failures to safe actionable messages", async () => {
+    const api = new DigitalLifeApi("");
+    const codex = { ...coder, displayName: "Local Codex", engine: "codex" as const, partnerId: "partner-codex", partnerRevisionId: "revision-codex" };
+    mockCatalog(api, [codex]);
+    vi.spyOn(api, "testPartnerModel")
+      .mockResolvedValueOnce({ partnerId: "partner-codex", reasonCode: "partner_cli_auth_required", status: "FAILED", testedAt: "2026-08-30T03:00:00.000Z" })
+      .mockResolvedValueOnce({ partnerId: "partner-codex", reasonCode: "partner_cli_model_unsupported", status: "FAILED", testedAt: "2026-08-30T03:01:00.000Z" })
+      .mockResolvedValueOnce({ partnerId: "partner-codex", reasonCode: "partner_cli_rate_limited", status: "FAILED", testedAt: "2026-08-30T03:02:00.000Z" })
+      .mockResolvedValueOnce({ partnerId: "partner-codex", reasonCode: "partner_cli_provider_unavailable", status: "FAILED", testedAt: "2026-08-30T03:03:00.000Z" })
+      .mockResolvedValueOnce({ partnerId: "partner-codex", reasonCode: "partner_cli_process_failed", status: "FAILED", testedAt: "2026-08-30T03:04:00.000Z" })
+      .mockResolvedValueOnce({ partnerId: "partner-codex", reasonCode: "partner_cli_store_failed", status: "FAILED", testedAt: "2026-08-30T03:05:00.000Z" });
+    render(<PartnerPage api={api} />);
+
+    const button = await screen.findByRole("button", { name: "测试可用性" });
+    fireEvent.click(button);
+    expect(await screen.findByText("Codex 尚未登录，请先完成登录")).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(await screen.findByText("当前本地 CLI 或账户不支持这个模型，请更新 CLI 或检查模型权限")).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(await screen.findByText("调用过于频繁，请稍后重试")).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(await screen.findByText("模型服务暂时不可用，请稍后重试")).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(await screen.findByText("本地搭档进程启动失败")).toBeInTheDocument();
+    fireEvent.click(button);
+    expect(await screen.findByText("本地会话记录失败")).toBeInTheDocument();
   });
 
   it("restores persisted provider validation status and detects a stale partner override", async () => {

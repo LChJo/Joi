@@ -151,6 +151,12 @@ export interface WorkbenchChangeRequestDto {
 
 export const PARTNER_ENGINES = ["claude-code", "codex", "pi-core"] as const;
 export type PartnerEngineDto = (typeof PARTNER_ENGINES)[number];
+export interface CodexPermissionsDto {
+  approvalPolicy: "never";
+  networkAccessEnabled: boolean;
+  sandboxMode: "read-only" | "workspace-write";
+  webSearchMode: "disabled" | "cached" | "live";
+}
 
 export interface PartnerKnowledgeDocDto {
   bytes: number;
@@ -167,6 +173,7 @@ export interface PartnerConfigurationDto {
 
 export interface PartnerDto {
   capabilities: string[];
+  codexPermissions?: CodexPermissionsDto;
   configuration?: PartnerConfigurationDto;
   createdBy: "joi" | "user";
   description?: string;
@@ -298,6 +305,7 @@ export interface JoiGoalHarnessDto {
 
 export interface JoiGoalCardBaseDto {
   agentCount: number;
+  artifacts?: WorkbenchArtifactDto[];
   workbench: { workbenchId: string; name: string };
   canDelete: boolean;
   completedAt?: string;
@@ -350,8 +358,16 @@ export interface WorkbenchAgentCardDto {
   transport: "A2A" | "LOCAL";
 }
 
+export interface WorkbenchArtifactDto {
+  artifactId?: string;
+  kind: "DIRECTORY" | "FILE";
+  mimeType: string;
+  name: string;
+  size: number;
+}
+
 export interface AgentConversationEntryDto {
-  artifact?: { mimeType: string; name: string; size: number };
+  artifact?: WorkbenchArtifactDto;
   createdAt: string;
   entryId: string;
   kind: "MARKDOWN" | "TOOL_CALL" | "TOOL_RESULT" | "ARTIFACT" | "ERROR";

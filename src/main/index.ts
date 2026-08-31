@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Tray } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, shell, Tray } from "electron";
 import { randomUUID } from "node:crypto";
 import { rmSync } from "node:fs";
 import os from "node:os";
@@ -12,6 +12,7 @@ import { OperationsService } from "./application/operations/operations-service.j
 import { RemoteCommandService } from "./application/remote/remote-command-service.js";
 import type { RemoteAccessControl } from "./application/ports/remote-access.js";
 import type { SsePublisher } from "./application/ports/runtime-store.js";
+import { DomainError } from "./domain/errors.js";
 import { wirePersistence } from "./composition/wire-persistence.js";
 import { wireModelSources } from "./composition/wire-model-sources.js";
 import { wirePartners } from "./composition/wire-partners.js";
@@ -45,7 +46,7 @@ const applicationIconPath = app.isPackaged
   ? path.join(process.resourcesPath, "resources", "branding", "icon.png")
   : path.resolve(currentDirectory, "../../../resources/branding/icon.png");
 const testUserDataPath = isTest
-  ? path.join(os.tmpdir(), `joi-e2e-${String(process.pid)}`)
+  ? path.join(os.tmpdir(), `joi-e2e-${String(process.pid)}-${randomUUID()}`)
   : undefined;
 
 if (testUserDataPath !== undefined) {
@@ -129,7 +130,23 @@ async function startRuntime(): Promise<void> {
   const persistence = wirePersistence({ clock, database, pid, userDataDirectory });
   const modelSourceStack = wireModelSources({ clock, ids, persistence, vault });
   const partnerStack = wirePartners({ clock, diagnostics: runtimeDiagnostics, ids, modelSourceStack, persistence });
-  const workbenchStack = wireWorkbenches({ clock, diagnostics: runtimeDiagnostics, ids, partnerStack, persistence });
+  const workbenchStack = wireWorkbenches({
+    artifactOpener: {
+      open: async (input) => {
+        try {
+          if (input.mode === "REVEAL") {
+            shell.showItemInFolder(input.targetPath);
+            return;
+          }
+          const failure = await shell.openPath(input.targetPath);
+          if (failure !== "") throw new Error("shell_open_failed");
+        } catch {
+          throw new DomainError("workbench_artifact_open_failed", "The artifact could not be opened.");
+        }
+      },
+    },
+    clock, diagnostics: runtimeDiagnostics, ids, partnerStack, persistence,
+  });
   const directoryPicker = async () => {
     try {
       const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "绑定 Workbench 工作目录" });

@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
+import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
 import type { RemoteAccessStatusDto } from "../shared/remote";
 
 export class ApiError extends Error {
@@ -33,7 +33,7 @@ interface RequestOptions {
 export class DigitalLifeApi {
   private csrfToken: string | null = null;
 
-  constructor(readonly origin: string) {}
+  constructor(readonly origin: string, readonly desktop = false) {}
 
   setCsrfToken(token: string) {
     this.csrfToken = token;
@@ -109,6 +109,17 @@ export class DigitalLifeApi {
     return this.request<undefined>(
       `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents/${encodeURIComponent(agentId)}`,
       { method: "DELETE" },
+    );
+  }
+  openWorkbenchArtifact(workbenchId: string, input: {
+    artifactId: string;
+    mode: "OPEN" | "REVEAL";
+    source: "AGENT" | "GOAL";
+    sourceId: string;
+  }) {
+    return this.request<{ opened: true }>(
+      `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/artifacts/${encodeURIComponent(input.artifactId)}/open`,
+      { body: { mode: input.mode, source: input.source, sourceId: input.sourceId }, method: "POST" },
     );
   }
   rebuildWorkbenchWorkspace(workbenchId: string) {
@@ -214,14 +225,14 @@ export class DigitalLifeApi {
   }
   listPartners() { return this.request<{ items: PartnerDto[] }>("/api/v1/partners"); }
   createPartner(body: {
-    capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
+    capabilities?: string[]; codexPermissions?: CodexPermissionsDto; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
     kind: "a2a" | "local-pi"; modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[];
     tools: string[];
   }) {
     return this.request<PartnerDto>("/api/v1/partners", { body, method: "POST" });
   }
   updatePartner(partnerId: string, body: {
-    capabilities?: string[]; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string | null;
+    capabilities?: string[]; codexPermissions?: CodexPermissionsDto; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string | null;
     modelIdOverride?: string | null; modelSourceId?: string | null; prompt?: string; promptMode?: "APPEND" | "REPLACE"; skills: string[]; tools: string[];
   }) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body, method: "PATCH" });
@@ -408,7 +419,7 @@ export async function createApi(): Promise<{ api: DigitalLifeApi; configured: bo
   const bridge = window.digitalLifeDesktop;
   const runtimeInfo = bridge === undefined ? undefined : await bridge.getRuntimeInfo();
   const origin = import.meta.env.DEV ? window.location.origin : runtimeInfo?.apiOrigin ?? window.location.origin;
-  const api = new DigitalLifeApi(origin);
+  const api = new DigitalLifeApi(origin, bridge !== undefined);
   const { configured } = await api.authStatus();
   if (bridge !== undefined) {
     const nonce = await bridge.createBootstrapNonce();

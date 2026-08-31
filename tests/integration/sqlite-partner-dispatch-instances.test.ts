@@ -352,6 +352,34 @@ describe("partner dispatch instance routing", () => {
     }
   });
 
+  it("projects a local CLI invocation failure as a safe Agent error entry", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      const handler = makeHandler(database, {
+        dispatch: async (input) => {
+          database.transaction((connection) => connection.prepare(
+            "UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = ?",
+          ).run("instance_9", input.dispatchAttemptId ?? ""));
+          throw wrapPartnerRunFailure(
+            Object.assign(new Error("PRIVATE local CLI output"), { code: "local_cli_run_failed" }),
+            { phase: "ENGINE", sideEffectState: "UNKNOWN" },
+          );
+        },
+      });
+
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", workId: "work_1" }));
+
+      const rows = database.transaction((connection) => connection.prepare(`SELECT role, kind, text
+        FROM workbench_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all()) as { kind: string; role: string; text: string }[];
+      expect(rows.at(-1)).toMatchObject({ kind: "ERROR", role: "AGENT" });
+      expect(rows.at(-1)?.text).toContain("reasonCode=local_cli_run_failed");
+      expect(JSON.stringify(rows)).not.toContain("PRIVATE local CLI output");
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("preserves pre-execution Skill failure facts and stores an actionable safe result body", async () => {
     const { database, root } = await openWithPartner();
     try {

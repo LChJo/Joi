@@ -193,6 +193,14 @@ describe("partner config HTTP API", () => {
       expect(invalidEngine.status).toBe(400);
       expect(await invalidEngine.json()).toMatchObject({ code: "partner_engine_invalid" });
 
+      const unsafeCodex = await fetch(`${session.url}/api/v1/partners`, {
+        body: JSON.stringify({ capabilities: [], codexPermissions: { approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "danger-full-access", webSearchMode: "live" }, displayName: "Unsafe", engine: "codex", kind: "local-pi", skills: [], tools: [] }),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(unsafeCodex.status).toBe(400);
+      expect(await unsafeCodex.json()).toMatchObject({ code: "partner_codex_permissions_invalid" });
+
       // Mana availability is gated before domain validation: while the engine is
       // unavailable every mana request fails with 409 engine_unavailable.
       const missingModel = await fetch(`${session.url}/api/v1/partners`, {

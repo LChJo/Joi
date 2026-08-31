@@ -21,6 +21,7 @@ import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 import type { PartnerRegistryService } from "./partner-registry-service.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
 import { wrapPartnerRunFailure, type PartnerRunFailure } from "./partner-run-failure.js";
+import { NativeAgentEventProjector } from "./native-agent-event-projector.js";
 
 const DEFAULT_LIMITS = {
   ephemeralIdleMillis: 5 * 60_000,
@@ -199,6 +200,11 @@ export class PartnerInstanceManager {
       sessionPolicy: record.sessionPolicy,
       workId: input.request.workId,
     });
+    const liveProjector = input.onConversation === undefined ? undefined : new NativeAgentEventProjector();
+    const onEvent = liveProjector === undefined ? undefined : async (event: Parameters<NativeAgentEventProjector["apply"]>[0]) => {
+      liveProjector.apply(event);
+      await input.onConversation?.({ conversation: liveProjector.snapshot(), instanceId: record.instanceId });
+    };
     try {
       if (input.revision.skills.length > 0) {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.skills.injected", {
@@ -214,7 +220,7 @@ export class PartnerInstanceManager {
       if (record.sessionPolicy === "EPHEMERAL") {
         const result = await engine.runEphemeral(input.request, input.revision, {
           knowledgeSection,
-          ...(input.onConversation === undefined ? {} : { onConversation: async (conversation) => input.onConversation?.({ conversation, instanceId: record.instanceId }) }),
+          ...(onEvent === undefined ? {} : { onEvent }),
           skillEnvironmentKeys,
           skillSection,
         });
@@ -245,14 +251,14 @@ export class PartnerInstanceManager {
         ...(record.externalSessionRef === undefined ? {} : { externalSessionRef: record.externalSessionRef }),
         instanceId: record.instanceId,
         knowledgeSection,
-        ...(input.onConversation === undefined ? {} : { onConversation: async (conversation) => input.onConversation?.({ conversation, instanceId: record.instanceId }) }),
+        ...(onEvent === undefined ? {} : { onEvent }),
         request: input.request,
         restoredMessages: restored,
         revision: input.revision,
         skillEnvironmentKeys,
         skillSection,
       });
-      await this.dependencies.messages.save(record.instanceId, turn.messages);
+      if (turn.messages !== undefined) await this.dependencies.messages.save(record.instanceId, turn.messages);
       await this.dependencies.repository.markTurnComplete(
         record.instanceId,
         this.dependencies.clock.now().toISOString(),

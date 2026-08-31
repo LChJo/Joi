@@ -45,13 +45,44 @@ describe("partner model probe", () => {
     expect(validate).not.toHaveBeenCalled();
   });
 
-  it("rejects engines that do not use managed Pi model sources", async () => {
+  it.each(["codex", "claude-code"] as const)("actively tests the %s CLI partner without using managed model sources", async (engine) => {
+    const test = vi.fn(async () => ({ available: true as const }));
     const service = new PartnerModelProbeService({
-      clock: new TestClock(),
-      partners: { inspect: async () => ({ ...partner, engine: "codex" }) },
-      sources: { list: async () => [], validate: vi.fn() },
+      clock: new TestClock(), engines: { test },
+      partners: { inspect: async () => ({ ...partner, engine, engineModelId: "local-model" }) },
+      sources: { list: vi.fn(), validate: vi.fn() },
     });
-    await expect(service.test("partner-1")).rejects.toMatchObject({ code: "partner_model_test_unsupported" });
+    await expect(service.test("partner-1")).resolves.toEqual({
+      modelId: "local-model", partnerId: "partner-1", status: "READY", testedAt: "2026-07-15T12:00:00.000Z",
+    });
+    expect(test).toHaveBeenCalledWith(engine, "local-model");
+  });
+
+  it("returns a safe actionable result when a local CLI invocation fails", async () => {
+    const service = new PartnerModelProbeService({
+      clock: new TestClock(), engines: { test: async () => ({ available: false, reasonCode: "partner_cli_probe_timed_out" }) },
+      partners: { inspect: async () => ({ ...partner, engine: "codex" }) },
+      sources: { list: vi.fn(), validate: vi.fn() },
+    });
+    await expect(service.test("partner-1")).resolves.toMatchObject({
+      partnerId: "partner-1", reasonCode: "partner_cli_probe_timed_out", status: "FAILED",
+    });
+  });
+
+  it("fails closed when active CLI probing is not wired and keeps A2A unsupported", async () => {
+    const unwired = new PartnerModelProbeService({
+      clock: new TestClock(), partners: { inspect: async () => ({ ...partner, engine: "codex" }) },
+      sources: { list: vi.fn(), validate: vi.fn() },
+    });
+    await expect(unwired.test("partner-1")).resolves.toMatchObject({
+      reasonCode: "partner_engine_probe_unavailable", status: "FAILED",
+    });
+
+    const remote = new PartnerModelProbeService({
+      clock: new TestClock(), partners: { inspect: async () => ({ ...partner, kind: "a2a" }) },
+      sources: { list: vi.fn(), validate: vi.fn() },
+    });
+    await expect(remote.test("partner-1")).rejects.toMatchObject({ code: "partner_model_test_unsupported" });
   });
 
   it("reports missing and disabled pinned sources without attempting validation", async () => {

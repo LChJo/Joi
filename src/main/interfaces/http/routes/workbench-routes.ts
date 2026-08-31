@@ -3,8 +3,10 @@ import {
   readJson,
   sendEmpty,
   sendJson,
+  sessionToken,
   stringField,
 } from "../http-core.js";
+import { AuthError } from "../../../application/auth/auth-service.js";
 import { workbenchAgentService, workbenchChangeService } from "../api-dependencies.js";
 import { exact, pattern, type RouteDefinition } from "../route-types.js";
 
@@ -47,6 +49,28 @@ export const WORKBENCH_ROUTES: RouteDefinition[] = [
         workbenchId: decodeURIComponent(groups[1] ?? ""),
         ...(cursor === undefined ? {} : { cursor }),
         limit: Number.isFinite(requestedLimit) ? requestedLimit : 50,
+      }));
+    },
+  },
+  {
+    auth: "write",
+    id: "POST /api/v1/workbenches/:workbenchId/artifacts/:artifactId/open",
+    match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/artifacts\/([^/]+)\/open$/),
+    handle: async (ctx, match) => {
+      const session = await ctx.dependencies.auth.authenticate(sessionToken(ctx.request));
+      if (session.kind !== "desktop") throw new AuthError("desktop_required", "Artifacts can only be opened from this computer.", 403);
+      const groups = match as RegExpExecArray;
+      const body = await readJson(ctx.request);
+      const mode = stringField(body, "mode");
+      const source = stringField(body, "source");
+      if (mode !== "OPEN" && mode !== "REVEAL") throw new HttpError("workbench_artifact_mode_invalid", "Artifact mode must be OPEN or REVEAL.", 400);
+      if (source !== "AGENT" && source !== "GOAL") throw new HttpError("workbench_artifact_source_invalid", "Artifact source must be AGENT or GOAL.", 400);
+      sendJson(ctx.response, 200, await workbenchAgentService(ctx.dependencies).openArtifact({
+        artifactId: decodeURIComponent(groups[2] ?? ""),
+        mode,
+        source,
+        sourceId: stringField(body, "sourceId"),
+        workbenchId: decodeURIComponent(groups[1] ?? ""),
       }));
     },
   },

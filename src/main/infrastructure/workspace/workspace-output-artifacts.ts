@@ -3,8 +3,10 @@ import type { Stats } from "node:fs";
 import path from "node:path";
 
 import type { PartnerRunOutput } from "../../application/ports/partner-execution.js";
+import { workspaceArtifactReference } from "../../domain/work/workspace-artifact-reference.js";
 
 interface WorkspaceFileState {
+  kind: "DIRECTORY" | "FILE";
   mtimeMs: number;
   size: number;
 }
@@ -41,6 +43,13 @@ async function walk(root: string, directory: string, files: Map<string, Workspac
   for (const entry of entries) {
     const candidate = path.join(directory, entry.name);
     if (entry.isDirectory()) {
+      try {
+        const facts = await lstat(candidate);
+        const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");
+        if (relativePath !== "") files.set(relativePath, { kind: "DIRECTORY", mtimeMs: facts.mtimeMs, size: 0 });
+      } catch {
+        continue;
+      }
       await walk(root, candidate, files);
       continue;
     }
@@ -53,7 +62,7 @@ async function walk(root: string, directory: string, files: Map<string, Workspac
     }
     if (!facts.isFile()) continue;
     const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");
-    if (relativePath !== "") files.set(relativePath, { mtimeMs: facts.mtimeMs, size: facts.size });
+    if (relativePath !== "") files.set(relativePath, { kind: "FILE", mtimeMs: facts.mtimeMs, size: facts.size });
   }
 }
 
@@ -91,12 +100,14 @@ export async function collectChangedWorkspaceArtifacts(
     .filter(([relativePath, state]) => {
       const previous = before.get(relativePath);
       if (previous === undefined) return true;
+      if (state.kind === "DIRECTORY") return false;
       return previous.size !== state.size || previous.mtimeMs !== state.mtimeMs;
     })
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([relativePath, state]) => {
-      const type = mimeType(relativePath);
+      const type = state.kind === "DIRECTORY" ? "inode/directory" : mimeType(relativePath);
       return {
+        artifactRef: workspaceArtifactReference(relativePath),
         ...(type === undefined ? {} : { mimeType: type }),
         name: path.basename(relativePath),
         size: state.size,

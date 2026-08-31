@@ -38,7 +38,7 @@ export interface ApiDependencies {
   workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
   workbenchManagement?: Pick<WorkbenchManagementService, "get" | "update">;
   workbenchWorkspaces?: Pick<WorkbenchWorkspaceService, "bindExisting" | "rebuildManaged">;
-  workbenchAgents?: Pick<WorkbenchAgentService, "conversation" | "dismiss" | "list">;
+  workbenchAgents?: Pick<WorkbenchAgentService, "conversation" | "dismiss" | "list" | "openArtifact">;
   workbenchChanges?: Pick<WorkbenchChangeService, "decide" | "listPending">;
   workbenches?: WorkbenchCatalog;
   auth: AuthService;

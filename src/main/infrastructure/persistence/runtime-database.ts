@@ -2892,6 +2892,16 @@ export async function latestMigrationVersion(migrationsDirectory: string): Promi
     .reduce((latest, entry) => Math.max(latest, Number.parseInt(entry.name.split("_", 1)[0] ?? "0", 10)), 0);
 }
 
+function shouldApplyGuardedColumnMigration(database: DatabaseSync, sql: string): boolean {
+  const guardedColumn = /^-- joi:migration add-column-if-missing ([A-Za-z_][A-Za-z0-9_]*) ([A-Za-z_][A-Za-z0-9_]*)\b/u.exec(sql);
+  if (guardedColumn === null) return true;
+  const tableName = guardedColumn[1];
+  const columnName = guardedColumn[2];
+  if (tableName === undefined || columnName === undefined) throw new Error("migration_column_guard_invalid");
+  return database.prepare(`PRAGMA table_info(${tableName})`).all()
+    .every((column) => (column as { name?: unknown }).name !== columnName);
+}
+
 export async function applyMigrations(database: DatabaseSync, migrationsDirectory: string) {
   database.exec(`
     CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -2911,7 +2921,7 @@ export async function applyMigrations(database: DatabaseSync, migrationsDirector
     if (requiresForeignKeysOff) database.exec("PRAGMA foreign_keys = OFF");
     database.exec("BEGIN IMMEDIATE");
     try {
-      database.exec(sql);
+      if (shouldApplyGuardedColumnMigration(database, sql)) database.exec(sql);
       if (requiresForeignKeysOff && database.prepare("PRAGMA foreign_key_check").all().length > 0) {
         throw new Error("migration_foreign_key_check_failed");
       }

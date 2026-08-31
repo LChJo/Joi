@@ -18,6 +18,7 @@ import { PartnerRegistryService } from "../../src/main/application/partners/part
 import { ScenarioPackService } from "../../src/main/application/partners/scenario-pack-service";
 import { PartnerWorkMemoryService } from "../../src/main/application/partners/partner-work-memory-service";
 import type { SsePublisher } from "../../src/main/application/ports/runtime-store";
+import type { WorkbenchArtifactOpenMode } from "../../src/main/application/ports/workbench-artifacts";
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
 import { SqlitePartnerInstanceMessageStore } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-message-store";
 import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository";
@@ -59,6 +60,7 @@ export class TestIds {
 }
 
 export interface RuntimeFixture {
+  artifactOpenCalls: { kind: "DIRECTORY" | "FILE"; mode: WorkbenchArtifactOpenMode; targetPath: string }[];
   agents: AgentService;
   auth: AuthService;
   workbenchManagement: WorkbenchManagementService;
@@ -98,7 +100,12 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   const workbenches = new LegacyLifeStoreAdapter(database);
   const workbenchRegistry = new WorkbenchRegistryService({ clock, ids, repository: workbenches });
   const workbenchManagement = new WorkbenchManagementService({ clock, ids, repository: new SqliteWorkbenchManagementRepository(database) });
-  const workbenchAgents = new WorkbenchAgentService({ clock, repository: new SqliteWorkbenchAgentRepository(database) });
+  const artifactOpenCalls: RuntimeFixture["artifactOpenCalls"] = [];
+  const workbenchAgents = new WorkbenchAgentService({
+    clock,
+    opener: { open: (input) => { artifactOpenCalls.push(input); return Promise.resolve(); } },
+    repository: new SqliteWorkbenchAgentRepository(database),
+  });
   const joiHomeFeed = new JoiHomeFeedService({ clock, repository: new SqliteJoiHomeFeedRepository(database) });
   const workbenchWorkspaces = new WorkbenchWorkspaceService({ workbenches, clock, ids, repository: new SqliteWorkbenchWorkspaceRepository(database) });
   const lives = new LifeService({ clock, ids, publisher: sse, store: database.store });
@@ -137,6 +144,7 @@ export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   const engines = new PartnerEngineCatalog(new Map());
 
   return {
+    artifactOpenCalls,
     agents,
     auth,
     workbenchManagement,

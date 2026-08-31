@@ -23,10 +23,10 @@ import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
+import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
-const LIVE_CONVERSATION_INTERVAL_MILLIS = 250;
 
 /** Per-run mutable facts: observed side effects and a pending question for the user. */
 interface RunTracker {
@@ -49,58 +49,35 @@ const MUTATING_TOOLS = new Set(["bash", "edit", "write"]);
  * this object. Persistence failures are deliberately non-fatal to the Work run.
  */
 class LiveConversationPublisher {
-  readonly #toolEvents: AgentConversationDraft[] = [];
   readonly #toolIds = new Set<string>();
-  #lastFingerprint = "";
-  #lastPublishedAt = 0;
-  #visibleText = "";
 
   constructor(
     private readonly taskProjection: string,
-    private readonly publish: (conversation: AgentConversationDraft[]) => Promise<void>,
+    private readonly publish: (event: NativeAgentEvent) => Promise<void>,
   ) {}
 
   async start(): Promise<void> {
-    await this.#publish(true);
+    await this.#safePublish({ type: "message", role: "user", parts: [{ type: "text", text: this.taskProjection }] });
+    await this.#safePublish({ type: "status", state: "working" });
   }
 
   async handle(event: AgentEvent): Promise<void> {
-    let force = false;
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
-      this.#visibleText += event.assistantMessageEvent.delta;
+      await this.#safePublish({ type: "message", role: "agent", parts: [{ type: "text", text: event.assistantMessageEvent.delta }] });
     } else if (event.type === "tool_execution_start" && !this.#toolIds.has(`start:${event.toolCallId}`)) {
       this.#toolIds.add(`start:${event.toolCallId}`);
-      this.#toolEvents.push({ kind: "TOOL_CALL", role: "TOOL", toolName: event.toolName });
-      force = true;
+      await this.#safePublish({ type: "tool_activity", toolName: event.toolName, state: "started" });
     } else if (event.type === "tool_execution_end" && !this.#toolIds.has(`end:${event.toolCallId}`)) {
       this.#toolIds.add(`end:${event.toolCallId}`);
-      this.#toolEvents.push({
-        kind: "TOOL_RESULT",
-        role: "TOOL",
-        text: event.isError ? "执行失败" : "执行完成",
-        toolName: event.toolName,
-      });
-      force = true;
-    } else if (event.type === "message_end" || event.type === "agent_end") {
-      force = true;
+      await this.#safePublish({ type: "tool_activity", toolName: event.toolName, state: event.isError ? "failed" : "completed" });
+    } else if (event.type === "agent_end") {
+      await this.#safePublish({ type: "status", state: "completed" });
     }
-    await this.#publish(force);
   }
 
-  async #publish(force: boolean): Promise<void> {
-    const now = Date.now();
-    if (!force && now - this.#lastPublishedAt < LIVE_CONVERSATION_INTERVAL_MILLIS) return;
-    const conversation: AgentConversationDraft[] = [
-      { kind: "MARKDOWN", role: "USER", text: this.taskProjection },
-      ...this.#toolEvents,
-      ...(this.#visibleText.trim() === "" ? [] : [{ kind: "MARKDOWN" as const, role: "AGENT" as const, text: this.#visibleText }]),
-    ];
-    const fingerprint = JSON.stringify(conversation);
-    if (fingerprint === this.#lastFingerprint) return;
-    this.#lastFingerprint = fingerprint;
-    this.#lastPublishedAt = now;
+  async #safePublish(event: NativeAgentEvent): Promise<void> {
     try {
-      await this.publish(conversation);
+      await this.publish(event);
     } catch {
       // The conversation is a non-authoritative display projection; execution must continue.
     }
@@ -278,7 +255,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       streamFn: resolved.models.streamSimple.bind(resolved.models),
       toolExecution: "sequential",
     });
-    const live = context.onConversation === undefined ? undefined : new LiveConversationPublisher(request.taskProjection, context.onConversation);
+    const live = context.onEvent === undefined ? undefined : new LiveConversationPublisher(request.taskProjection, context.onEvent);
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     await this.#promptWithIdleTimeout(agent, request.taskProjection, live);
@@ -354,7 +331,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     }
     warm.agent.state.systemPrompt = systemPrompt;
     const previousMessageCount = warm.agent.state.messages.length;
-    const live = input.onConversation === undefined ? undefined : new LiveConversationPublisher(input.request.taskProjection, input.onConversation);
+    const live = input.onEvent === undefined ? undefined : new LiveConversationPublisher(input.request.taskProjection, input.onEvent);
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live);

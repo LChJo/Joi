@@ -1,16 +1,54 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Buffer } from "node:buffer";
+import { realpath, stat } from "node:fs/promises";
 import type { DatabaseSync } from "node:sqlite";
+import path from "node:path";
 
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto } from "../../../shared/joi.js";
+import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto, WorkbenchArtifactDto } from "../../../shared/joi.js";
 import type { WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
+import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
 import { DomainError } from "../../domain/errors.js";
+import { workResultArtifactId, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import { mapStoredEngine } from "./partner-engine-storage.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
+
+interface StoredConversationArtifact {
+  artifactRef?: string;
+  mimeType: string;
+  name: string;
+  size: number;
+}
+
+function storedArtifact(value: unknown): StoredConversationArtifact | undefined {
+  if (typeof value !== "string") return undefined;
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    if (typeof parsed.mimeType !== "string" || typeof parsed.name !== "string" || typeof parsed.size !== "number") return undefined;
+    return {
+      ...(typeof parsed.artifactRef === "string" ? { artifactRef: parsed.artifactRef } : {}),
+      mimeType: parsed.mimeType,
+      name: parsed.name,
+      size: parsed.size,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function publicArtifact(artifact: StoredConversationArtifact, artifactId: string): WorkbenchArtifactDto {
+  const openable = workspaceArtifactRelativePath(artifact.artifactRef) !== undefined;
+  return {
+    ...(openable ? { artifactId } : {}),
+    kind: artifact.mimeType === "inode/directory" ? "DIRECTORY" : "FILE",
+    mimeType: artifact.mimeType,
+    name: artifact.name,
+    size: artifact.size,
+  };
+}
 
 function required(row: Row, key: string): string {
   const value = row[key];
@@ -189,11 +227,12 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
         FROM workbench_agent_conversation_entries WHERE agent_id = ? ORDER BY sequence, entry_id LIMIT ? OFFSET ?`)
         .all(input.agentId, limit + 1, offset) as Row[];
       const items = rows.slice(0, limit).map((row) => {
-        const artifact = typeof row.artifact_json === "string" ? JSON.parse(row.artifact_json) as { mimeType: string; name: string; size: number } : undefined;
+        const artifact = storedArtifact(row.artifact_json);
+        const entryId = required(row, "entry_id");
         return {
-          ...(artifact === undefined ? {} : { artifact }),
+          ...(artifact === undefined ? {} : { artifact: publicArtifact(artifact, entryId) }),
           createdAt: required(row, "created_at"),
-          entryId: required(row, "entry_id"),
+          entryId,
           kind: required(row, "kind") as AgentConversationPageDto["items"][number]["kind"],
           role: required(row, "role") as AgentConversationPageDto["items"][number]["role"],
           sequence: typeof row.sequence === "number" ? row.sequence : 0,
@@ -203,6 +242,56 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
       });
       return { agent: mapCard(cardRow), items, ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) };
     });
+  }
+
+  async resolveArtifact(input: WorkbenchArtifactResolutionInput): Promise<ResolvedWorkbenchArtifact> {
+    const stored = this.database.transaction((connection) => {
+      let artifact: StoredConversationArtifact | undefined;
+      if (input.source === "AGENT") {
+        const card = cardRows(connection, input.workbenchId, 1, 0, input.sourceId)[0];
+        if (card === undefined) return undefined;
+        const row = connection.prepare(`SELECT artifact_json FROM workbench_agent_conversation_entries
+          WHERE agent_id = ? AND entry_id = ? AND kind = 'ARTIFACT'`).get(input.sourceId, input.artifactId) as Row | undefined;
+        artifact = storedArtifact(row?.artifact_json);
+      } else {
+        const rows = connection.prepare(`SELECT r.result_id, r.artifacts_json FROM work_results r
+          JOIN work_items w ON w.work_id = r.work_id
+          WHERE r.workbench_id = ? AND w.input_id = ? AND r.is_authoritative = 1 AND r.status = 'COMPLETED'
+          ORDER BY r.created_at, r.result_id`).all(input.workbenchId, input.sourceId) as Row[];
+        for (const row of rows) {
+          if (typeof row.result_id !== "string" || typeof row.artifacts_json !== "string") continue;
+          let artifacts: unknown;
+          try { artifacts = JSON.parse(row.artifacts_json); } catch { continue; }
+          if (!Array.isArray(artifacts)) continue;
+          const index = artifacts.findIndex((_candidate, artifactIndex) => workResultArtifactId(row.result_id as string, artifactIndex) === input.artifactId);
+          if (index < 0) continue;
+          artifact = storedArtifact(JSON.stringify(artifacts[index]));
+          break;
+        }
+      }
+      const relativePath = workspaceArtifactRelativePath(artifact?.artifactRef);
+      if (relativePath === undefined) return undefined;
+      const root = connection.prepare(`SELECT roots.root_path FROM workbench_workspace_bindings binding
+        JOIN workbench_workspace_roots roots ON roots.workspace_ref = binding.workspace_ref
+        WHERE binding.workbench_id = ? AND binding.status = 'READY'`).get(input.workbenchId) as Row | undefined;
+      if (typeof root?.root_path !== "string") return undefined;
+      return { relativePath, rootPath: root.root_path };
+    });
+    if (stored === undefined) throw new DomainError("workbench_artifact_unavailable", "This artifact is not available to open.");
+    try {
+      const canonicalRoot = await realpath(stored.rootPath);
+      const candidate = path.resolve(canonicalRoot, ...stored.relativePath.split("/"));
+      const candidateRelative = path.relative(canonicalRoot, candidate);
+      if (candidateRelative === "" || candidateRelative.startsWith("..") || path.isAbsolute(candidateRelative)) throw new Error("outside_workspace");
+      const canonicalTarget = await realpath(candidate);
+      const targetRelative = path.relative(canonicalRoot, canonicalTarget);
+      if (targetRelative === "" || targetRelative.startsWith("..") || path.isAbsolute(targetRelative)) throw new Error("outside_workspace");
+      const facts = await stat(canonicalTarget);
+      if (!facts.isFile() && !facts.isDirectory()) throw new Error("unsupported_artifact");
+      return { kind: facts.isDirectory() ? "DIRECTORY" : "FILE", targetPath: canonicalTarget };
+    } catch {
+      throw new DomainError("workbench_artifact_unavailable", "This artifact is not available to open.");
+    }
   }
 
   async dismiss(input: { agentId: string; workbenchId: string; dismissedAt: string }): Promise<void> {

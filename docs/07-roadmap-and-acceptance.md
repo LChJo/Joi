@@ -45,7 +45,7 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-25 的共享工作目录收敛以 AC-54 为门禁：工作台 workspace binding 仍是各自 cwd 权威，但不得对物理 root 建立跨工作台排他所有权；多个工作台绑定同一目录必须成功，绝对路径仍不得进入 DTO/诊断。不同 workspace ref 指向同一 root 时，READ/WRITE lease 必须落入同一冲突域，保持多读并发、写与其他活动访问互斥。
 
-2026-08-25 的搭档模型配置与连通性收敛以 AC-55 为门禁：本机 Pi 搭档切换模型源时必须同步显示该来源的 active model，更新接口以显式 `null` 清除旧 pin，保存成功后读取最新 immutable revision；应用层在追加 revision 前拒绝非 READY 来源或来源/模型不匹配。搭档卡可发起固定极小、无工具、无 Work/run、无工作区副作用的模型验证，并仅展示持久化的安全状态、来源/模型、时间和稳定原因码；A2A 与本地 CLI 不提供伪连通测试。
+2026-08-25 的搭档模型配置与连通性收敛以 AC-55 为门禁：本机 Pi 搭档切换模型源时必须同步显示该来源的 active model，更新接口以显式 `null` 清除旧 pin，保存成功后读取最新 immutable revision；应用层在追加 revision 前拒绝非 READY 来源或来源/模型不匹配。搭档卡可发起固定极小、无工具、无 Work/run、无工作区副作用的模型验证，并仅展示持久化的安全状态、来源/模型、时间和稳定原因码；A2A 不提供伪连通测试。Claude Code 与 Codex 必须由用户显式点击后启动各自原生 backend 的无工具最小真实调用，PATH 探测不能作为测试成功；超时或未收到成功 result 必须返回安全失败状态。
 
 2026-08-24 的部分失败目标综合收敛继续以 AC-43 为门禁：综合 Turn 必须显式提交 `RESULT_SYNTHESIZED` 或 `RESULT_BLOCKED`；成功至少基于一个已验收完成 Work，并由 Joi 语义判断现有证据足以回答原目标。当前 COMPLETED outcome 的权威性高于失败 Work 计数，首页仍标记完成并把异常降级为可点击搭档入口；关键证据缺失才写 BLOCKED，存量 outcome 无损回填为 COMPLETED。
 
@@ -58,6 +58,12 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 2026-08-29 的搭档提示词查看与编辑以 AC-59 为门禁：普通搭档列表不得返回提示词正文或私有引用，只返回是否已配置。编辑页必须由用户显式点击后，才通过受 session、Origin 与 CSRF 保护且禁止缓存的接口读取当前提示词；读取失败不得显示内部异常。用户可选择完整替换或仅追加新指令，追加必须由服务端基于当前活跃 revision 合并并以空行分隔，两种操作都生成新的私有 prompt row 与不可变 Partner revision，未实际修改提示词时保存其他字段不得重写提示词。
 
 2026-08-29 的 Agent 运行时消息流以 AC-60 为门禁：本机 pi-core Agent 启动后必须立即写入任务展示快照，并把 assistant `text_delta`、工具名和工具完成/失败状态按有界节奏更新到同一 run；thinking、工具参数、原始工具结果、A2A payload、路径和凭据不得进入 live DTO。流式快照和终态完整投影都按 `(agentId, runId)` 事务替换，不得按 token 无限追加或重复内容；展示写入失败不得改变 Work/run 权威结果。renderer 只对当前选中的 RUNNING/WAITING Agent 做 750 ms HTTP 轮询并拒绝迟到响应，终态停止，不恢复 SSE/WebSocket。
+
+2026-08-29 的产物快捷操作与工具记录降级以 AC-61 为门禁：本机运行采集新建/修改文件和新建目录的内部 workspace 相对引用，Agent 工作记录与最终结论只显示不含路径的稳定产物元数据；桌面窗口点击打开、右键定位，目录点击打开目录。动作接口必须是 write-auth、desktop-only，并按 Agent/goal、Workbench、权威结果和真实 workspace root 重新解析，拒绝缺失、遍历与符号链接逃逸。LAN 不显示可操作按钮且调用返回 403。工具调用/结果默认压缩为一行，安全正文仅在显式展开后显示。
+
+2026-08-30 的本地 CLI 执行修复继续以 AC-33/AC-55 为门禁：Codex one-shot 必须使用原生 Codex conversation 并正常结束 stdin，Codex resident 不得配置为 Claude backend 或 Claude-only resident driver；Claude Code 保持原生 Claude backend。CLI stream 只有收到 success result 才算完成，异常、非成功 result 或无终态都必须携带稳定 `ENGINE` failure facts 回流，副作用未知时禁止自动重放，并在对应 Agent 工作记录中显示安全 ERROR 条目。可用性 probe 必须把 native error 归一为稳定安全原因码并写入不含原文的 settled diagnostics，使登录、模型、限流、服务、进程与存储故障可区分、可追踪。Electron 由 Codex/Codux 会话启动时，Codex 子进程必须隔离上层会话专用的 home/API key 与 managed-package 覆盖并使用桌面用户正常 CLI 登录缓存；可执行文件不得来自宿主 managed package 或 App 自身 `node_modules/.bin`，必须继续使用用户 PATH 安装。非嵌套 shell 配置不得被改写。
+
+2026-08-31 的官方 Agent SDK 切换以 AC-62 为门禁：生产依赖不得包含 `@rd-efficiency/agentsdk`；Claude/Codex 分别通过官方 SDK 和用户 CLI 运行。供应商 stream 必须先归一为 Joi 自有安全事件再投影到 Agent 记录，工具参数/命令/结果、reasoning、原始错误、凭据和绝对路径不得跨越端口。Claude 只使用环境 `ANTHROPIC_API_KEY` 并按标签恢复 session；Codex 原样传递模型，以显式只读/工作区可写、网络和 web search 权限映射 ThreadOptions，approval 固定 never。schema 047 保存显式配置并为旧工具列表提供确定兼容映射；旧无标签 session ref 必须开启新 session。probe 使用同一官方适配器，生产包保留 JS bridge 但排除平台 CLI 二进制。
 
 ## 1. 当前状态
 

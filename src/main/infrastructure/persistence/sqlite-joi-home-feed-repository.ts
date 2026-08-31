@@ -2,11 +2,12 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { JoiGoalCardBaseDto, JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
+import type { JoiGoalCardBaseDto, JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto, WorkbenchArtifactDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
 import type { HarnessGoalProjection } from "../../application/ports/joi-harness.js";
 import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "../../application/joi/joi-input-failure.js";
 import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
+import { workResultArtifactId, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
@@ -112,6 +113,37 @@ function collapseThinkingByGoal(items: JoiThinkingItemDto[]): JoiThinkingItemDto
   return [...byGoal.values()];
 }
 
+function goalArtifacts(connection: DatabaseSync, goalId: string, workbenchId: string): WorkbenchArtifactDto[] {
+  const rows = connection.prepare(`SELECT r.result_id, r.artifacts_json FROM work_results r
+    JOIN work_items w ON w.work_id = r.work_id
+    WHERE r.workbench_id = ? AND w.input_id = ? AND r.is_authoritative = 1 AND r.status = 'COMPLETED'
+    ORDER BY r.created_at, r.result_id`).all(workbenchId, goalId) as Row[];
+  const result: WorkbenchArtifactDto[] = [];
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (typeof row.result_id !== "string" || typeof row.artifacts_json !== "string") continue;
+    let artifacts: unknown;
+    try { artifacts = JSON.parse(row.artifacts_json); } catch { continue; }
+    if (!Array.isArray(artifacts)) continue;
+    artifacts.forEach((candidate, index) => {
+      if (candidate === null || typeof candidate !== "object") return;
+      const artifact = candidate as Record<string, unknown>;
+      const relativePath = workspaceArtifactRelativePath(typeof artifact.artifactRef === "string" ? artifact.artifactRef : undefined);
+      if (relativePath === undefined || seen.has(relativePath) || typeof artifact.name !== "string" || typeof artifact.size !== "number") return;
+      seen.add(relativePath);
+      const mimeType = typeof artifact.mimeType === "string" ? artifact.mimeType : "application/octet-stream";
+      result.push({
+        artifactId: workResultArtifactId(row.result_id as string, index),
+        kind: mimeType === "inode/directory" ? "DIRECTORY" : "FILE",
+        mimeType,
+        name: artifact.name,
+        size: artifact.size,
+      });
+    });
+  }
+  return result;
+}
+
 export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
@@ -160,8 +192,12 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const finalOutcome = number(row, "outcome_current") === 1 && harnessProjection?.mapStatus !== "ACTIVE";
         const terminalStatus = ["COMPLETED", "FAILED", "CANCELED"].includes(status);
         const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code);
+        const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))
+          ? goalArtifacts(connection, goalId, row.workbench_id)
+          : [];
         const base: JoiGoalCardBaseDto = {
           agentCount: number(row, "agent_count"),
+          ...(artifacts.length === 0 ? {} : { artifacts }),
           workbench: {
             workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",
             name: typeof row.workbench_name === "string" ? row.workbench_name : "等待归属",

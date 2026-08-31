@@ -4,11 +4,25 @@ export type PartnerKind = "local-pi" | "a2a";
 export type PartnerStatus = "ACTIVE" | "DISABLED" | "DELETED";
 export type PartnerEngine = "claude-code" | "codex" | "pi-core";
 export type PartnerCreator = "joi" | "user";
+export interface CodexPermissions {
+  approvalPolicy: "never";
+  networkAccessEnabled: boolean;
+  sandboxMode: "read-only" | "workspace-write";
+  webSearchMode: "disabled" | "cached" | "live";
+}
+
+export const DEFAULT_CODEX_PERMISSIONS: CodexPermissions = {
+  approvalPolicy: "never",
+  networkAccessEnabled: false,
+  sandboxMode: "workspace-write",
+  webSearchMode: "disabled",
+};
 
 export interface PartnerRevision {
   capabilities: string[];
   createdAt: string;
   createdBy: PartnerCreator;
+  codexPermissions?: CodexPermissions;
   description?: string;
   displayName: string;
   engine: PartnerEngine;
@@ -36,6 +50,7 @@ export interface CreatePartnerRevisionInput {
   capabilities: string[];
   createdAt: string;
   createdBy?: PartnerCreator;
+  codexPermissions?: CodexPermissions;
   description?: string;
   displayName: string;
   engine?: PartnerEngine;
@@ -74,6 +89,37 @@ function strings(values: string[], code: string): string[] {
   return [...new Set(normalized)];
 }
 
+export function normalizeCodexPermissions(value: CodexPermissions | undefined): CodexPermissions {
+  const permissions = value ?? DEFAULT_CODEX_PERMISSIONS;
+  const candidate = permissions as unknown as Record<string, unknown>;
+  if (candidate.approvalPolicy !== "never"
+    || (candidate.sandboxMode !== "read-only" && candidate.sandboxMode !== "workspace-write")
+    || (candidate.webSearchMode !== "disabled" && candidate.webSearchMode !== "cached" && candidate.webSearchMode !== "live")
+    || typeof candidate.networkAccessEnabled !== "boolean") {
+    throw new DomainError("partner_codex_permissions_invalid", "Codex permissions are invalid.");
+  }
+  return {
+    approvalPolicy: "never",
+    networkAccessEnabled: candidate.networkAccessEnabled,
+    sandboxMode: candidate.sandboxMode,
+    webSearchMode: candidate.webSearchMode,
+  };
+}
+
+export function legacyCodexPermissions(tools: readonly string[]): CodexPermissions {
+  if (tools.length === 0) {
+    return { approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "workspace-write", webSearchMode: "live" };
+  }
+  const writable = tools.some((tool) => tool === "shell" || tool === "apply_patch");
+  const web = tools.includes("web_search");
+  return {
+    approvalPolicy: "never",
+    networkAccessEnabled: web,
+    sandboxMode: writable ? "workspace-write" : "read-only",
+    webSearchMode: web ? "live" : "disabled",
+  };
+}
+
 export function createPartnerRevision(input: CreatePartnerRevisionInput): PartnerRevision {
   if (!Number.isSafeInteger(input.registryRevision) || input.registryRevision < 1) {
     throw new DomainError("partner_registry_revision_invalid", "Partner registry revision is invalid.");
@@ -93,6 +139,7 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
     capabilities: strings(input.capabilities, "partner_capabilities_invalid"),
     createdAt: input.createdAt,
     createdBy: input.createdBy ?? "user",
+    ...(engine === "codex" ? { codexPermissions: normalizeCodexPermissions(input.codexPermissions) } : {}),
     ...(description === undefined ? {} : { description }),
     displayName: text(input.displayName, "partner_name_invalid"),
     engine,
@@ -149,6 +196,7 @@ export function toPublicPartner(revision: PartnerRevision) {
   return {
     capabilities: [...revision.capabilities],
     createdBy: revision.createdBy,
+    ...(revision.codexPermissions === undefined ? {} : { codexPermissions: { ...revision.codexPermissions } }),
     ...(revision.description === undefined ? {} : { description: revision.description }),
     displayName: revision.displayName,
     engine: revision.engine,

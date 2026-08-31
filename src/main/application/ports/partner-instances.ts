@@ -1,6 +1,7 @@
 import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partner.js";
 import type { PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "./partner-execution.js";
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
+import type { NativeAgentEvent } from "./native-agent-events.js";
 
 export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
 export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE";
@@ -44,7 +45,7 @@ export interface ResidentTurnInput {
   externalSessionRef?: string;
   instanceId: string;
   knowledgeSection: string;
-  onConversation?: (conversation: AgentConversationDraft[]) => Promise<void>;
+  onEvent?: (event: NativeAgentEvent) => Promise<void>;
   request: PartnerRunRequest;
   restoredMessages: unknown[] | null;
   revision: PartnerRevision;
@@ -54,7 +55,7 @@ export interface ResidentTurnInput {
 
 export interface PartnerExecutionContext {
   knowledgeSection: string;
-  onConversation?: (conversation: AgentConversationDraft[]) => Promise<void>;
+  onEvent?: (event: NativeAgentEvent) => Promise<void>;
   skillEnvironmentKeys: readonly string[];
   skillSection: string;
 }
@@ -68,7 +69,7 @@ export interface ResidentTurnResult {
   conversation?: AgentConversationDraft[];
   externalRunId: string;
   externalSessionRef?: string;
-  messages: unknown[];
+  messages?: unknown[];
   output: PartnerRunOutput;
   status: PartnerRunStatus;
 }
@@ -78,6 +79,8 @@ export interface PartnerEngineRuntime {
   engineOf(): PartnerEngine;
   evictFromMemory(instanceId: string): void;
   health(): Promise<{ available: boolean; reason?: string }>;
+  /** User-triggered end-to-end availability check. Implementations must return only stable safe reason codes. */
+  probe?(input?: { modelId?: string }): Promise<{ available: boolean; reasonCode?: string }>;
   runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
   runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult>;
   /** Selectable native tool names for this engine's whitelist picker. */

@@ -26,7 +26,7 @@ function snapshot(modelSources: ModelSourceDto[]): JoiSnapshotDto {
 
 describe("Workbench context center", () => {
   it("shows safe workspace, work, result and private-instance metadata and runs management actions", async () => {
-    const api = new DigitalLifeApi("");
+    const api = new DigitalLifeApi("", true);
     const workbench = workbenchDto("workbench-1", "发布 Workbench");
     const detail: WorkbenchDetailDto = {
       activeWork: [{ workbenchId: workbench.workbenchId, status: "RUNNING", title: "更新发布文档", workId: "work-1" }],
@@ -79,7 +79,7 @@ describe("Workbench context center", () => {
   });
 
   it("drills from Workbench Agent cards into a read-only Markdown/tool stream and deletes only terminal ephemeral Agents", async () => {
-    const api = new DigitalLifeApi("");
+    const api = new DigitalLifeApi("", true);
     const workbench = workbenchDto("workbench-agent", "研发 Workbench");
     const detail: WorkbenchDetailDto = {
       activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name, personaRevisionId: "persona-1",
@@ -100,16 +100,23 @@ describe("Workbench context center", () => {
         { createdAt: workbench.updatedAt, entryId: "entry-1", kind: "MARKDOWN", role: "AGENT", sequence: 0, text: "## 完成\n\n- 已验证\n\n[安全链接](https://example.com/result) [内部链接](/private)\n\n![remote](https://example.com/private.png)" },
         { createdAt: workbench.updatedAt, entryId: "entry-2", kind: "TOOL_CALL", role: "TOOL", sequence: 1, text: "已调用", toolName: "apply_patch" },
         { createdAt: workbench.updatedAt, entryId: "entry-3", kind: "TOOL_RESULT", role: "TOOL", sequence: 2, text: "测试通过" },
-        { artifact: { mimeType: "text/markdown", name: "report.md", size: 128 }, createdAt: workbench.updatedAt, entryId: "entry-4", kind: "ARTIFACT", role: "AGENT", sequence: 3 },
+        { artifact: { artifactId: "entry-4", kind: "FILE", mimeType: "text/markdown", name: "report.md", size: 128 }, createdAt: workbench.updatedAt, entryId: "entry-4", kind: "ARTIFACT", role: "AGENT", sequence: 3 },
         { createdAt: workbench.updatedAt, entryId: "entry-user", kind: "MARKDOWN", role: "USER", sequence: 4, text: "原始任务投影" },
         { createdAt: workbench.updatedAt, entryId: "entry-tool-fallback", kind: "TOOL_CALL", role: "TOOL", sequence: 5 },
         { createdAt: workbench.updatedAt, entryId: "entry-result-fallback", kind: "TOOL_RESULT", role: "TOOL", sequence: 6, toolName: "shell" },
         { createdAt: workbench.updatedAt, entryId: "entry-artifact-fallback", kind: "ARTIFACT", role: "AGENT", sequence: 7 },
+        { artifact: { artifactId: "entry-directory", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0 }, createdAt: workbench.updatedAt, entryId: "entry-directory", kind: "ARTIFACT", role: "AGENT", sequence: 8 },
+        { artifact: { kind: "FILE", mimeType: "text/plain", name: "legacy.txt", size: 12 }, createdAt: workbench.updatedAt, entryId: "entry-legacy", kind: "ARTIFACT", role: "AGENT", sequence: 9 },
       ], nextCursor: "page-2" })
       .mockResolvedValueOnce({ agent: ephemeral, items: [
         { createdAt: workbench.updatedAt, entryId: "entry-5", kind: "ERROR", role: "SYSTEM", sequence: 4, text: "**已恢复**" },
       ] });
     const remove = vi.spyOn(api, "deleteWorkbenchAgent").mockResolvedValue(undefined);
+    const openArtifact = vi.spyOn(api, "openWorkbenchArtifact")
+      .mockResolvedValueOnce({ opened: true })
+      .mockResolvedValueOnce({ opened: true })
+      .mockRejectedValueOnce(new Error("desktop unavailable"))
+      .mockRejectedValueOnce(new ApiError("artifact_missing", "产物已经移动。", 404));
 
     render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
     expect(await screen.findByRole("button", { name: "查看 实现者 详情" })).toBeInTheDocument();
@@ -118,8 +125,30 @@ describe("Workbench context center", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看 实现者 详情" }));
     expect(await screen.findByRole("heading", { name: "完成" })).toBeInTheDocument();
     expect(screen.getByText("apply_patch")).toBeInTheDocument();
-    expect(screen.getByText("测试通过")).toBeInTheDocument();
+    const toolResult = screen.getByText("测试通过");
+    expect(toolResult).not.toBeVisible();
+    const toolResultDetails = toolResult.closest("details");
+    if (toolResultDetails === null) throw new Error("missing compact tool result");
+    fireEvent.click(within(toolResultDetails).getByText("工具结果"));
+    expect(toolResult).toBeVisible();
     expect(screen.getByText("report.md")).toBeInTheDocument();
+    const artifactButton = screen.getByRole("button", { name: "打开产物 report.md" });
+    fireEvent.click(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "entry-4", mode: "OPEN", source: "AGENT", sourceId: ephemeral.agentId,
+    }));
+    fireEvent.contextMenu(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "entry-4", mode: "REVEAL", source: "AGENT", sourceId: ephemeral.agentId,
+    }));
+    const directoryButton = screen.getByRole("button", { name: "打开产物 reports" });
+    expect(directoryButton).toHaveTextContent("打开文件夹");
+    fireEvent.click(directoryButton);
+    expect(await screen.findByText("这个产物暂时无法打开。")).toBeInTheDocument();
+    fireEvent.contextMenu(directoryButton);
+    expect(await screen.findByText("产物已经移动。")).toBeInTheDocument();
+    expect(screen.getByText("legacy.txt")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开产物 legacy.txt" })).not.toBeInTheDocument();
     expect(screen.getByText("原始任务投影")).toBeInTheDocument();
     expect(screen.getByText("tool")).toBeInTheDocument();
     expect(screen.getByText("shell")).toBeInTheDocument();
@@ -137,7 +166,7 @@ describe("Workbench context center", () => {
   });
 
   it("keeps the Agent area usable when its list is invalid and reports a read failure without exposing a composer", async () => {
-    const api = new DigitalLifeApi("");
+    const api = new DigitalLifeApi("", true);
     const workbench = workbenchDto("workbench-fallback", "容错 Workbench");
     const detail: WorkbenchDetailDto = {
       activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name, personaRevisionId: "persona-1",
@@ -228,14 +257,16 @@ describe("joi home single entry", () => {
     expect(await screen.findAllByText("queued")).toHaveLength(2);
   });
 
-  it("routes the composer input to the Workbench chosen in the toolbar and defaults to joi routing", async () => {
+  it("routes the composer input to the Workbench chosen in the toolbar", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-work", "发布工程")] });
     const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "input-1", status: "PENDING" });
     render(<JoiHome api={api} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "joi 自主分发" }));
-    expect(screen.getByText(/不选择时由 joi 自主判断归属/u)).toBeInTheDocument();
+    expect(screen.queryByText("这条输入交给谁")).not.toBeInTheDocument();
+    expect(screen.queryByText(/不选择时由 joi 自主判断归属/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "joi 自主分发（默认）" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "发布工程" }));
     expect(screen.getByRole("button", { name: "分发给 发布工程" })).toBeInTheDocument();
 
@@ -243,12 +274,27 @@ describe("joi home single entry", () => {
     fireEvent.change(composer, { target: { value: "发布一版" } });
     fireEvent.submit(parentForm(composer));
     await waitFor(() => expect(send).toHaveBeenCalledWith("发布一版", { workbenchId: "workbench-work" }));
+  });
 
-    fireEvent.click(screen.getByRole("button", { name: "分发给 发布工程" }));
-    fireEvent.click(screen.getByRole("button", { name: "joi 自主分发（默认）" }));
-    fireEvent.change(composer, { target: { value: "再看看风险" } });
-    fireEvent.submit(parentForm(composer));
-    await waitFor(() => expect(send).toHaveBeenCalledWith("再看看风险", {}));
+  it("keeps a large composer workbench picker searchable", async () => {
+    const api = new DigitalLifeApi("");
+    const workbenches = Array.from({ length: 20 }, (_, index) => workbenchDto(`composer-workbench-${String(index)}`, `工作台 ${String(index)}`));
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [], thinking: [], unassignedActions: [] });
+
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "joi 自主分发" }));
+    expect(screen.queryByText("这条输入交给谁")).not.toBeInTheDocument();
+    expect(screen.queryByText(/不选择时由 joi 自主判断归属/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "joi 自主分发（默认）" })).not.toBeInTheDocument();
+    const search = screen.getByLabelText("搜索工作台");
+    const list = screen.getByRole("group", { name: "工作台列表" });
+    expect(list).toHaveClass("joi-workbench-options");
+    expect(within(list).getAllByRole("button")).toHaveLength(20);
+    fireEvent.change(search, { target: { value: "工作台 17" } });
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
+    expect(within(list).getByRole("button", { name: "工作台 17" })).toBeInTheDocument();
   });
 
   it("shows Joi-proposed Workbench changes and requires an explicit user decision", async () => {
@@ -652,12 +698,13 @@ describe("joi home single entry", () => {
   });
 
   it("shows a persisted direct answer on a zero-Work completed card", async () => {
-    const api = new DigitalLifeApi("");
+    const api = new DigitalLifeApi("", true);
     const workbench = workbenchDto("workbench-direct", "问答工作台");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
     vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
       goals: [{
         agentCount: 0, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
+        artifacts: [{ artifactId: "goal-artifact-1", kind: "FILE", mimeType: "text/markdown", name: "answer.md", size: 256 }],
         completedAt: "2026-08-24T09:00:00.000Z", completionSummary: "## 身份\n\n我是 **Joi**，你的 AI 助手。",
         goalId: "input-direct", status: "COMPLETED", title: "你是谁", updatedAt: "2026-08-24T09:00:00.000Z",
         work: { active: 0, completed: 0, failed: 0, total: 0 },
@@ -666,12 +713,23 @@ describe("joi home single entry", () => {
       unassignedActions: [],
     });
     vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    const openArtifact = vi.spyOn(api, "openWorkbenchArtifact").mockResolvedValue({ opened: true });
     render(<JoiHome api={api} />);
 
     const preview = await screen.findByRole("button", { name: "打开「你是谁」的最终结果全文" });
     expect(preview).toHaveTextContent("我是 Joi，你的 AI 助手。");
     fireEvent.click(preview);
-    expect(within(await screen.findByRole("dialog")).getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
+    const artifactButton = within(drawer).getByRole("button", { name: "打开产物 answer.md" });
+    fireEvent.click(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "goal-artifact-1", mode: "OPEN", source: "GOAL", sourceId: "input-direct",
+    }));
+    fireEvent.contextMenu(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "goal-artifact-1", mode: "REVEAL", source: "GOAL", sourceId: "input-direct",
+    }));
   });
 
   it("shows the harness map panel in the goal detail only when the feed carries a projection", async () => {
@@ -1171,6 +1229,34 @@ describe("joi home single entry", () => {
     expect(screen.getByText(/想新建一个工作台来承接/u)).toBeInTheDocument();
     expect(screen.getByText(/指向的工作台已不存在/u)).toBeInTheDocument();
     expect(screen.getByText("搭档配置暂不可用，请先检查设置。")).toBeInTheDocument();
+  });
+
+  it("keeps a large workbench choice list bounded and searchable", async () => {
+    const api = new DigitalLifeApi("");
+    const workbenches = Array.from({ length: 20 }, (_, index) => workbenchDto(`workbench-${String(index)}`, `工作台 ${String(index)}`));
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [], thinking: [], unassignedActions: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationReasonCode: "workbench_selection_invalid",
+      inputId: "large-workbench-choice",
+      status: "CLARIFICATION_REQUIRED",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "large-workbench-choice", status: "PENDING",
+    });
+
+    render(<JoiHome api={api} />);
+
+    const search = await screen.findByLabelText("搜索工作台");
+    const list = screen.getByRole("group", { name: "选择一个工作台继续" });
+    expect(list).toHaveClass("joi-clarify-workbench-list");
+    expect(within(list).getAllByRole("button")).toHaveLength(20);
+    fireEvent.change(search, { target: { value: "工作台 17" } });
+    expect(screen.getByRole("button", { name: /工作台 17/u })).toBeInTheDocument();
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /工作台 17/u }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("large-workbench-choice", { workbenchId: "workbench-17" }));
   });
 
   it("does not ask the user to assert completion for an unrecoverable historical review", async () => {

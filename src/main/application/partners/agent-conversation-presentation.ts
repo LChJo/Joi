@@ -7,14 +7,15 @@ const BEARER_TOKEN = /Bearer\s+[A-Za-z0-9._~+/=-]{12,}/giu;
 const NAMED_SECRET = /\b(token|api[_ -]?key|apikey|secret|password|cookie|csrf(?:[_-]?token)?)\s*[=:]\s*[^\s,;]+/giu;
 
 export interface AgentConversationDraft {
-  artifact?: { mimeType: string; name: string; size: number };
+  artifact?: { artifactRef?: string; mimeType: string; name: string; size: number };
   kind: AgentConversationEntryDto["kind"];
   role: AgentConversationEntryDto["role"];
   text?: string;
   toolName?: string;
 }
 
-export interface NormalizedAgentConversationEntry extends Omit<AgentConversationEntryDto, "sequence"> {
+export interface NormalizedAgentConversationEntry extends Omit<AgentConversationEntryDto, "artifact" | "sequence"> {
+  artifact?: { artifactRef?: string; mimeType: string; name: string; size: number };
   order: number;
   runId: string;
 }
@@ -128,6 +129,7 @@ export function normalizeAgentConversationEntries(
     textChunks.forEach((text, chunkIndex) => {
       entries.push({
         ...(draft.artifact === undefined ? {} : { artifact: {
+          ...(draft.artifact.artifactRef === undefined ? {} : { artifactRef: draft.artifact.artifactRef }),
           mimeType: draft.artifact.mimeType.slice(0, 120),
           name: sanitizeAgentConversationText(draft.artifact.name).slice(0, 240),
           size: draft.artifact.size,

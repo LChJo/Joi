@@ -1,6 +1,6 @@
 # ADR 0004: 搭档执行引擎多元化（Pi core 与本地 CLI 引擎）
 
-- 状态：accepted（2026-08-01 修订：Mana SDK 由"内置二进制"改为"驱动用户本机 Claude Code / Codex"）
+- 状态：accepted；其中 Mana/agentsdk 实现已由 ADR 0014 取代
 - 日期：2026-07-31
 - 关联：ADR 0002（唯一 joi、Pi、工作台与搭档编排）
 

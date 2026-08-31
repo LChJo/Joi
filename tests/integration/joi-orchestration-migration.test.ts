@@ -43,7 +43,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(46);
+      expect(upgraded.inspect().schemaVersion).toBe(48);
       const rows = upgraded.transaction((connection) => connection.prepare(`SELECT input_id, canceled_at, failed_at,
         failure_count, failure_reason_code FROM joi_inbox_messages ORDER BY input_id`).all());
       expect(rows).toEqual([
@@ -377,7 +377,7 @@ describe("JOI-01 non-destructive migration", () => {
           WHERE workbench_id = 'workbench-unknown'`).get() as { active_work_json: string },
         work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-unknown'").get(),
       }));
-      expect(upgraded.inspect().schemaVersion).toBe(46);
+      expect(upgraded.inspect().schemaVersion).toBe(48);
       expect(facts.work).toEqual({ status: "FAILED" });
       expect(JSON.parse(facts.projection.active_work_json)).toEqual([]);
       expect(facts.memberCount).toBe(0);
@@ -400,7 +400,7 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(46);
+      expect(database.inspect().schemaVersion).toBe(48);
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_goal_outcomes)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "disposition", notnull: 1 })]));
       expect(database.transaction((connection) => connection.prepare(
@@ -482,7 +482,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(46);
+      expect(upgraded.inspect().schemaVersion).toBe(48);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         workbenches: (connection.prepare("SELECT COUNT(*) AS count FROM workbenches").get() as { count: number }).count,

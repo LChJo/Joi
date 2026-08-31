@@ -1,6 +1,5 @@
 import type { Clock } from "../application/ports/runtime-store.js";
 import { LegacyLifeStoreAdapter } from "../infrastructure/persistence/legacy-life-store-adapter.js";
-import { ManaSdkConversationStore } from "../infrastructure/mana/mana-sdk-session-store.js";
 import { SqliteDispatchPolicyGate } from "../infrastructure/persistence/sqlite-dispatch-policy-gate.js";
 import { SqliteJoiHarnessRepository } from "../infrastructure/persistence/sqlite-joi-harness-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../infrastructure/persistence/sqlite-joi-home-feed-repository.js";
@@ -44,7 +43,6 @@ export function wirePersistence(input: {
     joiHarnessRepository: new SqliteJoiHarnessRepository(database),
     joiHomeFeedRepository: new SqliteJoiHomeFeedRepository(database),
     joiInboxRepository: new SqliteJoiInboxRepository(database),
-    localCliConversationStore: new ManaSdkConversationStore(database),
     modelSourceRepository: new SqliteModelSourceRepository(database),
     partnerInstanceMessageStore: new SqlitePartnerInstanceMessageStore(database),
     partnerInstanceRepository: new SqlitePartnerInstanceRepository(database),

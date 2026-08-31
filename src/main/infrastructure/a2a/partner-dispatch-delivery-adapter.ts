@@ -569,10 +569,13 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     if (agentId !== null && this.dependencies.agentConversations !== undefined) {
       const fallback: AgentConversationDraft[] = [
         { kind: "MARKDOWN", role: "USER", text: taskProjection(row) },
-        ...(output.body === "" ? [] : [{ kind: committedStatus === "FAILED" ? "ERROR" as const : "MARKDOWN" as const, role: "AGENT" as const, text: output.body }]),
+        ...(output.body === "" ? [] : [{ kind: output.failure !== undefined || committedStatus === "FAILED" ? "ERROR" as const : "MARKDOWN" as const, role: "AGENT" as const, text: output.body }]),
       ];
       const artifacts: AgentConversationDraft[] = output.artifacts.map((artifact) => ({
-          artifact: { mimeType: artifact.mimeType ?? "application/octet-stream", name: artifact.name, size: artifact.size },
+          artifact: {
+            ...(artifact.artifactRef === undefined ? {} : { artifactRef: artifact.artifactRef }),
+            mimeType: artifact.mimeType ?? "application/octet-stream", name: artifact.name, size: artifact.size,
+          },
           kind: "ARTIFACT" as const,
           role: "AGENT" as const,
         }));

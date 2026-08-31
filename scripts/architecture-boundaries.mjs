@@ -43,7 +43,8 @@ const a2aPattern = /^@a2a-js\/sdk(?:\/|$)/;
 
 /** Engine SDKs stay inside their own infrastructure directory (plus type-only consumers are still violations). */
 const confinedPackages = [
-  { pattern: /^@rd-efficiency\/agentsdk(?:\/|$)/, prefix: "src/main/infrastructure/mana/" },
+  { pattern: /^@anthropic-ai\/claude-agent-sdk(?:\/|$)/, prefix: "src/main/infrastructure/mana/" },
+  { pattern: /^@openai\/codex-sdk(?:\/|$)/, prefix: "src/main/infrastructure/mana/" },
   { pattern: /^@earendil-works\/pi-(?:agent-core|ai|coding-agent)(?:\/|$)/, prefix: "src/main/infrastructure/pi/" },
 ];
 

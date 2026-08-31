@@ -2,7 +2,7 @@ import { type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState 
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardBaseDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardBaseDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const SAFE_MARKDOWN_COMPONENTS: Components = {
@@ -188,6 +188,60 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   </section>;
 }
 
+function ArtifactCard({ api, artifact, source, sourceId, workbenchId }: {
+  api: DigitalLifeApi;
+  artifact: WorkbenchArtifactDto;
+  source: "AGENT" | "GOAL";
+  sourceId: string;
+  workbenchId: string;
+}) {
+  const [notice, setNotice] = useState<string | null>(null);
+  const available = api.desktop && artifact.artifactId !== undefined;
+  const activate = async (mode: "OPEN" | "REVEAL") => {
+    if (artifact.artifactId === undefined) return;
+    setNotice(mode === "OPEN" ? "正在打开…" : "正在定位…");
+    try {
+      await api.openWorkbenchArtifact(workbenchId, { artifactId: artifact.artifactId, mode, source, sourceId });
+      setNotice(mode === "OPEN" ? "已交给系统打开。" : "已在文件夹中定位。");
+    } catch (error) {
+      setNotice(error instanceof ApiError ? error.message : "这个产物暂时无法打开。");
+    }
+  };
+  return <div className={`agent-artifact ${available ? "actionable" : ""}`}>
+    <span className="agent-artifact-copy"><strong>{artifact.name}</strong><span>{artifact.kind === "DIRECTORY" ? "文件夹" : artifact.mimeType} · {String(artifact.size)} B</span></span>
+    {available ? <button
+      aria-label={`打开产物 ${artifact.name}`}
+      className="button ghost agent-artifact-open"
+      onClick={() => void activate("OPEN")}
+      onContextMenu={(event) => { event.preventDefault(); void activate("REVEAL"); }}
+      title="点击打开；右键在文件夹中定位"
+      type="button"
+    >{artifact.kind === "DIRECTORY" ? "打开文件夹" : "打开"}</button> : null}
+    {notice === null ? null : <small className="agent-artifact-notice" role="status">{notice}</small>}
+  </div>;
+}
+
+function ToolEntry({ entry }: { entry: AgentConversationEntryDto }) {
+  const label = entry.kind === "TOOL_CALL" ? "调用工具" : "工具结果";
+  return <article className={`agent-message tool ${entry.kind.toLowerCase()}`}>
+    <details className={`agent-tool-compact ${entry.kind === "TOOL_RESULT" ? "result" : ""}`}>
+      <summary><span>{label}</span><code>{entry.toolName ?? (entry.kind === "TOOL_CALL" ? "tool" : "")}</code><time>{new Date(entry.createdAt).toLocaleString()}</time></summary>
+      {entry.text === undefined || entry.text === "" ? null : <pre>{entry.text}</pre>}
+    </details>
+  </article>;
+}
+
+function GoalArtifacts({ api, goal }: { api: DigitalLifeApi; goal: JoiGoalCardDto }) {
+  if (goal.artifacts === undefined || goal.artifacts.length === 0) return null;
+  return <section aria-label="结论产物" className="joi-goal-artifacts">
+    <h3>产物</h3>
+    {goal.artifacts.map((artifact) => <ArtifactCard
+      api={api} artifact={artifact} key={artifact.artifactId ?? `${artifact.name}:${String(artifact.size)}`}
+      source="GOAL" sourceId={goal.goalId} workbenchId={goal.workbench.workbenchId}
+    />)}
+  </section>;
+}
+
 function AgentMessageStream({ agent, api, workbenchId, live = false }: {
   agent: WorkbenchAgentCardDto;
   api: DigitalLifeApi;
@@ -224,12 +278,14 @@ function AgentMessageStream({ agent, api, workbenchId, live = false }: {
   };
   return <>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
-    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : page.items.map((entry) => <article className={`agent-message ${entry.role.toLowerCase()} ${entry.kind.toLowerCase()}`} key={entry.entryId}>
+    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : page.items.map((entry) => entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
+      ? <ToolEntry entry={entry} key={entry.entryId} />
+      : <article className={`agent-message ${entry.role.toLowerCase()} ${entry.kind.toLowerCase()}`} key={entry.entryId}>
       <header><strong>{entry.role === "USER" ? "任务" : entry.role === "AGENT" ? agent.partnerName : entry.role === "TOOL" ? "工具" : "系统"}</strong><time>{new Date(entry.createdAt).toLocaleString()}</time></header>
-      {entry.kind === "TOOL_CALL" ? <div className="agent-tool-block"><span>调用工具</span><code>{entry.toolName ?? "tool"}</code>{entry.text === undefined ? null : <pre>{entry.text}</pre>}</div>
-        : entry.kind === "TOOL_RESULT" ? <div className="agent-tool-block result"><span>{entry.toolName ?? "工具结果"}</span><pre>{entry.text ?? ""}</pre></div>
-          : entry.kind === "ARTIFACT" ? <div className="agent-artifact"><strong>{entry.artifact?.name ?? "产物"}</strong><span>{entry.artifact?.mimeType ?? "文件"} · {String(entry.artifact?.size ?? 0)} B</span></div>
-            : <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{entry.text ?? ""}</ReactMarkdown>}
+      {entry.kind === "ARTIFACT" && entry.artifact !== undefined
+        ? <ArtifactCard api={api} artifact={entry.artifact} source="AGENT" sourceId={agent.agentId} workbenchId={workbenchId} />
+        : entry.kind === "ARTIFACT" ? <div className="agent-artifact"><span className="agent-artifact-copy"><strong>产物</strong><span>文件 · 0 B</span></span></div>
+          : <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{entry.text ?? ""}</ReactMarkdown>}
     </article>)}</div>}
     {page?.nextCursor === undefined ? null : <button className="button ghost agent-load-more" onClick={() => void loadMore()} type="button">加载更早记录</button>}
   </>;
@@ -379,6 +435,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const [notice, setNotice] = useState<string | null>(null);
   const [creatingWorkbench, setCreatingWorkbench] = useState(false);
   const [createdWorkbench, setCreatedWorkbench] = useState<WorkbenchDto | null>(null);
+  const [workbenchQuery, setWorkbenchQuery] = useState("");
   const isQuestion = reasonCode === "question_required";
   const needsPartnerChoice = reasonCode === "partner_selection_required";
   const needsWaitingRecovery = reasonCode === "partner_waiting_recovery_required" || reasonCode === "partner_auth_required";
@@ -390,6 +447,11 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const selectableWorkbenches = createdWorkbench === null || workbenches.some((workbench) => workbench.workbenchId === createdWorkbench.workbenchId)
     ? workbenches
     : [...workbenches, createdWorkbench];
+  const showWorkbenchSearch = selectableWorkbenches.length > 6;
+  const normalizedWorkbenchQuery = workbenchQuery.trim().toLowerCase();
+  const visibleWorkbenches = !showWorkbenchSearch || normalizedWorkbenchQuery === ""
+    ? selectableWorkbenches
+    : selectableWorkbenches.filter((workbench) => `${workbench.name} ${workbench.scopeSummary}`.toLowerCase().includes(normalizedWorkbenchQuery));
   const selectablePartners = partners.filter((partner) => partner.status === "ACTIVE" && partner.configuration === undefined);
   const resolve = async (resolution: { actionChoice?: "RESUME"; partnerId?: string; workbenchId?: string; text?: string }) => {
     setBusy(true); setNotice(null);
@@ -462,9 +524,14 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       </div>}
     </> : needsWorkbenchChoice ? <>
       {selectableWorkbenches.length === 0 ? <p className="joi-clarify-hint">还没有可选的工作台；可以直接新增一个，或补充更明确的项目/角色。</p> : null}
-      <div className="joi-clarify-chips" role="group" aria-label="点选这条输入归属的工作台">
-        {selectableWorkbenches.map((workbench) => <button className="joi-clarify-chip" disabled={busy} key={workbench.workbenchId} onClick={() => void resolve({ workbenchId: workbench.workbenchId })} type="button">{workbench.name}</button>)}
-        <button className="joi-clarify-chip" disabled={busy} onClick={() => { setCreatingWorkbench(true); setNotice(null); }} type="button">新增工作台</button>
+      <div className="joi-clarify-workbench-picker" aria-label="点选这条输入归属的工作台">
+        {showWorkbenchSearch ? <label className="joi-clarify-workbench-search">搜索工作台<input aria-label="搜索工作台" onChange={(event) => setWorkbenchQuery(event.target.value)} placeholder="按名称或范围搜索…" type="search" value={workbenchQuery} /></label> : null}
+        <div className="joi-clarify-workbench-list" role="group" aria-label="选择一个工作台继续">
+          {visibleWorkbenches.length === 0 ? <p className="joi-clarify-hint">没有匹配的工作台，请换个关键词。</p> : visibleWorkbenches.map((workbench) => <button aria-label={workbench.name} className="joi-clarify-workbench-option" disabled={busy} key={workbench.workbenchId} onClick={() => void resolve({ workbenchId: workbench.workbenchId })} type="button">
+            <strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span>
+          </button>)}
+        </div>
+        <button className="joi-clarify-chip joi-clarify-new-workbench" disabled={busy} onClick={() => { setCreatingWorkbench(true); setNotice(null); }} type="button">新增工作台</button>
       </div>
       {creatingWorkbench ? <section aria-label="joi 建议的工作台方案" className="joi-clarify-proposals">
         <div><strong>joi 建议了几个工作台方案</strong><span>选择一个后，joi 会直接创建并继续这条输入。</span></div>
@@ -532,19 +599,26 @@ function ComposerWorkbenchPicker({ workbenches, onSelect, selected }: {
   selected: WorkbenchDto | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const choose = (workbenchId: string | null) => { onSelect(workbenchId); setOpen(false); };
+  const [query, setQuery] = useState("");
+  const showSearch = workbenches.length > 6;
+  const normalizedQuery = query.trim().toLowerCase();
+  const visibleWorkbenches = !showSearch || normalizedQuery === ""
+    ? workbenches
+    : workbenches.filter((workbench) => `${workbench.name} ${workbench.scopeSummary}`.toLowerCase().includes(normalizedQuery));
+  const toggle = () => setOpen((current) => {
+    if (current) setQuery("");
+    return !current;
+  });
+  const choose = (workbenchId: string | null) => { onSelect(workbenchId); setQuery(""); setOpen(false); };
   return <div className="joi-workbench-picker">
-    <button aria-expanded={open} aria-haspopup="dialog" className="joi-workbench-button" onClick={() => setOpen((current) => !current)} type="button">
+    <button aria-expanded={open} aria-haspopup="dialog" className="joi-workbench-button" onClick={toggle} type="button">
       {selected === undefined ? "joi 自主分发" : `分发给 ${selected.name}`}
     </button>
-    {open ? <div aria-label="选择这条输入的分发方式" className="joi-workbench-menu" role="dialog">
-      <strong>这条输入交给谁</strong>
-      <span>不选择时由 joi 自主判断归属；选择后直接交给该工作台。</span>
-      <div className="joi-workbench-options">
-        <button className="button ghost" onClick={() => choose(null)} type="button">joi 自主分发（默认）</button>
-        {workbenches.map((workbench) => <button className="button ghost" key={workbench.workbenchId} onClick={() => choose(workbench.workbenchId)} type="button">{workbench.name}</button>)}
+    {open ? <div aria-label="选择工作台" className="joi-workbench-menu" role="dialog">
+      {showSearch ? <label className="joi-workbench-search">搜索工作台<input aria-label="搜索工作台" onChange={(event) => setQuery(event.target.value)} placeholder="按名称或范围搜索…" type="search" value={query} /></label> : null}
+      <div aria-label="工作台列表" className="joi-workbench-options" role="group">
+        {visibleWorkbenches.length === 0 ? <small className="joi-workbench-empty">没有匹配的工作台，请换个关键词。</small> : visibleWorkbenches.map((workbench) => <button aria-label={workbench.name} className="button ghost" key={workbench.workbenchId} onClick={() => choose(workbench.workbenchId)} type="button">{workbench.name}</button>)}
       </div>
-      {workbenches.length === 0 ? <small>还没有工作台。直接提交目标，joi 会按需建立上下文。</small> : null}
     </div> : null}
   </div>;
 }
@@ -811,7 +885,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
       <div className="joi-goal-drawer-body">
         {goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
-        {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div></article>}
+        {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div><GoalArtifacts api={api} goal={goal} /></article>}
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
         {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
@@ -859,7 +933,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
         <div className="row-actions"><button className="button ghost" disabled={goal.workbench.workbenchId === ""} onClick={() => onOpenDetail()} type="button">查看详情</button><button className="button quiet" onClick={onBack} type="button">关闭</button></div>
       </header>
       <div className="joi-goal-drawer-body">
-        <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary ?? ""}</ReactMarkdown></div></article>
+        <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary ?? ""}</ReactMarkdown></div><GoalArtifacts api={api} goal={goal} /></article>
         <GoalAgentWarning goal={goal} onOpen={() => onOpenDetail("FAILED")} />
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
       </div>

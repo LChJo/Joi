@@ -5,6 +5,7 @@ import {
   mergeA2aCardRevision,
   toPublicPartner,
   type PartnerCreator,
+  type CodexPermissions,
   type PartnerEngine,
   type PartnerKind,
   type PartnerRevision,
@@ -17,6 +18,7 @@ import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 
 interface PartnerFields {
   capabilities: string[];
+  codexPermissions?: CodexPermissions;
   description?: string;
   displayName: string;
   engine?: PartnerEngine;
@@ -90,6 +92,7 @@ export class PartnerRegistryService {
       ...(description === undefined ? {} : { description }),
       displayName: input.displayName,
       engine,
+      ...(engine === "codex" ? { codexPermissions: input.codexPermissions ?? current.codexPermissions } : {}),
       ...(engineModelId === undefined ? {} : { engineModelId }),
       kind: current.kind,
       ...(modelIdOverride === undefined ? {} : { modelIdOverride }),
@@ -115,6 +118,7 @@ export class PartnerRegistryService {
       ...(current.description === undefined ? {} : { description: current.description }),
       displayName: current.displayName,
       engine: current.engine,
+      ...(current.codexPermissions === undefined ? {} : { codexPermissions: current.codexPermissions }),
       ...(current.engineModelId === undefined ? {} : { engineModelId: current.engineModelId }),
       ...(current.modelIdOverride === undefined ? {} : { modelIdOverride: current.modelIdOverride }),
       ...(current.modelSourceId === undefined ? {} : { modelSourceId: current.modelSourceId }),
@@ -132,6 +136,7 @@ export class PartnerRegistryService {
       ...(current.description === undefined ? {} : { description: current.description }),
       displayName: current.displayName,
       engine: current.engine,
+      ...(current.codexPermissions === undefined ? {} : { codexPermissions: current.codexPermissions }),
       ...(current.engineModelId === undefined ? {} : { engineModelId: current.engineModelId }),
       modelIdOverride: model.modelIdOverride,
       modelSourceId: model.modelSourceId,
@@ -219,6 +224,7 @@ export class PartnerRegistryService {
       ...(current.description === undefined ? {} : { description: current.description }),
       displayName: copyName(current.displayName),
       engine: current.engine,
+      ...(current.codexPermissions === undefined ? {} : { codexPermissions: current.codexPermissions }),
       ...(current.engineModelId === undefined ? {} : { engineModelId: current.engineModelId }),
       kind: current.kind,
       ...(current.modelIdOverride === undefined ? {} : { modelIdOverride: current.modelIdOverride }),
@@ -379,6 +385,7 @@ function withoutRegistryRevision(revision: PartnerRevision): AppendPartnerRevisi
     ...(revision.description === undefined ? {} : { description: revision.description }),
     displayName: revision.displayName,
     engine: revision.engine,
+    ...(revision.codexPermissions === undefined ? {} : { codexPermissions: { ...revision.codexPermissions } }),
     ...(revision.engineModelId === undefined ? {} : { engineModelId: revision.engineModelId }),
     kind: revision.kind,
     ...(revision.modelIdOverride === undefined ? {} : { modelIdOverride: revision.modelIdOverride }),

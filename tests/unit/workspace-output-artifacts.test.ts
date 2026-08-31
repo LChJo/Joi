@@ -15,8 +15,9 @@ describe("workspace output artifacts", () => {
       await writeFile(path.join(root, "reports", "evidence.md"), "# Evidence", "utf8");
 
       await expect(collectChangedWorkspaceArtifacts(root, before)).resolves.toEqual([
-        { mimeType: "text/plain", name: "existing.txt", size: 5 },
-        { mimeType: "text/markdown", name: "evidence.md", size: 10 },
+        { artifactRef: "workspace:existing.txt", mimeType: "text/plain", name: "existing.txt", size: 5 },
+        { artifactRef: "workspace:reports", mimeType: "inode/directory", name: "reports", size: 0 },
+        { artifactRef: "workspace:reports/evidence.md", mimeType: "text/markdown", name: "evidence.md", size: 10 },
       ]);
     } finally {
       await rm(root, { force: true, recursive: true });

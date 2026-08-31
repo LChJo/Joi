@@ -31,4 +31,16 @@ export class PartnerEngineCatalog {
     }
     return statuses;
   }
+
+  async test(engine: PartnerEngine, modelId?: string): Promise<{ available: boolean; reasonCode?: string }> {
+    const runtime = this.engines.get(engine);
+    if (runtime === undefined) return { available: false, reasonCode: "engine_unavailable" };
+    try {
+      if (runtime.probe !== undefined) return await runtime.probe(modelId === undefined ? {} : { modelId });
+      const health = await runtime.health();
+      return health.available ? { available: true } : { available: false, reasonCode: "engine_unavailable" };
+    } catch {
+      return { available: false, reasonCode: "partner_engine_probe_failed" };
+    }
+  }
 }

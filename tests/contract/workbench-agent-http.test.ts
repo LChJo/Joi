@@ -25,7 +25,14 @@ describe("Workbench Agent HTTP API", () => {
     await repository.append(ephemeral.instanceId, normalizeAgentConversationEntries({
       agentId: ephemeral.instanceId, runId: "run-http", startedAt: fixture.clock.now().toISOString(),
     }, [{ kind: "MARKDOWN", role: "AGENT", text: "完成 /home/private/result.md Bearer abcdefghijklmnop" }]));
-    const listeners = await startRuntimeListeners({ handler: createApiHandler(fixture), loopbackPort: 0 });
+    const openArtifact = vi.fn(() => Promise.resolve({ opened: true as const }));
+    const workbenchAgents = {
+      conversation: fixture.workbenchAgents.conversation.bind(fixture.workbenchAgents),
+      dismiss: fixture.workbenchAgents.dismiss.bind(fixture.workbenchAgents),
+      list: fixture.workbenchAgents.list.bind(fixture.workbenchAgents),
+      openArtifact,
+    };
+    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, workbenchAgents }), loopbackPort: 0 });
     try {
       const bootstrap = await fixture.auth.issueDesktopBootstrap();
       const authenticated = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
@@ -48,6 +55,37 @@ describe("Workbench Agent HTTP API", () => {
       const page = await conversation.json() as AgentConversationPageDto;
       expect(page.items[0]?.text).toContain("[redacted-path]");
       expect(JSON.stringify(page)).not.toMatch(/\/home\/private|abcdefghijklmnop/u);
+
+      const opened = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/artifacts/${encodeURIComponent("entry-artifact")}/open`, {
+        body: JSON.stringify({ mode: "OPEN", source: "AGENT", sourceId: ephemeral.instanceId }), headers: writeHeaders, method: "POST",
+      });
+      expect(opened.status).toBe(200);
+      expect(await opened.json()).toEqual({ opened: true });
+      expect(openArtifact).toHaveBeenCalledWith({
+        artifactId: "entry-artifact", mode: "OPEN", source: "AGENT", sourceId: ephemeral.instanceId, workbenchId: workbench.workbenchId,
+      });
+
+      const invalidMode = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/artifacts/${encodeURIComponent("entry-artifact")}/open`, {
+        body: JSON.stringify({ mode: "DELETE", source: "AGENT", sourceId: ephemeral.instanceId }), headers: writeHeaders, method: "POST",
+      });
+      expect(invalidMode.status).toBe(400);
+
+      await fetch(`${listeners.loopback.url}/api/v1/auth/setup`, {
+        body: JSON.stringify({ password: "correct horse battery staple" }), headers: writeHeaders, method: "POST",
+      });
+      const login = await fetch(`${listeners.loopback.url}/api/v1/auth/login`, {
+        body: JSON.stringify({ password: "correct horse battery staple" }),
+        headers: { "content-type": "application/json", origin: listeners.loopback.url }, method: "POST",
+      });
+      const lanGrant = await login.json() as { csrfToken: string };
+      const lanHeaders = {
+        "content-type": "application/json", cookie: cookieFrom(login), origin: listeners.loopback.url, "x-csrf-token": lanGrant.csrfToken,
+      };
+      const lanDenied = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/artifacts/${encodeURIComponent("entry-artifact")}/open`, {
+        body: JSON.stringify({ mode: "OPEN", source: "AGENT", sourceId: ephemeral.instanceId }), headers: lanHeaders, method: "POST",
+      });
+      expect(lanDenied.status).toBe(403);
+      expect(await lanDenied.json()).toMatchObject({ code: "desktop_required" });
 
       const denied = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/agents/${encodeURIComponent(resident.instanceId)}`, { headers: writeHeaders, method: "DELETE" });
       expect(denied.status).toBe(409);

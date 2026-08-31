@@ -3,18 +3,35 @@ import { DomainError } from "../../domain/errors.js";
 import type { Clock } from "../ports/runtime-store.js";
 import type { ModelSourceService } from "../model-sources/model-source-service.js";
 import type { PartnerRegistryService } from "./partner-registry-service.js";
+import type { PartnerEngineCatalog } from "./partner-engine-catalog.js";
 
 export class PartnerModelProbeService {
   constructor(private readonly dependencies: {
     clock: Clock;
+    engines?: Pick<PartnerEngineCatalog, "test">;
     partners: Pick<PartnerRegistryService, "inspect">;
     sources: Pick<ModelSourceService, "list" | "validate">;
   }) {}
 
   async test(partnerId: string): Promise<PartnerModelTestDto> {
     const partner = await this.dependencies.partners.inspect(partnerId);
-    if (partner.kind !== "local-pi" || partner.engine !== "pi-core") {
+    if (partner.kind !== "local-pi") {
       throw new DomainError("partner_model_test_unsupported", "Only local Pi partners use a managed model source.");
+    }
+    if (partner.engine === "codex" || partner.engine === "claude-code") {
+      const testedAt = this.dependencies.clock.now().toISOString();
+      const modelId = partner.engineModelId;
+      if (this.dependencies.engines === undefined) {
+        return { ...(modelId === undefined ? {} : { modelId }), partnerId, reasonCode: "partner_engine_probe_unavailable", status: "FAILED", testedAt };
+      }
+      const result = await this.dependencies.engines.test(partner.engine, modelId);
+      return {
+        ...(modelId === undefined ? {} : { modelId }),
+        partnerId,
+        ...(result.reasonCode === undefined ? {} : { reasonCode: result.reasonCode }),
+        status: result.available ? "READY" : "FAILED",
+        testedAt: this.dependencies.clock.now().toISOString(),
+      };
     }
     const sources = await this.dependencies.sources.list();
     const source = partner.modelSourceId === undefined

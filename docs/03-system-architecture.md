@@ -16,6 +16,8 @@ Pi core 的 Skill 使用 SDK 原生渐进披露：`pi-sdk-skill-catalog.ts` 从�
 
 本机 Pi 搭档没有整次 Work 或整个 Agent run 的固定总时限。运行时订阅 Pi Agent 的消息与工具生命周期事件；任一事件都刷新 20 分钟无进度截止，只有连续 20 分钟没有消息流、工具启动、工具更新或工具完成事件才 abort 当前 run，并形成稳定的 `partner_run_idle_timed_out`。每次独立工具调用另有不可放宽的 15 分钟上限，即使工具参数声明更长 timeout 也不能绕过；超时通过 AbortSignal 终止并以 `partner_tool_timed_out` 工具错误交回模型。该机制不改变副作用策略：已观察到副作用的 Work 仍不得自动重放。
 
+本机工作区输出采集器为新建/修改文件和新建目录保存仅供主进程使用的 `workspace:` 相对引用；Agent conversation 与 goal outcome 只投影不含路径的 artifactId 和安全元数据。`POST /api/v1/workbenches/:workbenchId/artifacts/:artifactId/open` 是 write-auth 且 desktop-only：repository 先校验 artifact 与 Agent/goal、Workbench 的权威关联，再从私有 workspace binding/root 解析引用并对 root、candidate、realpath 和文件类型逐层 fail closed；application 只把已解析目标交给 opener port，Electron `shell.openPath/showItemInFolder` 只在 composition root 实现。LAN 会话不能借该接口触发本机文件操作。
+
 ### 0.1 搭档实例与工作记忆
 
 搭档配置是无 cwd 的全局不可变模板；`PartnerInstanceManager` 负责运行中的工作台私有实例。每个实例必填 `workbenchId`，标记 `EPHEMERAL`（默认，单次即销毁）或 `RESIDENT`（保留会话、跨应用重启可恢复），确保、枚举、派发、复用和销毁都禁止跨工作台。实例行在 `partner_instances`，会话消息在 `partner_instance_messages`，`dispatch_attempts.instance_id` 关联派发。migration 027 会将升级前实例全部置为 `DISPOSED`；之后启动恢复只处理满足新不变量的实例。硬上限：常驻实例每工作台/搭档 4、全局 12、热 Agent 8。
@@ -361,3 +363,4 @@ API 返回 202 只表示事件已经持久化，不表示 Agent 已阅读或回�
 - 工作台名称、范围和工程标签描述持久的工作聚类与运行环境，不描述某一个 Agent 的人格或职位；前端调试/分析工作自动使用受管环境目录 `aimanadebug`。
 - Agent/Partner 名称描述可复用的能力聚类，例如 `编码工坊`；能力描述只写职责边界，不重复工作台环境、目录或项目上下文。
 - 工作台创建、受管目录重建和目录 provision 共用同一命名规则。目录名只作为受控路径的最后一段，绝对路径仍只留在主进程基础设施。
+Claude Code 与 Codex 运行时共享 `PartnerEngineRuntime`，但分别由官方 `@anthropic-ai/claude-agent-sdk` 与 `@openai/codex-sdk` 适配器实现。两者先把供应商 stream 收敛为 Joi 自有的 A2A 风格安全事件（message/status/artifact/tool activity），应用层 projector 再生成现有 Agent conversation DTO；工具参数、命令、结果、reasoning、原始错误和绝对路径不越过基础设施边界。Claude 使用用户 PATH 的可执行文件、环境 `ANTHROPIC_API_KEY`、partial messages、allowedTools 与官方 resume；Codex 使用用户 CLI、原样模型、`developer_instructions`、start/resume thread 与显式 sandbox/network/web 权限。`health` 只做低成本门禁，用户触发的 `probe` 才通过相同适配器执行无工具最小调用。若 Electron 携带上层 Codex 会话标记，子 Codex 环境移除 `CODEX_HOME`、`CODEX_API_KEY`、`CODEX_MANAGED_BY_NPM` 与 `CODEX_MANAGED_PACKAGE_ROOT`；resolver 跳过 App `node_modules/.bin`，只解析用户安装。详见 ADR 0014。

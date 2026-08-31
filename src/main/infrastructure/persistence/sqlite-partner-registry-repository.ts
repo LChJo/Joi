@@ -3,7 +3,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../../application/ports/partner-registry.js";
-import type { PartnerRevision } from "../../domain/partners/partner.js";
+import { legacyCodexPermissions, normalizeCodexPermissions, type PartnerRevision } from "../../domain/partners/partner.js";
 import { mapStoredEngine, storageCliProtocol, storageEngine } from "./partner-engine-storage.js";
 
 interface TransactionalDatabase {
@@ -14,7 +14,7 @@ type Row = Record<string, unknown>;
 
 const SELECT_REVISIONS = `SELECT p.partner_id, p.kind, p.created_by, r.status AS revision_status, r.partner_revision_id, r.registry_revision,
   r.display_name, r.capabilities_json, r.skills_json, r.tools_json, r.prompt_ref, r.workspace_ref,
-  r.description, r.engine, r.cli_protocol, r.model_source_id, r.model_id_override, r.engine_model_id,
+  r.description, r.engine, r.cli_protocol, r.model_source_id, r.model_id_override, r.engine_model_id, r.engine_config_json,
   r.provenance_json, r.created_at
   FROM partners p JOIN partner_revisions r ON r.partner_id = p.partner_id`;
 
@@ -43,13 +43,26 @@ function mapRow(row: Row): PartnerRevision {
   const engineModelId = row.engine_model_id;
   const modelIdOverride = row.model_id_override;
   const modelSourceId = row.model_source_id;
+  const engine = mapStoredEngine(row.engine, row.cli_protocol);
+  const tools = stringArray(row.tools_json);
+  let codexPermissions: PartnerRevision["codexPermissions"];
+  if (engine === "codex") {
+    if (typeof row.engine_config_json === "string") {
+      const parsed: unknown = JSON.parse(row.engine_config_json);
+      if (parsed === null || Array.isArray(parsed) || typeof parsed !== "object") throw new Error("partner_registry_record_invalid");
+      codexPermissions = normalizeCodexPermissions(parsed as PartnerRevision["codexPermissions"]);
+    } else {
+      codexPermissions = legacyCodexPermissions(tools);
+    }
+  }
   return {
     capabilities: stringArray(row.capabilities_json),
     createdAt: rowText(row, "created_at"),
     createdBy: row.created_by === "JOI" ? "joi" : "user",
     ...(typeof description === "string" ? { description } : {}),
     displayName: rowText(row, "display_name"),
-    engine: mapStoredEngine(row.engine, row.cli_protocol),
+    engine,
+    ...(codexPermissions === undefined ? {} : { codexPermissions }),
     ...(typeof engineModelId === "string" ? { engineModelId } : {}),
     kind: rowText(row, "kind") === "LOCAL_PI" ? "local-pi" : "a2a",
     ...(typeof modelIdOverride === "string" ? { modelIdOverride } : {}),
@@ -67,7 +80,7 @@ function mapRow(row: Row): PartnerRevision {
     registryRevision,
     skills: stringArray(row.skills_json),
     status: rowText(row, "revision_status") as PartnerRevision["status"],
-    tools: stringArray(row.tools_json),
+    tools,
   };
 }
 
@@ -87,18 +100,29 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
         input.partnerId, input.kind === "local-pi" ? "LOCAL_PI" : "A2A", input.status,
         input.createdBy === "joi" ? "JOI" : "USER", input.createdAt, input.createdAt,
       );
-      connection.prepare(`INSERT INTO partner_revisions
-        (partner_revision_id, partner_id, registry_revision, display_name, capabilities_json, skills_json,
-         tools_json, prompt_ref, workspace_ref, execution_policy_json, provenance_json, status, created_at,
-         description, engine, cli_protocol, model_source_id, model_id_override, engine_model_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      const revisionValues = [
         input.partnerRevisionId, input.partnerId, registryRevision, input.displayName,
         JSON.stringify(input.capabilities), JSON.stringify(input.skills), JSON.stringify(input.tools),
         input.promptRef ?? null, null,
         JSON.stringify({ transport: input.kind, localOverridesWin: true }), JSON.stringify(input.provenance), input.status, input.createdAt,
         input.description ?? null, storageEngine(input.engine), storageCliProtocol(input.engine),
         input.modelSourceId ?? null, input.modelIdOverride ?? null, input.engineModelId ?? null,
+      ];
+      const supportsEngineConfig = (connection.prepare("PRAGMA table_info(partner_revisions)").all() as { name?: unknown }[])
+        .some((column) => column.name === "engine_config_json");
+      if (supportsEngineConfig) connection.prepare(`INSERT INTO partner_revisions
+        (partner_revision_id, partner_id, registry_revision, display_name, capabilities_json, skills_json,
+         tools_json, prompt_ref, workspace_ref, execution_policy_json, provenance_json, status, created_at,
+         description, engine, cli_protocol, model_source_id, model_id_override, engine_model_id, engine_config_json)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        ...revisionValues,
+        input.codexPermissions === undefined ? null : JSON.stringify(input.codexPermissions),
       );
+      else connection.prepare(`INSERT INTO partner_revisions
+        (partner_revision_id, partner_id, registry_revision, display_name, capabilities_json, skills_json,
+         tools_json, prompt_ref, workspace_ref, execution_policy_json, provenance_json, status, created_at,
+         description, engine, cli_protocol, model_source_id, model_id_override, engine_model_id)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(...revisionValues);
       connection.prepare("UPDATE partners SET active_revision_id = ? WHERE partner_id = ?").run(input.partnerRevisionId, input.partnerId);
       return { ...input, registryRevision };
     });

@@ -301,6 +301,13 @@ export interface RuntimeDiagnosticEventMap {
     outboxId: string;
     status: string;
   };
+  "joi.partner.cli_probe.settled": {
+    durationMs: number;
+    engine: string;
+    outcome: "failed" | "ready";
+    phase: "create" | "invoke" | "resolve";
+    reasonCode?: string;
+  };
   "joi.partner.run.created": {
     actionId: string;
     agentId?: string;

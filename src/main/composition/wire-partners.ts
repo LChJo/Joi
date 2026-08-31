@@ -12,7 +12,8 @@ import { LocalSkillScanner } from "../infrastructure/skills/local-skill-scanner.
 import { BuiltinPiCodingToolFactory } from "../infrastructure/pi/pi-coding-tool-factory.js";
 import { PiPartnerEngineRuntime } from "../infrastructure/pi/pi-partner-engine-runtime.js";
 import { PiPartnerMemorySummarizer } from "../infrastructure/pi/pi-partner-memory-summarizer.js";
-import { LocalCliPartnerEngineRuntime } from "../infrastructure/mana/local-cli-partner-engine-runtime.js";
+import { ClaudeAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/claude-agent-sdk-partner-engine-runtime.js";
+import { CodexAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
 import type { ModelSourceBundle } from "./wire-model-sources.js";
 import type { PersistenceBundle } from "./wire-persistence.js";
 
@@ -43,22 +44,21 @@ export function wirePartners(input: {
       sources: modelSourceStack.reasoningSources,
       tools: new BuiltinPiCodingToolFactory(),
     })],
-    ["claude-code", new LocalCliPartnerEngineRuntime({
+    ["claude-code", new ClaudeAgentSdkPartnerEngineRuntime({
       contexts: persistence.workbenchContextRepository,
+      diagnostics,
       prompts: persistence.partnerPromptStore,
-      protocol: "claude",
-      store: persistence.localCliConversationStore,
     })],
-    ["codex", new LocalCliPartnerEngineRuntime({
+    ["codex", new CodexAgentSdkPartnerEngineRuntime({
       contexts: persistence.workbenchContextRepository,
+      diagnostics,
       prompts: persistence.partnerPromptStore,
-      protocol: "codex",
-      store: persistence.localCliConversationStore,
     })],
   ]);
   const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: persistence.scenarioPackRepository, skills: partnerSkillCatalog });
+  const engineCatalog = new PartnerEngineCatalog(partnerEngines);
   return {
-    engineCatalog: new PartnerEngineCatalog(partnerEngines),
+    engineCatalog,
     partnerInstances: new PartnerInstanceManager({
       clock,
       diagnostics,
@@ -72,7 +72,7 @@ export function wirePartners(input: {
       skills: partnerSkillCatalog,
     }),
     partnerKnowledge,
-    partnerModelProbe: new PartnerModelProbeService({ clock, partners, sources: modelSourceStack.modelSources }),
+    partnerModelProbe: new PartnerModelProbeService({ clock, engines: engineCatalog, partners, sources: modelSourceStack.modelSources }),
     partnerMemory: new PartnerWorkMemoryService({
       clock,
       ids,

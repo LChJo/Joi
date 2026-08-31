@@ -119,10 +119,10 @@ describe("Pi partner engine runtime", () => {
     let publishAttempts = 0;
     const context = {
       knowledgeSection: "",
-      onConversation: async (drafts: unknown[]) => {
+      onEvent: async (event: unknown) => {
         publishAttempts += 1;
+        snapshots.push(event);
         if (publishAttempts === 1) throw new Error("display projection temporarily unavailable");
-        snapshots.push(drafts);
       },
       skillEnvironmentKeys: [],
       skillSection: "",
@@ -135,11 +135,15 @@ describe("Pi partner engine runtime", () => {
     )).resolves.toMatchObject({ status: "COMPLETED" });
 
     const serialized = JSON.stringify(snapshots);
+    const visibleText = snapshots.flatMap((event) => {
+      const row = event as { parts?: { text?: string }[] };
+      return row.parts?.map((part) => part.text ?? "") ?? [];
+    }).join("");
     expect(snapshots.length).toBeGreaterThan(2);
     expect(serialized).toContain("分析公开资料");
-    expect(serialized).toContain("正在整理可见结论");
+    expect(visibleText).toContain("正在整理可见结论");
     expect(serialized).toContain('"toolName":"read"');
-    expect(serialized).toContain("执行完成");
+    expect(serialized).toContain('"state":"completed"');
     expect(serialized).not.toContain("PRIVATE_TOOL_ARGUMENT");
     expect(serialized).not.toContain("PRIVATE_TOOL_RESULT");
     expect(serialized).not.toContain("PRIVATE_REASONING");
@@ -608,12 +612,12 @@ describe("Pi partner engine runtime", () => {
     const second = await runtime.runResidentTurn({
       instanceId: "instance_1", knowledgeSection: "KB_SECTION",
       request: { ...request, actionId: "action_2", taskProjection: "second task" },
-      restoredMessages: first.messages,
+      restoredMessages: first.messages ?? null,
       revision,
       skillEnvironmentKeys: [],
       skillSection: "",
     });
-    expect(second.messages.length).toBeGreaterThan(first.messages.length);
+    expect(second.messages?.length).toBeGreaterThan(first.messages?.length ?? 0);
 
     const ephemeral = await runtime.runEphemeral(
       { actionId: "action_3", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "one shot", workId: "work_3" },
@@ -626,13 +630,13 @@ describe("Pi partner engine runtime", () => {
     const rebuilt = await runtime.runResidentTurn({
       instanceId: "instance_1", knowledgeSection: "KB_SECTION",
       request: { ...request, actionId: "action_4", taskProjection: "after eviction" },
-      restoredMessages: second.messages,
+      restoredMessages: second.messages ?? null,
       revision,
       skillEnvironmentKeys: [],
       skillSection: "",
     });
     expect(rebuilt.status).toBe("COMPLETED");
-    expect(rebuilt.messages.length).toBeGreaterThan(second.messages.length);
+    expect(rebuilt.messages?.length).toBeGreaterThan(second.messages?.length ?? 0);
 
     expect(runtime.engineOf()).toBe("pi-core");
     await expect(runtime.health()).resolves.toEqual({ available: true });

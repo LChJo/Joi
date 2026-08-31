@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, dirname, extname, join } from "node:path";
+import { delimiter, dirname, extname, join, normalize } from "node:path";
 
 /**
  * Resolves the user's locally installed Claude Code / Codex CLI that the Agent
@@ -26,6 +26,7 @@ function executableCandidates(commandName: string): string[] {
 function resolvePathExecutable(commandNames: string[]): string | undefined {
   const pathEntries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
   for (const dir of pathEntries) {
+    if (isNodeModulesBinDirectory(dir)) continue;
     for (const commandName of commandNames) {
       for (const candidateName of executableCandidates(commandName)) {
         const candidate = join(dir, candidateName);
@@ -34,6 +35,12 @@ function resolvePathExecutable(commandNames: string[]): string | undefined {
     }
   }
   return undefined;
+}
+
+/** npm scripts prepend the app's own node_modules/.bin; it is not a user CLI installation. */
+function isNodeModulesBinDirectory(directory: string): boolean {
+  const parts = normalize(directory).split(/[\\/]+/u).map((part) => part.toLowerCase());
+  return parts.some((part, index) => part === "node_modules" && parts[index + 1] === ".bin");
 }
 
 interface CodexNativeTarget {
@@ -52,26 +59,32 @@ function getCodexNativeTarget(): CodexNativeTarget | undefined {
   return undefined;
 }
 
+function resolveNativeCodexFromPackageRoot(packageRoot: string): string | undefined {
+  const target = getCodexNativeTarget();
+  if (target === undefined) return undefined;
+  const nativeRoots = [
+    join(dirname(packageRoot), target.packageName, "vendor", target.triple),
+    join(packageRoot, "node_modules", "@openai", target.packageName, "vendor", target.triple),
+  ];
+  for (const nativeRoot of nativeRoots) {
+    const modern = join(nativeRoot, "bin", target.binary);
+    if (existsSync(modern)) return modern;
+    const legacy = join(nativeRoot, "codex", target.binary);
+    if (existsSync(legacy)) return legacy;
+  }
+  return undefined;
+}
+
 /** Native conversations need the real Codex binary, not an npm cmd/bat shim. */
 function resolveNativeCodexExecutable(executablePath: string): string | undefined {
   if (process.platform !== "win32") return executablePath;
   const extension = extname(executablePath).toLowerCase();
   if (extension !== ".cmd" && extension !== ".bat" && extension !== ".ps1" && extension !== ".js") return executablePath;
-  const target = getCodexNativeTarget();
-  if (target === undefined) return undefined;
   const shimDir = dirname(executablePath);
   const packageRoots = [join(shimDir, "node_modules", "@openai", "codex"), join(shimDir, "..", "@openai", "codex")];
   for (const packageRoot of packageRoots) {
-    const nativeRoots = [
-      join(dirname(packageRoot), target.packageName, "vendor", target.triple),
-      join(packageRoot, "node_modules", "@openai", target.packageName, "vendor", target.triple),
-    ];
-    for (const nativeRoot of nativeRoots) {
-      const modern = join(nativeRoot, "bin", target.binary);
-      if (existsSync(modern)) return modern;
-      const legacy = join(nativeRoot, "codex", target.binary);
-      if (existsSync(legacy)) return legacy;
-    }
+    const native = resolveNativeCodexFromPackageRoot(packageRoot);
+    if (native !== undefined) return native;
   }
   return undefined;
 }

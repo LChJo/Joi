@@ -204,6 +204,27 @@
 .joi-clarify-label { margin: 0; color: var(--ink); font-size: .8rem; font-weight: 700; }
 .joi-clarify-reason { margin: 0; color: var(--muted); }
 .joi-clarify-hint { margin: 0; color: var(--faint); font-size: .85rem; }
+.joi-clarify-workbench-picker { display: grid; gap: 8px; min-width: 0; }
+.joi-clarify-workbench-search { display: grid; gap: 4px; color: var(--muted); font-size: .78rem; font-weight: 650; }
+.joi-clarify-workbench-search input {
+  width: 100%; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--paper-strong); color: var(--ink); padding: 8px 10px; font: inherit; font-weight: 400;
+}
+.joi-clarify-workbench-list {
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; min-width: 0;
+  max-height: min(320px, 34vh); overflow-y: auto; padding: 2px; overscroll-behavior: contain;
+}
+.joi-clarify-workbench-list > .joi-clarify-hint { grid-column: 1 / -1; padding: 8px 2px; }
+.joi-clarify-workbench-option {
+  display: grid; align-content: start; gap: 3px; min-width: 0; min-height: 58px; padding: 9px 11px;
+  border: 1px solid var(--line-strong); border-radius: var(--radius); background: var(--paper-strong);
+  color: var(--ink); cursor: pointer; font: inherit; text-align: left;
+}
+.joi-clarify-workbench-option:hover:not(:disabled) { border-color: var(--moss); background: color-mix(in srgb, var(--forest) 5%, var(--paper)); }
+.joi-clarify-workbench-option:disabled { opacity: .6; cursor: default; }
+.joi-clarify-workbench-option strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.joi-clarify-workbench-option span { display: -webkit-box; min-width: 0; overflow: hidden; color: var(--muted); font-size: .76rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.joi-clarify-new-workbench { justify-self: start; }
 .joi-clarify-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .joi-clarify-chip {
   border: 1px solid var(--line-strong); border-radius: 999px; background: var(--paper-strong);
@@ -410,9 +431,17 @@
   background: var(--paper-strong);
   box-shadow: var(--shadow);
 }
-.joi-workbench-menu > span, .joi-workbench-menu > small { color: var(--muted); font-size: .8rem; }
-.joi-workbench-options { display: grid; gap: 7px; }
-.joi-workbench-options .button { justify-content: flex-start; width: 100%; }
+.joi-workbench-search { display: grid; gap: 4px; color: var(--muted); font-size: .78rem; font-weight: 650; }
+.joi-workbench-search input {
+  width: 100%; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--radius);
+  background: var(--paper-strong); color: var(--ink); padding: 8px 10px; font: inherit; font-weight: 400;
+}
+.joi-workbench-options {
+  display: grid; gap: 7px; max-height: min(280px, 36vh); min-width: 0; overflow-y: auto;
+  overscroll-behavior: contain; padding: 2px;
+}
+.joi-workbench-options .button { justify-content: flex-start; width: 100%; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.joi-workbench-empty { padding: 8px 2px; color: var(--muted); font-size: .8rem; }
 .joi-file-summary { color: var(--muted); font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .joi-composer-toolbar .button.primary { margin-left: auto; }
 
@@ -507,11 +536,21 @@
 .agent-message > header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--muted); font-size: .76rem; }
 .agent-message > :last-child { margin-bottom: 0; }
 .agent-message pre { max-width: 100%; overflow: auto; white-space: pre-wrap; }
-.agent-tool-block { display: grid; gap: 5px; padding: 10px 12px; border-left: 3px solid var(--blue); border-radius: 8px; background: var(--wash); }
-.agent-tool-block.result { border-left-color: var(--moss); }
-.agent-tool-block span, .agent-artifact span { color: var(--muted); font-size: .76rem; }
-.agent-tool-block pre { margin: 0; font: .78rem/1.5 ui-monospace, "Cascadia Code", Consolas, monospace; }
-.agent-artifact { display: grid; gap: 3px; padding: 10px 12px; border: 1px dashed var(--line-strong); border-radius: 8px; }
+.agent-message.tool { padding: 0; border-color: transparent; background: transparent; box-shadow: none; }
+.agent-tool-compact { border: 1px solid var(--line); border-left: 3px solid var(--blue); border-radius: 8px; background: color-mix(in srgb, var(--wash) 72%, transparent); }
+.agent-tool-compact.result { border-left-color: var(--moss); }
+.agent-tool-compact summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 30px; padding: 3px 9px; color: var(--muted); cursor: pointer; font-size: .72rem; list-style-position: inside; }
+.agent-tool-compact summary code { overflow: hidden; color: var(--ink); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.agent-tool-compact summary time { color: var(--faint); font-size: .66rem; }
+.agent-tool-compact pre { max-height: 240px; margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); overflow: auto; font: .74rem/1.45 ui-monospace, "Cascadia Code", Consolas, monospace; }
+.agent-artifact { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 9px 11px; border: 1px dashed var(--line-strong); border-radius: 8px; }
+.agent-artifact-copy { display: grid; min-width: 0; gap: 2px; }
+.agent-artifact-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agent-artifact span, .agent-artifact-notice { color: var(--muted); font-size: .76rem; }
+.agent-artifact-open { min-height: 28px; padding: 4px 9px; }
+.agent-artifact-notice { grid-column: 1 / -1; }
+.joi-goal-artifacts { display: grid; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
+.joi-goal-artifacts h3 { margin: 0; font-size: .78rem; color: var(--muted); }
 .agent-remote-image { color: var(--faint); font-style: italic; }
 .agent-load-more { justify-self: center; }
 
@@ -608,6 +647,7 @@
   .joi-composer button { grid-column: 1; }
   .joi-clarify-add, .joi-clarify-workspace { align-items: stretch; flex-direction: column; }
   .joi-clarify-partner-list, .joi-clarify-proposal-list { grid-template-columns: 1fr; }
+  .joi-clarify-workbench-list { grid-template-columns: 1fr; max-height: min(360px, 46vh); }
   .joi-clarify-add button, .joi-clarify-workspace button { align-self: start; }
   .partner-form { grid-template-columns: 1fr; }
   .tab-panel, .mode-cards, .partner-basic-grid { grid-template-columns: 1fr; }
