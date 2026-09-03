@@ -1,6 +1,6 @@
 # joi repository guide
 
-Agent-facing run, validation, clean and package commands are documented in `.agent/commands.md`.
+Agent-facing run, validation, clean and package commands are indexed in `.agent/commands/README.md`. `.agent/commands.md` remains a compatibility summary.
 
 ## Source of truth
 

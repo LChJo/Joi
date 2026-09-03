@@ -34,7 +34,7 @@ npm run dev
 npm run app:run
 ```
 
-`npm run dev` 启动开发态；`npm run app:run` 构建并运行本地生产形态。Agent 使用的完整命令索引见 [`.agent/commands.md`](.agent/commands.md)。
+`npm run dev` 启动开发态；`npm run app:run` 构建并运行本地生产形态。Agent 使用的完整命令索引见 [`.agent/commands/`](.agent/commands/README.md)，旧 [`.agent/commands.md`](.agent/commands.md) 保留为兼容摘要。
 
 固定质量命令：
 

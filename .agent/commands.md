@@ -1,6 +1,13 @@
-# joi · Agent 运行与打包命令
+# joi · Agent 命令兼容入口
 
-所有命令都从仓库根目录执行。Node.js 与 npm 版本要求以 `package.json#engines` 为准。
+按任务拆分的 AI 命令文档位于 [`.agent/commands/`](commands/README.md)：
+
+- [开发运行](commands/dev.md)
+- [验证](commands/verify.md)
+- [打包](commands/package.md)
+- [清理](commands/clean.md)
+
+本文件保留为兼容摘要。所有命令都从仓库根目录执行，Node.js 与 npm 版本要求以 `package.json#engines` 为准。
 
 ## 安装与运行
 

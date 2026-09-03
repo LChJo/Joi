@@ -40,9 +40,25 @@ describe("joi product and release contract", () => {
   });
 
   it("publishes reproducible run, clean, and package commands for agents", async () => {
-    const [packageSource, agentCommands, packageScript, cleanScript, ignore] = await Promise.all([
+    const [
+      packageSource,
+      agentCommands,
+      commandIndex,
+      devCommand,
+      verifyCommand,
+      packageCommand,
+      cleanCommand,
+      packageScript,
+      cleanScript,
+      ignore,
+    ] = await Promise.all([
       readProjectFile("package.json"),
       readProjectFile(".agent/commands.md"),
+      readProjectFile(".agent/commands/README.md"),
+      readProjectFile(".agent/commands/dev.md"),
+      readProjectFile(".agent/commands/verify.md"),
+      readProjectFile(".agent/commands/package.md"),
+      readProjectFile(".agent/commands/clean.md"),
       readProjectFile("scripts/package-app.mjs"),
       readProjectFile("scripts/clean-artifacts.mjs"),
       readProjectFile(".gitignore"),
@@ -57,6 +73,15 @@ describe("joi product and release contract", () => {
     for (const command of ["npm run dev", "npm run app:run", "npm run package:win", "npm run package:mac", "npm run package:dir"]) {
       expect(agentCommands).toContain(command);
     }
+    for (const commandPath of ["dev.md", "verify.md", "package.md", "clean.md"]) {
+      expect(commandIndex).toContain(`(${commandPath})`);
+    }
+    expect(devCommand).toContain("npm run dev");
+    expect(verifyCommand).toContain("npm run typecheck");
+    expect(verifyCommand).toContain("npm run package:verify");
+    expect(packageCommand).toContain("npm run build:mobile:android");
+    expect(packageCommand).toContain("npm run package:win");
+    expect(cleanCommand).toContain("npm run clean");
     expect(packageScript).toContain("supportedTargets");
     expect(packageScript).toContain("npm_execpath");
     expect(packageScript).not.toContain('const npmCommand = process.platform === "win32" ? "npm.cmd" : "npm"');
