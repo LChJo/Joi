@@ -325,18 +325,111 @@ describe("SqliteJoiHarnessRepository", () => {
       expect(await repository.listReviewDigests()).toEqual([]);
     });
 
-    it("requeues a consumed review once when its history proves no side effect started", async () => {
-      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-recovery", status: "CONSUMED", turn: true });
-      await repository.createMap({ workbenchId, goalInputId: "goal-review-recovery", now: NOW });
-      seedCompletedLayer(fixture, "goal-review-recovery", 1);
+    it("does not post a harness review for a blocked synthesis outcome", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-blocked", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-blocked", now: NOW });
+      seedCompletedLayer(fixture, "goal-blocked", 1);
       fixture.database.transaction((connection) => connection.prepare(
-        "UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = 'goal-review-recovery'",
+        "UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = 'goal-blocked'",
       ).run());
+
+      expect(await repository.listReviewDigests()).toEqual([]);
+    });
+
+    it("queues a dedicated recovery turn and clears an internal dispatch clarification", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-self-heal", status: "CLARIFICATION_REQUIRED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-self-heal", now: NOW });
+      seedCompletedLayer(fixture, "goal-self-heal", 1);
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = 'goal-self-heal'").run();
+        connection.prepare(`UPDATE joi_inbox_messages SET clarification_reason_code = 'workspace_permission_required',
+          clarification_prompt = 'permission required' WHERE input_id = 'goal-self-heal'`).run();
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-self-heal', ?, 'goal-self-heal', 'missing report', '{}', 'READ', 'FAILED', ?, ?)`)
+          .run(workbenchId, NOW, NOW);
+      });
+
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
+        .toMatchObject({ goalId: "goal-self-heal", status: "NEEDS_ATTENTION" });
+      fixture.database.transaction((connection) => connection.prepare(`UPDATE joi_inbox_messages
+        SET clarification_reason_code = 'work_dispatch_failed', clarification_prompt = 'internal failure'
+        WHERE input_id = 'goal-self-heal'`).run());
+
+      const [seed] = await repository.listWorkRecoverySeeds();
+      expect(seed).toEqual({ attemptNo: 1, goalInputId: "goal-self-heal", sourceWorkId: "work-self-heal", workbenchId });
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
+        .toMatchObject({ canDelete: false, goalId: "goal-self-heal", status: "EXTENDING" });
+      if (seed === undefined) throw new Error("recovery seed missing");
+      const recoveryInputId = await repository.enqueueWorkRecovery({ now: NOW, seed });
+      expect(recoveryInputId).toBe("joi_recovery:goal:goal-self-heal:work:work-self-heal:a1");
+      expect(await repository.listWorkRecoverySeeds()).toEqual([]);
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT status, clarification_reason_code
+        FROM joi_inbox_messages WHERE input_id = 'goal-self-heal'`).get())).toEqual({
+        clarification_reason_code: null,
+        status: "CONSUMED",
+      });
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT goal_input_id, status
+        FROM joi_inbox_messages WHERE input_id = ?`).get(recoveryInputId))).toEqual({ goal_input_id: "goal-self-heal", status: "PENDING" });
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
+        .toMatchObject({ canDelete: false, goalId: "goal-self-heal", status: "EXTENDING" });
+
+      fixture.database.transaction((connection) => connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CONSUMED', failed_at = ? WHERE input_id = ?`).run(NOW, recoveryInputId));
+      const [secondSeed] = await repository.listWorkRecoverySeeds();
+      expect(secondSeed).toMatchObject({ attemptNo: 2, goalInputId: "goal-self-heal", sourceWorkId: "work-self-heal" });
+      if (secondSeed === undefined) throw new Error("second recovery seed missing");
+      const secondRecoveryInputId = await repository.enqueueWorkRecovery({ now: NOW, seed: secondSeed });
+      expect(secondRecoveryInputId).toBe("joi_recovery:goal:goal-self-heal:work:work-self-heal:a2");
+      fixture.database.transaction((connection) => connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CONSUMED', failed_at = ? WHERE input_id = ?`).run(NOW, secondRecoveryInputId));
+      expect(await repository.listWorkRecoverySeeds()).toEqual([]);
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
+        .toMatchObject({ goalId: "goal-self-heal", status: "FAILED" });
+    });
+
+    it("does not let historical review recovery quarantine a goal owned by work recovery", async () => {
+      const goalInputId = "goal-recovery-owns-blocked";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1);
       const [digest] = await repository.listReviewDigests();
       if (digest === undefined) throw new Error("review digest missing");
       const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
       if (reviewInputId === null) throw new Error("review input missing");
       fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = ?").run(goalInputId);
+        connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', failed_at = ?,
+          failure_reason_code = 'legacy_scheduler_failure', failure_count = 8 WHERE input_id = ?`).run(NOW, reviewInputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at)
+          VALUES ('turn-recovery-owned-review', ?, ?, 'review-recovery-owned', 'COMPLETED', 1, ?, ?)`).run(
+          reviewInputId, workbenchId, NOW, NOW,
+        );
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-recovery-owned', ?, ?, 'missing artifact', '{}', 'WRITE', 'FAILED', ?, ?)`).run(
+          workbenchId, goalInputId, NOW, NOW,
+        );
+      });
+
+      expect(await repository.listReviewRecoveries()).toHaveLength(1);
+      const [seed] = await repository.listWorkRecoverySeeds();
+      if (seed === undefined) throw new Error("work recovery seed missing");
+      expect(await repository.enqueueWorkRecovery({ now: NOW, seed })).not.toBeNull();
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+    });
+
+    it("requeues a consumed review once when its history proves no side effect started", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-recovery", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-review-recovery", now: NOW });
+      seedCompletedLayer(fixture, "goal-review-recovery", 1);
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = 'goal-review-recovery'").run();
         connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', failed_at = ?,
           failure_reason_code = 'legacy_scheduler_failure', failure_count = 8 WHERE input_id = ?`).run(NOW, reviewInputId);
         connection.prepare(`INSERT INTO joi_turns
@@ -361,14 +454,12 @@ describe("SqliteJoiHarnessRepository", () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-unsafe", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-review-unsafe", now: NOW });
       seedCompletedLayer(fixture, "goal-review-unsafe", 1);
-      fixture.database.transaction((connection) => connection.prepare(
-        "UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = 'goal-review-unsafe'",
-      ).run());
       const [digest] = await repository.listReviewDigests();
       if (digest === undefined) throw new Error("review digest missing");
       const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
       if (reviewInputId === null) throw new Error("review input missing");
       fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = 'goal-review-unsafe'").run();
         connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', failed_at = ?,
           failure_reason_code = 'legacy_scheduler_failure', failure_count = 8 WHERE input_id = ?`).run(NOW, reviewInputId);
         connection.prepare(`INSERT INTO joi_turns

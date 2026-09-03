@@ -8,6 +8,7 @@ import { PUBLIC_ROUTES } from "./public-routes.js";
 import { AGENT_ROUTES, SYSTEM_ROUTES } from "./system-routes.js";
 import { REMOTE_ROUTES } from "./remote-routes.js";
 import { WORKBENCH_ROUTES } from "./workbench-routes.js";
+import { AUTOMATION_READ_ROUTES, AUTOMATION_WRITE_ROUTES } from "./automation-routes.js";
 
 /**
  * Authenticated route table. Families are disjoint path prefixes, so cross-family
@@ -17,10 +18,12 @@ export const AUTHENTICATED_ROUTES: RouteDefinition[] = [
   ...AUTH_SESSION_ROUTES,
   ...MODEL_SOURCE_READ_ROUTES,
   ...JOI_READ_ROUTES,
+  ...AUTOMATION_READ_ROUTES,
   ...PARTNER_CATALOG_ROUTES,
   ...WORKBENCH_ROUTES,
   ...PARTNER_MUTATION_ROUTES,
   ...JOI_WRITE_ROUTES,
+  ...AUTOMATION_WRITE_ROUTES,
   ...MODEL_SOURCE_WRITE_ROUTES,
   ...AUTH_MUTATION_ROUTES,
   ...REMOTE_ROUTES,

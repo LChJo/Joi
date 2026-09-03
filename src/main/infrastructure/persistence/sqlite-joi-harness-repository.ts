@@ -13,6 +13,7 @@ import type {
   HarnessReviewDigest,
   HarnessReviewRecoveryCandidate,
   HarnessReviewRecoveryResult,
+  HarnessWorkRecoverySeed,
   JoiHarnessScan,
   JoiHarnessStore,
   JoiHarnessWriter,
@@ -199,12 +200,104 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.status = 'ACTIVE'
            AND rs.revision > m.reviewed_revision
            AND rs.synthesized_revision = rs.revision
+           AND o.disposition = 'COMPLETED'
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM work_items w
                             WHERE w.input_id = m.goal_input_id
                               AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
          ORDER BY m.updated_at, m.goal_input_id LIMIT 10`).all() as Row[];
       return candidates.map((row) => reviewDigest(connection, row));
+    });
+  }
+
+  async listWorkRecoverySeeds(): Promise<HarnessWorkRecoverySeed[]> {
+    return this.database.transaction((connection) => {
+      const rows = connection.prepare(`SELECT m.goal_input_id, m.workbench_id,
+        (SELECT failed.work_id FROM work_items failed
+          WHERE failed.input_id = m.goal_input_id AND failed.status = 'FAILED'
+            AND (SELECT COUNT(*) FROM work_recovery_attempts a WHERE a.source_work_id = failed.work_id) < 2
+            AND (SELECT COUNT(*) FROM joi_inbox_messages recovery
+                  WHERE recovery.goal_input_id = m.goal_input_id
+                    AND substr(recovery.idempotency_key, 1, length('work_recovery:' || failed.work_id || ':'))
+                      = 'work_recovery:' || failed.work_id || ':') < 2
+          ORDER BY failed.updated_at DESC, failed.work_id DESC LIMIT 1) AS source_work_id
+        FROM joi_harness_maps m
+        JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+        JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+        WHERE m.status = 'ACTIVE' AND rs.synthesized_revision = rs.revision
+          AND o.disposition = 'BLOCKED'
+          AND NOT EXISTS (SELECT 1 FROM work_items active WHERE active.input_id = m.goal_input_id
+            AND active.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+          AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages pending WHERE pending.goal_input_id = m.goal_input_id
+            AND pending.input_id LIKE 'joi_recovery:goal:%' AND pending.status IN ('PENDING', 'ROUTED'))
+        ORDER BY m.updated_at, m.goal_input_id LIMIT 10`).all() as Row[];
+      return rows.flatMap((row) => {
+        const sourceWorkId = optionalText(row, "source_work_id");
+        if (sourceWorkId === null) return [];
+        const prefix = `work_recovery:${sourceWorkId}:`;
+        const attemptRow = connection.prepare(`SELECT
+          (SELECT COUNT(*) FROM work_recovery_attempts WHERE source_work_id = ?) AS recorded_attempts,
+          (SELECT COUNT(*) FROM joi_inbox_messages WHERE goal_input_id = ?
+            AND substr(idempotency_key, 1, length(?)) = ?) AS recovery_inputs`)
+          .get(sourceWorkId, textValue(row, "goal_input_id"), prefix, prefix) as Row;
+        return [{
+          attemptNo: Math.max(
+            numberValue(attemptRow, "recorded_attempts"),
+            numberValue(attemptRow, "recovery_inputs"),
+          ) + 1,
+          goalInputId: textValue(row, "goal_input_id"),
+          sourceWorkId,
+          workbenchId: textValue(row, "workbench_id"),
+        }];
+      });
+    });
+  }
+
+  async enqueueWorkRecovery(input: { now: string; seed: HarnessWorkRecoverySeed }): Promise<string | null> {
+    return this.database.transaction((connection) => {
+      const prefix = `work_recovery:${input.seed.sourceWorkId}:`;
+      const recoveryCounts = connection.prepare(`SELECT
+        (SELECT COUNT(*) FROM work_recovery_attempts WHERE source_work_id = ?) AS recorded_attempts,
+        (SELECT COUNT(*) FROM joi_inbox_messages WHERE goal_input_id = ?
+          AND substr(idempotency_key, 1, length(?)) = ?) AS recovery_inputs`).get(
+        input.seed.sourceWorkId, input.seed.goalInputId, prefix, prefix,
+      ) as Row;
+      const currentAttempts = Math.max(
+        numberValue(recoveryCounts, "recorded_attempts"),
+        numberValue(recoveryCounts, "recovery_inputs"),
+      );
+      if (currentAttempts >= 2 || input.seed.attemptNo !== currentAttempts + 1) return null;
+      const eligible = connection.prepare(`SELECT 1 FROM work_items w
+        JOIN joi_harness_maps m ON m.goal_input_id = w.input_id AND m.status = 'ACTIVE'
+        JOIN joi_goal_result_sets rs ON rs.original_input_id = w.input_id
+        JOIN joi_goal_outcomes o ON o.input_id = w.input_id AND o.result_revision = rs.revision AND o.disposition = 'BLOCKED'
+        WHERE w.work_id = ? AND w.input_id = ? AND w.workbench_id = ? AND w.status = 'FAILED'
+          AND NOT EXISTS (SELECT 1 FROM work_items active WHERE active.input_id = w.input_id
+            AND active.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(
+        input.seed.sourceWorkId, input.seed.goalInputId, input.seed.workbenchId,
+      );
+      if (eligible === undefined) return null;
+      const inputId = `joi_recovery:goal:${input.seed.goalInputId}:work:${input.seed.sourceWorkId}:a${String(input.seed.attemptNo)}`;
+      const body = [
+        "[joi work recovery] An essential Work failed and the goal is blocked.",
+        `Source Work id: ${input.seed.sourceWorkId}. Recovery round: ${String(input.seed.attemptNo)} of 2.`,
+        "Inspect the safe result facts. If side effects were OBSERVED or UNKNOWN, never replay the source Work.",
+        "Use completed goal evidence and call work_supplement for only the missing deliverable. If a built-in tool was missing, call partner_set_tools first.",
+        "The source Work acceptance checks and access mode are inherited automatically; do not replace a required file with a Markdown response.",
+        "Do not use historical Work ids as work_dispatch dependency keys and do not ask the user to repair an internal orchestration failure.",
+      ].join(" ");
+      const inserted = connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+        VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?) ON CONFLICT(idempotency_key) DO NOTHING`).run(
+        inputId, `work_recovery:${input.seed.sourceWorkId}:${String(input.seed.attemptNo)}`, body,
+        input.seed.workbenchId, input.seed.goalInputId, input.now, input.now,
+      );
+      if (inserted.changes === 0) return null;
+      connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+        WHERE (input_id = ? OR goal_input_id = ?) AND clarification_reason_code = 'work_dispatch_failed'`)
+        .run(input.now, input.seed.goalInputId, input.seed.goalInputId);
+      return inputId;
     });
   }
 
@@ -250,6 +343,11 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
            AND NOT EXISTS (SELECT 1 FROM work_items w
                             WHERE w.input_id = m.goal_input_id
                               AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+           AND NOT (o.disposition = 'BLOCKED' AND EXISTS (
+             SELECT 1 FROM joi_inbox_messages recovery
+              WHERE recovery.goal_input_id = m.goal_input_id
+                AND recovery.input_id LIKE 'joi_recovery:goal:%'
+           ))
             AND (r.input_id IS NULL OR (
               r.status IN ('CONSUMED', 'ROUTED')
               AND (r.failed_at IS NOT NULL OR EXISTS (

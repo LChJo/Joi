@@ -10,7 +10,7 @@ import type {
   PreparedDispatch,
 } from "../../ports/partner-dispatch-delivery.js";
 import type { RuntimeStore } from "../../ports/runtime-store.js";
-import { partnerRunFailureFromError, safePartnerRunFailureBody } from "../../partners/partner-run-failure.js";
+import { partnerRunArtifactsFromError, partnerRunFailureFromError, safePartnerRunFailureBody } from "../../partners/partner-run-failure.js";
 
 const CLAIM_LEASE_MILLIS = 30_000;
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
@@ -27,7 +27,7 @@ interface InFlightRun {
 function failedOutput(error: unknown): DispatchRunOutput & { kind: "terminal" } {
   const failure = partnerRunFailureFromError(error);
   return {
-    artifacts: [], body: safePartnerRunFailureBody(failure), failure, kind: "terminal",
+    artifacts: partnerRunArtifactsFromError(error), body: safePartnerRunFailureBody(failure), failure, kind: "terminal",
     status: failure.sideEffectState === "NONE" ? "FAILED" : "UNKNOWN",
   };
 }

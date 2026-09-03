@@ -93,6 +93,7 @@ function mapRow(row: Row): JoiInboxRecord {
   const failureExecutionStarted = row.failure_execution_started;
   const failureReasonCode = row.failure_reason_code;
   const updatedAt = row.updated_at;
+  const automationRoutineId = row.automation_routine_id;
   if (typeof inputId !== "string" || typeof idempotencyKey !== "string" || typeof body !== "string"
     || typeof status !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string"
     || (workbenchId !== null && typeof workbenchId !== "string")
@@ -103,11 +104,13 @@ function mapRow(row: Row): JoiInboxRecord {
     || (failedAt !== null && failedAt !== undefined && typeof failedAt !== "string")
     || (failureCount !== null && failureCount !== undefined && (typeof failureCount !== "number" || !Number.isInteger(failureCount) || failureCount < 1))
     || (failureExecutionStarted !== null && failureExecutionStarted !== undefined && failureExecutionStarted !== 0 && failureExecutionStarted !== 1)
-    || (failureReasonCode !== null && failureReasonCode !== undefined && typeof failureReasonCode !== "string")) {
+    || (failureReasonCode !== null && failureReasonCode !== undefined && typeof failureReasonCode !== "string")
+    || (automationRoutineId !== null && automationRoutineId !== undefined && typeof automationRoutineId !== "string")) {
     throw new Error("joi_inbox_record_invalid");
   }
   return {
     ...(typeof workbenchId === "string" ? { workbenchId } : {}),
+    ...(typeof automationRoutineId === "string" ? { automationRoutineId } : {}),
     body,
     ...(typeof canceledAt === "string" ? { canceledAt } : {}),
     ...(typeof clarificationPrompt === "string" ? { clarificationPrompt } : {}),
@@ -133,8 +136,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const existing = connection.prepare("SELECT * FROM joi_inbox_messages WHERE idempotency_key = ?").get(record.idempotencyKey) as Row | undefined;
       if (existing !== undefined) return mapRow(existing);
       connection.prepare(`INSERT INTO joi_inbox_messages
-        (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
-        record.inputId, record.idempotencyKey, record.body, record.status, record.workbenchId ?? null, record.createdAt, record.updatedAt,
+        (input_id, idempotency_key, body, status, workbench_id, automation_routine_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        record.inputId, record.idempotencyKey, record.body, record.status, record.workbenchId ?? null, record.automationRoutineId ?? null, record.createdAt, record.updatedAt,
       );
       for (const attachmentId of record.attachmentIds ?? []) {
         const attachment = connection.prepare(`SELECT a.attachment_id,
@@ -374,7 +377,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async loadInput(inputId: string): Promise<JoiPendingInput | null> {
     const row = this.database.transaction((connection) => connection.prepare(
-      `SELECT i.input_id, i.body, i.status, i.workbench_id, i.goal_input_id, i.result_revision,
+      `SELECT i.input_id, i.body, i.status, i.workbench_id, i.goal_input_id, i.result_revision, i.automation_routine_id,
         (SELECT a.action_id FROM joi_user_action_requests a
           WHERE a.input_id = i.input_id AND a.status = 'RESOLVED' ORDER BY a.updated_at, a.action_id LIMIT 1) AS resolved_action_id,
         (SELECT a.work_id FROM joi_user_action_requests a
@@ -390,6 +393,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     if (row.workbench_id !== null && typeof row.workbench_id !== "string") throw new Error("joi_inbox_record_invalid");
     if (row.goal_input_id !== null && row.goal_input_id !== undefined && typeof row.goal_input_id !== "string") throw new Error("joi_inbox_record_invalid");
     if (row.result_revision !== null && row.result_revision !== undefined && typeof row.result_revision !== "number") throw new Error("joi_inbox_record_invalid");
+    if (row.automation_routine_id !== null && row.automation_routine_id !== undefined && typeof row.automation_routine_id !== "string") throw new Error("joi_inbox_record_invalid");
     if (row.resolved_action_id !== null && row.resolved_action_id !== undefined && typeof row.resolved_action_id !== "string") throw new Error("joi_user_action_invalid");
     if (row.resolved_work_id !== null && row.resolved_work_id !== undefined && typeof row.resolved_work_id !== "string") throw new Error("joi_user_action_invalid");
     if (row.resolved_decision !== null && row.resolved_decision !== undefined && row.resolved_decision !== "RESUME") throw new Error("joi_user_action_invalid");
@@ -398,6 +402,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       WHERE ia.input_id = ? ORDER BY a.created_at, a.attachment_id`).all(inputId)) as Record<string, unknown>[];
     return {
       ...(typeof row.workbench_id === "string" ? { workbenchId: row.workbench_id } : {}),
+      ...(typeof row.automation_routine_id === "string" ? { automationRoutineId: row.automation_routine_id } : {}),
       ...(attachments.length === 0 ? {} : { attachments: attachments.map((attachment) => {
         if (typeof attachment.attachment_id !== "string" || typeof attachment.filename !== "string"
           || typeof attachment.mime_type !== "string" || typeof attachment.size !== "number") throw new Error("joi_attachment_record_invalid");
@@ -547,6 +552,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
         WHERE input_id = ?`).run(now, input.inputId);
+      connection.prepare(`UPDATE joi_automation_runs SET status = 'COMPLETED', result = 'COMPLETED', completed_at = ?, reason_code = NULL
+        WHERE input_id = ? AND status <> 'CANCELED'`).run(now, input.inputId);
     });
   }
 
@@ -655,6 +662,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       }
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
         WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
+      connection.prepare(`UPDATE joi_automation_runs SET status = 'COMPLETED', result = 'COMPLETED', completed_at = ?, reason_code = NULL
+        WHERE input_id = ? AND status <> 'CANCELED'
+          AND EXISTS (SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND status = 'CONSUMED')`).run(now, inputId, inputId);
       connection.prepare("UPDATE partner_result_events SET consumed_at = ? WHERE input_id = ? AND consumed_at IS NULL").run(now, inputId);
       return undefined;
     });

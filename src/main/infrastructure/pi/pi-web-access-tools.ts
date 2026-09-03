@@ -91,6 +91,11 @@ function boundedText(value: string, maxChars = MAX_RESPONSE_CHARS): string {
   return normalized.length <= maxChars ? normalized : `${normalized.slice(0, maxChars)}\n\n[content truncated]`;
 }
 
+function firstContentPage(content: string): { hasMore: boolean; nextOffset?: number; text: string } {
+  if (content.length <= MAX_PAGE_CHARS) return { hasMore: false, text: content };
+  return { hasMore: true, nextOffset: MAX_PAGE_CHARS, text: content.slice(0, MAX_PAGE_CHARS) };
+}
+
 function privateAddress(address: string): boolean {
   const normalized = address.toLowerCase().replace(/^\[|\]$/gu, "");
   if (normalized.includes(":")) {
@@ -285,7 +290,12 @@ export class PiWebAccessToolFactory {
               if (!result.response.ok) continue;
               const content = boundedText(await readBoundedText(result.response, this.#maxResponseBytes));
               const responseId = this.#remember({ content, title: `${github.owner}/${github.repo} README`, url: parameters.url });
-              return textResult(content, { responseId, title: `${github.owner}/${github.repo} README`, url: parameters.url });
+              const page = firstContentPage(content);
+              return textResult(page.text, {
+                hasMore: page.hasMore,
+                ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+                responseId, title: `${github.owner}/${github.repo} README`, url: parameters.url,
+              });
             }
           }
           const result = await this.#request(requested);
@@ -293,7 +303,12 @@ export class PiWebAccessToolFactory {
           const raw = await readBoundedText(result.response, this.#maxResponseBytes);
           const extracted = parameters.mode === "raw" ? { content: raw, title: "" } : readableContent(raw, result.response.headers.get("content-type") ?? "");
           const responseId = this.#remember({ content: extracted.content, title: extracted.title, url: result.url.toString() });
-          return textResult(extracted.content, { responseId, title: extracted.title, url: result.url.toString() });
+          const page = firstContentPage(extracted.content);
+          return textResult(page.text, {
+            hasMore: page.hasMore,
+            ...(page.nextOffset === undefined ? {} : { nextOffset: page.nextOffset }),
+            responseId, title: extracted.title, url: result.url.toString(),
+          });
         } catch (error) {
           const code = error instanceof Error && /^[a-z_]+$/u.test(error.message) ? error.message : "web_request_failed";
           return errorResult(code, "Unable to read that public web address. Check the URL and try again.");

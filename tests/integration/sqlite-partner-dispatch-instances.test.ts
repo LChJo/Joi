@@ -380,6 +380,54 @@ describe("partner dispatch instance routing", () => {
     }
   });
 
+  it("salvages and verifies partial artifacts instead of replaying an unknown-side-effect run", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'",
+      ).run(JSON.stringify({ acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "report.md" }] })));
+      let verifiedArtifacts: unknown;
+      const handler = makeHandler(database, {
+        dispatch: async () => {
+          throw wrapPartnerRunFailure(
+            Object.assign(new Error("PRIVATE provider body"), {
+              code: "http_400",
+              partialArtifacts: [{ artifactRef: "workspace:report.md", mimeType: "text/markdown", name: "report.md", size: 321 }],
+            }),
+            { phase: "MODEL", sideEffectState: "OBSERVED" },
+          );
+        },
+      }, [], {
+        verify: async (input) => {
+          verifiedArtifacts = (input as { artifacts?: unknown }).artifacts;
+          return { status: "PASSED" };
+        },
+      });
+
+      await handler.handle(baseRecord({
+        actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", workId: "work_1",
+      }));
+
+      expect(verifiedArtifacts).toEqual([
+        { artifactRef: "workspace:report.md", mimeType: "text/markdown", name: "report.md", size: 321 },
+      ]);
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status, artifacts_json FROM work_results WHERE work_id = 'work_1'",
+      ).get())).toEqual({
+        artifacts_json: JSON.stringify([
+          { artifactRef: "workspace:report.md", mimeType: "text/markdown", name: "report.md", size: 321 },
+        ]),
+        status: "COMPLETED",
+      });
+      expect(database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = 'work_1'",
+      ).get())).toEqual({ status: "COMPLETED" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("preserves pre-execution Skill failure facts and stores an actionable safe result body", async () => {
     const { database, root } = await openWithPartner();
     try {

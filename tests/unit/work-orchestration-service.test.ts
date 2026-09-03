@@ -189,6 +189,58 @@ describe("work orchestration outbox", () => {
     ] })).rejects.toMatchObject({ code: "work_dependency_unknown" });
   });
 
+  it("commits a supplemental Work with evidence and a durable two-round recovery identity", async () => {
+    const committed: CommittedWorkPlan[] = [];
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) },
+      recovery: { countRecoveryAttempts: async () => 1, loadForSupplement: async () => ({
+        attemptCount: 1, evidenceResultIds: ["result-good"], inputId: "goal-1",
+        sourceAcceptanceChecks: [
+          { kind: "ARTIFACT_PRESENT" as const, name: "report.html" },
+          { kind: "FILE_EXISTS" as const, relativePath: "report.html" },
+        ],
+        item: { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "failed", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-failed" },
+      }) },
+      repository: { commit: async (plan) => { committed.push(plan); } },
+    });
+
+    await expect(service.supplement({
+      acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "report.html" }, { kind: "BODY_PRESENT" }], accessMode: "NONE", partnerId: "partner-a",
+      instructions: "Only fill the missing section.", sourceWorkId: "work-failed", title: "补齐报告",
+      turnId: "turn-2", workbenchId: "workbench-1",
+    })).resolves.toMatchObject({ attemptNo: 2, evidenceResultIds: ["result-good"] });
+    expect(committed[0]).toMatchObject({
+      dependencies: [], inputId: "goal-1",
+      recovery: { attemptNo: 2, sourceWorkId: "work-failed", strategy: "SUPPLEMENT" },
+    });
+    expect(committed[0]?.briefs[0]).toMatchObject({ evidenceResultIds: ["result-good"] });
+    expect(committed[0]?.briefs[0]).toMatchObject({ instructions: "Only fill the missing section." });
+    expect(committed[0]?.briefs[0]?.acceptanceChecks).toEqual([
+      { kind: "ARTIFACT_PRESENT", name: "report.html" },
+      { kind: "FILE_EXISTS", relativePath: "report.html" },
+      { kind: "BODY_PRESENT" },
+    ]);
+    expect(committed[0]?.items[0]?.accessMode).toBe("WRITE");
+  });
+
+  it("stops supplemental recovery after two rounds", async () => {
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) },
+      recovery: { countRecoveryAttempts: async () => 2, loadForSupplement: async () => ({
+        attemptCount: 2, evidenceResultIds: [], inputId: "goal-1",
+        sourceAcceptanceChecks: [],
+        item: { accessMode: "READ", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "failed", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-failed" },
+      }) },
+      repository: { commit: async () => undefined },
+    });
+    await expect(service.supplement({ accessMode: "READ", partnerId: "partner-a", sourceWorkId: "work-failed", title: "补齐报告", turnId: "turn-3", workbenchId: "workbench-1" }))
+      .rejects.toMatchObject({ code: "work_recovery_exhausted" });
+  });
+
   it("reassigns failed work through a new pinned revision and outbox action", async () => {
     const reassigned: ReassignedWorkPlan[] = [];
     const service = new WorkOrchestrationService({
@@ -204,6 +256,10 @@ describe("work orchestration outbox", () => {
         }),
         reassign: async (plan) => { reassigned.push(plan); },
       },
+      recovery: {
+        countRecoveryAttempts: async () => 1,
+        loadForSupplement: async () => { throw new Error("not used"); },
+      },
       repository: { commit: async () => undefined },
     });
 
@@ -213,6 +269,7 @@ describe("work orchestration outbox", () => {
     expect(reassigned[0]?.attempt.actionId).toMatch(/^action_/u);
     expect(reassigned[0]).toMatchObject({
       attempt: { partnerRevisionId: "revision-b", outbox: { kind: "partner.dispatch", payload: { workId: "work-1" } } },
+      recovery: { attemptNo: 2 },
       turnId: "turn-2",
     });
   });

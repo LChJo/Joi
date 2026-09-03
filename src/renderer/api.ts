@@ -16,6 +16,8 @@ import type {
 } from "./types";
 import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
 import type { RemoteAccessStatusDto } from "../shared/remote";
+import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
+import type { UpdateSystemSettingsInput } from "../shared/system-settings";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -73,6 +75,13 @@ export class DigitalLifeApi {
   }
   joiSnapshot() { return this.request<JoiSnapshotDto>("/api/v1/joi"); }
   listWorkbenches() { return this.request<{ items: WorkbenchDto[] }>("/api/v1/workbenches"); }
+  listAutomations() { return this.request<{ items: AutomationDto[] }>("/api/v1/automations"); }
+  getAutomation(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`); }
+  createAutomation(body: CreateAutomationInput) { return this.request<AutomationDto>("/api/v1/automations", { body: body as unknown as Record<string, unknown>, idempotencyKey: crypto.randomUUID(), method: "POST" }); }
+  revealAutomationPrompt(routineId: string) { return this.request<{ prompt: string }>(`/api/v1/automations/${encodeURIComponent(routineId)}/prompt/reveal`, { idempotencyKey: crypto.randomUUID(), method: "POST" }); }
+  updateAutomation(routineId: string, body: UpdateAutomationInput) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { body: body as unknown as Record<string, unknown>, idempotencyKey: crypto.randomUUID(), method: "PATCH" }); }
+  runAutomationNow(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}/run-now`, { idempotencyKey: crypto.randomUUID(), method: "POST" }); }
+  deleteAutomation(routineId: string) { return this.request<undefined>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { idempotencyKey: crypto.randomUUID(), method: "DELETE" }); }
   createWorkbench(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
     return this.request<WorkbenchDto>("/api/v1/workbenches", { body, method: "POST" });
   }
@@ -399,7 +408,7 @@ export class DigitalLifeApi {
   diagnostics() { return this.request<DiagnosticsDto>("/api/v1/diagnostics"); }
   diagnosticsExportUrl() { return `${this.origin}/api/v1/diagnostics/export`; }
   settings() { return this.request<SystemSettingsDto>("/api/v1/settings"); }
-  updateSettings(body: Record<string, unknown>) { return this.request<SystemSettingsDto>("/api/v1/settings", { body, method: "POST" }); }
+  updateSettings(body: UpdateSystemSettingsInput) { return this.request<SystemSettingsDto>("/api/v1/settings", { body: body as Record<string, unknown>, method: "POST" }); }
   remoteAccessStatus() { return this.request<RemoteAccessStatusDto>("/api/v1/remote"); }
   updateRemoteAccess(body: { enabled?: boolean; relayAuthentication?: string | null; relayUrl?: string }) {
     return this.request<RemoteAccessStatusDto>("/api/v1/remote", { body, method: "POST" });

@@ -44,6 +44,7 @@ function makeTools(options: {
   const addCalls: unknown[] = [];
   const setModelCalls: unknown[] = [];
   const setSkillsCalls: unknown[] = [];
+  const setToolsCalls: unknown[] = [];
   const ensureCalls: unknown[] = [];
   const disposeCalls: { instanceId: string; reason: string }[] = [];
   const planCalls: unknown[] = [];
@@ -104,6 +105,7 @@ function makeTools(options: {
       list: async () => options.partners ?? [partnerDto],
       setModel: async (partnerId, model) => { setModelCalls.push({ model, partnerId }); return { ...partnerDto, ...model }; },
       setSkills: async (partnerId, skills) => { setSkillsCalls.push({ partnerId, skills }); return { ...partnerDto, skills }; },
+      setTools: async (partnerId, tools) => { setToolsCalls.push({ partnerId, tools }); return { ...partnerDto, tools }; },
     },
     skills: { listForEngine: () => [{ description: "演示", displayName: "演示技能", id: "claude-code/demo-skill", modifiedAt: 1 }] },
     results: { read: async ({ resultId }) => ({ content: "result", resultId }) },
@@ -143,6 +145,7 @@ function makeTools(options: {
         workId: input.workId,
       }),
       cancel: async (input) => ({ workId: input.workId }),
+      supplement: async (input) => ({ attemptNo: 1, dispatchPlanId: "plan_recovery", evidenceResultIds: ["result_1"], waves: [[input.sourceWorkId]] }),
     },
   });
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
@@ -156,6 +159,7 @@ function makeTools(options: {
     addCalls,
     setModelCalls,
     setSkillsCalls,
+    setToolsCalls,
     disposeCalls,
     ensureCalls,
     planCalls,
@@ -372,6 +376,13 @@ describe("joi reasoning tools", () => {
     expect(planned[0]).not.toHaveProperty("sessionPolicy");
   });
 
+  it("lets joi expand a local partner to all bounded built-in tools", async () => {
+    const harness = makeTools();
+    await expect(harness.call("partner_set_tools", { partnerId: "partner_1", tools: [] }))
+      .resolves.toMatchObject({ partnerId: "partner_1", tools: [] });
+    expect(harness.setToolsCalls).toEqual([{ partnerId: "partner_1", tools: [] }]);
+  });
+
   it("mechanically drops an instance reference from one-shot ephemeral work", async () => {
     const harness = makeTools();
     await harness.call("work_dispatch", {
@@ -425,18 +436,32 @@ describe("joi reasoning tools", () => {
     expect((harness.planCalls[0] as { work?: unknown }).work).toEqual([expect.objectContaining({ acceptanceChecks: [{ kind: "BODY_PRESENT" }] })]);
   });
 
-  it("turns a deterministic dispatch error into a resumable clarification", async () => {
+  it("keeps an internal deterministic dispatch error out of user clarification", async () => {
     const harness = makeTools({ planError: new DomainError("partner_not_found", "private detail") });
     const result = await harness.call("work_dispatch", {
       dependencies: [],
       work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }],
     });
-    expect(result).toEqual({ reasonCode: "work_dispatch_failed", status: "CLARIFICATION_REQUIRED" });
-    expect(harness.clarificationCalls).toEqual([{
-      inputId: "input_1",
-      prompt: "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。",
-      reasonCode: "work_dispatch_failed",
-    }]);
+    expect(result).toEqual({ reasonCode: "partner_not_found", status: "FAILED" });
+    expect(harness.clarificationCalls).toEqual([]);
+  });
+
+  it("creates an independent bounded supplemental Work for a failed Work", async () => {
+    const harness = makeTools();
+    await expect(harness.call("work_supplement", {
+      acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", partnerId: "partner_1",
+      sourceWorkId: "failed-work", strategy: "SUPPLEMENT", title: "补齐报告",
+    })).resolves.toMatchObject({ attemptNo: 1, dispatchPlanId: "plan_recovery", evidenceResultIds: ["result_1"] });
+  });
+
+  it("treats an unknown historical dependency as a bounded self-correction", async () => {
+    const harness = makeTools({ planError: new DomainError("work_dependency_unknown", "private detail") });
+    const result = await harness.call("work_dispatch", {
+      dependencies: [{ dependsOnKey: "historical-work", workKey: "supplement" }],
+      work: [{ accessMode: "READ", key: "supplement", partnerId: "partner_1", title: "补充缺失交付物" }],
+    });
+    expect(result).toEqual({ reasonCode: "work_dependency_unknown", status: "RETRY_REQUIRED" });
+    expect(harness.clarificationCalls).toEqual([]);
   });
 
   it("commits an explicitly blocked goal synthesis outcome", async () => {
@@ -480,6 +505,7 @@ describe("joi reasoning tools", () => {
     const tool = makeTools().tools.find((candidate) => candidate.name === "work_dispatch");
     expect(tool?.description).toContain("exact instance id returned by partner_list_available or partner_list_instances");
     expect(tool?.description).toContain("Never pass instanceId together with sessionPolicy");
+    expect(tool?.description).toContain("current invocation");
   });
 
   it("parses the goal input id out of synthetic input prefixes", () => {

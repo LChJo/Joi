@@ -49,6 +49,13 @@ export interface HarnessFeedbackTarget {
   goalInputId: string;
 }
 
+export interface HarnessWorkRecoverySeed {
+  attemptNo: number;
+  goalInputId: string;
+  sourceWorkId: string;
+  workbenchId: string;
+}
+
 /** Bounded per-goal projection for the home feed goal card. */
 export interface HarnessGoalProjection {
   currentLayer: number;
@@ -72,6 +79,7 @@ export interface JoiHarnessScan {
   listReviewRecoveries(): Promise<HarnessReviewRecoveryCandidate[]>;
   listTrivialMapCandidates(): Promise<{ goalInputId: string }[]>;
   loadGoalProjections(): Promise<HarnessGoalProjection[]>;
+  listWorkRecoverySeeds?(): Promise<HarnessWorkRecoverySeed[]>;
 }
 
 /** Deterministic write surface used by the traversal. Never reasons and never dispatches. */
@@ -82,6 +90,7 @@ export interface JoiHarnessWriter {
   reconcileReview(input: { candidate: HarnessReviewRecoveryCandidate; now: string }): Promise<HarnessReviewRecoveryResult | null>;
   recordCompletionFeedback(input: { workbenchId: string; entry: string; goalInputId: string; now: string }): Promise<boolean>;
   synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }>;
+  enqueueWorkRecovery?(input: { now: string; seed: HarnessWorkRecoverySeed }): Promise<string | null>;
 }
 
 /** Reasoning-side write surface injected into the harness tools; always goal-scoped. */

@@ -91,6 +91,15 @@ async function startRuntime(): Promise<void> {
   await applyPendingRestore(userDataDirectory, migrationsDirectory);
   const settings = new SystemSettingsService({
     getLaunchAtLogin: () => app.getLoginItemSettings().openAtLogin,
+    getLanRuntimeState: () => runtimeListeners?.lanState(),
+    reconfigureLan: async (target) => {
+      if (runtimeListeners === null) {
+        return target === undefined
+          ? { status: "disabled" as const }
+          : { status: "blocked" as const, reasonCode: "lan_runtime_unavailable", message: "LAN 监听器尚未就绪。" };
+      }
+      return runtimeListeners.reconfigureLan(target);
+    },
     setLaunchAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     settingsPath: path.join(userDataDirectory, "settings.json"),
   });
@@ -218,14 +227,22 @@ async function startRuntime(): Promise<void> {
     clock,
     startup: startupEvidence,
     store: database.store,
-    webHealth: () => ({
-      ...(runtimeListeners?.lan === undefined ? {} : { lan: runtimeListeners.lan }),
-      ...(runtimeListeners?.loopback === undefined ? {} : { loopback: { status: runtimeListeners.loopback.status } }),
-    }),
+    webHealth: () => {
+      const lanState = runtimeListeners?.lanState();
+      return {
+        ...(runtimeListeners?.lan === undefined || lanState === undefined ? {} : {
+          lan: lanState.status === "listening"
+            ? { status: "listening", ...(lanState.pending === undefined ? {} : { code: lanState.pending.reasonCode }) }
+            : { status: "error", code: lanState.status === "blocked" ? lanState.reasonCode : "lan_disabled" },
+        }),
+        ...(runtimeListeners?.loopback === undefined ? {} : { loopback: { status: runtimeListeners.loopback.status } }),
+      };
+    },
   });
   const dependencies = {
     a2aGateway: runtimeStack.a2aGateway,
     agentOnboarding: runtimeStack.agentOnboarding,
+    automation: joiStack.automation,
     agents: new AgentService({ clock, ids, store: database.store }),
     artifacts: runtimeStack.artifactStorage,
     auth,

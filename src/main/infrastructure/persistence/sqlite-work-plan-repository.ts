@@ -6,8 +6,11 @@ import type {
   CommittedWorkPlan,
   PlannedDispatchAttempt,
   ReassignedWorkPlan,
+  WorkAcceptanceCheck,
   WorkPlanRepository,
   WorkQuery,
+  WorkRecoveryRepository,
+  WorkSupplementContext,
   WorkReassignmentContext,
   WorkReassignmentRepository,
 } from "../../application/ports/work-orchestration.js";
@@ -15,6 +18,39 @@ import type { WorkItemDto } from "../../../shared/joi.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
+}
+
+function workAcceptanceChecks(intentJson: string): WorkAcceptanceCheck[] {
+  let candidate: unknown;
+  try {
+    candidate = JSON.parse(intentJson);
+  } catch {
+    throw Object.assign(new Error("work_recovery_contract_invalid"), { code: "work_recovery_contract_invalid" });
+  }
+  if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw Object.assign(new Error("work_recovery_contract_invalid"), { code: "work_recovery_contract_invalid" });
+  }
+  const values = (candidate as { acceptanceChecks?: unknown }).acceptanceChecks;
+  if (!Array.isArray(values)) {
+    throw Object.assign(new Error("work_recovery_contract_invalid"), { code: "work_recovery_contract_invalid" });
+  }
+  return values.map((value) => {
+    if (value === null || typeof value !== "object" || Array.isArray(value)) {
+      throw Object.assign(new Error("work_recovery_contract_invalid"), { code: "work_recovery_contract_invalid" });
+    }
+    const check = value as Record<string, unknown>;
+    if (check.kind === "BODY_PRESENT") return { kind: "BODY_PRESENT" };
+    if (check.kind === "ARTIFACT_PRESENT" && typeof check.name === "string" && check.name.trim() !== "" && check.name.length <= 240) {
+      return { kind: "ARTIFACT_PRESENT", name: check.name };
+    }
+    if (check.kind === "FILE_EXISTS" && typeof check.relativePath === "string") {
+      return { kind: "FILE_EXISTS", relativePath: check.relativePath };
+    }
+    if (check.kind === "FILE_CONTAINS_EXACT" && typeof check.relativePath === "string" && typeof check.expectedText === "string") {
+      return { expectedText: check.expectedText, kind: "FILE_CONTAINS_EXACT", relativePath: check.relativePath };
+    }
+    throw Object.assign(new Error("work_recovery_contract_invalid"), { code: "work_recovery_contract_invalid" });
+  });
 }
 
 function plannedAttemptFromRow(row: Record<string, unknown> | undefined, workId: string): PlannedDispatchAttempt | null {
@@ -50,7 +86,7 @@ function plannedAttemptFromRow(row: Record<string, unknown> | undefined, workId:
   };
 }
 
-export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, WorkReassignmentRepository {
+export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, WorkReassignmentRepository, WorkRecoveryRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
   async commit(plan: CommittedWorkPlan): Promise<void> {
@@ -78,6 +114,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         insertWork.run(
         item.workId, item.workbenchId, plan.inputId, item.title, JSON.stringify({
           acceptanceChecks: brief.acceptanceChecks,
+          ...(brief.evidenceResultIds === undefined ? {} : { evidenceResultIds: brief.evidenceResultIds }),
           ...(brief.instructions === undefined ? {} : { instructions: brief.instructions }),
         }), item.accessMode === "NONE" ? "READ" : item.accessMode, null,
         item.status, item.createdAt, item.updatedAt,
@@ -109,6 +146,19 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
           attempt.dispatchAttemptId, plan.dispatchPlanId, attempt.workId, attempt.partnerRevisionId,
           attempt.registryRevision, attempt.actionId, attempt.outbox.outboxId, plan.createdAt, plan.createdAt,
         );
+      }
+      if (plan.recovery !== undefined) {
+        if (plan.items.length !== 1) throw new Error("work_recovery_plan_invalid");
+        const replacementWorkId = plan.items[0]?.workId;
+        if (replacementWorkId === undefined) throw new Error("work_recovery_plan_invalid");
+        connection.prepare(`INSERT INTO work_recovery_attempts
+          (recovery_id, source_work_id, replacement_work_id, attempt_no, strategy, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, 'PLANNED', ?, ?)`).run(
+          plan.recovery.recoveryId, plan.recovery.sourceWorkId, replacementWorkId,
+          plan.recovery.attemptNo, plan.recovery.strategy, plan.createdAt, plan.createdAt,
+        );
+        const evidence = connection.prepare(`INSERT INTO work_recovery_evidence (recovery_id, result_id) VALUES (?, ?)`);
+        for (const resultId of plan.briefs[0]?.evidenceResultIds ?? []) evidence.run(plan.recovery.recoveryId, resultId);
       }
       const active = connection.prepare(`SELECT work_id AS workId, title, status FROM work_items
         WHERE workbench_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY created_at, work_id`).all(workbenchId);
@@ -159,6 +209,54 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
       lastPartnerId: row.partner_id as string,
       lastPartnerRevisionId: row.partner_revision_id as string,
     };
+  }
+
+  async loadForSupplement(workId: string): Promise<WorkSupplementContext | null> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare(`SELECT w.work_id, w.workbench_id, w.input_id, w.title, w.intent_json,
+        COALESCE(p.access_mode, w.access_mode) AS access_mode, w.status, w.created_at, w.updated_at,
+        (SELECT COUNT(*) FROM work_recovery_attempts a WHERE a.source_work_id = w.work_id) AS attempt_count
+        FROM work_items w LEFT JOIN work_access_policies p ON p.work_id = w.work_id
+        WHERE w.work_id = ?`).get(workId) as Record<string, unknown> | undefined;
+      if (row === undefined) return null;
+      const required = ["work_id", "workbench_id", "input_id", "title", "intent_json", "access_mode", "status", "created_at", "updated_at"] as const;
+      if (required.some((key) => typeof row[key] !== "string") || typeof row.attempt_count !== "number") {
+        throw new Error("work_recovery_record_invalid");
+      }
+      const inputId = row.input_id as string;
+      const evidenceRows = connection.prepare(`SELECT r.result_id FROM work_results r
+        JOIN work_items evidence_work ON evidence_work.work_id = r.work_id
+        WHERE evidence_work.input_id = ? AND evidence_work.work_id <> ?
+          AND r.is_authoritative = 1 AND r.status = 'COMPLETED'
+        ORDER BY r.created_at DESC, r.result_id DESC LIMIT 12`).all(inputId, workId) as Record<string, unknown>[];
+      const evidenceResultIds = evidenceRows.map((candidate) => {
+        if (typeof candidate.result_id !== "string") throw new Error("work_recovery_evidence_invalid");
+        return candidate.result_id;
+      });
+      return {
+        attemptCount: row.attempt_count,
+        evidenceResultIds,
+        inputId,
+        item: {
+          accessMode: row.access_mode as WorkSupplementContext["item"]["accessMode"],
+          workbenchId: row.workbench_id as string,
+          createdAt: row.created_at as string,
+          status: row.status as WorkSupplementContext["item"]["status"],
+          title: row.title as string,
+          updatedAt: row.updated_at as string,
+          workId: row.work_id as string,
+        },
+        sourceAcceptanceChecks: workAcceptanceChecks(row.intent_json as string),
+      };
+    });
+  }
+
+  async countRecoveryAttempts(workId: string): Promise<number> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare("SELECT COUNT(*) AS n FROM work_recovery_attempts WHERE source_work_id = ?").get(workId) as Record<string, unknown>;
+      if (typeof row.n !== "number") throw new Error("work_recovery_record_invalid");
+      return row.n;
+    });
   }
 
   /** Cancels work that is not mid-flight; running attempts finish on their own and arrive late. */
@@ -221,6 +319,11 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
       );
       connection.prepare("UPDATE work_items SET status = 'READY', updated_at = ? WHERE work_id = ?")
         .run(plan.createdAt, plan.workId);
+      if (plan.recovery !== undefined) connection.prepare(`INSERT INTO work_recovery_attempts
+        (recovery_id, source_work_id, replacement_work_id, attempt_no, strategy, status, created_at, updated_at)
+        VALUES (?, ?, NULL, ?, 'REASSIGN', 'PLANNED', ?, ?)`).run(
+        plan.recovery.recoveryId, plan.workId, plan.recovery.attemptNo, plan.createdAt, plan.createdAt,
+      );
     });
   }
 }

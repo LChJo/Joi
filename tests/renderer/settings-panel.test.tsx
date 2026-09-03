@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
-import { ConsoleApp, RemoteAccessSettings, SettingsPanel } from "../../src/renderer/Console.js";
+import { ConsoleApp, RemoteAccessSettings, SettingsPanel, SystemPanel } from "../../src/renderer/Console.js";
 import type { DiagnosticsDto } from "../../src/renderer/types";
 
 const diagnostics: DiagnosticsDto = {
@@ -15,7 +15,17 @@ const diagnostics: DiagnosticsDto = {
   web: { sessions: 1 },
 };
 
-const runtimeSettings = { lan: { address: "192.168.1.20", enabled: false, port: 43130, riskAccepted: false }, launchAtLogin: false };
+const runtimeSettings = {
+  lan: {
+    address: "192.168.1.20",
+    availableAddresses: [{ address: "192.168.1.20", available: true }],
+    effective: { status: "disabled" as const },
+    enabled: false,
+    port: 43130,
+    riskAccepted: false,
+  },
+  launchAtLogin: false,
+};
 
 function mockOperations(api: DigitalLifeApi) {
   vi.spyOn(api, "listBackups").mockResolvedValue({
@@ -38,13 +48,13 @@ function mockOperations(api: DigitalLifeApi) {
 }
 
 describe("settings panel", () => {
-  it("groups settings into four accessible tabs with keyboard navigation", async () => {
+  it("groups settings into five accessible tabs with keyboard navigation", async () => {
     const api = new DigitalLifeApi("");
     mockOperations(api);
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["模型网络", "设备连接", "安全", "数据"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["模型网络", "设备连接", "安全", "数据", "诊断"]);
     expect(screen.getByRole("tab", { name: "模型网络" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tabpanel", { name: "模型网络" })).toBeInTheDocument();
     expect(screen.queryByText("其他设备访问")).not.toBeInTheDocument();
@@ -61,15 +71,17 @@ describe("settings panel", () => {
     expect(await screen.findByText("管理密码与设备")).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole("tab", { name: "安全" }), { key: "End" });
-    expect(screen.getByRole("tab", { name: "数据" })).toHaveFocus();
-    expect(await screen.findByText("备份与恢复")).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: "诊断" })).toHaveFocus();
+    expect(await screen.findByRole("heading", { name: "joi 的运行状态" })).toBeInTheDocument();
 
     fireEvent.keyDown(screen.getByRole("tab", { name: "数据" }), { key: "ArrowRight" });
-    expect(screen.getByRole("tab", { name: "模型网络" })).toHaveFocus();
-    fireEvent.keyDown(screen.getByRole("tab", { name: "模型网络" }), { key: "ArrowLeft" });
+    expect(screen.getByRole("tab", { name: "诊断" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "诊断" }), { key: "ArrowLeft" });
     expect(screen.getByRole("tab", { name: "数据" })).toHaveFocus();
     fireEvent.keyDown(screen.getByRole("tab", { name: "数据" }), { key: "Home" });
     expect(screen.getByRole("tab", { name: "模型网络" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+    expect(await screen.findByText("备份与恢复")).toBeInTheDocument();
   });
 
   it("configures native relay access, generates a QR code and revokes paired phones", async () => {
@@ -135,10 +147,88 @@ describe("settings panel", () => {
     expect(readStatus).toHaveBeenCalledTimes(2);
   });
 
-  it("saves LAN settings, reports restart requirements and labels session devices", async () => {
+  it("toggles LAN access in place and keeps prerequisite errors actionable", async () => {
     const api = new DigitalLifeApi("");
     mockOperations(api);
-    const update = vi.spyOn(api, "updateSettings").mockResolvedValue({ ...runtimeSettings, restartRequired: true });
+    const update = vi.spyOn(api, "updateSettings").mockResolvedValue({ ...runtimeSettings, restartRequired: false });
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "设备连接" }));
+
+    const enabled = await screen.findByRole<HTMLInputElement>("checkbox", { name: "允许局域网设备访问" });
+    expect(enabled.checked).toBe(false);
+    fireEvent.click(enabled);
+    expect(enabled.checked).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
+    expect(await screen.findByText("请先确认局域网明文连接风险。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("validates the LAN address and port before sending settings", async () => {
+    const api = new DigitalLifeApi("");
+    mockOperations(api);
+    const update = vi.spyOn(api, "updateSettings").mockResolvedValue({ ...runtimeSettings, restartRequired: false });
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "设备连接" }));
+    const enabled = await screen.findByRole<HTMLInputElement>("checkbox", { name: "允许局域网设备访问" });
+    fireEvent.click(enabled);
+    fireEvent.change(screen.getByLabelText("访问端口"), { target: { value: "1" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
+    expect(await screen.findByText("访问端口必须在 1024 到 65535 之间。", {}, { timeout: 4_000 })).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("访问端口"), { target: { value: "43130" } });
+    fireEvent.change(screen.getByLabelText("这台电脑的局域网地址"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
+    expect(await screen.findByText("请先选择这台电脑的局域网地址。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("shows blocked, pending and disabled runtime outcomes after hot updates", async () => {
+    const api = new DigitalLifeApi("");
+    mockOperations(api);
+    const update = vi.spyOn(api, "updateSettings")
+      .mockResolvedValueOnce({ ...runtimeSettings, lan: { ...runtimeSettings.lan, enabled: true, riskAccepted: true, effective: { status: "blocked", reasonCode: "lan_bind_failed", message: "端口被占用。" } }, restartRequired: false })
+      .mockResolvedValueOnce({ ...runtimeSettings, lan: { ...runtimeSettings.lan, enabled: true, riskAccepted: true, effective: { address: "192.168.1.20", port: 43130, status: "listening", url: "http://192.168.1.20:43130", pending: { address: "10.0.0.7", port: 43131, reasonCode: "lan_bind_failed" } } }, restartRequired: false })
+      .mockResolvedValueOnce({ ...runtimeSettings, restartRequired: false });
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "设备连接" }));
+    const enabled = await screen.findByRole<HTMLInputElement>("checkbox", { name: "允许局域网设备访问" });
+    fireEvent.click(enabled);
+    fireEvent.click(screen.getByLabelText("我明白同一网络中的其他人可能看到未加密的连接内容"));
+    fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
+    expect(await screen.findByText("设置已保存，但当前地址或端口暂时无法监听；本机访问仍可用。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(screen.getByText("端口被占用。", { exact: true })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
+    expect(await screen.findByText("设置已保存，但新地址暂未应用，当前仍保留原监听。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(screen.getByText("当前仍在 192.168.1.20:43130 监听，新配置等待应用")).toBeInTheDocument();
+
+    fireEvent.click(enabled);
+    fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
+    expect(await screen.findByText("设置已保存，局域网访问已关闭。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(update).toHaveBeenCalledTimes(3);
+  });
+
+  it("refreshes address candidates and preserves a stale selected address as unavailable", async () => {
+    const api = new DigitalLifeApi("");
+    const staleSettings = { ...runtimeSettings, lan: { ...runtimeSettings.lan, address: "192.168.1.99" } };
+    const operations = mockOperations(api);
+    operations.listSessions.mockResolvedValue({ items: [] });
+    const settings = vi.spyOn(api, "settings").mockResolvedValueOnce(staleSettings).mockResolvedValueOnce({ ...staleSettings, lan: { ...staleSettings.lan, availableAddresses: [{ address: "10.0.0.7", available: true }] } }).mockRejectedValueOnce(new Error("offline"));
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(await screen.findByRole("tab", { name: "设备连接" }));
+    expect(await screen.findByRole("option", { name: "192.168.1.99（当前不可用）" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "刷新地址" }));
+    expect(await screen.findByRole("option", { name: "10.0.0.7" })).toBeInTheDocument();
+    expect(await screen.findByText("局域网地址列表已刷新。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "刷新地址" }));
+    expect(await screen.findByText("没能刷新局域网地址。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(settings).toHaveBeenCalledTimes(3);
+  });
+
+  it("saves LAN settings immediately and labels session devices", async () => {
+    const api = new DigitalLifeApi("");
+    mockOperations(api);
+    const update = vi.spyOn(api, "updateSettings").mockResolvedValue({ ...runtimeSettings, lan: { ...runtimeSettings.lan, enabled: true, effective: { address: "192.168.1.20", port: 43130, status: "listening", url: "http://192.168.1.20:43130" } }, restartRequired: false });
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
     fireEvent.click(screen.getByRole("tab", { name: "安全" }));
@@ -147,12 +237,14 @@ describe("settings panel", () => {
     expect(screen.getByText(/局域网设备 2/u)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("tab", { name: "设备连接" }));
+    fireEvent.click(await screen.findByLabelText("允许局域网设备访问", {}, { timeout: 4_000 }));
+    fireEvent.click(screen.getByLabelText("我明白同一网络中的其他人可能看到未加密的连接内容"));
     fireEvent.click(await screen.findByRole("button", { name: "保存访问设置" }));
     await waitFor(() => expect(update).toHaveBeenCalledWith({
-      lan: { address: "192.168.1.20", enabled: false, port: 43130, riskAccepted: false },
+      lan: { address: "192.168.1.20", enabled: true, port: 43130, riskAccepted: true },
       launchAtLogin: false,
     }));
-    expect(await screen.findByText("设置已保存，重启后其他设备的访问方式会切换。", {}, { timeout: 4_000 })).toBeInTheDocument();
+    expect(await screen.findByText("设置已保存，局域网访问已立即生效。", {}, { timeout: 4_000 })).toBeInTheDocument();
   });
 
   it("shows at most the ten most recently active sessions", async () => {
@@ -228,6 +320,26 @@ describe("settings panel", () => {
     changePassword.mockRejectedValue(new Error("offline"));
     fireEvent.click(screen.getByRole("button", { name: "修改密码" }));
     expect(await screen.findByText("密码没更新。", {}, { timeout: 4_000 })).toBeInTheDocument();
+  });
+
+  it("renders diagnostic warnings and confirms an emergency stop", async () => {
+    const api = new DigitalLifeApi("");
+    const emergencyStopAll = vi.spyOn(api, "emergencyStopAll").mockResolvedValue(undefined);
+    const unhealthy: DiagnosticsDto = {
+      ...diagnostics,
+      agents: { connections: 2, activeInvocations: 1 },
+      database: { integrity: "failed", journalMode: "delete", state: "error" },
+      runtime: { activeWakes: 1, enabledSchedules: 2, pendingOutbox: 3, scheduledAlarms: 4, staleWakeTurns: 2 },
+      web: { lan: { status: "error" }, loopback: { status: "listening" }, sessions: 2 },
+    };
+    render(<SystemPanel api={api} diagnostics={unhealthy} interactions={[{ createdAt: "2026-08-01T00:00:00.000Z", interactionId: "interaction-1", invocationId: "invocation-1", kind: "input-required", prompt: "需要确认", status: "PENDING" }]} />);
+    expect(screen.getByText("数据有问题")).toBeInTheDocument();
+    expect(screen.getByText("2 次行动需要确认")).toBeInTheDocument();
+    expect(screen.getByText("暂时无法开放")).toBeInTheDocument();
+    expect(screen.getByText("1 项待处理")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "紧急暂停全部工作" }));
+    await waitFor(() => expect(emergencyStopAll).toHaveBeenCalledOnce());
+    expect(await screen.findByText("所有工作已紧急暂停，未确认的搭档过程仍会保留。", {}, { timeout: 4_000 })).toBeInTheDocument();
   });
 });
 

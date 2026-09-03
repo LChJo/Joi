@@ -75,7 +75,7 @@ function mockApi() {
     { createdAt: life.createdAt, current: true, deviceId: "device_1", ipSummary: "private", kind: "desktop", lastActivityAt: life.updatedAt },
     { createdAt: life.createdAt, current: false, deviceId: "device_2", ipSummary: "private", kind: "lan", lastActivityAt: life.updatedAt },
   ] });
-  vi.spyOn(api, "settings").mockResolvedValue({ lan: { address: "", enabled: false, port: 43130, riskAccepted: false }, launchAtLogin: false });
+  vi.spyOn(api, "settings").mockResolvedValue({ lan: { address: "", availableAddresses: [{ address: "192.168.1.20", available: true }], effective: { status: "disabled" }, enabled: false, port: 43130, riskAccepted: false }, launchAtLogin: false });
   vi.spyOn(api, "getLife").mockResolvedValue(life);
   vi.spyOn(api, "listEvents").mockResolvedValue({ items: [event, { ...event, eventId: "agent_event", payload: { summary: "已完成比较" }, source: "agent", type: "agent.completed" }] });
   vi.spyOn(api, "listExpressions").mockResolvedValue({ items: [{ actionId: "action_1", createdAt: life.createdAt, deliveredAt: life.createdAt, expressionId: "expression_1", lifeId: "life_1", text: "我会继续跟进。", wakeId: "wake_1" }] });
@@ -100,7 +100,7 @@ function mockApi() {
   vi.spyOn(api, "logout").mockResolvedValue(undefined);
   const createBackup = vi.spyOn(api, "createBackup").mockResolvedValue({ backupId: "backup_1", createdAt: life.createdAt, databaseBytes: 1024, manifestHash: "a".repeat(64), schemaVersion: 4 });
   const restoreBackup = vi.spyOn(api, "restoreBackup").mockResolvedValue({ backupId: "backup_1", restartRequired: true });
-  const updateSettings = vi.spyOn(api, "updateSettings").mockResolvedValue({ lan: { address: "192.168.1.20", enabled: true, port: 43130, riskAccepted: true }, launchAtLogin: true, restartRequired: true });
+  const updateSettings = vi.spyOn(api, "updateSettings").mockResolvedValue({ lan: { address: "192.168.1.20", availableAddresses: [{ address: "192.168.1.20", available: true }], effective: { address: "192.168.1.20", port: 43130, status: "listening", url: "http://192.168.1.20:43130" }, enabled: true, port: 43130, riskAccepted: true }, launchAtLogin: true, restartRequired: false });
   const changePassword = vi.spyOn(api, "changePassword").mockResolvedValue(undefined);
   const logoutAllLan = vi.spyOn(api, "logoutAllLan").mockResolvedValue(undefined);
   const addAgent = vi.spyOn(api, "addAgent").mockResolvedValue(agent);
@@ -161,8 +161,8 @@ describe("joi renderer console", () => {
     const navigation = screen.getByRole("navigation", { name: "主导航" });
     fireEvent.click(within(navigation).getByRole("button", { name: "搭档" }));
     expect(await screen.findByRole("heading", { name: "搭档" })).toBeInTheDocument();
-    fireEvent.click(within(navigation).getByRole("button", { name: "状态" }));
-    expect(await screen.findByRole("heading", { name: "joi 的运行状态" })).toBeInTheDocument();
+    fireEvent.click(within(navigation).getByRole("button", { name: "定时任务" }));
+    expect(await screen.findByRole("heading", { name: "定时任务" })).toBeInTheDocument();
     fireEvent.click(within(navigation).getByRole("button", { name: "设置" }));
     expect(await screen.findByRole("heading", { name: "joi 的设置" })).toBeInTheDocument();
   });
@@ -198,10 +198,10 @@ describe("joi renderer console", () => {
     await waitFor(() => expect(fixture.updateSettings).toHaveBeenCalledOnce());
     const submittedSettings = fixture.updateSettings.mock.calls[0]?.[0];
     expect(submittedSettings).toMatchObject({ launchAtLogin: true, lan: { enabled: true } });
-    await screen.findByText(/重启后其他设备的访问方式会切换/);
-    fixture.updateSettings.mockResolvedValueOnce({ lan: { address: "192.168.1.20", enabled: true, port: 43130, riskAccepted: true }, launchAtLogin: true, restartRequired: false });
+    await screen.findByText("设置已保存，局域网访问已立即生效。");
+    fixture.updateSettings.mockResolvedValueOnce({ lan: { address: "192.168.1.20", availableAddresses: [{ address: "192.168.1.20", available: true }], effective: { address: "192.168.1.20", port: 43130, status: "listening", url: "http://192.168.1.20:43130" }, enabled: true, port: 43130, riskAccepted: true }, launchAtLogin: true, restartRequired: false });
     fireEvent.submit(formFor(screen.getByLabelText("这台电脑的局域网地址")));
-    await screen.findByText("设置已保存。");
+    await screen.findByText("设置已保存，局域网访问已立即生效。");
     fireEvent.click(screen.getByRole("tab", { name: "安全" }));
     expect(screen.getByText("磁盘空间不足")).toBeInTheDocument();
     expect(screen.getByText(/局域网设备 2/)).toBeInTheDocument();

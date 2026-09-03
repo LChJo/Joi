@@ -30,6 +30,27 @@ describe("Pi web access tools", () => {
     expect(JSON.stringify(page.content)).toContain("Readable project information.");
   });
 
+  it("returns only the first page from fetch_content and keeps the full response pageable", async () => {
+    const longContent = `start-${"x".repeat(25_000)}-end`;
+    const factory = new PiWebAccessToolFactory({
+      fetchImpl: vi.fn<typeof fetch>().mockResolvedValue(new Response(longContent, { headers: { "content-type": "text/plain" } })),
+      resolveHost: () => Promise.resolve([{ address: "93.184.216.34", family: 4 }]),
+      idGenerator: () => "response_long",
+    });
+    const [fetchContent, getSearchContent] = factory.create(["fetch_content", "get_search_content"]);
+    if (fetchContent === undefined || getSearchContent === undefined) throw new Error("web tools missing");
+
+    const fetched = await fetchContent.execute("call-long", { url: "https://example.com/long.txt", mode: "raw" });
+    const firstPage = JSON.stringify(fetched.content);
+    expect(firstPage.length).toBeLessThan(21_000);
+    expect(firstPage).toContain("start-");
+    expect(firstPage).not.toContain("-end");
+    expect(fetched.details).toMatchObject({ hasMore: true, nextOffset: 20_000, responseId: "response_long" });
+
+    const next = await getSearchContent.execute("call-next", { responseId: "response_long", offset: 20_000, limit: 10_000 });
+    expect(JSON.stringify(next.content)).toContain("-end");
+  });
+
   it("rejects private network targets before issuing a request", async () => {
     const fetchImpl = vi.fn<typeof fetch>();
     const factory = new PiWebAccessToolFactory({ fetchImpl });

@@ -2,6 +2,7 @@ export type JoiInboxStatus = "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" |
 
 export interface JoiInboxRecord {
   attachmentIds?: string[];
+  automationRoutineId?: string;
   workbenchId?: string;
   body: string;
   canceledAt?: string;

@@ -235,8 +235,4 @@ export interface SessionDto {
   lastActivityAt: string;
 }
 
-export interface SystemSettingsDto {
-  lan: { address: string; enabled: boolean; port: number; riskAccepted: boolean };
-  launchAtLogin: boolean;
-  restartRequired?: boolean;
-}
+export type { SystemSettingsDto } from "../shared/system-settings.js";

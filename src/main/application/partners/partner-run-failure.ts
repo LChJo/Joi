@@ -1,3 +1,5 @@
+import type { PartnerRunOutput } from "../ports/partner-execution.js";
+
 export type PartnerRunFailurePhase = "CONFIGURATION" | "ENGINE" | "EXECUTION" | "MODEL" | "RECOVERY";
 export type PartnerRunSideEffectState = "NONE" | "OBSERVED" | "UNKNOWN";
 
@@ -9,6 +11,7 @@ export interface PartnerRunFailure {
 }
 
 interface PartnerRunFailureCarrier {
+  partialArtifacts?: unknown;
   partnerRunFailure?: unknown;
 }
 
@@ -46,23 +49,33 @@ export function partnerRunFailureFromError(
 export function wrapPartnerRunFailure(
   error: unknown,
   context: { phase: PartnerRunFailurePhase; sideEffectState: PartnerRunSideEffectState },
-): Error & { code: string; detail?: string; partnerRunFailure: PartnerRunFailure } {
-  const partnerRunFailure = classifyPartnerRunFailure(error, context);
-  const detail = errorDetailOf(error);
+): Error & { code: string; partnerRunFailure: PartnerRunFailure } {
+  const partnerRunFailure = partnerRunFailureFromError(error, context);
+  const partialArtifacts = partnerRunArtifactsFromError(error);
   return Object.assign(new Error("partner_run_failed"), {
     code: partnerRunFailure.reasonCode,
-    ...(detail === undefined ? {} : { detail }),
+    ...(partialArtifacts.length === 0 ? {} : { partialArtifacts }),
     partnerRunFailure,
   });
 }
 
-/** Truncated engine-provided diagnostic detail; local diagnostics only, never part of the work result. */
-export function errorDetailOf(error: unknown): string | undefined {
-  if (error === null || typeof error !== "object") return undefined;
-  const detail = (error as { detail?: unknown }).detail;
-  if (typeof detail !== "string") return undefined;
-  const trimmed = detail.trim();
-  return trimmed === "" ? undefined : trimmed.slice(0, 240);
+/** Extracts only bounded artifact metadata from a failed run; raw model/provider output is never retained. */
+export function partnerRunArtifactsFromError(error: unknown): PartnerRunOutput["artifacts"] {
+  if (error === null || typeof error !== "object") return [];
+  const candidates = (error as PartnerRunFailureCarrier).partialArtifacts;
+  if (!Array.isArray(candidates)) return [];
+  return candidates.slice(0, 64).flatMap((candidate) => {
+    if (candidate === null || typeof candidate !== "object") return [];
+    const value = candidate as Record<string, unknown>;
+    if (typeof value.name !== "string" || value.name.length === 0 || value.name.length > 240
+      || typeof value.size !== "number" || !Number.isSafeInteger(value.size) || value.size < 0) return [];
+    return [{
+      ...(typeof value.artifactRef === "string" && value.artifactRef.length <= 1_000 ? { artifactRef: value.artifactRef } : {}),
+      ...(typeof value.mimeType === "string" && value.mimeType.length <= 240 ? { mimeType: value.mimeType } : {}),
+      name: value.name,
+      size: value.size,
+    }];
+  });
 }
 
 export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
@@ -71,6 +84,12 @@ export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
     ? "No partner model or tool was started, so it is safe to retry after correction. Open Partner settings, reselect an installed Skill, and enable the read tool when using a narrowed tool list."
     : failure.reasonCode === "context_too_large"
     ? "The request exceeded the model route's context window. Split the Work into smaller units or shrink its inputs; do not replay it unchanged."
+    : failure.reasonCode === "invalid_model"
+      ? "The selected model is incompatible with this route. Select a compatible READY model before creating a safe recovery attempt."
+    : failure.reasonCode === "unsupported_parameter" || failure.reasonCode === "invalid_request"
+      ? "The provider rejected this request shape. Use a valid model route before creating a safe recovery attempt."
+    : failure.reasonCode === "model_context_budget_exhausted"
+      ? "The model route had no safe completion budget left. Verify any produced artifacts, then create a smaller supplemental Work instead of replaying it unchanged."
     : failure.reasonCode === "model_refused"
       ? "The model refused this request. Restate the task or ask the user for guidance; do not replay it unchanged."
       : failure.retryable
@@ -102,7 +121,20 @@ function failureCarrier(error: unknown): PartnerRunFailure | null {
 
 function reasonCodeOf(error: unknown): string {
   if (error !== null && typeof error === "object") {
+    const detail = (error as { detail?: unknown }).detail;
+    if (typeof detail === "string" && /max[_ -]?completion[_ -]?tokens|completion budget/iu.test(detail)) {
+      return "model_context_budget_exhausted";
+    }
     const status = numericStatus(error);
+    if (status === 400 && typeof detail === "string") {
+      if (/(?:invalid|unsupported|unknown|not found|does not exist)[^\r\n]{0,80}\bmodel\b|\bmodel\b[^\r\n]{0,80}(?:invalid|unsupported|unknown|not found|does not exist)/iu.test(detail)) {
+        return "invalid_model";
+      }
+      if (/(?:unsupported|unknown|unrecognized)[^\r\n]{0,80}(?:parameter|field)|(?:parameter|field)[^\r\n]{0,80}(?:unsupported|not supported|unknown|unrecognized)/iu.test(detail)) {
+        return "unsupported_parameter";
+      }
+      if (/invalid[_ -]?request(?:[_ -]?error)?|malformed request/iu.test(detail)) return "invalid_request";
+    }
     const code = (error as { code?: unknown }).code;
     if (typeof code === "string" && STABLE_CODE.test(code)) return code;
     if (status !== null) return `http_${String(status)}`;

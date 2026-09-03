@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import type { RuntimeDiagnostics } from "../application/ports/runtime-diagnostics.js";
 import { JoiInboxService } from "../application/joi/joi-inbox-service.js";
+import { AutomationService } from "../application/automation/automation-service.js";
 import { JoiCoordinator } from "../application/joi/joi-coordinator.js";
 import { ConfiguredPiReasoningRuntime } from "../infrastructure/pi/configured-pi-reasoning-runtime.js";
 import { PiWorkbenchRoutingRuntime } from "../infrastructure/pi/pi-workbench-routing-runtime.js";
@@ -39,6 +40,14 @@ export function wireJoi(input: {
     partners: partnerStack.partners,
     repository: persistence.joiInboxRepository,
   });
+  const automation = new AutomationService({
+    clock,
+    ids,
+    partners: partnerStack.partners,
+    store: persistence.automationStore,
+    workbenches: persistence.workbenches,
+    workspaces: persistence.workbenchWorkspaceRepository,
+  });
   // Constructed before the reasoning runtime and coordinator: both consume it (TDZ otherwise).
   const joiAttachmentStorage = new JoiAttachmentService({
     clock,
@@ -50,6 +59,7 @@ export function wireJoi(input: {
     resolver: modelSourceStack.configuredModelResolver,
     sessionStore: persistence.piReasoningSessionStore,
     tools: (turn) => selectJoiReasoningToolsForInput(createJoiReasoningTools({
+      automation,
       workbenchChanges: workbenchStack.workbenchChanges,
       workbenchId: turn.workbenchId,
       workbenchRefine: workbenchStack.workbenchManagement,
@@ -74,6 +84,7 @@ export function wireJoi(input: {
     }), turn.inputId),
   });
   const joiCoordinator = new JoiCoordinator({
+    automation,
     attachments: joiAttachmentStorage,
     clock,
     diagnostics,
@@ -90,7 +101,7 @@ export function wireJoi(input: {
     workbenchRegistry: workbenchStack.workbenchRegistry,
     workbenches: persistence.workbenches,
   });
-  return { joiAttachmentStorage, joiCoordinator, joiInbox, joiReasoning };
+  return { automation, joiAttachmentStorage, joiCoordinator, joiInbox, joiReasoning };
 }
 
 export type JoiBundle = ReturnType<typeof wireJoi>;

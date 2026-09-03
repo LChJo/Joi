@@ -33,6 +33,7 @@ export function wireWorkbenches(input: {
       partners: partnerStack.partners,
       policy: persistence.policyGate,
       reassignment: workRepository,
+      recovery: workRepository,
       repository: workRepository,
     }),
     workbenchAgents: new WorkbenchAgentService({ clock, opener: artifactOpener, repository: persistence.workbenchAgentRepository }),

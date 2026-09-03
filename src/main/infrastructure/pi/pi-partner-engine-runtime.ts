@@ -27,6 +27,28 @@ import type { NativeAgentEvent } from "../../application/ports/native-agent-even
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
+const PARTNER_CONTEXT_MAX_CHARS = 120_000;
+const PARTNER_CONTEXT_MAX_MESSAGES = 32;
+
+/** Keeps the current request plus a structurally valid recent tail before every provider call. */
+export function boundPartnerModelContext(messages: AgentMessage[]): AgentMessage[] {
+  if (messages.length <= PARTNER_CONTEXT_MAX_MESSAGES && JSON.stringify(messages).length <= PARTNER_CONTEXT_MAX_CHARS) return messages;
+  let start = Math.max(0, messages.length - PARTNER_CONTEXT_MAX_MESSAGES);
+  while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
+  const latestUserBefore = (): AgentMessage | undefined => {
+    for (let index = start - 1; index >= 0; index -= 1) if (messages[index]?.role === "user") return messages[index];
+    return undefined;
+  };
+  const initialAnchor = latestUserBefore();
+  let context = [...(initialAnchor === undefined ? [] : [initialAnchor]), ...messages.slice(start)];
+  while (context.length > 2 && JSON.stringify(context).length > PARTNER_CONTEXT_MAX_CHARS) {
+    start += 1;
+    while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
+    const anchor = latestUserBefore();
+    context = [...(anchor === undefined ? [] : [anchor]), ...messages.slice(start)];
+  }
+  return context;
+}
 
 /** Per-run mutable facts: observed side effects and a pending question for the user. */
 interface RunTracker {
@@ -254,22 +276,28 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       sessionId: externalRunId,
       streamFn: resolved.models.streamSimple.bind(resolved.models),
       toolExecution: "sequential",
+      transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages)),
     });
     const live = context.onEvent === undefined ? undefined : new LiveConversationPublisher(request.taskProjection, context.onEvent);
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
-    await this.#promptWithIdleTimeout(agent, request.taskProjection, live);
-    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0, live);
-    const failure = assistantFailureSignal(agent.state.messages);
-    if (failure !== null) throw failure;
-    const body = assistantText(agent.state.messages);
-    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
-    return {
-      conversation: draftAgentConversation(request.taskProjection, body, agent.state.messages),
-      externalRunId,
-      output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
-      status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
-    };
+    try {
+      await this.#promptWithIdleTimeout(agent, request.taskProjection, live);
+      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0, live);
+      const failure = assistantFailureSignal(agent.state.messages);
+      if (failure !== null) throw failure;
+      const body = assistantText(agent.state.messages);
+      const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
+      return {
+        conversation: draftAgentConversation(request.taskProjection, body, agent.state.messages),
+        externalRunId,
+        output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
+        status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
+      };
+    } catch (error) {
+      const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
+      throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
+    }
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
@@ -320,6 +348,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         sessionId: `local_pi_instance:${input.instanceId}`,
         streamFn: resolved.models.streamSimple.bind(resolved.models),
         toolExecution: "sequential",
+        transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages)),
       });
       warm = {
         agent,
@@ -334,21 +363,26 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const live = input.onEvent === undefined ? undefined : new LiveConversationPublisher(input.request.taskProjection, input.onEvent);
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
-    await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live);
-    if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live);
-    const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
-    const failure = assistantFailureSignal(turnMessages);
-    if (failure !== null) throw failure;
-    const body = assistantText(turnMessages);
-    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
-    return {
-      conversation: draftAgentConversation(input.request.taskProjection, body, turnMessages),
-      externalRunId: `local_pi:${input.request.actionId}`,
-      externalSessionRef: `partner_instance_messages:${input.instanceId}`,
-      messages: [...warm.agent.state.messages],
-      output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
-      status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
-    };
+    try {
+      await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live);
+      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live);
+      const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
+      const failure = assistantFailureSignal(turnMessages);
+      if (failure !== null) throw failure;
+      const body = assistantText(turnMessages);
+      const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
+      return {
+        conversation: draftAgentConversation(input.request.taskProjection, body, turnMessages),
+        externalRunId: `local_pi:${input.request.actionId}`,
+        externalSessionRef: `partner_instance_messages:${input.instanceId}`,
+        messages: [...warm.agent.state.messages],
+        output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
+        status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
+      };
+    } catch (error) {
+      const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
+      throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
+    }
   }
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */

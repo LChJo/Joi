@@ -1,5 +1,6 @@
 import {
   classifyPartnerRunFailure,
+  partnerRunArtifactsFromError,
   partnerRunFailureFromError,
   safePartnerRunFailureBody,
   wrapPartnerRunFailure,
@@ -50,6 +51,77 @@ describe("partner run failure classification", () => {
     });
     expect(failure).toEqual({ phase: "EXECUTION", reasonCode: "unknown_error", retryable: false, sideEffectState: "UNKNOWN" });
     expect(JSON.stringify(failure)).not.toContain("PRIVATE");
+  });
+
+  it("falls back safely for null and malformed failure carriers", () => {
+    expect(partnerRunArtifactsFromError(null)).toEqual([]);
+    expect(partnerRunArtifactsFromError({ partialArtifacts: [null] })).toEqual([]);
+    expect(partnerRunFailureFromError(null)).toEqual({
+      phase: "EXECUTION", reasonCode: "unknown_error", retryable: false, sideEffectState: "UNKNOWN",
+    });
+    expect(partnerRunFailureFromError({
+      partnerRunFailure: { phase: "MODEL", reasonCode: "contains spaces", retryable: true, sideEffectState: "OBSERVED" },
+    })).toEqual({
+      phase: "EXECUTION", reasonCode: "unknown_error", retryable: false, sideEffectState: "UNKNOWN",
+    });
+  });
+
+  it("normalizes a provider 400 caused by an exhausted completion budget without retaining detail", () => {
+    const raw = { detail: "HTTP 400: max_completion_tokens must be greater than or equal to 1", status: 400 };
+    const failure = classifyPartnerRunFailure(raw, { phase: "MODEL", sideEffectState: "OBSERVED" });
+    expect(failure).toEqual({
+      phase: "MODEL", reasonCode: "model_context_budget_exhausted", retryable: false, sideEffectState: "OBSERVED",
+    });
+    const wrapped = wrapPartnerRunFailure(raw, { phase: "MODEL", sideEffectState: "OBSERVED" });
+    expect(wrapped).not.toHaveProperty("detail");
+    expect(JSON.stringify(wrapped)).not.toContain("max_completion_tokens");
+  });
+
+  it.each([
+    ["HTTP 400: invalid model 'PRIVATE-model-id' for this route", "invalid_model"],
+    ["status 400 unsupported parameter: PRIVATE-field", "unsupported_parameter"],
+    ["400 invalid_request_error: PRIVATE malformed request", "invalid_request"],
+  ])("classifies actionable provider 400 details as %s without retaining their text", (detail, reasonCode) => {
+    const raw = { detail, status: 400 };
+    expect(classifyPartnerRunFailure(raw, { phase: "MODEL", sideEffectState: "OBSERVED" })).toEqual({
+      phase: "MODEL", reasonCode, retryable: false, sideEffectState: "OBSERVED",
+    });
+    const wrapped = wrapPartnerRunFailure(raw, { phase: "MODEL", sideEffectState: "OBSERVED" });
+    expect(JSON.stringify(wrapped)).not.toContain("PRIVATE");
+    expect(wrapped).not.toHaveProperty("detail");
+  });
+
+  it("keeps an unrecognized provider 400 generic and non-retryable", () => {
+    expect(classifyPartnerRunFailure({ detail: "HTTP 400: PRIVATE provider validation", status: 400 }, {
+      phase: "MODEL", sideEffectState: "NONE",
+    })).toEqual({ phase: "MODEL", reasonCode: "http_400", retryable: false, sideEffectState: "NONE" });
+  });
+
+  it("preserves only bounded artifact metadata from a failed run", () => {
+    const wrapped = Object.assign(new Error("private model output"), {
+      partialArtifacts: [
+        { artifactRef: "workspace://workbench/file/report.html", mimeType: "text/html", name: "report.html", size: 42 },
+        { name: "bad", size: -1 },
+      ],
+    });
+    expect(partnerRunArtifactsFromError(wrapped)).toEqual([{
+      artifactRef: "workspace://workbench/file/report.html", mimeType: "text/html", name: "report.html", size: 42,
+    }]);
+    expect(partnerRunArtifactsFromError({ partialArtifacts: [{ name: "plain.txt", size: 1 }] })).toEqual([
+      { name: "plain.txt", size: 1 },
+    ]);
+  });
+
+  it.each([
+    ["context_too_large", "exceeded the model route's context window"],
+    ["invalid_model", "compatible READY model"],
+    ["unsupported_parameter", "valid model route"],
+    ["invalid_request", "valid model route"],
+    ["model_context_budget_exhausted", "no safe completion budget left"],
+    ["model_refused", "refused this request"],
+  ])("provides a safe recovery direction for %s", (reasonCode, expected) => {
+    expect(safePartnerRunFailureBody({ phase: "MODEL", reasonCode, retryable: false, sideEffectState: "NONE" }))
+      .toContain(expected);
   });
 
   it("preserves a configuration carrier as pre-execution and gives an actionable safe message", () => {

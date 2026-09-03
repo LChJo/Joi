@@ -8,6 +8,8 @@
 
 输入先写全局 inbox，再由 Pi 选择 `select | create | suggest_merge | suggest_archive | clarify`。非法结构化决策只修复一次；再次失败进入澄清或安全串行降级。merge/archive 只生成建议，必须经用户确认。
 
+`Routine` 是全局自动化实体，不保存时区；每次 tick 使用当前系统时区解释周期和日期边界。创建必须绑定 READY Workbench，搭档只作为可选偏好提示。到期只写一条带 `automation_routine_id` 的普通 Joi `PENDING` 输入，运行期间继续使用 Joi 的单槽位；禁用或软删除不取消已经入队或运行中的输入。
+
 Partner 配置（revision）是无 cwd 的全局模板；运行中的 `PartnerInstance` 必须绑定一个 `workbenchId`，分为 `EPHEMERAL`（单次派发后销毁、消息清除）与 `RESIDENT`（会话消息持久化、跨重启恢复、目标完成后由 joi 销毁）。实例既不跨 Partner，也不跨工作台；忙碌实例不可复用或销毁。工作记忆按 `(workbenchId, partnerId)` 隔离，只向 joi 提供不含正文的选择依据；管理 API 不提供记忆正文。
 
 本机 Pi Partner revision 可固定 READY model source 及其 active model；保存前必须校验二者匹配，显式空值表示清除 pin 并恢复全局顺序选择。搭档页的模型测试只调用 Model Source 的固定极小验证路径，不创建 Work、Partner run、工具或工作区副作用；公开投影只包含安全状态、稳定原因码、来源/模型标识和验证时间。

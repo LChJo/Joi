@@ -4,6 +4,8 @@
 
 系统只有一个唯一全局 joi identity、system policy 与 scheduler，即唯一调度权威。Pi routing turn 只读取工作台摘要；选定后 execution turn 只装配对应工作台的 persona、工程引用、任务投影、记忆与相关搭档。不同工作台可拥有独立 thread 并并发工作，但不能拥有独立调度器。
 
+Routine 也归属于这个唯一 scheduler。`JoiAutomationComponent` 在根 tick 中先以当前系统 IANA 时区计算周期、interval、once 或 RRULE，到期时与 `nextRunAt` 推进、运行事实和普通 `joi_inbox_messages` 写入同一事务；它不创建 timer、线程、进程或第二个模型槽位。离线或 Workbench 暂不可用时只保留一个合并的 pending/blocked 运行事实，恢复后再转为普通 Joi 输入。
+
 ```text
 首页输入 -> durable joi inbox -> Pi routing -> Workbench context projection
          -> Work DAG -> policy gate -> outbox -> Local Pi / A2A Partner
@@ -38,7 +40,7 @@ joi 的结构化工具扩展为：`partner_create`（仅本机搭档，带 joi �
 
 Migration 033 建立独立的用户展示面：`workbench_agent_sessions` 将 post-033 本机 `partner_instances` 与 A2A `partner_runs` 映射为工作台 Agent 卡，不回填旧执行历史；`workbench_agent_conversation_entries` 保存规范化的 Markdown、工具、产物与错误条目。真实运行状态仍以原运行表为权威。未指定 goal 时 Agent 卡展示 instance availability；指定 `goalId` 时，查询在同一 session 下优先选择该 goal 的活跃 partner run，否则选择最新 partner run，并将其状态作为目标执行状态，不能让 resident instance 完成后回落的 IDLE 覆盖 COMPLETED/FAILED。执行适配器只提交安全展示草稿；pi-core 运行时把 `text_delta` 聚合为有界可见回答，把工具 lifecycle 降为工具名与完成/失败状态，并忽略 thinking、参数和原始工具结果。每个 live snapshot 经 `agent-conversation-presentation` 脱敏、分块后，在单个 SQLite 事务中按 `(agentId, runId)` 原位替换；终态完整投影再次替换同一 run，避免 token 级行膨胀和重复内容。该展示写入失败不改变 Work/run 结果。A2A data part 永不进入正文。删除一次性终态 Agent 只软删 session 并清理展示 entries，WorkResult、partner run、event 和审计事实保持。读取 API 为 `/api/v1/workbenches/:workbenchId/agents` 与其 `/conversation` 子资源。详见 ADR 0008。
 
-现有 Life/Wake 链只作为迁移期兼容消费者。切换时必须 stop-old-before-start-new；shadow 比对不得写 outbox、派发或正式表达。
+现有 Life/Wake 链只作为迁移期兼容消费者，旧 schedule/alarm API 继续可读写但不获得 Routine 的调度权。切换时必须 stop-old-before-start-new；shadow 比对不得写 outbox、派发或正式表达。
 
 ## 1. 架构目标
 
@@ -89,6 +91,7 @@ flowchart TB
 - loopback listener 始终启用，保证桌面窗口可用。
 - LAN listener 可选，只绑定用户明确选择的 RFC1918 地址。
 - 禁止以 `0.0.0.0` 作为便捷回退；LAN 绑定失败不影响 loopback。
+- LAN listener 由单一运行时管理器串行热重配置：候选绑定成功后再交换，失败清理候选并保留旧端点；没有旧端点时仅进入降级状态。
 
 Android 原生远程是第三条独立边界（ADR 0013），不复用 LAN listener，也不把 `/api/v1` 暴露到公网。Electron 通过受控 sidecar 承载 iroh host；Android Rust FFI 控制端使用二维码中的 endpoint ticket 优先建立局域网直连，失败时走既有 iroh relay。sidecar 只按 connection id 转发有界不透明帧，不能调用 application service。主进程解密后由 `RemoteCommandService` 显式映射到 `home-feed` 读取和文字 inbox 提交，所有其他命令 fail closed。
 

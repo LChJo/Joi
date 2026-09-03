@@ -685,8 +685,8 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
     ? 100
     : goal.work.total === 0 ? 0 : Math.round((goal.work.completed / goal.work.total) * 100);
   return <span className="joi-goal-progress">
-    <span aria-hidden="true" className="joi-goal-progress-track"><i className={goal.work.failed > 0 && goal.status !== "COMPLETED" ? "failed" : ""} style={{ width: `${String(percent)}%` }} /></span>
-    <i>{goal.agentCount} Agent · {goal.work.completed}/{goal.work.total} 工作完成{goal.work.failed > 0 && goal.status !== "COMPLETED" ? ` · ${String(goal.work.failed)} 失败` : ""}</i>
+    <span aria-hidden="true" className="joi-goal-progress-track"><i style={{ width: `${String(percent)}%` }} /></span>
+    <i>{goal.agentCount} Agent · {goal.work.completed}/{goal.work.total} 工作完成</i>
   </span>;
 }
 
@@ -814,7 +814,6 @@ function thinkingWorkSummary(item: JoiThinkingRenderItem): string {
   const parts = [
     agentCount > 0 ? `${String(agentCount)} Agent` : null,
     work.total > 0 ? `${String(work.completed)}/${String(work.total)} 工作完成` : null,
-    work.failed > 0 ? `${String(work.failed)} 失败` : null,
   ].filter((part): part is string => part !== null);
   return parts.join(" · ");
 }
@@ -886,6 +885,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         {goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div><GoalArtifacts api={api} goal={goal} /></article>}
+        <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
         {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
@@ -1084,7 +1084,6 @@ function JoiComposer({ api, onNavigate, snapshot }: {
           <div className="joi-goal-side"><GoalStatusBadge status={goal.status} />{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" || TERMINAL_GOAL_STATUSES.includes(goal.status) ? <div aria-label={`${goal.title} 操作`} className="joi-goal-actions" role="group">{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" ? <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} /> : null}{TERMINAL_GOAL_STATUSES.includes(goal.status) ? <button aria-label={`继续「${goal.title}」`} className="joi-goal-link" onClick={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} type="button">{retryGoalId === goal.goalId ? "收起" : "继续"}</button> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div> : null}</div>
         </div>
         {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoalId(goal.goalId); setOpenGoalId(null); } }}><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
-        <GoalAgentWarning goal={goal} onOpen={() => { setResultGoalId(null); setOpenGoalAgentStatus("FAILED"); setOpenGoalId(goal.goalId); }} />
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); markRetryStarted(goal); }} /> : null}

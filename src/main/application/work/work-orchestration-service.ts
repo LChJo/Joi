@@ -11,6 +11,7 @@ import type {
   PlannedDispatchAttempt,
   WorkAcceptanceCheck,
   WorkPlanRepository,
+  WorkRecoveryRepository,
   WorkReassignmentRepository,
 } from "../ports/work-orchestration.js";
 
@@ -43,6 +44,30 @@ function validateAcceptanceChecks(checks: WorkAcceptanceCheck[] | undefined): vo
   }
 }
 
+function acceptanceCheckKey(check: WorkAcceptanceCheck): string {
+  if (check.kind === "BODY_PRESENT") return check.kind;
+  if (check.kind === "ARTIFACT_PRESENT") return `${check.kind}:${check.name}`;
+  if (check.kind === "FILE_EXISTS") return `${check.kind}:${check.relativePath}`;
+  return `${check.kind}:${check.relativePath}:${check.expectedText}`;
+}
+
+function mergeAcceptanceChecks(required: WorkAcceptanceCheck[], additive: WorkAcceptanceCheck[] | undefined): WorkAcceptanceCheck[] {
+  const seen = new Set<string>();
+  const merged: WorkAcceptanceCheck[] = [];
+  for (const check of [...required, ...(additive ?? [])]) {
+    const key = acceptanceCheckKey(check);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push({ ...check });
+  }
+  return merged;
+}
+
+function strongerAccessMode(source: WorkAccessMode, requested: WorkAccessMode): WorkAccessMode {
+  const rank: Record<WorkAccessMode, number> = { NONE: 0, READ: 1, WRITE: 2 };
+  return rank[source] >= rank[requested] ? source : requested;
+}
+
 export class WorkOrchestrationService {
   constructor(private readonly dependencies: {
     clock: Clock;
@@ -54,6 +79,7 @@ export class WorkOrchestrationService {
     partners: { pinForDispatch(partnerId: string): Promise<PartnerDispatchPin> };
     policy: DispatchPolicyGate;
     reassignment?: WorkReassignmentRepository;
+    recovery?: WorkRecoveryRepository;
     repository: WorkPlanRepository;
   }) {}
 
@@ -63,6 +89,7 @@ export class WorkOrchestrationService {
     inputId: string;
     turnId: string;
     work: WorkRequest[];
+    recovery?: { attemptNo: number; evidenceResultIds: string[]; recoveryId: string; sourceWorkId: string; strategy: "SUPPLEMENT" | "TOOL_EXPANSION" };
   }): Promise<{ dispatchPlanId: string; waves: string[][] }> {
     const byKey = new Map<string, WorkRequest>();
     for (const request of input.work) {
@@ -96,6 +123,7 @@ export class WorkOrchestrationService {
       if (request === undefined) throw new Error("work_request_missing");
       return {
         acceptanceChecks: (request.acceptanceChecks ?? []).map((check) => ({ ...check })),
+        ...(input.recovery === undefined || input.recovery.evidenceResultIds.length === 0 ? {} : { evidenceResultIds: [...input.recovery.evidenceResultIds] }),
         ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
         workId: item.workId,
       };
@@ -136,7 +164,14 @@ export class WorkOrchestrationService {
     }
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await this.dependencies.repository.commit({
-      attempts, briefs, createdAt, dependencies, dispatchPlanId, inputId: input.inputId, items, policyResults, turnId: input.turnId, waves,
+      attempts, briefs, createdAt, dependencies, dispatchPlanId, inputId: input.inputId, items, policyResults,
+      ...(input.recovery === undefined ? {} : { recovery: {
+        attemptNo: input.recovery.attemptNo,
+        recoveryId: input.recovery.recoveryId,
+        sourceWorkId: input.recovery.sourceWorkId,
+        strategy: input.recovery.strategy,
+      } }),
+      turnId: input.turnId, waves,
     });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.plan.committed", {
       attemptCount: attempts.length,
@@ -167,6 +202,53 @@ export class WorkOrchestrationService {
       workIds: items.map((item) => item.workId),
     });
     return { dispatchPlanId, waves };
+  }
+
+  /** Creates a new, independent Work for an essential gap; historical Work is evidence, never a DAG key. */
+  async supplement(input: {
+    acceptanceChecks?: WorkAcceptanceCheck[];
+    accessMode: WorkAccessMode;
+    instructions?: string;
+    partnerId: string;
+    sourceWorkId: string;
+    strategy?: "SUPPLEMENT" | "TOOL_EXPANSION";
+    title: string;
+    turnId: string;
+    workbenchId: string;
+  }): Promise<{ attemptNo: number; dispatchPlanId: string; evidenceResultIds: string[]; waves: string[][] }> {
+    const repository = this.dependencies.recovery;
+    if (repository === undefined) throw new DomainError("work_recovery_unavailable", "Work recovery is unavailable.");
+    const context = await repository.loadForSupplement(input.sourceWorkId);
+    if (context === null) throw new DomainError("work_not_found", "Work was not found.");
+    if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
+    if (context.item.status !== "FAILED") throw new DomainError("work_recovery_status_invalid", "Only failed Work can be supplemented.");
+    if (context.attemptCount >= 2) throw new DomainError("work_recovery_exhausted", "Work recovery is limited to two rounds.");
+    const acceptanceChecks = mergeAcceptanceChecks(context.sourceAcceptanceChecks, input.acceptanceChecks);
+    validateAcceptanceChecks(acceptanceChecks);
+    const attemptNo = context.attemptCount + 1;
+    const recoveryId = this.dependencies.ids.next("work_recovery");
+    const planned = await this.plan({
+      dependencies: [],
+      inputId: context.inputId,
+      recovery: {
+        attemptNo,
+        evidenceResultIds: context.evidenceResultIds,
+        recoveryId,
+        sourceWorkId: input.sourceWorkId,
+        strategy: input.strategy ?? "SUPPLEMENT",
+      },
+      turnId: input.turnId,
+      work: [{
+        acceptanceChecks,
+        accessMode: strongerAccessMode(context.item.accessMode, input.accessMode),
+        ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
+        key: recoveryId,
+        partnerId: input.partnerId,
+        title: input.title,
+      }],
+      workbenchId: input.workbenchId,
+    });
+    return { attemptNo, dispatchPlanId: planned.dispatchPlanId, evidenceResultIds: context.evidenceResultIds, waves: planned.waves };
   }
 
   async #validateInstanceSelection(workbenchId: string, request: WorkRequest): Promise<void> {
@@ -201,6 +283,8 @@ export class WorkOrchestrationService {
     if (!(["FAILED", "WAITING", "READY"] as const).includes(context.item.status as "FAILED" | "WAITING" | "READY")) {
       throw new DomainError("work_reassign_status_invalid", "Work cannot be reassigned in its current state.");
     }
+    const recoveryAttemptCount = await this.dependencies.recovery?.countRecoveryAttempts(input.workId) ?? 0;
+    if (recoveryAttemptCount >= 2) throw new DomainError("work_recovery_exhausted", "Work recovery is limited to two rounds.");
     const pin = await this.dependencies.partners.pinForDispatch(input.partnerId);
     if (pin.partnerRevisionId === context.lastPartnerRevisionId) {
       throw new DomainError("work_reassign_same_revision", "Reassignment requires a different partner revision.");
@@ -227,6 +311,10 @@ export class WorkOrchestrationService {
       attempt,
       createdAt,
       dispatchPlanId,
+      ...(this.dependencies.recovery === undefined ? {} : { recovery: {
+        attemptNo: recoveryAttemptCount + 1,
+        recoveryId: this.dependencies.ids.next("work_recovery"),
+      } }),
       turnId: input.turnId,
       workId: input.workId,
     });

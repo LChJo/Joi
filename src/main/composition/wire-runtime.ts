@@ -7,6 +7,7 @@ import { ActorTree } from "../application/actors/actor-tree.js";
 import { JoiActor } from "../application/actors/joi-actor.js";
 import { WorkbenchActor } from "../application/actors/workbench-actor.js";
 import { JoiTaskComponent } from "../application/actors/components/joi-task-component.js";
+import { JoiAutomationComponent } from "../application/actors/components/joi-automation-component.js";
 import { JoiWorkbenchComponent } from "../application/actors/components/joi-workbench-component.js";
 import { JoiHarnessComponent } from "../application/actors/components/joi-harness-component.js";
 import { JoiRhythmComponent } from "../application/actors/components/joi-rhythm-component.js";
@@ -142,6 +143,7 @@ export function wireRuntime(input: {
     roots: [new JoiActor({
       workbenchComponent: new JoiWorkbenchComponent({ workbenches: persistence.workbenches }),
       components: [
+        new JoiAutomationComponent({ store: persistence.automationStore }),
         new JoiTaskComponent({
           driver: { handle: (inputId, signal) => joiStack.joiCoordinator.handle(inputId, signal) },
           gate: { hasReadySource: () => modelSourceStack.modelSources.hasReadySource() },

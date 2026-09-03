@@ -2,6 +2,7 @@ import type { WorkbenchSummary } from "./workbench-context.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 
 export interface JoiPendingInput {
+  automationRoutineId?: string;
   attachments?: { attachmentId: string; filename: string; mimeType: string; size: number }[];
   workbenchId?: string;
   body: string;

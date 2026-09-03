@@ -532,7 +532,8 @@ describe("joi home single entry", () => {
     expect(screen.getByText("等待搭档回应", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
     expect(screen.getByText("正在汇总结果", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
     expect(screen.getByText("正在整理任务", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
-    expect(screen.getByText("2 Agent · 1/3 工作完成 · 1 失败", { selector: ".joi-thinking-meta" })).toBeInTheDocument();
+    expect(screen.getByText("2 Agent · 1/3 工作完成", { selector: ".joi-thinking-meta" })).toBeInTheDocument();
+    expect(screen.queryByText(/失败/u, { selector: ".joi-thinking-meta" })).not.toBeInTheDocument();
     expect(screen.getAllByText(/已用 [0-9]+ 秒/u, { selector: ".joi-thinking-elapsed" })).toHaveLength(2);
     expect(screen.getAllByText(/已用 1 分钟/u, { selector: ".joi-thinking-elapsed" })).toHaveLength(2);
     expect(screen.getByText(/已用 2 小时/u, { selector: ".joi-thinking-elapsed" })).toBeInTheDocument();
@@ -618,7 +619,7 @@ describe("joi home single entry", () => {
     expect(conversation.mock.calls.length).toBeGreaterThanOrEqual(2);
   });
 
-  it("downgrades a failed partner to a clickable warning on a completed goal and opens its error stream", async () => {
+  it("hides a failed partner on the home card but keeps its warning and error stream in goal detail", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-partial", "综合工程");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
@@ -651,6 +652,9 @@ describe("joi home single entry", () => {
     render(<JoiHome api={api} />);
     expect(await screen.findByText("已完成")).toBeInTheDocument();
     expect(screen.getByText("已有信息足够回答原问题。")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看 1 个异常搭档" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("汇总搭档结论"));
+    await screen.findByRole("button", { name: /失败搭档/u });
     fireEvent.click(screen.getByRole("button", { name: "查看 1 个异常搭档" }));
 
     expect(await screen.findByText("安全错误详情")).toBeInTheDocument();

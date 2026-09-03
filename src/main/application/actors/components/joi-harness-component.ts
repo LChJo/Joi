@@ -11,10 +11,10 @@ const FEEDBACK_ENTRY_SUMMARY_LIMIT = 160;
 /**
  * Traversal over harness map facts: adopts goals into maps on their first turn,
  * records completion feedback into the workbench task context once a map clears,
- * silently clears trivial maps, posts exactly one review input per completed result
- * layer, and reconciles historical review rows. Terminal Work/path facts can
- * close a stale review without replaying its model turn; only incomplete facts
- * remain quarantined for an explicit user decision.
+ * silently clears trivial maps, starts bounded recovery for blocked goals, posts
+ * exactly one review input per completed result layer, and reconciles historical
+ * review rows. A dedicated recovery input owns blocked-goal repair so the legacy
+ * review reconciler cannot race it or turn an internal failure into user work.
  * Never calls an LLM and never dispatches: progression is delegated to joi reasoning
  * turns via PENDING rows in joi_inbox_messages (single scheduling authority stays
  * with the task slot).
@@ -38,6 +38,7 @@ export class JoiHarnessComponent implements ActorComponent {
     await this.#step(ctx, "paths", () => this.#synchronizeWorkPaths(ctx));
     await this.#step(ctx, "feedback", () => this.#recordCompletionFeedback(ctx));
     await this.#step(ctx, "trivial_clear", () => this.#clearTrivialMaps(ctx));
+    await this.#step(ctx, "work_recovery", () => this.#enqueueWorkRecoveries(ctx));
     if (this.dependencies.reviewEnabled === true) {
       await this.#step(ctx, "review", () => this.#enqueueReviews(ctx));
       await this.#step(ctx, "review_recovery", () => this.#reconcileReviews(ctx));
@@ -110,6 +111,19 @@ export class JoiHarnessComponent implements ActorComponent {
           resultRevision: digest.resultRevision,
         });
       }
+    }
+  }
+
+  async #enqueueWorkRecoveries(ctx: ActorTickContext): Promise<void> {
+    if (this.dependencies.scan.listWorkRecoverySeeds === undefined || this.dependencies.writer.enqueueWorkRecovery === undefined) return;
+    for (const seed of await this.dependencies.scan.listWorkRecoverySeeds()) {
+      const inputId = await this.dependencies.writer.enqueueWorkRecovery({ now: ctx.now.toISOString(), seed });
+      if (inputId !== null) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.work_recovery_enqueued", {
+        attemptNo: seed.attemptNo,
+        goalInputId: seed.goalInputId,
+        inputId,
+        sourceWorkId: seed.sourceWorkId,
+      });
     }
   }
 

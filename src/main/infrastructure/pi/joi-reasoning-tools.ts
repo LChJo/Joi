@@ -15,6 +15,8 @@ import type { WorkResultService } from "../../application/work/work-result-servi
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
 import type { JoiHarnessStore } from "../../application/ports/joi-harness.js";
 import type { JoiAttachmentPort } from "../../application/ports/managed-file-ports.js";
+import type { AutomationService } from "../../application/automation/automation-service.js";
+import type { AutomationFrequency } from "../../../shared/automation.js";
 import type { PartnerSkillCatalog } from "../../application/ports/partner-skills.js";
 import {
   emitRuntimeDiagnostic,
@@ -33,6 +35,12 @@ export function goalFromInputIdPrefix(inputId: string): string | undefined {
   if (inputId.startsWith(reviewPrefix)) {
     const remainder = inputId.slice(reviewPrefix.length);
     const separator = remainder.lastIndexOf(":r");
+    return separator < 0 ? remainder : remainder.slice(0, separator);
+  }
+  const recoveryPrefix = "joi_recovery:goal:";
+  if (inputId.startsWith(recoveryPrefix)) {
+    const remainder = inputId.slice(recoveryPrefix.length);
+    const separator = remainder.indexOf(":work:");
     return separator < 0 ? remainder : remainder.slice(0, separator);
   }
   return undefined;
@@ -79,17 +87,18 @@ function synthesizePartnerProfile(displayName: string, skills: string[], capabil
 }
 
 const SYNTHESIS_TOOL_NAMES = new Set([
-  "model_list_sources", "partner_list_available", "partner_set_model", "turn_complete", "work_cancel", "work_read_result", "work_reassign", "work_resume",
+  "model_list_sources", "partner_list_available", "partner_set_model", "partner_set_tools", "turn_complete", "work_cancel", "work_read_result", "work_reassign", "work_resume", "work_supplement",
 ]);
 
 const ATTACHMENT_CHUNK_CHARS = 8_000;
 
 export function selectJoiReasoningToolsForInput(tools: AgentTool[], inputId: string): AgentTool[] {
-  if (!inputId.startsWith("joi_result_input:goal:")) return tools;
+  if (!inputId.startsWith("joi_result_input:goal:") && !inputId.startsWith("joi_recovery:goal:")) return tools;
   return tools.filter((tool) => SYNTHESIS_TOOL_NAMES.has(tool.name));
 }
 
 export function createJoiReasoningTools(input: {
+  automation?: Pick<AutomationService, "create" | "delete" | "get" | "list" | "revealPrompt" | "runNow" | "setEnabled" | "update">;
   workbenchId: string;
   workbenchChanges: Pick<WorkbenchChangeService, "suggestArchive" | "suggestMerge">;
   workbenchRefine?: Pick<WorkbenchManagementService, "update">;
@@ -109,11 +118,11 @@ export function createJoiReasoningTools(input: {
   instances: Pick<PartnerInstanceManager, "dispose" | "ensure" | "list">;
   memory: Pick<PartnerWorkMemoryService, "digest">;
   models: Pick<ModelSourceService, "list">;
-  partners: Pick<PartnerRegistryService, "add" | "inspect" | "list" | "setModel" | "setSkills">;
+  partners: Pick<PartnerRegistryService, "add" | "inspect" | "list" | "setModel" | "setSkills" | "setTools">;
   results: Pick<WorkResultService, "read">;
   skills: Pick<PartnerSkillCatalog, "listForEngine">;
   turnId: string;
-  work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume">;
+  work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume" | "supplement">;
 }): AgentTool[] {
   let dispatchCorrectionOffered = false;
   const goalContext = (): string => input.goalInputId ?? input.inputId;
@@ -121,6 +130,53 @@ export function createJoiReasoningTools(input: {
     if (input.harness === undefined) throw new DomainError("harness_map_unavailable", "The goal map is not configured.");
     return input.harness;
   };
+  const automationFrequencyParameters = Type.Object({
+    anchorAt: Type.Optional(Type.String()), at: Type.Optional(Type.String()),
+    daysOfMonth: Type.Optional(Type.Array(Type.Number())), daysOfWeek: Type.Optional(Type.Array(Type.Number())),
+    dtStart: Type.Optional(Type.String()), hours: Type.Optional(Type.Number()), kind: Type.String(),
+    localTime: Type.Optional(Type.String()), rule: Type.Optional(Type.String()), unit: Type.Optional(Type.String()),
+  });
+  const automationParameters = Type.Object({
+    frequency: automationFrequencyParameters, name: Type.String(), preferredPartnerId: Type.Optional(Type.String()),
+    prompt: Type.String(), to: Type.Optional(Type.String()), from: Type.Optional(Type.String()), workbenchId: Type.Optional(Type.String()),
+  });
+  const automationUpdateParameters = Type.Object({
+    enabled: Type.Optional(Type.Boolean()), frequency: Type.Optional(automationFrequencyParameters), name: Type.Optional(Type.String()),
+    preferredPartnerId: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), routineId: Type.String(),
+    to: Type.Optional(Type.String()), from: Type.Optional(Type.String()), workbenchId: Type.Optional(Type.String()),
+  });
+  const automationMutation = (name: string, execute: (toolCallId: string, args: Record<string, unknown>) => Promise<unknown>): AgentTool => ({
+    description: "Manage a recurring Routine through the single joi scheduler.", execute: async (toolCallId, args) => {
+      if (input.automation === undefined) throw new DomainError("automation_runtime_unavailable", "Automation runtime is unavailable.");
+      return result(await execute(toolCallId, args as Record<string, unknown>));
+    }, label: name, name, parameters: automationParameters,
+  });
+  const automation = input.automation;
+  const automationTools: AgentTool[] = automation === undefined ? [] : [
+    automationMutation("create_automation", async (toolCallId, args) => automation.create({
+      frequency: args.frequency as AutomationFrequency, name: args.name as string, prompt: args.prompt as string, workbenchId: (args.workbenchId as string | undefined) ?? input.workbenchId,
+      ...(typeof args.from === "string" ? { from: args.from } : {}), ...(typeof args.to === "string" ? { to: args.to } : {}), ...(typeof args.preferredPartnerId === "string" ? { preferredPartnerId: args.preferredPartnerId } : {}),
+    }, `${input.inputId}:${toolCallId}`)),
+    automationMutation("schedule_plan", async (toolCallId, args) => automation.create({
+      frequency: args.frequency as AutomationFrequency, name: args.name as string, prompt: args.prompt as string, workbenchId: (args.workbenchId as string | undefined) ?? input.workbenchId,
+      ...(typeof args.from === "string" ? { from: args.from } : {}), ...(typeof args.to === "string" ? { to: args.to } : {}), ...(typeof args.preferredPartnerId === "string" ? { preferredPartnerId: args.preferredPartnerId } : {}),
+    }, `${input.inputId}:${toolCallId}`)),
+    {
+      description: "List routines without revealing their prompt text.", execute: async () => result(await automation.list()), label: "List routines", name: "list_automations", parameters: Type.Object({}),
+    },
+    {
+      description: "Read one routine's safe configuration without prompt text.", execute: async (_toolCallId, raw) => { const args = raw as Record<string, unknown>; return result(await automation.get(args.routineId as string)); }, label: "Get routine", name: "get_automation", parameters: Type.Object({ routineId: Type.String() }),
+    },
+    {
+      description: "Update a routine. Prompt text is accepted but never echoed by this tool.", execute: async (toolCallId, raw) => { const args = raw as Record<string, unknown>; const { routineId, ...patch } = args; return result(await automation.update(routineId as string, patch, `${input.inputId}:${toolCallId}`)); }, label: "Update routine", name: "update_automation", parameters: automationUpdateParameters,
+    },
+    {
+      description: "Soft-delete a routine without canceling an already queued Joi input.", execute: async (toolCallId, raw) => { const args = raw as Record<string, unknown>; await automation.delete(args.routineId as string, `${input.inputId}:${toolCallId}`); return result({ routineId: args.routineId, status: "DELETED" }); }, label: "Delete routine", name: "delete_automation", parameters: Type.Object({ routineId: Type.String() }),
+    },
+    {
+      description: "Queue one immediate execution of a routine using an idempotent key.", execute: async (toolCallId, raw) => { const args = raw as Record<string, unknown>; return result(await automation.runNow(args.routineId as string, `${input.inputId}:${toolCallId}`)); }, label: "Run routine now", name: "run_automation_now", parameters: Type.Object({ routineId: Type.String() }),
+    },
+  ];
   const workDispatchParameters = Type.Object({
     dependencies: Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() })),
     work: Type.Array(Type.Object({
@@ -143,12 +199,16 @@ export function createJoiReasoningTools(input: {
     }), { minItems: 1, maxItems: 16 }),
   });
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
-    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
+    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Dependency keys may reference only Work keys declared in the current invocation; historical Work is evidence, not a DAG dependency. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
     execute: async (_toolCallId, arguments_) => {
       try {
+        const currentKeys = new Set(arguments_.work.map((item) => item.key));
+        const currentDependencies = arguments_.dependencies.filter((dependency) => (
+          currentKeys.has(dependency.workKey) && currentKeys.has(dependency.dependsOnKey)
+        ));
         return result(await input.work.plan({
           workbenchId: input.workbenchId,
-          dependencies: arguments_.dependencies,
+          dependencies: currentDependencies,
           // Derived inputs (harness review) dispatch on behalf of the original goal so the
           // result set and synthesis closure stay attached to the goal, not the review row.
           inputId: goalContext(),
@@ -182,7 +242,9 @@ export function createJoiReasoningTools(input: {
           );
           return result({ reasonCode: DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady, status: "CLARIFICATION_REQUIRED" }, true);
         }
-        const correctable = reasonCode === "partner_not_available" || reasonCode.startsWith("partner_instance_");
+        const correctable = reasonCode === "partner_not_available"
+          || reasonCode === "work_dependency_unknown"
+          || reasonCode.startsWith("partner_instance_");
         if (correctable && !dispatchCorrectionOffered) {
           dispatchCorrectionOffered = true;
           return result({ reasonCode, status: "RETRY_REQUIRED" });
@@ -195,17 +257,43 @@ export function createJoiReasoningTools(input: {
           );
           return result({ reasonCode: "partner_selection_required", status: "CLARIFICATION_REQUIRED" }, true);
         }
-        await input.clarifications.requireClarification(
-          input.inputId,
-          "work_dispatch_failed",
-          "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。",
-        );
-        return result({ reasonCode: "work_dispatch_failed", status: "CLARIFICATION_REQUIRED" }, true);
+        return result({ reasonCode, status: "FAILED" }, true);
       }
     },
     label: "Plan and dispatch work",
     name: "work_dispatch",
     parameters: workDispatchParameters,
+  };
+  const workSupplementParameters = Type.Object({
+    acceptanceChecks: Type.Optional(Type.Array(Type.Union([
+      Type.Object({ kind: Type.Literal("BODY_PRESENT") }),
+      Type.Object({ kind: Type.Literal("ARTIFACT_PRESENT"), name: Type.String({ maxLength: 240, minLength: 1 }) }),
+      Type.Object({ expectedText: Type.String({ maxLength: 8_000 }), kind: Type.Literal("FILE_CONTAINS_EXACT"), relativePath: Type.String({ maxLength: 500, minLength: 1 }) }),
+      Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ maxLength: 500, minLength: 1 }) }),
+    ]), { maxItems: 8 })),
+    accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
+    instructions: Type.Optional(Type.String({ maxLength: 12_000 })),
+    partnerId: Type.String(),
+    sourceWorkId: Type.String(),
+    strategy: Type.Optional(Type.Union([Type.Literal("SUPPLEMENT"), Type.Literal("TOOL_EXPANSION")])),
+    title: Type.String({ maxLength: 240, minLength: 1 }),
+  });
+  const workSupplementTool: AgentTool<typeof workSupplementParameters> = {
+    description: "Create one independent recovery Work for an essential gap left by a FAILED Work. The source Work's acceptance checks and access mode are enforced automatically as a minimum; acceptanceChecks here are additive only and cannot weaken the original deliverable. Completed authoritative results from the same goal are attached as evidence references. Do not pass historical DAG keys. Each source Work is limited durably to two recovery rounds. For OBSERVED or UNKNOWN side effects, use this instead of replaying the failed Work; for a missing built-in tool, call partner_set_tools first and choose TOOL_EXPANSION.",
+    execute: async (_toolCallId, arguments_) => result(await input.work.supplement({
+      ...(arguments_.acceptanceChecks === undefined ? {} : { acceptanceChecks: arguments_.acceptanceChecks }),
+      accessMode: arguments_.accessMode,
+      ...(arguments_.instructions === undefined ? {} : { instructions: arguments_.instructions }),
+      partnerId: arguments_.partnerId,
+      sourceWorkId: arguments_.sourceWorkId,
+      ...(arguments_.strategy === undefined ? {} : { strategy: arguments_.strategy }),
+      title: arguments_.title,
+      turnId: input.turnId,
+      workbenchId: input.workbenchId,
+    }), true),
+    label: "Supplement failed work",
+    name: "work_supplement",
+    parameters: workSupplementParameters,
   };
   const workReassignParameters = Type.Object({ partnerId: Type.String(), workId: Type.String() });
   const workReassignTool: AgentTool<typeof workReassignParameters> = {
@@ -304,6 +392,23 @@ export function createJoiReasoningTools(input: {
     label: "Set partner skills",
     name: "partner_set_skills",
     parameters: partnerSetSkillsParameters,
+  };
+  const partnerSetToolsParameters = Type.Object({
+    partnerId: Type.String(),
+    tools: Type.Array(Type.String({ enum: [...PI_PARTNER_TOOL_NAMES] }), {
+      maxItems: PI_PARTNER_TOOL_NAMES.length,
+      uniqueItems: true,
+    }),
+  });
+  const partnerSetToolsTool: AgentTool<typeof partnerSetToolsParameters> = {
+    description: "Create a new immutable revision of a local Pi partner with a bounded built-in tool grant. Pass [] to grant every built-in coding and public-web tool. This never grants credentials, cookies, private-network access or paths outside the Workbench.",
+    execute: async (_toolCallId, arguments_) => result(await input.partners.setTools(
+      arguments_.partnerId,
+      normalizePartnerTools(arguments_.tools),
+    )),
+    label: "Set partner tools",
+    name: "partner_set_tools",
+    parameters: partnerSetToolsParameters,
   };
   const partnerSetModelParameters = Type.Object({
     modelId: Type.String({ maxLength: 240, minLength: 1 }),
@@ -697,6 +802,7 @@ export function createJoiReasoningTools(input: {
     ? []
     : [attachmentReadTool];
   return [
+    ...automationTools,
     ...attachmentTools,
     {
       description: "List redacted Workbench summaries. Does not return persona, memory, or workspace paths.",
@@ -718,6 +824,7 @@ export function createJoiReasoningTools(input: {
     suggestArchive,
     partnerListSkillsTool,
     partnerSetSkillsTool,
+    partnerSetToolsTool,
     partnerSetModelTool,
     {
       description: "List active partners with public metadata, live instances and a working-memory digest (recent outcomes, success rate). Use the digest to pick and the instance list to reuse.",
@@ -747,6 +854,7 @@ export function createJoiReasoningTools(input: {
     listInstancesTool,
     disposeInstanceTool,
     workDispatchTool,
+    workSupplementTool,
     workReassignTool,
     workResumeTool,
     workCancelTool,

@@ -33,8 +33,16 @@ export type WorkAcceptanceCheck =
 
 export interface WorkBrief {
   acceptanceChecks: WorkAcceptanceCheck[];
+  evidenceResultIds?: string[];
   instructions?: string;
   workId: string;
+}
+
+export interface WorkRecoveryPlan {
+  attemptNo: number;
+  recoveryId: string;
+  sourceWorkId: string;
+  strategy: "SUPPLEMENT" | "TOOL_EXPANSION";
 }
 
 export interface CommittedWorkPlan {
@@ -46,6 +54,7 @@ export interface CommittedWorkPlan {
   inputId: string;
   items: WorkItem[];
   policyResults: DispatchPolicyResult[];
+  recovery?: WorkRecoveryPlan;
   turnId: string;
   waves: string[][];
 }
@@ -62,12 +71,21 @@ export interface WorkReassignmentContext {
   lastPartnerRevisionId: string;
 }
 
+export interface WorkSupplementContext {
+  attemptCount: number;
+  evidenceResultIds: string[];
+  inputId: string;
+  item: WorkItem;
+  sourceAcceptanceChecks: WorkAcceptanceCheck[];
+}
+
 export interface ReassignedWorkPlan {
   attempt: PlannedDispatchAttempt;
   createdAt: string;
   dispatchPlanId: string;
   turnId: string;
   workId: string;
+  recovery?: { attemptNo: number; recoveryId: string };
 }
 
 export interface WorkReassignmentRepository {
@@ -76,6 +94,11 @@ export interface WorkReassignmentRepository {
   loadAttemptForTurn?(workId: string, turnId: string): Promise<PlannedDispatchAttempt | null>;
   loadForReassignment(workId: string): Promise<WorkReassignmentContext | null>;
   reassign(plan: ReassignedWorkPlan): Promise<void>;
+}
+
+export interface WorkRecoveryRepository {
+  countRecoveryAttempts(workId: string): Promise<number>;
+  loadForSupplement(workId: string): Promise<WorkSupplementContext | null>;
 }
 
 export interface WorkQuery {

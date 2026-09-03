@@ -1,4 +1,7 @@
 export interface RuntimeDiagnosticEventMap {
+  "joi.automation.claimed": {
+    count: number;
+  };
   "joi.input.accepted": {
     attachmentCount: number;
     workbenchBound: boolean;
@@ -45,6 +48,12 @@ export interface RuntimeDiagnosticEventMap {
     goalInputId: string;
     inputId: string;
     resultRevision: number;
+  };
+  "joi.harness.work_recovery_enqueued": {
+    attemptNo: number;
+    goalInputId: string;
+    inputId: string;
+    sourceWorkId: string;
   };
   "joi.harness.review_requeued": {
     goalInputId: string;

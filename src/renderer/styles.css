@@ -927,3 +927,20 @@ body:has(.remote-joi-shell) { min-width: 0; background: radial-gradient(circle a
 .remote-composer button { display: grid; width: 46px; height: 46px; place-items: center; border: 0; border-radius: 14px; background: #a9d8b9; color: #12301f; cursor: pointer; }
 .remote-composer button:disabled { opacity: .38; }
 .remote-composer-notice, .remote-composer-wrap > p { color: #819388; font-size: 10px; text-align: center; }
+/* Routine control surface */
+.automation-page { min-width: 0; }
+.automation-editor { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 18px 0 24px; border-bottom: 1px solid var(--line); }
+.automation-editor label:nth-child(2), .automation-editor .row-actions { grid-column: 1 / -1; }
+.automation-editor textarea { min-height: 90px; resize: vertical; }
+.automation-editor fieldset { display: flex; flex-wrap: wrap; gap: 8px 14px; min-width: 0; padding: 10px; border: 1px solid var(--line); }
+.automation-editor fieldset legend { padding-inline: 4px; color: var(--muted); font-size: 12px; }
+.automation-editor fieldset label { display: inline-flex; grid-template-columns: none; align-items: center; gap: 5px; }
+.automation-preview { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
+.automation-goal-link { display: inline-block; margin-left: 8px; padding: 2px 6px; font-size: 10px; }
+.automation-list { display: grid; }
+.automation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--line); }
+.automation-row > div:first-child { display: grid; gap: 5px; min-width: 0; }
+.automation-row strong { font-size: 15px; }
+.automation-row small, .automation-row span { color: var(--muted); font-size: 11px; }
+.automation-row .row-actions { align-items: start; flex-wrap: wrap; justify-content: end; }
+@media (max-width: 800px) { .automation-editor { grid-template-columns: 1fr; }.automation-editor label:nth-child(2), .automation-editor .row-actions, .automation-preview { grid-column: 1; }.automation-row { grid-template-columns: 1fr; }.automation-row .row-actions { justify-content: start; } }

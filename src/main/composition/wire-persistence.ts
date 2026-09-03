@@ -4,6 +4,7 @@ import { SqliteDispatchPolicyGate } from "../infrastructure/persistence/sqlite-d
 import { SqliteJoiHarnessRepository } from "../infrastructure/persistence/sqlite-joi-harness-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteJoiInboxRepository } from "../infrastructure/persistence/sqlite-joi-inbox-repository.js";
+import { SqliteAutomationStore } from "../infrastructure/persistence/sqlite-automation-store.js";
 import { SqliteModelSourceRepository } from "../infrastructure/persistence/sqlite-model-source-repository.js";
 import { SqlitePartnerInstanceMessageStore } from "../infrastructure/persistence/sqlite-partner-instance-message-store.js";
 import { SqlitePartnerInstanceRepository } from "../infrastructure/persistence/sqlite-partner-instance-repository.js";
@@ -39,6 +40,7 @@ export function wirePersistence(input: {
 }) {
   const { clock, database, pid, userDataDirectory } = input;
   return {
+    automationStore: new SqliteAutomationStore(database),
     dispatchClaims: new SqlitePartnerDispatchClaims(database),
     joiHarnessRepository: new SqliteJoiHarnessRepository(database),
     joiHomeFeedRepository: new SqliteJoiHomeFeedRepository(database),

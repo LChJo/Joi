@@ -52,6 +52,16 @@ describe("workspace Work verifier", () => {
     })).resolves.toEqual({ status: "PASSED" });
   });
 
+  it("does not let a Markdown body satisfy a required file artifact", async () => {
+    const verifier = new WorkspaceWorkVerifier({
+      contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {} }) },
+    });
+    await expect(verifier.verify({
+      acceptanceChecks: [{ kind: "ARTIFACT_PRESENT", name: "report.html" }, { kind: "BODY_PRESENT" }],
+      artifacts: [], body: "# Markdown report", contextSnapshotId: "context_1",
+    })).resolves.toEqual({ reasonCode: "verification_artifact_missing", status: "FAILED" });
+  });
+
   it("checks non-empty partner text with BODY_PRESENT", async () => {
     const verifier = new WorkspaceWorkVerifier({
       contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {} }) },

@@ -27,12 +27,14 @@ import type { SystemSettingsPort } from "../../application/ports/system-settings
 import type { RemoteAccessControl } from "../../application/ports/remote-access.js";
 import type { ArtifactReadPort, JoiAttachmentPort } from "../../application/ports/managed-file-ports.js";
 import type { WorkQuery } from "../../application/ports/work-orchestration.js";
+import type { AutomationService } from "../../application/automation/automation-service.js";
 import type { JoiActivityDto, PartnerEngineDto } from "../../../shared/joi.js";
 import { csrfToken, expectedOrigin, HttpError, optionalStringField, requestAddress, requestOrigin, sessionToken } from "./http-core.js";
 import type { IncomingMessage } from "node:http";
 
 export interface ApiDependencies {
   agentOnboarding?: AgentOnboardingService;
+  automation?: Pick<AutomationService, "create" | "delete" | "get" | "list" | "revealPrompt" | "runNow" | "setEnabled" | "update">;
   agents: AgentService;
   artifacts?: ArtifactReadPort;
   workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
@@ -81,6 +83,11 @@ export async function verifyWrite(dependencies: ApiDependencies, request: Incomi
 export function onboardingService(dependencies: ApiDependencies): AgentOnboardingService {
   if (dependencies.agentOnboarding === undefined) throw new HttpError("agent_gateway_unavailable", "Agent Gateway is unavailable.", 503);
   return dependencies.agentOnboarding;
+}
+
+export function automationService(dependencies: ApiDependencies): NonNullable<ApiDependencies["automation"]> {
+  if (dependencies.automation === undefined) throw new HttpError("automation_runtime_unavailable", "Automation runtime is unavailable.", 503);
+  return dependencies.automation;
 }
 
 export function eventService(dependencies: ApiDependencies): EventService {

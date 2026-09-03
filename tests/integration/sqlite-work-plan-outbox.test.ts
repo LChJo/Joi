@@ -15,9 +15,52 @@ import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persiste
 import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-context-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
-import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("SQLite work plan outbox", () => {
+  it("loads the failed source Work contract for supplemental recovery and fails closed on malformed legacy briefs", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "恢复", personaSummary: "persona", projectLabel: "HTML", scopeSummary: "输出文件" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-contract', 'key-contract', '生成 HTML', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-contract', 'goal-contract', ?, 'session-contract', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-contract', ?, 'goal-contract', '生成报告', ?, 'READ', 'FAILED', ?, ?)`).run(
+          workbench.workbenchId,
+          JSON.stringify({ acceptanceChecks: [
+            { kind: "ARTIFACT_PRESENT", name: "report.html" },
+            { kind: "FILE_EXISTS", relativePath: "report.html" },
+          ] }),
+          now,
+          now,
+        );
+        connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES ('work-contract', 'WRITE')").run();
+      });
+      const repository = new SqliteWorkPlanRepository(fixture.database);
+      await expect(repository.loadForSupplement("work-contract")).resolves.toMatchObject({
+        item: { accessMode: "WRITE" },
+        sourceAcceptanceChecks: [
+          { kind: "ARTIFACT_PRESENT", name: "report.html" },
+          { kind: "FILE_EXISTS", relativePath: "report.html" },
+        ],
+      });
+
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET intent_json = '{}' WHERE work_id = 'work-contract'",
+      ).run());
+      await expect(repository.loadForSupplement("work-contract")).rejects.toMatchObject({ code: "work_recovery_contract_invalid" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("commits work, partner revision pins and side-effect outbox atomically", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-plan-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });

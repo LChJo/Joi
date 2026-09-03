@@ -127,6 +127,26 @@ export class PartnerRegistryService {
     });
   }
 
+  /** Replaces only the built-in tool grant and creates a new immutable revision. Empty means all built-ins. */
+  async setTools(partnerId: string, tools: string[]): Promise<PartnerDto> {
+    const current = await this.#active(partnerId);
+    if (current.kind !== "local-pi" || current.engine !== "pi-core") {
+      throw new DomainError("partner_tools_not_supported", "Only local Pi partners can use built-in Pi tools.");
+    }
+    return this.update(partnerId, {
+      capabilities: [...current.capabilities],
+      ...(current.description === undefined ? {} : { description: current.description }),
+      displayName: current.displayName,
+      engine: current.engine,
+      ...(current.codexPermissions === undefined ? {} : { codexPermissions: current.codexPermissions }),
+      ...(current.engineModelId === undefined ? {} : { engineModelId: current.engineModelId }),
+      ...(current.modelIdOverride === undefined ? {} : { modelIdOverride: current.modelIdOverride }),
+      ...(current.modelSourceId === undefined ? {} : { modelSourceId: current.modelSourceId }),
+      skills: [...current.skills],
+      tools,
+    });
+  }
+
   /** Re-pins only the model source and appends a new immutable local-partner revision. */
   async setModel(partnerId: string, model: { modelIdOverride: string; modelSourceId: string }): Promise<PartnerDto> {
     const current = await this.#active(partnerId);

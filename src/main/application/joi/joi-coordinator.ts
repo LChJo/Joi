@@ -46,10 +46,15 @@ const COMMITTED_OUTCOME_TOOL_NAMES = new Set([
   "workbench_suggest_archive",
   "workbench_suggest_merge",
   "schedule_plan",
+  "create_automation",
+  "update_automation",
+  "delete_automation",
+  "run_automation_now",
   "turn_complete",
   "user_ask",
   "work_cancel",
   "work_dispatch",
+  "work_supplement",
   "work_reassign",
   "work_resume",
   "work_wait",
@@ -66,6 +71,8 @@ const REPLAY_SAFE_TOOL_NAMES = new Set([
   "partner_list_skills",
   "work_read_result",
   "workbench_list_summaries",
+  "list_automations",
+  "get_automation",
 ]);
 
 const OUTCOME_REPAIR_PROMPT = [
@@ -81,7 +88,6 @@ const EMPTY_COMPLETION_REPAIR_PROMPT = [
   "Emit the concise final answer for the user now; if tools were used, keep the already committed outcome.",
 ].join(" ");
 
-const WORK_DISPATCH_FAILURE_PROMPT = "joi 暂时无法把这条任务派发给搭档，任务已暂停。请补充要求后重试。";
 const DISPATCH_CLARIFICATION_REASONS = new Set([
   DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady,
   "partner_selection_required",
@@ -114,6 +120,7 @@ export class JoiCoordinator {
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     /** Verified attachment reader; without it attachments stay metadata-only. */
     attachments?: Pick<JoiAttachmentPort, "read">;
+    automation?: { promptForExecution(routineId: string): Promise<{ prompt: string } | null> };
     clock: Clock;
     diagnostics?: RuntimeDiagnostics;
     failureClassifier?: ReasoningFailureClassifier;
@@ -140,6 +147,11 @@ export class JoiCoordinator {
     const input = await this.dependencies.store.loadInput(inputId);
     if (input === null) throw new DomainError("joi_input_not_found", "joi input was not found.");
     if (input.status === "CONSUMED") return;
+    const automationPrompt = input.automationRoutineId === undefined || this.dependencies.automation === undefined
+      ? undefined
+      : (await this.dependencies.automation.promptForExecution(input.automationRoutineId))?.prompt;
+    if (input.automationRoutineId !== undefined && automationPrompt === undefined) throw new DomainError("automation_routine_not_found", "The scheduled Routine is unavailable.");
+    const requestText = automationPrompt ?? input.body;
     const handleStartedAt = this.dependencies.clock.now().getTime();
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.handling_started", {
       attachmentCount: input.attachments?.length ?? 0,
@@ -156,7 +168,7 @@ export class JoiCoordinator {
       let decision: WorkbenchDecision | null = null;
       for (let attempt = 0; attempt < 2 && decision === null; attempt += 1) {
         decision = workbenchDecision(
-          await this.dependencies.router.decide({ workbenches, input: input.body, repair: attempt === 1 }),
+          await this.dependencies.router.decide({ workbenches, input: requestText, repair: attempt === 1 }),
           known,
           this.dependencies.workbenchRegistry !== undefined,
         );
@@ -301,7 +313,7 @@ export class JoiCoordinator {
     let completionRepairAttempted = false;
     let completionText = "";
     let dispatchFailureReason: string | undefined;
-    let prompt = input.body;
+    let prompt = requestText;
     let turnImages: readonly { data: string; mimeType: string }[] | undefined;
     let turnAttachmentIds: readonly string[] | undefined;
     if (input.attachments !== undefined && input.attachments.length > 0 && this.dependencies.attachments !== undefined) {
@@ -310,7 +322,7 @@ export class JoiCoordinator {
         attachments: input.attachments,
         reader: (attachmentId) => attachments.read(attachmentId),
       });
-      if (attachmentContext.promptAddendum !== "") prompt = `${input.body}\n\n${attachmentContext.promptAddendum}`;
+      if (attachmentContext.promptAddendum !== "") prompt = `${requestText}\n\n${attachmentContext.promptAddendum}`;
       turnImages = attachmentContext.images.length === 0 ? undefined : attachmentContext.images;
       turnAttachmentIds = attachmentContext.attachmentIds;
     }
@@ -396,7 +408,7 @@ export class JoiCoordinator {
           if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
           if (dispatchFailureReason !== undefined) {
             if (!DISPATCH_CLARIFICATION_REASONS.has(dispatchFailureReason)) {
-              await this.dependencies.store.requireClarification(inputId, "work_dispatch_failed", WORK_DISPATCH_FAILURE_PROMPT);
+              throw new DomainError(dispatchFailureReason, "Work dispatch failed before a recoverable plan was committed.");
             }
             await this.dependencies.store.completeInput(inputId, turnId);
             emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.completed", {

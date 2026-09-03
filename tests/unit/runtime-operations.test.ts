@@ -29,6 +29,7 @@ describe("runtime recovery marker and persisted settings", () => {
     try {
       const service = new SystemSettingsService({
         getLaunchAtLogin: () => launchAtLogin,
+        listLanAddresses: [{ address: "192.168.1.20", available: true }],
         setLaunchAtLogin: (enabled) => { launchAtLogin = enabled; },
         settingsPath: path.join(root, "settings.json"),
       });
@@ -39,11 +40,32 @@ describe("runtime recovery marker and persisted settings", () => {
       expect(isRfc1918Address("172.15.0.1")).toBe(false);
       expect(isRfc1918Address("172.32.0.1")).toBe(false);
       expect(isRfc1918Address("192.168.bad.1")).toBe(false);
+      expect(isRfc1918Address("192.168..1")).toBe(false);
+      expect(isRfc1918Address(" 192.168.1.20")).toBe(false);
       expect(isRfc1918Address("0.0.0.0")).toBe(false);
-      await expect(service.update({ lan: { address: "203.0.113.2", enabled: true, riskAccepted: true } })).rejects.toThrow(/RFC1918/);
+      await expect(service.update({ lan: { address: "203.0.113.2", enabled: true, riskAccepted: true } })).rejects.toMatchObject({ code: "lan_address_invalid" });
       const saved = await service.update({ lan: { address: "192.168.1.20", enabled: true, port: 43_130, riskAccepted: true }, launchAtLogin: true });
-      expect(saved).toMatchObject({ launchAtLogin: true, restartRequired: true });
+      expect(saved).toMatchObject({ launchAtLogin: true, restartRequired: false, lan: { effective: { status: "blocked" } } });
       expect(await service.get()).toMatchObject({ lan: { address: "192.168.1.20", enabled: true }, launchAtLogin: true });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("persists an enabled LAN intent while exposing a blocked runtime state", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-settings-blocked-"));
+    try {
+      const service = new SystemSettingsService({
+        getLaunchAtLogin: () => false,
+        getLanRuntimeState: () => ({ status: "blocked", reasonCode: "lan_bind_failed", message: "端口被占用。" }),
+        listLanAddresses: [{ address: "192.168.1.20", available: true }],
+        reconfigureLan: () => Promise.resolve({ status: "blocked", reasonCode: "lan_bind_failed", message: "端口被占用。" }),
+        setLaunchAtLogin: () => undefined,
+        settingsPath: path.join(root, "settings.json"),
+      });
+      const result = await service.update({ lan: { address: "192.168.1.20", enabled: true, port: 43_130, riskAccepted: true } });
+      expect(result).toMatchObject({ lan: { enabled: true, effective: { status: "blocked", reasonCode: "lan_bind_failed" } } });
+      expect(await service.get()).toMatchObject({ lan: { enabled: true, effective: { status: "blocked" } } });
     } finally {
       await rm(root, { force: true, recursive: true });
     }

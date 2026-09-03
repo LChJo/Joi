@@ -1,5 +1,13 @@
 # 路线图与验收
 
+## AC-63 Routine 定时任务
+
+Routine 的周期、RRULE、日期边界、Workbench 可用性、原子 inbox 触发、补偿合并、幂等和安全投影以 `docs/10-requirements-traceability.md` 的 AC-63 为发布门禁；它复用唯一 Joi root scheduler，不引入第二条执行链。
+
+## AC-64 Agent 失败自愈
+
+单 Agent 失败只在目标详情展示；首页只在 Joi 两轮持久恢复均耗尽且目标无法完成时展示目标级失败。`OBSERVED/UNKNOWN` 不重放原 Work，先收集并验证现有产物，缺口通过无历史 DAG 依赖的补充 Work 修复；补充 Work 必须自动继承源 Work 的验收条件和访问模式下限，正文不得替代 HTML/PDF 等文件交付。内置工具可由 Joi 生成不可变 Partner revision 自动开放，但凭据、cookie、私网和 Workbench 外路径仍禁止。恢复可用或在途时首页保持 `EXTENDING`，内部 recovery input 不形成独立目标卡；`BLOCKED` outcome 不进入 Wayfinder review，存量内部派发澄清由专用 recovery input 自动解锁。详见 ADR 0016。
+
 ## 0. JOI-01 实施路线
 
 JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1 Pi 与 provider contract；W2 Model Source/工作台/Partner 领域及迁移；W3 首次连接、inbox 与最小首页闭环；W4 Work DAG/并发/outbox；W5 Local Pi/A2A 搭档；W6 唯一首页与次级管理 UI；W7 兼容切换、安全与发布验证。
@@ -33,7 +41,7 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-18 的首页首问投影收敛以 AC-47 为门禁：输入持久化为 `PENDING` 后，在 Workbench 尚未绑定前也必须以 `ARRANGING`/“等待归属”目标卡进入 home-feed；绑定后沿同一 `inputId` 升级，未归属 `CLARIFICATION_REQUIRED` 只进入“需要你”列表，不能重复显示。
 
-2026-08-18 的首页进度可见性收敛以 AC-48 为门禁：`progressing` 必须同时显示由持久化事实推导的阶段、Agent 数、Work 完成/失败/总数和已用时间；只展示安全枚举和计数，不展示 ETA、原始执行消息、模型标识、路径或错误正文；继续使用 HTTP home-feed 轮询与本地操作后的即时刷新，不新增 SSE/WebSocket。终态目标提交“继续”后必须先即时显示 `正在提交继续请求`，服务端确认后再进入 `queued`/`正在安排`；接口失败时撤销提交态并保留可重试错误，提交往返本身不得形成静默 gap。
+2026-08-18 的首页进度可见性收敛以 AC-48/AC-64 为门禁：`progressing` 必须同时显示由持久化事实推导的阶段、Agent 数、Work 完成/总数和已用时间；单 Agent 失败计数只在目标详情展示，首页只展示目标级不可恢复失败。其余只展示安全枚举和计数，不展示 ETA、原始执行消息、模型标识、路径或错误正文；继续使用 HTTP home-feed 轮询与本地操作后的即时刷新，不新增 SSE/WebSocket。终态目标提交“继续”后必须先即时显示 `正在提交继续请求`，服务端确认后再进入 `queued`/`正在安排`；接口失败时撤销提交态并保留可重试错误，提交往返本身不得形成静默 gap。
 
 2026-08-24 的直接回答结果收敛以 AC-50 为门禁：`DIRECT_ANSWER`、`TEAM_READY` 与无工具普通回答必须把非空最终 Markdown 有界脱敏后写入独立 Turn completion；写入与 Turn/Inbox 完成同事务且校验 input/turn 归属。首页仅在输入已消费且没有 result-set 时投影该 completion；当前 revision 的 Goal outcome 始终优先，重试期间不得展示旧回答，诊断不得记录回答正文。
 

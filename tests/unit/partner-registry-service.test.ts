@@ -333,6 +333,22 @@ describe("partner-registry-revision-before-dispatch", () => {
     expect(repository.history).toHaveLength(2);
   });
 
+  it("expands a Pi partner to all built-in tools through a new immutable revision", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
+    const partner = await service.add({
+      capabilities: ["code"], description: "Keeps its durable role", displayName: "Coder", kind: "local-pi",
+      modelIdOverride: "model-ready", modelSourceId: "source-ready", skills: [], tools: ["read"],
+    });
+    const expanded = await service.setTools(partner.partnerId, []);
+    expect(expanded).toMatchObject({
+      description: "Keeps its durable role", modelIdOverride: "model-ready", modelSourceId: "source-ready",
+      partnerId: partner.partnerId, tools: [],
+    });
+    expect(expanded.partnerRevisionId).not.toBe(partner.partnerRevisionId);
+    expect(repository.history).toHaveLength(2);
+  });
+
   it("requires an explicitly narrowed Pi tool list to include read whenever Skills are selected", async () => {
     const service = new PartnerRegistryService({
       clock: new TestClock(),

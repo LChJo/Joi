@@ -13,3 +13,7 @@ Migration 046 起，场景预设包以 `(pack_id, role_id)` 持久绑定全局�
 Migration 047 起，搭档 revision 可在 `engine_config_json` 保存引擎专属非敏感配置；首个消费者是 Codex 的 sandbox、network、web search 与固定 never approval 权限。旧 NULL 行由 repository 按历史工具列表确定性映射。
 
 Migration 048 修复旧开发库已占用 migration 047 但缺少 `engine_config_json` 的版本冲突；已有该列的数据库只记录修复版本，不重复执行 `ALTER TABLE`。
+
+Migration 049 建立全局 Routine 配置与紧凑运行事实，并为普通 Joi inbox 增加可空 `automation_routine_id`；调度 claim、运行记录和 inbox 输入在同一事务中提交，提示词正文不进入投影。
+
+Migration 050 持久化每个失败 Work 最多两轮的恢复尝试及其权威结果证据引用；补充 Work、dispatch outbox、恢复身份和证据引用在同一事务中提交。

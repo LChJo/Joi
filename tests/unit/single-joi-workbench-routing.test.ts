@@ -235,7 +235,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(completions).toEqual([{ completionSummary: "修复后的可靠总结", outcome: "RESULT_SYNTHESIZED" }]);
   });
 
-  it("closes a failed work dispatch as clarification instead of repairing or retrying the turn", async () => {
+  it("fails an internal work dispatch without fabricating a user clarification", async () => {
     let starts = 0;
     const clarifications: string[] = [];
     let completions = 0;
@@ -263,11 +263,11 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       },
     });
 
-    await coordinator.handle("input-dispatch-failed");
+    await expect(coordinator.handle("input-dispatch-failed")).rejects.toMatchObject({ code: "tool_execution_error" });
     expect(starts).toBe(1);
-    expect(clarifications).toEqual(["work_dispatch_failed"]);
-    expect(completions).toBe(1);
-    expect(failures).toBe(0);
+    expect(clarifications).toEqual([]);
+    expect(completions).toBe(0);
+    expect(failures).toBe(1);
   });
 
   it("preserves a partner-selection clarification already committed by the dispatch tool", async () => {

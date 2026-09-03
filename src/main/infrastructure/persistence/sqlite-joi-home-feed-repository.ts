@@ -54,6 +54,13 @@ function toHarnessDto(projection: {
 function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGoalStatusDto {
   if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
+  const blockedOutcome = number(row, "outcome_current") === 1 && row.outcome_disposition === "BLOCKED";
+  const recoveryAvailable = number(row, "recovery_pending_count") > 0 || number(row, "recoverable_failed_count") > 0;
+  const internalRecoveryClarification = row.clarification_reason_code === "work_dispatch_failed";
+  if (blockedOutcome && recoveryAvailable
+    && (row.clarification_reason_code === null || row.clarification_reason_code === undefined || internalRecoveryClarification)) {
+    return "EXTENDING";
+  }
   if (row.clarification_reason_code !== null && row.clarification_reason_code !== undefined) return "NEEDS_ATTENTION";
   // A transient invariant-repair window is active backend work, not a user request.
   // The Workbench actor will either restore an OPEN action or advance the Work.
@@ -62,6 +69,7 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   // state even when the goal still owns planned work from an earlier attempt.
   if (text(row, "inbox_status") === "PENDING") return "ARRANGING";
   const activeMap = harness?.mapStatus === "ACTIVE";
+  if (blockedOutcome) return "FAILED";
   if (activeMap && harness.reviewedRevision > 0 && number(row, "work_active") > 0) return "EXTENDING";
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0) return "ARRANGED";
@@ -169,7 +177,19 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         o.disposition AS outcome_disposition, o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
         tc.completed_at AS turn_completed_at,
         (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id
-          WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs
+          WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs,
+        (SELECT COUNT(*) FROM joi_inbox_messages recovery
+          WHERE recovery.goal_input_id = i.input_id AND recovery.input_id LIKE 'joi_recovery:goal:%'
+            AND recovery.status IN ('PENDING','ROUTED')) AS recovery_pending_count,
+        (SELECT COUNT(*) FROM work_items failed
+          WHERE failed.input_id = i.input_id AND failed.status = 'FAILED'
+            AND EXISTS (SELECT 1 FROM joi_harness_maps recovery_map
+              WHERE recovery_map.goal_input_id = i.input_id AND recovery_map.status = 'ACTIVE')
+            AND (SELECT COUNT(*) FROM work_recovery_attempts attempt WHERE attempt.source_work_id = failed.work_id) < 2
+            AND (SELECT COUNT(*) FROM joi_inbox_messages recovery
+              WHERE recovery.goal_input_id = i.input_id
+                AND substr(recovery.idempotency_key, 1, length('work_recovery:' || failed.work_id || ':'))
+                  = 'work_recovery:' || failed.work_id || ':') < 2) AS recoverable_failed_count
         FROM joi_inbox_messages i LEFT JOIN workbenches a ON a.workbench_id = i.workbench_id
         LEFT JOIN work_items w ON w.input_id = i.input_id
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
@@ -177,6 +197,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         LEFT JOIN joi_turn_completions tc ON tc.input_id = i.input_id
         WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'
           AND i.input_id NOT LIKE 'joi_harness_review:%'
+          AND i.goal_input_id IS NULL
           AND NOT (i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED')
         GROUP BY i.input_id ORDER BY i.updated_at DESC, i.input_id DESC`).all() as Row[];
       const harnessByGoal = new Map(queryHarnessGoalProjections(connection).map((projection) => [projection.goalInputId, projection]));
@@ -189,7 +210,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const activeRuns = number(row, "active_runs");
         const rawTitle = maskSecretText(text(row, "body")).replace(/\s+/gu, " ").trim();
         const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}…` : rawTitle;
-        const finalOutcome = number(row, "outcome_current") === 1 && harnessProjection?.mapStatus !== "ACTIVE";
+        const blockedRecoveryExhausted = status === "FAILED" && row.outcome_disposition === "BLOCKED";
+        const finalOutcome = number(row, "outcome_current") === 1
+          && (harnessProjection?.mapStatus !== "ACTIVE" || blockedRecoveryExhausted);
         const terminalStatus = ["COMPLETED", "FAILED", "CANCELED"].includes(status);
         const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code);
         const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))

@@ -6,6 +6,7 @@ import type {
   HarnessGoalSeed,
   HarnessReviewDigest,
   HarnessReviewRecoveryCandidate,
+  HarnessWorkRecoverySeed,
 } from "../../src/main/application/ports/joi-harness";
 
 const BASE = "2026-08-05T10:00:00.000Z";
@@ -26,10 +27,12 @@ function makeHarness(options?: { reconcileReturnsNull?: boolean; reviewEnabled?:
   const trivialCandidates: { goalInputId: string }[] = [];
   const reviewDigests: HarnessReviewDigest[] = [];
   const reviewRecoveries: HarnessReviewRecoveryCandidate[] = [];
+  const workRecoverySeeds: HarnessWorkRecoverySeed[] = [];
   const createdMaps: string[] = [];
   const feedbackEntries: { entry: string; goalInputId: string }[] = [];
   const clearedTrivial: string[] = [];
   const enqueuedReviews: string[] = [];
+  const enqueuedWorkRecoveries: string[] = [];
   let pathSync = { closed: 0, created: 0 };
   let failStep: string | null = null;
   const scan = {
@@ -43,6 +46,7 @@ function makeHarness(options?: { reconcileReturnsNull?: boolean; reviewEnabled?:
       return [...reviewDigests];
     },
     listReviewRecoveries: async () => [...reviewRecoveries],
+    listWorkRecoverySeeds: async () => [...workRecoverySeeds],
     listTrivialMapCandidates: async () => [...trivialCandidates],
     loadGoalProjections: async () => [],
   };
@@ -61,6 +65,12 @@ function makeHarness(options?: { reconcileReturnsNull?: boolean; reviewEnabled?:
     enqueueReview: async (input: { digest: HarnessReviewDigest }) => {
       enqueuedReviews.push(input.digest.goalInputId);
       return `joi_harness_review:goal:${input.digest.goalInputId}:r${String(input.digest.resultRevision)}`;
+    },
+    enqueueWorkRecovery: async (input: { seed: HarnessWorkRecoverySeed }) => {
+      enqueuedWorkRecoveries.push(input.seed.sourceWorkId);
+      const index = workRecoverySeeds.indexOf(input.seed);
+      if (index >= 0) workRecoverySeeds.splice(index, 1);
+      return `joi_recovery:goal:${input.seed.goalInputId}:work:${input.seed.sourceWorkId}:a${String(input.seed.attemptNo)}`;
     },
     reconcileReview: async (input: { candidate: HarnessReviewRecoveryCandidate }) => {
       if (options?.reconcileReturnsNull === true) return null;
@@ -90,10 +100,12 @@ function makeHarness(options?: { reconcileReturnsNull?: boolean; reviewEnabled?:
     createdMaps,
     diagnostics,
     enqueuedReviews,
+    enqueuedWorkRecoveries,
     feedbackEntries,
     feedbackTargets,
     reviewDigests,
     reviewRecoveries,
+    workRecoverySeeds,
     setPathSync: (value: { closed: number; created: number }) => { pathSync = value; },
     seeds,
     setFailStep: (step: string | null) => { failStep = step; },
@@ -166,6 +178,50 @@ describe("JoiHarnessComponent", () => {
     harness.reviewDigests.push(digest("goal-8"));
     await harness.component.update(ctxAt(0));
     expect(harness.enqueuedReviews).toEqual(["goal-8"]);
+  });
+
+  it("enqueues a bounded Work recovery and emits only stable identifiers", async () => {
+    const harness = makeHarness();
+    harness.workRecoverySeeds.push({
+      attemptNo: 1, goalInputId: "goal-blocked", sourceWorkId: "work-failed", workbenchId: "workbench-1",
+    });
+    const ctx = ctxAt(0);
+    await harness.component.update({ ...ctx, diagnostics: { emit: (name, payload) => harness.diagnostics.events.push({ name, payload }) } });
+    expect(harness.enqueuedWorkRecoveries).toEqual(["work-failed"]);
+    expect(harness.diagnostics.events).toContainEqual({
+      name: "joi.harness.work_recovery_enqueued",
+      payload: {
+        attemptNo: 1,
+        goalInputId: "goal-blocked",
+        inputId: "joi_recovery:goal:goal-blocked:work:work-failed:a1",
+        sourceWorkId: "work-failed",
+      },
+    });
+  });
+
+  it("skips Work recovery when only the scan side of the optional port is wired", async () => {
+    const scanOnly = new JoiHarnessComponent({
+      scan: {
+        listFeedbackTargets: async () => [],
+        listGoalsWithoutMap: async () => [],
+        listReviewDigests: async () => [],
+        listReviewRecoveries: async () => [],
+        listTrivialMapCandidates: async () => [],
+        listWorkRecoverySeeds: async () => [{
+          attemptNo: 1, goalInputId: "goal", sourceWorkId: "work", workbenchId: "workbench-1",
+        }],
+        loadGoalProjections: async () => [],
+      },
+      writer: {
+        clearTrivialMap: async () => false,
+        createMap: async () => false,
+        enqueueReview: async () => null,
+        reconcileReview: async () => null,
+        recordCompletionFeedback: async () => false,
+        synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
+      },
+    });
+    await expect(scanOnly.update(ctxAt(0))).resolves.toBeUndefined();
   });
 
   it("reconciles stale reviews once and keeps bounded diagnostics", async () => {

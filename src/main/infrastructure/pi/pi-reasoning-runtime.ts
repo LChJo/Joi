@@ -27,12 +27,14 @@ export const JOI_REASONING_TOOL_NAMES = [
   "partner_create",
   "partner_set_model",
   "partner_set_skills",
+  "partner_set_tools",
   "partner_create_instance",
   "partner_list_instances",
   "partner_dispose_instance",
   "work_create",
   "work_add_dependency",
   "work_dispatch",
+  "work_supplement",
   "work_read_result",
   "attachment_read",
   "work_wait",
@@ -42,6 +44,12 @@ export const JOI_REASONING_TOOL_NAMES = [
   "memory_search",
   "memory_append_candidate",
   "schedule_plan",
+  "create_automation",
+  "list_automations",
+  "get_automation",
+  "update_automation",
+  "delete_automation",
+  "run_automation_now",
   "user_ask",
   "turn_complete",
   "harness_name_destination",
@@ -106,6 +114,7 @@ function validateToolNames(tools: AgentTool[]): void {
 function safeToolResultReasonCode(result: unknown): string | undefined {
   const parsed = safeToolResultRecord(result);
   if (parsed === undefined) return undefined;
+  if (parsed.status === "RETRY_REQUIRED") return undefined;
   const reasonCode = parsed.reasonCode;
   return typeof reasonCode === "string" && /^[A-Za-z0-9_.:-]{1,80}$/u.test(reasonCode) ? reasonCode : undefined;
 }

@@ -7,7 +7,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinkin
 import { vi } from "vitest";
 
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
-import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
+import { boundPartnerModelContext, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
 
@@ -15,6 +15,21 @@ const contexts = { loadForExecution: async () => ({ promptSection: "Workbench co
 const wait = async (milliseconds: number): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 describe("local Pi coding partner runtime", () => {
+  it("bounds accumulated partner context while retaining the latest user request and a valid tail", () => {
+    const messages = [
+      { content: "original", role: "user", timestamp: 1 },
+      ...Array.from({ length: 40 }, (_, index) => ({
+        content: [{ type: "text", text: `${String(index)}-${"x".repeat(5_000)}` }],
+        role: "assistant",
+        timestamp: index + 2,
+      })),
+    ] as never[];
+    const bounded = boundPartnerModelContext(messages);
+    expect(bounded.length).toBeLessThan(messages.length);
+    expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(120_000);
+    expect(bounded[0]).toMatchObject({ content: "original", role: "user" });
+  });
+
   it("runs one isolated Pi session with the pinned workspace, prompt and tool allowlist", async () => {
     const faux = fauxProvider({ provider: "local-partner" });
     faux.setResponses([fauxAssistantMessage([fauxText("work completed")])]);
@@ -549,10 +564,12 @@ describe("Pi partner engine runtime", () => {
     }
   });
 
-  it("classifies overloaded, oversized-context and refusal failures into distinct actionable codes", async () => {
+  it("classifies provider failures into distinct actionable codes", async () => {
     const cases: { errorMessage: string; reasonCode: string; retryable: boolean }[] = [
       { errorMessage: "529 {\"type\":\"overloaded_error\",\"message\":\"upstream busy\"}", reasonCode: "server_error", retryable: true },
       { errorMessage: "400 {\"error\":{\"message\":\"prompt is too long: 210000 tokens > 128000 maximum\"}}", reasonCode: "context_too_large", retryable: false },
+      { errorMessage: "HTTP 400: invalid model for this route", reasonCode: "invalid_model", retryable: false },
+      { errorMessage: "status 400: unsupported parameter reasoning_effort", reasonCode: "unsupported_parameter", retryable: false },
       { errorMessage: "The model refused to complete the request", reasonCode: "model_refused", retryable: false },
     ];
     for (const expected of cases) {

@@ -5,7 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { A2aGatewayService } from "../../application/a2a/a2a-gateway-service.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
 import { normalizeAgentConversationEntries, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
-import { classifyPartnerRunFailure, partnerRunFailureFromError, safePartnerRunFailureBody, type PartnerRunFailure } from "../../application/partners/partner-run-failure.js";
+import { classifyPartnerRunFailure, partnerRunArtifactsFromError, partnerRunFailureFromError, safePartnerRunFailureBody, type PartnerRunFailure } from "../../application/partners/partner-run-failure.js";
 import {
   DISPATCH_POLICY_REASONS,
   evaluateDispatchPolicy,
@@ -402,7 +402,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           return "completed";
         } catch (error) {
           const failure = partnerRunFailureFromError(error, { phase: "RECOVERY", sideEffectState: "UNKNOWN" });
-          await this.#complete(row, "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure), failure });
+          await this.#complete(row, "UNKNOWN", { artifacts: partnerRunArtifactsFromError(error), body: safePartnerRunFailureBody(failure), failure });
           return "completed";
         }
       }
@@ -443,7 +443,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       if (failedRow !== undefined) {
         const failure = partnerRunFailureFromError(error);
         const status = failure.sideEffectState === "NONE" ? "FAILED" : "UNKNOWN";
-        await this.#complete(failedRow, status, { artifacts: [], body: safePartnerRunFailureBody(failure), failure });
+        await this.#complete(failedRow, status, { artifacts: partnerRunArtifactsFromError(error), body: safePartnerRunFailureBody(failure), failure });
       }
       return;
     }
@@ -518,18 +518,22 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     const brief = workBrief(row.intent_json);
     let verification = { status: "NOT_REQUIRED" as const } as Awaited<ReturnType<WorkVerifier["verify"]>>;
     let committedStatus = status;
-    if (status === "COMPLETED" && brief.acceptanceChecks.length > 0) {
+    const acceptanceChecks = status === "COMPLETED"
+      ? brief.acceptanceChecks
+      : brief.acceptanceChecks.filter((check) => check.kind !== "BODY_PRESENT");
+    if (acceptanceChecks.length > 0 && (status === "COMPLETED" || output.artifacts.length > 0)) {
       verification = row.context_snapshot_id === null
         ? { reasonCode: "verification_context_missing", status: "FAILED" }
         : this.dependencies.verifier === undefined
           ? { reasonCode: "verification_unavailable", status: "FAILED" }
           : await this.dependencies.verifier.verify({
-            acceptanceChecks: brief.acceptanceChecks,
+            acceptanceChecks,
             artifacts: output.artifacts,
             body: output.body,
             contextSnapshotId: row.context_snapshot_id,
           });
-      if (verification.status !== "PASSED") committedStatus = "FAILED";
+      if (verification.status === "PASSED") committedStatus = "COMPLETED";
+      else committedStatus = "FAILED";
     }
     const recorded = await this.dependencies.results.record(createWorkResult({
       actionId: row.action_id,
@@ -547,6 +551,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       verification,
       workId: row.work_id,
     }));
+    if (recorded.isAuthoritative && (committedStatus === "COMPLETED" || committedStatus === "FAILED")) {
+      this.dependencies.database.transaction((connection) => connection.prepare(`UPDATE work_recovery_attempts
+        SET status = ?, updated_at = ?
+        WHERE status = 'PLANNED' AND (replacement_work_id = ? OR (source_work_id = ? AND strategy = 'REASSIGN'))`)
+        .run(committedStatus, now, row.work_id, row.work_id));
+    }
     const agentId = row.kind === "A2A" ? `a2a_agent:${runId}` : row.instance_id;
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.result.recorded", {
       actionId: row.action_id,

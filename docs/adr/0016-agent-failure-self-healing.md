@@ -1,0 +1,11 @@
+# ADR 0016: Agent Failure Self-Healing
+
+Status: accepted
+
+An individual Agent failure is an execution detail, not a home-feed alert. The home feed shows effective goal progress and only surfaces a failure when Joi itself has exhausted bounded recovery and the goal is terminally blocked. Per-Agent failure facts and recovery history remain available in goal detail.
+
+Joi classifies failures using only `phase`, `reasonCode`, `retryable` and `sideEffectState`. A transient failure with no observed side effect may reassign the same Work. `OBSERVED` or `UNKNOWN` is never replayed: changed workspace artifacts are collected even on model failure and mechanically verified; a passing artifact can complete the Work, otherwise Joi creates a new supplemental Work for only the missing deliverable. Historical Work ids are evidence references and never dependency keys in a new dispatch invocation.
+
+Recovery attempts are persisted and capped at two per source Work across restarts. A supplemental Work is committed with its dispatch outbox and recovery/evidence records in one transaction. Its effective acceptance checks are the stable union of the source Work contract and any additive recovery checks, and its access mode cannot be weaker than the source Work. Consequently a Markdown response cannot satisfy a required HTML/PDF artifact. A local Pi partner may be moved to a new immutable revision that grants any built-in coding/public-web tools, but this does not grant credentials, cookies, private-network access or paths outside its Workbench. Exhaustion produces a goal-level blocked result without a fabricated user clarification.
+
+The harness only reviews `COMPLETED` synthesis outcomes. A blocked outcome with failed terminal Work and no live execution creates a dedicated goal-bound recovery input; this avoids replaying a review Turn whose side effects may already have been observed. While a recovery is eligible or pending, the home projection remains `EXTENDING` and derived recovery inputs never appear as independent goal cards. Provider context is bounded before calls, web content is paged, and provider error text is normalized to allowlisted stable codes such as `invalid_model`, `unsupported_parameter`, `invalid_request` or `model_context_budget_exhausted` without retention; unrecognized HTTP 400 remains `http_400`.

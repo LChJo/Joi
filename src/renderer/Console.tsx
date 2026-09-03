@@ -20,11 +20,13 @@ import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { WorkbenchManager, JoiHome, ModelSourceManager } from "./JoiHome";
 import { PartnerPage } from "./PartnerPage";
+import { AutomationPanel } from "./AutomationPanel";
 import { listenerStatusLabel } from "./copy";
 import type { DiagnosticsDto, InteractionDto } from "./types";
+import type { SystemSettingsDto } from "../shared/system-settings";
 
-type Section = "agents" | "joi" | "lives" | "settings" | "system";
-type SettingsTab = "connections" | "data" | "models" | "security";
+type Section = "agents" | "automations" | "joi" | "lives" | "settings";
+type SettingsTab = "connections" | "data" | "diagnostics" | "models" | "security";
 
 const SESSION_DISPLAY_LIMIT = 10;
 const REMOTE_STATUS_REFRESH_MS = 1_000;
@@ -34,13 +36,14 @@ const SETTINGS_TABS = [
   { key: "connections", label: "设备连接" },
   { key: "security", label: "安全" },
   { key: "data", label: "数据" },
+  { key: "diagnostics", label: "诊断" },
 ] as const satisfies readonly { key: SettingsTab; label: string }[];
 
 const NAVIGATION = [
   { icon: ChatsCircleIcon, key: "joi", label: "joi" },
   { icon: HeartbeatIcon, key: "lives", label: "工作台" },
   { icon: RobotIcon, key: "agents", label: "搭档" },
-  { icon: PulseIcon, key: "system", label: "状态" },
+  { icon: PulseIcon, key: "automations", label: "定时任务" },
   { icon: GearSixIcon, key: "settings", label: "设置" },
 ] as const;
 
@@ -139,15 +142,17 @@ export function SystemPanel({ api, diagnostics, interactions }: { api?: DigitalL
   return <section className="page-section"><header className="page-title-row"><div><p className="eyebrow">joi 一直在留意</p><h1>joi 的运行状态</h1><p>joi 的简要状态，不会显示消息正文、密钥或文件位置。</p></div>{api === undefined ? null : <div className="row-actions"><a className="button ghost" download href={api.diagnosticsExportUrl()}>导出诊断</a><button className="button danger" onClick={() => void api.emergencyStopAll().then(() => setNotice("所有工作已紧急暂停，未确认的搭档过程仍会保留。"))} type="button">紧急暂停全部工作</button></div>}</header>{notice === null ? null : <Notice tone="danger">{notice}</Notice>}{diagnostics === null ? <LoadingPage /> : <><div className="metric-strip"><div><span>数据版本</span><strong>v{diagnostics.schemaVersion}</strong></div><div><span>工作搭档</span><strong>{diagnostics.agents.connections}</strong></div><div><span>正在协作</span><strong>{diagnostics.agents.activeInvocations ?? 0}</strong></div><div><span>正在行动</span><strong>{diagnostics.runtime.activeWakes ?? 0}</strong></div><div><span>等待处理</span><strong>{diagnostics.runtime.pendingOutbox}</strong></div><div><span>状态更新</span><strong>{diagnostics.sse.events}</strong></div></div><div className="diagnostic-table"><div><span>本机数据</span><strong>{dataHealthy ? "数据正常" : "数据有问题"}</strong><i className={dataHealthy ? "ok" : "warn"}>{dataHealthy ? "正常" : "需要检查"}</i></div><div><span>日常安排</span><strong>{diagnostics.runtime.enabledSchedules ?? 0} 个作息 · {diagnostics.runtime.scheduledAlarms ?? 0} 个闹钟</strong><i className={(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? "warn" : "ok"}>{(diagnostics.runtime.staleWakeTurns ?? 0) > 0 ? `${String(diagnostics.runtime.staleWakeTurns)} 次行动需要确认` : "正常"}</i></div><div><span>其他设备访问</span><strong>{listenerStatusLabel(diagnostics.web.lan)}</strong><i className={diagnostics.web.lan === undefined ? "muted" : "ok"}>{diagnostics.web.lan === undefined ? "仅本机" : "已配置"}</i></div><div><span>已登录设备</span><strong>{diagnostics.web.sessions} 个活跃设备</strong><i className="ok">受保护</i></div><div><span>等你决定</span><strong>{interactions.length} 项待处理</strong><i className={interactions.length > 0 ? "warn" : "ok"}>{interactions.length > 0 ? "需要关注" : "正常"}</i></div></div>{api === undefined ? null : <PartnerMemoryDebug api={api} />}</>}</section>;
 }
 
-export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagnostics: DiagnosticsDto | null }) {
+export function SettingsPanel({ api, diagnostics, interactions = [] }: { api: DigitalLifeApi; diagnostics: DiagnosticsDto | null; interactions?: InteractionDto[] }) {
   const [activeTab, setActiveTab] = useState<SettingsTab>("models");
   const [backups, setBackups] = useState<Awaited<ReturnType<DigitalLifeApi["listBackups"]>>["items"]>([]);
   const [sessions, setSessions] = useState<Awaited<ReturnType<DigitalLifeApi["listSessions"]>>["items"]>([]);
-  const [settings, setSettings] = useState<Awaited<ReturnType<DigitalLifeApi["settings"]>> | null>(null);
+  const [settings, setSettings] = useState<SystemSettingsDto | null>(null);
+  const [lanDraft, setLanDraft] = useState<{ address: string; enabled: boolean; launchAtLogin: boolean; port: number; riskAccepted: boolean } | null>(null);
+  const [settingsSaving, setSettingsSaving] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const loadOperations = useCallback(async () => {
     const [backupPage, sessionPage, runtimeSettings] = await Promise.all([api.listBackups(), api.listSessions(), api.settings()]);
-    setBackups(backupPage.items); setSessions(sessionPage.items); setSettings(runtimeSettings);
+    setBackups(backupPage.items); setSessions(sessionPage.items); setSettings(runtimeSettings); setLanDraft({ ...runtimeSettings.lan, launchAtLogin: runtimeSettings.launchAtLogin });
   }, [api]);
   useEffect(() => {
     const timer = setTimeout(() => void loadOperations().catch(() => setNotice("没能读取这些设置。")), 0);
@@ -165,16 +170,28 @@ export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagn
     catch (error) { setNotice(error instanceof ApiError ? error.message : "恢复没开始。"); }
   };
   const updateRuntimeSettings = async (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault(); const form = new FormData(event.currentTarget);
-    const address = form.get("address"); const port = form.get("port");
+    event.preventDefault();
+    if (lanDraft === null) return;
+    if (!Number.isInteger(lanDraft.port) || lanDraft.port < 1024 || lanDraft.port > 65_535) { setNotice("访问端口必须在 1024 到 65535 之间。"); return; }
+    if (lanDraft.enabled && lanDraft.address === "") { setNotice("请先选择这台电脑的局域网地址。"); return; }
+    if (lanDraft.enabled && !lanDraft.riskAccepted) { setNotice("请先确认局域网明文连接风险。"); return; }
     setNotice("正在保存本机设置…");
+    setSettingsSaving(true);
     try {
       const next = await api.updateSettings({
-        lan: { address: typeof address === "string" ? address : "", enabled: form.get("enabled") === "on", port: typeof port === "string" ? Number(port) : 0, riskAccepted: form.get("riskAccepted") === "on" },
-        launchAtLogin: form.get("launchAtLogin") === "on",
+        lan: { address: lanDraft.address, enabled: lanDraft.enabled, port: lanDraft.port, riskAccepted: lanDraft.riskAccepted },
+        launchAtLogin: lanDraft.launchAtLogin,
       });
-      setSettings(next); setNotice(next.restartRequired ? "设置已保存，重启后其他设备的访问方式会切换。" : "设置已保存。");
+      setSettings(next); setLanDraft({ ...next.lan, launchAtLogin: next.launchAtLogin });
+      const effective = next.lan.effective ?? (next.lan.enabled
+        ? { status: "blocked" as const, reasonCode: "lan_not_applied" as const, message: "LAN 配置尚未应用到当前进程。" }
+        : { status: "disabled" as const });
+      if (effective.status === "listening" && effective.pending === undefined) setNotice("设置已保存，局域网访问已立即生效。");
+      else if (effective.status === "listening" && effective.pending !== undefined) setNotice("设置已保存，但新地址暂未应用，当前仍保留原监听。");
+      else if (effective.status === "blocked") setNotice("设置已保存，但当前地址或端口暂时无法监听；本机访问仍可用。");
+      else setNotice("设置已保存，局域网访问已关闭。");
     } catch (error) { setNotice(error instanceof ApiError ? error.message : "设置未保存。"); }
+    finally { setSettingsSaving(false); }
   };
   const changePassword = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -200,6 +217,24 @@ export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagn
     setActiveTab(nextTab.key);
     event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]').item(nextIndex).focus();
   };
+  const refreshLanSettings = async () => {
+    try {
+      const next = await api.settings();
+      setSettings(next); setLanDraft({ ...next.lan, launchAtLogin: next.launchAtLogin }); setNotice("局域网地址列表已刷新。");
+    } catch (error) { setNotice(error instanceof ApiError ? error.message : "没能刷新局域网地址。"); }
+  };
+  const addressOptions = settings === null ? [] : [
+    ...(settings.lan.availableAddresses ?? []),
+    ...(settings.lan.address !== "" && !(settings.lan.availableAddresses ?? []).some((item) => item.address === settings.lan.address)
+      ? [{ address: settings.lan.address, available: false }]
+      : []),
+  ];
+  const effective = settings?.lan.effective ?? (settings?.lan.enabled
+    ? { status: "blocked" as const, reasonCode: "lan_not_applied" as const, message: "LAN 配置尚未应用到当前进程。" }
+    : settings === null ? undefined : { status: "disabled" as const });
+  const effectiveLabel = effective === undefined || effective.status === "disabled"
+    ? "仅限本机"
+    : effective.status === "blocked" ? "暂时无法开放" : effective.pending === undefined ? "已对可信设备开放" : "新配置未应用";
   const selectedTab = SETTINGS_TABS.find((tab) => tab.key === activeTab) ?? SETTINGS_TABS[0];
   return <section className="page-section settings-page">
     <header className="page-title-row"><div><p className="eyebrow">按你的方式使用 joi</p><h1>joi 的设置</h1><p>管理模型网络、设备连接、安全和数据。</p></div></header>
@@ -227,10 +262,23 @@ export function SettingsPanel({ api, diagnostics }: { api: DigitalLifeApi; diagn
       {activeTab === "models" ? <ModelSourceManager api={api} /> : null}
       {activeTab === "connections" ? <>
         <RemoteAccessSettings api={api} />
-        <section><NetworkIcon aria-hidden /><div><h2>其他设备访问</h2><p>同一可信网络里的设备可以找到 joi。joi 不会自动改网络设置。</p>{settings === null ? <span className="status-dot muted">正在读取</span> : <form className="inline-settings" key={JSON.stringify(settings)} onSubmit={(event) => void updateRuntimeSettings(event)}><label><input defaultChecked={settings.lan.enabled} name="enabled" type="checkbox" />允许局域网设备访问</label><label>这台电脑的局域网地址<input defaultValue={settings.lan.address} name="address" placeholder="192.168.1.20" /></label><label>访问端口<input defaultValue={settings.lan.port} min="1024" name="port" type="number" /></label><label><input defaultChecked={settings.lan.riskAccepted} name="riskAccepted" type="checkbox" />我明白同一网络中的其他人可能看到未加密的连接内容</label><label><input defaultChecked={settings.launchAtLogin} name="launchAtLogin" type="checkbox" />开机时启动 joi</label><button className="button quiet" type="submit">保存访问设置</button></form>}</div></section>
+        <section><NetworkIcon aria-hidden /><div><h2>其他设备访问</h2><p>同一可信网络里的设备可以找到 joi。joi 不会自动改网络设置。</p>{settings === null || lanDraft === null ? <span className="status-dot muted">正在读取</span> : <>
+          <span className={`status-dot ${effective?.status === "blocked" ? "warn" : effective?.status === "listening" ? "ok" : "muted"}`}>{effectiveLabel}</span>
+          {effective?.status === "listening" ? <small>{effective.pending === undefined ? `当前地址 ${effective.address}:${String(effective.port)}` : `当前仍在 ${effective.address}:${String(effective.port)} 监听，新配置等待应用`}</small> : null}
+          {effective?.status === "blocked" ? <small className="field-hint">{effective.message}</small> : null}
+          <form className="inline-settings" noValidate onSubmit={(event) => void updateRuntimeSettings(event)}>
+            <label className="inline-check" htmlFor="lan-enabled"><input checked={lanDraft.enabled} id="lan-enabled" name="lanEnabled" onChange={(event) => setLanDraft((current) => current === null ? current : { ...current, enabled: event.target.checked })} type="checkbox" />允许局域网设备访问</label>
+            <label htmlFor="lan-address">这台电脑的局域网地址<select required={lanDraft.enabled} id="lan-address" name="lanAddress" onChange={(event) => setLanDraft((current) => current === null ? current : { ...current, address: event.target.value })} value={lanDraft.address}><option value="">请选择地址</option>{addressOptions.map((item) => <option disabled={!item.available} key={item.address} value={item.address}>{item.address}{item.available ? "" : "（当前不可用）"}</option>)}</select></label>
+            <label htmlFor="lan-port">访问端口<input id="lan-port" min="1024" name="lanPort" onChange={(event) => setLanDraft((current) => current === null ? current : { ...current, port: Number(event.target.value) })} type="number" value={lanDraft.port} /></label>
+            {lanDraft.enabled ? <label className="inline-check" htmlFor="lan-risk"><input checked={lanDraft.riskAccepted} id="lan-risk" name="lanRiskAccepted" onChange={(event) => setLanDraft((current) => current === null ? current : { ...current, riskAccepted: event.target.checked })} type="checkbox" />我明白同一网络中的其他人可能看到未加密的连接内容</label> : null}
+            <label className="inline-check" htmlFor="launch-at-login"><input checked={lanDraft.launchAtLogin} id="launch-at-login" name="launchAtLogin" onChange={(event) => setLanDraft((current) => current === null ? current : { ...current, launchAtLogin: event.target.checked })} type="checkbox" />开机时启动 joi</label>
+            <div className="row-actions"><button className="button quiet" disabled={settingsSaving} type="submit">{settingsSaving ? "保存中…" : "保存访问设置"}</button><button className="button ghost" disabled={settingsSaving} onClick={() => void refreshLanSettings()} type="button">刷新地址</button></div>
+          </form>
+        </>}</div></section>
       </> : null}
       {activeTab === "security" ? <section><ShieldWarningIcon aria-hidden /><div><h2>管理密码与设备</h2><p>joi 只显示设备类型和最近活动时间。改了密码后其他设备需要重新登录，本机不受影响。</p><div className="session-list">{sessions.slice(0, SESSION_DISPLAY_LIMIT).map((session, index) => <span key={session.deviceId}>{session.current ? "当前设备" : session.kind === "desktop" ? "另一台本机窗口" : `局域网设备 ${String(index + 1)}`} · {new Date(session.lastActivityAt).toLocaleString()}</span>)}</div><form className="inline-settings" onSubmit={(event) => void changePassword(event)}><label>当前密码<input autoComplete="current-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="currentPassword" required type="password" /></label><label>新密码<input autoComplete="new-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} name="newPassword" required type="password" /></label><div className="row-actions"><button className="button quiet" type="submit">修改密码</button><button className="button ghost" onClick={() => void api.logoutAllLan().then(loadOperations).then(() => setNotice("所有局域网设备已退出。"))} type="button">退出所有局域网设备</button></div></form><span className={`status-dot ${diagnostics?.storage?.state === "low" ? "warn" : "ok"}`}>{diagnostics?.storage?.state === "low" ? "磁盘空间不足" : "密钥已隔离保存"}</span></div></section> : null}
       {activeTab === "data" ? <section className="backup-settings"><ClockCounterClockwiseIcon aria-hidden /><div><h2>备份与恢复</h2><p>备份不含搭档密钥。恢复后其他设备需要重新登录，未完成的协作会等你确认。</p><span className="status-dot muted">数据格式 v{diagnostics?.schemaVersion ?? "-"} · {backups.length} 份可用备份</span>{backups.slice(0, 3).map((backup) => <div className="backup-row" key={backup.backupId}><span>{new Date(backup.createdAt).toLocaleString()} · {(backup.databaseBytes / 1024 / 1024).toFixed(1)} MB</span><button className="button ghost" onClick={() => void restore(backup.backupId)} type="button">恢复</button></div>)}</div><button className="button quiet" onClick={() => void createBackup()} type="button">创建备份</button></section> : null}
+      {activeTab === "diagnostics" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : null}
     </div>
   </section>;
 }
@@ -263,5 +311,5 @@ export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
   const streamHint = streamState === "reconnecting" ? "页面仍可使用，可以手动刷新状态。" : "joi 会按固定节奏刷新最新状态。";
   const reconnectStream = () => { setStreamState("connecting"); void load(); };
   useEffect(() => { if (contentRef.current !== null) contentRef.current.scrollTop = 0; }, [section, selectedWorkbenchId]);
-  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => { if (key === "lives") setSelectedWorkbenchId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={streamHint}>{streamLabel}</span></div>{streamState === "reconnecting" ? <button aria-label="重新连接状态更新" className="icon-button stream-retry" onClick={reconnectStream} title="重新连接状态更新" type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}<button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} onNavigate={go} /> : section === "lives" ? <WorkbenchManager api={api} {...(selectedWorkbenchId === undefined ? {} : { initialWorkbenchId: selectedWorkbenchId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "system" ? <SystemPanel api={api} diagnostics={diagnostics} interactions={interactions} /> : <SettingsPanel api={api} diagnostics={diagnostics} />}</main></div>;
+  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => { if (key === "lives") setSelectedWorkbenchId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={streamHint}>{streamLabel}</span></div>{streamState === "reconnecting" ? <button aria-label="重新连接状态更新" className="icon-button stream-retry" onClick={reconnectStream} title="重新连接状态更新" type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}<button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} onNavigate={go} /> : section === "lives" ? <WorkbenchManager api={api} {...(selectedWorkbenchId === undefined ? {} : { initialWorkbenchId: selectedWorkbenchId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "automations" ? <AutomationPanel api={api} onOpenJoi={() => setSection("joi")} /> : <SettingsPanel api={api} diagnostics={diagnostics} interactions={interactions} />}</main></div>;
 }
