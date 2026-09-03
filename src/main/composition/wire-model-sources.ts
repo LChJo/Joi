@@ -22,6 +22,7 @@ export function wireModelSources(input: {
     records: persistence.piCredentialRepository,
     vault,
   });
+  const validator = new PiModelSourceValidator({ clock, credentials: piCredentials });
   const modelSources = new ModelSourceService({
     catalog: new PiModelSourceCatalog(),
     clock,
@@ -31,7 +32,7 @@ export function wireModelSources(input: {
     ids,
     repository: persistence.modelSourceRepository,
     secrets: piCredentials,
-    validator: new PiModelSourceValidator({ clock, credentials: piCredentials }),
+    validator,
   });
   return {
     configuredModelResolver: new RepositoryPiConfiguredModelResolver({
@@ -40,7 +41,7 @@ export function wireModelSources(input: {
     }),
     modelSources,
     piCredentials,
-    reasoningSources: new ReasoningSourceSelector(persistence.modelSourceRepository),
+    reasoningSources: new ReasoningSourceSelector(persistence.modelSourceRepository, { clock, validator }),
   };
 }
 

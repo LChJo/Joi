@@ -1,6 +1,6 @@
 import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
-import type { CodexPermissionsDto, ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto } from "../shared/joi";
+import type { CodexPermissionsDto, ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto, ToolPolicyModeDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 type PartnerView = { mode: "grid" } | { mode: "editor"; partner: PartnerDto | null };
@@ -120,11 +120,12 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const initialSelectedSkills = partner?.skills ?? [];
   const [selectedSkills, setSelectedSkills] = useState<string[]>(partner?.skills ?? []);
   const [selectedTools, setSelectedTools] = useState<string[]>(partner?.tools ?? []);
+  const [toolPolicyMode, setToolPolicyMode] = useState<ToolPolicyModeDto>(partner?.toolPolicyMode ?? (partner === null || partner.tools.length === 0 ? "ALL" : "CUSTOM"));
   const [codexPermissions, setCodexPermissions] = useState<CodexPermissionsDto>(partner?.codexPermissions ?? {
     approvalPolicy: "never",
-    networkAccessEnabled: false,
+    networkAccessEnabled: true,
     sandboxMode: "workspace-write",
-    webSearchMode: "disabled",
+    webSearchMode: "live",
   });
   const [modelIdOverride, setModelIdOverride] = useState(partner?.modelIdOverride ?? "");
   const [modelSourceId, setModelSourceId] = useState(partner?.modelSourceId ?? "");
@@ -148,6 +149,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const handleEngineChange = (next: PartnerEngineDto) => {
     setEngine(next);
     setSelectedTools([]);
+    setToolPolicyMode("ALL");
     setSelectedSkills([]);
   };
 
@@ -183,6 +185,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     const fields = {
       displayName: fieldName(form.get("displayName")),
       skills: selectedSkills,
+      ...(engine === "codex" ? {} : { toolPolicyMode }),
       tools: selectedTools,
       ...(engine === "codex" ? { codexPermissions } : {}),
       ...(description === undefined ? {} : { description }),
@@ -231,7 +234,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const availableSkillIds = new Set(skills.map((skill) => skill.id));
   const skillsLoading = kind === "local-pi" && loadedSkillCatalogKey !== `${kind}:${engine}`;
   const invalidSelectedSkills = kind !== "local-pi" || skillsLoading ? [] : selectedSkills.filter((skill) => !availableSkillIds.has(skill));
-  const missingReadForSkills = engine === "pi-core" && selectedSkills.length > 0 && selectedTools.length > 0 && !selectedTools.includes("read");
+  const missingReadForSkills = engine === "pi-core" && selectedSkills.length > 0 && toolPolicyMode === "CUSTOM" && !selectedTools.includes("read");
   const skillSelectionChanged = selectedSkills.length !== initialSelectedSkills.length
     || selectedSkills.some((skill, index) => initialSelectedSkills[index] !== skill);
   const persistedConfigurationNeedsSkillChange = partner?.configuration?.reasonCodes.some((code) => code.startsWith("partner_skill_") && code !== "partner_skill_requires_read") ?? false;
@@ -333,8 +336,15 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
           </select></label>
           <label className="tool-choice"><input checked={codexPermissions.networkAccessEnabled} onChange={(event) => setCodexPermissions((current) => ({ ...current, networkAccessEnabled: event.target.checked }))} type="checkbox" /><span>允许网络访问</span></label>
           <small className="field-hint">审批策略固定为 never；不提供 danger-full-access。</small>
-        </div> : <div className="tool-field"><span className="kb-field-label">工具白名单（不勾选 = 不限制）</span>
-          {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">该引擎暂无可选工具。</small> : <div aria-label="工具白名单" className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={selectedTools.includes(tool)} onChange={() => setSelectedTools((current) => toggle(current, tool))} type="checkbox" /><span>{tool}</span></label>)}</div>}
+        </div> : <div className="tool-field"><span className="kb-field-label">工具权限</span>
+          <div className="button-row"><button className="button ghost" onClick={() => { setToolPolicyMode("ALL"); setSelectedTools([]); }} type="button">全部开启</button><button className="button ghost" onClick={() => { setToolPolicyMode("CUSTOM"); setSelectedTools([]); }} type="button">全部关闭</button></div>
+          {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">该引擎暂无可选工具。</small> : <div aria-label="工具白名单" className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={toolPolicyMode === "ALL" || selectedTools.includes(tool)} onChange={() => {
+            if (toolPolicyMode === "ALL") {
+              setToolPolicyMode("CUSTOM");
+              setSelectedTools((engineStatus?.tools ?? []).filter((candidate) => candidate !== tool));
+            } else setSelectedTools((current) => toggle(current, tool));
+          }} type="checkbox" /><span>{tool}</span></label>)}</div>}
+          <small className="field-hint">{toolPolicyMode === "ALL" ? "全部工具已开启。关闭任意工具会切换为自定义权限。" : `自定义权限：已开启 ${String(selectedTools.length)} 项。`}</small>
         </div>}
         {missingReadForSkills ? <p className="inline-notice warning" role="alert">已选择 Skill 且收窄了工具白名单，请启用 read 后再保存。</p> : null}
         <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>

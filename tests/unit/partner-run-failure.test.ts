@@ -97,6 +97,19 @@ describe("partner run failure classification", () => {
     })).toEqual({ phase: "MODEL", reasonCode: "http_400", retryable: false, sideEffectState: "NONE" });
   });
 
+  it.each([
+    ["403 invalid API key or account credential", "auth_forbidden"],
+    ["HTTP 403 model claude-private is not available for this account", "model_access_forbidden"],
+    ["status 403 service is unavailable in your region", "region_forbidden"],
+    ["403 request blocked by content policy", "request_policy_forbidden"],
+    ["HTTP 403 PRIVATE opaque denial", "http_403"],
+  ])("classifies provider 403 details as a safe code without retaining text", (detail, reasonCode) => {
+    const wrapped = wrapPartnerRunFailure({ detail, status: 403 }, { phase: "MODEL", sideEffectState: "OBSERVED" });
+    expect(wrapped.partnerRunFailure).toEqual({ phase: "MODEL", reasonCode, retryable: false, sideEffectState: "OBSERVED" });
+    expect(JSON.stringify(wrapped)).not.toContain(detail);
+    expect(wrapped).not.toHaveProperty("detail");
+  });
+
   it("preserves only bounded artifact metadata from a failed run", () => {
     const wrapped = Object.assign(new Error("private model output"), {
       partialArtifacts: [
@@ -139,5 +152,10 @@ describe("partner run failure classification", () => {
     expect(body).toContain("enable the read tool");
     expect(body).not.toContain("PRIVATE");
     expect(body).not.toContain("absolute path");
+  });
+
+  it("describes OBSERVED as a possibly side-effecting tool call", () => {
+    expect(safePartnerRunFailureBody({ phase: "MODEL", reasonCode: "http_403", retryable: false, sideEffectState: "OBSERVED" }))
+      .toContain("may have side effects");
   });
 });

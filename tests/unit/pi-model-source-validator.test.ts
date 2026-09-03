@@ -51,4 +51,20 @@ describe("PiModelSourceValidator", () => {
     });
     expect(await validator.validate(record())).toEqual({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" });
   });
+
+  it.each([
+    ["403 invalid API key credential", "auth_forbidden"],
+    ["403 model is not available for this account", "model_access_forbidden"],
+    ["403 unavailable in this region", "region_forbidden"],
+    ["403 request blocked by content policy", "request_policy_forbidden"],
+    ["403 PRIVATE opaque denial", "http_403"],
+  ])("persists only a safe 403 reason code for %s", async (message, reasonCode) => {
+    const validator = new PiModelSourceValidator({
+      clock: { now: () => new Date("2026-07-28T10:00:30.000Z") },
+      probe: async () => { throw new Error(message); },
+    });
+    const result = await validator.validate(record());
+    expect(result).toEqual({ reasonCode, status: "NEEDS_AUTH", validatedAt: "2026-07-28T10:00:30.000Z" });
+    expect(JSON.stringify(result)).not.toContain("PRIVATE");
+  });
 });

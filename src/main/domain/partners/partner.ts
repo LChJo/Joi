@@ -4,6 +4,7 @@ export type PartnerKind = "local-pi" | "a2a";
 export type PartnerStatus = "ACTIVE" | "DISABLED" | "DELETED";
 export type PartnerEngine = "claude-code" | "codex" | "pi-core";
 export type PartnerCreator = "joi" | "user";
+export type ToolPolicyMode = "ALL" | "CUSTOM";
 export interface CodexPermissions {
   approvalPolicy: "never";
   networkAccessEnabled: boolean;
@@ -13,9 +14,9 @@ export interface CodexPermissions {
 
 export const DEFAULT_CODEX_PERMISSIONS: CodexPermissions = {
   approvalPolicy: "never",
-  networkAccessEnabled: false,
+  networkAccessEnabled: true,
   sandboxMode: "workspace-write",
-  webSearchMode: "disabled",
+  webSearchMode: "live",
 };
 
 export interface PartnerRevision {
@@ -43,6 +44,7 @@ export interface PartnerRevision {
   registryRevision: number;
   skills: string[];
   status: PartnerStatus;
+  toolPolicyMode?: ToolPolicyMode;
   tools: string[];
 }
 
@@ -63,7 +65,18 @@ export interface CreatePartnerRevisionInput {
   promptRef?: string;
   registryRevision: number;
   skills: string[];
+  toolPolicyMode?: ToolPolicyMode;
   tools: string[];
+}
+
+export function legacyToolPolicyMode(tools: readonly string[]): ToolPolicyMode {
+  return tools.length === 0 ? "ALL" : "CUSTOM";
+}
+
+export function normalizeToolPolicyMode(value: unknown, tools: readonly string[]): ToolPolicyMode {
+  if (value === undefined) return legacyToolPolicyMode(tools);
+  if (value !== "ALL" && value !== "CUSTOM") throw new DomainError("partner_tool_policy_mode_invalid", "Partner tool policy mode is invalid.");
+  return value;
 }
 
 function text(value: string, code: string): string {
@@ -135,6 +148,7 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
   const description = optionalText(input.description, 600, "partner_description_invalid");
   const modelIdOverride = optionalText(input.modelIdOverride, 240, "partner_model_override_invalid");
   const modelSourceId = optionalText(input.modelSourceId, 240, "partner_model_source_invalid");
+  const toolPolicyMode = input.kind === "local-pi" ? normalizeToolPolicyMode(input.toolPolicyMode ?? "ALL", input.tools) : undefined;
   return {
     capabilities: strings(input.capabilities, "partner_capabilities_invalid"),
     createdAt: input.createdAt,
@@ -160,6 +174,7 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
     registryRevision: input.registryRevision,
     skills: strings(input.skills, "partner_skills_invalid"),
     status: "ACTIVE",
+    ...(toolPolicyMode === undefined ? {} : { toolPolicyMode }),
     tools: strings(input.tools, "partner_tools_invalid"),
   };
 }
@@ -210,6 +225,7 @@ export function toPublicPartner(revision: PartnerRevision) {
     registryRevision: revision.registryRevision,
     skills: [...revision.skills],
     status: revision.status,
+    ...(revision.toolPolicyMode === undefined ? {} : { toolPolicyMode: revision.toolPolicyMode }),
     tools: [...revision.tools],
   };
 }

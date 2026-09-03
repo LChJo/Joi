@@ -101,10 +101,12 @@ describe("scenario pack service edge states", () => {
     const repository = new MemoryBindings();
     await repository.save(binding("deleted"));
     const created: PartnerDto[] = [];
+    const createdInputs: Parameters<PartnerRegistryService["add"]>[0][] = [];
     const service = new ScenarioPackService({
       clock: new TestClock(), ids: new TestIds(), packs: [pack(["deleted"])], repository,
       partners: {
         add: (input: Parameters<PartnerRegistryService["add"]>[0]) => {
+          createdInputs.push(input);
           const item = partner(input.partnerId ?? "generated", "ACTIVE");
           created.push(item);
           return Promise.resolve(item);
@@ -115,6 +117,7 @@ describe("scenario pack service edge states", () => {
     const result = await service.install("test-pack", { teamIds: ["team", "team"] });
     expect(result.outcomes[0]).toMatchObject({ outcome: "CREATED", partnerId: "partner-deleted_replacement" });
     expect(created).toHaveLength(1);
+    expect(createdInputs[0]).toMatchObject({ toolPolicyMode: "ALL" });
     expect((await repository.find("test-pack", "deleted"))?.installedAt).toBe("2026-01-01T00:00:00.000Z");
 
     const malformed = { ...pack(["active"]), teams: [{ blurb: "bad", id: "bad", roleIds: ["missing-role"], title: "bad" }] };

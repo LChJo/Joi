@@ -20,6 +20,7 @@ const TRANSIENT_CODES = new Set([
   "UND_ERR_CONNECT_TIMEOUT", "connect", "connection_error", "partner_run_idle_timed_out", "partner_run_timed_out",
   "partner_tool_timed_out", "rate_limited", "server_error", "timeout",
 ]);
+const ALTERNATE_SOURCE_CODES = new Set(["auth_forbidden", "http_403", "model_access_forbidden", "region_forbidden"]);
 const PHASES = new Set<PartnerRunFailurePhase>(["CONFIGURATION", "ENGINE", "EXECUTION", "MODEL", "RECOVERY"]);
 const SIDE_EFFECT_STATES = new Set<PartnerRunSideEffectState>(["NONE", "OBSERVED", "UNKNOWN"]);
 const STABLE_CODE = /^[A-Za-z0-9_.:-]{1,120}$/u;
@@ -96,7 +97,9 @@ export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
     ? "Joi may reassign this Work to another suitable available partner, or select another READY model source and create a new immutable partner revision when no suitable alternative partner exists."
     : failure.sideEffectState === "NONE"
       ? "Joi must inspect configuration or request input before creating another attempt."
-      : "Joi must not replay this Work automatically because side effects were observed or cannot be determined.";
+      : failure.sideEffectState === "OBSERVED"
+        ? "Joi must not replay this Work automatically because a tool that may have side effects was called. Existing artifacts must be verified before a supplemental Work is created for any remaining gap."
+        : "Joi must not replay this Work automatically because side effects cannot be determined. Existing artifacts must be verified before a supplemental Work is created for any remaining gap.";
   return `Partner run failed safely (${facts}). ${next}`;
 }
 
@@ -114,7 +117,7 @@ function failureCarrier(error: unknown): PartnerRunFailure | null {
   return {
     phase,
     reasonCode: candidate.reasonCode,
-    retryable: candidate.retryable === true && sideEffectState === "NONE" && transientReasonCode(candidate.reasonCode),
+    retryable: candidate.retryable === true && sideEffectState === "NONE" && (transientReasonCode(candidate.reasonCode) || ALTERNATE_SOURCE_CODES.has(candidate.reasonCode)),
     sideEffectState,
   };
 }
@@ -126,6 +129,7 @@ function reasonCodeOf(error: unknown): string {
       return "model_context_budget_exhausted";
     }
     const status = numericStatus(error);
+    if (status === 403 && typeof detail === "string") return classifyHttp403Detail(detail);
     if (status === 400 && typeof detail === "string") {
       if (/(?:invalid|unsupported|unknown|not found|does not exist)[^\r\n]{0,80}\bmodel\b|\bmodel\b[^\r\n]{0,80}(?:invalid|unsupported|unknown|not found|does not exist)/iu.test(detail)) {
         return "invalid_model";
@@ -140,6 +144,23 @@ function reasonCodeOf(error: unknown): string {
     if (status !== null) return `http_${String(status)}`;
   }
   return "unknown_error";
+}
+
+/** Classifies transient provider text and returns only a persistence-safe reason code. */
+export function classifyHttp403Detail(detail: string): "auth_forbidden" | "http_403" | "model_access_forbidden" | "region_forbidden" | "request_policy_forbidden" {
+  if (/(?:invalid|expired|revoked|missing)[^\r\n]{0,80}(?:api[ _-]?key|token|credential)|(?:api[ _-]?key|token|credential)[^\r\n]{0,80}(?:invalid|expired|revoked|missing)|authentication|unauthori[sz]ed/iu.test(detail)) {
+    return "auth_forbidden";
+  }
+  if (/(?:model|deployment)[^\r\n]{0,100}(?:not (?:available|enabled|allowed)|access|permission|entitlement)|(?:access|permission|entitlement)[^\r\n]{0,100}(?:model|deployment)/iu.test(detail)) {
+    return "model_access_forbidden";
+  }
+  if (/(?:region|country|geograph|location|territor)[^\r\n]{0,100}(?:unsupported|unavailable|restricted|blocked|forbidden)|(?:unsupported|unavailable|restricted|blocked|forbidden)[^\r\n]{0,100}(?:region|country|geograph|location|territor)/iu.test(detail)) {
+    return "region_forbidden";
+  }
+  if (/(?:request|content|prompt)[^\r\n]{0,100}(?:policy|safety|blocked|forbidden|restricted)|(?:policy|safety)[^\r\n]{0,100}(?:request|content|prompt)/iu.test(detail)) {
+    return "request_policy_forbidden";
+  }
+  return "http_403";
 }
 
 function transientFailure(error: unknown, reasonCode: string): boolean {

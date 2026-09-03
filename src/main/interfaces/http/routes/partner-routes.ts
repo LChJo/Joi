@@ -115,6 +115,7 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
           kind: "local-pi",
           prompt: role.prompt,
           skills: role.skills ?? [],
+          toolPolicyMode: "ALL",
           tools: [],
         }));
       }
@@ -132,6 +133,7 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
       if (kind !== "local-pi" && kind !== "a2a") throw new HttpError("partner_kind_invalid", "Partner kind is invalid.", 400);
       const engine = partnerEngineField(body);
       const permissions = codexPermissions(body.codexPermissions);
+      const mode = toolPolicyMode(body.toolPolicyMode);
       await assertLocalEngineAvailable(ctx.dependencies, engine);
       sendJson(ctx.response, 201, await partnerRegistryService(ctx.dependencies).add({
         capabilities: optionalStringArray(body, "capabilities") ?? [],
@@ -144,6 +146,7 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
         ...(typeof body.modelIdOverride === "string" ? { modelIdOverride: body.modelIdOverride } : {}),
         ...(typeof body.modelSourceId === "string" ? { modelSourceId: body.modelSourceId } : {}),
         skills: optionalStringArray(body, "skills") ?? [],
+        ...(mode === undefined ? {} : { toolPolicyMode: mode }),
         tools: optionalStringArray(body, "tools") ?? [],
         ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
       }));
@@ -184,6 +187,7 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
       const engine = partnerEngineField(body);
       const promptMode = partnerPromptMode(body.promptMode);
       const permissions = codexPermissions(body.codexPermissions);
+      const mode = toolPolicyMode(body.toolPolicyMode);
       await assertLocalEngineAvailable(ctx.dependencies, engine);
       sendJson(ctx.response, 200, await partnerRegistryService(ctx.dependencies).update(partnerId, {
         capabilities: optionalStringArray(body, "capabilities") ?? [],
@@ -195,6 +199,7 @@ export const PARTNER_MUTATION_ROUTES: RouteDefinition[] = [
         ...(body.modelIdOverride === null ? { modelIdOverride: null } : typeof body.modelIdOverride === "string" ? { modelIdOverride: body.modelIdOverride } : {}),
         ...(body.modelSourceId === null ? { modelSourceId: null } : typeof body.modelSourceId === "string" ? { modelSourceId: body.modelSourceId } : {}),
         skills: optionalStringArray(body, "skills") ?? [],
+        ...(mode === undefined ? {} : { toolPolicyMode: mode }),
         tools: optionalStringArray(body, "tools") ?? [],
         ...(typeof body.prompt === "string" ? { prompt: body.prompt } : {}),
         ...(promptMode === undefined ? {} : { promptMode }),
@@ -300,4 +305,10 @@ function partnerPromptMode(value: unknown): "APPEND" | "REPLACE" | undefined {
   if (value === undefined) return undefined;
   if (value === "APPEND" || value === "REPLACE") return value;
   throw new HttpError("partner_prompt_mode_invalid", "Partner prompt mode is invalid.", 400);
+}
+
+function toolPolicyMode(value: unknown): "ALL" | "CUSTOM" | undefined {
+  if (value === undefined) return undefined;
+  if (value === "ALL" || value === "CUSTOM") return value;
+  throw new HttpError("partner_tool_policy_mode_invalid", "Partner tool policy mode is invalid.", 400);
 }

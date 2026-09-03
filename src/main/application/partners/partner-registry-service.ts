@@ -9,6 +9,7 @@ import {
   type PartnerEngine,
   type PartnerKind,
   type PartnerRevision,
+  type ToolPolicyMode,
 } from "../../domain/partners/partner.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type { PartnerPromptStore } from "../ports/partner-execution.js";
@@ -28,6 +29,7 @@ interface PartnerFields {
   prompt?: string;
   promptRef?: string;
   skills: string[];
+  toolPolicyMode?: ToolPolicyMode;
   tools: string[];
   /** Rejected compatibility fields; Partner templates never own cwd. */
   cwd?: string;
@@ -55,13 +57,15 @@ export class PartnerRegistryService {
 
   async add(input: PartnerFields & { createdBy?: PartnerCreator; kind: PartnerKind; partnerId?: string }): Promise<PartnerDto> {
     assertNoWorkspace(input);
-    this.#assertLocalSkills(input.kind, input.engine ?? "pi-core", input.skills, input.tools);
+    const toolPolicyMode = input.toolPolicyMode ?? (input.tools.length === 0 ? "ALL" : "CUSTOM");
+    this.#assertLocalSkills(input.kind, input.engine ?? "pi-core", input.skills, toolPolicyMode, input.tools);
     await this.#assertModelConfiguration(input.kind, input.engine ?? "pi-core", input.modelSourceId, input.modelIdOverride);
     const partnerId = input.partnerId ?? this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     const promptRef = await this.#promptRef(input, createdAt);
     const validated = createPartnerRevision({
       ...input,
+      toolPolicyMode,
       createdAt,
       partnerId,
       partnerRevisionId: this.dependencies.ids.next("partner_revision"),
@@ -76,7 +80,8 @@ export class PartnerRegistryService {
   async update(partnerId: string, input: PartnerUpdateFields): Promise<PartnerDto> {
     assertNoWorkspace(input);
     const current = await this.#active(partnerId);
-    this.#assertLocalSkills(current.kind, input.engine ?? current.engine, input.skills, input.tools);
+    const toolPolicyMode = input.toolPolicyMode ?? (input.tools.length === 0 ? "ALL" : "CUSTOM");
+    this.#assertLocalSkills(current.kind, input.engine ?? current.engine, input.skills, toolPolicyMode, input.tools);
     const engine = input.engine ?? current.engine;
     const engineModelId = explicitValue(input.engineModelId, current.engineModelId);
     const modelIdOverride = explicitValue(input.modelIdOverride, current.modelIdOverride);
@@ -102,6 +107,7 @@ export class PartnerRegistryService {
       ...(promptRef === undefined ? {} : { promptRef }),
       registryRevision: current.registryRevision + 1,
       skills: input.skills,
+      toolPolicyMode,
       tools: input.tools,
     });
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
@@ -123,12 +129,13 @@ export class PartnerRegistryService {
       ...(current.modelIdOverride === undefined ? {} : { modelIdOverride: current.modelIdOverride }),
       ...(current.modelSourceId === undefined ? {} : { modelSourceId: current.modelSourceId }),
       skills,
+      ...(current.toolPolicyMode === undefined ? {} : { toolPolicyMode: current.toolPolicyMode }),
       tools: [...current.tools],
     });
   }
 
-  /** Replaces only the built-in tool grant and creates a new immutable revision. Empty means all built-ins. */
-  async setTools(partnerId: string, tools: string[]): Promise<PartnerDto> {
+  /** Replaces only the built-in tool grant and creates a new immutable revision. */
+  async setTools(partnerId: string, tools: string[], toolPolicyMode?: ToolPolicyMode): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
     if (current.kind !== "local-pi" || current.engine !== "pi-core") {
       throw new DomainError("partner_tools_not_supported", "Only local Pi partners can use built-in Pi tools.");
@@ -143,6 +150,7 @@ export class PartnerRegistryService {
       ...(current.modelIdOverride === undefined ? {} : { modelIdOverride: current.modelIdOverride }),
       ...(current.modelSourceId === undefined ? {} : { modelSourceId: current.modelSourceId }),
       skills: [...current.skills],
+      toolPolicyMode: toolPolicyMode ?? (tools.length === 0 ? "ALL" : "CUSTOM"),
       tools,
     });
   }
@@ -161,6 +169,7 @@ export class PartnerRegistryService {
       modelIdOverride: model.modelIdOverride,
       modelSourceId: model.modelSourceId,
       skills: [...current.skills],
+      ...(current.toolPolicyMode === undefined ? {} : { toolPolicyMode: current.toolPolicyMode }),
       tools: [...current.tools],
     });
   }
@@ -225,7 +234,7 @@ export class PartnerRegistryService {
   async duplicate(partnerId: string): Promise<PartnerDto> {
     const current = await this.#active(partnerId);
     if (current.status === "DELETED") throw new DomainError("partner_not_found", "Partner was not found.");
-    this.#assertLocalSkills(current.kind, current.engine, current.skills, current.tools);
+    this.#assertLocalSkills(current.kind, current.engine, current.skills, current.toolPolicyMode ?? (current.tools.length === 0 ? "ALL" : "CUSTOM"), current.tools);
     const newPartnerId = this.dependencies.ids.next("partner");
     const createdAt = this.dependencies.clock.now().toISOString();
     let promptRef = current.promptRef;
@@ -254,6 +263,7 @@ export class PartnerRegistryService {
       ...(promptRef === undefined ? {} : { promptRef }),
       registryRevision: 1,
       skills: [...current.skills],
+      ...(current.toolPolicyMode === undefined ? {} : { toolPolicyMode: current.toolPolicyMode }),
       tools: [...current.tools],
     });
     const revision = await this.dependencies.repository.append(withoutRegistryRevision(validated));
@@ -294,9 +304,9 @@ export class PartnerRegistryService {
     return current;
   }
 
-  #assertLocalSkills(kind: PartnerKind, engine: PartnerEngine, skills: string[], tools: string[]): void {
+  #assertLocalSkills(kind: PartnerKind, engine: PartnerEngine, skills: string[], toolPolicyMode: ToolPolicyMode, tools: string[]): void {
     if (kind !== "local-pi" || this.dependencies.skills === undefined) return;
-    this.#validateLocalSkills(engine, skills, tools);
+    this.#validateLocalSkills(engine, skills, toolPolicyMode, tools);
   }
 
   async #assertModelConfiguration(kind: PartnerKind, engine: PartnerEngine, sourceId?: string, modelId?: string): Promise<void> {
@@ -312,7 +322,7 @@ export class PartnerRegistryService {
     }
   }
 
-  #validateLocalSkills(engine: PartnerEngine, skills: string[], tools: string[]): void {
+  #validateLocalSkills(engine: PartnerEngine, skills: string[], toolPolicyMode: ToolPolicyMode, tools: string[]): void {
     if (this.dependencies.skills === undefined) return;
     if (this.dependencies.skills.validateRefs !== undefined) this.dependencies.skills.validateRefs(engine, skills);
     else {
@@ -321,7 +331,7 @@ export class PartnerRegistryService {
         throw new DomainError("partner_skill_not_available", "Selected partner skill is not available for this engine.");
       }
     }
-    if (engine === "pi-core" && skills.length > 0 && tools.length > 0 && !tools.includes("read")) {
+    if (engine === "pi-core" && skills.length > 0 && toolPolicyMode === "CUSTOM" && !tools.includes("read")) {
       throw new DomainError("partner_skill_requires_read", "Pi Skills require the read tool when the tool list is narrowed.");
     }
   }
@@ -340,7 +350,7 @@ export class PartnerRegistryService {
   #configuration(revision: PartnerRevision): PartnerConfigurationDto | undefined {
     if (revision.kind !== "local-pi" || this.dependencies.skills === undefined) return undefined;
     try {
-      this.#validateLocalSkills(revision.engine, revision.skills, revision.tools);
+      this.#validateLocalSkills(revision.engine, revision.skills, revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM"), revision.tools);
       return undefined;
     } catch (error) {
       const code = error instanceof DomainError && /^partner_[a-z0-9_]+$/u.test(error.code)
@@ -416,6 +426,7 @@ function withoutRegistryRevision(revision: PartnerRevision): AppendPartnerRevisi
     provenance: { ...revision.provenance },
     skills: [...revision.skills],
     status: revision.status,
+    ...(revision.toolPolicyMode === undefined ? {} : { toolPolicyMode: revision.toolPolicyMode }),
     tools: [...revision.tools],
   };
 }

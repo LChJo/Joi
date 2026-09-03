@@ -114,6 +114,7 @@ export class ScenarioPackService {
       partnerId,
       prompt: role.prompt,
       skills: [...role.skills],
+      toolPolicyMode: "ALL",
       tools: [...role.tools],
     });
     const now = this.dependencies.clock.now().toISOString();

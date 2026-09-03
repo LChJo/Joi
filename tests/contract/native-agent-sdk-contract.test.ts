@@ -7,7 +7,7 @@ import { ClaudeAgentSdkPartnerEngineRuntime, type ClaudeAgentSdkSurface } from "
 import { CodexAgentSdkPartnerEngineRuntime, nestedCodexEnvironment, type CodexAgentSdkSurface, type CodexThreadSurface } from "../../src/main/infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
 
 const request = { actionId: "action_native", workbenchId: "workbench", contextSnapshotId: "snapshot", taskProjection: "do work", workId: "work" };
-const execution = { loadForExecution: async () => ({ promptSection: "scope", sanitized: {} }) };
+const execution = { loadForExecution: async () => ({ promptSection: "scope", sanitized: {}, workspacePath: "missing-test-workspace" }) };
 const prompts = { read: async () => "CUSTOM_SYSTEM" };
 const resolvedClaude = () => ({ commandName: "claude", executablePath: "user-claude", protocol: "claude" as const });
 const resolvedCodex = () => ({ commandName: "codex", executablePath: "user-codex", protocol: "codex" as const });
@@ -25,6 +25,7 @@ function revision(engine: "claude-code" | "codex") {
     promptRef: "prompt",
     registryRevision: 1,
     skills: [],
+    ...(engine === "claude-code" ? { toolPolicyMode: "CUSTOM" as const } : {}),
     tools: engine === "claude-code" ? ["Read"] : [],
     ...(engine === "codex" ? { codexPermissions: { approvalPolicy: "never" as const, networkAccessEnabled: true, sandboxMode: "read-only" as const, webSearchMode: "cached" as const } } : {}),
   });
@@ -48,7 +49,9 @@ describe("official native Agent SDK adapters", () => {
     const first = await runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", onEvent: async (event) => { events.push(event); }, request, restoredMessages: null, revision: revision("claude-code"), skillEnvironmentKeys: [], skillSection: "" });
     expect(first.externalSessionRef).toBe("native-agent:v1:claude:claude-session");
     expect(first.messages).toBeUndefined();
-    expect(calls[0]?.options).toMatchObject({ allowedTools: ["Read"], includePartialMessages: true, model: "claude-sonnet", pathToClaudeCodeExecutable: "user-claude", systemPrompt: expect.stringContaining("CUSTOM_SYSTEM") });
+    expect(calls[0]?.options).toMatchObject({ allowedTools: ["Read"], includePartialMessages: true, model: "claude-sonnet", pathToClaudeCodeExecutable: "user-claude", systemPrompt: expect.stringContaining("CUSTOM_SYSTEM"), tools: ["Read"] });
+    expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("Enabled tools: Read"));
+    expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("Disabled tools:"));
     expect((calls[0]?.options as { env?: Record<string, string> }).env?.ANTHROPIC_API_KEY).toBe("private-key");
     expect(events).toEqual(expect.arrayContaining([
       { type: "tool_activity", toolName: "Read", state: "started" },
@@ -99,6 +102,9 @@ describe("official native Agent SDK adapters", () => {
     expect(first.externalSessionRef).toBe("native-agent:v1:codex:thread-new");
     expect(starts[0]).toMatchObject({ approvalPolicy: "never", model: "gpt-5.6-sol", networkAccessEnabled: true, sandboxMode: "read-only", webSearchMode: "cached" });
     expect(clientOptions[0]).toMatchObject({ codexPathOverride: "user-codex", config: { developer_instructions: expect.stringContaining("CUSTOM_SYSTEM") }, env: { CODEX_SESSION_ID: "nested", PATH: "user-path" } });
+    expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("Workspace access: read-only"));
+    expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("Network access: enabled"));
+    expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("Web search: cached"));
     expect(JSON.stringify(events)).not.toContain("PRIVATE_COMMAND");
     expect(JSON.stringify(events)).not.toContain("PRIVATE_RESULT");
 

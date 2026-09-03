@@ -69,6 +69,7 @@ describe("local Pi coding partner runtime", () => {
       promptRef: "prompt_ref_1",
       registryRevision: 1,
       skills: ["typescript"],
+      toolPolicyMode: "CUSTOM",
       tools: ["read", "edit"],
     });
 

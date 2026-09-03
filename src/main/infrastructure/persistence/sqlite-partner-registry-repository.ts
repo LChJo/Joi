@@ -3,7 +3,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../../application/ports/partner-registry.js";
-import { legacyCodexPermissions, normalizeCodexPermissions, type PartnerRevision } from "../../domain/partners/partner.js";
+import { legacyCodexPermissions, legacyToolPolicyMode, normalizeCodexPermissions, normalizeToolPolicyMode, type PartnerRevision } from "../../domain/partners/partner.js";
 import { mapStoredEngine, storageCliProtocol, storageEngine } from "./partner-engine-storage.js";
 
 interface TransactionalDatabase {
@@ -13,7 +13,7 @@ interface TransactionalDatabase {
 type Row = Record<string, unknown>;
 
 const SELECT_REVISIONS = `SELECT p.partner_id, p.kind, p.created_by, r.status AS revision_status, r.partner_revision_id, r.registry_revision,
-  r.display_name, r.capabilities_json, r.skills_json, r.tools_json, r.prompt_ref, r.workspace_ref,
+  r.display_name, r.capabilities_json, r.skills_json, r.tools_json, r.prompt_ref, r.workspace_ref, r.execution_policy_json,
   r.description, r.engine, r.cli_protocol, r.model_source_id, r.model_id_override, r.engine_model_id, r.engine_config_json,
   r.provenance_json, r.created_at
   FROM partners p JOIN partner_revisions r ON r.partner_id = p.partner_id`;
@@ -45,6 +45,15 @@ function mapRow(row: Row): PartnerRevision {
   const modelSourceId = row.model_source_id;
   const engine = mapStoredEngine(row.engine, row.cli_protocol);
   const tools = stringArray(row.tools_json);
+  let storedToolPolicyMode: unknown;
+  if (typeof row.execution_policy_json === "string") {
+    const policy: unknown = JSON.parse(row.execution_policy_json);
+    if (policy === null || Array.isArray(policy) || typeof policy !== "object") throw new Error("partner_registry_record_invalid");
+    storedToolPolicyMode = (policy as { toolPolicyMode?: unknown }).toolPolicyMode;
+  }
+  const toolPolicyMode = rowText(row, "kind") === "LOCAL_PI"
+    ? normalizeToolPolicyMode(storedToolPolicyMode ?? legacyToolPolicyMode(tools), tools)
+    : undefined;
   let codexPermissions: PartnerRevision["codexPermissions"];
   if (engine === "codex") {
     if (typeof row.engine_config_json === "string") {
@@ -80,6 +89,7 @@ function mapRow(row: Row): PartnerRevision {
     registryRevision,
     skills: stringArray(row.skills_json),
     status: rowText(row, "revision_status") as PartnerRevision["status"],
+    ...(toolPolicyMode === undefined ? {} : { toolPolicyMode }),
     tools,
   };
 }
@@ -104,7 +114,7 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
         input.partnerRevisionId, input.partnerId, registryRevision, input.displayName,
         JSON.stringify(input.capabilities), JSON.stringify(input.skills), JSON.stringify(input.tools),
         input.promptRef ?? null, null,
-        JSON.stringify({ transport: input.kind, localOverridesWin: true }), JSON.stringify(input.provenance), input.status, input.createdAt,
+        JSON.stringify({ transport: input.kind, localOverridesWin: true, ...(input.toolPolicyMode === undefined ? {} : { toolPolicyMode: input.toolPolicyMode }) }), JSON.stringify(input.provenance), input.status, input.createdAt,
         input.description ?? null, storageEngine(input.engine), storageCliProtocol(input.engine),
         input.modelSourceId ?? null, input.modelIdOverride ?? null, input.engineModelId ?? null,
       ];

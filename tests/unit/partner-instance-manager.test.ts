@@ -346,9 +346,11 @@ describe("partner-instance-manager", () => {
     const { engine, manager } = makeManager(undefined, {
       resolveForPi: () => { throw new Error("must fail before SDK dispatch"); },
     });
+    const legacyRevision = { ...revision };
+    delete legacyRevision.toolPolicyMode;
     await expect(manager.dispatch({
       request,
-      revision: { ...revision, skills: ["agents/demo"], tools: ["edit"] },
+      revision: { ...legacyRevision, skills: ["agents/demo"], tools: ["edit"] },
     })).rejects.toMatchObject({
       code: "partner_skill_requires_read",
       partnerRunFailure: { phase: "CONFIGURATION", sideEffectState: "NONE" },

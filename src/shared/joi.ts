@@ -151,6 +151,7 @@ export interface WorkbenchChangeRequestDto {
 
 export const PARTNER_ENGINES = ["claude-code", "codex", "pi-core"] as const;
 export type PartnerEngineDto = (typeof PARTNER_ENGINES)[number];
+export type ToolPolicyModeDto = "ALL" | "CUSTOM";
 export interface CodexPermissionsDto {
   approvalPolicy: "never";
   networkAccessEnabled: boolean;
@@ -192,6 +193,7 @@ export interface PartnerDto {
   registryRevision: number;
   skills: string[];
   status: "ACTIVE" | "DISABLED" | "DELETED";
+  toolPolicyMode?: ToolPolicyModeDto;
   tools: string[];
 }
 

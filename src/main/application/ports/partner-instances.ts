@@ -79,6 +79,8 @@ export interface PartnerEngineRuntime {
   engineOf(): PartnerEngine;
   evictFromMemory(instanceId: string): void;
   health(): Promise<{ available: boolean; reason?: string }>;
+  /** Side-effect-free readiness gate executed before an Agent instance or tools are created. */
+  preflight?(input: { revision: PartnerRevision; turnId: string }): Promise<void>;
   /** User-triggered end-to-end availability check. Implementations must return only stable safe reason codes. */
   probe?(input?: { modelId?: string }): Promise<{ available: boolean; reasonCode?: string }>;
   runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;

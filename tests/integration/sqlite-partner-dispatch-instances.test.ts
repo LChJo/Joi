@@ -96,10 +96,15 @@ describe("partner dispatch instance routing", () => {
         "UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'",
       ).run(JSON.stringify({ acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }] })));
       const handler = makeHandler(database, {
-        dispatch: async () => ({
-          actionId: "action_1", artifacts: [], body: "I wrote it", externalRunId: "local_pi:action_1",
-          status: "COMPLETED" as const, workId: "work_1",
-        }),
+        dispatch: async (input) => {
+          database.transaction((connection) => connection.prepare("UPDATE dispatch_attempts SET instance_id = 'instance_9' WHERE dispatch_attempt_id = ?")
+            .run(input.dispatchAttemptId ?? ""));
+          return {
+            actionId: "action_1", artifacts: [], body: "I wrote it", externalRunId: "local_pi:action_1",
+            conversation: [{ kind: "MARKDOWN" as const, role: "AGENT" as const, text: "engine said done" }],
+            status: "COMPLETED" as const, workId: "work_1",
+          };
+        },
       }, [], {
         verify: async () => ({ reasonCode: "verification_content_mismatch", status: "FAILED" }),
       });
@@ -112,6 +117,10 @@ describe("partner dispatch instance routing", () => {
       expect(database.transaction((connection) => connection.prepare(
         "SELECT reason_code, status FROM work_result_verifications",
       ).get())).toEqual({ reason_code: "verification_content_mismatch", status: "FAILED" });
+      const terminal = database.transaction((connection) => connection.prepare(`SELECT kind, text
+        FROM workbench_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence DESC LIMIT 1`).get()) as { kind: string; text: string };
+      expect(terminal).toMatchObject({ kind: "ERROR" });
+      expect(terminal.text).toContain("reasonCode=verification_content_mismatch");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

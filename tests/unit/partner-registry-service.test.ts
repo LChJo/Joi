@@ -75,6 +75,17 @@ describe("partner-registry-revision-before-dispatch", () => {
     status: "READY",
   };
 
+  it("defaults new local partners to ALL while preserving explicit empty CUSTOM policies", async () => {
+    const repository = new MemoryPartnerRegistry();
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
+    const all = await service.add({ capabilities: [], displayName: "All", engine: "claude-code", kind: "local-pi", skills: [], tools: [] });
+    const custom = await service.add({ capabilities: [], displayName: "None", engine: "pi-core", kind: "local-pi", skills: [], toolPolicyMode: "CUSTOM", tools: [] });
+
+    expect(all).toMatchObject({ toolPolicyMode: "ALL", tools: [] });
+    expect(custom).toMatchObject({ toolPolicyMode: "CUSTOM", tools: [] });
+    expect(repository.history.map((revision) => revision.toolPolicyMode)).toEqual(["ALL", "CUSTOM"]);
+  });
+
   it("increments immutable registry revisions before every new dispatch pin", async () => {
     const repository = new MemoryPartnerRegistry();
     const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });

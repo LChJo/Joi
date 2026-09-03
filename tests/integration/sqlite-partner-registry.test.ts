@@ -38,7 +38,7 @@ describe("SQLite partner registry", () => {
     try {
       const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
       const safe = await service.add({ capabilities: [], displayName: "Safe Codex", engine: "codex", kind: "local-pi", skills: [], tools: [] });
-      expect(safe.codexPermissions).toEqual({ approvalPolicy: "never", networkAccessEnabled: false, sandboxMode: "workspace-write", webSearchMode: "disabled" });
+      expect(safe.codexPermissions).toEqual({ approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "workspace-write", webSearchMode: "live" });
 
       const legacyEmpty = await service.add({ capabilities: [], displayName: "Legacy empty", engine: "codex", kind: "local-pi", skills: [], tools: [] });
       const legacyRead = await service.add({ capabilities: [], displayName: "Legacy read", engine: "codex", kind: "local-pi", skills: [], tools: ["web_search"] });
@@ -50,6 +50,29 @@ describe("SQLite partner registry", () => {
         .toEqual({ approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "workspace-write", webSearchMode: "live" });
       expect((await repository.getRevision(legacyRead.partnerRevisionId))?.codexPermissions)
         .toEqual({ approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "read-only", webSearchMode: "live" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("persists ALL/CUSTOM in execution policy JSON and infers legacy rows without rewriting them", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-tool-policy-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
+      const all = await service.add({ capabilities: [], displayName: "All", kind: "local-pi", skills: [], toolPolicyMode: "ALL", tools: ["read"] });
+      const none = await service.add({ capabilities: [], displayName: "None", kind: "local-pi", skills: [], toolPolicyMode: "CUSTOM", tools: [] });
+      const stored = database.transaction((connection) => connection.prepare("SELECT execution_policy_json FROM partner_revisions WHERE partner_revision_id = ?").get(none.partnerRevisionId)) as { execution_policy_json: string };
+      expect(JSON.parse(stored.execution_policy_json)).toMatchObject({ toolPolicyMode: "CUSTOM" });
+
+      database.transaction((connection) => {
+        connection.prepare("UPDATE partner_revisions SET execution_policy_json = json_remove(execution_policy_json, '$.toolPolicyMode') WHERE partner_revision_id IN (?, ?)")
+          .run(all.partnerRevisionId, none.partnerRevisionId);
+      });
+      const repository = new SqlitePartnerRegistryRepository(database);
+      await expect(repository.getRevision(all.partnerRevisionId)).resolves.toMatchObject({ toolPolicyMode: "CUSTOM", tools: ["read"] });
+      await expect(repository.getRevision(none.partnerRevisionId)).resolves.toMatchObject({ toolPolicyMode: "ALL", tools: [] });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

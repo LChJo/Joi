@@ -589,8 +589,19 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           kind: "ARTIFACT" as const,
           role: "AGENT" as const,
         }));
+      const terminalError: AgentConversationDraft[] = committedStatus === "FAILED" || committedStatus === "UNKNOWN"
+        ? [{
+            kind: "ERROR" as const,
+            role: "AGENT" as const,
+            text: terminalFailureSummary({
+              ...(output.failure === undefined ? {} : { failure: output.failure }),
+              status: committedStatus,
+              ...(verification.status === "FAILED" ? { verificationReasonCode: verification.reasonCode ?? "verification_failed" } : {}),
+            }),
+          }]
+        : [];
       await this.dependencies.agentConversations.replaceRun(agentId, runId, normalizeAgentConversationEntries(
-        { agentId, runId, startedAt: now }, [...(output.conversation ?? fallback), ...artifacts],
+        { agentId, runId, startedAt: now }, [...(output.conversation ?? fallback), ...artifacts, ...terminalError],
       ));
     }
     await this.dependencies.leases.release(row.work_id);
@@ -614,4 +625,17 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     }
     return { isAuthoritative: recorded.isAuthoritative, resultId: recorded.result.resultId };
   }
+}
+
+function terminalFailureSummary(input: { failure?: PartnerRunFailure; status: "FAILED" | "UNKNOWN"; verificationReasonCode?: string }): string {
+  const reasonCode = input.failure?.reasonCode ?? input.verificationReasonCode ?? "partner_run_failed";
+  const health = input.failure !== undefined && ["auth_forbidden", "model_access_forbidden", "region_forbidden", "request_policy_forbidden", "http_401", "http_403"].includes(reasonCode)
+    ? "The model source was removed from dispatch and a no-tool health diagnostic was requested."
+    : "Model source health was not changed by this terminal result.";
+  const recovery = input.failure?.sideEffectState === "OBSERVED"
+    ? "A tool that may have side effects was called; the original Work will not be replayed. Existing artifacts must be verified, and any remaining gap must use a supplemental Work."
+    : input.failure?.sideEffectState === "UNKNOWN"
+      ? "Possible side effects cannot be ruled out; the original Work will not be replayed. Existing artifacts must be verified before supplemental recovery."
+      : "No possibly side-effecting tool call was recorded; any replacement attempt must still follow the bounded recovery policy.";
+  return `Partner terminal error: status=${input.status}; reasonCode=${reasonCode}. ${health} ${recovery}`;
 }

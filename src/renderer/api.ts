@@ -236,13 +236,13 @@ export class DigitalLifeApi {
   createPartner(body: {
     capabilities?: string[]; codexPermissions?: CodexPermissionsDto; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string;
     kind: "a2a" | "local-pi"; modelIdOverride?: string; modelSourceId?: string; prompt?: string; skills: string[];
-    tools: string[];
+    toolPolicyMode?: "ALL" | "CUSTOM"; tools: string[];
   }) {
     return this.request<PartnerDto>("/api/v1/partners", { body, method: "POST" });
   }
   updatePartner(partnerId: string, body: {
     capabilities?: string[]; codexPermissions?: CodexPermissionsDto; description?: string; displayName: string; engine?: PartnerEngineDto; engineModelId?: string | null;
-    modelIdOverride?: string | null; modelSourceId?: string | null; prompt?: string; promptMode?: "APPEND" | "REPLACE"; skills: string[]; tools: string[];
+    modelIdOverride?: string | null; modelSourceId?: string | null; prompt?: string; promptMode?: "APPEND" | "REPLACE"; skills: string[]; toolPolicyMode?: "ALL" | "CUSTOM"; tools: string[];
   }) {
     return this.request<PartnerDto>(`/api/v1/partners/${encodeURIComponent(partnerId)}`, { body, method: "PATCH" });
   }

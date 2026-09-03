@@ -100,6 +100,7 @@ export class PartnerInstanceManager {
     };
     let record: PartnerInstanceRecord;
     try {
+      await this.#engine(input.revision.engine).preflight?.({ revision: input.revision, turnId: input.request.actionId });
       if (input.instanceId !== undefined) {
         const existing = await this.dependencies.repository.get(input.instanceId);
         if (existing === null) throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
@@ -134,7 +135,8 @@ export class PartnerInstanceManager {
       if (input.revision.kind === "local-pi") {
         this.dependencies.skills.validateRefs(input.revision.engine, input.revision.skills);
         if (input.revision.engine === "pi-core") {
-          if (input.revision.skills.length > 0 && input.revision.tools.length > 0 && !input.revision.tools.includes("read")) {
+          const toolPolicyMode = input.revision.toolPolicyMode ?? (input.revision.tools.length === 0 ? "ALL" : "CUSTOM");
+          if (input.revision.skills.length > 0 && toolPolicyMode === "CUSTOM" && !input.revision.tools.includes("read")) {
             throw new DomainError("partner_skill_requires_read", "Pi Skills require the read tool when the tool list is narrowed.");
           }
           const dispatch = this.dependencies.skills.resolveForPi(input.revision.skills);

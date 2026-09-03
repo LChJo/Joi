@@ -8,6 +8,12 @@ Routine 的周期、RRULE、日期边界、Workbench 可用性、原子 inbox �
 
 单 Agent 失败只在目标详情展示；首页只在 Joi 两轮持久恢复均耗尽且目标无法完成时展示目标级失败。`OBSERVED/UNKNOWN` 不重放原 Work，先收集并验证现有产物，缺口通过无历史 DAG 依赖的补充 Work 修复；补充 Work 必须自动继承源 Work 的验收条件和访问模式下限，正文不得替代 HTML/PDF 等文件交付。内置工具可由 Joi 生成不可变 Partner revision 自动开放，但凭据、cookie、私网和 Workbench 外路径仍禁止。恢复可用或在途时首页保持 `EXTENDING`，内部 recovery input 不形成独立目标卡；`BLOCKED` outcome 不进入 Wayfinder review，存量内部派发澄清由专用 recovery input 自动解锁。详见 ADR 0016。
 
+## AC-65 搭档实际权限与模型来源新鲜度
+
+新建 Pi Core、Claude Code 和新安装场景搭档默认开启各自全部可用工具；`CUSTOM` 必须能表示包括空集在内的真实工具集合，旧 revision 继续按空列表为全开、非空为自定义解释且不得原地改写。Claude 必须同时用 SDK `tools` 限制可见工具、用 `allowedTools` 免交互授权；Codex 新建默认 `workspace-write`、网络开启、实时搜索、`approvalPolicy=never`，但不得开放 `danger-full-access`。三种本机引擎每次运行都注入不可被用户提示词或 Skill 覆盖的实际权限段。
+
+Pi READY 来源只有最近五分钟内按 source/model/credential revision 完成无工具验证才可直接派发；过期验证按 revision 合并探测。未固定搭档可跳过探测失败来源，固定来源必须停止并返回安全配置原因。运行中 401/403 先把来源移出派发集合，再做一次无工具诊断；403 只持久化 `auth_forbidden`、`model_access_forbidden`、`region_forbidden`、`request_policy_forbidden` 或 `http_403`。终态 FAILED/UNKNOWN 即使已有 engine conversation 也必须追加独立安全 ERROR；`OBSERVED/UNKNOWN` 继续遵守 AC-64 的产物验收与补充 Work 门禁。
+
 ## 0. JOI-01 实施路线
 
 JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1 Pi 与 provider contract；W2 Model Source/工作台/Partner 领域及迁移；W3 首次连接、inbox 与最小首页闭环；W4 Work DAG/并发/outbox；W5 Local Pi/A2A 搭档；W6 唯一首页与次级管理 UI；W7 兼容切换、安全与发布验证。
@@ -33,6 +39,8 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 2026-08-07 的 UNKNOWN 收敛修复以 AC-41/AC-43 为门禁：只有 `WAITING_INPUT`/`WAITING_AUTH` 可保持 Work `WAITING` 并显示需要用户；不可恢复的 `UNKNOWN` 必须终结为 `FAILED`，继续 result-set 综合且不得制造无操作入口的“需要你”。migration 039 修复 schema 038 的存量错误状态、活跃任务投影与尚未综合的 UNKNOWN result member。
 
 2026-08-19 的搭档失败恢复增量以 AC-35/AC-41/AC-43 为门禁：失败结果只公开 `phase/reasonCode/retryable/sideEffectState`；仅 timeout/connect/429/5xx 且未观察到工具或文件副作用时，Joi 可把 READY model source 固定到新的 immutable Partner revision，并以同一 Work、全新 action/dispatch attempt 重派。鉴权、余额、配置、Skill、安全拒绝及副作用 `OBSERVED/UNKNOWN` 禁止盲目重放；恢复后旧 result revision 不得提前写入目标完成 outcome。
+
+2026-09-03 的搭档权限与 403 自愈增量以 AC-65 为门禁：新建本机搭档默认全开，显式 `CUSTOM` 才按实际列表收窄且可关闭全部工具；运行提示必须与最终 SDK/工具参数一致。Pi 来源增加五分钟 freshness gate 与 revision 级并发合并，运行时 401/403 立即摘除并无工具复诊；403 原文只在内存分类，不进入 revision、结果或诊断。已有 engine conversation 不得覆盖终态错误事实。
 
 2026-08-20 的 Pi Skill 派发修复以 AC-14/AC-33 为门禁：Skill catalog、frontmatter、递归发现和 prompt catalog 必须复用锁定版本的 Pi SDK；只向 Pi 暴露被选中 Skill 的 `name/description/location`，正文由 Agent 通过 `read` 按需加载。显式 Skill 路径加载必须关闭默认 package/project discovery；`read` 只能访问工作台与被选中 Skill 根目录。旧引用、同名碰撞、加载失败或收窄工具列表遗漏 `read` 必须在模型/工具启动前收敛为 `CONFIGURATION/NONE`，并向用户说明可安全修正后重试。搭档保存和搭档设置列表同时复用 exact Skill validator；历史脏 revision 以脱敏 `ACTION_REQUIRED` 配置状态展示，编辑器在移除失效引用或启用 `read` 前禁止提交，避免用户到派发时才发现。bash 只继承精确非敏感运行基线；脚本型 Skill 的其他环境变量保持默认拒绝，必须由当前精确选中的 Skill 通过 `metadata.joi_required_env` 声明、由 `JOI_PARTNER_ENV_PASSTHROUGH` 按变量名授权且已被 Joi 进程继承，三项同时满足才可注入，不能泄露给其他 bash Partner。非法声明必须在启动前失败；命中缺失凭据错误必须收敛为 `WAITING_INPUT`，显示变量名、授权与完整重启动作，不得交由模型以 `BLOCKED` 文本伪装成完成。
 2026-08-21 的 Pi core 网页研究增量以 AC-49 为门禁：默认工具目录直接提供受控 `web_search`、`fetch_content`、`get_search_content`，无需切换 engine；适配器仅访问公开 HTTP(S)，在 DNS/重定向阶段拒绝 loopback/私网/链路本地和凭据 URL，并限制超时、响应大小、搜索结果和 runtime 内存缓存。HTML 先做可读性抽取，GitHub 仓库根 URL 优先读取公开 README，不执行 clone、cookie 注入或外部文件写入；第三方 Pi package 不被动态加载。

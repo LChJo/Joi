@@ -4,15 +4,19 @@ import type { ModelSourceRecord, ModelSourceValidator } from "../../application/
 import type { Clock } from "../../application/ports/runtime-store.js";
 import { createPiSourceProvider } from "./source-provider-factory.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
+import { classifyHttp403Detail } from "../../application/partners/partner-run-failure.js";
 
 type Probe = (record: ModelSourceRecord) => Promise<void>;
 
-function failureReason(error: unknown): { error: string; reasonCode: string; status: "DEGRADED" | "NEEDS_AUTH" } {
+function failureReason(error: unknown): { error?: string; reasonCode: string; status: "DEGRADED" | "NEEDS_AUTH" } {
   const raw = error instanceof Error ? error.message : String(error);
   const message = raw.toLowerCase();
   let reasonCode: string;
   let status: "DEGRADED" | "NEEDS_AUTH" = "DEGRADED";
-  if (/(^|\D)(401|403)(\D|$)|unauthori[sz]ed|forbidden|invalid[_ -]?(api[_ -]?key|x-api-key)|\bcredential\b|no api key/u.test(message)) {
+  if (/(^|\D)403(\D|$)|\bforbidden\b/u.test(message)) {
+    reasonCode = classifyHttp403Detail(raw);
+    status = "NEEDS_AUTH";
+  } else if (/(^|\D)401(\D|$)|unauthori[sz]ed|invalid[_ -]?(api[_ -]?key|x-api-key)|\bcredential\b|no api key/u.test(message)) {
     reasonCode = "auth_failed";
     status = "NEEDS_AUTH";
   } else if (/(^|\D)429(\D|$)|rate[_ -]?limit|throttl|overloaded|too many requests/u.test(message)) {
@@ -36,7 +40,7 @@ function failureReason(error: unknown): { error: string; reasonCode: string; sta
   } else {
     reasonCode = "endpoint_unreachable";
   }
-  return { error: raw.trim(), reasonCode, status };
+  return { ...(reasonCode === "auth_forbidden" || reasonCode === "model_access_forbidden" || reasonCode === "region_forbidden" || reasonCode === "request_policy_forbidden" || reasonCode === "http_403" ? {} : { error: raw.trim() }), reasonCode, status };
 }
 
 export class PiModelSourceValidator implements ModelSourceValidator {

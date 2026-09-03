@@ -148,7 +148,7 @@ describe("partner page", () => {
     fireEvent.change(screen.getByLabelText("描述（给 joi 做参考）"), { target: { value: "写文档的搭档" } });
     fireEvent.click(screen.getByRole("button", { name: "保存搭档" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({
-      description: "写文档的搭档", displayName: "Writer", kind: "local-pi", skills: [], tools: [],
+      description: "写文档的搭档", displayName: "Writer", kind: "local-pi", skills: [], toolPolicyMode: "ALL", tools: [],
     }));
   });
 
@@ -412,11 +412,15 @@ describe("partner page", () => {
     expect(await screen.findByRole("option", { name: "Claude Code（已检测到）" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Codex（未检测到）" })).toBeInTheDocument();
     expect(screen.getByText("read")).toBeInTheDocument();
+    expect(within(screen.getByRole("group", { name: "工具白名单" })).getAllByRole("checkbox").every((checkbox) => (checkbox as HTMLInputElement).checked)).toBe(true);
+    expect(screen.getByText("全部工具已开启。关闭任意工具会切换为自定义权限。")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("搭档引擎"), { target: { value: "codex" } });
     expect(await screen.findByText(/codex 未在 PATH 中找到/u)).toBeInTheDocument();
     expect(screen.getByText("Codex 权限")).toBeInTheDocument();
     expect(screen.getByLabelText("Codex 工作区权限")).toHaveValue("workspace-write");
+    expect(screen.getByLabelText("Codex 网页搜索")).toHaveValue("live");
+    expect(screen.getByText("允许网络访问").closest("label")?.querySelector("input")).toBeChecked();
     expect(screen.queryByText("apply_patch")).not.toBeInTheDocument();
   });
 
@@ -434,7 +438,6 @@ describe("partner page", () => {
     fireEvent.change(screen.getByLabelText("搭档引擎"), { target: { value: "codex" } });
     fireEvent.change(screen.getByLabelText("Codex 工作区权限"), { target: { value: "read-only" } });
     fireEvent.change(screen.getByLabelText("Codex 网页搜索"), { target: { value: "live" } });
-    fireEvent.click(screen.getByText("允许网络访问"));
     fireEvent.click(screen.getByRole("button", { name: "保存搭档" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
       codexPermissions: { approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "read-only", webSearchMode: "live" },
