@@ -758,10 +758,20 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
       connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
+      // Re-driving is only safe when the failed turn committed nothing. If it already started
+      // side effects (dispatched work, created routines, raised cards) or its work is still
+      // live, replaying the same prompt would duplicate those side effects: the codebase treats
+      // "revive after side effects" as a double-dispatch hazard everywhere else (see retry()).
+      // Such inputs converge through their live work / result synthesis instead of being re-queued.
+      const liveWork = connection.prepare(`SELECT 1 FROM work_items
+        WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(inputId);
+      const sideEffects = connection.prepare(`SELECT 1 FROM joi_turns
+        WHERE input_id = ? AND side_effect_started = 1 LIMIT 1`).get(inputId);
+      const nextStatus = liveWork !== undefined || sideEffects !== undefined ? "CONSUMED" : "PENDING";
       // Never kick a row that is waiting on the user back into the scheduler: an orphan
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages
-        SET status = 'PENDING', updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(now, inputId);
+        SET status = ?, updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(nextStatus, now, inputId);
     });
   }
 }

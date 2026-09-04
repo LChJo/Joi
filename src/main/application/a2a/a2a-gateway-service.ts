@@ -137,10 +137,14 @@ export class A2aGatewayService {
     }
   }
 
-  async recover(invocationId: string): Promise<InvocationRecord> {
+  async recover(invocationId: string): Promise<{ invocation: InvocationRecord; output: A2aInvocationOutput }> {
+    // Recovered terminal output must be returned to the caller: the dispatch path builds the
+    // work result body from it, and dropping it turns completed remote work into an empty
+    // (and, with mandatory acceptance checks, failing) result.
+    const output: A2aInvocationOutput = { artifacts: [], parts: [] };
     try {
       const invocation = await this.requireInvocation(invocationId);
-      if (TERMINAL.has(invocation.status)) return invocation;
+      if (TERMINAL.has(invocation.status)) return { invocation, output };
       if (invocation.taskId !== undefined) {
         const access = await this.access(invocation.agentConnectionId);
         const breakerKey = this.breaker.keyFor({
@@ -154,24 +158,29 @@ export class A2aGatewayService {
           // The endpoint is cooling down after retryable responses; skip the remote call
           // and let the outbox retry after the cooldown instead of piercing the rate-limit
           // window (recovery previously bypassed the breaker entirely).
-          return invocation;
+          return { invocation, output };
         }
         const remote = await this.dependencies.transport.getTask({ config: access.config, taskId: invocation.taskId });
+        if (remote.output !== undefined) this.collectOutput(output, remote.output);
         let current = await this.applyEvent(invocation, remote);
         if (!TERMINAL.has(current.status)) {
           for await (const event of this.dependencies.transport.resubscribe({ config: access.config, taskId: invocation.taskId })) {
+            if (event.output !== undefined) this.collectOutput(output, event.output);
             current = await this.applyEvent(current, event);
           }
         }
-        return current;
+        return { invocation: current, output };
       }
       if (invocation.status === "SENT_NO_ACCEPT" && invocation.sendAttempts >= 2) {
-        return await this.dependencies.store.updateInvocation(invocationId, {
-          status: "UNKNOWN_REQUIRES_REVIEW",
-          updatedAt: this.dependencies.clock.now().toISOString(),
-        });
+        return {
+          invocation: await this.dependencies.store.updateInvocation(invocationId, {
+            status: "UNKNOWN_REQUIRES_REVIEW",
+            updatedAt: this.dependencies.clock.now().toISOString(),
+          }),
+          output,
+        };
       }
-      return await this.dispatch(invocationId);
+      return { invocation: await this.dispatch(invocationId, output), output };
     } catch (error) {
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.a2a.recover_failed", {
         errorCode: runtimeDiagnosticErrorCode(error),

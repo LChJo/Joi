@@ -42,6 +42,14 @@ interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
 }
 
+/**
+ * Live conversation snapshots are display-only; the authoritative conversation is rewritten
+ * once by #complete. Writing on every streaming chunk deletes and re-inserts the whole run,
+ * an O(N²) amplification on the main-process synchronous database, so the live writes are
+ * throttled to at most one per interval.
+ */
+const LIVE_CONVERSATION_SNAPSHOT_INTERVAL_MS = 500;
+
 interface DispatchRow {
   access_mode: WorkAccessMode;
   action_id: string;
@@ -374,11 +382,17 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         ...(prepared.instanceId === undefined ? {} : { instanceId: prepared.instanceId }),
         ...(options?.signal === undefined ? {} : { signal: options.signal }),
         ...(this.dependencies.agentConversations === undefined ? {} : {
-          onConversation: async ({ conversation, instanceId }) => {
-            await this.dependencies.agentConversations?.replaceRun(instanceId, runId, normalizeAgentConversationEntries(
-              { agentId: instanceId, runId, startedAt: progressStartedAt }, conversation,
-            ));
-          },
+          onConversation: (() => {
+            let lastSnapshotAt = 0;
+            return async ({ conversation, instanceId }: { conversation: AgentConversationDraft[]; instanceId: string }) => {
+              const nowMs = this.dependencies.clock.now().getTime();
+              if (nowMs - lastSnapshotAt < LIVE_CONVERSATION_SNAPSHOT_INTERVAL_MS) return;
+              lastSnapshotAt = nowMs;
+              await this.dependencies.agentConversations?.replaceRun(instanceId, runId, normalizeAgentConversationEntries(
+                { agentId: instanceId, runId, startedAt: progressStartedAt }, conversation,
+              ));
+            };
+          })(),
         }),
         request: {
           actionId: row.action_id, workbenchId: row.workbench_id, contextSnapshotId: row.context_snapshot_id ?? "",
@@ -405,6 +419,9 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     const started = row.invocation_id === null
       ? await this.dependencies.gateway.startWithResult({
         agentConnectionId: row.agent_connection_id,
+        // Scope remote artifacts to the Workbench so they count against the storage quota
+        // instead of landing unbounded (lifeId is a grouping key; the Workbench plays that role here).
+        artifactScope: { lifeId: row.workbench_id },
         capacity: { lane: "collaborator", lifeId: row.workbench_id },
         messageId: row.action_id,
         parts: [
@@ -412,7 +429,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
           { data: { actionId: row.action_id, workbenchId: row.workbench_id, context: execution.sanitized, sourceBoundary: "joi-work", workId: row.work_id }, kind: "data" },
         ],
       })
-      : { invocation: await this.dependencies.gateway.recover(row.invocation_id), output: { artifacts: [], parts: [] } };
+      : await this.dependencies.gateway.recover(row.invocation_id);
     const terminal = terminalInvocation(started.invocation.status);
     if (terminal === null) return { kind: "waiting_remote" };
     const body = [
@@ -447,6 +464,14 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   async finalizeOrphan(orphan: PartnerDispatchOrphanRow): Promise<"completed" | "waiting"> {
     const row = this.#load(orphan.dispatchAttemptId);
     if (row === undefined || attemptTerminal(row.status)) return "completed";
+    // A canceled Work must not be resumed: converge the orphaned run to a terminal state
+    // without executing it, mirroring prepare()'s cancellation guard. Running it would do
+    // work the user already revoked and could write a result into the canceled goal.
+    if (row.work_status === "CANCELED") {
+      const failure = classifyPartnerRunFailure({ code: "work_canceled_before_recovery" }, { phase: "RECOVERY", sideEffectState: "NONE" });
+      await this.#complete(row, "FAILED", { artifacts: [], body: safePartnerRunFailureBody(failure), failure });
+      return "completed";
+    }
     const prepared: PreparedDispatch = {
       actionId: row.action_id,
       attemptCount: 0,

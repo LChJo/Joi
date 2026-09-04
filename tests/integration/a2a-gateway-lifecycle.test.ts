@@ -107,7 +107,7 @@ describe("A2A invocation lifecycle", () => {
         contextId: "context_1", sendAttempts: 1, status: "WORKING", taskId: "task_1", updatedAt: fixture.clock.now().toISOString(),
       });
       const recovered = await service.recover("invocation_recover");
-      expect(recovered).toMatchObject({ messageId: "message_stable", status: "COMPLETED", taskId: "task_1" });
+      expect(recovered.invocation).toMatchObject({ messageId: "message_stable", status: "COMPLETED", taskId: "task_1" });
       expect(transport.getTask).toHaveBeenCalledOnce();
       expect(transport.cancelTask).not.toHaveBeenCalled();
     } finally {
@@ -132,7 +132,7 @@ describe("A2A invocation lifecycle", () => {
         sendAttempts: 1, status: "SENT_NO_ACCEPT", updatedAt: fixture.clock.now().toISOString(),
       });
       const retried = await service.recover("invocation_unknown");
-      expect(retried).toMatchObject({ messageId: "message_stable", sendAttempts: 2, status: "UNKNOWN_REQUIRES_REVIEW" });
+      expect(retried.invocation).toMatchObject({ messageId: "message_stable", sendAttempts: 2, status: "UNKNOWN_REQUIRES_REVIEW" });
       await service.recover("invocation_unknown");
       expect(sendStream).toHaveBeenCalledOnce();
     } finally {
@@ -362,7 +362,7 @@ describe("A2A invocation lifecycle", () => {
       await fixture.database.store.updateInvocation("invocation_already_sent", {
         sendAttempts: 2, status: "SENT_NO_ACCEPT", updatedAt: fixture.clock.now().toISOString(),
       });
-      expect(await service.recover("invocation_already_sent")).toMatchObject({ status: "UNKNOWN_REQUIRES_REVIEW" });
+      expect((await service.recover("invocation_already_sent")).invocation).toMatchObject({ status: "UNKNOWN_REQUIRES_REVIEW" });
 
       await fixture.database.store.setAgentIntegrationStatus("agent_gateway", "DISABLED", fixture.clock.now().toISOString());
       await expect(service.start({ agentConnectionId: "agent_gateway", parts: [] })).rejects.toMatchObject({ code: "agent_unavailable" });

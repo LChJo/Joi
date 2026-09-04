@@ -205,16 +205,27 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     if (typeof this.#tools === "function") validateToolNames(turnTools);
     session.agent.state.tools = turnTools;
     input.onEvent?.({ type: "turn_started", turnId: input.turnId });
+    let promptError: unknown;
     try {
       const turnImages: ImageContent[] | undefined = input.images === undefined || input.images.length === 0
         ? undefined
         : input.images.map((image) => ({ data: image.data, mimeType: image.mimeType, type: "image" as const }));
       await session.agent.prompt(input.prompt, turnImages);
-    } finally {
-      await this.#compactAndSave(session);
-      input.onEvent?.({ type: "turn_finished", turnId: input.turnId });
-      session.current = undefined;
+    } catch (error) {
+      promptError = error;
     }
+    // A checkpoint failure must not mask the turn's true outcome: by this point the turn's
+    // side effects are already committed, and reporting the save error as a turn failure would
+    // re-drive the input and duplicate those side effects. The next turn's save repairs the
+    // snapshot. The original prompt error is always rethrown below.
+    try {
+      await this.#compactAndSave(session);
+    } catch {
+      // Non-fatal: keep the turn's real result.
+    }
+    input.onEvent?.({ type: "turn_finished", turnId: input.turnId });
+    session.current = undefined;
+    if (promptError !== undefined) throw promptError as Error;
   }
 
   steer(sessionId: string, text: string): void {

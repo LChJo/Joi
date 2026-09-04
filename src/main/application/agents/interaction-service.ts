@@ -13,8 +13,10 @@ export class InteractionService {
     if (interaction.kind === "auth-required") throw new DomainError("auth_user_action_required", "Authorization must be completed by the user at the Agent.");
     const invocation = await this.dependencies.store.getInvocation(interaction.invocationId);
     if (invocation?.contextId === undefined) throw new DomainError("interaction_stale", "Interaction context is no longer available.");
+    const answerScope = await this.dependencies.store.getInteractionScope(interactionId);
     await this.dependencies.gateway.start({
       agentConnectionId: invocation.agentConnectionId,
+      ...(answerScope === null ? {} : { artifactScope: answerScope }),
       contextId: invocation.contextId,
       parts: [
         { kind: "text", text: answer },
@@ -34,7 +36,7 @@ export class InteractionService {
     const invocation = await this.dependencies.store.getInvocation(interaction.invocationId);
     if (invocation?.taskId === undefined) throw new DomainError("interaction_stale", "The original Agent Task is unavailable.");
     const recovered = await this.dependencies.gateway.recover(invocation.invocationId);
-    if (recovered.status === "AUTH_REQUIRED") throw new DomainError("auth_still_required", "The Agent still reports that authorization is required.");
+    if (recovered.invocation.status === "AUTH_REQUIRED") throw new DomainError("auth_still_required", "The Agent still reports that authorization is required.");
     const resolved = await this.dependencies.store.resolveInteraction(interactionId);
     await this.recordHumanResolution(interactionId, "human.auth_resolved", { invocationId: invocation.invocationId });
     return resolved;

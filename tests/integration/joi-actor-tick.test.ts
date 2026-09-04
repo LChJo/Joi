@@ -44,6 +44,14 @@ function makeDatabase(): DatabaseSync {
       input_id TEXT NOT NULL,
       status TEXT NOT NULL
     );
+    CREATE TABLE work_items (
+      work_id TEXT PRIMARY KEY,
+      workbench_id TEXT,
+      input_id TEXT,
+      status TEXT NOT NULL,
+      created_at TEXT,
+      updated_at TEXT
+    );
   `);
   return database;
 }

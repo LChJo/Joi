@@ -59,11 +59,12 @@ function makeHandler(
   diagnostics: { event: string; fields: Record<string, unknown> }[] = [],
   verifier?: { verify(input: unknown): Promise<{ reasonCode?: string; status: "FAILED" | "NOT_REQUIRED" | "PASSED" }> },
   publish: (event: unknown) => Promise<unknown> = async () => undefined,
+  clock: TestClock = new TestClock(),
 ) {
   const contexts = new SqliteWorkbenchContextRepository(database);
   return new SqlitePartnerDispatchDelivery({
     agentConversations: new SqliteWorkbenchAgentRepository(database),
-    clock: new TestClock(),
+    clock,
     contextAssembler: new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
     contexts,
     database,
@@ -281,6 +282,7 @@ describe("partner dispatch instance routing", () => {
     const { database, root } = await openWithPartner();
     try {
       let liveRows: unknown[] = [];
+      const clock = new TestClock();
       const handler = makeHandler(database, {
         dispatch: async (rawInput) => {
           const input = rawInput as typeof rawInput & {
@@ -297,6 +299,9 @@ describe("partner dispatch instance routing", () => {
             ],
             instanceId: "instance_9",
           });
+          // Live snapshots are throttled (display-only; #complete rewrites the authoritative
+          // conversation); advance past the throttle window so the second snapshot lands.
+          clock.advance(600);
           await input.onConversation?.({
             conversation: [
               { kind: "MARKDOWN", role: "USER", text: "the task" },
@@ -314,7 +319,7 @@ describe("partner dispatch instance routing", () => {
             externalRunId: "local_pi:action_1", instanceId: "instance_9", status: "COMPLETED" as const, workId: "work_1",
           };
         },
-      });
+      }, [], undefined, async () => undefined, clock);
 
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", workId: "work_1" }));
 

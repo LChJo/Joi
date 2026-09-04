@@ -29,14 +29,16 @@ const invocation: InvocationRecord = {
 function make(interaction: InteractionRecord | null, invocationRecord: InvocationRecord | null = invocation) {
   const store = {
     getInteraction: vi.fn(() => Promise.resolve(interaction)),
+    getInteractionScope: vi.fn(() => Promise.resolve(null)),
     getInvocation: vi.fn(() => Promise.resolve(invocationRecord)),
     listPendingInteractions: vi.fn(() => Promise.resolve(interaction === null ? [] : [interaction])),
     resolveInteraction: vi.fn(() => Promise.resolve({ ...pending, status: "RESOLVED" as const })),
   } as unknown as RuntimeStore;
   const start = vi.fn(() => Promise.resolve(invocation));
-  const recover = vi.fn<(invocationId: string) => Promise<InvocationRecord>>(
-    () => Promise.resolve({ ...invocation, status: "WORKING" as const, taskId: "task_1" }),
-  );
+  const recover = vi.fn((): Promise<{ invocation: InvocationRecord; output: { artifacts: never[]; parts: never[] } }> => Promise.resolve({
+    invocation: { ...invocation, status: "WORKING", taskId: "task_1" },
+    output: { artifacts: [], parts: [] },
+  }));
   const gateway = { recover, start } as unknown as A2aGatewayService;
   return { recover, service: new InteractionService({ gateway, store }), start };
 }
@@ -81,7 +83,7 @@ describe("Interaction Service", () => {
     await expect(make({ ...pending, kind: "auth-required" }, withoutTask).service.resumeAuthorization("interaction_1"))
       .rejects.toMatchObject({ code: "interaction_stale" });
     const stillRequired = make({ ...pending, kind: "auth-required" }, { ...withoutTask, taskId: "task_1" });
-    stillRequired.recover.mockResolvedValueOnce({ ...withoutTask, status: "AUTH_REQUIRED", taskId: "task_1" });
+    stillRequired.recover.mockResolvedValueOnce({ invocation: { ...withoutTask, status: "AUTH_REQUIRED", taskId: "task_1" }, output: { artifacts: [], parts: [] } });
     await expect(stillRequired.service.resumeAuthorization("interaction_1")).rejects.toMatchObject({ code: "auth_still_required" });
   });
 
@@ -96,7 +98,7 @@ describe("Interaction Service", () => {
       getInvocation: vi.fn(() => Promise.resolve(authInvocation)),
       resolveInteraction: vi.fn(() => Promise.resolve({ ...pending, kind: "auth-required" as const, status: "RESOLVED" as const })),
     } as unknown as RuntimeStore;
-    const recover = vi.fn(() => Promise.resolve({ ...authInvocation, status: "WORKING" as const }));
+    const recover = vi.fn(() => Promise.resolve({ invocation: { ...authInvocation, status: "WORKING" as const }, output: { artifacts: [], parts: [] } }));
     const ingest = vi.fn(() => Promise.resolve({ eventId: "event_resolution" }));
     const notify = vi.fn();
     const service = new InteractionService({

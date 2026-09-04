@@ -377,8 +377,12 @@ export class JoiCoordinator {
                   turnId,
                 });
                 toolStartedAt.delete(event.toolCallId);
-                if (event.toolName === "work_dispatch" && (event.isError || event.reasonCode !== undefined)) {
-                  dispatchFailureReason = event.reasonCode ?? "tool_execution_error";
+                if (event.toolName === "work_dispatch") {
+                  // Reflect the latest dispatch outcome: a later successful dispatch in the same
+                  // Turn clears an earlier failure so a corrected retry is not wrongly failed.
+                  dispatchFailureReason = event.isError || event.reasonCode !== undefined
+                    ? event.reasonCode ?? "tool_execution_error"
+                    : undefined;
                 }
               }
               if (event.type === "tool_finished" && !event.isError && COMMITTED_OUTCOME_TOOL_NAMES.has(event.toolName)) {

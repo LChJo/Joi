@@ -202,7 +202,7 @@ export function wireRuntime(input: {
       "a2a.send": async (record) => {
         const invocationId = record.payload.invocationId;
         if (typeof invocationId !== "string") throw new Error("A2A outbox record is missing invocationId.");
-        const invocation = await a2aGateway.recover(invocationId);
+        const { invocation } = await a2aGateway.recover(invocationId);
         if (invocation.status === "WAITING_RETRY" || invocation.status === "SENT_NO_ACCEPT") {
           emitRuntimeDiagnostic(diagnostics, "joi.a2a.recover_not_ready", {
             invocationId,
