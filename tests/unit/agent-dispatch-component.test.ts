@@ -20,6 +20,7 @@ const PREPARED: PreparedDispatch = { actionId: "action_1", attemptCount: 0, disp
 const TERMINAL: DispatchRunOutput = { artifacts: [], body: "done", kind: "terminal", status: "COMPLETED" };
 
 interface HarnessOptions {
+  abandonError?: Error;
   claims?: PartnerDispatchClaimRow[];
   leaseRenew?: (input: { workId: string; workspaceRef: string }) => Promise<{ expiresAt: string } | null>;
   orphans?: PartnerDispatchOrphanRow[];
@@ -31,6 +32,7 @@ interface HarnessOptions {
 }
 
 function makeHarness(options: HarnessOptions = {}) {
+  const abandoned: { dispatchAttemptId: string; reasonCode: string }[] = [];
   const calls: string[] = [];
   const completed: string[] = [];
   const completionOutputs: (DispatchRunOutput & { kind: "terminal" })[] = [];
@@ -47,6 +49,11 @@ function makeHarness(options: HarnessOptions = {}) {
     },
     ...(options.leaseRenew === undefined ? {} : { leases: { renew: options.leaseRenew } }),
     delivery: {
+      abandon: async (input) => {
+        if (options.abandonError !== undefined) throw options.abandonError;
+        abandoned.push({ dispatchAttemptId: input.claim.dispatchAttemptId, reasonCode: input.reasonCode });
+        calls.push("abandon");
+      },
       complete: async (input) => {
         completed.push(input.prepared.dispatchAttemptId);
         completionOutputs.push(input.output);
@@ -78,7 +85,7 @@ function makeHarness(options: HarnessOptions = {}) {
         if (claim === undefined) return null;
         options.claims = (options.claims ?? []).filter((entry) => entry.outboxId !== input.outboxId);
         calls.push(`claim:${input.outboxId}`);
-        return { attemptCount: 0, availableAt: BASE, createdAt: BASE, kind: "partner.dispatch", outboxId: input.outboxId, payload: {}, status: "CLAIMED" };
+        return { attemptCount: claim.attemptCount, availableAt: BASE, createdAt: BASE, kind: "partner.dispatch", outboxId: input.outboxId, payload: {}, status: "CLAIMED" };
       },
       completeOutbox: async (outboxId) => {
         calls.push(`ack:${outboxId}`);
@@ -91,7 +98,7 @@ function makeHarness(options: HarnessOptions = {}) {
     partnerId: "partner_1",
     ...(options.watchdogMillis === undefined ? {} : { watchdogMillis: options.watchdogMillis }),
   });
-  return { calls, completed, completionOutputs, component, diagnosticEvents, finalized, released, runSignals };
+  return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, released, runSignals };
 }
 
 function diagnosticsSink(events: { event: string; fields: Record<string, unknown> }[]) {
@@ -285,6 +292,43 @@ describe("AgentDispatchComponent", () => {
       kind: "terminal",
       status: "UNKNOWN",
     });
+  });
+
+  it("abandons a persistently failing preparation with a terminal result instead of retrying forever", async () => {
+    const exhaustedClaim: PartnerDispatchClaimRow = { ...CLAIM, attemptCount: 6 };
+    const harness = makeHarness({
+      claims: [exhaustedClaim],
+      prepareResult: Object.assign(new Error("The workspace lease could not be acquired."), { code: "workspace_lease_conflict" }),
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.abandoned).toEqual([{ dispatchAttemptId: "attempt_1", reasonCode: "workspace_lease_conflict" }]);
+    expect(harness.calls).toContain("ack:outbox_1");
+    expect(harness.released).toEqual([]);
+    expect(harness.calls).not.toContain("run");
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.prepare_exhausted");
+  });
+
+  it("falls back to a bounded backoff when the exhaustion attempt itself fails", async () => {
+    const exhaustedClaim: PartnerDispatchClaimRow = { ...CLAIM, attemptCount: 6 };
+    const harness = makeHarness({
+      abandonError: new Error("abandon_failed"),
+      claims: [exhaustedClaim],
+      prepareResult: new Error("workspace_lease_conflict"),
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.released).toEqual(["outbox_1"]);
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.prepare_failed");
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).not.toContain("joi.agent.prepare_exhausted");
+  });
+
+  it("keeps retrying a failing preparation while the attempt budget remains", async () => {
+    const harness = makeHarness({
+      claims: [{ ...CLAIM, attemptCount: 3 }],
+      prepareResult: new Error("workspace_lease_conflict"),
+    });
+    await harness.component.update(ctxAt(0));
+    expect(harness.abandoned).toEqual([]);
+    expect(harness.released).toEqual(["outbox_1"]);
   });
 
   it("aborts and converges a hung run once the watchdog passes its limit", async () => {

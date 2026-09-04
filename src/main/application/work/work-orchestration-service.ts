@@ -90,7 +90,7 @@ export class WorkOrchestrationService {
     turnId: string;
     work: WorkRequest[];
     recovery?: { attemptNo: number; evidenceResultIds: string[]; recoveryId: string; sourceWorkId: string; strategy: "SUPPLEMENT" | "TOOL_EXPANSION" };
-  }): Promise<{ dispatchPlanId: string; waves: string[][] }> {
+  }): Promise<{ denied: { reasonCode: string; workKey: string }[]; dispatchPlanId: string; waves: string[][] }> {
     const byKey = new Map<string, WorkRequest>();
     for (const request of input.work) {
       if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Workbench workspace automatically.");
@@ -131,13 +131,20 @@ export class WorkOrchestrationService {
     const waves = buildWorkExecutionWaves(items, dependencies);
     const policyResults: CommittedWorkPlan["policyResults"] = [];
     const attempts: PlannedDispatchAttempt[] = [];
+    const denied: { partnerId: string; reasonCode: string; workId: string; workKey: string }[] = [];
     for (const [index, item] of items.entries()) {
       const request = input.work[index];
       if (request === undefined) throw new Error("work_request_missing");
       const pin = await this.dependencies.partners.pinForDispatch(request.partnerId);
       const result = await this.dependencies.policy.evaluate(item, pin);
       policyResults.push({ allowed: result.allowed, ...(result.reason === undefined ? {} : { reason: result.reason }), workId: item.workId });
-      if (!result.allowed) continue;
+      // Denied Work still gets an attempt so the delivery-side recheck decides its fate:
+      // a transient lease conflict retries through the outbox, a permanent denial lands a
+      // terminal FAILED result, and neither can silently jam the goal forever. Only a
+      // missing workspace aborts the whole plan before commit (raised below).
+      if (!result.allowed && result.reason !== DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady) {
+        denied.push({ partnerId: request.partnerId, reasonCode: result.reason ?? "dispatch_policy_denied", workId: item.workId, workKey: request.key });
+      }
       const actionId = this.dependencies.ids.next("action");
       const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
       attempts.push({
@@ -176,6 +183,7 @@ export class WorkOrchestrationService {
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.plan.committed", {
       attemptCount: attempts.length,
       workbenchId: input.workbenchId,
+      deniedCount: denied.length,
       dependencyCount: dependencies.length,
       dispatchPlanId,
       inputId: input.inputId,
@@ -196,12 +204,26 @@ export class WorkOrchestrationService {
         workId: attempt.workId,
       });
     }
+    for (const entry of denied) {
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.plan_policy_denied", {
+        workbenchId: input.workbenchId,
+        dispatchPlanId,
+        partnerId: entry.partnerId,
+        reasonCode: entry.reasonCode,
+        turnId: input.turnId,
+        workId: entry.workId,
+      });
+    }
     await this.dependencies.events?.emit("work.plan.committed", dispatchPlanId, {
       workbenchId: input.workbenchId,
       dispatchPlanId,
       workIds: items.map((item) => item.workId),
     });
-    return { dispatchPlanId, waves };
+    return {
+      denied: denied.map(({ reasonCode, workKey }) => ({ reasonCode, workKey })),
+      dispatchPlanId,
+      waves,
+    };
   }
 
   /** Creates a new, independent Work for an essential gap; historical Work is evidence, never a DAG key. */

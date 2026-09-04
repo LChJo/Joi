@@ -144,18 +144,30 @@ describe("work orchestration outbox", () => {
     expect(JSON.stringify(diagnostics)).not.toContain("写入");
   });
 
-  it("keeps denied candidates persisted without creating a side effect", async () => {
+  it("still commits an attempt for a denied candidate so delivery can recheck it, and reports the denial", async () => {
     const committed: CommittedWorkPlan[] = [];
+    const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
     const service = new WorkOrchestrationService({
       clock: new TestClock(), ids: new TestIds(),
+      diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
-      policy: { evaluate: async () => ({ allowed: false, reason: "workspace_untrusted" }) },
+      policy: { evaluate: async () => ({ allowed: false, reason: "workspace_lease_conflict" }) },
       repository: { commit: async (plan) => { committed.push(plan); } },
     });
-    await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
+    const result = await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
+    // The denied Work still gets a claimable attempt so the delivery-side recheck decides
+    // its fate (retry a transient lease conflict, land a terminal FAILED otherwise) instead
+    // of silently jamming the goal. The denial is surfaced to the caller and diagnostics.
+    expect(result.denied).toEqual([{ reasonCode: "workspace_lease_conflict", workKey: "write" }]);
     expect(committed[0]?.items).toHaveLength(1);
-    expect(committed[0]?.attempts).toEqual([]);
-    expect(committed[0]?.policyResults).toEqual([expect.objectContaining({ allowed: false, reason: "workspace_untrusted" })]);
+    expect(committed[0]?.attempts).toHaveLength(1);
+    expect(committed[0]?.policyResults).toEqual([expect.objectContaining({ allowed: false, reason: "workspace_lease_conflict" })]);
+    expect(diagnostics.find((entry) => entry.event === "joi.work.plan_policy_denied")?.fields).toMatchObject({
+      partnerId: "partner-a",
+      reasonCode: "workspace_lease_conflict",
+      workbenchId: "workbench-1",
+    });
+    expect(diagnostics.find((entry) => entry.event === "joi.work.plan.committed")?.fields).toMatchObject({ deniedCount: 1 });
   });
 
   it("does not commit a partial plan when the Workbench workspace must be selected first", async () => {

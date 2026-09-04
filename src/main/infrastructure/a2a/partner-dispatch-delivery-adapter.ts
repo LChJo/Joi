@@ -33,6 +33,7 @@ import type { WorkbenchExecutionContextReader } from "../../application/ports/wo
 import type { WorkResultRepository } from "../../application/ports/work-results.js";
 import type { WorkAcceptanceCheck } from "../../application/ports/work-orchestration.js";
 import type { WorkVerifier } from "../../application/ports/work-verification.js";
+import { DomainError } from "../../domain/errors.js";
 import { createWorkResult } from "../../domain/work/work-result.js";
 import type { WorkAccessMode } from "../../domain/work/work.js";
 import type { SqliteWorkspaceLeaseManager } from "../persistence/sqlite-workspace-lease-manager.js";
@@ -229,7 +230,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         await this.#complete(row, "FAILED", { artifacts: [], body: "Remote partners cannot execute Workbench file work." });
         return "skipped_terminal";
       }
-      throw new Error(reason);
+      throw new DomainError(reason, "The dispatch policy denied this Work at delivery time.");
     }
 
     let leaseExpiresAt: string | undefined;
@@ -241,7 +242,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         workId: row.work_id,
         workspaceRef: row.workspace_ref,
       });
-      if (lease === null) throw new Error(denialReason(deliveryPolicy(row, true)));
+      if (lease === null) throw new DomainError(denialReason(deliveryPolicy(row, true)), "The workspace lease could not be acquired.");
       leaseExpiresAt = lease.expiresAt;
       leaseWorkId = row.work_id;
     }
@@ -310,6 +311,19 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       if (leaseWorkId !== undefined) await this.dependencies.leases.release(leaseWorkId);
       throw error;
     }
+  }
+
+  async abandon(input: { claim: PartnerDispatchClaimRow; reasonCode: string }): Promise<void> {
+    let row = this.#load(input.claim.dispatchAttemptId);
+    if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
+    if (attemptTerminal(row.status) || (row.work_status === "CANCELED" && row.run_status === null)) return;
+    await this.#ensureRun(row);
+    row = this.#load(input.claim.dispatchAttemptId) ?? row;
+    await this.#complete(row, "FAILED", {
+      artifacts: [],
+      body: `Dispatch preparation kept failing with '${input.reasonCode}' and the bounded retry window is exhausted. Inspect the workspace, lease or partner configuration, then create a new attempt.`,
+      failure: { phase: "EXECUTION", reasonCode: input.reasonCode, retryable: false, sideEffectState: "NONE" },
+    });
   }
 
   async run(prepared: PreparedDispatch, options?: { signal?: AbortSignal }): Promise<DispatchRunOutput> {

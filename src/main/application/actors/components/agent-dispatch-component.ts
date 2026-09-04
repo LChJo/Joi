@@ -23,6 +23,8 @@ const LEASE_RENEW_MARGIN_MILLIS = 60_000;
 const DEFAULT_WATCHDOG_MILLIS = 32 * 60_000;
 /** A converge that keeps failing to persist is eventually force-cleared instead of jamming the slot. */
 const MAX_COMPLETE_FAILURES = 10;
+/** After this many failed preparation attempts the dispatch is abandoned with a terminal FAILED result. */
+const MAX_PREPARE_ATTEMPTS = 6;
 
 interface InFlightRun {
   abortController: AbortController;
@@ -243,6 +245,27 @@ export class AgentDispatchComponent implements ActorComponent {
       try {
         prepared = await this.dependencies.delivery.prepare(claim);
       } catch (error) {
+        const errorCode = runtimeDiagnosticErrorCode(error);
+        if (claim.attemptCount >= MAX_PREPARE_ATTEMPTS && this.dependencies.delivery.abandon !== undefined) {
+          // Preparation keeps failing; end the dispatch with a visible terminal result
+          // instead of retrying forever and silently jamming the goal. An abandon failure
+          // falls through to the normal backoff so the claim is never leaked.
+          try {
+            await this.dependencies.delivery.abandon({ claim, reasonCode: errorCode });
+            await this.dependencies.outbox.completeOutbox(claim.outboxId, this.dependencies.owner);
+            emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.prepare_exhausted", {
+              workbenchId: this.dependencies.workbenchId,
+              dispatchAttemptId: claim.dispatchAttemptId,
+              errorCode,
+              outboxId: claim.outboxId,
+              partnerId: this.dependencies.partnerId,
+            });
+            this.#retryAvailableAt = ctx.now.getTime() + 5_000;
+            return;
+          } catch {
+            // Fall through: the release below restores the claim for a later retry.
+          }
+        }
         const delayMinutes = Math.min(60, 2 ** Math.min(claim.attemptCount, 6));
         await this.dependencies.outbox.releaseOutbox({
           availableAt: new Date(ctx.now.getTime() + delayMinutes * 60_000).toISOString(),
@@ -252,7 +275,7 @@ export class AgentDispatchComponent implements ActorComponent {
         this.#retryAvailableAt = ctx.now.getTime() + 5_000;
         emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.prepare_failed", {
           workbenchId: this.dependencies.workbenchId,
-          errorCode: runtimeDiagnosticErrorCode(error),
+          errorCode,
           outboxId: claim.outboxId,
           partnerId: this.dependencies.partnerId,
         });

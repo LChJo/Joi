@@ -129,6 +129,13 @@ export interface RuntimeDiagnosticEventMap {
     outboxId: string;
     partnerId: string;
   };
+  "joi.agent.prepare_exhausted": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    errorCode: string;
+    outboxId: string;
+    partnerId: string;
+  };
   "joi.agent.lease_lost": {
     workbenchId: string;
     dispatchAttemptId: string;
@@ -277,12 +284,21 @@ export interface RuntimeDiagnosticEventMap {
   "joi.work.plan.committed": {
     attemptCount: number;
     workbenchId: string;
+    deniedCount: number;
     dependencyCount: number;
     dispatchPlanId: string;
     inputId: string;
     turnId: string;
     waveCount: number;
     workCount: number;
+  };
+  "joi.work.plan_policy_denied": {
+    workbenchId: string;
+    dispatchPlanId: string;
+    partnerId: string;
+    reasonCode: string;
+    turnId: string;
+    workId: string;
   };
   "joi.work.dispatch_planned": {
     actionId: string;

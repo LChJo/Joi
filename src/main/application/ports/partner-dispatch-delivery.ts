@@ -64,6 +64,12 @@ export interface WorkAttachmentStagerPort {
  * engine run and converge the terminal result on later ticks.
  */
 export interface PartnerDispatchDelivery {
+  /**
+   * Ends a dispatch whose preparation kept failing after the bounded retry window:
+   * persists a terminal FAILED result so the Work reaches a visible end state instead
+   * of retrying forever. The caller acknowledges the outbox afterwards.
+   */
+  abandon?(input: { claim: PartnerDispatchClaimRow; reasonCode: string }): Promise<void>;
   prepare(claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal">;
   run(prepared: PreparedDispatch, options?: { signal?: AbortSignal }): Promise<DispatchRunOutput>;
   complete(input: { output: DispatchRunOutput & { kind: "terminal" }; prepared: PreparedDispatch }): Promise<{ isAuthoritative: boolean; resultId: string }>;

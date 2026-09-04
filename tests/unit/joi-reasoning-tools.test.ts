@@ -115,7 +115,7 @@ function makeTools(options: {
         planCalls.push(input);
         if (options.workspaceBlocked === true) throw new DomainError("workbench_workspace_not_ready", "workspace required");
         if (options.planError !== undefined) throw options.planError;
-        return { dispatchPlanId: "plan_1", waves: [] };
+        return { denied: [], dispatchPlanId: "plan_1", waves: [] };
       },
       reassign: async (input) => ({
         ...input,

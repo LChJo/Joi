@@ -163,6 +163,37 @@ describe("partner dispatch attachment staging", () => {
     }
   });
 
+  it("lands a terminal FAILED result when an exhausted preparation is abandoned", async () => {
+    const fixture = await openFixture();
+    try {
+      const spy = { calls: [] as unknown[] };
+      const delivery = makeDelivery(fixture, spy);
+      const claim = { attemptCount: 6, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
+      await delivery.abandon({ claim, reasonCode: "workspace_lease_conflict" });
+
+      const facts = fixture.database.transaction((connection) => ({
+        attempt: connection.prepare("SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'").get(),
+        result: connection.prepare("SELECT status, summary FROM work_results").get(),
+        run: connection.prepare("SELECT status FROM partner_runs WHERE work_id = 'work_1'").get(),
+        work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get(),
+      }));
+      expect(facts).toMatchObject({
+        attempt: { status: "FAILED" },
+        result: { status: "FAILED" },
+        run: { status: "FAILED" },
+        work: { status: "FAILED" },
+      });
+      expect((facts.result as { summary: string }).summary).toContain("workspace_lease_conflict");
+      expect(spy.calls).toEqual([]);
+
+      // Abandoning an already-terminal attempt is a no-op.
+      await expect(delivery.abandon({ claim, reasonCode: "workspace_lease_conflict" })).resolves.toBeUndefined();
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("does not stage attachments for work without file access", async () => {
     const fixture = await openFixture();
     try {
