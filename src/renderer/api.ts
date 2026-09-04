@@ -18,6 +18,7 @@ import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardD
 import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
+import { randomUuid } from "./random-uuid";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -77,11 +78,11 @@ export class DigitalLifeApi {
   listWorkbenches() { return this.request<{ items: WorkbenchDto[] }>("/api/v1/workbenches"); }
   listAutomations() { return this.request<{ items: AutomationDto[] }>("/api/v1/automations"); }
   getAutomation(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`); }
-  createAutomation(body: CreateAutomationInput) { return this.request<AutomationDto>("/api/v1/automations", { body: body as unknown as Record<string, unknown>, idempotencyKey: crypto.randomUUID(), method: "POST" }); }
-  revealAutomationPrompt(routineId: string) { return this.request<{ prompt: string }>(`/api/v1/automations/${encodeURIComponent(routineId)}/prompt/reveal`, { idempotencyKey: crypto.randomUUID(), method: "POST" }); }
-  updateAutomation(routineId: string, body: UpdateAutomationInput) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { body: body as unknown as Record<string, unknown>, idempotencyKey: crypto.randomUUID(), method: "PATCH" }); }
-  runAutomationNow(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}/run-now`, { idempotencyKey: crypto.randomUUID(), method: "POST" }); }
-  deleteAutomation(routineId: string) { return this.request<undefined>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { idempotencyKey: crypto.randomUUID(), method: "DELETE" }); }
+  createAutomation(body: CreateAutomationInput) { return this.request<AutomationDto>("/api/v1/automations", { body: body as unknown as Record<string, unknown>, idempotencyKey: randomUuid(), method: "POST" }); }
+  revealAutomationPrompt(routineId: string) { return this.request<{ prompt: string }>(`/api/v1/automations/${encodeURIComponent(routineId)}/prompt/reveal`, { idempotencyKey: randomUuid(), method: "POST" }); }
+  updateAutomation(routineId: string, body: UpdateAutomationInput) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { body: body as unknown as Record<string, unknown>, idempotencyKey: randomUuid(), method: "PATCH" }); }
+  runAutomationNow(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}/run-now`, { idempotencyKey: randomUuid(), method: "POST" }); }
+  deleteAutomation(routineId: string) { return this.request<undefined>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { idempotencyKey: randomUuid(), method: "DELETE" }); }
   createWorkbench(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
     return this.request<WorkbenchDto>("/api/v1/workbenches", { body, method: "POST" });
   }
@@ -148,7 +149,7 @@ export class DigitalLifeApi {
         ...(options.attachmentIds === undefined || options.attachmentIds.length === 0 ? {} : { attachmentIds: options.attachmentIds }),
         ...(options.workbenchId === undefined ? {} : { workbenchId: options.workbenchId }),
       },
-      idempotencyKey: crypto.randomUUID(), method: "POST",
+      idempotencyKey: randomUuid(), method: "POST",
     });
   }
   clarifyJoiMessage(inputId: string, resolution: { actionChoice?: "RESUME"; partnerId?: string; workbenchId?: string; text?: string }) {
@@ -295,7 +296,7 @@ export class DigitalLifeApi {
   listLives() { return this.request<{ items: LifeDto[] }>("/api/v1/lives?limit=100"); }
   getLife(lifeId: string) { return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`); }
   createLife(body: Record<string, unknown>) {
-    return this.request<LifeDto>("/api/v1/lives", { body, idempotencyKey: crypto.randomUUID(), method: "POST" });
+    return this.request<LifeDto>("/api/v1/lives", { body, idempotencyKey: randomUuid(), method: "POST" });
   }
   updateLife(lifeId: string, body: Record<string, unknown>) {
     return this.request<LifeDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}`, { body, method: "PATCH" });
@@ -320,7 +321,7 @@ export class DigitalLifeApi {
   emergencyStopAll() { return this.request<undefined>("/api/v1/runtime/emergency-stop", { method: "POST" }); }
   sendMessage(lifeId: string, text: string, attachmentIds?: string[]) {
     return this.request<LifeEventDto>(`/api/v1/lives/${encodeURIComponent(lifeId)}/messages`, {
-      body: { text, ...(attachmentIds === undefined || attachmentIds.length === 0 ? {} : { attachmentIds }) }, idempotencyKey: crypto.randomUUID(), method: "POST",
+      body: { text, ...(attachmentIds === undefined || attachmentIds.length === 0 ? {} : { attachmentIds }) }, idempotencyKey: randomUuid(), method: "POST",
     });
   }
   async uploadAttachment(lifeId: string, file: File) {

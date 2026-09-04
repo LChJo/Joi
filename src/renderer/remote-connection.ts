@@ -1,5 +1,6 @@
 import type { JoiAcceptedMessageDto, JoiHomeFeedDto } from "../shared/joi.js";
 import { REMOTE_PROTOCOL_VERSION, type RemoteCommandResponse, type RemoteEncryptedFrame, type RemoteHandshakeReady } from "../shared/remote.js";
+import { randomUuid } from "./random-uuid.js";
 import type { RemoteJoiConnection } from "./RemoteJoiApp.js";
 
 interface RemoteBrowserCredential { deviceId: string; hostId: string; secret: string }
@@ -127,12 +128,12 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
 
   status() { return this.#status; }
   async feed(): Promise<JoiHomeFeedDto> {
-    const response = await this.#request({ kind: "feed.get", requestId: crypto.randomUUID() });
+    const response = await this.#request({ kind: "feed.get", requestId: randomUuid() });
     if (response.error !== undefined || response.result === undefined) throw new Error(response.error?.code ?? "remote_response_invalid");
     return response.result as JoiHomeFeedDto;
   }
   async sendMessage(text: string, idempotencyKey: string): Promise<JoiAcceptedMessageDto> {
-    const response = await this.#request({ idempotencyKey, kind: "message.send", requestId: crypto.randomUUID(), text });
+    const response = await this.#request({ idempotencyKey, kind: "message.send", requestId: randomUuid(), text });
     if (response.error !== undefined || response.result === undefined) throw new Error(response.error?.code ?? "remote_response_invalid");
     return response.result as JoiAcceptedMessageDto;
   }

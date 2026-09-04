@@ -2,6 +2,7 @@ import { ArrowUpIcon, CheckCircleIcon, CircleNotchIcon, WarningCircleIcon } from
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
 import type { JoiAcceptedMessageDto, JoiHomeFeedDto } from "../shared/joi.js";
+import { randomUuid } from "./random-uuid.js";
 
 export interface RemoteJoiConnection {
   feed(): Promise<JoiHomeFeedDto>;
@@ -66,8 +67,7 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
     setSending(true);
     setNotice("正在交给 joi…");
     try {
-      const randomId = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
-      await connection.sendMessage(text, `remote:${randomId}`);
+      await connection.sendMessage(text, `remote:${randomUuid()}`);
       setDraft("");
       setNotice("joi 已收到，正在安排。");
       await refresh();

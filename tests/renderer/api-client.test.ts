@@ -76,6 +76,37 @@ describe("renderer API client", () => {
     fetchMock.mockRestore();
   });
 
+  it("sends idempotent writes without randomUUID", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() => response({
+      acceptedAt: "2026-09-04T00:00:00.000Z",
+      inputId: "input-lan",
+      status: "PENDING",
+    }, 202));
+    const getRandomValues = vi.fn(<T extends ArrayBufferView | null>(array: T): T => {
+      if (array instanceof Uint8Array) array.fill(0);
+      return array;
+    });
+    vi.stubGlobal("crypto", { getRandomValues });
+
+    try {
+      const api = new DigitalLifeApi("http://192.168.1.20:43130");
+      api.setCsrfToken("csrf");
+      await expect(api.sendJoiMessage("hi from lan")).resolves.toMatchObject({ inputId: "input-lan" });
+
+      expect(getRandomValues).toHaveBeenCalledTimes(1);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("http://192.168.1.20:43130/api/v1/joi/messages");
+      expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({
+        "idempotency-key": "00000000-0000-4000-8000-000000000000",
+        "x-csrf-token": "csrf",
+      });
+      expect(fetchMock.mock.calls[0]?.[1]?.method).toBe("POST");
+    } finally {
+      vi.unstubAllGlobals();
+      fetchMock.mockRestore();
+    }
+  });
+
   it("normalizes API errors, empty responses, and desktop bootstrap", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock.mockImplementationOnce(() => response(undefined, 204));
