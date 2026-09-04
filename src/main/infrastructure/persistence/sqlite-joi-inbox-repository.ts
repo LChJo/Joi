@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { JoiInboxRecord, JoiInboxRepository, JoiInboxStatus } from "../../application/ports/joi-inbox.js";
 import type { JoiCoordinatorStore, JoiPendingInput } from "../../application/ports/joi-coordinator.js";
+import type { Clock } from "../../application/ports/runtime-store.js";
 import type { JoiActivityDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import { normalizeCompletionSummary } from "../../application/partners/agent-conversation-presentation.js";
@@ -130,7 +131,11 @@ function mapRow(row: Row): JoiInboxRecord {
 }
 
 export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordinatorStore {
-  constructor(private readonly database: TransactionalDatabase) {}
+  readonly #clock: Clock;
+
+  constructor(private readonly database: TransactionalDatabase, clock?: Clock) {
+    this.#clock = clock ?? { now: () => new Date() };
+  }
 
   async create(record: JoiInboxRecord): Promise<JoiInboxRecord> {
     return this.database.transaction((connection) => {
@@ -188,7 +193,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
               AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = rs.original_input_id
                                 AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(inputId, action.result_revision);
           if (currentOutcome === undefined) return null;
-          const now = new Date().toISOString();
+          const now = this.#clock.now().toISOString();
           if (patch.actionChoice === "CONTINUE") {
             const authorized = connection.prepare(`UPDATE joi_harness_maps
               SET continuation_allowance = continuation_allowance + 2, revision = revision + 1, updated_at = ?
@@ -218,7 +223,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       } else if (patch.actionChoice !== undefined) {
         return null;
       }
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       const nextWorkbench = patch.workbenchId ?? current.workbenchId;
       const result = connection.prepare(`UPDATE joi_inbox_messages
@@ -242,7 +247,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       if (row === undefined) return null;
       const current = mapRow(row);
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       if (current.status === "CONSUMED") {
         // A consumed goal can still hold live work: a partner may have paused with a
         // question whose answer turn never resumed the work. The home feed shows such
@@ -294,7 +299,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             SELECT 1 FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
             WHERE w.input_id = i.input_id AND pr.status = 'RUNNING'
           )`).all() as { input_id?: unknown }[];
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       let canceled = 0;
       for (const row of rows) {
         if (typeof row.input_id !== 'string') continue;
@@ -316,7 +321,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       throw new Error("joi_input_failure_invalid");
     }
     return this.database.transaction((connection) => {
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'CONSUMED', canceled_at = NULL, failed_at = ?, failure_reason_code = ?,
           failure_count = ?, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
@@ -342,7 +347,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const activeExecution = connection.prepare(`SELECT 1 FROM work_items
         WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(inputId);
       if (activeExecution !== undefined) return null;
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET body = ?, status = 'PENDING', canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL,
@@ -379,7 +384,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE s.original_input_id = ? AND s.revision > 0`).get(inputId);
         if (currentOutcome === undefined) return null;
       }
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET dismissed_at = ?, updated_at = ?
         WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(now, now, inputId);
@@ -534,7 +539,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async enqueueSystemSignal(input: { workbenchId: string; signalId: string; type: string }): Promise<string> {
     const inputId = `joi_signal_input:${input.signalId}`;
-    const now = new Date().toISOString();
+    const now = this.#clock.now().toISOString();
     this.database.transaction((connection) => connection.prepare(`INSERT OR IGNORE INTO joi_inbox_messages
       (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
       VALUES (?, ?, ?, 'PENDING', ?, ?, ?)`
@@ -562,10 +567,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const raised = connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = ?, clarification_prompt = ?, updated_at = ?
         WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(
-        reasonCode, prompt ?? null, new Date().toISOString(), inputId,
+        reasonCode, prompt ?? null, this.#clock.now().toISOString(), inputId,
       );
       if (action !== undefined && raised.changes === 1) {
-        const now = new Date().toISOString();
+        const now = this.#clock.now().toISOString();
         connection.prepare(`INSERT INTO joi_user_action_requests
           (action_id, input_id, work_id, run_id, kind, status, reason_code, prompt, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
@@ -581,7 +586,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async completeResolvedAction(input: { actionId: string; inputId: string; turnId: string }): Promise<void> {
     this.database.transaction((connection) => {
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       const action = connection.prepare(`UPDATE joi_user_action_requests
         SET status = 'APPLIED', applied_at = COALESCE(applied_at, ?), updated_at = ?
         WHERE action_id = ? AND input_id = ? AND status IN ('RESOLVED', 'APPLIED')`).run(
@@ -622,7 +627,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion) {
     return this.database.transaction((connection) => {
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       const review = connection.prepare(`SELECT goal_input_id FROM joi_inbox_messages
         WHERE input_id = ? AND input_id LIKE 'joi_harness_review:goal:%'`).get(inputId) as Row | undefined;
       if (typeof review?.goal_input_id === "string") {
@@ -719,7 +724,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       WHERE turn_id = ?`).run(
       progress.formalOutputStarted ? 1 : 0,
       progress.sideEffectStarted ? 1 : 0,
-      new Date().toISOString(),
+      this.#clock.now().toISOString(),
       turnId,
     ));
   }
@@ -727,13 +732,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async updateTurnSource(turnId: string, sourceRevisionId: string, modelRevisionId: string): Promise<void> {
     this.database.transaction((connection) => connection.prepare(`UPDATE joi_turns
       SET source_revision_id = ?, model_revision_id = ?, updated_at = ? WHERE turn_id = ?`).run(
-      sourceRevisionId, modelRevisionId, new Date().toISOString(), turnId,
+      sourceRevisionId, modelRevisionId, this.#clock.now().toISOString(), turnId,
     ));
   }
 
   async failTurn(inputId: string, turnId: string): Promise<void> {
     this.database.transaction((connection) => {
-      const now = new Date().toISOString();
+      const now = this.#clock.now().toISOString();
       connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
       // Never kick a row that is waiting on the user back into the scheduler: an orphan
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).

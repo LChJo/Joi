@@ -1,3 +1,4 @@
+-- joi:migration foreign-keys-off
 -- Distinguish a safe next evidence layer from a hard blocker, and persist the
 -- number of continuation layers the user has authorized for each goal map.
 ALTER TABLE joi_harness_maps ADD COLUMN continuation_allowance INTEGER NOT NULL DEFAULT 2

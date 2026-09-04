@@ -4,6 +4,7 @@ import path from "node:path";
 
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
+import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
@@ -16,7 +17,7 @@ describe("sqlite joi inbox clarify", () => {
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "恢复", personaSummary: "persona", projectLabel: "joi", scopeSummary: "恢复等待工作" });
       const partner = await fixture.partners.add({ capabilities: [], displayName: "实现搭档", kind: "local-pi", skills: [], tools: [] });
-      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
       const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
       const accepted = await inbox.accept({ idempotencyKey: "key-action-question", text: "继续实现", workbenchId: workbench.workbenchId });
       const now = fixture.clock.now().toISOString();
@@ -104,8 +105,9 @@ describe("sqlite joi inbox clarify", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      const repository = new SqliteJoiInboxRepository(database);
-      const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
+      const clock = new TestClock();
+      const repository = new SqliteJoiInboxRepository(database, clock);
+      const inbox = new JoiInboxService({ clock, ids: new TestIds(), repository });
       database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
         (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
@@ -131,8 +133,9 @@ describe("sqlite joi inbox clarify", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-text-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      const repository = new SqliteJoiInboxRepository(database);
-      const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
+      const clock = new TestClock();
+      const repository = new SqliteJoiInboxRepository(database, clock);
+      const inbox = new JoiInboxService({ clock, ids: new TestIds(), repository });
       const accepted = await inbox.accept({ idempotencyKey: "key-2", text: "归属？" });
       await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
       const clarified = await repository.clarify(accepted.inputId, { text: "是登录模块" });
@@ -148,8 +151,9 @@ describe("sqlite joi inbox clarify", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-choice-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      const repository = new SqliteJoiInboxRepository(database);
-      const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
+      const clock = new TestClock();
+      const repository = new SqliteJoiInboxRepository(database, clock);
+      const inbox = new JoiInboxService({ clock, ids: new TestIds(), repository });
       const accepted = await inbox.accept({ idempotencyKey: "key-partner", text: "分析任务" });
       await repository.requireClarification(accepted.inputId, "question_required", "选择搭档？");
       expect(await repository.clarify(accepted.inputId, {
@@ -173,8 +177,9 @@ describe("sqlite joi inbox clarify", () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-question-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      const repository = new SqliteJoiInboxRepository(database);
-      const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
+      const clock = new TestClock();
+      const repository = new SqliteJoiInboxRepository(database, clock);
+      const inbox = new JoiInboxService({ clock, ids: new TestIds(), repository });
       const accepted = await inbox.accept({ idempotencyKey: "key-question", text: "请规划发布" });
       await repository.requireClarification(accepted.inputId, "question_required", "生产发布时间是什么时候？");
       await repository.completeInput(accepted.inputId, "turn-question");
@@ -194,7 +199,7 @@ describe("sqlite joi inbox clarify", () => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "研究", personaSummary: "persona", projectLabel: "joi", scopeSummary: "研究" });
-      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
       const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
       const accepted = await inbox.accept({ idempotencyKey: "key-goal-continuation", text: "研究 AI 资讯", workbenchId: workbench.workbenchId });
       const now = fixture.clock.now().toISOString();
@@ -228,6 +233,9 @@ describe("sqlite joi inbox clarify", () => {
         goal: { clarification_reason_code: null, status: "CONSUMED" },
         map: { continuation_allowance: 4, status: "ACTIVE" },
       });
+      // Granting two more layers must make the same CONTINUE revision reviewable again.
+      expect(await new SqliteJoiHarnessRepository(fixture.database).listReviewDigests())
+        .toEqual([expect.objectContaining({ goalInputId: accepted.inputId, resultRevision: 3 })]);
 
       fixture.database.transaction((connection) => {
         connection.prepare("UPDATE joi_inbox_messages SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'goal_continuation_required' WHERE input_id = ?").run(accepted.inputId);

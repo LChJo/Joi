@@ -4,6 +4,10 @@ import { join } from "node:path";
 
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
 
+// Every case spawns real `node -e` subprocesses through the bash tool; cold starts
+// exceed vitest's default 5s per-test timeout under load, so widen it for this file.
+vi.setConfig({ testTimeout: 30_000 });
+
 describe("Pi coding tool workspace scope", () => {
   it("passes a broad non-secret baseline but rejects unknown environment variables", async () => {
     const root = mkdtempSync(join(tmpdir(), "joi-pi-env-scope-"));

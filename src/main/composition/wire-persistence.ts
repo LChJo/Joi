@@ -44,7 +44,7 @@ export function wirePersistence(input: {
     dispatchClaims: new SqlitePartnerDispatchClaims(database),
     joiHarnessRepository: new SqliteJoiHarnessRepository(database),
     joiHomeFeedRepository: new SqliteJoiHomeFeedRepository(database),
-    joiInboxRepository: new SqliteJoiInboxRepository(database),
+    joiInboxRepository: new SqliteJoiInboxRepository(database, clock),
     modelSourceRepository: new SqliteModelSourceRepository(database),
     partnerInstanceMessageStore: new SqlitePartnerInstanceMessageStore(database),
     partnerInstanceRepository: new SqlitePartnerInstanceRepository(database),

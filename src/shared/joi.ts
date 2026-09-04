@@ -121,7 +121,7 @@ export interface WorkbenchDetailDto {
     completedAt: string;
     goalId: string;
     resultRevision: number;
-    status: "COMPLETED" | "FAILED" | "CANCELED";
+    status: "COMPLETED" | "COMPLETED_WITH_GAPS" | "FAILED" | "CANCELED";
     summary: string;
     title: string;
   }[];

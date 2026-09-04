@@ -10,8 +10,14 @@ import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistenc
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { latestMigrationVersion, openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+
+let latestSchemaVersion: number | undefined;
+async function expectedSchemaVersion(): Promise<number> {
+  latestSchemaVersion ??= await latestMigrationVersion(path.resolve("resources/migrations"));
+  return latestSchemaVersion;
+}
 
 async function copyMigrationsThrough(destination: string, maximumVersion: number): Promise<void> {
   await mkdir(destination, { recursive: true });
@@ -43,7 +49,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(51);
+      expect(upgraded.inspect().schemaVersion).toBe(await expectedSchemaVersion());
       const rows = upgraded.transaction((connection) => connection.prepare(`SELECT input_id, canceled_at, failed_at,
         failure_count, failure_reason_code FROM joi_inbox_messages ORDER BY input_id`).all());
       expect(rows).toEqual([
@@ -377,7 +383,7 @@ describe("JOI-01 non-destructive migration", () => {
           WHERE workbench_id = 'workbench-unknown'`).get() as { active_work_json: string },
         work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-unknown'").get(),
       }));
-      expect(upgraded.inspect().schemaVersion).toBe(51);
+      expect(upgraded.inspect().schemaVersion).toBe(await expectedSchemaVersion());
       expect(facts.work).toEqual({ status: "FAILED" });
       expect(JSON.parse(facts.projection.active_work_json)).toEqual([]);
       expect(facts.memberCount).toBe(0);
@@ -400,7 +406,7 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(51);
+      expect(database.inspect().schemaVersion).toBe(await expectedSchemaVersion());
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_goal_outcomes)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "disposition", notnull: 1 })]));
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_harness_maps)").all()))
@@ -526,7 +532,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(51);
+      expect(upgraded.inspect().schemaVersion).toBe(await expectedSchemaVersion());
       expect(upgraded.transaction((connection) => ({
         action: connection.prepare(`SELECT action_id, work_id, run_id, result_revision, kind, status
           FROM joi_user_action_requests WHERE action_id = 'action-continuation-upgrade'`).get(),
@@ -573,7 +579,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(51);
+      expect(upgraded.inspect().schemaVersion).toBe(await expectedSchemaVersion());
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         workbenches: (connection.prepare("SELECT COUNT(*) AS count FROM workbenches").get() as { count: number }).count,

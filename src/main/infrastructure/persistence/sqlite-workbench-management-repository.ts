@@ -77,7 +77,10 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
           goalId: required(item, "input_id"),
           resultRevision: requiredNumber(item, "result_revision"),
           status: item.canceled_at === null || item.canceled_at === undefined
-            ? item.disposition === "BLOCKED" ? "FAILED" as const : "COMPLETED" as const
+            ? item.disposition === "BLOCKED" ? "FAILED" as const
+              // A user-accepted gap must never be presented as full attainment (ADR 0017).
+              : item.disposition === "ACCEPTED_WITH_GAPS" ? "COMPLETED_WITH_GAPS" as const
+                : "COMPLETED" as const
             : "CANCELED" as const,
           summary: sanitizeAgentConversationText(required(item, "completion_summary")),
           title: safeTitle(required(item, "body")),

@@ -71,6 +71,37 @@ describe("Workbench Agent and joi home projections", () => {
     }
   });
 
+  it("never presents an accepted-with-gaps outcome as full completion", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "分析", personaSummary: "persona", projectLabel: "joi", scopeSummary: "综合" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-accepted', 'key-accepted', '接受有缺口的结论', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-accepted', 'goal-accepted', ?, 'session-accepted', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-accepted', ?, 'goal-accepted', '已有分析', '{}', 'READ', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES ('goal-accepted', 1, 1, ?)`).run(now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES ('goal-accepted', 1, 'ACCEPTED_WITH_GAPS', '横评已形成，但近七天来源不足。', ?, ?)`).run(now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+      expect(feed.goals[0]).toMatchObject({ completionSummary: "横评已形成，但近七天来源不足。", status: "COMPLETED_WITH_GAPS" });
+      expect((await fixture.workbenchManagement.get(workbench.workbenchId)).recentOutcomes[0])
+        .toMatchObject({ goalId: "goal-accepted", status: "COMPLETED_WITH_GAPS" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("creates cards only for new local instances and keeps resident cards non-deletable", async () => {
     const fixture = await createRuntimeFixture();
     try {

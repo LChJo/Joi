@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { latestMigrationVersion, openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("SQLite partner registry", () => {
@@ -99,7 +99,7 @@ describe("SQLite partner registry", () => {
       database.close();
 
       database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
-      expect(database.inspect()).toMatchObject({ mode: "read-write", schemaVersion: 51 });
+      expect(database.inspect()).toMatchObject({ mode: "read-write", schemaVersion: await latestMigrationVersion(path.resolve("resources/migrations")) });
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(partner_revisions)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "engine_config_json" })]));
       await expect(new SqlitePartnerRegistryRepository(database).getActive(legacy.partnerId)).resolves.toMatchObject({

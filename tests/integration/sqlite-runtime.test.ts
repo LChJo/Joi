@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import { LifeService } from "../../src/main/application/lives/life-service";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
+import { latestMigrationVersion, openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture";
 
 describe("SQLite runtime foundation", () => {
@@ -14,7 +14,7 @@ describe("SQLite runtime foundation", () => {
         busyTimeout: 5000,
         foreignKeys: true,
         journalMode: "wal",
-        schemaVersion: 51,
+        schemaVersion: await latestMigrationVersion(path.resolve("resources/migrations")),
       });
       const agent = await fixture.agents.createShell({ cardUrl: "http://192.168.1.20/agent-card.json", name: "主 Agent" });
       await fixture.agents.activateForReadiness(agent.agentConnectionId);

@@ -376,7 +376,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
         <article className="context-card"><h3>工作区</h3><p><strong>{detail.workspace.displayName}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">重建受管目录</button></div></article>
         <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
-        <article className="context-card"><h3>最近结果总结</h3>{detail.recentOutcomes.length === 0 ? <p>还没有目标级结果总结。</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{item.status} · {new Date(item.completedAt).toLocaleString()}</small></li>)}</ul>}</article>
+        <article className="context-card"><h3>最近结果总结</h3>{detail.recentOutcomes.length === 0 ? <p>还没有目标级结果总结。</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{recentOutcomeLabel(item.status)} · {new Date(item.completedAt).toLocaleString()}</small></li>)}</ul>}</article>
       </div>}
     </>}
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
@@ -680,6 +680,13 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   if (status === "COMPLETED_WITH_GAPS") return "已完成（有缺口）";
   if (status === "FAILED") return "处理失败";
   return "已取消";
+}
+
+function recentOutcomeLabel(status: WorkbenchDetailDto["recentOutcomes"][number]["status"]): string {
+  if (status === "COMPLETED_WITH_GAPS") return "已完成（有缺口）";
+  if (status === "FAILED") return "处理失败";
+  if (status === "CANCELED") return "已取消";
+  return "已完成";
 }
 
 const ACTIVE_GOAL_STATUSES: ReadonlySet<JoiGoalCardDto["status"]> = new Set(["ARRANGING", "ARRANGED", "RUNNING", "REVIEWING", "EXTENDING", "FINALIZING"]);

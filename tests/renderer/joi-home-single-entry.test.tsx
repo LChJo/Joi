@@ -62,7 +62,7 @@ describe("Workbench context center", () => {
     expect(screen.getByText("发布文档已经完成，风险已收口。")).toBeInTheDocument();
     const recentOutcomes = screen.getByRole("heading", { name: "最近结果总结" }).closest("article");
     expect(recentOutcomes).toHaveTextContent("更新发布文档");
-    expect(recentOutcomes).toHaveTextContent("COMPLETED");
+    expect(recentOutcomes).toHaveTextContent("已完成");
     expect(recentOutcomes).not.toHaveTextContent("发布检查完成");
     expect(document.body.textContent).not.toContain("PRIVATE_PERSONA_BODY");
     expect(document.body.textContent).not.toMatch(/[A-Za-z]:\\/u);

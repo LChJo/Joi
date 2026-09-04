@@ -82,6 +82,9 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (number(row, "outcome_current") === 1) {
     if (row.outcome_disposition === "BLOCKED") return "FAILED";
     if (row.outcome_disposition === "ACCEPTED_WITH_GAPS") return "COMPLETED_WITH_GAPS";
+    // A CONTINUE outcome is one evidence layer, never a terminal attainment. The map is
+    // adopted within one harness tick; until then project review instead of completion.
+    if (row.outcome_disposition === "CONTINUE") return "REVIEWING";
     return "COMPLETED";
   }
   if (text(row, "inbox_status") === "CONSUMED") return "COMPLETED";

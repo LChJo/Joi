@@ -1,9 +1,13 @@
+import path from "node:path";
+
+import { latestMigrationVersion } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture } from "../support/runtime-fixture";
 
 describe("safe operations projections", () => {
   it("returns only counts, versions, states and non-sensitive backup metadata", async () => {
     const fixture = await createRuntimeFixture();
     try {
+      const schemaVersion = await latestMigrationVersion(path.resolve("resources/migrations"));
       const diagnostics = await fixture.operations.diagnostics();
       const manifest = await fixture.operations.createBackupManifest({ appVersion: "0.1.0", artifactCount: 0, artifactTotalBytes: 0 });
       const serialized = JSON.stringify({ diagnostics, manifest });
@@ -11,11 +15,11 @@ describe("safe operations projections", () => {
       expect(diagnostics).toMatchObject({
         database: { journalMode: "wal", state: "open" },
         runtime: { pendingOutbox: 0 },
-        schemaVersion: 51,
+        schemaVersion,
       });
       expect(manifest).toMatchObject({
         appVersion: "0.1.0",
-        schemaVersion: 51,
+        schemaVersion,
         secretsExcluded: true,
       });
       expect(manifest.manifestHash).toMatch(/^[a-f0-9]{64}$/);
