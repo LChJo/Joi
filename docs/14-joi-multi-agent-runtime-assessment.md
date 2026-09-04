@@ -438,3 +438,50 @@ WakeRecoveryService → src/ 内零引用，仅 tests/integration/wake-audit-rep
 至于「多 agent 框架的结论生产效果」：收集与裁决环节可信（去重、权威性、revision 门禁、恢复期不发布过期结论都做对了），分解与验证环节不可信（R1 + §5.2）。也就是说，**joi 能可靠地把 agent 产出汇总成一个结论，但不能可靠地保证那个结论所依赖的前置工作真的按序完成过、真的通过了验收**。
 
 最后需要重申：本文 25 条风险未经独立验证，且全部并发与恢复类判断没有运行时证据。§9.2 的第 1、2、9 项是把这份评估从「静态推断」推进到「实证」的关键。
+
+---
+
+## 11. 修复状态（2026-09-04，分支 `joi/runtime-hardening`）
+
+本节记录针对本评估的修复落地情况。除注明外，均通过 `typecheck` / `lint` / `test`（1098 用例）/ `check:boundaries` 门禁。
+
+### 11.1 已确证风险（§8）
+
+| 风险 | 处置 | 落地阶段 |
+|---|---|---|
+| R1 依赖 DAG 不门控派发 | **已修复**：认领门控（`listClaimable` 增加「前置全部 COMPLETED」NOT EXISTS）+ 失败级联（递归 CTE 把下游 Work 级联 CANCELED，覆盖权威结果置 FAILED、work_cancel、input 取消、commit 时前置已终态四个触发点）；新增迁移 052（依赖反查索引 + `work_items.cancel_reason`）与 `joi.work.dependency_cascade` 诊断。 | P4 |
+| R2 策略拒绝静默吞掉 | **已修复**：被拒 Work 也创建 attempt+outbox，交交付侧复检——`workspace_lease_conflict` 经 outbox 指数退避重试、`a2a_workspace_access_forbidden` 落终态 FAILED；重试 6 次后 `abandon` 落可见终态；`joi.work.plan_policy_denied` 诊断、`work_dispatch` 返回 `denied`。 | P3 |
+| R3/R4 旧 Wake 子系统死代码 | **已删除**：移除 `application/wakes/`、`domain/wakes/`、`a2a-wake-agent-executor.ts` 及其测试；`wakes` 等表因被 `memory_revisions`/`delegations` 外键引用而保留。 | P1 |
+| R5 工作区租约无续租 | **已修复**：`SqliteWorkspaceLeaseManager.renew()`；`AgentDispatchComponent` 每 tick 心跳续租（剩余 <60s 时续回 5 分钟），租约丢失则中止 run 并落非重放 UNKNOWN；`prepare` 取租约后的抛错路径补释放；TTL 10→5 分钟。 | P2-A |
+| R6 native run 无死线 | **已修复**：`RunDeadlineGuard`（总死线 30 分钟 + 空闲死线 20 分钟，逐事件刷新）接入 claude-code/codex 引擎；组件看门狗 32 分钟兜底并可经 AbortSignal 真杀；`partner_run_timed_out`/`partner_run_idle_timed_out` 首次落地；孤儿判死阈值 10→20 分钟，消除与 15 分钟卡死中止的倒挂。 | P2-B |
+| R7 根 tick 丢弃 error | **已修复**：根定时器 catch 保留错误对象，发 `joi.runtime.tick_failed`（稳定码）并仍写 stderr。 | P6 |
+
+### 11.2 验证环节弱点（§5.2）
+
+**已修复**（P5）：`work_dispatch` schema 与 `plan()` 权威双层强制每个 Work 至少一个验收项（`work_acceptance_checks_required`）；`intent_json` 损坏不再静默降级为「无验收」，改为收敛终态 `work_brief_invalid`；合成输入 join `work_result_verifications` 并按 `verification=PASSED/FAILED/NOT_REQUIRED` 区分已验证证据与未验证自述，`work_read_result` 首块返回验收结论。
+
+### 11.3 可观测性缺口（§7）
+
+**已修复**（P6）：错误码归一化优先携带 partner-run reasonCode（仍不引入 message 文本）；`connection_breakers` 过期行惰性清理、`openBreakers` 只计未过期行；A2A 通道埋点（`invocation_started/settled`、`breaker_opened`、`recover_failed`、`recover_not_ready`）且 `recover()` 不再穿透断路器冷却窗口；`JoiRhythmComponent` 记录逐调度器连续失败计数；RESIDENT 实例上限只计 RESIDENT 行。
+
+### 11.4 其余未复核风险（§8 未复核簇）对抗验证
+
+对 11 个剩余风险簇各派 1 个对抗验证 agent（默认立场「不是真问题」，从代码核实/可达性/影响度三角度核查），结果：**7 条确证、3 条驳回、1 条存疑**（P7 修复确证项）。
+
+| 风险 | 判定 | 处置 |
+|---|---|---|
+| failTurn 无视 `side_effect_started` 回置 PENDING | 确证 | **已修复**：有副作用或存活 Work 时不回 PENDING，改置 CONSUMED 经存活 Work/结果合成收敛，杜绝中途失败/崩溃恢复后的重复派发。 |
+| Turn 崩溃后无「活跃 Work」守卫、`plan()` 不幂等 | 确证 | **已修复**：同上（共用 `failTurn` 守卫）。 |
+| `finalizeOrphan` 绕过闸门 | 确证 | **已修复**：对已取消 Work 不恢复、不写结果，直接收敛终态。 |
+| `recover()` 丢弃远端输出 | 确证 | **已修复**：`recover()` 返回 `{invocation, output}`，适配器消费，已完成远端工作不再塌成空结果。 |
+| 协作者/恢复路径产物绕过配额 | 确证 | **已修复（部分）**：A2A 派发与交互应答两处调用点补 `artifactScope` 纳入配额；重启后经 `recover()` 的产物作用域持久化仍为遗留项。 |
+| 每流式块 O(N²) 全量重写会话快照 | 确证 | **已修复**：实时快照节流（≤1/500ms，展示性数据；权威会话由完成时一次性重写）。 |
+| `startTurn` finally 保存失败吞掉真实错误 | 确证 | **已修复**：保存失败降级为非致命，原始 prompt 错误始终原样重抛。 |
+| 同一 invocation 被双驱动 | **驳回** | outbox 按 kind 分区（`excludeKinds:["partner.dispatch"]`），两消费者互斥。 |
+| 一次 429/503 落不可重放 UNKNOWN | **驳回** | 无副作用时落可重试 FAILED；有副作用不自动重放是设计契约；有断路器/恢复链兜底。 |
+| `delivery.complete` 抛错卡死槽位 | **驳回** | P2-B 已有有界重试 + 强制清槽 + 孤儿回收兜底。 |
+| `dispatchFailureReason` 置位不清除 | 存疑 | **已加固**：成功的 `work_dispatch` 清除早前失败原因；主要触发路径本已有守卫。 |
+
+### 11.5 测试卫生（§6.3 / §9.2）
+
+**已修复**（P0）：`-- joi:migration foreign-keys-off` 标记、schema 版本改用 `latestMigrationVersion()`（消除逐迁移改测试）、两处 flake（子进程超时、`SqliteJoiInboxRepository` 注入时钟）、契约测试补行为断言。
