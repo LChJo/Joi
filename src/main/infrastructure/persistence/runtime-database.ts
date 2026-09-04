@@ -1958,19 +1958,6 @@ class SqliteRuntimeStore implements RuntimeStore {
     return row === undefined ? null : mapInvocation(row);
   }
 
-  async linkWakeTurnInvocation(turnId: string, invocationId: string, now: string): Promise<void> {
-    const result = this.database.prepare(`
-      UPDATE wake_turns SET invocation_id = ?, last_activity_at = ? WHERE turn_id = ? AND invocation_id IS NULL`)
-      .run(invocationId, now, turnId);
-    if (result.changes === 0) {
-      const row = asRow(this.database.prepare("SELECT invocation_id FROM wake_turns WHERE turn_id = ?").get(turnId));
-      if (row === undefined) throw new DomainError("wake_turn_not_found", "Wake Turn was not found.");
-      if (optionalTextValue(row, "invocation_id") !== invocationId) {
-        throw new DomainError("wake_turn_invocation_conflict", "Wake Turn is already linked to another invocation.");
-      }
-    }
-  }
-
   async getPrimaryAgentContext(input: { affairKey: string; agentConnectionId: string; lifeId: string }): Promise<PrimaryAgentContextRecord | null> {
     const row = asRow(this.database.prepare(`
       SELECT * FROM primary_agent_contexts WHERE life_id = ? AND affair_key = ? AND agent_connection_id = ?`)

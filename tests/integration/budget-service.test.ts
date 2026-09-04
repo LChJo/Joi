@@ -1,9 +1,9 @@
 import { EventService } from "../../src/main/application/events/event-service";
 import { LifeRuntimeService } from "../../src/main/application/lives/life-runtime-service";
 import { BudgetService } from "../../src/main/application/rhythm/budget-service";
-import { WakeArbiter } from "../../src/main/application/wakes/wake-arbiter";
 import { InMemoryEventSignal } from "../../src/main/infrastructure/runtime/in-memory-event-signal";
 import { createRuntimeFixture } from "../support/runtime-fixture";
+import { claimTestWake } from "../support/wake-fixture";
 
 describe("daily Life budgets", () => {
   it("pauses autonomous work while allowing a committed human message when invocation budget remains", async () => {
@@ -18,8 +18,8 @@ describe("daily Life budgets", () => {
       fixture.database.transaction((database) => database.prepare(`
         UPDATE daily_budgets SET autonomous_wakes_limit = 0, invocations_limit = 1 WHERE life_id = ? AND local_date = '2026-07-15'`)
         .run(life.lifeId));
-      const arbiter = new WakeArbiter({ clock: fixture.clock, ids: fixture.ids, store: fixture.database.store });
-      expect(await arbiter.claim(life.lifeId, "runtime-budget")).toBeNull();
+      const claim = () => claimTestWake({ clock: fixture.clock, ids: fixture.ids, leaseOwner: "runtime-budget", lifeId: life.lifeId, store: fixture.database.store });
+      expect(await claim()).toBeNull();
       expect((await fixture.lives.get(life.lifeId)).state).toBe("BUDGET_PAUSED");
 
       await events.ingest({ lifeId: life.lifeId, payload: { text: "请现在处理" }, source: "human", type: "human.message" });
@@ -27,7 +27,7 @@ describe("daily Life budgets", () => {
       const budgets = new BudgetService({ clock: fixture.clock, events, notify, store: fixture.database.store });
       expect(await budgets.tick()).toEqual([life.lifeId]);
       expect(notify).toHaveBeenCalledWith(life.lifeId);
-      expect(await arbiter.claim(life.lifeId, "runtime-budget")).not.toBeNull();
+      expect(await claim()).not.toBeNull();
       expect(await fixture.database.store.getDailyBudget(life.lifeId, "2026-07-15", fixture.clock.now().toISOString()))
         .toMatchObject({ autonomousWakesUsed: 0, invocationsUsed: 1 });
       await expect(budgets.extend(life.lifeId, { autonomousWakes: 1, invocations: 2 }))

@@ -1,5 +1,3 @@
-import type { A2aRequestPart } from "./a2a-ports.js";
-import type { UserAttachmentRecord } from "./attachment-ports.js";
 import type { JoiAttachmentDto } from "../../../shared/joi.js";
 
 export interface ArtifactReadPort {
@@ -8,13 +6,6 @@ export interface ArtifactReadPort {
     filename: string;
     mimeType: string;
   }>;
-}
-
-export interface UserAttachmentPort {
-  filePartsFromWake(payload: Record<string, unknown>): Promise<A2aRequestPart[]>;
-  upload(input: { bytes: Uint8Array; filename: string; lifeId: string; mimeType: string }): Promise<
-    Pick<UserAttachmentRecord, "attachmentId" | "createdAt" | "filename" | "lifeId" | "mimeType" | "size">
-  >;
 }
 
 export interface JoiAttachmentPort {

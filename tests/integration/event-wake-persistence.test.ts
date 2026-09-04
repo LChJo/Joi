@@ -1,8 +1,8 @@
 import { EventService } from "../../src/main/application/events/event-service";
 import { LifeRuntimeService } from "../../src/main/application/lives/life-runtime-service";
-import { WakeArbiter } from "../../src/main/application/wakes/wake-arbiter";
 import { InMemoryEventSignal } from "../../src/main/infrastructure/runtime/in-memory-event-signal";
 import { createRuntimeFixture } from "../support/runtime-fixture";
+import { claimTestWake } from "../support/wake-fixture";
 
 async function createLife(fixture: Awaited<ReturnType<typeof createRuntimeFixture>>) {
   const agent = await fixture.agents.createShell({ cardUrl: "http://192.168.1.20/card.json", name: "主 Agent" });
@@ -19,7 +19,6 @@ function services(fixture: Awaited<ReturnType<typeof createRuntimeFixture>>) {
   const signal = new InMemoryEventSignal();
   const events = new EventService({ clock: fixture.clock, ids: fixture.ids, publisher: fixture.sse, signal, store: fixture.database.store });
   return {
-    arbiter: new WakeArbiter({ clock: fixture.clock, ids: fixture.ids, store: fixture.database.store }),
     events,
     lifeRuntime: new LifeRuntimeService({ clock: fixture.clock, events, store: fixture.database.store }),
     signal,
@@ -59,11 +58,11 @@ describe("persistent Life events and Wake arbitration", () => {
       const unknown = await runtime.events.ingest({ lifeId: life.lifeId, payload: { data: true }, source: "system", type: "extension.unknown" });
       expect(unknown.status).toBe("DEFERRED");
 
-      const bundle = await runtime.arbiter.claim(life.lifeId, "runtime-a");
+      const bundle = await claimTestWake({ clock: fixture.clock, ids: fixture.ids, leaseOwner: "runtime-a", lifeId: life.lifeId, store: fixture.database.store });
       expect(bundle).not.toBeNull();
       expect(bundle?.events.map((event) => event.type)).toEqual(["system.birth", "human.message"]);
       expect(bundle?.events.every((event) => event.status === "CLAIMED")).toBe(true);
-      expect(await runtime.arbiter.claim(life.lifeId, "runtime-b")).toBeNull();
+      expect(await claimTestWake({ clock: fixture.clock, ids: fixture.ids, leaseOwner: "runtime-b", lifeId: life.lifeId, store: fixture.database.store })).toBeNull();
       expect((await fixture.database.store.getLifeEvent(future.eventId))?.status).toBe("PENDING");
       expect((await fixture.lives.get(life.lifeId)).state).toBe("RUNNING");
     } finally {
@@ -77,7 +76,7 @@ describe("persistent Life events and Wake arbitration", () => {
     const runtime = services(fixture);
     try {
       await runtime.lifeRuntime.start(life.lifeId);
-      const wake = await runtime.arbiter.claim(life.lifeId, "runtime-a");
+      const wake = await claimTestWake({ clock: fixture.clock, ids: fixture.ids, leaseOwner: "runtime-a", lifeId: life.lifeId, store: fixture.database.store });
       if (wake === null) throw new Error("missing Wake");
       const received: string[] = [];
       const unsubscribe = runtime.signal.subscribe(wake.wake.wakeId, (eventId) => received.push(eventId));
@@ -109,29 +108,13 @@ describe("persistent Life events and Wake arbitration", () => {
     }
   });
 
-  it("returns an empty QUEUED Life to SLEEPING without invoking an Agent", async () => {
-    const fixture = await createRuntimeFixture();
-    const life = await createLife(fixture);
-    const runtime = services(fixture);
-    try {
-      await fixture.database.store.setLifeState(life.lifeId, "QUEUED", fixture.clock.now().toISOString());
-      expect(await runtime.arbiter.claim(life.lifeId, "runtime-empty")).toBeNull();
-      expect(await fixture.lives.get(life.lifeId)).toMatchObject({ state: "SLEEPING" });
-      // SSE projection frozen (ADR 0009): state changes are observable via the facts tables only.
-      await expect(fixture.database.store.listSseEvents(0, 100)).resolves.toEqual([]);
-      expect(await fixture.lives.get(life.lifeId)).toMatchObject({ state: "SLEEPING" });
-    } finally {
-      await fixture.close();
-    }
-  });
-
   it("emergency-stops an active Wake and returns its uncommitted events to the queue", async () => {
     const fixture = await createRuntimeFixture();
     const life = await createLife(fixture);
     const runtime = services(fixture);
     try {
       await runtime.lifeRuntime.start(life.lifeId);
-      const bundle = await runtime.arbiter.claim(life.lifeId, "runtime-a");
+      const bundle = await claimTestWake({ clock: fixture.clock, ids: fixture.ids, leaseOwner: "runtime-a", lifeId: life.lifeId, store: fixture.database.store });
       if (bundle === null) throw new Error("missing Wake");
       expect(await runtime.lifeRuntime.emergencyStop(life.lifeId)).toMatchObject({ state: "PAUSED" });
       expect(await fixture.database.store.getWake(bundle.wake.wakeId)).toMatchObject({ status: "CANCELED" });

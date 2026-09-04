@@ -1,12 +1,12 @@
-import { access, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { access, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
-import { AttachmentService } from "../../src/main/infrastructure/artifacts/user-attachment-service";
 import { EventService } from "../../src/main/application/events/event-service";
 import { LifeFileDeletionService } from "../../src/main/infrastructure/artifacts/life-file-deletion-service";
 import { LifeService } from "../../src/main/application/lives/life-service";
 import { InMemoryEventSignal } from "../../src/main/infrastructure/runtime/in-memory-event-signal";
-import { createRuntimeFixture } from "../support/runtime-fixture";
+import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
 
 const card = {
   authentication: "bearer" as const,
@@ -23,8 +23,25 @@ const card = {
   transport: "JSONRPC" as const,
 };
 
+// Mirrors the row shape the retired AttachmentService.upload produced, so the
+// EventService/LifeFileDeletionService validation paths stay fully exercised.
+async function seedAttachment(fixture: RuntimeFixture, input: { bytes: Uint8Array; filename: string; lifeId: string; mimeType: string }) {
+  const attachmentId = fixture.ids.next("attachment");
+  const relativePath = path.join("user-attachments", `${attachmentId}.bin`);
+  fixture.database.transaction((database) => database.prepare(`
+    INSERT INTO user_attachments
+      (attachment_id, life_id, event_id, filename, mime_type, size_bytes, relative_path, sha256, created_at)
+    VALUES (?, ?, NULL, ?, ?, ?, ?, ?, ?)`)
+    .run(attachmentId, input.lifeId, input.filename, input.mimeType, input.bytes.byteLength, relativePath,
+      createHash("sha256").update(input.bytes).digest("hex"), fixture.clock.now().toISOString()));
+  const target = path.join(fixture.root, "artifacts", relativePath);
+  await mkdir(path.dirname(target), { recursive: true });
+  await writeFile(target, input.bytes);
+  return { attachmentId, relativePath };
+}
+
 describe("managed user attachments", () => {
-  it("atomically scopes attachments to one message and revalidates bytes before A2A forwarding", async () => {
+  it("atomically scopes attachments to one message and binds them to the ingested event", async () => {
     const fixture = await createRuntimeFixture();
     await fixture.database.store.saveOnboardedAgent({
       agentConnectionId: "agent_attachment", card, cardSnapshotId: "card_attachment", credentialId: "credential_attachment",
@@ -36,54 +53,29 @@ describe("managed user attachments", () => {
     const otherLife = await fixture.lives.create({
       mainAgentConnectionId: "agent_attachment", name: "隔离生命", personaSummary: "不能越权读取", timezone: "UTC",
     });
-    const attachments = new AttachmentService({
-      clock: fixture.clock, ids: fixture.ids, rootDirectory: path.join(fixture.root, "artifacts"), store: fixture.database.store,
-    });
     const events = new EventService({
       clock: fixture.clock, ids: fixture.ids, publisher: fixture.sse, signal: new InMemoryEventSignal(), store: fixture.database.store,
     });
     try {
-      const uploaded = await attachments.upload({
+      const seeded = await seedAttachment(fixture, {
         bytes: new TextEncoder().encode("hello attachment"), filename: "brief.txt", lifeId: life.lifeId, mimeType: "text/plain",
       });
       await expect(events.ingest({
-        attachmentIds: [uploaded.attachmentId], lifeId: otherLife.lifeId, payload: { text: "越权" }, source: "human", type: "human.message",
+        attachmentIds: [seeded.attachmentId], lifeId: otherLife.lifeId, payload: { text: "越权" }, source: "human", type: "human.message",
       })).rejects.toMatchObject({ code: "attachment_not_found" });
 
       const event = await events.ingest({
-        attachmentIds: [uploaded.attachmentId], lifeId: life.lifeId, payload: { text: "请阅读" }, source: "human", type: "human.message",
+        attachmentIds: [seeded.attachmentId], lifeId: life.lifeId, payload: { text: "请阅读" }, source: "human", type: "human.message",
       });
       expect(event.payload).toMatchObject({
-        attachments: [{ attachmentId: uploaded.attachmentId, filename: "brief.txt", mimeType: "text/plain", size: 16 }], text: "请阅读",
+        attachments: [{ attachmentId: seeded.attachmentId, filename: "brief.txt", mimeType: "text/plain", size: 16 }], text: "请阅读",
       });
       await expect(events.ingest({
-        attachmentIds: [uploaded.attachmentId], lifeId: life.lifeId, payload: { text: "重复使用" }, source: "human", type: "human.message",
+        attachmentIds: [seeded.attachmentId], lifeId: life.lifeId, payload: { text: "重复使用" }, source: "human", type: "human.message",
       })).rejects.toMatchObject({ code: "attachment_already_used" });
 
-      const wakePayload = { events: [{ payload: event.payload }], life: { lifeId: life.lifeId } };
-      await expect(attachments.filePartsFromWake(wakePayload)).resolves.toEqual([
-        { bytes: Buffer.from("hello attachment").toString("base64"), kind: "file", mimeType: "text/plain", name: "brief.txt" },
-      ]);
-      const stored = await fixture.database.store.getUserAttachment(uploaded.attachmentId);
+      const stored = await fixture.database.store.getUserAttachment(seeded.attachmentId);
       expect(stored).toMatchObject({ eventId: event.eventId, lifeId: life.lifeId });
-      if (stored === null) throw new Error("attachment missing");
-      await writeFile(path.join(fixture.root, "artifacts", stored.relativePath), "tampered");
-      await expect(attachments.filePartsFromWake(wakePayload)).rejects.toMatchObject({ code: "attachment_integrity_failed" });
-    } finally {
-      await fixture.close();
-    }
-  });
-
-  it("enforces filename, per-file, count and aggregate limits below the UI", async () => {
-    const fixture = await createRuntimeFixture();
-    const attachments = new AttachmentService({
-      clock: fixture.clock, ids: fixture.ids, rootDirectory: path.join(fixture.root, "artifacts"), store: fixture.database.store,
-    });
-    try {
-      await expect(attachments.upload({ bytes: new Uint8Array(), filename: "../escape.txt", lifeId: "missing", mimeType: "text/plain" }))
-        .rejects.toMatchObject({ code: "attachment_filename_invalid" });
-      await expect(attachments.upload({ bytes: new Uint8Array(10 * 1024 * 1024 + 1), filename: "large.bin", lifeId: "missing", mimeType: "application/octet-stream" }))
-        .rejects.toMatchObject({ code: "attachment_too_large" });
     } finally {
       await fixture.close();
     }
@@ -99,17 +91,16 @@ describe("managed user attachments", () => {
       mainAgentConnectionId: "agent_delete_files", name: "待删除生命", personaSummary: "验证文件清理", timezone: "UTC",
     });
     const rootDirectory = path.join(fixture.root, "artifacts");
-    const attachments = new AttachmentService({ clock: fixture.clock, ids: fixture.ids, rootDirectory, store: fixture.database.store });
     const events = new EventService({
       clock: fixture.clock, ids: fixture.ids, publisher: fixture.sse, signal: new InMemoryEventSignal(), store: fixture.database.store,
     });
     const files = new LifeFileDeletionService({ ids: fixture.ids, rootDirectory, store: fixture.database.store });
     try {
-      const uploaded = await attachments.upload({
+      const seeded = await seedAttachment(fixture, {
         bytes: new TextEncoder().encode("delete me"), filename: "delete.txt", lifeId: life.lifeId, mimeType: "text/plain",
       });
-      await events.ingest({ attachmentIds: [uploaded.attachmentId], lifeId: life.lifeId, payload: { text: "保存" }, source: "human", type: "human.message" });
-      const record = await fixture.database.store.getUserAttachment(uploaded.attachmentId);
+      await events.ingest({ attachmentIds: [seeded.attachmentId], lifeId: life.lifeId, payload: { text: "保存" }, source: "human", type: "human.message" });
+      const record = await fixture.database.store.getUserAttachment(seeded.attachmentId);
       if (record === null) throw new Error("attachment missing");
       const filePath = path.join(rootDirectory, record.relativePath);
       expect(await fixture.lives.getDeletionImpact(life.lifeId)).toMatchObject({ attachments: 1, managedBytes: 9 });
@@ -122,7 +113,7 @@ describe("managed user attachments", () => {
       const deletingLives = new LifeService({ clock: fixture.clock, files, ids: fixture.ids, publisher: fixture.sse, store: fixture.database.store });
       await deletingLives.delete(life.lifeId);
       await expect(access(filePath)).rejects.toBeDefined();
-      expect(await fixture.database.store.getUserAttachment(uploaded.attachmentId)).toBeNull();
+      expect(await fixture.database.store.getUserAttachment(seeded.attachmentId)).toBeNull();
     } finally {
       await fixture.close();
     }

@@ -146,7 +146,6 @@ export interface InvocationStore {
     request: { contextId?: string; extensions?: string[]; parts: A2aRequestPart[] };
   }): Promise<InvocationRecord>;
   getInvocation(invocationId: string): Promise<InvocationRecord | null>;
-  linkWakeTurnInvocation(turnId: string, invocationId: string, now: string): Promise<void>;
   updateInvocation(invocationId: string, patch: {
     acceptedAt?: string;
     contextId?: string;

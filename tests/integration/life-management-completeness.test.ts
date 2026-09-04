@@ -1,8 +1,8 @@
 import { EventService } from "../../src/main/application/events/event-service";
 import { LifeRuntimeService } from "../../src/main/application/lives/life-runtime-service";
-import { WakeArbiter } from "../../src/main/application/wakes/wake-arbiter";
 import { InMemoryEventSignal } from "../../src/main/infrastructure/runtime/in-memory-event-signal";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
+import { claimTestWake } from "../support/wake-fixture";
 
 async function createActiveAgent(fixture: RuntimeFixture, suffix: string) {
   const agent = await fixture.agents.createShell({
@@ -21,7 +21,6 @@ function runtimeServices(fixture: RuntimeFixture) {
     store: fixture.database.store,
   });
   return {
-    arbiter: new WakeArbiter({ clock: fixture.clock, ids: fixture.ids, publisher: fixture.sse, store: fixture.database.store }),
     runtime: new LifeRuntimeService({ clock: fixture.clock, events, store: fixture.database.store }),
   };
 }
@@ -72,9 +71,9 @@ describe("complete Life management", () => {
         personaSummary: "测试暂停",
         timezone: "UTC",
       });
-      const { arbiter, runtime } = runtimeServices(fixture);
+      const { runtime } = runtimeServices(fixture);
       await runtime.start(life.lifeId);
-      const claimed = await arbiter.claim(life.lifeId, "runtime-test");
+      const claimed = await claimTestWake({ clock: fixture.clock, ids: fixture.ids, leaseOwner: "runtime-test", lifeId: life.lifeId, store: fixture.database.store });
       expect(claimed?.wake.status).toBe("RUNNING");
       if (claimed === null) throw new Error("Expected birth event to create an active Wake.");
 
@@ -95,9 +94,9 @@ describe("complete Life management", () => {
       const life = await fixture.lives.create({
         mainAgentConnectionId: agent.agentConnectionId, name: "单次停止", personaSummary: "保持后续调度", timezone: "UTC",
       });
-      const { arbiter, runtime } = runtimeServices(fixture);
+      const { runtime } = runtimeServices(fixture);
       await runtime.start(life.lifeId);
-      const claimed = await arbiter.claim(life.lifeId, "runtime-test");
+      const claimed = await claimTestWake({ clock: fixture.clock, ids: fixture.ids, leaseOwner: "runtime-test", lifeId: life.lifeId, store: fixture.database.store });
       if (claimed === null) throw new Error("Expected an active Wake.");
       expect(await runtime.stopRun(life.lifeId)).toMatchObject({ state: "SLEEPING" });
       expect(await fixture.database.store.getWake(claimed.wake.wakeId)).toMatchObject({ status: "CANCELED" });
