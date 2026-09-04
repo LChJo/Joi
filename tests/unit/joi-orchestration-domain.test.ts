@@ -15,6 +15,20 @@ import {
 } from "../../src/main/domain/partners/partner.js";
 
 describe("JOI-01 pure domain", () => {
+  it("keeps legacy non-empty local tool lists narrowed when no mode is supplied", () => {
+    expect(createPartnerRevision({
+      capabilities: [],
+      createdAt: "2026-09-03T10:00:00.000Z",
+      displayName: "Legacy local",
+      kind: "local-pi",
+      partnerId: "partner_legacy",
+      partnerRevisionId: "revision_legacy",
+      registryRevision: 1,
+      skills: [],
+      tools: ["read"],
+    }).toolPolicyMode).toBe("CUSTOM");
+  });
+
   it("keeps Workbench as context only and creates immutable profile revisions", () => {
     const workbench = createWorkbench({
       workbenchId: "workbench_1",

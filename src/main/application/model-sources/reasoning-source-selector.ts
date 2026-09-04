@@ -1,17 +1,17 @@
 import { DomainError } from "../../domain/errors.js";
 import { classifySourceFailure, pinModelSourceForTurn, type SourceFailureKind } from "../../domain/model-sources/model-source.js";
-import type { ModelSourceRecord, ModelSourceRepository } from "../ports/model-source-ports.js";
-import type { ModelSourceValidator } from "../ports/model-source-ports.js";
+import type { ModelSourceHealthRevision, ModelSourceRecord, ModelSourceRepository, ModelSourceValidator } from "../ports/model-source-ports.js";
 import type { Clock } from "../ports/runtime-store.js";
 import { classifyHttp403Detail } from "../partners/partner-run-failure.js";
 
 type SourcePin = ReturnType<typeof pinModelSourceForTurn>;
+type SelectorRepository = Pick<ModelSourceRepository, "list"> & Partial<Pick<ModelSourceRepository, "get" | "save" | "saveHealthIfCurrent">>;
 
 export class ReasoningSourceSelector {
-  readonly #probes = new Map<string, Promise<ModelSourceRecord>>();
+  readonly #probes = new Map<string, Promise<ModelSourceRecord | undefined>>();
 
   constructor(
-    private readonly repository: Pick<ModelSourceRepository, "get" | "list" | "save"> | Pick<ModelSourceRepository, "list">,
+    private readonly repository: SelectorRepository,
     private readonly options?: { clock: Pick<Clock, "now">; freshnessMillis?: number; validator: ModelSourceValidator },
   ) {}
 
@@ -38,7 +38,8 @@ export class ReasoningSourceSelector {
 
   /** Removes a failed auth route from dispatch immediately, then runs one coalesced no-tool diagnostic probe. */
   async reportRunFailure(sourceId: string, error: unknown): Promise<void> {
-    if (this.options === undefined || !("get" in this.repository) || !("save" in this.repository)) return;
+    if (this.options === undefined || this.repository.get === undefined
+      || (this.repository.save === undefined && this.repository.saveHealthIfCurrent === undefined)) return;
     const status = numericStatus(error);
     if (status !== 401 && status !== 403) return;
     const current = await this.repository.get(sourceId);
@@ -48,13 +49,15 @@ export class ReasoningSourceSelector {
       : "";
     const reasonCode = status === 401 ? "auth_failed" : classifyHttp403Detail(detail);
     const now = this.options.clock.now().toISOString();
-    await this.repository.save({
+    const marked = await this.#saveHealth({
       ...withoutHealthText(current),
       lastValidatedAt: now,
       reasonCode,
       source: { ...current.source, status: "NEEDS_AUTH", updatedAt: now },
-    });
-    await this.#probe(current, true);
+    }, current);
+    if (!marked) return;
+    const latest = await this.repository.get(sourceId);
+    if (latest !== null) await this.#probe(latest, true);
   }
 
   async selectFallback(input: {
@@ -65,10 +68,15 @@ export class ReasoningSourceSelector {
     turnId: string;
   }): Promise<SourcePin | null> {
     if (input.formalOutputStarted || input.sideEffectStarted || !classifySourceFailure(input.failure).fallbackAllowed) return null;
-    const sources = await this.#readySources();
+    const sources = (await this.repository.list()).sort((left, right) => left.order - right.order);
     const currentIndex = sources.findIndex((record) => record.source.sourceId === input.currentSourceId);
-    const fallback = currentIndex < 0 ? undefined : sources[currentIndex + 1];
-    return fallback === undefined ? null : pinModelSourceForTurn(fallback.source, input.turnId);
+    if (currentIndex < 0) return null;
+    for (const candidate of sources.slice(currentIndex + 1)) {
+      if (candidate.source.status !== "READY") continue;
+      const fresh = await this.#fresh(candidate);
+      if (fresh?.source.status === "READY") return pinModelSourceForTurn(fresh.source, input.turnId);
+    }
+    return null;
   }
 
   async #readySources(): Promise<ModelSourceRecord[]> {
@@ -85,8 +93,8 @@ export class ReasoningSourceSelector {
     return this.#probe(record, false);
   }
 
-  async #probe(record: ModelSourceRecord, force: boolean): Promise<ModelSourceRecord> {
-    if (this.options === undefined || !("save" in this.repository)) return record;
+  async #probe(record: ModelSourceRecord, force: boolean): Promise<ModelSourceRecord | undefined> {
+    if (this.options === undefined || (this.repository.save === undefined && this.repository.saveHealthIfCurrent === undefined)) return record;
     const options = this.options;
     const repository = this.repository;
     const source = record.source;
@@ -107,12 +115,29 @@ export class ReasoningSourceSelector {
         ...(result.error === undefined ? {} : { lastError: result.error.slice(0, 1_000) }),
         source: { ...record.source, status: result.status, updatedAt: result.validatedAt },
       };
-      await repository.save(updated);
-      return updated;
+      if (await this.#saveHealth(updated, record)) return updated;
+      return repository.get === undefined ? undefined : await repository.get(source.sourceId) ?? undefined;
     })();
     this.#probes.set(key, probe);
     try { return await probe; }
     finally { if (this.#probes.get(key) === probe) this.#probes.delete(key); }
+  }
+
+  async #saveHealth(record: ModelSourceRecord, expected: ModelSourceRecord): Promise<boolean> {
+    const revision: ModelSourceHealthRevision = {
+      credentialVersion: expected.source.activeSourceRevision.credentialVersion,
+      modelRevisionId: expected.source.activeModelRevision.modelRevisionId,
+      sourceRevisionId: expected.source.activeSourceRevision.sourceRevisionId,
+      sourceUpdatedAt: expected.source.updatedAt,
+    };
+    if (this.repository.saveHealthIfCurrent !== undefined) return this.repository.saveHealthIfCurrent(record, revision);
+    if (this.repository.save === undefined) return false;
+    if (this.repository.get !== undefined) {
+      const current = await this.repository.get(expected.source.sourceId);
+      if (current === null || !sameRevision(current, expected)) return false;
+    }
+    await this.repository.save(record);
+    return true;
   }
 }
 
@@ -130,6 +155,14 @@ function withoutHealthText(record: ModelSourceRecord): Omit<ModelSourceRecord, "
 
 function safeReasonSuffix(reasonCode: string): string {
   return /^[a-z0-9_]{1,80}$/u.test(reasonCode) ? reasonCode : "not_ready";
+}
+
+function sameRevision(left: ModelSourceRecord, right: ModelSourceRecord): boolean {
+  return left.source.sourceId === right.source.sourceId
+    && left.source.activeSourceRevision.sourceRevisionId === right.source.activeSourceRevision.sourceRevisionId
+    && left.source.activeModelRevision.modelRevisionId === right.source.activeModelRevision.modelRevisionId
+    && left.source.activeSourceRevision.credentialVersion === right.source.activeSourceRevision.credentialVersion
+    && left.source.updatedAt === right.source.updatedAt;
 }
 
 function numericStatus(error: unknown): number | undefined {

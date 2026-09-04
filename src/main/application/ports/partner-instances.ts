@@ -1,4 +1,5 @@
 import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partner.js";
+import type { ModelSourceTurnPin } from "../../domain/model-sources/model-source.js";
 import type { PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "./partner-execution.js";
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 import type { NativeAgentEvent } from "./native-agent-events.js";
@@ -51,6 +52,8 @@ export interface ResidentTurnInput {
   revision: PartnerRevision;
   skillEnvironmentKeys: readonly string[];
   skillSection: string;
+  /** Source selected by the manager's side-effect-free preflight, when available. */
+  sourcePin?: ModelSourceTurnPin;
 }
 
 export interface PartnerExecutionContext {
@@ -80,7 +83,7 @@ export interface PartnerEngineRuntime {
   evictFromMemory(instanceId: string): void;
   health(): Promise<{ available: boolean; reason?: string }>;
   /** Side-effect-free readiness gate executed before an Agent instance or tools are created. */
-  preflight?(input: { revision: PartnerRevision; turnId: string }): Promise<void>;
+  preflight?(input: { revision: PartnerRevision; turnId: string }): Promise<ModelSourceTurnPin | undefined>;
   /** User-triggered end-to-end availability check. Implementations must return only stable safe reason codes. */
   probe?(input?: { modelId?: string }): Promise<{ available: boolean; reasonCode?: string }>;
   runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;

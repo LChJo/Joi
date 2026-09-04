@@ -2,7 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { ModelSourceRecord, ModelSourceRepository } from "../../application/ports/model-source-ports.js";
+import type { ModelSourceHealthRevision, ModelSourceRecord, ModelSourceRepository } from "../../application/ports/model-source-ports.js";
 import type { ModelCapability, ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol, ModelSourceStatus } from "../../domain/model-sources/model-source.js";
 
 interface TransactionalDatabase {
@@ -148,6 +148,33 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         record.source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null,
         record.source.updatedAt, record.source.sourceId,
       );
+    });
+  }
+
+  async saveHealthIfCurrent(record: ModelSourceRecord, expected: ModelSourceHealthRevision): Promise<boolean> {
+    return this.database.transaction((connection) => {
+      const updated = connection.prepare(`UPDATE model_sources
+        SET status = ?, updated_at = ?
+        WHERE source_id = ?
+          AND active_source_revision_id = ?
+          AND active_model_revision_id = ?
+          AND updated_at = ?
+          AND EXISTS (
+            SELECT 1 FROM model_source_revisions sr
+            WHERE sr.source_revision_id = model_sources.active_source_revision_id
+              AND sr.source_id = model_sources.source_id
+              AND sr.credential_version = ?
+          )`).run(
+        record.source.status, record.source.updatedAt, record.source.sourceId,
+        expected.sourceRevisionId, expected.modelRevisionId, expected.sourceUpdatedAt, expected.credentialVersion,
+      );
+      if (updated.changes !== 1) return false;
+      connection.prepare(`UPDATE model_source_health
+        SET status = ?, reason_code = ?, last_error = ?, last_validated_at = ?, updated_at = ? WHERE source_id = ?`).run(
+        record.source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null,
+        record.source.updatedAt, record.source.sourceId,
+      );
+      return true;
     });
   }
 

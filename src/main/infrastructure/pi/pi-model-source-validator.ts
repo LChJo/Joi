@@ -9,14 +9,15 @@ import { classifyHttp403Detail } from "../../application/partners/partner-run-fa
 type Probe = (record: ModelSourceRecord) => Promise<void>;
 
 function failureReason(error: unknown): { error?: string; reasonCode: string; status: "DEGRADED" | "NEEDS_AUTH" } {
-  const raw = error instanceof Error ? error.message : String(error);
+  const raw = errorMessage(error);
   const message = raw.toLowerCase();
+  const statusCode = numericStatus(error);
   let reasonCode: string;
   let status: "DEGRADED" | "NEEDS_AUTH" = "DEGRADED";
-  if (/(^|\D)403(\D|$)|\bforbidden\b/u.test(message)) {
+  if (statusCode === 403 || /(^|\D)403(\D|$)|\bforbidden\b/u.test(message)) {
     reasonCode = classifyHttp403Detail(raw);
     status = "NEEDS_AUTH";
-  } else if (/(^|\D)401(\D|$)|unauthori[sz]ed|invalid[_ -]?(api[_ -]?key|x-api-key)|\bcredential\b|no api key/u.test(message)) {
+  } else if (statusCode === 401 || /(^|\D)401(\D|$)|unauthori[sz]ed|invalid[_ -]?(api[_ -]?key|x-api-key)|\bcredential\b|no api key/u.test(message)) {
     reasonCode = "auth_failed";
     status = "NEEDS_AUTH";
   } else if (/(^|\D)429(\D|$)|rate[_ -]?limit|throttl|overloaded|too many requests/u.test(message)) {
@@ -41,6 +42,25 @@ function failureReason(error: unknown): { error?: string; reasonCode: string; st
     reasonCode = "endpoint_unreachable";
   }
   return { ...(reasonCode === "auth_forbidden" || reasonCode === "model_access_forbidden" || reasonCode === "region_forbidden" || reasonCode === "request_policy_forbidden" || reasonCode === "http_403" ? {} : { error: raw.trim() }), reasonCode, status };
+}
+
+function errorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  if (error !== null && typeof error === "object" && typeof (error as { message?: unknown }).message === "string") return (error as { message: string }).message;
+  return String(error);
+}
+
+function numericStatus(error: unknown): number | undefined {
+  if (error === null || typeof error !== "object") return undefined;
+  const value = error as { status?: unknown; statusCode?: unknown; response?: unknown };
+  const direct = typeof value.status === "number" ? value.status : value.statusCode;
+  if (typeof direct === "number" && Number.isInteger(direct) && direct >= 100 && direct <= 599) return direct;
+  if (value.response !== null && typeof value.response === "object") {
+    const nested = (value.response as { status?: unknown; statusCode?: unknown });
+    const responseStatus = typeof nested.status === "number" ? nested.status : nested.statusCode;
+    if (typeof responseStatus === "number" && Number.isInteger(responseStatus) && responseStatus >= 100 && responseStatus <= 599) return responseStatus;
+  }
+  return undefined;
 }
 
 export class PiModelSourceValidator implements ModelSourceValidator {

@@ -148,7 +148,7 @@ export function createPartnerRevision(input: CreatePartnerRevisionInput): Partne
   const description = optionalText(input.description, 600, "partner_description_invalid");
   const modelIdOverride = optionalText(input.modelIdOverride, 240, "partner_model_override_invalid");
   const modelSourceId = optionalText(input.modelSourceId, 240, "partner_model_source_invalid");
-  const toolPolicyMode = input.kind === "local-pi" ? normalizeToolPolicyMode(input.toolPolicyMode ?? "ALL", input.tools) : undefined;
+  const toolPolicyMode = input.kind === "local-pi" ? normalizeToolPolicyMode(input.toolPolicyMode, input.tools) : undefined;
   return {
     capabilities: strings(input.capabilities, "partner_capabilities_invalid"),
     createdAt: input.createdAt,

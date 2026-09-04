@@ -92,4 +92,43 @@ describe("SqliteModelSourceRepository", () => {
       await rm(root, { force: true, recursive: true });
     }
   });
+
+  it("rejects health writes from an obsolete source revision", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-model-source-health-race-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      database.transaction((connection) => connection.prepare(`INSERT INTO model_source_credentials
+        (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES (?, 'api_key', ?, 1, ?)`)
+        .run("joi-source:race", new Uint8Array([1]), "2026-09-03T10:00:00.000Z"));
+      const repository = new SqliteModelSourceRepository(database);
+      const initial = record("race", 0);
+      await repository.create(initial);
+      const revised: ModelSourceRecord = {
+        ...initial,
+        source: {
+          ...initial.source,
+          activeSourceRevision: { ...initial.source.activeSourceRevision, sourceRevisionId: "revision-race-2", credentialVersion: 2 },
+          activeModelRevision: { ...initial.source.activeModelRevision, modelRevisionId: "model-race-2", modelId: "deepseek-chat-v2" },
+          status: "DRAFT",
+          updatedAt: "2026-09-03T10:01:00.000Z",
+        },
+      };
+      await repository.revise(revised);
+
+      await expect(repository.saveHealthIfCurrent({
+        ...initial,
+        lastValidatedAt: "2026-09-03T10:02:00.000Z",
+        source: { ...initial.source, status: "READY", updatedAt: "2026-09-03T10:02:00.000Z" },
+      }, {
+        credentialVersion: initial.source.activeSourceRevision.credentialVersion,
+        modelRevisionId: initial.source.activeModelRevision.modelRevisionId,
+        sourceRevisionId: initial.source.activeSourceRevision.sourceRevisionId,
+        sourceUpdatedAt: initial.source.updatedAt,
+      })).resolves.toBe(false);
+      expect(await repository.get("race")).toMatchObject({ source: { status: "DRAFT", activeSourceRevision: { sourceRevisionId: "revision-race-2" } } });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
 });

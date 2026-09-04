@@ -9,6 +9,7 @@ import type {
   PartnerInstanceMessageStore,
   ResidentTurnInput,
 } from "../../src/main/application/ports/partner-instances.js";
+import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision, type PartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { DomainError } from "../../src/main/domain/errors.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
@@ -90,9 +91,11 @@ class FakeEngine implements PartnerEngineRuntime {
   includeEphemeralConversation = true;
   includeResidentConversation = false;
   pendingQuestion?: string;
+  preflightPin?: ModelSourceTurnPin;
   engineOf() { return "pi-core" as const; }
   evictFromMemory(instanceId: string) { this.evicted.push(instanceId); }
   async health() { return { available: true }; }
+  async preflight() { return this.preflightPin; }
   toolOptions() { return [] as readonly string[]; }
   async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
     this.ephemeralRuns.push({
@@ -165,6 +168,21 @@ function makeManager(
 }
 
 describe("partner-instance-manager", () => {
+  it("passes the preflight source pin into resident turns", async () => {
+    const { engine, manager } = makeManager();
+    engine.preflightPin = {
+      modelId: "model-b",
+      modelRevisionId: "model-revision-b",
+      sourceId: "source-b",
+      sourceRevisionId: "source-revision-b",
+      turnId: request.actionId,
+    };
+
+    await manager.dispatch({ request, revision, sessionPolicy: "RESIDENT" });
+
+    expect(engine.residentTurns[0]?.sourcePin).toEqual(engine.preflightPin);
+  });
+
   it("classifies an unavailable requested instance as a safe preflight failure", async () => {
     const { diagnostics, engine, manager } = makeManager();
     await expect(manager.dispatch({ dispatchAttemptId: "attempt_opaque", instanceId: "PRIVATE_INSTANCE_REFERENCE", request, revision }))

@@ -8,6 +8,7 @@ import { vi } from "vitest";
 
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
 import { boundPartnerModelContext, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
+import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
 
@@ -571,6 +572,7 @@ describe("Pi partner engine runtime", () => {
       { errorMessage: "400 {\"error\":{\"message\":\"prompt is too long: 210000 tokens > 128000 maximum\"}}", reasonCode: "context_too_large", retryable: false },
       { errorMessage: "HTTP 400: invalid model for this route", reasonCode: "invalid_model", retryable: false },
       { errorMessage: "status 400: unsupported parameter reasoning_effort", reasonCode: "unsupported_parameter", retryable: false },
+      { errorMessage: "Request failed with status code 403: model access denied", reasonCode: "model_access_forbidden", retryable: true },
       { errorMessage: "The model refused to complete the request", reasonCode: "model_refused", retryable: false },
     ];
     for (const expected of cases) {
@@ -597,6 +599,34 @@ describe("Pi partner engine runtime", () => {
         partnerRunFailure: { phase: "MODEL", reasonCode: expected.reasonCode, retryable: expected.retryable },
       });
     }
+  });
+
+  it("rebuilds a resident Agent when the preflight source pin changes", async () => {
+    const faux = fauxProvider({ provider: "local-partner-resident-source-change" });
+    faux.setResponses([fauxAssistantMessage([fauxText("first answer")]), fauxAssistantMessage([fauxText("second answer")])]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const pinA: ModelSourceTurnPin = { modelId: "faux", modelRevisionId: "model-a", sourceId: "source-a", sourceRevisionId: "source-revision-a", turnId: "action_source_a" };
+    const pinB: ModelSourceTurnPin = { modelId: "faux", modelRevisionId: "model-b", sourceId: "source-b", sourceRevisionId: "source-revision-b", turnId: "action_source_b" };
+    const resolved = vi.fn(async (pin: ModelSourceTurnPin) => ({ model: faux.getModel(), models, pin }));
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: resolved },
+      sources: { selectInitial: async () => pinA },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-09-03T10:00:00.000Z", displayName: "Resident", kind: "local-pi",
+      partnerId: "partner_resident_source", partnerRevisionId: "partner_revision_resident_source", registryRevision: 1, skills: [], tools: [],
+    });
+    const request = { actionId: "action_source_a", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "first", workId: "work_source" };
+
+    const first = await runtime.runResidentTurn({ instanceId: "instance_source", knowledgeSection: "", request, restoredMessages: null, revision, skillEnvironmentKeys: [], skillSection: "", sourcePin: pinA });
+    await runtime.runResidentTurn({ instanceId: "instance_source", knowledgeSection: "", request: { ...request, actionId: "action_source_b", taskProjection: "second" }, restoredMessages: first.messages ?? null, revision, skillEnvironmentKeys: [], skillSection: "", sourcePin: pinB });
+
+    expect(resolved).toHaveBeenCalledTimes(2);
+    expect(resolved.mock.calls[1]?.[0]).toMatchObject({ sourceId: "source-b", sourceRevisionId: "source-revision-b", modelRevisionId: "model-b" });
   });
 
   it("continues a resident conversation across turns, rebuilds after eviction and keeps ephemeral runs isolated", async () => {

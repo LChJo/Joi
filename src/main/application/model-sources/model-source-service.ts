@@ -11,6 +11,7 @@ import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type {
   ModelSourceCatalog,
   ModelSourceEndpointPolicy,
+  ModelSourceHealthRevision,
   ModelSourceRecord,
   ModelSourceRepository,
   ModelSourceSecretStore,
@@ -165,7 +166,7 @@ export class ModelSourceService {
       ...withoutHealthReason(current),
       source: { ...current.source, status: "DISABLED", updatedAt },
     };
-    await this.dependencies.repository.save(disabled);
+    if (!await this.#saveHealth(disabled, current)) return toDto(await this.#get(sourceId));
     return toDto(disabled);
   }
 
@@ -183,7 +184,7 @@ export class ModelSourceService {
       ...record,
       source: { ...record.source, status: "VALIDATING", updatedAt: this.dependencies.clock.now().toISOString() },
     };
-    await this.dependencies.repository.save(validating);
+    if (!await this.#saveHealth(validating, record)) return toDto(await this.#get(sourceId));
     const result = await this.dependencies.validator.validate(validating);
     const updated: ModelSourceRecord = {
       ...withoutHealthReason(validating),
@@ -192,7 +193,7 @@ export class ModelSourceService {
       ...(result.error === undefined ? {} : { lastError: truncateError(result.error) }),
       source: { ...validating.source, status: result.status, updatedAt: result.validatedAt },
     };
-    await this.dependencies.repository.save(updated);
+    if (!await this.#saveHealth(updated, validating)) return toDto(await this.#get(sourceId));
     return toDto(updated);
   }
 
@@ -215,6 +216,20 @@ export class ModelSourceService {
     if (record === null) throw new DomainError("model_source_not_found", "Model source was not found.");
     return record;
   }
+
+  async #saveHealth(record: ModelSourceRecord, expected: ModelSourceRecord): Promise<boolean> {
+    const revision: ModelSourceHealthRevision = {
+      credentialVersion: expected.source.activeSourceRevision.credentialVersion,
+      modelRevisionId: expected.source.activeModelRevision.modelRevisionId,
+      sourceRevisionId: expected.source.activeSourceRevision.sourceRevisionId,
+      sourceUpdatedAt: expected.source.updatedAt,
+    };
+    if (this.dependencies.repository.saveHealthIfCurrent !== undefined) return this.dependencies.repository.saveHealthIfCurrent(record, revision);
+    const current = await this.dependencies.repository.get(record.source.sourceId);
+    if (!sameHealthRevision(current, expected)) return false;
+    await this.dependencies.repository.save(record);
+    return true;
+  }
 }
 
 const MAX_LAST_ERROR = 1000;
@@ -233,6 +248,15 @@ function withoutHealthReason(record: ModelSourceRecord): Omit<ModelSourceRecord,
     primary: record.primary,
     source: record.source,
   };
+}
+
+function sameHealthRevision(left: ModelSourceRecord | null, right: ModelSourceRecord): boolean {
+  return left !== null
+    && left.source.sourceId === right.source.sourceId
+    && left.source.activeSourceRevision.sourceRevisionId === right.source.activeSourceRevision.sourceRevisionId
+    && left.source.activeModelRevision.modelRevisionId === right.source.activeModelRevision.modelRevisionId
+    && left.source.activeSourceRevision.credentialVersion === right.source.activeSourceRevision.credentialVersion
+    && left.source.updatedAt === right.source.updatedAt;
 }
 
 function toDto(record: ModelSourceRecord): ModelSourceDto {

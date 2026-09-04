@@ -70,26 +70,27 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext) {
-    const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" };
+    const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" };
     try { return await this.#run(request, revision, context, undefined, tracker); }
     catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
-    const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" };
+    const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" };
     try {
       const result = await this.#run(input.request, input.revision, input, parseNativeAgentSessionRef(input.externalSessionRef, "codex"), tracker);
       return { ...result, ...(result.nativeSessionId === undefined ? {} : { externalSessionRef: toNativeAgentSessionRef("codex", result.nativeSessionId) }) };
     } catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
-  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     const resolved = this.#resolve();
     if (resolved.executablePath === undefined) throw new DomainError("engine_unavailable", "Codex is unavailable.");
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Codex runs local partners only.");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new DomainError("workbench_context_snapshot_not_found", "Workbench context snapshot is missing.");
     const permissions = revision.codexPermissions ?? DEFAULT_CODEX_PERMISSIONS;
+    tracker.sideEffectState = permissions.sandboxMode === "workspace-write" ? "UNKNOWN" : "NONE";
     const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context, permissions, execution.workspacePath !== undefined);
     const client = this.#client(resolved, systemPrompt);
     const threadOptions: ThreadOptions = {

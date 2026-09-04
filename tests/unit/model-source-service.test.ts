@@ -4,6 +4,7 @@ import { ModelSourceService } from "../../src/main/application/model-sources/mod
 import type {
   ModelSourceCatalog,
   ModelSourceEndpointPolicy,
+  ModelSourceHealthRevision,
   ModelSourceRecord,
   ModelSourceRepository,
   ModelSourceSecretStore,
@@ -17,6 +18,17 @@ class MemoryModelSourceRepository implements ModelSourceRepository {
   async get(sourceId: string) { return structuredClone(this.records.get(sourceId) ?? null); }
   async list() { return [...this.records.values()].sort((a, b) => a.order - b.order).map((item) => structuredClone(item)); }
   async save(record: ModelSourceRecord) { this.records.set(record.source.sourceId, structuredClone(record)); }
+  async saveHealthIfCurrent(record: ModelSourceRecord, expected: ModelSourceHealthRevision) {
+    const current = this.records.get(record.source.sourceId);
+    const source = current?.source;
+    if (source === undefined) return false;
+    if (source.updatedAt !== expected.sourceUpdatedAt
+      || source.activeSourceRevision.sourceRevisionId !== expected.sourceRevisionId
+      || source.activeModelRevision.modelRevisionId !== expected.modelRevisionId
+      || source.activeSourceRevision.credentialVersion !== expected.credentialVersion) return false;
+    this.records.set(record.source.sourceId, structuredClone(record));
+    return true;
+  }
   async revise(record: ModelSourceRecord) { this.records.set(record.source.sourceId, structuredClone(record)); }
   async setOrder(sourceIds: string[]) {
     sourceIds.forEach((sourceId, order) => {
@@ -194,5 +206,133 @@ describe("ModelSourceService", () => {
     expect(ready).toMatchObject({ status: "READY" });
     expect(ready.lastError).toBeUndefined();
     expect(ready.reasonCode).toBeUndefined();
+  });
+
+  it("does not publish a validation result after the source is revised during the probe", async () => {
+    const repository = new MemoryModelSourceRepository();
+    let release!: () => void;
+    let probeStarted!: () => void;
+    const service = new ModelSourceService({
+      catalog: { resolve: () => ({ accessMode: "api", capability: "release-tested", displayName: "Qwen", modelId: "qwen3.7-plus", presetVersion: "2026-07-28", protocol: "openai" }) },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => {
+        probeStarted();
+        await new Promise<void>((resolve) => { release = resolve; });
+        return { status: "READY" as const, validatedAt: "2026-09-03T10:01:00.000Z" };
+      } },
+    });
+    const source = await service.create({ apiKey: "key", kind: "qwen" });
+    const validating = service.validate(source.sourceId);
+    await new Promise<void>((resolve) => { probeStarted = resolve; });
+    const current = await repository.get(source.sourceId);
+    if (current === null) throw new Error("fixture_missing");
+    await repository.revise({
+      ...current,
+      source: {
+        ...current.source,
+        activeSourceRevision: { ...current.source.activeSourceRevision, sourceRevisionId: "source-revision-new", credentialVersion: 2 },
+        activeModelRevision: { ...current.source.activeModelRevision, modelRevisionId: "model-revision-new", modelId: "qwen3.7-max" },
+        status: "DRAFT",
+        updatedAt: "2026-09-03T10:00:30.000Z",
+      },
+    });
+    release();
+
+    await expect(validating).resolves.toMatchObject({ status: "DRAFT", activeSourceRevisionId: "source-revision-new" });
+  });
+
+  it("returns the current source when disable loses a conditional-write race", async () => {
+    const repository = new MemoryModelSourceRepository();
+    const service = new ModelSourceService({
+      catalog: { resolve: () => ({ accessMode: "api", capability: "release-tested", displayName: "Qwen", modelId: "qwen3.7-plus", presetVersion: "2026-07-28", protocol: "openai" }) },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => ({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" }) },
+    });
+    const created = await service.create({ apiKey: "key", kind: "qwen" });
+    repository.saveHealthIfCurrent = async () => false;
+
+    await expect(service.disable(created.sourceId)).resolves.toMatchObject({ sourceId: created.sourceId, status: "DRAFT" });
+  });
+
+  it("does not validate when the initial VALIDATING write loses its revision race", async () => {
+    const repository = new MemoryModelSourceRepository();
+    const validate = vi.fn();
+    const service = new ModelSourceService({
+      catalog: { resolve: () => ({ accessMode: "api", capability: "release-tested", displayName: "Qwen", modelId: "qwen3.7-plus", presetVersion: "2026-07-28", protocol: "openai" }) },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate },
+    });
+    const created = await service.create({ apiKey: "key", kind: "qwen" });
+    repository.saveHealthIfCurrent = async () => false;
+
+    await expect(service.validate(created.sourceId)).resolves.toMatchObject({ sourceId: created.sourceId, status: "DRAFT" });
+    expect(validate).not.toHaveBeenCalled();
+  });
+
+  it("keeps legacy repositories from overwriting a changed source during disable", async () => {
+    const base = new MemoryModelSourceRepository();
+    let reads = 0;
+    const legacy: ModelSourceRepository = {
+      create: base.create.bind(base),
+      delete: base.delete.bind(base),
+      get: async (sourceId) => {
+        reads += 1;
+        if (reads === 2) return null;
+        return base.get(sourceId);
+      },
+      list: base.list.bind(base),
+      revise: base.revise.bind(base),
+      save: base.save.bind(base),
+      setOrder: base.setOrder.bind(base),
+    };
+    const service = new ModelSourceService({
+      catalog: { resolve: () => ({ accessMode: "api", capability: "release-tested", displayName: "Qwen", modelId: "qwen3.7-plus", presetVersion: "2026-07-28", protocol: "openai" }) },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository: legacy,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => ({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" }) },
+    });
+    const created = await service.create({ apiKey: "key", kind: "qwen" });
+
+    await expect(service.disable(created.sourceId)).resolves.toMatchObject({ sourceId: created.sourceId, status: "DRAFT" });
+  });
+
+  it("writes health through the legacy repository path for local generic sources", async () => {
+    const base = new MemoryModelSourceRepository();
+    const legacy: ModelSourceRepository = {
+      create: base.create.bind(base),
+      delete: base.delete.bind(base),
+      get: base.get.bind(base),
+      list: base.list.bind(base),
+      revise: base.revise.bind(base),
+      save: base.save.bind(base),
+      setOrder: base.setOrder.bind(base),
+    };
+    const service = new ModelSourceService({
+      catalog: { resolve: () => ({ accessMode: "custom", capability: "custom-unverified-tools", displayName: "Local", modelId: "local-model", protocol: "openai" }) },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: true, url }) },
+      ids: new TestIds(),
+      repository: legacy,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => ({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" }) },
+    });
+    const created = await service.create({ apiKey: "", baseUrl: "http://127.0.0.1:11434/v1", displayName: "Local", kind: "generic-openai", modelId: "local-model" });
+
+    await expect(service.disable(created.sourceId)).resolves.toMatchObject({ sourceId: created.sourceId, status: "DISABLED" });
   });
 });

@@ -32,6 +32,34 @@ function revision(engine: "claude-code" | "codex") {
 }
 
 describe("official native Agent SDK adapters", () => {
+  it("treats an interrupted tool-capable native run as side-effect unknown", async () => {
+    const runtime = new CodexAgentSdkPartnerEngineRuntime({
+      contexts: execution,
+      environment: { CODEX_API_KEY: "private-key" },
+      prompts,
+      resolveExecutable: resolvedCodex,
+      sdk: {
+        create: () => ({
+          startThread: () => ({
+            id: "interrupted",
+            runStreamed: async () => ({ events: (async function* () {
+              yield { type: "thread.started", thread_id: "interrupted" } as ThreadEvent;
+              throw new Error("connection dropped after remote execution began");
+            })() }),
+          }),
+          resumeThread: () => { throw new Error("unexpected resume"); },
+        }),
+      },
+    });
+    const writable = createPartnerRevision({
+      ...revision("codex"),
+      codexPermissions: { approvalPolicy: "never", networkAccessEnabled: true, sandboxMode: "workspace-write", webSearchMode: "live" },
+    });
+
+    await expect(runtime.runEphemeral(request, writable, { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" }))
+      .rejects.toMatchObject({ partnerRunFailure: { sideEffectState: "UNKNOWN" } });
+  });
+
   it("maps Claude streaming, tool lifecycle, API-key auth, executable and tagged resume", async () => {
     const calls: { options?: Record<string, unknown>; prompt: string }[] = [];
     const sdk: ClaudeAgentSdkSurface = { query: (input) => {

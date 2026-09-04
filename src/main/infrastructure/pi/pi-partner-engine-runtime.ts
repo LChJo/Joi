@@ -15,6 +15,7 @@ import type { ReasoningSourceSelector } from "../../application/model-sources/re
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
+import type { ModelSourceTurnPin } from "../../domain/model-sources/model-source.js";
 import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import { type PiCodingToolFactory } from "./pi-coding-tool-factory.js";
@@ -61,6 +62,8 @@ interface WarmAgent {
   partnerRevisionId: string;
   sideEffectTracker: { current: RunTracker };
   sourceId: string;
+  modelRevisionId: string;
+  sourceRevisionId: string;
   workspacePath?: string;
 }
 
@@ -234,8 +237,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     return { available: true };
   }
 
-  async preflight(input: { revision: PartnerRevision; turnId: string }): Promise<void> {
-    await this.#selectSource(input.revision, `partner_preflight:${input.turnId}`);
+  async preflight(input: { revision: PartnerRevision; turnId: string }): Promise<ModelSourceTurnPin> {
+    return this.#selectSource(input.revision, `partner_preflight:${input.turnId}`);
   }
 
   evictFromMemory(instanceId: string): void {
@@ -324,15 +327,19 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId);
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
+    const pin = input.sourcePin ?? await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
     let warm = this.#warm.get(input.instanceId);
-    if (warm !== undefined && (warm.partnerRevisionId !== revision.partnerRevisionId || warm.workspacePath !== execution.workspacePath)) {
+    if (warm !== undefined && (warm.partnerRevisionId !== revision.partnerRevisionId
+      || warm.workspacePath !== execution.workspacePath
+      || warm.sourceId !== pin.sourceId
+      || warm.sourceRevisionId !== pin.sourceRevisionId
+      || warm.modelRevisionId !== pin.modelRevisionId)) {
       this.#warm.delete(input.instanceId);
       warm = undefined;
     }
     if (warm !== undefined) warm.sideEffectTracker.current = tracker;
     const effectiveToolNames = this.#effectiveToolNames(revision);
     if (warm === undefined) {
-      const pin = await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
       const resolved = await this.dependencies.resolver.resolve(pin);
       const sideEffectTracker = { current: tracker };
       const tools = this.#toolsWithTimeout([
@@ -366,7 +373,9 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         agent,
         partnerRevisionId: revision.partnerRevisionId,
         sideEffectTracker,
+        modelRevisionId: pin.modelRevisionId,
         sourceId: pin.sourceId,
+        sourceRevisionId: pin.sourceRevisionId,
         ...(execution.workspacePath === undefined ? {} : { workspacePath: execution.workspacePath }),
       };
       this.#trackWarm(input.instanceId, warm);
@@ -579,7 +588,7 @@ function assistantFailureSignal(messages: readonly unknown[]): Error | null {
     if (/\brate[ -]?limit(?:ed|ing)?\b/iu.test(raw)) return codedProviderError("rate_limited", detail);
     if (/\b(?:timed?\s*out|timeout)\b/iu.test(raw)) return codedProviderError("timeout", detail);
     if (/\b(?:invalid[ _-]?api[ _-]?key|authentication|unauthorized)\b/iu.test(raw)) return codedProviderError("invalid_api_key", detail);
-    const statusText = /\b(?:HTTP|status)\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(raw)?.[1] ?? /^\s*([1-5]\d{2})\b/u.exec(raw)?.[1];
+    const statusText = /\b(?:HTTP|status)(?:\s+code)?\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(raw)?.[1] ?? /^\s*([1-5]\d{2})\b/u.exec(raw)?.[1];
     if (statusText !== undefined) return Object.assign(new Error("partner_provider_failed"), { detail, status: Number(statusText) });
     return codedProviderError("assistant_error", detail);
   }

@@ -22,6 +22,7 @@ import type { PartnerRegistryService } from "./partner-registry-service.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
 import { wrapPartnerRunFailure, type PartnerRunFailure } from "./partner-run-failure.js";
 import { NativeAgentEventProjector } from "./native-agent-event-projector.js";
+import type { ModelSourceTurnPin } from "../../domain/model-sources/model-source.js";
 
 const DEFAULT_LIMITS = {
   ephemeralIdleMillis: 5 * 60_000,
@@ -99,8 +100,9 @@ export class PartnerInstanceManager {
       return createdEphemeral;
     };
     let record: PartnerInstanceRecord;
+    let preflightPin: ModelSourceTurnPin | undefined;
     try {
-      await this.#engine(input.revision.engine).preflight?.({ revision: input.revision, turnId: input.request.actionId });
+      preflightPin = await this.#engine(input.revision.engine).preflight?.({ revision: input.revision, turnId: input.request.actionId });
       if (input.instanceId !== undefined) {
         const existing = await this.dependencies.repository.get(input.instanceId);
         if (existing === null) throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
@@ -259,6 +261,7 @@ export class PartnerInstanceManager {
         revision: input.revision,
         skillEnvironmentKeys,
         skillSection,
+        ...(preflightPin === undefined ? {} : { sourcePin: preflightPin }),
       });
       if (turn.messages !== undefined) await this.dependencies.messages.save(record.instanceId, turn.messages);
       await this.dependencies.repository.markTurnComplete(

@@ -67,4 +67,18 @@ describe("PiModelSourceValidator", () => {
     expect(result).toEqual({ reasonCode, status: "NEEDS_AUTH", validatedAt: "2026-07-28T10:00:30.000Z" });
     expect(JSON.stringify(result)).not.toContain("PRIVATE");
   });
+
+  it("classifies a status-bearing provider error even when its message has no status text", async () => {
+    const failure = Object.assign(new Error("provider denied this request"), { status: 403 });
+    const validator = new PiModelSourceValidator({
+      clock: { now: () => new Date("2026-07-28T10:00:30.000Z") },
+      probe: async () => { throw failure; },
+    });
+
+    await expect(validator.validate(record())).resolves.toEqual({
+      reasonCode: "http_403",
+      status: "NEEDS_AUTH",
+      validatedAt: "2026-07-28T10:00:30.000Z",
+    });
+  });
 });

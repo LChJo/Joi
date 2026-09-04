@@ -35,6 +35,13 @@ export interface ModelSourceRecord {
   source: ModelSource;
 }
 
+export interface ModelSourceHealthRevision {
+  credentialVersion: number;
+  modelRevisionId: string;
+  sourceRevisionId: string;
+  sourceUpdatedAt: string;
+}
+
 export interface ModelSourceRepository {
   create(record: ModelSourceRecord): Promise<void>;
   delete(sourceId: string): Promise<void>;
@@ -42,6 +49,8 @@ export interface ModelSourceRepository {
   list(): Promise<ModelSourceRecord[]>;
   revise(record: ModelSourceRecord): Promise<void>;
   save(record: ModelSourceRecord): Promise<void>;
+  /** Atomically writes health only when the active source/model/credential revision still matches. */
+  saveHealthIfCurrent?(record: ModelSourceRecord, expected: ModelSourceHealthRevision): Promise<boolean>;
   setOrder(sourceIds: string[]): Promise<void>;
 }
 

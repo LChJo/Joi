@@ -56,6 +56,66 @@ describe("deterministic-source-fallback-classification", () => {
     expect(saved.some((record) => record.reasonCode === "model_access_forbidden" && record.source.status === "NEEDS_AUTH")).toBe(true);
   });
 
+  it("does not persist a stale probe result after the active source revision changes", async () => {
+    const stale = { ...first, lastValidatedAt: "2026-09-03T09:00:00.000Z" };
+    const revised = {
+      ...stale,
+      source: {
+        ...stale.source,
+        activeSourceRevision: { ...stale.source.activeSourceRevision, sourceRevisionId: "first-revision-2", credentialVersion: 2 },
+        activeModelRevision: { ...stale.source.activeModelRevision, modelRevisionId: "first-model-revision-2", modelId: "first-model-2" },
+        status: "DRAFT" as const,
+      },
+    };
+    let current: ModelSourceRecord = stale;
+    let release!: () => void;
+    const saved: ModelSourceRecord[] = [];
+    const validate = vi.fn(async () => {
+      await new Promise<void>((resolve) => { release = resolve; });
+      return { status: "READY" as const, validatedAt: "2026-09-03T10:01:00.000Z" };
+    });
+    const selector = new ReasoningSourceSelector({
+      list: async () => [current],
+      get: async () => current,
+      save: async (record) => { saved.push(record); },
+      saveHealthIfCurrent: async () => false,
+    }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate },
+    });
+
+    const selection = selector.selectInitial("turn-race");
+    await vi.waitFor(() => expect(validate).toHaveBeenCalledOnce());
+    current = revised;
+    release();
+
+    await expect(selection).rejects.toMatchObject({ code: "model_source_not_ready" });
+    expect(saved).toHaveLength(0);
+  });
+
+  it("locates a fallback from the full ordered list and freshness-checks it", async () => {
+    const current = { ...first, source: { ...first.source, status: "NEEDS_AUTH" as const } };
+    const staleFallback = { ...second, lastValidatedAt: "2026-09-03T09:00:00.000Z" };
+    const validate = vi.fn(async () => ({ status: "READY" as const, validatedAt: "2026-09-03T10:00:00.000Z" }));
+    const selector = new ReasoningSourceSelector({
+      list: async () => [current, staleFallback],
+      get: async (id) => id === current.source.sourceId ? current : staleFallback,
+      save: async () => undefined,
+    }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate },
+    });
+
+    await expect(selector.selectFallback({
+      currentSourceId: current.source.sourceId,
+      failure: "timeout",
+      formalOutputStarted: false,
+      sideEffectStarted: false,
+      turnId: "turn-fallback-fresh",
+    })).resolves.toMatchObject({ sourceId: staleFallback.source.sourceId });
+    expect(validate).toHaveBeenCalledWith(staleFallback);
+  });
+
   it("stops on a stale forbidden pinned source", async () => {
     const stale = { ...first, lastValidatedAt: "2026-09-03T09:00:00.000Z" };
     const selector = new ReasoningSourceSelector({ ...repository, list: async () => [stale], save: async () => undefined }, {
@@ -80,6 +140,33 @@ describe("deterministic-source-fallback-classification", () => {
     expect(validate).toHaveBeenCalledOnce();
     expect(states.at(-1)).toMatchObject({ reasonCode: "model_access_forbidden", source: { status: "NEEDS_AUTH" } });
     expect(JSON.stringify(states)).not.toContain("not available for this account");
+  });
+
+  it("does not probe when the conditional auth mark loses a revision race", async () => {
+    const validate = vi.fn();
+    const selector = new ReasoningSourceSelector({
+      ...repository,
+      get: async () => first,
+      saveHealthIfCurrent: async () => false,
+    }, { clock: { now: () => new Date("2026-09-03T10:00:00.000Z") }, validator: { validate } });
+
+    await selector.reportRunFailure("first", { status: 403 });
+
+    expect(validate).not.toHaveBeenCalled();
+  });
+
+  it("does not run a diagnostic probe after the source disappears", async () => {
+    let reads = 0;
+    const validate = vi.fn();
+    const selector = new ReasoningSourceSelector({
+      ...repository,
+      get: async () => (++reads === 1 ? first : null),
+      saveHealthIfCurrent: async () => true,
+    }, { clock: { now: () => new Date("2026-09-03T10:00:00.000Z") }, validator: { validate } });
+
+    await selector.reportRunFailure("first", { status: 403 });
+
+    expect(validate).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -136,6 +223,54 @@ describe("deterministic-source-fallback-classification", () => {
     await expect(selector.selectInitial("turn-never-validated")).rejects.toMatchObject({ code: "model_source_not_ready" });
     expect(saved[0]).toMatchObject({ baseUrl: neverValidated.baseUrl, presetVersion: "2", reasonCode: "endpoint_unreachable" });
     expect(saved[0]?.lastError).toHaveLength(1_000);
+  });
+
+  it("returns the latest record when a legacy health write detects a revision change", async () => {
+    const stale = { ...first, lastValidatedAt: "2026-09-03T09:00:00.000Z" };
+    const current = { ...stale, source: { ...stale.source, status: "DRAFT" as const, updatedAt: "2026-09-03T09:30:00.000Z" } };
+    const save = vi.fn();
+    const selector = new ReasoningSourceSelector({
+      list: async () => [stale],
+      get: async () => current,
+      save,
+    }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate: async () => ({ status: "READY" as const, validatedAt: "2026-09-03T10:00:00.000Z" }) },
+    });
+
+    await expect(selector.selectInitial("turn-legacy-race")).rejects.toMatchObject({ code: "model_source_not_ready" });
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("supports a legacy repository without a get method for health writes", async () => {
+    const stale = { ...first, lastValidatedAt: "2026-09-03T09:00:00.000Z" };
+    const save = vi.fn();
+    const selector = new ReasoningSourceSelector({
+      list: async () => [stale],
+      save,
+    }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate: async () => ({ status: "READY" as const, validatedAt: "2026-09-03T10:00:00.000Z" }) },
+    });
+
+    await expect(selector.selectInitial("turn-legacy-save")).resolves.toMatchObject({ sourceId: "first" });
+    expect(save).toHaveBeenCalledOnce();
+  });
+
+  it("skips non-ready and failed-ready fallback candidates", async () => {
+    const blocked = { ...second, source: { ...second.source, sourceId: "blocked", status: "DRAFT" as const } };
+    const candidate = { ...second, source: { ...second.source, sourceId: "candidate" }, lastValidatedAt: "2026-09-03T09:00:00.000Z" };
+    const selector = new ReasoningSourceSelector({
+      list: async () => [first, blocked, candidate],
+      save: async () => undefined,
+    }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate: async () => ({ status: "NEEDS_AUTH" as const, validatedAt: "2026-09-03T10:00:00.000Z" }) },
+    });
+
+    await expect(selector.selectFallback({
+      currentSourceId: "first", failure: "timeout", formalOutputStarted: false, sideEffectStarted: false, turnId: "turn-skip-candidates",
+    })).resolves.toBeNull();
   });
 
   it("does not expose an unsafe validator reason in a pinned-source error code", async () => {
