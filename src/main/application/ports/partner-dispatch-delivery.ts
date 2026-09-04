@@ -65,7 +65,7 @@ export interface WorkAttachmentStagerPort {
  */
 export interface PartnerDispatchDelivery {
   prepare(claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal">;
-  run(prepared: PreparedDispatch): Promise<DispatchRunOutput>;
+  run(prepared: PreparedDispatch, options?: { signal?: AbortSignal }): Promise<DispatchRunOutput>;
   complete(input: { output: DispatchRunOutput & { kind: "terminal" }; prepared: PreparedDispatch }): Promise<{ isAuthoritative: boolean; resultId: string }>;
   finalizeOrphan(orphan: PartnerDispatchOrphanRow): Promise<"completed" | "waiting">;
   /** Compatibility composition: prepare → run → complete in one await (tests, one-shot callers). */

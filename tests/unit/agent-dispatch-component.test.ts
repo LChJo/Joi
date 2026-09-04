@@ -27,6 +27,7 @@ interface HarnessOptions {
   runError?: Error;
   runOutputs?: DispatchRunOutput[];
   runOverride?: () => Promise<DispatchRunOutput>;
+  watchdogMillis?: number;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -36,6 +37,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const diagnosticEvents: { event: string; fields: Record<string, unknown> }[] = [];
   const finalized: string[] = [];
   const released: string[] = [];
+  const runSignals: (AbortSignal | undefined)[] = [];
   let runCount = 0;
   const component = new AgentDispatchComponent({
     workbenchId: "workbench_1",
@@ -61,9 +63,10 @@ function makeHarness(options: HarnessOptions = {}) {
         if (result instanceof Error) throw result;
         return result;
       },
-      run: async () => {
+      run: async (_prepared, runOptions) => {
         calls.push("run");
         runCount += 1;
+        runSignals.push(runOptions?.signal);
         if (options.runError !== undefined) throw options.runError;
         if (options.runOverride !== undefined) return options.runOverride();
         return (options.runOutputs ?? [TERMINAL])[Math.min(runCount - 1, (options.runOutputs ?? [TERMINAL]).length - 1)] ?? TERMINAL;
@@ -86,8 +89,9 @@ function makeHarness(options: HarnessOptions = {}) {
     },
     owner: "agent_test",
     partnerId: "partner_1",
+    ...(options.watchdogMillis === undefined ? {} : { watchdogMillis: options.watchdogMillis }),
   });
-  return { calls, completed, completionOutputs, component, diagnosticEvents, finalized, released };
+  return { calls, completed, completionOutputs, component, diagnosticEvents, finalized, released, runSignals };
 }
 
 function diagnosticsSink(events: { event: string; fields: Record<string, unknown> }[]) {
@@ -273,10 +277,38 @@ describe("AgentDispatchComponent", () => {
     // Next tick enters the renewal margin and the renewal reports the lease gone.
     await harness.component.update(ctxWithDiagnostics(31_000, harness.diagnosticEvents));
     expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.lease_lost");
+    expect(harness.runSignals[0]?.aborted).toBe(true);
     await harness.component.update(ctxWithDiagnostics(32_000, harness.diagnosticEvents));
     expect(harness.completed).toEqual(["attempt_1"]);
     expect(harness.completionOutputs[0]).toMatchObject({
       failure: { phase: "EXECUTION", reasonCode: "workspace_lease_lost", retryable: false, sideEffectState: "UNKNOWN" },
+      kind: "terminal",
+      status: "UNKNOWN",
+    });
+  });
+
+  it("aborts and converges a hung run once the watchdog passes its limit", async () => {
+    const harness = makeHarness({
+      claims: [CLAIM],
+      runOverride: () => new Promise<DispatchRunOutput>(() => undefined),
+      watchdogMillis: 60_000,
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(harness.runSignals[0]?.aborted).toBe(false);
+
+    // Inside the watchdog window nothing happens.
+    await harness.component.update(ctxWithDiagnostics(59_000, harness.diagnosticEvents));
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).not.toContain("joi.agent.watchdog_abort");
+
+    // Past it the run is aborted and converged as a non-replayable UNKNOWN.
+    await harness.component.update(ctxWithDiagnostics(61_000, harness.diagnosticEvents));
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.watchdog_abort");
+    expect(harness.runSignals[0]?.aborted).toBe(true);
+    await harness.component.update(ctxWithDiagnostics(62_000, harness.diagnosticEvents));
+    expect(harness.completed).toEqual(["attempt_1"]);
+    expect(harness.completionOutputs[0]).toMatchObject({
+      failure: { phase: "EXECUTION", reasonCode: "dispatch_watchdog_timed_out", retryable: false, sideEffectState: "UNKNOWN" },
       kind: "terminal",
       status: "UNKNOWN",
     });

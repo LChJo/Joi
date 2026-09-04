@@ -135,6 +135,23 @@ export interface RuntimeDiagnosticEventMap {
     partnerId: string;
     workId: string;
   };
+  "joi.agent.watchdog_abort": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    partnerId: string;
+  };
+  "joi.agent.complete_failed": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    errorCode: string;
+    partnerId: string;
+  };
+  "joi.agent.converge_stuck_cleared": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    errorCode: string;
+    partnerId: string;
+  };
   "joi.partner.orphan_found": {
     workbenchId: string;
     dispatchAttemptId: string;

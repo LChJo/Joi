@@ -93,6 +93,8 @@ export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
       ? "The model route had no safe completion budget left. Verify any produced artifacts, then create a smaller supplemental Work instead of replaying it unchanged."
     : failure.reasonCode === "model_refused"
       ? "The model refused this request. Restate the task or ask the user for guidance; do not replay it unchanged."
+    : failure.reasonCode === "partner_run_timed_out" || failure.reasonCode === "partner_run_idle_timed_out" || failure.reasonCode === "dispatch_watchdog_timed_out"
+      ? "The run exceeded its deadline and was terminated. Treat any produced artifacts as unverified until checked, then cover the remaining gap with a supplemental Work instead of replaying the run unchanged."
       : failure.retryable
     ? "Joi may reassign this Work to another suitable available partner, or select another READY model source and create a new immutable partner revision when no suitable alternative partner exists."
     : failure.sideEffectState === "NONE"

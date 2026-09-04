@@ -145,4 +145,84 @@ describe("official native Agent SDK adapters", () => {
   it("does not rewrite an ordinary Codex environment", () => {
     expect(nestedCodexEnvironment({ CODEX_HOME: "user-home", PATH: "user-path" })).toBeUndefined();
   });
+
+  it("terminates a stalled Claude run at the total deadline with a safe timeout failure", async () => {
+    const sdk: ClaudeAgentSdkSurface = { query: (input) => {
+      const controller = (input.options as { abortController?: AbortController }).abortController;
+      return (async function* () {
+        yield { type: "system", subtype: "init", session_id: "stalled" } as SDKMessage;
+        await new Promise<void>((_resolve, reject) => {
+          if (controller?.signal.aborted === true) reject(new Error("aborted"));
+          else controller?.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      })();
+    } };
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({
+      contexts: execution,
+      deadlines: { totalMillis: 40 },
+      environment: { ANTHROPIC_API_KEY: "private-key" },
+      prompts,
+      resolveExecutable: resolvedClaude,
+      sdk,
+    });
+    await expect(runtime.runEphemeral(request, revision("claude-code"), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" }))
+      .rejects.toMatchObject({ partnerRunFailure: { phase: "ENGINE", reasonCode: "partner_run_timed_out" } });
+  });
+
+  it("terminates an idle Codex run that stops producing events and aborts the signaled thread", async () => {
+    const seenSignals: (AbortSignal | undefined)[] = [];
+    const sdk: CodexAgentSdkSurface = { create: () => ({
+      startThread: () => ({
+        id: "idle-thread",
+        runStreamed: async (_input, options) => {
+          seenSignals.push(options?.signal);
+          return { events: (async function* () {
+            yield { type: "thread.started", thread_id: "idle-thread" } as ThreadEvent;
+            await new Promise<void>((_resolve, reject) => {
+              const signal = options?.signal;
+              if (signal?.aborted === true) reject(new Error("aborted"));
+              else signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+            });
+          })() };
+        },
+      }),
+      resumeThread: () => { throw new Error("unexpected resume"); },
+    }) };
+    const runtime = new CodexAgentSdkPartnerEngineRuntime({
+      contexts: execution,
+      deadlines: { idleMillis: 40, totalMillis: 60_000 },
+      environment: { CODEX_API_KEY: "private-key" },
+      prompts,
+      resolveExecutable: resolvedCodex,
+      sdk,
+    });
+    await expect(runtime.runEphemeral(request, revision("codex"), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" }))
+      .rejects.toMatchObject({ partnerRunFailure: { phase: "ENGINE", reasonCode: "partner_run_idle_timed_out" } });
+    expect(seenSignals[0]).toBeInstanceOf(AbortSignal);
+    expect(seenSignals[0]?.aborted).toBe(true);
+  });
+
+  it("propagates an external abort signal into the formal native run", async () => {
+    const controller = new AbortController();
+    const sdk: ClaudeAgentSdkSurface = { query: (input) => {
+      const sdkController = (input.options as { abortController?: AbortController }).abortController;
+      return (async function* () {
+        yield { type: "system", subtype: "init", session_id: "aborted" } as SDKMessage;
+        await new Promise<void>((_resolve, reject) => {
+          if (sdkController?.signal.aborted === true) reject(new Error("aborted"));
+          else sdkController?.signal.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+        });
+      })();
+    } };
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({
+      contexts: execution,
+      environment: { ANTHROPIC_API_KEY: "private-key" },
+      prompts,
+      resolveExecutable: resolvedClaude,
+      sdk,
+    });
+    const pending = runtime.runEphemeral(request, revision("claude-code"), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" }, { signal: controller.signal });
+    controller.abort();
+    await expect(pending).rejects.toBeDefined();
+  });
 });

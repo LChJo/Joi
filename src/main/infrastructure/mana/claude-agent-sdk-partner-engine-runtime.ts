@@ -14,6 +14,7 @@ import { wrapPartnerRunFailure } from "../../application/partners/partner-run-fa
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, NativeCliRunError, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
+import { RunDeadlineGuard } from "./native-run-deadlines.js";
 
 export const CLAUDE_CODE_TOOL_OPTIONS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "NotebookEdit"] as const;
 const CLAUDE_WORKSPACE_TOOLS = new Set(["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"]);
@@ -28,6 +29,8 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
 
   constructor(private readonly dependencies: {
     contexts: WorkbenchExecutionContextReader;
+    /** Formal run deadlines; absent keeps the legacy unbounded behavior (tests, probes). */
+    deadlines?: { idleMillis?: number; totalMillis: number };
     diagnostics?: RuntimeDiagnostics;
     environment?: NodeJS.ProcessEnv;
     probeTimeoutMillis?: number;
@@ -71,21 +74,21 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     } finally { clearTimeout(timer); }
   }
 
-  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext) {
+  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }) {
     const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" };
-    try { return await this.#run(request, revision, context, undefined, tracker); }
+    try { return await this.#run(request, revision, context, undefined, tracker, options?.signal); }
     catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
     const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" };
     try {
-      const result = await this.#run(input.request, input.revision, input, parseNativeAgentSessionRef(input.externalSessionRef, "claude"), tracker);
+      const result = await this.#run(input.request, input.revision, input, parseNativeAgentSessionRef(input.externalSessionRef, "claude"), tracker, input.signal);
       return { ...result, ...(result.nativeSessionId === undefined ? {} : { externalSessionRef: toNativeAgentSessionRef("claude", result.nativeSessionId) }) };
     } catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
-  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     const resolved = this.#resolve();
     if (resolved.executablePath === undefined) throw new DomainError("engine_unavailable", "Claude Code is unavailable.");
     if (!this.#hasApiKey()) throw new NativeCliRunError("partner_cli_auth_required");
@@ -104,6 +107,14 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     await emit({ type: "status", state: "working" });
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     const controller = new AbortController();
+    if (signal?.aborted === true) controller.abort();
+    else signal?.addEventListener("abort", () => controller.abort(), { once: true });
+    let timedOut: "idle" | "total" | undefined;
+    const guard = this.dependencies.deadlines === undefined ? undefined : new RunDeadlineGuard({
+      ...(this.dependencies.deadlines.idleMillis === undefined ? {} : { idleMillis: this.dependencies.deadlines.idleMillis }),
+      onTimeout: (kind) => { timedOut = kind; controller.abort(); },
+      totalMillis: this.dependencies.deadlines.totalMillis,
+    });
     let consumed: { body: string; sessionId?: string };
     try {
       consumed = await this.#consume((await this.#sdk()).query({
@@ -119,10 +130,19 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           systemPrompt,
           tools,
         }),
-      }), emit);
+      }), emit, () => guard?.onProgress());
     } catch (error) {
+      if (timedOut !== undefined) {
+        await emit({ type: "status", state: "failed" });
+        throw new DomainError(
+          timedOut === "idle" ? "partner_run_idle_timed_out" : "partner_run_timed_out",
+          "The native run exceeded its deadline and was terminated.",
+        );
+      }
       await emit({ type: "status", state: classifyNativeCliFailure(error) === "partner_cli_auth_required" ? "auth-required" : "failed" });
       throw error;
+    } finally {
+      guard?.dispose();
     }
     const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     for (const artifact of artifacts) await emit({ type: "artifact", artifact: { ...artifact, mimeType: artifact.mimeType ?? "application/octet-stream" } });
@@ -130,7 +150,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     return { conversation: projector.snapshot(), externalRunId: `native_claude:${request.actionId}`, ...(consumed.sessionId === undefined ? {} : { nativeSessionId: consumed.sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
   }
 
-  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>): Promise<{ body: string; sessionId?: string }> {
+  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void): Promise<{ body: string; sessionId?: string }> {
     let body = "";
     let completed = false;
     let sessionId: string | undefined;
@@ -139,6 +159,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     const started = new Set<string>();
     const ended = new Set<string>();
     for await (const message of stream) {
+      onProgress?.();
       const row = message as unknown as Record<string, unknown>;
       if (typeof row.session_id === "string") sessionId = row.session_id;
       if (row.type === "stream_event" && row.event !== null && typeof row.event === "object") {

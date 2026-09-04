@@ -50,6 +50,8 @@ export interface ResidentTurnInput {
   request: PartnerRunRequest;
   restoredMessages: unknown[] | null;
   revision: PartnerRevision;
+  /** Abort requested by the dispatch actor (watchdog, lease loss, cancellation). */
+  signal?: AbortSignal;
   skillEnvironmentKeys: readonly string[];
   skillSection: string;
   /** Source selected by the manager's side-effect-free preflight, when available. */
@@ -86,7 +88,7 @@ export interface PartnerEngineRuntime {
   preflight?(input: { revision: PartnerRevision; turnId: string }): Promise<ModelSourceTurnPin | undefined>;
   /** User-triggered end-to-end availability check. Implementations must return only stable safe reason codes. */
   probe?(input?: { modelId?: string }): Promise<{ available: boolean; reasonCode?: string }>;
-  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
+  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
   runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult>;
   /** Selectable native tool names for this engine's whitelist picker. */
   toolOptions(): readonly string[];

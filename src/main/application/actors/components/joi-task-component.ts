@@ -6,7 +6,10 @@ import type { ActorComponent, ActorTickContext } from "../../ports/actor-runtime
 import type { JoiTaskInbox, JoiTurnDriver, ModelSourceGate } from "../../ports/joi-task.js";
 
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
-const DEFAULT_STALE_TURN_OLDER_THAN_MILLIS = 10 * 60_000;
+// The stale-turn orphan sweep must run strictly after the in-memory stall abort so a
+// Turn that is still being driven is never failed out from under the stall watchdog
+// (orphan detection 20 min > stall abort 15 min).
+const DEFAULT_STALE_TURN_OLDER_THAN_MILLIS = 20 * 60_000;
 const DEFAULT_STALLED_TURN_AFTER_MILLIS = 15 * 60_000;
 const DEFAULT_MAX_CONSECUTIVE_FAILURES = 8;
 

@@ -14,13 +14,18 @@ import type { RuntimeStore } from "../../ports/runtime-store.js";
 import type { PartnerRunFailure } from "../../partners/partner-run-failure.js";
 import { partnerRunArtifactsFromError, partnerRunFailureFromError, safePartnerRunFailureBody } from "../../partners/partner-run-failure.js";
 
-const CLAIM_LEASE_MILLIS = 30_000;
+const CLAIM_LEASE_MILLIS = 120_000;
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
 const DEFAULT_WAITING_RETRY_EVERY_MILLIS = 30_000;
 /** Renew the workspace lease once its remaining lifetime drops below this margin. */
 const LEASE_RENEW_MARGIN_MILLIS = 60_000;
+/** Backstop above the engine deadlines (30 min total): a run past this age is converged as hung. */
+const DEFAULT_WATCHDOG_MILLIS = 32 * 60_000;
+/** A converge that keeps failing to persist is eventually force-cleared instead of jamming the slot. */
+const MAX_COMPLETE_FAILURES = 10;
 
 interface InFlightRun {
+  abortController: AbortController;
   dispatchAttemptId: string;
   outboxId: string;
   prepared: PreparedDispatch;
@@ -43,6 +48,7 @@ function failedOutput(error: unknown): DispatchRunOutput & { kind: "terminal" } 
  */
 export class AgentDispatchComponent implements ActorComponent {
   readonly componentName = "agent-dispatch";
+  #completeFailures = 0;
   #inFlight: InFlightRun | null = null;
   #lastOrphanScanAt = 0;
   #nextWaitingRetryAt = 0;
@@ -59,6 +65,7 @@ export class AgentDispatchComponent implements ActorComponent {
     owner: string;
     partnerId: string;
     waitingRetryEveryMillis?: number;
+    watchdogMillis?: number;
   }) {}
 
   get inFlightAttemptId(): string | undefined {
@@ -95,6 +102,7 @@ export class AgentDispatchComponent implements ActorComponent {
       const { workspaceLease: _lost, ...prepared } = run.prepared;
       void _lost;
       run.prepared = prepared;
+      run.abortController.abort();
       const failure: PartnerRunFailure = {
         phase: "EXECUTION",
         reasonCode: "workspace_lease_lost",
@@ -115,21 +123,66 @@ export class AgentDispatchComponent implements ActorComponent {
 
   async #converge(ctx: ActorTickContext): Promise<void> {
     const run = this.#inFlight;
-    if (run?.settled === undefined) return;
+    if (run === null) return;
+    if (run.settled === undefined) {
+      const watchdogMillis = this.dependencies.watchdogMillis ?? DEFAULT_WATCHDOG_MILLIS;
+      if (ctx.now.getTime() - run.startedAt > watchdogMillis) {
+        // The engine's own deadlines fire first; reaching this point means the run is
+        // hung outside any bounded path. Abort it and converge a non-replayable UNKNOWN.
+        run.abortController.abort();
+        const failure: PartnerRunFailure = {
+          phase: "EXECUTION",
+          reasonCode: "dispatch_watchdog_timed_out",
+          retryable: false,
+          sideEffectState: "UNKNOWN",
+        };
+        run.settled = { artifacts: [], body: safePartnerRunFailureBody(failure), failure, kind: "terminal", status: "UNKNOWN" };
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.watchdog_abort", {
+          workbenchId: this.dependencies.workbenchId,
+          dispatchAttemptId: run.dispatchAttemptId,
+          partnerId: this.dependencies.partnerId,
+        });
+      } else {
+        return;
+      }
+    }
     const output = run.settled;
     if (output.kind === "waiting_remote") {
       if (ctx.now.getTime() < this.#nextWaitingRetryAt) return;
       this.#nextWaitingRetryAt = ctx.now.getTime() + (this.dependencies.waitingRetryEveryMillis ?? DEFAULT_WAITING_RETRY_EVERY_MILLIS);
       run.settled = undefined;
       const attemptId = run.dispatchAttemptId;
-      void this.dependencies.delivery.run(run.prepared).then((next) => {
+      void this.dependencies.delivery.run(run.prepared, { signal: run.abortController.signal }).then((next) => {
         if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = next;
       }).catch((error: unknown) => {
         if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = failedOutput(error);
       });
       return;
     }
-    await this.dependencies.delivery.complete({ output, prepared: run.prepared });
+    try {
+      await this.dependencies.delivery.complete({ output, prepared: run.prepared });
+    } catch (error) {
+      this.#completeFailures += 1;
+      if (this.#completeFailures >= MAX_COMPLETE_FAILURES) {
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.converge_stuck_cleared", {
+          workbenchId: this.dependencies.workbenchId,
+          dispatchAttemptId: run.dispatchAttemptId,
+          errorCode: runtimeDiagnosticErrorCode(error),
+          partnerId: this.dependencies.partnerId,
+        });
+        this.#inFlight = null;
+        this.#completeFailures = 0;
+      } else {
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.complete_failed", {
+          workbenchId: this.dependencies.workbenchId,
+          dispatchAttemptId: run.dispatchAttemptId,
+          errorCode: runtimeDiagnosticErrorCode(error),
+          partnerId: this.dependencies.partnerId,
+        });
+      }
+      return;
+    }
+    this.#completeFailures = 0;
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.run_converged", {
       workbenchId: this.dependencies.workbenchId,
       dispatchAttemptId: run.dispatchAttemptId,
@@ -208,7 +261,9 @@ export class AgentDispatchComponent implements ActorComponent {
       // Delivery is fully persisted after prepare; the outbox duty ends at this ack.
       await this.dependencies.outbox.completeOutbox(claim.outboxId, this.dependencies.owner);
       if (prepared === "skipped_terminal") continue;
+      const abortController = new AbortController();
       this.#inFlight = {
+        abortController,
         dispatchAttemptId: prepared.dispatchAttemptId,
         outboxId: claim.outboxId,
         prepared,
@@ -222,7 +277,7 @@ export class AgentDispatchComponent implements ActorComponent {
         partnerId: this.dependencies.partnerId,
       });
       const attemptId = prepared.dispatchAttemptId;
-      void this.dependencies.delivery.run(prepared).then((output) => {
+      void this.dependencies.delivery.run(prepared, { signal: abortController.signal }).then((output) => {
         if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = output;
       }).catch((error: unknown) => {
         if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = failedOutput(error);

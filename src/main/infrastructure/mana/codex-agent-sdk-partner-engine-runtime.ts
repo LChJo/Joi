@@ -14,6 +14,7 @@ import { wrapPartnerRunFailure } from "../../application/partners/partner-run-fa
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
+import { RunDeadlineGuard } from "./native-run-deadlines.js";
 
 export interface CodexThreadSurface {
   readonly id: string | null;
@@ -29,6 +30,8 @@ const CODEX_MUTATING_TOOLS = new Set(["apply_patch", "shell"]);
 export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
   constructor(private readonly dependencies: {
     contexts: WorkbenchExecutionContextReader;
+    /** Formal run deadlines; absent keeps the legacy unbounded behavior (tests, probes). */
+    deadlines?: { idleMillis?: number; totalMillis: number };
     diagnostics?: RuntimeDiagnostics;
     environment?: NodeJS.ProcessEnv;
     probeTimeoutMillis?: number;
@@ -69,21 +72,21 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     } finally { clearTimeout(timer); }
   }
 
-  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext) {
+  async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }) {
     const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" };
-    try { return await this.#run(request, revision, context, undefined, tracker); }
+    try { return await this.#run(request, revision, context, undefined, tracker, options?.signal); }
     catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
     const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" };
     try {
-      const result = await this.#run(input.request, input.revision, input, parseNativeAgentSessionRef(input.externalSessionRef, "codex"), tracker);
+      const result = await this.#run(input.request, input.revision, input, parseNativeAgentSessionRef(input.externalSessionRef, "codex"), tracker, input.signal);
       return { ...result, ...(result.nativeSessionId === undefined ? {} : { externalSessionRef: toNativeAgentSessionRef("codex", result.nativeSessionId) }) };
     } catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
-  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     const resolved = this.#resolve();
     if (resolved.executablePath === undefined) throw new DomainError("engine_unavailable", "Codex is unavailable.");
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Codex runs local partners only.");
@@ -110,12 +113,30 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     await emit({ type: "message", role: "user", parts: [{ type: "text", text: request.taskProjection }] });
     await emit({ type: "status", state: "working" });
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
+    const controller = new AbortController();
+    if (signal?.aborted === true) controller.abort();
+    else signal?.addEventListener("abort", () => controller.abort(), { once: true });
+    let timedOut: "idle" | "total" | undefined;
+    const guard = this.dependencies.deadlines === undefined ? undefined : new RunDeadlineGuard({
+      ...(this.dependencies.deadlines.idleMillis === undefined ? {} : { idleMillis: this.dependencies.deadlines.idleMillis }),
+      onTimeout: (kind) => { timedOut = kind; controller.abort(); },
+      totalMillis: this.dependencies.deadlines.totalMillis,
+    });
     let consumed: { body: string; threadId?: string };
     try {
-      consumed = await this.#consume(thread, request.taskProjection, undefined, emit);
+      consumed = await this.#consume(thread, request.taskProjection, controller.signal, emit, () => guard?.onProgress());
     } catch (error) {
+      if (timedOut !== undefined) {
+        await emit({ type: "status", state: "failed" });
+        throw new DomainError(
+          timedOut === "idle" ? "partner_run_idle_timed_out" : "partner_run_timed_out",
+          "The native run exceeded its deadline and was terminated.",
+        );
+      }
       await emit({ type: "status", state: classifyNativeCliFailure(error) === "partner_cli_auth_required" ? "auth-required" : "failed" });
       throw error;
+    } finally {
+      guard?.dispose();
     }
     const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     for (const artifact of artifacts) await emit({ type: "artifact", artifact: { ...artifact, mimeType: artifact.mimeType ?? "application/octet-stream" } });
@@ -124,7 +145,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     return { conversation: projector.snapshot(), externalRunId: `native_codex:${request.actionId}`, ...(sessionId === undefined ? {} : { nativeSessionId: sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
   }
 
-  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>): Promise<{ body: string; threadId?: string }> {
+  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void): Promise<{ body: string; threadId?: string }> {
     const streamed = await thread.runStreamed(prompt, signal === undefined ? undefined : { signal });
     let completed = false;
     let threadId: string | undefined;
@@ -132,6 +153,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     const started = new Set<string>();
     const ended = new Set<string>();
     for await (const event of streamed.events) {
+      onProgress?.();
       if (event.type === "thread.started") threadId = event.thread_id;
       else if (event.type === "turn.completed") completed = true;
       else if (event.type === "turn.failed" || event.type === "error") throw new Error("codex_turn_failed", { cause: event });

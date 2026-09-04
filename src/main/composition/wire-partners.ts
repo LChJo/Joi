@@ -7,6 +7,7 @@ import { PartnerRegistryService } from "../application/partners/partner-registry
 import { ScenarioPackService } from "../application/partners/scenario-pack-service.js";
 import { PartnerEngineCatalog } from "../application/partners/partner-engine-catalog.js";
 import { PartnerInstanceManager } from "../application/partners/partner-instance-manager.js";
+import { NATIVE_RUN_DEADLINES } from "../application/partners/partner-run-deadlines.js";
 import { PartnerWorkMemoryService } from "../application/partners/partner-work-memory-service.js";
 import { LocalSkillScanner } from "../infrastructure/skills/local-skill-scanner.js";
 import { BuiltinPiCodingToolFactory } from "../infrastructure/pi/pi-coding-tool-factory.js";
@@ -46,11 +47,13 @@ export function wirePartners(input: {
     })],
     ["claude-code", new ClaudeAgentSdkPartnerEngineRuntime({
       contexts: persistence.workbenchContextRepository,
+      deadlines: { ...NATIVE_RUN_DEADLINES },
       diagnostics,
       prompts: persistence.partnerPromptStore,
     })],
     ["codex", new CodexAgentSdkPartnerEngineRuntime({
       contexts: persistence.workbenchContextRepository,
+      deadlines: { ...NATIVE_RUN_DEADLINES },
       diagnostics,
       prompts: persistence.partnerPromptStore,
     })],

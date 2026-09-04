@@ -85,6 +85,8 @@ export class PartnerInstanceManager {
     request: PartnerRunRequest;
     revision: PartnerRevision;
     sessionPolicy?: SessionPolicy;
+    /** Abort requested by the dispatch actor (watchdog, lease loss, cancellation). */
+    signal?: AbortSignal;
   }): Promise<PartnerRunResult> {
     let createdEphemeral: PartnerInstanceRecord | undefined;
     const createEphemeral = async (): Promise<PartnerInstanceRecord> => {
@@ -227,7 +229,7 @@ export class PartnerInstanceManager {
           ...(onEvent === undefined ? {} : { onEvent }),
           skillEnvironmentKeys,
           skillSection,
-        });
+        }, input.signal === undefined ? undefined : { signal: input.signal });
         await this.#disposeRecord(record, "ephemeral_completed");
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.completed", {
           actionId: input.request.actionId,
@@ -259,6 +261,7 @@ export class PartnerInstanceManager {
         request: input.request,
         restoredMessages: restored,
         revision: input.revision,
+        ...(input.signal === undefined ? {} : { signal: input.signal }),
         skillEnvironmentKeys,
         skillSection,
         ...(preflightPin === undefined ? {} : { sourcePin: preflightPin }),

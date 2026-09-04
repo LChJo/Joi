@@ -312,7 +312,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     }
   }
 
-  async run(prepared: PreparedDispatch): Promise<DispatchRunOutput> {
+  async run(prepared: PreparedDispatch, options?: { signal?: AbortSignal }): Promise<DispatchRunOutput> {
     const row = this.#load(prepared.dispatchAttemptId);
     if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
     const revision = await this.dependencies.partners.getRevision(row.partner_revision_id);
@@ -324,6 +324,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       const result = await this.dependencies.instances.dispatch({
         dispatchAttemptId: row.dispatch_attempt_id,
         ...(prepared.instanceId === undefined ? {} : { instanceId: prepared.instanceId }),
+        ...(options?.signal === undefined ? {} : { signal: options.signal }),
         ...(this.dependencies.agentConversations === undefined ? {} : {
           onConversation: async ({ conversation, instanceId }) => {
             await this.dependencies.agentConversations?.replaceRun(instanceId, runId, normalizeAgentConversationEntries(
