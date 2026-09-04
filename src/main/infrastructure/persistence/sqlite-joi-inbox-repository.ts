@@ -74,6 +74,7 @@ function clearCompletedReviewMap(connection: DatabaseSync, goalInputId: string, 
             AND rs.revision > 0
             AND rs.synthesized_revision = rs.revision
             AND m.reviewed_revision = rs.revision
+            AND o.disposition = 'COMPLETED'
        )`).run(now, now, goalInputId, turnId).changes > 0;
 }
 
@@ -158,22 +159,62 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     ).all()).map((row) => mapRow(row as Row));
   }
 
-  async clarify(inputId: string, patch: { actionChoice?: "RESUME"; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
+  async clarify(inputId: string, patch: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     return this.database.transaction((connection) => {
       const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       if (row === undefined) return null;
       const current = mapRow(row);
       if (current.status !== "CLARIFICATION_REQUIRED") return null;
       if (patch.expectedReasonCode !== undefined && current.clarificationReasonCode !== patch.expectedReasonCode) return null;
-      const action = connection.prepare(`SELECT action_id, kind FROM joi_user_action_requests
+      const action = connection.prepare(`SELECT action_id, kind, result_revision FROM joi_user_action_requests
         WHERE input_id = ? AND status = 'OPEN' ORDER BY created_at, action_id LIMIT 1`).get(inputId) as {
           action_id?: unknown;
           kind?: unknown;
+          result_revision?: unknown;
         } | undefined;
       if (action !== undefined) {
         if (typeof action.action_id !== "string" || typeof action.kind !== "string") throw new Error("joi_user_action_invalid");
         if (action.kind === "PARTNER_QUESTION" && patch.text === undefined) return null;
         if (action.kind === "RECOVERY_DECISION" && patch.actionChoice !== "RESUME") return null;
+        if (action.kind === "GOAL_CONTINUATION") {
+          if (patch.actionChoice !== "CONTINUE" && patch.actionChoice !== "ACCEPT_CURRENT") return null;
+          if (typeof action.result_revision !== "number") throw new Error("joi_user_action_invalid");
+          const currentOutcome = connection.prepare(`SELECT o.disposition
+            FROM joi_goal_result_sets rs
+            JOIN joi_goal_outcomes o ON o.input_id = rs.original_input_id AND o.result_revision = rs.revision
+            JOIN joi_harness_maps m ON m.goal_input_id = rs.original_input_id
+            WHERE rs.original_input_id = ? AND rs.revision = ? AND rs.synthesized_revision = rs.revision
+              AND o.disposition = 'CONTINUE' AND m.status = 'ACTIVE'
+              AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = rs.original_input_id
+                                AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(inputId, action.result_revision);
+          if (currentOutcome === undefined) return null;
+          const now = new Date().toISOString();
+          if (patch.actionChoice === "CONTINUE") {
+            const authorized = connection.prepare(`UPDATE joi_harness_maps
+              SET continuation_allowance = continuation_allowance + 2, revision = revision + 1, updated_at = ?
+              WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, inputId);
+            if (authorized.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+          } else {
+            const accepted = connection.prepare(`UPDATE joi_goal_outcomes
+              SET disposition = 'ACCEPTED_WITH_GAPS', completed_at = ?, updated_at = ?
+              WHERE input_id = ? AND result_revision = ? AND disposition = 'CONTINUE'`).run(now, now, inputId, action.result_revision);
+            if (accepted.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+            const cleared = connection.prepare(`UPDATE joi_harness_maps
+              SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
+              WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, now, inputId);
+            if (cleared.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+          }
+          const applied = connection.prepare(`UPDATE joi_user_action_requests
+            SET status = 'APPLIED', decision = ?, resolved_at = ?, applied_at = ?, updated_at = ?
+            WHERE action_id = ? AND status = 'OPEN'`).run(patch.actionChoice, now, now, now, action.action_id);
+          if (applied.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+          const consumed = connection.prepare(`UPDATE joi_inbox_messages
+            SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
+            WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(now, inputId);
+          if (consumed.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+          const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+          return updated === undefined ? null : mapRow(updated);
+        }
       } else if (patch.actionChoice !== undefined) {
         return null;
       }
@@ -470,8 +511,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         ...results.map((row) => `resultId=${String(row.result_id)} workId=${String(row.work_id)} title=${String(row.title).slice(0, 240)} status=${String(row.status)} summary=${String(row.summary).slice(0, 320)}`),
         "Treat COMPLETED results as verified evidence. A FAILED/UNKNOWN result is a coverage gap; it does not invalidate other evidence and must not dominate the final answer unless that missing coverage is essential to the original goal.",
         "If verified completed results already answer the original goal, synthesize that answer, mention non-critical failures only as a brief trailing warning, and call turn_complete with RESULT_SYNTHESIZED.",
+        "If the evidence is insufficient but a concrete next evidence layer can run without a user decision, credential or broader permission, summarize the bounded gap and call turn_complete with RESULT_CONTINUE. The Wayfinder review will arrange that next layer.",
         "If an essential gap remains, inspect structured failure facts: only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Prefer a different suitable available partner; only switch the current partner's model when no suitable alternative exists.",
-        "For an essential auth, balance, configuration, skill or safety failure, or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; explain the missing coverage and call turn_complete with RESULT_BLOCKED.",
+        "For an essential auth, balance, configuration, skill or safety failure, a required user judgment, or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; explain the missing coverage and call turn_complete with RESULT_BLOCKED.",
         "Use work_read_result only if the bounded summary is insufficient.",
         "Do not dump raw per-Agent output.",
       ].join("\n");
@@ -604,7 +646,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         if (typeof current?.revision !== "number") throw new Error("goal_result_set_invalid");
         if (current.revision !== synthesis.result_revision
           || completion === undefined
-          || !["RESULT_SYNTHESIZED", "RESULT_BLOCKED"].includes(completion.outcome)) {
+          || !["RESULT_SYNTHESIZED", "RESULT_CONTINUE", "RESULT_BLOCKED"].includes(completion.outcome)) {
           connection.prepare(`UPDATE joi_inbox_messages SET status = 'PENDING', updated_at = ? WHERE input_id = ?`)
             .run(now, inputId);
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
@@ -620,7 +662,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         }
         const summary = normalizeCompletionSummary(completion.completionSummary);
         if (summary === "") throw new DomainError("joi_goal_synthesis_summary_empty", "Goal synthesis must include a visible summary.");
-        const disposition = completion.outcome === "RESULT_SYNTHESIZED" ? "COMPLETED" : "BLOCKED";
+        const disposition = completion.outcome === "RESULT_SYNTHESIZED" ? "COMPLETED"
+          : completion.outcome === "RESULT_CONTINUE" ? "CONTINUE" : "BLOCKED";
         if (disposition === "COMPLETED") {
           const completedWork = connection.prepare(`SELECT 1 FROM work_items
             WHERE input_id = ? AND status = 'COMPLETED' LIMIT 1`).get(synthesis.goal_input_id);

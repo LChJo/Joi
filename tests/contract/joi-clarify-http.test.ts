@@ -90,6 +90,20 @@ describe("joi clarify HTTP route", () => {
         method: "POST",
       });
       expect(session.clarifyCalls.at(-1)).toEqual({ actionChoice: "RESUME", inputId: "input-1" });
+
+      await fetch(`${session.url}/api/v1/joi/messages/input-1/clarify`, {
+        body: JSON.stringify({ actionChoice: "CONTINUE" }),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(session.clarifyCalls.at(-1)).toEqual({ actionChoice: "CONTINUE", inputId: "input-1" });
+
+      await fetch(`${session.url}/api/v1/joi/messages/input-1/clarify`, {
+        body: JSON.stringify({ actionChoice: "ACCEPT_CURRENT" }),
+        headers: session.headers,
+        method: "POST",
+      });
+      expect(session.clarifyCalls.at(-1)).toEqual({ actionChoice: "ACCEPT_CURRENT", inputId: "input-1" });
     } finally {
       await session.close();
     }

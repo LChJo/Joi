@@ -147,6 +147,10 @@ export interface RuntimeDiagnosticEventMap {
     inputId: string;
     reasonCode: string;
   };
+  "joi.harness.continuation_decision_requested": {
+    goalInputId: string;
+    resultRevision: number;
+  };
   "joi.workbench.resolved": {
     workbenchId: string;
     inputId: string;
@@ -234,7 +238,7 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.goal.synthesis.completed": {
-    disposition: "BLOCKED" | "COMPLETED";
+    disposition: "BLOCKED" | "COMPLETED" | "CONTINUE";
     workbenchId: string;
     goalInputId: string;
     inputId: string;
@@ -242,7 +246,7 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
   };
   "joi.goal.outcome.persisted": {
-    disposition: "BLOCKED" | "COMPLETED";
+    disposition: "BLOCKED" | "COMPLETED" | "CONTINUE";
     workbenchId: string;
     goalInputId: string;
     resultRevision: number;

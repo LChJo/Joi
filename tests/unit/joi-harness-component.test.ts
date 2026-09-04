@@ -148,6 +148,20 @@ describe("JoiHarnessComponent", () => {
     expect(harness.feedbackEntries[0]?.entry).toBe("[2026-08-05] 「目标」达成：目标已收尾");
   });
 
+  it("records user-accepted gaps without claiming the destination was attained", async () => {
+    const harness = makeHarness();
+    harness.feedbackTargets.push({
+      acceptedWithGaps: true,
+      workbenchId: "workbench-1",
+      completionSummary: "横评已形成，但近七天来源不足。",
+      destination: "完成资讯横评",
+      goalInputId: "goal-gaps",
+    });
+    await harness.component.update(ctxAt(0));
+    expect(harness.feedbackEntries[0]?.entry)
+      .toBe("[2026-08-05] 「完成资讯横评」接受当前结果（有缺口）：横评已形成，但近七天来源不足。");
+  });
+
   it("clears trivial maps", async () => {
     const harness = makeHarness();
     harness.trivialCandidates.push({ goalInputId: "goal-4" });

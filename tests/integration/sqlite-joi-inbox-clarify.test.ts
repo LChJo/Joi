@@ -5,6 +5,7 @@ import path from "node:path";
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
+import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
@@ -186,6 +187,80 @@ describe("sqlite joi inbox clarify", () => {
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("applies a goal continuation decision without rerouting the original input", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "研究", personaSummary: "persona", projectLabel: "joi", scopeSummary: "研究" });
+      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-goal-continuation", text: "研究 AI 资讯", workbenchId: workbench.workbenchId });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-goal-continuation', ?, ?, 'session-goal-continuation', 'COMPLETED', ?, ?)`)
+          .run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'goal_continuation_required', clarification_prompt = '证据仍有缺口。' WHERE input_id = ?").run(accepted.inputId);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
+          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 3, 3, ?)`).run(accepted.inputId, now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, completion_summary, completed_at, updated_at, disposition)
+          VALUES (?, 3, '已有横评，近七天来源仍不足。', ?, ?, 'CONTINUE')`).run(accepted.inputId, now, now);
+        connection.prepare(`INSERT INTO joi_user_action_requests
+          (action_id, input_id, result_revision, kind, status, reason_code, prompt, created_at, updated_at)
+          VALUES ('continue-action', ?, 3, 'GOAL_CONTINUATION', 'OPEN', 'goal_continuation_required', '证据仍有缺口。', ?, ?)`)
+          .run(accepted.inputId, now, now);
+      });
+
+      await expect(inbox.clarify({ actionChoice: "CONTINUE", inputId: accepted.inputId })).resolves.toMatchObject({ status: "CONSUMED" });
+      expect(fixture.database.transaction((connection) => ({
+        action: connection.prepare("SELECT decision, status FROM joi_user_action_requests WHERE action_id = 'continue-action'").get(),
+        goal: connection.prepare("SELECT status, clarification_reason_code FROM joi_inbox_messages WHERE input_id = ?").get(accepted.inputId),
+        map: connection.prepare("SELECT continuation_allowance, status FROM joi_harness_maps WHERE goal_input_id = ?").get(accepted.inputId),
+      }))).toEqual({
+        action: { decision: "CONTINUE", status: "APPLIED" },
+        goal: { clarification_reason_code: null, status: "CONSUMED" },
+        map: { continuation_allowance: 4, status: "ACTIVE" },
+      });
+
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'goal_continuation_required' WHERE input_id = ?").run(accepted.inputId);
+        connection.prepare(`INSERT INTO joi_user_action_requests
+          (action_id, input_id, result_revision, kind, status, reason_code, prompt, created_at, updated_at)
+          VALUES ('accept-action', ?, 3, 'GOAL_CONTINUATION', 'OPEN', 'goal_continuation_required', '证据仍有缺口。', ?, ?)`)
+          .run(accepted.inputId, now, now);
+      });
+      await expect(inbox.clarify({ actionChoice: "ACCEPT_CURRENT", inputId: accepted.inputId })).resolves.toMatchObject({ status: "CONSUMED" });
+      const facts = fixture.database.transaction((connection) => ({
+        action: connection.prepare("SELECT decision, status FROM joi_user_action_requests WHERE action_id = 'accept-action'").get(),
+        map: connection.prepare("SELECT status FROM joi_harness_maps WHERE goal_input_id = ?").get(accepted.inputId),
+        outcome: connection.prepare("SELECT disposition, completed_at FROM joi_goal_outcomes WHERE input_id = ?").get(accepted.inputId),
+      })) as {
+        action: { decision: string; status: string };
+        map: { status: string };
+        outcome: { completed_at: string; disposition: string };
+      };
+      expect(facts).toEqual({
+        action: { decision: "ACCEPT_CURRENT", status: "APPLIED" },
+        map: { status: "CLEARED" },
+        outcome: { completed_at: facts.outcome.completed_at, disposition: "ACCEPTED_WITH_GAPS" },
+      });
+      expect(Number.isNaN(Date.parse(facts.outcome.completed_at))).toBe(false);
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+      expect(feed.goals[0]).toMatchObject({
+        completionSummary: "已有横评，近七天来源仍不足。",
+        goalId: accepted.inputId,
+        status: "COMPLETED_WITH_GAPS",
+      });
+      expect(feed.thinking).toEqual([]);
+    } finally {
+      await fixture.close();
     }
   });
 });

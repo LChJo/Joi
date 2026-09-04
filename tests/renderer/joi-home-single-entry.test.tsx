@@ -788,7 +788,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-phases", "阶段 Workbench");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
-    const statuses = ["ARRANGING", "ARRANGED", "RUNNING", "REVIEWING", "EXTENDING", "NEEDS_ATTENTION", "FINALIZING", "COMPLETED", "FAILED", "CANCELED"] as const;
+    const statuses = ["ARRANGING", "ARRANGED", "RUNNING", "REVIEWING", "EXTENDING", "NEEDS_ATTENTION", "FINALIZING", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"] as const;
     vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
       goals: statuses.map((status, index): JoiGoalCardDto => {
         const base = {
@@ -816,7 +816,7 @@ describe("joi home single entry", () => {
     render(<JoiHome api={api} />);
     expect(await screen.findByText("正在评审")).toBeInTheDocument();
     expect(screen.getByText("评审后补充执行")).toBeInTheDocument();
-    for (const label of ["正在安排", "已安排", "执行中", "需要你", "正在总结", "已完成", "处理失败", "已取消"]) {
+    for (const label of ["正在安排", "已安排", "执行中", "需要你", "正在总结", "已完成", "已完成（有缺口）", "处理失败", "已取消"]) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText("有一项执行未完成")).toBeInTheDocument();
@@ -1233,6 +1233,42 @@ describe("joi home single entry", () => {
     expect(screen.getByText(/想新建一个工作台来承接/u)).toBeInTheDocument();
     expect(screen.getByText(/指向的工作台已不存在/u)).toBeInTheDocument();
     expect(screen.getByText("搭档配置暂不可用，请先检查设置。")).toBeInTheDocument();
+  });
+
+  it("offers bounded continuation or acceptance on the original goal card", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-continuation", "研究 Workbench");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        clarification: {
+          prompt: "已自动补充两轮，当前结果仍有明确缺口。",
+          reasonCode: "goal_continuation_required",
+        },
+        completionSummary: "横评维度已建立，但近七天来源不足。",
+        goalId: "goal-continuation",
+        status: "NEEDS_ATTENTION",
+        title: "评估中文 AI 资讯网站",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 3, failed: 0, total: 3 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: workbench.updatedAt, inputId: "goal-continuation", status: "CONSUMED",
+    });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("已自动补充两轮，当前结果仍有明确缺口。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续补齐" }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "CONTINUE" }));
+    fireEvent.click(screen.getByRole("button", { name: "接受现状" }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "ACCEPT_CURRENT" }));
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
   });
 
   it("keeps a large workbench choice list bounded and searchable", async () => {

@@ -69,6 +69,7 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
         JOIN joi_inbox_messages i ON i.input_id = o.input_id
         WHERE i.workbench_id = ? AND rs.revision > 0
           AND o.result_revision = rs.revision AND rs.synthesized_revision = rs.revision
+          AND o.disposition IN ('COMPLETED', 'BLOCKED', 'ACCEPTED_WITH_GAPS')
         ORDER BY o.completed_at DESC, o.input_id DESC LIMIT 10`).all(workbenchId).map((value) => {
         const item = value as Row;
         return {

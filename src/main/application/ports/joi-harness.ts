@@ -17,6 +17,7 @@ export interface HarnessGoalSeed {
 
 /** Bounded digest handed to a harness review turn (limits enforced by the scan). */
 export interface HarnessReviewDigest {
+  continuationRequested?: true;
   workbenchId: string;
   completionSummary: string;
   decisionCount: number;
@@ -43,6 +44,7 @@ export interface HarnessReviewRecoveryResult {
 }
 
 export interface HarnessFeedbackTarget {
+  acceptedWithGaps?: true;
   workbenchId: string;
   completionSummary: string;
   destination: string | null;
@@ -53,6 +55,12 @@ export interface HarnessWorkRecoverySeed {
   attemptNo: number;
   goalInputId: string;
   sourceWorkId: string;
+  workbenchId: string;
+}
+
+export interface HarnessContinuationDecisionSeed {
+  goalInputId: string;
+  resultRevision: number;
   workbenchId: string;
 }
 
@@ -80,6 +88,7 @@ export interface JoiHarnessScan {
   listTrivialMapCandidates(): Promise<{ goalInputId: string }[]>;
   loadGoalProjections(): Promise<HarnessGoalProjection[]>;
   listWorkRecoverySeeds?(): Promise<HarnessWorkRecoverySeed[]>;
+  listContinuationDecisionSeeds?(): Promise<HarnessContinuationDecisionSeed[]>;
 }
 
 /** Deterministic write surface used by the traversal. Never reasons and never dispatches. */
@@ -91,6 +100,7 @@ export interface JoiHarnessWriter {
   recordCompletionFeedback(input: { workbenchId: string; entry: string; goalInputId: string; now: string }): Promise<boolean>;
   synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }>;
   enqueueWorkRecovery?(input: { now: string; seed: HarnessWorkRecoverySeed }): Promise<string | null>;
+  requestContinuationDecision?(input: { now: string; seed: HarnessContinuationDecisionSeed }): Promise<boolean>;
 }
 
 /** Reasoning-side write surface injected into the harness tools; always goal-scoped. */

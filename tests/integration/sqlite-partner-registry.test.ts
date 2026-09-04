@@ -99,7 +99,7 @@ describe("SQLite partner registry", () => {
       database.close();
 
       database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
-      expect(database.inspect()).toMatchObject({ mode: "read-write", schemaVersion: 50 });
+      expect(database.inspect()).toMatchObject({ mode: "read-write", schemaVersion: 51 });
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(partner_revisions)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "engine_config_json" })]));
       await expect(new SqlitePartnerRegistryRepository(database).getActive(legacy.partnerId)).resolves.toMatchObject({

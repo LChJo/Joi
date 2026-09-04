@@ -79,7 +79,11 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (number(row, "outcome_current") === 1 && activeMap) return "REVIEWING";
   // An up-to-date synthesized outcome means the goal lifecycle is done even when the
   // orchestration turn is still open (long wait turn) or leaked (orphan not yet recovered).
-  if (number(row, "outcome_current") === 1) return row.outcome_disposition === "BLOCKED" ? "FAILED" : "COMPLETED";
+  if (number(row, "outcome_current") === 1) {
+    if (row.outcome_disposition === "BLOCKED") return "FAILED";
+    if (row.outcome_disposition === "ACCEPTED_WITH_GAPS") return "COMPLETED_WITH_GAPS";
+    return "COMPLETED";
+  }
   if (text(row, "inbox_status") === "CONSUMED") return "COMPLETED";
   return "ARRANGING";
 }
@@ -211,9 +215,11 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const rawTitle = maskSecretText(text(row, "body")).replace(/\s+/gu, " ").trim();
         const title = rawTitle.length > 120 ? `${rawTitle.slice(0, 120)}…` : rawTitle;
         const blockedRecoveryExhausted = status === "FAILED" && row.outcome_disposition === "BLOCKED";
+        const continuationDecision = status === "NEEDS_ATTENTION"
+          && row.clarification_reason_code === "goal_continuation_required";
         const finalOutcome = number(row, "outcome_current") === 1
-          && (harnessProjection?.mapStatus !== "ACTIVE" || blockedRecoveryExhausted);
-        const terminalStatus = ["COMPLETED", "FAILED", "CANCELED"].includes(status);
+          && (harnessProjection?.mapStatus !== "ACTIVE" || blockedRecoveryExhausted || continuationDecision);
+        const terminalStatus = ["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(status);
         const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code);
         const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))
           ? goalArtifacts(connection, goalId, row.workbench_id)
@@ -288,7 +294,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
       const thinking = collapseThinkingByGoal(turns.filter((row) => {
         if (text(row, "status") === "PENDING") return true;
         const goal = goalsById.get(text(row, "goal_id"));
-        return goal === undefined || !["COMPLETED", "FAILED", "CANCELED"].includes(goal.status);
+        return goal === undefined || !["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(goal.status);
       }).map((row) => {
         const status = text(row, "status");
         const activityInputId = text(row, "activity_input_id");

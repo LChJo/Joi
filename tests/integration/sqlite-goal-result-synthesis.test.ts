@@ -156,6 +156,26 @@ describe("goal-level result synthesis", () => {
         connection.prepare("UPDATE work_items SET status = 'COMPLETED' WHERE work_id = 'work-2'").run();
         connection.prepare(`INSERT INTO joi_turns
           (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-synthesis-continue', ?, ?, ?, 'RUNNING', ?, ?)`).run(
+          synthesisInputId, workbench.workbenchId, `joi_synthesis_session:${workbench.workbenchId}`,
+          "2026-08-05T09:01:02.500Z", "2026-08-05T09:01:02.500Z",
+        );
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED' WHERE input_id = ?").run(synthesisInputId);
+      });
+      await inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis-continue", {
+        completionSummary: "横评维度已建立，但近七天来源仍需补齐。",
+        outcome: "RESULT_CONTINUE",
+      });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT disposition, completion_summary FROM joi_goal_outcomes WHERE input_id = 'goal-stock'",
+      ).get())).toEqual({
+        completion_summary: "横评维度已建立，但近七天来源仍需补齐。",
+        disposition: "CONTINUE",
+      });
+
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
           VALUES ('turn-synthesis-final', ?, ?, ?, 'RUNNING', ?, ?)`).run(
           synthesisInputId, workbench.workbenchId, `joi_synthesis_session:${workbench.workbenchId}`,
           "2026-08-05T09:01:03.000Z", "2026-08-05T09:01:03.000Z",

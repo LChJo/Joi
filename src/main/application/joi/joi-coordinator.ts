@@ -427,7 +427,7 @@ export class JoiCoordinator {
           if (pin.modelCapability === "custom-unverified-tools" && observedToolCalls.size === 0) {
             throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
           }
-          const synthesisOutcomeCommitted = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_BLOCKED";
+          const synthesisOutcomeCommitted = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_CONTINUE" || committedTurnOutcome === "RESULT_BLOCKED";
           if (observedToolCalls.size > 0 && committedOutcomeTools.size === 0 || isGoalSynthesis && !synthesisOutcomeCommitted) {
             if (completionRepairAttempted) {
               throw new DomainError("joi_turn_outcome_uncommitted", "The reasoning Turn ended without a committed outcome.");
@@ -493,7 +493,7 @@ export class JoiCoordinator {
       }
       const completionSummary = normalizeCompletionSummary(completionText);
       if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
-      const synthesisOutcome = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_BLOCKED"
+      const synthesisOutcome = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_CONTINUE" || committedTurnOutcome === "RESULT_BLOCKED"
         ? committedTurnOutcome
         : undefined;
       if (isGoalSynthesis && synthesisOutcome === undefined) {
@@ -514,7 +514,8 @@ export class JoiCoordinator {
         outcome: directOutcome,
       });
       if (goalSynthesis !== null) {
-        const disposition = synthesisOutcome === "RESULT_SYNTHESIZED" ? "COMPLETED" as const : "BLOCKED" as const;
+        const disposition = synthesisOutcome === "RESULT_SYNTHESIZED" ? "COMPLETED" as const
+          : synthesisOutcome === "RESULT_CONTINUE" ? "CONTINUE" as const : "BLOCKED" as const;
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.synthesis.completed", {
           disposition,
           workbenchId,

@@ -41,6 +41,7 @@ export class JoiHarnessComponent implements ActorComponent {
     await this.#step(ctx, "work_recovery", () => this.#enqueueWorkRecoveries(ctx));
     if (this.dependencies.reviewEnabled === true) {
       await this.#step(ctx, "review", () => this.#enqueueReviews(ctx));
+      await this.#step(ctx, "continuation_decision", () => this.#requestContinuationDecisions(ctx));
       await this.#step(ctx, "review_recovery", () => this.#reconcileReviews(ctx));
     }
   }
@@ -76,7 +77,8 @@ export class JoiHarnessComponent implements ActorComponent {
     for (const target of await this.dependencies.scan.listFeedbackTargets()) {
       const heading = target.destination ?? "目标";
       const summary = target.completionSummary.trim() === "" ? "目标已收尾" : target.completionSummary.slice(0, FEEDBACK_ENTRY_SUMMARY_LIMIT);
-      const entry = `[${ctx.now.toISOString().slice(0, 10)}] 「${heading}」达成：${summary}`;
+      const outcomeLabel = target.acceptedWithGaps === true ? "接受当前结果（有缺口）" : "达成";
+      const entry = `[${ctx.now.toISOString().slice(0, 10)}] 「${heading}」${outcomeLabel}：${summary}`;
       const recorded = await this.dependencies.writer.recordCompletionFeedback({
         workbenchId: target.workbenchId,
         entry,
@@ -123,6 +125,18 @@ export class JoiHarnessComponent implements ActorComponent {
         goalInputId: seed.goalInputId,
         inputId,
         sourceWorkId: seed.sourceWorkId,
+      });
+    }
+  }
+
+  async #requestContinuationDecisions(ctx: ActorTickContext): Promise<void> {
+    if (this.dependencies.scan.listContinuationDecisionSeeds === undefined
+      || this.dependencies.writer.requestContinuationDecision === undefined) return;
+    for (const seed of await this.dependencies.scan.listContinuationDecisionSeeds()) {
+      const created = await this.dependencies.writer.requestContinuationDecision({ now: ctx.now.toISOString(), seed });
+      if (created) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.continuation_decision_requested", {
+        goalInputId: seed.goalInputId,
+        resultRevision: seed.resultRevision,
       });
     }
   }

@@ -14,6 +14,10 @@ Routine 的周期、RRULE、日期边界、Workbench 可用性、原子 inbox �
 
 Pi READY 来源只有最近五分钟内按 source/model/credential revision 完成无工具验证才可直接派发；过期验证按 revision 合并探测。未固定搭档可跳过探测失败来源，固定来源必须停止并返回安全配置原因。运行中 401/403 先把来源移出派发集合，再做一次无工具诊断；403 只持久化 `auth_forbidden`、`model_access_forbidden`、`region_forbidden`、`request_policy_forbidden` 或 `http_403`。终态 FAILED/UNKNOWN 即使已有 engine conversation 也必须追加独立安全 ERROR；`OBSERVED/UNKNOWN` 继续遵守 AC-64 的产物验收与补充 Work 门禁。
 
+## AC-66 结果缺口自动续跑与用户兜底
+
+综合证据不足但下一证据层明确、无需用户判断、凭据或扩权时，Joi 必须提交 `RESULT_CONTINUE`，不得误记为硬失败。每个 Wayfinder 目标默认持久授权两层自动续跑，重启和重复 tick 不得重置或重复消费额度；额度内由 review 安排下一层 Work。额度耗尽后首页原目标卡必须提供“继续补齐/接受现状”：前者再授权两层且不重路由原始输入，后者原子清图并形成 `COMPLETED_WITH_GAPS`，保留缺口摘要且不得反哺为“达成”。详见 ADR 0017。
+
 ## 0. JOI-01 实施路线
 
 JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1 Pi 与 provider contract；W2 Model Source/工作台/Partner 领域及迁移；W3 首次连接、inbox 与最小首页闭环；W4 Work DAG/并发/outbox；W5 Local Pi/A2A 搭档；W6 唯一首页与次级管理 UI；W7 兼容切换、安全与发布验证。
@@ -63,7 +67,7 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-25 的搭档模型配置与连通性收敛以 AC-55 为门禁：本机 Pi 搭档切换模型源时必须同步显示该来源的 active model，更新接口以显式 `null` 清除旧 pin，保存成功后读取最新 immutable revision；应用层在追加 revision 前拒绝非 READY 来源或来源/模型不匹配。搭档卡可发起固定极小、无工具、无 Work/run、无工作区副作用的模型验证，并仅展示持久化的安全状态、来源/模型、时间和稳定原因码；A2A 不提供伪连通测试。Claude Code 与 Codex 必须由用户显式点击后启动各自原生 backend 的无工具最小真实调用，PATH 探测不能作为测试成功；超时或未收到成功 result 必须返回安全失败状态。
 
-2026-08-24 的部分失败目标综合收敛继续以 AC-43 为门禁：综合 Turn 必须显式提交 `RESULT_SYNTHESIZED` 或 `RESULT_BLOCKED`；成功至少基于一个已验收完成 Work，并由 Joi 语义判断现有证据足以回答原目标。当前 COMPLETED outcome 的权威性高于失败 Work 计数，首页仍标记完成并把异常降级为可点击搭档入口；关键证据缺失才写 BLOCKED，存量 outcome 无损回填为 COMPLETED。
+2026-08-24 的部分失败目标综合收敛继续以 AC-43 为门禁：综合 Turn 必须显式提交目标级 disposition；成功至少基于一个已验收完成 Work，并由 Joi 语义判断现有证据足以回答原目标。当前 COMPLETED outcome 的权威性高于失败 Work 计数，首页仍标记完成并把异常降级为可点击搭档入口；无安全下一步的关键缺口才写 BLOCKED，存量 outcome 无损回填为 COMPLETED。可安全补证的缺口按 AC-66 使用 `RESULT_CONTINUE`。
 
 2026-08-26 的 AI Berkshire 大型场景预设包以 AC-56 为门禁：内置快照必须可脱离来源 checkout 运行，二十个 canonical workflow 与写作 overlay 收敛为六个子团队、十五位共享搭档；安装以 pack/role 稳定绑定并可从部分失败继续，重复安装不得覆盖用户 revision、启用停用搭档或产生重复角色。搭档页提供子团队和完整套件的一键安装；财务计算与研究审计只通过固定、有界、不可执行任意代码的工具完成。
 

@@ -439,6 +439,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const isQuestion = reasonCode === "question_required";
   const needsPartnerChoice = reasonCode === "partner_selection_required";
   const needsWaitingRecovery = reasonCode === "partner_waiting_recovery_required" || reasonCode === "partner_auth_required";
+  const needsGoalContinuation = reasonCode === "goal_continuation_required";
   const needsWorkspace = reasonCode === "workbench_workspace_not_ready";
   const needsWorkbenchChoice = reasonCode === "workbench_selection_invalid" || reasonCode === "workbench_creation_unavailable" || reasonCode === "workbench_not_found";
   const needsHistoricalReview = reasonCode === "harness_review_unrecoverable";
@@ -453,7 +454,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     ? selectableWorkbenches
     : selectableWorkbenches.filter((workbench) => `${workbench.name} ${workbench.scopeSummary}`.toLowerCase().includes(normalizedWorkbenchQuery));
   const selectablePartners = partners.filter((partner) => partner.status === "ACTIVE" && partner.configuration === undefined);
-  const resolve = async (resolution: { actionChoice?: "RESUME"; partnerId?: string; workbenchId?: string; text?: string }) => {
+  const resolve = async (resolution: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; partnerId?: string; workbenchId?: string; text?: string }) => {
     setBusy(true); setNotice(null);
     try {
       await api.clarifyJoiMessage(inputId, resolution);
@@ -545,7 +546,13 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
         </div>
       </section> : null}
     </> : null}
-    {needsHistoricalReview || needsPartnerChoice ? null : needsWaitingRecovery ? <div className="joi-clarify-workspace">
+    {needsHistoricalReview || needsPartnerChoice ? null : needsGoalContinuation ? <div className="joi-clarify-workspace">
+      <div><strong>选择如何收口</strong><span>继续会再授权最多两轮自动补充；接受现状会保留当前结论和已注明的缺口。</span></div>
+      <span className="row-actions">
+        <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "CONTINUE" })} type="button">{busy ? "提交中…" : "继续补齐"}</button>
+        <button className="button quiet" disabled={busy} onClick={() => void resolve({ actionChoice: "ACCEPT_CURRENT" })} type="button">接受现状</button>
+      </span>
+    </div> : needsWaitingRecovery ? <div className="joi-clarify-workspace">
       <div><strong>恢复原工作</strong><span>joi 会使用已保存的 Work 和搭档会话继续，不会重新创建一份任务。</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "RESUME" })} type="button">{busy ? "恢复中…" : "继续原工作"}</button>
     </div> : needsWorkspace ? <div className="joi-clarify-workspace">
@@ -670,6 +677,7 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   if (status === "NEEDS_ATTENTION") return "需要你";
   if (status === "FINALIZING") return "正在总结";
   if (status === "COMPLETED") return "已完成";
+  if (status === "COMPLETED_WITH_GAPS") return "已完成（有缺口）";
   if (status === "FAILED") return "处理失败";
   return "已取消";
 }
@@ -681,7 +689,7 @@ function GoalStatusBadge({ status }: { status: JoiGoalCardDto["status"] }) {
 }
 
 function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
-  const percent = goal.status === "COMPLETED"
+  const percent = goal.status === "COMPLETED" || goal.status === "COMPLETED_WITH_GAPS"
     ? 100
     : goal.work.total === 0 ? 0 : Math.round((goal.work.completed / goal.work.total) * 100);
   return <span className="joi-goal-progress">
@@ -691,7 +699,7 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
 }
 
 function GoalAgentWarning({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
-  if (goal.status !== "COMPLETED" || goal.work.failed === 0) return null;
+  if ((goal.status !== "COMPLETED" && goal.status !== "COMPLETED_WITH_GAPS") || goal.work.failed === 0) return null;
   return <button
     aria-label={`查看 ${String(goal.work.failed)} 个异常搭档`}
     className="joi-goal-agent-warning"
@@ -715,7 +723,7 @@ function GoalFailureNotice({ failure }: { failure: NonNullable<JoiGoalCardDto["f
   </section>;
 }
 
-const TERMINAL_GOAL_STATUSES: readonly JoiGoalCardDto["status"][] = ["CANCELED", "COMPLETED", "FAILED"];
+const TERMINAL_GOAL_STATUSES: readonly JoiGoalCardDto["status"][] = ["CANCELED", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED"];
 
 function goalRetryHint(status: JoiGoalCardDto["status"]): string {
   if (status === "FAILED") return "问题处理好后，可以继续这条任务。补充新的要求，或留空直接重新派发。";
@@ -1121,6 +1129,7 @@ function clarificationText(code: string | undefined, prompt?: string, workbenchN
   if (code === "question_required") return prompt ?? "joi 需要你回答一个问题，才能继续安排这条任务。";
   if (code === "partner_waiting_recovery_required") return prompt ?? "一项搭档工作仍在等待。点击继续原工作即可恢复。";
   if (code === "partner_auth_required") return prompt ?? "搭档需要重新授权。请先在搭档设置完成授权，然后点击继续原工作。";
+  if (code === "goal_continuation_required") return prompt ?? "已自动补充两轮，当前结果仍有明确缺口。可以继续补齐，或接受当前结果。";
   if (code === "workbench_workspace_not_ready") return `“${workbenchName ?? "当前工作台"}”还没有可用的工作目录。选择一个目录后，joi 会自动继续这条任务。`;
   if (code === "partner_selection_required") return prompt ?? "请选择一个可用搭档继续这条任务。";
   if (code === "work_dispatch_failed") return prompt ?? "joi 暂时无法把这条任务派发给搭档，任务已暂停。修复搭档配置后可以继续重试。";

@@ -35,7 +35,12 @@ function seedGoal(fixture: RuntimeFixture, options: GoalSeedOptions): { workbenc
   return { workbenchId };
 }
 
-function seedCompletedLayer(fixture: RuntimeFixture, goalInputId: string, revision: number): void {
+function seedCompletedLayer(
+  fixture: RuntimeFixture,
+  goalInputId: string,
+  revision: number,
+  disposition: "BLOCKED" | "COMPLETED" | "CONTINUE" | "ACCEPTED_WITH_GAPS" = "COMPLETED",
+): void {
   fixture.database.transaction((connection) => {
     connection.prepare(`INSERT INTO joi_goal_result_sets
       (original_input_id, revision, synthesized_revision, updated_at)
@@ -44,11 +49,12 @@ function seedCompletedLayer(fixture: RuntimeFixture, goalInputId: string, revisi
         synthesized_revision = excluded.synthesized_revision, updated_at = excluded.updated_at`)
       .run(goalInputId, revision, revision, NOW);
     connection.prepare(`INSERT INTO joi_goal_outcomes
-      (input_id, result_revision, completion_summary, completed_at, updated_at)
-      VALUES (?, ?, '一层完成', ?, ?)
+      (input_id, result_revision, completion_summary, completed_at, updated_at, disposition)
+      VALUES (?, ?, '一层完成', ?, ?, ?)
       ON CONFLICT(input_id) DO UPDATE SET result_revision = excluded.result_revision,
-        completion_summary = excluded.completion_summary, updated_at = excluded.updated_at`)
-      .run(goalInputId, revision, NOW, NOW);
+        completion_summary = excluded.completion_summary, updated_at = excluded.updated_at,
+        disposition = excluded.disposition`)
+      .run(goalInputId, revision, NOW, NOW, disposition);
   });
 }
 
@@ -139,6 +145,21 @@ describe("SqliteJoiHarnessRepository", () => {
       ).get()) as { task_summary: string };
       expect(summary.task_summary).toHaveLength(2_000);
       expect(summary.task_summary.endsWith("TAIL")).toBe(true);
+    });
+
+    it("marks accepted incomplete evidence so feedback cannot claim full attainment", async () => {
+      seedGoal(fixture, { goalInputId: "goal-feedback-gaps", turn: true });
+      await repository.createMap({ workbenchId: "workbench-goal-feedback-gaps", goalInputId: "goal-feedback-gaps", now: NOW });
+      seedCompletedLayer(fixture, "goal-feedback-gaps", 1, "ACCEPTED_WITH_GAPS");
+      forceMapCleared(fixture, "goal-feedback-gaps");
+
+      expect(await repository.listFeedbackTargets()).toEqual([{
+        acceptedWithGaps: true,
+        workbenchId: "workbench-goal-feedback-gaps",
+        completionSummary: "一层完成",
+        destination: null,
+        goalInputId: "goal-feedback-gaps",
+      }]);
     });
   });
 
@@ -334,6 +355,78 @@ describe("SqliteJoiHarnessRepository", () => {
       ).run());
 
       expect(await repository.listReviewDigests()).toEqual([]);
+    });
+
+    it("automatically reviews two continuation layers then requests a goal-level decision", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-continue", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-continue", now: NOW });
+
+      for (const layer of [1, 2, 3]) {
+        if (layer > 1) {
+          fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_harness_paths
+            (path_id, goal_input_id, layer, title, status, created_at, updated_at)
+            VALUES (?, 'goal-continue', ?, '补充证据', 'CLOSED', ?, ?)`)
+            .run(`path-continue-${String(layer)}`, layer, NOW, NOW));
+        }
+        seedCompletedLayer(fixture, "goal-continue", layer, "CONTINUE");
+        const digests = await repository.listReviewDigests();
+        if (layer <= 2) {
+          expect(digests).toHaveLength(1);
+          const digest = digests[0];
+          if (digest === undefined) throw new Error("expected continuation review digest");
+          await expect(repository.enqueueReview({ digest, now: NOW })).resolves.not.toBeNull();
+        } else {
+          expect(digests).toEqual([]);
+        }
+      }
+
+      const decisions = await repository.listContinuationDecisionSeeds();
+      expect(decisions).toEqual([{
+        goalInputId: "goal-continue",
+        resultRevision: 3,
+        workbenchId,
+      }]);
+      const decision = decisions[0];
+      if (decision === undefined) throw new Error("expected continuation decision seed");
+      await expect(repository.requestContinuationDecision({ now: NOW, seed: decision })).resolves.toBe(true);
+      await expect(repository.requestContinuationDecision({ now: NOW, seed: decision })).resolves.toBe(false);
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
+        .toMatchObject({
+          clarification: { reasonCode: "goal_continuation_required" },
+          goalId: "goal-continue",
+          status: "NEEDS_ATTENTION",
+        });
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT kind, result_revision, status
+        FROM joi_user_action_requests WHERE input_id = 'goal-continue'`).get())).toEqual({
+        kind: "GOAL_CONTINUATION",
+        result_revision: 3,
+        status: "OPEN",
+      });
+    });
+
+    it("does not overwrite an unrelated user clarification with automatic continuation", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-continue-guard", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-continue-guard", now: NOW });
+      seedCompletedLayer(fixture, "goal-continue-guard", 1, "CONTINUE");
+      fixture.database.transaction((connection) => connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'question_required',
+            clarification_prompt = '先确认范围' WHERE input_id = 'goal-continue-guard'`).run());
+
+      expect(await repository.listReviewDigests()).toEqual([]);
+      fixture.database.transaction((connection) => {
+        const insertPath = connection.prepare(`INSERT INTO joi_harness_paths
+          (path_id, goal_input_id, layer, title, status, created_at, updated_at)
+          VALUES (?, 'goal-continue-guard', ?, '补充证据', 'CLOSED', ?, ?)`);
+        insertPath.run("path-continue-guard-2", 2, NOW, NOW);
+        insertPath.run("path-continue-guard-3", 3, NOW, NOW);
+      });
+      seedCompletedLayer(fixture, "goal-continue-guard", 3, "CONTINUE");
+      expect(await repository.listContinuationDecisionSeeds()).toEqual([]);
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT status, clarification_reason_code
+        FROM joi_inbox_messages WHERE input_id = 'goal-continue-guard'`).get())).toEqual({
+        clarification_reason_code: "question_required",
+        status: "CLARIFICATION_REQUIRED",
+      });
     });
 
     it("queues a dedicated recovery turn and clears an internal dispatch clarification", async () => {
@@ -689,6 +782,13 @@ describe("SqliteJoiHarnessRepository", () => {
       await repository.chartPath({
         close: { pathId: path.pathId, status: "CLOSED" }, goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current",
       });
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_goal_outcomes SET disposition = 'CONTINUE' WHERE input_id = 'goal-clear-gates'",
+      ).run());
+      expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current" })).toBe(false);
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_goal_outcomes SET disposition = 'COMPLETED' WHERE input_id = 'goal-clear-gates'",
+      ).run());
       expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current" })).toBe(true);
       expect(await repository.clearMap({ goalInputId: "goal-clear-gates", turnId: "turn-review-clear-current" })).toBe(false);
       const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));

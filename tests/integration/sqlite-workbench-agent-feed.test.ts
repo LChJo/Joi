@@ -529,17 +529,20 @@ describe("Workbench Agent and joi home projections", () => {
           (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
           VALUES (?, ?, ?, 'CONSUMED', ?, ?, ?)`);
         insertGoal.run("goal-current", "key-current", "当前目标", workbench.workbenchId, now, now);
+        insertGoal.run("goal-continue", "key-continue", "仍需补齐的目标", workbench.workbenchId, now, now);
         insertGoal.run("goal-old", "key-old", "旧目标", workbench.workbenchId, now, now);
         insertGoal.run("goal-pending", "key-pending", "未合成目标", workbench.workbenchId, now, now);
         const insertSet = connection.prepare(`INSERT INTO joi_goal_result_sets
           (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, ?, ?, ?)`);
         insertSet.run("goal-current", 2, 2, now);
+        insertSet.run("goal-continue", 1, 1, now);
         insertSet.run("goal-old", 2, 1, now);
         insertSet.run("goal-pending", 1, 0, now);
         connection.prepare(`INSERT INTO joi_goal_outcomes
-          (input_id, result_revision, completion_summary, completed_at, updated_at)
-          VALUES ('goal-current', 2, '这是当前目标的最终综合结论。', ?, ?),
-                 ('goal-old', 1, '这是旧 revision 的结论。', ?, ?)`).run(now, now, now, now);
+          (input_id, result_revision, completion_summary, completed_at, updated_at, disposition)
+          VALUES ('goal-current', 2, '这是当前目标的最终综合结论。', ?, ?, 'COMPLETED'),
+                 ('goal-continue', 1, '这是等待下一层证据的中间结论。', ?, ?, 'CONTINUE'),
+                 ('goal-old', 1, '这是旧 revision 的结论。', ?, ?, 'COMPLETED')`).run(now, now, now, now, now, now);
       });
 
       const detail = await fixture.workbenchManagement.get(workbench.workbenchId) as unknown as { recentOutcomes: unknown };

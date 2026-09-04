@@ -281,7 +281,7 @@ export interface JoiActivityDto {
   workId?: string;
 }
 
-export type JoiGoalStatusDto = "ARRANGING" | "ARRANGED" | "RUNNING" | "REVIEWING" | "EXTENDING" | "NEEDS_ATTENTION" | "FINALIZING" | "COMPLETED" | "FAILED" | "CANCELED";
+export type JoiGoalStatusDto = "ARRANGING" | "ARRANGED" | "RUNNING" | "REVIEWING" | "EXTENDING" | "NEEDS_ATTENTION" | "FINALIZING" | "COMPLETED" | "COMPLETED_WITH_GAPS" | "FAILED" | "CANCELED";
 
 export type JoiFailureSuggestedActionDto = "CHECK_MODEL_SOURCE" | "RESTART_OR_UPDATE" | "RETRY_OR_EXPORT_DIAGNOSTICS";
 

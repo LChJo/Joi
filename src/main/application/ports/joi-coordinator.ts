@@ -13,7 +13,7 @@ export interface JoiPendingInput {
   status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
 }
 
-export type JoiCompletionOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_BLOCKED";
+export type JoiCompletionOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED";
 
 export interface JoiInputCompletion {
   completionSummary: string;

@@ -563,14 +563,15 @@ export function createJoiReasoningTools(input: {
       Type.Literal("DIRECT_ANSWER"),
       Type.Literal("TEAM_READY"),
       Type.Literal("RESULT_SYNTHESIZED"),
+      Type.Literal("RESULT_CONTINUE"),
       Type.Literal("RESULT_BLOCKED"),
       Type.Literal("MAP_CLEARED"),
     ]),
   });
   const turnCompleteTool: AgentTool<typeof turnCompleteParameters> = {
-    description: "Commit a tool-using Turn. DIRECT_ANSWER is only for requests needing no execution; TEAM_READY is only for a completed team-building request; RESULT_SYNTHESIZED means persisted results contain enough verified evidence to answer the original goal; RESULT_BLOCKED means a critical evidence gap remains after safe recovery is unavailable; MAP_CLEARED is only when the goal's destination is reached and no way remains (never while open paths exist). This tool never executes work.",
+    description: "Commit a tool-using Turn. DIRECT_ANSWER is only for requests needing no execution; TEAM_READY is only for a completed team-building request; RESULT_SYNTHESIZED means persisted results contain enough verified evidence to answer the original goal; RESULT_CONTINUE means evidence is incomplete but the next safe evidence layer is concrete and needs no user decision, credential or broader permission; RESULT_BLOCKED means a critical evidence gap remains and no safe automatic next step exists; MAP_CLEARED is only when the goal's destination is reached and no way remains (never while open paths exist). This tool never executes work.",
     execute: async (_toolCallId, arguments_) => {
-      if ((arguments_.outcome === "RESULT_SYNTHESIZED" || arguments_.outcome === "RESULT_BLOCKED")
+      if ((arguments_.outcome === "RESULT_SYNTHESIZED" || arguments_.outcome === "RESULT_CONTINUE" || arguments_.outcome === "RESULT_BLOCKED")
         && (input.goalInputId === undefined || !input.inputId.startsWith("joi_result_input:goal:"))) {
         throw new DomainError("goal_synthesis_outcome_not_allowed", "Result dispositions are only allowed in a goal synthesis Turn.");
       }

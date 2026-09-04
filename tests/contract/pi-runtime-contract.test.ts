@@ -52,7 +52,7 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
-  it.each(["DIRECT_ANSWER", "RESULT_BLOCKED"] as const)("projects the safe %s Turn outcome from a turn_complete result", async (committedOutcome) => {
+  it.each(["DIRECT_ANSWER", "RESULT_CONTINUE", "RESULT_BLOCKED"] as const)("projects the safe %s Turn outcome from a turn_complete result", async (committedOutcome) => {
     const faux = fauxProvider({ provider: "joi-turn-outcome" });
     faux.setResponses([
       fauxAssistantMessage([fauxToolCall("turn_complete", { outcome: committedOutcome })], { stopReason: "toolUse" }),

@@ -35,13 +35,13 @@ describe("RemoteJoiApp", () => {
 
   it("renders every safe goal state and preserves a failed send for retry", async () => {
     const statuses: JoiHomeFeedDto["goals"][number]["status"][] = [
-      "ARRANGING", "ARRANGED", "REVIEWING", "EXTENDING", "FINALIZING", "COMPLETED", "NEEDS_ATTENTION", "FAILED", "CANCELED",
+      "ARRANGING", "ARRANGED", "REVIEWING", "EXTENDING", "FINALIZING", "COMPLETED", "COMPLETED_WITH_GAPS", "NEEDS_ATTENTION", "FAILED", "CANCELED",
     ];
     const goals = statuses.map((status, index) => ({
       agentCount: 1,
       canDelete: false,
       clarification: status === "NEEDS_ATTENTION" ? { prompt: "请选择下一步", reasonCode: "question_required" } : { reasonCode: "none" },
-      completionSummary: status === "COMPLETED" ? "任务已经完成" : undefined,
+      completionSummary: status === "COMPLETED" || status === "COMPLETED_WITH_GAPS" ? "任务已经完成" : undefined,
       goalId: `goal-${String(index)}`,
       status,
       title: `任务 ${String(index)}`,
@@ -60,8 +60,8 @@ describe("RemoteJoiApp", () => {
     render(<RemoteJoiApp connection={connection} />);
     expect(await screen.findByText("请选择下一步")).toBeInTheDocument();
     expect(screen.getByText("这个任务需要你回到桌面确认。")).toBeInTheDocument();
-    expect(screen.getByText("任务已经完成")).toBeInTheDocument();
-    expect(screen.getAllByText("joi 正在梳理")).toHaveLength(9);
+    expect(screen.getAllByText("任务已经完成")).toHaveLength(2);
+    expect(screen.getAllByText("joi 正在梳理")).toHaveLength(10);
     expect(screen.getByText("1 项异常")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "给 joi 发消息" }), { target: { value: "再试一次" } });
     fireEvent.click(screen.getByRole("button", { name: "发送" }));

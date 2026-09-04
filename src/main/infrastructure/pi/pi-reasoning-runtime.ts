@@ -141,7 +141,7 @@ function safeToolResultRecord(result: unknown): Record<string, unknown> | undefi
 function safeTurnOutcome(toolName: string, result: unknown): JoiReasoningOutcome | undefined {
   if (toolName !== "turn_complete") return undefined;
   const outcome = safeToolResultRecord(result)?.outcome;
-  return outcome === "DIRECT_ANSWER" || outcome === "TEAM_READY" || outcome === "RESULT_SYNTHESIZED" || outcome === "RESULT_BLOCKED" || outcome === "MAP_CLEARED"
+  return outcome === "DIRECT_ANSWER" || outcome === "TEAM_READY" || outcome === "RESULT_SYNTHESIZED" || outcome === "RESULT_CONTINUE" || outcome === "RESULT_BLOCKED" || outcome === "MAP_CLEARED"
     ? outcome
     : undefined;
 }

@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import type { DatabaseSync } from "node:sqlite";
 
 import type {
+  HarnessContinuationDecisionSeed,
   HarnessDecisionKind,
   HarnessFeedbackTarget,
   HarnessGoalProjection,
@@ -98,6 +99,7 @@ function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
       title: textValue(pathRow, "title"),
     }));
   return {
+    ...(optionalText(row, "outcome_disposition") === "CONTINUE" ? { continuationRequested: true as const } : {}),
     workbenchId: textValue(row, "workbench_id"),
     completionSummary: optionalText(row, "completion_summary") ?? "",
     decisionCount,
@@ -192,7 +194,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     return this.database.transaction((connection) => {
       const candidates = connection.prepare(`
         SELECT m.goal_input_id, m.workbench_id, m.destination, rs.revision AS result_revision,
-               o.completion_summary
+               o.completion_summary, o.disposition AS outcome_disposition
           FROM joi_harness_maps m
           JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
           JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
@@ -200,7 +202,13 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.status = 'ACTIVE'
            AND rs.revision > m.reviewed_revision
            AND rs.synthesized_revision = rs.revision
-           AND o.disposition = 'COMPLETED'
+           AND (o.disposition = 'COMPLETED' OR (
+             o.disposition = 'CONTINUE'
+             AND g.status = 'CONSUMED'
+             AND g.clarification_reason_code IS NULL
+             AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
+                                   WHERE p.goal_input_id = m.goal_input_id), 1) - 1) < m.continuation_allowance
+           ))
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM work_items w
                             WHERE w.input_id = m.goal_input_id
@@ -208,6 +216,34 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          ORDER BY m.updated_at, m.goal_input_id LIMIT 10`).all() as Row[];
       return candidates.map((row) => reviewDigest(connection, row));
     });
+  }
+
+  async listContinuationDecisionSeeds(): Promise<HarnessContinuationDecisionSeed[]> {
+    return (this.database.transaction((connection) => connection.prepare(`
+      SELECT m.goal_input_id, m.workbench_id, rs.revision AS result_revision
+        FROM joi_harness_maps m
+        JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+        JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+        JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
+       WHERE m.status = 'ACTIVE'
+         AND rs.revision > m.reviewed_revision
+         AND rs.synthesized_revision = rs.revision
+         AND o.disposition = 'CONTINUE'
+         AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
+                              WHERE p.goal_input_id = m.goal_input_id), 1) - 1) >= m.continuation_allowance
+         AND g.status = 'CONSUMED'
+         AND g.clarification_reason_code IS NULL
+         AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                           AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+         AND NOT EXISTS (SELECT 1 FROM joi_user_action_requests a
+                          WHERE a.input_id = m.goal_input_id AND a.status = 'OPEN')
+       ORDER BY m.updated_at, m.goal_input_id LIMIT 10`).all()) as Row[])
+      .map((row) => ({
+        goalInputId: textValue(row, "goal_input_id"),
+        resultRevision: numberValue(row, "result_revision"),
+        workbenchId: textValue(row, "workbench_id"),
+      }));
   }
 
   async listWorkRecoverySeeds(): Promise<HarnessWorkRecoverySeed[]> {
@@ -397,11 +433,15 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       SELECT m.goal_input_id, m.workbench_id, m.destination,
              COALESCE((SELECT o.completion_summary FROM joi_goal_outcomes o
                         WHERE o.input_id = m.goal_input_id
-                        ORDER BY o.result_revision DESC LIMIT 1), '') AS completion_summary
+                        ORDER BY o.result_revision DESC LIMIT 1), '') AS completion_summary,
+             COALESCE((SELECT o.disposition FROM joi_goal_outcomes o
+                        WHERE o.input_id = m.goal_input_id
+                        ORDER BY o.result_revision DESC LIMIT 1), 'COMPLETED') AS outcome_disposition
         FROM joi_harness_maps m
        WHERE m.status = 'CLEARED' AND m.feedback_recorded_at IS NULL
        ORDER BY m.cleared_at, m.goal_input_id LIMIT 10`).all()) as Row[])
       .map((row) => ({
+        ...(optionalText(row, "outcome_disposition") === "ACCEPTED_WITH_GAPS" ? { acceptedWithGaps: true as const } : {}),
         workbenchId: textValue(row, "workbench_id"),
         completionSummary: textValue(row, "completion_summary"),
         destination: optionalText(row, "destination"),
@@ -485,9 +525,18 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
           FROM joi_harness_maps m
           JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
           JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+          JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
          WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
            AND rs.revision > m.reviewed_revision
-           AND rs.synthesized_revision = rs.revision`).get(digest.goalInputId) as Row | undefined;
+           AND rs.synthesized_revision = rs.revision
+           AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+           AND (o.disposition = 'COMPLETED' OR (
+             o.disposition = 'CONTINUE'
+             AND g.status = 'CONSUMED'
+             AND g.clarification_reason_code IS NULL
+             AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
+                                   WHERE p.goal_input_id = m.goal_input_id), 1) - 1) < m.continuation_allowance
+           ))`).get(digest.goalInputId) as Row | undefined;
       if (gate === undefined) return null;
       const resultRevision = numberValue(gate, "result_revision");
       const active = connection.prepare(`
@@ -520,6 +569,48 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         resultRevision, now, digest.goalInputId, resultRevision,
       );
       return inputId;
+    });
+  }
+
+  async requestContinuationDecision(input: { now: string; seed: HarnessContinuationDecisionSeed }): Promise<boolean> {
+    return this.database.transaction((connection) => {
+      const eligible = connection.prepare(`SELECT 1
+        FROM joi_harness_maps m
+        JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+        JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+        JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
+       WHERE m.goal_input_id = ? AND m.workbench_id = ? AND m.status = 'ACTIVE'
+         AND rs.revision = ? AND rs.revision > m.reviewed_revision
+         AND rs.synthesized_revision = rs.revision AND o.disposition = 'CONTINUE'
+         AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
+                              WHERE p.goal_input_id = m.goal_input_id), 1) - 1) >= m.continuation_allowance
+         AND g.status = 'CONSUMED'
+         AND g.clarification_reason_code IS NULL
+         AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+         AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                           AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+         AND NOT EXISTS (SELECT 1 FROM joi_user_action_requests a
+                          WHERE a.input_id = m.goal_input_id AND a.status = 'OPEN')`).get(
+        input.seed.goalInputId, input.seed.workbenchId, input.seed.resultRevision,
+      );
+      if (eligible === undefined) return false;
+      const prompt = "已自动补充两轮，当前结果仍有明确缺口。可以继续补齐，或接受当前结果并保留缺口说明。";
+      const inserted = connection.prepare(`INSERT OR IGNORE INTO joi_user_action_requests
+        (action_id, input_id, result_revision, kind, status, reason_code, prompt, created_at, updated_at)
+        VALUES (?, ?, ?, 'GOAL_CONTINUATION', 'OPEN', 'goal_continuation_required', ?, ?, ?)`).run(
+        `joi_action:goal_continuation:${input.seed.goalInputId}:r${String(input.seed.resultRevision)}`,
+        input.seed.goalInputId, input.seed.resultRevision, prompt, input.now, input.now,
+      );
+      if (inserted.changes === 0) return false;
+      const raised = connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'goal_continuation_required',
+            clarification_prompt = ?, updated_at = ?
+        WHERE input_id = ? AND status = 'CONSUMED' AND clarification_reason_code IS NULL
+          AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(
+        prompt, input.now, input.seed.goalInputId,
+      );
+      if (raised.changes !== 1) throw new Error("joi_goal_continuation_request_conflict");
+      return true;
     });
   }
 
@@ -837,6 +928,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                 AND rs.revision > 0
                 AND rs.synthesized_revision = rs.revision
                 AND m.reviewed_revision = rs.revision
+                AND o.disposition = 'COMPLETED'
            )`)
         .run(now, now, input.goalInputId, input.turnId).changes > 0;
     });

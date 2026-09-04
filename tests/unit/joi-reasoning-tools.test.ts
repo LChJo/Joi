@@ -473,8 +473,19 @@ describe("joi reasoning tools", () => {
     });
   });
 
+  it("commits a non-blocking request for another evidence layer", async () => {
+    const harness = makeTools({ goalInputId: "goal-1", inputId: "joi_result_input:goal:goal-1" });
+
+    await expect(harness.call("turn_complete", { outcome: "RESULT_CONTINUE" })).resolves.toEqual({
+      outcome: "RESULT_CONTINUE",
+      status: "COMMITTED",
+    });
+  });
+
   it("rejects result dispositions outside a goal synthesis Turn", async () => {
     await expect(makeTools().call("turn_complete", { outcome: "RESULT_BLOCKED" }))
+      .rejects.toMatchObject({ code: "goal_synthesis_outcome_not_allowed" });
+    await expect(makeTools().call("turn_complete", { outcome: "RESULT_CONTINUE" }))
       .rejects.toMatchObject({ code: "goal_synthesis_outcome_not_allowed" });
   });
 

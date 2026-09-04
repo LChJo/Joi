@@ -42,8 +42,8 @@ export function composeReviewBody(digest: HarnessReviewDigest): string {
     }
   }
   lines.push(`Latest completion: ${digest.completionSummary.slice(0, COMPLETION_SUMMARY_LIMIT)}`);
-  lines.push(
-    "Close-first rule: if the latest completion satisfies the original goal and there is no active or open path to pursue, call turn_complete with MAP_CLEARED immediately; do not use DIRECT_ANSWER for a review. Otherwise resolve at most ONE decision with harness_record_decision; dispatch the next evidence layer with work_dispatch (its Work facts are mirrored into paths automatically, so do not chart the same Work again); use harness_chart_path only for a non-Work path; send new fog to harness_note_fog and graduate now-specifiable fog.",
-  );
+  lines.push(digest.continuationRequested === true
+    ? "Continuation rule: result synthesis explicitly found the evidence incomplete and requested a safe next layer. Do not call MAP_CLEARED in this review. Resolve at most ONE decision with harness_record_decision and dispatch the concrete next evidence layer with work_dispatch (its Work facts are mirrored into paths automatically, so do not chart the same Work again); use harness_chart_path only for a non-Work path; send new fog to harness_note_fog and graduate now-specifiable fog."
+    : "Close-first rule: if the latest completion satisfies the original goal and there is no active or open path to pursue, call turn_complete with MAP_CLEARED immediately; do not use DIRECT_ANSWER for a review. Otherwise resolve at most ONE decision with harness_record_decision; dispatch the next evidence layer with work_dispatch (its Work facts are mirrored into paths automatically, so do not chart the same Work again); use harness_chart_path only for a non-Work path; send new fog to harness_note_fog and graduate now-specifiable fog.");
   return lines.join("\n");
 }

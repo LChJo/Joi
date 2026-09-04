@@ -61,7 +61,7 @@ export class JoiInboxService {
     const cleanPartner = partnerId.length === 0 ? undefined : partnerId;
     const cleanText = text.length === 0 ? undefined : text;
     const cleanActionChoice = actionChoice === "" ? undefined : actionChoice;
-    if (cleanActionChoice !== undefined && cleanActionChoice !== "RESUME") {
+    if (cleanActionChoice !== undefined && !["RESUME", "CONTINUE", "ACCEPT_CURRENT"].includes(cleanActionChoice)) {
       throw new DomainError("joi_clarification_invalid", "The selected action is invalid.");
     }
     if (cleanActionChoice !== undefined && (cleanPartner !== undefined || cleanWorkbench !== undefined || cleanText !== undefined)) {
@@ -79,7 +79,7 @@ export class JoiInboxService {
     let record;
     if (cleanPartner === undefined) {
       record = await this.dependencies.repository.clarify(inputId, {
-        ...(cleanActionChoice === undefined ? {} : { actionChoice: cleanActionChoice }),
+        ...(cleanActionChoice === undefined ? {} : { actionChoice: cleanActionChoice as "RESUME" | "CONTINUE" | "ACCEPT_CURRENT" }),
         ...(cleanWorkbench === undefined ? {} : { workbenchId: cleanWorkbench }),
         ...(cleanText === undefined ? {} : { text: cleanText }),
       });

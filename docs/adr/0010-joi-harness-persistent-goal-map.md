@@ -22,6 +22,7 @@ ADR 0005 把 wayfinder 方法论落为提示词纪律：destination-first、分�
 6. **UI**：home-feed goal 卡扩 `harness?` 有界投影（destination/topPaths/计数/雾区），不加新端点；GoalDetail 渲染路径推进区块；goal 查询排除 review 前缀防冒充。
 7. **执行路径机械同步（2026-08-26 增补）**：harness component 在 adopt 后按稳定 workId 为 goal-bound Work 幂等建立 path，按此前 review input 数计算层级，并以 Work 权威终态关闭 path。模型不再负责为已派发 Work 重复建 path；`harness_chart_path` 保留给不绑定 Work 的显式探索路径。
 8. **终态与评审投影（2026-08-26 增补）**：result outcome 是当前证据层总结，不等于 goal terminal。map ACTIVE 时 home-feed 投影 `REVIEWING`，复盘后存在活跃 Work 时投影 `EXTENDING`；只有 `MAP_CLEARED` 事务重验 review turn、最新综合水位、Work-path 覆盖和无开放路径后，当前 outcome 才作为最终结果开放完成操作。
+9. **结果续跑（2026-09-04 增补）**：`CONTINUE` 结果按 ADR 0017 在持久额度内自动进入下一证据层；普通 `MAP_CLEARED` 只接受 `COMPLETED` disposition，接受缺口必须走 goal/revision 绑定的用户动作。
 
 ## 后果
 

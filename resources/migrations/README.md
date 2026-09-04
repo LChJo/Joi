@@ -17,3 +17,5 @@ Migration 048 修复旧开发库已占用 migration 047 但缺少 `engine_config
 Migration 049 建立全局 Routine 配置与紧凑运行事实，并为普通 Joi inbox 增加可空 `automation_routine_id`；调度 claim、运行记录和 inbox 输入在同一事务中提交，提示词正文不进入投影。
 
 Migration 050 持久化每个失败 Work 最多两轮的恢复尝试及其权威结果证据引用；补充 Work、dispatch outbox、恢复身份和证据引用在同一事务中提交。
+
+Migration 051 区分可自动补证的 `CONTINUE` 与硬阻断，并为每个目标地图持久化默认两轮续跑额度；额度耗尽后以目标级用户动作提供“继续补齐/接受现状”，接受时保留 `ACCEPTED_WITH_GAPS` 终态。

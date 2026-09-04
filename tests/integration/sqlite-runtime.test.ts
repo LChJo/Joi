@@ -14,7 +14,7 @@ describe("SQLite runtime foundation", () => {
         busyTimeout: 5000,
         foreignKeys: true,
         journalMode: "wal",
-        schemaVersion: 50,
+        schemaVersion: 51,
       });
       const agent = await fixture.agents.createShell({ cardUrl: "http://192.168.1.20/agent-card.json", name: "主 Agent" });
       await fixture.agents.activateForReadiness(agent.agentConnectionId);

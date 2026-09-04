@@ -43,7 +43,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(50);
+      expect(upgraded.inspect().schemaVersion).toBe(51);
       const rows = upgraded.transaction((connection) => connection.prepare(`SELECT input_id, canceled_at, failed_at,
         failure_count, failure_reason_code FROM joi_inbox_messages ORDER BY input_id`).all());
       expect(rows).toEqual([
@@ -377,7 +377,7 @@ describe("JOI-01 non-destructive migration", () => {
           WHERE workbench_id = 'workbench-unknown'`).get() as { active_work_json: string },
         work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work-unknown'").get(),
       }));
-      expect(upgraded.inspect().schemaVersion).toBe(50);
+      expect(upgraded.inspect().schemaVersion).toBe(51);
       expect(facts.work).toEqual({ status: "FAILED" });
       expect(JSON.parse(facts.projection.active_work_json)).toEqual([]);
       expect(facts.memberCount).toBe(0);
@@ -400,9 +400,17 @@ describe("JOI-01 non-destructive migration", () => {
       migrationsDirectory: path.resolve("resources/migrations"),
     });
     try {
-      expect(database.inspect().schemaVersion).toBe(50);
+      expect(database.inspect().schemaVersion).toBe(51);
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_goal_outcomes)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "disposition", notnull: 1 })]));
+      expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_harness_maps)").all()))
+        .toEqual(expect.arrayContaining([expect.objectContaining({ name: "continuation_allowance", notnull: 1 })]));
+      expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_user_action_requests)").all()))
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: "result_revision", notnull: 0 }),
+          expect.objectContaining({ name: "work_id", notnull: 0 }),
+          expect.objectContaining({ name: "run_id", notnull: 0 }),
+        ]));
       expect(database.transaction((connection) => connection.prepare(
         "SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('workbench_agent_sessions', 'workbench_agent_conversation_entries') ORDER BY name",
       ).all())).toEqual([
@@ -459,6 +467,89 @@ describe("JOI-01 non-destructive migration", () => {
     }
   });
 
+  it("upgrades schema 050 outcomes, maps and Work-bound actions without losing their identity", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-goal-continuation-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 50);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-09-04T10:00:00.000Z";
+    const clock = new TestClock(now);
+    const ids = new TestIds();
+    const workbench = await new WorkbenchRegistryService({ clock, ids, repository: new LegacyLifeStoreAdapter(oldDatabase) })
+      .create({ name: "升级验证", personaSummary: "private", projectLabel: "joi", scopeSummary: "续跑" });
+    const partner = await new PartnerRegistryService({ clock, ids, repository: new SqlitePartnerRegistryRepository(oldDatabase) })
+      .add({ capabilities: [], displayName: "验证搭档", kind: "local-pi", skills: [], tools: [] });
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, clarification_reason_code, workbench_id, created_at, updated_at)
+        VALUES ('goal-continuation-upgrade', 'key-continuation-upgrade', 'private goal', 'CLARIFICATION_REQUIRED',
+                'question_required', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+      connection.prepare(`INSERT INTO joi_turns
+        (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('turn-continuation-upgrade', 'goal-continuation-upgrade', ?, 'session-continuation-upgrade',
+                'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+      connection.prepare(`INSERT INTO dispatch_plans
+        (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+        VALUES ('plan-continuation-upgrade', 'turn-continuation-upgrade', '{}', '[]', ?)`).run(now);
+      connection.prepare(`INSERT INTO work_items
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-continuation-upgrade', ?, 'goal-continuation-upgrade', '等待回答', '{}', 'READ', 'WAITING', ?, ?)`)
+        .run(workbench.workbenchId, now, now);
+      connection.prepare(`INSERT INTO dispatch_attempts
+        (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id,
+         status, created_at, updated_at)
+        VALUES ('attempt-continuation-upgrade', 'plan-continuation-upgrade', 'work-continuation-upgrade', ?, 1,
+                'dispatch-continuation-upgrade', 'WAITING_INPUT', ?, ?)`).run(partner.partnerRevisionId, now, now);
+      connection.prepare(`INSERT INTO partner_runs
+        (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
+         external_run_id, status, created_at, updated_at)
+        VALUES ('run-continuation-upgrade', 'attempt-continuation-upgrade', 'dispatch-continuation-upgrade', ?,
+                'work-continuation-upgrade', ?, 'LOCAL_PI', 'local:continuation-upgrade', 'WAITING_INPUT', ?, ?)`)
+        .run(workbench.workbenchId, partner.partnerRevisionId, now, now);
+      connection.prepare(`INSERT INTO joi_user_action_requests
+        (action_id, input_id, work_id, run_id, kind, status, reason_code, prompt, created_at, updated_at)
+        VALUES ('action-continuation-upgrade', 'goal-continuation-upgrade', 'work-continuation-upgrade',
+                'run-continuation-upgrade', 'PARTNER_QUESTION', 'OPEN', 'question_required', '选择配置', ?, ?)`)
+        .run(now, now);
+      connection.prepare(`INSERT INTO joi_harness_maps
+        (goal_input_id, workbench_id, destination, status, created_at, updated_at)
+        VALUES ('goal-continuation-upgrade', ?, '完成验证', 'ACTIVE', ?, ?)`).run(workbench.workbenchId, now, now);
+      connection.prepare(`INSERT INTO joi_goal_result_sets
+        (original_input_id, revision, synthesized_revision, updated_at)
+        VALUES ('goal-continuation-upgrade', 1, 1, ?)`).run(now);
+      connection.prepare(`INSERT INTO joi_goal_outcomes
+        (input_id, result_revision, completion_summary, completed_at, updated_at, disposition)
+        VALUES ('goal-continuation-upgrade', 1, '保留的历史结论', ?, ?, 'COMPLETED')`).run(now, now);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.inspect().schemaVersion).toBe(51);
+      expect(upgraded.transaction((connection) => ({
+        action: connection.prepare(`SELECT action_id, work_id, run_id, result_revision, kind, status
+          FROM joi_user_action_requests WHERE action_id = 'action-continuation-upgrade'`).get(),
+        map: connection.prepare(`SELECT continuation_allowance FROM joi_harness_maps
+          WHERE goal_input_id = 'goal-continuation-upgrade'`).get(),
+        outcome: connection.prepare(`SELECT result_revision, disposition, completion_summary FROM joi_goal_outcomes
+          WHERE input_id = 'goal-continuation-upgrade'`).get(),
+      }))).toEqual({
+        action: {
+          action_id: "action-continuation-upgrade", kind: "PARTNER_QUESTION", result_revision: null,
+          run_id: "run-continuation-upgrade", status: "OPEN", work_id: "work-continuation-upgrade",
+        },
+        map: { continuation_allowance: 2 },
+        outcome: { completion_summary: "保留的历史结论", disposition: "COMPLETED", result_revision: 1 },
+      });
+      expect(() => upgraded.transaction((connection) => connection.prepare(`UPDATE joi_user_action_requests
+        SET decision = 'CONTINUE' WHERE action_id = 'action-continuation-upgrade'`).run())).toThrow();
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("backfills legacy identities without changing old counts and maps the primary Agent to preferred Partner", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-schema-upgrade-"));
     const legacyMigrations = path.join(root, "legacy-migrations");
@@ -482,7 +573,7 @@ describe("JOI-01 non-destructive migration", () => {
 
     const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
     try {
-      expect(upgraded.inspect().schemaVersion).toBe(50);
+      expect(upgraded.inspect().schemaVersion).toBe(51);
       const counts = upgraded.transaction((connection) => ({
         agents: (connection.prepare("SELECT COUNT(*) AS count FROM agent_connections").get() as { count: number }).count,
         workbenches: (connection.prepare("SELECT COUNT(*) AS count FROM workbenches").get() as { count: number }).count,

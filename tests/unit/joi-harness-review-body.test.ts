@@ -35,6 +35,13 @@ describe("composeReviewBody", () => {
     expect(body).toContain("harness_name_destination");
   });
 
+  it("requires a requested continuation review to arrange another layer instead of clearing", () => {
+    const body = composeReviewBody(digest({ continuationRequested: true }));
+    expect(body).toContain("result synthesis explicitly found the evidence incomplete");
+    expect(body).toContain("Do not call MAP_CLEARED");
+    expect(body).not.toContain("Close-first rule");
+  });
+
   it("bounds the digest sections", () => {
     const body = composeReviewBody(digest({
       completionSummary: "总".repeat(500),

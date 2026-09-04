@@ -25,6 +25,7 @@ function goalStatus(status: JoiHomeFeedDto["goals"][number]["status"]): string {
   if (status === "EXTENDING") return "补充执行";
   if (status === "FINALIZING") return "正在总结";
   if (status === "COMPLETED") return "已完成";
+  if (status === "COMPLETED_WITH_GAPS") return "已完成（有缺口）";
   if (status === "NEEDS_ATTENTION") return "需要你";
   if (status === "FAILED") return "处理失败";
   return "已取消";
