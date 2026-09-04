@@ -12,6 +12,7 @@ function makeDatabase(): DatabaseSync {
     CREATE TABLE work_items (work_id TEXT PRIMARY KEY, workbench_id TEXT, input_id TEXT, title TEXT, status TEXT);
     CREATE TABLE work_results (result_id TEXT PRIMARY KEY, run_id TEXT, work_id TEXT, workbench_id TEXT,
       status TEXT, summary TEXT, is_authoritative INTEGER, is_late INTEGER, instance_id TEXT, created_at TEXT);
+    CREATE TABLE work_result_verifications (result_id TEXT PRIMARY KEY, status TEXT, reason_code TEXT, created_at TEXT);
     CREATE TABLE partner_result_events (event_id TEXT PRIMARY KEY, run_id TEXT, status TEXT);
     CREATE TABLE partner_runs (run_id TEXT PRIMARY KEY, workbench_id TEXT, work_id TEXT, status TEXT, kind TEXT,
       action_id TEXT, partner_revision_id TEXT, created_at TEXT, updated_at TEXT);

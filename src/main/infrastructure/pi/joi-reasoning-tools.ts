@@ -188,7 +188,7 @@ export function createJoiReasoningTools(input: {
           relativePath: Type.String({ maxLength: 500, minLength: 1 }),
         }),
         Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ maxLength: 500, minLength: 1 }) }),
-      ]), { maxItems: 8 })),
+      ]), { maxItems: 8, minItems: 1 })),
       accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
       instanceId: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String({ maxLength: 12_000 })),
@@ -533,7 +533,7 @@ export function createJoiReasoningTools(input: {
   };
   const readResultParameters = Type.Object({ cursor: Type.Optional(Type.String()), resultId: Type.String() });
   const readResultTool: AgentTool<typeof readResultParameters> = {
-    description: "Read one bounded chunk of a persisted work result belonging to the current Workbench. Use nextCursor to continue.",
+    description: "Read one bounded chunk of a persisted work result belonging to the current Workbench. The first chunk also reports the acceptance verification verdict (PASSED, FAILED with a reason, or NOT_REQUIRED). Use nextCursor to continue.",
     execute: async (_toolCallId, arguments_) => result(await input.results.read({
       workbenchId: input.workbenchId,
       ...(arguments_.cursor === undefined ? {} : { cursor: arguments_.cursor }),

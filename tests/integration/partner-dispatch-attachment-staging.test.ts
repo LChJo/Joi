@@ -194,6 +194,33 @@ describe("partner dispatch attachment staging", () => {
     }
   });
 
+  it("converges a corrupted Work brief to a terminal FAILED result instead of running it unverifiable", async () => {
+    const fixture = await openFixture();
+    try {
+      const spy = { calls: [] as unknown[] };
+      const delivery = makeDelivery(fixture, spy);
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE work_items SET intent_json = '{not valid json' WHERE work_id = 'work_1'",
+      ).run());
+      const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
+      await expect(delivery.prepare(claim)).resolves.toBe("skipped_terminal");
+
+      const facts = fixture.database.transaction((connection) => ({
+        result: connection.prepare("SELECT status, summary FROM work_results WHERE work_id = 'work_1'").get(),
+        work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get(),
+      }));
+      expect(facts).toMatchObject({
+        result: { status: "FAILED" },
+        work: { status: "FAILED" },
+      });
+      expect((facts.result as { summary: string }).summary).toContain("brief is corrupted");
+      expect(spy.calls).toEqual([]);
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("does not stage attachments for work without file access", async () => {
     const fixture = await openFixture();
     try {

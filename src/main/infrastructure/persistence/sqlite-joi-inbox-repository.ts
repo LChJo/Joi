@@ -507,11 +507,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const active = connection.prepare(`SELECT 1 FROM work_items
         WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(goalInputId);
       if (active !== undefined) return null;
-      const results = connection.prepare(`SELECT r.result_id, r.work_id, r.status, r.summary, w.title
+      const results = connection.prepare(`SELECT r.result_id, r.work_id, r.status, r.summary, w.title,
+               v.status AS verification_status, v.reason_code AS verification_reason
         FROM joi_goal_result_members m
         JOIN partner_result_events e ON e.event_id = m.event_id
         JOIN work_results r ON r.run_id = e.run_id AND r.status = e.status AND r.is_authoritative = 1
         JOIN work_items w ON w.work_id = r.work_id
+        LEFT JOIN work_result_verifications v ON v.result_id = r.result_id
         WHERE m.original_input_id = ? AND m.revision <= ?
         ORDER BY m.revision, m.event_id`).all(goalInputId, resultSet.revision) as Row[];
       const inputId = `joi_result_input:goal:${goalInputId}`;
@@ -521,8 +523,16 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         `resultRevision=${String(resultSet.revision)}`,
         "Original user goal (authoritative):",
         source.goal_body.slice(0, 4_000),
-        ...results.map((row) => `resultId=${String(row.result_id)} workId=${String(row.work_id)} title=${String(row.title).slice(0, 240)} status=${String(row.status)} summary=${String(row.summary).slice(0, 320)}`),
-        "Treat COMPLETED results as verified evidence. A FAILED/UNKNOWN result is a coverage gap; it does not invalidate other evidence and must not dominate the final answer unless that missing coverage is essential to the original goal.",
+        ...results.map((row) => {
+          const verificationReason = typeof row.verification_reason === "string" && row.verification_reason !== ""
+            ? row.verification_reason
+            : "verification_failed";
+          const verification = row.verification_status === "PASSED" ? "PASSED"
+            : row.verification_status === "FAILED" ? `FAILED(${verificationReason})`
+              : "NOT_REQUIRED";
+          return `resultId=${String(row.result_id)} workId=${String(row.work_id)} title=${String(row.title).slice(0, 240)} status=${String(row.status)} verification=${verification} summary=${String(row.summary).slice(0, 320)}`;
+        }),
+        "Only COMPLETED results with verification=PASSED are verified evidence. A COMPLETED result with verification=NOT_REQUIRED is an unverified self-report: it may support the answer, but say so when the distinction matters. A FAILED/UNKNOWN result or verification=FAILED is a coverage gap; it does not invalidate other evidence and must not dominate the final answer unless that missing coverage is essential to the original goal.",
         "If verified completed results already answer the original goal, synthesize that answer, mention non-critical failures only as a brief trailing warning, and call turn_complete with RESULT_SYNTHESIZED.",
         "If the evidence is insufficient but a concrete next evidence layer can run without a user decision, credential or broader permission, summarize the bounded gap and call turn_complete with RESULT_CONTINUE. The Wayfinder review will arrange that next layer.",
         "If an essential gap remains, inspect structured failure facts: only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Prefer a different suitable available partner; only switch the current partner's model when no suitable alternative exists.",

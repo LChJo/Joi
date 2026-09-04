@@ -34,7 +34,8 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("concrete options");
     expect(prompt).toContain("turn_complete");
     expect(prompt).toContain("Every Turn that uses a tool");
-    expect(prompt).toContain("use BODY_PRESENT for a textual answer");
+    expect(prompt).toContain("Use BODY_PRESENT for a textual answer");
+    expect(prompt).toContain("always declare at least one acceptance check");
     expect(prompt).toContain("never an absolute or external path");
     expect(prompt).toContain("Grill the spec before dispatch");
     expect(prompt).toContain("one focused alignment question per turn");

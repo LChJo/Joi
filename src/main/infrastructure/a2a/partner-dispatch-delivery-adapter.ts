@@ -68,26 +68,38 @@ interface DispatchRow {
   work_status: string;
 }
 
-function workBrief(intentJson: string): { acceptanceChecks: WorkAcceptanceCheck[]; instructions?: string } {
+function isValidAcceptanceCheck(value: unknown): value is WorkAcceptanceCheck {
+  if (value === null || Array.isArray(value) || typeof value !== "object") return false;
+  const candidate = value as Record<string, unknown>;
+  if (candidate.kind === "BODY_PRESENT") return true;
+  if (candidate.kind === "ARTIFACT_PRESENT") return typeof candidate.name === "string";
+  if (candidate.kind === "FILE_EXISTS") return typeof candidate.relativePath === "string";
+  return candidate.kind === "FILE_CONTAINS_EXACT"
+    && typeof candidate.relativePath === "string" && typeof candidate.expectedText === "string";
+}
+
+/** True when the stored brief cannot be read as an object at all (tampering, bad migration). */
+function intentJsonCorrupt(intentJson: string): boolean {
+  try {
+    const parsed = JSON.parse(intentJson) as unknown;
+    return parsed === null || typeof parsed !== "object" || Array.isArray(parsed);
+  } catch {
+    return true;
+  }
+}
+
+function workBrief(intentJson: string): { acceptanceChecks: WorkAcceptanceCheck[]; droppedChecks: number; instructions?: string } {
   try {
     const parsed = JSON.parse(intentJson) as { acceptanceChecks?: unknown; instructions?: unknown };
-    const acceptanceChecks = Array.isArray(parsed.acceptanceChecks)
-      ? parsed.acceptanceChecks.filter((value): value is WorkAcceptanceCheck => {
-        if (value === null || Array.isArray(value) || typeof value !== "object") return false;
-        const candidate = value as Record<string, unknown>;
-        if (candidate.kind === "BODY_PRESENT") return true;
-        if (candidate.kind === "ARTIFACT_PRESENT") return typeof candidate.name === "string";
-        if (candidate.kind === "FILE_EXISTS") return typeof candidate.relativePath === "string";
-        return candidate.kind === "FILE_CONTAINS_EXACT"
-          && typeof candidate.relativePath === "string" && typeof candidate.expectedText === "string";
-      })
-      : [];
+    const candidates = Array.isArray(parsed.acceptanceChecks) ? parsed.acceptanceChecks : [];
+    const acceptanceChecks = candidates.filter(isValidAcceptanceCheck);
     return {
       acceptanceChecks,
+      droppedChecks: candidates.length - acceptanceChecks.length,
       ...(typeof parsed.instructions === "string" && parsed.instructions !== "" ? { instructions: parsed.instructions } : {}),
     };
   } catch {
-    return { acceptanceChecks: [] };
+    return { acceptanceChecks: [], droppedChecks: 0 };
   }
 }
 
@@ -239,6 +251,20 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         return "skipped_terminal";
       }
       throw new DomainError(reason, "The dispatch policy denied this Work at delivery time.");
+    }
+
+    // A corrupted brief means the acceptance contract is unreadable; converge to a visible
+    // terminal FAILED instead of running an unverifiable Work (the legacy silent downgrade
+    // to "no checks" let unverified results masquerade as completed evidence).
+    if (intentJsonCorrupt(row.intent_json)) {
+      await this.#ensureRun(row);
+      row = this.#load(claim.dispatchAttemptId) ?? row;
+      await this.#complete(row, "FAILED", {
+        artifacts: [],
+        body: "The Work brief is corrupted and its acceptance contract cannot be read.",
+        failure: { phase: "CONFIGURATION", reasonCode: "work_brief_invalid", retryable: false, sideEffectState: "NONE" },
+      });
+      return "skipped_terminal";
     }
 
     let leaseExpiresAt: string | undefined;
@@ -554,6 +580,16 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     const now = this.dependencies.clock.now().toISOString();
     const runId = row.run_id ?? `partner_run:${row.action_id}`;
     const brief = workBrief(row.intent_json);
+    if (brief.droppedChecks > 0) {
+      // Plan-time validation makes this defensive; a non-zero count signals stored data drift.
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.brief_checks_filtered", {
+        workbenchId: row.workbench_id,
+        dispatchAttemptId: row.dispatch_attempt_id,
+        droppedChecks: brief.droppedChecks,
+        partnerId: row.partner_id,
+        workId: row.work_id,
+      });
+    }
     let verification = { status: "NOT_REQUIRED" as const } as Awaited<ReturnType<WorkVerifier["verify"]>>;
     let committedStatus = status;
     const acceptanceChecks = status === "COMPLETED"

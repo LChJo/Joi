@@ -96,6 +96,12 @@ export class WorkOrchestrationService {
       if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Workbench workspace automatically.");
       if (byKey.has(request.key)) throw new DomainError("work_key_duplicate", "Work keys must be unique.");
       validateAcceptanceChecks(request.acceptanceChecks);
+      // Authoritative backstop for the schema's minItems: a Work with no acceptance check
+      // cannot be verified, so it must not be dispatched (BODY_PRESENT is the natural floor
+      // for text-only work).
+      if ((request.acceptanceChecks ?? []).length === 0) {
+        throw new DomainError("work_acceptance_checks_required", "Every Work needs at least one mechanically checkable acceptance check.");
+      }
       byKey.set(request.key, request);
     }
     for (const request of input.work) await this.#validateInstanceSelection(input.workbenchId, request);

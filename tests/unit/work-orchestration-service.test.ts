@@ -30,7 +30,7 @@ describe("work orchestration outbox", () => {
 
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
     })).rejects.toMatchObject({ code });
     expect(committed).toEqual([]);
   });
@@ -45,7 +45,7 @@ describe("work orchestration outbox", () => {
     });
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", sessionPolicy: "RESIDENT", title: "读取" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", sessionPolicy: "RESIDENT", title: "读取" }],
     })).rejects.toMatchObject({ code: "partner_instance_selection_ambiguous" });
     expect(get).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
@@ -61,7 +61,7 @@ describe("work orchestration outbox", () => {
     });
     await service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
     });
     expect(committed[0]?.attempts[0]?.outbox.payload).toMatchObject({ instanceId: "instance-1" });
   });
@@ -92,6 +92,26 @@ describe("work orchestration outbox", () => {
     })).rejects.toMatchObject({ code: "work_acceptance_path_invalid" });
   });
 
+  it("rejects Work without any acceptance check so nothing dispatches unverifiable", async () => {
+    const committed: CommittedWorkPlan[] = [];
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async (plan) => { committed.push(plan); } },
+    });
+    await expect(service.plan({
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
+        { accessMode: "READ", key: "read", partnerId: "partner", title: "读取" },
+      ],
+    })).rejects.toMatchObject({ code: "work_acceptance_checks_required" });
+    await expect(service.plan({
+      workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
+        { acceptanceChecks: [], accessMode: "READ", key: "read", partnerId: "partner", title: "读取" },
+      ],
+    })).rejects.toMatchObject({ code: "work_acceptance_checks_required" });
+    expect(committed).toEqual([]);
+  });
+
   it("persists the DAG, immutable partner pins and dispatch outbox records as one plan", async () => {
     const committed: CommittedWorkPlan[] = [];
     const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
@@ -108,7 +128,7 @@ describe("work orchestration outbox", () => {
       inputId: "input-1",
       turnId: "turn-1",
       work: [
-        { accessMode: "READ", key: "research", partnerId: "partner-a", title: "研究" },
+        { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "research", partnerId: "partner-a", title: "研究" },
         {
           acceptanceChecks: [{ kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt", expectedText: "hellow" }],
           accessMode: "WRITE", instructions: "保留原始拼写", key: "write", partnerId: "partner-b", title: "写入",
@@ -120,7 +140,7 @@ describe("work orchestration outbox", () => {
     expect(committed[0]?.inputId).toBe("input-1");
     expect(committed[0]?.attempts).toHaveLength(2);
     expect(committed[0]?.briefs).toEqual([
-      { acceptanceChecks: [], workId: committed[0]?.items[0]?.workId },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], workId: committed[0]?.items[0]?.workId },
       {
         acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
         instructions: "保留原始拼写",
@@ -154,7 +174,7 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: false, reason: "workspace_lease_conflict" }) },
       repository: { commit: async (plan) => { committed.push(plan); } },
     });
-    const result = await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
+    const result = await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
     // The denied Work still gets a claimable attempt so the delivery-side recheck decides
     // its fate (retry a transient lease conflict, land a terminal FAILED otherwise) instead
     // of silently jamming the goal. The denial is surfaced to the caller and diagnostics.
@@ -181,7 +201,7 @@ describe("work orchestration outbox", () => {
 
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }],
     })).rejects.toMatchObject({ code: "workbench_workspace_not_ready" });
     expect(committed).toEqual([]);
   });
@@ -193,11 +213,11 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
     });
     await expect(service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
-      { accessMode: "READ", key: "same", partnerId: "partner", title: "A" },
-      { accessMode: "READ", key: "same", partnerId: "partner", title: "B" },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "same", partnerId: "partner", title: "A" },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "same", partnerId: "partner", title: "B" },
     ] })).rejects.toMatchObject({ code: "work_key_duplicate" });
     await expect(service.plan({ workbenchId: "workbench-1", dependencies: [{ dependsOnKey: "missing", workKey: "a" }], inputId: "input-1", turnId: "turn", work: [
-      { accessMode: "READ", key: "a", partnerId: "partner", title: "A" },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "a", partnerId: "partner", title: "A" },
     ] })).rejects.toMatchObject({ code: "work_dependency_unknown" });
   });
 

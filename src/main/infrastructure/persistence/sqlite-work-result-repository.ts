@@ -3,7 +3,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { SseEvent } from "../../application/ports/runtime-store.js";
-import type { RecordedWorkResult, WorkResultRepository } from "../../application/ports/work-results.js";
+import type { RecordedWorkResult, WorkResultRepository, WorkVerificationProjection } from "../../application/ports/work-results.js";
 import type { WorkResult } from "../../domain/work/work-result.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
 
@@ -113,6 +113,17 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
         result: { ...result, artifacts, isLate },
       };
     });
+  }
+
+  async readVerification(resultId: string): Promise<WorkVerificationProjection | null> {
+    const row = this.database.transaction((connection) => connection.prepare(
+      "SELECT status, reason_code FROM work_result_verifications WHERE result_id = ?",
+    ).get(resultId)) as { reason_code?: unknown; status?: unknown } | undefined;
+    if (typeof row?.status !== "string") return null;
+    return {
+      ...(typeof row.reason_code === "string" ? { reasonCode: row.reason_code } : {}),
+      status: row.status as WorkVerificationProjection["status"],
+    };
   }
 
   async readBody(input: { workbenchId: string; limit: number; offset: number; resultId: string }): Promise<{ body: string; total: number } | null> {

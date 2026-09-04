@@ -9,7 +9,13 @@ export interface RecordedWorkResult {
   result: WorkResult;
 }
 
+export interface WorkVerificationProjection {
+  reasonCode?: string;
+  status: "FAILED" | "NOT_REQUIRED" | "PASSED";
+}
+
 export interface WorkResultRepository {
   readBody(input: { workbenchId: string; limit: number; offset: number; resultId: string }): Promise<{ body: string; total: number } | null>;
+  readVerification(resultId: string): Promise<WorkVerificationProjection | null>;
   record(result: WorkResult): Promise<RecordedWorkResult>;
 }

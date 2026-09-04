@@ -122,6 +122,11 @@ describe("goal-level result synthesis", () => {
       expect(synthesisBody).toContain("result-1");
       expect(synthesisBody).toContain("result-2");
       expect(synthesisBody).not.toContain("PRIVATE RAW RESULT");
+      // The acceptance verdict is part of the evidence line, and the guidance no longer
+      // treats every COMPLETED result as verified.
+      expect(synthesisBody).toContain("verification=NOT_REQUIRED");
+      expect(synthesisBody).toContain("verification=PASSED are verified evidence");
+      expect(synthesisBody).not.toContain("Treat COMPLETED results as verified evidence");
 
       const before = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-08-05T09:01:01.000Z"));
       expect(before.goals[0]).toMatchObject({ canDelete: false, goalId: "goal-stock", status: "FINALIZING" });

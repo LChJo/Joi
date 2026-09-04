@@ -306,6 +306,13 @@ export interface RuntimeDiagnosticEventMap {
     reasonCode: string;
     sourceWorkId: string;
   };
+  "joi.partner.brief_checks_filtered": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    droppedChecks: number;
+    partnerId: string;
+    workId: string;
+  };
   "joi.work.dispatch_planned": {
     actionId: string;
     workbenchId: string;

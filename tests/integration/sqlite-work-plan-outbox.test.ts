@@ -264,7 +264,7 @@ describe("SQLite work plan outbox", () => {
       // Review turn dispatch binds back to the original goal.
       await service.plan({
         workbenchId: "workbench-r", dependencies: [], inputId: "goal-r", turnId: "turn-review",
-        work: [{ accessMode: "READ", instructions: "下一层工作", key: "next", partnerId: partner.partnerId, title: "下一层" }],
+        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "下一层工作", key: "next", partnerId: partner.partnerId, title: "下一层" }],
       });
       expect(database.transaction((connection) => connection.prepare(
         "SELECT input_id, status FROM work_items",
@@ -272,7 +272,7 @@ describe("SQLite work plan outbox", () => {
       // A turn with no goal relationship to the plan input stays rejected.
       await expect(service.plan({
         workbenchId: "workbench-r", dependencies: [], inputId: "goal-r", turnId: "turn-stranger",
-        work: [{ accessMode: "READ", key: "forged", partnerId: partner.partnerId, title: "冒充" }],
+        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "forged", partnerId: partner.partnerId, title: "冒充" }],
       })).rejects.toThrow("work_plan_goal_binding_invalid");
     } finally {
       database.close();
