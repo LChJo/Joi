@@ -376,4 +376,40 @@ describe("A2A invocation lifecycle", () => {
       await fixture.close();
     }
   });
+
+  it("emits invocation lifecycle and breaker diagnostics", async () => {
+    const fixture = await createRuntimeFixture();
+    await seedConnection(fixture);
+    const events: { event: string; fields: Record<string, unknown> }[] = [];
+    const diagnostics = { emit: (event: string, fields: Record<string, unknown>) => { events.push({ event, fields }); } };
+    let fail429 = false;
+    const transport: A2aInvocationTransport = {
+      cancelTask: vi.fn(), getTask: vi.fn(), async *resubscribe() {},
+      async *sendStream() {
+        if (fail429) throw Object.assign(new Error("rate limited"), { retryAfter: null, status: 429 });
+        yield { contextId: "context_diag", kind: "task", state: "completed", taskId: "task_diag" } as const;
+      },
+    };
+    const service = new A2aGatewayService({ clock: fixture.clock, diagnostics, ids: fixture.ids, store: fixture.database.store, transport, vault: new PlainTestVault() });
+    try {
+      await service.start({ agentConnectionId: "agent_gateway", parts: [] });
+      const started = events.find((entry) => entry.event === "joi.a2a.invocation_started");
+      const settled = events.find((entry) => entry.event === "joi.a2a.invocation_settled");
+      expect(started?.fields).toMatchObject({ agentConnectionId: "agent_gateway" });
+      expect(settled?.fields.status).toBe("COMPLETED");
+      expect(typeof settled?.fields.durationMs).toBe("number");
+
+      fail429 = true;
+      await expect(service.start({ agentConnectionId: "agent_gateway", parts: [] })).resolves.toMatchObject({ status: "WAITING_RETRY" });
+      const opened = events.find((entry) => entry.event === "joi.a2a.breaker_opened");
+      expect(opened?.fields.lastStatus).toBe(429);
+      expect(typeof opened?.fields.openUntil).toBe("string");
+
+      await expect(service.recover("invocation_missing")).rejects.toMatchObject({ code: "invocation_not_found" });
+      expect(events.find((entry) => entry.event === "joi.a2a.recover_failed")?.fields)
+        .toMatchObject({ errorCode: "invocation_not_found", invocationId: "invocation_missing" });
+    } finally {
+      await fixture.close();
+    }
+  });
 });

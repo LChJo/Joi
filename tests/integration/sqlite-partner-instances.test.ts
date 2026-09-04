@@ -25,8 +25,9 @@ describe("SQLite partner instances", () => {
       const resident = await repository.create({ workbenchId: "workbench_test", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_resident", partnerId: partner.partnerId, partnerRevisionId: partner.partnerRevisionId, sessionPolicy: "RESIDENT" });
       await repository.create({ workbenchId: "workbench_test", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance_ephemeral", partnerId: partner.partnerId, partnerRevisionId: partner.partnerRevisionId, sessionPolicy: "EPHEMERAL" });
       expect(resident).toMatchObject({ sessionPolicy: "RESIDENT", status: "IDLE" });
-      expect(await repository.countActive("workbench_test", partner.partnerId)).toBe(2);
-      expect(await repository.countActiveGlobal()).toBe(2);
+      // Resident caps count RESIDENT instances only; the EPHEMERAL instance above is excluded.
+      expect(await repository.countActive("workbench_test", partner.partnerId)).toBe(1);
+      expect(await repository.countActiveGlobal()).toBe(1);
 
       await repository.setStatusBusy("instance_resident", "2026-07-29T10:01:00.000Z");
       await repository.setStatusBusy("instance_ephemeral", "2026-07-29T10:01:00.000Z");

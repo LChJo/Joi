@@ -1869,6 +1869,10 @@ class SqliteRuntimeStore implements RuntimeStore {
     };
   }
 
+  async deleteExpiredConnectionBreakers(before: string): Promise<number> {
+    return Number(this.database.prepare("DELETE FROM connection_breakers WHERE open_until <= ?").run(before).changes);
+  }
+
   async saveConnectionBreaker(record: ConnectionBreakerRecord): Promise<void> {
     this.database.prepare(`
       INSERT INTO connection_breakers (breaker_key, open_until, last_status, updated_at)
@@ -2627,7 +2631,7 @@ class SqliteRuntimeStore implements RuntimeStore {
       integrity: integrity === undefined ? "unknown" : textValue(integrity, "quick_check"),
       journalMode: journal === undefined ? "unknown" : textValue(journal, "journal_mode"),
       lives: count("lives"),
-      openBreakers: count("connection_breakers"),
+      openBreakers: count("connection_breakers", `WHERE open_until > '${new Date().toISOString()}'`),
       pendingOutbox: count("outbox", "WHERE status = 'PENDING'"),
       runtimeLeases: count("runtime_leases"),
       scheduledAlarms: count("alarms", "WHERE status = 'SCHEDULED'"),

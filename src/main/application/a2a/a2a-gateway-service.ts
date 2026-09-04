@@ -13,6 +13,7 @@ import type {
   InvocationStatus,
 } from "../ports/a2a-ports.js";
 import type { Clock, IdGenerator, RuntimeStore } from "../ports/runtime-store.js";
+import { emitRuntimeDiagnostic, runtimeDiagnosticErrorCode, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import { PersistentConnectionBreaker } from "./connection-breaker.js";
 import { InvocationCapacityGate, type InvocationCapacityScope } from "./invocation-capacity-gate.js";
 
@@ -47,6 +48,7 @@ export class A2aGatewayService {
     vault: CredentialVault;
     artifactDownloader?: ArtifactDownloader;
     capacity?: InvocationCapacityGate;
+    diagnostics?: RuntimeDiagnostics;
   }) {
     this.breaker = new PersistentConnectionBreaker({ clock: dependencies.clock, store: dependencies.store });
     this.capacity = dependencies.capacity ?? new InvocationCapacityGate();
@@ -75,6 +77,12 @@ export class A2aGatewayService {
     });
     if (input.capacity !== undefined) this.capacityByInvocation.set(invocationId, input.capacity);
     if (input.artifactScope !== undefined) this.artifactScopeByInvocation.set(invocationId, input.artifactScope);
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.a2a.invocation_started", {
+      agentConnectionId: input.agentConnectionId,
+      invocationId,
+      messageId,
+    });
+    const startedAtMillis = this.dependencies.clock.now().getTime();
     const directOwner = `direct:${invocationId}`;
     const claimed = await this.dependencies.store.claimOutboxById({
       claimUntil: new Date(this.dependencies.clock.now().getTime() + 10 * 60_000).toISOString(),
@@ -95,6 +103,11 @@ export class A2aGatewayService {
       } else {
         await this.dependencies.store.completeOutbox(outboxId, directOwner);
       }
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.a2a.invocation_settled", {
+        durationMs: Math.max(0, this.dependencies.clock.now().getTime() - startedAtMillis),
+        invocationId,
+        status: invocation.status,
+      });
       return { invocation, output };
     } catch (error) {
       if (input.signal?.aborted === true) {
@@ -125,26 +138,47 @@ export class A2aGatewayService {
   }
 
   async recover(invocationId: string): Promise<InvocationRecord> {
-    const invocation = await this.requireInvocation(invocationId);
-    if (TERMINAL.has(invocation.status)) return invocation;
-    if (invocation.taskId !== undefined) {
-      const access = await this.access(invocation.agentConnectionId);
-      const remote = await this.dependencies.transport.getTask({ config: access.config, taskId: invocation.taskId });
-      let current = await this.applyEvent(invocation, remote);
-      if (!TERMINAL.has(current.status)) {
-        for await (const event of this.dependencies.transport.resubscribe({ config: access.config, taskId: invocation.taskId })) {
-          current = await this.applyEvent(current, event);
+    try {
+      const invocation = await this.requireInvocation(invocationId);
+      if (TERMINAL.has(invocation.status)) return invocation;
+      if (invocation.taskId !== undefined) {
+        const access = await this.access(invocation.agentConnectionId);
+        const breakerKey = this.breaker.keyFor({
+          agentConnectionId: access.config.agentConnectionId,
+          credentialVersion: access.config.credentialVersion,
+          origin: access.config.origin,
+        });
+        try {
+          await this.breaker.assertAvailable(breakerKey);
+        } catch {
+          // The endpoint is cooling down after retryable responses; skip the remote call
+          // and let the outbox retry after the cooldown instead of piercing the rate-limit
+          // window (recovery previously bypassed the breaker entirely).
+          return invocation;
         }
+        const remote = await this.dependencies.transport.getTask({ config: access.config, taskId: invocation.taskId });
+        let current = await this.applyEvent(invocation, remote);
+        if (!TERMINAL.has(current.status)) {
+          for await (const event of this.dependencies.transport.resubscribe({ config: access.config, taskId: invocation.taskId })) {
+            current = await this.applyEvent(current, event);
+          }
+        }
+        return current;
       }
-      return current;
-    }
-    if (invocation.status === "SENT_NO_ACCEPT" && invocation.sendAttempts >= 2) {
-      return this.dependencies.store.updateInvocation(invocationId, {
-        status: "UNKNOWN_REQUIRES_REVIEW",
-        updatedAt: this.dependencies.clock.now().toISOString(),
+      if (invocation.status === "SENT_NO_ACCEPT" && invocation.sendAttempts >= 2) {
+        return await this.dependencies.store.updateInvocation(invocationId, {
+          status: "UNKNOWN_REQUIRES_REVIEW",
+          updatedAt: this.dependencies.clock.now().toISOString(),
+        });
+      }
+      return await this.dispatch(invocationId);
+    } catch (error) {
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.a2a.recover_failed", {
+        errorCode: runtimeDiagnosticErrorCode(error),
+        invocationId,
       });
+      throw error;
     }
-    return this.dispatch(invocationId);
   }
 
   async cancel(invocationId: string): Promise<InvocationRecord> {
@@ -199,7 +233,13 @@ export class A2aGatewayService {
     } catch (error) {
       const retryable = this.retryableError(error);
       if (retryable !== null) {
-        await this.breaker.recordRetryableResponse({ key: breakerKey, retryAfter: retryable.retryAfter, status: retryable.status });
+        const opened = await this.breaker.recordRetryableResponse({ key: breakerKey, retryAfter: retryable.retryAfter, status: retryable.status });
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.a2a.breaker_opened", {
+          breakerKey,
+          invocationId,
+          lastStatus: retryable.status,
+          openUntil: opened.openUntil,
+        });
         return await this.dependencies.store.updateInvocation(invocationId, {
           status: "WAITING_RETRY", updatedAt: this.dependencies.clock.now().toISOString(),
         });

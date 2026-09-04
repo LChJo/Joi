@@ -23,6 +23,7 @@ import { LifeFileDeletionService } from "./infrastructure/artifacts/life-file-de
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
 import { SystemSettingsService } from "./infrastructure/operations/system-settings-service.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "./infrastructure/persistence/runtime-database.js";
+import { emitRuntimeDiagnostic, runtimeDiagnosticErrorCode } from "./application/ports/runtime-diagnostics.js";
 import { JsonLineRuntimeDiagnostics } from "./infrastructure/runtime/json-line-runtime-diagnostics.js";
 import { FileRemoteAccessStore } from "./infrastructure/remote/file-remote-access-store.js";
 import { IrohSidecarTransport } from "./infrastructure/remote/iroh-sidecar-transport.js";
@@ -311,7 +312,13 @@ async function startRuntime(): Promise<void> {
       })();
       rootTickInFlight = pass;
       void pass
-        .catch(() => process.stderr.write("Runtime background dispatch cycle failed.\n"))
+        .catch((error: unknown) => {
+          // Keep the error object: a bare message here was the blind spot that hid every
+          // uncaught failure in the whole tick chain.
+          const errorCode = runtimeDiagnosticErrorCode(error);
+          emitRuntimeDiagnostic(runtimeDiagnostics, "joi.runtime.tick_failed", { errorCode });
+          process.stderr.write(`Runtime background dispatch cycle failed (${errorCode}).\n`);
+        })
         .finally(() => {
           if (rootTickInFlight === pass) rootTickInFlight = null;
         });

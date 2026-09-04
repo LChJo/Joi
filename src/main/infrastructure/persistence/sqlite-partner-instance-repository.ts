@@ -38,16 +38,19 @@ const SELECT_INSTANCES = `SELECT instance_id, workbench_id, partner_id, partner_
 export class SqlitePartnerInstanceRepository implements PartnerInstanceRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
+  // Both caps bound RESIDENT instances only (see PartnerInstanceManager limits); EPHEMERAL
+  // instances are created freely for one-shot dispatch and must not consume the resident
+  // quota, so only RESIDENT rows are counted.
   async countActive(workbenchId: string, partnerId: string): Promise<number> {
     const row = this.database.transaction((connection) => connection.prepare(
-      "SELECT COUNT(*) AS count FROM partner_instances WHERE workbench_id = ? AND partner_id = ? AND status <> 'DISPOSED'",
+      "SELECT COUNT(*) AS count FROM partner_instances WHERE workbench_id = ? AND partner_id = ? AND session_policy = 'RESIDENT' AND status <> 'DISPOSED'",
     ).get(workbenchId, partnerId)) as { count: number };
     return row.count;
   }
 
   async countActiveGlobal(): Promise<number> {
     const row = this.database.transaction((connection) => connection.prepare(
-      "SELECT COUNT(*) AS count FROM partner_instances WHERE status <> 'DISPOSED'",
+      "SELECT COUNT(*) AS count FROM partner_instances WHERE session_policy = 'RESIDENT' AND status <> 'DISPOSED'",
     ).get()) as { count: number };
     return row.count;
   }

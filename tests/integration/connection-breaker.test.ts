@@ -29,4 +29,22 @@ describe("shared Agent connection breaker", () => {
       await fixture.close();
     }
   });
+
+  it("reaps lapsed breaker rows so the table does not grow unbounded", async () => {
+    const fixture = await createRuntimeFixture();
+    const breaker = new PersistentConnectionBreaker({ clock: fixture.clock, store: fixture.database.store });
+    try {
+      const key = breaker.keyFor({ agentConnectionId: "agent_reap", credentialVersion: 1, origin: "http://192.168.1.30:43120" });
+      await breaker.recordRetryableResponse({ key, retryAfter: "1", status: 429 });
+      expect(await fixture.database.store.getConnectionBreaker(key)).not.toBeNull();
+
+      // Past the cooldown the next availability check removes the lapsed row entirely.
+      fixture.clock.advance(60_000);
+      await expect(breaker.assertAvailable(key)).resolves.toBeUndefined();
+      expect(await fixture.database.store.getConnectionBreaker(key)).toBeNull();
+      await expect(fixture.database.store.deleteExpiredConnectionBreakers(fixture.clock.now().toISOString())).resolves.toBe(0);
+    } finally {
+      await fixture.close();
+    }
+  });
 });

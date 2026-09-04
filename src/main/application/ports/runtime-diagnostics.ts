@@ -99,6 +99,7 @@ export interface RuntimeDiagnosticEventMap {
     errorCode: string;
   };
   "joi.rhythm.tick_failed": {
+    consecutiveFailures: number;
     errorCode: string;
     service: string;
   };
@@ -122,6 +123,9 @@ export interface RuntimeDiagnosticEventMap {
     dispatchAttemptId: string;
     partnerId: string;
     status: string;
+  };
+  "joi.runtime.tick_failed": {
+    errorCode: string;
   };
   "joi.agent.prepare_failed": {
     workbenchId: string;
@@ -313,6 +317,30 @@ export interface RuntimeDiagnosticEventMap {
     partnerId: string;
     workId: string;
   };
+  "joi.a2a.invocation_started": {
+    agentConnectionId: string;
+    invocationId: string;
+    messageId: string;
+  };
+  "joi.a2a.invocation_settled": {
+    durationMs: number;
+    invocationId: string;
+    status: string;
+  };
+  "joi.a2a.breaker_opened": {
+    breakerKey: string;
+    invocationId: string;
+    lastStatus: number;
+    openUntil: string;
+  };
+  "joi.a2a.recover_failed": {
+    errorCode: string;
+    invocationId: string;
+  };
+  "joi.a2a.recover_not_ready": {
+    invocationId: string;
+    status: string;
+  };
   "joi.work.dispatch_planned": {
     actionId: string;
     workbenchId: string;
@@ -483,9 +511,18 @@ export function emitRuntimeDiagnostic<Name extends RuntimeDiagnosticName>(
 
 /** Returns a bounded identifier only; error messages and stacks may contain private content or paths. */
 export function runtimeDiagnosticErrorCode(error: unknown): string {
-  const candidate = error !== null && typeof error === "object" && "code" in error && typeof error.code === "string"
-    ? error.code
-    : error instanceof Error ? error.name : "unknown_error";
+  // Prefer the structured partner-run reason code, then an explicit code property, then the
+  // error name. The message itself is never used: free text would leak into diagnostics and
+  // a bare `new Error(...)` would otherwise collapse every distinct failure into "Error".
+  const carrier = error !== null && typeof error === "object" ? (error as { partnerRunFailure?: unknown }).partnerRunFailure : undefined;
+  const carriedReason = carrier !== null && typeof carrier === "object" && typeof (carrier as { reasonCode?: unknown }).reasonCode === "string"
+    ? (carrier as { reasonCode: string }).reasonCode
+    : undefined;
+  const candidate = carriedReason !== undefined && carriedReason !== ""
+    ? carriedReason
+    : error !== null && typeof error === "object" && "code" in error && typeof error.code === "string"
+      ? error.code
+      : error instanceof Error ? error.name : "unknown_error";
   return candidate.length <= 80 && /^[A-Za-z0-9_.:-]+$/u.test(candidate) ? candidate : "unknown_error";
 }
 

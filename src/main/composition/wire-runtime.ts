@@ -2,7 +2,7 @@ import path from "node:path";
 import { lookup } from "node:dns/promises";
 
 import type { Clock, IdGenerator, SsePublisher } from "../application/ports/runtime-store.js";
-import type { RuntimeDiagnostics } from "../application/ports/runtime-diagnostics.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../application/ports/runtime-diagnostics.js";
 import { ActorTree } from "../application/actors/actor-tree.js";
 import { JoiActor } from "../application/actors/joi-actor.js";
 import { WorkbenchActor } from "../application/actors/workbench-actor.js";
@@ -75,6 +75,7 @@ export function wireRuntime(input: {
   const a2aGateway = new A2aGatewayService({
     artifactDownloader: new SecureArtifactDownloader({ policy, rootDirectory: artifactsDirectory }),
     clock,
+    diagnostics,
     ids,
     store: database.store,
     transport: new SdkA2aInvocationTransport({ policy }),
@@ -203,6 +204,10 @@ export function wireRuntime(input: {
         if (typeof invocationId !== "string") throw new Error("A2A outbox record is missing invocationId.");
         const invocation = await a2aGateway.recover(invocationId);
         if (invocation.status === "WAITING_RETRY" || invocation.status === "SENT_NO_ACCEPT") {
+          emitRuntimeDiagnostic(diagnostics, "joi.a2a.recover_not_ready", {
+            invocationId,
+            status: invocation.status,
+          });
           throw new Error("A2A invocation is waiting for retry.");
         }
       },

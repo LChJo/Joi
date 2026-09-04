@@ -71,6 +71,8 @@ export interface ConnectionBreakerRecord {
 }
 
 export interface ConnectionBreakerStore {
+  /** Removes breaker rows whose cooldown has lapsed so the table does not grow unbounded. */
+  deleteExpiredConnectionBreakers(before: string): Promise<number>;
   getConnectionBreaker(breakerKey: string): Promise<ConnectionBreakerRecord | null>;
   saveConnectionBreaker(record: ConnectionBreakerRecord): Promise<void>;
 }

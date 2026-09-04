@@ -111,6 +111,17 @@ describe("json-line runtime diagnostics", () => {
     expect(runtimeDiagnosticErrorCode({ code: "private value with spaces" })).toBe("unknown_error");
   });
 
+  it("prefers a carried partner-run reason code over a generic code or name", () => {
+    const carried = { partnerRunFailure: { reasonCode: "partner_run_timed_out" } };
+    expect(runtimeDiagnosticErrorCode(carried)).toBe("partner_run_timed_out");
+    // The carrier wins even when a code property or Error name is also present.
+    expect(runtimeDiagnosticErrorCode(Object.assign(new Error("boom"), { code: "ETIMEDOUT", partnerRunFailure: { reasonCode: "workspace_lease_lost" } })))
+      .toBe("workspace_lease_lost");
+    // An unusable carrier falls back to the code property, then the name.
+    expect(runtimeDiagnosticErrorCode({ partnerRunFailure: { reasonCode: "has spaces" } })).toBe("unknown_error");
+    expect(runtimeDiagnosticErrorCode({ partnerRunFailure: {} })).toBe("unknown_error");
+  });
+
   it("keeps only bounded explicit diagnostic detail", () => {
     expect(runtimeDiagnosticErrorDetail(null)).toBeUndefined();
     expect(runtimeDiagnosticErrorDetail(new Error("private message only"))).toBeUndefined();
