@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { SseEvent } from "../../application/ports/runtime-store.js";
 import type { RecordedWorkResult, WorkResultRepository } from "../../application/ports/work-results.js";
 import type { WorkResult } from "../../domain/work/work-result.js";
+import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -55,12 +56,24 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
       connection.prepare(`INSERT INTO work_result_verifications
         (result_id, status, reason_code, created_at) VALUES (?, ?, ?, ?)`)
         .run(result.resultId, result.verification.status, result.verification.reasonCode ?? null, result.createdAt);
+      let cascadedWorkIds: string[] | undefined;
       if (isAuthoritative) {
         connection.prepare("UPDATE partner_runs SET status = ?, updated_at = ? WHERE run_id = ?").run(result.status, result.createdAt, result.runId);
         connection.prepare("UPDATE dispatch_attempts SET status = ?, updated_at = ? WHERE action_id = ?")
           .run(result.status, result.createdAt, result.actionId);
-        if (!isLate) connection.prepare("UPDATE work_items SET status = ?, updated_at = ? WHERE work_id = ?")
-          .run(workStatus(result.status), result.createdAt, result.workId);
+        if (!isLate) {
+          const nextStatus = workStatus(result.status);
+          connection.prepare("UPDATE work_items SET status = ?, updated_at = ? WHERE work_id = ?")
+            .run(nextStatus, result.createdAt, result.workId);
+          if (nextStatus === "FAILED") {
+            const cascaded = cascadeDependencyCancellation(connection, {
+              cancelReason: "dependency_failed",
+              now: result.createdAt,
+              workId: result.workId,
+            });
+            if (cascaded.length > 0) cascadedWorkIds = cascaded;
+          }
+        }
       }
       const active = connection.prepare(`SELECT work_id AS workId, title, status FROM work_items
         WHERE workbench_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY created_at, work_id`).all(result.workbenchId);
@@ -93,7 +106,12 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
         sequence: 0,
         type: "work.result.recorded",
       };
-      return { event, isAuthoritative, result: { ...result, artifacts, isLate } };
+      return {
+        ...(cascadedWorkIds === undefined ? {} : { cascadedWorkIds }),
+        event,
+        isAuthoritative,
+        result: { ...result, artifacts, isLate },
+      };
     });
   }
 

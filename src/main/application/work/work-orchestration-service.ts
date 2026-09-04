@@ -436,12 +436,20 @@ export class WorkOrchestrationService {
     const context = await repository.loadForReassignment(input.workId);
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
-    const canceled = await repository.cancel(input.workId, this.dependencies.clock.now().toISOString());
-    if (!canceled) throw new DomainError("work_cancel_status_invalid", "Work in its current state cannot be canceled.");
+    const outcome = await repository.cancel(input.workId, this.dependencies.clock.now().toISOString());
+    if (!outcome.canceled) throw new DomainError("work_cancel_status_invalid", "Work in its current state cannot be canceled.");
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.canceled", {
       workbenchId: input.workbenchId,
       workId: input.workId,
     });
+    if (outcome.cascadedWorkIds.length > 0) {
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dependency_cascade", {
+        workbenchId: input.workbenchId,
+        canceledWorkIds: outcome.cascadedWorkIds,
+        reasonCode: "dependency_canceled",
+        sourceWorkId: input.workId,
+      });
+    }
     await this.dependencies.events?.emit("work.canceled", input.workId, {
       workbenchId: input.workbenchId,
       workId: input.workId,

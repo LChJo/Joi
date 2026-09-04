@@ -10,6 +10,7 @@ import { DomainError } from "../../domain/errors.js";
 import { normalizeCompletionSummary } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
+import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
 import { closeHistoricalReviewInTransaction } from "./sqlite-joi-harness-review-closure.js";
 
 interface TransactionalDatabase {
@@ -21,8 +22,15 @@ type Row = Record<string, unknown>;
 function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string): void {
   connection.prepare(`UPDATE joi_user_action_requests
     SET status = 'CANCELED', updated_at = ? WHERE input_id = ? AND status IN ('OPEN', 'RESOLVED')`).run(now, inputId);
+  const queuedWorkIds = (connection.prepare(`SELECT work_id FROM work_items
+    WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING')`).all(inputId) as { work_id?: unknown }[])
+    .map((row) => String(row.work_id));
   connection.prepare(`UPDATE work_items SET status = 'CANCELED', updated_at = ?
     WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING')`).run(now, inputId);
+  // Successors of the canceled Works (possibly owned by other inputs) must not run either.
+  for (const workId of queuedWorkIds) {
+    cascadeDependencyCancellation(connection, { cancelReason: "input_canceled", now, workId });
+  }
   // A canceled queued attempt must not remain claimable by a later AgentActor tick.
   connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
     WHERE work_id IN (SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')

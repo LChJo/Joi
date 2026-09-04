@@ -19,3 +19,5 @@ Migration 049 建立全局 Routine 配置与紧凑运行事实，并为普通 Jo
 Migration 050 持久化每个失败 Work 最多两轮的恢复尝试及其权威结果证据引用；补充 Work、dispatch outbox、恢复身份和证据引用在同一事务中提交。
 
 Migration 051 区分可自动补证的 `CONTINUE` 与硬阻断，并为每个目标地图持久化默认两轮续跑额度；额度耗尽后以目标级用户动作提供“继续补齐/接受现状”，接受时保留 `ACCEPTED_WITH_GAPS` 终态。
+
+Migration 052 让声明的 Work 依赖在派发时真正生效：依赖反查索引支撑认领门控（前置未全部完成不可认领），`work_items.cancel_reason` 记录依赖失败/取消触发的确定性级联取消原因。

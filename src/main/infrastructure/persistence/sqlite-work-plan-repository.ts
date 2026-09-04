@@ -15,6 +15,7 @@ import type {
   WorkReassignmentRepository,
 } from "../../application/ports/work-orchestration.js";
 import type { WorkItemDto } from "../../../shared/joi.js";
+import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -124,6 +125,19 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
       for (const item of plan.items) insertAccess.run(item.workId, item.accessMode);
       const insertDependency = connection.prepare("INSERT INTO work_dependencies (work_id, depends_on_work_id) VALUES (?, ?)");
       for (const dependency of plan.dependencies) insertDependency.run(dependency.workId, dependency.dependsOnWorkId);
+      // A dependency declared against an already terminal-failed predecessor is canceled on
+      // arrival: the claim gate would keep it unclaimable forever otherwise.
+      for (const dependency of plan.dependencies) {
+        const target = connection.prepare("SELECT status FROM work_items WHERE work_id = ?")
+          .get(dependency.dependsOnWorkId) as { status?: unknown } | undefined;
+        if (target?.status === "FAILED" || target?.status === "CANCELED") {
+          cascadeDependencyCancellation(connection, {
+            cancelReason: target.status === "FAILED" ? "dependency_failed" : "dependency_canceled",
+            now: plan.createdAt,
+            workId: dependency.dependsOnWorkId,
+          });
+        }
+      }
       connection.prepare(`INSERT INTO dispatch_plans
         (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at) VALUES (?, ?, ?, ?, ?)`).run(
         plan.dispatchPlanId, plan.turnId,
@@ -260,10 +274,19 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
   }
 
   /** Cancels work that is not mid-flight; running attempts finish on their own and arrive late. */
-  async cancel(workId: string, at: string): Promise<boolean> {
-    return this.database.transaction((connection) => connection.prepare(`
-      UPDATE work_items SET status = 'CANCELED', updated_at = ?
-       WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED')`).run(at, workId).changes > 0);
+  async cancel(workId: string, at: string): Promise<{ canceled: boolean; cascadedWorkIds: string[] }> {
+    return this.database.transaction((connection) => {
+      const canceled = connection.prepare(`
+        UPDATE work_items SET status = 'CANCELED', updated_at = ?
+         WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED')`).run(at, workId).changes > 0;
+      if (!canceled) return { canceled: false, cascadedWorkIds: [] };
+      const cascadedWorkIds = cascadeDependencyCancellation(connection, {
+        cancelReason: "dependency_canceled",
+        now: at,
+        workId,
+      });
+      return { canceled: true, cascadedWorkIds };
+    });
   }
 
   async loadAttemptForTurn(workId: string, turnId: string): Promise<PlannedDispatchAttempt | null> {

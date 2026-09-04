@@ -154,6 +154,14 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
          AND w.status IN ('PLANNED', 'READY')
          AND o.available_at <= ?
          AND (o.status = 'PENDING' OR (o.status = 'CLAIMED' AND o.claim_until <= ?))
+         -- Dependency gate: a Work is only claimable once every declared predecessor
+         -- has completed. In-flight predecessors keep it waiting; FAILED/CANCELED
+         -- predecessors cancel it through the cascade instead of stranding it here.
+         AND NOT EXISTS (
+           SELECT 1 FROM work_dependencies d
+           JOIN work_items dep ON dep.work_id = d.depends_on_work_id
+           WHERE d.work_id = w.work_id AND dep.status <> 'COMPLETED'
+         )
        ORDER BY o.created_at ASC, o.outbox_id ASC LIMIT 10`)
       .all(input.workbenchId, input.partnerId, input.now, input.now)) as Record<string, unknown>[])
       .map((row) => ({
@@ -606,6 +614,14 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       status: committedStatus,
       workId: row.work_id,
     });
+    if (recorded.cascadedWorkIds !== undefined) {
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dependency_cascade", {
+        workbenchId: row.workbench_id,
+        canceledWorkIds: recorded.cascadedWorkIds,
+        reasonCode: "dependency_failed",
+        sourceWorkId: row.work_id,
+      });
+    }
     if (agentId !== null && this.dependencies.agentConversations !== undefined) {
       const fallback: AgentConversationDraft[] = [
         { kind: "MARKDOWN", role: "USER", text: taskProjection(row) },

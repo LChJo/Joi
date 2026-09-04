@@ -89,7 +89,7 @@ export interface ReassignedWorkPlan {
 }
 
 export interface WorkReassignmentRepository {
-  cancel(workId: string, at: string): Promise<boolean>;
+  cancel(workId: string, at: string): Promise<{ canceled: boolean; cascadedWorkIds: string[] }>;
   loadAttemptForAction?(workId: string, actionId: string): Promise<PlannedDispatchAttempt | null>;
   loadAttemptForTurn?(workId: string, turnId: string): Promise<PlannedDispatchAttempt | null>;
   loadForReassignment(workId: string): Promise<WorkReassignmentContext | null>;

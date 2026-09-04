@@ -260,7 +260,7 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async () => ({ partnerId: "partner-b", partnerRevisionId: "revision-b", registryRevision: 8 }) },
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
-        cancel: async () => true,
+        cancel: async () => ({ canceled: true, cascadedWorkIds: [] }),
         loadForReassignment: async () => ({
           item: { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" },
           lastPartnerId: "partner-a",
@@ -298,7 +298,7 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async () => ({ partnerId: "partner", partnerRevisionId: options.revision ?? "revision-new", registryRevision: 2 }) },
       policy: { evaluate: async () => options.policy ?? { allowed: true } },
       ...(options.reassignment === false ? {} : { reassignment: {
-        cancel: async () => true,
+        cancel: async () => ({ canceled: true, cascadedWorkIds: [] }),
         loadForReassignment: async () => options.context === undefined ? { item: baseItem, lastPartnerId: "partner-old", lastPartnerRevisionId: "revision-old" } : options.context,
         reassign: async () => undefined,
       } }),
@@ -323,7 +323,7 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision-same", registryRevision: 3 }) },
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
-        cancel: async () => true,
+        cancel: async () => ({ canceled: true, cascadedWorkIds: [] }),
         loadForReassignment: async (): Promise<WorkReassignmentContext> => ({
           item: options.item ?? waitingItem,
           lastInstanceId: "instance-1",
@@ -369,7 +369,7 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async () => { throw new Error("must not repin"); } },
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
-        cancel: async () => true,
+        cancel: async () => ({ canceled: true, cascadedWorkIds: [] }),
         loadAttemptForAction: async (workId, actionId) => workId === "work-1" && actionId === "attention-1" ? existing : null,
         loadForReassignment,
         reassign,
@@ -391,7 +391,7 @@ describe("work orchestration outbox", () => {
       partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
-        cancel: async (workId) => { canceled.push(workId); return cancelResult; },
+        cancel: async (workId) => { canceled.push(workId); return { canceled: cancelResult, cascadedWorkIds: [] }; },
         loadForReassignment: async (): Promise<WorkReassignmentContext> => ({ item: waitingItem, lastPartnerId: "partner-a", lastPartnerRevisionId: "revision" }),
         reassign: async () => undefined,
       },

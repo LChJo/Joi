@@ -300,6 +300,12 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
     workId: string;
   };
+  "joi.work.dependency_cascade": {
+    workbenchId: string;
+    canceledWorkIds: string[];
+    reasonCode: string;
+    sourceWorkId: string;
+  };
   "joi.work.dispatch_planned": {
     actionId: string;
     workbenchId: string;
