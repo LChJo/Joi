@@ -59,6 +59,37 @@ export class SqliteWorkspaceLeaseManager {
     });
   }
 
+  /**
+   * Extends a still-live lease for the owning work. Returns null when the lease row is
+   * missing or already expired; callers must treat that as lost workspace exclusivity.
+   */
+  async renew(input: { workId: string; workspaceRef: string }): Promise<WorkspaceLease | null> {
+    const now = this.dependencies.clock.now();
+    const nowText = now.toISOString();
+    const expiresAt = new Date(now.getTime() + (this.dependencies.leaseMilliseconds ?? 10 * 60_000)).toISOString();
+    return this.dependencies.database.transaction((connection) => {
+      const updated = connection.prepare(`UPDATE workspace_leases
+        SET expires_at = ?
+      WHERE work_id = ? AND workspace_ref = ? AND expires_at > ?`).run(
+        expiresAt, input.workId, input.workspaceRef, nowText,
+      );
+      if (updated.changes === 0) return null;
+      const row = connection.prepare(`SELECT access_mode, lease_owner, generation
+        FROM workspace_leases WHERE workspace_ref = ? AND work_id = ?`).get(
+        input.workspaceRef, input.workId,
+      ) as { access_mode?: unknown; generation?: unknown; lease_owner?: unknown } | undefined;
+      if (row === undefined) return null;
+      return {
+        accessMode: String(row.access_mode) as WorkAccessMode,
+        expiresAt,
+        generation: typeof row.generation === "number" ? row.generation : 1,
+        owner: typeof row.lease_owner === "string" ? row.lease_owner : "",
+        workId: input.workId,
+        workspaceRef: input.workspaceRef,
+      };
+    });
+  }
+
   async release(workId: string): Promise<void> {
     this.dependencies.database.transaction((connection) => {
       connection.prepare("DELETE FROM workspace_leases WHERE work_id = ?").run(workId);

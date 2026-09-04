@@ -66,7 +66,9 @@ export function wirePersistence(input: {
     workbenches: new LegacyLifeStoreAdapter(database),
     workPlanRepository: new SqliteWorkPlanRepository(database),
     workResultRepository: new SqliteWorkResultRepository(database),
-    workspaceLeases: new SqliteWorkspaceLeaseManager({ clock, database, owner: `partner_${pid}` }),
+    // Short TTL + per-tick heartbeat renewal (agent-dispatch-component): a live process
+    // never expires, a dead process's lease is swept within five minutes.
+    workspaceLeases: new SqliteWorkspaceLeaseManager({ clock, database, leaseMilliseconds: 5 * 60_000, owner: `partner_${pid}` }),
   };
 }
 

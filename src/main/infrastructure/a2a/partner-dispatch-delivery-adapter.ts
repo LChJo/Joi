@@ -232,6 +232,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       throw new Error(reason);
     }
 
+    let leaseExpiresAt: string | undefined;
+    let leaseWorkId: string | undefined;
     if (row.access_mode !== "NONE") {
       if (row.workspace_ref === null) throw new Error("dispatch_policy_workspace_ref_missing");
       const lease = await this.dependencies.leases.acquire({
@@ -240,61 +242,74 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         workspaceRef: row.workspace_ref,
       });
       if (lease === null) throw new Error(denialReason(deliveryPolicy(row, true)));
+      leaseExpiresAt = lease.expiresAt;
+      leaseWorkId = row.work_id;
     }
 
-    // Stage the source input's attachments while holding the workspace lease so
-    // file-capable local partners can read the originals from deterministic paths.
-    let stagedAttachments: readonly StagedAttachment[] | undefined;
-    if (row.access_mode !== "NONE" && row.kind === "LOCAL_PI" && row.workspace_ref !== null && this.dependencies.attachmentStager !== undefined) {
-      const workspaceRef = row.workspace_ref;
-      const inputId = row.input_id;
-      const roots = this.dependencies.database.transaction((connection) => connection.prepare(
-        "SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?",
-      ).get(workspaceRef)) as { root_path?: unknown } | undefined;
-      if (typeof roots?.root_path === "string") {
-        const staged = await this.dependencies.attachmentStager.stage({ inputId, workspacePath: roots.root_path });
-        if (staged.length > 0) stagedAttachments = staged;
-      }
-    }
-
-    const runWasPresent = row.run_id !== null;
-    if (!runWasPresent) {
-      await this.#ensureRun(row);
-      row = this.#load(claim.dispatchAttemptId);
-      if (row?.run_id === undefined || row.run_id === null) throw new Error("partner_run_create_failed");
-    }
-    const revision = await this.dependencies.partners.getRevision(row.partner_revision_id);
-    if (revision === null) {
-      await this.#complete(row, "FAILED", { artifacts: [], body: "The pinned partner revision is unavailable." });
-      return "skipped_terminal";
-    }
-    if (row.context_snapshot_id === null) throw new Error("workbench_context_snapshot_not_found");
-
-    if (runWasPresent && row.run_status === "RUNNING" && row.kind === "LOCAL_PI" && row.instance_id === null) {
-      // A crashed legacy single-shot run is not resumable; instance-linked attempts resume via finalizeOrphan.
-      await this.#complete(row, "UNKNOWN", { artifacts: [], body: "The previous local run could not be resumed safely." });
-      return "skipped_terminal";
-    }
-
-    let instanceId: string | undefined;
-    let sessionPolicy: "EPHEMERAL" | "RESIDENT" | undefined;
+    // Every failure after the lease was granted must release it; otherwise the row
+    // blocks the workspace until its TTL expires. The #complete branches below release
+    // on their own, so only thrown errors need the catch.
     try {
-      const payload = JSON.parse(claim.payloadJson) as Record<string, unknown>;
-      if (typeof payload.instanceId === "string") instanceId = payload.instanceId;
-      if (payload.sessionPolicy === "EPHEMERAL" || payload.sessionPolicy === "RESIDENT") sessionPolicy = payload.sessionPolicy;
-    } catch {
-      // Malformed payloads dispatch as one-shot ephemeral work.
+      // Stage the source input's attachments while holding the workspace lease so
+      // file-capable local partners can read the originals from deterministic paths.
+      let stagedAttachments: readonly StagedAttachment[] | undefined;
+      if (row.access_mode !== "NONE" && row.kind === "LOCAL_PI" && row.workspace_ref !== null && this.dependencies.attachmentStager !== undefined) {
+        const workspaceRef = row.workspace_ref;
+        const inputId = row.input_id;
+        const roots = this.dependencies.database.transaction((connection) => connection.prepare(
+          "SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?",
+        ).get(workspaceRef)) as { root_path?: unknown } | undefined;
+        if (typeof roots?.root_path === "string") {
+          const staged = await this.dependencies.attachmentStager.stage({ inputId, workspacePath: roots.root_path });
+          if (staged.length > 0) stagedAttachments = staged;
+        }
+      }
+
+      const runWasPresent = row.run_id !== null;
+      if (!runWasPresent) {
+        await this.#ensureRun(row);
+        row = this.#load(claim.dispatchAttemptId);
+        if (row?.run_id === undefined || row.run_id === null) throw new Error("partner_run_create_failed");
+      }
+      const revision = await this.dependencies.partners.getRevision(row.partner_revision_id);
+      if (revision === null) {
+        await this.#complete(row, "FAILED", { artifacts: [], body: "The pinned partner revision is unavailable." });
+        return "skipped_terminal";
+      }
+      if (row.context_snapshot_id === null) throw new Error("workbench_context_snapshot_not_found");
+
+      if (runWasPresent && row.run_status === "RUNNING" && row.kind === "LOCAL_PI" && row.instance_id === null) {
+        // A crashed legacy single-shot run is not resumable; instance-linked attempts resume via finalizeOrphan.
+        await this.#complete(row, "UNKNOWN", { artifacts: [], body: "The previous local run could not be resumed safely." });
+        return "skipped_terminal";
+      }
+
+      let instanceId: string | undefined;
+      let sessionPolicy: "EPHEMERAL" | "RESIDENT" | undefined;
+      try {
+        const payload = JSON.parse(claim.payloadJson) as Record<string, unknown>;
+        if (typeof payload.instanceId === "string") instanceId = payload.instanceId;
+        if (payload.sessionPolicy === "EPHEMERAL" || payload.sessionPolicy === "RESIDENT") sessionPolicy = payload.sessionPolicy;
+      } catch {
+        // Malformed payloads dispatch as one-shot ephemeral work.
+      }
+      return {
+        actionId: row.action_id,
+        attemptCount: claim.attemptCount,
+        dispatchAttemptId: row.dispatch_attempt_id,
+        ...(instanceId === undefined ? {} : { instanceId }),
+        kind: row.kind,
+        outboxId: claim.outboxId,
+        ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
+        ...(stagedAttachments === undefined ? {} : { stagedAttachments }),
+        ...(leaseExpiresAt === undefined || row.workspace_ref === null ? {} : {
+          workspaceLease: { expiresAt: leaseExpiresAt, workId: row.work_id, workspaceRef: row.workspace_ref },
+        }),
+      };
+    } catch (error) {
+      if (leaseWorkId !== undefined) await this.dependencies.leases.release(leaseWorkId);
+      throw error;
     }
-    return {
-      actionId: row.action_id,
-      attemptCount: claim.attemptCount,
-      dispatchAttemptId: row.dispatch_attempt_id,
-      ...(instanceId === undefined ? {} : { instanceId }),
-      kind: row.kind,
-      outboxId: claim.outboxId,
-      ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
-      ...(stagedAttachments === undefined ? {} : { stagedAttachments }),
-    };
   }
 
   async run(prepared: PreparedDispatch): Promise<DispatchRunOutput> {

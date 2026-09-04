@@ -8,13 +8,17 @@ import type {
   PartnerDispatchClaims,
   PartnerDispatchDelivery,
   PreparedDispatch,
+  WorkspaceLeaseRenewal,
 } from "../../ports/partner-dispatch-delivery.js";
 import type { RuntimeStore } from "../../ports/runtime-store.js";
+import type { PartnerRunFailure } from "../../partners/partner-run-failure.js";
 import { partnerRunArtifactsFromError, partnerRunFailureFromError, safePartnerRunFailureBody } from "../../partners/partner-run-failure.js";
 
 const CLAIM_LEASE_MILLIS = 30_000;
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
 const DEFAULT_WAITING_RETRY_EVERY_MILLIS = 30_000;
+/** Renew the workspace lease once its remaining lifetime drops below this margin. */
+const LEASE_RENEW_MARGIN_MILLIS = 60_000;
 
 interface InFlightRun {
   dispatchAttemptId: string;
@@ -49,6 +53,7 @@ export class AgentDispatchComponent implements ActorComponent {
     workbenchId: string;
     claims: PartnerDispatchClaims;
     delivery: PartnerDispatchDelivery;
+    leases?: WorkspaceLeaseRenewal;
     orphanScanEveryMillis?: number;
     outbox: Pick<RuntimeStore, "claimOutboxById" | "completeOutbox" | "releaseOutbox">;
     owner: string;
@@ -61,10 +66,51 @@ export class AgentDispatchComponent implements ActorComponent {
   }
 
   async update(ctx: ActorTickContext): Promise<void> {
+    await this.#renewLease(ctx);
     await this.#converge(ctx);
     await this.#scanOrphans(ctx);
     if (this.#inFlight !== null || this.#orphanInFlight.size > 0 || ctx.now.getTime() < this.#retryAvailableAt) return;
     await this.#claimAndStart(ctx);
+  }
+
+  /**
+   * Heartbeats the workspace lease of the in-flight run so a live process keeps
+   * exclusivity indefinitely while a dead process's lease expires and is swept.
+   * A lost lease converges the run to a non-replayable UNKNOWN terminal result.
+   */
+  async #renewLease(ctx: ActorTickContext): Promise<void> {
+    const run = this.#inFlight;
+    if (run === null || run.settled !== undefined) return;
+    const lease = run.prepared.workspaceLease;
+    if (lease === undefined || this.dependencies.leases === undefined) return;
+    if (Date.parse(lease.expiresAt) - ctx.now.getTime() > LEASE_RENEW_MARGIN_MILLIS) return;
+    const renewed = await this.dependencies.leases.renew({ workId: lease.workId, workspaceRef: lease.workspaceRef });
+    if (renewed === null) {
+      emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.lease_lost", {
+        workbenchId: this.dependencies.workbenchId,
+        dispatchAttemptId: run.dispatchAttemptId,
+        partnerId: this.dependencies.partnerId,
+        workId: lease.workId,
+      });
+      const { workspaceLease: _lost, ...prepared } = run.prepared;
+      void _lost;
+      run.prepared = prepared;
+      const failure: PartnerRunFailure = {
+        phase: "EXECUTION",
+        reasonCode: "workspace_lease_lost",
+        retryable: false,
+        sideEffectState: "UNKNOWN",
+      };
+      run.settled = {
+        artifacts: [],
+        body: safePartnerRunFailureBody(failure),
+        failure,
+        kind: "terminal",
+        status: "UNKNOWN",
+      };
+      return;
+    }
+    run.prepared = { ...run.prepared, workspaceLease: { ...lease, expiresAt: renewed.expiresAt } };
   }
 
   async #converge(ctx: ActorTickContext): Promise<void> {

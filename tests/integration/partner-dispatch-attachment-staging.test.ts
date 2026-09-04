@@ -5,6 +5,7 @@ import path from "node:path";
 
 import { WorkbenchContextAssembler } from "../../src/main/application/joi/workbench-context-assembler.js";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
+import type { StagedAttachment } from "../../src/main/application/ports/partner-dispatch-delivery.js";
 import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
 import { JoiAttachmentService } from "../../src/main/infrastructure/artifacts/joi-attachment-service.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
@@ -64,11 +65,15 @@ async function openFixture() {
   return { attachments, clock, database, ids, partner, root, uploaded, workspaceDir };
 }
 
-function makeDelivery(fixture: Awaited<ReturnType<typeof openFixture>>, dispatchSpy: { calls: unknown[] }) {
+function makeDelivery(
+  fixture: Awaited<ReturnType<typeof openFixture>>,
+  dispatchSpy: { calls: unknown[] },
+  overrides?: { attachmentStager?: { stage(input: { inputId: string; workspacePath: string }): Promise<StagedAttachment[]> } },
+) {
   const contexts = new SqliteWorkbenchContextRepository(fixture.database);
   return new SqlitePartnerDispatchDelivery({
     agentConversations: new SqliteWorkbenchAgentRepository(fixture.database),
-    attachmentStager: new WorkAttachmentStager({ attachments: fixture.attachments, database: fixture.database }),
+    attachmentStager: overrides?.attachmentStager ?? new WorkAttachmentStager({ attachments: fixture.attachments, database: fixture.database }),
     clock: fixture.clock,
     contextAssembler: new WorkbenchContextAssembler({
       workbenches: new LegacyLifeStoreAdapter(fixture.database), clock: fixture.clock, ids: fixture.ids, projections: contexts, snapshots: contexts,
@@ -128,6 +133,30 @@ describe("partner dispatch attachment staging", () => {
       await stager.stage({ inputId: "input_1", workspacePath: fixture.workspaceDir });
       expect(new Uint8Array(await readFile(stagedPath))).toEqual(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
       expect(await stager.stage({ inputId: "no_such_input", workspacePath: fixture.workspaceDir })).toEqual([]);
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("releases the workspace lease when prepare fails after acquiring it", async () => {
+    const fixture = await openFixture();
+    try {
+      const spy = { calls: [] as unknown[] };
+      const failing = makeDelivery(fixture, spy, {
+        attachmentStager: { stage: () => Promise.reject(new Error("stage_failed")) },
+      });
+      const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
+      await expect(failing.prepare(claim)).rejects.toThrow("stage_failed");
+      const heldLeases = fixture.database.transaction((connection) => (
+        connection.prepare("SELECT COUNT(*) AS n FROM workspace_leases").get() as { n: number }
+      ).n);
+      expect(heldLeases).toBe(0);
+
+      // The freed lease lets the same work dispatch normally on the next attempt.
+      const healthy = makeDelivery(fixture, spy);
+      await healthy.handle(outboxRecord("outbox_1", "attempt_1", "work_1"));
+      expect(spy.calls).toHaveLength(1);
     } finally {
       fixture.database.close();
       await rm(fixture.root, { force: true, recursive: true });

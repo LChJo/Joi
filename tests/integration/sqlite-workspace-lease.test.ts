@@ -40,6 +40,49 @@ describe("workspace lease lifecycle", () => {
     }
   });
 
+  it("renews a live lease, refuses a lapsed one, and sweeps a dead owner's lease", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(`
+      CREATE TABLE workbench_workspace_roots (workspace_ref TEXT PRIMARY KEY, root_path TEXT NOT NULL);
+      CREATE TABLE workspace_leases (
+        workspace_ref TEXT NOT NULL, work_id TEXT NOT NULL, access_mode TEXT NOT NULL,
+        lease_owner TEXT NOT NULL, generation INTEGER NOT NULL, expires_at TEXT NOT NULL,
+        PRIMARY KEY (workspace_ref, work_id)
+      );
+    `);
+    try {
+      const clock = new TestClock();
+      const leases = new SqliteWorkspaceLeaseManager({
+        clock,
+        database: { transaction: (operation) => operation(database) },
+        leaseMilliseconds: 30_000,
+      });
+      const acquired = await leases.acquire({ accessMode: "WRITE", workId: "write_a", workspaceRef: "workbench_workspace:a" });
+      expect(acquired).not.toBeNull();
+
+      // Mid-life renewal extends the deadline and keeps the workspace exclusive.
+      clock.advance(20_000);
+      const renewed = await leases.renew({ workId: "write_a", workspaceRef: "workbench_workspace:a" });
+      expect(renewed).toMatchObject({
+        expiresAt: new Date(clock.now().getTime() + 30_000).toISOString(),
+        generation: 1,
+        workId: "write_a",
+      });
+      await expect(leases.acquire({ accessMode: "WRITE", workId: "write_b", workspaceRef: "workbench_workspace:a" }))
+        .resolves.toBeNull();
+
+      // A dead owner stops renewing; once the TTL lapses, renewal fails and the
+      // next acquire sweeps the row and grants the workspace to new work.
+      clock.advance(31_000);
+      await expect(leases.renew({ workId: "write_a", workspaceRef: "workbench_workspace:a" })).resolves.toBeNull();
+      await expect(leases.acquire({ accessMode: "WRITE", workId: "write_b", workspaceRef: "workbench_workspace:a" }))
+        .resolves.toMatchObject({ generation: 1, workId: "write_b" });
+      await expect(leases.renew({ workId: "missing", workspaceRef: "workbench_workspace:a" })).resolves.toBeNull();
+    } finally {
+      database.close();
+    }
+  });
+
   it("shares reads, excludes writes, releases terminal work and recovers expired leases", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-lease-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });

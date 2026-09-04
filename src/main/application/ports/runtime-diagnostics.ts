@@ -129,6 +129,12 @@ export interface RuntimeDiagnosticEventMap {
     outboxId: string;
     partnerId: string;
   };
+  "joi.agent.lease_lost": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    partnerId: string;
+    workId: string;
+  };
   "joi.partner.orphan_found": {
     workbenchId: string;
     dispatchAttemptId: string;

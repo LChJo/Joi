@@ -6,6 +6,7 @@ import type { WorkbenchAgentScan } from "../../ports/workbench-agent-scan.js";
 import type {
   PartnerDispatchClaims,
   PartnerDispatchDelivery,
+  WorkspaceLeaseRenewal,
 } from "../../ports/partner-dispatch-delivery.js";
 import type { PartnerRunStatus } from "../../ports/partner-execution.js";
 import type { RuntimeStore } from "../../ports/runtime-store.js";
@@ -33,6 +34,7 @@ export class WorkbenchAgentComponent implements ActorComponent {
     dispatch?: {
       claims: PartnerDispatchClaims;
       delivery: PartnerDispatchDelivery;
+      leases?: WorkspaceLeaseRenewal;
       outbox: Pick<RuntimeStore, "claimOutboxById" | "completeOutbox" | "releaseOutbox">;
       owner: string;
     };
@@ -109,6 +111,7 @@ export class WorkbenchAgentComponent implements ActorComponent {
           workbenchId: this.dependencies.workbenchId,
           claims: this.dependencies.dispatch.claims,
           delivery: this.dependencies.dispatch.delivery,
+          ...(this.dependencies.dispatch.leases === undefined ? {} : { leases: this.dependencies.dispatch.leases }),
           outbox: this.dependencies.dispatch.outbox,
           owner: this.dependencies.dispatch.owner,
           partnerId: key.partnerId,

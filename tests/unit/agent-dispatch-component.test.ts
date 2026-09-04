@@ -21,6 +21,7 @@ const TERMINAL: DispatchRunOutput = { artifacts: [], body: "done", kind: "termin
 
 interface HarnessOptions {
   claims?: PartnerDispatchClaimRow[];
+  leaseRenew?: (input: { workId: string; workspaceRef: string }) => Promise<{ expiresAt: string } | null>;
   orphans?: PartnerDispatchOrphanRow[];
   prepareResult?: PreparedDispatch | "skipped_terminal" | Error;
   runError?: Error;
@@ -32,6 +33,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const calls: string[] = [];
   const completed: string[] = [];
   const completionOutputs: (DispatchRunOutput & { kind: "terminal" })[] = [];
+  const diagnosticEvents: { event: string; fields: Record<string, unknown> }[] = [];
   const finalized: string[] = [];
   const released: string[] = [];
   let runCount = 0;
@@ -41,6 +43,7 @@ function makeHarness(options: HarnessOptions = {}) {
       listClaimable: async () => [...(options.claims ?? [])],
       listOrphanRuns: async () => [...(options.orphans ?? [])],
     },
+    ...(options.leaseRenew === undefined ? {} : { leases: { renew: options.leaseRenew } }),
     delivery: {
       complete: async (input) => {
         completed.push(input.prepared.dispatchAttemptId);
@@ -84,7 +87,16 @@ function makeHarness(options: HarnessOptions = {}) {
     owner: "agent_test",
     partnerId: "partner_1",
   });
-  return { calls, completed, completionOutputs, component, finalized, released };
+  return { calls, completed, completionOutputs, component, diagnosticEvents, finalized, released };
+}
+
+function diagnosticsSink(events: { event: string; fields: Record<string, unknown> }[]) {
+  return { emit: (event: string, fields: Record<string, unknown>) => { events.push({ event, fields }); } };
+}
+
+function ctxWithDiagnostics(offsetMillis: number, events: { event: string; fields: Record<string, unknown> }[]) {
+  const now = new Date(new Date(BASE).getTime() + offsetMillis);
+  return { clock: { now: () => now }, diagnostics: diagnosticsSink(events), now, tickId: 1 };
 }
 
 describe("AgentDispatchComponent", () => {
@@ -209,6 +221,63 @@ describe("AgentDispatchComponent", () => {
 
     expect(harness.completionOutputs[0]).toMatchObject({
       failure: { reasonCode: "unknown_error", retryable: false, sideEffectState: "UNKNOWN" },
+      status: "UNKNOWN",
+    });
+  });
+
+  it("heartbeats the workspace lease only inside the renewal margin while a run is in flight", async () => {
+    const prepared: PreparedDispatch = {
+      ...PREPARED,
+      workspaceLease: { expiresAt: new Date(new Date(BASE).getTime() + 5 * 60_000).toISOString(), workId: "work_1", workspaceRef: "workspace_ref" },
+    };
+    const renewCalls: { workId: string; workspaceRef: string }[] = [];
+    const harness = makeHarness({
+      claims: [CLAIM],
+      leaseRenew: async (input) => {
+        renewCalls.push(input);
+        return { expiresAt: new Date(new Date(BASE).getTime() + 10 * 60_000).toISOString() };
+      },
+      prepareResult: prepared,
+      runOverride: () => new Promise<DispatchRunOutput>(() => undefined),
+    });
+    await harness.component.update(ctxAt(0));
+    expect(renewCalls).toEqual([]);
+
+    // Well inside the lease lifetime: no renewal.
+    await harness.component.update(ctxAt(2 * 60_000));
+    expect(renewCalls).toEqual([]);
+
+    // 30s left, below the 60s margin: exactly one renewal with the lease identity.
+    await harness.component.update(ctxAt(4 * 60_000 + 30_000));
+    expect(renewCalls).toEqual([{ workId: "work_1", workspaceRef: "workspace_ref" }]);
+
+    // The renewed expiry (10 min from BASE) is now far away again.
+    await harness.component.update(ctxAt(5 * 60_000));
+    expect(renewCalls).toHaveLength(1);
+  });
+
+  it("converges a run to non-replayable UNKNOWN when its workspace lease is lost", async () => {
+    const prepared: PreparedDispatch = {
+      ...PREPARED,
+      workspaceLease: { expiresAt: new Date(new Date(BASE).getTime() + 90_000).toISOString(), workId: "work_1", workspaceRef: "workspace_ref" },
+    };
+    const harness = makeHarness({
+      claims: [CLAIM],
+      leaseRenew: async () => null,
+      prepareResult: prepared,
+      runOverride: () => new Promise<DispatchRunOutput>(() => undefined),
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    // Next tick enters the renewal margin and the renewal reports the lease gone.
+    await harness.component.update(ctxWithDiagnostics(31_000, harness.diagnosticEvents));
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.lease_lost");
+    await harness.component.update(ctxWithDiagnostics(32_000, harness.diagnosticEvents));
+    expect(harness.completed).toEqual(["attempt_1"]);
+    expect(harness.completionOutputs[0]).toMatchObject({
+      failure: { phase: "EXECUTION", reasonCode: "workspace_lease_lost", retryable: false, sideEffectState: "UNKNOWN" },
+      kind: "terminal",
       status: "UNKNOWN",
     });
   });

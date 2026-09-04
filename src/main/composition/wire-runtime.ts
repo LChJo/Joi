@@ -176,6 +176,7 @@ export function wireRuntime(input: {
           dispatch: {
             claims: persistence.dispatchClaims,
             delivery: partnerDispatchDelivery,
+            leases: persistence.workspaceLeases,
             outbox: database.store,
             owner: `agent_${workbenchId}_${String(process.pid)}`,
           },

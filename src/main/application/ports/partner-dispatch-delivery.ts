@@ -41,6 +41,13 @@ export interface PreparedDispatch {
   sessionPolicy?: "EPHEMERAL" | "RESIDENT";
   /** Attachments staged into the workspace for file-capable local work. */
   stagedAttachments?: readonly StagedAttachment[];
+  /** Workspace lease held by this run; the dispatch actor heartbeats it while in flight. */
+  workspaceLease?: { expiresAt: string; workId: string; workspaceRef: string };
+}
+
+/** Renews the workspace lease held by an in-flight run; null means the lease was lost. */
+export interface WorkspaceLeaseRenewal {
+  renew(input: { workId: string; workspaceRef: string }): Promise<{ expiresAt: string } | null>;
 }
 
 export type DispatchRunOutput =
