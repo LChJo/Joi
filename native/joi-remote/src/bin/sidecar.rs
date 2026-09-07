@@ -14,7 +14,11 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{Mutex, mpsc};
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum SidecarCommand {
     Start {
         relay_authentication: Option<String>,
@@ -32,7 +36,11 @@ enum SidecarCommand {
 }
 
 #[derive(Debug, Serialize)]
-#[serde(tag = "type", rename_all = "camelCase")]
+#[serde(
+    tag = "type",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase"
+)]
 enum SidecarEvent<'a> {
     Ready {
         ticket: joi_remote::protocol::TransportTicket,
@@ -173,5 +181,31 @@ fn decode_secret_key(value: &str) -> Result<[u8; 32]> {
 fn emit(event: &SidecarEvent<'_>) {
     if let Ok(line) = serde_json::to_string(event) {
         println!("{line}");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn desktop_start_preserves_optional_relay_fields() {
+        let decoded = serde_json::from_value::<SidecarCommand>(json!({
+            "type": "start", "secretKey": "test-key", "relayUrl": "https://relay.example.test",
+            "relayAuthentication": "test-auth"
+        }))
+        .expect("desktop start schema");
+        let SidecarCommand::Start {
+            secret_key,
+            relay_url,
+            relay_authentication,
+        } = decoded
+        else {
+            panic!("expected start");
+        };
+        assert_eq!(secret_key, "test-key");
+        assert_eq!(relay_url.as_deref(), Some("https://relay.example.test"));
+        assert_eq!(relay_authentication.as_deref(), Some("test-auth"));
     }
 }

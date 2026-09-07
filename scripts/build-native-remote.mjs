@@ -35,6 +35,8 @@ if (cargo === undefined) throw new Error("Rust Cargo is required to build Joi na
 
 if (!android) {
   await run(cargo, ["build", "--release", "--bin", "joi-remote-sidecar"]);
+  // Validate the real stdio/QUIC contract before copying a binary into a package.
+  await run(cargo, ["test", "--release", "--bin", "joi-remote-sidecar", "--test", "sidecar_contract"]);
   const executable = `joi-remote-sidecar${process.platform === "win32" ? ".exe" : ""}`;
   const destinationDirectory = path.join(projectRoot, "resources", "native", process.platform);
   await mkdir(destinationDirectory, { recursive: true });

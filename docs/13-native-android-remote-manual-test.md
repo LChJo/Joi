@@ -1,5 +1,9 @@
 # Joi Android 原生远程真机端测
 
+## 原生链路启动修复（2026-09-07）
+
+若旧桌面持续显示“原生链路暂时不可用”，已确认的一项原因是 stdio 字段 camelCase/snake_case 不匹配。修复版统一桌面命令和原生事件字段，并在打包前运行真实 sidecar 的启动、QUIC 收发与关闭回归。请退出旧桌面后安装修复版；这项修复不改 Android 网络协议，不需要为此重装 APK 或清除绑定。真实组件测试不等于双 Android 真机网络验收。
+
 ## 2026-09-07：首页能力补充验收（真机待测）
 
 本轮 APK 构建成功：`joi-android-0.1.0-arm64.apk`，48,350,888 字节（约 46.1 MiB），SHA-256 为 `639CB151FCC45FBB99F5A74BB71E0B41E34CE58710D6BBBAAB6C5C5BF06CD3D1`。`apksigner verify` 通过，证书为 Android Debug；仅适合侧载验收，不是正式商店签名。Flutter analyze 与 11 项测试通过。Windows 跨盘 Kotlin 增量缓存报错后回退编译成功，构建最终退出码为 0。
