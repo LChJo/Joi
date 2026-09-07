@@ -51,4 +51,12 @@ flutter test
 Set-Location ../..
 ```
 
+公网中继变更还必须显式运行以下外部验收（普通 `cargo test` 默认忽略它）。两个端点禁用 IP 直连，验证真实中继上线及双向收发；仅 `/ping` 成功不算通过：
+
+```powershell
+$env:JOI_RELAY_SMOKE_URL = "https://remote.joilab.top"
+cargo test --manifest-path native/joi-remote/Cargo.toml --test deployed_relay -- --ignored --nocapture
+Remove-Item Env:JOI_RELAY_SMOKE_URL
+```
+
 成功标准：命令退出码均为 `0`，没有被忽略的失败或未说明的环境跳过项。

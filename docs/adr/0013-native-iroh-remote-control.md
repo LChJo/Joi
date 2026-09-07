@@ -30,6 +30,13 @@
 6. 旧浏览器远程源码和已部署网关在 Android 真机验收前保留作回退；验收通过后删除 WebSocket relay、`/remote/` renderer 和相关部署资产。
 7. 默认中继为 `https://remote.joilab.top`，用户仍可手动配置其他 HTTPS relay。ECS 上同一 iroh 1.0.x 实例以多域名证书同时服务 `remote` 与兼容保留的 `cudex`；默认客户端不内置共享 Bearer，公开 relay 必须配置连接与单客户端流量上限。
 
+## 2026-09-07 公网 TLS 握手兼容性
+
+- 同一台 Windows 主机、同一 ECS 的 443：旧 ring 配置的强制中继测试 15 秒未上线；仅对齐 Codux 依赖元数据中的 iroh-relay 1.0.2 / rustls 0.23.40 仍失败，不能把版本差异视为原因。
+- Node 对照保持证书验证与目标不变：经典 X25519 握手被重置，提供混合 X25519MLKEM768 并保留 X25519 时成功。仅增加合成握手长度的诊断也改变结果，说明是公网路径对握手形态的兼容性问题，尚未确定产生重置的设备；不声称服务端要求后量子算法。
+- 采用 iroh 官方支持的 `tls-aws-lc-rs` 后端，明确启用 rustls `prefer-post-quantum`，保留 iroh 原来的 metrics、portmapper、fast-apple-datapath。不添加自定义密码学、TLS 分片、代理或额外服务器；证书链、主机名、SNI 与应用层授权保持不变。公开 API 依据：[iroh 1.0.2 features](https://docs.rs/crate/iroh/1.0.2/source/Cargo.toml.orig)、[rustls 默认密钥交换](https://docs.rs/rustls/0.23.43/rustls/manual/_05_defaults/index.html)。
+- 修复须由配置回归测试和真实公网 `deployed_relay` 双端收发共同验证。两端均清除 IP transport，防止同机直连掩盖中继失败。Android/桌面共享该依赖配置；实际手机扫码和移动网络切换仍需真机验收。
+
 ## Consequences
 
 - 局域网直连不经过 ECS；公网无法打洞时只依赖现有 iroh 中继，无需 Cloudflare、DCDN 或额外 Web 网关。

@@ -335,3 +335,22 @@ async fn read_frame<T: DeserializeOwned>(recv: &mut iroh::endpoint::RecvStream) 
         .context("read Joi remote frame")?;
     serde_json::from_slice(&payload).context("decode Joi remote frame")
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn public_tls_prefers_hybrid_key_exchange_and_keeps_classical_fallback() {
+        let host = RemoteHostTransport::bind().await.expect("bind host");
+        let groups = &host.endpoint.tls_config().crypto_provider().kx_groups;
+        assert_eq!(groups[0].name(), rustls::NamedGroup::X25519MLKEM768);
+        assert!(
+            groups
+                .iter()
+                .any(|group| group.name() == rustls::NamedGroup::X25519)
+        );
+        assert!(host.endpoint.tls_config().enable_sni);
+        host.close().await;
+    }
+}
