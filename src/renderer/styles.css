@@ -852,6 +852,10 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 .remote-device-list strong { font-size: 12px; }
 .remote-settings-notice { color: var(--muted); font-size: 11px; }
 
+/* Embedded full pages (diagnostics) keep their own vertical layout instead of the settings row grid. */
+.settings-sections > section.page-section { display: block; padding: 0; border-bottom: 0; }
+.settings-sections > section.page-section > div { gap: 0; }
+
 .settings-sections > .model-source-manager { grid-template-columns: minmax(0, 1fr); align-items: stretch; }
 .model-source-manager > .joi-network-gate {
   width: 100%;
