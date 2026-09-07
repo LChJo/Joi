@@ -5,6 +5,48 @@ import { describe, expect, it, vi } from "vitest";
 import { RemoteCommandService } from "../../src/main/application/remote/remote-command-service.js";
 
 describe("RemoteCommandService", () => {
+  it("removes private paths from action receipts and legacy feed projections", async () => {
+    const unsafe = { textPreview: "C:\\private\\report.md", token: "token=private-value" };
+    const service = new RemoteCommandService({ homeFeed: { load: vi.fn().mockResolvedValue(unsafe) }, inbox: { accept: vi.fn().mockResolvedValue(unsafe) } });
+    for (const command of [{ kind: "feed.get", requestId: "feed" }, { kind: "message.send", requestId: "send", text: "hello", idempotencyKey: "key" }] as const) {
+      const response = await service.handle(command);
+      expect(JSON.stringify(response)).not.toContain("private");
+    }
+  });
+  it("preserves an explicitly selected workbench when sending", async () => {
+    const accept = vi.fn().mockResolvedValue({ inputId: "input-1", status: "PENDING" });
+    const service = new RemoteCommandService({ homeFeed: { load: vi.fn() }, inbox: { accept } });
+    await service.handle({ kind: "message.send", requestId: "send", idempotencyKey: "same-key", text: "hello", workbenchId: "bench-1" } as never);
+    expect(accept).toHaveBeenCalledWith({ text: "hello", idempotencyKey: "same-key", workbenchId: "bench-1" });
+  });
+
+  it("pages long read results without splitting Unicode and binds cursors to the connection", async () => {
+    const feed = { goals: [], thinking: [], unassignedActions: [], text: "中文😀\n".repeat(30_000) };
+    const service = new RemoteCommandService({ homeFeed: { load: vi.fn().mockResolvedValue(feed) }, inbox: { accept: vi.fn() } });
+    const handle = service.handle.bind(service) as (command: unknown, scope: string) => Promise<{ result?: { chunk: string; nextCursor?: string }; error?: unknown }>;
+    let response = await handle({ kind: "feed.get", requestId: "a", paged: true }, "phone-a");
+    let body = "";
+    expect(response.result?.chunk).toBeTypeOf("string");
+    while (response.result !== undefined) {
+      expect(new TextEncoder().encode(JSON.stringify(response)).length).toBeLessThan(96 * 1024);
+      body += response.result.chunk;
+      const cursor = response.result.nextCursor;
+      if (cursor === undefined) break;
+      expect((await handle({ kind: "read.next", requestId: "other", cursor }, "phone-b")).error).toBeDefined();
+      response = await handle({ kind: "read.next", requestId: "a", cursor }, "phone-a");
+    }
+    expect(JSON.parse(body)).toEqual(feed);
+  });
+
+  it("routes goal mutations and returns domain failures without throwing out of the session", async () => {
+    const retry = vi.fn().mockResolvedValue({ inputId: "goal", status: "PENDING" });
+    const dismiss = vi.fn().mockRejectedValue(new Error("private failure"));
+    const service = new RemoteCommandService({ homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), retry, dismiss } } as never);
+    await expect(service.handle({ kind: "message.retry", requestId: "retry", inputId: "goal", text: "more" } as never)).resolves.toMatchObject({ result: { inputId: "goal" } });
+    expect(retry).toHaveBeenCalledWith({ inputId: "goal", text: "more" });
+    await expect(service.handle({ kind: "message.dismiss", requestId: "dismiss", inputId: "goal" } as never)).resolves.toMatchObject({ error: { code: "remote_command_failed" } });
+  });
+
   it("exposes only the home feed and idempotent text submission", async () => {
     const feed = { goals: [], thinking: [], unassignedActions: [] };
     const load = vi.fn().mockResolvedValue(feed);

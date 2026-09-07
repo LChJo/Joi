@@ -249,10 +249,12 @@ class NativeRemoteController extends ChangeNotifier
     required NativeTransport transport,
     Random? random,
   }) : _credentials = credentials,
-        _random = random ?? Random.secure(),
-        _transport = transport {
+       _random = random ?? Random.secure(),
+       _transport = transport {
     _subscription = transport.events.listen((event) {
-      unawaited(_onTransportEvent(event).catchError((_) => _handleDisconnect()));
+      _inbound = _inbound
+          .then((_) => _onTransportEvent(event))
+          .catchError((_) => _handleDisconnect());
     });
   }
 
@@ -270,6 +272,13 @@ class NativeRemoteController extends ChangeNotifier
   Timer? _reconnectTimer;
   Timer? _refreshTimer;
   bool _refreshing = false;
+  bool _foreground = true;
+  bool _disposed = false;
+  int _generation = 0;
+  Future<void> _inbound = Future.value();
+  Future<void> _outbound = Future.value();
+  String? _pendingMessageKey;
+  String? _pendingMessageSignature;
   RemoteViewState _state = const RemoteViewState();
 
   @override
@@ -296,6 +305,19 @@ class NativeRemoteController extends ChangeNotifier
     required String mode,
   }) async {
     _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _generation += 1;
+    for (final pending in _pending.values) {
+      if (!pending.isCompleted) {
+        pending.completeError(StateError('joi_remote_disconnected'));
+      }
+    }
+    _pending.clear();
+    if (_credential?.hostId != credential.hostId) {
+      _state = const RemoteViewState();
+      _pendingMessageKey = null;
+      _pendingMessageSignature = null;
+    }
     _credential = credential;
     _mode = mode;
     _key = null;
@@ -303,9 +325,9 @@ class NativeRemoteController extends ChangeNotifier
     _inboundSequence = 0;
     _outboundSequence = 0;
     _setState(
-      RemoteViewState(
+      _state.copyWith(
         connection: RemoteConnectionState.connecting,
-        goals: _state.goals,
+        supportsHome: false,
       ),
     );
     await _transport.connect(
@@ -316,17 +338,15 @@ class NativeRemoteController extends ChangeNotifier
 
   @override
   Future<void> refresh() async {
-    if (_refreshing) return;
+    if (_refreshing ||
+        !_foreground ||
+        _state.connection != RemoteConnectionState.connected) {
+      return;
+    }
     _refreshing = true;
+    final generation = _generation;
     try {
-      final response = await _sendCommand({
-        'kind': 'feed.get',
-        'requestId': _requestId('feed'),
-      });
-      final result = response['result'];
-      if (result is! Map<String, dynamic>) {
-        throw const FormatException('joi_feed_invalid');
-      }
+      final result = await read('feed.get');
       final goals = result['goals'];
       final cards = <RemoteGoalCard>[];
       if (goals is List) {
@@ -336,65 +356,211 @@ class NativeRemoteController extends ChangeNotifier
               item['status'] is! String) {
             continue;
           }
-          final work = item['work'];
+          final thinking = (result['thinking'] as List? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .where((t) => t['goalId'] == item['goalId']);
           cards.add(
-            RemoteGoalCard(
-              activeWork: work is Map<String, dynamic> && work['active'] is int
-                  ? work['active'] as int
-                  : 0,
-              completedWork:
-                  work is Map<String, dynamic> && work['completed'] is int
-                  ? work['completed'] as int
-                  : 0,
-              status: item['status'] as String,
-              title: item['title'] as String,
-              totalWork: work is Map<String, dynamic> && work['total'] is int
-                  ? work['total'] as int
-                  : 0,
+            RemoteGoalCard.fromJson(
+              item,
+              stage: thinking.firstOrNull?['stage'] as String?,
             ),
           );
         }
       }
-      _setState(
-        RemoteViewState(
-          connection: RemoteConnectionState.connected,
-          goals: cards,
-          path: _state.path,
-        ),
-      );
+      for (final item
+          in (result['unassignedActions'] as List? ?? [])
+              .whereType<Map<String, dynamic>>()) {
+        cards.add(RemoteGoalCard.fromJson(item));
+      }
+      if (generation == _generation) {
+        _setState(_state.copyWith(goals: cards, clearNotice: true));
+      }
     } finally {
       _refreshing = false;
     }
   }
 
   @override
-  Future<void> sendMessage(String text) async {
+  Future<void> sendMessage(String text, {String? workbenchId}) async {
     final trimmed = text.trim();
-    if (trimmed.isEmpty) return;
-    _setState(
-      RemoteViewState(
-        connection: _state.connection,
-        goals: _state.goals,
-        path: _state.path,
-        sending: true,
-      ),
-    );
+    if (trimmed.isEmpty || _state.sending) return;
+    if (_state.connection != RemoteConnectionState.connected) {
+      throw StateError('joi_remote_not_ready');
+    }
+    if (workbenchId != null && !_state.supportsHome) {
+      throw StateError('remote_upgrade_required');
+    }
+    final signature = jsonEncode([trimmed, workbenchId]);
+    if (_pendingMessageSignature != signature || _pendingMessageKey == null) {
+      _pendingMessageSignature = signature;
+      _pendingMessageKey = 'mobile:${_requestId('message')}';
+    }
+    final generation = _generation;
+    _setState(_state.copyWith(sending: true, clearNotice: true));
     try {
       await _sendCommand({
-        'idempotencyKey': 'mobile:${_requestId('message')}',
+        'idempotencyKey': _pendingMessageKey,
         'kind': 'message.send',
         'requestId': _requestId('send'),
         'text': trimmed,
+        'workbenchId': ?workbenchId,
       });
-      await refresh();
+      if (generation != _generation) {
+        throw StateError('joi_remote_disconnected');
+      }
+      _pendingMessageKey = null;
+      _pendingMessageSignature = null;
+      unawaited(_refreshSafely());
     } finally {
+      if (generation == _generation) _setState(_state.copyWith(sending: false));
+    }
+  }
+
+  Future<void> _refreshSafely() async {
+    final generation = _generation;
+    try {
+      await refresh();
+    } catch (_) {
+      if (generation == _generation) {
+        _setState(_state.copyWith(notice: '未能刷新，已保留上次内容。下拉重试。'));
+      }
+    }
+  }
+
+  @override
+  Future<Map<String, dynamic>> read(
+    String kind, {
+    String? goalId,
+    String? agentId,
+    String? cursor,
+  }) async {
+    if (kind != 'feed.get' && !_state.supportsHome) {
+      throw StateError('remote_upgrade_required');
+    }
+    final generation = _generation;
+    var response = await _sendCommand({
+      'kind': kind,
+      'requestId': _requestId('read'),
+      if (kind == 'feed.get' && _state.supportsHome) 'paged': true,
+      'goalId': ?goalId,
+      'agentId': ?agentId,
+      'cursor': ?cursor,
+    });
+    var result = response['result'];
+    if (result is Map<String, dynamic> && result['encoding'] == 'json') {
+      final buffer = StringBuffer();
+      var bytes = 0;
+      while (true) {
+        if (generation != _generation ||
+            result is! Map<String, dynamic> ||
+            result['chunk'] is! String) {
+          throw StateError('remote_read_invalid');
+        }
+        final chunk = result['chunk'] as String;
+        bytes += utf8.encode(chunk).length;
+        if (bytes > 16 * 1024 * 1024) throw StateError('remote_read_too_large');
+        buffer.write(chunk);
+        final next = result['nextCursor'];
+        if (next == null) break;
+        response = await _sendCommand({
+          'kind': 'read.next',
+          'requestId': _requestId('page'),
+          'cursor': next,
+        });
+        result = response['result'];
+      }
+      result = jsonDecode(buffer.toString());
+    }
+    if (generation != _generation || result is! Map<String, dynamic>) {
+      throw StateError('remote_read_invalid');
+    }
+    return result;
+  }
+
+  Future<void> _loadCatalog() async {
+    final generation = _generation;
+    try {
+      final result = await read('catalog.get');
+      if (generation != _generation) return;
       _setState(
-        RemoteViewState(
-          connection: _state.connection,
-          goals: _state.goals,
-          path: _state.path,
+        _state.copyWith(
+          workbenches: (result['workbenches'] as List? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .map(
+                (b) => RemoteChoice(
+                  b['workbenchId'] as String,
+                  b['name'] as String,
+                  b['scopeSummary'] as String? ?? '',
+                ),
+              )
+              .toList(),
+          partners: (result['partners'] as List? ?? [])
+              .whereType<Map<String, dynamic>>()
+              .map(
+                (p) => RemoteChoice(
+                  p['partnerId'] as String,
+                  p['displayName'] as String,
+                ),
+              )
+              .toList(),
         ),
       );
+    } catch (_) {
+      if (generation == _generation) {
+        _setState(_state.copyWith(notice: '工作台列表未能更新，请重新刷新。'));
+      }
+    }
+  }
+
+  @override
+  Future<void> act(
+    String inputId,
+    String action, {
+    String? text,
+    String? workbenchId,
+    String? partnerId,
+    String? actionChoice,
+  }) async {
+    if (!_state.supportsHome) throw StateError('remote_upgrade_required');
+    if (_state.busyGoals.contains(inputId)) return;
+    final generation = _generation;
+    _setState(_state.copyWith(busyGoals: {..._state.busyGoals, inputId}));
+    try {
+      await _sendCommand({
+        'kind': 'message.$action',
+        'requestId': _requestId('action'),
+        'inputId': inputId,
+        if (text != null && text.trim().isNotEmpty) 'text': text.trim(),
+        'workbenchId': ?workbenchId,
+        'partnerId': ?partnerId,
+        'actionChoice': ?actionChoice,
+      });
+      if (generation != _generation) {
+        throw StateError('joi_remote_disconnected');
+      }
+      if (action == 'dismiss') {
+        _setState(
+          _state.copyWith(
+            goals: _state.goals.where((g) => g.goalId != inputId).toList(),
+          ),
+        );
+      }
+    } finally {
+      if (generation == _generation) {
+        _setState(
+          _state.copyWith(busyGoals: {..._state.busyGoals}..remove(inputId)),
+        );
+        unawaited(_refreshSafely());
+      }
+    }
+  }
+
+  @override
+  void setForeground(bool value) {
+    _foreground = value;
+    if (value && _state.connection == RemoteConnectionState.connected) {
+      unawaited(_refreshSafely());
+      if (_state.supportsHome) unawaited(_loadCatalog());
     }
   }
 
@@ -409,17 +575,31 @@ class NativeRemoteController extends ChangeNotifier
     }
     final completer = Completer<Map<String, dynamic>>();
     _pending[requestId] = completer;
-    _outboundSequence += 1;
+    final generation = _generation;
     try {
-      await _transport.send(
-        await RemoteSessionCrypto.encrypt(
-          key,
-          _outboundSequence,
-          command,
-          credential.deviceId,
-        ),
-      );
-      return await completer.future.timeout(const Duration(seconds: 20));
+      final reply = completer.future.timeout(const Duration(seconds: 20));
+      // Attach the error listener before queued transport work can disconnect.
+      unawaited(reply.then<void>((_) {}, onError: (Object _) {}));
+      final sent = _outbound.then((_) async {
+        if (generation != _generation) {
+          throw StateError('joi_remote_disconnected');
+        }
+        _outboundSequence += 1;
+        await _transport.send(
+          await RemoteSessionCrypto.encrypt(
+            key,
+            _outboundSequence,
+            command,
+            credential.deviceId,
+          ),
+        );
+      });
+      _outbound = sent.catchError((_) {});
+      await sent;
+      return await reply;
+    } catch (error, stack) {
+      if (!completer.isCompleted) completer.completeError(error, stack);
+      rethrow;
     } finally {
       _pending.remove(requestId);
     }
@@ -435,9 +615,8 @@ class NativeRemoteController extends ChangeNotifier
       _clientNonce = _base64UrlNoPadding(nonce);
       final path = _pathFromName(event.path);
       _setState(
-        RemoteViewState(
+        _state.copyWith(
           connection: RemoteConnectionState.connecting,
-          goals: _state.goals,
           path: path,
         ),
       );
@@ -460,7 +639,7 @@ class NativeRemoteController extends ChangeNotifier
     }
     if (event.type == 'path') {
       _setState(
-        RemoteViewState(
+        _state.copyWith(
           connection: _state.connection,
           goals: _state.goals,
           path: _pathFromName(event.path),
@@ -479,6 +658,8 @@ class NativeRemoteController extends ChangeNotifier
   }
 
   void _handleDisconnect() {
+    if (_disposed) return;
+    _generation += 1;
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
         completer.completeError(StateError('joi_remote_disconnected'));
@@ -489,15 +670,17 @@ class NativeRemoteController extends ChangeNotifier
     _refreshTimer?.cancel();
     _refreshTimer = null;
     _setState(
-      RemoteViewState(
+      _state.copyWith(
         connection: RemoteConnectionState.reconnecting,
-        goals: _state.goals,
+        sending: false,
+        busyGoals: {},
       ),
     );
     _scheduleReconnect();
   }
 
   Future<void> _onFrame(Object? value) async {
+    final generation = _generation;
     if (value is! Map<String, dynamic>) return;
     final credential = _credential;
     final clientNonce = _clientNonce;
@@ -516,11 +699,13 @@ class NativeRemoteController extends ChangeNotifier
           )) {
         throw const FormatException('joi_remote_host_proof_invalid');
       }
-      _key = await RemoteSessionCrypto.deriveKey(
+      final key = await RemoteSessionCrypto.deriveKey(
         credential,
         clientNonce,
         value['hostNonce'] as String,
       );
+      if (generation != _generation || _disposed) return;
+      _key = key;
       if (_mode == 'pair') {
         final resumable = PairingCredential(
           deviceId: credential.deviceId,
@@ -531,21 +716,27 @@ class NativeRemoteController extends ChangeNotifier
         _credential = resumable;
         await _credentials.write(resumable.toStoredJson());
       }
+      if (generation != _generation || _disposed) return;
       _setState(
-        RemoteViewState(
+        _state.copyWith(
           connection: RemoteConnectionState.connected,
-          goals: _state.goals,
-          path: _state.path,
+          supportsHome:
+              value['capabilities'] is List &&
+              (value['capabilities'] as List).contains('home.v2'),
+          sending: false,
+          busyGoals: {},
         ),
       );
       _refreshTimer?.cancel();
       _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-        if (_state.connection == RemoteConnectionState.connected &&
+        if (_foreground &&
+            _state.connection == RemoteConnectionState.connected &&
             !_state.sending) {
-          unawaited(refresh().catchError((_) {}));
+          unawaited(_refreshSafely());
         }
       });
-      unawaited(refresh().catchError((_) {}));
+      unawaited(_refreshSafely());
+      if (_state.supportsHome) unawaited(_loadCatalog());
       return;
     }
     final sequence = value['seq'];
@@ -557,15 +748,20 @@ class NativeRemoteController extends ChangeNotifier
       value,
       credential!.deviceId,
     );
+    if (generation != _generation || _disposed) return;
     _inboundSequence = sequence;
     if (response is! Map<String, dynamic> || response['requestId'] is! String) {
       return;
     }
     final completer = _pending[response['requestId'] as String];
     if (response['error'] != null) {
-      completer?.completeError(StateError('joi_remote_command_failed'));
+      if (completer != null && !completer.isCompleted) {
+        completer.completeError(StateError('joi_remote_command_failed'));
+      }
     } else {
-      completer?.complete(response);
+      if (completer != null && !completer.isCompleted) {
+        completer.complete(response);
+      }
     }
   }
 
@@ -574,11 +770,19 @@ class NativeRemoteController extends ChangeNotifier
     _reconnectTimer = Timer(const Duration(seconds: 2), () {
       _reconnectTimer = null;
       final credential = _credential;
-      if (credential != null) unawaited(_connect(credential, mode: 'resume'));
+      if (credential != null) {
+        unawaited(
+          _connect(
+            credential,
+            mode: 'resume',
+          ).catchError((_) => _handleDisconnect()),
+        );
+      }
     });
   }
 
   void _setState(RemoteViewState value) {
+    if (_disposed) return;
     _state = value;
     notifyListeners();
   }
@@ -589,13 +793,21 @@ class NativeRemoteController extends ChangeNotifier
   }
 
   RemoteConnectionPath _pathFromName(String? path) => switch (path) {
-        'direct' => RemoteConnectionPath.direct,
-        'relay' => RemoteConnectionPath.relay,
-        _ => RemoteConnectionPath.mixed,
-      };
+    'direct' => RemoteConnectionPath.direct,
+    'relay' => RemoteConnectionPath.relay,
+    _ => RemoteConnectionPath.mixed,
+  };
 
   @override
   void dispose() {
+    _disposed = true;
+    _generation += 1;
+    for (final pending in _pending.values) {
+      if (!pending.isCompleted) {
+        pending.completeError(StateError('joi_remote_disconnected'));
+      }
+    }
+    _pending.clear();
     _reconnectTimer?.cancel();
     _refreshTimer?.cancel();
     unawaited(_subscription.cancel());

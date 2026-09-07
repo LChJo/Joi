@@ -90,6 +90,79 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it("hands complete goal evidence to a workspace-free successor without exposing bodies in safe snapshots", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      const body = `${"研究材料\n".repeat(200)}owner/repo https://github.com/example/project 2026-09-01 FINAL_EVIDENCE`;
+      await makeHandler(database, {
+        dispatch: async () => ({ actionId: "action_1", artifacts: [], body, externalRunId: "local:action_1", status: "COMPLETED", workId: "work_1" }),
+      }).handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }));
+      // More than the ten-item summary window: none of the completed bodies is lost.
+      for (let index = 0; index < 11; index += 1) {
+        const id = `sibling_${String(index)}`;
+        database.transaction((connection) => {
+          connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+            SELECT ?, workbench_id, input_id, ?, intent_json, access_mode, status, created_at, updated_at FROM work_items WHERE work_id = 'work_1'`).run(id, id);
+          connection.prepare(`INSERT INTO dispatch_attempts (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+            SELECT ?, dispatch_plan_id, ?, partner_revision_id, registry_revision, ?, status, created_at, updated_at FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'`).run(id, id, id);
+          connection.prepare(`INSERT INTO partner_runs (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+            SELECT ?, ?, ?, workbench_id, ?, partner_revision_id, kind, ?, status, created_at, updated_at FROM partner_runs WHERE action_id = 'action_1'`).run(id, id, id, id, id);
+          connection.prepare(`INSERT INTO work_result_bodies (body_ref, body, created_at) VALUES (?, ?, '2026-07-29T10:00:00.000Z')`).run(id, `${"x".repeat(400)} EVIDENCE_${String(index)}_END`);
+          connection.prepare(`INSERT INTO work_results (result_id, run_id, action_id, workbench_id, work_id, partner_revision_id, status, summary, body_ref, artifacts_json, is_late, is_authoritative, created_at)
+            SELECT ?, ?, ?, workbench_id, ?, partner_revision_id, status, 'preview', ?, '[]', 0, 1, created_at FROM work_results WHERE action_id = 'action_1'`).run(id, id, id, id, id);
+          connection.prepare(`INSERT INTO work_result_verifications (result_id, status, created_at) VALUES (?, 'PASSED', '2026-07-29T10:00:00.000Z')`).run(id);
+        });
+      }
+      database.transaction((connection) => {
+        connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          SELECT 'audit', workbench_id, input_id, 'Audit', '{}', 'READ', 'READY', created_at, updated_at FROM work_items WHERE work_id = 'work_1'`).run();
+        connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES ('audit', 'NONE')").run();
+      });
+      const contexts = new SqliteWorkbenchContextRepository(database);
+      const snapshot = await new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: { next: () => "audit_snapshot" }, projections: contexts, snapshots: contexts })
+        .assemble({ workbenchId: "workbench_1", workId: "audit" });
+      const execution = await contexts.loadForExecution(snapshot.contextSnapshotId);
+      expect(execution?.workspacePath).toBeUndefined();
+      expect(JSON.stringify(snapshot)).not.toContain("FINAL_EVIDENCE");
+      expect(JSON.stringify(execution?.sanitized)).not.toContain("FINAL_EVIDENCE");
+      expect(execution?.promptSection).toContain(JSON.stringify(body));
+      for (let index = 0; index < 11; index += 1) expect(execution?.promptSection).toContain(`EVIDENCE_${String(index)}_END`);
+
+      // Resume reads the current goal evidence even when the saved summary is old.
+      database.transaction((connection) => connection.prepare("UPDATE work_result_bodies SET body = ? WHERE body_ref = (SELECT body_ref FROM work_results WHERE action_id = 'action_1')").run(`${body}\nUPDATED_EVIDENCE`));
+      expect((await contexts.loadForExecution(snapshot.contextSnapshotId))?.promptSection).toContain("UPDATED_EVIDENCE");
+
+      database.transaction((connection) => connection.prepare("UPDATE work_result_verifications SET status = 'FAILED'").run());
+      expect((await contexts.loadForExecution(snapshot.contextSnapshotId))?.promptSection).not.toContain("FINAL_EVIDENCE");
+      database.transaction((connection) => connection.prepare("UPDATE work_result_verifications SET status = 'PASSED'").run());
+
+      // Failed, canceled, late and conflicting results must never become accepted evidence.
+      for (const status of ["FAILED", "CANCELED", "RUNNING"]) {
+        database.transaction((connection) => connection.prepare("UPDATE work_items SET status = ? WHERE work_id = 'work_1'").run(status));
+        expect((await contexts.loadForExecution(snapshot.contextSnapshotId))?.promptSection).not.toContain("FINAL_EVIDENCE");
+      }
+      database.transaction((connection) => {
+        connection.prepare("UPDATE work_items SET status = 'COMPLETED' WHERE work_id = 'work_1'").run();
+        connection.prepare("UPDATE work_results SET is_late = 1").run();
+      });
+      expect((await contexts.loadForExecution(snapshot.contextSnapshotId))?.promptSection).not.toContain("FINAL_EVIDENCE");
+      database.transaction((connection) => connection.prepare("UPDATE work_results SET is_late = 0, is_authoritative = 0").run());
+      expect((await contexts.loadForExecution(snapshot.contextSnapshotId))?.promptSection).not.toContain("FINAL_EVIDENCE");
+      database.transaction((connection) => {
+        connection.prepare("UPDATE work_results SET is_authoritative = 1").run();
+        connection.prepare(`INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          SELECT 'other_goal', 'other_key', '', status, workbench_id, created_at, updated_at FROM joi_inbox_messages WHERE input_id = 'input_1'`).run();
+        connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          SELECT 'other_turn', 'other_goal', workbench_id, session_id, status, created_at, updated_at FROM joi_turns WHERE turn_id = 'turn_1'`).run();
+        connection.prepare("UPDATE work_items SET input_id = 'other_goal' WHERE work_id = 'work_1'").run();
+      });
+      expect((await contexts.loadForExecution(snapshot.contextSnapshotId))?.promptSection).not.toContain("FINAL_EVIDENCE");
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("fails a candidate completion when its private acceptance checks do not pass", async () => {
     const { database, root } = await openWithPartner();
     try {
@@ -606,18 +679,24 @@ describe("partner dispatch instance routing", () => {
         agentConversations: new SqliteWorkbenchAgentRepository(database),
         clock: new TestClock(),
         contextAssembler: new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
-        contexts,
+        contexts: { loadForExecution: async (id) => {
+          const execution = await contexts.loadForExecution(id);
+          return execution === null ? null : { ...execution, promptSection: `${execution.promptSection}\nPRIVATE_GOAL_EVIDENCE` };
+        } },
         database,
         gateway: {
           recover: async () => { throw new Error("unexpected recovery"); },
-          startWithResult: async () => ({
-            invocation: {
-              agentConnectionId: "remote_1", createdAt: "2026-07-29T10:00:00.000Z", invocationId: "invocation_remote_1",
-              lastActivityAt: "2026-07-29T10:00:00.000Z", messageId: "action_1", request: { parts: [] }, sendAttempts: 1,
-              status: "COMPLETED" as const, updatedAt: "2026-07-29T10:00:00.000Z",
-            },
-            output: { artifacts: [], parts: [{ data: "远程工作完成", kind: "text" }, { data: "PRIVATE_A2A_PAYLOAD", kind: "data" }] },
-          }),
+          startWithResult: async (input) => {
+            expect(JSON.stringify(input.parts)).toContain("PRIVATE_GOAL_EVIDENCE");
+            return {
+              invocation: {
+                agentConnectionId: "remote_1", createdAt: "2026-07-29T10:00:00.000Z", invocationId: "invocation_remote_1",
+                lastActivityAt: "2026-07-29T10:00:00.000Z", messageId: "action_1", request: { parts: [] }, sendAttempts: 1,
+                status: "COMPLETED" as const, updatedAt: "2026-07-29T10:00:00.000Z",
+              },
+              output: { artifacts: [], parts: [{ data: "远程工作完成", kind: "text" }, { data: "PRIVATE_A2A_PAYLOAD", kind: "data" }] },
+            };
+          },
         },
         instances: { dispatch: async () => { throw new Error("instance dispatch must not be used for A2A"); } },
         leases: { acquire: async () => null, release: async () => undefined },
@@ -632,6 +711,7 @@ describe("partner dispatch instance routing", () => {
         FROM workbench_agent_conversation_entries ORDER BY sequence`).all()) as { text: string | null }[];
       expect(displayText.map((row) => row.text).join("\n")).toContain("远程工作完成");
       expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_A2A_PAYLOAD");
+      expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_GOAL_EVIDENCE");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

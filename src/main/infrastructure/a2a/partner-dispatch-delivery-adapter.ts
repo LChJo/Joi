@@ -425,7 +425,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         capacity: { lane: "collaborator", lifeId: row.workbench_id },
         messageId: row.action_id,
         parts: [
-          { kind: "text", text: taskProjection(row) },
+          { kind: "text", text: `${taskProjection(row)}\n\n${execution.promptSection}` },
           { data: { actionId: row.action_id, workbenchId: row.workbench_id, context: execution.sanitized, sourceBoundary: "joi-work", workId: row.work_id }, kind: "data" },
         ],
       })

@@ -73,19 +73,32 @@ function isEncryptedFrame(value: unknown): value is RemoteEncryptedFrame {
     && typeof item.iv === "string" && typeof item.tag === "string";
 }
 
-function isRemoteCommand(value: unknown): value is RemoteCommand {
+export function isRemoteCommand(value: unknown): value is RemoteCommand {
   if (value === null || Array.isArray(value) || typeof value !== "object") return false;
-  const item = value as Partial<RemoteCommand>;
-  if (item.kind === "feed.get") return typeof item.requestId === "string" && item.requestId.length <= 160;
-  return item.kind === "message.send" && typeof item.requestId === "string" && item.requestId.length <= 160
-    && typeof item.idempotencyKey === "string" && item.idempotencyKey.length <= 240
-    && typeof item.text === "string" && item.text.length <= 32_000;
+  const item = value as Record<string, unknown>;
+  const string = (key: string, max = 160, optional = false) => item[key] === undefined ? optional
+    : typeof item[key] === "string" && item[key].length > 0 && item[key].length <= max;
+  if (!string("requestId")) return false;
+  if (item.kind === "feed.get") return item.paged === undefined || typeof item.paged === "boolean";
+  if (item.kind === "catalog.get") return true;
+  if (item.kind === "read.next") return string("cursor", 240);
+  if (item.kind === "goal.get" || item.kind === "goal.agents" || item.kind === "agent.conversation") {
+    return string("goalId") && string("cursor", 240, true) && (item.kind !== "agent.conversation" || string("agentId"));
+  }
+  if (item.kind === "message.send") return string("idempotencyKey", 240) && string("text", 32_000) && string("workbenchId", 160, true);
+  if (!string("inputId")) return false;
+  if (["message.cancel", "message.dismiss", "message.closeHistoricalReview"].includes(String(item.kind))) return true;
+  if (item.kind === "message.retry") return item.text === undefined || typeof item.text === "string" && item.text.length <= 8_000;
+  if (item.kind === "message.clarify") return string("text", 8_000, true) && string("workbenchId", 160, true)
+    && string("partnerId", 160, true) && (item.actionChoice === undefined || typeof item.actionChoice === "string" && ["RESUME", "CONTINUE", "ACCEPT_CURRENT"].includes(item.actionChoice));
+  return false;
 }
 
 export class RemoteAccessHost implements RemoteAccessControl {
   readonly #clock: Clock;
   readonly #commands: RemoteCommandHandler;
   readonly #sessions = new Map<string, PeerSession>();
+  readonly #peerQueues = new Map<string, Promise<void>>();
   readonly #store: RemoteAccessStore;
   readonly #transport: RemotePeerTransport;
   readonly #vault: CredentialVault;
@@ -119,7 +132,10 @@ export class RemoteAccessHost implements RemoteAccessControl {
     if (loaded === null) await this.#store.save(this.#state);
     this.#stopped = false;
     this.#unsubscribe = this.#transport.subscribe((event) => {
-      void this.#handleTransportEvent(event).catch(() => undefined);
+      const key = "connectionId" in event ? event.connectionId : "transport";
+      const queued = (this.#peerQueues.get(key) ?? Promise.resolve()).then(() => this.#handleTransportEvent(event)).catch(() => undefined);
+      this.#peerQueues.set(key, queued);
+      void queued.finally(() => { if (this.#peerQueues.get(key) === queued) this.#peerQueues.delete(key); });
     });
     if (this.#state.enabled) await this.#connect();
   }
@@ -134,6 +150,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
     await this.#transport.close();
     this.#transportStarted = false;
     this.#ticket = undefined;
+    for (const connectionId of this.#sessions.keys()) this.#commands.release?.(connectionId);
     this.#sessions.clear();
     this.#status = this.#state?.enabled === true ? "error" : "disabled";
   }
@@ -181,6 +198,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
     if (this.#transportStarted) await this.#transport.close();
     this.#transportStarted = false;
     this.#ticket = undefined;
+    for (const connectionId of this.#sessions.keys()) this.#commands.release?.(connectionId);
     this.#sessions.clear();
     if (enabled) await this.#connect();
     else this.#status = "disabled";
@@ -268,8 +286,10 @@ export class RemoteAccessHost implements RemoteAccessControl {
   }
 
   async #handleTransportEvent(event: RemotePeerTransportEvent): Promise<void> {
+    if (this.#stopped || this.#state?.enabled !== true) return;
     if (event.type === "error") {
       this.#status = "error";
+      for (const connectionId of this.#sessions.keys()) this.#commands.release?.(connectionId);
       this.#sessions.clear();
       await this.#transport.close();
       this.#transportStarted = false;
@@ -278,6 +298,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       return;
     }
     if (event.type === "peerOpen") {
+      this.#commands.release?.(event.connectionId);
       this.#sessions.set(event.connectionId, {
         connectionId: event.connectionId,
         inbound: new RemoteReplayGuard(),
@@ -286,6 +307,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       return;
     }
     if (event.type === "peerClose") {
+      this.#commands.release?.(event.connectionId);
       this.#sessions.delete(event.connectionId);
       return;
     }
@@ -339,7 +361,8 @@ export class RemoteAccessHost implements RemoteAccessControl {
     } else {
       await this.#touchDevice(value.deviceId);
     }
-    this.#send(session.connectionId, {
+    await this.#send(session.connectionId, {
+      capabilities: ["home.v2"],
       hostNonce,
       kind: "handshake.ready",
       proof: remoteReadyProof(secret, context, hostNonce),
@@ -353,9 +376,13 @@ export class RemoteAccessHost implements RemoteAccessControl {
       session.inbound.accept(value.seq);
       const command = decryptRemotePayload(session.key, value, session.connectionId);
       if (!isRemoteCommand(command)) { this.#reject(session.connectionId); return; }
-      const response = await this.#commands.handle(command);
+      const response = await this.#commands.handle(command, session.connectionId);
+      if (this.#sessions.get(session.connectionId) !== session) {
+        this.#commands.release?.(session.connectionId);
+        return;
+      }
       session.outboundSequence += 1;
-      this.#send(
+      await this.#send(
         session.connectionId,
         encryptRemotePayload(session.key, session.outboundSequence, response, session.connectionId),
       );
@@ -371,11 +398,12 @@ export class RemoteAccessHost implements RemoteAccessControl {
     await this.#store.save(this.#state);
   }
 
-  #send(connectionId: string, frame: unknown): void {
-    void this.#transport.send(connectionId, frame).catch(() => this.#reject(connectionId));
+  async #send(connectionId: string, frame: unknown): Promise<void> {
+    await this.#transport.send(connectionId, frame).catch(() => this.#reject(connectionId));
   }
 
   #reject(connectionId: string): void {
+    this.#commands.release?.(connectionId);
     this.#sessions.delete(connectionId);
     void this.#transport.disconnect(connectionId).catch(() => undefined);
   }

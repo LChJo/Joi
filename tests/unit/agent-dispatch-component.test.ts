@@ -39,6 +39,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const diagnosticEvents: { event: string; fields: Record<string, unknown> }[] = [];
   const finalized: string[] = [];
   const released: string[] = [];
+  const releaseAvailableAt: string[] = [];
   const runSignals: (AbortSignal | undefined)[] = [];
   let runCount = 0;
   const component = new AgentDispatchComponent({
@@ -92,13 +93,14 @@ function makeHarness(options: HarnessOptions = {}) {
       },
       releaseOutbox: async (input) => {
         released.push(input.outboxId);
+        releaseAvailableAt.push(input.availableAt);
       },
     },
     owner: "agent_test",
     partnerId: "partner_1",
     ...(options.watchdogMillis === undefined ? {} : { watchdogMillis: options.watchdogMillis }),
   });
-  return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, released, runSignals };
+  return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, releaseAvailableAt, released, runSignals };
 }
 
 function diagnosticsSink(events: { event: string; fields: Record<string, unknown> }[]) {
@@ -294,14 +296,30 @@ describe("AgentDispatchComponent", () => {
     });
   });
 
-  it("abandons a persistently failing preparation with a terminal result instead of retrying forever", async () => {
+  it("keeps workspace contention queued with a short retry even after the generic preparation budget", async () => {
     const exhaustedClaim: PartnerDispatchClaimRow = { ...CLAIM, attemptCount: 6 };
     const harness = makeHarness({
       claims: [exhaustedClaim],
       prepareResult: Object.assign(new Error("The workspace lease could not be acquired."), { code: "workspace_lease_conflict" }),
     });
     await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
-    expect(harness.abandoned).toEqual([{ dispatchAttemptId: "attempt_1", reasonCode: "workspace_lease_conflict" }]);
+    expect(harness.abandoned).toEqual([]);
+    expect(harness.calls).not.toContain("ack:outbox_1");
+    expect(harness.released).toEqual(["outbox_1"]);
+    expect(harness.releaseAvailableAt).toEqual(["2026-08-05T10:00:05.000Z"]);
+    expect(harness.calls).not.toContain("run");
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.workspace_contended");
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).not.toContain("joi.agent.prepare_exhausted");
+  });
+
+  it("still abandons an exhausted non-contention preparation failure", async () => {
+    const exhaustedClaim: PartnerDispatchClaimRow = { ...CLAIM, attemptCount: 6 };
+    const harness = makeHarness({
+      claims: [exhaustedClaim],
+      prepareResult: Object.assign(new Error("Partner configuration is invalid."), { code: "partner_configuration_invalid" }),
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.abandoned).toEqual([{ dispatchAttemptId: "attempt_1", reasonCode: "partner_configuration_invalid" }]);
     expect(harness.calls).toContain("ack:outbox_1");
     expect(harness.released).toEqual([]);
     expect(harness.calls).not.toContain("run");

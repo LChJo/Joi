@@ -15,9 +15,10 @@ export class WorkbenchAgentService {
     });
   }
 
-  conversation(input: { agentId: string; workbenchId: string; cursor?: string; limit?: number }) {
+  conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; limit?: number }) {
     return this.dependencies.repository.conversation({
       agentId: input.agentId,
+      ...(input.goalId === undefined ? {} : { goalId: input.goalId }),
       workbenchId: input.workbenchId,
       ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
       limit: input.limit ?? 50,

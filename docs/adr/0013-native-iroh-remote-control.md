@@ -1,5 +1,14 @@
 # ADR 0013: Android 原生控制端复用 iroh 直连与中继
 
+## 2026-09-07：首页能力增量
+
+- 握手可选能力 `home.v2`；无该能力的桌面继续使用旧版 feed/send。
+- allowlist 增加 `catalog.get`、`goal.get`、`goal.agents`、`agent.conversation`、`read.next`，以及 `message.clarify/retry/cancel/dismiss/closeHistoricalReview`。发送可选已有工作台；动作复用桌面 inbox 状态门禁，不增加文件/设置权限。
+- 只读 JSON 快照用连接绑定、60 秒有效的游标分块；每块 12,000 UTF-16 单位且不拆代理对，响应低于 96 KiB，底层仍限制 256 KiB。单快照最多 16 MiB、每连接最多 8 个、全局最多 64 个；关闭/撤销时释放。记录查询同时约束工作台、目标和搭档实例。
+- 只返回用户可展示投影，正文和记录继续脱敏；不暴露引擎私有推理和原始载荷。Flutter 原生 Markdown 禁止远程图片加载，仅允许用户点击 HTTP(S) 链接，产物只显示元数据。
+- 两端加密收发按连接串行，旧会话结果不更新新会话。发送确认和刷新独立；未确认的相同草稿/工作台复用幂等键。其他动作不自动重放，结果不确定时提示刷新确认。
+- 首页前台约 2 秒刷新，当前活跃搭档记录约 1 秒刷新；保留草稿与阅读位置，后台暂停。能力增量仍属于 AC-57，不能替代真机验收。
+
 - 状态：accepted
 - 日期：2026-08-27
 - 取代：ADR 0012（浏览器 WebSocket 远程入口）
@@ -17,7 +26,7 @@
 2. Electron 通过受控 NDJSON sidecar 使用 iroh。sidecar 只转发有界、不透明 JSON 帧，并按 transport connection id 隔离多个手机连接；节点私钥由 Electron credential vault 加密持久化，且不进入参数、日志或 HTTP DTO。
 3. 桌面二维码使用 `joi://pair`，包含十分钟、一次有效的应用层配对密钥和 iroh transport ticket。每台 App 获得独立 device id 与密钥；绑定可逐台撤销。
 4. 保留 Joi 已有的双向 HMAC-SHA-256 证明、HKDF-SHA-256 会话派生、AES-256-GCM、严格递增序号和 `connectionId + sequence` AAD。iroh 的加密传输不替代应用层设备授权。
-5. Android 凭据存入系统安全存储。App 只展示竖屏任务卡、链路状态和文字输入；主机 allowlist 仍只有 `feed.get` 与 `message.send`。
+5. Android 凭据存入系统安全存储。初版仅有任务卡和文字输入；2026-09-07 起按下述 `home.v2` 增量扩展受限首页能力。
 6. 旧浏览器远程源码和已部署网关在 Android 真机验收前保留作回退；验收通过后删除 WebSocket relay、`/remote/` renderer 和相关部署资产。
 7. 默认中继为 `https://remote.joilab.top`，用户仍可手动配置其他 HTTPS relay。ECS 上同一 iroh 1.0.x 实例以多域名证书同时服务 `remote` 与兼容保留的 `cudex`；默认客户端不内置共享 Bearer，公开 relay 必须配置连接与单客户端流量上限。
 

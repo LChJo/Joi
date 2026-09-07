@@ -171,6 +171,22 @@ describe("Workbench Agent and joi home projections", () => {
       expect((await repository.listAgents({ workbenchId: workbench.workbenchId, limit: 50 })).items).toHaveLength(2);
       const filtered = await repository.listAgents({ workbenchId: workbench.workbenchId, goalId: "goal-a", limit: 50 });
       expect(filtered.items.map((item) => item.agentId)).toEqual([first.instanceId]);
+      fixture.database.transaction((connection) => {
+        for (const suffix of ["a", "b"]) connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, 'LOCAL_PI', ?, 'COMPLETED', ?, ?)`)
+          .run(`run-${suffix}`, `attempt-${suffix}`, `action-${suffix}`, workbench.workbenchId, `work-${suffix}`, first.partnerRevisionId, `external-${suffix}`, now, now);
+        // One resident-style stream containing entries from more than one goal.
+        connection.prepare("UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = 'attempt-b'").run(first.instanceId);
+      });
+      await repository.append(first.instanceId, [
+        { entryId: "entry-a", runId: "run-a", createdAt: now, order: 0, kind: "MARKDOWN", role: "AGENT", text: "Goal A evidence" },
+        { entryId: "entry-b", runId: "run-b", createdAt: now, order: 0, kind: "MARKDOWN", role: "AGENT", text: "Goal B evidence" },
+      ]);
+      expect((await repository.conversation({ agentId: first.instanceId, workbenchId: workbench.workbenchId, goalId: "goal-a", limit: 20 })).items.map((item) => item.text))
+        .toEqual(["Goal A evidence"]);
+      await expect(repository.conversation({ agentId: second.instanceId, workbenchId: workbench.workbenchId, goalId: "goal-a", limit: 20 }))
+        .rejects.toMatchObject({ code: "workbench_agent_not_found" });
     } finally {
       await fixture.close();
     }

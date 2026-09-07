@@ -13,10 +13,13 @@ import type {
 import type { RuntimeStore } from "../../ports/runtime-store.js";
 import type { PartnerRunFailure } from "../../partners/partner-run-failure.js";
 import { partnerRunArtifactsFromError, partnerRunFailureFromError, safePartnerRunFailureBody } from "../../partners/partner-run-failure.js";
+import { DISPATCH_POLICY_REASONS } from "../../work/dispatch-policy.js";
 
 const CLAIM_LEASE_MILLIS = 120_000;
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
 const DEFAULT_WAITING_RETRY_EVERY_MILLIS = 30_000;
+/** Scheduling contention is expected while another Work owns a write lease. */
+const WORKSPACE_CONTENTION_RETRY_MILLIS = 5_000;
 /** Renew the workspace lease once its remaining lifetime drops below this margin. */
 const LEASE_RENEW_MARGIN_MILLIS = 60_000;
 /** Backstop above the engine deadlines (30 min total): a run past this age is converged as hung. */
@@ -246,6 +249,25 @@ export class AgentDispatchComponent implements ActorComponent {
         prepared = await this.dependencies.delivery.prepare(claim);
       } catch (error) {
         const errorCode = runtimeDiagnosticErrorCode(error);
+        if (errorCode === DISPATCH_POLICY_REASONS.workspaceLeaseConflict) {
+          // A live Work legitimately owns this workspace. Keep this Work queued and
+          // check again promptly after the owner completes; contention is not a broken
+          // dispatch and must never consume the terminal preparation-failure budget.
+          const availableAt = new Date(ctx.now.getTime() + WORKSPACE_CONTENTION_RETRY_MILLIS).toISOString();
+          await this.dependencies.outbox.releaseOutbox({
+            availableAt,
+            outboxId: claim.outboxId,
+            owner: this.dependencies.owner,
+          });
+          this.#retryAvailableAt = ctx.now.getTime() + WORKSPACE_CONTENTION_RETRY_MILLIS;
+          emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.workspace_contended", {
+            workbenchId: this.dependencies.workbenchId,
+            dispatchAttemptId: claim.dispatchAttemptId,
+            outboxId: claim.outboxId,
+            partnerId: this.dependencies.partnerId,
+          });
+          return;
+        }
         if (claim.attemptCount >= MAX_PREPARE_ATTEMPTS && this.dependencies.delivery.abandon !== undefined) {
           // Preparation keeps failing; end the dispatch with a visible terminal result
           // instead of retrying forever and silently jamming the goal. An abandon failure

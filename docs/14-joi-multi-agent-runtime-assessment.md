@@ -450,7 +450,7 @@ WakeRecoveryService → src/ 内零引用，仅 tests/integration/wake-audit-rep
 | 风险 | 处置 | 落地阶段 |
 |---|---|---|
 | R1 依赖 DAG 不门控派发 | **已修复**：认领门控（`listClaimable` 增加「前置全部 COMPLETED」NOT EXISTS）+ 失败级联（递归 CTE 把下游 Work 级联 CANCELED，覆盖权威结果置 FAILED、work_cancel、input 取消、commit 时前置已终态四个触发点）；新增迁移 052（依赖反查索引 + `work_items.cancel_reason`）与 `joi.work.dependency_cascade` 诊断。 | P4 |
-| R2 策略拒绝静默吞掉 | **已修复**：被拒 Work 也创建 attempt+outbox，交交付侧复检——`workspace_lease_conflict` 经 outbox 指数退避重试、`a2a_workspace_access_forbidden` 落终态 FAILED；重试 6 次后 `abandon` 落可见终态；`joi.work.plan_policy_denied` 诊断、`work_dispatch` 返回 `denied`。 | P3 |
+| R2 策略拒绝静默吞掉 | **已修复**：被拒 Work 也创建 attempt+outbox，交交付侧复检——`workspace_lease_conflict` 作为正常排队竞争每 5 秒重试且不消耗通用失败终结预算，`a2a_workspace_access_forbidden` 落终态 FAILED；真正的准备故障重试 6 次后 `abandon` 落可见终态；`joi.work.plan_policy_denied` / `joi.agent.workspace_contended` 提供安全诊断，`work_dispatch` 返回 `denied`。 | P3 + 2026-09-06 回归修复 |
 | R3/R4 旧 Wake 子系统死代码 | **已删除**：移除 `application/wakes/`、`domain/wakes/`、`a2a-wake-agent-executor.ts` 及其测试；`wakes` 等表因被 `memory_revisions`/`delegations` 外键引用而保留。 | P1 |
 | R5 工作区租约无续租 | **已修复**：`SqliteWorkspaceLeaseManager.renew()`；`AgentDispatchComponent` 每 tick 心跳续租（剩余 <60s 时续回 5 分钟），租约丢失则中止 run 并落非重放 UNKNOWN；`prepare` 取租约后的抛错路径补释放；TTL 10→5 分钟。 | P2-A |
 | R6 native run 无死线 | **已修复**：`RunDeadlineGuard`（总死线 30 分钟 + 空闲死线 20 分钟，逐事件刷新）接入 claude-code/codex 引擎；组件看门狗 32 分钟兜底并可经 AbortSignal 真杀；`partner_run_timed_out`/`partner_run_idle_timed_out` 首次落地；孤儿判死阈值 10→20 分钟，消除与 15 分钟卡死中止的倒挂。 | P2-B |

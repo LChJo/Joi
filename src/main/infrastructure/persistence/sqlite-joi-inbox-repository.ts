@@ -7,7 +7,7 @@ import type { JoiCoordinatorStore, JoiPendingInput } from "../../application/por
 import type { Clock } from "../../application/ports/runtime-store.js";
 import type { JoiActivityDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
-import { normalizeCompletionSummary } from "../../application/partners/agent-conversation-presentation.js";
+import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
@@ -340,6 +340,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });
+  }
+
+  async readDisplayText(inputId: string): Promise<string | null> {
+    const row = this.database.transaction((connection) => connection.prepare(`SELECT body FROM joi_inbox_messages
+      WHERE input_id = ? AND dismissed_at IS NULL AND goal_input_id IS NULL
+        AND input_id NOT LIKE 'joi_result_input:%' AND input_id NOT LIKE 'joi_harness_review:%'
+        AND input_id NOT LIKE 'joi_signal_input:%'`).get(inputId)) as { body?: unknown } | undefined;
+    return typeof row?.body === "string" ? sanitizeAgentConversationText(row.body) : null;
   }
 
   async retry(inputId: string, patch: { text?: string }): Promise<JoiInboxRecord | null> {

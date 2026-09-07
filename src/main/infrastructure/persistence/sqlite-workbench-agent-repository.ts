@@ -217,15 +217,18 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
     });
   }
 
-  async conversation(input: { agentId: string; workbenchId: string; cursor?: string; limit: number }): Promise<AgentConversationPageDto> {
+  async conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; limit: number }): Promise<AgentConversationPageDto> {
     const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)));
     const offset = decodeCursor(input.cursor);
     return this.database.transaction((connection) => {
-      const cardRow = cardRows(connection, input.workbenchId, 1, 0, input.agentId)[0];
+      const cardRow = cardRows(connection, input.workbenchId, 1, 0, input.agentId, input.goalId)[0];
       if (cardRow === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
+      const scope = input.goalId === undefined ? "" : ` AND run_id IN (
+        SELECT pr.run_id FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
+        WHERE w.input_id = ? AND w.workbench_id = ?)`;
       const rows = connection.prepare(`SELECT entry_id, sequence, role, kind, text, tool_name, artifact_json, created_at
-        FROM workbench_agent_conversation_entries WHERE agent_id = ? ORDER BY sequence, entry_id LIMIT ? OFFSET ?`)
-        .all(input.agentId, limit + 1, offset) as Row[];
+        FROM workbench_agent_conversation_entries WHERE agent_id = ?${scope} ORDER BY sequence, entry_id LIMIT ? OFFSET ?`)
+        .all(input.agentId, ...(input.goalId === undefined ? [] : [input.goalId, input.workbenchId]), limit + 1, offset) as Row[];
       const items = rows.slice(0, limit).map((row) => {
         const artifact = storedArtifact(row.artifact_json);
         const entryId = required(row, "entry_id");

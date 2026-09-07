@@ -133,6 +133,12 @@ export interface RuntimeDiagnosticEventMap {
     outboxId: string;
     partnerId: string;
   };
+  "joi.agent.workspace_contended": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    outboxId: string;
+    partnerId: string;
+  };
   "joi.agent.prepare_exhausted": {
     workbenchId: string;
     dispatchAttemptId: string;

@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+AC-57 的 2026-09-07 首页增量证据：`remote-home-queries.test.ts` 覆盖能力命令校验、目标解析与游标失效/连接隔离；`remote-command-service.test.ts` 覆盖工作台透传、动作映射和 Unicode 长结果有界分页；`sqlite-workbench-agent-feed.test.ts` 覆盖同实例跨目标记录隔离；Flutter `widget_test.dart` 覆盖工作台发送、详情/产物/记录、回答/继续/移除和草稿保留，`remote_session_test.dart` 覆盖真实加密帧顺序、幂等键复用、成功回执与刷新分离及旧主机兼容。下表初版两命令限制由 ADR 0013 的 `home.v2` 增量取代；真机网络与多设备验收仍待执行。
+
 ## JOI-01 验收追踪（目标架构）
 
 | AC | 目标 | 当前证据 |
@@ -70,7 +72,7 @@
 | AC-64 | Agent 失败自愈、补充 Work 与首页降级（ADR 0016） | 已自动证实：migration 050 将恢复尝试按 source Work 持久化且最多两轮，补充 Work/outbox/recovery/evidence 同事务提交；`BLOCKED` outcome 不再进入 review，harness 为无活跃 Work 的阻塞目标创建专用 goal-bound recovery input 并清除伪造的 `work_dispatch_failed` 用户澄清。`work_supplement` 不接受历史 DAG key，自动携带同目标权威完成结果引用，并以源 Work 验收条件及访问模式为不可削弱下限；Markdown 正文不能替代所需 HTML/PDF。`partner_set_tools` 只创建内置工具 grant 的不可变 revision，仍受 Workbench、SSRF 与无凭据边界约束。Pi 失败后仍采集工作区变化，非正文验收通过可把 UNKNOWN/FAILED 收敛为完成；上下文和网页响应有界，常见 400 映射为 allowlist 安全原因码，未知 400 保留 `http_400`。首页隐藏派生 recovery input，并在恢复可用/在途时显示 `EXTENDING`；单 Agent 失败只在目标详情显示，恢复耗尽才保留目标级失败。`work-orchestration-service.test.ts`、`sqlite-work-plan-outbox.test.ts`、`sqlite-joi-harness-repository.test.ts`、`joi-reasoning-tools.test.ts`、`partner-run-failure.test.ts`、`workspace-work-verifier.test.ts`、`pi-web-access-tools.test.ts`、`local-pi-partner-runtime.test.ts`、`joi-home-single-entry.test.tsx`。 |
 | AC-65 | 搭档真实权限、READY freshness 与 403 安全恢复 | 已自动证实：本机 Partner revision 在既有 `execution_policy_json` 保存 `ALL/CUSTOM`，旧空/非空工具列表兼容解释且历史 revision 不重写；新建与新装场景默认 ALL，CUSTOM 可为空，Skill+Pi CUSTOM 缺 read 时保存和派发均拒绝。Claude SDK 同时收到真实 `tools` 与 `allowedTools`；Codex 默认 workspace-write、网络和 live search 且 approval 固定 never。三引擎提示词列出最终启用、关闭/不可用能力。Pi READY 来源按五分钟与 source/model/credential revision 合并无工具探测，未 pin 可顺序换源、pin 失败停止；运行时 401/403 先摘除再复诊，403 只保留五类安全码。FAILED/UNKNOWN 始终追加独立 ERROR，既有 OBSERVED/UNKNOWN 产物验收和补充 Work 规则保持。`partner-registry-service.test.ts`、`sqlite-partner-registry.test.ts`、`partner-page.test.tsx`、`native-agent-sdk-contract.test.ts`、`local-pi-partner-runtime.test.ts`、`reasoning-source-selector.test.ts`、`pi-model-source-validator.test.ts`、`partner-run-failure.test.ts`、`sqlite-partner-dispatch-instances.test.ts`。 |
 | AC-66 | 结果缺口自动续跑与接受现状（ADR 0017） | 已自动证实：migration 051 扩展 `RESULT_CONTINUE`/`CONTINUE` 与 `ACCEPTED_WITH_GAPS`，地图默认持久化两层续跑额度；额度内 review 自动安排下一证据层，额度耗尽才创建 revision-bound `GOAL_CONTINUATION` 动作。继续补齐原子增加两层授权且不重路由原输入；接受现状原子消费动作、清图并投影 `COMPLETED_WITH_GAPS`，反馈记忆明确标为有缺口。中间 `CONTINUE` 不进入工作台近期结果，首页提供“继续补齐/接受现状”，终态不残留 thinking。`pi-runtime-contract.test.ts`、`joi-reasoning-tools.test.ts`、`sqlite-goal-result-synthesis.test.ts`、`sqlite-joi-harness-repository.test.ts`、`sqlite-joi-inbox-clarify.test.ts`、`joi-harness-component.test.ts`、`joi-home-single-entry.test.tsx`、`remote-joi-app.test.tsx`。 |
-| AC-67 | 编排确定性与运行时死线（评估 §11 修复） | 已自动证实：声明的 Work 依赖在派发时真正门控（前置全部完成才可认领），前置失败级联取消下游（migration 052）；策略拒绝不再静默，落可见终态或退避重试；工作区租约心跳续租、丢失即中止；claude-code/codex 有总/空闲死线且组件看门狗可中止；每个 Work 强制至少一个验收项并被合成/`work_read_result` 消费；`failTurn` 不再把已产生副作用的输入回置重放。详见 `14-joi-multi-agent-runtime-assessment.md` §11。`sqlite-work-dependency-gate.test.ts`、`sqlite-work-plan-outbox.test.ts`、`sqlite-workspace-lease.test.ts`、`native-agent-sdk-contract.test.ts`、`native-run-deadlines.test.ts`、`agent-dispatch-component.test.ts`、`sqlite-goal-result-synthesis.test.ts`、`joi-actor-tick.test.ts`。 |
+| AC-67 | 编排确定性与运行时死线（评估 §11 修复） | 已自动证实：声明的 Work 依赖在派发时真正门控（前置全部完成才可认领），前置失败级联取消下游（migration 052）；策略拒绝不再静默，永久拒绝落可见终态，工作区租约竞争则保留 outbox 并每 5 秒自动复检且不消耗准备失败终结预算；工作区租约心跳续租、丢失即中止；claude-code/codex 有总/空闲死线且组件看门狗可中止；每个 Work 强制至少一个验收项并被合成/`work_read_result` 消费；`failTurn` 不再把已产生副作用的输入回置重放。详见 `14-joi-multi-agent-runtime-assessment.md` §11。`sqlite-work-dependency-gate.test.ts`、`sqlite-work-plan-outbox.test.ts`、`sqlite-workspace-lease.test.ts`、`native-agent-sdk-contract.test.ts`、`native-run-deadlines.test.ts`、`agent-dispatch-component.test.ts`、`sqlite-goal-result-synthesis.test.ts`、`joi-actor-tick.test.ts`。 |
 
 本表随 RED→GREEN 证据更新；“旧基线可复用”不等于目标 AC 已完成。
 
@@ -192,6 +194,8 @@
 | E2E-11 Endpoint 退避与审计 | shared breaker、Retry-After、activity projection tests | 真实网络抖动与 Agent |
 
 ## 当前发布 concerns
+
+AC-67 搭档证据传递补充（2026-09-07）：`sqlite-partner-dispatch-instances.test.ts` 验证超过 320 字符的完整正文、超过十条结果、无工作区权限、恢复时重新加载、目标隔离、失败/取消/迟到/冲突/验收失败过滤，以及 A2A 私有上下文传递与展示隔离。
 
 1. 提供真实 AI Mana 主 Agent、两个协作者和第二台 LAN 浏览器，执行 E2E-01 至 E2E-11。
 2. 在 macOS 构建机完成 DMG、签名、公证、安装、升级和托盘验证。

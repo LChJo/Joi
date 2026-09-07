@@ -30,14 +30,27 @@ export interface RemoteAccessStatusDto {
 }
 
 export type RemoteCommand =
-  | { kind: "feed.get"; requestId: string }
-  | { idempotencyKey: string; kind: "message.send"; requestId: string; text: string };
+  | { kind: "feed.get"; requestId: string; paged?: boolean }
+  | { kind: "catalog.get"; requestId: string }
+  | { kind: "goal.get" | "goal.agents"; requestId: string; goalId: string; cursor?: string }
+  | { kind: "agent.conversation"; requestId: string; goalId: string; agentId: string; cursor?: string }
+  | { kind: "read.next"; requestId: string; cursor: string }
+  | { idempotencyKey: string; kind: "message.send"; requestId: string; text: string; workbenchId?: string }
+  | { kind: "message.retry"; requestId: string; inputId: string; text?: string }
+  | { kind: "message.clarify"; requestId: string; inputId: string; text?: string; workbenchId?: string; partnerId?: string; actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT" }
+  | { kind: "message.cancel" | "message.dismiss" | "message.closeHistoricalReview"; requestId: string; inputId: string };
+
+export interface RemoteReadPage {
+  encoding: "json";
+  chunk: string;
+  nextCursor?: string;
+}
 
 export interface RemoteCommandResponse {
   error?: { code: string; message: string };
   kind: "response";
   requestId: string;
-  result?: JoiAcceptedMessageDto | JoiHomeFeedDto;
+  result?: JoiAcceptedMessageDto | JoiHomeFeedDto | RemoteReadPage;
 }
 
 export interface RemoteEncryptedFrame {
@@ -61,6 +74,7 @@ export interface RemoteHandshakeHello {
 }
 
 export interface RemoteHandshakeReady {
+  capabilities?: string[];
   hostNonce: string;
   kind: "handshake.ready";
   proof: string;

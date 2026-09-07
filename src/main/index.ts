@@ -10,6 +10,7 @@ import { AuthService } from "./application/auth/auth-service.js";
 import { LifeService } from "./application/lives/life-service.js";
 import { OperationsService } from "./application/operations/operations-service.js";
 import { RemoteCommandService } from "./application/remote/remote-command-service.js";
+import { RemoteHomeQueryService } from "./application/remote/remote-home-queries.js";
 import type { RemoteAccessControl } from "./application/ports/remote-access.js";
 import type { SsePublisher } from "./application/ports/runtime-store.js";
 import { DomainError } from "./domain/errors.js";
@@ -198,7 +199,10 @@ async function startRuntime(): Promise<void> {
   await runtimeStack.actorTree.tick(clock.now());
   const remoteAccess = new RemoteAccessHost({
     clock,
-    commands: new RemoteCommandService({ homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox }),
+    commands: new RemoteCommandService({ homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox,
+      queries: new RemoteHomeQueryService({ homeFeed: workbenchStack.joiHomeFeed, inputs: persistence.joiInboxRepository,
+        agents: workbenchStack.workbenchAgents, workbenches: persistence.workbenches, partners: partnerStack.partners }),
+    }),
     store: new FileRemoteAccessStore(path.join(userDataDirectory, "remote-access.json")),
     transport: new IrohSidecarTransport(app.isPackaged
       ? path.join(process.resourcesPath, "resources", "native", process.platform, `joi-remote-sidecar${process.platform === "win32" ? ".exe" : ""}`)

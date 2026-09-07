@@ -33,7 +33,8 @@ export interface RemoteAccessControl {
 }
 
 export interface RemoteCommandHandler {
-  handle(command: RemoteCommand): Promise<RemoteCommandResponse>;
+  handle(command: RemoteCommand, scope?: string): Promise<RemoteCommandResponse>;
+  release?(scope: string): void;
 }
 
 export interface RemoteTransportTicket {
