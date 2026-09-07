@@ -120,3 +120,17 @@ async fn desktop_camel_case_commands_and_peer_events_match_real_sidecar() {
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
+
+#[test]
+fn initial_ticket_keeps_configured_relay_before_it_is_online() {
+    let mut sidecar = Sidecar::start();
+    sidecar.send(
+        json!({ "type": "start", "secretKey": STANDARD.encode([8u8; 32]),
+        "relayUrl": "https://relay.example.invalid" }),
+    );
+    let ready = sidecar.event("ready");
+    assert_eq!(
+        ready["ticket"]["relayUrls"],
+        json!(["https://relay.example.invalid/"])
+    );
+}

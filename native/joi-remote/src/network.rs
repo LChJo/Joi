@@ -29,6 +29,7 @@ pub struct HostTransportOptions {
 
 pub struct RemoteHostTransport {
     endpoint: Endpoint,
+    configured_relay: Option<RelayUrl>,
     peers: Arc<Mutex<HashMap<String, mpsc::Sender<HostMessage>>>>,
     requests: Mutex<mpsc::Receiver<HostRequest>>,
 }
@@ -43,8 +44,13 @@ impl RemoteHostTransport {
         if let Some(secret_key) = options.secret_key {
             builder = builder.secret_key(SecretKey::from_bytes(&secret_key));
         }
-        if let Some(relay_url) = options.relay_url.as_deref() {
-            let relay_url: RelayUrl = relay_url.parse().context("parse Joi relay URL")?;
+        let configured_relay = options
+            .relay_url
+            .as_deref()
+            .map(str::parse::<RelayUrl>)
+            .transpose()
+            .context("parse Joi relay URL")?;
+        if let Some(relay_url) = configured_relay.clone() {
             let mut relay = RelayConfig::new(relay_url, None);
             if let Some(authentication) = options
                 .relay_authentication
@@ -60,13 +66,20 @@ impl RemoteHostTransport {
         spawn_accept_loop(endpoint.clone(), peers.clone(), request_tx);
         Ok(Self {
             endpoint,
+            configured_relay,
             peers,
             requests: Mutex::new(request_rx),
         })
     }
 
     pub fn address(&self) -> EndpointAddr {
-        self.endpoint.addr()
+        // bind() precedes relay registration. The first ticket must retain the
+        // configured route even while offline; this is not an online indicator.
+        let address = self.endpoint.addr();
+        match &self.configured_relay {
+            Some(relay) => address.with_relay_url(relay.clone()),
+            None => address,
+        }
     }
 
     pub fn ticket(&self) -> TransportTicket {

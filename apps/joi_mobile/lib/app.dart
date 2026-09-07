@@ -72,6 +72,11 @@ class _PairingScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 34),
+              if (controller.state.notice case final String notice)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 16),
+                  child: Text(notice, textAlign: TextAlign.center),
+                ),
               FilledButton.icon(
                 onPressed: () => _scan(context),
                 icon: const Icon(Icons.qr_code_scanner_rounded),

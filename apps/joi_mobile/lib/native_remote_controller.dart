@@ -217,7 +217,7 @@ class RemoteSessionCrypto {
     mode,
     credential.hostId,
     credential.deviceId,
-    credential.pairingId ?? '',
+    mode == 'pair' ? credential.pairingId ?? '' : '',
     clientNonce,
   ].join('\n');
 }
@@ -270,10 +270,13 @@ class NativeRemoteController extends ChangeNotifier
   int _outboundSequence = 0;
   String _mode = 'resume';
   Timer? _reconnectTimer;
+  Timer? _pairingTimer;
+  Timer? _handshakeTimer;
   Timer? _refreshTimer;
   bool _refreshing = false;
   bool _foreground = true;
   bool _disposed = false;
+  bool _handshakeSent = false;
   int _generation = 0;
   Future<void> _inbound = Future.value();
   Future<void> _outbound = Future.value();
@@ -297,8 +300,26 @@ class NativeRemoteController extends ChangeNotifier
   }
 
   @override
-  Future<void> connectFromQr(String payload) =>
-      _connect(PairingCredential.parse(payload), mode: 'pair');
+  Future<void> connectFromQr(String payload) {
+    final credential = PairingCredential.parse(payload);
+    _pairingTimer?.cancel();
+    _pairingTimer = Timer(const Duration(minutes: 2), () {
+      _generation += 1;
+      _credential = null;
+      _key = null;
+      _reconnectTimer?.cancel();
+      _reconnectTimer = null;
+      _handshakeTimer?.cancel();
+      unawaited(_transport.close());
+      _setState(
+        const RemoteViewState(
+          connection: RemoteConnectionState.unpaired,
+          notice: '未能连接电脑。请确认电脑在线、两端已更新，并在电脑上生成新二维码重试。',
+        ),
+      );
+    });
+    return _connect(credential, mode: 'pair');
+  }
 
   Future<void> _connect(
     PairingCredential credential, {
@@ -306,6 +327,7 @@ class NativeRemoteController extends ChangeNotifier
   }) async {
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
+    _handshakeTimer?.cancel();
     _generation += 1;
     for (final pending in _pending.values) {
       if (!pending.isCompleted) {
@@ -320,6 +342,7 @@ class NativeRemoteController extends ChangeNotifier
     }
     _credential = credential;
     _mode = mode;
+    _handshakeSent = false;
     _key = null;
     _clientNonce = null;
     _inboundSequence = 0;
@@ -330,10 +353,18 @@ class NativeRemoteController extends ChangeNotifier
         supportsHome: false,
       ),
     );
-    await _transport.connect(
-      connectionId: credential.deviceId,
-      ticket: credential.ticket,
-    );
+    final generation = _generation;
+    _handshakeTimer = Timer(const Duration(seconds: 15), () {
+      if (generation == _generation) _handleDisconnect();
+    });
+    try {
+      await _transport.connect(
+        connectionId: credential.deviceId,
+        ticket: credential.ticket,
+      );
+    } catch (_) {
+      if (generation == _generation) _handleDisconnect();
+    }
   }
 
   @override
@@ -606,6 +637,7 @@ class NativeRemoteController extends ChangeNotifier
   }
 
   Future<void> _onTransportEvent(NativeTransportEvent event) async {
+    if (_disposed || _credential == null || _reconnectTimer != null) return;
     if (event.type == 'connected') {
       final credential = _credential;
       if (credential == null) return;
@@ -620,6 +652,14 @@ class NativeRemoteController extends ChangeNotifier
           path: path,
         ),
       );
+      final generation = _generation;
+      final proof = await RemoteSessionCrypto.handshakeProof(
+        credential,
+        _clientNonce!,
+        mode: _mode,
+      );
+      if (generation != _generation || _disposed) return;
+      _handshakeSent = true;
       await _transport.send({
         'clientNonce': _clientNonce,
         'deviceId': credential.deviceId,
@@ -627,12 +667,8 @@ class NativeRemoteController extends ChangeNotifier
         'hostId': credential.hostId,
         'kind': 'handshake.hello',
         'mode': _mode,
-        if (credential.pairingId != null) 'pairingId': credential.pairingId,
-        'proof': await RemoteSessionCrypto.handshakeProof(
-          credential,
-          _clientNonce!,
-          mode: _mode,
-        ),
+        if (_mode == 'pair') 'pairingId': credential.pairingId,
+        'proof': proof,
         'version': 1,
       });
       return;
@@ -658,7 +694,8 @@ class NativeRemoteController extends ChangeNotifier
   }
 
   void _handleDisconnect() {
-    if (_disposed) return;
+    if (_disposed || _credential == null || _reconnectTimer != null) return;
+    _handshakeTimer?.cancel();
     _generation += 1;
     for (final completer in _pending.values) {
       if (!completer.isCompleted) {
@@ -706,7 +743,7 @@ class NativeRemoteController extends ChangeNotifier
       );
       if (generation != _generation || _disposed) return;
       _key = key;
-      if (_mode == 'pair') {
+      if (credential.pairingId != null) {
         final resumable = PairingCredential(
           deviceId: credential.deviceId,
           hostId: credential.hostId,
@@ -717,6 +754,9 @@ class NativeRemoteController extends ChangeNotifier
         await _credentials.write(resumable.toStoredJson());
       }
       if (generation != _generation || _disposed) return;
+      _mode = 'resume';
+      _handshakeTimer?.cancel();
+      _pairingTimer?.cancel();
       _setState(
         _state.copyWith(
           connection: RemoteConnectionState.connected,
@@ -767,6 +807,13 @@ class NativeRemoteController extends ChangeNotifier
 
   void _scheduleReconnect() {
     if (_credential == null || _reconnectTimer != null) return;
+    // A lost pair receipt may mean the host already consumed the offer. Try
+    // resume in that case, then pair again if the host never registered us.
+    final mode = _credential!.pairingId == null
+        ? 'resume'
+        : _handshakeSent
+        ? (_mode == 'pair' ? 'resume' : 'pair')
+        : _mode;
     _reconnectTimer = Timer(const Duration(seconds: 2), () {
       _reconnectTimer = null;
       final credential = _credential;
@@ -774,7 +821,7 @@ class NativeRemoteController extends ChangeNotifier
         unawaited(
           _connect(
             credential,
-            mode: 'resume',
+            mode: mode,
           ).catchError((_) => _handleDisconnect()),
         );
       }
@@ -810,6 +857,8 @@ class NativeRemoteController extends ChangeNotifier
     _pending.clear();
     _reconnectTimer?.cancel();
     _refreshTimer?.cancel();
+    _handshakeTimer?.cancel();
+    _pairingTimer?.cancel();
     unawaited(_subscription.cancel());
     unawaited(_transport.close());
     super.dispose();
