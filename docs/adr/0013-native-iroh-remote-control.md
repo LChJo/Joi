@@ -37,6 +37,13 @@
 - 采用 iroh 官方支持的 `tls-aws-lc-rs` 后端，明确启用 rustls `prefer-post-quantum`，保留 iroh 原来的 metrics、portmapper、fast-apple-datapath。不添加自定义密码学、TLS 分片、代理或额外服务器；证书链、主机名、SNI 与应用层授权保持不变。公开 API 依据：[iroh 1.0.2 features](https://docs.rs/crate/iroh/1.0.2/source/Cargo.toml.orig)、[rustls 默认密钥交换](https://docs.rs/rustls/0.23.43/rustls/manual/_05_defaults/index.html)。
 - 修复须由配置回归测试和真实公网 `deployed_relay` 双端收发共同验证。两端均清除 IP transport，防止同机直连掩盖中继失败。Android/桌面共享该依赖配置；实际手机扫码和移动网络切换仍需真机验收。
 
+## 2026-09-07 分片读取取消安全
+
+- 真实本地 QUIC 回归复现：FFI 的两秒路径检查和主机的 outbound 分支取消 `read_exact` 时，局部头部/正文进度丢失，后续合法字节被错当作新帧并断连。
+- 两端每个接收流持有独立 `FrameReader`，使用取消安全的 `RecvStream::read`，在下一次 await 前持久化已读位置；完整解码后才重置状态。不新增后台任务、不改变线路协议、授权或重试预算。
+- 帧长度仍为四字节大端、上限 256 KiB；空帧、超限、截断与无效 JSON 仍关闭流。回归覆盖半头/半正文跨 FFI timer、FFI send、主机 outbound，以及下一帧对齐与半帧关闭。
+- 该修复解决已稳定复现的传输缺陷，不替代安装新版两端后的 Android 跨网扫码验收。
+
 ## Consequences
 
 - 局域网直连不经过 ECS；公网无法打洞时只依赖现有 iroh 中继，无需 Cloudflare、DCDN 或额外 Web 网关。

@@ -114,6 +114,7 @@ pub struct RemoteControllerTransport {
     connection: iroh::endpoint::Connection,
     endpoint: Endpoint,
     recv: iroh::endpoint::RecvStream,
+    reader: FrameReader,
     send: iroh::endpoint::SendStream,
 }
 
@@ -130,7 +131,7 @@ impl RemoteControllerTransport {
     }
 
     pub async fn recv(&mut self) -> Result<HostMessage> {
-        read_frame(&mut self.recv).await
+        self.reader.read(&mut self.recv).await
     }
 
     pub fn path(&self) -> RemoteConnectionPath {
@@ -194,6 +195,7 @@ pub async fn connect(
         connection,
         endpoint,
         recv,
+        reader: FrameReader::default(),
         send,
     })
 }
@@ -258,7 +260,8 @@ fn spawn_accept_loop(
                 let Ok((send, mut recv)) = connection.accept_bi().await else {
                     return;
                 };
-                let Ok(ClientMessage::Hello { device_id }) = read_frame(&mut recv).await else {
+                let mut reader = FrameReader::default();
+                let Ok(ClientMessage::Hello { device_id }) = reader.read(&mut recv).await else {
                     return;
                 };
                 if device_id.is_empty() || device_id.len() > 160 {
@@ -269,7 +272,7 @@ fn spawn_accept_loop(
                 let mut send = send;
                 loop {
                     tokio::select! {
-                        inbound = read_frame::<ClientMessage>(&mut recv) => {
+                        inbound = reader.read::<ClientMessage>(&mut recv) => {
                             let Ok(ClientMessage::Request { kind, payload, request_id }) = inbound else {
                                 break;
                             };
@@ -320,20 +323,50 @@ async fn write_frame<T: Serialize>(send: &mut iroh::endpoint::SendStream, value:
     Ok(())
 }
 
-async fn read_frame<T: DeserializeOwned>(recv: &mut iroh::endpoint::RecvStream) -> Result<T> {
-    let mut length = [0_u8; 4];
-    recv.read_exact(&mut length)
-        .await
-        .context("read Joi remote frame length")?;
-    let length = u32::from_be_bytes(length) as usize;
-    if length == 0 || length > MAX_FRAME_BYTES {
-        return Err(anyhow!("remote frame length is invalid"));
+// select! may drop read() when an outbound message or path tick wins. Keep all
+// consumed bytes on the connection, not in the future. RecvStream::read is
+// cancellation-safe; read_exact is not. Update progress before the next await.
+#[derive(Default)]
+struct FrameReader {
+    header: [u8; 4],
+    header_read: usize,
+    payload: Vec<u8>,
+    payload_read: usize,
+}
+
+impl FrameReader {
+    async fn read<T: DeserializeOwned>(&mut self, recv: &mut iroh::endpoint::RecvStream) -> Result<T> {
+        while self.header_read < self.header.len() {
+            let count = recv
+                .read(&mut self.header[self.header_read..])
+                .await
+                .context("read Joi remote frame length")?
+                .filter(|count| *count > 0)
+                .ok_or_else(|| anyhow!("incomplete Joi remote frame length"))?;
+            self.header_read += count;
+        }
+        let length = u32::from_be_bytes(self.header) as usize;
+        if length == 0 || length > MAX_FRAME_BYTES {
+            return Err(anyhow!("remote frame length is invalid"));
+        }
+        if self.payload.is_empty() {
+            self.payload.resize(length, 0);
+        }
+        while self.payload_read < length {
+            let count = recv
+                .read(&mut self.payload[self.payload_read..])
+                .await
+                .context("read Joi remote frame")?
+                .filter(|count| *count > 0)
+                .ok_or_else(|| anyhow!("incomplete Joi remote frame"))?;
+            self.payload_read += count;
+        }
+        let result = serde_json::from_slice(&self.payload).context("decode Joi remote frame");
+        self.header_read = 0;
+        self.payload.clear();
+        self.payload_read = 0;
+        result
     }
-    let mut payload = vec![0_u8; length];
-    recv.read_exact(&mut payload)
-        .await
-        .context("read Joi remote frame")?;
-    serde_json::from_slice(&payload).context("decode Joi remote frame")
 }
 
 #[cfg(test)]
