@@ -1,4 +1,5 @@
 import { randomBytes, randomUUID } from "node:crypto";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 
 import type { CredentialVault } from "../../application/ports/a2a-ports.js";
 import type {
@@ -14,6 +15,9 @@ import type {
 import type { Clock } from "../../application/ports/runtime-store.js";
 import {
   REMOTE_PAIRING_TTL_MS,
+  REMOTE_DIAGNOSTIC_CODES,
+  type RemoteDiagnosticCode,
+  type RemoteDiagnosticDto,
   REMOTE_PROTOCOL_VERSION,
   type RemoteAccessStatusDto,
   type RemoteCommand,
@@ -46,6 +50,7 @@ interface PeerSession {
   inbound: RemoteReplayGuard;
   key?: Buffer;
   outboundSequence: number;
+  commandSeen?: boolean;
 }
 
 function assertRelayUrl(value: string): string {
@@ -111,8 +116,12 @@ export class RemoteAccessHost implements RemoteAccessControl {
   #transportStarted = false;
   #transportGeneration = 0;
   #unsubscribe: (() => void) | undefined;
+  readonly #diagnostics: RuntimeDiagnostics | undefined;
+  readonly #recentDiagnostics: RemoteDiagnosticDto[] = [];
+  #diagnosticSequence = 0;
 
-  constructor(input: { clock: Clock; commands: RemoteCommandHandler; store: RemoteAccessStore; transport: RemotePeerTransport; vault: CredentialVault }) {
+  constructor(input: { clock: Clock; commands: RemoteCommandHandler; store: RemoteAccessStore; transport: RemotePeerTransport; vault: CredentialVault; diagnostics?: RuntimeDiagnostics }) {
+    this.#diagnostics = input.diagnostics;
     this.#clock = input.clock;
     this.#commands = input.commands;
     this.#store = input.store;
@@ -133,7 +142,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
     this.#stopped = false;
     this.#unsubscribe = this.#transport.subscribe((event) => {
       const key = "connectionId" in event ? event.connectionId : "transport";
-      const queued = (this.#peerQueues.get(key) ?? Promise.resolve()).then(() => this.#handleTransportEvent(event)).catch(() => undefined);
+      const queued = (this.#peerQueues.get(key) ?? Promise.resolve()).then(() => this.#handleTransportEvent(event)).catch(() => { this.#record("handlerFailed"); });
       this.#peerQueues.set(key, queued);
       void queued.finally(() => { if (this.#peerQueues.get(key) === queued) this.#peerQueues.delete(key); });
     });
@@ -159,6 +168,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
     const state = this.#requireState();
     if (this.#pairing !== undefined && Date.parse(this.#pairing.expiresAt) <= this.#clock.now().getTime()) this.#pairing = undefined;
     return Promise.resolve({
+      diagnostics: this.#recentDiagnostics.map((entry) => ({ ...entry })),
       devices: state.devices.map(({ createdAt, deviceId, lastSeenAt, name }) => ({ createdAt, deviceId, lastSeenAt, name })),
       enabled: state.enabled,
       hostId: state.hostId,
@@ -247,6 +257,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
     const state = this.#requireState();
     if (!state.enabled || state.relayUrl === "") return;
     this.#status = "connecting";
+    this.#record("transportStarting");
     try {
       if (!this.#vault.isAvailable()) throw new Error("remote_credential_encryption_unavailable");
       let nodeSecret: string;
@@ -268,10 +279,12 @@ export class RemoteAccessHost implements RemoteAccessControl {
       });
       this.#transportStarted = true;
       this.#status = "connected";
+      this.#record("transportReady");
     } catch {
       this.#transportStarted = false;
       this.#ticket = undefined;
       this.#status = "error";
+      this.#record("transportFailed");
       this.#scheduleReconnect();
     }
   }
@@ -287,7 +300,12 @@ export class RemoteAccessHost implements RemoteAccessControl {
 
   async #handleTransportEvent(event: RemotePeerTransportEvent): Promise<void> {
     if (this.#stopped || this.#state?.enabled !== true) return;
+    if (event.type === "diagnostic") {
+      if (REMOTE_DIAGNOSTIC_CODES.some((code) => code === event.code)) this.#record(event.code as RemoteDiagnosticCode);
+      return;
+    }
     if (event.type === "error") {
+      this.#record("transportFailed");
       this.#status = "error";
       for (const connectionId of this.#sessions.keys()) this.#commands.release?.(connectionId);
       this.#sessions.clear();
@@ -298,6 +316,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       return;
     }
     if (event.type === "peerOpen") {
+      this.#record("peerOpened");
       this.#commands.release?.(event.connectionId);
       this.#sessions.set(event.connectionId, {
         connectionId: event.connectionId,
@@ -307,6 +326,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       return;
     }
     if (event.type === "peerClose") {
+      this.#record("peerClosed");
       this.#commands.release?.(event.connectionId);
       this.#sessions.delete(event.connectionId);
       return;
@@ -318,21 +338,22 @@ export class RemoteAccessHost implements RemoteAccessControl {
   }
 
   async #handleHandshake(session: PeerSession, value: unknown): Promise<void> {
-    if (!isHandshake(value)) { this.#reject(session.connectionId); return; }
+    this.#record("handshakeReceived");
+    if (!isHandshake(value)) { this.#reject(session.connectionId, "handshakeInvalid"); return; }
     const state = this.#requireState();
     if (value.hostId !== state.hostId || value.deviceId.length > 160 || value.deviceName.length > 80) {
-      this.#reject(session.connectionId); return;
+      this.#reject(session.connectionId, "hostMismatch"); return;
     }
     let secret: string;
     let pairing: ActivePairing | undefined;
     if (value.mode === "pair") {
       pairing = this.#pairing;
       if (pairing === undefined || value.pairingId !== pairing.pairingId || value.deviceId !== pairing.deviceId
-        || Date.parse(pairing.expiresAt) <= this.#clock.now().getTime()) { this.#reject(session.connectionId); return; }
+        || Date.parse(pairing.expiresAt) <= this.#clock.now().getTime()) { this.#reject(session.connectionId, "pairingUnavailable"); return; }
       secret = pairing.secret;
     } else {
       const device = state.devices.find((item) => item.deviceId === value.deviceId);
-      if (device === undefined || !this.#vault.isAvailable()) { this.#reject(session.connectionId); return; }
+      if (device === undefined || !this.#vault.isAvailable()) { this.#reject(session.connectionId, "deviceUnavailable"); return; }
       secret = await this.#vault.decrypt(device.encryptedSecret);
     }
     const context = {
@@ -342,7 +363,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       mode: value.mode,
       pairingId: value.pairingId ?? "",
     };
-    if (!verifyRemoteHandshakeProof(secret, context, value.proof)) { this.#reject(session.connectionId); return; }
+    if (!verifyRemoteHandshakeProof(secret, context, value.proof)) { this.#reject(session.connectionId, "proofInvalid"); return; }
     const hostNonce = createRemoteNonce();
     session.deviceId = value.deviceId;
     session.key = deriveRemoteSessionKey(secret, value.clientNonce, hostNonce);
@@ -368,6 +389,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       proof: remoteReadyProof(secret, context, hostNonce),
       version: REMOTE_PROTOCOL_VERSION,
     });
+    if (this.#sessions.get(session.connectionId) === session) this.#record("handshakeReady");
   }
 
   async #handleEncryptedCommand(session: PeerSession, value: unknown): Promise<void> {
@@ -376,6 +398,10 @@ export class RemoteAccessHost implements RemoteAccessControl {
       session.inbound.accept(value.seq);
       const command = decryptRemotePayload(session.key, value, session.connectionId);
       if (!isRemoteCommand(command)) { this.#reject(session.connectionId); return; }
+      if (!session.commandSeen) {
+        session.commandSeen = true;
+        this.#record("firstCommandReceived");
+      }
       const response = await this.#commands.handle(command, session.connectionId);
       if (this.#sessions.get(session.connectionId) !== session) {
         this.#commands.release?.(session.connectionId);
@@ -399,12 +425,20 @@ export class RemoteAccessHost implements RemoteAccessControl {
   }
 
   async #send(connectionId: string, frame: unknown): Promise<void> {
-    await this.#transport.send(connectionId, frame).catch(() => this.#reject(connectionId));
+    await this.#transport.send(connectionId, frame).catch(() => this.#reject(connectionId, "hostSendFailed"));
   }
 
-  #reject(connectionId: string): void {
+  #reject(connectionId: string, code: RemoteDiagnosticCode = "sessionRejected"): void {
+    this.#record(code);
     this.#commands.release?.(connectionId);
     this.#sessions.delete(connectionId);
     void this.#transport.disconnect(connectionId).catch(() => undefined);
+  }
+
+  #record(code: RemoteDiagnosticCode): void {
+    const entry = { at: this.#clock.now().toISOString(), code, sequence: ++this.#diagnosticSequence };
+    this.#recentDiagnostics.push(entry);
+    if (this.#recentDiagnostics.length > 50) this.#recentDiagnostics.shift();
+    emitRuntimeDiagnostic(this.#diagnostics, "joi.remote.connection", { code, sequence: entry.sequence });
   }
 }

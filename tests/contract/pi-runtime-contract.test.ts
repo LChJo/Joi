@@ -465,4 +465,79 @@ describe("Pi reasoning runtime contract", () => {
     });
     expect(store.snapshots.get("session_compact")?.compaction?.count).toBe(1);
   });
+
+  it("compacts a token-overflowing session before prompting even below the message cap", async () => {
+    const faux = fauxProvider({ provider: "joi-token-overflow" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxText("checkpoint summary")]),
+      fauxAssistantMessage([fauxText("压缩后的回答")]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const flood = Array.from({ length: 24 }, (_, index) => ({
+      content: `填充 ${String(index)} ${"上下文".repeat(100)}`,
+      role: "user",
+      timestamp: 1_700_000_000_000 + index * 1000,
+    }));
+    await store.save({
+      messages: flood,
+      modelRevisionId: "model_rev_1",
+      sessionId: "session_overflow",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      updatedAt: "2026-09-08T10:00:00.000Z",
+      workbenchId: "workbench_1",
+    });
+    const runtime = new PiReasoningRuntime({
+      model: { ...faux.getModel(), contextWindow: 16_000, maxTokens: 8_000 },
+      models,
+      sessionStore: store,
+      tools: [],
+    });
+    await runtime.startTurn({
+      workbenchId: "workbench_1",
+      inputId: "input_overflow",
+      modelId: "contract-model",
+      modelRevisionId: "model_rev_1",
+      prompt: "hi",
+      sessionId: "session_overflow",
+      sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      turnId: "turn_overflow",
+    });
+    const saved = store.snapshots.get("session_overflow");
+    expect(saved?.messages.length).toBeLessThan(flood.length);
+    expect(JSON.stringify(saved?.messages[0])).toContain("joi session checkpoint");
+    expect(saved?.compaction).toMatchObject({ count: 1 });
+  });
+
+  it("surfaces a killed stream that delivered nothing as reasoning_stream_error", async () => {
+    const faux = fauxProvider({ provider: "joi-stream-error" });
+    faux.setResponses([fauxAssistantMessage([], {
+      errorMessage: "400 event:error max_completion_tokens [1] must be greater than thinking_budget [1024]",
+      stopReason: "error",
+    })]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiReasoningRuntime({
+      model: faux.getModel(),
+      models,
+      sessionStore: new MemorySessionStore(),
+      tools: [],
+    });
+    await expect(runtime.startTurn({
+      workbenchId: "workbench_1",
+      inputId: "input_stream_error",
+      modelId: "contract-model",
+      modelRevisionId: "model_rev_1",
+      prompt: "hi",
+      sessionId: "session_stream_error",
+      sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      turnId: "turn_stream_error",
+    })).rejects.toMatchObject({ code: "reasoning_stream_error" });
+  });
 });

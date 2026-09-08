@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'remote_controller.dart';
 import 'pairing_scanner.dart';
 import 'home_screen.dart';
+import 'connection_diagnostics_view.dart';
 
 class JoiMobileApp extends StatelessWidget {
   const JoiMobileApp({super.key, required this.controller});
@@ -93,6 +94,7 @@ class _PairingScreen extends StatelessWidget {
                 ),
                 child: const Text('输入连接码'),
               ),
+              ConnectionDiagnosticsButton(controller: controller),
               const Spacer(),
               const Text(
                 '同一台 Joi 可以安全绑定多台手机',

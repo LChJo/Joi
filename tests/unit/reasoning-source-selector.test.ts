@@ -32,6 +32,17 @@ describe("deterministic-source-fallback-classification", () => {
     expect(validate).not.toHaveBeenCalled();
   });
 
+  it("keeps the tool capability proof across a freshness probe", async () => {
+    const staleProven = { ...first, lastValidatedAt: "2026-09-03T09:00:00.000Z", source: { ...first.source, toolProofAt: "2026-08-06T10:00:00.000Z" } };
+    const validate = vi.fn(async () => ({ status: "READY" as const, validatedAt: "2026-09-03T10:00:00.000Z" }));
+    const selector = new ReasoningSourceSelector({ ...repository, list: async () => [staleProven] }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate },
+    });
+    await expect(selector.selectInitial("turn-proven")).resolves.toMatchObject({ sourceId: "first", toolCapabilityProven: true });
+    expect(validate).toHaveBeenCalled();
+  });
+
   it("coalesces stale probes by source/model/credential revision and falls through for an unpinned partner", async () => {
     const staleFirst = { ...first, lastValidatedAt: "2026-09-03T09:00:00.000Z" };
     const staleSecond = { ...second, lastValidatedAt: "2026-09-03T09:00:00.000Z" };

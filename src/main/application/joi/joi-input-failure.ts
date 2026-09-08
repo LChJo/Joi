@@ -9,6 +9,8 @@ export function normalizeJoiFailureReasonCode(value: unknown): string {
 /** Maps a bounded machine reason to a safe user action; never presents raw error text. */
 export function suggestedActionForJoiInputFailure(reasonCode: string): JoiFailureSuggestedActionDto {
   if (reasonCode === "unsafe_reasoning_tool" || reasonCode === "legacy_scheduler_failure") return "RESTART_OR_UPDATE";
+  // A killed stream (provider 400/5xx, budget clashes) is a source-side problem, not a joi bug.
+  if (reasonCode === "reasoning_stream_error") return "CHECK_MODEL_SOURCE";
   if (/^(?:auth_failed|bad_request|connection_error|credential_|http_error|model_|not_found|provider_|rate_limited|server_error|source_|timeout)/u.test(reasonCode)) {
     return "CHECK_MODEL_SOURCE";
   }

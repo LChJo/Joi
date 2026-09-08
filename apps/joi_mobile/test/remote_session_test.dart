@@ -190,6 +190,58 @@ Future<void> settleUntil(bool Function() ready) async {
 }
 
 void main() {
+  test(
+    'native failures retain stage, unknown errors never reach diagnostics',
+    () async {
+      final peer = Peer()..silent = true;
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      try {
+        await controller.initialize();
+        peer.bus.add(
+          const NativeTransportEvent(type: 'diagnostic', stage: 'endpointDial'),
+        );
+        peer.bus.add(
+          const NativeTransportEvent(type: 'error', code: 'secret=private'),
+        );
+        await settleUntil(
+          () =>
+              controller.state.connection == RemoteConnectionState.reconnecting,
+        );
+        expect(controller.state.diagnostics.summary, contains('endpointDial'));
+        expect(
+          controller.state.diagnostics.summary,
+          contains('unknownFailure'),
+        );
+        expect(
+          controller.state.diagnostics.summary,
+          isNot(contains('private')),
+        );
+        expect(controller.state.notice, contains('unknownFailure'));
+      } finally {
+        controller.dispose();
+        await peer.bus.close();
+      }
+    },
+  );
+  testWidgets('silent native connection retains a useful timeout diagnostic', (
+    tester,
+  ) async {
+    final peer = Peer()..silent = true;
+    final controller = NativeRemoteController(
+      credentials: MemoryCredentials(),
+      transport: peer,
+    );
+    await controller.initialize();
+    await tester.pump(const Duration(seconds: 15));
+    expect(controller.state.notice, contains('nativeConnectTimeout'));
+    await tester.pump(const Duration(seconds: 2));
+    expect(controller.state.notice, contains('nativeConnectTimeout'));
+    controller.dispose();
+    await peer.bus.close();
+  });
   String pairingUri() => Uri(
     scheme: 'joi',
     host: 'pair',

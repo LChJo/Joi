@@ -60,6 +60,31 @@ function pairingFields(value: string): Record<string, string> {
 }
 
 describe("native RemoteAccessHost", () => {
+  it("keeps bounded safe evidence of incoming peers and rejected handshakes", async () => {
+    const transport = new FakePeerTransport();
+    const emit = vi.fn();
+    const host = new RemoteAccessHost({ clock: { now: () => new Date("2026-09-08T00:00:00Z") },
+      commands: { handle: vi.fn() }, store: new MemoryRemoteStore(), transport, vault, diagnostics: { emit } });
+    await host.start();
+    await host.update({ enabled: true });
+    transport.emit({ type: "peerOpen", connectionId: "private-peer" });
+    transport.emit({ type: "peerFrame", connectionId: "private-peer", frame: { secret: "never-log-this" } });
+    await vi.waitFor(async () => {
+      const status = await host.status();
+      expect(status).toHaveProperty("diagnostics");
+      expect(JSON.stringify(status.diagnostics)).toContain("handshakeInvalid");
+    });
+    const diagnostics = (await host.status()).diagnostics;
+    expect(JSON.stringify(diagnostics)).toContain("peerOpened");
+    expect(JSON.stringify(diagnostics)).not.toMatch(/private-peer|never-log-this|secret/u);
+    expect(emit).toHaveBeenCalledWith("joi.remote.connection", expect.objectContaining({ code: "handshakeInvalid" }));
+    expect(JSON.stringify(emit.mock.calls)).not.toMatch(/private-peer|never-log-this|secret/u);
+    for (let i = 0; i < 70; i++) transport.emit({ type: "diagnostic", code: "quicAccepted" });
+    transport.emit({ type: "diagnostic", code: "secret=private-diagnostic" });
+    await vi.waitFor(async () => expect((await host.status()).diagnostics).toHaveLength(50));
+    expect(JSON.stringify((await host.status()).diagnostics)).not.toContain("private-diagnostic");
+    await host.close();
+  });
   it("uses the Joi-owned relay by default while keeping the relay editable", async () => {
     const store = new MemoryRemoteStore();
     const host = new RemoteAccessHost({

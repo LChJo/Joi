@@ -7,6 +7,7 @@ describe("joi input failure presentation", () => {
   it("maps bounded reason codes to safe next actions", () => {
     expect(suggestedActionForJoiInputFailure("unsafe_reasoning_tool")).toBe("RESTART_OR_UPDATE");
     expect(suggestedActionForJoiInputFailure("model_unavailable")).toBe("CHECK_MODEL_SOURCE");
+    expect(suggestedActionForJoiInputFailure("reasoning_stream_error")).toBe("CHECK_MODEL_SOURCE");
     expect(suggestedActionForJoiInputFailure("joi_task_turn_failed")).toBe("RETRY_OR_EXPORT_DIAGNOSTICS");
   });
 

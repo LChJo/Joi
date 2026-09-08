@@ -8,6 +8,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'iroh_ffi_transport.dart';
 import 'remote_controller.dart';
+import 'connection_diagnostics.dart';
 
 const _credentialKey = 'joi.remote.native.credential.v1';
 
@@ -254,7 +255,9 @@ class NativeRemoteController extends ChangeNotifier
     _subscription = transport.events.listen((event) {
       _inbound = _inbound
           .then((_) => _onTransportEvent(event))
-          .catchError((_) => _handleDisconnect());
+          .catchError(
+            (Object error) => _handleDisconnect(code: _failureCode(error)),
+          );
     });
   }
 
@@ -277,6 +280,7 @@ class NativeRemoteController extends ChangeNotifier
   bool _foreground = true;
   bool _disposed = false;
   bool _handshakeSent = false;
+  bool _feedLoaded = false;
   int _generation = 0;
   Future<void> _inbound = Future.value();
   Future<void> _outbound = Future.value();
@@ -288,14 +292,13 @@ class NativeRemoteController extends ChangeNotifier
   RemoteViewState get state => _state;
 
   Future<void> initialize() async {
-    final saved = await _credentials.read();
-    if (saved == null) return;
     try {
+      final saved = await _credentials.read();
+      if (saved == null) return;
       await _connect(PairingCredential.fromStoredJson(saved), mode: 'resume');
     } catch (_) {
-      _setState(
-        const RemoteViewState(connection: RemoteConnectionState.offline),
-      );
+      _record(code: 'credentialReadFailed', failure: true);
+      _setState(_state.copyWith(connection: RemoteConnectionState.offline));
     }
   }
 
@@ -304,6 +307,7 @@ class NativeRemoteController extends ChangeNotifier
     final credential = PairingCredential.parse(payload);
     _pairingTimer?.cancel();
     _pairingTimer = Timer(const Duration(minutes: 2), () {
+      _record(code: 'pairingTimeout', failure: true);
       _generation += 1;
       _credential = null;
       _key = null;
@@ -312,7 +316,7 @@ class NativeRemoteController extends ChangeNotifier
       _handshakeTimer?.cancel();
       unawaited(_transport.close());
       _setState(
-        const RemoteViewState(
+        _state.copyWith(
           connection: RemoteConnectionState.unpaired,
           notice: '未能连接电脑。请确认电脑在线、两端已更新，并在电脑上生成新二维码重试。',
         ),
@@ -343,6 +347,7 @@ class NativeRemoteController extends ChangeNotifier
     _credential = credential;
     _mode = mode;
     _handshakeSent = false;
+    _feedLoaded = false;
     _key = null;
     _clientNonce = null;
     _inboundSequence = 0;
@@ -354,8 +359,13 @@ class NativeRemoteController extends ChangeNotifier
       ),
     );
     final generation = _generation;
+    _record(stage: ConnectionStage.nativeConnect, newAttempt: true);
     _handshakeTimer = Timer(const Duration(seconds: 15), () {
-      if (generation == _generation) _handleDisconnect();
+      if (generation == _generation) {
+        _handleDisconnect(
+          code: _handshakeSent ? 'handshakeTimeout' : 'nativeConnectTimeout',
+        );
+      }
     });
     try {
       await _transport.connect(
@@ -363,7 +373,9 @@ class NativeRemoteController extends ChangeNotifier
         ticket: credential.ticket,
       );
     } catch (_) {
-      if (generation == _generation) _handleDisconnect();
+      if (generation == _generation) {
+        _handleDisconnect(code: 'nativeStartFailed');
+      }
     }
   }
 
@@ -404,6 +416,10 @@ class NativeRemoteController extends ChangeNotifier
         cards.add(RemoteGoalCard.fromJson(item));
       }
       if (generation == _generation) {
+        if (!_feedLoaded) {
+          _feedLoaded = true;
+          _record(stage: ConnectionStage.ready);
+        }
         _setState(_state.copyWith(goals: cards, clearNotice: true));
       }
     } finally {
@@ -453,6 +469,7 @@ class NativeRemoteController extends ChangeNotifier
       await refresh();
     } catch (_) {
       if (generation == _generation) {
+        _record(code: 'feedFailed', failure: true);
         _setState(_state.copyWith(notice: '未能刷新，已保留上次内容。下拉重试。'));
       }
     }
@@ -638,7 +655,15 @@ class NativeRemoteController extends ChangeNotifier
 
   Future<void> _onTransportEvent(NativeTransportEvent event) async {
     if (_disposed || _credential == null || _reconnectTimer != null) return;
+    if (event.type == 'diagnostic') {
+      final stage = ConnectionStage.values
+          .where((s) => s.name == event.stage)
+          .firstOrNull;
+      _record(stage: stage, code: event.code);
+      return;
+    }
     if (event.type == 'connected') {
+      _record(stage: ConnectionStage.handshake);
       final credential = _credential;
       if (credential == null) return;
       final nonce = Uint8List.fromList(
@@ -689,12 +714,13 @@ class NativeRemoteController extends ChangeNotifier
       return;
     }
     if (event.type == 'disconnected' || event.type == 'error') {
-      _handleDisconnect();
+      _handleDisconnect(code: event.code ?? 'transportDisconnected');
     }
   }
 
-  void _handleDisconnect() {
+  void _handleDisconnect({String code = 'transportDisconnected'}) {
     if (_disposed || _credential == null || _reconnectTimer != null) return;
+    _record(code: code, failure: true);
     _handshakeTimer?.cancel();
     _generation += 1;
     for (final completer in _pending.values) {
@@ -744,6 +770,7 @@ class NativeRemoteController extends ChangeNotifier
       if (generation != _generation || _disposed) return;
       _key = key;
       if (credential.pairingId != null) {
+        _record(stage: ConnectionStage.credentialSave);
         final resumable = PairingCredential(
           deviceId: credential.deviceId,
           hostId: credential.hostId,
@@ -755,6 +782,7 @@ class NativeRemoteController extends ChangeNotifier
       }
       if (generation != _generation || _disposed) return;
       _mode = 'resume';
+      _record(stage: ConnectionStage.sessionReady);
       _handshakeTimer?.cancel();
       _pairingTimer?.cancel();
       _setState(
@@ -775,6 +803,7 @@ class NativeRemoteController extends ChangeNotifier
           unawaited(_refreshSafely());
         }
       });
+      _record(stage: ConnectionStage.feedLoad);
       unawaited(_refreshSafely());
       if (_state.supportsHome) unawaited(_loadCatalog());
       return;
@@ -832,6 +861,46 @@ class NativeRemoteController extends ChangeNotifier
     if (_disposed) return;
     _state = value;
     notifyListeners();
+  }
+
+  String _failureCode(Object error) {
+    if (_state.diagnostics.stage == ConnectionStage.credentialSave) {
+      return 'credentialWriteFailed';
+    }
+    if (error is FormatException) {
+      return switch (error.message) {
+        'joi_remote_host_proof_invalid' => 'hostProofInvalid',
+        'joi_remote_frame_replayed' => 'frameReplayed',
+        'joi_encrypted_frame_invalid' => 'frameInvalid',
+        _ => 'eventHandlingFailed',
+      };
+    }
+    return 'eventHandlingFailed';
+  }
+
+  void _record({
+    ConnectionStage? stage,
+    String? code,
+    bool failure = false,
+    bool newAttempt = false,
+  }) {
+    final diagnostics = _state.diagnostics.record(
+      pairing: _mode == 'pair',
+      stage: stage,
+      code: code,
+      failure: failure,
+      newAttempt: newAttempt,
+    );
+    _setState(
+      _state.copyWith(
+        diagnostics: diagnostics,
+        notice: failure
+            ? '连接诊断：${stageLabel(diagnostics.stage)} · ${safeConnectionCode(code)}'
+            : null,
+      ),
+    );
+    // Only locally constructed enum labels/counters and allowlisted codes.
+    debugPrint('joi.remote ${diagnostics.history.last}');
   }
 
   String _requestId(String prefix) {

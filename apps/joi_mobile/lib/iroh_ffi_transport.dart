@@ -6,11 +6,28 @@ import 'dart:io';
 import 'package:ffi/ffi.dart';
 
 class NativeTransportEvent {
-  const NativeTransportEvent({required this.type, this.frame, this.path});
+  const NativeTransportEvent({
+    required this.type,
+    this.frame,
+    this.path,
+    this.code,
+    this.stage,
+  });
+
+  factory NativeTransportEvent.fromJson(Map<String, dynamic> value) =>
+      NativeTransportEvent(
+        type: value['type'] is String ? value['type'] as String : 'error',
+        frame: value['frame'],
+        path: value['path'] is String ? value['path'] as String : null,
+        code: value['code'] is String ? value['code'] as String : null,
+        stage: value['stage'] is String ? value['stage'] as String : null,
+      );
 
   final Object? frame;
   final String? path;
   final String type;
+  final String? code;
+  final String? stage;
 }
 
 abstract interface class NativeTransport {
@@ -121,15 +138,17 @@ class IrohFfiTransport implements NativeTransport {
       } finally {
         _free(pointer);
       }
-      final value = jsonDecode(text);
-      if (value is! Map<String, dynamic> || value['type'] is! String) continue;
-      _events.add(
-        NativeTransportEvent(
-          frame: value['frame'],
-          path: value['path'] as String?,
-          type: value['type'] as String,
-        ),
-      );
+      try {
+        final value = jsonDecode(text);
+        if (value is! Map<String, dynamic> || value['type'] is! String) {
+          throw const FormatException();
+        }
+        _events.add(NativeTransportEvent.fromJson(value));
+      } catch (_) {
+        _events.add(
+          const NativeTransportEvent(type: 'error', code: 'ffiEventInvalid'),
+        );
+      }
     }
   }
 

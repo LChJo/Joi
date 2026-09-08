@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'remote_controller.dart';
 import 'goal_detail.dart';
+import 'connection_diagnostics_view.dart';
 
 String statusLabel(String value) =>
     const {
@@ -190,6 +191,9 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 padding: const EdgeInsets.all(12),
                 child: Text(notice, semanticsLabel: notice),
               ),
+            if (!ready) ConnectionProgress(controller: widget.controller),
+            if (ready)
+              ConnectionDiagnosticsButton(controller: widget.controller),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: () async {
@@ -206,9 +210,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   padding: const EdgeInsets.all(16),
                   children: [
                     if (state.goals.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(24),
-                        child: Text('暂时没有任务，和 joi 说点什么吧。'),
+                      Padding(
+                        padding: const EdgeInsets.all(24),
+                        child: Text(
+                          ready
+                              ? '暂时没有任务，和 joi 说点什么吧。'
+                              : '尚未同步首页，连接成功后会显示电脑上的任务。',
+                        ),
                       ),
                     for (final group in groups.entries)
                       if (group.value.isNotEmpty) ...[

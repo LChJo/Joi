@@ -158,7 +158,11 @@ describe("JOI-01 pure domain", () => {
       modelRevisionId: "model_rev_2",
       sourceId: "source_1",
       sourceRevisionId: "source_rev_2",
+      toolCapabilityProven: false,
       turnId: "turn_1",
+    });
+    expect(pinModelSourceForTurn({ ...revised, toolProofAt: "2026-07-28T10:02:00.000Z" }, "turn_1")).toMatchObject({
+      toolCapabilityProven: true,
     });
     expect(() => createModelSource({
       createdAt: "2026-07-28T10:00:00.000Z", credentialRef: "credential_invalid", credentialVersion: 0,

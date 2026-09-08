@@ -1,4 +1,10 @@
+import type { RemoteDiagnosticCode } from "../../../shared/remote.js";
+
 export interface RuntimeDiagnosticEventMap {
+  "joi.remote.connection": {
+    code: RemoteDiagnosticCode;
+    sequence: number;
+  };
   "joi.automation.claimed": {
     count: number;
   };
@@ -208,6 +214,7 @@ export interface RuntimeDiagnosticEventMap {
     modelRevisionId?: string;
     sourceId?: string;
     sourceRevisionId?: string;
+    toolCapabilityProven?: boolean;
     turnId: string;
   };
   "joi.action.applied": {
@@ -247,6 +254,12 @@ export interface RuntimeDiagnosticEventMap {
     fromSourceId: string;
     inputId: string;
     toSourceId: string;
+    turnId: string;
+  };
+  "joi.turn.tool_capability_proven": {
+    modelRevisionId: string;
+    sourceId: string;
+    sourceRevisionId: string;
     turnId: string;
   };
   "joi.turn.completed": {

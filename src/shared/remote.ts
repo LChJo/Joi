@@ -6,6 +6,16 @@ export const REMOTE_MAX_FRAME_BYTES = 256 * 1_024;
 
 export type RemoteConnectionStatus = "connected" | "connecting" | "disabled" | "error";
 
+export const REMOTE_DIAGNOSTIC_CODES = [
+  "transportStarting", "transportReady", "transportFailed", "peerOpened", "peerClosed",
+  "handshakeReceived", "handshakeInvalid", "hostMismatch", "pairingUnavailable",
+  "deviceUnavailable", "proofInvalid", "handshakeReady", "firstCommandReceived",
+  "sessionRejected", "hostSendFailed", "handlerFailed",
+  "quicAccepted", "quicFailed", "streamAccepted", "streamFailed", "helloAccepted", "helloInvalid", "streamClosed",
+] as const;
+export type RemoteDiagnosticCode = typeof REMOTE_DIAGNOSTIC_CODES[number];
+export interface RemoteDiagnosticDto { at: string; code: RemoteDiagnosticCode; sequence: number }
+
 export interface RemoteDeviceDto {
   createdAt: string;
   deviceId: string;
@@ -27,6 +37,7 @@ export interface RemoteAccessStatusDto {
   relayUrl: string;
   status: RemoteConnectionStatus;
   pairing?: RemotePairingDto;
+  diagnostics?: RemoteDiagnosticDto[];
 }
 
 export type RemoteCommand =

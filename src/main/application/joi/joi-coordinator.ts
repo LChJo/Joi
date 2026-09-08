@@ -23,6 +23,7 @@ interface SourcePin {
   modelRevisionId: string;
   sourceId: string;
   sourceRevisionId: string;
+  toolCapabilityProven?: boolean;
   turnId: string;
 }
 
@@ -136,6 +137,7 @@ export class JoiCoordinator {
         sideEffectStarted: boolean;
         turnId: string;
       }): Promise<SourcePin | null>;
+      recordToolProof?(input: { modelRevisionId: string; provenAt: string; sourceRevisionId: string }): Promise<void>;
       selectInitial(turnId: string): Promise<SourcePin>;
     };
     store: JoiCoordinatorStore;
@@ -293,6 +295,7 @@ export class JoiCoordinator {
       modelRevisionId: pin.modelRevisionId,
       sourceId: pin.sourceId,
       sourceRevisionId: pin.sourceRevisionId,
+      toolCapabilityProven: pin.toolCapabilityProven === true,
       turnId,
     });
     if (goalSynthesis !== null) emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.goal.synthesis.started", {
@@ -400,7 +403,7 @@ export class JoiCoordinator {
             systemPrompt: buildJoiSystemPrompt({
               ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
               workbenchName: workbench.profile.name,
-              ...(pin.modelCapability === undefined ? {} : { modelCapability: pin.modelCapability }),
+              ...(pin.modelCapability === undefined || pin.toolCapabilityProven === true ? {} : { modelCapability: pin.modelCapability }),
               personaSummary: workbench.profile.personaSummary,
               projectLabel: workbench.project.label,
               scopeSummary: workbench.profile.scopeSummary,
@@ -428,7 +431,10 @@ export class JoiCoordinator {
             await this.dependencies.events?.emit("joi.turn.completed", turnId, { workbenchId, inputId, turnId });
             return;
           }
-          if (pin.modelCapability === "custom-unverified-tools" && observedToolCalls.size === 0) {
+          // AC-26 gates the FIRST Turn of an unproven custom model only: once any Turn of the
+          // pinned revision pair demonstrated structured tool calling, a later direct answer
+          // (zero tool calls) is a valid outcome instead of a capability failure.
+          if (pin.modelCapability === "custom-unverified-tools" && pin.toolCapabilityProven !== true && observedToolCalls.size === 0) {
             throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
           }
           const synthesisOutcomeCommitted = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_CONTINUE" || committedTurnOutcome === "RESULT_BLOCKED";
@@ -494,6 +500,20 @@ export class JoiCoordinator {
           pin = fallback;
           await this.dependencies.store.updateTurnSource?.(turnId, pin.sourceRevisionId, pin.modelRevisionId);
         }
+      }
+      if (pin.modelCapability === "custom-unverified-tools" && pin.toolCapabilityProven !== true && observedToolCalls.size > 0) {
+        await this.dependencies.sources.recordToolProof?.({
+          modelRevisionId: pin.modelRevisionId,
+          provenAt: this.dependencies.clock.now().toISOString(),
+          sourceRevisionId: pin.sourceRevisionId,
+        });
+        pin = { ...pin, toolCapabilityProven: true };
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.tool_capability_proven", {
+          modelRevisionId: pin.modelRevisionId,
+          sourceId: pin.sourceId,
+          sourceRevisionId: pin.sourceRevisionId,
+          turnId,
+        });
       }
       const completionSummary = normalizeCompletionSummary(completionText);
       if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");

@@ -47,6 +47,8 @@ export interface ModelSourceRepository {
   delete(sourceId: string): Promise<void>;
   get(sourceId: string): Promise<ModelSourceRecord | null>;
   list(): Promise<ModelSourceRecord[]>;
+  /** Remembers that the revision pair demonstrated structured tool calling; idempotent per pair. */
+  recordToolProof?(input: { modelRevisionId: string; provenAt: string; sourceRevisionId: string }): Promise<void>;
   revise(record: ModelSourceRecord): Promise<void>;
   save(record: ModelSourceRecord): Promise<void>;
   /** Atomically writes health only when the active source/model/credential revision still matches. */

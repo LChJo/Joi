@@ -206,7 +206,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           AND i.input_id NOT LIKE 'joi_harness_review:%'
           AND i.goal_input_id IS NULL
           AND NOT (i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED')
-        GROUP BY i.input_id ORDER BY i.updated_at DESC, i.input_id DESC`).all() as Row[];
+        GROUP BY i.input_id ORDER BY projection_updated_at DESC, i.input_id DESC`).all() as Row[];
       const harnessByGoal = new Map(queryHarnessGoalProjections(connection).map((projection) => [projection.goalInputId, projection]));
       const goals: JoiGoalCardDto[] = rows.map((row) => {
         const goalId = text(row, "input_id");

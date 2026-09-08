@@ -42,6 +42,9 @@ enum SidecarCommand {
     rename_all_fields = "camelCase"
 )]
 enum SidecarEvent<'a> {
+    Diagnostic {
+        code: &'a str,
+    },
     Ready {
         ticket: joi_remote::protocol::TransportTicket,
     },
@@ -101,6 +104,11 @@ async fn run() -> Result<()> {
     let seen = Arc::new(Mutex::new(HashSet::<String>::new()));
     loop {
         tokio::select! {
+            diagnostic = host.next_diagnostic() => {
+                if let Some(code) = diagnostic {
+                    emit(&SidecarEvent::Diagnostic { code });
+                }
+            }
             command = commands_rx.recv() => {
                 match command {
                     Some(SidecarCommand::Send { connection_id, frame }) => {

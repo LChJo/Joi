@@ -84,6 +84,16 @@ JOI_RELAY_SMOKE_URL=https://cudex.joilab.top cargo test --manifest-path native/j
 
 两条命令都通过，才表示 Joi 默认中继可用且 Codux 兼容入口未被破坏。
 
+## 手机持续重连：两端诊断（remote-diag-1）
+
+1. 重新构建并安装两端（APK 必须重建 Rust 动态库，不能只更新 Dart）。手机点击“连接诊断”应看到 `remote-diag-1`；未看到则不是带诊断的版本。
+2. 桌面打开“设置 → 手机连接 → 连接诊断”，保持页面打开，重新生成二维码，用手机扫码一次，等待一次失败后立即在手机点击“复制诊断”。不要分享二维码或连接码。
+3. 对照两端的时间：手机 `endpointDial + nativeConnectTimeout/connectFailed` 且桌面没有 `quicAccepted`，优先检查实际网络、端点地址与中继；有 `quicAccepted` 但无 `helloAccepted` 则检查传输流；有 `handshakeReceived` 后出现 `pairingUnavailable/deviceUnavailable/proofInvalid`，则检查配对/恢复与证明；`handshakeReady` 后手机 `hostProofInvalid/credentialWriteFailed`，则聚焦手机验证/安全存储；`firstCommandReceived` 后失败再检查业务协议。
+4. `androidContextMissing` 表示开始连接时尚未安装 Android 原生网络上下文，需要检查 Android 初始化；它不是公网不可达的证明。`transportReady` 仅表示桌面传输已启动，不表示手机在线。
+5. 桌面记录写入用户数据目录的 `diagnostics/joi-flow.jsonl`（沿用 2 MiB × 3 文件轮转），事件名 `joi.remote.connection`。只提取该事件的 `at/code/sequence`；不要上传完整用户数据目录、remote-access.json 或其他业务日志。
+
+手机只保留本次进程最近 40 条阶段记录及最近失败，重启后清空；桌面设置显示当前运行最近 50 条，历史在轮转日志。记录只有时间、阶段、计数、固定错误码，未知错误不输出原文。先留证据再重启；这些信息用于缩小故障范围，不能仅凭“重连中”断定根因。
+
 ## 当前部署与回滚
 
 2026-08-27 已在 `121.40.20.202` 部署上述配置：双域名 TLS、两次 relay-only 数据交换和 Nginx 校验均通过。服务器保留以下回滚副本：

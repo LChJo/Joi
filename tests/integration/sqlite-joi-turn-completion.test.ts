@@ -54,6 +54,37 @@ describe("persisted joi Turn completions", () => {
     }
   });
 
+  it("keeps goal card order on projected activity so background inbox touches cannot reorder cards", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "排序", personaSummary: "private", projectLabel: "joi", scopeSummary: "卡片排序" });
+      fixture.database.transaction((connection) => {
+        // An older goal completed early; background maintenance touched its inbox row later.
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('input-old-goal', 'key-old-goal', '旧目标', 'CONSUMED', ?, '2026-08-01T10:00:00.000Z', '2026-08-06T10:00:00.000Z')`)
+          .run(workbench.workbenchId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-old-goal', 'input-old-goal', ?, 'session-old-goal', 'COMPLETED', '2026-08-01T10:00:00.000Z', '2026-08-01T10:05:00.000Z')`)
+          .run(workbench.workbenchId);
+        connection.prepare(`INSERT INTO joi_turn_completions
+          (input_id, turn_id, outcome_kind, completion_summary, completed_at, updated_at)
+          VALUES ('input-old-goal', 'turn-old-goal', 'DIRECT_ANSWER', '完成', '2026-08-01T10:05:00.000Z', '2026-08-01T10:05:00.000Z')`).run();
+        // A newer goal failed after the old goal completed: its card must stay first even
+        // though the old inbox row carries the newest raw updated_at.
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at, failed_at, failure_reason_code, failure_count)
+          VALUES ('input-new-goal', 'key-new-goal', 'hi', 'CONSUMED', ?, '2026-08-02T10:00:00.000Z', '2026-08-02T10:01:00.000Z', '2026-08-02T10:01:00.000Z', 'custom_model_tool_capability_unverified', 8)`)
+          .run(workbench.workbenchId);
+      });
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+      expect(feed.goals.map((goal) => goal.goalId)).toEqual(["input-new-goal", "input-old-goal"]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("keeps the current Goal outcome authoritative over an older direct completion", async () => {
     const fixture = await createRuntimeFixture();
     try {

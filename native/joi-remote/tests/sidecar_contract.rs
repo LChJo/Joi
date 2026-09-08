@@ -52,13 +52,34 @@ impl Sidecar {
     }
 
     fn event(&self, kind: &str) -> Value {
-        let event = self
-            .events
-            .recv_timeout(Duration::from_secs(10))
-            .expect("sidecar event timeout");
-        // Assert only the event type: never print credentials or ticket contents.
-        assert_eq!(event["type"].as_str(), Some(kind));
-        event
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        loop {
+            let event = self
+                .events
+                .recv_timeout(deadline.saturating_duration_since(std::time::Instant::now()))
+                .expect("sidecar event timeout");
+            if event["type"] == "diagnostic" {
+                assert_eq!(event.as_object().unwrap().len(), 2);
+                assert!(
+                    [
+                        "quicAccepted",
+                        "quicFailed",
+                        "streamAccepted",
+                        "streamFailed",
+                        "helloAccepted",
+                        "helloInvalid",
+                        "streamClosed"
+                    ]
+                    .contains(&event["code"].as_str().unwrap())
+                );
+                if kind != "diagnostic" {
+                    continue;
+                }
+            }
+            // Assert only the event type: never print credentials or ticket contents.
+            assert_eq!(event["type"].as_str(), Some(kind));
+            return event;
+        }
     }
 }
 
@@ -84,6 +105,10 @@ async fn desktop_camel_case_commands_and_peer_events_match_real_sidecar() {
         .await
         .expect("connect timeout")
         .expect("connect phone");
+    // Evidence must precede the first application frame, not just successful pairing.
+    for code in ["quicAccepted", "streamAccepted", "helloAccepted"] {
+        assert_eq!(sidecar.event("diagnostic")["code"], code);
+    }
     phone
         .send(ClientMessage::Request {
             kind: "frame".into(),

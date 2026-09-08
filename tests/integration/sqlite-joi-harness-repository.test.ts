@@ -611,6 +611,40 @@ describe("SqliteJoiHarnessRepository", () => {
       });
     });
 
+    it("stops reconciling an already cleared review without touching the goal inbox again", async () => {
+      const LATER = "2026-08-06T11:00:00.000Z";
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-zombie", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-review-zombie", now: NOW });
+      seedCompletedLayer(fixture, "goal-review-zombie", 1);
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((connection) => {
+        connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', failed_at = ?,
+          failure_reason_code = 'legacy_scheduler_failure', failure_count = 8 WHERE input_id = ?`).run(NOW, reviewInputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at)
+          VALUES ('turn-review-zombie', ?, ?, 'review-zombie', 'FAILED', 0, ?, ?)`).run(reviewInputId, workbenchId, NOW, NOW);
+      });
+
+      const candidates = await repository.listReviewRecoveries();
+      expect(candidates).toHaveLength(1);
+      const candidate = candidates[0];
+      if (candidate === undefined) throw new Error("review recovery candidate missing");
+      expect(candidate).toMatchObject({ action: "AUTO_CLEAR", reasonCode: "review_facts_complete" });
+      expect(await repository.reconcileReview({ candidate, now: LATER })).toEqual({ action: "AUTO_CLEARED" });
+      // The goal row was already clean CONSUMED: clearing the review must not bump its
+      // updated_at, or every actor tick re-sorts the completed goal to the top of the home feed.
+      const goalUpdatedAt = () => fixture.database.transaction((connection) => connection.prepare(
+        "SELECT updated_at FROM joi_inbox_messages WHERE input_id = 'goal-review-zombie'").get()) as { updated_at: string };
+      expect(goalUpdatedAt()).toEqual({ updated_at: NOW });
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+      // A stale candidate kept from an earlier tick converges to a no-op instead of re-touching rows.
+      expect(await repository.reconcileReview({ candidate, now: LATER })).toBeNull();
+      expect(goalUpdatedAt()).toEqual({ updated_at: NOW });
+    });
+
     it("removes a stale historical clarification after the map was already cleared", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-stale-clarification", status: "CLARIFICATION_REQUIRED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-review-stale-clarification", now: NOW });

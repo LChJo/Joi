@@ -17,6 +17,8 @@ const SELECT_RECORDS = `
          sr.credential_ref, sr.credential_version, sr.created_at AS source_revision_created_at,
          mr.model_revision_id, mr.model_id, mr.capability, mr.preset_version,
          mr.created_at AS model_revision_created_at,
+         (SELECT p.proven_at FROM model_source_tool_proofs p
+           WHERE p.source_revision_id = sr.source_revision_id AND p.model_revision_id = mr.model_revision_id) AS tool_proof_at,
          h.reason_code, h.last_error, h.last_validated_at, o.position, o.is_primary
     FROM model_sources s
     JOIN model_source_revisions sr ON sr.source_revision_id = s.active_source_revision_id
@@ -59,6 +61,7 @@ function mapRow(row: Row): ModelSourceRecord {
   const reasonCode = optionalText(row, "reason_code");
   const lastValidatedAt = optionalText(row, "last_validated_at");
   const presetVersion = optionalText(row, "preset_version");
+  const toolProofAt = optionalText(row, "tool_proof_at");
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(lastError === undefined ? {} : { lastError }),
@@ -88,6 +91,7 @@ function mapRow(row: Row): ModelSourceRecord {
       createdAt: text(row, "created_at"),
       sourceId: text(row, "source_id"),
       status: text(row, "status") as ModelSourceStatus,
+      ...(toolProofAt === undefined ? {} : { toolProofAt }),
       updatedAt: text(row, "updated_at"),
     },
   };
@@ -175,6 +179,15 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         record.source.updatedAt, record.source.sourceId,
       );
       return true;
+    });
+  }
+
+  async recordToolProof(input: { modelRevisionId: string; provenAt: string; sourceRevisionId: string }): Promise<void> {
+    this.database.transaction((connection) => {
+      connection.prepare(`INSERT INTO model_source_tool_proofs (source_revision_id, model_revision_id, proven_at)
+        VALUES (?, ?, ?) ON CONFLICT (source_revision_id, model_revision_id) DO NOTHING`).run(
+        input.sourceRevisionId, input.modelRevisionId, input.provenAt,
+      );
     });
   }
 

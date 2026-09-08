@@ -13,7 +13,7 @@ use tokio::{runtime::Runtime, sync::mpsc};
 use uuid::Uuid;
 
 use crate::{
-    network::{RemoteConnectionPath, address_from_ticket, connect},
+    network::{RemoteConnectionPath, address_from_ticket, connect_with_progress},
     protocol::{ClientMessage, HostMessage, TransportTicket},
 };
 
@@ -61,7 +61,14 @@ pub unsafe extern "C" fn joi_remote_controller_start(config_json: *const c_char)
     let (events_tx, events_rx) = mpsc::channel(64);
     let connection_id = config.connection_id;
     RUNTIME.spawn(async move {
-        let Ok(mut controller) = connect(address, &connection_id).await else {
+        #[cfg(target_os = "android")]
+        emit(&events_tx, json!({ "type": "diagnostic", "code": if ANDROID_CONTEXT.get().is_some() {
+            "androidContextReady"
+        } else { "androidContextMissing" } })).await;
+        let progress = |stage| {
+            let _ = events_tx.try_send(json!({ "type": "diagnostic", "stage": stage }).to_string());
+        };
+        let Ok(mut controller) = connect_with_progress(address, &connection_id, progress).await else {
             emit(&events_tx, json!({ "type": "error", "code": "connectFailed" })).await;
             return;
         };
@@ -83,7 +90,10 @@ pub unsafe extern "C" fn joi_remote_controller_start(config_json: *const c_char)
                             payload: frame,
                             request_id: Uuid::new_v4().to_string(),
                         }).await;
-                        if result.is_err() { break; }
+                        if result.is_err() {
+                            emit(&events_tx, json!({ "type": "error", "code": "sendFailed" })).await;
+                            break;
+                        }
                     }
                     Some(ControllerCommand::Close) | None => break,
                 },
@@ -95,7 +105,10 @@ pub unsafe extern "C" fn joi_remote_controller_start(config_json: *const c_char)
                         emit(&events_tx, json!({ "type": "event", "kind": kind, "payload": payload })).await;
                     }
                     Ok(HostMessage::Ready) => {}
-                    Err(_) => break,
+                    Err(_) => {
+                        emit(&events_tx, json!({ "type": "error", "code": "receiveFailed" })).await;
+                        break;
+                    },
                 },
                 _ = path_tick.tick() => {
                     let current_path = controller.path();

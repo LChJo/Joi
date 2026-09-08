@@ -1,7 +1,8 @@
 /* Pi hooks require Promise-returning callbacks. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent, generateSummary, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, ImageContent, Model, Models } from "@earendil-works/pi-ai";
+import type { Api, Context, ImageContent, Model, Models } from "@earendil-works/pi-ai";
+import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type {
@@ -77,8 +78,19 @@ interface PiReasoningRuntimeOptions {
 interface SessionRuntime {
   agent: Agent;
   current: StartReasoningTurnInput | undefined;
+  /** Whether the current Turn already delivered visible text or a tool call to the coordinator. */
+  delivered: { text: boolean; tool: boolean };
   metadata: Omit<JoiReasoningSessionSnapshot, "messages" | "updatedAt">;
 }
+
+/**
+ * Output headroom a Turn needs (thinking budget plus a visible answer). When the estimated
+ * context leaves less than this, pi-ai clamps max_tokens toward 1 and providers reject the
+ * request, so the session must be compacted before prompting instead of after the damage.
+ */
+const COMPACTION_OUTPUT_HEADROOM = 8_192;
+/** Progressively smaller tails tried when an overflowing session is compacted by token budget. */
+const COMPACTION_TAIL_STEPS = [32, 16, 8, 4, 2] as const;
 
 const DEFAULT_COMPACTION = {
   keepRecentMessages: 80,
@@ -188,6 +200,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     if (session.metadata.workbenchId !== input.workbenchId) throw new Error("reasoning_session_workbench_mismatch");
 
     session.current = input;
+    session.delivered = { text: false, tool: false };
     session.metadata = {
       workbenchId: input.workbenchId,
       compaction: session.metadata.compaction,
@@ -204,6 +217,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const turnTools = typeof this.#tools === "function" ? this.#tools(input) : this.#tools;
     if (typeof this.#tools === "function") validateToolNames(turnTools);
     session.agent.state.tools = turnTools;
+    // An overflowing context would clamp the request's max_tokens to 1 and make every provider
+    // call fail opaque; compact before prompting so the Turn starts inside the model window.
+    // The snapshot save stays with the post-turn checkpoint write.
+    await this.#compactIfNeeded(session);
     input.onEvent?.({ type: "turn_started", turnId: input.turnId });
     let promptError: unknown;
     try {
@@ -213,6 +230,20 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       await session.agent.prompt(input.prompt, turnImages);
     } catch (error) {
       promptError = error;
+    }
+    // A provider can kill a stream without any delivery (bad request, thinking-budget
+    // clashes, ...): the agent parks an empty assistant message with stopReason "error" and
+    // the Turn would otherwise be misreported as an empty answer or a missing tool call.
+    if (promptError === undefined && !session.delivered.text && !session.delivered.tool) {
+      const failed = [...session.agent.state.messages].reverse().find((message) => roleOf(message) === "assistant") as
+        | { errorMessage?: string; stopReason?: string }
+        | undefined;
+      if (failed?.stopReason === "error") {
+        promptError = Object.assign(
+          new Error((failed.errorMessage ?? "The reasoning stream failed without delivering content.").slice(0, 400)),
+          { code: "reasoning_stream_error" },
+        );
+      }
     }
     // A checkpoint failure must not mask the turn's true outcome: by this point the turn's
     // side effects are already committed, and reporting the save error as a turn failure would
@@ -287,7 +318,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       streamFn: this.#models.streamSimple.bind(this.#models),
       toolExecution: "parallel",
     });
-    const runtime: SessionRuntime = { agent, current: undefined, metadata };
+    const runtime: SessionRuntime = { agent, current: undefined, delivered: { text: false, tool: false }, metadata };
     agent.subscribe(async (event) => {
       this.#emit(runtime, event);
     });
@@ -296,9 +327,24 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   }
 
   async #compactAndSave(runtime: SessionRuntime): Promise<void> {
+    await this.#compactIfNeeded(runtime);
+    await this.#sessionStore.save({
+      ...runtime.metadata,
+      messages: runtime.agent.state.messages,
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  /** Compacts when the message count or the estimated token budget says the context is full. */
+  async #compactIfNeeded(runtime: SessionRuntime): Promise<void> {
     const currentMessages = runtime.agent.state.messages;
-    if (currentMessages.length > this.#compaction.maxMessages) {
-      const targetIndex = Math.max(1, currentMessages.length - this.#compaction.keepRecentMessages);
+    const overflow = !this.#headroomSatisfied(currentMessages);
+    if (!overflow && currentMessages.length <= this.#compaction.maxMessages) return;
+    // An overflowing session must also shrink its kept tail: the fixed recent-message window
+    // can itself exceed the model window, which is exactly what clamped max_tokens to 1.
+    const keep = overflow ? this.#fittingTailKeep(currentMessages) : this.#compaction.keepRecentMessages;
+    {
+      const targetIndex = Math.max(1, currentMessages.length - keep);
       let firstKeptIndex = targetIndex;
       while (firstKeptIndex > 0) {
         const candidate = currentMessages[firstKeptIndex];
@@ -345,14 +391,36 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         }, ...currentMessages.slice(firstKeptIndex)];
       }
     }
-    await this.#sessionStore.save({
-      ...runtime.metadata,
-      messages: runtime.agent.state.messages,
-      updatedAt: new Date().toISOString(),
-    });
+  }
+
+  /** True when the estimated context still leaves room for thinking plus a visible answer. */
+  #headroomSatisfied(messages: readonly AgentMessage[]): boolean {
+    if (this.#model.contextWindow <= 0) return true;
+    // Reuses pi-ai's own estimate and safety margin: if even a headroom-sized request gets
+    // clamped below the headroom, the next real request would be clamped as well.
+    const context = { messages: [...messages] } as unknown as Context;
+    return clampMaxTokensToContext(this.#model, context, COMPACTION_OUTPUT_HEADROOM) >= COMPACTION_OUTPUT_HEADROOM;
+  }
+
+  /** Smallest kept tail (summary checkpoint included) that restores the output headroom. */
+  #fittingTailKeep(messages: readonly AgentMessage[]): number {
+    const checkpoint: AgentMessage = {
+      content: `[joi session checkpoint]\n${"x".repeat(this.#compaction.maxSummaryCharacters)}`,
+      role: "user",
+      timestamp: 0,
+    };
+    for (const keep of COMPACTION_TAIL_STEPS) {
+      const tail = messages.slice(Math.max(1, messages.length - keep));
+      if (this.#headroomSatisfied([checkpoint, ...tail])) return keep;
+    }
+    return 2;
   }
 
   #emit(runtime: SessionRuntime, event: Parameters<Parameters<Agent["subscribe"]>[0]>[0]): void {
+    // Delivery is tracked before the onEvent guard: surfacing a killed stream must not
+    // depend on whether the coordinator attached a listener for this Turn.
+    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") runtime.delivered.text = true;
+    if (event.type === "tool_execution_start") runtime.delivered.tool = true;
     const active = runtime.current;
     if (active?.onEvent === undefined) return;
     let mapped: PrimaryReasoningEvent | undefined;

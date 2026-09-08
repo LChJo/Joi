@@ -199,6 +199,7 @@ async function startRuntime(): Promise<void> {
   await runtimeStack.actorTree.tick(clock.now());
   const remoteAccess = new RemoteAccessHost({
     clock,
+    diagnostics: runtimeDiagnostics,
     commands: new RemoteCommandService({ homeFeed: workbenchStack.joiHomeFeed, inbox: joiStack.joiInbox,
       queries: new RemoteHomeQueryService({ homeFeed: workbenchStack.joiHomeFeed, inputs: persistence.joiInboxRepository,
         agents: workbenchStack.workbenchAgents, workbenches: persistence.workbenches, partners: partnerStack.partners }),

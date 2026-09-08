@@ -96,6 +96,21 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
 }
 
 void main() {
+  testWidgets(
+    'reconnecting offers diagnostics instead of a misleading empty feed',
+    (tester) async {
+      final controller = FakeRemoteController(
+        const RemoteViewState(connection: RemoteConnectionState.reconnecting),
+      );
+      await tester.pumpWidget(JoiMobileApp(controller: controller));
+      expect(find.text('连接诊断'), findsOneWidget);
+      expect(find.text('暂时没有任务，和 joi 说点什么吧。'), findsNothing);
+      await tester.tap(find.text('连接诊断'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('remote-diag-1'), findsOneWidget);
+      expect(find.text('复制诊断'), findsOneWidget);
+    },
+  );
   testWidgets('connected portrait shell renders task cards and sends text', (
     tester,
   ) async {

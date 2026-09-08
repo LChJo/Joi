@@ -45,6 +45,7 @@ export interface RemoteTransportTicket {
 }
 
 export type RemotePeerTransportEvent =
+  | { code: string; type: "diagnostic" }
   | { connectionId: string; type: "peerOpen" }
   | { connectionId: string; frame: unknown; type: "peerFrame" }
   | { connectionId: string; type: "peerClose" }

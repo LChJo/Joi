@@ -11,7 +11,14 @@ const workbench = createWorkbench({
   taskContext: { activeWorkIds: [], summary: "" },
 });
 
-function coordinator(mode: "lookup" | "none" | "outcome", completed: string[], failed: string[], diagnostics: string[] = []) {
+interface ToolProofState {
+  proven: boolean;
+  recorded: { modelRevisionId: string; provenAt: string; sourceRevisionId: string }[];
+}
+
+const unproven = (): ToolProofState => ({ proven: false, recorded: [] });
+
+function coordinator(mode: "lookup" | "none" | "outcome", completed: string[], failed: string[], diagnostics: string[] = [], proof: ToolProofState = unproven()) {
   const runtime: PrimaryReasoningRuntime = {
     abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
     startTurn: async (turn) => {
@@ -27,10 +34,13 @@ function coordinator(mode: "lookup" | "none" | "outcome", completed: string[], f
     clock: new TestClock(), ids: new TestIds(),
     diagnostics: { emit: (event) => { diagnostics.push(event); } },
     router: { decide: async () => { throw new Error("pre-bound"); } }, runtime,
-    sources: { selectInitial: async (turnId) => ({
-      modelCapability: "custom-unverified-tools", modelId: "custom", modelRevisionId: "mr",
-      sourceId: "source", sourceRevisionId: "sr", turnId,
-    }) },
+    sources: {
+      recordToolProof: async (input) => { proof.recorded.push(input); proof.proven = true; },
+      selectInitial: async (turnId) => ({
+        modelCapability: "custom-unverified-tools" as const, modelId: "custom", modelRevisionId: "mr",
+        sourceId: "source", sourceRevisionId: "sr", toolCapabilityProven: proof.proven, turnId,
+      }),
+    },
     store: {
       completeInput: async (inputId) => { completed.push(inputId); }, createTurn: async () => undefined,
       failTurn: async (inputId) => { failed.push(inputId); },
@@ -48,6 +58,20 @@ describe("custom model tool capability gate", () => {
     expect(failed).toEqual(["input"]);
     await coordinator("outcome", completed, failed).handle("input");
     expect(completed).toEqual(["input"]);
+  });
+
+  it("records the tool proof once demonstrated and lets later direct answers through", async () => {
+    const completed: string[] = [];
+    const failed: string[] = [];
+    const proof = unproven();
+    await coordinator("outcome", completed, failed, [], proof).handle("input");
+    expect(completed).toEqual(["input"]);
+    expect(proof.recorded).toMatchObject([{ modelRevisionId: "mr", sourceRevisionId: "sr" }]);
+    expect(proof.proven).toBe(true);
+    // A later greeting Turn answers directly with zero tool calls: proven capability must not fail closed.
+    await coordinator("none", completed, failed, [], proof).handle("input");
+    expect(completed).toEqual(["input", "input"]);
+    expect(failed).toEqual([]);
   });
 
   it("does not consume an input when both the original and repair attempt use lookup tools only", async () => {

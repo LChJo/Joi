@@ -399,6 +399,10 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                                WHERE live_review.input_id = r.input_id
                                  AND live_review.status IN ('PENDING', 'RUNNING', 'WAITING'))
             ))
+           AND NOT (m.status = 'CLEARED' AND g.status = 'CONSUMED'
+             AND g.failed_at IS NULL AND g.failure_reason_code IS NULL AND g.failure_count IS NULL
+             AND g.clarification_reason_code IS NULL AND g.clarification_prompt IS NULL
+             AND (r.input_id IS NULL OR r.status = 'CONSUMED'))
          ORDER BY m.updated_at, m.goal_input_id LIMIT 20`).all() as Row[];
       return candidates.map((row): HarnessReviewRecoveryCandidate => {
         const reviewInput = optionalText(row, "review_input_id");
@@ -668,21 +672,29 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                               WHERE w.input_id = m.goal_input_id
                                 AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`).get(goalInputId);
         if (safe === undefined) return null;
-        connection.prepare(`UPDATE joi_harness_maps
+        const cleared = connection.prepare(`UPDATE joi_harness_maps
           SET status = 'CLEARED', cleared_at = COALESCE(cleared_at, ?), revision = revision + 1, updated_at = ?
           WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, now, goalInputId);
-        connection.prepare(`UPDATE joi_inbox_messages
+        // Only touch rows that actually change: an already CLEARED map with clean inbox rows
+        // must not bump updated_at again, or every actor tick re-sorts the home feed.
+        const goalCleaned = connection.prepare(`UPDATE joi_inbox_messages
           SET status = 'CONSUMED', failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
               clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
-          WHERE input_id = ? AND (status = 'CONSUMED' OR
-            (status = 'CLARIFICATION_REQUIRED' AND clarification_reason_code = 'harness_review_unrecoverable'))`).run(now, goalInputId);
-        connection.prepare(`UPDATE joi_inbox_messages
+          WHERE input_id = ? AND (
+            (status = 'CLARIFICATION_REQUIRED' AND clarification_reason_code = 'harness_review_unrecoverable')
+            OR (status = 'CONSUMED' AND (failed_at IS NOT NULL OR failure_reason_code IS NOT NULL
+              OR failure_count IS NOT NULL OR clarification_reason_code IS NOT NULL OR clarification_prompt IS NOT NULL)))`).run(now, goalInputId);
+        const reviewCleaned = connection.prepare(`UPDATE joi_inbox_messages
           SET status = 'CONSUMED', failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
               clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
-          WHERE input_id = ? AND status IN ('PENDING', 'FAILED', 'CLARIFICATION_REQUIRED', 'ROUTED', 'CONSUMED')
+          WHERE input_id = ? AND (
+            status IN ('PENDING', 'FAILED', 'CLARIFICATION_REQUIRED', 'ROUTED')
+            OR (status = 'CONSUMED' AND (failed_at IS NOT NULL OR failure_reason_code IS NOT NULL
+              OR failure_count IS NOT NULL OR clarification_reason_code IS NOT NULL OR clarification_prompt IS NOT NULL)))
             AND NOT EXISTS (SELECT 1 FROM joi_turns t
                             WHERE t.input_id = joi_inbox_messages.input_id
                               AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))`).run(now, reviewId);
+        if (Number(cleared.changes) + Number(goalCleaned.changes) + Number(reviewCleaned.changes) === 0) return null;
         return { action: "AUTO_CLEARED" as const };
       }
 

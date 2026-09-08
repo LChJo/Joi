@@ -41,7 +41,8 @@ impl Drop for Controller {
     }
 }
 
-async fn next_frame(controller: &Controller) -> Value {
+async fn next_frame(controller: &Controller, expect_progress: bool) -> Value {
+    let mut stages = Vec::new();
     loop {
         let pointer = joi_remote_controller_poll(controller.0);
         if !pointer.is_null() {
@@ -52,7 +53,41 @@ async fn next_frame(controller: &Controller) -> Value {
                 result.unwrap()
             };
             match value["type"].as_str() {
-                Some("frame") => return value["frame"].clone(),
+                Some("diagnostic") => {
+                    assert!(
+                        value
+                            .as_object()
+                            .unwrap()
+                            .keys()
+                            .all(|key| ["type", "stage", "code"].contains(&key.as_str()))
+                    );
+                    if let Some(stage) = value["stage"].as_str() {
+                        assert!(
+                            [
+                                "endpointBind",
+                                "endpointDial",
+                                "streamOpen",
+                                "transportHello"
+                            ]
+                            .contains(&stage)
+                        );
+                        stages.push(stage.to_owned());
+                    }
+                }
+                Some("frame") => {
+                    if expect_progress {
+                        assert_eq!(
+                            stages,
+                            [
+                                "endpointBind",
+                                "endpointDial",
+                                "streamOpen",
+                                "transportHello"
+                            ]
+                        );
+                    }
+                    return value["frame"].clone();
+                }
                 Some("error" | "disconnected") => panic!("controller lost fragmented frame"),
                 _ => {}
             }
@@ -105,10 +140,10 @@ async fn ffi_fragment(split: usize, interrupt_by_send: bool) {
             sleep(Duration::from_millis(2200)).await;
         }
         send.write_all(&response[split..]).await.unwrap();
-        assert_eq!(next_frame(&controller).await, json!({"probe": 1}));
+        assert_eq!(next_frame(&controller, true).await, json!({"probe": 1}));
         // A second complete frame verifies state reset and framing alignment.
         send.write_all(&response).await.unwrap();
-        assert_eq!(next_frame(&controller).await, json!({"probe": 1}));
+        assert_eq!(next_frame(&controller, false).await, json!({"probe": 1}));
         // Closing must remain responsive even with another incomplete frame.
         send.write_all(&response[..split]).await.unwrap();
         sleep(Duration::from_millis(100)).await;

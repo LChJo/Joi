@@ -32,6 +32,7 @@ pub struct RemoteHostTransport {
     configured_relay: Option<RelayUrl>,
     peers: Arc<Mutex<HashMap<String, mpsc::Sender<HostMessage>>>>,
     requests: Mutex<mpsc::Receiver<HostRequest>>,
+    diagnostics: Mutex<mpsc::Receiver<&'static str>>,
 }
 
 impl RemoteHostTransport {
@@ -63,12 +64,14 @@ impl RemoteHostTransport {
         let endpoint = builder.bind().await.context("bind Joi host endpoint")?;
         let peers = Arc::new(Mutex::new(HashMap::new()));
         let (request_tx, request_rx) = mpsc::channel(64);
-        spawn_accept_loop(endpoint.clone(), peers.clone(), request_tx);
+        let (diagnostic_tx, diagnostic_rx) = mpsc::channel(64);
+        spawn_accept_loop(endpoint.clone(), peers.clone(), request_tx, diagnostic_tx);
         Ok(Self {
             endpoint,
             configured_relay,
             peers,
             requests: Mutex::new(request_rx),
+            diagnostics: Mutex::new(diagnostic_rx),
         })
     }
 
@@ -88,6 +91,10 @@ impl RemoteHostTransport {
 
     pub async fn next_request(&self) -> Option<HostRequest> {
         self.requests.lock().await.recv().await
+    }
+
+    pub async fn next_diagnostic(&self) -> Option<&'static str> {
+        self.diagnostics.lock().await.recv().await
     }
 
     pub async fn send_to(&self, device_id: &str, message: HostMessage) -> Result<()> {
@@ -163,6 +170,14 @@ pub async fn connect(
     address: EndpointAddr,
     connection_id: &str,
 ) -> Result<RemoteControllerTransport> {
+    connect_with_progress(address, connection_id, |_| {}).await
+}
+
+pub(crate) async fn connect_with_progress(
+    address: EndpointAddr,
+    connection_id: &str,
+    progress: impl Fn(&'static str),
+) -> Result<RemoteControllerTransport> {
     let relay_map: RelayMap = address
         .relay_urls()
         .cloned()
@@ -172,18 +187,22 @@ pub async fn connect(
     if !relay_map.is_empty() {
         builder = builder.relay_mode(RelayMode::Custom(relay_map));
     }
+    progress("endpointBind");
     let endpoint = builder
         .bind()
         .await
         .context("bind Joi test controller endpoint")?;
+    progress("endpointDial");
     let connection = endpoint
         .connect(address, JOI_REMOTE_ALPN)
         .await
         .context("connect Joi test controller")?;
+    progress("streamOpen");
     let (mut send, recv) = connection
         .open_bi()
         .await
         .context("open Joi control stream")?;
+    progress("transportHello");
     write_frame(
         &mut send,
         &ClientMessage::Hello {
@@ -248,25 +267,34 @@ fn spawn_accept_loop(
     endpoint: Endpoint,
     peers: Arc<Mutex<HashMap<String, mpsc::Sender<HostMessage>>>>,
     requests: mpsc::Sender<HostRequest>,
+    diagnostics: mpsc::Sender<&'static str>,
 ) {
     tokio::spawn(async move {
         while let Some(incoming) = endpoint.accept().await {
             let peers = peers.clone();
             let requests = requests.clone();
+            let diagnostics = diagnostics.clone();
             tokio::spawn(async move {
                 let Ok(connection) = incoming.await else {
+                    let _ = diagnostics.try_send("quicFailed");
                     return;
                 };
+                let _ = diagnostics.try_send("quicAccepted");
                 let Ok((send, mut recv)) = connection.accept_bi().await else {
+                    let _ = diagnostics.try_send("streamFailed");
                     return;
                 };
+                let _ = diagnostics.try_send("streamAccepted");
                 let mut reader = FrameReader::default();
                 let Ok(ClientMessage::Hello { device_id }) = reader.read(&mut recv).await else {
+                    let _ = diagnostics.try_send("helloInvalid");
                     return;
                 };
                 if device_id.is_empty() || device_id.len() > 160 {
+                    let _ = diagnostics.try_send("helloInvalid");
                     return;
                 }
+                let _ = diagnostics.try_send("helloAccepted");
                 let (outbound_tx, mut outbound_rx) = mpsc::channel(32);
                 peers.lock().await.insert(device_id.clone(), outbound_tx);
                 let mut send = send;
@@ -296,6 +324,7 @@ fn spawn_accept_loop(
                     }
                 }
                 peers.lock().await.remove(&device_id);
+                let _ = diagnostics.try_send("streamClosed");
                 let _ = requests
                     .send(HostRequest {
                         device_id,

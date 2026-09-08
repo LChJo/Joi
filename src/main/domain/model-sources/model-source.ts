@@ -35,6 +35,8 @@ export interface ModelSource {
   createdAt: string;
   sourceId: string;
   status: ModelSourceStatus;
+  /** Set once the active revision pair demonstrated structured tool calling in a real Turn. */
+  toolProofAt?: string;
   updatedAt: string;
 }
 
@@ -127,6 +129,8 @@ export interface ModelSourceTurnPin {
   modelRevisionId: string;
   sourceId: string;
   sourceRevisionId: string;
+  /** True once this revision pair demonstrated structured tool calling; the first-Turn gate no longer applies. Absent means unproven. */
+  toolCapabilityProven?: boolean;
   turnId: string;
 }
 
@@ -137,6 +141,7 @@ export function pinModelSourceForTurn(source: ModelSource, turnId: string): Mode
     modelRevisionId: source.activeModelRevision.modelRevisionId,
     sourceId: source.sourceId,
     sourceRevisionId: source.activeSourceRevision.sourceRevisionId,
+    toolCapabilityProven: source.toolProofAt !== undefined,
     turnId: required(turnId, "joi_turn_id_invalid"),
   };
 }

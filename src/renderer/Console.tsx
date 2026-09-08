@@ -63,6 +63,7 @@ function remoteStatusLabel(status: "connected" | "connecting" | "disabled" | "er
 }
 
 export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false);
   const [status, setStatus] = useState<Awaited<ReturnType<DigitalLifeApi["remoteAccessStatus"]>> | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => {
@@ -75,18 +76,18 @@ export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
     return () => clearTimeout(timer);
   }, [load]);
   useEffect(() => {
-    if (status?.enabled !== true || status.status === "connected") return;
+    if (status?.enabled !== true || (status.status === "connected" && !diagnosticsOpen)) return;
     let refreshing = false;
     const timer = setInterval(() => {
       if (refreshing) return;
       refreshing = true;
       void load()
-        .then((next) => { if (next.status === "connected") setNotice("Joi 手机链路已就绪。"); })
+        .then((next) => { if (status.status !== "connected" && next.status === "connected") setNotice("Joi 手机链路已就绪。"); })
         .catch(() => setNotice("没能读取远程连接状态。"))
         .finally(() => { refreshing = false; });
     }, REMOTE_STATUS_REFRESH_MS);
     return () => clearInterval(timer);
-  }, [load, status?.enabled, status?.status]);
+  }, [load, status?.enabled, status?.status, diagnosticsOpen]);
   const save = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const formElement = event.currentTarget;
@@ -124,6 +125,11 @@ export function RemoteAccessSettings({ api }: { api: DigitalLifeApi }) {
       {status.pairing === undefined ? null : <div className="remote-pairing"><div aria-label="Joi Android App 绑定二维码"><QRCodeSVG bgColor="transparent" fgColor="currentColor" level="M" marginSize={2} size={184} value={status.pairing.qrUrl} /></div><div><strong>在 Joi App 中扫码</strong><span>{new Date(status.pairing.expiresAt).toLocaleTimeString()} 前有效 · 仅可绑定一次</span><small>配对密钥只存在于二维码与两端安全存储中，中继无法读取会话内容。</small></div></div>}
       {status.devices.length === 0 ? <small>还没有绑定手机。</small> : <div className="remote-device-list">{status.devices.map((device) => <div key={device.deviceId}><span><strong>{device.name}</strong><small>最近连接 {new Date(device.lastSeenAt).toLocaleString()}</small></span><button aria-label={`移除 ${device.name}`} className="icon-button danger" onClick={() => void revoke(device.deviceId)} type="button"><TrashIcon aria-hidden /></button></div>)}</div>}
     </>}
+    {status?.diagnostics === undefined ? null : <details onToggle={(event) => setDiagnosticsOpen(event.currentTarget.open)}><summary>连接诊断（最近 50 条）</summary>
+      <small>仅记录阶段和错误码，不含二维码或消息。主机就绪不代表手机已连接。</small>
+      {status.diagnostics.length === 0 ? <p>本次运行尚无连接记录。</p> : <ol>{status.diagnostics.map((entry) =>
+        <li key={entry.sequence}><time>{new Date(entry.at).toLocaleTimeString()}</time> · {entry.code}</li>)}</ol>}
+    </details>}
     {notice === null ? null : <div className="remote-settings-notice" role="status">{notice}</div>}
   </div></section>;
 }

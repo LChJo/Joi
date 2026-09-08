@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'connection_diagnostics.dart';
 
 enum RemoteConnectionState {
   unpaired,
@@ -106,6 +107,7 @@ class RemoteViewState {
     this.partners = const [],
     this.busyGoals = const {},
     this.notice,
+    this.diagnostics = const ConnectionDiagnostics(),
   });
 
   final RemoteConnectionState connection;
@@ -117,6 +119,7 @@ class RemoteViewState {
   final List<RemoteChoice> partners;
   final Set<String> busyGoals;
   final String? notice;
+  final ConnectionDiagnostics diagnostics;
   RemoteViewState copyWith({
     RemoteConnectionState? connection,
     List<RemoteGoalCard>? goals,
@@ -128,6 +131,7 @@ class RemoteViewState {
     Set<String>? busyGoals,
     String? notice,
     bool clearNotice = false,
+    ConnectionDiagnostics? diagnostics,
   }) => RemoteViewState(
     connection: connection ?? this.connection,
     goals: goals ?? this.goals,
@@ -138,6 +142,7 @@ class RemoteViewState {
     partners: partners ?? this.partners,
     busyGoals: busyGoals ?? this.busyGoals,
     notice: clearNotice ? null : notice ?? this.notice,
+    diagnostics: diagnostics ?? this.diagnostics,
   );
 }
 

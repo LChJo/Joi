@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import type { ModelSourceRecord } from "../../src/main/application/ports/model-source-ports.js";
-import { createModelSource } from "../../src/main/domain/model-sources/model-source.js";
+import { createModelSource, reviseModelSource } from "../../src/main/domain/model-sources/model-source.js";
 import { SqliteModelSourceRepository } from "../../src/main/infrastructure/persistence/sqlite-model-source-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 
@@ -44,6 +44,35 @@ describe("SqliteModelSourceRepository", () => {
       source.source.activeSourceRevision.kind = "qwen";
       await new SqliteModelSourceRepository(database).create(source);
       expect((await new SqliteModelSourceRepository(database).get("token-plan"))?.source.activeSourceRevision.accessMode).toBe("token-plan");
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("remembers a tool capability proof for the active revision pair only", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-tool-proof-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      database.transaction((connection) => connection.prepare(`INSERT INTO model_source_credentials
+        (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES (?, 'api_key', ?, 1, ?)`)
+        .run("joi-source:proof", new Uint8Array([1]), "2026-08-02T12:00:00.000Z"));
+      const repository = new SqliteModelSourceRepository(database);
+      await repository.create(record("proof", 0));
+      expect((await repository.get("proof"))?.source.toolProofAt).toBeUndefined();
+      await repository.recordToolProof({ modelRevisionId: "model-proof", provenAt: "2026-08-06T10:00:00.000Z", sourceRevisionId: "revision-proof" });
+      await repository.recordToolProof({ modelRevisionId: "model-proof", provenAt: "2026-08-06T11:00:00.000Z", sourceRevisionId: "revision-proof" });
+      expect((await repository.get("proof"))?.source.toolProofAt).toBe("2026-08-06T10:00:00.000Z");
+      const current = await repository.get("proof");
+      if (current === null) throw new Error("source missing");
+      await repository.revise({
+        ...current,
+        source: reviseModelSource(current.source, {
+          credentialVersion: 2, modelCapability: "release-tested", modelId: "kimi-k2.5",
+          modelRevisionId: "model-proof-2", sourceRevisionId: "revision-proof-2", updatedAt: "2026-08-06T12:00:00.000Z",
+        }),
+      });
+      expect((await repository.get("proof"))?.source.toolProofAt).toBeUndefined();
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

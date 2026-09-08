@@ -85,7 +85,9 @@ export class IrohSidecarTransport implements RemotePeerTransport {
           if (!settled) { settled = true; clearTimeout(startTimer); resolve(event.ticket); }
           return;
         }
-        if (event.type === "peerOpen" && typeof event.connectionId === "string") {
+        if (event.type === "diagnostic" && typeof event.code === "string") {
+          this.#emit({ code: event.code, type: "diagnostic" });
+        } else if (event.type === "peerOpen" && typeof event.connectionId === "string") {
           this.#emit({ connectionId: event.connectionId, type: "peerOpen" });
         } else if (event.type === "peerFrame" && typeof event.connectionId === "string") {
           this.#emit({ connectionId: event.connectionId, frame: event.frame, type: "peerFrame" });

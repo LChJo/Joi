@@ -5,7 +5,7 @@ import type { Clock } from "../ports/runtime-store.js";
 import { classifyHttp403Detail } from "../partners/partner-run-failure.js";
 
 type SourcePin = ReturnType<typeof pinModelSourceForTurn>;
-type SelectorRepository = Pick<ModelSourceRepository, "list"> & Partial<Pick<ModelSourceRepository, "get" | "save" | "saveHealthIfCurrent">>;
+type SelectorRepository = Pick<ModelSourceRepository, "list"> & Partial<Pick<ModelSourceRepository, "get" | "recordToolProof" | "save" | "saveHealthIfCurrent">>;
 
 export class ReasoningSourceSelector {
   readonly #probes = new Map<string, Promise<ModelSourceRecord | undefined>>();
@@ -79,6 +79,11 @@ export class ReasoningSourceSelector {
     return null;
   }
 
+  /** Persists that the pinned revision pair demonstrated structured tool calling, so later Turns skip the first-Turn gate. */
+  async recordToolProof(input: { modelRevisionId: string; provenAt: string; sourceRevisionId: string }): Promise<void> {
+    await this.repository.recordToolProof?.(input);
+  }
+
   async #readySources(): Promise<ModelSourceRecord[]> {
     return (await this.repository.list())
       .filter((record) => record.source.status === "READY")
@@ -149,6 +154,7 @@ function withoutHealthText(record: ModelSourceRecord): Omit<ModelSourceRecord, "
     order: record.order,
     ...(record.presetVersion === undefined ? {} : { presetVersion: record.presetVersion }),
     primary: record.primary,
+    // The proof lives inside source, so it survives health rebuilds automatically.
     source: record.source,
   };
 }
