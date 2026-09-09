@@ -13,7 +13,7 @@ use tokio::{runtime::Runtime, sync::mpsc};
 use uuid::Uuid;
 
 use crate::{
-    network::{RemoteConnectionPath, address_from_ticket, connect_with_progress},
+    network::{ControllerConnector, RemoteConnectionPath, address_from_ticket, network_error_code},
     protocol::{ClientMessage, HostMessage, TransportTicket},
 };
 
@@ -25,6 +25,7 @@ static RUNTIME: LazyLock<Runtime> =
 static CONTROLLERS: LazyLock<Mutex<HashMap<u64, ControllerHandle>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 static NEXT_HANDLE: AtomicU64 = AtomicU64::new(1);
+static CONNECTOR: LazyLock<ControllerConnector> = LazyLock::new(ControllerConnector::default);
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -35,10 +36,10 @@ struct ControllerConfig {
 
 enum ControllerCommand {
     Send(Value),
-    Close,
 }
 
 struct ControllerHandle {
+    task: tokio::task::AbortHandle,
     commands: mpsc::Sender<ControllerCommand>,
     events: Mutex<mpsc::Receiver<String>>,
 }
@@ -60,17 +61,22 @@ pub unsafe extern "C" fn joi_remote_controller_start(config_json: *const c_char)
     let (commands_tx, mut commands_rx) = mpsc::channel(32);
     let (events_tx, events_rx) = mpsc::channel(64);
     let connection_id = config.connection_id;
-    RUNTIME.spawn(async move {
+    let task = RUNTIME.spawn(async move {
+        emit(&events_tx, json!({ "type": "diagnostic", "code": "nativeDiagnosticsV3" })).await;
         #[cfg(target_os = "android")]
         emit(&events_tx, json!({ "type": "diagnostic", "code": if ANDROID_CONTEXT.get().is_some() {
             "androidContextReady"
         } else { "androidContextMissing" } })).await;
         let progress = |stage| {
-            let _ = events_tx.try_send(json!({ "type": "diagnostic", "stage": stage }).to_string());
+            let key = if matches!(stage, "endpointBind" | "endpointDial" | "endpointRetry" | "endpointRelayWait" | "streamOpen" | "transportHello") { "stage" } else { "code" };
+            let _ = events_tx.try_send(json!({ "type": "diagnostic", (key): stage }).to_string());
         };
-        let Ok(mut controller) = connect_with_progress(address, &connection_id, progress).await else {
-            emit(&events_tx, json!({ "type": "error", "code": "connectFailed" })).await;
-            return;
+        let mut controller = match CONNECTOR.connect(address, &connection_id, progress).await {
+            Ok(controller) => controller,
+            Err(error) => {
+                emit(&events_tx, json!({ "type": "error", "code": network_error_code(error.as_ref()) })).await;
+                return;
+            }
         };
         let path = match controller.path() {
             RemoteConnectionPath::Direct => "direct",
@@ -95,7 +101,7 @@ pub unsafe extern "C" fn joi_remote_controller_start(config_json: *const c_char)
                             break;
                         }
                     }
-                    Some(ControllerCommand::Close) | None => break,
+                    None => break,
                 },
                 response = controller.recv() => match response {
                     Ok(HostMessage::Response { payload, .. }) => {
@@ -129,11 +135,13 @@ pub unsafe extern "C" fn joi_remote_controller_start(config_json: *const c_char)
     });
     let handle = NEXT_HANDLE.fetch_add(1, Ordering::Relaxed);
     let Ok(mut controllers) = CONTROLLERS.lock() else {
+        task.abort();
         return 0;
     };
     controllers.insert(
         handle,
         ControllerHandle {
+            task: task.abort_handle(),
             commands: commands_tx,
             events: Mutex::new(events_rx),
         },
@@ -189,7 +197,7 @@ pub extern "C" fn joi_remote_controller_close(handle: u64) {
         return;
     };
     if let Some(controller) = controllers.remove(&handle) {
-        let _ = controller.commands.try_send(ControllerCommand::Close);
+        controller.task.abort();
     }
 }
 
@@ -215,6 +223,59 @@ fn c_string(value: *const c_char) -> Option<String> {
 async fn emit(events: &mpsc::Sender<String>, value: Value) {
     if let Ok(event) = serde_json::to_string(&value) {
         let _ = events.send(event).await;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn closing_a_dial_aborts_the_native_task() {
+        let address = iroh::EndpointAddr::new(iroh::SecretKey::generate().public())
+            .with_ip_addr("127.0.0.1:9".parse().unwrap());
+        let config = CString::new(json!({ "connectionId": "cancel-test", "ticket": crate::network::ticket_from_address(&address) }).to_string()).unwrap();
+        let handle = unsafe { joi_remote_controller_start(config.as_ptr()) };
+        assert_ne!(handle, 0);
+        let task = CONTROLLERS
+            .lock()
+            .unwrap()
+            .get(&handle)
+            .unwrap()
+            .task
+            .clone();
+        RUNTIME.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(3), async {
+                loop {
+                    let event = joi_remote_controller_poll(handle);
+                    if !event.is_null() {
+                        let text = unsafe { CStr::from_ptr(event) }
+                            .to_str()
+                            .unwrap()
+                            .to_owned();
+                        unsafe { joi_remote_string_free(event) };
+                        if text.contains("endpointDial") {
+                            break;
+                        }
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("task must enter dial before cancellation");
+        });
+        assert!(!task.is_finished());
+        joi_remote_controller_close(handle);
+        RUNTIME.block_on(async {
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                while !task.is_finished() {
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("close must cancel dial immediately");
+        });
+        assert!(joi_remote_controller_poll(handle).is_null());
     }
 }
 

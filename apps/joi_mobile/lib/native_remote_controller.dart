@@ -360,7 +360,9 @@ class NativeRemoteController extends ChangeNotifier
     );
     final generation = _generation;
     _record(stage: ConnectionStage.nativeConnect, newAttempt: true);
-    _handshakeTimer = Timer(const Duration(seconds: 15), () {
+    // Native: three bounded dials plus relay readiness (at most 28s),
+    // with headroom for bind/stream setup. Application handshake gets its own budget.
+    _handshakeTimer = Timer(const Duration(seconds: 45), () {
       if (generation == _generation) {
         _handleDisconnect(
           code: _handshakeSent ? 'handshakeTimeout' : 'nativeConnectTimeout',
@@ -663,6 +665,13 @@ class NativeRemoteController extends ChangeNotifier
       return;
     }
     if (event.type == 'connected') {
+      _handshakeTimer?.cancel();
+      final handshakeGeneration = _generation;
+      _handshakeTimer = Timer(const Duration(seconds: 15), () {
+        if (handshakeGeneration == _generation) {
+          _handleDisconnect(code: 'handshakeTimeout');
+        }
+      });
       _record(stage: ConnectionStage.handshake);
       final credential = _credential;
       if (credential == null) return;

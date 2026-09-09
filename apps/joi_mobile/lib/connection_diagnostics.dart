@@ -3,6 +3,8 @@ enum ConnectionStage {
   nativeConnect,
   endpointBind,
   endpointDial,
+  endpointRetry,
+  endpointRelayWait,
   streamOpen,
   transportHello,
   handshake,
@@ -17,6 +19,8 @@ String stageLabel(ConnectionStage stage) => const {
   ConnectionStage.nativeConnect: '启动原生连接',
   ConnectionStage.endpointBind: '创建网络端点',
   ConnectionStage.endpointDial: '连接电脑（直连/中继）',
+  ConnectionStage.endpointRetry: '复用网络端点重拨',
+  ConnectionStage.endpointRelayWait: '等待中继就绪',
   ConnectionStage.streamOpen: '打开控制通道',
   ConnectionStage.transportHello: '发送传输握手',
   ConnectionStage.handshake: '验证配对/恢复握手',
@@ -30,6 +34,27 @@ String stageLabel(ConnectionStage stage) => const {
 String safeConnectionCode(String? value) =>
     const {
       'connectFailed',
+      'nativeDiagnosticsV2',
+      'nativeDiagnosticsV3',
+      'endpointAvailable',
+      'relayReady',
+      'relayReadyTimeout',
+      'quicTimedOut',
+      'quicReset',
+      'quicLocallyClosed',
+      'quicVersionMismatch',
+      'quicCidsExhausted',
+      'quicPeerApplicationClosed',
+      'quicPeerTransportClosed',
+      'quicTransportError',
+      'quicAuthenticationFailed',
+      'quicLocallyRejected',
+      'quicUnknownError',
+      'quicTlsNoApplicationProtocol',
+      'quicTlsHandshakeFailure',
+      'quicTlsProtocolVersion',
+      'quicTlsCertificateRejected',
+      'quicTlsAlert',
       'receiveFailed',
       'sendFailed',
       'nativeStartFailed',
@@ -91,7 +116,7 @@ class ConnectionDiagnostics {
   }
 
   String get summary =>
-      'joi remote-diag-1\n阶段：${stageLabel(stage)}\n'
+      'joi remote-diag-3\n阶段：${stageLabel(stage)}\n'
       '握手：${pairing ? '首次配对 pair' : '恢复连接 resume'}\n'
       '尝试：$attempt\n最近失败：${lastFailure ?? '无'}\n${history.join('\n')}';
 }

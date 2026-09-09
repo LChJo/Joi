@@ -84,15 +84,23 @@ JOI_RELAY_SMOKE_URL=https://cudex.joilab.top cargo test --manifest-path native/j
 
 两条命令都通过，才表示 Joi 默认中继可用且 Codux 兼容入口未被破坏。
 
-## 手机持续重连：两端诊断（remote-diag-1）
+## 手机持续重连：两端诊断（remote-diag-3）
 
-1. 重新构建并安装两端（APK 必须重建 Rust 动态库，不能只更新 Dart）。手机点击“连接诊断”应看到 `remote-diag-1`；未看到则不是带诊断的版本。
+1. 重新构建并安装两端（APK 必须重建 Rust 动态库，不能只更新 Dart）。手机点击“连接诊断”应看到 `remote-diag-3`，记录包含 `nativeDiagnosticsV3`；前者确认 Dart、后者确认 Rust 连接策略版本。
 2. 桌面打开“设置 → 手机连接 → 连接诊断”，保持页面打开，重新生成二维码，用手机扫码一次，等待一次失败后立即在手机点击“复制诊断”。不要分享二维码或连接码。
 3. 对照两端的时间：手机 `endpointDial + nativeConnectTimeout/connectFailed` 且桌面没有 `quicAccepted`，优先检查实际网络、端点地址与中继；有 `quicAccepted` 但无 `helloAccepted` 则检查传输流；有 `handshakeReceived` 后出现 `pairingUnavailable/deviceUnavailable/proofInvalid`，则检查配对/恢复与证明；`handshakeReady` 后手机 `hostProofInvalid/credentialWriteFailed`，则聚焦手机验证/安全存储；`firstCommandReceived` 后失败再检查业务协议。
 4. `androidContextMissing` 表示开始连接时尚未安装 Android 原生网络上下文，需要检查 Android 初始化；它不是公网不可达的证明。`transportReady` 仅表示桌面传输已启动，不表示手机在线。
 5. 桌面记录写入用户数据目录的 `diagnostics/joi-flow.jsonl`（沿用 2 MiB × 3 文件轮转），事件名 `joi.remote.connection`。只提取该事件的 `at/code/sequence`；不要上传完整用户数据目录、remote-access.json 或其他业务日志。
 
 手机只保留本次进程最近 40 条阶段记录及最近失败，重启后清空；桌面设置显示当前运行最近 50 条，历史在轮转日志。记录只有时间、阶段、计数、固定错误码，未知错误不输出原文。先留证据再重启；这些信息用于缩小故障范围，不能仅凭“重连中”断定根因。
+
+第二版桌面在等待入站握手前记录 `quicIncoming`，`quicFailed` 或 `streamFailed` 后紧跟类型化原因：`quicTimedOut`（底层超时）、`quicReset`、`quicLocallyClosed`、`quicPeerApplicationClosed`、`quicPeerTransportClosed`、`quicVersionMismatch`、`quicTransportError`、`quicAuthenticationFailed`。TLS alert 分为 `quicTlsNoApplicationProtocol`、`quicTlsHandshakeFailure`、`quicTlsProtocolVersion`、`quicTlsCertificateRejected` 和其他 `quicTlsAlert`；无法识别为 `quicUnknownError`。TLS 类别可能来自本地或对端报告，不等于已查明具体故障设备；绝不输出对端 reason 或异常原文。
+
+第三版控制端缓存一个 relay 配置对应的 Endpoint，pair/resume 与重连复用其网络身份；切换配置或全部重拨失败后淘汰缓存，现存连接不被其他连接关闭。首先直接拨号（6 秒），失败后在同一端点等待 relay online（最多 4 秒），随后重拨（6 秒、8 秒，两次重拨前均有最多 4 秒就绪等待）。这保留了中继离线时立即使用局域网的能力，最长拨号/就绪预算 28 秒；并非按同网段猜测可达性，也不强制所有连接走中继。
+
+`endpointRetry` 表示同端点重拨，`endpointRelayWait` 表示等待中继，`relayReady/relayReadyTimeout` 区分等待结果；每次拨号失败记录类型化原因。`quicTimedOut` 也可表示本次有界拨号超时，不代表路由器已被定位为故障。Flutter 原生连接预算改为 45 秒，连接成功后另给应用握手 15 秒，首配总计两分钟保持不变。关闭 FFI 句柄会取消正在拨号的任务，不再等连接返回才消费 Close。
+
+一次扫码后保持前台约 60 秒，复制手机诊断并保存电脑对应记录；并发尝试没有跨端关联 ID，不能只按行号一一配对。必须分别复验普通局域网 direct、蜂窝 relay、隔离访客 Wi-Fi relay。自动化中“首拨被挂起后重拨成功”和公网测试不能代替最后一项真机验收。
 
 ## 当前部署与回滚
 

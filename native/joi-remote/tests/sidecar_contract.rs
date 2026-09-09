@@ -62,6 +62,7 @@ impl Sidecar {
                 assert_eq!(event.as_object().unwrap().len(), 2);
                 assert!(
                     [
+                        "quicIncoming",
                         "quicAccepted",
                         "quicFailed",
                         "streamAccepted",
@@ -106,7 +107,7 @@ async fn desktop_camel_case_commands_and_peer_events_match_real_sidecar() {
         .expect("connect timeout")
         .expect("connect phone");
     // Evidence must precede the first application frame, not just successful pairing.
-    for code in ["quicAccepted", "streamAccepted", "helloAccepted"] {
+    for code in ["quicIncoming", "quicAccepted", "streamAccepted", "helloAccepted"] {
         assert_eq!(sidecar.event("diagnostic")["code"], code);
     }
     phone

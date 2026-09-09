@@ -12,6 +12,11 @@ export const REMOTE_DIAGNOSTIC_CODES = [
   "deviceUnavailable", "proofInvalid", "handshakeReady", "firstCommandReceived",
   "sessionRejected", "hostSendFailed", "handlerFailed",
   "quicAccepted", "quicFailed", "streamAccepted", "streamFailed", "helloAccepted", "helloInvalid", "streamClosed",
+  "quicIncoming", "quicTimedOut", "quicReset", "quicLocallyClosed", "quicVersionMismatch",
+  "quicCidsExhausted", "quicPeerApplicationClosed", "quicPeerTransportClosed", "quicTransportError",
+  "quicAuthenticationFailed", "quicLocallyRejected", "quicUnknownError",
+  "quicTlsNoApplicationProtocol", "quicTlsHandshakeFailure", "quicTlsProtocolVersion",
+  "quicTlsCertificateRejected", "quicTlsAlert",
 ] as const;
 export type RemoteDiagnosticCode = typeof REMOTE_DIAGNOSTIC_CODES[number];
 export interface RemoteDiagnosticDto { at: string; code: RemoteDiagnosticCode; sequence: number }

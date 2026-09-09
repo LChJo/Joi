@@ -3,6 +3,18 @@ import 'package:joi_mobile/connection_diagnostics.dart';
 import 'package:joi_mobile/iroh_ffi_transport.dart';
 
 void main() {
+  test('typed QUIC failures survive the diagnostic privacy boundary', () {
+    expect(safeConnectionCode('quicTimedOut'), 'quicTimedOut');
+    expect(
+      safeConnectionCode('quicTlsNoApplicationProtocol'),
+      'quicTlsNoApplicationProtocol',
+    );
+    expect(
+      safeConnectionCode('quicPeerApplicationClosed'),
+      'quicPeerApplicationClosed',
+    );
+    expect(safeConnectionCode('quicTimedOut secret=private'), 'unknownFailure');
+  });
   test(
     'native event preserves stage and code without interpreting payload',
     () {

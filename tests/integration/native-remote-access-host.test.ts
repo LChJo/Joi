@@ -79,6 +79,10 @@ describe("native RemoteAccessHost", () => {
     expect(JSON.stringify(diagnostics)).not.toMatch(/private-peer|never-log-this|secret/u);
     expect(emit).toHaveBeenCalledWith("joi.remote.connection", expect.objectContaining({ code: "handshakeInvalid" }));
     expect(JSON.stringify(emit.mock.calls)).not.toMatch(/private-peer|never-log-this|secret/u);
+    transport.emit({ type: "diagnostic", code: "quicIncoming" });
+    transport.emit({ type: "diagnostic", code: "quicTlsNoApplicationProtocol" });
+    await vi.waitFor(async () => expect(JSON.stringify((await host.status()).diagnostics)).toContain("quicTlsNoApplicationProtocol"));
+    expect(emit).toHaveBeenCalledWith("joi.remote.connection", expect.objectContaining({ code: "quicIncoming" }));
     for (let i = 0; i < 70; i++) transport.emit({ type: "diagnostic", code: "quicAccepted" });
     transport.emit({ type: "diagnostic", code: "secret=private-diagnostic" });
     await vi.waitFor(async () => expect((await host.status()).diagnostics).toHaveLength(50));

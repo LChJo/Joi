@@ -3,7 +3,7 @@ use std::{collections::HashMap, sync::Arc};
 use anyhow::{Context, Result, anyhow};
 use iroh::{
     Endpoint, EndpointAddr, EndpointId, RelayConfig, RelayMap, RelayMode, RelayUrl, SecretKey,
-    endpoint::presets,
+    endpoint::{ConnectingError, ConnectionError, presets},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::sync::{Mutex, mpsc};
@@ -11,6 +11,52 @@ use tokio::sync::{Mutex, mpsc};
 use crate::protocol::{ClientMessage, HostMessage, JOI_REMOTE_ALPN, TransportTicket};
 
 const MAX_FRAME_BYTES: usize = 256 * 1024;
+
+// Inspect typed sources only. Never format errors: peer close reasons can contain
+// arbitrary bytes, and local errors may include addresses or private paths.
+pub(crate) fn network_error_code(error: &(dyn std::error::Error + 'static)) -> &'static str {
+    let mut current = Some(error);
+    for _ in 0..16 {
+        let Some(error) = current else { break };
+        if let Some(error) = error.downcast_ref::<ConnectionError>() {
+            return match error {
+                ConnectionError::TimedOut => "quicTimedOut",
+                ConnectionError::Reset => "quicReset",
+                ConnectionError::LocallyClosed => "quicLocallyClosed",
+                ConnectionError::VersionMismatch => "quicVersionMismatch",
+                ConnectionError::CidsExhausted => "quicCidsExhausted",
+                ConnectionError::ApplicationClosed(_) => "quicPeerApplicationClosed",
+                ConnectionError::ConnectionClosed(close) => {
+                    transport_error_code(u64::from(close.error_code), true)
+                }
+                ConnectionError::TransportError(error) => {
+                    transport_error_code(u64::from(error.code), false)
+                }
+            };
+        }
+        if let Some(error) = error.downcast_ref::<ConnectingError>() {
+            match error {
+                ConnectingError::HandshakeFailure { .. } => return "quicAuthenticationFailed",
+                ConnectingError::LocallyRejected { .. } => return "quicLocallyRejected",
+                _ => {}
+            }
+        }
+        current = error.source();
+    }
+    "quicUnknownError"
+}
+
+fn transport_error_code(code: u64, peer: bool) -> &'static str {
+    match code {
+        0x178 => "quicTlsNoApplicationProtocol",
+        0x128 => "quicTlsHandshakeFailure",
+        0x146 => "quicTlsProtocolVersion",
+        0x12a..=0x12e | 0x130 | 0x174 => "quicTlsCertificateRejected",
+        0x100..=0x1ff => "quicTlsAlert",
+        _ if peer => "quicPeerTransportClosed",
+        _ => "quicTransportError",
+    }
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HostRequest {
@@ -119,7 +165,7 @@ impl RemoteHostTransport {
 
 pub struct RemoteControllerTransport {
     connection: iroh::endpoint::Connection,
-    endpoint: Endpoint,
+    _endpoint: Endpoint,
     recv: iroh::endpoint::RecvStream,
     reader: FrameReader,
     send: iroh::endpoint::SendStream,
@@ -162,7 +208,7 @@ impl RemoteControllerTransport {
     }
 
     pub async fn close(self) {
-        self.endpoint.close().await;
+        self.connection.close(0u32.into(), b"controller closed");
     }
 }
 
@@ -170,53 +216,129 @@ pub async fn connect(
     address: EndpointAddr,
     connection_id: &str,
 ) -> Result<RemoteControllerTransport> {
-    connect_with_progress(address, connection_id, |_| {}).await
+    ControllerConnector::default()
+        .connect(address, connection_id, |_| {})
+        .await
 }
 
-pub(crate) async fn connect_with_progress(
-    address: EndpointAddr,
-    connection_id: &str,
-    progress: impl Fn(&'static str),
-) -> Result<RemoteControllerTransport> {
-    let relay_map: RelayMap = address
-        .relay_urls()
-        .cloned()
-        .map(|url| RelayConfig::new(url, None))
-        .collect();
-    let mut builder = Endpoint::builder(presets::Minimal);
-    if !relay_map.is_empty() {
-        builder = builder.relay_mode(RelayMode::Custom(relay_map));
+// Owned by the FFI runtime, not by individual Dart attempts. One cached relay
+// configuration bounds idle resources; active connections retain their own clone.
+#[derive(Default)]
+pub(crate) struct ControllerConnector {
+    cached: Mutex<Option<(Vec<RelayUrl>, Endpoint)>>,
+}
+
+impl ControllerConnector {
+    async fn endpoint(&self, address: &EndpointAddr) -> Result<Endpoint> {
+        let mut urls: Vec<_> = address.relay_urls().cloned().collect();
+        urls.sort();
+        let mut cached = self.cached.lock().await;
+        if let Some((key, endpoint)) = cached.as_ref() {
+            if key == &urls {
+                return Ok(endpoint.clone());
+            }
+        }
+        let relay_map: RelayMap = urls
+            .iter()
+            .cloned()
+            .map(|url| RelayConfig::new(url, None))
+            .collect();
+        let mut builder = Endpoint::builder(presets::Minimal);
+        if !relay_map.is_empty() {
+            builder = builder.relay_mode(RelayMode::Custom(relay_map));
+        }
+        let endpoint = builder
+            .bind()
+            .await
+            .context("bind Joi controller endpoint")?;
+        *cached = Some((urls, endpoint.clone()));
+        Ok(endpoint)
     }
-    progress("endpointBind");
-    let endpoint = builder
-        .bind()
-        .await
-        .context("bind Joi test controller endpoint")?;
-    progress("endpointDial");
-    let connection = endpoint
-        .connect(address, JOI_REMOTE_ALPN)
-        .await
-        .context("connect Joi test controller")?;
-    progress("streamOpen");
-    let (mut send, recv) = connection
-        .open_bi()
-        .await
-        .context("open Joi control stream")?;
-    progress("transportHello");
-    write_frame(
-        &mut send,
-        &ClientMessage::Hello {
-            device_id: connection_id.to_owned(),
-        },
-    )
-    .await?;
-    Ok(RemoteControllerTransport {
-        connection,
-        endpoint,
-        recv,
-        reader: FrameReader::default(),
-        send,
-    })
+
+    pub(crate) async fn connect(
+        &self,
+        address: EndpointAddr,
+        connection_id: &str,
+        progress: impl Fn(&'static str),
+    ) -> Result<RemoteControllerTransport> {
+        progress("endpointBind");
+        let endpoint = self.endpoint(&address).await?;
+        progress("endpointAvailable");
+        let mut last_error = anyhow!("controller dial exhausted");
+        let mut connected = None;
+        // Try LAN immediately, even if the configured relay is offline. A stalled
+        // cold dial gets bounded relay preparation and redials on this same identity.
+        for seconds in [6, 6, 8] {
+            progress("endpointDial");
+            match tokio::time::timeout(
+                std::time::Duration::from_secs(seconds),
+                endpoint.connect(address.clone(), JOI_REMOTE_ALPN),
+            )
+            .await
+            {
+                Ok(Ok(connection)) => {
+                    connected = Some(connection);
+                    break;
+                }
+                Ok(Err(error)) => last_error = error.into(),
+                Err(_) => last_error = ConnectionError::TimedOut.into(),
+            }
+            progress(network_error_code(last_error.as_ref()));
+            if seconds == 8 {
+                break;
+            }
+            progress("endpointRetry");
+            if address.relay_urls().next().is_some() {
+                progress("endpointRelayWait");
+                let ready =
+                    tokio::time::timeout(std::time::Duration::from_secs(4), endpoint.online())
+                        .await
+                        .is_ok();
+                progress(if ready {
+                    "relayReady"
+                } else {
+                    "relayReadyTimeout"
+                });
+            }
+        }
+        let Some(connection) = connected else {
+            let mut cached = self.cached.lock().await;
+            if cached
+                .as_ref()
+                .is_some_and(|(_, value)| value.id() == endpoint.id())
+            {
+                cached.take();
+            }
+            return Err(last_error);
+        };
+        progress("streamOpen");
+        let (mut send, recv) = connection
+            .open_bi()
+            .await
+            .context("open Joi control stream")?;
+        progress("transportHello");
+        write_frame(
+            &mut send,
+            &ClientMessage::Hello {
+                device_id: connection_id.to_owned(),
+            },
+        )
+        .await?;
+        Ok(RemoteControllerTransport {
+            connection,
+            _endpoint: endpoint,
+            recv,
+            reader: FrameReader::default(),
+            send,
+        })
+    }
+}
+
+impl Drop for RemoteControllerTransport {
+    fn drop(&mut self) {
+        // Includes task abort: do not leave a live QUIC session on the cached endpoint.
+        self.connection.close(0u32.into(), b"controller closed");
+    }
 }
 
 pub async fn connect_for_test(
@@ -271,18 +393,27 @@ fn spawn_accept_loop(
 ) {
     tokio::spawn(async move {
         while let Some(incoming) = endpoint.accept().await {
+            let _ = diagnostics.try_send("quicIncoming");
             let peers = peers.clone();
             let requests = requests.clone();
             let diagnostics = diagnostics.clone();
             tokio::spawn(async move {
-                let Ok(connection) = incoming.await else {
-                    let _ = diagnostics.try_send("quicFailed");
-                    return;
+                let connection = match incoming.await {
+                    Ok(connection) => connection,
+                    Err(error) => {
+                        let _ = diagnostics.try_send("quicFailed");
+                        let _ = diagnostics.try_send(network_error_code(&error));
+                        return;
+                    }
                 };
                 let _ = diagnostics.try_send("quicAccepted");
-                let Ok((send, mut recv)) = connection.accept_bi().await else {
-                    let _ = diagnostics.try_send("streamFailed");
-                    return;
+                let (send, mut recv) = match connection.accept_bi().await {
+                    Ok(streams) => streams,
+                    Err(error) => {
+                        let _ = diagnostics.try_send("streamFailed");
+                        let _ = diagnostics.try_send(network_error_code(&error));
+                        return;
+                    }
                 };
                 let _ = diagnostics.try_send("streamAccepted");
                 let mut reader = FrameReader::default();
@@ -364,7 +495,10 @@ struct FrameReader {
 }
 
 impl FrameReader {
-    async fn read<T: DeserializeOwned>(&mut self, recv: &mut iroh::endpoint::RecvStream) -> Result<T> {
+    async fn read<T: DeserializeOwned>(
+        &mut self,
+        recv: &mut iroh::endpoint::RecvStream,
+    ) -> Result<T> {
         while self.header_read < self.header.len() {
             let count = recv
                 .read(&mut self.header[self.header_read..])
@@ -401,6 +535,233 @@ impl FrameReader {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn controller_endpoint_is_reused_and_close_is_connection_scoped() {
+        let connector = ControllerConnector::default();
+        let host = RemoteHostTransport::bind().await.unwrap();
+        let first = connector
+            .connect(host.address(), "first", |_| {})
+            .await
+            .unwrap();
+        let id = first._endpoint.id();
+        let mut concurrent = connector
+            .connect(host.address(), "concurrent", |_| {})
+            .await
+            .unwrap();
+        first.close().await;
+        concurrent
+            .send(ClientMessage::Request {
+                kind: "probe".into(),
+                payload: serde_json::json!({}),
+                request_id: "probe".into(),
+            })
+            .await
+            .unwrap();
+        let request = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+            loop {
+                let request = host.next_request().await.unwrap();
+                if request.kind == "probe" {
+                    break request;
+                }
+            }
+        })
+        .await
+        .unwrap();
+        assert_eq!(request.device_id, "concurrent");
+        let second = connector
+            .connect(host.address(), "second", |_| {})
+            .await
+            .unwrap();
+        assert_eq!(second._endpoint.id(), id);
+        assert!(second.connection.close_reason().is_none());
+        second.close().await;
+        concurrent.close().await;
+        host.close().await;
+    }
+
+    #[tokio::test]
+    async fn offline_relay_does_not_delay_reachable_lan() {
+        let host = RemoteHostTransport::bind().await.unwrap();
+        let address = host
+            .address()
+            .with_relay_url("https://127.0.0.1:9".parse().unwrap());
+        let connector = ControllerConnector::default();
+        let client = tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            connector.connect(address, "lan", |_| {}),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        assert_eq!(client.path(), RemoteConnectionPath::Direct);
+        client.close().await;
+        host.close().await;
+    }
+
+    #[tokio::test]
+    async fn stalled_first_dial_redials_on_the_same_endpoint() {
+        tokio::time::timeout(std::time::Duration::from_secs(15), async {
+            let host = Endpoint::builder(presets::Minimal)
+                .alpns(vec![JOI_REMOTE_ALPN.to_vec()])
+                .bind()
+                .await
+                .unwrap();
+            let connector = ControllerConnector::default();
+            let address = host.addr();
+            let original = connector.endpoint(&address).await.unwrap().id();
+            let server = async {
+                let stalled = host.accept().await.unwrap();
+                tokio::time::sleep(std::time::Duration::from_millis(6300)).await;
+                stalled.ignore();
+                let connection = host.accept().await.unwrap().await.unwrap();
+                let (_send, mut recv) = connection.accept_bi().await.unwrap();
+                let message: ClientMessage = FrameReader::default().read(&mut recv).await.unwrap();
+                assert!(matches!(message, ClientMessage::Hello { .. }));
+                connection
+            };
+            let stages = std::sync::Mutex::new(Vec::new());
+            let (client, server) = tokio::join!(
+                connector.connect(address, "retry", |stage| stages.lock().unwrap().push(stage)),
+                server
+            );
+            let client = client.unwrap();
+            assert_eq!(client._endpoint.id(), original);
+            assert!(stages.lock().unwrap().contains(&"endpointRetry"));
+            client.close().await;
+            drop(server);
+            host.close().await;
+        })
+        .await
+        .expect("bounded warm redial");
+    }
+
+    #[test]
+    fn error_diagnostics_discard_private_reasons_and_classify_typed_sources() {
+        use iroh::endpoint::{ApplicationClose, TransportError, TransportErrorCode};
+        let timeout = anyhow::Error::new(ConnectionError::TimedOut).context("private path");
+        assert_eq!(network_error_code(timeout.as_ref()), "quicTimedOut");
+        let incoming: ConnectingError = ConnectionError::TimedOut.into();
+        assert_eq!(network_error_code(&incoming), "quicTimedOut");
+        let close = ConnectionError::ApplicationClosed(ApplicationClose {
+            error_code: 7u32.into(),
+            reason: b"secret peer payload".to_vec().into(),
+        });
+        assert_eq!(network_error_code(&close), "quicPeerApplicationClosed");
+        for (alert, expected) in [
+            (120, "quicTlsNoApplicationProtocol"),
+            (42, "quicTlsCertificateRejected"),
+            (40, "quicTlsHandshakeFailure"),
+            (70, "quicTlsProtocolVersion"),
+            (80, "quicTlsAlert"),
+        ] {
+            let error = ConnectionError::TransportError(TransportError::new(
+                TransportErrorCode::crypto(alert),
+                "secret certificate/path".into(),
+            ));
+            assert_eq!(network_error_code(&error), expected);
+        }
+        assert_eq!(
+            network_error_code(anyhow!("secret=private").as_ref()),
+            "quicUnknownError"
+        );
+    }
+
+    #[tokio::test]
+    async fn exhausted_dial_is_bounded_and_evicts_only_its_endpoint() {
+        let connector = ControllerConnector::default();
+        let address = EndpointAddr::new(SecretKey::generate().public())
+            .with_ip_addr("127.0.0.1:9".parse().unwrap());
+        let stages = std::sync::Mutex::new(Vec::new());
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(23),
+            connector.connect(address, "timeout", |stage| {
+                stages.lock().unwrap().push(stage)
+            }),
+        )
+        .await
+        .unwrap();
+        assert!(result.is_err());
+        assert_eq!(
+            stages
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|&&stage| stage == "endpointDial")
+                .count(),
+            3
+        );
+        assert!(connector.cached.lock().await.is_none());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires JOI_RELAY_SMOKE_URL and a deployed public relay"]
+    async fn production_connector_exchanges_frames_with_relay_only_host() {
+        let relay: RelayUrl = std::env::var("JOI_RELAY_SMOKE_URL")
+            .unwrap()
+            .parse()
+            .unwrap();
+        let host = Endpoint::builder(presets::Minimal)
+            .alpns(vec![JOI_REMOTE_ALPN.to_vec()])
+            .relay_mode(RelayMode::Custom(RelayMap::from(RelayConfig::new(
+                relay, None,
+            ))))
+            .clear_ip_transports()
+            .bind()
+            .await
+            .unwrap();
+        tokio::time::timeout(std::time::Duration::from_secs(15), host.online())
+            .await
+            .unwrap();
+        let connector = ControllerConnector::default();
+        tokio::time::timeout(std::time::Duration::from_secs(40), async {
+            let server = async {
+                let connection = host.accept().await.unwrap().await.unwrap();
+                let (mut send, mut recv) = connection.accept_bi().await.unwrap();
+                let hello: ClientMessage = FrameReader::default().read(&mut recv).await.unwrap();
+                assert!(matches!(hello, ClientMessage::Hello { .. }));
+                write_frame(&mut send, &HostMessage::Ready).await.unwrap();
+                connection.closed().await;
+            };
+            let client = async {
+                let mut client = connector
+                    .connect(host.addr(), "relay-smoke", |_| {})
+                    .await
+                    .unwrap();
+                assert_eq!(client.path(), RemoteConnectionPath::Relay);
+                assert!(matches!(client.recv().await.unwrap(), HostMessage::Ready));
+                client.close().await;
+            };
+            tokio::join!(server, client);
+        })
+        .await
+        .unwrap();
+        host.close().await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn real_peer_close_has_a_safe_reason() {
+        tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let host = RemoteHostTransport::bind().await.unwrap();
+            let client = Endpoint::builder(presets::Minimal).bind().await.unwrap();
+            let connection = client
+                .connect(host.address(), JOI_REMOTE_ALPN)
+                .await
+                .unwrap();
+            assert_eq!(host.next_diagnostic().await, Some("quicIncoming"));
+            assert_eq!(host.next_diagnostic().await, Some("quicAccepted"));
+            connection.close(7u32.into(), b"private peer close reason");
+            assert_eq!(host.next_diagnostic().await, Some("streamFailed"));
+            assert_eq!(
+                host.next_diagnostic().await,
+                Some("quicPeerApplicationClosed")
+            );
+            client.close().await;
+            host.close().await;
+        })
+        .await
+        .expect("diagnostic test timeout");
+    }
 
     #[tokio::test]
     async fn public_tls_prefers_hybrid_key_exchange_and_keeps_classical_fallback() {

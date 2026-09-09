@@ -36,6 +36,7 @@ class Peer implements NativeTransport {
   bool enforcePairing = false;
   bool losePairHello = false;
   bool silent = false;
+  bool silentHandshake = false;
   final bus = StreamController<NativeTransportEvent>.broadcast();
   final commands = <Map<String, dynamic>>[];
   final sequences = <int>[];
@@ -69,6 +70,7 @@ class Peer implements NativeTransport {
     final frame = Map<String, dynamic>.from(value as Map);
     if (frame['kind'] == 'handshake.hello') {
       hellos.add(frame);
+      if (silentHandshake) return;
       final clientBody =
           'joi-remote-v1\n${frame['mode']}\nhost\ndevice\n${frame['mode'] == 'pair' ? frame['pairingId'] : ''}\n${frame['clientNonce']}';
       final clientProof = await Hmac.sha256().calculateMac(
@@ -236,9 +238,35 @@ void main() {
     );
     await controller.initialize();
     await tester.pump(const Duration(seconds: 15));
+    expect(
+      controller.state.notice ?? '',
+      isNot(contains('nativeConnectTimeout')),
+    );
+    await tester.pump(const Duration(seconds: 30));
     expect(controller.state.notice, contains('nativeConnectTimeout'));
     await tester.pump(const Duration(seconds: 2));
     expect(controller.state.notice, contains('nativeConnectTimeout'));
+    controller.dispose();
+    await peer.bus.close();
+  });
+  testWidgets('late native success gets a separate handshake budget', (
+    tester,
+  ) async {
+    final peer = Peer()
+      ..silent = true
+      ..silentHandshake = true;
+    final controller = NativeRemoteController(
+      credentials: MemoryCredentials(),
+      transport: peer,
+    );
+    await controller.initialize();
+    await tester.pump(const Duration(seconds: 40));
+    peer.bus.add(const NativeTransportEvent(type: 'connected', path: 'relay'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 10));
+    expect(controller.state.notice ?? '', isNot(contains('Timeout')));
+    await tester.pump(const Duration(seconds: 5));
+    expect(controller.state.notice, contains('handshakeTimeout'));
     controller.dispose();
     await peer.bus.close();
   });
