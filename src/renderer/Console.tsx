@@ -20,19 +20,21 @@ import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { WorkbenchManager, JoiHome, ModelSourceManager } from "./JoiHome";
 import { PartnerPage } from "./PartnerPage";
+import { JoiSkillSettings } from "./JoiSkillSettings";
 import { AutomationPanel } from "./AutomationPanel";
 import { listenerStatusLabel } from "./copy";
 import type { DiagnosticsDto, InteractionDto } from "./types";
 import type { SystemSettingsDto } from "../shared/system-settings";
 
 type Section = "agents" | "automations" | "joi" | "lives" | "settings";
-type SettingsTab = "connections" | "data" | "diagnostics" | "models" | "security";
+type SettingsTab = "connections" | "data" | "diagnostics" | "models" | "security" | "skills";
 
 const SESSION_DISPLAY_LIMIT = 10;
 const REMOTE_STATUS_REFRESH_MS = 1_000;
 
 const SETTINGS_TABS = [
   { key: "models", label: "模型网络" },
+  { key: "skills", label: "技能" },
   { key: "connections", label: "设备连接" },
   { key: "security", label: "安全" },
   { key: "data", label: "数据" },
@@ -266,6 +268,7 @@ export function SettingsPanel({ api, diagnostics, interactions = [] }: { api: Di
       tabIndex={0}
     >
       {activeTab === "models" ? <ModelSourceManager api={api} /> : null}
+      {activeTab === "skills" ? <JoiSkillSettings api={api} /> : null}
       {activeTab === "connections" ? <>
         <RemoteAccessSettings api={api} />
         <section><NetworkIcon aria-hidden /><div><h2>其他设备访问</h2><p>同一可信网络里的设备可以找到 joi。joi 不会自动改网络设置。</p>{settings === null || lanDraft === null ? <span className="status-dot muted">正在读取</span> : <>

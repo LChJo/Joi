@@ -231,6 +231,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     partners: Pick<PartnerRegistryRepository, "getRevision">;
     publish?: (event: SseEvent) => Promise<unknown>;
     results: WorkResultRepository;
+    runDirectories?: { ensureForWork(input: { workbenchId: string; workId: string }): Promise<void> };
     verifier?: WorkVerifier;
   }) {}
 
@@ -249,6 +250,11 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       workId: row.work_id,
     });
 
+    if (row.kind === "LOCAL_PI" && this.dependencies.runDirectories !== undefined) {
+      if (row.access_mode === "NONE") throw new DomainError("work_execution_access_required", "Local Work requires a working directory. Resume or reassign it to refresh its access policy.");
+      await this.dependencies.runDirectories.ensureForWork({ workbenchId: row.workbench_id, workId: row.work_id });
+      row = this.#load(claim.dispatchAttemptId) ?? row;
+    }
     const policy = deliveryPolicy(row);
     if (!policy.allowed) {
       const reason = denialReason(policy);
@@ -298,10 +304,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       let stagedAttachments: readonly StagedAttachment[] | undefined;
       if (row.access_mode !== "NONE" && row.kind === "LOCAL_PI" && row.workspace_ref !== null && this.dependencies.attachmentStager !== undefined) {
         const workspaceRef = row.workspace_ref;
+        const workId = row.work_id;
         const inputId = row.input_id;
         const roots = this.dependencies.database.transaction((connection) => connection.prepare(
-          "SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?",
-        ).get(workspaceRef)) as { root_path?: unknown } | undefined;
+          `SELECT root_path FROM work_run_directories WHERE work_id = ? AND status = 'READY'
+           UNION ALL SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ? LIMIT 1`,
+        ).get(workId, workspaceRef)) as { root_path?: unknown } | undefined;
         if (typeof roots?.root_path === "string") {
           const staged = await this.dependencies.attachmentStager.stage({ inputId, workspacePath: roots.root_path });
           if (staged.length > 0) stagedAttachments = staged;
@@ -546,7 +554,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
              w.work_id, w.workbench_id, w.input_id, w.title, w.intent_json, i.body AS source_request,
              w.status AS work_status,
              COALESCE(ap.access_mode, w.access_mode) AS access_mode,
-             b.workspace_ref, b.status AS workspace_status,
+             b.workspace_ref, COALESCE(d.status, b.status) AS workspace_status,
              p.partner_id, p.kind, p.legacy_agent_connection_id AS agent_connection_id,
              r.display_name AS partner_display_name,
              (SELECT invocation_id FROM invocations WHERE message_id = a.action_id) AS invocation_id,
@@ -558,6 +566,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         JOIN partners p ON p.partner_id = r.partner_id
         LEFT JOIN work_access_policies ap ON ap.work_id = w.work_id
         LEFT JOIN workbench_workspace_bindings b ON b.workbench_id = w.workbench_id
+        LEFT JOIN work_run_directories d ON d.work_id = w.work_id
         LEFT JOIN partner_runs pr ON pr.dispatch_attempt_id = a.dispatch_attempt_id
        WHERE a.dispatch_attempt_id = ?`).get(dispatchAttemptId)) as DispatchRow | undefined;
   }

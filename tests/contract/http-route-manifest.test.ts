@@ -28,6 +28,7 @@ const GOLDEN_ROUTES = [
   "GET /api/v1/system/pick-directory",
   "GET /api/v1/scenario-packs",
   "GET /api/v1/scenarios",
+  "POST /api/v1/workbenches/:workbenchId/archive",
   "GET /api/v1/workbenches",
   "GET /api/v1/workbenches/:workbenchId/agents",
   "GET /api/v1/workbenches/:workbenchId/agents/:agentId/conversation",

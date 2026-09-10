@@ -20,6 +20,8 @@
 
 ## 项目状态
 
+主 joi 支持在“设置 → 技能”中勾选本机 Skill，扫描 `~/.agents/skills`、`~/.claude/skills` 和 `~/.codex/skills`。默认不加载，保存后下一轮思考生效；目录变化后可刷新并移除失效选择。主 joi 按需读取所选说明，CLI、文件和外部服务操作仍由搭档执行，搭档的技能需要单独配置。技能被识别不代表所需工具、依赖和登录状态都已就绪。
+
 当前里程碑使用 JOI-01 的 M1–M3：M1（W0–W3）与 M2（W4–W5）已有仓库内自动化证据；M3 已完成 W6 的界面收敛，正在推进 W7 的兼容切换、安全和发布验收。旧 M0–M7 只描述 Life/Wake 兼容运行时的历史建设顺序，其“本机自动化完成”不能再作为 JOI-01 或 MVP 完成结论。
 
 Electron actor 根循环、HTTP 轮询控制面、outbox、工作台/Partner/Work、旧 Life 只读兼容、恢复与打包链已有自动化覆盖。当前仍不是“完整 MVP”：真实 AI Mana、第二台 LAN 设备、macOS 打包/签名/公证、Windows 签名、24 小时长稳和人工键盘/对比度视觉验收未在当前环境执行，不会标为通过。证据与 concerns 见[发布验收报告](docs/09-release-validation-report.md)，完整标准见[路线图与验收](docs/07-roadmap-and-acceptance.md)。AI Mana 配套扩展属于独立仓库。
@@ -153,3 +155,5 @@ flowchart LR
 - JavaScript SDK：`@a2a-js/sdk@0.3.14`
 
 文档中的“应当”和“将”描述验收标准；实现状态以[需求追踪矩阵](docs/10-requirements-traceability.md)和[发布验收报告](docs/09-release-validation-report.md)中的当前证据为准。
+本地工作台任务始终在实际目录中运行：未绑定目录时，在用户主目录的 `joi/runs/日期时间_UUID/` 下为每个新任务创建独立目录，恢复和重试复用该任务目录；绑定已有目录时固定使用指定目录。派发按搭档已配置的工具计算最低 READ/WRITE 访问等级，避免 NONE 导致技能读取和命令工具被关闭。
+在同一工作台重新提交提示词会启动独立目标：Joi 对话和搭档任务证据按本次目标隔离。原任务的补充回答、恢复操作继续原目标；工作台和搭档的长期配置仍可复用。

@@ -8,6 +8,12 @@ class MemoryWorkbenchChanges implements WorkbenchChangeRepository {
   readonly active = new Set(["source", "target"]);
   readonly requests = new Map<string, WorkbenchChangeRequest>();
 
+  async archiveConfirmed(request: WorkbenchChangeRequest) {
+    const existing = await this.get(request.requestId);
+    if (existing !== null) return existing;
+    await this.create(request);
+    return this.decide(request.requestId, "CONFIRM", request.createdAt);
+  }
   async create(request: WorkbenchChangeRequest) { this.requests.set(request.requestId, structuredClone(request)); }
   async decide(requestId: string, decision: "CONFIRM" | "REJECT", decidedAt: string) {
     const existing = this.requests.get(requestId);
@@ -27,6 +33,15 @@ function fixture() {
 }
 
 describe("Workbench change suggestions", () => {
+  it("archives a workbench through a confirmed stable request", async () => {
+    const { service, repository } = fixture();
+    const confirmed = await service.archive("source");
+    expect(confirmed).toMatchObject({ kind: "ARCHIVE", sourceWorkbenchId: "source", status: "CONFIRMED" });
+    expect(await service.archive("source")).toEqual(confirmed);
+    expect(repository.requests.size).toBe(1);
+    await expect(service.archive(" ")).rejects.toMatchObject({ code: "workbench_change_source_required" });
+  });
+
   it("validates identifiers, reasons, active records and merge targets before persisting", async () => {
     const { repository, service } = fixture();
 

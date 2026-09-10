@@ -1,4 +1,6 @@
 import path from "node:path";
+import type { SystemSettingsPort } from "../application/ports/system-settings.js";
+import { JoiSkillRuntime } from "../infrastructure/pi/joi-skill-runtime.js";
 
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import type { RuntimeDiagnostics } from "../application/ports/runtime-diagnostics.js";
@@ -30,6 +32,7 @@ export function wireJoi(input: {
   partnerStack: PartnerBundle;
   persistence: PersistenceBundle;
   userDataDirectory: string;
+  settings: SystemSettingsPort;
   workbenchStack: WorkbenchBundle;
 }) {
   const { clock, database, diagnostics, directoryPicker, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
@@ -56,6 +59,7 @@ export function wireJoi(input: {
     rootDirectory: path.join(userDataDirectory, "artifacts"),
   });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
+    skills: new JoiSkillRuntime({ catalog: partnerStack.partnerSkillCatalog, settings: input.settings }),
     resolver: modelSourceStack.configuredModelResolver,
     sessionStore: persistence.piReasoningSessionStore,
     tools: (turn) => selectJoiReasoningToolsForInput(createJoiReasoningTools({

@@ -1,6 +1,7 @@
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -64,7 +65,13 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
 
 test("Electron completes setup, native workbench creation, and responsive joi-console paths", async () => {
   test.setTimeout(60_000);
-  const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
+  const skillsRoot = await mkdtemp(path.join(tmpdir(), "joi-e2e-skills-"));
+  await mkdir(path.join(skillsRoot, "example"));
+  await writeFile(path.join(skillsRoot, "example", "SKILL.md"), "---\nname: example\ndescription: Disposable skill for main Joi settings.\n---\nUse the test workflow.\n");
+  const application = await electron.launch({ args: ["."], env: {
+    ...process.env, JOI_TEST: "1", JOI_AGENTS_SKILLS_DIR: skillsRoot,
+    JOI_CLAUDE_SKILLS_DIR: path.join(skillsRoot, "empty-claude"), JOI_CODEX_SKILLS_DIR: path.join(skillsRoot, "empty-codex"),
+  } });
 
   try {
     const window = await application.firstWindow();
@@ -94,6 +101,22 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-model-source-960.png") });
+
+    await window.getByRole("tab", { name: "技能", exact: true }).click();
+    const skill = window.getByRole("checkbox", { name: /example/ });
+    await expect(skill).not.toBeChecked();
+    await skill.check();
+    await window.getByRole("button", { name: "保存技能选择" }).click();
+    await expect(window.getByText("技能选择已保存，下次思考时生效。")).toBeVisible();
+    await expectNoHorizontalOverflow(window);
+    await window.screenshot({ path: path.resolve("test-results/e2e-joi-skills-960.png") });
+    await window.getByRole("tab", { name: "模型网络", exact: true }).click();
+    await window.getByRole("tab", { name: "技能", exact: true }).click();
+    await expect(skill).toBeChecked();
+    await skill.uncheck();
+    await window.getByRole("button", { name: "保存技能选择" }).click();
+    await expect(window.getByText("技能选择已保存，下次思考时生效。")).toBeVisible();
+    await window.getByRole("tab", { name: "模型网络", exact: true }).click();
 
     await window.getByRole("button", { name: "添加网络" }).click();
     const embeddedNetworkTitle = window.getByRole("heading", { name: "joi需要链接到大模型网络" });
@@ -138,14 +161,25 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await window.setViewportSize({ height: 900, width: 768 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(768);
     await expect(window.getByRole("heading", { exact: true, name: "工作台" })).toBeVisible();
-    await window.getByRole("button", { name: /栖光/u }).click();
+    await window.getByRole("button", { name: /栖光.*管理上下文/u }).click();
     await expect(window.getByRole("heading", { name: "栖光" })).toBeVisible();
     await expect(window.getByRole("tab", { name: /Agent/u })).toHaveAttribute("aria-selected", "true");
     await expect(window.getByRole("heading", { name: "还没有 Agent" })).toBeVisible();
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-console-768.png") });
+    await window.getByRole("button", { name: "移除工作台", exact: true }).click();
+    await expect(window.getByRole("dialog")).toContainText("历史记录和工作目录会保留");
+    await window.screenshot({ path: path.resolve("test-results/e2e-workbench-removal-768.png") });
+    await window.getByRole("button", { name: "取消", exact: true }).click();
+    await expect(window.getByRole("heading", { name: "栖光", exact: true })).toBeVisible();
+    await window.getByRole("button", { name: "移除工作台", exact: true }).click();
+    await window.getByRole("button", { name: "确认移除", exact: true }).click();
+    await expect(window.getByRole("dialog")).toHaveCount(0);
+    await expect(window.getByRole("heading", { name: "工作台", exact: true })).toBeVisible();
+    await expect(window.getByRole("button", { name: /栖光/u })).toHaveCount(0);
   } finally {
     await application.close();
+    await rm(skillsRoot, { recursive: true, force: true });
   }
 });

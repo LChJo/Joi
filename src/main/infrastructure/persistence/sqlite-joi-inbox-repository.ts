@@ -367,8 +367,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET body = ?, status = 'PENDING', canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL,
-          failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
-        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, inputId);
+          failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
+        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, now, inputId);
       if (result.changes === 0) return null;
       connection.prepare(`UPDATE joi_harness_maps
         SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,

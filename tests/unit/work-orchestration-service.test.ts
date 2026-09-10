@@ -7,6 +7,23 @@ import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
+  it("normalizes Skill work before building waves and checking workspace policy", async () => {
+    const committed: CommittedWorkPlan[] = [];
+    const evaluate = vi.fn(async (_item: WorkItem) => ({ allowed: true }));
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1, minimumAccessMode: "WRITE" as const }) },
+      policy: { evaluate }, repository: { commit: async (plan) => { committed.push(plan); } },
+    });
+    await service.plan({ workbenchId: "workbench-1", inputId: "input-1", turnId: "turn-1", dependencies: [], work: [
+      { key: "skill-a", title: "Analyze tasks", partnerId: "partner", accessMode: "NONE", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+      { key: "skill-b", title: "Analyze more", partnerId: "partner", accessMode: "READ", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+    ] });
+    expect(committed[0]?.items.map((item) => item.accessMode)).toEqual(["WRITE", "WRITE"]);
+    expect(committed[0]?.waves).toHaveLength(2);
+    expect(evaluate.mock.calls[0]?.[0]).toMatchObject({ accessMode: "WRITE" });
+  });
+
   const idleInstance: PartnerInstanceRecord = {
     workbenchId: "workbench-1", createdAt: "2026-07-29T10:00:00.000Z", engine: "pi-core", instanceId: "instance-1",
     lastUsedAt: "2026-07-29T10:00:00.000Z", partnerId: "partner-a", partnerRevisionId: "revision",
@@ -277,12 +294,12 @@ describe("work orchestration outbox", () => {
     const reassigned: ReassignedWorkPlan[] = [];
     const service = new WorkOrchestrationService({
       clock: new TestClock(), ids: new TestIds(),
-      partners: { pinForDispatch: async () => ({ partnerId: "partner-b", partnerRevisionId: "revision-b", registryRevision: 8 }) },
+      partners: { pinForDispatch: async () => ({ partnerId: "partner-b", partnerRevisionId: "revision-b", registryRevision: 8, minimumAccessMode: "WRITE" }) },
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
         cancel: async () => ({ canceled: true, cascadedWorkIds: [] }),
         loadForReassignment: async () => ({
-          item: { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" },
+          item: { accessMode: "NONE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "FAILED", title: "修复", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" },
           lastPartnerId: "partner-a",
           lastPartnerRevisionId: "revision-a",
         }),
@@ -300,6 +317,7 @@ describe("work orchestration outbox", () => {
     expect(reassigned).toHaveLength(1);
     expect(reassigned[0]?.attempt.actionId).toMatch(/^action_/u);
     expect(reassigned[0]).toMatchObject({
+      accessMode: "WRITE",
       attempt: { partnerRevisionId: "revision-b", outbox: { kind: "partner.dispatch", payload: { workId: "work-1" } } },
       recovery: { attemptNo: 2 },
       turnId: "turn-2",
@@ -335,12 +353,12 @@ describe("work orchestration outbox", () => {
   });
 
   it("resumes waiting work on the same revision and only reuses a live instance", async () => {
-    const waitingItem: WorkItem = { accessMode: "WRITE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "WAITING", title: "待答", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };
+    const waitingItem: WorkItem = { accessMode: "NONE", workbenchId: "workbench-1", createdAt: "2026-07-16T00:00:00.000Z", status: "WAITING", title: "待答", updatedAt: "2026-07-16T00:00:00.000Z", workId: "work-1" };
     const reassigned: ReassignedWorkPlan[] = [];
     const create = (options: { instance?: { instanceId: string; status: string } | null; item?: WorkItem }) => new WorkOrchestrationService({
       clock: new TestClock(), ids: new TestIds(),
       instances: { get: async () => options.instance === undefined ? null : options.instance as never },
-      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision-same", registryRevision: 3 }) },
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision-same", registryRevision: 3, minimumAccessMode: "WRITE" }) },
       policy: { evaluate: async () => ({ allowed: true }) },
       reassignment: {
         cancel: async () => ({ canceled: true, cascadedWorkIds: [] }),
@@ -362,6 +380,7 @@ describe("work orchestration outbox", () => {
     await expect(create({ instance: { instanceId: "instance-1", status: "DISPOSED" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" }))
       .resolves.toMatchObject({ outbox: { payload: { sessionPolicy: "RESIDENT", workId: "work-1" } } });
     expect(reassigned).toHaveLength(2);
+    expect(reassigned.map((plan) => plan.accessMode)).toEqual(["WRITE", "WRITE"]);
 
     await expect(create({ item: { ...waitingItem, status: "COMPLETED" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_resume_status_invalid" });
     await expect(create({ item: { ...waitingItem, workbenchId: "workbench-2" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });

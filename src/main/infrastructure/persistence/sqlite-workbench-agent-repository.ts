@@ -250,14 +250,17 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
   async resolveArtifact(input: WorkbenchArtifactResolutionInput): Promise<ResolvedWorkbenchArtifact> {
     const stored = this.database.transaction((connection) => {
       let artifact: StoredConversationArtifact | undefined;
+      let workId: string | undefined;
       if (input.source === "AGENT") {
         const card = cardRows(connection, input.workbenchId, 1, 0, input.sourceId)[0];
         if (card === undefined) return undefined;
-        const row = connection.prepare(`SELECT artifact_json FROM workbench_agent_conversation_entries
-          WHERE agent_id = ? AND entry_id = ? AND kind = 'ARTIFACT'`).get(input.sourceId, input.artifactId) as Row | undefined;
+        const row = connection.prepare(`SELECT e.artifact_json, pr.work_id FROM workbench_agent_conversation_entries e
+          LEFT JOIN partner_runs pr ON pr.run_id = e.run_id
+          WHERE e.agent_id = ? AND e.entry_id = ? AND e.kind = 'ARTIFACT'`).get(input.sourceId, input.artifactId) as Row | undefined;
         artifact = storedArtifact(row?.artifact_json);
+        if (typeof row?.work_id === "string") workId = row.work_id;
       } else {
-        const rows = connection.prepare(`SELECT r.result_id, r.artifacts_json FROM work_results r
+        const rows = connection.prepare(`SELECT r.result_id, r.artifacts_json, r.work_id FROM work_results r
           JOIN work_items w ON w.work_id = r.work_id
           WHERE r.workbench_id = ? AND w.input_id = ? AND r.is_authoritative = 1 AND r.status = 'COMPLETED'
           ORDER BY r.created_at, r.result_id`).all(input.workbenchId, input.sourceId) as Row[];
@@ -269,14 +272,17 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
           const index = artifacts.findIndex((_candidate, artifactIndex) => workResultArtifactId(row.result_id as string, artifactIndex) === input.artifactId);
           if (index < 0) continue;
           artifact = storedArtifact(JSON.stringify(artifacts[index]));
+          if (typeof row.work_id === "string") workId = row.work_id;
           break;
         }
       }
       const relativePath = workspaceArtifactRelativePath(artifact?.artifactRef);
       if (relativePath === undefined) return undefined;
-      const root = connection.prepare(`SELECT roots.root_path FROM workbench_workspace_bindings binding
+      const runRoot = connection.prepare(`SELECT root_path FROM work_run_directories
+        WHERE work_id = ? AND workbench_id = ? AND status = 'READY'`).get(workId ?? "", input.workbenchId) as Row | undefined;
+      const root = runRoot ?? connection.prepare(`SELECT roots.root_path FROM workbench_workspace_bindings binding
         JOIN workbench_workspace_roots roots ON roots.workspace_ref = binding.workspace_ref
-        WHERE binding.workbench_id = ? AND binding.status = 'READY'`).get(input.workbenchId) as Row | undefined;
+        WHERE binding.workbench_id = ? AND binding.status = 'READY'`).get(input.workbenchId);
       if (typeof root?.root_path !== "string") return undefined;
       return { relativePath, rootPath: root.root_path };
     });

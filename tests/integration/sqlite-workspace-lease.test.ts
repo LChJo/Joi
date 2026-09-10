@@ -8,10 +8,11 @@ import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/r
 import { TestClock } from "../support/runtime-fixture.js";
 
 describe("workspace lease lifecycle", () => {
-  it("coordinates conflicting access across Workbench refs that share one physical root", async () => {
+  it.each([false, true])("coordinates physical roots including captured run directories (%s)", async (captured) => {
     const database = new DatabaseSync(":memory:");
     database.exec(`
       CREATE TABLE workbench_workspace_roots (workspace_ref TEXT PRIMARY KEY, root_path TEXT NOT NULL);
+      CREATE TABLE work_run_directories (work_id TEXT PRIMARY KEY, root_path TEXT NOT NULL);
       CREATE TABLE workspace_leases (
         workspace_ref TEXT NOT NULL, work_id TEXT NOT NULL, access_mode TEXT NOT NULL,
         lease_owner TEXT NOT NULL, generation INTEGER NOT NULL, expires_at TEXT NOT NULL,
@@ -21,6 +22,10 @@ describe("workspace lease lifecycle", () => {
         ('workbench_workspace:a', 'C:\\projects\\shared'),
         ('workbench_workspace:b', 'C:\\projects\\shared');
     `);
+    if (captured) {
+      database.exec(`INSERT INTO work_run_directories VALUES ('write_a', 'C:\\projects\\shared');
+        UPDATE workbench_workspace_roots SET root_path = 'C:\\projects\\changed' WHERE workspace_ref = 'workbench_workspace:a';`);
+    }
     try {
       const clock = new TestClock();
       const leases = new SqliteWorkspaceLeaseManager({
@@ -44,6 +49,7 @@ describe("workspace lease lifecycle", () => {
     const database = new DatabaseSync(":memory:");
     database.exec(`
       CREATE TABLE workbench_workspace_roots (workspace_ref TEXT PRIMARY KEY, root_path TEXT NOT NULL);
+      CREATE TABLE work_run_directories (work_id TEXT PRIMARY KEY, root_path TEXT NOT NULL);
       CREATE TABLE workspace_leases (
         workspace_ref TEXT NOT NULL, work_id TEXT NOT NULL, access_mode TEXT NOT NULL,
         lease_owner TEXT NOT NULL, generation INTEGER NOT NULL, expires_at TEXT NOT NULL,

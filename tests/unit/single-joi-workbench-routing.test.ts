@@ -152,7 +152,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     });
 
     await coordinator.handle("joi_result_input:goal:goal-1");
-    expect(sessions).toEqual(["joi_synthesis_session:research"]);
+    expect(sessions).toEqual(["joi_synthesis_session:research:goal-1"]);
     expect(completions).toEqual([expect.objectContaining({
       completion: { completionSummary: "两项工作已完成。 [redacted-path] 已隐藏。", outcome: "RESULT_SYNTHESIZED" },
       inputId: "joi_result_input:goal:goal-1",
@@ -605,27 +605,29 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(sourceUpdates).toEqual(["fallback-sr"]);
   });
 
-  it("reuses one Workbench-scoped Pi session across consecutive safe-boundary turns", async () => {
+  it("isolates repeated new requests and retains only the same input's session on clarification", async () => {
     const sessions: string[] = [];
-    let input = 0;
+    const prompts: string[] = [];
     const coordinator = new JoiCoordinator({
-      workbenches: { getWorkbench: async () => research, listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
+      workbenches: { getWorkbench: async () => ({ ...research, taskContext: { activeWorkIds: ["previous-work"], summary: "OLD_TASK_ALREADY_RUNNING" } }), listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
       runtime: {
         abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
-        startTurn: async (turn) => { sessions.push(turn.sessionId); }, steer: () => undefined, waitForIdle: async () => undefined,
+        startTurn: async (turn) => { sessions.push(turn.sessionId); prompts.push(turn.systemPrompt); }, steer: () => undefined, waitForIdle: async () => undefined,
       },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store: {
         completeInput: async () => undefined, createTurn: async () => undefined,
-        loadInput: async () => ({ body: "next", inputId: `input-${String(++input)}`, status: "PENDING" }),
+        loadInput: async (inputId) => ({ body: "使用飞书项目，分析我的待办工作", inputId, status: "PENDING" }),
         requireClarification: async () => undefined,
       },
     });
     await coordinator.handle("input-1");
     await coordinator.handle("input-2");
-    expect(sessions).toEqual(["joi_session:research", "joi_session:research"]);
+    await coordinator.handle("input-2");
+    expect(sessions).toEqual(["joi_session:research:input-1", "joi_session:research:input-2", "joi_session:research:input-2"]);
+    expect(prompts.every((prompt) => !prompt.includes("OLD_TASK_ALREADY_RUNNING"))).toBe(true);
   });
 
   it("never falls back after formal output or a tool side effect has started", async () => {

@@ -220,7 +220,10 @@ export class JoiCoordinator {
       ? { goalInputId: input.goalInputId, resultRevision: input.resultRevision }
       : null;
     const isGoalSynthesis = goalSynthesis !== null;
-    const sessionId = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}` : `joi_session:${workbenchId}`;
+    // New submissions are independent goals even when their text and Workbench match.
+    // Clarification/recovery keep the persisted input id; internal reviews keep their goal id.
+    const goalId = input.goalInputId ?? input.inputId;
+    const sessionId = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}:${goalId}` : `joi_session:${workbenchId}:${goalId}`;
     if (input.resolvedAction !== undefined) {
       if (this.dependencies.work === undefined || this.dependencies.store.completeResolvedAction === undefined) {
         throw new DomainError("joi_action_resume_unavailable", "The persisted user action cannot be resumed right now.");
@@ -407,7 +410,7 @@ export class JoiCoordinator {
               personaSummary: workbench.profile.personaSummary,
               projectLabel: workbench.project.label,
               scopeSummary: workbench.profile.scopeSummary,
-              taskContextSummary: workbench.taskContext.summary,
+              taskContextSummary: `Current goal: ${goalId}. Use only this goal's request and execution evidence.`,
             }),
             turnId,
           });

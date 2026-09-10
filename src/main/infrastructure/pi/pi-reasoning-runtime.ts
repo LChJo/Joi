@@ -23,6 +23,7 @@ export const JOI_REASONING_TOOL_NAMES = [
   "workbench_suggest_archive",
   "model_list_sources",
   "partner_list_skills",
+  "joi_read_skill",
   "partner_list_available",
   "partner_inspect_revision",
   "partner_create",

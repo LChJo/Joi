@@ -1,3 +1,6 @@
+import { WorkbenchChangeService } from "../../src/main/application/joi/workbench-change-service.js";
+import { SqliteWorkbenchChangeRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-change-repository.js";
+import { TestIds } from "../support/runtime-fixture.js";
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler.js";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners.js";
 import type { WorkbenchDetailDto, WorkbenchWorkspaceDto } from "../../src/shared/joi.js";
@@ -20,7 +23,8 @@ describe("Workbench context HTTP API", () => {
     });
     const partner = await fixture.partners.add({ capabilities: [], displayName: "写作者", kind: "local-pi", skills: [], tools: [] });
     await fixture.instances.ensure({ workbenchId: workbench.workbenchId, partnerId: partner.partnerId });
-    const listeners = await startRuntimeListeners({ handler: createApiHandler(fixture), loopbackPort: 0 });
+    const workbenchChanges = new WorkbenchChangeService({ clock: fixture.clock, ids: new TestIds(), repository: new SqliteWorkbenchChangeRepository(fixture.database) });
+    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, workbenchChanges }), loopbackPort: 0 });
     try {
       const bootstrap = await fixture.auth.issueDesktopBootstrap();
       const authenticated = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
@@ -89,6 +93,26 @@ describe("Workbench context HTTP API", () => {
           VALUES ('work-busy', ?, 'input-busy', '正在写文件', '{}', 'READ', 'RUNNING', ?, ?)`).run(workbench.workbenchId, now, now);
         connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES ('work-busy', 'READ')").run();
       });
+      const archiveBusy = await fetch(`${detailUrl}/archive`, { headers, method: "POST" });
+      expect(archiveBusy.status).toBe(409);
+      expect(await archiveBusy.json()).toMatchObject({ code: "workbench_change_active_work" });
+      expect(await workbenchChanges.listPending()).toEqual([]);
+      const archiveUrl = `${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(secondWorkbench.workbenchId)}/archive`;
+      const denied = await fetch(archiveUrl, { headers: { cookie: headers.cookie, origin: "null" }, method: "POST" });
+      expect(denied.status).toBe(403);
+      const archived = await fetch(archiveUrl, { headers, method: "POST" });
+      expect(archived.status).toBe(200);
+      const receipt: unknown = await archived.json();
+      expect(receipt).toMatchObject({ status: "CONFIRMED", kind: "ARCHIVE", sourceWorkbenchId: secondWorkbench.workbenchId });
+      const retry = await fetch(archiveUrl, { headers, method: "POST" });
+      expect(await retry.json()).toEqual(receipt);
+      expect(await fixture.workbenches.listSummaries()).not.toContainEqual(expect.objectContaining({ workbenchId: secondWorkbench.workbenchId }));
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM workbenches WHERE workbench_id = ?",
+      ).get(secondWorkbench.workbenchId))).toEqual({ status: "ARCHIVED" });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT COUNT(*) AS count FROM workbench_workspace_roots WHERE root_path = '/stub/workdir'",
+      ).get())).toEqual({ count: 2 });
       const rejected = await fetch(`${detailUrl}/workspace/rebuild`, { headers, method: "POST" });
       expect(rejected.status).toBe(409);
       expect(await rejected.json()).toMatchObject({ code: "workbench_workspace_busy" });

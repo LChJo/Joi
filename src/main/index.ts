@@ -22,6 +22,7 @@ import { wireJoi } from "./composition/wire-joi.js";
 import { wireRuntime } from "./composition/wire-runtime.js";
 import { LifeFileDeletionService } from "./infrastructure/artifacts/life-file-deletion-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
+import { LocalSkillScanner } from "./infrastructure/skills/local-skill-scanner.js";
 import { SystemSettingsService } from "./infrastructure/operations/system-settings-service.js";
 import { openRuntimeDatabase, type RuntimeDatabase } from "./infrastructure/persistence/runtime-database.js";
 import { emitRuntimeDiagnostic, runtimeDiagnosticErrorCode } from "./application/ports/runtime-diagnostics.js";
@@ -104,6 +105,7 @@ async function startRuntime(): Promise<void> {
     },
     setLaunchAtLogin: (enabled) => app.setLoginItemSettings({ openAtLogin: enabled }),
     settingsPath: path.join(userDataDirectory, "settings.json"),
+    validateJoiSkills: (refs) => new LocalSkillScanner().validateRefs("pi-core", refs),
   });
   const runtimeSettings = await settings.get();
   const database = await openRuntimeDatabase({
@@ -138,7 +140,9 @@ async function startRuntime(): Promise<void> {
   });
   const vault = new ElectronCredentialVault();
   const pid = String(process.pid);
-  const persistence = wirePersistence({ clock, database, pid, userDataDirectory });
+  const persistence = wirePersistence({ clock, database, pid, userDataDirectory,
+    runDirectory: path.join(isTest ? userDataDirectory : app.getPath("home"), "joi", "runs"),
+  });
   const modelSourceStack = wireModelSources({ clock, ids, persistence, vault });
   const partnerStack = wirePartners({ clock, diagnostics: runtimeDiagnostics, ids, modelSourceStack, persistence });
   const workbenchStack = wireWorkbenches({
@@ -168,6 +172,7 @@ async function startRuntime(): Promise<void> {
     }
   };
   const joiStack = wireJoi({
+    settings,
     clock,
     database,
     directoryPicker,

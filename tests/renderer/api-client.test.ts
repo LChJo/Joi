@@ -17,6 +17,8 @@ describe("renderer API client", () => {
     await api.authStatus(); await api.bootstrap("nonce"); await api.login("password"); await api.setup("password");
     await api.logout(); await api.listSessions(); await api.logoutAllLan(); await api.changePassword("old password", "new password");
     await api.joiSnapshot(); await api.listWorkbenches(); await api.createWorkbench({ name: "Workbench", personaSummary: "Persona", projectLabel: "Project", scopeSummary: "Scope" });
+    await api.archiveWorkbench("workbench 1");
+    expect(fetchMock).toHaveBeenCalledWith("http://127.0.0.1:43130/api/v1/workbenches/workbench%201/archive", expect.objectContaining({ method: "POST" }));
     await api.getWorkbench("workbench 1"); await api.updateWorkbench("workbench 1", { name: "Updated", persona: "New persona" });
     await api.bindWorkbenchWorkspace("workbench 1"); await api.rebuildWorkbenchWorkspace("workbench 1");
     await api.joiHomeFeed(); await api.listWorkbenchAgents("workbench 1", { cursor: "agent cursor", limit: 12 });

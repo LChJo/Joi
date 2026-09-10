@@ -86,6 +86,9 @@ export class DigitalLifeApi {
   createWorkbench(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
     return this.request<WorkbenchDto>("/api/v1/workbenches", { body, method: "POST" });
   }
+  archiveWorkbench(workbenchId: string) {
+    return this.request<WorkbenchChangeRequestDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/archive`, { method: "POST" });
+  }
   getWorkbench(workbenchId: string) { return this.request<WorkbenchDetailDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}`); }
   updateWorkbench(workbenchId: string, body: { name?: string; persona?: string; projectLabel?: string; responsibility?: string }) {
     return this.request<WorkbenchDetailDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}`, { body, method: "PATCH" });

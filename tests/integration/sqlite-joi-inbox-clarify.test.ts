@@ -84,6 +84,10 @@ describe("sqlite joi inbox clarify", () => {
         workbenchId: workbench.workbenchId,
       });
       expect(retriedResume).toEqual(firstResume);
+      expect(fixture.database.transaction((connection) => connection.prepare(`
+        SELECT w.access_mode, p.access_mode AS policy_access FROM work_items w
+        JOIN work_access_policies p ON p.work_id = w.work_id WHERE w.work_id = 'work-action-question'`).get()))
+        .toEqual({ access_mode: "WRITE", policy_access: "WRITE" });
       expect(fixture.database.transaction((connection) => ({
         activeAttempts: connection.prepare(`SELECT COUNT(*) AS count FROM dispatch_attempts
           WHERE work_id = 'work-action-question' AND status = 'PENDING'`).get(),

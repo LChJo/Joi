@@ -52,34 +52,47 @@ export class SqliteWorkbenchChangeRepository implements WorkbenchChangeRepositor
   }
 
   async decide(requestId: string, decision: "CONFIRM" | "REJECT", decidedAt: string): Promise<WorkbenchChangeRequest> {
+    return this.database.transaction((connection) => this.#decide(connection, requestId, decision, decidedAt));
+  }
+
+  async archiveConfirmed(request: WorkbenchChangeRequest): Promise<WorkbenchChangeRequest> {
     return this.database.transaction((connection) => {
-      const row = connection.prepare(`${SELECT_REQUEST} WHERE request_id = ?`).get(requestId) as Row | undefined;
-      if (row === undefined) throw new DomainError("workbench_change_not_found", "Workbench change request was not found.");
-      const request = requestFrom(row);
-      if (request.status !== "PENDING") throw new DomainError("workbench_change_already_decided", "Workbench change request was already decided.");
-      if (decision === "CONFIRM") {
-        const activeWork = connection.prepare(`SELECT COUNT(*) AS count FROM work_items
-          WHERE workbench_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING')`).get(request.sourceWorkbenchId) as { count: number };
-        if (activeWork.count > 0) throw new DomainError("workbench_change_active_work", "Workbench still owns nonterminal work.");
-        const source = connection.prepare("SELECT status FROM workbenches WHERE workbench_id = ?").get(request.sourceWorkbenchId) as { status: string } | undefined;
-        if (source?.status !== "ACTIVE") throw new DomainError("workbench_change_source_not_active", "Source Workbench is not active.");
-        if (request.kind === "MERGE") {
-          const targetWorkbenchId = request.targetWorkbenchId;
-          if (targetWorkbenchId === undefined) throw new Error("workbench_change_record_invalid");
-          const target = connection.prepare("SELECT status FROM workbenches WHERE workbench_id = ?").get(targetWorkbenchId) as { status: string } | undefined;
-          if (target?.status !== "ACTIVE") throw new DomainError("workbench_change_target_not_active", "Target Workbench is not active.");
-          connection.prepare(`INSERT INTO workbench_merges
-            (request_id, source_workbench_id, target_workbench_id, created_at) VALUES (?, ?, ?, ?)`
-          ).run(request.requestId, request.sourceWorkbenchId, targetWorkbenchId, decidedAt);
-        }
-        connection.prepare("UPDATE workbenches SET status = 'ARCHIVED', updated_at = ? WHERE workbench_id = ?")
-          .run(decidedAt, request.sourceWorkbenchId);
-      }
-      const status = decision === "CONFIRM" ? "CONFIRMED" : "REJECTED";
-      connection.prepare("UPDATE workbench_change_requests SET status = ?, decided_at = ? WHERE request_id = ?")
-        .run(status, decidedAt, requestId);
-      return requestFrom(connection.prepare(`${SELECT_REQUEST} WHERE request_id = ?`).get(requestId) as Row);
+      connection.prepare(`INSERT INTO workbench_change_requests
+        (request_id, kind, source_workbench_id, reason, turn_id, status, created_at)
+        VALUES (?, 'ARCHIVE', ?, ?, ?, 'PENDING', ?) ON CONFLICT(request_id) DO NOTHING`)
+        .run(request.requestId, request.sourceWorkbenchId, request.reason, request.turnId, request.createdAt);
+      return this.#decide(connection, request.requestId, "CONFIRM", request.createdAt);
     });
+  }
+
+  #decide(connection: DatabaseSync, requestId: string, decision: "CONFIRM" | "REJECT", decidedAt: string): WorkbenchChangeRequest {
+    const row = connection.prepare(`${SELECT_REQUEST} WHERE request_id = ?`).get(requestId) as Row | undefined;
+    if (row === undefined) throw new DomainError("workbench_change_not_found", "Workbench change request was not found.");
+    const request = requestFrom(row);
+    if (request.status === (decision === "CONFIRM" ? "CONFIRMED" : "REJECTED")) return request;
+    if (request.status !== "PENDING") throw new DomainError("workbench_change_already_decided", "Workbench change request was already decided.");
+    if (decision === "CONFIRM") {
+      const activeWork = connection.prepare(`SELECT COUNT(*) AS count FROM work_items
+        WHERE workbench_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING')`).get(request.sourceWorkbenchId) as { count: number };
+      if (activeWork.count > 0) throw new DomainError("workbench_change_active_work", "Workbench still owns nonterminal work.");
+      const source = connection.prepare("SELECT status FROM workbenches WHERE workbench_id = ?").get(request.sourceWorkbenchId) as { status: string } | undefined;
+      if (source?.status !== "ACTIVE") throw new DomainError("workbench_change_source_not_active", "Source Workbench is not active.");
+      if (request.kind === "MERGE") {
+        const targetWorkbenchId = request.targetWorkbenchId;
+        if (targetWorkbenchId === undefined) throw new Error("workbench_change_record_invalid");
+        const target = connection.prepare("SELECT status FROM workbenches WHERE workbench_id = ?").get(targetWorkbenchId) as { status: string } | undefined;
+        if (target?.status !== "ACTIVE") throw new DomainError("workbench_change_target_not_active", "Target Workbench is not active.");
+        connection.prepare(`INSERT INTO workbench_merges
+          (request_id, source_workbench_id, target_workbench_id, created_at) VALUES (?, ?, ?, ?)`
+        ).run(request.requestId, request.sourceWorkbenchId, targetWorkbenchId, decidedAt);
+      }
+      connection.prepare("UPDATE workbenches SET status = 'ARCHIVED', updated_at = ? WHERE workbench_id = ?")
+        .run(decidedAt, request.sourceWorkbenchId);
+    }
+    const status = decision === "CONFIRM" ? "CONFIRMED" : "REJECTED";
+    connection.prepare("UPDATE workbench_change_requests SET status = ?, decided_at = ? WHERE request_id = ?")
+      .run(status, decidedAt, requestId);
+    return requestFrom(connection.prepare(`${SELECT_REQUEST} WHERE request_id = ?`).get(requestId) as Row);
   }
 
   async get(requestId: string): Promise<WorkbenchChangeRequest | null> {

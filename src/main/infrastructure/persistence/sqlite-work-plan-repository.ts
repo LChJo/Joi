@@ -316,6 +316,12 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
 
   async reassign(plan: ReassignedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
+      if (plan.accessMode !== undefined) {
+        connection.prepare("UPDATE work_items SET access_mode = ? WHERE work_id = ?")
+          .run(plan.accessMode === "NONE" ? "READ" : plan.accessMode, plan.workId);
+        connection.prepare(`INSERT INTO work_access_policies (work_id, access_mode) VALUES (?, ?)
+          ON CONFLICT(work_id) DO UPDATE SET access_mode = excluded.access_mode`).run(plan.workId, plan.accessMode);
+      }
       // A resumed/reassigned Work supersedes its paused run. Leaving the old run in
       // WAITING_INPUT would keep Agent and goal projections permanently active.
       connection.prepare(`UPDATE partner_runs SET status = 'FAILED', updated_at = ?

@@ -14,6 +14,7 @@ export interface WorkbenchChangeRequest {
 }
 
 export interface WorkbenchChangeRepository {
+  archiveConfirmed(request: WorkbenchChangeRequest): Promise<WorkbenchChangeRequest>;
   create(request: WorkbenchChangeRequest): Promise<void>;
   decide(requestId: string, decision: "CONFIRM" | "REJECT", decidedAt: string): Promise<WorkbenchChangeRequest>;
   get(requestId: string): Promise<WorkbenchChangeRequest | null>;

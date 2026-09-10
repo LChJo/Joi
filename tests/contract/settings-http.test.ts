@@ -22,6 +22,7 @@ describe("LAN settings HTTP contract", () => {
       listLanAddresses: [{ address: "192.168.1.20", available: true }],
       setLaunchAtLogin: () => undefined,
       settingsPath: path.join(root, "settings.json"),
+      validateJoiSkills: () => undefined,
     });
     const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, settings }), loopbackPort: 0 });
     try {
@@ -45,6 +46,20 @@ describe("LAN settings HTTP contract", () => {
       const read = await fetch(`${listeners.loopback.url}/api/v1/settings`, { headers: { cookie } });
       expect(read.status).toBe(200);
       expect(await read.json()).toMatchObject({ lan: { availableAddresses: [{ address: "192.168.1.20", available: true }], effective: { status: "disabled" } } });
+      const postSkills = (joiSkills: unknown) => fetch(`${listeners.loopback.url}/api/v1/settings`, {
+        body: JSON.stringify({ joiSkills }),
+        headers: { "content-type": "application/json", cookie, origin: listeners.loopback.url, "x-csrf-token": csrfToken },
+        method: "POST",
+      });
+      const saved = await postSkills(["agents/lark-project"]);
+      expect(saved.status).toBe(200);
+      expect(await saved.json()).toMatchObject({ joiSkills: ["agents/lark-project"] });
+      const invalidSkills = await postSkills("agents/lark-project");
+      expect(invalidSkills.status).toBe(400);
+      expect(await invalidSkills.json()).toMatchObject({ code: "joi_skills_invalid" });
+      expect((await settings.get()).joiSkills).toEqual(["agents/lark-project"]);
+      const cleared = await postSkills([]);
+      expect(await cleared.json()).toMatchObject({ joiSkills: [] });
     } finally {
       await listeners.close();
       await fixture.close();

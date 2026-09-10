@@ -221,7 +221,28 @@ function ArtifactCard({ api, artifact, source, sourceId, workbenchId }: {
   </div>;
 }
 
-function ToolEntry({ entry }: { entry: AgentConversationEntryDto }) {
+function groupAgentEntries(items: AgentConversationEntryDto[]) {
+  const groups: { entry: AgentConversationEntryDto; entries: AgentConversationEntryDto[] }[] = [];
+  for (const entry of items) {
+    const previous = groups.at(-1);
+    const isTool = entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT";
+    if (isTool && entry.toolName !== undefined && previous?.entry.toolName === entry.toolName
+      && (previous.entry.kind === "TOOL_CALL" || previous.entry.kind === "TOOL_RESULT")) {
+      previous.entries.push(entry);
+    } else { groups.push({ entry, entries: [entry] }); }
+  }
+  return groups;
+}
+
+function ToolEntry({ entry, entries }: { entry: AgentConversationEntryDto; entries: AgentConversationEntryDto[] }) {
+  if (entries.length > 1) {
+    const calls = entries.filter((item) => item.kind === "TOOL_CALL").length;
+    const results = entries.length - calls;
+    return <article className="agent-message tool"><details className="agent-tool-compact">
+      <summary><span>工具</span><code>{entry.toolName} ×{Math.max(calls, results)}</code></summary>
+      {entries.map((item) => <div key={item.entryId}><small>{item.kind === "TOOL_CALL" ? "调用工具" : "工具结果"}</small>{item.text ? <pre>{item.text}</pre> : null}</div>)}
+    </details></article>;
+  }
   const label = entry.kind === "TOOL_CALL" ? "调用工具" : "工具结果";
   return <article className={`agent-message tool ${entry.kind.toLowerCase()}`}>
     <details className={`agent-tool-compact ${entry.kind === "TOOL_RESULT" ? "result" : ""}`}>
@@ -278,8 +299,8 @@ function AgentMessageStream({ agent, api, workbenchId, live = false }: {
   };
   return <>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
-    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : page.items.map((entry) => entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
-      ? <ToolEntry entry={entry} key={entry.entryId} />
+    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : groupAgentEntries(page.items).map(({ entry, entries }) => entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
+      ? <ToolEntry entry={entry} entries={entries} key={entry.entryId} />
       : <article className={`agent-message ${entry.role.toLowerCase()} ${entry.kind.toLowerCase()}`} key={entry.entryId}>
       <header><strong>{entry.role === "USER" ? "任务" : entry.role === "AGENT" ? agent.partnerName : entry.role === "TOOL" ? "工具" : "系统"}</strong><time>{new Date(entry.createdAt).toLocaleString()}</time></header>
       {entry.kind === "ARTIFACT" && entry.artifact !== undefined
@@ -304,6 +325,17 @@ function AgentConversation({ agent, api, workbenchId, onBack }: {
 }
 
 export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLifeApi; initialWorkbenchId?: string }) {
+  const [removing, setRemoving] = useState<{ workbenchId: string; name: string } | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const removeLock = useRef(false);
+  const removeDialog = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (removing === null) return;
+    const previousFocus = document.activeElement;
+    removeDialog.current?.querySelector<HTMLButtonElement>("button")?.focus();
+    return () => { if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus(); };
+  }, [removing]);
   const [workbenches, setWorkbenches] = useState<WorkbenchDto[]>([]);
   const [detail, setDetail] = useState<WorkbenchDetailDto | null>(null);
   const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
@@ -358,7 +390,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     try {
       if (action === "bind") await api.bindWorkbenchWorkspace(detail.workbenchId); else await api.rebuildWorkbenchWorkspace(detail.workbenchId);
       await open(detail.workbenchId); setTab("context");
-      setNotice(action === "bind" ? "已绑定现有目录。" : "已重新排队创建受管目录。");
+      setNotice(action === "bind" ? "已绑定现有目录。" : "已切换为默认运行目录，新任务将创建独立目录。");
     } catch (error) { setNotice(error instanceof ApiError ? error.message : "工作区操作没有完成。"); }
   };
   const removeAgent = async (agent: WorkbenchAgentCardDto) => {
@@ -366,15 +398,45 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     try { await api.deleteWorkbenchAgent(detail.workbenchId, agent.agentId); await loadAgents(detail.workbenchId); }
     catch (error) { setNotice(error instanceof ApiError ? error.message : "Agent 没有删除。"); }
   };
+  const requestRemoval = (workbench: { workbenchId: string; name: string }) => {
+    setRemoveError(null); setRemoving(workbench);
+  };
+  const removeWorkbench = async () => {
+    if (removing === null || removeLock.current) return;
+    removeLock.current = true; setRemoveBusy(true); setRemoveError(null);
+    try {
+      await api.archiveWorkbench(removing.workbenchId);
+      setWorkbenches((items) => items.filter((item) => item.workbenchId !== removing.workbenchId));
+      setDetail(null); setAgents([]); setSelectedAgent(null); setRemoving(null);
+      setNotice("工作台已移除，历史记录和工作目录已保留。");
+    } catch (error) {
+      setRemoveError(error instanceof ApiError && error.code === "workbench_change_active_work"
+        ? "工作台仍有未结束的任务，请先完成或取消任务后再移除。"
+        : "工作台没有移除，请重试。");
+    } finally { removeLock.current = false; setRemoveBusy(false); }
+  };
   if (detail !== null && selectedAgent !== null) return <AgentConversation agent={selectedAgent} api={api} workbenchId={detail.workbenchId} onBack={() => setSelectedAgent(null)} />;
   return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">工作台 / Agent</p><h1>{detail?.name ?? "工作台"}</h1><p>{detail === null ? "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建工作台"}</button> : <button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回工作台列表</button>}</header>
+    {removing === null ? null : <div className="dialog-backdrop"><section aria-labelledby="remove-workbench-title" aria-modal="true" className="dialog" ref={removeDialog} role="dialog" tabIndex={-1} onKeyDown={(event) => {
+      if (event.key === "Escape" && !removeBusy) setRemoving(null);
+      if (event.key === "Tab") {
+        const buttons = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
+        const next = buttons[(buttons.indexOf(document.activeElement as HTMLButtonElement) + (event.shiftKey ? -1 : 1) + buttons.length) % buttons.length];
+        event.preventDefault(); (next ?? event.currentTarget).focus();
+      }
+    }}>
+      <h2 id="remove-workbench-title">移除“{removing.name}”？</h2>
+      <p>工作台将从列表移除，不再接收新任务。历史记录和工作目录会保留。有未结束的任务时无法移除。</p>
+      {removeError === null ? null : <p role="alert">{removeError}</p>}
+      <div className="row-actions"><button className="button ghost" disabled={removeBusy} onClick={() => setRemoving(null)} type="button">取消</button><button className="button danger-text" disabled={removeBusy} onClick={() => void removeWorkbench()} type="button">{removeBusy ? "正在移除…" : "确认移除"}</button></div>
+    </section></div>}
+    <header className="page-title-row"><div><p className="eyebrow">工作台 / Agent</p><h1>{detail?.name ?? "工作台"}</h1><p>{detail === null ? "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建工作台"}</button> : <div className="row-actions"><button className="button danger-text" onClick={() => requestRemoval(detail)} type="button">移除工作台</button><button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回工作台列表</button></div>}</header>
     {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" placeholder="工作聚类名称，如：前端调试分析" required /></label><label>工程名称<input name="projectLabel" placeholder="工作环境 / 工程，如：数字生活" required /></label><label>职责范围<textarea name="scopeSummary" placeholder="描述这类工作共享的环境和边界" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" placeholder="描述工作环境的长期约束，不要写单个 Agent 角色" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
-    {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <button className="workbench-catalog-card" key={workbench.workbenchId} onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span><small>更新于 {new Date(workbench.updatedAt).toLocaleString()}</small><i>管理上下文</i></button>)}</div>) : <>
+    {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <article className="workbench-catalog-entry" key={workbench.workbenchId}><button className="workbench-catalog-card" onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span><small>更新于 {new Date(workbench.updatedAt).toLocaleString()}</small><i>管理上下文</i></button><button aria-label={`移除 ${workbench.name}`} className="button danger-text" onClick={() => requestRemoval(workbench)} type="button">移除工作台</button></article>)}</div>) : <>
       <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button></div>
       {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
-        <article className="context-card"><h3>工作区</h3><p><strong>{detail.workspace.displayName}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">重建受管目录</button></div></article>
+        <article className="context-card"><h3>工作区</h3><p>{detail.workspace.kind === "BOUND" ? "此工作台的新任务固定使用指定目录。" : "每个新任务在用户主目录 joi/runs 下创建独立目录；恢复和重试复用原目录。"}</p><p><strong>{detail.workspace.kind === "BOUND" ? detail.workspace.displayName : "默认运行目录"}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">使用默认运行目录</button></div></article>
         <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
         <article className="context-card"><h3>最近结果总结</h3>{detail.recentOutcomes.length === 0 ? <p>还没有目标级结果总结。</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{recentOutcomeLabel(item.status)} · {new Date(item.completedAt).toLocaleString()}</small></li>)}</ul>}</article>
       </div>}

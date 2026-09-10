@@ -31,6 +31,14 @@ const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
 const PARTNER_CONTEXT_MAX_CHARS = 120_000;
 const PARTNER_CONTEXT_MAX_MESSAGES = 32;
 
+function assertSkillWorkspace(revision: PartnerRevision, workspacePath: string | undefined): void {
+  if (revision.skills.length > 0 && workspacePath === undefined) {
+    throw wrapPartnerRunFailure(new DomainError("partner_skill_workspace_required", "Skill execution requires a Workbench workspace. Dispatch with READ or WRITE access."), {
+      phase: "CONFIGURATION", sideEffectState: "NONE",
+    });
+  }
+}
+
 /** Keeps the current request plus a structurally valid recent tail before every provider call. */
 export function boundPartnerModelContext(messages: AgentMessage[]): AgentMessage[] {
   if (messages.length <= PARTNER_CONTEXT_MAX_MESSAGES && JSON.stringify(messages).length <= PARTNER_CONTEXT_MAX_CHARS) return messages;
@@ -260,6 +268,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
+    assertSkillWorkspace(revision, execution.workspacePath);
     const externalRunId = `local_pi:${request.actionId}`;
     const pin = await this.#selectSource(revision, externalRunId);
     const resolved = await this.dependencies.resolver.resolve(pin);
@@ -327,6 +336,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId);
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
+    assertSkillWorkspace(revision, execution.workspacePath);
     const pin = input.sourcePin ?? await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
     let warm = this.#warm.get(input.instanceId);
     if (warm !== undefined && (warm.partnerRevisionId !== revision.partnerRevisionId

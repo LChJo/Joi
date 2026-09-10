@@ -1,7 +1,9 @@
-import type { WorkDependency, WorkItem } from "../../domain/work/work.js";
+import type { WorkAccessMode, WorkDependency, WorkItem } from "../../domain/work/work.js";
 import type { WorkItemDto } from "../../../shared/joi.js";
 
 export interface PartnerDispatchPin {
+  /** Required by the pinned Skill/tool policy; applied before policy and lease checks. */
+  minimumAccessMode?: WorkAccessMode;
   partnerId: string;
   partnerRevisionId: string;
   registryRevision: number;
@@ -80,6 +82,7 @@ export interface WorkSupplementContext {
 }
 
 export interface ReassignedWorkPlan {
+  accessMode?: WorkAccessMode;
   attempt: PlannedDispatchAttempt;
   createdAt: string;
   dispatchPlanId: string;

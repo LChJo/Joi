@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { ConsoleApp, RemoteAccessSettings, SettingsPanel, SystemPanel } from "../../src/renderer/Console.js";
 import type { DiagnosticsDto } from "../../src/renderer/types";
+import { JoiSkillSettings } from "../../src/renderer/JoiSkillSettings";
 
 const diagnostics: DiagnosticsDto = {
   agents: { connections: 0 },
@@ -48,13 +49,66 @@ function mockOperations(api: DigitalLifeApi) {
 }
 
 describe("settings panel", () => {
-  it("groups settings into five accessible tabs with keyboard navigation", async () => {
+  it("explains missing Skills, supports search and preserves draft selection during refresh", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "settings").mockResolvedValue({ ...runtimeSettings, joiSkills: ["agents/missing"] });
+    const catalog = vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ id: "agents/example", displayName: "example" }] });
+    const save = vi.spyOn(api, "updateSettings").mockRejectedValue(new Error("private failure"));
+    render(<JoiSkillSettings api={api} />);
+    await screen.findByRole("button", { name: "移除 agents/missing" });
+    expect(screen.getByRole("button", { name: "保存技能选择" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "移除 agents/missing" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: /example/ }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "absent" } });
+    expect(screen.getByText("没有匹配的技能。")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "example" } });
+    fireEvent.click(screen.getByRole("button", { name: "刷新技能目录" }));
+    await screen.findByText("技能目录已刷新，未保存的选择已保留。");
+    expect(screen.getByRole("checkbox", { name: /example/ })).toBeChecked();
+    expect(catalog).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "保存技能选择" }));
+    await screen.findByText("没能保存技能选择，请重试。");
+    expect(save).toHaveBeenCalledWith({ joiSkills: ["agents/example"] });
+    expect(screen.getByRole("checkbox", { name: /example/ })).toBeChecked();
+  });
+
+  it("retries catalog failures and explains an empty catalog", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "settings").mockResolvedValue(runtimeSettings);
+    vi.spyOn(api, "engineSkills").mockRejectedValueOnce(new Error("private path")).mockResolvedValue({ items: [] });
+    render(<JoiSkillSettings api={api} />);
+    await screen.findByText("没能读取技能目录，请重试。");
+    expect(screen.queryByRole("button", { name: "保存技能选择" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "刷新技能目录" }));
+    await screen.findByText("还没有发现可用技能。安装 Skill 后刷新目录。");
+    expect(screen.getByRole("button", { name: "保存技能选择" })).toBeEnabled();
+  });
+
+  it("selects main Joi Skills and persists an explicit empty selection", async () => {
+    const api = new DigitalLifeApi("");
+    mockOperations(api);
+    vi.spyOn(api, "engineSkills").mockResolvedValue({ items: [{ id: "agents/lark-project", displayName: "lark-project" }] });
+    const save = vi.spyOn(api, "updateSettings").mockResolvedValue({ ...runtimeSettings, joiSkills: ["agents/lark-project"] });
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    fireEvent.click(screen.getByRole("tab", { name: "技能" }));
+    const checkbox = await screen.findByRole("checkbox", { name: /lark-project/ });
+    expect(checkbox).not.toBeChecked();
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "保存技能选择" }));
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ joiSkills: ["agents/lark-project"] }));
+    await screen.findByText("技能选择已保存，下次思考时生效。");
+    fireEvent.click(checkbox);
+    fireEvent.click(screen.getByRole("button", { name: "保存技能选择" }));
+    await waitFor(() => expect(save).toHaveBeenLastCalledWith({ joiSkills: [] }));
+  });
+
+  it("groups settings into accessible tabs with keyboard navigation", async () => {
     const api = new DigitalLifeApi("");
     mockOperations(api);
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
 
     const tabs = await screen.findAllByRole("tab");
-    expect(tabs.map((tab) => tab.textContent)).toEqual(["模型网络", "设备连接", "安全", "数据", "诊断"]);
+    expect(tabs.map((tab) => tab.textContent)).toEqual(["模型网络", "技能", "设备连接", "安全", "数据", "诊断"]);
     expect(screen.getByRole("tab", { name: "模型网络" })).toHaveAttribute("aria-selected", "true");
     expect(screen.getByRole("tabpanel", { name: "模型网络" })).toBeInTheDocument();
     expect(screen.queryByText("其他设备访问")).not.toBeInTheDocument();

@@ -1,8 +1,39 @@
 import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
+import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("Workbench Agent and joi home projections", () => {
+  it("orders goals by opening time and keeps that order through progress and completion updates", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      fixture.database.transaction((connection) => {
+        const insert = connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, created_at, updated_at)
+          VALUES (?, ?, '排序测试', 'PENDING', ?, ?)`);
+        insert.run('older', 'older', '2026-09-10T01:00:00.000Z', '2026-09-10T04:00:00.000Z');
+        insert.run('newer-a', 'newer-a', '2026-09-10T02:00:00.000Z', '2026-09-10T02:00:00.000Z');
+        insert.run('newer-b', 'newer-b', '2026-09-10T02:00:00.000Z', '2026-09-10T03:00:00.000Z');
+      });
+      const repository = new SqliteJoiHomeFeedRepository(fixture.database);
+      const order = async () => (await repository.load(fixture.clock.now())).goals.map((goal) => goal.goalId);
+      expect(await order()).toEqual(['newer-b', 'newer-a', 'older']);
+      fixture.database.transaction((connection) => {
+        connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = '2026-09-10T05:00:00.000Z' WHERE input_id = 'older'`).run();
+      });
+      expect(await order()).toEqual(['newer-b', 'newer-a', 'older']);
+      const inbox = new SqliteJoiInboxRepository(fixture.database, { now: () => new Date('2026-09-10T06:00:00.000Z') });
+      expect(await inbox.retry('older', {})).not.toBeNull();
+      expect(await order()).toEqual(['older', 'newer-b', 'newer-a']);
+      fixture.database.transaction((connection) => {
+        connection.prepare(`UPDATE joi_inbox_messages SET updated_at = '2026-09-10T07:00:00.000Z' WHERE input_id = 'newer-a'`).run();
+      });
+      expect(await order()).toEqual(['older', 'newer-b', 'newer-a']);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("keeps a current completed goal outcome authoritative when one terminal Work failed", async () => {
     const fixture = await createRuntimeFixture();
     try {

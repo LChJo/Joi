@@ -9,6 +9,7 @@ export interface LanSettings {
 
 export interface SystemSettings {
   lan: LanSettings;
+  joiSkills?: string[];
   launchAtLogin: boolean;
 }
 
@@ -21,7 +22,7 @@ export interface SystemSettingsSnapshot extends SystemSettings {
 
 export interface SystemSettingsPort {
   get(): Promise<SystemSettingsSnapshot>;
-  update(input: { lan?: Partial<LanSettings>; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }>;
+  update(input: { lan?: Partial<LanSettings>; joiSkills?: string[]; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }>;
 }
 
 export function isRfc1918Address(address: string): boolean {

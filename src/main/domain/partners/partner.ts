@@ -1,4 +1,5 @@
 import { DomainError } from "../errors.js";
+import type { WorkAccessMode } from "../work/work.js";
 
 export type PartnerKind = "local-pi" | "a2a";
 export type PartnerStatus = "ACTIVE" | "DISABLED" | "DELETED";
@@ -71,6 +72,14 @@ export interface CreatePartnerRevisionInput {
 
 export function legacyToolPolicyMode(tools: readonly string[]): ToolPolicyMode {
   return tools.length === 0 ? "ALL" : "CUSTOM";
+}
+
+/** Local execution always has a working directory, including text-only tasks. */
+export function minimumLocalWorkAccess(revision: PartnerRevision): WorkAccessMode {
+  if (revision.kind !== "local-pi") return "NONE";
+  if (revision.engine === "codex") return revision.codexPermissions?.sandboxMode === "read-only" ? "READ" : "WRITE";
+  if ((revision.toolPolicyMode ?? legacyToolPolicyMode(revision.tools)) === "ALL") return "WRITE";
+  return revision.tools.some((name) => ["bash", "edit", "write", "multiedit", "notebookedit"].includes(name.toLowerCase())) ? "WRITE" : "READ";
 }
 
 export function normalizeToolPolicyMode(value: unknown, tools: readonly string[]): ToolPolicyMode {

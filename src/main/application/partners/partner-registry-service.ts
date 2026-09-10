@@ -3,6 +3,7 @@ import { DomainError } from "../../domain/errors.js";
 import {
   createPartnerRevision,
   mergeA2aCardRevision,
+  minimumLocalWorkAccess,
   toPublicPartner,
   type PartnerCreator,
   type CodexPermissions,
@@ -15,6 +16,7 @@ import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime
 import type { PartnerPromptStore } from "../ports/partner-execution.js";
 import type { AppendPartnerRevisionInput, PartnerRegistryRepository } from "../ports/partner-registry.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
+import type { PartnerDispatchPin } from "../ports/work-orchestration.js";
 import type { PartnerKnowledgeService } from "./partner-knowledge-service.js";
 
 interface PartnerFields {
@@ -288,14 +290,17 @@ export class PartnerRegistryService {
       .map((revision) => this.#public(revision)));
   }
 
-  async pinForDispatch(partnerId: string): Promise<{ partnerId: string; partnerRevisionId: string; registryRevision: number }> {
+  async pinForDispatch(partnerId: string): Promise<PartnerDispatchPin> {
     const revision = await this.#active(partnerId);
     if (revision.status !== "ACTIVE") throw new DomainError("partner_not_available", "Partner is not available.");
     const configuration = this.#configuration(revision);
     if (configuration !== undefined) {
       throw new DomainError(configuration.reasonCodes[0] ?? "partner_configuration_invalid", "Partner configuration requires correction before dispatch.");
     }
-    return { partnerId, partnerRevisionId: revision.partnerRevisionId, registryRevision: revision.registryRevision };
+    const minimumAccessMode = minimumLocalWorkAccess(revision);
+    return { partnerId, partnerRevisionId: revision.partnerRevisionId, registryRevision: revision.registryRevision,
+      ...(minimumAccessMode === "NONE" ? {} : { minimumAccessMode }),
+    };
   }
 
   async #active(partnerId: string): Promise<PartnerRevision> {

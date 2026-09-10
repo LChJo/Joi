@@ -42,19 +42,24 @@ export class SqliteWorkbenchContextRepository implements WorkbenchContextProject
     const row = this.database.transaction((connection) => connection.prepare(`
       SELECT w.work_id, w.workbench_id, w.title,
              COALESCE(ap.access_mode, w.access_mode) AS effective_access_mode,
-             b.workspace_ref, b.status AS workspace_status, b.kind AS workspace_kind,
+             b.workspace_ref, COALESCE(d.status, b.status) AS workspace_status, b.kind AS workspace_kind,
              b.display_name AS workspace_display_name, b.failure_reason_code,
              p.active_work_json, p.recent_results_json
         FROM work_items w
         LEFT JOIN work_access_policies ap ON ap.work_id = w.work_id
         LEFT JOIN workbench_workspace_bindings b ON b.workbench_id = w.workbench_id
+        LEFT JOIN work_run_directories d ON d.work_id = w.work_id
         LEFT JOIN workbench_task_projections p ON p.workbench_id = w.workbench_id
        WHERE w.work_id = ? AND w.workbench_id = ?`).get(workId, workbenchId)) as Row | undefined;
     if (row === undefined || typeof row.work_id !== "string" || typeof row.title !== "string" || typeof row.effective_access_mode !== "string") return null;
+    const goalWorks = this.database.transaction((connection) => connection.prepare(`
+      SELECT sibling.work_id FROM work_items sibling JOIN work_items current ON current.input_id = sibling.input_id
+      WHERE current.work_id = ? AND current.workbench_id = ? AND sibling.workbench_id = ?`).all(workId, workbenchId, workbenchId));
+    const goalWorkIds = new Set(goalWorks.map((work) => work.work_id));
     return {
-      activeWork: parseArray<{ status: string; title: string; workId: string }>(row.active_work_json),
+      activeWork: parseArray<{ status: string; title: string; workId: string }>(row.active_work_json).filter((work) => goalWorkIds.has(work.workId)),
       memorySummaryRefs: [],
-      recentResults: parseArray<{ resultId: string; status: string; summary: string; workId: string }>(row.recent_results_json),
+      recentResults: parseArray<{ resultId: string; status: string; summary: string; workId: string }>(row.recent_results_json).filter((result) => goalWorkIds.has(result.workId)),
       work: { accessMode: row.effective_access_mode as WorkAccessMode, title: row.title, workId: row.work_id },
       workspace: workspace(row),
     };
@@ -93,9 +98,12 @@ export class SqliteWorkbenchContextRepository implements WorkbenchContextProject
     const snapshot = await this.load(contextSnapshotId);
     if (snapshot === null) return null;
     const workspaceRef = snapshot.workspaceRef;
-    const row = workspaceRef === undefined ? undefined : this.database.transaction((connection) => connection.prepare(
+    const runDirectory = this.database.transaction((connection) => connection.prepare(
+      "SELECT root_path FROM work_run_directories WHERE work_id = ? AND workbench_id = ? AND status = 'READY'",
+    ).get(snapshot.workId, snapshot.workbenchId)) as Row | undefined;
+    const row = runDirectory ?? (workspaceRef === undefined ? undefined : this.database.transaction((connection) => connection.prepare(
       "SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?",
-    ).get(workspaceRef)) as Row | undefined;
+    ).get(workspaceRef)));
     const sanitized = {
       activeWork: snapshot.safeContext.activeWork,
       workbenchName: snapshot.safeContext.workbenchName,

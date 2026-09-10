@@ -12,6 +12,16 @@ import { exact, pattern, type RouteDefinition } from "../route-types.js";
 
 export const WORKBENCH_ROUTES: RouteDefinition[] = [
   {
+    auth: "write",
+    id: "POST /api/v1/workbenches/:workbenchId/archive",
+    match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/archive$/),
+    handle: async (ctx, match) => {
+      sendJson(ctx.response, 200, await workbenchChangeService(ctx.dependencies).archive(
+        decodeURIComponent((match as RegExpExecArray)[1] ?? ""),
+      ));
+    },
+  },
+  {
     auth: "read",
     id: "GET /api/v1/workbenches",
     match: exact("GET", "/api/v1/workbenches"),

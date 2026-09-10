@@ -149,11 +149,15 @@ export const SYSTEM_ROUTES: RouteDefinition[] = [
     handle: async (ctx) => {
       if (ctx.dependencies.settings === undefined) throw new HttpError("settings_unavailable", "Runtime settings are unavailable.", 503);
       const body = await readJson(ctx.request);
+      if (body.joiSkills !== undefined && (!Array.isArray(body.joiSkills) || body.joiSkills.some((ref: unknown) => typeof ref !== "string"))) {
+        throw new HttpError("joi_skills_invalid", "技能选择必须是引用列表。", 400);
+      }
       const lanBody = body.lan;
       const lan = lanBody !== null && typeof lanBody === "object" && !Array.isArray(lanBody)
         ? lanBody as Record<string, unknown>
         : undefined;
       sendJson(ctx.response, 200, await ctx.dependencies.settings.update({
+        ...(body.joiSkills === undefined ? {} : { joiSkills: body.joiSkills as string[] }),
         ...(typeof body.launchAtLogin === "boolean" ? { launchAtLogin: body.launchAtLogin } : {}),
         ...(lan === undefined ? {} : { lan: {
           ...(typeof lan.address === "string" ? { address: lan.address } : {}),

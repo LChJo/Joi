@@ -23,6 +23,8 @@ import {
   MODEL_SOURCE_PRESETS,
 } from "../../src/main/infrastructure/pi/provider-presets.js";
 import { createPiSourceProvider } from "../../src/main/infrastructure/pi/source-provider-factory.js";
+import { ConfiguredPiReasoningRuntime } from "../../src/main/infrastructure/pi/configured-pi-reasoning-runtime.js";
+import { JoiSkillRuntime } from "../../src/main/infrastructure/pi/joi-skill-runtime.js";
 
 class MemorySessionStore implements ReasoningSessionStore {
   readonly snapshots = new Map<string, JoiReasoningSessionSnapshot>();
@@ -52,6 +54,45 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
+  it("loads selected main Skills into cached sessions and refreshes them on the next turn", async () => {
+    const faux = fauxProvider({ provider: "joi-selected-skills" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("joi_read_skill", { skillId: "agents/example" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Skill read.")]),
+      fauxAssistantMessage([fauxText("No selected skills.")]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    let joiSkills = ["agents/example"];
+    const readInstructions = vi.fn(() => "private skill body");
+    const store = new MemorySessionStore();
+    const resolve = vi.fn(async () => ({ model: faux.getModel(), models }));
+    const runtime = new ConfiguredPiReasoningRuntime({
+      resolver: { resolve }, sessionStore: store, tools: [],
+      skills: new JoiSkillRuntime({
+        catalog: { listForEngine: () => [{ id: "agents/example", displayName: "example" }], validateRefs: () => undefined, readInstructions },
+        settings: { get: async () => ({ joiSkills }) },
+      }),
+    });
+    const events: unknown[] = [];
+    const input = {
+      workbenchId: "workbench_skills", inputId: "input_skills", modelId: "model", modelRevisionId: "model_rev",
+      prompt: "Use the selected skill", sessionId: "session_skills", sourceId: "source", sourceRevisionId: "source_rev",
+      systemPrompt: "You are Joi.", turnId: "turn_skills",
+      onEvent: (event: unknown) => { events.push(event); },
+    };
+    await runtime.startTurn(input);
+    expect(readInstructions).toHaveBeenCalledWith(["agents/example"]);
+    expect(store.snapshots.get(input.sessionId)?.systemPrompt).toContain("agents/example");
+    expect(store.snapshots.get(input.sessionId)?.systemPrompt).not.toContain("private skill body");
+    expect(JSON.stringify(events)).not.toContain("private skill body");
+    joiSkills = [];
+    await runtime.startTurn({ ...input, turnId: "turn_without_skills" });
+    expect(store.snapshots.get(input.sessionId)?.systemPrompt).toBe(input.systemPrompt);
+    expect(resolve).toHaveBeenCalledTimes(1);
+    expect(readInstructions).toHaveBeenCalledTimes(1);
+  });
+
   it.each(["DIRECT_ANSWER", "RESULT_CONTINUE", "RESULT_BLOCKED"] as const)("projects the safe %s Turn outcome from a turn_complete result", async (committedOutcome) => {
     const faux = fauxProvider({ provider: "joi-turn-outcome" });
     faux.setResponses([
@@ -316,6 +357,7 @@ describe("Pi reasoning runtime contract", () => {
       "workbench_suggest_archive",
       "model_list_sources",
       "partner_list_skills",
+      "joi_read_skill",
       "partner_list_available",
       "partner_inspect_revision",
       "partner_create",
@@ -476,7 +518,8 @@ describe("Pi reasoning runtime contract", () => {
     models.setProvider(faux.provider);
     const store = new MemorySessionStore();
     const flood = Array.from({ length: 24 }, (_, index) => ({
-      content: `填充 ${String(index)} ${"上下文".repeat(100)}`,
+      // Keep this fixture above the SDK's estimated token window, not merely large in characters.
+      content: `填充 ${String(index)} ${"上下文".repeat(1000)}`,
       role: "user",
       timestamp: 1_700_000_000_000 + index * 1000,
     }));

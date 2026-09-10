@@ -104,6 +104,25 @@ describe("local Pi coding partner runtime", () => {
 });
 
 describe("Pi partner engine runtime", () => {
+  it.each(["ephemeral", "resident"])("rejects %s Skill runs without a workspace before model initialization", async (mode) => {
+    const resolve = vi.fn(async () => { throw new Error("must not initialize model"); });
+    const runtime = new PiPartnerEngineRuntime({
+      contexts: { loadForExecution: async () => ({ promptSection: "", sanitized: {} }) },
+      prompts: { read: async () => null }, resolver: { resolve },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { names: ["read", "bash"], create: () => [] },
+    });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-09-09T00:00:00.000Z", displayName: "Skill partner", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: ["agents/lark-project"], tools: ["read", "bash"] });
+    const request = { actionId: "action", workbenchId: "workbench", contextSnapshotId: "snapshot", taskProjection: "Analyze tasks", workId: "work" };
+    const context = { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "skill metadata" };
+    const run = mode === "ephemeral" ? runtime.runEphemeral(request, revision, context)
+      : runtime.runResidentTurn({ ...context, instanceId: "instance", request, revision, restoredMessages: null });
+    await expect(run).rejects.toMatchObject({ partnerRunFailure: {
+      phase: "CONFIGURATION", reasonCode: "partner_skill_workspace_required", retryable: false, sideEffectState: "NONE",
+    } });
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
   it("publishes bounded visible text and tool lifecycle snapshots while a run is active", async () => {
     const faux = fauxProvider({ provider: "local-partner-live-conversation", tokenSize: { max: 1, min: 1 }, tokensPerSecond: 100 });
     faux.setResponses([

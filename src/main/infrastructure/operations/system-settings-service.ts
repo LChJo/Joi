@@ -18,6 +18,7 @@ export class SystemSettingsService implements SystemSettingsPort {
     reconfigureLan?: (target: { address: string; port: number } | undefined) => Promise<LanRuntimeState>;
     setLaunchAtLogin: (enabled: boolean) => void;
     settingsPath: string;
+    validateJoiSkills?: (refs: readonly string[]) => void;
   }) {}
 
   async get(): Promise<SystemSettingsSnapshot> {
@@ -26,34 +27,46 @@ export class SystemSettingsService implements SystemSettingsPort {
     return this.snapshot(persisted, availableAddresses);
   }
 
-  async update(input: { lan?: Partial<LanSettings>; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
+  async update(input: { lan?: Partial<LanSettings>; joiSkills?: string[]; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
     const operation = this.updateChain.then(() => this.performUpdate(input));
     this.updateChain = operation.then(() => undefined, () => undefined);
     return operation;
   }
 
-  private async performUpdate(input: { lan?: Partial<LanSettings>; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
+  private async performUpdate(input: { lan?: Partial<LanSettings>; joiSkills?: string[]; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
     const current = await this.readPersisted();
     const lan = { ...current.lan, ...(input.lan ?? {}) };
-    if (!Number.isInteger(lan.port) || lan.port < 1024 || lan.port > 65_535) {
+    const applyLan = input.lan !== undefined || input.joiSkills === undefined;
+    if (applyLan && (!Number.isInteger(lan.port) || lan.port < 1024 || lan.port > 65_535)) {
       throw new DomainError("lan_port_invalid", "LAN 端口必须在 1024 到 65535 之间。");
     }
-    if (lan.enabled && !lan.riskAccepted) {
+    if (applyLan && lan.enabled && !lan.riskAccepted) {
       throw new DomainError("lan_risk_required", "启用 LAN 访问前必须确认明文连接风险。");
     }
-    if (lan.enabled && !isRfc1918Address(lan.address)) {
+    if (applyLan && lan.enabled && !isRfc1918Address(lan.address)) {
       throw new DomainError("lan_address_invalid", "LAN 访问必须使用明确的 RFC1918 IPv4 地址。");
     }
     const availableAddresses = await this.availableAddresses();
-    if (lan.enabled && !availableAddresses.some((item) => item.address === lan.address && item.available)) {
+    if (applyLan && lan.enabled && !availableAddresses.some((item) => item.address === lan.address && item.available)) {
       throw new DomainError("lan_address_unavailable", "所选局域网地址当前不在本机网卡上。");
     }
 
-    await this.persist(lan);
+    const joiSkills = input.joiSkills ?? current.joiSkills ?? [];
+    if (input.joiSkills !== undefined) {
+      if (!Array.isArray(joiSkills) || joiSkills.length > 100 || joiSkills.some((ref) => typeof ref !== "string" || ref.length > 256)
+        || new Set(joiSkills).size !== joiSkills.length) {
+        throw new DomainError("joi_skills_invalid", "技能选择无效，请重新选择。");
+      }
+      if (joiSkills.length > 0 && this.dependencies.validateJoiSkills === undefined) {
+        throw new DomainError("joi_skills_unavailable", "技能加载暂不可用。");
+      }
+      this.dependencies.validateJoiSkills?.(joiSkills);
+    }
+    await this.persist(lan, joiSkills);
     if (input.launchAtLogin !== undefined) this.dependencies.setLaunchAtLogin(input.launchAtLogin);
 
     let effective = this.dependencies.getLanRuntimeState?.();
-    if (this.dependencies.reconfigureLan !== undefined) {
+    if (applyLan && this.dependencies.reconfigureLan !== undefined) {
       try {
         effective = await this.dependencies.reconfigureLan(lan.enabled ? { address: lan.address, port: lan.port } : undefined);
       } catch {
@@ -61,15 +74,19 @@ export class SystemSettingsService implements SystemSettingsPort {
       }
     }
     return {
-      ...this.snapshot({ lan, launchAtLogin: this.dependencies.getLaunchAtLogin() }, availableAddresses, effective),
+      ...this.snapshot({ lan, joiSkills, launchAtLogin: this.dependencies.getLaunchAtLogin() }, availableAddresses, effective),
       restartRequired: false,
     };
   }
 
   private async readPersisted(): Promise<SystemSettings> {
     let lan = DEFAULT_LAN;
+    let joiSkills: string[] = [];
     try {
       const parsed: unknown = JSON.parse(await readFile(this.dependencies.settingsPath, "utf8"));
+      if (parsed !== null && typeof parsed === "object" && "joiSkills" in parsed && Array.isArray(parsed.joiSkills)) {
+        joiSkills = parsed.joiSkills.filter((ref): ref is string => typeof ref === "string");
+      }
       if (parsed !== null && typeof parsed === "object" && "lan" in parsed) {
         const value = parsed.lan;
         if (value !== null && typeof value === "object" && !Array.isArray(value)) {
@@ -87,7 +104,7 @@ export class SystemSettingsService implements SystemSettingsPort {
       const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
       if (code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
     }
-    return { lan, launchAtLogin: this.dependencies.getLaunchAtLogin() };
+    return { lan, joiSkills, launchAtLogin: this.dependencies.getLaunchAtLogin() };
   }
 
   private async availableAddresses(): Promise<LanAddressOption[]> {
@@ -107,17 +124,17 @@ export class SystemSettingsService implements SystemSettingsPort {
       ? { status: "blocked" as const, reasonCode: "lan_not_applied", message: "LAN 配置尚未应用到当前进程。" }
       : { status: "disabled" as const });
     return {
+      joiSkills: persisted.joiSkills ?? [],
       launchAtLogin: persisted.launchAtLogin,
       lan: { ...persisted.lan, availableAddresses, effective: runtime },
     };
   }
 
-  private async persist(lan: LanSettings): Promise<void> {
+  private async persist(lan: LanSettings, joiSkills: string[]): Promise<void> {
     await mkdir(path.dirname(this.dependencies.settingsPath), { recursive: true });
     const temporary = `${this.dependencies.settingsPath}.${String(process.pid)}.tmp`;
     await rm(temporary, { force: true });
-    await writeFile(temporary, `${JSON.stringify({ lan }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
-    await rm(this.dependencies.settingsPath, { force: true });
+    await writeFile(temporary, `${JSON.stringify({ lan, joiSkills }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     await rename(temporary, this.dependencies.settingsPath);
   }
 }

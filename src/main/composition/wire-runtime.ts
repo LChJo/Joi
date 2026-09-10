@@ -123,6 +123,7 @@ export function wireRuntime(input: {
   const todoScheduler = new TodoScheduler({ clock, ids, notify: (workbenchId) => notifyJoi(workbenchId, "todo.due"), publisher, store: database.store });
   const expressionDelivery = new ExpressionDeliveryScheduler({ clock, publisher, store: database.store });
   const partnerDispatchDelivery = new SqlitePartnerDispatchDelivery({
+    runDirectories: persistence.runDirectories,
     agentConversations: persistence.workbenchAgentRepository,
     attachmentStager: new WorkAttachmentStager({ attachments: joiStack.joiAttachmentStorage, database }),
     clarifications: persistence.joiInboxRepository,

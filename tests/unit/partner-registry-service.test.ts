@@ -61,6 +61,24 @@ class MemoryKnowledgeStore implements PartnerKnowledgeStore {
 }
 
 describe("partner-registry-revision-before-dispatch", () => {
+  it.each(["read-only", "workspace-write"] as const)("uses Codex sandbox %s for minimum dispatch access", async (sandboxMode) => {
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new MemoryPartnerRegistry() });
+    const partner = await service.add({ capabilities: [], displayName: "Codex", engine: "codex", kind: "local-pi", skills: [], tools: [],
+      codexPermissions: { approvalPolicy: "never", networkAccessEnabled: true, sandboxMode, webSearchMode: "live" } });
+    expect(await service.pinForDispatch(partner.partnerId)).toMatchObject({ minimumAccessMode: sandboxMode === "read-only" ? "READ" : "WRITE" });
+  });
+  it.each([
+    { tools: ["read", "bash"], mode: "CUSTOM" as const, expected: "WRITE" },
+    { tools: ["read"], mode: "CUSTOM" as const, expected: "READ" },
+    { tools: [], mode: "ALL" as const, expected: "WRITE" },
+  ])("pins the minimum workspace access for selected Skills: $expected", async ({ tools, mode, expected }) => {
+    const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new MemoryPartnerRegistry() });
+    const partner = await service.add({ capabilities: [], displayName: "Skill partner", kind: "local-pi", skills: ["agents/lark-project"], tools, toolPolicyMode: mode });
+    expect(await service.pinForDispatch(partner.partnerId)).toMatchObject({ minimumAccessMode: expected });
+    const plain = await service.add({ capabilities: [], displayName: "Text partner", kind: "local-pi", skills: [], tools: [] });
+    expect(await service.pinForDispatch(plain.partnerId)).toMatchObject({ minimumAccessMode: "WRITE" });
+  });
+
   const readySource: ModelSourceDto = {
     accessMode: "api",
     activeModel: { capability: "release-tested", id: "gpt-5.6-sol-sub", revisionId: "model-revision-1" },
@@ -94,8 +112,8 @@ describe("partner-registry-revision-before-dispatch", () => {
     const second = await service.update(first.partnerId, { capabilities: ["research", "write"], displayName: "本机搭档", skills: ["web"], tools: ["read", "edit"] });
     const secondPin = await service.pinForDispatch(first.partnerId);
     expect(repository.history.map((item) => item.registryRevision)).toEqual([1, 2]);
-    expect(firstPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: first.partnerRevisionId, registryRevision: 1 });
-    expect(secondPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: second.partnerRevisionId, registryRevision: 2 });
+    expect(firstPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: first.partnerRevisionId, registryRevision: 1, minimumAccessMode: "READ" });
+    expect(secondPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: second.partnerRevisionId, registryRevision: 2, minimumAccessMode: "WRITE" });
     expect(second.partnerRevisionId).not.toBe(first.partnerRevisionId);
   });
 

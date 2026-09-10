@@ -105,13 +105,16 @@ export class WorkOrchestrationService {
       byKey.set(request.key, request);
     }
     for (const request of input.work) await this.#validateInstanceSelection(input.workbenchId, request);
+    // Pin once, then normalize before waves, policy checks and durable access records.
+    const pins: PartnerDispatchPin[] = [];
+    for (const request of input.work) pins.push(await this.dependencies.partners.pinForDispatch(request.partnerId));
     const createdAt = this.dependencies.clock.now().toISOString();
     const workIds = new Map<string, string>();
-    const items = input.work.map((request) => {
+    const items = input.work.map((request, index) => {
       const workId = this.dependencies.ids.next("work");
       workIds.set(request.key, workId);
       return createWorkItem({
-        accessMode: request.accessMode,
+        accessMode: strongerAccessMode(request.accessMode, pins[index]?.minimumAccessMode ?? "NONE"),
         workbenchId: input.workbenchId,
         createdAt,
         title: request.title,
@@ -141,7 +144,8 @@ export class WorkOrchestrationService {
     for (const [index, item] of items.entries()) {
       const request = input.work[index];
       if (request === undefined) throw new Error("work_request_missing");
-      const pin = await this.dependencies.partners.pinForDispatch(request.partnerId);
+      const pin = pins[index];
+      if (pin === undefined) throw new Error("work_partner_pin_missing");
       const result = await this.dependencies.policy.evaluate(item, pin);
       policyResults.push({ allowed: result.allowed, ...(result.reason === undefined ? {} : { reason: result.reason }), workId: item.workId });
       // Denied Work still gets an attempt so the delivery-side recheck decides its fate:
@@ -154,7 +158,7 @@ export class WorkOrchestrationService {
       const actionId = this.dependencies.ids.next("action");
       const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
       attempts.push({
-        ...pin,
+        partnerId: pin.partnerId, partnerRevisionId: pin.partnerRevisionId, registryRevision: pin.registryRevision,
         actionId,
         dispatchAttemptId,
         outbox: {
@@ -317,13 +321,14 @@ export class WorkOrchestrationService {
     if (pin.partnerRevisionId === context.lastPartnerRevisionId) {
       throw new DomainError("work_reassign_same_revision", "Reassignment requires a different partner revision.");
     }
-    const policy = await this.dependencies.policy.evaluate(context.item, pin);
+    const accessMode = strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
+    const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
     if (!policy.allowed) throw new DomainError("work_reassign_policy_denied", policy.reason ?? "Work reassignment was denied.");
     const createdAt = this.dependencies.clock.now().toISOString();
     const actionId = this.dependencies.ids.next("action");
     const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
     const attempt: PlannedDispatchAttempt = {
-      ...pin,
+      partnerId: pin.partnerId, partnerRevisionId: pin.partnerRevisionId, registryRevision: pin.registryRevision,
       actionId,
       dispatchAttemptId,
       outbox: {
@@ -336,6 +341,7 @@ export class WorkOrchestrationService {
     };
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await repository.reassign({
+      ...(accessMode === context.item.accessMode ? {} : { accessMode }),
       attempt,
       createdAt,
       dispatchPlanId,
@@ -384,7 +390,8 @@ export class WorkOrchestrationService {
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
     if (context.item.status !== "WAITING") throw new DomainError("work_resume_status_invalid", "Only waiting work can be resumed.");
     const pin = await this.dependencies.partners.pinForDispatch(context.lastPartnerId);
-    const policy = await this.dependencies.policy.evaluate(context.item, pin);
+    const accessMode = strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
+    const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
     if (!policy.allowed) throw new DomainError("work_resume_policy_denied", policy.reason ?? "Work resume was denied.");
     // Continue in the instance that paused so the resident conversation keeps the question
     // context. Never reference a disposed instance: dispatch would fail and the outbox row
@@ -396,7 +403,7 @@ export class WorkOrchestrationService {
     const actionId = input.actionId ?? this.dependencies.ids.next("action");
     const dispatchAttemptId = this.dependencies.ids.next("dispatch_attempt");
     const attempt: PlannedDispatchAttempt = {
-      ...pin,
+      partnerId: pin.partnerId, partnerRevisionId: pin.partnerRevisionId, registryRevision: pin.registryRevision,
       actionId,
       dispatchAttemptId,
       outbox: {
@@ -415,7 +422,9 @@ export class WorkOrchestrationService {
       workId: input.workId,
     };
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
-    await repository.reassign({ attempt, createdAt, dispatchPlanId, turnId: input.turnId, workId: input.workId });
+    await repository.reassign({ attempt, createdAt, dispatchPlanId, turnId: input.turnId, workId: input.workId,
+      ...(accessMode === context.item.accessMode ? {} : { accessMode }),
+    });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {
       actionId: attempt.actionId,
       workbenchId: input.workbenchId,

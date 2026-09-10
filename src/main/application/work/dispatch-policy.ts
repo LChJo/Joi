@@ -20,6 +20,8 @@ export interface DispatchPolicyFacts {
   partnerKind: string;
   /** Opaque workspace binding ref; undefined when the workbench has none. */
   workspaceRef?: string;
+  /** Managed directories are provisioned idempotently by dispatch before execution. */
+  workspaceKind?: "BOUND" | "MANAGED";
   /** Workspace binding status; undefined when no binding row exists. */
   workspaceStatus?: string;
 }
@@ -37,6 +39,9 @@ export interface DispatchPolicyDecision {
 export function evaluateDispatchPolicy(accessMode: WorkAccessMode, facts: DispatchPolicyFacts): DispatchPolicyDecision {
   if (accessMode === "NONE") return { allowed: true };
   if (facts.partnerKind === "A2A") return { allowed: false, reason: DISPATCH_POLICY_REASONS.a2aWorkspaceAccessForbidden };
+  if (facts.workspaceKind === "MANAGED" && typeof facts.workspaceRef === "string") {
+    return facts.leaseConflict ? { allowed: false, reason: DISPATCH_POLICY_REASONS.workspaceLeaseConflict } : { allowed: true };
+  }
   if (facts.workspaceStatus !== "READY" || typeof facts.workspaceRef !== "string") {
     return { allowed: false, reason: DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady };
   }

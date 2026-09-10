@@ -948,3 +948,17 @@ body:has(.remote-joi-shell) { min-width: 0; background: radial-gradient(circle a
 .automation-row small, .automation-row span { color: var(--muted); font-size: 11px; }
 .automation-row .row-actions { align-items: start; flex-wrap: wrap; justify-content: end; }
 @media (max-width: 800px) { .automation-editor { grid-template-columns: 1fr; }.automation-editor label:nth-child(2), .automation-editor .row-actions, .automation-preview { grid-column: 1; }.automation-row { grid-template-columns: 1fr; }.automation-row .row-actions { justify-content: start; } }
+
+.joi-skill-settings > div { min-width: 0; width: 100%; }
+.settings-sections > .joi-skill-settings { align-items: start; }
+.joi-skill-settings > div > .button { justify-self: start; }
+.skill-search { display: grid; gap: 8px; margin: 16px 0; }
+.joi-skill-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(260px, 100%), 1fr)); gap: 10px; max-height: 480px; overflow-y: auto; margin: 16px 0; }
+.joi-skill-option { display: flex; align-items: flex-start; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; }
+.joi-skill-option > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.joi-skill-option input { flex: 0 0 16px; width: 16px; height: 16px; margin: 2px 0 0; padding: 0; accent-color: var(--forest); }
+.joi-skill-option small { color: var(--muted); }
+
+.workbench-catalog-entry { position: relative; display: grid; align-self: start; min-width: 0; }
+.workbench-catalog-entry .workbench-catalog-card i { padding-right: 82px; white-space: nowrap; }
+.workbench-catalog-entry > .danger-text { position: absolute; right: 12px; bottom: 12px; min-height: 26px; padding: 4px 5px; border-color: transparent; border-radius: 5px; font-size: 12px; font-weight: 500; line-height: 18px; }

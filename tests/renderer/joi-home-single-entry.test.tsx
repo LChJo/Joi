@@ -25,6 +25,66 @@ function snapshot(modelSources: ModelSourceDto[]): JoiSnapshotDto {
 }
 
 describe("Workbench context center", () => {
+  it("blocks duplicate removal and dismissal while saving, then allows escape after a network failure", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbenchDto("pending", "等待移除")] });
+    let rejectRemoval!: (error: Error) => void;
+    const pending = new Promise<never>((_resolve, reject) => { rejectRemoval = reject; });
+    const archive = vi.spyOn(api, "archiveWorkbench").mockReturnValue(pending);
+    render(<WorkbenchManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "移除 等待移除" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "取消" }), { key: "Tab" });
+    expect(screen.getByRole("button", { name: "确认移除" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
+    const saving = screen.getByRole("button", { name: "正在移除…" });
+    expect(saving).toBeDisabled();
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    fireEvent.click(saving);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab" });
+    expect(screen.getByRole("dialog")).toHaveFocus();
+    expect(archive).toHaveBeenCalledTimes(1);
+    await act(async () => { rejectRemoval(new Error("private network failure")); await pending.catch(() => undefined); });
+    expect(screen.getByRole("alert")).toHaveTextContent("工作台没有移除，请重试。");
+    expect(document.body.textContent).not.toContain("private network failure");
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除 等待移除" })).toBeInTheDocument();
+  });
+
+  it.each(["catalog", "detail"])("confirms removal from %s once, keeps failures, and clears success", async (entry) => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("remove-me", "待移除工作台");
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue({
+      activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+      personaRevisionId: "persona", projectLabel: "project", recentOutcomes: [], recentResults: [], responsibility: "scope",
+      updatedAt: workbench.updatedAt, workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
+    });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    const archive = vi.spyOn(api, "archiveWorkbench").mockRejectedValueOnce(new ApiError("workbench_change_active_work", "busy", 409)).mockResolvedValue({} as never);
+    render(<WorkbenchManager api={api} />);
+    if (entry === "detail") fireEvent.click(await screen.findByRole("button", { name: /待移除工作台.*管理上下文/u }));
+    const removalLabel = entry === "detail" ? "移除工作台" : "移除 待移除工作台";
+    fireEvent.click(await screen.findByRole("button", { name: removalLabel }));
+    expect(archive).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toHaveTextContent("历史记录和工作目录会保留");
+    expect(screen.getByRole("button", { name: "取消" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("button", { name: "取消" }), { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "确认移除" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(archive).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: removalLabel }));
+    fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
+    expect(await screen.findByText("工作台仍有未结束的任务，请先完成或取消任务后再移除。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(archive).toHaveBeenCalledWith("remove-me");
+    expect(screen.queryByRole("button", { name: "移除 待移除工作台" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "还没有工作台" })).toBeInTheDocument();
+  });
+
   it("shows safe workspace, work, result and private-instance metadata and runs management actions", async () => {
     const api = new DigitalLifeApi("", true);
     const workbench = workbenchDto("workbench-1", "发布 Workbench");
@@ -53,7 +113,7 @@ describe("Workbench context center", () => {
     const rebuild = vi.spyOn(api, "rebuildWorkbenchWorkspace").mockResolvedValue({ displayName: "发布 Workbench 工作区", kind: "MANAGED", status: "PROVISIONING" });
 
     render(<WorkbenchManager api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: /发布 Workbench/u }));
+    fireEvent.click(await screen.findByRole("button", { name: /发布 Workbench.*管理上下文/u }));
     expect(await screen.findByRole("heading", { name: "发布 Workbench" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看 写作者 详情" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "上下文设置" }));
@@ -74,7 +134,8 @@ describe("Workbench context center", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "绑定已有目录" }));
     await waitFor(() => expect(bind).toHaveBeenCalledWith(workbench.workbenchId));
-    fireEvent.click(screen.getByRole("button", { name: "重建受管目录" }));
+    expect(screen.getByText("此工作台的新任务固定使用指定目录。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "使用默认运行目录" }));
     await waitFor(() => expect(rebuild).toHaveBeenCalledWith(workbench.workbenchId));
   });
 
@@ -107,6 +168,7 @@ describe("Workbench context center", () => {
         { createdAt: workbench.updatedAt, entryId: "entry-artifact-fallback", kind: "ARTIFACT", role: "AGENT", sequence: 7 },
         { artifact: { artifactId: "entry-directory", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0 }, createdAt: workbench.updatedAt, entryId: "entry-directory", kind: "ARTIFACT", role: "AGENT", sequence: 8 },
         { artifact: { kind: "FILE", mimeType: "text/plain", name: "legacy.txt", size: 12 }, createdAt: workbench.updatedAt, entryId: "entry-legacy", kind: "ARTIFACT", role: "AGENT", sequence: 9 },
+        ...Array.from({ length: 6 }, (_, index) => ({ createdAt: workbench.updatedAt, entryId: `bash-${String(index)}`, kind: index % 2 === 0 ? "TOOL_CALL" as const : "TOOL_RESULT" as const, role: "TOOL" as const, sequence: 10 + index, toolName: "bash", ...(index === 5 ? { text: "执行失败" } : {}) })),
       ], nextCursor: "page-2" })
       .mockResolvedValueOnce({ agent: ephemeral, items: [
         { createdAt: workbench.updatedAt, entryId: "entry-5", kind: "ERROR", role: "SYSTEM", sequence: 4, text: "**已恢复**" },
@@ -125,6 +187,11 @@ describe("Workbench context center", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看 实现者 详情" }));
     expect(await screen.findByRole("heading", { name: "完成" })).toBeInTheDocument();
     expect(screen.getByText("apply_patch")).toBeInTheDocument();
+    const groupedTool = screen.getByText("bash ×3").closest("details");
+    expect(groupedTool).not.toBeNull();
+    expect(screen.getByText("执行失败")).not.toBeVisible();
+    fireEvent.click(screen.getByText("bash ×3"));
+    expect(screen.getByText("执行失败")).toBeVisible();
     const toolResult = screen.getByText("测试通过");
     expect(toolResult).not.toBeVisible();
     const toolResultDetails = toolResult.closest("details");

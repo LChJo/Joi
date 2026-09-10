@@ -43,6 +43,9 @@ describe("SQLite dispatch policy gate", () => {
 
       await expect(gate.evaluate(item("NONE"), remotePin)).resolves.toEqual({ allowed: true });
       await expect(gate.evaluate(item("READ"), remotePin)).resolves.toEqual({ allowed: false, reason: "a2a_workspace_access_forbidden" });
+      // Default managed directories are created by the dispatch outbox, not by a user picker.
+      await expect(gate.evaluate(item("WRITE"), localPin)).resolves.toEqual({ allowed: true });
+      database.transaction((connection) => connection.prepare("UPDATE workbench_workspace_bindings SET kind = 'BOUND' WHERE workbench_id = 'workbench-policy'").run());
       await expect(gate.evaluate(item("WRITE"), localPin)).resolves.toEqual({ allowed: false, reason: "workbench_workspace_not_ready" });
 
       database.transaction((connection) => connection.prepare(

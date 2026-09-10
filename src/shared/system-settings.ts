@@ -24,6 +24,7 @@ export interface SystemSettingsDto {
     port: number;
     riskAccepted: boolean;
   };
+  joiSkills?: string[];
   launchAtLogin: boolean;
   restartRequired?: boolean;
 }
@@ -35,5 +36,6 @@ export interface UpdateSystemSettingsInput {
     port?: number;
     riskAccepted?: boolean;
   };
+  joiSkills?: string[];
   launchAtLogin?: boolean;
 }

@@ -11,6 +11,16 @@ function required(value: string, code: string): string {
 export class WorkbenchChangeService {
   constructor(private readonly dependencies: { clock: Clock; ids: IdGenerator; repository: WorkbenchChangeRepository }) {}
 
+  async archive(workbenchId: string): Promise<WorkbenchChangeRequest> {
+    const sourceWorkbenchId = required(workbenchId, "workbench_change_source_required");
+    return this.dependencies.repository.archiveConfirmed({
+      createdAt: this.dependencies.clock.now().toISOString(),
+      kind: "ARCHIVE", reason: "User confirmed removal", sourceWorkbenchId,
+      requestId: `workbench_remove:${sourceWorkbenchId}`, status: "PENDING",
+      turnId: `workbench_remove:${sourceWorkbenchId}`,
+    });
+  }
+
   async suggestArchive(input: { workbenchId: string; reason: string; turnId: string }): Promise<WorkbenchChangeRequest> {
     const sourceWorkbenchId = required(input.workbenchId, "workbench_change_source_required");
     await this.#requireActive(sourceWorkbenchId, "workbench_change_source_not_active");

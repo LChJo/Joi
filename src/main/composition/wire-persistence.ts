@@ -1,4 +1,6 @@
 import type { Clock } from "../application/ports/runtime-store.js";
+import path from "node:path";
+import { WorkRunDirectoryProvisioner } from "../infrastructure/persistence/work-run-directory-provisioner.js";
 import { LegacyLifeStoreAdapter } from "../infrastructure/persistence/legacy-life-store-adapter.js";
 import { SqliteDispatchPolicyGate } from "../infrastructure/persistence/sqlite-dispatch-policy-gate.js";
 import { SqliteJoiHarnessRepository } from "../infrastructure/persistence/sqlite-joi-harness-repository.js";
@@ -37,9 +39,11 @@ export function wirePersistence(input: {
   database: RuntimeDatabase;
   pid: string;
   userDataDirectory: string;
+  runDirectory?: string;
 }) {
   const { clock, database, pid, userDataDirectory } = input;
   return {
+    runDirectories: new WorkRunDirectoryProvisioner({ database, clock, baseDirectory: input.runDirectory ?? path.join(userDataDirectory, "runs") }),
     automationStore: new SqliteAutomationStore(database),
     dispatchClaims: new SqlitePartnerDispatchClaims(database),
     joiHarnessRepository: new SqliteJoiHarnessRepository(database),
