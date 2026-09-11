@@ -161,8 +161,11 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await window.setViewportSize({ height: 900, width: 768 });
     expect(await window.evaluate(() => globalThis.innerWidth)).toBe(768);
     await expect(window.getByRole("heading", { exact: true, name: "工作台" })).toBeVisible();
-    await window.getByRole("button", { name: /栖光.*管理上下文/u }).click();
+    await window.getByRole("button", { name: "管理上下文 栖光" }).click();
     await expect(window.getByRole("heading", { name: "栖光" })).toBeVisible();
+    await expect(window.getByRole("tab", { name: /上下文设置/u })).toHaveAttribute("aria-selected", "true");
+    await window.getByRole("button", { name: "返回工作台列表" }).click();
+    await window.getByRole("button", { name: "打开工作台 栖光" }).click();
     await expect(window.getByRole("tab", { name: /Agent/u })).toHaveAttribute("aria-selected", "true");
     await expect(window.getByRole("heading", { name: "还没有 Agent" })).toBeVisible();
     await expectNoHorizontalOverflow(window);

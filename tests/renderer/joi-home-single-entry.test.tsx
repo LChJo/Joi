@@ -32,7 +32,7 @@ describe("Workbench context center", () => {
     const pending = new Promise<never>((_resolve, reject) => { rejectRemoval = reject; });
     const archive = vi.spyOn(api, "archiveWorkbench").mockReturnValue(pending);
     render(<WorkbenchManager api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "移除 等待移除" }));
+    fireEvent.click(await screen.findByRole("button", { name: "移除工作台 等待移除" }));
     fireEvent.keyDown(screen.getByRole("button", { name: "取消" }), { key: "Tab" });
     expect(screen.getByRole("button", { name: "确认移除" })).toHaveFocus();
     fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
@@ -49,7 +49,7 @@ describe("Workbench context center", () => {
     expect(document.body.textContent).not.toContain("private network failure");
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "移除 等待移除" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除工作台 等待移除" })).toBeInTheDocument();
   });
 
   it.each(["catalog", "detail"])("confirms removal from %s once, keeps failures, and clears success", async (entry) => {
@@ -64,8 +64,8 @@ describe("Workbench context center", () => {
     vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
     const archive = vi.spyOn(api, "archiveWorkbench").mockRejectedValueOnce(new ApiError("workbench_change_active_work", "busy", 409)).mockResolvedValue({} as never);
     render(<WorkbenchManager api={api} />);
-    if (entry === "detail") fireEvent.click(await screen.findByRole("button", { name: /待移除工作台.*管理上下文/u }));
-    const removalLabel = entry === "detail" ? "移除工作台" : "移除 待移除工作台";
+    if (entry === "detail") fireEvent.click(await screen.findByRole("button", { name: "打开工作台 待移除工作台" }));
+    const removalLabel = entry === "detail" ? "移除工作台" : "移除工作台 待移除工作台";
     fireEvent.click(await screen.findByRole("button", { name: removalLabel }));
     expect(archive).not.toHaveBeenCalled();
     expect(screen.getByRole("dialog")).toHaveTextContent("历史记录和工作目录会保留");
@@ -81,7 +81,7 @@ describe("Workbench context center", () => {
     fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(archive).toHaveBeenCalledWith("remove-me");
-    expect(screen.queryByRole("button", { name: "移除 待移除工作台" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "移除工作台 待移除工作台" })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "还没有工作台" })).toBeInTheDocument();
   });
 
@@ -113,7 +113,7 @@ describe("Workbench context center", () => {
     const rebuild = vi.spyOn(api, "rebuildWorkbenchWorkspace").mockResolvedValue({ displayName: "发布 Workbench 工作区", kind: "MANAGED", status: "PROVISIONING" });
 
     render(<WorkbenchManager api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: /发布 Workbench.*管理上下文/u }));
+    fireEvent.click(await screen.findByRole("button", { name: "打开工作台 发布 Workbench" }));
     expect(await screen.findByRole("heading", { name: "发布 Workbench" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看 写作者 详情" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "上下文设置" }));

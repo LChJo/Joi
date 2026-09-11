@@ -324,6 +324,10 @@ function AgentConversation({ agent, api, workbenchId, onBack }: {
   </section>;
 }
 
+function formatWorkbenchUpdated(iso: string): string {
+  return new Date(iso).toLocaleString("zh-CN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", hour12: false });
+}
+
 export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLifeApi; initialWorkbenchId?: string }) {
   const [removing, setRemoving] = useState<{ workbenchId: string; name: string } | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
@@ -351,10 +355,10 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     }
     catch { setAgents([]); }
   }, [api]);
-  const open = useCallback(async (workbenchId: string) => {
+  const open = useCallback(async (workbenchId: string, nextTab: "agents" | "context" = "agents") => {
     try {
       setDetail(await api.getWorkbench(workbenchId));
-      setSelectedAgent(null); setTab("agents"); setNotice(null);
+      setSelectedAgent(null); setTab(nextTab); setNotice(null);
       await loadAgents(workbenchId);
     } catch (error) { setNotice(error instanceof ApiError ? error.message : "没能读取工作台上下文。"); }
   }, [api, loadAgents]);
@@ -432,7 +436,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     </section></div>}
     <header className="page-title-row"><div><p className="eyebrow">工作台 / Agent</p><h1>{detail?.name ?? "工作台"}</h1><p>{detail === null ? "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建工作台"}</button> : <div className="row-actions"><button className="button danger-text" onClick={() => requestRemoval(detail)} type="button">移除工作台</button><button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回工作台列表</button></div>}</header>
     {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" placeholder="工作聚类名称，如：前端调试分析" required /></label><label>工程名称<input name="projectLabel" placeholder="工作环境 / 工程，如：数字生活" required /></label><label>职责范围<textarea name="scopeSummary" placeholder="描述这类工作共享的环境和边界" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" placeholder="描述工作环境的长期约束，不要写单个 Agent 角色" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
-    {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <article className="workbench-catalog-entry" key={workbench.workbenchId}><button className="workbench-catalog-card" onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span><small>更新于 {new Date(workbench.updatedAt).toLocaleString()}</small><i>管理上下文</i></button><button aria-label={`移除 ${workbench.name}`} className="button danger-text" onClick={() => requestRemoval(workbench)} type="button">移除工作台</button></article>)}</div>) : <>
+    {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <article className="workbench-catalog-entry" key={workbench.workbenchId}><button aria-label={`打开工作台 ${workbench.name}`} className="workbench-catalog-open" onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-catalog-head"><span aria-hidden="true" className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong></span><span className="workbench-catalog-scope" title={workbench.scopeSummary}>{workbench.scopeSummary}</span></button><footer className="workbench-catalog-footer"><time dateTime={workbench.updatedAt} title={new Date(workbench.updatedAt).toLocaleString()}>更新于 {formatWorkbenchUpdated(workbench.updatedAt)}</time><span className="workbench-catalog-actions"><button aria-label={`管理上下文 ${workbench.name}`} className="workbench-catalog-manage" onClick={() => void open(workbench.workbenchId, "context")} type="button">管理上下文</button><button aria-label={`移除工作台 ${workbench.name}`} className="button danger-text workbench-catalog-remove" onClick={() => requestRemoval(workbench)} type="button">移除工作台</button></span></footer></article>)}</div>) : <>
       <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button></div>
       {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
