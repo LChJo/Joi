@@ -82,6 +82,7 @@ export class PartnerInstanceManager {
     dispatchAttemptId?: string;
     instanceId?: string;
     onConversation?: (progress: PartnerConversationProgress) => Promise<void>;
+    onProgress?: () => void;
     request: PartnerRunRequest;
     revision: PartnerRevision;
     sessionPolicy?: SessionPolicy;
@@ -227,6 +228,7 @@ export class PartnerInstanceManager {
         const result = await engine.runEphemeral(input.request, input.revision, {
           knowledgeSection,
           ...(onEvent === undefined ? {} : { onEvent }),
+          ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
           skillEnvironmentKeys,
           skillSection,
         }, input.signal === undefined ? undefined : { signal: input.signal });
@@ -258,6 +260,7 @@ export class PartnerInstanceManager {
         instanceId: record.instanceId,
         knowledgeSection,
         ...(onEvent === undefined ? {} : { onEvent }),
+        ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
         request: input.request,
         restoredMessages: restored,
         revision: input.revision,

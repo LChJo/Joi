@@ -71,7 +71,7 @@ export interface PartnerDispatchDelivery {
    */
   abandon?(input: { claim: PartnerDispatchClaimRow; reasonCode: string }): Promise<void>;
   prepare(claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal">;
-  run(prepared: PreparedDispatch, options?: { signal?: AbortSignal }): Promise<DispatchRunOutput>;
+  run(prepared: PreparedDispatch, options?: { onProgress?: () => void; signal?: AbortSignal }): Promise<DispatchRunOutput>;
   complete(input: { output: DispatchRunOutput & { kind: "terminal" }; prepared: PreparedDispatch }): Promise<{ isAuthoritative: boolean; resultId: string }>;
   finalizeOrphan(orphan: PartnerDispatchOrphanRow): Promise<"completed" | "waiting">;
   /** Compatibility composition: prepare → run → complete in one await (tests, one-shot callers). */

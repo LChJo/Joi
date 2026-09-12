@@ -41,6 +41,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const released: string[] = [];
   const releaseAvailableAt: string[] = [];
   const runSignals: (AbortSignal | undefined)[] = [];
+  const progressCallbacks: (() => void)[] = [];
   let runCount = 0;
   const component = new AgentDispatchComponent({
     workbenchId: "workbench_1",
@@ -75,6 +76,7 @@ function makeHarness(options: HarnessOptions = {}) {
         calls.push("run");
         runCount += 1;
         runSignals.push(runOptions?.signal);
+        progressCallbacks.push(runOptions?.onProgress ?? (() => undefined));
         if (options.runError !== undefined) throw options.runError;
         if (options.runOverride !== undefined) return options.runOverride();
         return (options.runOutputs ?? [TERMINAL])[Math.min(runCount - 1, (options.runOutputs ?? [TERMINAL]).length - 1)] ?? TERMINAL;
@@ -100,7 +102,7 @@ function makeHarness(options: HarnessOptions = {}) {
     partnerId: "partner_1",
     ...(options.watchdogMillis === undefined ? {} : { watchdogMillis: options.watchdogMillis }),
   });
-  return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, releaseAvailableAt, released, runSignals };
+  return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, releaseAvailableAt, released, runSignals, progressCallbacks };
 }
 
 function diagnosticsSink(events: { event: string; fields: Record<string, unknown> }[]) {
@@ -347,6 +349,26 @@ describe("AgentDispatchComponent", () => {
     await harness.component.update(ctxAt(0));
     expect(harness.abandoned).toEqual([]);
     expect(harness.released).toEqual(["outbox_1"]);
+  });
+
+  it("AC-52: keeps a progressing run alive beyond 32 minutes, then bounds a stalled run", async () => {
+    let now = new Date(BASE);
+    const harness = makeHarness({ claims: [CLAIM], runOverride: () => new Promise(() => undefined) });
+    const tick = async (minutes: number) => {
+      now = new Date(Date.parse(BASE) + minutes * 60_000);
+      await harness.component.update({ clock: { now: () => now }, now, tickId: 1 });
+    };
+    await tick(0);
+    for (const minute of [15, 30, 45, 60]) {
+      now = new Date(Date.parse(BASE) + minute * 60_000);
+      harness.progressCallbacks[0]?.();
+      await tick(minute);
+      expect(harness.runSignals[0]?.aborted).toBe(false);
+      expect(harness.completed).toEqual([]);
+    }
+    await tick(93);
+    expect(harness.runSignals[0]?.aborted).toBe(true);
+    expect(harness.completionOutputs[0]).toMatchObject({ status: "UNKNOWN", failure: { retryable: false } });
   });
 
   it("aborts and converges a hung run once the watchdog passes its limit", async () => {

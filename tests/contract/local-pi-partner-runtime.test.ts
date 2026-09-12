@@ -442,11 +442,17 @@ describe("Pi partner engine runtime", () => {
       partnerId: "partner_streaming", partnerRevisionId: "partner_revision_streaming", registryRevision: 1, skills: [], tools: [],
     });
 
+    const onProgress = vi.fn();
     await expect(runtime.runEphemeral(
       { actionId: "action_streaming", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "stream", workId: "work_streaming" },
       revision,
-      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+      { onProgress, knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
     )).resolves.toMatchObject({ status: "COMPLETED" });
+    expect(onProgress.mock.calls.length).toBeGreaterThan(10);
+    expect(onProgress.mock.calls.every((args) => args.length === 0)).toBe(true);
+    const callsAfterCompletion = onProgress.mock.calls.length;
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(onProgress).toHaveBeenCalledTimes(callsAfterCompletion);
   });
 
   it("allows a tool to run longer than the idle interval while tool updates keep arriving", async () => {

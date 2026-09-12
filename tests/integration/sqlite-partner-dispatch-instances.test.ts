@@ -90,6 +90,26 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it("forwards Pi execution activity to the dispatch watchdog", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      const onProgress = vi.fn();
+      const handler = makeHandler(database, {
+        dispatch: async (input) => {
+          input.onProgress?.();
+          return { actionId: "action_1", artifacts: [], body: "done", externalRunId: "local:action_1", status: "COMPLETED", workId: "work_1" };
+        },
+      });
+      const prepared = await handler.prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: JSON.stringify({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }) });
+      if (prepared === "skipped_terminal") throw new Error("unexpected terminal dispatch");
+      await handler.run(prepared, { onProgress });
+      expect(onProgress).toHaveBeenCalledExactlyOnceWith();
+    } finally {
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("hands complete goal evidence to a workspace-free successor without exposing bodies in safe snapshots", async () => {
     const { database, root } = await openWithPartner();
     try {

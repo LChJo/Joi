@@ -301,8 +301,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     try {
-      await this.#promptWithIdleTimeout(agent, request.taskProjection, live);
-      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0, live);
+      await this.#promptWithIdleTimeout(agent, request.taskProjection, live, context.onProgress);
+      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0, live, context.onProgress);
       const failure = assistantFailureSignal(agent.state.messages);
       if (failure !== null) throw failure;
       const body = assistantText(agent.state.messages);
@@ -401,8 +401,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     try {
-      await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live);
-      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live);
+      await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live, input.onProgress);
+      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live, input.onProgress);
       const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
       const failure = assistantFailureSignal(turnMessages);
       if (failure !== null) throw failure;
@@ -424,29 +424,29 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */
-  async #promptWithIdleTimeout(agent: Agent, text: string, live?: LiveConversationPublisher): Promise<void> {
-    await this.#runWithIdleTimeout(agent, () => agent.prompt(text), live);
+  async #promptWithIdleTimeout(agent: Agent, text: string, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
+    await this.#runWithIdleTimeout(agent, () => agent.prompt(text), live, onProgress);
   }
 
   /**
    * A provider disconnect after tools ran cannot safely replay the whole Work. Remove only
    * the failed assistant frame and continue from the persisted tool result once instead.
    */
-  async #continueAfterTransientFailure(agent: Agent, messageStart: number, live?: LiveConversationPublisher): Promise<void> {
+  async #continueAfterTransientFailure(agent: Agent, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
     const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
     if (failure === null || !classifyPartnerRunFailure(failure, { phase: "MODEL", sideEffectState: "NONE" }).retryable) return;
     const failedMessage = agent.state.messages.at(-1);
     if (!isAssistantErrorMessage(failedMessage)) return;
     agent.state.messages = agent.state.messages.slice(0, -1);
     try {
-      await this.#runWithIdleTimeout(agent, () => agent.continue(), live);
+      await this.#runWithIdleTimeout(agent, () => agent.continue(), live, onProgress);
     } catch (error) {
       agent.state.messages = [...agent.state.messages, failedMessage];
       throw error;
     }
   }
 
-  async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>, live?: LiveConversationPublisher): Promise<void> {
+  async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let signalIdle: (() => void) | undefined;
     const idle = new Promise<"idle">((resolve) => {
@@ -461,6 +461,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     };
     const unsubscribe = agent.subscribe(async (event) => {
       refreshIdleDeadline();
+      onProgress?.();
       await live?.handle(event);
     });
     refreshIdleDeadline();

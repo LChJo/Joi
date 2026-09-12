@@ -22,7 +22,7 @@ const DEFAULT_WAITING_RETRY_EVERY_MILLIS = 30_000;
 const WORKSPACE_CONTENTION_RETRY_MILLIS = 5_000;
 /** Renew the workspace lease once its remaining lifetime drops below this margin. */
 const LEASE_RENEW_MARGIN_MILLIS = 60_000;
-/** Backstop above the engine deadlines (30 min total): a run past this age is converged as hung. */
+/** Backstop for stalled delivery. Pi progress renews it; native engines retain their own total deadlines. */
 const DEFAULT_WATCHDOG_MILLIS = 32 * 60_000;
 /** A converge that keeps failing to persist is eventually force-cleared instead of jamming the slot. */
 const MAX_COMPLETE_FAILURES = 10;
@@ -35,7 +35,7 @@ interface InFlightRun {
   outboxId: string;
   prepared: PreparedDispatch;
   settled: DispatchRunOutput | undefined;
-  startedAt: number;
+  lastProgressAt: number;
 }
 
 function failedOutput(error: unknown): DispatchRunOutput & { kind: "terminal" } {
@@ -131,9 +131,9 @@ export class AgentDispatchComponent implements ActorComponent {
     if (run === null) return;
     if (run.settled === undefined) {
       const watchdogMillis = this.dependencies.watchdogMillis ?? DEFAULT_WATCHDOG_MILLIS;
-      if (ctx.now.getTime() - run.startedAt > watchdogMillis) {
-        // The engine's own deadlines fire first; reaching this point means the run is
-        // hung outside any bounded path. Abort it and converge a non-replayable UNKNOWN.
+      if (ctx.now.getTime() - run.lastProgressAt > watchdogMillis) {
+        // Engine idle/total deadlines normally fire first. No progress within this
+        // backstop indicates a stalled delivery or cleanup path. Abort it and converge a non-replayable UNKNOWN.
         run.abortController.abort();
         const failure: PartnerRunFailure = {
           phase: "EXECUTION",
@@ -313,7 +313,7 @@ export class AgentDispatchComponent implements ActorComponent {
         outboxId: claim.outboxId,
         prepared,
         settled: undefined,
-        startedAt: ctx.now.getTime(),
+        lastProgressAt: ctx.clock.now().getTime(),
       };
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.run_started", {
         workbenchId: this.dependencies.workbenchId,
@@ -322,7 +322,15 @@ export class AgentDispatchComponent implements ActorComponent {
         partnerId: this.dependencies.partnerId,
       });
       const attemptId = prepared.dispatchAttemptId;
-      void this.dependencies.delivery.run(prepared, { signal: abortController.signal }).then((output) => {
+      void this.dependencies.delivery.run(prepared, {
+        signal: abortController.signal,
+        onProgress: () => {
+          const run = this.#inFlight;
+          if (run?.dispatchAttemptId === attemptId && !abortController.signal.aborted && run.settled === undefined) {
+            run.lastProgressAt = ctx.clock.now().getTime();
+          }
+        },
+      }).then((output) => {
         if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = output;
       }).catch((error: unknown) => {
         if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = failedOutput(error);

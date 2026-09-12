@@ -47,6 +47,8 @@ export interface ResidentTurnInput {
   instanceId: string;
   knowledgeSection: string;
   onEvent?: (event: NativeAgentEvent) => Promise<void>;
+  /** Payload-free execution activity; independent of conversation projection. */
+  onProgress?: () => void;
   request: PartnerRunRequest;
   restoredMessages: unknown[] | null;
   revision: PartnerRevision;
@@ -61,6 +63,8 @@ export interface ResidentTurnInput {
 export interface PartnerExecutionContext {
   knowledgeSection: string;
   onEvent?: (event: NativeAgentEvent) => Promise<void>;
+  /** Payload-free execution activity; independent of conversation projection. */
+  onProgress?: () => void;
   skillEnvironmentKeys: readonly string[];
   skillSection: string;
 }

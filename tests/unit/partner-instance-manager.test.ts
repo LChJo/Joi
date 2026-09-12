@@ -97,7 +97,8 @@ class FakeEngine implements PartnerEngineRuntime {
   async health() { return { available: true }; }
   async preflight() { return this.preflightPin; }
   toolOptions() { return [] as readonly string[]; }
-  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
+  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { onProgress?: () => void; knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
+    context.onProgress?.();
     this.ephemeralRuns.push({
       knowledgeSection: context.knowledgeSection,
       request: runRequest,
@@ -119,6 +120,7 @@ class FakeEngine implements PartnerEngineRuntime {
     };
   }
   async runResidentTurn(input: ResidentTurnInput) {
+    input.onProgress?.();
     this.residentTurns.push(input);
     if (this.failResident) throw new Error("turn_failed");
     const messages = [...(input.restoredMessages ?? []), { content: input.request.taskProjection, role: "user" }];
@@ -168,6 +170,13 @@ function makeManager(
 }
 
 describe("partner-instance-manager", () => {
+  it.each(["EPHEMERAL", "RESIDENT"] as const)("forwards activity without conversation projection for %s", async (sessionPolicy) => {
+    const { manager } = makeManager();
+    const onProgress = vi.fn();
+    await manager.dispatch({ request, revision, sessionPolicy, onProgress });
+    expect(onProgress).toHaveBeenCalledExactlyOnceWith();
+  });
+
   it("passes the preflight source pin into resident turns", async () => {
     const { engine, manager } = makeManager();
     engine.preflightPin = {
