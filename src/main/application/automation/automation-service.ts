@@ -1,5 +1,5 @@
-import type { AutomationDto, AutomationRunDto, CreateAutomationInput, UpdateAutomationInput } from "../../../shared/automation.js";
-import { createRoutine, nextRoutineOccurrence, routineLifecycle } from "../../domain/automation/routine.js";
+import type { AutomationDto, AutomationRunDto, AutomationTarget, CreateAutomationInput, UpdateAutomationInput } from "../../../shared/automation.js";
+import { createRoutine, nextRoutineOccurrence, routineLifecycle, type RoutineTarget } from "../../domain/automation/routine.js";
 import { DomainError } from "../../domain/errors.js";
 import type { AutomationRecord, AutomationStore } from "../ports/automation.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
@@ -36,17 +36,21 @@ export class AutomationService {
       if (existing !== null) return toDto(existing);
     }
     if (await this.dependencies.store.countActive() >= MAX_ROUTINES) throw new DomainError("routine_limit_reached", "At most 30 routines are allowed.");
-    const workbenchId = await this.assertWorkbench(input.workbenchId);
-    await this.assertPartner(input.preferredPartnerId);
+    const target = normalizeTarget(input.target);
+    const workbenchId = target.kind === "GOAL_CONTINUATION"
+      ? (await this.assertContinuationGoal(target.goalId)).workbenchId
+      : await this.assertWorkbench(input.workbenchId);
+    if (target.kind === "NEW_GOAL") await this.assertPartner(input.preferredPartnerId);
     const now = this.dependencies.clock.now().toISOString();
     const routine = createRoutine({
       createdAt: now,
       ...(input.from === undefined ? {} : { from: input.from }),
       frequency: input.frequency,
       name: input.name,
-      ...(input.preferredPartnerId === undefined ? {} : { preferredPartnerId: input.preferredPartnerId }),
+      ...(target.kind === "NEW_GOAL" && input.preferredPartnerId !== undefined ? { preferredPartnerId: input.preferredPartnerId } : {}),
       prompt: input.prompt,
       routineId: this.dependencies.ids.next("routine"),
+      target,
       ...(input.to === undefined ? {} : { to: input.to }),
       workbenchId,
     });
@@ -65,8 +69,16 @@ export class AutomationService {
       if (replay === null) throw new DomainError("routine_not_found", "Routine was not found.");
       return toDto(replay);
     }
-    if (input.workbenchId !== undefined) await this.assertWorkbench(input.workbenchId);
-    await this.assertPartner(input.preferredPartnerId === null ? undefined : input.preferredPartnerId);
+    const target = normalizeTarget(input.target ?? current.target);
+    const targetChanged = JSON.stringify(target) !== JSON.stringify(current.target);
+    if (targetChanged && await this.dependencies.store.hasLiveRun(current.routineId)) {
+      throw new DomainError("routine_target_busy", "Routine target cannot change while a run is active or waiting.");
+    }
+    const targetWorkbenchId = target.kind === "GOAL_CONTINUATION"
+      ? (await this.assertContinuationGoal(target.goalId)).workbenchId
+      : input.workbenchId ?? current.workbenchId;
+    if (target.kind === "NEW_GOAL" && input.workbenchId !== undefined) await this.assertWorkbench(input.workbenchId);
+    if (target.kind === "NEW_GOAL") await this.assertPartner(input.preferredPartnerId === null ? undefined : input.preferredPartnerId);
     const candidate = createRoutine({
       createdAt: current.createdAt,
       enabled: input.enabled ?? current.enabled,
@@ -75,19 +87,24 @@ export class AutomationService {
       ...(current.lastRunAt === undefined ? {} : { lastRunAt: current.lastRunAt }),
       name: input.name ?? current.name,
       ...(current.pendingTriggerAt === undefined ? {} : { pendingTriggerAt: current.pendingTriggerAt }),
-      ...(input.preferredPartnerId === null ? {} : { preferredPartnerId: input.preferredPartnerId ?? current.preferredPartnerId }),
+      ...(target.kind === "NEW_GOAL" && input.preferredPartnerId !== null
+        ? { preferredPartnerId: input.preferredPartnerId ?? current.preferredPartnerId }
+        : {}),
       prompt: input.prompt ?? current.prompt,
       routineId: current.routineId,
+      target,
       ...(input.to === null ? {} : { to: input.to ?? current.to }),
-      workbenchId: input.workbenchId ?? current.workbenchId,
+      workbenchId: targetWorkbenchId,
     });
     const nextRun = nextRoutineOccurrence(candidate, new Date(this.dependencies.clock.now().getTime() - 1), systemTimezone());
     const updated = await this.dependencies.store.update(current.routineId, {
-      enabled: candidate.enabled, frequency: candidate.frequency, name: candidate.name, prompt: candidate.prompt, workbenchId: candidate.workbenchId,
+      enabled: candidate.enabled, frequency: candidate.frequency, name: candidate.name, prompt: candidate.prompt, target: candidate.target, workbenchId: candidate.workbenchId,
       ...(nextRun === undefined ? { nextRunAt: null } : { nextRunAt: nextRun.toISOString() }),
       ...(input.from === null ? { from: null } : candidate.from === undefined ? {} : { from: candidate.from }),
       ...(candidate.pendingTriggerAt === undefined ? {} : { pendingTriggerAt: candidate.pendingTriggerAt }),
-      ...(input.preferredPartnerId === null ? { preferredPartnerId: null } : candidate.preferredPartnerId === undefined ? {} : { preferredPartnerId: candidate.preferredPartnerId }),
+      ...(target.kind === "GOAL_CONTINUATION" || input.preferredPartnerId === null
+        ? { preferredPartnerId: null }
+        : candidate.preferredPartnerId === undefined ? {} : { preferredPartnerId: candidate.preferredPartnerId }),
       ...(input.to === null ? { to: null } : candidate.to === undefined ? {} : { to: candidate.to }),
     }, mutationKey);
     if (updated === null) throw new DomainError("routine_not_found", "Routine was not found.");
@@ -126,7 +143,8 @@ export class AutomationService {
     return toDto(routine);
   }
 
-  private async assertWorkbench(workbenchId: string): Promise<string> {
+  private async assertWorkbench(workbenchId: string | undefined): Promise<string> {
+    if (workbenchId === undefined) throw new DomainError("routine_workbench_invalid", "Routine Workbench is unavailable.");
     const clean = workbenchId.trim();
     if (clean.length === 0 || clean.length > 160 || await this.dependencies.workbenches.getWorkbench(clean) === null) throw new DomainError("routine_workbench_invalid", "Routine Workbench is unavailable.");
     const workspace = await this.dependencies.workspaces?.getWorkspace(clean);
@@ -134,6 +152,17 @@ export class AutomationService {
       throw new DomainError("routine_workbench_unavailable", "Routine Workbench is not ready.");
     }
     return clean;
+  }
+
+  private async assertContinuationGoal(goalId: string) {
+    const clean = goalId.trim();
+    if (clean.length === 0 || clean.length > 160) throw new DomainError("routine_goal_invalid", "Routine goal is unavailable.");
+    const goal = await this.dependencies.store.inspectGoal(clean);
+    if (goal === null) throw new DomainError("routine_goal_invalid", "Routine goal is unavailable.");
+    if (await this.dependencies.workbenches.getWorkbench(goal.workbenchId) === null) {
+      throw new DomainError("routine_goal_invalid", "Routine goal Workbench is unavailable.");
+    }
+    return goal;
   }
 
   private async assertPartner(partnerId: string | null | undefined): Promise<void> {
@@ -168,7 +197,7 @@ function toDto(record: AutomationRecord): AutomationDto {
     ...(record.from === undefined ? {} : { from: record.from }),
     frequency: record.frequency,
     ...(record.lastRunAt === undefined ? {} : { lastRunAt: record.lastRunAt }),
-    lifecycle: routineLifecycle(record, undefined, record.runs.some((run) => run.status === "BLOCKED" && run.reasonCode === "workbench_unavailable")),
+    lifecycle: routineLifecycle(record, undefined, record.runs.some((run) => run.status === "BLOCKED")),
     name: record.name,
     ...(record.nextRunAt === undefined ? {} : { nextRunAt: record.nextRunAt }),
     ...(record.pendingTriggerAt === undefined ? {} : { pendingTriggerAt: record.pendingTriggerAt }),
@@ -176,9 +205,16 @@ function toDto(record: AutomationRecord): AutomationDto {
     promptConfigured: record.prompt.length > 0,
     routineId: record.routineId,
     runs: [...record.runs].sort((left, right) => right.occurrenceAt.localeCompare(left.occurrenceAt)).slice(0, 10).map(toRunDto),
+    target: record.target,
     ...(record.to === undefined ? {} : { to: record.to }),
     workbenchId: record.workbenchId,
   };
+}
+
+function normalizeTarget(value: AutomationTarget | undefined): RoutineTarget {
+  return value?.kind === "GOAL_CONTINUATION"
+    ? { goalId: value.goalId, kind: "GOAL_CONTINUATION" }
+    : { kind: "NEW_GOAL" };
 }
 
 function toRunDto(run: AutomationRecord["runs"][number]): AutomationRunDto {

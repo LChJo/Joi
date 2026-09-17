@@ -138,11 +138,13 @@ export function createJoiReasoningTools(input: {
   });
   const automationParameters = Type.Object({
     frequency: automationFrequencyParameters, name: Type.String(), preferredPartnerId: Type.Optional(Type.String()),
-    prompt: Type.String(), to: Type.Optional(Type.String()), from: Type.Optional(Type.String()), workbenchId: Type.Optional(Type.String()),
+    prompt: Type.String(), targetKind: Type.Optional(Type.Union([Type.Literal("NEW_GOAL"), Type.Literal("GOAL_CONTINUATION")])),
+    to: Type.Optional(Type.String()), from: Type.Optional(Type.String()), workbenchId: Type.Optional(Type.String()),
   });
   const automationUpdateParameters = Type.Object({
     enabled: Type.Optional(Type.Boolean()), frequency: Type.Optional(automationFrequencyParameters), name: Type.Optional(Type.String()),
     preferredPartnerId: Type.Optional(Type.String()), prompt: Type.Optional(Type.String()), routineId: Type.String(),
+    targetKind: Type.Optional(Type.Union([Type.Literal("NEW_GOAL"), Type.Literal("GOAL_CONTINUATION")])),
     to: Type.Optional(Type.String()), from: Type.Optional(Type.String()), workbenchId: Type.Optional(Type.String()),
   });
   const automationMutation = (name: string, execute: (toolCallId: string, args: Record<string, unknown>) => Promise<unknown>): AgentTool => ({
@@ -152,15 +154,26 @@ export function createJoiReasoningTools(input: {
     }, label: name, name, parameters: automationParameters,
   });
   const automation = input.automation;
+  const createAutomation = (args: Record<string, unknown>) => {
+    const shared = {
+      frequency: args.frequency as AutomationFrequency,
+      name: args.name as string,
+      prompt: args.prompt as string,
+      ...(typeof args.from === "string" ? { from: args.from } : {}),
+      ...(typeof args.to === "string" ? { to: args.to } : {}),
+    };
+    return args.targetKind === "GOAL_CONTINUATION"
+      ? { ...shared, target: { goalId: goalContext(), kind: "GOAL_CONTINUATION" as const } }
+      : {
+        ...shared,
+        target: { kind: "NEW_GOAL" as const },
+        workbenchId: (args.workbenchId as string | undefined) ?? input.workbenchId,
+        ...(typeof args.preferredPartnerId === "string" ? { preferredPartnerId: args.preferredPartnerId } : {}),
+      };
+  };
   const automationTools: AgentTool[] = automation === undefined ? [] : [
-    automationMutation("create_automation", async (toolCallId, args) => automation.create({
-      frequency: args.frequency as AutomationFrequency, name: args.name as string, prompt: args.prompt as string, workbenchId: (args.workbenchId as string | undefined) ?? input.workbenchId,
-      ...(typeof args.from === "string" ? { from: args.from } : {}), ...(typeof args.to === "string" ? { to: args.to } : {}), ...(typeof args.preferredPartnerId === "string" ? { preferredPartnerId: args.preferredPartnerId } : {}),
-    }, `${input.inputId}:${toolCallId}`)),
-    automationMutation("schedule_plan", async (toolCallId, args) => automation.create({
-      frequency: args.frequency as AutomationFrequency, name: args.name as string, prompt: args.prompt as string, workbenchId: (args.workbenchId as string | undefined) ?? input.workbenchId,
-      ...(typeof args.from === "string" ? { from: args.from } : {}), ...(typeof args.to === "string" ? { to: args.to } : {}), ...(typeof args.preferredPartnerId === "string" ? { preferredPartnerId: args.preferredPartnerId } : {}),
-    }, `${input.inputId}:${toolCallId}`)),
+    automationMutation("create_automation", async (toolCallId, args) => automation.create(createAutomation(args), `${input.inputId}:${toolCallId}`)),
+    automationMutation("schedule_plan", async (toolCallId, args) => automation.create(createAutomation(args), `${input.inputId}:${toolCallId}`)),
     {
       description: "List routines without revealing their prompt text.", execute: async () => result(await automation.list()), label: "List routines", name: "list_automations", parameters: Type.Object({}),
     },
@@ -168,7 +181,15 @@ export function createJoiReasoningTools(input: {
       description: "Read one routine's safe configuration without prompt text.", execute: async (_toolCallId, raw) => { const args = raw as Record<string, unknown>; return result(await automation.get(args.routineId as string)); }, label: "Get routine", name: "get_automation", parameters: Type.Object({ routineId: Type.String() }),
     },
     {
-      description: "Update a routine. Prompt text is accepted but never echoed by this tool.", execute: async (toolCallId, raw) => { const args = raw as Record<string, unknown>; const { routineId, ...patch } = args; return result(await automation.update(routineId as string, patch, `${input.inputId}:${toolCallId}`)); }, label: "Update routine", name: "update_automation", parameters: automationUpdateParameters,
+      description: "Update a routine. Prompt text is accepted but never echoed by this tool.", execute: async (toolCallId, raw) => {
+        const args = raw as Record<string, unknown>;
+        const { routineId, targetKind, ...patch } = args;
+        return result(await automation.update(routineId as string, {
+          ...patch,
+          ...(targetKind === "GOAL_CONTINUATION" ? { target: { goalId: goalContext(), kind: "GOAL_CONTINUATION" as const } }
+            : targetKind === "NEW_GOAL" ? { target: { kind: "NEW_GOAL" as const } } : {}),
+        }, `${input.inputId}:${toolCallId}`));
+      }, label: "Update routine", name: "update_automation", parameters: automationUpdateParameters,
     },
     {
       description: "Soft-delete a routine without canceling an already queued Joi input.", execute: async (toolCallId, raw) => { const args = raw as Record<string, unknown>; await automation.delete(args.routineId as string, `${input.inputId}:${toolCallId}`); return result({ routineId: args.routineId, status: "DELETED" }); }, label: "Delete routine", name: "delete_automation", parameters: Type.Object({ routineId: Type.String() }),

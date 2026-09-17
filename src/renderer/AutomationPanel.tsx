@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useState, type SyntheticEvent } from "react";
+import { useCallback, useEffect, useRef, useState, type SyntheticEvent } from "react";
 
 import type { AutomationDto, AutomationFrequency, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
-import type { PartnerDto, WorkbenchDto } from "../shared/joi";
+import type { JoiGoalCardDto, PartnerDto, WorkbenchDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const WEEKDAYS = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"];
@@ -40,21 +40,32 @@ function frequencyFromForm(form: FormData): AutomationFrequency {
   };
 }
 
-export function AutomationPanel({ api, onOpenJoi }: { api: DigitalLifeApi; onOpenJoi?: () => void }) {
+function continuationGoalId(item: AutomationDto): string {
+  return item.target.kind === "GOAL_CONTINUATION" ? item.target.goalId : "";
+}
+
+export function AutomationPanel({ api, initialGoalId, onOpenJoi }: { api: DigitalLifeApi; initialGoalId?: string; onOpenJoi?: () => void }) {
   const [items, setItems] = useState<AutomationDto[]>([]);
   const [workbenches, setWorkbenches] = useState<WorkbenchDto[]>([]);
   const [partners, setPartners] = useState<PartnerDto[]>([]);
+  const [goals, setGoals] = useState<JoiGoalCardDto[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
+  const [targetKind, setTargetKind] = useState<"NEW_GOAL" | "GOAL_CONTINUATION">("NEW_GOAL");
+  const [targetGoalId, setTargetGoalId] = useState("");
   const [frequencyKind, setFrequencyKind] = useState<AutomationFrequency["kind"]>("cycle");
   const [cycleUnit, setCycleUnit] = useState<"day" | "week" | "month">("day");
   const [formOpen, setFormOpen] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const [prompt, setPrompt] = useState<Record<string, string>>({});
+  const consumedInitialGoal = useRef<string | undefined>(undefined);
   const selectedItem = items.find((item) => item.routineId === selected);
   const selectedFrequency = selectedItem?.frequency;
+  const selectedBusy = selectedItem?.runs.some((run) => run.status === "PENDING" || run.status === "RUNNING" || run.status === "BLOCKED") ?? false;
 
   const openNewEditor = () => {
     setSelected(null);
+    setTargetKind("NEW_GOAL");
+    setTargetGoalId("");
     setFrequencyKind("cycle");
     setCycleUnit("day");
     setFormOpen(true);
@@ -66,16 +77,28 @@ export function AutomationPanel({ api, onOpenJoi }: { api: DigitalLifeApi; onOpe
   };
 
   const load = useCallback(async () => {
-    const [routines, contexts, availablePartners] = await Promise.all([api.listAutomations(), api.listWorkbenches(), api.listPartners()]);
+    const [routines, contexts, availablePartners, feed] = await Promise.all([api.listAutomations(), api.listWorkbenches(), api.listPartners(), api.joiHomeFeed()]);
     setItems(routines.items);
     setWorkbenches(contexts.items);
     setPartners(availablePartners.items.filter((partner) => partner.status === "ACTIVE"));
+    setGoals(feed.goals);
   }, [api]);
 
   useEffect(() => {
     const timer = setTimeout(() => void load().catch(() => setNotice("没能读取定时任务。")), 0);
     return () => clearTimeout(timer);
   }, [load]);
+
+  useEffect(() => {
+    if (initialGoalId === undefined || consumedInitialGoal.current === initialGoalId || !goals.some((goal) => goal.goalId === initialGoalId)) return;
+    consumedInitialGoal.current = initialGoalId;
+    setSelected(null);
+    setTargetKind("GOAL_CONTINUATION");
+    setTargetGoalId(initialGoalId);
+    setFrequencyKind("cycle");
+    setCycleUnit("day");
+    setFormOpen(true);
+  }, [goals, initialGoalId]);
 
   const save = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -86,17 +109,27 @@ export function AutomationPanel({ api, onOpenJoi }: { api: DigitalLifeApi; onOpe
       const common = {
         frequency: frequencyFromForm(form),
         name: formText(form, "name"),
-        workbenchId: formText(form, "workbenchId"),
         ...(formText(form, "from") === "" ? {} : { from: formText(form, "from") }),
         ...(formText(form, "to") === "" ? {} : { to: formText(form, "to") }),
-        ...(partnerId === "" ? {} : { preferredPartnerId: partnerId }),
       };
-      if (selected === null) await api.createAutomation({ ...common, prompt: promptValue } satisfies CreateAutomationInput);
+      const target = targetKind === "GOAL_CONTINUATION"
+        ? { goalId: formText(form, "targetGoalId"), kind: "GOAL_CONTINUATION" as const }
+        : { kind: "NEW_GOAL" as const };
+      if (selected === null) {
+        const create: CreateAutomationInput = target.kind === "GOAL_CONTINUATION"
+          ? { ...common, prompt: promptValue, target }
+          : { ...common, prompt: promptValue, target, workbenchId: formText(form, "workbenchId"), ...(partnerId === "" ? {} : { preferredPartnerId: partnerId }) };
+        await api.createAutomation(create);
+      }
       else {
         const update: UpdateAutomationInput = {
           ...common,
+          target,
           ...(promptValue === "" ? {} : { prompt: promptValue }),
-          preferredPartnerId: partnerId === "" ? null : partnerId,
+          ...(target.kind === "GOAL_CONTINUATION" ? {} : {
+            preferredPartnerId: partnerId === "" ? null : partnerId,
+            workbenchId: formText(form, "workbenchId"),
+          }),
         };
         await api.updateAutomation(selected, update);
       }
@@ -114,7 +147,7 @@ export function AutomationPanel({ api, onOpenJoi }: { api: DigitalLifeApi; onOpe
     catch { setNotice("定时任务状态未更新。"); }
   };
   const runNow = async (item: AutomationDto) => {
-    try { await api.runAutomationNow(item.routineId); await load(); setNotice("已加入 Joi 目标流。"); }
+    try { await api.runAutomationNow(item.routineId); await load(); setNotice(item.target.kind === "GOAL_CONTINUATION" ? "已触发；原任务未收官时会自动等待。" : "已加入 Joi 目标流。"); }
     catch { setNotice("定时任务未执行。"); }
   };
   const remove = async (item: AutomationDto) => {
@@ -124,13 +157,20 @@ export function AutomationPanel({ api, onOpenJoi }: { api: DigitalLifeApi; onOpe
   };
 
   return <section className="page-section automation-page">
-    <header className="page-title-row"><div><p className="eyebrow">按节奏推进</p><h1>定时任务</h1><p>到点后，joi 会把一次普通目标输入加入首页目标流。</p></div><button className="button primary" onClick={openNewEditor} type="button">新建定时任务</button></header>
+    <header className="page-title-row"><div><p className="eyebrow">按节奏推进</p><h1>定时任务</h1><p>到点创建新任务，或在已有任务收官后继续同一张卡片。</p></div><button className="button primary" onClick={openNewEditor} type="button">新建定时任务</button></header>
     {notice === null ? null : <div className="inline-notice info" role="status">{notice}</div>}
     {formOpen ? <form className="automation-editor" key={selected ?? "new"} onSubmit={(event) => void save(event)}>
+      <label>任务类型<select disabled={selectedBusy} name="targetKind" onChange={(event) => setTargetKind(event.target.value as "NEW_GOAL" | "GOAL_CONTINUATION")} value={targetKind}><option value="NEW_GOAL">创建新任务</option><option value="GOAL_CONTINUATION">继续已有任务</option></select></label>
+      {targetKind === "GOAL_CONTINUATION" ? <>
+        <label>关联任务<select disabled={selectedBusy} name="targetGoalId" onChange={(event) => setTargetGoalId(event.target.value)} required value={targetGoalId}><option value="">请选择任务卡片</option>{goals.map((goal) => <option key={goal.goalId} value={goal.goalId}>{goal.title}</option>)}</select></label>
+        <p className="field-hint">运行中的任务会等到收官后再继续，错过的触发会合并一次。</p>
+      </> : null}
       <label>名称<input defaultValue={selectedItem?.name ?? ""} name="name" required /></label>
-      <label>提示词<textarea defaultValue={selected === null ? "" : prompt[selected] ?? ""} name="prompt" placeholder={selected === null ? "这条定时任务到点执行什么？" : "保持空白不会改动已保存的提示词"} required={selected === null} /></label>
-      <label>Workbench<select defaultValue={selectedItem?.workbenchId ?? workbenches[0]?.workbenchId} name="workbenchId" required>{workbenches.map((workbench) => <option key={workbench.workbenchId} value={workbench.workbenchId}>{workbench.name}</option>)}</select></label>
-      <label>偏好搭档<select defaultValue={selectedItem?.preferredPartnerId ?? ""} name="preferredPartnerId"><option value="">遵循 Joi 当前策略</option>{partners.map((partner) => <option key={partner.partnerId} value={partner.partnerId}>{partner.displayName}</option>)}</select></label>
+      <label>{targetKind === "GOAL_CONTINUATION" ? "续聊指令" : "提示词"}<textarea defaultValue={selected === null ? "" : prompt[selected] ?? ""} name="prompt" placeholder={selected === null ? (targetKind === "GOAL_CONTINUATION" ? "到点后，让 joi 接着这条任务做什么？" : "这条定时任务到点执行什么？") : "保持空白不会改动已保存的提示词"} required={selected === null} /></label>
+      {targetKind === "NEW_GOAL" ? <>
+        <label>Workbench<select defaultValue={selectedItem?.workbenchId ?? workbenches[0]?.workbenchId} name="workbenchId" required>{workbenches.map((workbench) => <option key={workbench.workbenchId} value={workbench.workbenchId}>{workbench.name}</option>)}</select></label>
+        <label>偏好搭档<select defaultValue={selectedItem?.preferredPartnerId ?? ""} name="preferredPartnerId"><option value="">遵循 Joi 当前策略</option>{partners.map((partner) => <option key={partner.partnerId} value={partner.partnerId}>{partner.displayName}</option>)}</select></label>
+      </> : null}
       <label>频率<select onChange={(event) => setFrequencyKind(event.target.value as AutomationFrequency["kind"])} value={frequencyKind} name="kind"><option value="cycle">周期</option><option value="interval">间隔</option><option value="once">一次</option><option value="rrule">RRULE</option></select></label>
       {frequencyKind === "cycle" ? <>
         <label>周期单位<select onChange={(event) => setCycleUnit(event.target.value as "day" | "week" | "month")} value={cycleUnit} name="unit"><option value="day">每天</option><option value="week">每周</option><option value="month">每月</option></select></label>
@@ -148,6 +188,6 @@ export function AutomationPanel({ api, onOpenJoi }: { api: DigitalLifeApi; onOpe
       <output aria-label="下次执行预览" className="automation-preview">{selectedItem?.nextRunAt === undefined ? "保存后显示下次执行时间" : `下次执行：${new Date(selectedItem.nextRunAt).toLocaleString()}`}</output>
       <div className="row-actions"><button className="button primary" type="submit">保存</button><button className="button ghost" onClick={closeEditor} type="button">取消</button></div>
     </form> : null}
-    <div className="automation-list">{items.length === 0 ? <p className="empty-line">还没有定时任务。</p> : items.map((item) => <article className="automation-row" key={item.routineId}><div><strong>{item.name}</strong><small>{item.lifecycle} · {item.nextRunAt === undefined ? "没有下次执行" : `下次 ${new Date(item.nextRunAt).toLocaleString()}`}</small><span>{item.promptConfigured ? "提示词已配置" : "缺少提示词"}</span>{item.runs.slice(-10).map((run) => <small key={run.runId}>{run.status} · {new Date(run.occurrenceAt).toLocaleString()} · 合并 {run.mergeCount}{run.reasonCode === undefined ? "" : ` · ${run.reasonCode}`}{run.inputId === undefined || onOpenJoi === undefined ? null : <button className="button quiet automation-goal-link" onClick={onOpenJoi} type="button">查看 Joi 目标</button>}</small>)}</div><div className="row-actions"><button className="button quiet" onClick={() => void (async () => { try { const value = await api.revealAutomationPrompt(item.routineId); setPrompt((current) => ({ ...current, [item.routineId]: value.prompt })); setFrequencyKind(item.frequency.kind); setCycleUnit(item.frequency.kind === "cycle" ? item.frequency.unit : "day"); setSelected(item.routineId); setFormOpen(true); setNotice("提示词已显示在编辑器中。"); } catch { setNotice("提示词未读取。"); } })()} type="button">查看提示词</button><button className="button quiet" onClick={() => { setFrequencyKind(item.frequency.kind); setCycleUnit(item.frequency.kind === "cycle" ? item.frequency.unit : "day"); setSelected(item.routineId); setFormOpen(true); }} type="button">编辑</button><button className="button quiet" onClick={() => void toggle(item)} type="button">{item.enabled ? "暂停" : "恢复"}</button><button className="button quiet" onClick={() => void runNow(item)} type="button">立即执行</button><button className="button danger" onClick={() => void remove(item)} type="button">删除</button></div></article>)}</div>
+    <div className="automation-list">{items.length === 0 ? <p className="empty-line">还没有定时任务。</p> : items.map((item) => <article className="automation-row" key={item.routineId}><div><strong>{item.name}</strong><small>{item.target.kind === "NEW_GOAL" ? "创建新任务" : `继续：${goals.find((goal) => goal.goalId === continuationGoalId(item))?.title ?? "已移除的任务"}`} · {item.lifecycle} · {item.nextRunAt === undefined ? "没有下次执行" : `下次 ${new Date(item.nextRunAt).toLocaleString()}`}</small><span>{item.promptConfigured ? "提示词已配置" : "缺少提示词"}</span>{item.runs.slice(-10).map((run) => <small key={run.runId}>{run.status} · {new Date(run.occurrenceAt).toLocaleString()} · 合并 {run.mergeCount}{run.reasonCode === undefined ? "" : ` · ${run.reasonCode}`}{run.inputId === undefined || onOpenJoi === undefined ? null : <button className="button quiet automation-goal-link" onClick={onOpenJoi} type="button">查看 Joi 目标</button>}</small>)}</div><div className="row-actions"><button className="button quiet" onClick={() => void (async () => { try { const value = await api.revealAutomationPrompt(item.routineId); setPrompt((current) => ({ ...current, [item.routineId]: value.prompt })); setFrequencyKind(item.frequency.kind); setCycleUnit(item.frequency.kind === "cycle" ? item.frequency.unit : "day"); setTargetKind(item.target.kind); setTargetGoalId(continuationGoalId(item)); setSelected(item.routineId); setFormOpen(true); setNotice("提示词已显示在编辑器中。"); } catch { setNotice("提示词未读取。"); } })()} type="button">查看提示词</button><button className="button quiet" onClick={() => { setFrequencyKind(item.frequency.kind); setCycleUnit(item.frequency.kind === "cycle" ? item.frequency.unit : "day"); setTargetKind(item.target.kind); setTargetGoalId(continuationGoalId(item)); setSelected(item.routineId); setFormOpen(true); }} type="button">编辑</button><button className="button quiet" onClick={() => void toggle(item)} type="button">{item.enabled ? "暂停" : "恢复"}</button><button className="button quiet" onClick={() => void runNow(item)} type="button">立即执行</button><button className="button danger" onClick={() => void remove(item)} type="button">删除</button></div></article>)}</div>
   </section>;
 }

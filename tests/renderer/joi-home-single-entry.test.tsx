@@ -879,8 +879,9 @@ describe("joi home single entry", () => {
       unassignedActions: [],
     });
     const dismiss = vi.spyOn(api, "dismissJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-COMPLETED", status: "CONSUMED" });
+    const onScheduleGoal = vi.fn();
 
-    render(<JoiHome api={api} />);
+    render(<JoiHome api={api} onScheduleGoal={onScheduleGoal} />);
     expect(await screen.findByText("正在评审")).toBeInTheDocument();
     expect(screen.getByText("评审后补充执行")).toBeInTheDocument();
     for (const label of ["正在安排", "已安排", "执行中", "需要你", "正在总结", "已完成", "已完成（有缺口）", "处理失败", "已取消"]) {
@@ -888,6 +889,8 @@ describe("joi home single entry", () => {
     }
     expect(screen.getByText("有一项执行未完成")).toBeInTheDocument();
     expect(screen.getAllByText("progressing")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "定时继续「目标 RUNNING」" }));
+    expect(onScheduleGoal).toHaveBeenCalledWith("goal-RUNNING");
     fireEvent.click(screen.getByRole("button", { name: "移除这条卡片" }));
     await waitFor(() => expect(dismiss).toHaveBeenCalledWith("goal-COMPLETED"));
     expect(screen.queryByText("目标 COMPLETED")).not.toBeInTheDocument();

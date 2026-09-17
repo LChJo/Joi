@@ -14,7 +14,7 @@
 - 搭档输出先原子归档为工作台范围内 WorkResult 并更新工作/任务投影，再以有界摘要通知 joi；正文只能由当前工作台通过分页工具读取。
 - 所有输入先持久化，所有外部副作用先进入 outbox，并使用稳定幂等标识；连续输入的合并、等待或并发由 joi 在安全 Turn 边界决定。
 - 首次无可用模型源时，首页先完成大模型网络连接；提供六家官方厂商和一个通用平台，厂商内区分普通 API 与官方 Coding/Token Plan，并在厂商支持时继续选择 OpenAI-compatible 或 Anthropic-compatible 协议。
-- “定时任务”是唯一全局 Joi scheduler 的管理入口：Routine 到点只原子写入一条普通 `PENDING` inbox 输入，由现有 Joi 单槽位执行；诊断、导出和紧急停止收纳在“设置 → 诊断”。
+- “定时任务”是唯一全局 Joi scheduler 的管理入口：Routine 可创建新目标，也可在指定首页任务卡收官后按固定指令继续同一目标；到点仍由现有 Joi 单槽位执行，诊断、导出和紧急停止收纳在“设置 → 诊断”。
 
 目标架构决策见 [ADR 0002](docs/adr/0002-unique-joi-pi-workbench-orchestration.md)，旧 Life 数据兼容策略见 [ADR 0003](docs/adr/0003-workbench-legacy-life-migration.md)，工作台私有实例、工作区和结果闭环见 [ADR 0006](docs/adr/0006-workbench-private-partner-instances-and-results.md)。下文中 Life/Wake/主 Agent 描述的是现有兼容运行时，实施 JOI-01 时逐步收敛为只读兼容层，不再代表新的调度权威。
 
@@ -85,7 +85,7 @@ joi 不是一个新的聊天页，也不是把多个 Agent 排成固定流水线
 - 保存活动时间线、意识残留、情景记忆、语义记忆、事务、待办和闹钟。
 - 由主 Agent 设置闹钟、写记忆、更新事务、向人表达和委派协作者。
 - 展示流式状态、正式回复、input/auth 请求、Artifact 与失败恢复过程。
-- 创建、暂停、恢复、立即执行和删除 Routine；列表只显示安全运行事实，提示词必须显式 reveal。
+- 创建、暂停、恢复、立即执行和删除 Routine；可从首页任意未移除任务卡创建“定时继续”，列表只显示安全运行事实，提示词必须显式 reveal。
 - 在应用重启后恢复事件队列，并对已被远端接受的 A2A Task 执行查询或续订。
 
 ## 系统概览

@@ -7,6 +7,9 @@ export type AutomationFrequency =
 
 export type AutomationLifecycle = "ACTIVE" | "PAUSED" | "EXPIRED" | "BLOCKED" | "DELETED";
 export type AutomationRunStatus = "PENDING" | "RUNNING" | "COMPLETED" | "FAILED" | "BLOCKED" | "CANCELED";
+export type AutomationTarget =
+  | { kind: "NEW_GOAL" }
+  | { goalId: string; kind: "GOAL_CONTINUATION" };
 
 export interface AutomationRunDto {
   completedAt?: string;
@@ -35,6 +38,7 @@ export interface AutomationDto {
   promptConfigured: boolean;
   routineId: string;
   runs: AutomationRunDto[];
+  target: AutomationTarget;
   to?: string;
   workbenchId: string;
 }
@@ -45,8 +49,9 @@ export interface CreateAutomationInput {
   name: string;
   preferredPartnerId?: string;
   prompt: string;
+  target?: AutomationTarget;
   to?: string;
-  workbenchId: string;
+  workbenchId?: string;
 }
 
 export interface UpdateAutomationInput {
@@ -56,6 +61,7 @@ export interface UpdateAutomationInput {
   name?: string;
   preferredPartnerId?: string | null;
   prompt?: string;
+  target?: AutomationTarget;
   to?: string | null;
   workbenchId?: string;
 }

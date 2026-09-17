@@ -8,7 +8,7 @@
 
 输入先写全局 inbox，再由 Pi 选择 `select | create | suggest_merge | suggest_archive | clarify`。非法结构化决策只修复一次；再次失败进入澄清或安全串行降级。merge/archive 只生成建议，必须经用户确认。
 
-`Routine` 是全局自动化实体，不保存时区；每次 tick 使用当前系统时区解释周期和日期边界。创建必须绑定 READY Workbench，搭档只作为可选偏好提示。到期只写一条带 `automation_routine_id` 的普通 Joi `PENDING` 输入，运行期间继续使用 Joi 的单槽位；禁用或软删除不取消已经入队或运行中的输入。
+`Routine` 是全局自动化实体，不保存时区；每次 tick 使用当前系统时区解释周期和日期边界。`NEW_GOAL` target 必须绑定 READY Workbench，搭档只作为可选偏好提示；`GOAL_CONTINUATION` target 绑定一个尚未移除的首页 goal，并从该 goal 派生 Workbench。到期时，新目标写一条普通 Joi `PENDING` 输入；续聊则复用原 goal/input/card，不创建第二张卡。目标活跃时到期事实合并等待，完成或失败后自动重排；取消不会自动恢复。类型或目标只允许在没有 pending/running/blocked run 时修改。移除目标卡片会在同一事务软删除全部关联 Routine；普通禁用或删除 Routine 仍不取消已经入队或运行中的输入。
 
 Partner 配置（revision）是无 cwd 的全局模板；运行中的 `PartnerInstance` 必须绑定一个 `workbenchId`，分为 `EPHEMERAL`（单次派发后销毁、消息清除）与 `RESIDENT`（会话消息持久化、跨重启恢复、目标完成后由 joi 销毁）。实例既不跨 Partner，也不跨工作台；忙碌实例不可复用或销毁。工作记忆按 `(workbenchId, partnerId)` 隔离，只向 joi 提供不含正文的选择依据；管理 API 不提供记忆正文。
 

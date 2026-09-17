@@ -9,6 +9,9 @@ export type RoutineFrequency =
   | { dtStart?: string; kind: "rrule"; rule: string };
 
 export type RoutineLifecycle = "ACTIVE" | "PAUSED" | "EXPIRED" | "BLOCKED" | "DELETED";
+export type RoutineTarget =
+  | { kind: "NEW_GOAL" }
+  | { goalId: string; kind: "GOAL_CONTINUATION" };
 
 export interface Routine {
   createdAt: string;
@@ -22,6 +25,7 @@ export interface Routine {
   preferredPartnerId?: string;
   prompt: string;
   routineId: string;
+  target: RoutineTarget;
   to?: string;
   workbenchId: string;
 }
@@ -113,16 +117,19 @@ function normalizeFrequency(frequency: unknown, createdAt: string): RoutineFrequ
 
 export function createRoutine(input: {
   createdAt: string; deletedAt?: string; enabled?: boolean; from?: string; frequency: RoutineFrequency; lastRunAt?: string;
-  name: string; pendingTriggerAt?: string; preferredPartnerId?: string; prompt: string; routineId: string; to?: string; workbenchId: string;
+  name: string; pendingTriggerAt?: string; preferredPartnerId?: string; prompt: string; routineId: string; target?: RoutineTarget; to?: string; workbenchId: string;
 }): Routine {
   const createdAt = instant(input.createdAt, "routine_created_at_invalid");
   const from = optionalDate(input.from, "routine_from_invalid");
   const to = optionalDate(input.to, "routine_to_invalid");
   if (from !== undefined && to !== undefined && from > to) throw new DomainError("routine_date_range_invalid", "Routine date range is invalid.");
+  const target: RoutineTarget = input.target?.kind === "GOAL_CONTINUATION"
+    ? { goalId: text(input.target.goalId, 160, "routine_goal_invalid"), kind: "GOAL_CONTINUATION" }
+    : { kind: "NEW_GOAL" };
   const result: Routine = {
     createdAt, enabled: input.enabled ?? true, frequency: normalizeFrequency(input.frequency, createdAt),
     name: text(input.name, 120, "routine_name_invalid"), prompt: text(input.prompt, 32_000, "routine_prompt_invalid"),
-    routineId: text(input.routineId, 160, "routine_id_invalid"), workbenchId: text(input.workbenchId, 160, "routine_workbench_invalid"),
+    routineId: text(input.routineId, 160, "routine_id_invalid"), target, workbenchId: text(input.workbenchId, 160, "routine_workbench_invalid"),
     ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }),
     ...(input.deletedAt === undefined ? {} : { deletedAt: instant(input.deletedAt, "routine_deleted_at_invalid") }),
     ...(input.lastRunAt === undefined ? {} : { lastRunAt: instant(input.lastRunAt, "routine_last_run_invalid") }),

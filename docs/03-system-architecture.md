@@ -4,7 +4,7 @@
 
 系统只有一个唯一全局 joi identity、system policy 与 scheduler，即唯一调度权威。Pi routing turn 只读取工作台摘要；选定后 execution turn 只装配对应工作台的 persona、工程引用、任务投影、记忆与相关搭档。不同工作台可拥有独立 thread 并并发工作，但不能拥有独立调度器。
 
-Routine 也归属于这个唯一 scheduler。`JoiAutomationComponent` 在根 tick 中先以当前系统 IANA 时区计算周期、interval、once 或 RRULE，到期时与 `nextRunAt` 推进、运行事实和普通 `joi_inbox_messages` 写入同一事务；它不创建 timer、线程、进程或第二个模型槽位。离线或 Workbench 暂不可用时只保留一个合并的 pending/blocked 运行事实，恢复后再转为普通 Joi 输入。
+Routine 也归属于这个唯一 scheduler。`JoiAutomationComponent` 在根 tick 中先以当前系统 IANA 时区计算周期、interval、once 或 RRULE，到期时与 `nextRunAt` 推进、运行事实和普通 `joi_inbox_messages` 写入同一事务；它不创建 timer、线程、进程或第二个模型槽位。Routine 的 target 可以是新目标或已有 goal。已有 goal 仍活跃或已取消时只保留一个合并的 blocked 运行事实；只有完成或失败后才把同一 goal 原子重排为 `PENDING`，重开已清理地图，并在该轮执行时解析固定续聊指令。移除首页 goal 卡片与软删除其所有关联 Routine 处于同一事务。离线或 Workbench 暂不可用同样只保留一个合并的 pending/blocked 事实。
 
 ```text
 首页输入 -> durable joi inbox -> Pi routing -> Workbench context projection

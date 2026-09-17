@@ -1025,9 +1025,10 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
 const JOI_MAX_ATTACHMENTS = 8;
 const JOI_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
-function JoiComposer({ api, onNavigate, snapshot }: {
+function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
   api: DigitalLifeApi;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
+  onScheduleGoal?: (goalId: string) => void;
   snapshot: JoiSnapshotDto;
 }) {
   const [text, setText] = useState("");
@@ -1162,7 +1163,7 @@ function JoiComposer({ api, onNavigate, snapshot }: {
       {feed.goals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
           <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => { setResultGoalId(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong><GoalProgress goal={goal} /></span></button>
-          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} />{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" || TERMINAL_GOAL_STATUSES.includes(goal.status) ? <div aria-label={`${goal.title} 操作`} className="joi-goal-actions" role="group">{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" ? <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} /> : null}{TERMINAL_GOAL_STATUSES.includes(goal.status) ? <button aria-label={`继续「${goal.title}」`} className="joi-goal-link" onClick={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} type="button">{retryGoalId === goal.goalId ? "收起" : "继续"}</button> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div> : null}</div>
+          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} />{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" || TERMINAL_GOAL_STATUSES.includes(goal.status) || onScheduleGoal !== undefined ? <div aria-label={`${goal.title} 操作`} className="joi-goal-actions" role="group">{onScheduleGoal === undefined ? null : <button aria-label={`定时继续「${goal.title}」`} className="button quiet joi-schedule-goal" onClick={() => onScheduleGoal(goal.goalId)} type="button">定时继续</button>}{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" ? <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} /> : null}{TERMINAL_GOAL_STATUSES.includes(goal.status) ? <button aria-label={`继续「${goal.title}」`} className="joi-goal-link" onClick={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} type="button">{retryGoalId === goal.goalId ? "收起" : "继续"}</button> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div> : null}</div>
         </div>
         {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoalId(goal.goalId); setOpenGoalId(null); } }}><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
@@ -1212,9 +1213,10 @@ function clarificationText(code: string | undefined, prompt?: string, workbenchN
   return prompt ?? "joi 需要你补充信息后才能继续。在下方补充细节，它会接着这条输入往下做。";
 }
 
-export function JoiHome({ api, onNavigate }: {
+export function JoiHome({ api, onNavigate, onScheduleGoal }: {
   api: DigitalLifeApi;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
+  onScheduleGoal?: (goalId: string) => void;
 }) {
   const [snapshot, setSnapshot] = useState<JoiSnapshotDto | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -1225,5 +1227,5 @@ export function JoiHome({ api, onNavigate }: {
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   if (error !== null) return <section className="content-state" role="alert"><p>{error}</p><button className="button quiet" onClick={() => void load()} type="button">再试一次</button></section>;
   if (snapshot === null) return <section className="content-state" role="status">joi 正在整理全局状态…</section>;
-  return snapshot.runtime.configured ? <JoiComposer api={api} {...(onNavigate === undefined ? {} : { onNavigate })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
+  return snapshot.runtime.configured ? <JoiComposer api={api} {...(onNavigate === undefined ? {} : { onNavigate })} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
 }

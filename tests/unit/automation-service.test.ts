@@ -62,12 +62,31 @@ describe("AutomationService", () => {
     const store: Partial<AutomationStore> = { get: vi.fn(async () => full), list: vi.fn(async () => [full, minimal]) };
     const service = new AutomationService(dependencies(store));
     const list = await service.list();
-    expect(list[0]).toMatchObject({ lifecycle: "BLOCKED", promptConfigured: true, runs: [{ completedAt: "2026-01-01T03:00:00.000Z" }] });
+    expect(list[0]).toMatchObject({ lifecycle: "BLOCKED", promptConfigured: true, target: { kind: "NEW_GOAL" }, runs: [{ completedAt: "2026-01-01T03:00:00.000Z" }] });
     expect(list[0]).not.toHaveProperty("prompt");
     expect((await service.get(" routine_1 ")).routineId).toBe("routine_1");
     await expect(service.get(" ")).rejects.toMatchObject({ code: "routine_id_invalid" });
     (store.get as ReturnType<typeof vi.fn>).mockResolvedValueOnce(null);
     await expect(service.get("missing")).rejects.toMatchObject({ code: "routine_not_found" });
+  });
+
+  it("derives a continuation Workbench from its live goal and rejects unavailable targets", async () => {
+    const current = record();
+    const inspectGoal = vi.fn(async () => ({ goalId: "goal_1", state: "COMPLETED" as const, workbenchId: "workbench_1" }));
+    const store: Partial<AutomationStore> = {
+      countActive: vi.fn(async () => 0),
+      create: vi.fn(async (value) => value),
+      inspectGoal,
+    };
+    const service = new AutomationService(dependencies(store));
+    const created = await service.create({
+      frequency: { at: "2026-01-02T00:00:00.000Z", kind: "once" }, name: "Continue", prompt: "继续检查",
+      target: { goalId: "goal_1", kind: "GOAL_CONTINUATION" },
+    } as never);
+    expect(created).toMatchObject({ target: { goalId: "goal_1", kind: "GOAL_CONTINUATION" }, workbenchId: "workbench_1" });
+    expect(store.create).toHaveBeenCalledWith(expect.objectContaining({ target: { goalId: "goal_1", kind: "GOAL_CONTINUATION" }, workbenchId: "workbench_1" }));
+    inspectGoal.mockResolvedValueOnce(null as never);
+    await expect(service.create({ frequency: current.frequency, name: "Missing", prompt: "继续", target: { goalId: "missing", kind: "GOAL_CONTINUATION" } } as never)).rejects.toMatchObject({ code: "routine_goal_invalid" });
   });
 
   it("validates create idempotency, Workbench readiness, partner preference and the limit", async () => {

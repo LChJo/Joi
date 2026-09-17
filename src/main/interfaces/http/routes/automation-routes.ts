@@ -1,7 +1,7 @@
 import { automationService } from "../api-dependencies.js";
 import { HttpError, optionalStringField, readJson, sendEmpty, sendJson, stringField } from "../http-core.js";
 import { exact, pattern, type RouteDefinition } from "../route-types.js";
-import type { AutomationFrequency } from "../../../../shared/automation.js";
+import type { AutomationFrequency, AutomationTarget } from "../../../../shared/automation.js";
 import type { IncomingHttpHeaders } from "node:http";
 
 function idempotencyKey(headers: IncomingHttpHeaders): string {
@@ -30,6 +30,20 @@ function optionalNewString(body: Record<string, unknown>, key: string): string |
   return value;
 }
 
+function target(body: Record<string, unknown>): AutomationTarget | undefined {
+  const value = body.target;
+  if (value === undefined) return undefined;
+  if (value === null || typeof value !== "object" || Array.isArray(value)) {
+    throw new HttpError("routine_target_invalid", "target must be an object.", 400);
+  }
+  const record = value as Record<string, unknown>;
+  if (record.kind === "NEW_GOAL") return { kind: "NEW_GOAL" };
+  if (record.kind === "GOAL_CONTINUATION" && typeof record.goalId === "string" && record.goalId.trim() !== "") {
+    return { kind: "GOAL_CONTINUATION", goalId: record.goalId.trim() };
+  }
+  throw new HttpError("routine_target_invalid", "target must identify a supported automation target.", 400);
+}
+
 export const AUTOMATION_READ_ROUTES: RouteDefinition[] = [
   {
     auth: "read", id: "GET /api/v1/automations", match: exact("GET", "/api/v1/automations"),
@@ -50,10 +64,14 @@ export const AUTOMATION_WRITE_ROUTES: RouteDefinition[] = [
       const preferredPartnerId = optionalNewString(body, "preferredPartnerId");
       const from = optionalNewString(body, "from");
       const to = optionalNewString(body, "to");
+      const automationTarget = target(body);
+      const workbenchId = optionalNewString(body, "workbenchId");
       sendJson(ctx.response, 201, await automationService(ctx.dependencies).create({
-        frequency: frequency(body), name: stringField(body, "name"), prompt: stringField(body, "prompt"), workbenchId: stringField(body, "workbenchId"),
+        frequency: frequency(body), name: stringField(body, "name"), prompt: stringField(body, "prompt"),
         ...(from === undefined ? {} : { from }), ...(to === undefined ? {} : { to }),
         ...(preferredPartnerId === undefined ? {} : { preferredPartnerId }),
+        ...(automationTarget === undefined ? {} : { target: automationTarget }),
+        ...(workbenchId === undefined ? {} : { workbenchId }),
       }, key));
     },
   },
@@ -73,11 +91,13 @@ export const AUTOMATION_WRITE_ROUTES: RouteDefinition[] = [
       const from = optionalStringField(body, "from");
       const to = optionalStringField(body, "to");
       const preferredPartnerId = optionalStringField(body, "preferredPartnerId");
+      const automationTarget = target(body);
       sendJson(ctx.response, 200, await automationService(ctx.dependencies).update(decodeURIComponent((match as RegExpExecArray)[1] ?? ""), {
         ...(enabled === undefined ? {} : { enabled }), ...(from === undefined ? {} : { from }),
         ...(body.frequency === undefined ? {} : { frequency: frequency(body) }),
         ...(name === undefined ? {} : { name }), ...(preferredPartnerId === undefined ? {} : { preferredPartnerId }),
         ...(prompt === undefined ? {} : { prompt }), ...(to === undefined ? {} : { to }), ...(workbenchId === undefined ? {} : { workbenchId }),
+        ...(automationTarget === undefined ? {} : { target: automationTarget }),
       }, key));
     },
   },

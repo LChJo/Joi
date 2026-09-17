@@ -10,6 +10,15 @@ const routine: AutomationDto = {
   frequency: { kind: "cycle", localTime: "09:00", unit: "week", daysOfWeek: [0, 4] }, lifecycle: "ACTIVE", name: "早间检查",
   nextRunAt: "2026-01-02T09:00:00.000Z", promptConfigured: true, routineId: "routine_1", workbenchId: "workbench_1",
   runs: [{ inputId: "input_1", occurrenceAt: "2026-01-01T09:00:00.000Z", result: "PENDING", runId: "run_1", mergeCount: 1, status: "PENDING", triggeredAt: "2026-01-01T09:00:00.000Z" }],
+  target: { kind: "NEW_GOAL" },
+};
+
+const continuationRoutine: AutomationDto = {
+  ...routine,
+  name: "继续登录研究",
+  routineId: "routine_continuation",
+  runs: [],
+  target: { goalId: "goal-running", kind: "GOAL_CONTINUATION" },
 };
 
 function mockApi() {
@@ -20,6 +29,14 @@ function mockApi() {
     capabilities: [], createdBy: "user", displayName: "研究搭档", engine: "pi-core", inFlightCount: 0, kind: "a2a", knowledgeDocCount: 0,
     lifecyclePolicy: "DRAIN", partnerId: "partner_1", partnerRevisionId: "revision_1", registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
   }] });
+  vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+    goals: [{
+      agentCount: 1, canDelete: false, goalId: "goal-running", status: "RUNNING", title: "持续研究登录方案",
+      updatedAt: routine.createdAt, work: { active: 1, completed: 0, failed: 0, total: 1 },
+      workbench: { name: "产品工作", workbenchId: "workbench_1" },
+    }],
+    thinking: [], unassignedActions: [],
+  });
   const createAutomation = vi.spyOn(api, "createAutomation").mockResolvedValue(routine);
   const updateAutomation = vi.spyOn(api, "updateAutomation").mockResolvedValue(routine);
   const revealAutomationPrompt = vi.spyOn(api, "revealAutomationPrompt").mockResolvedValue({ prompt: "秘密提示词" });
@@ -84,6 +101,55 @@ describe("AutomationPanel", () => {
     fireEvent.change(screen.getByLabelText("提示词"), { target: { value: "检查" } });
     fireEvent.click(screen.getByRole("button", { name: "保存" }));
     await waitFor(() => expect(screen.getByText("定时任务未保存。")).toBeInTheDocument());
+  });
+
+  it("creates a goal continuation from any live card and derives its Workbench", async () => {
+    const fixture = mockApi();
+    render(<AutomationPanel api={fixture.api} initialGoalId="goal-running" />);
+
+    expect(await screen.findByLabelText("任务类型")).toHaveValue("GOAL_CONTINUATION");
+    expect(screen.getByLabelText("关联任务")).toHaveValue("goal-running");
+    expect(screen.getByText("运行中的任务会等到收官后再继续，错过的触发会合并一次。")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Workbench")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("偏好搭档")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("名称"), { target: { value: "继续登录研究" } });
+    fireEvent.change(screen.getByLabelText("续聊指令"), { target: { value: "继续核对最新证据" } });
+    fireEvent.submit(formOf(screen.getByRole("button", { name: "保存" })));
+    await waitFor(() => expect(fixture.createAutomation).toHaveBeenCalledWith(expect.objectContaining({
+      name: "继续登录研究",
+      prompt: "继续核对最新证据",
+      target: { goalId: "goal-running", kind: "GOAL_CONTINUATION" },
+    })));
+    const payload = fixture.createAutomation.mock.calls.at(-1)?.[0];
+    expect(payload).not.toHaveProperty("workbenchId");
+  });
+
+  it("edits an idle continuation target and locks a waiting target", async () => {
+    const fixture = mockApi();
+    fixture.listAutomations.mockResolvedValue({ items: [continuationRoutine] });
+    const view = render(<AutomationPanel api={fixture.api} />);
+
+    expect(await screen.findByText("继续：持续研究登录方案", { exact: false })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(screen.getByLabelText("任务类型")).toHaveValue("GOAL_CONTINUATION");
+    expect(screen.getByLabelText("关联任务")).toHaveValue("goal-running");
+    fireEvent.change(screen.getByLabelText("任务类型"), { target: { value: "NEW_GOAL" } });
+    expect(screen.getByLabelText("Workbench")).toBeInTheDocument();
+    fireEvent.submit(formOf(screen.getByRole("button", { name: "保存" })));
+    await waitFor(() => expect(fixture.updateAutomation).toHaveBeenCalledWith("routine_continuation", expect.objectContaining({
+      target: { kind: "NEW_GOAL" },
+      workbenchId: "workbench_1",
+    })));
+
+    view.unmount();
+    fixture.listAutomations.mockResolvedValue({ items: [{
+      ...continuationRoutine,
+      runs: [{ mergeCount: 1, occurrenceAt: routine.createdAt, reasonCode: "goal_not_finished", result: "BLOCKED", runId: "run-waiting", status: "BLOCKED", triggeredAt: routine.createdAt }],
+    }] });
+    render(<AutomationPanel api={fixture.api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    expect(screen.getByLabelText("任务类型")).toBeDisabled();
+    expect(screen.getByLabelText("关联任务")).toBeDisabled();
   });
 
   it("submits interval, once and RRULE forms and reports operation failures", async () => {

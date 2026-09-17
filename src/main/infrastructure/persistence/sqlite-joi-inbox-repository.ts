@@ -274,6 +274,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(now, now, inputId);
         if (result.changes === 0) return null;
         cancelQueuedWork(connection, inputId, now);
+        finishAutomationRun(connection, inputId, "CANCELED", now);
         const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
         return updated === undefined ? null : mapRow(updated);
       }
@@ -286,6 +287,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // Canceling a goal also cancels its not-yet-final work; a WAITING work would
       // otherwise block the goal's synthesis forever with nobody left to answer it.
       cancelQueuedWork(connection, inputId, now);
+      finishAutomationRun(connection, inputId, "CANCELED", now);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });
@@ -317,6 +319,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL`).run(now, now, row.input_id);
         if (result.changes === 0) continue;
         cancelQueuedWork(connection, row.input_id, now);
+        finishAutomationRun(connection, row.input_id, "CANCELED", now);
         canceled += 1;
       }
       return canceled;
@@ -337,6 +340,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         now, failure.reasonCode, failure.failureCount, now, inputId,
       );
       if (result.changes === 0) return null;
+      finishAutomationRun(connection, inputId, "FAILED", now, failure.reasonCode);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });
@@ -405,6 +409,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         SET dismissed_at = ?, updated_at = ?
         WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(now, now, inputId);
       if (result.changes === 0) return null;
+      connection.prepare(`UPDATE joi_automation_runs SET status = 'CANCELED', result = 'CANCELED', completed_at = ?, reason_code = 'goal_removed'
+        WHERE input_id IS NULL AND status IN ('PENDING', 'RUNNING', 'BLOCKED') AND routine_id IN (
+          SELECT routine_id FROM joi_automations
+          WHERE target_kind = 'GOAL_CONTINUATION' AND target_goal_input_id = ? AND deleted_at IS NULL
+        )`).run(now, inputId);
+      connection.prepare(`UPDATE joi_automations SET enabled = 0, deleted_at = ?, updated_at = ?
+        WHERE target_kind = 'GOAL_CONTINUATION' AND target_goal_input_id = ? AND deleted_at IS NULL`).run(now, now, inputId);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });
@@ -626,7 +637,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
         WHERE input_id = ?`).run(now, input.inputId);
       connection.prepare(`UPDATE joi_automation_runs SET status = 'COMPLETED', result = 'COMPLETED', completed_at = ?, reason_code = NULL
-        WHERE input_id = ? AND status <> 'CANCELED'`).run(now, input.inputId);
+        WHERE input_id = ? AND status IN ('PENDING', 'RUNNING', 'BLOCKED')`).run(now, input.inputId);
+      connection.prepare("UPDATE joi_inbox_messages SET automation_routine_id = NULL WHERE input_id = ?").run(input.inputId);
     });
   }
 
@@ -737,8 +749,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
         WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(now, inputId);
       connection.prepare(`UPDATE joi_automation_runs SET status = 'COMPLETED', result = 'COMPLETED', completed_at = ?, reason_code = NULL
-        WHERE input_id = ? AND status <> 'CANCELED'
+        WHERE input_id = ? AND status IN ('PENDING', 'RUNNING', 'BLOCKED')
           AND EXISTS (SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND status = 'CONSUMED')`).run(now, inputId, inputId);
+      connection.prepare("UPDATE joi_inbox_messages SET automation_routine_id = NULL WHERE input_id = ?").run(inputId);
       connection.prepare("UPDATE partner_result_events SET consumed_at = ? WHERE input_id = ? AND consumed_at IS NULL").run(now, inputId);
       return undefined;
     });
@@ -782,4 +795,19 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         SET status = ?, updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(nextStatus, now, inputId);
     });
   }
+}
+
+function finishAutomationRun(
+  connection: DatabaseSync,
+  inputId: string,
+  result: "CANCELED" | "FAILED",
+  completedAt: string,
+  reasonCode?: string,
+): void {
+  connection.prepare(`UPDATE joi_automation_runs
+    SET status = ?, result = ?, completed_at = ?, reason_code = ?
+    WHERE input_id = ? AND status IN ('PENDING', 'RUNNING', 'BLOCKED')`).run(
+    result, result, completedAt, reasonCode ?? null, inputId,
+  );
+  connection.prepare("UPDATE joi_inbox_messages SET automation_routine_id = NULL WHERE input_id = ?").run(inputId);
 }

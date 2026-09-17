@@ -2,6 +2,7 @@
 import { createJoiReasoningTools, goalFromInputIdPrefix, selectJoiReasoningToolsForInput } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
 import { JOI_REASONING_TOOL_NAMES } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { DomainError } from "../../src/main/domain/errors.js";
+import type { CreateAutomationInput, UpdateAutomationInput } from "../../src/shared/automation.js";
 import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 
 const partnerDto: PartnerDto = {
@@ -28,6 +29,7 @@ interface HarnessRecorder {
 }
 
 function makeTools(options: {
+  automationCalls?: { input: Record<string, unknown>; key?: string; method: string }[];
   attachmentIds?: string[];
   attachments?: { read(attachmentId: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }> };
   goalInputId?: string;
@@ -53,6 +55,16 @@ function makeTools(options: {
   const harnessCalls = options.harness?.calls ?? [];
   const push = (method: string, args: Record<string, unknown>): void => { harnessCalls.push({ args, method }); };
   const tools = createJoiReasoningTools({
+    ...(options.automationCalls === undefined ? {} : { automation: {
+      create: async (automationInput: CreateAutomationInput, key?: string) => { options.automationCalls?.push({ input: automationInput as unknown as Record<string, unknown>, ...(key === undefined ? {} : { key }), method: "create" }); return {} as never; },
+      delete: async () => undefined,
+      get: async () => ({} as never),
+      list: async () => [],
+      revealPrompt: async () => ({ prompt: "" }),
+      runNow: async () => ({} as never),
+      setEnabled: async () => ({} as never),
+      update: async (routineId: string, updatePatch: UpdateAutomationInput, key?: string) => { options.automationCalls?.push({ input: { routineId, ...updatePatch }, ...(key === undefined ? {} : { key }), method: "update" }); return {} as never; },
+    } }),
     workbenchId: "workbench_1",
     workbenchChanges: {
       suggestArchive: async (input) => ({ ...changeBase, ...input, kind: "ARCHIVE" as const, sourceWorkbenchId: input.workbenchId }),
@@ -172,6 +184,27 @@ describe("joi reasoning tools", () => {
   it("keeps every registered reasoning tool inside the runtime allowlist", () => {
     const allowed = new Set<string>(JOI_REASONING_TOOL_NAMES);
     expect(makeTools().tools.map((tool) => tool.name).filter((name) => !allowed.has(name))).toEqual([]);
+  });
+
+  it("can schedule a fixed continuation against the current goal context", async () => {
+    const automationCalls: { input: Record<string, unknown>; key?: string; method: string }[] = [];
+    const fixture = makeTools({ automationCalls, goalInputId: "goal-root", inputId: "joi_harness_review:goal:goal-root:r1" });
+
+    await fixture.call("create_automation", {
+      frequency: { hours: 1, kind: "interval" },
+      name: "继续检查",
+      prompt: "核对新增证据",
+      targetKind: "GOAL_CONTINUATION",
+    });
+
+    expect(automationCalls).toHaveLength(1);
+    expect(automationCalls[0]?.method).toBe("create");
+    expect(automationCalls[0]?.input).toMatchObject({
+      name: "继续检查",
+      prompt: "核对新增证据",
+      target: { goalId: "goal-root", kind: "GOAL_CONTINUATION" },
+    });
+    expect(automationCalls[0]?.input).not.toHaveProperty("workbenchId");
   });
 
   it("lets a goal result turn inspect a safe failure, switch a partner revision and reassign the same Work", () => {
