@@ -1,4 +1,9 @@
 import path from "node:path";
+import { app } from "electron";
+import { createHash } from "node:crypto";
+import { SqliteResultExports } from "../infrastructure/persistence/sqlite-result-exports.js";
+import { ElectronResultExporter } from "../infrastructure/artifacts/electron-result-export.js";
+import { ResultExportService } from "../application/operations/result-export-service.js";
 import { lookup } from "node:dns/promises";
 
 import type { Clock, IdGenerator, SsePublisher } from "../application/ports/runtime-store.js";
@@ -195,11 +200,23 @@ export function wireRuntime(input: {
       },
     })],
   });
+  const exportJobs = new SqliteResultExports(database);
+  const exporter = new ElectronResultExporter({ jobs: exportJobs, downloads: app.getPath('downloads'), fontPath: path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), 'resources', 'fonts', 'NotoSansSC.ttf') });
+  const resultExports = new ResultExportService({
+    find: input => exportJobs.find(input),
+    read: async goalId => {
+      const goal = (await workbenchStack.joiHomeFeed.load()).goals.find(g => g.goalId === goalId);
+      return goal ? { title: goal.title, body: goal.completionSummary ?? '' } : null;
+    },
+    digest: body => Promise.resolve(createHash('sha256').update(body).digest('hex')),
+    create: input => exportJobs.create(input), get: id => exportJobs.get(id), open: (id, reveal) => exporter.open(id, reveal),
+  });
   const outboxDispatcher = new OutboxDispatcher({
     clock,
     diagnostics,
     excludeKinds: ["partner.dispatch"],
     handlers: {
+      "result.export": record => exporter.handle(String(record.payload.exportId)),
       "a2a.send": async (record) => {
         const invocationId = record.payload.invocationId;
         if (typeof invocationId !== "string") throw new Error("A2A outbox record is missing invocationId.");
@@ -256,6 +273,7 @@ export function wireRuntime(input: {
     legacyRunControl,
     lifeRuntime,
     outboxDispatcher,
+    resultExports,
   };
 }
 

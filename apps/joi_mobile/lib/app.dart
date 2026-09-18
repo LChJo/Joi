@@ -47,6 +47,9 @@ class _PairingScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(
+        actions: [ConnectionDiagnosticsButton(controller: controller)],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24),
@@ -94,7 +97,6 @@ class _PairingScreen extends StatelessWidget {
                 ),
                 child: const Text('输入连接码'),
               ),
-              ConnectionDiagnosticsButton(controller: controller),
               const Spacer(),
               const Text(
                 '同一台 Joi 可以安全绑定多台手机',

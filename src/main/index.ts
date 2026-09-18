@@ -271,6 +271,7 @@ async function startRuntime(): Promise<void> {
     interactions: runtimeStack.interactions,
     joiActivity: persistence.joiInboxRepository,
     joiHomeFeed: workbenchStack.joiHomeFeed,
+    resultExports: runtimeStack.resultExports,
     joiAttachments: joiStack.joiAttachmentStorage,
     joiInbox: joiStack.joiInbox,
     knowledge: partnerStack.partnerKnowledge,

@@ -40,6 +40,11 @@ dependencies:
   mobile_scanner: ^7.4.0
   flutter_markdown_plus: 1.0.12
   url_launcher: ^6.3.2
+  markdown: ^7.3.1
+  pdf: ^3.12.0
+  printing: ^5.14.3
+  image: ^4.10.1
+  path_provider: ^2.1.6
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +67,9 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+  assets:
+    - assets/fonts/NotoSansSC.ttf
+    - assets/fonts/OFL.txt
 
   # To add assets to your application, add an assets section, like this:
   # assets:

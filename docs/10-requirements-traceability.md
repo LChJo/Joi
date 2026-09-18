@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+AC-57 全文导出与安卓诊断入口：[规格与设备待验](19-result-export-acceptance.md)。对应 `tests/unit/result-export.test.ts`、`tests/integration/result-export-persistence.test.ts`、`tests/contract/result-export-http.test.ts`、`tests/renderer/result-export-menu.test.tsx`、`tests/e2e/result-export.spec.ts` 和 Flutter `result_export_test.dart` / `result_reader_test.dart`。复制仅最终 Markdown；文件导出使用快照、离线字体和下载/Joi，诊断图标按当前状态显示。
+
 AC-57 原生 stdio 协议回归：`native/joi-remote/tests/sidecar_contract.rs` 必须启动真实 sidecar，以桌面 camelCase 命令验证 ready、QUIC peerOpen/peerFrame、send 回包、close/peerClose 与 shutdown；Rust 枚举同时指定 variant 与 field 的 camelCase。可选 relayUrl/relayAuthentication 有独立反序列化断言，防止静默丢弃配置。桌面原生构建在复制可执行文件前强制运行该契约，模拟 sidecar 测试不作为跨语言兼容证据。
 
 AC-57 的 2026-09-07 首页增量证据：`remote-home-queries.test.ts` 覆盖能力命令校验、目标解析与游标失效/连接隔离；`remote-command-service.test.ts` 覆盖工作台透传、动作映射和 Unicode 长结果有界分页；`sqlite-workbench-agent-feed.test.ts` 覆盖同实例跨目标记录隔离；Flutter `widget_test.dart` 覆盖工作台发送、详情/产物/记录、回答/继续/移除和草稿保留，`remote_session_test.dart` 覆盖真实加密帧顺序、幂等键复用、成功回执与刷新分离及旧主机兼容。下表初版两命令限制由 ADR 0013 的 `home.v2` 增量取代；真机网络与多设备验收仍待执行。
@@ -205,6 +207,8 @@ AC-67 搭档证据传递补充（2026-09-07）：`sqlite-partner-dispatch-instan
 4. 连接可用的 in-app browser，完成 768/960 px、键盘、焦点、对比度和截图验收。
 5. 执行 24 小时长稳、多 Life/Alarm 峰值、磁盘不足和真实网络故障报告。
 ## AC-63 Routine
+
+AC-63 entry placement (2026-09-17): home goal cards do not show a scheduling action. The goal detail header places a `定时` action below `关闭`; it opens the existing continuation editor with the current goal selected. The Automation page remains an independent creation entry.
 
 AC-63 blocked recovery regression (2026-09-17): before a new occurrence is due, unchanged continuation blockers must not update either the run or Routine row. A changed blocking reason is recorded once without moving the trigger timestamp. Delayed recovery preserves `triggeredAt` and records admission time in `queuedAt`, including exhausted one-time schedules. `goal_canceled` facts are excluded from automatic recovery scans; genuine subsequent occurrences may still coalesce without resuming the canceled goal. `tests/integration/automation.test.ts` verifies repeated ticks using SQLite `total_changes()`, reason transitions, occurrence merging, and single admission on recovery.
 

@@ -1,5 +1,7 @@
 # 路线图与验收
 
+2026-09-17 AC-57 增量：PC/Android 对最终结果提供快照阅读、原始 Markdown 复制、A4 PDF 和 1080px 分段 PNG 导出，默认下载/Joi。PC 使用 desktop-only API、正文摘要校验和持久 outbox；Android 本地离线排版与 MediaStore/SAF 保存。Android 各页右上角统一当前状态 i 诊断入口。规格与真机待验项目见 [全文导出验收](19-result-export-acceptance.md)。
+
 ## AC-63 Routine 定时任务
 
 Routine 的周期、RRULE、日期边界、Workbench 可用性、原子 inbox 触发、补偿合并、幂等和安全投影以 `docs/10-requirements-traceability.md` 的 AC-63 为发布门禁；它复用唯一 Joi root scheduler，不引入第二条执行链。

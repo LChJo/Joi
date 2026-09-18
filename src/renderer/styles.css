@@ -175,6 +175,14 @@
 .joi-goal-detail-title { flex: 1 1 auto; min-width: 0; display: grid; gap: 5px; }
 .joi-goal-detail-title h1 { margin: 0; font-size: 1.28rem; overflow-wrap: anywhere; }
 .joi-goal-detail-title .eyebrow { margin: 0; }
+.joi-goal-detail-actions { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.joi-goal-detail-actions .button { white-space: nowrap; }
+.joi-goal-detail-actions .joi-goal-detail-close { border-color: transparent; background: transparent; color: var(--muted); }
+.joi-goal-detail-actions .joi-goal-detail-close:hover { background: var(--wash); color: var(--ink); }
+.joi-goal-detail-actions .joi-goal-schedule { min-height: 36px; padding: 0 12px; gap: 6px; border-color: var(--line-strong); background: transparent; color: var(--forest); }
+.joi-goal-detail-actions .joi-goal-schedule:hover { background: var(--wash); border-color: var(--forest); }
+.joi-goal-detail-actions button:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; }
+.joi-goal-detail-actions svg { flex-shrink: 0; }
 .joi-goal-detail-meta { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .joi-goal-result { padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--forest) 30%, var(--line)); border-radius: 16px; background: color-mix(in srgb, var(--forest) 6%, var(--paper)); }
 .joi-goal-result h2 { margin: 0 0 6px; font-size: .9rem; }
@@ -975,3 +983,21 @@ body:has(.remote-joi-shell) { min-width: 0; background: radial-gradient(circle a
 .joi-skill-option > span { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
 .joi-skill-option input { flex: 0 0 16px; width: 16px; height: 16px; margin: 2px 0 0; padding: 0; accent-color: var(--forest); }
 .joi-skill-option small { color: var(--muted); }
+
+.joi-result-drawer > .joi-goal-drawer-body { padding-bottom: 208px; }
+.joi-result-export { position: absolute; right: 24px; bottom: 24px; display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 85%; }
+.joi-export-feedback { width: 272px; max-width: 100%; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--paper-strong); box-shadow: var(--shadow-card); }
+.joi-export-feedback-message { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; }
+.joi-export-feedback-icon { display: grid; place-items: center; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; background: var(--wash); color: var(--forest); font-size: 16px; }
+.joi-export-feedback-icon.error { color: var(--amber); background: color-mix(in srgb, var(--amber) 10%, var(--paper-strong)); }
+.joi-export-feedback-icon.busy svg { animation: joi-export-spin 1s linear infinite; }
+.joi-export-feedback-copy { display: grid; gap: 3px; min-width: 0; align-self: center; }
+.joi-export-feedback-copy strong { color: var(--ink); font-size: 13px; font-weight: 650; line-height: 1.6; overflow-wrap: anywhere; }
+.joi-export-feedback-copy > span { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.joi-export-feedback-actions { display: flex; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); background: var(--paper); }
+.joi-export-feedback-actions .button { flex: 1; min-height: 32px; padding: 0 8px; gap: 6px; color: var(--forest); font-size: 12px; border-radius: 6px; white-space: nowrap; }
+.joi-export-feedback-actions svg { font-size: 16px; flex: none; }
+.joi-export-feedback-actions .button:focus-visible { outline: 2px solid var(--forest); outline-offset: 1px; }
+@keyframes joi-export-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .joi-export-feedback-icon.busy svg { animation: none; } }
+.joi-export-options { display: flex; flex-direction: column; padding: 8px; gap: 6px; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 8px 32px #0002; }

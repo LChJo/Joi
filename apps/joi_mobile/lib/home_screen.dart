@@ -1,3 +1,4 @@
+import 'result_reader.dart';
 import 'package:flutter/material.dart';
 
 import 'remote_controller.dart';
@@ -176,6 +177,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         title: const Text('joi'),
         actions: [
           Padding(padding: const EdgeInsets.all(16), child: Text(link)),
+          ConnectionDiagnosticsButton(controller: widget.controller),
         ],
       ),
       body: SafeArea(
@@ -192,8 +194,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 child: Text(notice, semanticsLabel: notice),
               ),
             if (!ready) ConnectionProgress(controller: widget.controller),
-            if (ready)
-              ConnectionDiagnosticsButton(controller: widget.controller),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: () async {
@@ -286,10 +286,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                             padding: const EdgeInsets.only(
                                               top: 10,
                                             ),
-                                            child: Text(
-                                              goal.summary!,
-                                              maxLines: 3,
-                                              overflow: TextOverflow.ellipsis,
+                                            child: InkWell(
+                                              onTap: !state.supportsHome
+                                                  ? null
+                                                  : () => Navigator.push(
+                                                      context,
+                                                      MaterialPageRoute(
+                                                        builder: (_) =>
+                                                            ResultReaderPage(
+                                                              controller: widget
+                                                                  .controller,
+                                                              goal: goal,
+                                                            ),
+                                                      ),
+                                                    ),
+                                              child: Text(
+                                                goal.summary!,
+                                                maxLines: 3,
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
                                             ),
                                           ),
                                         if (state.supportsHome)

@@ -103,9 +103,9 @@ void main() {
         const RemoteViewState(connection: RemoteConnectionState.reconnecting),
       );
       await tester.pumpWidget(JoiMobileApp(controller: controller));
-      expect(find.text('连接诊断'), findsOneWidget);
+      expect(find.byTooltip('连接诊断 · 重连中'), findsOneWidget);
       expect(find.text('暂时没有任务，和 joi 说点什么吧。'), findsNothing);
-      await tester.tap(find.text('连接诊断'));
+      await tester.tap(find.byTooltip('连接诊断 · 重连中'));
       await tester.pumpAndSettle();
       expect(find.textContaining('remote-diag-3'), findsOneWidget);
       expect(find.text('复制诊断'), findsOneWidget);

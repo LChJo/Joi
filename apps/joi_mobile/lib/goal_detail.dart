@@ -1,3 +1,5 @@
+import 'result_reader.dart';
+import 'connection_diagnostics_view.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
@@ -363,6 +365,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
           onPressed: () => _load(),
           icon: const Icon(Icons.refresh),
         ),
+        ConnectionDiagnosticsButton(controller: widget.controller),
       ],
     ),
     body: ListView(
@@ -382,7 +385,18 @@ class _GoalDetailPageState extends State<GoalDetailPage>
         ],
         if (_goal.summary != null) ...[
           const Divider(height: 32),
-          Text('最终结果', style: Theme.of(context).textTheme.titleLarge),
+          TextButton(
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ResultReaderPage(
+                  controller: widget.controller,
+                  goal: _goal,
+                ),
+              ),
+            ),
+            child: const Text('最终结果 · 查看全文'),
+          ),
           MessageBody(_goal.summary!),
         ],
         if (_facts['failure'] case final Map<String, dynamic> failure) ...[
@@ -570,6 +584,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
           onPressed: () => _load(),
           icon: const Icon(Icons.refresh),
         ),
+        ConnectionDiagnosticsButton(controller: widget.controller),
       ],
     ),
     body: ListView(

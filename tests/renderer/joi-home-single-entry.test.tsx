@@ -751,6 +751,14 @@ describe("joi home single entry", () => {
     fireEvent.keyDown(preview, { key: "ArrowDown" });
     fireEvent.keyDown(preview, { key: " " });
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "导出全文" }));
+    expect(screen.getByRole("menuitem", { name: "复制全文" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "复制全文" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "导出全文" }));
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(screen.queryByRole("menuitem", { name: "复制全文" })).not.toBeInTheDocument();
     fireEvent.keyDown(window, { key: "Escape" });
 
     fireEvent.click(preview);
@@ -766,6 +774,18 @@ describe("joi home single entry", () => {
 
     fireEvent.keyDown(window, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps an opened result snapshot when the live feed loses its conclusion", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    const goal: JoiGoalCardDto = { agentCount: 0, workbench: { workbenchId: "b", name: "工作台" }, canDelete: false, completionSummary: "旧版最终正文", goalId: "g", status: "COMPLETED", title: "快照", updatedAt: "2026-09-17T00:00:00Z", work: { active: 0, completed: 0, failed: 0, total: 0 } };
+    const feed = vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [goal], thinking: [], unassignedActions: [] });
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开「快照」的最终结果全文" }));
+    feed.mockResolvedValue({ goals: [], thinking: [], unassignedActions: [] });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1700)); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("旧版最终正文");
   });
 
   it("shows a persisted direct answer on a zero-Work completed card", async () => {
@@ -889,8 +909,12 @@ describe("joi home single entry", () => {
     }
     expect(screen.getByText("有一项执行未完成")).toBeInTheDocument();
     expect(screen.getAllByText("progressing")).toHaveLength(1);
-    fireEvent.click(screen.getByRole("button", { name: "定时继续「目标 RUNNING」" }));
+    expect(screen.queryByRole("button", { name: /定时/u })).not.toBeInTheDocument();
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    fireEvent.click(screen.getByText("目标 RUNNING"));
+    fireEvent.click(await screen.findByRole("button", { name: "定时" }));
     expect(onScheduleGoal).toHaveBeenCalledWith("goal-RUNNING");
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
     fireEvent.click(screen.getByRole("button", { name: "移除这条卡片" }));
     await waitFor(() => expect(dismiss).toHaveBeenCalledWith("goal-COMPLETED"));
     expect(screen.queryByText("目标 COMPLETED")).not.toBeInTheDocument();
