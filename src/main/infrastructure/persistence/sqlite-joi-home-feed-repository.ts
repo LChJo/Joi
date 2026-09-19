@@ -54,6 +54,8 @@ function toHarnessDto(projection: {
 function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGoalStatusDto {
   if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
+  if (row.gate_status === "WAITING_INPUT") return "NEEDS_ATTENTION";
+  if (row.gate_status === "REVIEWING") return "REVIEWING";
   const blockedOutcome = number(row, "outcome_current") === 1 && row.outcome_disposition === "BLOCKED";
   const recoveryAvailable = number(row, "recovery_pending_count") > 0 || number(row, "recoverable_failed_count") > 0;
   const internalRecoveryClarification = row.clarification_reason_code === "work_dispatch_failed";
@@ -165,13 +167,21 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.clarification_reason_code, i.clarification_prompt,
+        gate.status AS gate_status, gate.question_id, gate.question_version,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
         COALESCE(o.completed_at, tc.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
         COALESCE(SUM(CASE WHEN w.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count,
         COALESCE(SUM(CASE WHEN w.status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failed_count,
-        COALESCE(SUM(CASE WHEN w.status = 'RUNNING' THEN 1 ELSE 0 END), 0) AS running_count,
+        COALESCE(SUM(CASE WHEN w.status = 'RUNNING' OR (w.status IN ('PLANNED','READY') AND EXISTS (
+          SELECT 1 FROM partner_runs running
+          JOIN dispatch_attempts current_attempt ON current_attempt.dispatch_attempt_id = running.dispatch_attempt_id
+          WHERE running.work_id = w.work_id AND running.status = 'RUNNING'
+            AND current_attempt.status IN ('PENDING','DISPATCHED','ACCEPTED','RUNNING')
+            AND current_attempt.dispatch_attempt_id = (SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest
+              WHERE latest.work_id = w.work_id ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1)
+        )) THEN 1 ELSE 0 END), 0) AS running_count,
         COALESCE(SUM(CASE WHEN w.status = 'WAITING' THEN 1 ELSE 0 END), 0) AS waiting_count,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY') THEN 1 ELSE 0 END), 0) AS arranged_count,
         (SELECT COUNT(DISTINCT s.agent_id) FROM workbench_agent_sessions s
@@ -202,6 +212,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
         LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
         LEFT JOIN joi_turn_completions tc ON tc.input_id = i.input_id
+        LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
         WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'
           AND i.input_id NOT LIKE 'joi_harness_review:%'
           AND i.goal_input_id IS NULL
@@ -268,6 +279,8 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             ...base,
             clarification: {
               ...(typeof row.clarification_prompt === "string" ? { prompt: row.clarification_prompt } : {}),
+              questionId: typeof row.question_id === "string" ? row.question_id : `legacy_question:${goalId}`,
+              questionVersion: typeof row.question_version === "number" ? row.question_version : 1,
               reasonCode: row.clarification_reason_code,
             },
             status,
@@ -319,14 +332,17 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           work: goal?.work ?? { active: 0, completed: 0, failed: 0, total: 0 },
         };
       }).filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime()));
-      const unassignedActions = (connection.prepare(`SELECT input_id, workbench_id, status, clarification_reason_code,
-        clarification_prompt, body, created_at, canceled_at FROM joi_inbox_messages
-        WHERE dismissed_at IS NULL AND workbench_id IS NULL AND status = 'CLARIFICATION_REQUIRED'
-        ORDER BY created_at DESC, input_id DESC`).all() as Row[]).map((row) => ({
+      const unassignedActions = (connection.prepare(`SELECT i.input_id, i.workbench_id, i.status, i.clarification_reason_code,
+        i.clarification_prompt, i.body, i.created_at, i.canceled_at, gate.question_id, gate.question_version
+        FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
+        WHERE i.dismissed_at IS NULL AND i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED'
+        ORDER BY i.created_at DESC, i.input_id DESC`).all() as Row[]).map((row) => ({
         acceptedAt: text(row, "created_at"),
         ...(typeof row.clarification_prompt === "string" ? { clarificationPrompt: row.clarification_prompt } : {}),
         ...(typeof row.clarification_reason_code === "string" ? { clarificationReasonCode: row.clarification_reason_code } : {}),
         inputId: text(row, "input_id"),
+        questionId: typeof row.question_id === "string" ? row.question_id : `legacy_question:${text(row, "input_id")}`,
+        questionVersion: typeof row.question_version === "number" ? row.question_version : 1,
         status: "CLARIFICATION_REQUIRED" as const,
         textPreview: maskSecretText(text(row, "body")).replace(/\s+/gu, " ").trim().slice(0, 81),
       }));

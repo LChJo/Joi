@@ -98,6 +98,8 @@ export const JOI_WRITE_ROUTES: RouteDefinition[] = [
       const clarified = await joiInboxService(ctx.dependencies).clarify({
         ...(typeof body.actionChoice === "string" ? { actionChoice: body.actionChoice } : {}),
         ...(typeof body.partnerId === "string" ? { partnerId: body.partnerId } : {}),
+        ...(typeof body.questionId === "string" ? { questionId: body.questionId } : {}),
+        ...(typeof body.questionVersion === "number" ? { questionVersion: body.questionVersion } : {}),
         ...(typeof body.workbenchId === "string" ? { workbenchId: body.workbenchId } : {}),
         inputId: decodeURIComponent((match as RegExpExecArray)[1] ?? ""),
         ...(typeof body.text === "string" ? { text: body.text } : {}),

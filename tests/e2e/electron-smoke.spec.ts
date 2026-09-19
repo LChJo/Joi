@@ -208,7 +208,10 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await expect(stream.getByText("执行记录 126", { exact: true })).toBeInViewport();
     await window.screenshot({ path: path.resolve("test-results/e2e-agent-stream-latest.png") });
     await window.getByRole("button", { name: "返回 Agent 列表" }).click();
-    await window.route("**/api/v1/joi/home-feed", route => route.fulfill({ json: {
+    let feedUnavailable = false;
+    await window.route("**/api/v1/joi/home-feed", route => feedUnavailable
+      ? route.fulfill({ status: 503, json: { error: { code: "test_feed_unavailable", message: "unavailable" } } })
+      : route.fulfill({ json: {
       thinking: [], unassignedActions: [], goals: [{
         goalId: "stream-goal", title: "长任务执行记录", status: "RUNNING", agentCount: 1, canDelete: false,
         workbench: { workbenchId: "fixture", name: "栖光" }, updatedAt: agent.createdAt,
@@ -217,6 +220,16 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
       }],
     } }));
     await window.getByRole("button", { exact: true, name: "joi" }).click();
+    const runningGoal = window.locator(".joi-goal-card").filter({ hasText: "长任务执行记录" });
+    await expect(runningGoal.getByText("执行中", { exact: true })).toBeVisible();
+    feedUnavailable = true;
+    await expect(window.getByText("任务状态暂时无法刷新，已保留上次成功获取的数据。")).toBeVisible();
+    await expect(runningGoal.getByText("执行中", { exact: true })).toBeVisible();
+    await expect(runningGoal.getByText("排队中", { exact: true })).toHaveCount(0);
+    await expect(runningGoal.getByText("已完成", { exact: true })).toHaveCount(0);
+    feedUnavailable = false;
+    await window.getByRole("button", { name: "重新加载任务状态" }).click();
+    await expect(window.getByText("任务状态暂时无法刷新，已保留上次成功获取的数据。")).toHaveCount(0);
     await window.getByText("长任务执行记录", { exact: true }).click();
     const goalStream = window.getByRole("log", { name: "Agent 执行记录" });
     await expect(goalStream.getByText("执行记录 126", { exact: true })).toBeInViewport();

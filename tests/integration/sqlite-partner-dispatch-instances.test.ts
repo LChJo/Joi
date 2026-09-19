@@ -6,7 +6,8 @@ import path from "node:path";
 import type { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager.js";
 import { WorkbenchContextAssembler } from "../../src/main/application/joi/workbench-context-assembler.js";
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
-import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
+import { SqlitePartnerDispatchClaims, SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
+import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
 import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
@@ -19,6 +20,8 @@ import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistenc
 import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 import { wrapPartnerRunFailure } from "../../src/main/application/partners/partner-run-failure.js";
+import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
+import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 
 function seedDispatchFixture(database: RuntimeDatabase, partnerRevisionId: string): void {
   database.transaction((connection) => {
@@ -90,6 +93,175 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it("rechecks a question committed during context assembly before persisting any start", async () => {
+    const { database, root } = await openWithPartner();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the assembler receiver via call below.
+    const original = WorkbenchContextAssembler.prototype.assemble;
+    const assemble = vi.spyOn(WorkbenchContextAssembler.prototype, "assemble").mockImplementationOnce(async function (this: WorkbenchContextAssembler, input) {
+      const snapshot = await original.call(this, input);
+      await new SqliteJoiInboxRepository(database, new TestClock()).requireClarification("input_1", "question_required", "Confirm?");
+      return snapshot;
+    });
+    try {
+      await expect(makeHandler(database, { dispatch: async () => { throw new Error("must not run"); } })
+        .prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" }))
+        .rejects.toMatchObject({ code: "goal_execution_paused" });
+      expect(database.transaction((db) => db.prepare("SELECT COUNT(*) AS count FROM partner_runs").get())).toEqual({ count: 0 });
+      expect(database.transaction((db) => db.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get())).toEqual({ status: "READY" });
+    } finally {
+      assemble.mockRestore();
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("re-acks a persisted start after a crash even behind a closed goal gate without replay", async () => {
+    const { database, partner, root } = await openWithPartner();
+    try {
+      const now = new TestClock().now().toISOString();
+      database.transaction((db) => {
+        db.prepare(`INSERT INTO outbox (outbox_id, kind, payload_json, status, attempt_count, available_at, created_at)
+          VALUES ('outbox_1', 'partner.dispatch', '{}', 'PENDING', 0, ?, ?)`).run(now, now);
+        db.prepare("UPDATE dispatch_attempts SET outbox_id = 'outbox_1'").run();
+      });
+      const handler = makeHandler(database, { dispatch: async () => { throw new Error("must not replay"); } });
+      const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
+      await handler.prepare(claim);
+      await new SqliteJoiInboxRepository(database, new TestClock()).requireClarification("input_1", "question_required", "Confirm?");
+      const home = await new SqliteJoiHomeFeedRepository(database).load(new TestClock().now());
+      expect(home.goals[0]?.status).toBe("NEEDS_ATTENTION");
+      const claims = await new SqlitePartnerDispatchClaims(database).listClaimable({ workbenchId: "workbench_1", partnerId: partner.partnerId, now });
+      expect(claims.map((item) => item.dispatchAttemptId)).toEqual(["attempt_1"]);
+      expect(await handler.prepare(claim)).toBe("skipped_terminal");
+      database.transaction((db) => db.prepare("UPDATE outbox SET status = 'DONE'").run());
+      expect(await new SqlitePartnerDispatchClaims(database).listOrphanRuns({ workbenchId: "workbench_1", partnerId: partner.partnerId }))
+        .toEqual([{ dispatchAttemptId: "attempt_1", instanceStatus: null, kind: "LOCAL_PI", runId: "partner_run:action_1" }]);
+    } finally {
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["CANCELED", "COMPLETED", "FAILED"])("does not start when %s wins during context assembly", async (status) => {
+    const { database, root } = await openWithPartner();
+    // eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the assembler receiver via call below.
+    const original = WorkbenchContextAssembler.prototype.assemble;
+    const assemble = vi.spyOn(WorkbenchContextAssembler.prototype, "assemble").mockImplementationOnce(async function (this: WorkbenchContextAssembler, input) {
+      const snapshot = await original.call(this, input);
+      database.transaction((db) => db.prepare("UPDATE work_items SET status = ? WHERE work_id = 'work_1'").run(status));
+      return snapshot;
+    });
+    try {
+      expect(await makeHandler(database, { dispatch: async () => { throw new Error("must not run"); } })
+        .prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" })).toBe("skipped_terminal");
+      expect(database.transaction((db) => db.prepare("SELECT COUNT(*) AS count FROM partner_runs").get())).toEqual({ count: 0 });
+      expect(database.transaction((db) => db.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get())).toEqual({ status });
+    } finally {
+      assemble.mockRestore();
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps an explicitly busy instance queued without creating a run", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      await new SqlitePartnerInstanceRepository(database).setStatusBusy("instance_9", new TestClock().now().toISOString());
+      await expect(makeHandler(database, { dispatch: async () => { throw new Error("must not run"); } })
+        .prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: JSON.stringify({ instanceId: "instance_9" }) }))
+        .rejects.toMatchObject({ code: "partner_instance_busy" });
+      expect(database.transaction((db) => db.prepare("SELECT COUNT(*) AS count FROM partner_runs").get())).toEqual({ count: 0 });
+      expect(database.transaction((db) => db.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get())).toEqual({ status: "READY" });
+    } finally {
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("does not finalize or replay a persisted start on repeated preparation", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      const handler = makeHandler(database, { dispatch: async () => { throw new Error("must not run"); } });
+      const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
+      expect(await handler.prepare(claim)).not.toBe("skipped_terminal");
+      expect(await handler.prepare(claim)).toBe("skipped_terminal");
+      expect(database.transaction((db) => db.prepare("SELECT status FROM partner_runs").all())).toEqual([{ status: "RUNNING" }]);
+    } finally {
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("persists all running states before returning a result, then advances to finalizing", async () => {
+    const { database, root } = await openWithPartner();
+    const entered = Promise.withResolvers<undefined>();
+    const finish = Promise.withResolvers<undefined>();
+    const handler = makeHandler(database, { dispatch: async () => {
+      entered.resolve(undefined);
+      await finish.promise;
+      return { actionId: "action_1", artifacts: [], body: "done", externalRunId: "local:action_1", status: "COMPLETED", workId: "work_1" };
+    } });
+    let running: Promise<unknown> | undefined;
+    try {
+      running = handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1" }));
+      await entered.promise;
+      expect(database.transaction((db) => db.prepare(`SELECT w.status AS work, a.status AS attempt, r.status AS run
+        FROM work_items w JOIN dispatch_attempts a ON a.work_id = w.work_id
+        JOIN partner_runs r ON r.dispatch_attempt_id = a.dispatch_attempt_id WHERE w.work_id = 'work_1'`).get()))
+        .toEqual({ work: "RUNNING", attempt: "RUNNING", run: "RUNNING" });
+      expect((await new SqliteJoiHomeFeedRepository(database).load(new TestClock().now())).goals[0]?.status).toBe("RUNNING");
+      expect(await new SqliteWorkPlanRepository(database).cancel("work_1", new TestClock().now().toISOString())).toEqual({ canceled: false, cascadedWorkIds: [] });
+      finish.resolve(undefined);
+      await running;
+      expect((await new SqliteJoiHomeFeedRepository(database).load(new TestClock().now())).goals[0]?.status).toBe("FINALIZING");
+    } finally {
+      finish.resolve(undefined);
+      await running;
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it.each(["PLANNED", "READY"])("projects legacy %s work from its running attempt, without mutating it", async (status) => {
+    const { database, root } = await openWithPartner();
+    try {
+      const handler = makeHandler(database, { dispatch: async () => { throw new Error("must not run"); } });
+      await handler.prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" });
+      database.transaction((db) => {
+        db.prepare("UPDATE work_items SET status = ? WHERE work_id = 'work_1'").run(status);
+        db.prepare("UPDATE dispatch_attempts SET status = 'PENDING'").run();
+        db.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          SELECT 'queued', workbench_id, input_id, 'queued', '{}', 'READ', 'READY', created_at, updated_at FROM work_items WHERE work_id = 'work_1'`).run();
+      });
+      const home = new SqliteJoiHomeFeedRepository(database);
+      expect((await home.load(new TestClock().now())).goals[0]).toMatchObject({ status: "RUNNING", work: { active: 2, total: 2 } });
+      expect(database.transaction((db) => db.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get())).toEqual({ status });
+      // Superseded runs cannot make a replacement attempt look started.
+      database.transaction((db) => db.prepare(`INSERT INTO dispatch_attempts
+        (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+        SELECT 'attempt_new', dispatch_plan_id, work_id, partner_revision_id, registry_revision, 'action_new', 'PENDING', '2026-09-19', '2026-09-19'
+        FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'`).run());
+      expect((await home.load(new TestClock().now())).goals[0]?.status).toBe("ARRANGED");
+    } finally {
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects queued-only cancellation when a legacy READY work has a running attempt", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      await makeHandler(database, { dispatch: async () => { throw new Error("must not run"); } })
+        .prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" });
+      database.transaction((db) => db.prepare("UPDATE work_items SET status = 'READY'").run());
+      expect(await new SqliteWorkPlanRepository(database).cancel("work_1", new TestClock().now().toISOString()))
+        .toEqual({ canceled: false, cascadedWorkIds: [] });
+    } finally {
+      database.close();
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("forwards Pi execution activity to the dispatch watchdog", async () => {
     const { database, root } = await openWithPartner();
     try {
@@ -619,7 +791,7 @@ describe("partner dispatch instance routing", () => {
     }
   });
 
-  it("resumes RUNNING instance-linked attempts through the manager instead of terminalizing them", async () => {
+  it("recovers RUNNING instance-linked attempts through the orphan manager instead of redelivery", async () => {
     const { database, partner, root } = await openWithPartner();
     try {
       database.transaction((connection) => {
@@ -639,6 +811,8 @@ describe("partner dispatch instance routing", () => {
         },
       });
       await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", sessionPolicy: "RESIDENT", workId: "work_1" }));
+      expect(dispatchInputs).toHaveLength(0);
+      await handler.finalizeOrphan({ dispatchAttemptId: "attempt_1", instanceStatus: "IDLE", kind: "LOCAL_PI", runId: "partner_run:action_1" });
       expect(dispatchInputs).toHaveLength(1);
       const attempt = database.transaction((connection) => connection.prepare(
         "SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'",
@@ -666,7 +840,12 @@ describe("partner dispatch instance routing", () => {
       const handler = makeHandler(database, {
         dispatch: async () => ({ actionId: "action_1", artifacts: [], body: "late body", externalRunId: "local_pi:action_1", status: "COMPLETED" as const, workId: "work_1" }),
       });
-      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", instanceId: "instance_9", sessionPolicy: "RESIDENT", workId: "work_1" }));
+      // The execution started before cancellation; only its result arrives now.
+      // Redelivering canceled work is not a valid way to simulate a late result.
+      await handler.complete({
+        prepared: { actionId: "action_1", attemptCount: 0, dispatchAttemptId: "attempt_1", kind: "LOCAL_PI", outboxId: "outbox_1", workId: "work_1" },
+        output: { kind: "terminal", status: "COMPLETED", artifacts: [], body: "late body" },
+      });
 
       // Late results are non-authoritative: the workbench traversal must never fold them into synthesis.
       await expect(new SqliteWorkbenchAgentScan(database).listUnsynthesizedResults("workbench_1")).resolves.toEqual([]);

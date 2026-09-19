@@ -99,10 +99,15 @@ describe("sqlite joi inbox cancel", () => {
       await repository.requireClarification(accepted.inputId, "question_required", "搭档『验证搭档』在执行工作『搜索验证』时暂停并提问：\nTavily API Key 是什么？");
       const raised = (await repository.list()).find((entry) => entry.inputId === accepted.inputId);
       expect(raised).toMatchObject({ clarificationReasonCode: "question_required", status: "CLARIFICATION_REQUIRED" });
+      if (raised?.questionId === undefined || raised.questionVersion === undefined) throw new Error("question metadata missing");
 
-      // The user's answer appends to the original request and re-enters the scheduler.
-      const answered = await repository.clarify(accepted.inputId, { text: "key 在 ~/.openclaw/.env" });
-      expect(answered).toMatchObject({ status: "PENDING" });
+      // The user's answer appends to the original request and enters review before execution resumes.
+      const answered = await repository.clarify(accepted.inputId, {
+        expectedQuestionId: raised.questionId,
+        expectedQuestionVersion: raised.questionVersion,
+        text: "key 在 ~/.openclaw/.env",
+      });
+      expect(answered).toMatchObject({ status: "ROUTED" });
       expect(answered?.body).toContain("[用户补充] key 在 ~/.openclaw/.env");
 
       // A stale orphan-turn sweep must never swallow the card while the user is thinking.

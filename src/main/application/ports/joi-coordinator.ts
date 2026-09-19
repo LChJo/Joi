@@ -41,6 +41,7 @@ export interface JoiCoordinatorStore {
     runId: string;
     workId: string;
   }): Promise<void>;
+  resumeGoal?(input: { inputId: string; turnId: string }): Promise<{ status: "OPEN" }>;
   updateTurnSource?(turnId: string, sourceRevisionId: string, modelRevisionId: string): Promise<void>;
 }
 

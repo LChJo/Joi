@@ -51,6 +51,7 @@ const COMMITTED_OUTCOME_TOOL_NAMES = new Set([
   "update_automation",
   "delete_automation",
   "run_automation_now",
+  "goal_resume",
   "turn_complete",
   "user_ask",
   "work_cancel",

@@ -127,9 +127,9 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
     });
   }
 
-  async setStatusBusy(instanceId: string, at: string): Promise<void> {
-    this.database.transaction((connection) => connection.prepare(
-      "UPDATE partner_instances SET status = 'BUSY', last_used_at = ? WHERE instance_id = ?",
-    ).run(at, instanceId));
+  async setStatusBusy(instanceId: string, at: string): Promise<boolean> {
+    return this.database.transaction((connection) => connection.prepare(
+      "UPDATE partner_instances SET status = 'BUSY', last_used_at = ? WHERE instance_id = ? AND status = 'IDLE'",
+    ).run(at, instanceId).changes === 1);
   }
 }

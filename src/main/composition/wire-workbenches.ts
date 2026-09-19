@@ -29,6 +29,7 @@ export function wireWorkbenches(input: {
       clock,
       diagnostics,
       ids,
+      goalGate: workRepository,
       instances: persistence.partnerInstanceRepository,
       partners: partnerStack.partners,
       policy: persistence.policyGate,

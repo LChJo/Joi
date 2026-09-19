@@ -74,6 +74,10 @@ export class WorkOrchestrationService {
     diagnostics?: RuntimeDiagnostics;
     events?: DurableUiEventEmitter;
     ids: IdGenerator;
+    goalGate?: {
+      assertOpen(goalInputId: string): Promise<void>;
+      assertWorkOpen(workId: string): Promise<void>;
+    };
     /** Liveness check before a resume references a stored instance id. */
     instances?: Pick<PartnerInstanceRepository, "get">;
     partners: { pinForDispatch(partnerId: string): Promise<PartnerDispatchPin> };
@@ -90,7 +94,8 @@ export class WorkOrchestrationService {
     turnId: string;
     work: WorkRequest[];
     recovery?: { attemptNo: number; evidenceResultIds: string[]; recoveryId: string; sourceWorkId: string; strategy: "SUPPLEMENT" | "TOOL_EXPANSION" };
-  }): Promise<{ denied: { reasonCode: string; workKey: string }[]; dispatchPlanId: string; waves: string[][] }> {
+  }): Promise<{ denied: { reasonCode: string; workKey: string }[]; queued: { reasonCode: string; workId: string; workKey: string }[]; dispatchPlanId: string; waves: string[][] }> {
+    await this.dependencies.goalGate?.assertOpen(input.inputId);
     const byKey = new Map<string, WorkRequest>();
     for (const request of input.work) {
       if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Workbench workspace automatically.");
@@ -141,6 +146,7 @@ export class WorkOrchestrationService {
     const policyResults: CommittedWorkPlan["policyResults"] = [];
     const attempts: PlannedDispatchAttempt[] = [];
     const denied: { partnerId: string; reasonCode: string; workId: string; workKey: string }[] = [];
+    const queued: { reasonCode: string; workId: string; workKey: string }[] = [];
     for (const [index, item] of items.entries()) {
       const request = input.work[index];
       if (request === undefined) throw new Error("work_request_missing");
@@ -152,7 +158,9 @@ export class WorkOrchestrationService {
       // a transient lease conflict retries through the outbox, a permanent denial lands a
       // terminal FAILED result, and neither can silently jam the goal forever. Only a
       // missing workspace aborts the whole plan before commit (raised below).
-      if (!result.allowed && result.reason !== DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady) {
+      if (!result.allowed && result.reason === DISPATCH_POLICY_REASONS.workspaceLeaseConflict) {
+        queued.push({ reasonCode: result.reason, workId: item.workId, workKey: request.key });
+      } else if (!result.allowed && result.reason !== DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady) {
         denied.push({ partnerId: request.partnerId, reasonCode: result.reason ?? "dispatch_policy_denied", workId: item.workId, workKey: request.key });
       }
       const actionId = this.dependencies.ids.next("action");
@@ -231,6 +239,7 @@ export class WorkOrchestrationService {
     });
     return {
       denied: denied.map(({ reasonCode, workKey }) => ({ reasonCode, workKey })),
+      queued,
       dispatchPlanId,
       waves,
     };
@@ -248,6 +257,7 @@ export class WorkOrchestrationService {
     turnId: string;
     workbenchId: string;
   }): Promise<{ attemptNo: number; dispatchPlanId: string; evidenceResultIds: string[]; waves: string[][] }> {
+    await this.dependencies.goalGate?.assertWorkOpen(input.sourceWorkId);
     const repository = this.dependencies.recovery;
     if (repository === undefined) throw new DomainError("work_recovery_unavailable", "Work recovery is unavailable.");
     const context = await repository.loadForSupplement(input.sourceWorkId);
@@ -307,6 +317,7 @@ export class WorkOrchestrationService {
   }
 
   async reassign(input: { workbenchId: string; partnerId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+    await this.dependencies.goalGate?.assertWorkOpen(input.workId);
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
     const context = await repository.loadForReassignment(input.workId);
@@ -377,6 +388,7 @@ export class WorkOrchestrationService {
    * the dispatch continues in the original resident instance when it is still alive.
    */
   async resume(input: { actionId?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+    await this.dependencies.goalGate?.assertWorkOpen(input.workId);
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
     const existingForAction = input.actionId === undefined

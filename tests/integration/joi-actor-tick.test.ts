@@ -23,6 +23,7 @@ function makeDatabase(): DatabaseSync {
       body TEXT NOT NULL,
       status TEXT NOT NULL,
       workbench_id TEXT,
+      goal_input_id TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL,
       canceled_at TEXT,
@@ -43,6 +44,13 @@ function makeDatabase(): DatabaseSync {
       action_id TEXT PRIMARY KEY,
       input_id TEXT NOT NULL,
       status TEXT NOT NULL
+    );
+    CREATE TABLE joi_goal_execution_gates (
+      goal_input_id TEXT PRIMARY KEY,
+      question_id TEXT NOT NULL,
+      question_version INTEGER NOT NULL,
+      status TEXT NOT NULL,
+      resume_input_id TEXT
     );
     CREATE TABLE work_items (
       work_id TEXT PRIMARY KEY,

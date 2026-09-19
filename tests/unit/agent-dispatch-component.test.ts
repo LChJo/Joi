@@ -7,6 +7,7 @@ import type {
   PartnerDispatchOrphanRow,
   PreparedDispatch,
 } from "../../src/main/application/ports/partner-dispatch-delivery";
+import { LocalDispatchCapacityController } from "../../src/main/application/work/local-dispatch-capacity";
 
 const BASE = "2026-08-05T10:00:00.000Z";
 
@@ -21,10 +22,12 @@ const TERMINAL: DispatchRunOutput = { artifacts: [], body: "done", kind: "termin
 
 interface HarnessOptions {
   abandonError?: Error;
+  capacity?: LocalDispatchCapacityController;
   claims?: PartnerDispatchClaimRow[];
   leaseRenew?: (input: { workId: string; workspaceRef: string }) => Promise<{ expiresAt: string } | null>;
   orphans?: PartnerDispatchOrphanRow[];
   prepareResult?: PreparedDispatch | "skipped_terminal" | Error;
+  prepareOverride?: (claim: PartnerDispatchClaimRow) => Promise<PreparedDispatch | "skipped_terminal">;
   runError?: Error;
   runOutputs?: DispatchRunOutput[];
   runOverride?: () => Promise<DispatchRunOutput>;
@@ -50,6 +53,7 @@ function makeHarness(options: HarnessOptions = {}) {
       listClaimable: async () => [...(options.claims ?? [])],
       listOrphanRuns: async () => [...(options.orphans ?? [])],
     },
+    ...(options.capacity === undefined ? {} : { capacity: options.capacity }),
     ...(options.leaseRenew === undefined ? {} : { leases: { renew: options.leaseRenew } }),
     delivery: {
       abandon: async (input) => {
@@ -68,7 +72,8 @@ function makeHarness(options: HarnessOptions = {}) {
         return "completed" as const;
       },
       handle: async () => undefined,
-      prepare: async () => {
+      prepare: async (claim) => {
+        if (options.prepareOverride !== undefined) return options.prepareOverride(claim);
         const result = options.prepareResult ?? PREPARED;
         if (result instanceof Error) throw result;
         return result;
@@ -117,6 +122,120 @@ function ctxWithDiagnostics(offsetMillis: number, events: { event: string; field
 }
 
 describe("AgentDispatchComponent", () => {
+  it("starts independent dispatch slots for the same partner without waiting for the first run", async () => {
+    const claims = [
+      { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" },
+      { attemptCount: 0, dispatchAttemptId: "attempt_2", outboxId: "outbox_2", payloadJson: "{}" },
+    ];
+    const pending: (() => void)[] = [];
+    const harness = makeHarness({
+      claims,
+      prepareOverride: async (claim) => ({ ...PREPARED, dispatchAttemptId: claim.dispatchAttemptId, outboxId: claim.outboxId, workId: `work_${claim.dispatchAttemptId}` }),
+      runOverride: () => new Promise<DispatchRunOutput>((resolve) => pending.push(() => resolve(TERMINAL))),
+    });
+
+    await harness.component.update(ctxAt(0));
+    expect(harness.calls.filter((call) => call === "run")).toHaveLength(2);
+
+    pending.forEach((resolve) => resolve());
+  });
+
+  it("continues to another claim when the first Work is waiting on a resource lease", async () => {
+    const conflict = Object.assign(new Error("busy"), { code: "workspace_lease_conflict" });
+    const claims = [
+      { attemptCount: 0, dispatchAttemptId: "attempt_busy", outboxId: "outbox_busy", payloadJson: "{}" },
+      { attemptCount: 0, dispatchAttemptId: "attempt_ready", outboxId: "outbox_ready", payloadJson: "{}" },
+    ];
+    const harness = makeHarness({
+      claims,
+      prepareOverride: async (claim) => {
+        if (claim.dispatchAttemptId === "attempt_busy") throw conflict;
+        return { ...PREPARED, dispatchAttemptId: claim.dispatchAttemptId, outboxId: claim.outboxId, workId: "work_ready" };
+      },
+    });
+
+    await harness.component.update(ctxAt(0));
+    expect(harness.released).toEqual(["outbox_busy"]);
+    expect(harness.calls).toContain("claim:outbox_ready");
+    expect(harness.calls).toContain("run");
+  });
+
+  it("keeps a paused goal queued with the generic resource reason", async () => {
+    const harness = makeHarness({
+      claims: [CLAIM],
+      prepareResult: Object.assign(new Error("paused"), { code: "goal_execution_paused" }),
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.released).toEqual(["outbox_1"]);
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toEqual(["joi.agent.resource_queued"]);
+    expect(harness.diagnosticEvents[0]?.fields.reasonCode).toBe("goal_execution_paused");
+  });
+
+  it("reserves and releases shared local capacity for a completed slot", async () => {
+    const capacity = new LocalDispatchCapacityController();
+    const harness = makeHarness({ capacity, claims: [{ ...CLAIM, kind: "LOCAL_PI" }] });
+    await harness.component.update(ctxAt(0));
+    expect(capacity.snapshot().global).toBe(1);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await harness.component.update(ctxAt(2_000));
+    expect(capacity.snapshot().global).toBe(0);
+  });
+
+  it("leaves a local claim untouched when the partner capacity is full", async () => {
+    const capacity = new LocalDispatchCapacityController();
+    for (let index = 0; index < 4; index += 1) {
+      capacity.reserve({ dispatchAttemptId: `held-${String(index)}`, partnerId: "partner_1" });
+    }
+    const harness = makeHarness({ capacity, claims: [{ ...CLAIM, kind: "LOCAL_PI" }] });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.calls).not.toContain("claim:outbox_1");
+    expect(harness.diagnosticEvents).toEqual([expect.objectContaining({ event: "joi.agent.capacity_queued" })]);
+  });
+
+  it("keeps A2A dispatch serial within one partner actor", async () => {
+    const claims = [
+      { ...CLAIM, kind: "A2A" as const },
+      { ...CLAIM, dispatchAttemptId: "attempt_2", kind: "A2A" as const, outboxId: "outbox_2" },
+    ];
+    const harness = makeHarness({
+      claims,
+      prepareOverride: async (claim) => ({
+        ...PREPARED, dispatchAttemptId: claim.dispatchAttemptId, kind: "A2A", outboxId: claim.outboxId,
+      }),
+      runOverride: () => new Promise<DispatchRunOutput>(() => undefined),
+    });
+    await harness.component.update(ctxAt(0));
+    expect(harness.calls.filter((call) => call === "run")).toHaveLength(1);
+    expect(harness.calls).not.toContain("claim:outbox_2");
+  });
+
+  it("cancels only the matching running slot while another slot keeps running", async () => {
+    const claims = [
+      { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" },
+      { attemptCount: 0, dispatchAttemptId: "attempt_2", outboxId: "outbox_2", payloadJson: "{}" },
+    ];
+    const canceled = new Set<string>();
+    const harness = makeHarness({
+      claims,
+      prepareOverride: async (claim) => ({
+        ...PREPARED,
+        dispatchAttemptId: claim.dispatchAttemptId,
+        outboxId: claim.outboxId,
+        workId: claim.dispatchAttemptId === "attempt_1" ? "work_1" : "work_2",
+      }),
+      runOverride: () => new Promise<DispatchRunOutput>(() => undefined),
+      workCanceled: async (workId) => canceled.has(workId),
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.runSignals).toHaveLength(2);
+
+    canceled.add("work_1");
+    await harness.component.update(ctxWithDiagnostics(2_000, harness.diagnosticEvents));
+    expect(harness.runSignals[0]?.aborted).toBe(true);
+    expect(harness.runSignals[1]?.aborted).toBe(false);
+    expect(harness.completed).toEqual(["attempt_1"]);
+  });
+
   it("acks the outbox before firing the run and converges the terminal result on the next tick", async () => {
     const harness = makeHarness({ claims: [CLAIM] });
     await harness.component.update(ctxAt(0));

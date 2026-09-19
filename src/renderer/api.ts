@@ -157,11 +157,13 @@ export class DigitalLifeApi {
       idempotencyKey: randomUuid(), method: "POST",
     });
   }
-  clarifyJoiMessage(inputId: string, resolution: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; partnerId?: string; workbenchId?: string; text?: string }) {
+  clarifyJoiMessage(inputId: string, resolution: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; partnerId?: string; questionId?: string; questionVersion?: number; workbenchId?: string; text?: string }) {
     return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/clarify`, {
       body: {
         ...(resolution.actionChoice === undefined ? {} : { actionChoice: resolution.actionChoice }),
         ...(resolution.partnerId === undefined ? {} : { partnerId: resolution.partnerId }),
+        ...(resolution.questionId === undefined ? {} : { questionId: resolution.questionId }),
+        ...(resolution.questionVersion === undefined ? {} : { questionVersion: resolution.questionVersion }),
         ...(resolution.workbenchId === undefined ? {} : { workbenchId: resolution.workbenchId }),
         ...(resolution.text === undefined ? {} : { text: resolution.text }),
       },

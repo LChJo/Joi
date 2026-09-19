@@ -107,6 +107,8 @@ function mapRow(row: Row): JoiInboxRecord {
   const failureReasonCode = row.failure_reason_code;
   const updatedAt = row.updated_at;
   const automationRoutineId = row.automation_routine_id;
+  const questionId = row.question_id;
+  const questionVersion = row.question_version;
   if (typeof inputId !== "string" || typeof idempotencyKey !== "string" || typeof body !== "string"
     || typeof status !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string"
     || (workbenchId !== null && typeof workbenchId !== "string")
@@ -118,7 +120,9 @@ function mapRow(row: Row): JoiInboxRecord {
     || (failureCount !== null && failureCount !== undefined && (typeof failureCount !== "number" || !Number.isInteger(failureCount) || failureCount < 1))
     || (failureExecutionStarted !== null && failureExecutionStarted !== undefined && failureExecutionStarted !== 0 && failureExecutionStarted !== 1)
     || (failureReasonCode !== null && failureReasonCode !== undefined && typeof failureReasonCode !== "string")
-    || (automationRoutineId !== null && automationRoutineId !== undefined && typeof automationRoutineId !== "string")) {
+    || (automationRoutineId !== null && automationRoutineId !== undefined && typeof automationRoutineId !== "string")
+    || (questionId !== null && questionId !== undefined && typeof questionId !== "string")
+    || (questionVersion !== null && questionVersion !== undefined && (typeof questionVersion !== "number" || !Number.isInteger(questionVersion) || questionVersion < 1))) {
     throw new Error("joi_inbox_record_invalid");
   }
   return {
@@ -136,6 +140,8 @@ function mapRow(row: Row): JoiInboxRecord {
     ...(typeof failureReasonCode === "string" ? { failureReasonCode: normalizeJoiFailureReasonCode(failureReasonCode) } : {}),
     idempotencyKey,
     inputId,
+    ...(typeof questionId === "string" ? { questionId } : {}),
+    ...(typeof questionVersion === "number" ? { questionVersion } : {}),
     status: status as JoiInboxStatus,
     updatedAt,
   };
@@ -170,20 +176,33 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async list(): Promise<JoiInboxRecord[]> {
     return this.database.transaction((connection) => connection.prepare(
-      `SELECT i.*, CASE WHEN EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id) THEN 1 ELSE 0 END AS failure_execution_started
-        FROM joi_inbox_messages i WHERE i.dismissed_at IS NULL ORDER BY i.created_at, i.input_id`,
+      `SELECT i.*, gate.question_id, gate.question_version,
+        CASE WHEN EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id) THEN 1 ELSE 0 END AS failure_execution_started
+        FROM joi_inbox_messages i
+        LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
+        WHERE i.dismissed_at IS NULL ORDER BY i.created_at, i.input_id`,
     ).all()).map((row) => mapRow(row as Row));
   }
 
-  async clarify(inputId: string, patch: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
+  async clarify(inputId: string, patch: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; expectedQuestionId?: string; expectedQuestionVersion?: number; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
     return this.database.transaction((connection) => {
       const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       if (row === undefined) return null;
       const current = mapRow(row);
       if (current.status !== "CLARIFICATION_REQUIRED") return null;
       if (patch.expectedReasonCode !== undefined && current.clarificationReasonCode !== patch.expectedReasonCode) return null;
-      const action = connection.prepare(`SELECT action_id, kind, result_revision FROM joi_user_action_requests
-        WHERE input_id = ? AND status = 'OPEN' ORDER BY created_at, action_id LIMIT 1`).get(inputId) as {
+      const goalInputId = typeof row.goal_input_id === "string" ? row.goal_input_id : inputId;
+      const gate = connection.prepare(`SELECT question_id, question_version, status FROM joi_goal_execution_gates
+        WHERE goal_input_id = ?`).get(goalInputId) as { question_id?: unknown; question_version?: unknown; status?: unknown } | undefined;
+      if (gate !== undefined) {
+        if (gate.status !== "WAITING_INPUT" || typeof gate.question_id !== "string" || typeof gate.question_version !== "number") return null;
+        if (patch.expectedQuestionId !== gate.question_id || patch.expectedQuestionVersion !== gate.question_version) return null;
+      }
+      const action = connection.prepare(`SELECT action.action_id, action.kind, action.result_revision
+        FROM joi_user_action_requests action
+        JOIN joi_inbox_messages action_input ON action_input.input_id = action.input_id
+        WHERE (action.input_id = ? OR action_input.goal_input_id = ?) AND action.status = 'OPEN'
+        ORDER BY action.created_at, action.action_id LIMIT 1`).get(inputId, goalInputId) as {
           action_id?: unknown;
           kind?: unknown;
           result_revision?: unknown;
@@ -228,6 +247,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
             WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(now, inputId);
           if (consumed.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+          connection.prepare(`UPDATE joi_goal_execution_gates SET status = 'OPEN', resume_input_id = NULL,
+            answered_at = COALESCE(answered_at, ?), updated_at = ? WHERE goal_input_id = ?`).run(now, now, goalInputId);
           const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
           return updated === undefined ? null : mapRow(updated);
         }
@@ -237,10 +258,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const now = this.#clock.now().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       const nextWorkbench = patch.workbenchId ?? current.workbenchId;
+      const questionId = typeof gate?.question_id === "string" ? gate.question_id : `goal_question:${goalInputId}:v1`;
+      const questionVersion = typeof gate?.question_version === "number" ? gate.question_version : 1;
+      const resumeInputId = `joi_goal_resume:goal:${goalInputId}:v${String(questionVersion)}`;
       const result = connection.prepare(`UPDATE joi_inbox_messages
-        SET body = ?, workbench_id = ?, status = 'PENDING', clarification_reason_code = NULL,
+        SET body = ?, workbench_id = ?, status = 'ROUTED', clarification_reason_code = NULL,
           clarification_prompt = NULL, updated_at = ?
-        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, inputId);
+        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, goalInputId);
       if (result.changes === 0) return null;
       if (action !== undefined) {
         const resolved = connection.prepare(`UPDATE joi_user_action_requests
@@ -248,7 +272,46 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE action_id = ? AND status = 'OPEN'`).run(now, now, action.action_id as string);
         if (resolved.changes !== 1) throw new Error("joi_user_action_resolution_conflict");
       }
-      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      const queued = connection.prepare(`SELECT w.work_id, w.title, w.status,
+          (SELECT action_id FROM joi_user_action_requests action
+            WHERE action.work_id = w.work_id AND action.status = 'RESOLVED'
+            ORDER BY action.updated_at DESC, action.action_id DESC LIMIT 1) AS resolved_action_id
+        FROM work_items w
+        WHERE w.input_id = ? AND w.status IN ('PLANNED','READY','WAITING') ORDER BY w.created_at, w.work_id LIMIT 24`).all(goalInputId) as Row[];
+      const answer = patch.text ?? (patch.workbenchId === undefined ? "已提交结构化选择。" : "已确认工作台选择。");
+      const resumeBody = [
+        "A blocking question for this goal has been answered. Review the saved Work before resuming execution.",
+        `goalInputId=${goalInputId}`,
+        `questionId=${questionId}`,
+        `questionVersion=${String(questionVersion)}`,
+        `answer=${answer}`,
+        ...queued.map((item) => `queuedWorkId=${String(item.work_id)} status=${String(item.status)}${typeof item.resolved_action_id === "string" ? ` resolvedActionId=${item.resolved_action_id}` : ""} title=${String(item.title).slice(0, 240)}`),
+        "If the original plan still applies, call goal_resume, then resume or leave the existing Work as appropriate.",
+        "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements.",
+        "If information is still missing, call user_ask; do not call goal_resume.",
+      ].join("\n");
+      connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+        VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)
+        ON CONFLICT(input_id) DO UPDATE SET body = excluded.body, status = 'PENDING', updated_at = excluded.updated_at
+        WHERE joi_inbox_messages.status <> 'CONSUMED'`).run(
+        resumeInputId, `goal_resume:${goalInputId}:v${String(questionVersion)}`, resumeBody,
+        nextWorkbench ?? null, goalInputId, now, now,
+      );
+      connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
+        WHERE goal_input_id = ? AND input_id LIKE 'joi_goal_resume:goal:%' AND input_id <> ?
+          AND status <> 'CONSUMED'`).run(now, goalInputId, resumeInputId);
+      connection.prepare(`INSERT INTO joi_goal_execution_gates
+        (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
+        VALUES (?, ?, ?, 'REVIEWING', ?, ?, ?, ?, ?)
+        ON CONFLICT(goal_input_id) DO UPDATE SET status = 'REVIEWING', resume_input_id = excluded.resume_input_id,
+          answered_at = excluded.answered_at, updated_at = excluded.updated_at`).run(
+        goalInputId, questionId, questionVersion, current.clarificationReasonCode ?? "question_required",
+        resumeInputId, now, now, now,
+      );
+      const updated = connection.prepare(`SELECT i.*, gate.question_id, gate.question_version
+        FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
+        WHERE i.input_id = ?`).get(goalInputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });
   }
@@ -506,6 +569,12 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       ) as { created_at?: unknown; goal_body?: unknown; input_id?: unknown } | undefined;
       if (typeof source?.created_at !== "string" || typeof source.input_id !== "string" || typeof source.goal_body !== "string") throw new Error("partner_result_event_not_found");
       const goalInputId = source.input_id;
+      // Keep the result authoritative and unsynthesized while the goal is paused.
+      // Not claiming membership yet lets the normal result scanner reconsider it
+      // after goal_resume atomically opens the gate.
+      const gate = connection.prepare("SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?")
+        .get(goalInputId) as { status?: unknown } | undefined;
+      if (gate !== undefined && gate.status !== "OPEN") return null;
       connection.prepare(`INSERT OR IGNORE INTO joi_goal_result_sets
         (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 0, 0, ?)`)
         .run(goalInputId, source.created_at);
@@ -599,26 +668,79 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     workId: string;
   }): Promise<void> {
     this.database.transaction((connection) => {
+      const source = connection.prepare(`SELECT COALESCE(source.goal_input_id, source.input_id) AS goal_input_id,
+          goal.clarification_prompt AS existing_prompt
+        FROM joi_inbox_messages source
+        JOIN joi_inbox_messages goal ON goal.input_id = COALESCE(source.goal_input_id, source.input_id)
+        WHERE source.input_id = ?`).get(inputId) as { existing_prompt?: unknown; goal_input_id?: unknown } | undefined;
+      if (typeof source?.goal_input_id !== "string") return;
+      const goalInputId = source.goal_input_id;
+      const now = this.#clock.now().toISOString();
+      const existingGate = connection.prepare(`SELECT question_id, question_version, status, reason_code
+        FROM joi_goal_execution_gates WHERE goal_input_id = ?`).get(goalInputId) as {
+          question_id?: unknown; question_version?: unknown; reason_code?: unknown; status?: unknown;
+        } | undefined;
+      const reuseWaiting = existingGate?.status === "WAITING_INPUT" && existingGate.reason_code === reasonCode
+        && (typeof source.existing_prompt === "string" ? source.existing_prompt : undefined) === prompt;
+      const questionVersion = reuseWaiting && typeof existingGate.question_version === "number"
+        ? existingGate.question_version
+        : (typeof existingGate?.question_version === "number" ? existingGate.question_version : 0) + 1;
+      const questionId = reuseWaiting && typeof existingGate.question_id === "string"
+        ? existingGate.question_id
+        : `goal_question:${goalInputId}:v${String(questionVersion)}`;
       // Any live row may be (re-)raised into a question card, including an already
       // CONSUMED goal input: a partner question revives the goal so the user can answer
       // and the flow continues. Dismissed, canceled and parked rows stay untouched.
       const raised = connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = ?, clarification_prompt = ?, updated_at = ?
         WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(
-        reasonCode, prompt ?? null, this.#clock.now().toISOString(), inputId,
+        reasonCode, prompt ?? null, now, goalInputId,
+      );
+      if (raised.changes === 1) connection.prepare(`INSERT INTO joi_goal_execution_gates
+        (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
+        VALUES (?, ?, ?, 'WAITING_INPUT', ?, NULL, ?, NULL, ?)
+        ON CONFLICT(goal_input_id) DO UPDATE SET question_id = excluded.question_id,
+          question_version = excluded.question_version, status = 'WAITING_INPUT', reason_code = excluded.reason_code,
+          resume_input_id = NULL, answered_at = NULL, updated_at = excluded.updated_at`).run(
+        goalInputId, questionId, questionVersion, reasonCode, now, now,
       );
       if (action !== undefined && raised.changes === 1) {
-        const now = this.#clock.now().toISOString();
         connection.prepare(`INSERT INTO joi_user_action_requests
           (action_id, input_id, work_id, run_id, kind, status, reason_code, prompt, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, 'OPEN', ?, ?, ?, ?)
           ON CONFLICT(action_id) DO UPDATE SET reason_code = excluded.reason_code, prompt = excluded.prompt,
             updated_at = excluded.updated_at
           WHERE joi_user_action_requests.status = 'OPEN'`).run(
-          action.actionId, inputId, action.workId, action.runId, action.kind, reasonCode,
+          action.actionId, goalInputId, action.workId, action.runId, action.kind, reasonCode,
           prompt ?? "搭档正在等待你的回答。", now, now,
         );
       }
+    });
+  }
+
+  async resumeGoal(input: { inputId: string; turnId: string }): Promise<{ status: "OPEN" }> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare(`SELECT i.goal_input_id, gate.goal_input_id AS gated_goal_input_id,
+          gate.question_id, gate.question_version, gate.status, gate.resume_input_id
+        FROM joi_inbox_messages i
+        JOIN joi_turns turn ON turn.input_id = i.input_id AND turn.turn_id = ? AND turn.status = 'RUNNING'
+        JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.goal_input_id
+        WHERE i.input_id = ? AND i.input_id LIKE 'joi_goal_resume:goal:%'`).get(input.turnId, input.inputId) as Row | undefined;
+      if (row === undefined || typeof row.goal_input_id !== "string" || row.goal_input_id !== row.gated_goal_input_id
+        || typeof row.question_id !== "string" || typeof row.question_version !== "number"
+        || row.resume_input_id !== input.inputId) {
+        throw new DomainError("goal_resume_not_allowed", "Only the matching goal recovery turn can resume this goal.");
+      }
+      if (row.status === "OPEN") return { status: "OPEN" };
+      if (row.status !== "REVIEWING") throw new DomainError("goal_resume_not_allowed", "The goal is not ready to resume.");
+      const now = this.#clock.now().toISOString();
+      const opened = connection.prepare(`UPDATE joi_goal_execution_gates SET status = 'OPEN', updated_at = ?
+        WHERE goal_input_id = ? AND question_id = ? AND question_version = ? AND status = 'REVIEWING'
+          AND resume_input_id = ?`).run(
+        now, row.goal_input_id, row.question_id, row.question_version, input.inputId,
+      );
+      if (opened.changes !== 1) throw new DomainError("goal_resume_conflict", "The goal resume version is no longer current.");
+      return { status: "OPEN" };
     });
   }
 
@@ -667,6 +789,28 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion) {
     return this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
+      const resumeGate = connection.prepare(`SELECT gate.status, i.goal_input_id, gate.resume_input_id
+        FROM joi_inbox_messages i
+        JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.goal_input_id
+        WHERE i.input_id = ?`).get(inputId) as { goal_input_id?: unknown; resume_input_id?: unknown; status?: unknown } | undefined;
+      if (resumeGate?.status === "REVIEWING" && resumeGate.resume_input_id === inputId) {
+        throw new DomainError("goal_resume_required", "Review the queued goal and call goal_resume before ending this recovery turn.");
+      }
+      const originalGate = connection.prepare(`SELECT gate.status, i.goal_input_id, gate.resume_input_id
+        FROM joi_inbox_messages i
+        JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
+        WHERE i.input_id = ?`).get(inputId) as { goal_input_id?: unknown; resume_input_id?: unknown; status?: unknown } | undefined;
+      const directGate = resumeGate ?? originalGate;
+      if (directGate !== undefined && directGate.status !== "OPEN") {
+        connection.prepare("UPDATE joi_turns SET status = 'COMPLETED', updated_at = ? WHERE turn_id = ? AND input_id = ?")
+          .run(now, turnId, inputId);
+        if (typeof directGate.goal_input_id === "string") {
+          const pendingStatus = inputId.startsWith("joi_goal_resume:goal:") ? "CONSUMED" : "PENDING";
+          connection.prepare(`UPDATE joi_inbox_messages SET status = ?, updated_at = ?
+            WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(pendingStatus, now, inputId);
+        }
+        return undefined;
+      }
       const review = connection.prepare(`SELECT goal_input_id FROM joi_inbox_messages
         WHERE input_id = ? AND input_id LIKE 'joi_harness_review:goal:%'`).get(inputId) as Row | undefined;
       if (typeof review?.goal_input_id === "string") {
@@ -685,6 +829,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const synthesis = connection.prepare(`SELECT goal_input_id, result_revision FROM joi_inbox_messages
         WHERE input_id = ?`).get(inputId) as { goal_input_id?: unknown; result_revision?: unknown } | undefined;
       if (typeof synthesis?.goal_input_id === "string" && typeof synthesis.result_revision === "number") {
+        const synthesisGate = connection.prepare("SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?")
+          .get(synthesis.goal_input_id) as { status?: unknown } | undefined;
+        if (synthesisGate !== undefined && synthesisGate.status !== "OPEN") {
+          connection.prepare("UPDATE joi_inbox_messages SET status = 'PENDING', updated_at = ? WHERE input_id = ?")
+            .run(now, inputId);
+          return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
+        }
         const current = connection.prepare(`SELECT revision FROM joi_goal_result_sets
           WHERE original_input_id = ?`).get(synthesis.goal_input_id) as { revision?: unknown } | undefined;
         if (typeof current?.revision !== "number") throw new Error("goal_result_set_invalid");

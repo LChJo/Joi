@@ -20,7 +20,8 @@ function statusLabel(status: RemoteJoiConnection["status"] extends () => infer T
 
 function goalStatus(status: JoiHomeFeedDto["goals"][number]["status"]): string {
   if (status === "RUNNING") return "执行中";
-  if (status === "ARRANGING" || status === "ARRANGED") return "正在安排";
+  if (status === "ARRANGING") return "正在安排";
+  if (status === "ARRANGED") return "排队中";
   if (status === "REVIEWING") return "正在评审";
   if (status === "EXTENDING") return "补充执行";
   if (status === "FINALIZING") return "正在总结";

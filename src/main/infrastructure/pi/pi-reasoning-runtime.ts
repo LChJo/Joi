@@ -52,6 +52,7 @@ export const JOI_REASONING_TOOL_NAMES = [
   "update_automation",
   "delete_automation",
   "run_automation_now",
+  "goal_resume",
   "user_ask",
   "turn_complete",
   "harness_name_destination",
@@ -317,7 +318,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       sessionId: metadata.sessionId,
       steeringMode: "one-at-a-time",
       streamFn: this.#models.streamSimple.bind(this.#models),
-      toolExecution: "parallel",
+      toolExecution: "sequential",
     });
     const runtime: SessionRuntime = { agent, current: undefined, delivered: { text: false, tool: false }, metadata };
     agent.subscribe(async (event) => {
@@ -422,6 +423,13 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // depend on whether the coordinator attached a listener for this Turn.
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") runtime.delivered.text = true;
     if (event.type === "tool_execution_start") runtime.delivered.tool = true;
+    // Terminating orchestration tools must stop the current model turn even when
+    // no event listener is attached. Tool execution is sequential, so aborting at
+    // the successful end prevents any later calls emitted in the same response.
+    if (event.type === "tool_execution_end") {
+      if (event.toolName === "work_dispatch" && event.isError) runtime.agent.abort();
+      if (event.toolName === "user_ask" && !event.isError) runtime.agent.abort();
+    }
     const active = runtime.current;
     if (active?.onEvent === undefined) return;
     let mapped: PrimaryReasoningEvent | undefined;
@@ -446,7 +454,6 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // Validation errors happen before a tool's execute handler and therefore
       // cannot return a terminating result. Stop this run at the runtime edge
       // so the coordinator can persist one clarification instead of retrying.
-      if (event.toolName === "work_dispatch" && event.isError) runtime.agent.abort();
     }
     if (mapped !== undefined) active.onEvent(mapped);
   }

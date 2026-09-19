@@ -50,7 +50,7 @@ export class JoiInboxService {
     return (await this.dependencies.repository.list()).map(toDto);
   }
 
-  async clarify(input: { actionChoice?: string; partnerId?: string; workbenchId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
+  async clarify(input: { actionChoice?: string; partnerId?: string; questionId?: string; questionVersion?: number; workbenchId?: string; inputId: string; text?: string }): Promise<JoiAcceptedMessageDto> {
     const inputId = input.inputId.trim();
     if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
     const workbenchId = typeof input.workbenchId === "string" ? input.workbenchId.trim() : "";
@@ -61,6 +61,15 @@ export class JoiInboxService {
     const cleanPartner = partnerId.length === 0 ? undefined : partnerId;
     const cleanText = text.length === 0 ? undefined : text;
     const cleanActionChoice = actionChoice === "" ? undefined : actionChoice;
+    const questionId = typeof input.questionId === "string" ? input.questionId.trim() : "";
+    const questionVersion = input.questionVersion;
+    if ((questionId === "") !== (questionVersion === undefined)
+      || (questionVersion !== undefined && (!Number.isInteger(questionVersion) || questionVersion < 1))) {
+      throw new DomainError("joi_clarification_version_invalid", "The clarification question version is invalid.");
+    }
+    const expectedQuestion = questionId === "" || questionVersion === undefined
+      ? {}
+      : { expectedQuestionId: questionId, expectedQuestionVersion: questionVersion };
     if (cleanActionChoice !== undefined && !["RESUME", "CONTINUE", "ACCEPT_CURRENT"].includes(cleanActionChoice)) {
       throw new DomainError("joi_clarification_invalid", "The selected action is invalid.");
     }
@@ -82,6 +91,7 @@ export class JoiInboxService {
         ...(cleanActionChoice === undefined ? {} : { actionChoice: cleanActionChoice as "RESUME" | "CONTINUE" | "ACCEPT_CURRENT" }),
         ...(cleanWorkbench === undefined ? {} : { workbenchId: cleanWorkbench }),
         ...(cleanText === undefined ? {} : { text: cleanText }),
+        ...expectedQuestion,
       });
     } else {
       if (this.dependencies.partners === undefined) {
@@ -98,6 +108,7 @@ export class JoiInboxService {
       }
       record = await this.dependencies.repository.clarify(inputId, {
         expectedReasonCode: "partner_selection_required",
+        ...expectedQuestion,
         text: `[用户选择搭档] partnerId=${partner.partnerId}。请使用这个精确搭档继续原任务；一次性工作不要传 instanceId。`,
       });
     }
@@ -176,6 +187,8 @@ function toDto(record: JoiInboxRecord): JoiAcceptedMessageDto {
       },
     }),
     inputId: record.inputId,
+    ...(record.questionId === undefined ? {} : { questionId: record.questionId }),
+    ...(record.questionVersion === undefined ? {} : { questionVersion: record.questionVersion }),
     status: record.status,
     ...(preview === undefined ? {} : { textPreview: preview }),
   };

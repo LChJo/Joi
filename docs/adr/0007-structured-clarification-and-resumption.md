@@ -25,3 +25,9 @@ Migration 029 只新增可空问题字段；旧澄清记录保持兼容。首页
 `WAITING_INPUT` 不能只靠 Work/Run 状态和一段提示文案表达。Migration 044 增加 `joi_user_action_requests`，把问题或恢复决策绑定到精确的 input、Work 和 partner run；OPEN → RESOLVED → APPLIED 是恢复的权威事实。用户回答问题时继续使用文本，存量断链等待则展示单一“继续原工作”动作，不要求用户猜测需要补充什么。
 
 RESOLVED 动作属于确定性命令：task actor 即使没有 READY model source 也会执行，Coordinator 不调用路由或推理模型。其稳定 action id 同时作为恢复 dispatch 的幂等 id；若进程在 dispatch 事务后、动作完成事务前崩溃，重试读取已有 attempt，不创建第二个外部副作用。新 attempt 提交时必须终结被取代的 WAITING run/attempt。
+
+## 2026-09-19 补充：目标级执行门禁与版本化恢复
+
+澄清不再只暂停 Joi 的当前 Turn。Migration 058 以原始 goal input 为键持久化 `WAITING_INPUT`、`REVIEWING`、`OPEN` 三态门禁，并保存稳定 question id、递增版本和唯一恢复 input。`user_ask` 与 WAITING_INPUT 写入同一事务；回答必须匹配问题编号和版本，只把门禁推进到 REVIEWING。Joi 在恢复 input 中核对已有结果和未启动 Work：计划仍适用则保留原标识，要求改变则先取消受影响 Work；只有该版本恢复 Turn 的 `goal_resume` 能原子打开门禁。仍缺信息时再次提问并保持暂停。
+
+门禁在 Work 计划提交事务、dispatch claim、run 启动事务、结果综合、harness review 和目标完成处复查。问题事务之前已有持久 run 的任务可以完成并保存权威结果；门禁关闭期间这些结果不加入综合 membership，OPEN 后由正常扫描重新发现。资源容量、目录 lease 或 resident BUSY 与 HITL 严格分离：前者保持 outbox 排队，不创建问题、不增加执行失败预算。

@@ -8,6 +8,35 @@ import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/r
 import { TestClock } from "../support/runtime-fixture.js";
 
 describe("workspace lease lifecycle", () => {
+  it("allows writes in distinct managed run directories of the same Workbench", async () => {
+    const database = new DatabaseSync(":memory:");
+    database.exec(`
+      CREATE TABLE workbench_workspace_roots (workspace_ref TEXT PRIMARY KEY, root_path TEXT NOT NULL);
+      CREATE TABLE work_run_directories (work_id TEXT PRIMARY KEY, root_path TEXT NOT NULL);
+      CREATE TABLE workspace_leases (
+        workspace_ref TEXT NOT NULL, work_id TEXT NOT NULL, access_mode TEXT NOT NULL,
+        lease_owner TEXT NOT NULL, generation INTEGER NOT NULL, expires_at TEXT NOT NULL,
+        PRIMARY KEY (workspace_ref, work_id)
+      );
+      INSERT INTO workbench_workspace_roots VALUES ('workbench_workspace:a', 'C:\\managed\\workbench');
+      INSERT INTO work_run_directories VALUES
+        ('write_a', 'C:\\managed\\runs\\a'),
+        ('write_b', 'C:\\managed\\runs\\b');
+    `);
+    try {
+      const leases = new SqliteWorkspaceLeaseManager({
+        clock: new TestClock(),
+        database: { transaction: (operation) => operation(database) },
+      });
+      await expect(leases.acquire({ accessMode: "WRITE", workId: "write_a", workspaceRef: "workbench_workspace:a" }))
+        .resolves.toMatchObject({ workId: "write_a" });
+      await expect(leases.acquire({ accessMode: "WRITE", workId: "write_b", workspaceRef: "workbench_workspace:a" }))
+        .resolves.toMatchObject({ workId: "write_b" });
+    } finally {
+      database.close();
+    }
+  });
+
   it.each([false, true])("coordinates physical roots including captured run directories (%s)", async (captured) => {
     const database = new DatabaseSync(":memory:");
     database.exec(`

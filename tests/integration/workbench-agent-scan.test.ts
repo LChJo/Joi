@@ -29,6 +29,7 @@ function makeDatabase(): DatabaseSync {
       synthesized_revision INTEGER, synthetic_input_id TEXT, updated_at TEXT);
     CREATE TABLE joi_goal_result_members (original_input_id TEXT, event_id TEXT, revision INTEGER,
       PRIMARY KEY (original_input_id, event_id));
+    CREATE TABLE joi_goal_execution_gates (goal_input_id TEXT PRIMARY KEY, status TEXT NOT NULL);
     CREATE TABLE workbench_change_requests (request_id TEXT PRIMARY KEY, kind TEXT, source_workbench_id TEXT,
       target_workbench_id TEXT, reason TEXT, turn_id TEXT, status TEXT, created_at TEXT, decided_at TEXT);
     CREATE TABLE invocations (invocation_id TEXT PRIMARY KEY, message_id TEXT);

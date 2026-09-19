@@ -11,6 +11,12 @@ import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persiste
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
+async function questionVersion(repository: SqliteJoiInboxRepository, inputId: string) {
+  const question = (await repository.list()).find((item) => item.inputId === inputId);
+  if (question?.questionId === undefined || question.questionVersion === undefined) throw new Error("question metadata missing");
+  return { expectedQuestionId: question.questionId, expectedQuestionVersion: question.questionVersion };
+}
+
 describe("sqlite joi inbox clarify", () => {
   it("resolves a persisted partner question to the exact waiting Work", async () => {
     const fixture = await createRuntimeFixture();
@@ -47,16 +53,34 @@ describe("sqlite joi inbox clarify", () => {
         workId: "work-action-question",
       });
 
-      await inbox.clarify({ inputId: accepted.inputId, text: "使用现有配置" });
+      const question = await questionVersion(repository, accepted.inputId);
+      await inbox.clarify({
+        inputId: accepted.inputId,
+        questionId: question.expectedQuestionId,
+        questionVersion: question.expectedQuestionVersion,
+        text: "使用现有配置",
+      });
 
       expect(await repository.loadInput(accepted.inputId)).toMatchObject({
         resolvedAction: { actionId: "attention-action-question", decision: "RESUME", workId: "work-action-question" },
-        status: "PENDING",
+        status: "ROUTED",
       });
       expect(fixture.database.transaction((connection) => connection.prepare(
         "SELECT status, decision FROM joi_user_action_requests WHERE action_id = 'attention-action-question'",
       ).get())).toEqual({ decision: "RESUME", status: "RESOLVED" });
 
+      const resumeInput = fixture.database.transaction((connection) => connection.prepare(
+        "SELECT input_id, body FROM joi_inbox_messages WHERE goal_input_id = ? AND input_id LIKE 'joi_goal_resume:goal:%'",
+      ).get(accepted.inputId)) as { body: string; input_id: string };
+      expect(resumeInput.body).toContain("resolvedActionId=attention-action-question");
+      await repository.createTurn({
+        workbenchId: workbench.workbenchId,
+        createdAt: now,
+        inputId: resumeInput.input_id,
+        sessionId: "resume-session",
+        turnId: "turn-goal-resume",
+      });
+      await repository.resumeGoal({ inputId: resumeInput.input_id, turnId: "turn-goal-resume" });
       fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_turns
         (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
         VALUES ('turn-action-retry-1', ?, ?, 'session-action-retry', 'RUNNING', ?, ?),
@@ -84,6 +108,9 @@ describe("sqlite joi inbox clarify", () => {
         workbenchId: workbench.workbenchId,
       });
       expect(retriedResume).toEqual(firstResume);
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, decision FROM joi_user_action_requests WHERE action_id = 'attention-action-question'",
+      ).get())).toEqual({ decision: "RESUME", status: "APPLIED" });
       expect(fixture.database.transaction((connection) => connection.prepare(`
         SELECT w.access_mode, p.access_mode AS policy_access FROM work_items w
         JOIN work_access_policies p ON p.work_id = w.work_id WHERE w.work_id = 'work-action-question'`).get()))
@@ -123,8 +150,10 @@ describe("sqlite joi inbox clarify", () => {
       expect(await repository.clarify(accepted.inputId, { workbenchId: "workbench-1" })).toBeNull();
 
       await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
-      const clarified = await repository.clarify(accepted.inputId, { workbenchId: "workbench-1" });
-      expect(clarified).toMatchObject({ workbenchId: "workbench-1", body: "研究登录改造", inputId: accepted.inputId, status: "PENDING" });
+      const clarified = await repository.clarify(accepted.inputId, {
+        ...await questionVersion(repository, accepted.inputId), workbenchId: "workbench-1",
+      });
+      expect(clarified).toMatchObject({ workbenchId: "workbench-1", body: "研究登录改造", inputId: accepted.inputId, status: "ROUTED" });
       expect(clarified?.clarificationReasonCode).toBeUndefined();
       expect(await repository.clarify(accepted.inputId, { text: "too late" })).toBeNull();
     } finally {
@@ -142,9 +171,11 @@ describe("sqlite joi inbox clarify", () => {
       const inbox = new JoiInboxService({ clock, ids: new TestIds(), repository });
       const accepted = await inbox.accept({ idempotencyKey: "key-2", text: "归属？" });
       await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
-      const clarified = await repository.clarify(accepted.inputId, { text: "是登录模块" });
+      const clarified = await repository.clarify(accepted.inputId, {
+        ...await questionVersion(repository, accepted.inputId), text: "是登录模块",
+      });
       expect(clarified?.body).toBe("归属？\n\n[用户补充] 是登录模块");
-      expect(clarified?.status).toBe("PENDING");
+      expect(clarified?.status).toBe("ROUTED");
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });
@@ -167,9 +198,10 @@ describe("sqlite joi inbox clarify", () => {
 
       await repository.requireClarification(accepted.inputId, "partner_selection_required", "选择搭档继续。");
       const clarified = await repository.clarify(accepted.inputId, {
+        ...await questionVersion(repository, accepted.inputId),
         expectedReasonCode: "partner_selection_required", text: "partnerId=partner-1",
       });
-      expect(clarified).toMatchObject({ status: "PENDING" });
+      expect(clarified).toMatchObject({ status: "ROUTED" });
       expect(clarified?.body).toContain("partnerId=partner-1");
     } finally {
       database.close();

@@ -4,7 +4,7 @@ import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardBaseDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const SAFE_MARKDOWN_COMPONENTS: Components = {
@@ -571,7 +571,7 @@ function workbenchProposals(seed?: string): WorkbenchProposal[] {
   ];
 }
 
-function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, reasonCode, suggestionSeed }: {
+function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, suggestionSeed }: {
   api: DigitalLifeApi;
   partners: PartnerDto[];
   workbenchId: string | undefined;
@@ -579,6 +579,8 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   inputId: string;
   onResolved: () => void;
   prompt: string | undefined;
+  questionId: string | undefined;
+  questionVersion: number | undefined;
   reasonCode: string | undefined;
   suggestionSeed?: string;
 }) {
@@ -609,7 +611,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const resolve = async (resolution: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; partnerId?: string; workbenchId?: string; text?: string }) => {
     setBusy(true); setNotice(null);
     try {
-      await api.clarifyJoiMessage(inputId, resolution);
+      await api.clarifyJoiMessage(inputId, { ...resolution, ...(questionId === undefined || questionVersion === undefined ? {} : { questionId, questionVersion }) });
       setNotice("已交给 joi，正在重新安排…");
       setDraft("");
       onResolved();
@@ -635,7 +637,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       });
       setCreatedWorkbench(created);
       setCreatingWorkbench(false);
-      await api.clarifyJoiMessage(inputId, { workbenchId: created.workbenchId });
+      await api.clarifyJoiMessage(inputId, { workbenchId: created.workbenchId, ...(questionId === undefined || questionVersion === undefined ? {} : { questionId, questionVersion }) });
       setNotice("工作台已创建，正在重新安排…");
       setDraft("");
       onResolved();
@@ -653,7 +655,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     setBusy(true); setNotice(null);
     try {
       await api.bindWorkbenchWorkspace(workbenchId);
-      await api.clarifyJoiMessage(inputId, { workbenchId });
+      await api.clarifyJoiMessage(inputId, { workbenchId, ...(questionId === undefined || questionVersion === undefined ? {} : { questionId, questionVersion }) });
       setNotice("工作目录已绑定，joi 正在继续安排…");
       onResolved();
     } catch (error) {
@@ -782,47 +784,10 @@ function ComposerWorkbenchPicker({ workbenches, onSelect, selected }: {
   </div>;
 }
 
-function legacyHomeFeed(messages: JoiAcceptedMessageDto[]): JoiHomeFeedDto {
-  const unassignedActions = messages.filter((message) => message.status === "CLARIFICATION_REQUIRED" && message.workbenchId === undefined);
-  const goals: JoiGoalCardDto[] = messages.filter((message) => !unassignedActions.includes(message)).map((message) => {
-    const status = message.failure !== undefined ? "FAILED" as const : message.canceled === true ? "CANCELED" as const
-      : message.status === "CONSUMED" ? "COMPLETED" as const : message.status === "CLARIFICATION_REQUIRED" ? "NEEDS_ATTENTION" as const
-        : message.status === "ROUTED" ? "ARRANGED" as const : "ARRANGING" as const;
-    const base: JoiGoalCardBaseDto = {
-      agentCount: 0,
-      workbench: { workbenchId: message.workbenchId ?? "", name: message.workbenchId ?? "等待归属" },
-      canDelete: message.status === "CONSUMED",
-      ...(message.failure === undefined ? {} : { failure: message.failure }),
-      goalId: message.inputId,
-      title: message.textPreview ?? "正在安排的新目标",
-      updatedAt: message.acceptedAt,
-      work: { active: 0, completed: 0, failed: 0, total: 0 },
-    };
-    if (status === "NEEDS_ATTENTION") return {
-      ...base,
-      clarification: {
-        ...(message.clarificationPrompt === undefined ? {} : { prompt: message.clarificationPrompt }),
-        reasonCode: message.clarificationReasonCode ?? "clarification_required",
-      },
-      status,
-    };
-    return { ...base, status };
-  });
-  const thinking = messages.filter((message) => message.status === "PENDING" || message.status === "ROUTED").map((message) => ({
-    agentCount: 0,
-    goalId: message.inputId,
-    phase: message.status === "PENDING" ? "queued" as const : "progressing" as const,
-    stage: message.status === "PENDING" ? "ROUTING" as const : "PLANNING" as const,
-    startedAt: message.acceptedAt,
-    turnId: `legacy:${message.inputId}`,
-    work: { active: 0, completed: 0, failed: 0, total: 0 },
-  }));
-  return { goals, thinking, unassignedActions };
-}
 
 function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   if (status === "ARRANGING") return "正在安排";
-  if (status === "ARRANGED") return "已安排";
+  if (status === "ARRANGED") return "排队中";
   if (status === "RUNNING") return "执行中";
   if (status === "REVIEWING") return "正在评审";
   if (status === "EXTENDING") return "评审后补充执行";
@@ -1057,7 +1022,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div><GoalArtifacts api={api} goal={goal} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
-        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
+        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
         {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
         <div className="joi-goal-detail-body">
@@ -1131,6 +1096,7 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
   const [targetWorkbenchId, setTargetWorkbenchId] = useState<string | null>(null);
   const targetWorkbench = snapshot.workbenches.find((workbench) => workbench.workbenchId === targetWorkbenchId);
   const [feed, setFeed] = useState<JoiHomeFeedDto>({ goals: [], thinking: [], unassignedActions: [] });
+  const [feedError, setFeedError] = useState(false);
   const [openGoalId, setOpenGoalId] = useState<string | null>(null);
   const [openGoalAgentStatus, setOpenGoalAgentStatus] = useState<WorkbenchAgentStatusDto | undefined>(undefined);
   const [resultGoal, setResultGoal] = useState<JoiGoalCardDto | null>(null);
@@ -1145,11 +1111,12 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
       if (!Array.isArray(loaded.goals) || !Array.isArray(loaded.thinking) || !Array.isArray(loaded.unassignedActions)) throw new Error("joi_home_feed_invalid");
       if (revision !== feedRevisionRef.current) return;
       setFeed(loaded);
+      setFeedError(false);
     } catch {
-      const messages = await api.listJoiMessages();
-      if (!Array.isArray(messages.items)) throw new Error("joi_messages_invalid");
       if (revision !== feedRevisionRef.current) return;
-      setFeed(legacyHomeFeed(messages.items));
+      // Inbox routing/consumption is not execution/completion evidence.
+      // Keep the last authoritative projection until this endpoint recovers.
+      setFeedError(true);
     }
   }, [api]);
   const refresh = useCallback(async () => {
@@ -1225,6 +1192,7 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
   };
   return <section className="joi-home" aria-labelledby="joi-home-title">
     <header><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。工作台归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
+    {feedError ? <div className="inline-notice danger" role="alert"><p>任务状态暂时无法刷新，已保留上次成功获取的数据。</p><button className="button quiet" onClick={() => void loadFeed()} type="button">重新加载任务状态</button></div> : null}
     {workbenchChanges.length === 0 ? null : <section className="joi-workbench-confirmations" aria-label="工作台变更确认"><h2>需要你确认</h2>{workbenchChanges.map((change) => <article key={change.requestId}>
       <div><strong>{change.kind === "MERGE" ? "joi 建议合并工作台" : "joi 建议归档工作台"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceWorkbenchId} → ${change.targetWorkbenchId ?? ""}` : change.sourceWorkbenchId}</small></div>
       <div className="row-actions"><button className="button ghost" onClick={() => void api.decideWorkbenchChange(change.requestId, "REJECT").then(refresh)} type="button">保留原样</button><button className="button danger-text" onClick={() => void api.decideWorkbenchChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? "确认合并" : "确认归档"}</button></div>
@@ -1252,7 +1220,7 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
           </div>
         </div>;
       })}
-      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} /></article>)}
+      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} /></article>)}
       {feed.goals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
           <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => { setResultGoal(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong><GoalProgress goal={goal} /></span></button>
@@ -1260,10 +1228,10 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
         </div>
         {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoal(goal); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoal(goal); setOpenGoalId(null); } }}><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
-        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
+        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); markRetryStarted(goal); }} /> : null}
       </article>)}
-      {visibleThinking.length === 0 && feed.unassignedActions.length === 0 && feed.goals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}
+      {!feedError && visibleThinking.length === 0 && feed.unassignedActions.length === 0 && feed.goals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}
     </div>
     {snapshot.partners.length >= 2 ? null : <div className="inline-notice warning"><span>{snapshot.partners.length === 0 ? "当前还没有工作搭档。" : `当前只有 ${String(snapshot.partners.length)} 个工作搭档。`}可以先用场景预设一键组建团队，或去搭档页手动创建 2-3 个。</span><span className="row-actions"><button className="button ghost" onClick={() => onNavigate?.("agents", "scenarios")} type="button">看场景预设</button><button className="button ghost" onClick={() => onNavigate?.("agents", "partners")} type="button">去搭档页创建</button></span></div>}
     <div className="joi-composer-dock">

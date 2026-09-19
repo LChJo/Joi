@@ -43,6 +43,12 @@ export function goalFromInputIdPrefix(inputId: string): string | undefined {
     const separator = remainder.indexOf(":work:");
     return separator < 0 ? remainder : remainder.slice(0, separator);
   }
+  const resumePrefix = "joi_goal_resume:goal:";
+  if (inputId.startsWith(resumePrefix)) {
+    const remainder = inputId.slice(resumePrefix.length);
+    const separator = remainder.lastIndexOf(":v");
+    return separator < 0 ? remainder : remainder.slice(0, separator);
+  }
   return undefined;
 }
 
@@ -109,7 +115,7 @@ export function createJoiReasoningTools(input: {
   attachmentIds?: readonly string[];
   /** Verified attachment reader; attachment_read is only registered together with attachmentIds. */
   attachments?: Pick<JoiAttachmentPort, "read">;
-  clarifications: Pick<JoiCoordinatorStore, "requireClarification">;
+  clarifications: Pick<JoiCoordinatorStore, "requireClarification" | "resumeGoal">;
   diagnostics?: RuntimeDiagnostics;
   /** Original goal input id; harness tools and goal-binding fall back to inputId when absent. */
   goalInputId?: string | undefined;
@@ -220,7 +226,7 @@ export function createJoiReasoningTools(input: {
     }), { minItems: 1, maxItems: 16 }),
   });
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
-    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Dependency keys may reference only Work keys declared in the current invocation; historical Work is evidence, not a DAG dependency. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
+    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. The result's queued entries are normal resource waits with stable reason codes, not denials and never a reason to ask the user for more information. Dependency keys may reference only Work keys declared in the current invocation; historical Work is evidence, not a DAG dependency. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
     execute: async (_toolCallId, arguments_) => {
       try {
         const currentKeys = new Set(arguments_.work.map((item) => item.key));
@@ -329,10 +335,11 @@ export function createJoiReasoningTools(input: {
     name: "work_reassign",
     parameters: workReassignParameters,
   };
-  const workResumeParameters = Type.Object({ workId: Type.String() });
+  const workResumeParameters = Type.Object({ actionId: Type.Optional(Type.String()), workId: Type.String() });
   const workResumeTool: AgentTool<typeof workResumeParameters> = {
-    description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive; the user's answer is already part of the goal request text. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
+    description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Pass the exact resolvedActionId from the recovery input as actionId when present so retries preserve identity. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive; the user's answer is already part of the goal request text. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
     execute: async (_toolCallId, arguments_) => result(await input.work.resume({
+      ...(arguments_.actionId === undefined ? {} : { actionId: arguments_.actionId }),
       workbenchId: input.workbenchId,
       turnId: input.turnId,
       workId: arguments_.workId,
@@ -565,6 +572,16 @@ export function createJoiReasoningTools(input: {
     parameters: readResultParameters,
   };
   const userAskParameters = Type.Object({ question: Type.String() });
+  const goalResumeTool: AgentTool = {
+    description: "Open the current goal execution gate after reviewing the saved answer and queued Work. This is allowed only in the matching versioned goal recovery turn. Call it before resuming, reassigning, supplementing or dispatching replacement Work; if information is still missing, call user_ask instead.",
+    execute: async () => {
+      if (input.clarifications.resumeGoal === undefined) throw new DomainError("goal_resume_unavailable", "Goal resume is unavailable.");
+      return result(await input.clarifications.resumeGoal({ inputId: input.inputId, turnId: input.turnId }));
+    },
+    label: "Resume goal execution",
+    name: "goal_resume",
+    parameters: Type.Object({}),
+  };
   const userAskTool: AgentTool<typeof userAskParameters> = {
     description: "Persist one concrete blocking question for the user. Call this only when their judgement or missing information is required, then stop planning until they answer the card.",
     execute: async (_toolCallId, arguments_) => {
@@ -881,6 +898,7 @@ export function createJoiReasoningTools(input: {
     workResumeTool,
     workCancelTool,
     readResultTool,
+    goalResumeTool,
     userAskTool,
     turnCompleteTool,
     harnessNameDestinationTool,

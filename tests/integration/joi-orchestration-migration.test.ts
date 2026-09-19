@@ -29,6 +29,48 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
 }
 
 describe("JOI-01 non-destructive migration", () => {
+  it("moves an unresolved derived question onto its original goal and creates a versioned gate", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-goal-gate-upgrade-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 57);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    const now = "2026-09-18T10:00:00.000Z";
+    oldDatabase.transaction((connection) => connection.prepare(`INSERT INTO joi_inbox_messages
+      (input_id, idempotency_key, body, status, goal_input_id, clarification_reason_code, clarification_prompt, created_at, updated_at)
+      VALUES ('legacy-goal', 'legacy-goal-key', 'goal', 'CONSUMED', NULL, NULL, NULL, ?, ?),
+             ('legacy-derived', 'legacy-derived-key', 'review', 'CLARIFICATION_REQUIRED', 'legacy-goal',
+              'question_required', '还需要哪个地区？', ?, ?)`)
+      .run(now, now, now, now));
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.inspect().schemaVersion).toBe(await expectedSchemaVersion());
+      expect(upgraded.transaction((connection) => connection.prepare(`SELECT input_id, status, clarification_reason_code, clarification_prompt
+        FROM joi_inbox_messages WHERE input_id IN ('legacy-goal', 'legacy-derived') ORDER BY input_id`).all())).toEqual([
+        { clarification_prompt: null, clarification_reason_code: null, input_id: "legacy-derived", status: "CONSUMED" },
+        { clarification_prompt: "还需要哪个地区？", clarification_reason_code: "question_required", input_id: "legacy-goal", status: "CLARIFICATION_REQUIRED" },
+      ]);
+      expect(upgraded.transaction((connection) => connection.prepare(`SELECT goal_input_id, question_id, question_version, status
+        FROM joi_goal_execution_gates`).get())).toEqual({
+        goal_input_id: "legacy-goal",
+        question_id: "goal_question:legacy-goal:v1",
+        question_version: 1,
+        status: "WAITING_INPUT",
+      });
+      const repository = new SqliteJoiInboxRepository(upgraded, new TestClock(now));
+      await expect(repository.clarify("legacy-goal", {
+        expectedQuestionId: "goal_question:legacy-goal:v1",
+        expectedQuestionVersion: 1,
+        text: "华东",
+      })).resolves.toMatchObject({ inputId: "legacy-goal", status: "ROUTED" });
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("recovers legacy crash-loop parking without reclassifying real user cancellations", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-input-failure-upgrade-"));
     const oldMigrations = path.join(root, "old-migrations");

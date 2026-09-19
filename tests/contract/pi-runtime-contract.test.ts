@@ -386,6 +386,7 @@ describe("Pi reasoning runtime contract", () => {
       "update_automation",
       "delete_automation",
       "run_automation_now",
+      "goal_resume",
       "user_ask",
       "turn_complete",
       "harness_name_destination",
@@ -445,6 +446,40 @@ describe("Pi reasoning runtime contract", () => {
     await running;
     await runtime.waitForIdle("session_abort");
     expect(runtime.isRunning("session_abort")).toBe(false);
+  });
+
+  it("stops a sequential tool batch immediately after user_ask commits", async () => {
+    const faux = fauxProvider({ provider: "joi-user-ask-stop" });
+    faux.setResponses([fauxAssistantMessage([
+      fauxToolCall("user_ask", { question: "请选择验收范围" }),
+      fauxToolCall("turn_complete", { outcome: "DIRECT_ANSWER" }),
+    ], { stopReason: "toolUse" })]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const calls: string[] = [];
+    const tool = (name: "user_ask" | "turn_complete") => ({
+      description: name,
+      execute: async () => {
+        calls.push(name);
+        return { content: [{ type: "text" as const, text: "{}" }], details: {} };
+      },
+      label: name,
+      name,
+      parameters: Type.Object({}),
+    });
+    const runtime = new PiReasoningRuntime({
+      model: faux.getModel(),
+      models,
+      sessionStore: new MemorySessionStore(),
+      tools: [tool("user_ask"), tool("turn_complete")],
+    });
+
+    await runtime.startTurn({
+      workbenchId: "workbench_1", inputId: "input_ask", modelId: "contract-model", modelRevisionId: "model_rev_1",
+      onEvent: () => undefined, prompt: "安排任务", sessionId: "session_ask", sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1", systemPrompt: "You are joi.", turnId: "turn_ask",
+    });
+    expect(calls).toEqual(["user_ask"]);
   });
 
   it("compacts completed turns into a bounded recoverable checkpoint", async () => {

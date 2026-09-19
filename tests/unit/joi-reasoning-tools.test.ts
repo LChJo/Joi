@@ -38,10 +38,12 @@ function makeTools(options: {
   inputId?: string;
   partners?: PartnerDto[];
   planError?: Error;
+  resumeCalls?: { inputId: string; turnId: string }[];
   refineCalls?: { args: { workbenchId: string; input: Record<string, unknown> }[] };
   workspaceBindCalls?: { workbenchId: string; rootPath: string }[];
   workspacePicker?: () => Promise<string | null>;
   workspaceBlocked?: boolean;
+  workResumeCalls?: Record<string, unknown>[];
 } = {}) {
   const addCalls: unknown[] = [];
   const setModelCalls: unknown[] = [];
@@ -83,9 +85,15 @@ function makeTools(options: {
         return { displayName: "绑定目录", kind: "BOUND", status: "READY" };
       },
     },
-    clarifications: { requireClarification: async (inputId, reasonCode, prompt) => {
-      clarificationCalls.push({ inputId, ...(prompt === undefined ? {} : { prompt }), reasonCode });
-    } },
+    clarifications: {
+      requireClarification: async (inputId, reasonCode, prompt) => {
+        clarificationCalls.push({ inputId, ...(prompt === undefined ? {} : { prompt }), reasonCode });
+      },
+      ...(options.resumeCalls === undefined ? {} : { resumeGoal: async (input: { inputId: string; turnId: string }) => {
+        options.resumeCalls?.push(input);
+        return { status: "OPEN" as const };
+      } }),
+    },
     workbenches: { getWorkbench: async () => null, listSummaries: async () => [] },
     ...(options.attachmentIds === undefined ? {} : { attachmentIds: options.attachmentIds }),
     ...(options.attachments === undefined ? {} : { attachments: options.attachments }),
@@ -127,7 +135,7 @@ function makeTools(options: {
         planCalls.push(input);
         if (options.workspaceBlocked === true) throw new DomainError("workbench_workspace_not_ready", "workspace required");
         if (options.planError !== undefined) throw options.planError;
-        return { denied: [], dispatchPlanId: "plan_1", waves: [] };
+        return { denied: [], queued: [], dispatchPlanId: "plan_1", waves: [] };
       },
       reassign: async (input) => ({
         ...input,
@@ -142,20 +150,23 @@ function makeTools(options: {
         partnerRevisionId: "partner_revision_1",
         registryRevision: 1,
       }),
-      resume: async (input) => ({
-        actionId: "action_resume",
-        dispatchAttemptId: "attempt_resume",
-        outbox: {
-          availableAt: "2026-07-29T10:00:00.000Z",
-          kind: "partner.dispatch" as const,
-          outboxId: "outbox_resume",
-          payload: { actionId: "action_resume", dispatchAttemptId: "attempt_resume", sessionPolicy: "RESIDENT" as const, workId: input.workId },
-        },
-        partnerId: "partner_1",
-        partnerRevisionId: "partner_revision_1",
-        registryRevision: 1,
-        workId: input.workId,
-      }),
+      resume: async (input) => {
+        options.workResumeCalls?.push(input);
+        return {
+          actionId: "action_resume",
+          dispatchAttemptId: "attempt_resume",
+          outbox: {
+            availableAt: "2026-07-29T10:00:00.000Z",
+            kind: "partner.dispatch" as const,
+            outboxId: "outbox_resume",
+            payload: { actionId: "action_resume", dispatchAttemptId: "attempt_resume", sessionPolicy: "RESIDENT" as const, workId: input.workId },
+          },
+          partnerId: "partner_1",
+          partnerRevisionId: "partner_revision_1",
+          registryRevision: 1,
+          workId: input.workId,
+        };
+      },
       cancel: async (input) => ({ workId: input.workId }),
       supplement: async (input) => ({ attemptNo: 1, dispatchPlanId: "plan_recovery", evidenceResultIds: ["result_1"], waves: [[input.sourceWorkId]] }),
     },
@@ -436,6 +447,22 @@ describe("joi reasoning tools", () => {
     await harness.call("user_ask", { question: "验收必须覆盖哪些浏览器？" });
     expect(harness.clarificationCalls).toEqual([{
       inputId: "input_1", prompt: "验收必须覆盖哪些浏览器？", reasonCode: "question_required",
+    }]);
+  });
+
+  it("opens a goal only through the versioned recovery turn", async () => {
+    const resumeCalls: { inputId: string; turnId: string }[] = [];
+    const harness = makeTools({ inputId: "joi_goal_resume:goal:goal-1:v2", resumeCalls });
+    await expect(harness.call("goal_resume", {})).resolves.toEqual({ status: "OPEN" });
+    expect(resumeCalls).toEqual([{ inputId: "joi_goal_resume:goal:goal-1:v2", turnId: "turn_1" }]);
+  });
+
+  it("preserves a resolved action id when resuming waiting work", async () => {
+    const workResumeCalls: Record<string, unknown>[] = [];
+    const harness = makeTools({ workResumeCalls });
+    await harness.call("work_resume", { actionId: "attention-1", workId: "work-1" });
+    expect(workResumeCalls).toEqual([{
+      actionId: "attention-1", turnId: "turn_1", workbenchId: "workbench_1", workId: "work-1",
     }]);
   });
 

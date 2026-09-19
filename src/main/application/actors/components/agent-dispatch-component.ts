@@ -14,6 +14,7 @@ import type { RuntimeStore } from "../../ports/runtime-store.js";
 import type { PartnerRunFailure } from "../../partners/partner-run-failure.js";
 import { partnerRunArtifactsFromError, partnerRunFailureFromError, safePartnerRunFailureBody } from "../../partners/partner-run-failure.js";
 import { DISPATCH_POLICY_REASONS } from "../../work/dispatch-policy.js";
+import type { LocalDispatchCapacityController } from "../../work/local-dispatch-capacity.js";
 
 const CLAIM_LEASE_MILLIS = 120_000;
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
@@ -36,6 +37,9 @@ interface InFlightRun {
   prepared: PreparedDispatch;
   settled: DispatchRunOutput | undefined;
   lastProgressAt: number;
+  completeFailures: number;
+  nextWaitingRetryAt: number;
+  capacityReserved: boolean;
 }
 
 function failedOutput(error: unknown): DispatchRunOutput & { kind: "terminal" } {
@@ -53,16 +57,14 @@ function failedOutput(error: unknown): DispatchRunOutput & { kind: "terminal" } 
  */
 export class AgentDispatchComponent implements ActorComponent {
   readonly componentName = "agent-dispatch";
-  #completeFailures = 0;
-  #inFlight: InFlightRun | null = null;
+  readonly #inFlight = new Map<string, InFlightRun>();
   #lastOrphanScanAt = 0;
-  #nextWaitingRetryAt = 0;
   readonly #orphanInFlight = new Set<string>();
-  #retryAvailableAt = 0;
 
   constructor(private readonly dependencies: {
     workbenchId: string;
     claims: PartnerDispatchClaims;
+    capacity?: LocalDispatchCapacityController;
     delivery: PartnerDispatchDelivery;
     leases?: WorkspaceLeaseRenewal;
     orphanScanEveryMillis?: number;
@@ -76,14 +78,14 @@ export class AgentDispatchComponent implements ActorComponent {
   }) {}
 
   get inFlightAttemptId(): string | undefined {
-    return this.#inFlight?.dispatchAttemptId;
+    return this.#inFlight.keys().next().value;
   }
 
   async update(ctx: ActorTickContext): Promise<void> {
     await this.#renewLease(ctx);
     await this.#converge(ctx);
     await this.#scanOrphans(ctx);
-    if (this.#inFlight !== null || this.#orphanInFlight.size > 0 || ctx.now.getTime() < this.#retryAvailableAt) return;
+    if (this.#orphanInFlight.size > 0) return;
     await this.#claimAndStart(ctx);
   }
 
@@ -93,8 +95,11 @@ export class AgentDispatchComponent implements ActorComponent {
    * A lost lease converges the run to a non-replayable UNKNOWN terminal result.
    */
   async #renewLease(ctx: ActorTickContext): Promise<void> {
-    const run = this.#inFlight;
-    if (run === null || run.settled !== undefined) return;
+    for (const run of this.#inFlight.values()) await this.#renewRunLease(ctx, run);
+  }
+
+  async #renewRunLease(ctx: ActorTickContext, run: InFlightRun): Promise<void> {
+    if (run.settled !== undefined) return;
     const lease = run.prepared.workspaceLease;
     if (lease === undefined || this.dependencies.leases === undefined) return;
     if (Date.parse(lease.expiresAt) - ctx.now.getTime() > LEASE_RENEW_MARGIN_MILLIS) return;
@@ -129,8 +134,10 @@ export class AgentDispatchComponent implements ActorComponent {
   }
 
   async #converge(ctx: ActorTickContext): Promise<void> {
-    const run = this.#inFlight;
-    if (run === null) return;
+    for (const run of [...this.#inFlight.values()]) await this.#convergeRun(ctx, run);
+  }
+
+  async #convergeRun(ctx: ActorTickContext, run: InFlightRun): Promise<void> {
     // A user cancel revokes the Work in DB (work_items CANCELED, attempt FAILED); abort the
     // live engine session instead of letting it run to completion. The terminal rows make
     // the later complete() a no-op, so converging here only releases the actor slot.
@@ -175,30 +182,31 @@ export class AgentDispatchComponent implements ActorComponent {
     }
     const output = run.settled;
     if (output.kind === "waiting_remote") {
-      if (ctx.now.getTime() < this.#nextWaitingRetryAt) return;
-      this.#nextWaitingRetryAt = ctx.now.getTime() + (this.dependencies.waitingRetryEveryMillis ?? DEFAULT_WAITING_RETRY_EVERY_MILLIS);
+      if (ctx.now.getTime() < run.nextWaitingRetryAt) return;
+      run.nextWaitingRetryAt = ctx.now.getTime() + (this.dependencies.waitingRetryEveryMillis ?? DEFAULT_WAITING_RETRY_EVERY_MILLIS);
       run.settled = undefined;
       const attemptId = run.dispatchAttemptId;
       void this.dependencies.delivery.run(run.prepared, { signal: run.abortController.signal }).then((next) => {
-        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = next;
+        const current = this.#inFlight.get(attemptId);
+        if (current !== undefined) current.settled = next;
       }).catch((error: unknown) => {
-        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = failedOutput(error);
+        const current = this.#inFlight.get(attemptId);
+        if (current !== undefined) current.settled = failedOutput(error);
       });
       return;
     }
     try {
       await this.dependencies.delivery.complete({ output, prepared: run.prepared });
     } catch (error) {
-      this.#completeFailures += 1;
-      if (this.#completeFailures >= MAX_COMPLETE_FAILURES) {
+      run.completeFailures += 1;
+      if (run.completeFailures >= MAX_COMPLETE_FAILURES) {
         emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.converge_stuck_cleared", {
           workbenchId: this.dependencies.workbenchId,
           dispatchAttemptId: run.dispatchAttemptId,
           errorCode: runtimeDiagnosticErrorCode(error),
           partnerId: this.dependencies.partnerId,
         });
-        this.#inFlight = null;
-        this.#completeFailures = 0;
+        this.#releaseSlot(run);
       } else {
         emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.complete_failed", {
           workbenchId: this.dependencies.workbenchId,
@@ -209,14 +217,18 @@ export class AgentDispatchComponent implements ActorComponent {
       }
       return;
     }
-    this.#completeFailures = 0;
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.run_converged", {
       workbenchId: this.dependencies.workbenchId,
       dispatchAttemptId: run.dispatchAttemptId,
       partnerId: this.dependencies.partnerId,
       status: output.status,
     });
-    this.#inFlight = null;
+    this.#releaseSlot(run);
+  }
+
+  #releaseSlot(run: InFlightRun): void {
+    this.#inFlight.delete(run.dispatchAttemptId);
+    if (run.capacityReserved) this.dependencies.capacity?.release(run.dispatchAttemptId);
   }
 
   async #scanOrphans(ctx: ActorTickContext): Promise<void> {
@@ -227,7 +239,7 @@ export class AgentDispatchComponent implements ActorComponent {
       partnerId: this.dependencies.partnerId,
     });
     for (const orphan of orphans) {
-      if (orphan.dispatchAttemptId === this.#inFlight?.dispatchAttemptId) continue;
+      if (this.#inFlight.has(orphan.dispatchAttemptId)) continue;
       if (this.#orphanInFlight.has(orphan.dispatchAttemptId)) continue;
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.partner.orphan_found", {
         workbenchId: this.dependencies.workbenchId,
@@ -258,6 +270,24 @@ export class AgentDispatchComponent implements ActorComponent {
       partnerId: this.dependencies.partnerId,
     });
     for (const claim of claims) {
+      if (claim.kind === "A2A" && [...this.#inFlight.values()].some((run) => run.prepared.kind === "A2A")) continue;
+      let capacityReserved = false;
+      if (claim.kind === "LOCAL_PI" && this.dependencies.capacity !== undefined) {
+        const reservation = this.dependencies.capacity.reserve({
+          dispatchAttemptId: claim.dispatchAttemptId,
+          partnerId: this.dependencies.partnerId,
+        });
+        if (!reservation.acquired) {
+          emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.capacity_queued", {
+            workbenchId: this.dependencies.workbenchId,
+            dispatchAttemptId: claim.dispatchAttemptId,
+            partnerId: this.dependencies.partnerId,
+            reasonCode: reservation.reasonCode,
+          });
+          break;
+        }
+        capacityReserved = true;
+      }
       const now = ctx.now.toISOString();
       const claimed = await this.dependencies.outbox.claimOutboxById({
         claimUntil: new Date(ctx.now.getTime() + CLAIM_LEASE_MILLIS).toISOString(),
@@ -265,13 +295,18 @@ export class AgentDispatchComponent implements ActorComponent {
         outboxId: claim.outboxId,
         owner: this.dependencies.owner,
       });
-      if (claimed === null) continue;
+      if (claimed === null) {
+        if (capacityReserved) this.dependencies.capacity?.release(claim.dispatchAttemptId);
+        continue;
+      }
       let prepared: PreparedDispatch | "skipped_terminal";
       try {
         prepared = await this.dependencies.delivery.prepare(claim);
       } catch (error) {
+        if (capacityReserved) this.dependencies.capacity?.release(claim.dispatchAttemptId);
         const errorCode = runtimeDiagnosticErrorCode(error);
-        if (errorCode === DISPATCH_POLICY_REASONS.workspaceLeaseConflict) {
+        if (errorCode === DISPATCH_POLICY_REASONS.workspaceLeaseConflict || errorCode === "goal_execution_paused"
+          || errorCode === "partner_instance_busy") {
           // A live Work legitimately owns this workspace. Keep this Work queued and
           // check again promptly after the owner completes; contention is not a broken
           // dispatch and must never consume the terminal preparation-failure budget.
@@ -281,14 +316,15 @@ export class AgentDispatchComponent implements ActorComponent {
             outboxId: claim.outboxId,
             owner: this.dependencies.owner,
           });
-          this.#retryAvailableAt = ctx.now.getTime() + WORKSPACE_CONTENTION_RETRY_MILLIS;
-          emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.workspace_contended", {
+          emitRuntimeDiagnostic(ctx.diagnostics, errorCode === DISPATCH_POLICY_REASONS.workspaceLeaseConflict
+            ? "joi.agent.workspace_contended" : "joi.agent.resource_queued", {
             workbenchId: this.dependencies.workbenchId,
             dispatchAttemptId: claim.dispatchAttemptId,
             outboxId: claim.outboxId,
             partnerId: this.dependencies.partnerId,
+            reasonCode: errorCode,
           });
-          return;
+          continue;
         }
         if (claim.attemptCount >= MAX_PREPARE_ATTEMPTS && this.dependencies.delivery.abandon !== undefined) {
           // Preparation keeps failing; end the dispatch with a visible terminal result
@@ -304,8 +340,7 @@ export class AgentDispatchComponent implements ActorComponent {
               outboxId: claim.outboxId,
               partnerId: this.dependencies.partnerId,
             });
-            this.#retryAvailableAt = ctx.now.getTime() + 5_000;
-            return;
+            continue;
           } catch {
             // Fall through: the release below restores the claim for a later retry.
           }
@@ -316,27 +351,33 @@ export class AgentDispatchComponent implements ActorComponent {
           outboxId: claim.outboxId,
           owner: this.dependencies.owner,
         });
-        this.#retryAvailableAt = ctx.now.getTime() + 5_000;
         emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.prepare_failed", {
           workbenchId: this.dependencies.workbenchId,
           errorCode,
           outboxId: claim.outboxId,
           partnerId: this.dependencies.partnerId,
         });
-        return;
+        continue;
       }
       // Delivery is fully persisted after prepare; the outbox duty ends at this ack.
       await this.dependencies.outbox.completeOutbox(claim.outboxId, this.dependencies.owner);
-      if (prepared === "skipped_terminal") continue;
+      if (prepared === "skipped_terminal") {
+        if (capacityReserved) this.dependencies.capacity?.release(claim.dispatchAttemptId);
+        continue;
+      }
       const abortController = new AbortController();
-      this.#inFlight = {
+      const run: InFlightRun = {
         abortController,
+        capacityReserved,
+        completeFailures: 0,
         dispatchAttemptId: prepared.dispatchAttemptId,
         outboxId: claim.outboxId,
         prepared,
         settled: undefined,
         lastProgressAt: ctx.clock.now().getTime(),
+        nextWaitingRetryAt: 0,
       };
+      this.#inFlight.set(prepared.dispatchAttemptId, run);
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.run_started", {
         workbenchId: this.dependencies.workbenchId,
         dispatchAttemptId: prepared.dispatchAttemptId,
@@ -347,17 +388,18 @@ export class AgentDispatchComponent implements ActorComponent {
       void this.dependencies.delivery.run(prepared, {
         signal: abortController.signal,
         onProgress: () => {
-          const run = this.#inFlight;
-          if (run?.dispatchAttemptId === attemptId && !abortController.signal.aborted && run.settled === undefined) {
-            run.lastProgressAt = ctx.clock.now().getTime();
+          const active = this.#inFlight.get(attemptId);
+          if (active !== undefined && !abortController.signal.aborted && active.settled === undefined) {
+            active.lastProgressAt = ctx.clock.now().getTime();
           }
         },
       }).then((output) => {
-        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = output;
+        const active = this.#inFlight.get(attemptId);
+        if (active !== undefined) active.settled = output;
       }).catch((error: unknown) => {
-        if (this.#inFlight?.dispatchAttemptId === attemptId) this.#inFlight.settled = failedOutput(error);
+        const active = this.#inFlight.get(attemptId);
+        if (active !== undefined) active.settled = failedOutput(error);
       });
-      return;
     }
   }
 }

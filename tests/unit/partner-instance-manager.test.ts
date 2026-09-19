@@ -69,9 +69,10 @@ class MemoryInstanceRepository implements PartnerInstanceRepository {
   }
   async setStatusBusy(instanceId: string, at: string) {
     const record = this.records.find((item) => item.instanceId === instanceId);
-    if (record === undefined) return;
+    if (record?.status !== "IDLE") return false;
     record.lastUsedAt = at;
     record.status = "BUSY";
+    return true;
   }
 }
 

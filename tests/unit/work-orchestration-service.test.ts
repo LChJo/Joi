@@ -16,12 +16,14 @@ describe("work orchestration outbox", () => {
       policy: { evaluate }, repository: { commit: async (plan) => { committed.push(plan); } },
     });
     await service.plan({ workbenchId: "workbench-1", inputId: "input-1", turnId: "turn-1", dependencies: [], work: [
-      { key: "skill-a", title: "Analyze tasks", partnerId: "partner", accessMode: "NONE", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+      { key: "skill-a", title: "Analyze tasks", partnerId: "partner", accessMode: "NONE", acceptanceChecks: [{ kind: "BODY_PRESENT" }], instructions: "Use the selected skill", sessionPolicy: "EPHEMERAL" },
       { key: "skill-b", title: "Analyze more", partnerId: "partner", accessMode: "READ", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
     ] });
     expect(committed[0]?.items.map((item) => item.accessMode)).toEqual(["WRITE", "WRITE"]);
-    expect(committed[0]?.waves).toHaveLength(2);
+    expect(committed[0]?.waves).toHaveLength(1);
     expect(evaluate.mock.calls[0]?.[0]).toMatchObject({ accessMode: "WRITE" });
+    expect(committed[0]?.attempts[0]?.outbox.payload).toMatchObject({ sessionPolicy: "EPHEMERAL" });
+    expect(committed[0]?.briefs[0]).toMatchObject({ instructions: "Use the selected skill" });
   });
 
   const idleInstance: PartnerInstanceRecord = {
@@ -181,7 +183,7 @@ describe("work orchestration outbox", () => {
     expect(JSON.stringify(diagnostics)).not.toContain("写入");
   });
 
-  it("still commits an attempt for a denied candidate so delivery can recheck it, and reports the denial", async () => {
+  it("still commits an attempt for a queued candidate so delivery can recheck it, and reports resource waiting", async () => {
     const committed: CommittedWorkPlan[] = [];
     const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
     const service = new WorkOrchestrationService({
@@ -192,19 +194,37 @@ describe("work orchestration outbox", () => {
       repository: { commit: async (plan) => { committed.push(plan); } },
     });
     const result = await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
-    // The denied Work still gets a claimable attempt so the delivery-side recheck decides
+    // The queued Work still gets a claimable attempt so the delivery-side recheck decides
     // its fate (retry a transient lease conflict, land a terminal FAILED otherwise) instead
     // of silently jamming the goal. The denial is surfaced to the caller and diagnostics.
-    expect(result.denied).toEqual([{ reasonCode: "workspace_lease_conflict", workKey: "write" }]);
+    expect(result.denied).toEqual([]);
+    expect(result.queued).toEqual([{
+      reasonCode: "workspace_lease_conflict",
+      workId: committed[0]?.items[0]?.workId,
+      workKey: "write",
+    }]);
     expect(committed[0]?.items).toHaveLength(1);
     expect(committed[0]?.attempts).toHaveLength(1);
     expect(committed[0]?.policyResults).toEqual([expect.objectContaining({ allowed: false, reason: "workspace_lease_conflict" })]);
-    expect(diagnostics.find((entry) => entry.event === "joi.work.plan_policy_denied")?.fields).toMatchObject({
-      partnerId: "partner-a",
-      reasonCode: "workspace_lease_conflict",
-      workbenchId: "workbench-1",
+    expect(diagnostics.find((entry) => entry.event === "joi.work.plan_policy_denied")).toBeUndefined();
+    expect(diagnostics.find((entry) => entry.event === "joi.work.plan.committed")?.fields).toMatchObject({ deniedCount: 0 });
+  });
+
+  it("keeps permanent policy refusal separate from resource queueing", async () => {
+    const committed: CommittedWorkPlan[] = [];
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async (partnerId) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: false }) },
+      repository: { commit: async (plan) => { committed.push(plan); } },
     });
-    expect(diagnostics.find((entry) => entry.event === "joi.work.plan.committed")?.fields).toMatchObject({ deniedCount: 1 });
+    const result = await service.plan({
+      dependencies: [], inputId: "input-1", turnId: "turn-1", workbenchId: "workbench-1",
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "denied", partnerId: "partner-a", title: "拒绝" }],
+    });
+    expect(result.queued).toEqual([]);
+    expect(result.denied).toEqual([{ reasonCode: "dispatch_policy_denied", workKey: "denied" }]);
+    expect(committed[0]?.attempts).toHaveLength(1);
   });
 
   it("does not commit a partial plan when the Workbench workspace must be selected first", async () => {

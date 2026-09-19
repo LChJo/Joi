@@ -24,6 +24,36 @@ function snapshot(modelSources: ModelSourceDto[]): JoiSnapshotDto {
   return { workbenchChanges: [], workbenches: [], modelSources, partners: [], runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" }, work: [] };
 }
 
+// Legacy test cases describe message cards. Supply those fixtures through the current
+// feed endpoint; production must not infer execution truth from the message endpoint.
+function mockHomeMessages(api: DigitalLifeApi) {
+  const spy = vi.spyOn(api, "joiHomeFeed");
+  const projection = ({ items }: { items: JoiAcceptedMessageDto[] }) => {
+    const unassignedActions = items.filter((item) => item.status === "CLARIFICATION_REQUIRED" && item.workbenchId === undefined);
+    const goals: JoiGoalCardDto[] = items.filter((item) => !unassignedActions.includes(item)).map((item) => {
+      const base = {
+        agentCount: 0, canDelete: item.status === "CONSUMED", goalId: item.inputId,
+        title: item.textPreview ?? "正在安排的新目标", updatedAt: item.acceptedAt,
+        workbench: { workbenchId: item.workbenchId ?? "", name: item.workbenchId ?? "等待归属" },
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      };
+      if (item.status === "CLARIFICATION_REQUIRED") return { ...base, status: "NEEDS_ATTENTION", clarification: {
+        reasonCode: item.clarificationReasonCode ?? "clarification_required",
+        ...(item.clarificationPrompt === undefined ? {} : { prompt: item.clarificationPrompt }),
+        ...(item.questionId === undefined ? {} : { questionId: item.questionId }),
+        ...(item.questionVersion === undefined ? {} : { questionVersion: item.questionVersion }),
+      } };
+      return { ...base, status: item.canceled ? "CANCELED" : item.status === "CONSUMED" ? "COMPLETED" : item.status === "ROUTED" ? "ARRANGED" : "ARRANGING" };
+    });
+    return { goals, thinking: [], unassignedActions };
+  };
+  const mock = {
+    mockResolvedValue: (value: { items: JoiAcceptedMessageDto[] }) => { spy.mockResolvedValue(projection(value)); return mock; },
+    mockResolvedValueOnce: (value: { items: JoiAcceptedMessageDto[] }) => { spy.mockResolvedValueOnce(projection(value)); return mock; },
+  };
+  return mock;
+}
+
 describe("Workbench context center", () => {
   it("blocks duplicate removal and dismissal while saving, then allows escape after a network failure", async () => {
     const api = new DigitalLifeApi("", true);
@@ -376,7 +406,7 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "joiSnapshot")
       .mockResolvedValueOnce({ ...snapshot([readySource]), workbenchChanges: [pending] })
       .mockResolvedValue(snapshot([readySource]));
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
     const decide = vi.spyOn(api, "decideWorkbenchChange").mockResolvedValue({ ...pending, status: "CONFIRMED" });
     render(<JoiHome api={api} />);
@@ -506,6 +536,7 @@ describe("joi home single entry", () => {
 
   it("keeps snapshot and composer failures retryable without losing text", async () => {
     const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [], thinking: [], unassignedActions: [] });
     const snapshotSpy = vi.spyOn(api, "joiSnapshot")
       .mockRejectedValueOnce(new ApiError("offline", "模型网络离线", 503))
       .mockRejectedValueOnce(new Error("offline"))
@@ -907,7 +938,7 @@ describe("joi home single entry", () => {
     render(<JoiHome api={api} onScheduleGoal={onScheduleGoal} />);
     expect(await screen.findByText("正在评审")).toBeInTheDocument();
     expect(screen.getByText("评审后补充执行")).toBeInTheDocument();
-    for (const label of ["正在安排", "已安排", "执行中", "需要你", "正在总结", "已完成", "已完成（有缺口）", "处理失败", "已取消"]) {
+    for (const label of ["正在安排", "排队中", "执行中", "需要你", "正在总结", "已完成", "已完成（有缺口）", "处理失败", "已取消"]) {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText("有一项执行未完成")).toBeInTheDocument();
@@ -944,7 +975,7 @@ describe("joi home single entry", () => {
     const cancel = vi.spyOn(api, "cancelJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, canceled: true, inputId: "goal-arranged-cancel", status: "CONSUMED" });
 
     render(<JoiHome api={api} />);
-    expect(await screen.findByText("已安排")).toBeInTheDocument();
+    expect(await screen.findByText("排队中")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消这条任务" }));
     await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-arranged-cancel"));
   });
@@ -1240,7 +1271,7 @@ describe("joi home single entry", () => {
   it("binds uploaded files to one global joi input and ignores an empty submit", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
     const upload = vi.spyOn(api, "uploadJoiAttachment").mockResolvedValue({
       attachmentId: "attachment-1", createdAt: "2026-07-28T10:00:00.000Z", filename: "brief.txt", mimeType: "text/plain", size: 5,
@@ -1263,7 +1294,7 @@ describe("joi home single entry", () => {
   it("accepts attachments through drag-and-drop and paste and sends them with the message", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
     let uploadCount = 0;
     const upload = vi.spyOn(api, "uploadJoiAttachment").mockImplementation((file) => {
@@ -1293,7 +1324,7 @@ describe("joi home single entry", () => {
   it("rejects oversized files and enforces the 8-file cap with visible notices", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
     render(<JoiHome api={api} />);
     const composer = await screen.findByLabelText("给 joi 输入");
@@ -1345,7 +1376,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "clarify-1", status: "CLARIFICATION_REQUIRED" },
       { acceptedAt: "2026-08-01T00:00:01.000Z", clarificationReasonCode: "workbench_creation_unavailable", inputId: "clarify-2", status: "CLARIFICATION_REQUIRED" },
       { acceptedAt: "2026-08-01T00:00:02.000Z", clarificationReasonCode: "workbench_not_found", inputId: "clarify-3", status: "CLARIFICATION_REQUIRED" },
@@ -1426,7 +1457,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z",
       clarificationPrompt: "历史评审记录无法安全恢复。",
       clarificationReasonCode: "harness_review_unrecoverable",
@@ -1453,7 +1484,7 @@ describe("joi home single entry", () => {
     };
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), partners: [ready, blocked] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z", clarificationPrompt: "选择一个搭档继续原任务。",
       clarificationReasonCode: "partner_selection_required", inputId: "partner-choice", status: "CLARIFICATION_REQUIRED",
     }] });
@@ -1473,7 +1504,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z",
       clarificationPrompt: "检测到一项等待中的原工作。",
       clarificationReasonCode: "partner_waiting_recovery_required",
@@ -1496,7 +1527,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z",
       clarificationReasonCode: "partner_auth_required",
       inputId: "waiting-auth",
@@ -1527,7 +1558,7 @@ describe("joi home single entry", () => {
     };
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), partners: [local, remote] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "partner_selection_required",
       inputId: "partner-kind-hints", status: "CLARIFICATION_REQUIRED",
     }] });
@@ -1542,7 +1573,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), partners: [] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "partner_selection_required",
       inputId: "no-partner-choice", status: "CLARIFICATION_REQUIRED",
     }] });
@@ -1558,7 +1589,7 @@ describe("joi home single entry", () => {
     const thin = snapshot([readySource]);
     thin.partners = [];
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(thin);
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
     const nav = vi.fn();
     render(<JoiHome api={api} onNavigate={nav} />);
@@ -1572,7 +1603,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "前端搭档")] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "clarify-x", status: "CLARIFICATION_REQUIRED" },
     ] });
     const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "clarify-x", status: "PENDING" });
@@ -1590,7 +1621,7 @@ describe("joi home single entry", () => {
     const created = workbenchDto("workbench-proposal", "AI 应用开发工作台");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "proposal-1", status: "CLARIFICATION_REQUIRED", textPreview: "使用 Claude Code 开发 AI 应用并排查 monitor 问题" },
     ] });
     const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(created);
@@ -1612,7 +1643,7 @@ describe("joi home single entry", () => {
     const created = workbenchDto("workbench-new", "新工作台");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "create-workbench-1", status: "CLARIFICATION_REQUIRED" },
     ] });
     const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(created);
@@ -1639,7 +1670,7 @@ describe("joi home single entry", () => {
     const created = workbenchDto("workbench-new-retry", "新工作台");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "create-workbench-retry", status: "CLARIFICATION_REQUIRED" },
     ] });
     const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(created);
@@ -1663,7 +1694,7 @@ describe("joi home single entry", () => {
     const workbench = workbenchDto("workbench-submit-failure", "已有工程");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "submit-failure", status: "CLARIFICATION_REQUIRED" },
     ] });
     vi.spyOn(api, "clarifyJoiMessage").mockRejectedValue(new Error("offline"));
@@ -1678,7 +1709,7 @@ describe("joi home single entry", () => {
     const workbench = workbenchDto("workbench-incomplete", "已有工程");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "create-workbench-incomplete", status: "CLARIFICATION_REQUIRED" },
     ] });
     render(<JoiHome api={api} />);
@@ -1693,7 +1724,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "前端搭档")] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_not_found", inputId: "clarify-y", status: "CLARIFICATION_REQUIRED" },
     ] });
     vi.spyOn(api, "clarifyJoiMessage").mockRejectedValue(new ApiError("gone", "这条已经处理过了", 400));
@@ -1706,7 +1737,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z", clarificationPrompt: "验收需要覆盖哪些浏览器？",
       clarificationReasonCode: "question_required", inputId: "question-1", status: "CLARIFICATION_REQUIRED",
     }] });
@@ -1723,7 +1754,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-work", "发布工程")] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [{
+    mockHomeMessages(api).mockResolvedValue({ items: [{
       acceptedAt: "2026-08-01T00:00:00.000Z", workbenchId: "workbench-work", clarificationReasonCode: "workbench_workspace_not_ready",
       inputId: "workspace-1", status: "CLARIFICATION_REQUIRED",
     }] });
@@ -1742,7 +1773,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "前端搭档")] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages")
+    mockHomeMessages(api)
       .mockResolvedValueOnce({ items: [
         { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "cancel-1", status: "CLARIFICATION_REQUIRED" },
       ] })
@@ -1762,7 +1793,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:04.000Z", inputId: "done-1", status: "CONSUMED" },
       { acceptedAt: "2026-08-01T00:00:01.000Z", canceled: true, inputId: "canceled-1", status: "CONSUMED" },
       { acceptedAt: "2026-08-01T00:00:02.000Z", inputId: "live-1", status: "PENDING" },
@@ -1783,7 +1814,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "done-2", status: "CONSUMED" },
     ] });
     vi.spyOn(api, "dismissJoiMessage").mockRejectedValue(new ApiError("gone", "这条还在处理中", 400));
@@ -1796,7 +1827,7 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    vi.spyOn(api, "listJoiMessages").mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValue({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_not_found", inputId: "cancel-2", status: "CLARIFICATION_REQUIRED" },
     ] });
     vi.spyOn(api, "cancelJoiMessage").mockRejectedValue(new ApiError("gone", "这条已经处理过了", 400));

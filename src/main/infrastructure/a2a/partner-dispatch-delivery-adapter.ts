@@ -165,13 +165,20 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
 
   async listClaimable(input: { workbenchId: string; now: string; partnerId: string }): Promise<PartnerDispatchClaimRow[]> {
     return (this.database.transaction((connection) => connection.prepare(`
-      SELECT o.outbox_id, o.payload_json, o.attempt_count, a.dispatch_attempt_id
+      SELECT o.outbox_id, o.payload_json, o.attempt_count, a.dispatch_attempt_id, p.kind
         FROM outbox o
         JOIN dispatch_attempts a ON a.outbox_id = o.outbox_id
         JOIN work_items w ON w.work_id = a.work_id
         JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
+        JOIN partners p ON p.partner_id = rev.partner_id
+        JOIN joi_inbox_messages i ON i.input_id = w.input_id
+        LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
        WHERE o.kind = 'partner.dispatch' AND w.workbench_id = ? AND rev.partner_id = ?
-         AND w.status IN ('PLANNED', 'READY')
+         AND ((w.status IN ('PLANNED', 'READY') AND (gate.status IS NULL OR gate.status = 'OPEN'))
+           -- A crash between persisted start and outbox ACK only needs re-ACK, never
+           -- another execution. prepare skips existing runs; orphan recovery owns them.
+           OR (w.status IN ('PLANNED','READY','RUNNING','CANCELED') AND EXISTS (
+             SELECT 1 FROM partner_runs started WHERE started.dispatch_attempt_id = a.dispatch_attempt_id AND started.status = 'RUNNING')))
          AND o.available_at <= ?
          AND (o.status = 'PENDING' OR (o.status = 'CLAIMED' AND o.claim_until <= ?))
          -- Dependency gate: a Work is only claimable once every declared predecessor
@@ -187,6 +194,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
       .map((row) => ({
         attemptCount: typeof row.attempt_count === "number" ? row.attempt_count : 0,
         dispatchAttemptId: String(row.dispatch_attempt_id),
+        kind: row.kind === "A2A" ? "A2A" as const : "LOCAL_PI" as const,
         outboxId: String(row.outbox_id),
         payloadJson: String(row.payload_json),
       }));
@@ -238,7 +246,13 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   async prepare(claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal"> {
     let row = this.#load(claim.dispatchAttemptId);
     if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
-    if (attemptTerminal(row.status) || (row.work_status === "CANCELED" && row.run_status === null)) return "skipped_terminal";
+    if (attemptTerminal(row.status) || ["COMPLETED", "FAILED", "CANCELED"].includes(row.work_status)) return "skipped_terminal";
+    // A persisted start is owned by its live slot or the orphan recovery path.
+    // Redelivery must never start it again or finalize a still-live preparation.
+    if (row.run_id !== null) return "skipped_terminal";
+    if (!this.#goalExecutionOpen(row.work_id)) {
+      throw new DomainError("goal_execution_paused", "The goal is waiting for Joi to review a user answer.");
+    }
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.dispatch.started", {
       actionId: row.action_id,
       workbenchId: row.workbench_id,
@@ -259,7 +273,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     if (!policy.allowed) {
       const reason = denialReason(policy);
       if (reason === DISPATCH_POLICY_REASONS.a2aWorkspaceAccessForbidden) {
-        await this.#ensureRun(row);
+        if (!await this.#ensureRun(row)) return "skipped_terminal";
         row = this.#load(claim.dispatchAttemptId) ?? row;
         await this.#complete(row, "FAILED", { artifacts: [], body: "Remote partners cannot execute Workbench file work." });
         return "skipped_terminal";
@@ -271,7 +285,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     // terminal FAILED instead of running an unverifiable Work (the legacy silent downgrade
     // to "no checks" let unverified results masquerade as completed evidence).
     if (intentJsonCorrupt(row.intent_json)) {
-      await this.#ensureRun(row);
+      if (!await this.#ensureRun(row)) return "skipped_terminal";
       row = this.#load(claim.dispatchAttemptId) ?? row;
       await this.#complete(row, "FAILED", {
         artifacts: [],
@@ -316,24 +330,18 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         }
       }
 
-      const runWasPresent = row.run_id !== null;
-      if (!runWasPresent) {
-        await this.#ensureRun(row);
-        row = this.#load(claim.dispatchAttemptId);
-        if (row?.run_id === undefined || row.run_id === null) throw new Error("partner_run_create_failed");
+      if (!await this.#ensureRun(row, claim.payloadJson)) {
+        if (leaseWorkId !== undefined) await this.dependencies.leases.release(leaseWorkId);
+        return "skipped_terminal";
       }
+      row = this.#load(claim.dispatchAttemptId);
+      if (row?.run_id === undefined || row.run_id === null) throw new Error("partner_run_create_failed");
       const revision = await this.dependencies.partners.getRevision(row.partner_revision_id);
       if (revision === null) {
         await this.#complete(row, "FAILED", { artifacts: [], body: "The pinned partner revision is unavailable." });
         return "skipped_terminal";
       }
       if (row.context_snapshot_id === null) throw new Error("workbench_context_snapshot_not_found");
-
-      if (runWasPresent && row.run_status === "RUNNING" && row.kind === "LOCAL_PI" && row.instance_id === null) {
-        // A crashed legacy single-shot run is not resumable; instance-linked attempts resume via finalizeOrphan.
-        await this.#complete(row, "UNKNOWN", { artifacts: [], body: "The previous local run could not be resumed safely." });
-        return "skipped_terminal";
-      }
 
       let instanceId: string | undefined;
       let sessionPolicy: "EPHEMERAL" | "RESIDENT" | undefined;
@@ -368,7 +376,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     let row = this.#load(input.claim.dispatchAttemptId);
     if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
     if (attemptTerminal(row.status) || (row.work_status === "CANCELED" && row.run_status === null)) return;
-    await this.#ensureRun(row);
+    if (row.run_id === null && !await this.#ensureRun(row)) return;
     row = this.#load(input.claim.dispatchAttemptId) ?? row;
     await this.#complete(row, "FAILED", {
       artifacts: [],
@@ -574,12 +582,49 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
        WHERE a.dispatch_attempt_id = ?`).get(dispatchAttemptId)) as DispatchRow | undefined;
   }
 
-  async #ensureRun(row: DispatchRow): Promise<void> {
+  async #ensureRun(row: DispatchRow, payloadJson = "{}"): Promise<boolean> {
     const now = this.dependencies.clock.now().toISOString();
     const runId = `partner_run:${row.action_id}`;
     const externalRunId = row.kind === "LOCAL_PI" ? `local_pi:${row.action_id}` : `a2a:${row.action_id}`;
     const snapshot = await this.dependencies.contextAssembler.assemble({ workbenchId: row.workbench_id, workId: row.work_id });
-    this.dependencies.database.transaction((connection) => {
+    const created = this.dependencies.database.transaction((connection) => {
+      // Recheck after asynchronous context assembly: cancellation, terminal results and
+      // another preparation can win while the snapshot is being assembled.
+      const current = connection.prepare(`SELECT w.status AS work_status, a.status AS attempt_status,
+          i.canceled_at, i.failed_at, pr.run_id
+        FROM dispatch_attempts a JOIN work_items w ON w.work_id = a.work_id
+        JOIN joi_inbox_messages i ON i.input_id = w.input_id
+        LEFT JOIN partner_runs pr ON pr.dispatch_attempt_id = a.dispatch_attempt_id
+        WHERE a.dispatch_attempt_id = ? AND a.dispatch_attempt_id = (
+          SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest WHERE latest.work_id = w.work_id
+          ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1)`).get(row.dispatch_attempt_id) as {
+          work_status: string; attempt_status: string; canceled_at: string | null; failed_at: string | null; run_id: string | null;
+        } | undefined;
+      if (current?.run_id !== null || attemptTerminal(current.attempt_status)
+        || current.canceled_at !== null || current.failed_at !== null
+        || !["PLANNED", "READY"].includes(current.work_status)) return false;
+      const blocked = connection.prepare(`SELECT 1 FROM work_items w
+        JOIN joi_inbox_messages i ON i.input_id = w.input_id
+        JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
+        WHERE w.work_id = ? AND gate.status <> 'OPEN' LIMIT 1`).get(row.work_id);
+      if (blocked !== undefined) throw new DomainError("goal_execution_paused", "The goal is waiting for Joi to review a user answer.");
+      // Reserve an explicitly selected instance by linking this persisted start in the
+      // same transaction. BUSY and already-started turns both keep later Work queued.
+      let instanceId: string | undefined;
+      try {
+        const payload = JSON.parse(payloadJson) as { instanceId?: unknown };
+        if (typeof payload.instanceId === "string") instanceId = payload.instanceId;
+      } catch { /* Same malformed-payload fallback as prepare. */ }
+      if (row.kind === "LOCAL_PI" && instanceId !== undefined) {
+        const instance = connection.prepare(`SELECT status FROM partner_instances WHERE instance_id = ?`).get(instanceId) as { status: string } | undefined;
+        const started = connection.prepare(`SELECT 1 FROM dispatch_attempts a JOIN partner_runs r
+          ON r.dispatch_attempt_id = a.dispatch_attempt_id WHERE a.instance_id = ? AND r.status = 'RUNNING'`).get(instanceId);
+        if (instance?.status === "BUSY" || started !== undefined) {
+          throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
+        }
+        if (instance?.status === "IDLE") connection.prepare("UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = ?")
+          .run(instanceId, row.dispatch_attempt_id);
+      }
       connection.prepare(`INSERT INTO partner_runs
         (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
          external_run_id, status, created_at, updated_at, context_snapshot_id)
@@ -588,11 +633,17 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         runId, row.dispatch_attempt_id, row.action_id, row.workbench_id, row.work_id, row.partner_revision_id,
         row.kind, externalRunId, now, now, snapshot.contextSnapshotId,
       );
+      connection.prepare("UPDATE dispatch_attempts SET status = 'RUNNING', updated_at = ? WHERE dispatch_attempt_id = ?")
+        .run(now, row.dispatch_attempt_id);
+      connection.prepare("UPDATE work_items SET status = 'RUNNING', updated_at = ? WHERE work_id = ?")
+        .run(now, row.work_id);
       if (row.kind === "A2A") connection.prepare(`INSERT OR IGNORE INTO workbench_agent_sessions
         (agent_id, workbench_id, partner_id, partner_revision_id, backing_kind, backing_id, session_policy, created_at)
         VALUES (?, ?, ?, ?, 'A2A_RUN', ?, 'EPHEMERAL', ?)`
       ).run(`a2a_agent:${runId}`, row.workbench_id, row.partner_id, row.partner_revision_id, runId, now);
+      return true;
     });
+    if (!created) return false;
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.run.created", {
       actionId: row.action_id,
       ...(row.kind === "A2A" ? { agentId: `a2a_agent:${runId}` } : {}),
@@ -602,6 +653,14 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       runId,
       workId: row.work_id,
     });
+    return true;
+  }
+
+  #goalExecutionOpen(workId: string): boolean {
+    return this.dependencies.database.transaction((connection) => connection.prepare(`SELECT 1 FROM work_items w
+      JOIN joi_inbox_messages i ON i.input_id = w.input_id
+      JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
+      WHERE w.work_id = ? AND gate.status <> 'OPEN' LIMIT 1`).get(workId)) === undefined;
   }
 
   async #complete(row: DispatchRow, status: PartnerRunStatus, output: {

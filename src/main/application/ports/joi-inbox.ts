@@ -16,6 +16,8 @@ export interface JoiInboxRecord {
   failureReasonCode?: string;
   idempotencyKey: string;
   inputId: string;
+  questionId?: string;
+  questionVersion?: number;
   status: JoiInboxStatus;
   updatedAt: string;
 }
@@ -26,7 +28,7 @@ export interface JoiInboxRepository {
   closeHistoricalReview?(inputId: string): Promise<JoiInboxRecord | null>;
   /** Stops queued goals without touching partner runs already in flight. */
   cancelQueued?(): Promise<number>;
-  clarify(inputId: string, patch: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null>;
+  clarify(inputId: string, patch: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; expectedQuestionId?: string; expectedQuestionVersion?: number; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null>;
   create(record: JoiInboxRecord): Promise<JoiInboxRecord>;
   dismiss(inputId: string): Promise<JoiInboxRecord | null>;
   list(): Promise<JoiInboxRecord[]>;

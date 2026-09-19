@@ -260,6 +260,8 @@ export interface JoiAcceptedMessageDto {
   clarificationReasonCode?: string;
   failure?: JoiGoalFailureDto;
   inputId: string;
+  questionId?: string;
+  questionVersion?: number;
   status: "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
   textPreview?: string;
 }
@@ -321,7 +323,7 @@ export interface JoiGoalCardBaseDto {
 }
 
 export type JoiGoalCardDto = JoiGoalCardBaseDto & (
-  | { clarification: { prompt?: string; reasonCode: string }; status: "NEEDS_ATTENTION" }
+  | { clarification: { prompt?: string; questionId?: string; questionVersion?: number; reasonCode: string }; status: "NEEDS_ATTENTION" }
   | { clarification?: never; status: Exclude<JoiGoalStatusDto, "NEEDS_ATTENTION"> }
 );
 

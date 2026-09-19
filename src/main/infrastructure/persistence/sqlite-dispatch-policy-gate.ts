@@ -22,7 +22,7 @@ export class SqliteDispatchPolicyGate implements DispatchPolicyGate {
       WHERE r.partner_revision_id = ?`).get(item.workbenchId, _pin.partnerRevisionId)) as { kind?: unknown; workspace_ref?: unknown; workspace_status?: unknown; workspace_kind?: unknown } | undefined;
     const workspaceRef = typeof row?.workspace_ref === "string" ? row.workspace_ref : undefined;
     return evaluateDispatchPolicy(item.accessMode, {
-      leaseConflict: workspaceRef !== undefined && this.leaseConflict(workspaceRef, item.accessMode),
+      leaseConflict: workspaceRef !== undefined && row?.workspace_kind === "BOUND" && this.leaseConflict(workspaceRef, item.accessMode),
       partnerKind: typeof row?.kind === "string" ? row.kind : "",
       ...(row?.workspace_kind === "MANAGED" || row?.workspace_kind === "BOUND" ? { workspaceKind: row.workspace_kind } : {}),
       ...(workspaceRef === undefined ? {} : { workspaceRef }),

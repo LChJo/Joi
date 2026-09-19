@@ -7,6 +7,7 @@ import { PartnerRegistryService } from "../../src/main/application/partners/part
 import { createWorkResult } from "../../src/main/domain/work/work-result.js";
 import { SqlitePartnerDispatchClaims } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
+import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
@@ -75,6 +76,32 @@ function workFacts(database: Awaited<ReturnType<typeof openFixture>>["database"]
 }
 
 describe("work dependency gate and failure cascade", () => {
+  it("pauses unstarted dispatches at the goal gate but preserves a persistently started run", async () => {
+    const fixture = await openFixture();
+    try {
+      fixture.database.transaction((connection) => {
+        seedWork(connection, { partnerRevisionId: fixture.partnerRevisionId, run: true, status: "RUNNING", workId: "work_started" });
+        connection.prepare("UPDATE outbox SET status = 'DONE' WHERE outbox_id = (SELECT outbox_id FROM dispatch_attempts WHERE work_id = 'work_started')").run();
+        seedWork(connection, { partnerRevisionId: fixture.partnerRevisionId, status: "PLANNED", workId: "work_queued" });
+      });
+      await new SqliteJoiInboxRepository(fixture.database, fixture.clock)
+        .requireClarification("input_1", "question_required", "请选择验收范围");
+
+      const claims = await new SqlitePartnerDispatchClaims(fixture.database).listClaimable({
+        now: NOW,
+        partnerId: fixture.partner.partnerId,
+        workbenchId: "workbench_1",
+      });
+      expect(claims).toEqual([]);
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM partner_runs WHERE work_id = 'work_started'",
+      ).get())).toEqual({ status: "RUNNING" });
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("only claims a Work once every declared predecessor has completed", async () => {
     const fixture = await openFixture();
     try {

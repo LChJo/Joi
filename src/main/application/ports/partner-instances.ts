@@ -32,7 +32,7 @@ export interface PartnerInstanceRepository {
   markDisposed(instanceId: string, reason: string, at: string): Promise<void>;
   markTurnComplete(instanceId: string, at: string, externalSessionRef?: string): Promise<void>;
   recoverCrashed(at: string): Promise<{ ephemeralDisposed: number; residentRecovered: number }>;
-  setStatusBusy(instanceId: string, at: string): Promise<void>;
+  setStatusBusy(instanceId: string, at: string): Promise<boolean>;
 }
 
 export interface PartnerInstanceMessageStore {

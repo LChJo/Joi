@@ -13,6 +13,7 @@ import type { RuntimeStore } from "../../ports/runtime-store.js";
 import type { PartnerWorkMemoryService } from "../../partners/partner-work-memory-service.js";
 import type { PartnerInstanceManager } from "../../partners/partner-instance-manager.js";
 import type { WorkbenchAttentionReconciler } from "../../ports/workbench-attention.js";
+import type { LocalDispatchCapacityController } from "../../work/local-dispatch-capacity.js";
 
 const DEFAULT_SWEEP_EVERY_MILLIS = 60_000;
 const WAITING_RECOVERY_REASON = "partner_waiting_recovery_required";
@@ -33,6 +34,7 @@ export class WorkbenchAgentComponent implements ActorComponent {
     workbenchId: string;
     dispatch?: {
       claims: PartnerDispatchClaims;
+      capacity?: LocalDispatchCapacityController;
       delivery: PartnerDispatchDelivery;
       leases?: WorkspaceLeaseRenewal;
       outbox: Pick<RuntimeStore, "claimOutboxById" | "completeOutbox" | "releaseOutbox">;
@@ -111,6 +113,7 @@ export class WorkbenchAgentComponent implements ActorComponent {
         const components: ActorComponent[] = this.dependencies.dispatch === undefined ? [] : [new AgentDispatchComponent({
           workbenchId: this.dependencies.workbenchId,
           claims: this.dependencies.dispatch.claims,
+          ...(this.dependencies.dispatch.capacity === undefined ? {} : { capacity: this.dependencies.dispatch.capacity }),
           delivery: this.dependencies.dispatch.delivery,
           ...(this.dependencies.dispatch.leases === undefined ? {} : { leases: this.dependencies.dispatch.leases }),
           outbox: this.dependencies.dispatch.outbox,

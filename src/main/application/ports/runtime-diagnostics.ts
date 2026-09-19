@@ -150,6 +150,19 @@ export interface RuntimeDiagnosticEventMap {
     outboxId: string;
     partnerId: string;
   };
+  "joi.agent.resource_queued": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    outboxId: string;
+    partnerId: string;
+    reasonCode: string;
+  };
+  "joi.agent.capacity_queued": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    partnerId: string;
+    reasonCode: string;
+  };
   "joi.agent.prepare_exhausted": {
     workbenchId: string;
     dispatchAttemptId: string;

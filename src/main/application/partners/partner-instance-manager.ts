@@ -181,18 +181,22 @@ export class PartnerInstanceManager {
 
     let engine: PartnerEngineRuntime;
     let knowledgeSection: string;
+    let turnClaimed = false;
     const startedAtMillis = this.dependencies.clock.now().getTime();
     try {
       engine = this.#engine(record.engine);
       knowledgeSection = input.revision.kind === "local-pi"
         ? await this.dependencies.knowledge.readForInjection(record.partnerId)
         : "";
-      await this.dependencies.repository.setStatusBusy(record.instanceId, this.dependencies.clock.now().toISOString());
+      if (!await this.dependencies.repository.setStatusBusy(record.instanceId, this.dependencies.clock.now().toISOString())) {
+        throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
+      }
+      turnClaimed = true;
     } catch (error) {
       const failure = wrapPartnerRunFailure(error, { phase: "EXECUTION", sideEffectState: "NONE" });
       try {
         if (record.sessionPolicy === "EPHEMERAL") await this.#disposeRecord(record, "dispatch_preflight_failed");
-        else await this.dependencies.repository.markTurnComplete(record.instanceId, this.dependencies.clock.now().toISOString());
+        else if (turnClaimed) await this.dependencies.repository.markTurnComplete(record.instanceId, this.dependencies.clock.now().toISOString());
       } catch { /* retain the original safe failure */ }
       this.#emitPreflightFailure(input, failure.partnerRunFailure, record, Math.max(0, this.dependencies.clock.now().getTime() - startedAtMillis));
       throw failure;

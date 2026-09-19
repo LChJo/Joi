@@ -17,6 +17,7 @@ import { JoiWorkbenchComponent } from "../application/actors/components/joi-work
 import { JoiHarnessComponent } from "../application/actors/components/joi-harness-component.js";
 import { JoiRhythmComponent } from "../application/actors/components/joi-rhythm-component.js";
 import { WorkbenchAgentComponent } from "../application/actors/components/workbench-agent-component.js";
+import { LocalDispatchCapacityController } from "../application/work/local-dispatch-capacity.js";
 import { SqliteJoiTaskReader } from "../infrastructure/persistence/sqlite-joi-task-reader.js";
 import { SqliteWorkbenchAttentionReconciler } from "../infrastructure/persistence/sqlite-workbench-attention-reconciler.js";
 import { A2aGatewayService } from "../application/a2a/a2a-gateway-service.js";
@@ -144,6 +145,7 @@ export function wireRuntime(input: {
     results: persistence.workResultRepository,
     verifier: new WorkspaceWorkVerifier({ contexts: persistence.workbenchContextRepository }),
   });
+  const localDispatchCapacity = new LocalDispatchCapacityController();
   const actorTree = new ActorTree({
     clock,
     diagnostics,
@@ -182,6 +184,7 @@ export function wireRuntime(input: {
           workbenchId,
           dispatch: {
             claims: persistence.dispatchClaims,
+            capacity: localDispatchCapacity,
             delivery: partnerDispatchDelivery,
             leases: persistence.workspaceLeases,
             outbox: database.store,

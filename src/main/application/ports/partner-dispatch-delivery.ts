@@ -6,6 +6,7 @@ import type { PartnerRunFailure } from "../partners/partner-run-failure.js";
 export interface PartnerDispatchClaimRow {
   attemptCount: number;
   dispatchAttemptId: string;
+  kind?: "A2A" | "LOCAL_PI";
   outboxId: string;
   payloadJson: string;
 }

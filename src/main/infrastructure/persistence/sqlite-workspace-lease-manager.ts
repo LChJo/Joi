@@ -35,14 +35,16 @@ export class SqliteWorkspaceLeaseManager {
       connection.prepare("DELETE FROM workspace_leases WHERE expires_at <= ?").run(nowText);
       const conflict = connection.prepare(`SELECT 1 FROM workspace_leases held
         WHERE held.work_id <> ? AND (held.access_mode = 'WRITE' OR ? = 'WRITE')
-          AND (held.workspace_ref = ? OR COALESCE(
+          AND COALESCE(
             (SELECT root_path FROM work_run_directories WHERE work_id = ?),
-            (SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?)
+            (SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ?),
+            ?
           ) = COALESCE(
             (SELECT root_path FROM work_run_directories WHERE work_id = held.work_id),
-            (SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = held.workspace_ref)
-          ))
-        LIMIT 1`).get(input.workId, input.accessMode, input.workspaceRef, input.workId, input.workspaceRef);
+            (SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = held.workspace_ref),
+            held.workspace_ref
+          )
+        LIMIT 1`).get(input.workId, input.accessMode, input.workId, input.workspaceRef, input.workspaceRef);
       if (conflict !== undefined) return null;
       const current = connection.prepare("SELECT generation FROM workspace_leases WHERE workspace_ref = ? AND work_id = ?")
         .get(input.workspaceRef, input.workId) as { generation?: unknown } | undefined;

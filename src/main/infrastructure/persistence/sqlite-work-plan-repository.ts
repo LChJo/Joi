@@ -21,6 +21,25 @@ interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
 }
 
+function goalPausedError(): Error & { code: string } {
+  return Object.assign(new Error("goal_execution_paused"), { code: "goal_execution_paused" });
+}
+
+function assertGoalOpen(connection: DatabaseSync, goalInputId: string): void {
+  const blocked = connection.prepare(
+    "SELECT 1 FROM joi_goal_execution_gates WHERE goal_input_id = ? AND status <> 'OPEN'",
+  ).get(goalInputId);
+  if (blocked !== undefined) throw goalPausedError();
+}
+
+function assertWorkGoalOpen(connection: DatabaseSync, workId: string): void {
+  const blocked = connection.prepare(`SELECT 1 FROM work_items w
+    JOIN joi_inbox_messages i ON i.input_id = w.input_id
+    JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
+    WHERE w.work_id = ? AND gate.status <> 'OPEN'`).get(workId);
+  if (blocked !== undefined) throw goalPausedError();
+}
+
 function workAcceptanceChecks(intentJson: string): WorkAcceptanceCheck[] {
   let candidate: unknown;
   try {
@@ -90,8 +109,24 @@ function plannedAttemptFromRow(row: Record<string, unknown> | undefined, workId:
 export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, WorkReassignmentRepository, WorkRecoveryRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
+  async assertOpen(goalInputId: string): Promise<void> {
+    const blocked = this.database.transaction((connection) => connection.prepare(
+      "SELECT 1 FROM joi_goal_execution_gates WHERE goal_input_id = ? AND status <> 'OPEN'",
+    ).get(goalInputId));
+    if (blocked !== undefined) throw goalPausedError();
+  }
+
+  async assertWorkOpen(workId: string): Promise<void> {
+    const blocked = this.database.transaction((connection) => connection.prepare(`SELECT 1 FROM work_items w
+      JOIN joi_inbox_messages i ON i.input_id = w.input_id
+      JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
+      WHERE w.work_id = ? AND gate.status <> 'OPEN'`).get(workId));
+    if (blocked !== undefined) throw goalPausedError();
+  }
+
   async commit(plan: CommittedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
+      assertGoalOpen(connection, plan.inputId);
       const workbenchIds = [...new Set(plan.items.map((item) => item.workbenchId))];
       if (workbenchIds.length !== 1) throw new Error("work_plan_workbench_invalid");
       const workbenchId = workbenchIds[0];
@@ -278,7 +313,9 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
     return this.database.transaction((connection) => {
       const canceled = connection.prepare(`
         UPDATE work_items SET status = 'CANCELED', updated_at = ?
-         WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED')`).run(at, workId).changes > 0;
+         WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED')
+           AND NOT EXISTS (SELECT 1 FROM partner_runs r
+             WHERE r.work_id = work_items.work_id AND r.status = 'RUNNING')`).run(at, workId).changes > 0;
       if (!canceled) return { canceled: false, cascadedWorkIds: [] };
       const cascadedWorkIds = cascadeDependencyCancellation(connection, {
         cancelReason: "dependency_canceled",
@@ -323,6 +360,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
 
   async reassign(plan: ReassignedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
+      assertWorkGoalOpen(connection, plan.workId);
       if (plan.accessMode !== undefined) {
         connection.prepare("UPDATE work_items SET access_mode = ? WHERE work_id = ?")
           .run(plan.accessMode === "NONE" ? "READ" : plan.accessMode, plan.workId);
@@ -352,6 +390,10 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)`).run(
         plan.attempt.dispatchAttemptId, plan.dispatchPlanId, plan.workId, plan.attempt.partnerRevisionId,
         plan.attempt.registryRevision, plan.attempt.actionId, plan.attempt.outbox.outboxId, plan.createdAt, plan.createdAt,
+      );
+      connection.prepare(`UPDATE joi_user_action_requests SET status = 'APPLIED', applied_at = COALESCE(applied_at, ?), updated_at = ?
+        WHERE action_id = ? AND work_id = ? AND status IN ('RESOLVED', 'APPLIED')`).run(
+        plan.createdAt, plan.createdAt, plan.attempt.actionId, plan.workId,
       );
       connection.prepare("UPDATE work_items SET status = 'READY', updated_at = ? WHERE work_id = ?")
         .run(plan.createdAt, plan.workId);
