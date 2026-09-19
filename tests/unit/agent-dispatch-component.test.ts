@@ -16,7 +16,7 @@ function ctxAt(offsetMillis: number): ActorTickContext {
 }
 
 const CLAIM: PartnerDispatchClaimRow = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
-const PREPARED: PreparedDispatch = { actionId: "action_1", attemptCount: 0, dispatchAttemptId: "attempt_1", kind: "LOCAL_PI", outboxId: "outbox_1" };
+const PREPARED: PreparedDispatch = { actionId: "action_1", attemptCount: 0, dispatchAttemptId: "attempt_1", kind: "LOCAL_PI", outboxId: "outbox_1", workId: "work_1" };
 const TERMINAL: DispatchRunOutput = { artifacts: [], body: "done", kind: "terminal", status: "COMPLETED" };
 
 interface HarnessOptions {
@@ -29,6 +29,7 @@ interface HarnessOptions {
   runOutputs?: DispatchRunOutput[];
   runOverride?: () => Promise<DispatchRunOutput>;
   watchdogMillis?: number;
+  workCanceled?: (workId: string) => Promise<boolean>;
 }
 
 function makeHarness(options: HarnessOptions = {}) {
@@ -101,6 +102,7 @@ function makeHarness(options: HarnessOptions = {}) {
     owner: "agent_test",
     partnerId: "partner_1",
     ...(options.watchdogMillis === undefined ? {} : { watchdogMillis: options.watchdogMillis }),
+    ...(options.workCanceled === undefined ? {} : { workCanceled: options.workCanceled }),
   });
   return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, releaseAvailableAt, released, runSignals, progressCallbacks };
 }
@@ -296,6 +298,34 @@ describe("AgentDispatchComponent", () => {
       kind: "terminal",
       status: "UNKNOWN",
     });
+  });
+
+  it("aborts an in-flight run once its goal is canceled and converges it as goal_canceled", async () => {
+    let canceled = false;
+    const harness = makeHarness({
+      claims: [CLAIM],
+      runOverride: () => new Promise<DispatchRunOutput>(() => undefined),
+      workCanceled: async (workId) => workId === "work_1" && canceled,
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.runSignals[0]?.aborted).toBe(false);
+
+    canceled = true;
+    await harness.component.update(ctxWithDiagnostics(2_000, harness.diagnosticEvents));
+    expect(harness.runSignals[0]?.aborted).toBe(true);
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.run_canceled");
+    // The terminal settle converges on the same tick; the delivery adapter no-ops it
+    // against the FAILED attempt the cancel already wrote.
+    expect(harness.completed).toEqual(["attempt_1"]);
+    expect(harness.completionOutputs[0]).toMatchObject({
+      failure: { phase: "EXECUTION", reasonCode: "goal_canceled", retryable: false, sideEffectState: "UNKNOWN" },
+      kind: "terminal",
+      status: "UNKNOWN",
+    });
+    // A later tick neither re-converges nor claims a new run for the canceled goal.
+    await harness.component.update(ctxWithDiagnostics(4_000, harness.diagnosticEvents));
+    expect(harness.completed).toHaveLength(1);
+    expect(harness.calls.filter((call) => call === "run")).toHaveLength(1);
   });
 
   it("keeps workspace contention queued with a short retry even after the generic preparation budget", async () => {

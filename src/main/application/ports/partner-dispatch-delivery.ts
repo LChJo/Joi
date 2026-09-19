@@ -41,6 +41,8 @@ export interface PreparedDispatch {
   sessionPolicy?: "EPHEMERAL" | "RESIDENT";
   /** Attachments staged into the workspace for file-capable local work. */
   stagedAttachments?: readonly StagedAttachment[];
+  /** The Work this run executes; the dispatch actor checks its goal for cancellation. */
+  workId: string;
   /** Workspace lease held by this run; the dispatch actor heartbeats it while in flight. */
   workspaceLease?: { expiresAt: string; workId: string; workspaceRef: string };
 }

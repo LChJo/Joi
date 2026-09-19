@@ -186,6 +186,7 @@ export function wireRuntime(input: {
             leases: persistence.workspaceLeases,
             outbox: database.store,
             owner: `agent_${workbenchId}_${String(process.pid)}`,
+            workCanceled: (workId) => workbenchStack.workRepository.isGoalCanceled(workId),
           },
           instances: partnerStack.partnerInstances,
           memory: partnerStack.partnerMemory,

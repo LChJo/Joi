@@ -554,6 +554,8 @@
 .agent-detail-header h2, .agent-detail-header p { margin: 0; }
 .agent-detail-header span { color: var(--muted); }
 .agent-message-stream { display: grid; gap: 12px; }
+.agent-stream-viewport { min-width: 0; max-height: 65vh; overflow-y: auto; overflow-anchor: none; scrollbar-gutter: stable; padding-right: 4px; }
+.agent-history-hint { margin: 0 0 10px; text-align: center; color: var(--faint); font-size: .76rem; }
 .agent-message { padding: 14px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); overflow-wrap: anywhere; }
 .agent-message.user { margin-left: 8%; background: color-mix(in srgb, var(--forest) 5%, var(--paper)); }
 .agent-message > header { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; color: var(--muted); font-size: .76rem; }

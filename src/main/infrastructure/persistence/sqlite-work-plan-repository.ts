@@ -289,6 +289,13 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
     });
   }
 
+  /** True when the Work's owning goal was canceled; in-flight runs of it must abort. */
+  async isGoalCanceled(workId: string): Promise<boolean> {
+    return this.database.transaction((connection) => connection.prepare(`SELECT 1 AS hit
+      FROM work_items w JOIN joi_inbox_messages i ON i.input_id = w.input_id
+      WHERE w.work_id = ? AND i.canceled_at IS NOT NULL LIMIT 1`).get(workId)) !== undefined;
+  }
+
   async loadAttemptForTurn(workId: string, turnId: string): Promise<PlannedDispatchAttempt | null> {
     const row = this.database.transaction((connection) => connection.prepare(`SELECT
       a.action_id, a.dispatch_attempt_id, a.partner_revision_id, a.registry_revision,

@@ -94,9 +94,42 @@ describe("official native Agent SDK adapters", () => {
     expect(calls[2]?.options).not.toHaveProperty("resume");
   });
 
-  it("requires ANTHROPIC_API_KEY instead of falling back to claude.ai login", async () => {
-    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, environment: {}, prompts, resolveExecutable: resolvedClaude, sdk: { query: vi.fn() as never } });
+  it("detects an installed Claude without requiring an environment API key or invoking it", async () => {
+    const query = vi.fn() as never;
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, environment: {}, prompts, resolveExecutable: resolvedClaude, sdk: { query } });
+    await expect(runtime.health()).resolves.toEqual({ available: true });
+    expect(query).not.toHaveBeenCalled();
+  });
+
+  it.each([{}, { ANTHROPIC_API_KEY: "" }, { ANTHROPIC_AUTH_TOKEN: "fake-native-token", CLAUDE_CONFIG_DIR: "fake-config" }])("uses native Claude authentication for probes and both run modes: %j", async (environment) => {
+    const query = vi.fn((_input: Parameters<ClaudeAgentSdkSurface["query"]>[0]) => (async function* () {
+      yield { type: "result", subtype: "success", is_error: false, result: "OK", session_id: "native-auth" } as SDKMessage;
+    })());
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, environment, prompts, resolveExecutable: resolvedClaude, sdk: { query } });
+    await expect(runtime.probe()).resolves.toEqual({ available: true });
+    await expect(runtime.runEphemeral(request, revision("claude-code"), { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" })).resolves.toMatchObject({ status: "COMPLETED" });
+    await expect(runtime.runResidentTurn({ instanceId: "native-auth", request, restoredMessages: null, revision: revision("claude-code"), knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" })).resolves.toMatchObject({ externalSessionRef: "native-agent:v1:claude:native-auth" });
+    expect(query).toHaveBeenCalledTimes(3);
+    expect(query.mock.calls[0]?.[0].options).toMatchObject({ allowedTools: [], tools: [], permissionMode: "plan", env: environment });
+    // Omitted settingSources preserves the installed SDK's native CLI settings defaults.
+    expect(query.mock.calls[0]?.[0].options?.settingSources).toBeUndefined();
+  });
+
+  it("reports native Claude authentication failures safely after actually probing", async () => {
+    const query = vi.fn(() => (async function* () {
+      yield { type: "result", subtype: "error_during_execution", is_error: true, errors: ["authentication_failed PRIVATE_CREDENTIAL"] } as SDKMessage;
+    })());
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, environment: {}, prompts, resolveExecutable: resolvedClaude, sdk: { query } });
     await expect(runtime.probe()).resolves.toEqual({ available: false, reasonCode: "partner_cli_auth_required" });
+    expect(query).toHaveBeenCalledTimes(1);
+  });
+
+  it("still rejects a missing Claude executable without invoking the SDK", async () => {
+    const query = vi.fn() as never;
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, environment: {}, prompts, resolveExecutable: () => ({ commandName: "claude", protocol: "claude" }), sdk: { query } });
+    await expect(runtime.health()).resolves.toMatchObject({ available: false });
+    await expect(runtime.probe()).resolves.toEqual({ available: false, reasonCode: "engine_unavailable" });
+    expect(query).not.toHaveBeenCalled();
   });
 
   it("passes Codex model and permissions unchanged, starts/resumes threads and strips only nested launcher variables", async () => {

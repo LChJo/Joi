@@ -21,7 +21,7 @@ interface Harness {
   parks: { failureCount: number; inputId: string; reasonCode: string }[];
   signals: Map<string, AbortSignal | undefined>;
   settle: (inputId: string, outcome?: "ok" | "fail") => void;
-  state: { pending: JoiTaskPendingInput[]; stale: JoiTaskStaleTurn[] };
+  state: { canceled: string[]; pending: JoiTaskPendingInput[]; stale: JoiTaskStaleTurn[] };
 }
 
 function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harness {
@@ -31,6 +31,7 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harn
   const signals = new Map<string, AbortSignal | undefined>();
   const resolvers = new Map<string, { reject: (error: Error) => void; resolve: () => void }>();
   const state = {
+    canceled: [] as string[],
     pending: [] as JoiTaskPendingInput[],
     stale: [] as JoiTaskStaleTurn[],
   };
@@ -56,6 +57,7 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harn
       },
       listPendingInputs: async () => [...state.pending],
       listStaleRunningTurns: async () => [...state.stale],
+      isCanceled: async (inputId) => state.canceled.includes(inputId),
     },
   });
   return {
@@ -164,6 +166,7 @@ describe("JoiTaskComponent traversal scheduling", () => {
           scans.push(`scan@${olderThan}`);
           return [];
         },
+        isCanceled: async () => false,
       },
       orphanScanEveryMillis: 5_000,
       staleTurnOlderThanMillis: 60_000,
@@ -204,5 +207,25 @@ describe("JoiTaskComponent traversal scheduling", () => {
     await flush();
     await harness.component.update(ctxAt(18 * 60_000));
     expect(harness.calls).toEqual(["input_a", "input_a"]);
+  });
+
+  it("aborts the in-flight turn once the goal is canceled and never parks it as a failure", async () => {
+    const harness = makeHarness();
+    harness.state.pending = [{ createdAt: BASE, inputId: "input_a" }];
+    await harness.component.update(ctxAt(0));
+    expect(harness.calls).toEqual(["input_a"]);
+    expect(harness.signals.get("input_a")?.aborted).toBe(false);
+
+    harness.state.canceled = ["input_a"];
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.signals.get("input_a")?.aborted).toBe(true);
+    // The serial slot stays occupied until the aborted driver promise settles.
+    expect(harness.calls).toEqual(["input_a"]);
+
+    await flush();
+    harness.state.pending = [{ createdAt: BASE, inputId: "input_b" }];
+    await harness.component.update(ctxAt(2_000));
+    expect(harness.calls).toEqual(["input_a", "input_b"]);
+    expect(harness.parks).toEqual([]);
   });
 });

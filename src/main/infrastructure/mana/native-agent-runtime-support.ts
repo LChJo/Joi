@@ -49,6 +49,7 @@ function collectFailureSignal(error: unknown): string {
     if (typeof candidate === "string" || typeof candidate === "number") { parts.push(String(candidate).slice(0, 1_000)); return; }
     if (candidate === null || typeof candidate !== "object" || seen.has(candidate)) return;
     seen.add(candidate);
+    if (Array.isArray(candidate)) { for (const item of candidate.slice(0, 20)) visit(item, depth + 1); return; }
     const row = candidate as Record<string, unknown>;
     for (const key of ["name", "code", "status", "statusCode", "message", "error", "cause", "errors"] as const) {
       if (row[key] !== undefined) visit(row[key], depth + 1);

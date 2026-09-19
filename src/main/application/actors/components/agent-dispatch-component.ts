@@ -70,6 +70,8 @@ export class AgentDispatchComponent implements ActorComponent {
     owner: string;
     partnerId: string;
     waitingRetryEveryMillis?: number;
+    /** True when the in-flight run's goal was canceled; the run must then abort. */
+    workCanceled?: (workId: string) => Promise<boolean>;
     watchdogMillis?: number;
   }) {}
 
@@ -129,6 +131,26 @@ export class AgentDispatchComponent implements ActorComponent {
   async #converge(ctx: ActorTickContext): Promise<void> {
     const run = this.#inFlight;
     if (run === null) return;
+    // A user cancel revokes the Work in DB (work_items CANCELED, attempt FAILED); abort the
+    // live engine session instead of letting it run to completion. The terminal rows make
+    // the later complete() a no-op, so converging here only releases the actor slot.
+    if (run.settled === undefined && this.dependencies.workCanceled !== undefined
+      && await this.dependencies.workCanceled(run.prepared.workId)) {
+      run.abortController.abort();
+      const failure: PartnerRunFailure = {
+        phase: "EXECUTION",
+        reasonCode: "goal_canceled",
+        retryable: false,
+        sideEffectState: "UNKNOWN",
+      };
+      run.settled = { artifacts: [], body: safePartnerRunFailureBody(failure), failure, kind: "terminal", status: "UNKNOWN" };
+      emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.run_canceled", {
+        workbenchId: this.dependencies.workbenchId,
+        dispatchAttemptId: run.dispatchAttemptId,
+        partnerId: this.dependencies.partnerId,
+        workId: run.prepared.workId,
+      });
+    }
     if (run.settled === undefined) {
       const watchdogMillis = this.dependencies.watchdogMillis ?? DEFAULT_WATCHDOG_MILLIS;
       if (ctx.now.getTime() - run.lastProgressAt > watchdogMillis) {

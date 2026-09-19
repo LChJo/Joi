@@ -22,11 +22,14 @@ type Row = Record<string, unknown>;
 function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string): void {
   connection.prepare(`UPDATE joi_user_action_requests
     SET status = 'CANCELED', updated_at = ? WHERE input_id = ? AND status IN ('OPEN', 'RESOLVED')`).run(now, inputId);
+  // Hard cancel: in-flight work is revoked too. Its run is aborted by the dispatch actor
+  // on a later tick; the terminal rows here make any late settle non-authoritative
+  // (work_results.record treats a CANCELED work as late) and unclaimable.
   const queuedWorkIds = (connection.prepare(`SELECT work_id FROM work_items
-    WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING')`).all(inputId) as { work_id?: unknown }[])
+    WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING')`).all(inputId) as { work_id?: unknown }[])
     .map((row) => String(row.work_id));
   connection.prepare(`UPDATE work_items SET status = 'CANCELED', updated_at = ?
-    WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING')`).run(now, inputId);
+    WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING')`).run(now, inputId);
   // Successors of the canceled Works (possibly owned by other inputs) must not run either.
   for (const workId of queuedWorkIds) {
     cascadeDependencyCancellation(connection, { cancelReason: "input_canceled", now, workId });
@@ -42,7 +45,7 @@ function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string
       WHERE w.input_id = ? AND w.status = 'CANCELED' AND a.outbox_id IS NOT NULL
     ) AND status IN ('PENDING', 'CLAIMED')`).run(inputId);
   connection.prepare(`UPDATE partner_runs SET status = 'FAILED', updated_at = ?
-    WHERE status IN ('WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
+    WHERE status IN ('RUNNING', 'WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
       SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(now, inputId);
   connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
     WHERE status IN ('WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
@@ -257,17 +260,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const current = mapRow(row);
       const now = this.#clock.now().toISOString();
       if (current.status === "CONSUMED") {
-        // A consumed goal can still hold live work: a partner may have paused with a
-        // question whose answer turn never resumed the work. The home feed shows such
-        // cards as "needs you" with a cancel affordance, so honor it: cancel the goal's
-        // not-yet-final work and terminalize the paused runs; otherwise the card could
+        // A consumed goal can still hold live work: a partner may be mid-run or paused
+        // with a question whose answer turn never resumed the work. The home feed offers
+        // a cancel affordance on every non-terminal card, so honor it: hard-cancel the
+        // goal's not-yet-final work (in-flight runs are aborted by their dispatch actors
+        // and converge as non-authoritative late results); otherwise the card could
         // never be canceled or dismissed.
         if (current.dismissedAt !== undefined || current.canceledAt !== undefined || current.failedAt !== undefined) return null;
-        const activeRun = connection.prepare(`SELECT 1 FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
-          WHERE w.input_id = ? AND pr.status = 'RUNNING' LIMIT 1`).get(inputId);
-        if (activeRun !== undefined) return null;
         const cancelableWork = connection.prepare(`SELECT 1 FROM work_items
-          WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'WAITING') LIMIT 1`).get(inputId);
+          WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') LIMIT 1`).get(inputId);
         if (cancelableWork === undefined) return null;
         const result = connection.prepare(`UPDATE joi_inbox_messages
           SET canceled_at = ?, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
@@ -278,11 +279,12 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
         return updated === undefined ? null : mapRow(updated);
       }
-      if (current.status !== "PENDING" && current.status !== "CLARIFICATION_REQUIRED") return null;
+      // Every remaining status (PENDING, CLARIFICATION_REQUIRED, ROUTED) is cancelable:
+      // the CONSUMED branch above already returned for the terminal-row cases.
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'CONSUMED', canceled_at = ?, clarification_reason_code = NULL,
           clarification_prompt = NULL, updated_at = ?
-        WHERE input_id = ? AND status IN ('PENDING', 'CLARIFICATION_REQUIRED')`).run(now, now, inputId);
+        WHERE input_id = ? AND status IN ('PENDING', 'CLARIFICATION_REQUIRED', 'ROUTED')`).run(now, now, inputId);
       if (result.changes === 0) return null;
       // Canceling a goal also cancels its not-yet-final work; a WAITING work would
       // otherwise block the goal's synthesis forever with nobody left to answer it.
@@ -299,16 +301,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async cancelQueued(): Promise<number> {
     return this.database.transaction((connection) => {
+      // Emergency stop honors the same hard-cancel semantics as a single cancel: routed
+      // goals and goals with in-flight runs are revoked too; their live runs are aborted
+      // by their actors and converge as late, non-authoritative results.
       const rows = connection.prepare(`SELECT i.input_id FROM joi_inbox_messages i
         WHERE i.dismissed_at IS NULL AND i.canceled_at IS NULL
-          AND (i.status IN ('PENDING', 'CLARIFICATION_REQUIRED') OR (
+          AND (i.status IN ('PENDING', 'CLARIFICATION_REQUIRED', 'ROUTED') OR (
             i.status = 'CONSUMED'
-            AND EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status IN ('PLANNED', 'READY', 'WAITING'))
-          ))
-          AND NOT EXISTS (
-            SELECT 1 FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
-            WHERE w.input_id = i.input_id AND pr.status = 'RUNNING'
-          )`).all() as { input_id?: unknown }[];
+            AND EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING'))
+          ))`).all() as { input_id?: unknown }[];
       const now = this.#clock.now().toISOString();
       let canceled = 0;
       for (const row of rows) {

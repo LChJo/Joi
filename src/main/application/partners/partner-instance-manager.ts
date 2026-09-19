@@ -207,7 +207,7 @@ export class PartnerInstanceManager {
       sessionPolicy: record.sessionPolicy,
       workId: input.request.workId,
     });
-    const liveProjector = input.onConversation === undefined ? undefined : new NativeAgentEventProjector();
+    const liveProjector = input.onConversation === undefined ? undefined : new NativeAgentEventProjector(this.dependencies.clock);
     const onEvent = liveProjector === undefined ? undefined : async (event: Parameters<NativeAgentEventProjector["apply"]>[0]) => {
       liveProjector.apply(event);
       await input.onConversation?.({ conversation: liveProjector.snapshot(), instanceId: record.instanceId });
@@ -247,6 +247,7 @@ export class PartnerInstanceManager {
           artifacts: result.output.artifacts,
           body: result.output.body,
           ...(result.conversation === undefined ? {} : { conversation: result.conversation }),
+          ...(liveProjector?.snapshot().length ? { conversation: liveProjector.snapshot() } : {}),
           externalRunId: result.externalRunId,
           instanceId: record.instanceId,
           ...(result.output.pendingQuestion === undefined ? {} : { pendingQuestion: result.output.pendingQuestion }),
@@ -289,6 +290,7 @@ export class PartnerInstanceManager {
         artifacts: turn.output.artifacts,
         body: turn.output.body,
         ...(turn.conversation === undefined ? {} : { conversation: turn.conversation }),
+        ...(liveProjector?.snapshot().length ? { conversation: liveProjector.snapshot() } : {}),
         externalRunId: turn.externalRunId,
         instanceId: record.instanceId,
         ...(turn.output.pendingQuestion === undefined ? {} : { pendingQuestion: turn.output.pendingQuestion }),

@@ -51,7 +51,7 @@ class RemoteGoalCard {
     'FAILED',
     'CANCELED',
   ].contains(status);
-  bool get canCancel => const ['ARRANGED', 'NEEDS_ATTENTION'].contains(status);
+  bool get canCancel => !terminal;
 
   factory RemoteGoalCard.fromJson(Map<String, dynamic> json, {String? stage}) {
     final work = json['work'] as Map<String, dynamic>? ?? {};

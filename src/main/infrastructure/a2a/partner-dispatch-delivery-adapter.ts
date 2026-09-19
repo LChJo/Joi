@@ -215,7 +215,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
 
 export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   constructor(private readonly dependencies: {
-    agentConversations?: Pick<WorkbenchAgentRepository, "replaceRun">;
+    agentConversations?: Pick<WorkbenchAgentRepository, "append" | "replaceRun">;
     /** Stages source-input attachments into the workspace for file-capable local work. */
     attachmentStager?: Pick<WorkAttachmentStagerPort, "stage">;
     clock: Clock;
@@ -353,6 +353,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         outboxId: claim.outboxId,
         ...(sessionPolicy === undefined ? {} : { sessionPolicy }),
         ...(stagedAttachments === undefined ? {} : { stagedAttachments }),
+        workId: row.work_id,
         ...(leaseExpiresAt === undefined || row.workspace_ref === null ? {} : {
           workspaceLease: { expiresAt: leaseExpiresAt, workId: row.work_id, workspaceRef: row.workspace_ref },
         }),
@@ -488,6 +489,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       ...(row.instance_id === null ? {} : { instanceId: row.instance_id }),
       kind: row.kind,
       outboxId: "",
+      workId: row.work_id,
     };
     if (row.kind === "LOCAL_PI") {
       const fresh = orphan.instanceStatus;
@@ -717,9 +719,20 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
             }),
           }]
         : [];
-      await this.dependencies.agentConversations.replaceRun(agentId, runId, normalizeAgentConversationEntries(
-        { agentId, runId, startedAt: now }, [...(output.conversation ?? fallback), ...artifacts, ...terminalError],
-      ));
+      const hasLiveHistory = output.conversation === undefined && this.dependencies.database.transaction(connection =>
+        connection.prepare("SELECT 1 FROM workbench_agent_conversation_entries WHERE agent_id = ? AND run_id = ? LIMIT 1").get(agentId, runId) !== undefined);
+      if (hasLiveHistory) {
+        // Exceptions/recovery may only supply a final error, not an engine snapshot.
+        // Keep the already persisted event timeline; terminal IDs are stable on retry.
+        const terminalEntries = normalizeAgentConversationEntries(
+          { agentId, runId, startedAt: now }, [...fallback.filter(entry => entry.role !== "USER"), ...artifacts, ...terminalError],
+        ).map(entry => ({ ...entry, entryId: `terminal:${entry.entryId}` }));
+        await this.dependencies.agentConversations.append(agentId, terminalEntries);
+      } else {
+        await this.dependencies.agentConversations.replaceRun(agentId, runId, normalizeAgentConversationEntries(
+          { agentId, runId, startedAt: now }, [...(output.conversation ?? fallback), ...artifacts, ...terminalError],
+        ));
+      }
     }
     await this.dependencies.leases.release(row.work_id);
     if (recorded.isAuthoritative) {

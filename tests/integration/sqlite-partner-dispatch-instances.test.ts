@@ -467,6 +467,10 @@ describe("partner dispatch instance routing", () => {
           database.transaction((connection) => connection.prepare(
             "UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = ?",
           ).run("instance_9", input.dispatchAttemptId ?? ""));
+          await input.onConversation?.({ instanceId: "instance_9", conversation: [
+            { kind: "MARKDOWN", role: "USER", text: "original task", createdAt: "2026-07-29T10:00:00.000Z" },
+            { kind: "TOOL_CALL", role: "TOOL", toolName: "read", createdAt: "2026-07-29T10:01:00.000Z" },
+          ] });
           throw wrapPartnerRunFailure(
             Object.assign(new Error("PRIVATE local CLI output"), { code: "local_cli_run_failed" }),
             { phase: "ENGINE", sideEffectState: "UNKNOWN" },
@@ -480,6 +484,8 @@ describe("partner dispatch instance routing", () => {
         FROM workbench_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all()) as { kind: string; role: string; text: string }[];
       expect(rows.at(-1)).toMatchObject({ kind: "ERROR", role: "AGENT" });
       expect(rows.at(-1)?.text).toContain("reasonCode=local_cli_run_failed");
+      expect(rows[0]).toMatchObject({ role: "USER", text: "original task" });
+      expect(rows[1]).toMatchObject({ role: "TOOL", kind: "TOOL_CALL" });
       expect(JSON.stringify(rows)).not.toContain("PRIVATE local CLI output");
     } finally {
       database.close();

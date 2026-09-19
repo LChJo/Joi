@@ -108,8 +108,10 @@ export class DigitalLifeApi {
       `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents${suffix}`,
     );
   }
-  agentConversation(workbenchId: string, agentId: string, options: { cursor?: string; limit?: number } = {}) {
+  agentConversation(workbenchId: string, agentId: string, options: { cursor?: string; goalId?: string; latest?: boolean; limit?: number } = {}) {
     const query = [
+      ...(options.latest === true ? ["latest=true"] : []),
+      ...(options.goalId === undefined ? [] : [`goalId=${encodeURIComponent(options.goalId)}`]),
       ...(options.cursor === undefined ? [] : [`cursor=${encodeURIComponent(options.cursor)}`]),
       ...(options.limit === undefined ? [] : [`limit=${encodeURIComponent(String(options.limit))}`]),
     ];

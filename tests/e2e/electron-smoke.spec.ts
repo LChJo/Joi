@@ -168,6 +168,62 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await window.getByRole("button", { name: "打开工作台 栖光" }).click();
     await expect(window.getByRole("tab", { name: /Agent/u })).toHaveAttribute("aria-selected", "true");
     await expect(window.getByRole("heading", { name: "还没有 Agent" })).toBeVisible();
+    // AC-60: exercise the real built renderer with disposable HTTP projections.
+    const agent = {
+      agentId: "stream-e2e", workbenchId: "fixture", canDelete: false, createdAt: "2026-09-18T10:00:00Z",
+      engine: "pi-core", lastActivityAt: "2026-09-18T10:00:00Z", partnerId: "fixture", partnerName: "滚动搭档",
+      sessionPolicy: "EPHEMERAL", status: "RUNNING", transport: "LOCAL",
+    };
+    let messageCount = 125;
+    let historyReads = 0;
+    await window.route("**/api/v1/workbenches/*/agents**", async route => {
+      const url = new URL(route.request().url());
+      if (!url.pathname.endsWith("/conversation")) { await route.fulfill({ json: { items: [agent] } }); return; }
+      expect(url.searchParams.get("latest")).toBe("true");
+      const before = Number(url.searchParams.get("cursor") ?? messageCount);
+      if (url.searchParams.has("cursor")) historyReads += 1;
+      const start = Math.max(0, before - 50);
+      await route.fulfill({ json: { agent, ...(start > 0 ? { nextCursor: String(start) } : {}),
+        items: Array.from({ length: before - start }, (_, i) => ({
+          entryId: `stream-${String(start + i)}`, sequence: start + i, kind: "MARKDOWN", role: "AGENT",
+          createdAt: new Date(Date.UTC(2026, 8, 18, 10, 0, start + i)).toISOString(), text: `执行记录 ${String(start + i)}`,
+        })),
+      } });
+    });
+    await window.getByRole("button", { name: "返回工作台列表" }).click();
+    await window.getByRole("button", { name: "打开工作台 栖光" }).click();
+    await window.getByRole("button", { name: /滚动搭档/u }).click();
+    const stream = window.getByRole("log", { name: "Agent 执行记录" });
+    await expect(stream.getByText("执行记录 124", { exact: true })).toBeInViewport();
+    messageCount = 126;
+    await expect(stream.getByText("执行记录 125", { exact: true })).toBeInViewport();
+    await stream.evaluate(element => { element.scrollTop = 0; });
+    await expect.poll(() => historyReads).toBeGreaterThan(0);
+    await expect(stream.getByText("执行记录 25", { exact: true })).toBeAttached();
+    await expect.poll(() => stream.evaluate(element => element.scrollTop)).toBeGreaterThan(0);
+    messageCount = 127;
+    await expect(stream.getByText("执行记录 126", { exact: true })).toBeAttached();
+    await expect(stream.getByText("执行记录 126", { exact: true })).not.toBeInViewport();
+    await window.getByRole("button", { name: "回到最新" }).click();
+    await expect(stream.getByText("执行记录 126", { exact: true })).toBeInViewport();
+    await window.screenshot({ path: path.resolve("test-results/e2e-agent-stream-latest.png") });
+    await window.getByRole("button", { name: "返回 Agent 列表" }).click();
+    await window.route("**/api/v1/joi/home-feed", route => route.fulfill({ json: {
+      thinking: [], unassignedActions: [], goals: [{
+        goalId: "stream-goal", title: "长任务执行记录", status: "RUNNING", agentCount: 1, canDelete: false,
+        workbench: { workbenchId: "fixture", name: "栖光" }, updatedAt: agent.createdAt,
+        work: { active: 1, completed: 0, failed: 0, total: 2 },
+        harness: { destination: "完整验证最新消息的可见性。".repeat(24), topPaths: [], decisionCount: 1, fogCount: 0, currentLayer: 1 },
+      }],
+    } }));
+    await window.getByRole("button", { exact: true, name: "joi" }).click();
+    await window.getByText("长任务执行记录", { exact: true }).click();
+    const goalStream = window.getByRole("log", { name: "Agent 执行记录" });
+    await expect(goalStream.getByText("执行记录 126", { exact: true })).toBeInViewport();
+    await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-stream-latest.png") });
+    await window.getByRole("button", { name: "关闭", exact: true }).click();
+    await window.getByRole("button", { exact: true, name: "工作台" }).click();
+    await window.getByRole("button", { name: "打开工作台 栖光" }).click();
     await expectNoHorizontalOverflow(window);
     await mkdir(path.resolve("test-results"), { recursive: true });
     await window.screenshot({ path: path.resolve("test-results/e2e-console-768.png") });

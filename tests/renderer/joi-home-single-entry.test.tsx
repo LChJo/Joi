@@ -224,7 +224,10 @@ describe("Workbench context center", () => {
     expect(screen.getByText("内部链接").closest("a")).toBeNull();
     expect(screen.queryByRole("img")).not.toBeInTheDocument();
     expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "加载更早记录" }));
+    const log = screen.getByRole("log", { name: "Agent 执行记录" });
+    Object.defineProperties(log, { clientHeight: { value: 200 }, scrollHeight: { value: 1000 } });
+    log.scrollTop = 0;
+    fireEvent.scroll(log);
     expect(await screen.findByText("已恢复")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "加载更早记录" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "返回 Agent 列表" }));
@@ -725,7 +728,7 @@ describe("joi home single entry", () => {
     fireEvent.click(screen.getByRole("button", { name: "查看 1 个异常搭档" }));
 
     expect(await screen.findByText("安全错误详情")).toBeInTheDocument();
-    expect(conversation).toHaveBeenCalledWith(workbench.workbenchId, failed.agentId, { limit: 50 });
+    expect(conversation).toHaveBeenCalledWith(workbench.workbenchId, failed.agentId, { limit: 50, latest: true, goalId: "goal-partial" });
     expect(screen.getByRole("button", { name: /失败搭档/u })).toHaveAttribute("aria-pressed", "true");
   });
 
@@ -944,6 +947,32 @@ describe("joi home single entry", () => {
     expect(await screen.findByText("已安排")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消这条任务" }));
     await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-arranged-cancel"));
+  });
+
+  it("offers cancellation for an in-flight goal so a running main task can be stopped", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-running-cancel", "在途 Workbench");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 1,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        goalId: "goal-running-cancel",
+        status: "RUNNING",
+        title: "正在执行的主任务",
+        updatedAt: workbench.updatedAt,
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const cancel = vi.spyOn(api, "cancelJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, canceled: true, inputId: "goal-running-cancel", status: "CONSUMED" });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("执行中")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "取消这条任务" }));
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-running-cancel"));
   });
 
   it("explains a parked internal failure without presenting it as a cancellation", async () => {

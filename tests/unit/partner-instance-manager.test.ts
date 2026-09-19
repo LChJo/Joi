@@ -1,6 +1,7 @@
 /* In-memory doubles keep instance lifecycle tests free of SQLite. */
 /* eslint-disable @typescript-eslint/require-await */
 import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager.js";
+import type { NativeAgentEvent } from "../../src/main/application/ports/native-agent-events.js";
 import type { PartnerRunRequest, PartnerRunStatus } from "../../src/main/application/ports/partner-execution.js";
 import type {
   PartnerEngineRuntime,
@@ -91,14 +92,16 @@ class FakeEngine implements PartnerEngineRuntime {
   includeEphemeralConversation = true;
   includeResidentConversation = false;
   pendingQuestion?: string;
+  events: NativeAgentEvent[] = [];
   preflightPin?: ModelSourceTurnPin;
   engineOf() { return "pi-core" as const; }
   evictFromMemory(instanceId: string) { this.evicted.push(instanceId); }
   async health() { return { available: true }; }
   async preflight() { return this.preflightPin; }
   toolOptions() { return [] as readonly string[]; }
-  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { onProgress?: () => void; knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
+  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { onEvent?: (event: NativeAgentEvent) => void | Promise<void>; onProgress?: () => void; knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
     context.onProgress?.();
+    for (const event of this.events) await context.onEvent?.(event);
     this.ephemeralRuns.push({
       knowledgeSection: context.knowledgeSection,
       request: runRequest,
@@ -121,6 +124,7 @@ class FakeEngine implements PartnerEngineRuntime {
   }
   async runResidentTurn(input: ResidentTurnInput) {
     input.onProgress?.();
+    for (const event of this.events) await input.onEvent?.(event);
     this.residentTurns.push(input);
     if (this.failResident) throw new Error("turn_failed");
     const messages = [...(input.restoredMessages ?? []), { content: input.request.taskProjection, role: "user" }];
@@ -170,6 +174,20 @@ function makeManager(
 }
 
 describe("partner-instance-manager", () => {
+  it.each(["EPHEMERAL", "RESIDENT"] as const)("preserves the timestamped live timeline on %s completion", async (sessionPolicy) => {
+    const { manager, engine, clock } = makeManager();
+    const first = clock.now().toISOString();
+    engine.events = [
+      { type: "message", role: "agent", parts: [{ type: "text", text: "investigating" }] },
+      { type: "tool_activity", toolName: "read", state: "started" },
+      { type: "tool_activity", toolName: "read", state: "completed" },
+      { type: "message", role: "agent", parts: [{ type: "text", text: "done" }] },
+    ];
+    const result = await manager.dispatch({ request, revision, sessionPolicy, onConversation: async () => { clock.advance(1000); } });
+    expect(result.conversation).toHaveLength(4);
+    expect(result.conversation?.[0]).toMatchObject({ text: "investigating", createdAt: first });
+    expect(result.conversation?.[3]).toMatchObject({ text: "done", createdAt: new Date(new Date(first).getTime() + 3000).toISOString() });
+  });
   it.each(["EPHEMERAL", "RESIDENT"] as const)("forwards activity without conversation projection for %s", async (sessionPolicy) => {
     const { manager } = makeManager();
     const onProgress = vi.fn();

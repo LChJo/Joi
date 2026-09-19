@@ -16,6 +16,8 @@ export interface JoiTaskInbox {
   listPendingInputs(): Promise<JoiTaskPendingInput[]>;
   listStaleRunningTurns(olderThan: string): Promise<JoiTaskStaleTurn[]>;
   failTurn(inputId: string, turnId: string): Promise<void>;
+  /** True once the goal was canceled by the user; an in-flight turn must then abort. */
+  isCanceled(inputId: string): Promise<boolean>;
 }
 
 export interface JoiTurnDriver {

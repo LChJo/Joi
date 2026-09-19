@@ -56,6 +56,8 @@ export const WORKBENCH_ROUTES: RouteDefinition[] = [
       const requestedLimit = Number(ctx.url.searchParams.get("limit") ?? "50");
       sendJson(ctx.response, 200, await workbenchAgentService(ctx.dependencies).conversation({
         agentId: decodeURIComponent(groups[2] ?? ""),
+        latest: ctx.url.searchParams.get("latest") === "true",
+        ...(ctx.url.searchParams.has("goalId") ? { goalId: ctx.url.searchParams.get("goalId") ?? "" } : {}),
         workbenchId: decodeURIComponent(groups[1] ?? ""),
         ...(cursor === undefined ? {} : { cursor }),
         limit: Number.isFinite(requestedLimit) ? requestedLimit : 50,

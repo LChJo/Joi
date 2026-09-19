@@ -55,4 +55,10 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
   async failTurn(inputId: string, turnId: string): Promise<void> {
     await this.dependencies.failTurn(inputId, turnId);
   }
+
+  async isCanceled(inputId: string): Promise<boolean> {
+    return this.dependencies.database.transaction((connection) => connection.prepare(
+      "SELECT 1 AS hit FROM joi_inbox_messages WHERE input_id = ? AND canceled_at IS NOT NULL LIMIT 1",
+    ).get(inputId)) !== undefined;
+  }
 }

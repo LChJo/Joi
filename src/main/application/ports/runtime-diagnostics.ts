@@ -32,6 +32,11 @@ export interface RuntimeDiagnosticEventMap {
   };
   "joi.task.turn_cancel_requested": {
     inputId: string;
+    reason?: "stalled" | "user_canceled";
+  };
+  "joi.task.turn_canceled": {
+    durationMs: number;
+    inputId: string;
   };
   "joi.task.turn_settled": {
     durationMs: number;
@@ -162,6 +167,12 @@ export interface RuntimeDiagnosticEventMap {
     workbenchId: string;
     dispatchAttemptId: string;
     partnerId: string;
+  };
+  "joi.agent.run_canceled": {
+    workbenchId: string;
+    dispatchAttemptId: string;
+    partnerId: string;
+    workId: string;
   };
   "joi.agent.complete_failed": {
     workbenchId: string;

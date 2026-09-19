@@ -93,7 +93,7 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-08-30 的本地 CLI 执行修复继续以 AC-33/AC-55 为门禁：Codex one-shot 必须使用原生 Codex conversation 并正常结束 stdin，Codex resident 不得配置为 Claude backend 或 Claude-only resident driver；Claude Code 保持原生 Claude backend。CLI stream 只有收到 success result 才算完成，异常、非成功 result 或无终态都必须携带稳定 `ENGINE` failure facts 回流，副作用未知时禁止自动重放，并在对应 Agent 工作记录中显示安全 ERROR 条目。可用性 probe 必须把 native error 归一为稳定安全原因码并写入不含原文的 settled diagnostics，使登录、模型、限流、服务、进程与存储故障可区分、可追踪。Electron 由 Codex/Codux 会话启动时，Codex 子进程必须隔离上层会话专用的 home/API key 与 managed-package 覆盖并使用桌面用户正常 CLI 登录缓存；可执行文件不得来自宿主 managed package 或 App 自身 `node_modules/.bin`，必须继续使用用户 PATH 安装。非嵌套 shell 配置不得被改写。
 
-2026-08-31 的官方 Agent SDK 切换以 AC-62 为门禁：生产依赖不得包含 `@rd-efficiency/agentsdk`；Claude/Codex 分别通过官方 SDK 和用户 CLI 运行。供应商 stream 必须先归一为 Joi 自有安全事件再投影到 Agent 记录，工具参数/命令/结果、reasoning、原始错误、凭据和绝对路径不得跨越端口。Claude 只使用环境 `ANTHROPIC_API_KEY` 并按标签恢复 session；Codex 原样传递模型，以显式只读/工作区可写、网络和 web search 权限映射 ThreadOptions，approval 固定 never。schema 047 保存显式配置并为旧工具列表提供确定兼容映射；旧无标签 session ref 必须开启新 session。probe 使用同一官方适配器，生产包保留 JS bridge 但排除平台 CLI 二进制。
+2026-08-31 的官方 Agent SDK 切换以 AC-62 为门禁：生产依赖不得包含 `@rd-efficiency/agentsdk`；Claude/Codex 分别通过官方 SDK 和用户 CLI 运行。供应商 stream 必须先归一为 Joi 自有安全事件再投影到 Agent 记录，工具参数/命令/结果、reasoning、原始错误、凭据和绝对路径不得跨越端口。Claude 交由用户 CLI 解析本机配置与认证（兼容环境 `ANTHROPIC_API_KEY`），不得仅因进程缺少 API key 拒绝已安装引擎，并按标签恢复 session；Codex 原样传递模型，以显式只读/工作区可写、网络和 web search 权限映射 ThreadOptions，approval 固定 never。schema 047 保存显式配置并为旧工具列表提供确定兼容映射；旧无标签 session ref 必须开启新 session。probe 使用同一官方适配器，生产包保留 JS bridge 但排除平台 CLI 二进制。
 
 ## 1. 当前状态
 

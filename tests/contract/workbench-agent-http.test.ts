@@ -56,6 +56,18 @@ describe("Workbench Agent HTTP API", () => {
       expect(page.items[0]?.text).toContain("[redacted-path]");
       expect(JSON.stringify(page)).not.toMatch(/\/home\/private|abcdefghijklmnop/u);
 
+      await repository.append(ephemeral.instanceId, normalizeAgentConversationEntries({
+        agentId: ephemeral.instanceId, runId: "run-newer", startedAt: fixture.clock.now().toISOString(),
+      }, [{ kind: "MARKDOWN", role: "AGENT", text: "newest" }]));
+      const endpoint = `${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/agents/${encodeURIComponent(ephemeral.instanceId)}/conversation`;
+      const latest = await (await fetch(`${endpoint}?latest=true&limit=1`, { headers })).json() as AgentConversationPageDto;
+      expect(latest.items.map(item => item.text)).toEqual(["newest"]);
+      const older = await (await fetch(`${endpoint}?latest=true&limit=1&cursor=${encodeURIComponent(latest.nextCursor ?? "")}`, { headers })).json() as AgentConversationPageDto;
+      expect(older.items[0]?.entryId).toBe(page.items[0]?.entryId);
+      expect(older.nextCursor).toBeUndefined();
+      expect((await fetch(`${endpoint}?latest=true&cursor=invalid`, { headers })).status).toBe(400);
+      expect((await fetch(`${endpoint}?latest=true&goalId=unrelated`, { headers })).status).toBe(404);
+
       const opened = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/artifacts/${encodeURIComponent("entry-artifact")}/open`, {
         body: JSON.stringify({ mode: "OPEN", source: "AGENT", sourceId: ephemeral.instanceId }), headers: writeHeaders, method: "POST",
       });

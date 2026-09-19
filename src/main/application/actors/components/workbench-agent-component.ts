@@ -37,6 +37,7 @@ export class WorkbenchAgentComponent implements ActorComponent {
       leases?: WorkspaceLeaseRenewal;
       outbox: Pick<RuntimeStore, "claimOutboxById" | "completeOutbox" | "releaseOutbox">;
       owner: string;
+      workCanceled?: (workId: string) => Promise<boolean>;
     };
     instances: Pick<PartnerInstanceManager, "sweepIdleFor">;
     memory: Pick<PartnerWorkMemoryService, "recordResult">;
@@ -115,6 +116,7 @@ export class WorkbenchAgentComponent implements ActorComponent {
           outbox: this.dependencies.dispatch.outbox,
           owner: this.dependencies.dispatch.owner,
           partnerId: key.partnerId,
+          ...(this.dependencies.dispatch.workCanceled === undefined ? {} : { workCanceled: this.dependencies.dispatch.workCanceled }),
         })];
         this.#agentActors.set(key.partnerId, new AgentActor({
           workbenchId: this.dependencies.workbenchId,

@@ -41,7 +41,7 @@ function modelTestMessage(result: PartnerModelTestDto, engine: PartnerEngineDto)
   if (result.reasonCode === "partner_model_override_not_ready") return "模型名与供应商当前模型不一致";
   if (result.reasonCode === "partner_model_source_not_ready") return "供应商尚未就绪";
   if (result.reasonCode === "partner_cli_probe_timed_out") return "搭档调用超时";
-  if (result.reasonCode === "partner_cli_auth_required") return engine === "claude-code" ? "Claude Code 缺少 ANTHROPIC_API_KEY" : `${ENGINE_LABELS[engine]} 尚未登录，请先完成登录`;
+  if (result.reasonCode === "partner_cli_auth_required") return engine === "claude-code" ? "Claude Code 认证失败，请检查本机 Claude 的登录或凭据配置" : `${ENGINE_LABELS[engine]} 尚未登录，请先完成登录`;
   if (result.reasonCode === "partner_cli_model_unsupported") return "当前本地 CLI 或账户不支持这个模型，请更新 CLI 或检查模型权限";
   if (result.reasonCode === "partner_cli_rate_limited") return "调用过于频繁，请稍后重试";
   if (result.reasonCode === "partner_cli_provider_unavailable") return "模型服务暂时不可用，请稍后重试";
@@ -324,7 +324,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
         </> : <>
           <label>模型名（可选覆盖）<input defaultValue={partner?.engineModelId} name="engineModelId" placeholder="留空使用本机 Claude/Codex 自己的配置" /></label>
           <p className="field-hint">{engine === "claude-code"
-            ? "Claude Code 使用 Joi 进程环境中的 ANTHROPIC_API_KEY，并调用你安装的 Claude 可执行文件。"
+            ? "Claude Code 使用本机 Claude 的配置与认证，并调用你安装的 Claude 可执行文件。保存后可测试可用性。"
             : "Codex 使用你本机 Codex CLI 的登录与配置；模型名会原样传递。"}</p>
         </>}
         {engine === "codex" ? <div className="tool-field"><span className="kb-field-label">Codex 权限</span>

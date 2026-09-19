@@ -266,7 +266,98 @@ describe("sqlite joi inbox cancel", () => {
     }
   });
 
-  it("emergency-stops queued Workbench goals without pretending a running goal stopped", async () => {
+  it("cancels a routed goal whose work is queued, the state the home feed shows as arranged", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "路由取消", personaSummary: "persona", projectLabel: "任务", scopeSummary: "路由取消" });
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "路由搭档", kind: "local-pi", skills: [], tools: [] });
+      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-routed-cancel", text: "已安排但还没跑起来" });
+      const now = "2026-08-21T04:30:00.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn_routed_cancel', ?, ?, 'joi_session:test', 'COMPLETED', ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED', workbench_id = ? WHERE input_id = ?").run(workbench.workbenchId, accepted.inputId);
+        connection.prepare(`INSERT INTO dispatch_plans
+          (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+          VALUES ('plan_routed_cancel', 'turn_routed_cancel', '{}', '[]', ?)`).run(now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work_routed_cancel', ?, ?, '排队任务', '{}', 'READ', 'READY', ?, ?)`).run(workbench.workbenchId, accepted.inputId, now, now);
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+          VALUES ('attempt_routed_cancel', 'plan_routed_cancel', 'work_routed_cancel', ?, 1, 'action_routed_cancel', 'PENDING', ?, ?)`).run(partner.partnerRevisionId, now, now);
+      });
+
+      const feedBefore = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(now));
+      expect(feedBefore.goals[0]).toMatchObject({ goalId: accepted.inputId, status: "ARRANGED" });
+
+      const canceled = await inbox.cancel({ inputId: accepted.inputId });
+      expect(canceled).toMatchObject({ canceled: true, status: "CONSUMED" });
+      const states = fixture.database.transaction((connection) => ({
+        attempt: connection.prepare("SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_routed_cancel'").get(),
+        work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work_routed_cancel'").get(),
+      }));
+      expect(states).toEqual({ attempt: { status: "FAILED" }, work: { status: "CANCELED" } });
+      const feedAfter = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(now));
+      expect(feedAfter.goals[0]).toMatchObject({ goalId: accepted.inputId, status: "CANCELED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("hard-cancels an in-flight goal so the aborting actor converges a late, non-authoritative result", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "在途取消", personaSummary: "persona", projectLabel: "任务", scopeSummary: "在途取消" });
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "在途搭档", kind: "local-pi", skills: [], tools: [] });
+      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-inflight-cancel", text: "正在执行的主任务" });
+      const now = "2026-08-21T04:40:00.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn_inflight_cancel', ?, ?, 'joi_session:test', 'COMPLETED', ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED', workbench_id = ? WHERE input_id = ?").run(workbench.workbenchId, accepted.inputId);
+        connection.prepare(`INSERT INTO dispatch_plans
+          (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+          VALUES ('plan_inflight_cancel', 'turn_inflight_cancel', '{}', '[]', ?)`).run(now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work_inflight_cancel', ?, ?, '在途任务', '{}', 'READ', 'RUNNING', ?, ?)`).run(workbench.workbenchId, accepted.inputId, now, now);
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+          VALUES ('attempt_inflight_cancel', 'plan_inflight_cancel', 'work_inflight_cancel', ?, 1, 'action_inflight_cancel', 'RUNNING', ?, ?)`).run(partner.partnerRevisionId, now, now);
+        connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          VALUES ('run_inflight_cancel', 'attempt_inflight_cancel', 'action_inflight_cancel', ?, 'work_inflight_cancel', ?, 'LOCAL_PI', 'local:inflight', 'RUNNING', ?, ?)`)
+          .run(workbench.workbenchId, partner.partnerRevisionId, now, now);
+      });
+
+      const feedBefore = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(now));
+      expect(feedBefore.goals[0]).toMatchObject({ goalId: accepted.inputId, status: "RUNNING" });
+
+      const canceled = await inbox.cancel({ inputId: accepted.inputId });
+      expect(canceled).toMatchObject({ canceled: true, status: "CONSUMED" });
+      // Terminal rows up front: the dispatch actor's abort converges through complete(),
+      // which no-ops on the FAILED attempt, and any recorded result lands as late.
+      const states = fixture.database.transaction((connection) => ({
+        attempt: connection.prepare("SELECT status FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_inflight_cancel'").get(),
+        run: connection.prepare("SELECT status FROM partner_runs WHERE run_id = 'run_inflight_cancel'").get(),
+        work: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work_inflight_cancel'").get(),
+      }));
+      expect(states).toEqual({ attempt: { status: "FAILED" }, run: { status: "FAILED" }, work: { status: "CANCELED" } });
+      const feedAfter = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(now));
+      expect(feedAfter.goals[0]).toMatchObject({ goalId: accepted.inputId, status: "CANCELED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("emergency-stops every active Workbench goal, in-flight runs included", async () => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "全局停止", personaSummary: "persona", projectLabel: "任务", scopeSummary: "全局停止" });
@@ -309,17 +400,19 @@ describe("sqlite joi inbox cancel", () => {
         );
       });
 
-      await expect(inbox.emergencyStopQueued()).resolves.toBe(1);
+      await expect(inbox.emergencyStopQueued()).resolves.toBe(2);
       const states = fixture.database.transaction((connection) => ({
         queued: connection.prepare("SELECT canceled_at FROM joi_inbox_messages WHERE input_id = ?").get(queued.inputId),
         queuedWork: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work_global_queued'").get(),
         running: connection.prepare("SELECT canceled_at FROM joi_inbox_messages WHERE input_id = ?").get(running.inputId),
+        runningRun: connection.prepare("SELECT status FROM partner_runs WHERE run_id = 'run_global_running'").get(),
         runningWork: connection.prepare("SELECT status FROM work_items WHERE work_id = 'work_global_running'").get(),
       }));
       expect(states.queued?.canceled_at).toEqual(expect.any(String));
       expect(states.queuedWork).toEqual({ status: "CANCELED" });
-      expect(states.running?.canceled_at).toBeNull();
-      expect(states.runningWork).toEqual({ status: "RUNNING" });
+      expect(states.running?.canceled_at).toEqual(expect.any(String));
+      expect(states.runningRun).toEqual({ status: "FAILED" });
+      expect(states.runningWork).toEqual({ status: "CANCELED" });
     } finally {
       await fixture.close();
     }

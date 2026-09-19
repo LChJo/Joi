@@ -112,6 +112,15 @@ function decodeCursor(cursor: string | undefined): number {
   return parsed;
 }
 
+function historyBoundary(cursor: string | undefined): [number, string] | undefined {
+  if (cursor === undefined) return undefined;
+  try {
+    const value: unknown = JSON.parse(Buffer.from(cursor, "base64url").toString("utf8"));
+    if (Array.isArray(value) && value.length === 2 && Number.isSafeInteger(value[0]) && value[0] >= 0 && typeof value[1] === "string") return value as [number, string];
+  } catch { /* reject malformed or legacy cursors in history mode */ }
+  throw new DomainError("workbench_agent_cursor_invalid", "Agent cursor is invalid.");
+}
+
 function cardSelect(goalScoped: boolean): string {
   return `SELECT s.agent_id, s.workbench_id, s.partner_id, s.backing_kind, s.backing_id,
   s.session_policy, s.created_at, r.display_name AS partner_name,
@@ -200,26 +209,34 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
 
   async replaceRun(agentId: string, runId: string, entries: NormalizedAgentConversationEntry[]): Promise<void> {
     this.database.transaction((connection) => {
-      connection.prepare("DELETE FROM workbench_agent_conversation_entries WHERE agent_id = ? AND run_id = ?")
-        .run(agentId, runId);
-      if (entries.length === 0) return;
+      const existing = connection.prepare("SELECT entry_id FROM workbench_agent_conversation_entries WHERE agent_id = ? AND run_id = ?").all(agentId, runId) as Row[];
+      const retained = new Set(entries.map(entry => entry.entryId));
+      const remove = connection.prepare("DELETE FROM workbench_agent_conversation_entries WHERE agent_id = ? AND run_id = ? AND entry_id = ?");
+      for (const row of existing) if (!retained.has(required(row, "entry_id"))) remove.run(agentId, runId, required(row, "entry_id"));
+      const known = new Set(existing.map(row => required(row, "entry_id")));
       const base = connection.prepare("SELECT COALESCE(MAX(sequence), -1) AS value FROM workbench_agent_conversation_entries WHERE agent_id = ?")
         .get(agentId) as { value?: unknown } | undefined;
-      const start = typeof base?.value === "number" ? base.value + 1 : 0;
+      let sequence = typeof base?.value === "number" ? base.value + 1 : 0;
       const insert = connection.prepare(`INSERT INTO workbench_agent_conversation_entries
         (entry_id, agent_id, run_id, sequence, role, kind, text, tool_name, artifact_json, created_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-      for (const entry of entries) insert.run(
-        entry.entryId, agentId, runId, start + entry.order,
-        entry.role, entry.kind, entry.text ?? null, entry.toolName ?? null,
-        entry.artifact === undefined ? null : JSON.stringify(entry.artifact), entry.createdAt,
-      );
+      const update = connection.prepare(`UPDATE workbench_agent_conversation_entries
+        SET role = ?, kind = ?, text = ?, tool_name = ?, artifact_json = ?, created_at = ?
+        WHERE agent_id = ? AND run_id = ? AND entry_id = ?
+        AND (role IS NOT ? OR kind IS NOT ? OR text IS NOT ? OR tool_name IS NOT ? OR artifact_json IS NOT ? OR created_at IS NOT ?)`);
+      for (const entry of entries) {
+        const values = [entry.role, entry.kind, entry.text ?? null, entry.toolName ?? null,
+          entry.artifact === undefined ? null : JSON.stringify(entry.artifact), entry.createdAt];
+        if (known.has(entry.entryId)) update.run(...values, agentId, runId, entry.entryId, ...values);
+        else insert.run(entry.entryId, agentId, runId, sequence++, ...values);
+      }
     });
   }
 
-  async conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; limit: number }): Promise<AgentConversationPageDto> {
+  async conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; latest?: boolean; limit: number }): Promise<AgentConversationPageDto> {
     const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)));
-    const offset = decodeCursor(input.cursor);
+    const offset = input.latest ? 0 : decodeCursor(input.cursor);
+    const boundary = input.latest ? historyBoundary(input.cursor) : undefined;
     return this.database.transaction((connection) => {
       const cardRow = cardRows(connection, input.workbenchId, 1, 0, input.agentId, input.goalId)[0];
       if (cardRow === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
@@ -227,8 +244,9 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
         SELECT pr.run_id FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
         WHERE w.input_id = ? AND w.workbench_id = ?)`;
       const rows = connection.prepare(`SELECT entry_id, sequence, role, kind, text, tool_name, artifact_json, created_at
-        FROM workbench_agent_conversation_entries WHERE agent_id = ?${scope} ORDER BY sequence, entry_id LIMIT ? OFFSET ?`)
-        .all(input.agentId, ...(input.goalId === undefined ? [] : [input.goalId, input.workbenchId]), limit + 1, offset) as Row[];
+        FROM workbench_agent_conversation_entries WHERE agent_id = ?${scope}${boundary === undefined ? "" : " AND (sequence, entry_id) < (?, ?)"}
+        ORDER BY sequence ${input.latest ? "DESC" : "ASC"}, entry_id ${input.latest ? "DESC" : "ASC"} LIMIT ? OFFSET ?`)
+        .all(input.agentId, ...(input.goalId === undefined ? [] : [input.goalId, input.workbenchId]), ...(boundary ?? []), limit + 1, offset) as Row[];
       const items = rows.slice(0, limit).map((row) => {
         const artifact = storedArtifact(row.artifact_json);
         const entryId = required(row, "entry_id");
@@ -243,7 +261,11 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
           ...(typeof row.tool_name === "string" ? { toolName: row.tool_name } : {}),
         };
       });
-      return { agent: mapCard(cardRow), items, ...(rows.length > limit ? { nextCursor: encodeCursor(offset + limit) } : {}) };
+      const last = items.at(-1);
+      const nextCursor = input.latest && last !== undefined
+        ? Buffer.from(JSON.stringify([last.sequence, last.entryId]), "utf8").toString("base64url") : encodeCursor(offset + limit);
+      if (input.latest) items.reverse();
+      return { agent: mapCard(cardRow), items, ...(rows.length > limit ? { nextCursor } : {}) };
     });
   }
 

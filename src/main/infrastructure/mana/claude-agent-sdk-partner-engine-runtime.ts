@@ -46,7 +46,6 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
   health(): Promise<{ available: boolean; reason?: string }> {
     const resolved = this.#resolve();
     if (resolved.executablePath === undefined) return Promise.resolve({ available: false, reason: `${resolved.commandName} 未在 PATH 中找到，无法使用本地 Claude Code 引擎。` });
-    if (!this.#hasApiKey()) return Promise.resolve({ available: false, reason: "Claude Code 需要在 Joi 环境中配置 ANTHROPIC_API_KEY。" });
     return Promise.resolve({ available: true });
   }
 
@@ -57,7 +56,6 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     let resolved: ResolvedLocalCliExecutable;
     try { resolved = this.#resolve(); } catch (error) { return settle({ available: false, reasonCode: classifyNativeCliFailure(error) }); }
     if (resolved.executablePath === undefined) return settle({ available: false, reasonCode: "engine_unavailable" });
-    if (!this.#hasApiKey()) return settle({ available: false, reasonCode: "partner_cli_auth_required" });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.dependencies.probeTimeoutMillis ?? 45_000);
     try {
@@ -70,7 +68,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       }));
       return settle({ available: true });
     } catch (error) {
-      return settle({ available: false, reasonCode: controller.signal.aborted ? "partner_cli_probe_timed_out" : classifyNativeCliFailure(error) });
+      return settle({ available: false, reasonCode: controller.signal.aborted ? "partner_cli_probe_timed_out" : error instanceof NativeCliRunError ? error.probeReasonCode : classifyNativeCliFailure(error) });
     } finally { clearTimeout(timer); }
   }
 
@@ -91,7 +89,6 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
   async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     const resolved = this.#resolve();
     if (resolved.executablePath === undefined) throw new DomainError("engine_unavailable", "Claude Code is unavailable.");
-    if (!this.#hasApiKey()) throw new NativeCliRunError("partner_cli_auth_required");
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Claude Code runs local partners only.");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new DomainError("workbench_context_snapshot_not_found", "Workbench context snapshot is missing.");
@@ -217,6 +214,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       ...(input.allowedTools === undefined ? {} : { allowedTools: [...input.allowedTools] }),
       ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
       env: environment,
+      // Keep native CLI settings/authentication defaults; credentials need not live in env.
       includePartialMessages: true,
       ...(input.permissionMode === "plan" ? { maxTurns: 1 } : {}),
       ...(input.modelId === undefined ? {} : { model: input.modelId }),
@@ -251,7 +249,6 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
   }
 
   #resolve(): ResolvedLocalCliExecutable { return (this.dependencies.resolveExecutable ?? (() => resolveLocalCliExecutable("claude")))(); }
-  #hasApiKey(): boolean { return (this.dependencies.environment ?? process.env).ANTHROPIC_API_KEY?.trim() !== "" && (this.dependencies.environment ?? process.env).ANTHROPIC_API_KEY !== undefined; }
   async #sdk(): Promise<ClaudeAgentSdkSurface> {
     if (this.dependencies.sdk !== undefined) return this.dependencies.sdk;
     if (this.#surface === undefined) { const module = await import("@anthropic-ai/claude-agent-sdk"); this.#surface = { query: (input) => module.query(input) }; }

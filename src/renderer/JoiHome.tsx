@@ -1,5 +1,5 @@
 import { ResultExportMenu } from './ResultExportMenu';
-import { type SyntheticEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -241,14 +241,14 @@ function ToolEntry({ entry, entries }: { entry: AgentConversationEntryDto; entri
     const calls = entries.filter((item) => item.kind === "TOOL_CALL").length;
     const results = entries.length - calls;
     return <article className="agent-message tool"><details className="agent-tool-compact">
-      <summary><span>工具</span><code>{entry.toolName} ×{Math.max(calls, results)}</code></summary>
-      {entries.map((item) => <div key={item.entryId}><small>{item.kind === "TOOL_CALL" ? "调用工具" : "工具结果"}</small>{item.text ? <pre>{item.text}</pre> : null}</div>)}
+      <summary><span>工具</span><code>{entry.toolName} ×{Math.max(calls, results)}</code><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></summary>
+      {entries.map((item) => <div key={item.entryId}><small>{item.kind === "TOOL_CALL" ? "调用工具" : "工具结果"} · <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time></small>{item.text ? <pre>{item.text}</pre> : null}</div>)}
     </details></article>;
   }
   const label = entry.kind === "TOOL_CALL" ? "调用工具" : "工具结果";
   return <article className={`agent-message tool ${entry.kind.toLowerCase()}`}>
     <details className={`agent-tool-compact ${entry.kind === "TOOL_RESULT" ? "result" : ""}`}>
-      <summary><span>{label}</span><code>{entry.toolName ?? (entry.kind === "TOOL_CALL" ? "tool" : "")}</code><time>{new Date(entry.createdAt).toLocaleString()}</time></summary>
+      <summary><span>{label}</span><code>{entry.toolName ?? (entry.kind === "TOOL_CALL" ? "tool" : "")}</code><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></summary>
       {entry.text === undefined || entry.text === "" ? null : <pre>{entry.text}</pre>}
     </details>
   </article>;
@@ -265,52 +265,136 @@ function GoalArtifacts({ api, goal }: { api: DigitalLifeApi; goal: JoiGoalCardDt
   </section>;
 }
 
-function AgentMessageStream({ agent, api, workbenchId, live = false }: {
+function mergeConversationItems(older: AgentConversationEntryDto[], newer: AgentConversationEntryDto[]) {
+  return [...new Map([...older, ...newer].map(entry => [entry.entryId, entry])).values()]
+    .sort((a, b) => a.sequence - b.sequence || a.entryId.localeCompare(b.entryId));
+}
+
+export function AgentMessageStream({ agent, api, workbenchId, goalId, live = false }: {
   agent: WorkbenchAgentCardDto;
   api: DigitalLifeApi;
   workbenchId: string;
+  goalId?: string;
   live?: boolean;
 }) {
   const [page, setPage] = useState<AgentConversationPageDto | null>(null);
-  const [paged, setPaged] = useState(false);
+  const [following, setFollowing] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const loadRevision = useRef(0);
-  const load = useCallback(async () => {
-    const revision = loadRevision.current + 1;
-    loadRevision.current = revision;
+  const viewport = useRef<HTMLDivElement>(null);
+  const currentPage = useRef<AgentConversationPageDto | null>(null);
+  const followLatest = useRef(true);
+  const positioned = useRef(false);
+  const historyBusy = useRef(false);
+  const historyAnchor = useRef<{ height: number; top: number } | null>(null);
+  const generation = useRef(0);
+  const publish = useCallback((next: AgentConversationPageDto) => { currentPage.current = next; setPage(next); }, []);
+  const read = useCallback((cursor?: string) => api.agentConversation(workbenchId, agent.agentId, {
+    limit: 50, latest: true, ...(goalId === undefined ? {} : { goalId }), ...(cursor === undefined ? {} : { cursor }),
+  }), [agent.agentId, api, goalId, workbenchId]);
+  useEffect(() => {
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout>;
+    const load = async () => {
+      try {
+        const previous = currentPage.current;
+        let next = await read();
+        // Catch up after a slow/background tab without leaving a hole between pages.
+        const known = new Set(previous?.items.map(item => item.entryId));
+        const cursors = new Set<string>();
+        while (!cancelled && known.size > 0 && next.nextCursor !== undefined
+          && !next.items.some(item => known.has(item.entryId)) && !cursors.has(next.nextCursor)) {
+          cursors.add(next.nextCursor);
+          const older = await read(next.nextCursor);
+          next = { ...older, agent: next.agent, items: mergeConversationItems(older.items, next.items) };
+        }
+        if (cancelled) return;
+        const current = currentPage.current;
+        publish(current === null || current.items.length === 0 ? next : {
+          ...current, agent: next.agent, items: mergeConversationItems(current.items, next.items),
+        });
+        setNotice(null);
+      } catch (error) {
+        if (!cancelled) setNotice(error instanceof ApiError ? error.message : "没能读取 Agent 对话。");
+      } finally {
+        const status = currentPage.current?.agent.status;
+        if (!cancelled && live && (status === undefined || status === "RUNNING" || status === "WAITING")) timer = setTimeout(() => void load(), 750);
+      }
+    };
+    timer = setTimeout(() => void load(), 0);
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [live, publish, read]);
+  useEffect(() => () => { generation.current += 1; }, [read]);
+  useLayoutEffect(() => {
+    const element = viewport.current;
+    if (element === null) return;
+    if (followLatest.current) element.scrollTop = element.scrollHeight;
+    else if (historyAnchor.current !== null) element.scrollTop = historyAnchor.current.top + element.scrollHeight - historyAnchor.current.height;
+    historyAnchor.current = null;
+    if (!positioned.current && page !== null && page.items.length > 0) {
+      positioned.current = true;
+      element.scrollIntoView({ block: "end", inline: "nearest" });
+    }
+  }, [page]);
+  const loadMore = useCallback(async () => {
+    const cursor = currentPage.current?.nextCursor;
+    if (cursor === undefined || historyBusy.current) return;
+    const revision = generation.current;
+    historyBusy.current = true;
+    setLoadingHistory(true);
     try {
-      const next = await api.agentConversation(workbenchId, agent.agentId, { limit: 50 });
-      if (revision !== loadRevision.current) return;
-      setPage(next);
+      const next = await read(cursor);
+      if (revision !== generation.current) return;
+      const element = viewport.current;
+      if (element !== null) historyAnchor.current = { height: element.scrollHeight, top: element.scrollTop };
+      const current = currentPage.current;
+      publish({ ...next, agent: current?.agent ?? next.agent, items: mergeConversationItems(next.items, current?.items ?? []) });
       setNotice(null);
     } catch (error) {
-      if (revision === loadRevision.current) setNotice(error instanceof ApiError ? error.message : "没能读取 Agent 对话。");
+      if (revision === generation.current) setNotice(error instanceof ApiError ? error.message : "没能读取更早记录，向上滚动可重试。");
+    } finally {
+      historyBusy.current = false;
+      if (revision === generation.current) setLoadingHistory(false);
     }
-  }, [agent.agentId, api, workbenchId]);
-  useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
+  }, [publish, read]);
   useEffect(() => {
-    if (!live || paged) return undefined;
-    const interval = setInterval(() => void load().catch(() => undefined), 750);
-    return () => clearInterval(interval);
-  }, [live, load, paged]);
-  const loadMore = async () => {
-    if (page?.nextCursor === undefined) return;
-    const next = await api.agentConversation(workbenchId, agent.agentId, { cursor: page.nextCursor, limit: 50 });
-    setPaged(true);
-    setPage({ ...next, items: [...page.items, ...next.items] });
-  };
+    // Compact tool groups can leave a page shorter than the viewport: fill it so
+    // history is reachable even when there is no scrollbar yet.
+    const timer = setTimeout(() => {
+      const element = viewport.current;
+      if (element !== null && element.clientHeight > 0 && element.scrollHeight <= element.clientHeight) void loadMore();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loadMore, page]);
   return <>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
+    <div className="agent-stream-viewport" ref={viewport} role="log" aria-label="Agent 执行记录" aria-live="off" tabIndex={0} onScroll={() => {
+      const element = viewport.current;
+      if (element === null || element.clientHeight === 0) return;
+      const atBottom = element.scrollHeight - element.scrollTop - element.clientHeight < 48;
+      followLatest.current = atBottom;
+      setFollowing(atBottom);
+      if (element.scrollTop < 64 && !atBottom) void loadMore();
+    }}>
+    {page?.nextCursor === undefined ? null : <p className="agent-history-hint">{loadingHistory ? "正在加载历史记录…" : "向上滚动查看更早记录"}</p>}
     {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : groupAgentEntries(page.items).map(({ entry, entries }) => entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
       ? <ToolEntry entry={entry} entries={entries} key={entry.entryId} />
       : <article className={`agent-message ${entry.role.toLowerCase()} ${entry.kind.toLowerCase()}`} key={entry.entryId}>
-      <header><strong>{entry.role === "USER" ? "任务" : entry.role === "AGENT" ? agent.partnerName : entry.role === "TOOL" ? "工具" : "系统"}</strong><time>{new Date(entry.createdAt).toLocaleString()}</time></header>
+      <header><strong>{entry.role === "USER" ? "任务" : entry.role === "AGENT" ? agent.partnerName : entry.role === "TOOL" ? "工具" : "系统"}</strong><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></header>
       {entry.kind === "ARTIFACT" && entry.artifact !== undefined
         ? <ArtifactCard api={api} artifact={entry.artifact} source="AGENT" sourceId={agent.agentId} workbenchId={workbenchId} />
         : entry.kind === "ARTIFACT" ? <div className="agent-artifact"><span className="agent-artifact-copy"><strong>产物</strong><span>文件 · 0 B</span></span></div>
           : <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{entry.text ?? ""}</ReactMarkdown>}
     </article>)}</div>}
-    {page?.nextCursor === undefined ? null : <button className="button ghost agent-load-more" onClick={() => void loadMore()} type="button">加载更早记录</button>}
+    </div>
+    {following ? null : <button className="button ghost agent-load-more" onClick={() => {
+      followLatest.current = true;
+      setFollowing(true);
+      if (viewport.current !== null) {
+        viewport.current.scrollTop = viewport.current.scrollHeight;
+        viewport.current.scrollIntoView({ block: "end", inline: "nearest" });
+      }
+    }} type="button">回到最新</button>}
   </>;
 }
 
@@ -322,7 +406,7 @@ function AgentConversation({ agent, api, workbenchId, onBack }: {
 }) {
   return <section className="agent-conversation" aria-label={`${agent.partnerName} 对话`}>
     <header className="agent-detail-header"><button className="button ghost" onClick={onBack} type="button">返回 Agent 列表</button><div><p className="eyebrow">只读执行记录</p><h2>{agent.partnerName}</h2><span>{agent.transport} · {agent.sessionPolicy} · {agent.status}</span></div></header>
-    <AgentMessageStream agent={agent} api={api} workbenchId={workbenchId} live={agent.status === "RUNNING" || agent.status === "WAITING"} />
+    <AgentMessageStream key={agent.agentId} agent={agent} api={api} workbenchId={workbenchId} live={agent.status === "RUNNING" || agent.status === "WAITING"} />
   </section>;
 }
 
@@ -987,7 +1071,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
           <div className="joi-goal-stream">
             {selectedAgent === undefined
               ? <p className="content-state">Agent 启动后，这里会直接展示它的执行数据流和结果。</p>
-              : <AgentMessageStream agent={selectedAgent} api={api} workbenchId={goal.workbench.workbenchId} key={selectedAgent.agentId} live={selectedAgent.status === "RUNNING" || selectedAgent.status === "WAITING"} />}
+              : <AgentMessageStream agent={selectedAgent} api={api} workbenchId={goal.workbench.workbenchId} goalId={goal.goalId} key={`${goal.goalId}:${selectedAgent.agentId}`} live={selectedAgent.status === "RUNNING" || selectedAgent.status === "WAITING"} />}
           </div>
         </div>
       </div>
@@ -1172,7 +1256,7 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
       {feed.goals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
           <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => { setResultGoal(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong><GoalProgress goal={goal} /></span></button>
-          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} />{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" || TERMINAL_GOAL_STATUSES.includes(goal.status) ? <div aria-label={`${goal.title} 操作`} className="joi-goal-actions" role="group">{goal.status === "ARRANGED" || goal.status === "NEEDS_ATTENTION" ? <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} /> : null}{TERMINAL_GOAL_STATUSES.includes(goal.status) ? <button aria-label={`继续「${goal.title}」`} className="joi-goal-link" onClick={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} type="button">{retryGoalId === goal.goalId ? "收起" : "继续"}</button> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div> : null}</div>
+          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><div aria-label={`${goal.title} 操作`} className="joi-goal-actions" role="group">{TERMINAL_GOAL_STATUSES.includes(goal.status) ? null : <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} />}{TERMINAL_GOAL_STATUSES.includes(goal.status) ? <button aria-label={`继续「${goal.title}」`} className="joi-goal-link" onClick={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} type="button">{retryGoalId === goal.goalId ? "收起" : "继续"}</button> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div></div>
         </div>
         {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoal(goal); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoal(goal); setOpenGoalId(null); } }}><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}

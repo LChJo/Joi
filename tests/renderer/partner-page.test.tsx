@@ -703,6 +703,15 @@ describe("partner page", () => {
     expect(test).toHaveBeenCalledWith("partner-claude");
   });
 
+  it("shows native Claude authentication guidance without requiring an environment API key", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [{ ...coder, engine: "claude-code", partnerId: "partner-claude" }]);
+    vi.spyOn(api, "testPartnerModel").mockResolvedValue({ partnerId: "partner-claude", reasonCode: "partner_cli_auth_required", status: "FAILED", testedAt: "2026-09-18T03:00:00.000Z" });
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "测试可用性" }));
+    expect(await screen.findByText("Claude Code 认证失败，请检查本机 Claude 的登录或凭据配置")).toBeInTheDocument();
+  });
+
   it("maps local CLI probe failures to safe actionable messages", async () => {
     const api = new DigitalLifeApi("");
     const codex = { ...coder, displayName: "Local Codex", engine: "codex" as const, partnerId: "partner-codex", partnerRevisionId: "revision-codex" };

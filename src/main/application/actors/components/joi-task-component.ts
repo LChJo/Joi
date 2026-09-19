@@ -20,6 +20,7 @@ interface InFlightTurn {
   inputId: string;
   settled: "failed" | "ok" | undefined;
   startedAt: number;
+  userCanceled?: boolean;
 }
 
 /**
@@ -56,6 +57,20 @@ export class JoiTaskComponent implements ActorComponent {
   async #converge(ctx: ActorTickContext): Promise<void> {
     const turn = this.#inFlight;
     if (turn === null) return;
+    // A user cancel is a DB fact (canceled_at); abort the live reasoning session instead
+    // of letting it run to completion. Checked every tick so the abort lands within one
+    // actor cycle of the cancel request.
+    if (turn.settled === undefined && !turn.cancelRequested && await this.dependencies.inbox.isCanceled(turn.inputId)) {
+      turn.cancelRequested = true;
+      turn.userCanceled = true;
+      turn.abortController.abort();
+      emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.turn_cancel_requested", {
+        inputId: turn.inputId,
+        reason: "user_canceled",
+      });
+      // Keep the serial slot occupied until the driver promise settles.
+      return;
+    }
     const stalled = turn.settled === undefined
       && ctx.now.getTime() - turn.startedAt >= (this.dependencies.stalledTurnAfterMillis ?? DEFAULT_STALLED_TURN_AFTER_MILLIS);
     if (turn.settled === undefined && !stalled) return;
@@ -65,6 +80,7 @@ export class JoiTaskComponent implements ActorComponent {
         turn.abortController.abort();
         emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.turn_cancel_requested", {
           inputId: turn.inputId,
+          reason: "stalled",
         });
       }
       // Keep the serial slot occupied until the driver promise settles. Releasing it
@@ -74,7 +90,15 @@ export class JoiTaskComponent implements ActorComponent {
     this.#inFlight = null;
     const outcome = turn.settled ?? "failed";
     const errorCode = outcome === "failed" ? turn.errorCode ?? "joi_task_turn_stalled" : undefined;
-    if (outcome === "failed") {
+    if (turn.userCanceled === true) {
+      // A canceled goal is a user decision, not a scheduler fault: never count it toward
+      // the crash-loop breaker and never park the (already terminal) input.
+      this.#failures.delete(turn.inputId);
+      emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.turn_canceled", {
+        durationMs: Math.max(0, ctx.now.getTime() - turn.startedAt),
+        inputId: turn.inputId,
+      });
+    } else if (outcome === "failed") {
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.input.scheduler_failed", {
         errorCode: errorCode ?? "joi_task_turn_failed",
         inputId: turn.inputId,

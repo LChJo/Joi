@@ -4,7 +4,7 @@ import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from
 
 export interface WorkbenchAgentRepository {
   append(agentId: string, entries: NormalizedAgentConversationEntry[]): Promise<void>;
-  conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; limit: number }): Promise<AgentConversationPageDto>;
+  conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; latest?: boolean; limit: number }): Promise<AgentConversationPageDto>;
   dismiss(input: { agentId: string; workbenchId: string; dismissedAt: string }): Promise<void>;
   listAgents(input: { workbenchId: string; cursor?: string; goalId?: string; limit: number }): Promise<{ items: WorkbenchAgentCardDto[]; nextCursor?: string }>;
   resolveArtifact(input: WorkbenchArtifactResolutionInput): Promise<ResolvedWorkbenchArtifact>;

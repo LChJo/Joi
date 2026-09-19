@@ -1,8 +1,14 @@
 import type { AgentConversationDraft } from "./agent-conversation-presentation.js";
 import type { NativeAgentEvent } from "../ports/native-agent-events.js";
+import type { Clock } from "../ports/runtime-store.js";
 
 export class NativeAgentEventProjector {
   readonly #drafts: AgentConversationDraft[] = [];
+  constructor(private readonly clock?: Clock) {}
+
+  #stamp(): { createdAt?: string } {
+    return this.clock === undefined ? {} : { createdAt: this.clock.now().toISOString() };
+  }
 
   apply(event: NativeAgentEvent): void {
     if (event.type === "message") {
@@ -11,6 +17,7 @@ export class NativeAgentEventProjector {
           this.#appendText(event.role === "user" ? "USER" : "AGENT", part.text);
         } else if (part.type !== "text") {
           this.#drafts.push({
+            ...this.#stamp(),
             artifact: { mimeType: part.mimeType, name: part.name, size: part.size },
             kind: "ARTIFACT",
             role: event.role === "user" ? "USER" : "AGENT",
@@ -22,14 +29,14 @@ export class NativeAgentEventProjector {
     if (event.type === "tool_activity") {
       const toolName = event.toolName.slice(0, 120);
       this.#drafts.push(event.state === "started"
-        ? { kind: "TOOL_CALL", role: "TOOL", toolName }
-        : { kind: "TOOL_RESULT", role: "TOOL", text: event.state === "completed" ? "执行完成" : "执行失败", toolName });
+        ? { ...this.#stamp(), kind: "TOOL_CALL", role: "TOOL", toolName }
+        : { ...this.#stamp(), kind: "TOOL_RESULT", role: "TOOL", text: event.state === "completed" ? "执行完成" : "执行失败", toolName });
       return;
     }
     if (event.type === "artifact") {
-      this.#drafts.push({ artifact: { ...event.artifact }, kind: "ARTIFACT", role: "AGENT" });
+      this.#drafts.push({ ...this.#stamp(), artifact: { ...event.artifact }, kind: "ARTIFACT", role: "AGENT" });
     } else if (event.state === "failed" || event.state === "auth-required") {
-      this.#drafts.push({ kind: "ERROR", role: "SYSTEM", text: event.state === "auth-required" ? "需要完成身份验证" : "搭档调用失败" });
+      this.#drafts.push({ ...this.#stamp(), kind: "ERROR", role: "SYSTEM", text: event.state === "auth-required" ? "需要完成身份验证" : "搭档调用失败" });
     }
   }
 
@@ -45,7 +52,7 @@ export class NativeAgentEventProjector {
     if (last?.kind === "MARKDOWN" && last.role === role) {
       last.text = `${last.text ?? ""}${text}`;
     } else {
-      this.#drafts.push({ kind: "MARKDOWN", role, text });
+      this.#drafts.push({ ...this.#stamp(), kind: "MARKDOWN", role, text });
     }
   }
 }
