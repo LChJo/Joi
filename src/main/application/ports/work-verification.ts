@@ -9,6 +9,8 @@ export interface WorkVerificationInput {
 }
 
 export interface WorkVerificationResult {
+  /** Human-readable, path-relative explanation of a FAILED status. Never contains absolute paths. */
+  detail?: string;
   reasonCode?: string;
   status: "FAILED" | "NOT_REQUIRED" | "PASSED";
 }

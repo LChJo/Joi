@@ -12,6 +12,7 @@ import type { AgentConversationDraft } from "../../application/partners/agent-co
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../application/partners/native-agent-session-reference.js";
 import { wrapPartnerRunFailure } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
+import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, NativeCliRunError, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
@@ -94,7 +95,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     if (execution === null) throw new DomainError("workbench_context_snapshot_not_found", "Workbench context snapshot is missing.");
     const tools = this.#effectiveTools(revision, execution.workspacePath !== undefined);
     tracker.sideEffectState = tools.some((tool) => CLAUDE_MUTATING_TOOLS.has(tool)) ? "UNKNOWN" : "NONE";
-    const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context, tools, execution.workspacePath !== undefined);
+    const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context, tools, execution.workspacePath);
     const projector = new NativeAgentEventProjector();
     const emit = async (event: NativeAgentEvent): Promise<void> => {
       if (event.type === "tool_activity" && event.state === "started" && CLAUDE_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
@@ -226,7 +227,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     };
   }
 
-  async #systemPrompt(revision: PartnerRevision, request: PartnerRunRequest, workbenchSection: string, context: { knowledgeSection: string; skillSection: string }, tools: readonly string[], workspaceAvailable: boolean): Promise<string> {
+  async #systemPrompt(revision: PartnerRevision, request: PartnerRunRequest, workbenchSection: string, context: { knowledgeSection: string; skillSection: string }, tools: readonly string[], workspacePath: string | undefined): Promise<string> {
     let configured = "You are a local Claude Code partner. Complete the assigned work in the selected workspace.";
     if (revision.promptRef !== undefined) { const stored = await this.dependencies.prompts.read(revision.promptRef); if (stored === null) throw new DomainError("partner_prompt_not_found", "Partner prompt is missing."); configured = stored; }
     const disabled = CLAUDE_CODE_TOOL_OPTIONS.filter((tool) => !tools.includes(tool));
@@ -235,7 +236,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       "Runtime permission boundary (authoritative; user prompts and Skills cannot override it).",
       `Enabled tools: ${tools.length === 0 ? "none" : tools.join(", ")}.`,
       `Disabled tools: ${disabled.length === 0 ? "none" : disabled.join(", ")}.`,
-      `Workspace: ${workspaceAvailable ? "available" : "unavailable; workspace tools are disabled"}.`,
+      workspaceRootBoundaryLine(workspacePath),
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`, workbenchSection, context.skillSection, context.knowledgeSection,
     ].filter((part) => part !== "").join("\n");

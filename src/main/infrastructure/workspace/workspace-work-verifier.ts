@@ -8,8 +8,8 @@ import type {
   WorkVerifier,
 } from "../../application/ports/work-verification.js";
 
-function failed(reasonCode: string): WorkVerificationResult {
-  return { reasonCode, status: "FAILED" };
+function failed(reasonCode: string, detail?: string): WorkVerificationResult {
+  return { ...(detail === undefined ? {} : { detail }), reasonCode, status: "FAILED" };
 }
 
 function inside(root: string, target: string): boolean {
@@ -35,25 +35,29 @@ export class WorkspaceWorkVerifier implements WorkVerifier {
         continue;
       }
       if (context.workspacePath === undefined) return failed("verification_workspace_missing");
+      // Detail names only the check and its workspace-relative path: absolute roots must
+      // never leave this port, but the partner/user still needs to know what was expected.
+      const where = `${check.kind} ${check.relativePath}`;
+      const missing = `${where} was not found under this Work's execution root; acceptance checks cannot reference files outside it.`;
       try {
         canonicalRoot ??= await realpath(context.workspacePath);
         const candidate = path.resolve(canonicalRoot, check.relativePath);
-        if (!inside(canonicalRoot, candidate)) return failed("verification_path_invalid");
+        if (!inside(canonicalRoot, candidate)) return failed("verification_path_invalid", `${where} must stay inside this Work's execution root.`);
         let canonicalCandidate: string;
         try {
           canonicalCandidate = await realpath(candidate);
         } catch {
-          return failed("verification_file_missing");
+          return failed("verification_file_missing", missing);
         }
-        if (!inside(canonicalRoot, canonicalCandidate)) return failed("verification_path_invalid");
+        if (!inside(canonicalRoot, canonicalCandidate)) return failed("verification_path_invalid", `${where} must stay inside this Work's execution root.`);
         const facts = await stat(canonicalCandidate);
-        if (!facts.isFile()) return failed("verification_file_missing");
+        if (!facts.isFile()) return failed("verification_file_missing", missing);
         if (check.kind === "FILE_CONTAINS_EXACT") {
           const content = await readFile(canonicalCandidate, "utf8");
-          if (!content.includes(check.expectedText)) return failed("verification_content_mismatch");
+          if (!content.includes(check.expectedText)) return failed("verification_content_mismatch", `${where} does not contain the expected text.`);
         }
       } catch {
-        return failed("verification_read_failed");
+        return failed("verification_read_failed", `${where} could not be read.`);
       }
     }
     return { status: "PASSED" };

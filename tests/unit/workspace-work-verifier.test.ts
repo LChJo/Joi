@@ -35,7 +35,26 @@ describe("workspace Work verifier", () => {
         acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "../secret.txt" }],
         artifacts: [], contextSnapshotId: "context_1",
       });
-      expect(result).toEqual({ reasonCode: "verification_path_invalid", status: "FAILED" });
+      expect(result).toMatchObject({ reasonCode: "verification_path_invalid", status: "FAILED" });
+      expect(result.detail).toContain("FILE_EXISTS ../secret.txt");
+      expect(JSON.stringify(result)).not.toContain(root);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("reports a missing deliverable by relative path without leaking the root", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-verifier-missing-"));
+    try {
+      const verifier = new WorkspaceWorkVerifier({
+        contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {}, workspacePath: root }) },
+      });
+      const result = await verifier.verify({
+        acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "plugin-module-evidence.md" }],
+        artifacts: [], contextSnapshotId: "context_1",
+      });
+      expect(result).toMatchObject({ reasonCode: "verification_file_missing", status: "FAILED" });
+      expect(result.detail).toBe("FILE_EXISTS plugin-module-evidence.md was not found under this Work's execution root; acceptance checks cannot reference files outside it.");
       expect(JSON.stringify(result)).not.toContain(root);
     } finally {
       await rm(root, { force: true, recursive: true });

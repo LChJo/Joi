@@ -717,7 +717,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       resultId: `work_result:${runId}:${committedStatus}`,
       runId,
       status: committedStatus,
-      ...(verification.status === "FAILED" ? { summary: `Work verification failed (${verification.reasonCode ?? "verification_failed"}).` } : {}),
+      ...(verification.status === "FAILED" ? { summary: `Work verification failed (${verification.reasonCode ?? "verification_failed"}).${verification.detail === undefined ? "" : ` ${verification.detail}`}` } : {}),
       verification,
       workId: row.work_id,
     }));
