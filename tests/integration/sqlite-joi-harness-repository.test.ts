@@ -671,7 +671,45 @@ describe("SqliteJoiHarnessRepository", () => {
       });
     });
 
-    it("does not quarantine a normally consumed review without an explicit failure", async () => {
+    it("closes a completed review after delayed Work path synchronization without replaying it", async () => {
+      const goalInputId = "goal-review-sync-race";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      for (let index = 0; index < 15; index++) {
+        const workId = `work-review-sync-${String(index)}`;
+        fixture.database.transaction((connection) => connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES (?, ?, ?, '检查证据', '{}', 'READ', ?, ?, ?)`)
+          .run(workId, workbenchId, goalInputId, index < 12 ? "COMPLETED" : "FAILED", NOW, NOW));
+        await repository.chartPath({ goalInputId, open: { layer: 1, title: "待同步路径", workId }, turnId: `turn-${goalInputId}` });
+      }
+      seedCompletedLayer(fixture, goalInputId, 1);
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      await inbox.createTurn({ inputId: reviewInputId, turnId: "turn-sync-review", workbenchId, sessionId: "review-sync", createdAt: NOW });
+      await inbox.completeInput(reviewInputId, "turn-sync-review");
+      const feed = new SqliteJoiHomeFeedRepository(fixture.database);
+      expect((await feed.load(new Date(NOW))).goals[0]).toMatchObject({
+        status: "REVIEWING", work: { completed: 12, failed: 3, total: 15, active: 0 },
+      });
+      await repository.synchronizeWorkPaths({ now: NOW });
+
+      const [candidate] = await repository.listReviewRecoveries();
+      expect(candidate).toMatchObject({ action: "AUTO_CLEAR", reasonCode: "review_facts_complete" });
+      if (candidate === undefined) throw new Error("review recovery candidate missing");
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toEqual({ action: "AUTO_CLEARED" });
+      expect((await feed.load(new Date(NOW))).goals[0]).toMatchObject({ status: "COMPLETED", completionSummary: "一层完成" });
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, (SELECT COUNT(*) FROM joi_turns WHERE input_id = ?) AS turns FROM joi_inbox_messages WHERE input_id = ?",
+      ).get(reviewInputId, reviewInputId))).toEqual({ status: "CONSUMED", turns: 1 });
+    });
+
+    it("auto-clears rather than quarantines a normally consumed review with complete facts", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-normal", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-review-normal", now: NOW });
       seedCompletedLayer(fixture, "goal-review-normal", 1);
@@ -686,7 +724,55 @@ describe("SqliteJoiHarnessRepository", () => {
           VALUES ('turn-review-normal', ?, ?, 'review-normal', 'COMPLETED', 0, ?, ?)`).run(reviewInputId, workbenchId, NOW, NOW);
       });
 
+      expect(await repository.listReviewRecoveries()).toEqual([expect.objectContaining({
+        action: "AUTO_CLEAR", reasonCode: "review_facts_complete",
+      })]);
+    });
+
+    it.each([
+      "live-review", "active-work", "open-path", "missing-path", "continue", "blocked",
+      "waiting-gate", "reviewing-gate", "canceled", "new-revision",
+    ])("does not auto-close completed review when %s appears, including after scanning", async (blocker) => {
+      const goalInputId = "goal-review-recheck";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1);
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(reviewInputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-review-recheck', ?, ?, 'review-recheck', 'COMPLETED', ?, ?)`)
+          .run(reviewInputId, workbenchId, NOW, NOW);
+      });
+      const [candidate] = await repository.listReviewRecoveries();
+      expect(candidate).toMatchObject({ action: "AUTO_CLEAR" });
+      if (candidate === undefined) throw new Error("review recovery candidate missing");
+
+      fixture.database.transaction((connection) => {
+        if (blocker === "live-review") connection.prepare("UPDATE joi_turns SET status = 'RUNNING' WHERE turn_id = 'turn-review-recheck'").run();
+        if (blocker === "active-work" || blocker === "missing-path") connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-review-recheck', ?, ?, '新证据', '{}', 'READ', ?, ?, ?)`)
+          .run(workbenchId, goalInputId, blocker === "active-work" ? "READY" : "COMPLETED", NOW, NOW);
+        if (blocker === "continue" || blocker === "blocked") connection.prepare("UPDATE joi_goal_outcomes SET disposition = ? WHERE input_id = ?")
+          .run(blocker === "continue" ? "CONTINUE" : "BLOCKED", goalInputId);
+        if (blocker === "waiting-gate" || blocker === "reviewing-gate") connection.prepare(`INSERT INTO joi_goal_execution_gates
+          (goal_input_id, question_id, question_version, status, reason_code, created_at, updated_at)
+          VALUES (?, 'question-recheck', 1, ?, 'question_required', ?, ?)`)
+          .run(goalInputId, blocker === "waiting-gate" ? "WAITING_INPUT" : "REVIEWING", NOW, NOW);
+        if (blocker === "canceled") connection.prepare("UPDATE joi_inbox_messages SET canceled_at = ? WHERE input_id = ?").run(NOW, goalInputId);
+      });
+      if (blocker === "new-revision") seedCompletedLayer(fixture, goalInputId, 2);
+      if (blocker === "open-path") await repository.chartPath({
+        goalInputId, open: { layer: 1, title: "未完成验证" }, turnId: "turn-review-recheck",
+      });
       expect(await repository.listReviewRecoveries()).toEqual([]);
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+      expect((await repository.loadGoalProjections())[0]?.mapStatus).toBe("ACTIVE");
     });
 
     it("closes a quarantined historical review only after the user confirms and gates pass", async () => {

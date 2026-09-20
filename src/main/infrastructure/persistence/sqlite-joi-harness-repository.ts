@@ -38,6 +38,23 @@ const LAYER_MIN = 1;
 const LAYER_MAX = 32;
 const TASK_SUMMARY_KEEP_CHARS = 2_000;
 
+/**
+ * Shared review-recovery predicates. The scan (listReviewRecoveries) and its write-time
+ * recheck (reconcileReview) must stay in lockstep: a candidate that passes the scan but
+ * no longer passes the recheck is rejected instead of written. Both queries bind these
+ * fragments against the same aliases (m = joi_harness_maps, r = review input, o = outcome).
+ */
+const REVIEW_GATE_OPEN_SQL = `NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates gate
+                            WHERE gate.goal_input_id = m.goal_input_id AND gate.status <> 'OPEN')`;
+const REVIEW_FACTS_COMPLETE_SQL = `
+                r.status = 'CONSUMED' AND o.disposition = 'COMPLETED'
+                AND EXISTS (SELECT 1 FROM joi_turns finished_review
+                             WHERE finished_review.input_id = r.input_id AND finished_review.status = 'COMPLETED')
+                AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
+                                 WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
+                AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                                 AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`;
+
 function textValue(row: Row, key: string): string {
   const value = row[key];
   if (typeof value !== "string") throw new Error("joi_harness_row_invalid");
@@ -339,6 +356,9 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
 
   async listReviewRecoveries(): Promise<HarnessReviewRecoveryCandidate[]> {
     return this.database.transaction((connection) => {
+      // A successful review may finish before Work paths are synchronized. Once
+      // those facts converge, close it mechanically instead of waiting for a
+      // failure that will never occur or replaying the completed review.
       const candidates = connection.prepare(`
         SELECT m.goal_input_id, m.workbench_id, m.destination, rs.revision AS result_revision,
                o.completion_summary, o.disposition AS outcome_disposition, r.input_id AS review_input_id,
@@ -362,6 +382,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
            AND rs.synthesized_revision = rs.revision
            AND m.reviewed_revision = rs.revision
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+           AND ${REVIEW_GATE_OPEN_SQL}
            AND (
              g.status = 'CONSUMED'
              OR (g.status = 'CLARIFICATION_REQUIRED'
@@ -389,6 +410,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
               AND (r.failed_at IS NOT NULL OR EXISTS (
                 SELECT 1 FROM joi_turns failed_review
                  WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
+              ) OR (${REVIEW_FACTS_COMPLETE_SQL}
               ))
               AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
                                WHERE live_review.input_id = r.input_id
@@ -634,6 +656,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
            AND rs.synthesized_revision = rs.revision
            AND rs.revision = ? AND m.reviewed_revision = rs.revision
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+           AND ${REVIEW_GATE_OPEN_SQL}
            AND (g.status = 'CONSUMED' OR (g.status = 'CLARIFICATION_REQUIRED'
              AND g.clarification_reason_code = 'harness_review_unrecoverable'))
            AND (r.input_id IS NULL OR (
@@ -641,6 +664,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              AND (r.failed_at IS NOT NULL OR EXISTS (
                SELECT 1 FROM joi_turns failed_review
                 WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
+             ) OR (${REVIEW_FACTS_COMPLETE_SQL}
              ))
              AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
                               WHERE live_review.input_id = r.input_id

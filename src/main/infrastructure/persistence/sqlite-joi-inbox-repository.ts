@@ -285,6 +285,11 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         `questionId=${questionId}`,
         `questionVersion=${String(questionVersion)}`,
         `answer=${answer}`,
+        ...(current.clarificationReasonCode === "goal_review_interrupted"
+          // Cap the embedded history: every interrupt/retry cycle appends a supplement to
+          // the goal body, and an unbounded copy would inflate each recovery prompt.
+          ? [`savedGoalAndAnswers=${current.body.length > 4000 ? `${current.body.slice(0, 4000)}…` : current.body}`]
+          : []),
         ...queued.map((item) => `queuedWorkId=${String(item.work_id)} status=${String(item.status)}${typeof item.resolved_action_id === "string" ? ` resolvedActionId=${item.resolved_action_id}` : ""} title=${String(item.title).slice(0, 240)}`),
         "If the original plan still applies, call goal_resume, then resume or leave the existing Work as appropriate.",
         "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements.",
@@ -405,6 +410,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       );
       if (result.changes === 0) return null;
       finishAutomationRun(connection, inputId, "FAILED", now, failure.reasonCode);
+      recoverInterruptedGoalReviews(connection, now);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });
@@ -740,6 +746,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         now, row.goal_input_id, row.question_id, row.question_version, input.inputId,
       );
       if (opened.changes !== 1) throw new DomainError("goal_resume_conflict", "The goal resume version is no longer current.");
+      // The recovery input now owns orchestration; do not leave its original goal
+      // ROUTED forever, preventing result synthesis and harness convergence.
+      connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
+        WHERE input_id = ? AND status = 'ROUTED'`).run(now, row.goal_input_id);
       return { status: "OPEN" };
     });
   }
@@ -945,7 +955,70 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages
         SET status = ?, updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(nextStatus, now, inputId);
+      recoverInterruptedGoalReviews(connection, now);
     });
+  }
+
+  async recoverInterruptedGoalReviews(): Promise<void> {
+    this.database.transaction((connection) => recoverInterruptedGoalReviews(connection, this.#clock.now().toISOString()));
+  }
+}
+
+function recoverInterruptedGoalReviews(connection: DatabaseSync, now: string): void {
+  // Repair older successful recoveries whose original input was never consumed.
+  // An OPEN gate is the authoritative fact that goal_resume committed inside its own
+  // transaction, so a terminal (COMPLETED or FAILED) matching recovery turn plus the
+  // absence of any live goal-derived turn is enough to settle the goal; requiring a
+  // COMPLETED turn would strand the crash window between goal_resume and completeInput.
+  connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
+    WHERE input_id IN (
+      SELECT goal.input_id FROM joi_inbox_messages goal
+      JOIN joi_goal_execution_gates gate ON gate.goal_input_id = goal.input_id AND gate.status = 'OPEN'
+      JOIN joi_inbox_messages resume ON resume.input_id = gate.resume_input_id AND resume.status = 'CONSUMED'
+      WHERE goal.status = 'ROUTED' AND goal.canceled_at IS NULL AND goal.dismissed_at IS NULL AND goal.failed_at IS NULL
+        AND EXISTS (SELECT 1 FROM joi_turns done WHERE done.input_id = resume.input_id
+          AND done.status IN ('COMPLETED', 'FAILED'))
+        AND NOT EXISTS (SELECT 1 FROM joi_turns live JOIN joi_inbox_messages source ON source.input_id = live.input_id
+          WHERE live.status IN ('PENDING', 'RUNNING', 'WAITING')
+            AND COALESCE(source.goal_input_id, source.input_id) = goal.input_id)
+      ORDER BY gate.updated_at, goal.input_id LIMIT 50
+    )`).run(now);
+  // Terminal recovery inputs cannot open their gate. Surface a versioned retry
+  // instead of replaying a turn that may already have committed side effects.
+  // Deferred while goal-bound Work is still live or any goal-derived turn is in
+  // flight: the retry turn would otherwise orchestrate concurrently with them. The
+  // closed gate already blocks derived inputs, so waiting cannot stall convergence.
+  const rows = connection.prepare(`SELECT gate.goal_input_id, gate.question_version
+    FROM joi_goal_execution_gates gate
+    JOIN joi_inbox_messages goal ON goal.input_id = gate.goal_input_id
+    LEFT JOIN joi_inbox_messages resume ON resume.input_id = gate.resume_input_id
+    WHERE gate.status = 'REVIEWING'
+      AND goal.status IN ('PENDING', 'ROUTED')
+      AND goal.canceled_at IS NULL AND goal.dismissed_at IS NULL AND goal.failed_at IS NULL
+      AND (resume.input_id IS NULL OR resume.status = 'CONSUMED')
+      AND NOT EXISTS (SELECT 1 FROM joi_turns turn WHERE turn.input_id = gate.resume_input_id
+        AND turn.status IN ('PENDING', 'RUNNING', 'WAITING'))
+      AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = gate.goal_input_id
+        AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+      AND NOT EXISTS (SELECT 1 FROM joi_turns live JOIN joi_inbox_messages source ON source.input_id = live.input_id
+        WHERE live.status IN ('PENDING', 'RUNNING', 'WAITING')
+          AND COALESCE(source.goal_input_id, source.input_id) = goal.input_id)
+    ORDER BY gate.updated_at, gate.goal_input_id LIMIT 50`).all() as { goal_input_id: string; question_version: number }[];
+  for (const row of rows) {
+    const version = row.question_version + 1;
+    // Guarded transitions: this repair runs unattended, so it must never resurrect a
+    // terminal goal or split goal/gate state when the expected status did not hold.
+    const raised = connection.prepare(`UPDATE joi_inbox_messages SET status = 'CLARIFICATION_REQUIRED',
+      clarification_reason_code = 'goal_review_interrupted',
+      clarification_prompt = '恢复评审中断，已有回答和工作结果已保留。请重试评审，joi 会重新核对后继续。', updated_at = ?
+      WHERE input_id = ? AND status IN ('PENDING', 'ROUTED')`).run(now, row.goal_input_id);
+    if (raised.changes !== 1) continue;
+    connection.prepare(`UPDATE joi_goal_execution_gates SET status = 'WAITING_INPUT',
+      question_id = ?, question_version = ?, reason_code = 'goal_review_interrupted',
+      resume_input_id = NULL, answered_at = NULL, updated_at = ?
+      WHERE goal_input_id = ? AND status = 'REVIEWING'`).run(
+      `goal_question:${row.goal_input_id}:v${String(version)}`, version, now, row.goal_input_id,
+    );
   }
 }
 

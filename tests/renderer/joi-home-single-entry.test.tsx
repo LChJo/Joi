@@ -1523,6 +1523,22 @@ describe("joi home single entry", () => {
     expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
   });
 
+  it("retries an interrupted goal review with the saved answer and current question version", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "review-retry", status: "CLARIFICATION_REQUIRED",
+      clarificationReasonCode: "goal_review_interrupted", clarificationPrompt: "恢复评审中断，已有回答已保留。",
+      questionId: "review-question-v2", questionVersion: 2,
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "review-retry", status: "ROUTED" });
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "重试评审" }));
+    expect(clarify).toHaveBeenCalledWith("review-retry", { text: "沿用已保存的回答，重试评审。", questionId: "review-question-v2", questionVersion: 2 });
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
   it("shows authorization repair as an explicit one-click recovery instead of a blank input", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));

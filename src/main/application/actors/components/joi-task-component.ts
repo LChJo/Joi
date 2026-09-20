@@ -162,5 +162,14 @@ export class JoiTaskComponent implements ActorComponent {
         turnId: stale.turnId,
       });
     }
+    try {
+      await this.dependencies.inbox.recoverInterruptedGoalReviews?.();
+    } catch (error: unknown) {
+      // Background repair is best-effort: never take down the traversal loop. The next
+      // scheduled scan retries, and the underlying facts are still guarded on write.
+      emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.review_recovery_failed", {
+        errorCode: runtimeDiagnosticErrorCode(error),
+      });
+    }
   }
 }

@@ -159,6 +159,7 @@ export function wireRuntime(input: {
           inbox: new SqliteJoiTaskReader({
             database,
             failTurn: (inputId, turnId) => persistence.joiInboxRepository.failTurn(inputId, turnId),
+            recoverInterruptedGoalReviews: () => persistence.joiInboxRepository.recoverInterruptedGoalReviews(),
             park: async (inputId, failure) => { await persistence.joiInboxRepository.park(inputId, failure); },
           }),
         }),

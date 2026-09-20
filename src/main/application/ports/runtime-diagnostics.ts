@@ -47,6 +47,9 @@ export interface RuntimeDiagnosticEventMap {
     inputId: string;
     turnId: string;
   };
+  "joi.task.review_recovery_failed": {
+    errorCode: string;
+  };
   "joi.task.input_parked": {
     consecutiveFailures: number;
     errorCode: string;

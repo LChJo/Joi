@@ -596,6 +596,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const needsPartnerChoice = reasonCode === "partner_selection_required";
   const needsWaitingRecovery = reasonCode === "partner_waiting_recovery_required" || reasonCode === "partner_auth_required";
   const needsGoalContinuation = reasonCode === "goal_continuation_required";
+  const needsReviewRetry = reasonCode === "goal_review_interrupted";
   const needsWorkspace = reasonCode === "workbench_workspace_not_ready";
   const needsWorkbenchChoice = reasonCode === "workbench_selection_invalid" || reasonCode === "workbench_creation_unavailable" || reasonCode === "workbench_not_found";
   const needsHistoricalReview = reasonCode === "harness_review_unrecoverable";
@@ -702,7 +703,10 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
         </div>
       </section> : null}
     </> : null}
-    {needsHistoricalReview || needsPartnerChoice ? null : needsGoalContinuation ? <div className="joi-clarify-workspace">
+    {needsHistoricalReview || needsPartnerChoice ? null : needsReviewRetry ? <div className="joi-clarify-workspace">
+      <div><strong>重新核对已有工作</strong><span>已有回答和工作结果已保留，joi 会核对后继续。</span></div>
+      <button className="button primary" disabled={busy} onClick={() => void resolve({ text: "沿用已保存的回答，重试评审。" })} type="button">{busy ? "提交中…" : "重试评审"}</button>
+    </div> : needsGoalContinuation ? <div className="joi-clarify-workspace">
       <div><strong>选择如何收口</strong><span>继续会再授权最多两轮自动补充；接受现状会保留当前结论和已注明的缺口。</span></div>
       <span className="row-actions">
         <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "CONTINUE" })} type="button">{busy ? "提交中…" : "继续补齐"}</button>

@@ -19,6 +19,7 @@ function textValue(row: Row, key: string): string {
 export class SqliteJoiTaskReader implements JoiTaskInbox {
   constructor(private readonly dependencies: {
     database: TransactionalDatabase;
+    recoverInterruptedGoalReviews?: () => Promise<void>;
     failTurn: (inputId: string, turnId: string) => Promise<void>;
     park: (inputId: string, failure: { failureCount: number; reasonCode: string }) => Promise<void>;
   }) {}
@@ -48,6 +49,10 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
 
   async park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<void> {
     await this.dependencies.park(inputId, failure);
+  }
+
+  async recoverInterruptedGoalReviews(): Promise<void> {
+    await this.dependencies.recoverInterruptedGoalReviews?.();
   }
 
   async listStaleRunningTurns(olderThan: string): Promise<JoiTaskStaleTurn[]> {

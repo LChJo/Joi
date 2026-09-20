@@ -2,6 +2,7 @@ import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-servic
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
+import { SqliteJoiTaskReader } from "../../src/main/infrastructure/persistence/sqlite-joi-task-reader.js";
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("goal execution gate", () => {
@@ -60,13 +61,109 @@ describe("goal execution gate", () => {
         inputId: resume.input_id,
         turnId: "resume-turn",
       })).resolves.toEqual({ status: "OPEN" });
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)?.status).toBe("CONSUMED");
       await expect(repository.resumeGoal({
         inputId: resume.input_id,
         turnId: "resume-turn",
       })).resolves.toEqual({ status: "OPEN" });
+      await repository.completeInput(resume.input_id, "resume-turn");
+      // An older build left the original input ROUTED even after a successful recovery.
+      fixture.database.transaction((db) => db.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED' WHERE input_id = ?").run(goal.inputId));
+      await repository.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)?.status).toBe("CONSUMED");
+      // Crash window: goal_resume committed (gate OPEN) but the recovery turn was later
+      // failed by the orphan sweep. The OPEN gate is authoritative; the goal must still
+      // settle instead of stranding as ROUTED forever.
+      fixture.database.transaction((db) => {
+        db.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED' WHERE input_id = ?").run(goal.inputId);
+        db.prepare("UPDATE joi_turns SET status = 'FAILED' WHERE input_id = ?").run(resume.input_id);
+      });
+      await repository.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)?.status).toBe("CONSUMED");
     } finally {
       await fixture.close();
     }
+  });
+
+  it.each(["side-effect", "parked", "historical"])("exposes an interrupted %s recovery and preserves saved answers for retry", async (failure) => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "复核", personaSummary: "persona", projectLabel: "joi", scopeSummary: "复核" });
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const goal = await inbox.accept({ idempotencyKey: "interrupted-review", text: "准备发布", workbenchId: workbench.workbenchId });
+      await repository.requireClarification(goal.inputId, "question_required", "哪些平台？");
+      const questionId = `goal_question:${goal.inputId}:v1`;
+      await inbox.clarify({ inputId: goal.inputId, questionId, questionVersion: 1, text: "Windows 和 macOS" });
+      const resumeId = `joi_goal_resume:goal:${goal.inputId}:v1`;
+      await repository.createTurn({ workbenchId: workbench.workbenchId, createdAt: fixture.clock.now().toISOString(), inputId: resumeId, sessionId: "session", turnId: "resume-turn" });
+      if (failure === "historical") {
+        fixture.database.transaction((db) => {
+          db.prepare("UPDATE joi_turns SET status = 'FAILED' WHERE turn_id = 'resume-turn'").run();
+          db.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(resumeId);
+        });
+      } else {
+        if (failure === "side-effect") await repository.recordTurnProgress("resume-turn", { formalOutputStarted: false, sideEffectStarted: true });
+        await repository.failTurn(resumeId, "resume-turn");
+        if (failure === "parked") await repository.park(resumeId, { failureCount: 8, reasonCode: "goal_resume_required" });
+      }
+      const reader = new SqliteJoiTaskReader({ database: fixture.database,
+        failTurn: (inputId, turnId) => repository.failTurn(inputId, turnId),
+        park: async (inputId, reason) => { await repository.park(inputId, reason); },
+        recoverInterruptedGoalReviews: () => repository.recoverInterruptedGoalReviews(),
+      });
+      await reader.recoverInterruptedGoalReviews();
+      await reader.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)).toMatchObject({
+        status: "CLARIFICATION_REQUIRED", clarificationReasonCode: "goal_review_interrupted", questionVersion: 2,
+      });
+      await expect(inbox.clarify({ inputId: goal.inputId, questionId, questionVersion: 1, text: "旧回答" })).rejects.toMatchObject({ code: "joi_clarification_unavailable" });
+      await inbox.clarify({ inputId: goal.inputId, questionId: `goal_question:${goal.inputId}:v2`, questionVersion: 2, text: "沿用已保存的回答，重试评审。" });
+      const retryId = `joi_goal_resume:goal:${goal.inputId}:v2`;
+      expect((await repository.loadInput(retryId))?.body).toContain("Windows 和 macOS");
+      expect((await reader.listPendingInputs()).map((item) => item.inputId)).toEqual([retryId]);
+      await expect(repository.resumeGoal({ inputId: resumeId, turnId: "resume-turn" })).rejects.toMatchObject({ code: "goal_resume_not_allowed" });
+    } finally { await fixture.close(); }
+  });
+
+  it.each(["pending", "running", "canceled", "dismissed", "failed", "open", "new-question", "consumed-goal", "live-work"])("leaves %s goals alone during interrupted-review recovery", async (state) => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const goal = await inbox.accept({ idempotencyKey: "guard-review", text: "研究" });
+      const workbench = await fixture.workbenchRegistry.create({ name: "核对", personaSummary: "persona", projectLabel: "joi", scopeSummary: "核对" });
+      await repository.requireClarification(goal.inputId, "question_required", "范围？");
+      await inbox.clarify({ inputId: goal.inputId, questionId: `goal_question:${goal.inputId}:v1`, questionVersion: 1, text: "全球" });
+      const resumeId = `joi_goal_resume:goal:${goal.inputId}:v1`;
+      fixture.database.transaction((db) => {
+        if (state !== "pending") db.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(resumeId);
+        if (state === "running") db.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('live-review', ?, ?, 'session', 'RUNNING', ?, ?)`).run(resumeId, workbench.workbenchId, fixture.clock.now().toISOString(), fixture.clock.now().toISOString());
+        if (state === "canceled") db.prepare("UPDATE joi_inbox_messages SET canceled_at = ? WHERE input_id = ?").run(fixture.clock.now().toISOString(), goal.inputId);
+        if (state === "dismissed") db.prepare("UPDATE joi_inbox_messages SET dismissed_at = ? WHERE input_id = ?").run(fixture.clock.now().toISOString(), goal.inputId);
+        if (state === "failed") db.prepare("UPDATE joi_inbox_messages SET failed_at = ? WHERE input_id = ?").run(fixture.clock.now().toISOString(), goal.inputId);
+        if (state === "open") db.prepare("UPDATE joi_goal_execution_gates SET status = 'OPEN' WHERE goal_input_id = ?").run(goal.inputId);
+        // A terminal goal must never be resurrected into a question card by the unattended scan.
+        if (state === "consumed-goal") db.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(goal.inputId);
+        // Live goal-bound Work defers the retry card: the recovery turn would otherwise
+        // orchestrate concurrently with it. The goal turn satisfies the work_items
+        // goal-binding trigger (migration 034).
+        if (state === "live-work") {
+          db.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+            VALUES ('goal-turn', ?, ?, 'session', 'COMPLETED', ?, ?)`)
+            .run(goal.inputId, workbench.workbenchId, fixture.clock.now().toISOString(), fixture.clock.now().toISOString());
+          db.prepare(`INSERT INTO work_items
+            (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+            VALUES ('live-work-guard', ?, ?, '进行中', '{}', 'READ', 'RUNNING', ?, ?)`)
+            .run(workbench.workbenchId, goal.inputId, fixture.clock.now().toISOString(), fixture.clock.now().toISOString());
+        }
+      });
+      if (state === "new-question") await repository.requireClarification(resumeId, "question_required", "时间范围？");
+      const before = await inbox.list();
+      await repository.recoverInterruptedGoalReviews();
+      expect(await inbox.list()).toEqual(before);
+    } finally { await fixture.close(); }
   });
 
   it("closes the dispatch/commit race inside the work-plan transaction", async () => {

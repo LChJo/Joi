@@ -18,6 +18,7 @@ interface Harness {
   calls: string[];
   component: JoiTaskComponent;
   failTurns: string[];
+  recoverReviews: ReturnType<typeof vi.fn>;
   parks: { failureCount: number; inputId: string; reasonCode: string }[];
   signals: Map<string, AbortSignal | undefined>;
   settle: (inputId: string, outcome?: "ok" | "fail") => void;
@@ -27,6 +28,7 @@ interface Harness {
 function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harness {
   const calls: string[] = [];
   const failTurns: string[] = [];
+  const recoverReviews = vi.fn(async () => undefined);
   const parks: { failureCount: number; inputId: string; reasonCode: string }[] = [];
   const signals = new Map<string, AbortSignal | undefined>();
   const resolvers = new Map<string, { reject: (error: Error) => void; resolve: () => void }>();
@@ -48,6 +50,7 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harn
     },
     gate: { hasReadySource: async () => options?.ready ?? true },
     inbox: {
+      recoverInterruptedGoalReviews: recoverReviews,
       park: async (inputId, failure) => {
         state.pending = state.pending.filter((pending) => pending.inputId !== inputId);
         parks.push({ inputId, ...failure });
@@ -64,6 +67,7 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harn
     calls,
     component,
     failTurns,
+    recoverReviews,
     parks,
     signals,
     settle: (inputId, outcome = "ok") => {
@@ -143,12 +147,26 @@ describe("JoiTaskComponent traversal scheduling", () => {
     harness.state.stale = [{ inputId: "input_old", turnId: "turn_old" }];
     await harness.component.update(ctxAt(0));
     expect(harness.failTurns).toEqual(["turn_old"]);
+    expect(harness.recoverReviews).toHaveBeenCalledTimes(1);
 
     await harness.component.update(ctxAt(5_000));
     expect(harness.failTurns).toEqual(["turn_old"]);
 
     await harness.component.update(ctxAt(31_000));
     expect(harness.failTurns).toEqual(["turn_old", "turn_old"]);
+    expect(harness.recoverReviews).toHaveBeenCalledTimes(2);
+  });
+
+  it("isolates a failing review-recovery scan from the traversal loop", async () => {
+    const harness = makeHarness();
+    harness.recoverReviews.mockRejectedValueOnce(Object.assign(new Error("database is locked"), { code: "sqlite_busy" }));
+    harness.state.stale = [{ inputId: "input_old", turnId: "turn_old" }];
+    await expect(harness.component.update(ctxAt(0))).resolves.toBeUndefined();
+    expect(harness.failTurns).toEqual(["turn_old"]);
+    expect(harness.recoverReviews).toHaveBeenCalledTimes(1);
+    // The next scheduled scan retries and succeeds.
+    await harness.component.update(ctxAt(31_000));
+    expect(harness.recoverReviews).toHaveBeenCalledTimes(2);
   });
 
   it("honors explicit timing options over the defaults", async () => {

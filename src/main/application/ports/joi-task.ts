@@ -12,6 +12,7 @@ export interface JoiTaskStaleTurn {
 
 /** DB-fact view the joi task component traverses; PENDING rows are the only scheduling truth. */
 export interface JoiTaskInbox {
+  recoverInterruptedGoalReviews?(): Promise<void>;
   park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<void>;
   listPendingInputs(): Promise<JoiTaskPendingInput[]>;
   listStaleRunningTurns(olderThan: string): Promise<JoiTaskStaleTurn[]>;
