@@ -231,6 +231,51 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
+  it("grants continuation allowance above recovery-appended layers, not a blind +2", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "研究", personaSummary: "persona", projectLabel: "joi", scopeSummary: "研究" });
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-goal-continuation-overshoot", text: "研究 AI 资讯", workbenchId: workbench.workbenchId });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-continuation-overshoot', ?, ?, 'session-continuation-overshoot', 'COMPLETED', ?, ?)`)
+          .run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'goal_continuation_required', clarification_prompt = '证据仍有缺口。' WHERE input_id = ?").run(accepted.inputId);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
+          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        // Work recovery appended layers past the allowance: depth 5 against allowance 2.
+        const insertPath = connection.prepare(`INSERT INTO joi_harness_paths
+          (path_id, goal_input_id, layer, title, status, created_at, updated_at)
+          VALUES (?, ?, ?, '补充证据', 'CLOSED', ?, ?)`);
+        for (let layer = 1; layer <= 5; layer += 1) insertPath.run(`path-overshoot-${String(layer)}`, accepted.inputId, layer, now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 3, 3, ?)`).run(accepted.inputId, now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, completion_summary, completed_at, updated_at, disposition)
+          VALUES (?, 3, '已有横评，近七天来源仍不足。', ?, ?, 'CONTINUE')`).run(accepted.inputId, now, now);
+        connection.prepare(`INSERT INTO joi_user_action_requests
+          (action_id, input_id, result_revision, kind, status, reason_code, prompt, created_at, updated_at)
+          VALUES ('overshoot-action', ?, 3, 'GOAL_CONTINUATION', 'OPEN', 'goal_continuation_required', '证据仍有缺口。', ?, ?)`)
+          .run(accepted.inputId, now, now);
+      });
+
+      await expect(inbox.clarify({ actionChoice: "CONTINUE", inputId: accepted.inputId })).resolves.toMatchObject({ status: "CONSUMED" });
+      // A blind +2 would land on 4 == MAX(layer)-1 and stall; the grant must clear the depth.
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT continuation_allowance FROM joi_harness_maps WHERE goal_input_id = ?").get(accepted.inputId)))
+        .toEqual({ continuation_allowance: 6 });
+      expect(await new SqliteJoiHarnessRepository(fixture.database).listReviewDigests())
+        .toEqual([expect.objectContaining({ goalInputId: accepted.inputId, resultRevision: 3 })]);
+    } finally {
+      fixture.database.close();
+    }
+  });
+
   it("applies a goal continuation decision without rerouting the original input", async () => {
     const fixture = await createRuntimeFixture();
     try {

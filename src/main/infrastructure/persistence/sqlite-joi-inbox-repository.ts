@@ -225,8 +225,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           if (currentOutcome === undefined) return null;
           const now = this.#clock.now().toISOString();
           if (patch.actionChoice === "CONTINUE") {
+            // Grant relative to the deepest layer actually on the map. Work recovery appends
+            // replacement layers without spending allowance, so a blind +2 can land exactly on
+            // the MAX(layer)-1 exhaustion threshold and leave the goal unable to auto-continue.
             const authorized = connection.prepare(`UPDATE joi_harness_maps
-              SET continuation_allowance = continuation_allowance + 2, revision = revision + 1, updated_at = ?
+              SET continuation_allowance = MAX(continuation_allowance,
+                    (SELECT MAX(0, COALESCE(MAX(p.layer), 1) - 1) FROM joi_harness_paths p
+                      WHERE p.goal_input_id = joi_harness_maps.goal_input_id)) + 2,
+                  revision = revision + 1, updated_at = ?
               WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, inputId);
             if (authorized.changes !== 1) throw new Error("joi_goal_continuation_conflict");
           } else {
@@ -337,7 +343,19 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         if (current.dismissedAt !== undefined || current.canceledAt !== undefined || current.failedAt !== undefined) return null;
         const cancelableWork = connection.prepare(`SELECT 1 FROM work_items
           WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') LIMIT 1`).get(inputId);
-        if (cancelableWork === undefined) return null;
+        if (cancelableWork === undefined) {
+          // No live work: only a stalled lifecycle is cancelable here — an ACTIVE map with
+          // nothing in flight can neither advance nor always be re-prompted, so without this
+          // exit the card would stay non-terminal and un-actionable forever.
+          const stalled = connection.prepare(`SELECT 1 FROM joi_harness_maps m
+            WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
+              AND NOT EXISTS (SELECT 1 FROM joi_turns live
+                               JOIN joi_inbox_messages source ON source.input_id = live.input_id
+                               WHERE live.status IN ('PENDING', 'RUNNING', 'WAITING')
+                                 AND COALESCE(source.goal_input_id, source.input_id) = m.goal_input_id)
+            LIMIT 1`).get(inputId);
+          if (stalled === undefined) return null;
+        }
         const result = connection.prepare(`UPDATE joi_inbox_messages
           SET canceled_at = ?, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
           WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(now, now, inputId);

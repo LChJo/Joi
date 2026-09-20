@@ -79,6 +79,41 @@ describe("sqlite joi inbox cancel", () => {
     }
   });
 
+  it("cancels a stalled consumed goal whose map is active but nothing is in flight", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "验证", personaSummary: "persona", projectLabel: "技能", scopeSummary: "验证" });
+      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-stalled", text: "产出定稿报告", workbenchId: workbench.workbenchId });
+      const seedStalled = (inputId: string, mapStatus: string) => fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, 'joi_session:stalled', 'COMPLETED', '2026-09-20T09:00:00.000Z', '2026-09-20T09:00:00.000Z')`)
+          .run(`turn_stalled_${mapStatus.toLowerCase()}`, inputId, workbench.workbenchId);
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(inputId);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
+          VALUES (?, ?, '产出定稿', ?, 2, '2026-09-20T09:00:00.000Z', '2026-09-20T09:00:00.000Z')`)
+          .run(inputId, workbench.workbenchId, mapStatus);
+      });
+      seedStalled(accepted.inputId, "ACTIVE");
+
+      const canceled = await inbox.cancel({ inputId: accepted.inputId });
+      expect(canceled).toMatchObject({ canceled: true, status: "CONSUMED" });
+      const canceledRow = fixture.database.transaction((connection) => connection.prepare(
+        "SELECT canceled_at FROM joi_inbox_messages WHERE input_id = ?").get(accepted.inputId)) as { canceled_at: string | null };
+      expect(typeof canceledRow.canceled_at).toBe("string");
+
+      // A cleared map with nothing in flight is already terminal: cancel keeps refusing.
+      const settled = await inbox.accept({ idempotencyKey: "key-settled", text: "产出定稿报告二", workbenchId: workbench.workbenchId });
+      seedStalled(settled.inputId, "CLEARED");
+      await expect(inbox.cancel({ inputId: settled.inputId })).rejects.toMatchObject({ code: "joi_cancel_unavailable" });
+    } finally {
+      fixture.database.close();
+    }
+  });
+
   it("revives a consumed goal input when a partner question arrives and routes the answer back", async () => {
     const fixture = await createRuntimeFixture();
     try {

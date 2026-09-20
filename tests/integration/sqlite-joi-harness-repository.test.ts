@@ -404,6 +404,47 @@ describe("SqliteJoiHarnessRepository", () => {
       });
     });
 
+    it("re-raises a continuation decision when an applied grant left the goal exhausted", async () => {
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-continue-reraise", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-continue-reraise", now: NOW });
+      for (const layer of [1, 2, 3]) {
+        if (layer > 1) {
+          fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_harness_paths
+            (path_id, goal_input_id, layer, title, status, created_at, updated_at)
+            VALUES (?, 'goal-continue-reraise', ?, '补充证据', 'CLOSED', ?, ?)`)
+            .run(`path-reraise-${String(layer)}`, layer, NOW, NOW));
+        }
+        seedCompletedLayer(fixture, "goal-continue-reraise", layer, "CONTINUE");
+      }
+      const decisions = await repository.listContinuationDecisionSeeds();
+      const decision = decisions[0];
+      if (decision === undefined) throw new Error("expected continuation decision seed");
+      await expect(repository.requestContinuationDecision({ now: NOW, seed: decision })).resolves.toBe(true);
+
+      // Simulate the grant being applied without opening room (recovery-appended layers):
+      // the goal is still exhausted and idle, so the decision must be askable again.
+      fixture.database.transaction((connection) => {
+        connection.prepare(`UPDATE joi_user_action_requests SET status = 'APPLIED', decision = 'CONTINUE'
+          WHERE input_id = 'goal-continue-reraise' AND status = 'OPEN'`).run();
+        connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', clarification_reason_code = NULL,
+          clarification_prompt = NULL WHERE input_id = 'goal-continue-reraise'`).run();
+      });
+
+      const again = await repository.listContinuationDecisionSeeds();
+      expect(again).toEqual([decision]);
+      await expect(repository.requestContinuationDecision({ now: NOW, seed: decision })).resolves.toBe(true);
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT action_id, status
+        FROM joi_user_action_requests WHERE input_id = 'goal-continue-reraise' ORDER BY action_id`).all())).toEqual([
+        { action_id: "joi_action:goal_continuation:goal-continue-reraise:r3:s1", status: "APPLIED" },
+        { action_id: "joi_action:goal_continuation:goal-continue-reraise:r3:s2", status: "OPEN" },
+      ]);
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT status, clarification_reason_code
+        FROM joi_inbox_messages WHERE input_id = 'goal-continue-reraise'`).get())).toEqual({
+        clarification_reason_code: "goal_continuation_required",
+        status: "CLARIFICATION_REQUIRED",
+      });
+    });
+
     it("does not overwrite an unrelated user clarification with automatic continuation", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-continue-guard", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-continue-guard", now: NOW });

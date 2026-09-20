@@ -621,10 +621,16 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       );
       if (eligible === undefined) return false;
       const prompt = "已自动补充两轮，当前结果仍有明确缺口。可以继续补齐，或接受当前结果并保留缺口说明。";
+      // Sequence the action per (goal, revision): a prior request for this revision may already
+      // be APPLIED/RESOLVED while the goal is still exhausted and idle (e.g. recovery-appended
+      // layers consumed the grant). Re-raise instead of letting the idempotency row silence it.
+      const prior = connection.prepare(`SELECT COUNT(*) AS n FROM joi_user_action_requests
+        WHERE input_id = ? AND result_revision = ? AND kind = 'GOAL_CONTINUATION'`).get(
+        input.seed.goalInputId, input.seed.resultRevision) as { n: number | bigint };
       const inserted = connection.prepare(`INSERT OR IGNORE INTO joi_user_action_requests
         (action_id, input_id, result_revision, kind, status, reason_code, prompt, created_at, updated_at)
         VALUES (?, ?, ?, 'GOAL_CONTINUATION', 'OPEN', 'goal_continuation_required', ?, ?, ?)`).run(
-        `joi_action:goal_continuation:${input.seed.goalInputId}:r${String(input.seed.resultRevision)}`,
+        `joi_action:goal_continuation:${input.seed.goalInputId}:r${String(input.seed.resultRevision)}:s${String(Number(prior.n) + 1)}`,
         input.seed.goalInputId, input.seed.resultRevision, prompt, input.now, input.now,
       );
       if (inserted.changes === 0) return false;
