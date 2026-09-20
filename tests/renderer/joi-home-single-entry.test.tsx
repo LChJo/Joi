@@ -1866,6 +1866,8 @@ describe("joi home single entry", () => {
       ["DEGRADED", "bad_request", "拒绝了请求参数"],
       ["DEGRADED", "connection_error", "无法连通所选接口"],
       ["DEGRADED", "timeout", "连接所选接口超时"],
+      ["DEGRADED", "empty_response", "接口已响应，但未返回有效正文"],
+      ["DEGRADED", "response_truncated", "验证回复达到输出上限而被截断"],
       ["DEGRADED", "http_error", "可展开查看原始报错"],
       ["DEGRADED", "endpoint_unreachable", "joi 无法访问所选接口"],
     ];

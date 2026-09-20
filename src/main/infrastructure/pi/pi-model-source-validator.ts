@@ -8,7 +8,14 @@ import { classifyHttp403Detail } from "../../application/partners/partner-run-fa
 
 type Probe = (record: ModelSourceRecord) => Promise<void>;
 
+class ProbeResponseError extends Error {
+  constructor(readonly reasonCode: "empty_response" | "response_truncated") {
+    super(reasonCode === "empty_response" ? "validation response contained no text" : "validation response reached output limit");
+  }
+}
+
 function failureReason(error: unknown): { error?: string; reasonCode: string; status: "DEGRADED" | "NEEDS_AUTH" } {
+  if (error instanceof ProbeResponseError) return { error: error.message, reasonCode: error.reasonCode, status: "DEGRADED" };
   const raw = errorMessage(error);
   const message = raw.toLowerCase();
   const statusCode = numericStatus(error);
@@ -113,21 +120,38 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       const model = provider.getModels().find((candidate) => candidate.id === source.activeModelRevision.modelId);
       if (model === undefined) throw new Error("model not found");
       const alwaysOn = modelRequiresAlwaysOnThinking(model.baseUrl);
+      // DeepSeek defaults to thinking even when Pi's model metadata says false.
+      // For this no-tool probe only, let Pi emit reasoning.effort=none; otherwise
+      // thinking can exhaust the tiny output budget before any visible answer.
+      const probeModel = model.api === "openai-responses" && new URL(model.baseUrl).hostname === "api.deepseek.com"
+        ? { ...model, reasoning: true } : model;
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), alwaysOn ? 30_000 : 15_000);
       timer.unref();
       try {
-        const response = await models.completeSimple(model, {
-          messages: [{ content: "Reply with OK.", role: "user", timestamp: Date.now() }],
-        }, { maxTokens: alwaysOn ? 256 : 8, signal: controller.signal, ...(alwaysOn ? { reasoning: "low" as const } : {}) });
-        if (response.stopReason === "error") {
-          throw new Error(response.errorMessage ?? "minimal text response failed");
-        }
-        if (controller.signal.aborted || response.stopReason === "aborted") {
-          throw new Error("validation probe timed out");
-        }
-        if (!response.content.some((block) => block.type === "text" && block.text.length > 0)) {
-          throw new Error("minimal text response failed");
+        const timestamp = Date.now();
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const response = await models.completeSimple(probeModel, {
+            messages: [{ content: "Reply with OK.", role: "user", timestamp }],
+          }, {
+            maxTokens: attempt === 0 ? (alwaysOn ? 256 : 64) : 1024,
+            signal: controller.signal,
+            ...(alwaysOn ? { reasoning: "low" as const } : {}),
+          });
+          if (controller.signal.aborted || response.stopReason === "aborted") {
+            throw new Error("validation probe timed out");
+          }
+          if (response.stopReason === "error") {
+            throw new Error(response.errorMessage ?? "minimal text response failed");
+          }
+          // This is a connectivity probe, so partial visible text is sufficient.
+          if (response.content.some((block) => block.type === "text" && block.text.trim().length > 0)) return;
+          const truncated = response.stopReason === "length";
+          const hasThinking = response.content.some((block) => block.type === "thinking" && block.thinking.trim().length > 0);
+          if (attempt === 1 || (!truncated && !hasThinking)) {
+            throw new ProbeResponseError(truncated ? "response_truncated" : "empty_response");
+          }
+          // Retry only this fixed, no-tool request, under the same deadline.
         }
       } finally {
         clearTimeout(timer);

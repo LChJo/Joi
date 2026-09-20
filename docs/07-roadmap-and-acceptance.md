@@ -12,6 +12,8 @@ Routine 的周期、RRULE、日期边界、Workbench 可用性、原子 inbox �
 
 ## AC-65 搭档实际权限与模型来源新鲜度
 
+2026-09-20 验证兼容性增量（AC-55/AC-65）：DeepSeek 官方 Responses 端点的固定无工具探测必须显式关闭默认思考，普通探测首轮输出上限为 64 token，强制思考套餐为 256 token。存在有效非空白正文即判定 READY，达到输出上限不单独构成失败；超时、取消或供应商错误仍优先判失败。无有效正文且达到输出上限或仅有思考时，允许以 1024 token 重试同一固定无工具请求一次，不携带上一轮回复；两次共用原 15 秒总超时（强制思考套餐 30 秒），不改变思考配置或业务推理。无思考的正常空回复不重试。最终仍无正文时返回 `empty_response` / `response_truncated`，UI 不得误报网络不可达，提示不得包含响应正文或思考内容。模拟 transport 经真实 Pi SDK 覆盖官方端点、相似域名隔离、有正文截断成功、有限重试、强制思考套餐与共用超时。
+
 新建 Pi Core、Claude Code 和新安装场景搭档默认开启各自全部可用工具；`CUSTOM` 必须能表示包括空集在内的真实工具集合，旧 revision 继续按空列表为全开、非空为自定义解释且不得原地改写。Claude 必须同时用 SDK `tools` 限制可见工具、用 `allowedTools` 免交互授权；Codex 新建默认 `workspace-write`、网络开启、实时搜索、`approvalPolicy=never`，但不得开放 `danger-full-access`。三种本机引擎每次运行都注入不可被用户提示词或 Skill 覆盖的实际权限段。
 
 Pi READY 来源只有最近五分钟内按 source/model/credential revision 完成无工具验证才可直接派发；过期验证按 revision 合并探测。未固定搭档可跳过探测失败来源，固定来源必须停止并返回安全配置原因。运行中 401/403 先把来源移出派发集合，再做一次无工具诊断；403 只持久化 `auth_forbidden`、`model_access_forbidden`、`region_forbidden`、`request_policy_forbidden` 或 `http_403`。终态 FAILED/UNKNOWN 即使已有 engine conversation 也必须追加独立安全 ERROR；`OBSERVED/UNKNOWN` 继续遵守 AC-64 的产物验收与补充 Work 门禁。

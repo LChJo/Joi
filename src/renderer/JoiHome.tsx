@@ -106,6 +106,8 @@ function modelSourceReasonText(reasonCode: string | undefined): string {
   if (reasonCode === "bad_request") return "接口拒绝了请求参数（400），请检查 Model ID 与协议是否与该套餐匹配。";
   if (reasonCode === "connection_error") return "无法连通所选接口（DNS/连接/TLS 失败），请检查网络、代理与接口可用性。";
   if (reasonCode === "timeout") return "连接所选接口超时，请检查网络或稍后重试。";
+  if (reasonCode === "empty_response") return "接口已响应，但未返回有效正文。请稍后重新验证，若持续出现请检查模型与协议兼容性。";
+  if (reasonCode === "response_truncated") return "验证回复达到输出上限而被截断，可能与模型思考模式有关。请重新验证，若持续出现请检查模型与协议兼容性。";
   if (reasonCode === "http_error") return "接口返回了错误响应，可展开查看原始报错。";
   return "joi 无法访问所选接口。请检查网络、服务状态和套餐余额后再验证。";
 }
