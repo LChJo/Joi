@@ -19,7 +19,7 @@ export class SqlitePiCredentialRepository implements PiCredentialRecordStore {
   async read(providerId: string): Promise<EncryptedPiCredentialRecord | null> {
     const row = this.database.transaction((connection) => connection.prepare(`
       SELECT provider_id, credential_type, encrypted_blob, credential_version
-        FROM model_source_credentials WHERE provider_id = ?`).get(providerId)) as Row | undefined;
+        FROM model_source_credentials WHERE provider_id = ? AND length(encrypted_blob) > 0`).get(providerId)) as Row | undefined;
     if (row === undefined) return null;
     if (!(row.encrypted_blob instanceof Uint8Array) || typeof row.provider_id !== "string"
       || typeof row.credential_type !== "string" || typeof row.credential_version !== "number") {
@@ -36,7 +36,7 @@ export class SqlitePiCredentialRepository implements PiCredentialRecordStore {
   async list() {
     return this.database.transaction((connection) => connection.prepare(`
       SELECT provider_id, credential_type, credential_version
-        FROM model_source_credentials ORDER BY provider_id`).all()).map((value) => {
+        FROM model_source_credentials WHERE length(encrypted_blob) > 0 ORDER BY provider_id`).all()).map((value) => {
       const row = value as Row;
       if (typeof row.provider_id !== "string" || typeof row.credential_type !== "string" || typeof row.credential_version !== "number") {
         throw new Error("pi_credential_record_invalid");
@@ -68,8 +68,12 @@ export class SqlitePiCredentialRepository implements PiCredentialRecordStore {
   }
 
   async delete(providerId: string): Promise<void> {
-    this.database.transaction((connection) => connection.prepare(
-      "DELETE FROM model_source_credentials WHERE provider_id = ?",
-    ).run(providerId));
+    this.database.transaction((connection) => {
+      // Retained source revisions require a credential identity, never its secret.
+      // An empty blob is a tombstone and is excluded from credential reads/lists.
+      connection.prepare(`UPDATE model_source_credentials SET encrypted_blob = X'' WHERE provider_id = ?`).run(providerId);
+      connection.prepare(`DELETE FROM model_source_credentials WHERE provider_id = ?
+        AND NOT EXISTS (SELECT 1 FROM model_source_revisions WHERE credential_ref = ?)`).run(providerId, providerId);
+    });
   }
 }

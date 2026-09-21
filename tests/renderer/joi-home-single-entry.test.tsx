@@ -499,6 +499,23 @@ describe("joi home single entry", () => {
     expect(await screen.findByText("验证没有通过。")).toBeInTheDocument();
   });
 
+  it("shows a safe deletion failure and refreshes the list after retry", async () => {
+    const api = new DigitalLifeApi("");
+    const list = vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource] });
+    const remove = vi.spyOn(api, "deleteModelSource").mockRejectedValueOnce(new Error("private backend detail")).mockResolvedValue(undefined);
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+    expect(await screen.findByText("模型网络未删除，请重试。")).toBeInTheDocument();
+    expect(screen.queryByText("private backend detail")).not.toBeInTheDocument();
+    expect(screen.getByText("DeepSeek")).toBeInTheDocument();
+    list.mockResolvedValue({ items: [] });
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(screen.queryByText("DeepSeek")).not.toBeInTheDocument());
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("模型网络未删除，请重试。")).not.toBeInTheDocument();
+    expect(screen.getByText("模型网络已删除。")).toBeInTheDocument();
+  });
+
   it("edits model, endpoint metadata and optional replacement credentials as a new draft revision", async () => {
     const api = new DigitalLifeApi("");
     const generic = {

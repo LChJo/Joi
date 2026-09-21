@@ -6,6 +6,9 @@ import type { ModelSourceRecord } from "../../src/main/application/ports/model-s
 import { createModelSource, reviseModelSource } from "../../src/main/domain/model-sources/model-source.js";
 import { SqliteModelSourceRepository } from "../../src/main/infrastructure/persistence/sqlite-model-source-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { ModelSourceService } from "../../src/main/application/model-sources/model-source-service.js";
+import { SqlitePiCredentialRepository } from "../../src/main/infrastructure/persistence/sqlite-pi-credential-repository.js";
+import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 function record(sourceId: string, order: number): ModelSourceRecord {
   const createdAt = order === 0 ? "2026-07-28T10:00:00.000Z" : "2026-07-28T10:00:01.000Z";
@@ -32,6 +35,78 @@ function record(sourceId: string, order: number): ModelSourceRecord {
 }
 
 describe("SqliteModelSourceRepository", () => {
+  it("deletes a used source and its secret without changing historical turn revisions after restart", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-source-delete-"));
+    const databasePath = path.join(root, "runtime.sqlite");
+    let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const credentials = new SqlitePiCredentialRepository(database);
+      const repository = new SqliteModelSourceRepository(database);
+      for (const [index, sourceId] of ["used", "backup"].entries()) {
+        await credentials.write({ encryptedBlob: new Uint8Array([1, 2, 3]), providerId: `joi-source:${sourceId}`, type: "api_key", version: 1 });
+        await repository.create(record(sourceId, index));
+      }
+      const now = "2026-09-21T06:00:00.000Z";
+      database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, created_at, updated_at)
+          VALUES ('input-delete', 'input-delete', '', 'CONSUMED', ?, ?)`).run(now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, session_id, source_revision_id, model_revision_id, status, created_at, updated_at)
+          VALUES ('turn-delete', 'input-delete', 'session-delete', 'revision-used', 'model-used', 'COMPLETED', ?, ?)`).run(now, now);
+      });
+      const service = new ModelSourceService({
+        catalog: { resolve: () => { throw new Error("unexpected catalog call"); } },
+        clock: new TestClock(), endpointPolicy: { validate: () => { throw new Error("unexpected endpoint call"); } }, ids: new TestIds(), repository,
+        secrets: { delete: (providerId) => credentials.delete(providerId), saveApiKey: () => { throw new Error("unexpected secret write"); } },
+        validator: { validate: () => { throw new Error("unexpected validation"); } },
+      });
+      await service.delete("used");
+      expect(await service.list()).toMatchObject([{ sourceId: "backup", primary: true, order: 0 }]);
+      expect(await repository.get("used")).toBeNull();
+      expect(await credentials.read("joi-source:used")).toBeNull();
+      expect(await credentials.list()).toEqual([{ providerId: "joi-source:backup", type: "api_key", version: 1 }]);
+      // A late validation result must not resurrect the removed source.
+      const deleted = record("used", 0);
+      expect(await repository.saveHealthIfCurrent({ ...deleted, source: { ...deleted.source, status: "READY" } }, {
+        credentialVersion: 1, modelRevisionId: "model-used", sourceRevisionId: "revision-used", sourceUpdatedAt: deleted.source.updatedAt,
+      })).toBe(false);
+      expect(await repository.get("used")).toBeNull();
+      database.close();
+      database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      expect(await new SqliteModelSourceRepository(database).list()).toHaveLength(1);
+      expect(await new SqlitePiCredentialRepository(database).read("joi-source:used")).toBeNull();
+      database.transaction((connection) => {
+        expect(connection.prepare(`SELECT t.source_revision_id, t.model_revision_id, t.status
+          FROM joi_turns t JOIN model_source_revisions sr ON sr.source_revision_id = t.source_revision_id
+          JOIN model_source_model_revisions mr ON mr.model_revision_id = t.model_revision_id
+          WHERE turn_id = 'turn-delete'`).get()).toEqual({ source_revision_id: "revision-used", model_revision_id: "model-used", status: "COMPLETED" });
+        expect(connection.prepare("SELECT length(encrypted_blob) AS size FROM model_source_credentials WHERE provider_id = 'joi-source:used'").get()).toEqual({ size: 0 });
+        expect(connection.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
+      });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("removes unreferenced credentials and treats repeated deletion as empty", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-credential-delete-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const credentials = new SqlitePiCredentialRepository(database);
+      await credentials.write({ encryptedBlob: new Uint8Array([1]), providerId: "orphan", type: "api_key", version: 1 });
+      await credentials.delete("orphan");
+      await credentials.delete("orphan");
+      expect(await credentials.read("orphan")).toBeNull();
+      expect(await credentials.list()).toEqual([]);
+      expect(database.transaction((connection) => connection.prepare("SELECT provider_id FROM model_source_credentials").all())).toEqual([]);
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("persists the dedicated token-plan access mode", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-token-plan-source-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });

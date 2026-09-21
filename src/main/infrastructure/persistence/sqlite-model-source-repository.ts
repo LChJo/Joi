@@ -232,10 +232,10 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
     this.database.transaction((connection) => {
       connection.prepare("DELETE FROM model_source_order WHERE source_id = ?").run(sourceId);
       connection.prepare("DELETE FROM model_source_health WHERE source_id = ?").run(sourceId);
-      connection.prepare("UPDATE model_sources SET active_source_revision_id = NULL, active_model_revision_id = NULL WHERE source_id = ?").run(sourceId);
-      connection.prepare("DELETE FROM model_source_revisions WHERE source_id = ?").run(sourceId);
-      connection.prepare("DELETE FROM model_source_model_revisions WHERE source_id = ?").run(sourceId);
-      connection.prepare("DELETE FROM model_sources WHERE source_id = ?").run(sourceId);
+      // Historical turns pin immutable revisions. Remove the active configuration,
+      // retaining its identity and revisions solely for those historical references.
+      connection.prepare(`UPDATE model_sources SET status = 'DISABLED',
+        active_source_revision_id = NULL, active_model_revision_id = NULL WHERE source_id = ?`).run(sourceId);
     });
   }
 }
