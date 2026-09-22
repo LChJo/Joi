@@ -1,4 +1,5 @@
 import type { AgentService } from "../../application/agents/agent-service.js";
+import type { StatisticsService } from "../../application/statistics/statistics-service.js";
 import type { EvolutionService } from "../../application/evolution/evolution-service.js";
 import type { ResultExportService } from "../../application/operations/result-export-service.js";
 import type { AgentOnboardingService } from "../../application/agents/agent-onboarding-service.js";
@@ -35,6 +36,7 @@ import { csrfToken, expectedOrigin, HttpError, optionalStringField, requestAddre
 import type { IncomingMessage } from "node:http";
 
 export interface ApiDependencies {
+  statistics?: Pick<StatisticsService, "query">;
   evolution?: Pick<EvolutionService, "status" | "configure" | "rollback" | "negativeFeedback">;
   resultExports?: ResultExportService;
   agentOnboarding?: AgentOnboardingService;

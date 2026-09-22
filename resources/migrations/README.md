@@ -1,5 +1,7 @@
 # SQLite migrations
 
+Migration 060 增加本地 Token 数值账本：调用身份、各模型累计快照、采集起点与持久缺失提示。按调用内稳定标识替换快照，不扫描历史私有会话，不触发模型请求。
+
 M1 起所有迁移使用单调版本号并在 Runtime 调度前执行。本目录只存生产 migration，不存真实数据库、凭据或测试 userData。
 
 Migration 042 起，普通直接回答写入独立 `joi_turn_completions` 展示投影；Goal synthesis 继续使用带 revision 的 `joi_goal_outcomes`。
