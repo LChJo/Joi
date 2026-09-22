@@ -6,7 +6,7 @@ import type { WorkbenchExecutionContextReader } from "../../application/ports/wo
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
-import type { RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import { NativeAgentEventProjector } from "../../application/partners/native-agent-event-projector.js";
 import type { AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../application/partners/native-agent-session-reference.js";
@@ -32,7 +32,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
   constructor(private readonly dependencies: {
     contexts: WorkbenchExecutionContextReader;
     /** Formal run deadlines; absent keeps the legacy unbounded behavior (tests, probes). */
-    deadlines?: { idleMillis?: number; totalMillis: number };
+    deadlines?: { graceActiveWindowMillis?: number; graceMillis?: number; idleMillis?: number; totalMillis: number };
     diagnostics?: RuntimeDiagnostics;
     environment?: NodeJS.ProcessEnv;
     probeTimeoutMillis?: number;
@@ -118,10 +118,14 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     if (signal?.aborted === true) controller.abort();
     else signal?.addEventListener("abort", () => controller.abort(), { once: true });
     let timedOut: "idle" | "total" | undefined;
-    const guard = this.dependencies.deadlines === undefined ? undefined : new RunDeadlineGuard({
-      ...(this.dependencies.deadlines.idleMillis === undefined ? {} : { idleMillis: this.dependencies.deadlines.idleMillis }),
+    const deadlines = this.dependencies.deadlines;
+    const guard = deadlines === undefined ? undefined : new RunDeadlineGuard({
+      ...(deadlines.graceActiveWindowMillis === undefined ? {} : { graceActiveWindowMillis: deadlines.graceActiveWindowMillis }),
+      ...(deadlines.graceMillis === undefined ? {} : { graceMillis: deadlines.graceMillis }),
+      ...(deadlines.idleMillis === undefined ? {} : { idleMillis: deadlines.idleMillis }),
+      onGrace: () => { emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.agent.deadline_grace", { actionId: request.actionId, graceMillis: deadlines.graceMillis ?? 0, workbenchId: request.workbenchId, workId: request.workId }); },
       onTimeout: (kind) => { timedOut = kind; controller.abort(); },
-      totalMillis: this.dependencies.deadlines.totalMillis,
+      totalMillis: deadlines.totalMillis,
     });
     let consumed: { body: string; threadId?: string };
     try {
