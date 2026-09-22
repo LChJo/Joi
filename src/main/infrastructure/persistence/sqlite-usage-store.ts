@@ -41,7 +41,8 @@ export class SqliteUsageStore implements UsageStore {
       const metadata = db.prepare("SELECT collected_since,collection_degraded FROM statistics_metadata WHERE singleton = 1").get() as Row;
       const rows = db.prepare(`SELECT i.*, o.observation_key, COALESCE(o.observed_at,i.started_at) AS at,
         COALESCE(o.model_id,i.model_id) AS effective_model,COALESCE(o.source_id,i.source_id) AS effective_source,
-        COALESCE(o.source_name,i.source_name) AS effective_name,o.tokens_json
+        CASE WHEN o.source_id IS NULL OR o.source_id = i.source_id THEN COALESCE(i.source_name,o.source_name)
+          ELSE COALESCE(o.source_name,i.source_name) END AS effective_name,o.tokens_json
         FROM usage_invocations i LEFT JOIN usage_observations o ON o.invocation_id = i.invocation_id
         WHERE COALESCE(o.observed_at,i.started_at) >= ? AND COALESCE(o.observed_at,i.started_at) < ?
         ORDER BY at,i.invocation_id,o.observation_key`).all(fromUtc, toUtc) as Row[];

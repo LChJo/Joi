@@ -88,4 +88,10 @@ describe("numeric usage ledger", () => {
     invalid.record({ key: "response", tokens: { input: -1, output: 2, cacheRead: null, cacheWrite: null, reasoning: null } }); invalid.finish("failed");
     expect(service.query(query).overview).toMatchObject({ total: 6, unknownRecords: 1 });
   });
+  it("preserves the captured source label when the SDK reports its provider name", () => {
+    const session = service.begin({ engine: "pi", purpose: "orchestration", sourceId: "source-a", sourceName: "研究来源", modelId: "model-a" });
+    session.record({ key: "result", sourceId: "source-a", sourceName: "provider", tokens: { input: 4, output: 2, cacheRead: 0, cacheWrite: 0, reasoning: null } });
+    session.finish("completed");
+    expect(service.query(query).models[0]?.sourceName).toBe("研究来源");
+  });
 });
