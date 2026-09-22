@@ -25,7 +25,7 @@ export function wireModelSources(input: {
     records: persistence.piCredentialRepository,
     vault,
   });
-  const validator = new PiModelSourceValidator({ clock, credentials: piCredentials });
+  const validator = new PiModelSourceValidator({ clock, credentials: piCredentials, usage: statistics });
   const modelSources = new ModelSourceService({
     catalog: new PiModelSourceCatalog(),
     clock,

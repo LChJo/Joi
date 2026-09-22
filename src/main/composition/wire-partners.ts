@@ -39,6 +39,7 @@ export function wirePartners(input: {
   });
   const partnerEngines = new Map<string, PartnerEngineRuntime>([
     ["pi-core", new PiPartnerEngineRuntime({
+      usage: modelSourceStack.statistics,
       contexts: persistence.workbenchContextRepository,
       prompts: persistence.partnerPromptStore,
       resolver: modelSourceStack.configuredModelResolver,
@@ -46,12 +47,14 @@ export function wirePartners(input: {
       tools: new BuiltinPiCodingToolFactory(),
     })],
     ["claude-code", new ClaudeAgentSdkPartnerEngineRuntime({
+      usage: modelSourceStack.statistics,
       contexts: persistence.workbenchContextRepository,
       deadlines: { ...NATIVE_RUN_DEADLINES },
       diagnostics,
       prompts: persistence.partnerPromptStore,
     })],
     ["codex", new CodexAgentSdkPartnerEngineRuntime({
+      usage: modelSourceStack.statistics,
       contexts: persistence.workbenchContextRepository,
       deadlines: { ...NATIVE_RUN_DEADLINES },
       diagnostics,
@@ -81,6 +84,7 @@ export function wirePartners(input: {
       ids,
       store: persistence.partnerWorkMemoryStore,
       summarizer: new PiPartnerMemorySummarizer({
+        usage: modelSourceStack.statistics,
         resolver: modelSourceStack.configuredModelResolver,
         sources: modelSourceStack.reasoningSources,
       }),

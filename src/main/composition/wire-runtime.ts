@@ -85,7 +85,7 @@ export function wireRuntime(input: {
     diagnostics,
     ids,
     store: database.store,
-    transport: new SdkA2aInvocationTransport({ policy }),
+    transport: new SdkA2aInvocationTransport({ policy, usage: modelSourceStack.statistics }),
     vault,
   });
   const events = new EventService({ clock, ids, publisher, signal: new InMemoryEventSignal(), store: database.store });

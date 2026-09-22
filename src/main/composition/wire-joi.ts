@@ -42,7 +42,7 @@ export function wireJoi(input: {
   const { clock, database, diagnostics, directoryPicker, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
   const evolution = new EvolutionService({ store: new SqliteEvolutionStore(database),
     // Read-only selection: freshness probes would spend unreserved calls outside evolution's outbox.
-    model: new PiEvolutionModel({ resolver: modelSourceStack.configuredModelResolver, sources: new ReasoningSourceSelector(persistence.modelSourceRepository) }),
+    model: new PiEvolutionModel({ resolver: modelSourceStack.configuredModelResolver, sources: new ReasoningSourceSelector(persistence.modelSourceRepository), usage: modelSourceStack.statistics }),
     now: () => clock.now().toISOString(), id: () => ids.next("evolution") });
   const joiInbox = new JoiInboxService({
     clock,
@@ -67,6 +67,7 @@ export function wireJoi(input: {
     rootDirectory: path.join(userDataDirectory, "artifacts"),
   });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
+    usage: modelSourceStack.statistics,
     skills: new JoiSkillRuntime({ catalog: partnerStack.partnerSkillCatalog, settings: input.settings }),
     resolver: modelSourceStack.configuredModelResolver,
     sessionStore: persistence.piReasoningSessionStore,
@@ -103,6 +104,7 @@ export function wireJoi(input: {
     failureClassifier: new PiReasoningFailureClassifier(),
     ids,
     router: new PiWorkbenchRoutingRuntime({
+      usage: modelSourceStack.statistics,
       resolver: modelSourceStack.configuredModelResolver,
       sources: modelSourceStack.reasoningSources,
     }),
