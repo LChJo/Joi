@@ -1,6 +1,6 @@
 # README 实现追踪矩阵
 
-AC-STATS-01..06 Token 统计：[ADR 0021](adr/0021-token-statistics.md)。归一化与聚合对应 `statistics-policy.test.ts`，账本/恢复/归属/缺失标记对应 `statistics-ledger.test.ts`，认证和有界查询对应 `statistics-http.test.ts`；SDK、renderer 与隔离 Electron E2E 对应各 statistics/usage 测试。真实供应商用量未返回时不得模拟为零，测试不调用真实模型。
+AC-STATS-01..06 Token 统计：[ADR 0021](adr/0021-token-statistics.md)。SDK 归一化和故障隔离对应 `sdk-usage-normalization.test.ts`、`sdk-usage.test.ts`、`native-agent-usage.test.ts`、`pi-runtime-usage.test.ts`、`a2a-usage.test.ts`；时区、聚合和对账对应 `statistics-policy.test.ts`，账本/恢复/归属/缺失标记对应 `statistics-ledger.test.ts`，认证和有界查询对应 `statistics-http.test.ts`。页面与安全 HTTP 客户端对应 `statistics-page.test.tsx`、`api-client.test.ts`；隔离 Electron 的筛选、当日明细、目标跳转和浅深主题三宽度截图对应 `tests/e2e/statistics.spec.ts`。真实供应商用量未返回时不得模拟为零，测试不调用真实模型。
 
 AC-EVO-01..06 受限策略进化：[ADR 0020](adr/0020-bounded-strategy-evolution.md)。对应 `evolution-policy.test.ts`、`evolution-scenarios.test.ts`、`evolution-component.test.ts`、`sqlite-evolution-store.test.ts`、`evolution-evidence.test.ts`、`evolution-service.test.ts`、`pi-evolution-model.test.ts`、`evolution-http.test.ts`、`evolution-settings.test.tsx`、`joi-home-single-entry.test.tsx`（目标卡片负反馈入口）、`composition-root.test.ts`（审计 outbox 不进入通用调度器），以及原有 Joi 工具、提示词与运行时契约回归和 Electron 设置页 E2E。覆盖声明式单模块变更、工作台/目标隔离、最终验收事实采样、预算与恢复、失败批次续跑与有界重试、开发/独立封存评测、自动晋升与回滚。真实供应商收益未由测试替身证明。
 
