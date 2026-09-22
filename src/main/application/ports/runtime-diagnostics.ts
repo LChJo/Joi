@@ -184,6 +184,12 @@ export interface RuntimeDiagnosticEventMap {
     dispatchAttemptId: string;
     partnerId: string;
   };
+  "joi.agent.deadline_grace": {
+    workbenchId: string;
+    workId: string;
+    actionId: string;
+    graceMillis: number;
+  };
   "joi.agent.run_canceled": {
     workbenchId: string;
     dispatchAttemptId: string;

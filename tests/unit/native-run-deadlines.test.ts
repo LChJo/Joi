@@ -48,6 +48,63 @@ describe("RunDeadlineGuard", () => {
     guard.dispose();
   });
 
+  it("grants a still-streaming run one grace window at the total deadline instead of aborting mid-landing", async () => {
+    vi.useFakeTimers();
+    const fired: string[] = [];
+    let graced = 0;
+    const guard = new RunDeadlineGuard({ graceActiveWindowMillis: 50, graceMillis: 30, idleMillis: 500, onGrace: () => { graced += 1; }, onTimeout: (kind) => fired.push(kind), totalMillis: 100 });
+    await vi.advanceTimersByTimeAsync(90);
+    guard.onProgress();
+    // Total deadline at t=100 sees fresh progress, so the abort waits out the grace window.
+    await vi.advanceTimersByTimeAsync(10);
+    expect(fired).toEqual([]);
+    expect(graced).toBe(1);
+    await vi.advanceTimersByTimeAsync(29);
+    expect(fired).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fired).toEqual(["total"]);
+    guard.dispose();
+  });
+
+  it("lets a run that lands inside the grace window complete without a timeout", async () => {
+    vi.useFakeTimers();
+    const fired: string[] = [];
+    const guard = new RunDeadlineGuard({ graceActiveWindowMillis: 50, graceMillis: 30, idleMillis: 500, onTimeout: (kind) => fired.push(kind), totalMillis: 100 });
+    await vi.advanceTimersByTimeAsync(90);
+    guard.onProgress();
+    await vi.advanceTimersByTimeAsync(20);
+    guard.dispose();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(fired).toEqual([]);
+  });
+
+  it("denies the grace window to a run whose progress went stale before the total deadline", async () => {
+    vi.useFakeTimers();
+    const fired: string[] = [];
+    const guard = new RunDeadlineGuard({ graceActiveWindowMillis: 20, graceMillis: 30, idleMillis: 500, onTimeout: (kind) => fired.push(kind), totalMillis: 100 });
+    await vi.advanceTimersByTimeAsync(50);
+    guard.onProgress();
+    // Last progress at t=50 is outside the 20ms recency window when the total deadline expires.
+    await vi.advanceTimersByTimeAsync(50);
+    expect(fired).toEqual(["total"]);
+    guard.dispose();
+  });
+
+  it("does not renew the grace window with further progress", async () => {
+    vi.useFakeTimers();
+    const fired: string[] = [];
+    const guard = new RunDeadlineGuard({ graceActiveWindowMillis: 50, graceMillis: 30, idleMillis: 500, onTimeout: (kind) => fired.push(kind), totalMillis: 100 });
+    await vi.advanceTimersByTimeAsync(90);
+    guard.onProgress();
+    await vi.advanceTimersByTimeAsync(30);
+    guard.onProgress();
+    await vi.advanceTimersByTimeAsync(9);
+    expect(fired).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(fired).toEqual(["total"]);
+    guard.dispose();
+  });
+
   it("does nothing after dispose even when timers were already queued", () => {
     vi.useFakeTimers();
     const fired: string[] = [];
