@@ -270,6 +270,8 @@
   background: var(--paper-strong); color: var(--ink); padding: 8px 10px; font: inherit;
 }
 .joi-clarify-add button { flex: 0 0 auto; white-space: nowrap; }
+.joi-goal-feedback { display: grid; justify-items: start; gap: 4px; }
+.joi-goal-feedback .field-hint { margin: 0; }
 .joi-clarify-workspace {
   display: flex; align-items: center; justify-content: space-between; gap: 14px;
   padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius);
@@ -612,6 +614,13 @@
 .partner-extra-fields label { display: grid; gap: 6px; }
 .partner-extra-fields input { width: 100%; padding: 10px; border: 1px solid var(--line-strong); background: var(--paper-strong); color: var(--ink); }
 .field-hint { grid-column: 1 / -1; margin: 0; color: var(--faint); font-size: 12px; }
+.evolution-budget-presets { grid-column: 1 / -1; display: grid; gap: 6px; border: 0; margin: 0; padding: 0; }
+.evolution-budget-presets legend { padding: 0; font-weight: 600; color: var(--ink); }
+.evolution-budget-presets:disabled { opacity: .6; }
+.evolution-budget-options { display: flex; flex-wrap: wrap; gap: 16px; }
+.evolution-budget-options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.workbench-evolution-panel { grid-template-columns: minmax(0, 1fr); }
+.workbench-evolution-intro { margin: 0; color: var(--muted); }
 .kb-field { display: grid; gap: 8px; grid-column: 1 / -1; color: var(--muted); }
 .kb-field > small { color: var(--faint); }
 .partner-basic-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; grid-column: 1 / -1; align-items: start; }

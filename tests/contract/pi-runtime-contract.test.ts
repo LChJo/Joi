@@ -393,7 +393,6 @@ describe("Pi reasoning runtime contract", () => {
       "harness_chart_path",
       "harness_record_decision",
       "harness_note_fog",
-      "harness_refine_workbench",
     ]);
     expect(JOI_REASONING_TOOL_NAMES).not.toEqual(expect.arrayContaining(["bash", "read", "write", "edit", "find", "grep", "ls"]));
 

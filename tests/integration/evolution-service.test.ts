@@ -1,0 +1,293 @@
+import { EvolutionService } from "../../src/main/application/evolution/evolution-service";
+import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/sqlite-evolution-store";
+import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
+import { evolutionScenarios, EVOLUTION_EVALUATOR_VERSION } from "../../src/main/domain/evolution/scenarios";
+import { baselineStrategy } from "../../src/main/domain/evolution/strategy";
+import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution";
+import type { EvolutionBatch, EvolutionModel, EvolutionRevision } from "../../src/main/application/ports/evolution";
+
+const pin = { modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" };
+describe("evolution execution and budget", () => {
+  let fixture: RuntimeFixture;
+  let store: SqliteEvolutionStore;
+  let service: EvolutionService;
+  let day: string;
+  const call = vi.fn();
+  beforeEach(async () => {
+    fixture = await createRuntimeFixture();
+    store = new SqliteEvolutionStore(fixture.database);
+    day = "2026-09-22T01:00:00.000Z";
+    call.mockReset().mockResolvedValue({ action: "read_evidence", evidenceId: "record-11" });
+    service = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "batch-1" });
+    fixture.database.transaction((db) => {
+      db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('a','A','p','','','','mem','ACTIVE',?,?)`).run(day, day);
+      for (let i = 0; i < 10; i++) db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,'private','CONSUMED','a',?,?)`).run(`g${String(i)}`, `g${String(i)}`, day, day);
+    });
+    for (let i = 0; i < 10; i++) store.recordEvidence({ workbenchId: "a", goalId: `g${String(i)}`, revisionId: null, outcome: i < 3 ? "VERIFICATION_FAILED" : "VERIFIED", observedAt: day });
+  });
+  afterEach(async () => { await fixture.close(); });
+  it("starts on the low preset, spends nothing when off, and validates explicit budgets", async () => {
+    expect(service.status("a").dailyCallLimit).toBe(DEFAULT_EVOLUTION_DAILY_CALL_LIMIT);
+    expect(service.status("a").reason).toBe("collecting");
+    expect(() => service.configure("a", -1)).toThrow();
+    expect(() => service.configure("a", 1.1)).toThrow();
+    expect(service.configure("a", 0).dailyCallLimit).toBe(0);
+    expect(service.status("a").reason).toBe("disabled");
+    expect(service.pending()).toEqual([]);
+    await service.handle("evolution:a");
+    expect(call).not.toHaveBeenCalled();
+    expect(service.configure("a", 2).dailyCallLimit).toBe(2);
+  });
+  it("performs one call per slot, reserves budget, and resumes on the next day", async () => {
+    service.configure("a", 1);
+    expect(service.pending()).toHaveLength(1);
+    await service.handle("evolution:a");
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(service.status("a").callsUsedToday).toBe(1);
+    expect(service.pending()).toEqual([]);
+    day = "2026-09-23T01:00:00.000Z";
+    await service.handle("evolution:a");
+    expect(call).toHaveBeenCalledTimes(2);
+    expect(store.read("a").batch?.rollouts[0]?.calls).toBe(2);
+    expect(JSON.stringify(service.status("a"))).not.toContain("record-11");
+  });
+  it("gives user tasks priority and does not refund failed calls", async () => {
+    service.configure("a", 2);
+    fixture.database.transaction((db) => db.prepare("UPDATE joi_inbox_messages SET status = 'PENDING' WHERE input_id = 'g0'").run());
+    expect(service.pending()).toEqual([]);
+    await service.handle("evolution:a");
+    expect(call).not.toHaveBeenCalled();
+    fixture.database.transaction((db) => db.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = 'g0'").run());
+    call.mockRejectedValue(new Error("private provider error"));
+    await service.handle("evolution:a");
+    expect(service.status("a").callsUsedToday).toBe(1);
+    expect(JSON.stringify(service.status("a"))).not.toContain("provider");
+  });
+  function revision(revisionId = "r1"): EvolutionRevision {
+    return { revisionId, parentRevisionId: null, evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, monitoredGoals: [], strategy: { ...baselineStrategy, completion: "evidence_matrix" }, pin, evidenceIds: [], prediction: { fixes: [], risks: [] }, module: "completion", status: "ACTIVE", createdAt: day, reason: "promoted", baselineSuccesses: 80, candidateSuccesses: 90, evaluatedRuns: 180 };
+  }
+  function batch(): EvolutionBatch {
+    return { id: "b", evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentStrategy: baselineStrategy, parentRevisionId: null, strategy: baselineStrategy, pin, phase: "DEVELOP", evidenceIds: ["g0","g1","g2"], rollouts: [] };
+  }
+  it("runs contrastive development, sealed paired trials, promotion, goal pinning and rollback end to end", async () => {
+    service.configure("a", 1000);
+    const development = evolutionScenarios("development");
+    const sealed = evolutionScenarios("sealed");
+    call.mockImplementation((input: Parameters<EvolutionModel["call"]>[0]) => {
+      const current = store.read("a").batch;
+      assert(current);
+      if (current.phase === "PROPOSE") {
+        expect(input.prompt).not.toContain("sealed:");
+        return Promise.resolve({ strategy: { ...baselineStrategy, completion: "evidence_matrix" }, fixes: development.slice(0,3).map((s) => s.id), risks: [] });
+      }
+      const run = current.rollouts.at(-1);
+      assert(run);
+      const scenario = [...development, ...sealed].find((s) => s.id === run.scenarioId);
+      assert(scenario);
+      if (run.calls < 2) return Promise.resolve({ action: "read_evidence", evidenceId: scenario.requiredIds[run.calls] });
+      const fail = current.phase === "DEVELOP" ? development.indexOf(scenario) < 3 : current.phase === "EVALUATE" && run.variant === "baseline" && run.attempt === 0 && sealed.indexOf(scenario) < 5;
+      return Promise.resolve({ action: "finish", decision: fail ? scenario.expected === "complete" ? "wait" : "complete" : scenario.expected, evidenceIds: scenario.requiredIds });
+    });
+    const original = service.strategyForGoal("a", "g0", pin);
+    expect(original.strategyRevisionId).toBeNull();
+    for (let i = 0; i < 1000 && service.status("a").activeRevisionId === null; i++) {
+      await service.handle("evolution:a");
+      if (i > 0 && store.read("a").batch === null) break;
+    }
+    const promoted = service.status("a");
+    expect(promoted.reason).toBe("promoted");
+    expect(promoted.versions[0]).toMatchObject({ status: "ACTIVE", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
+    expect(store.read("a").revisions[0]?.evaluation).toHaveLength(30);
+    expect(service.strategyForGoal("a", "g0", pin)).toEqual(original);
+    const updated = service.strategyForGoal("a", "g1", pin);
+    expect(updated.instructions).toContain("acceptance-to-evidence matrix");
+    expect(updated.strategyRevisionId).toBe(promoted.activeRevisionId);
+    expect(service.strategyForGoal("a", "g2", { ...pin, modelRevisionId: "new" }).strategyRevisionId).toBeNull();
+    assert(promoted.activeRevisionId);
+    expect(service.rollback("a", promoted.activeRevisionId).activeRevisionId).toBeNull();
+    expect(service.rollback("a", promoted.activeRevisionId).reason).toBe("rolled_back");
+    expect(service.strategyForGoal("a", "g1", pin)).toEqual(updated);
+    expect(service.pending()).toEqual([]);
+  }, 60_000);
+  it("resumes completed trials after a crash without refunding or reusing the abandoned call", async () => {
+    service.configure("a", 3);
+    await service.handle("evolution:a");
+    store.update("a", (s) => { assert(s.call); s.call.state = "RUNNING"; });
+    const previous = store.read("a").call?.id;
+    service.scan(); // Already owned by this instance: no concurrent recovery.
+    const restored = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "b2" });
+    restored.scan();
+    expect(store.read("a").batch?.rollouts).toEqual([]);
+    await restored.handle("evolution:a");
+    expect(store.read("a").call?.id).not.toBe(previous);
+    expect(restored.status("a").callsUsedToday).toBe(2);
+  });
+  it("keeps completed trials after a transient failure and abandons the batch only after repeated failures", async () => {
+    service.configure("a", 10);
+    await service.handle("evolution:a"); // one successful read; the rollout stays open
+    call.mockRejectedValueOnce(new Error("private transient"));
+    await service.handle("evolution:a");
+    const failed = store.read("a");
+    expect(failed.batch).not.toBeNull(); // the multi-day batch survives a transient error
+    expect(failed.batch?.rollouts).toEqual([]); // only the interrupted attempt is dropped
+    expect(failed.call?.state).toBe("DONE");
+    expect(failed.reason).toBe("call_failed");
+    expect(service.status("a").callsUsedToday).toBe(2); // the reserved call is not refunded
+    expect(service.pending()).toEqual([]); // parked for the day
+    day = "2026-09-23T01:00:00.000Z";
+    expect(service.pending()).toHaveLength(1); // resumes the next day
+    call.mockRejectedValue(new Error("private again"));
+    await service.handle("evolution:a");
+    expect(store.read("a").batch).not.toBeNull();
+    day = "2026-09-24T01:00:00.000Z";
+    await service.handle("evolution:a");
+    expect(store.read("a").batch).toBeNull(); // abandoned after three consecutive failures
+    expect(store.read("a").callFailures).toBe(3);
+    expect(store.read("a").lastBatchFinishedAt).toBeUndefined(); // infrastructure aborts keep the trigger
+    expect(service.status("a").reason).toBe("call_failed");
+  });
+  it("freezes merit rejections but lets infrastructure failures retry the same strategy once", async () => {
+    service.configure("a", 100);
+    const development = evolutionScenarios("development");
+    const failedRuns = development.slice(0, 3).map((s, index) => ({ scenarioId: s.id, variant: "baseline" as const, attempt: index, calls: 3, observations: [], actions: [], success: false }));
+    const rejected = (reason: EvolutionRevision["reason"], revisionId: string): EvolutionRevision => ({ revisionId, parentRevisionId: null, evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, monitoredGoals: [], strategy: { ...baselineStrategy, completion: "evidence_matrix" }, pin, evidenceIds: [], prediction: { fixes: [], risks: [] }, module: "completion", status: "REJECTED", createdAt: day, reason, baselineSuccesses: 0, candidateSuccesses: 0, evaluatedRuns: 0 });
+    const propose = async (revisions: EvolutionRevision[]) => {
+      store.update("a", (s) => { s.revisions = revisions; s.batch = { ...batch(), phase: "PROPOSE", rollouts: failedRuns }; });
+      call.mockResolvedValue({ strategy: { ...baselineStrategy, completion: "evidence_matrix" }, fixes: development.slice(0, 3).map((s) => s.id), risks: [] });
+      await service.handle("evolution:a");
+    };
+    await propose([rejected("call_failed", "r-infra")]);
+    expect(store.read("a").batch?.phase).toBe("VALIDATE");
+    expect(store.read("a").revisions).toHaveLength(2);
+    await propose([rejected("hard_violation", "r-frozen")]);
+    expect(service.status("a").reason).toBe("invalid_candidate");
+    await propose([rejected("cost_regression", "r-cost")]);
+    expect(service.status("a").reason).toBe("invalid_candidate");
+    await propose([rejected("call_failed", "r-1"), rejected("call_failed", "r-2")]);
+    expect(service.status("a").reason).toBe("invalid_candidate"); // attempts exhausted
+    await propose([rejected("quality_regression", "r-noise")]);
+    expect(store.read("a").batch?.phase).toBe("VALIDATE"); // noise-sensitive verdicts get one retry
+  });
+  it("starts a new batch only for evidence observed after the previous verdict", () => {
+    service.configure("a", 100);
+    expect(service.pending()).toHaveLength(1);
+    store.update("a", (s) => { s.lastBatchFinishedAt = "2026-09-22T02:00:00.000Z"; });
+    expect(service.pending()).toEqual([]); // historical failures were consumed by the verdict
+    fixture.database.transaction((db) => db.prepare("DELETE FROM evolution_evidence").run());
+    for (let i = 0; i < 10; i++) store.recordEvidence({ workbenchId: "a", goalId: `g${String(i)}`, revisionId: null, outcome: i < 3 ? "VERIFICATION_FAILED" : "VERIFIED", observedAt: "2026-09-22T03:00:00.000Z" });
+    expect(service.pending()).toHaveLength(1); // fresh failures re-arm the trigger
+  });
+  it("rejects changed model/evaluator versions and unsupported proposals", async () => {
+    service.configure("a", 10);
+    store.update("a", (s) => { s.batch = { ...batch(), evaluatorVersion: "old" }; });
+    await service.handle("evolution:a");
+    expect(service.status("a").reason).toBe("model_changed");
+    expect(call).not.toHaveBeenCalled();
+    store.update("a", (s) => { s.batch = { ...batch(), phase: "PROPOSE" }; });
+    call.mockResolvedValue({ strategy: { ...baselineStrategy, context: "requirements_first" }, fixes: [], risks: [] });
+    await service.handle("evolution:a");
+    expect(service.status("a").reason).toBe("invalid_candidate");
+  });
+  it("counts a proposal from a previous day's batch against today's candidate limit", async () => {
+    service.configure("a", 10);
+    store.update("a", (s) => { s.batch = { ...batch(), phase: "PROPOSE" }; s.lastCandidateDay = "2026-09-21"; });
+    call.mockResolvedValue({ strategy: baselineStrategy, fixes: [], risks: [] });
+    await service.handle("evolution:a");
+    expect(service.status("a").reason).toBe("invalid_candidate");
+    expect(service.pending()).toEqual([]);
+  });
+  it.each(["hard_violation", "quality_regression", "insufficient_gain"] as const)("rejects development validation with %s", async (reason) => {
+    service.configure("a", 10);
+    const scenarios = evolutionScenarios("development");
+    const runs = scenarios.flatMap((s) => [0,1,2].map((attempt) => ({ scenarioId: s.id, variant: "baseline" as const, attempt, calls: 3, observations: [], actions: [], success: true })));
+    const candidates = runs.map((r) => ({ ...r, variant: "candidate" as const }));
+    const last = candidates.pop(); assert(last);
+    const scenario = scenarios.at(-1); assert(scenario);
+    store.update("a", (s) => {
+      s.revisions = [{ ...revision(), status: "CANDIDATE", prediction: { fixes: [scenarios[0]?.id ?? ""], risks: [] } }];
+      s.batch = { ...batch(), phase: "VALIDATE", revisionId: "r1", rollouts: [...runs, ...candidates, { scenarioId: last.scenarioId, variant: "candidate", attempt: last.attempt, observations: [], calls: 2, actions: scenario.requiredIds.map((id) => `read:${id}`) }] };
+    });
+    call.mockResolvedValue(reason === "hard_violation" ? { action: "write_file" } : { action: "finish", decision: reason === "quality_regression" ? "wait" : scenario.expected, evidenceIds: scenario.requiredIds });
+    await service.handle("evolution:a");
+    expect(service.status("a").reason).toBe(reason);
+    expect(service.status("a").activeRevisionId).toBeNull();
+    expect(service.status("a").versions[0]?.status).toBe("REJECTED");
+  });
+  it("restores the superseded parent and rejects late results after source changes", async () => {
+    store.update("a", (s) => { s.revisions = [{ ...revision("parent"), status: "SUPERSEDED" }, { ...revision(), parentRevisionId: "parent" }]; s.activeRevisionId = "r1"; });
+    expect(service.rollback("a", "r1").activeRevisionId).toBe("parent");
+    expect(service.status("a").versions.find((r) => r.revisionId === "parent")?.status).toBe("ACTIVE");
+    service.configure("a", 10);
+    // The rollback verdict consumed the stale evidence trigger; seed the resumed batch directly.
+    store.update("a", (s) => { s.batch = batch(); });
+    const source = vi.fn().mockResolvedValueOnce(pin).mockResolvedValue({ ...pin, sourceRevisionId: "changed" });
+    const changed = new EvolutionService({ store, model: { pin: source, call }, now: () => day, id: () => "changed" });
+    await changed.handle("evolution:a");
+    expect(changed.status("a").reason).toBe("model_changed");
+    expect(changed.status("a").activeRevisionId).toBe("parent");
+    // The rollback verdict stamped the trigger; the infrastructure abort leaves that stamp unchanged.
+    expect(store.read("a").lastBatchFinishedAt).toBe(day);
+  });
+  it("automatically rolls back verification failures only in the first ten monitored goals", () => {
+    store.update("a", (s) => { s.revisions = [revision()]; s.activeRevisionId = "r1"; });
+    fixture.database.transaction((db) => db.prepare("UPDATE evolution_evidence SET revision_id = 'r1' WHERE goal_id = 'g0'").run());
+    service.scan();
+    expect(service.status("a").activeRevisionId).toBeNull();
+    store.update("a", (s) => { s.paused = false; s.revisions = [{ ...revision(), monitoredGoals: Array.from({length:10}, (_, i) => `old-${String(i)}`) }]; s.activeRevisionId = "r1"; });
+    service.scan();
+    expect(service.status("a").activeRevisionId).toBe("r1");
+  });
+  it("validates feedback scope and makes emergency stop cancel background calls", () => {
+    store.update("a", (s) => { s.revisions = [revision()]; s.activeRevisionId = "r1"; });
+    expect(() => service.negativeFeedback("a", "unknown")).toThrow();
+    service.strategyForGoal("a", "g1", pin);
+    expect(service.negativeFeedback("a", "g1").activeRevisionId).toBeNull();
+    expect(service.negativeFeedback("a", "g1").reason).toBe("rolled_back");
+    expect(() => service.rollback("a", "stale")).toThrow();
+    service.configure("a", 3);
+    expect(service.canceled("evolution:a")).toBe(false);
+    service.emergencyStop();
+    expect(service.canceled("evolution:a")).toBe(true);
+    expect(service.canceled("evolution:missing")).toBe(true);
+  });
+  it("classifies acceptance gaps, cancellation and unverified success separately", () => {
+    fixture.database.transaction((db) => db.prepare("DELETE FROM evolution_evidence").run());
+    const common = { workbenchId: "a", observedAt: day, canceled: false, disposition: "COMPLETED", verified: 1, failed: 0, unverified: 0, workFailed: 0 };
+    vi.spyOn(store, "evidenceSeeds").mockReturnValue([
+      { ...common, goalId: "g0", canceled: true },
+      { ...common, goalId: "g1", disposition: "ACCEPTED_WITH_GAPS" },
+      { ...common, goalId: "g2", failed: 1 },
+      { ...common, goalId: "g3", workFailed: 1 },
+      { ...common, goalId: "g4" },
+      { ...common, goalId: "g5", unverified: 1 },
+    ]);
+    service.scan();
+    expect(store.evidence("a").map((e) => e.outcome).sort()).toEqual(["ACCEPTED_WITH_GAPS", "CANCELED", "ENVIRONMENT_FAILED", "UNEVALUABLE", "VERIFICATION_FAILED", "VERIFIED"]);
+    service.configure("a", 10);
+    expect(service.pending()).toEqual([]);
+  });
+  it("does not publish when disabled during a call and skips canceled requests", async () => {
+    service.configure("a", 10);
+    const controller = new AbortController(); controller.abort();
+    await service.handle("evolution:a", controller.signal);
+    await service.handle("ordinary-input");
+    expect(call).not.toHaveBeenCalled();
+    call.mockImplementation(() => { service.configure("a", 0); return Promise.resolve({ action: "finish", decision: "complete", evidenceIds: [] }); });
+    await service.handle("evolution:a");
+    expect(store.read("a").batch?.rollouts[0]?.success).toBeUndefined();
+    expect(service.status("a").activeRevisionId).toBeNull();
+    expect(service.status("a").callsUsedToday).toBe(1);
+  });
+  it("parks unusable sources for the day without unbudgeted model attempts", async () => {
+    service.configure("a", 10);
+    const broken = new EvolutionService({ store, model: { pin: vi.fn().mockRejectedValue(new Error("not ready")), call }, now: () => day, id: () => "b" });
+    await broken.handle("evolution:a");
+    expect(broken.status("a").reason).toBe("call_failed");
+    expect(broken.pending()).toEqual([]);
+    expect(call).not.toHaveBeenCalled();
+    broken.park("evolution:missing");
+    broken.park("evolution:a");
+    expect(broken.canceled("evolution:a")).toBe(true);
+    expect(broken.evaluatorVersion).toBe(EVOLUTION_EVALUATOR_VERSION);
+  });
+});

@@ -1,4 +1,5 @@
 import { ResultExportMenu } from './ResultExportMenu';
+import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
@@ -443,7 +444,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
   const [detail, setDetail] = useState<WorkbenchDetailDto | null>(null);
   const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<WorkbenchAgentCardDto | null>(null);
-  const [tab, setTab] = useState<"agents" | "context">("agents");
+  const [tab, setTab] = useState<"agents" | "context" | "evolution">("agents");
   const [adding, setAdding] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
   const load = useCallback(async () => setWorkbenches((await api.listWorkbenches()).items), [api]);
@@ -454,7 +455,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     }
     catch { setAgents([]); }
   }, [api]);
-  const open = useCallback(async (workbenchId: string, nextTab: "agents" | "context" = "agents") => {
+  const open = useCallback(async (workbenchId: string, nextTab: "agents" | "context" | "evolution" = "agents") => {
     try {
       setDetail(await api.getWorkbench(workbenchId));
       setSelectedAgent(null); setTab(nextTab); setNotice(null);
@@ -536,13 +537,13 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     <header className="page-title-row"><div><p className="eyebrow">工作台 / Agent</p><h1>{detail?.name ?? "工作台"}</h1><p>{detail === null ? "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建工作台"}</button> : <div className="row-actions"><button className="button danger-text" onClick={() => requestRemoval(detail)} type="button">移除工作台</button><button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回工作台列表</button></div>}</header>
     {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" placeholder="工作聚类名称，如：前端调试分析" required /></label><label>工程名称<input name="projectLabel" placeholder="工作环境 / 工程，如：数字生活" required /></label><label>职责范围<textarea name="scopeSummary" placeholder="描述这类工作共享的环境和边界" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" placeholder="描述工作环境的长期约束，不要写单个 Agent 角色" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
     {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <article className="workbench-catalog-entry" key={workbench.workbenchId}><button aria-label={`打开工作台 ${workbench.name}`} className="workbench-catalog-open" onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-catalog-head"><span aria-hidden="true" className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong></span><span className="workbench-catalog-scope" title={workbench.scopeSummary}>{workbench.scopeSummary}</span></button><footer className="workbench-catalog-footer"><time dateTime={workbench.updatedAt} title={new Date(workbench.updatedAt).toLocaleString()}>更新于 {formatWorkbenchUpdated(workbench.updatedAt)}</time><span className="workbench-catalog-actions"><button aria-label={`管理上下文 ${workbench.name}`} className="workbench-catalog-manage" onClick={() => void open(workbench.workbenchId, "context")} type="button">管理上下文</button><button aria-label={`移除工作台 ${workbench.name}`} className="button danger-text workbench-catalog-remove" onClick={() => requestRemoval(workbench)} type="button">移除工作台</button></span></footer></article>)}</div>) : <>
-      <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button></div>
-      {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : <div className="workbench-context-center">
+      <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button><button aria-selected={tab === "evolution"} onClick={() => setTab("evolution")} role="tab" type="button">自主进化</button></div>
+      {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : tab === "context" ? <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
         <article className="context-card"><h3>工作区</h3><p>{detail.workspace.kind === "BOUND" ? "此工作台的新任务固定使用指定目录。" : "每个新任务在用户主目录 joi/runs 下创建独立目录；恢复和重试复用原目录。"}</p><p><strong>{detail.workspace.kind === "BOUND" ? detail.workspace.displayName : "默认运行目录"}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">使用默认运行目录</button></div></article>
         <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
         <article className="context-card"><h3>最近结果总结</h3>{detail.recentOutcomes.length === 0 ? <p>还没有目标级结果总结。</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{recentOutcomeLabel(item.status)} · {new Date(item.completedAt).toLocaleString()}</small></li>)}</ul>}</article>
-      </div>}
+      </div> : <div className="workbench-context-center"><WorkbenchEvolutionPanel api={api} key={detail.workbenchId} workbenchId={detail.workbenchId} /></div>}
     </>}
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
   </section>;
@@ -880,6 +881,8 @@ function GoalRetryPanel({ api, goal, onDone }: {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackBusy, setFeedbackBusy] = useState(false);
   const submit = () => {
     if (busy) return;
     setBusy(true); setNotice(null);
@@ -888,6 +891,18 @@ function GoalRetryPanel({ api, goal, onDone }: {
       .then((accepted) => onDone(accepted))
       .catch((reason: unknown) => setNotice(reason instanceof ApiError ? reason.message : "没能继续这条目标，请重试。"))
       .finally(() => setBusy(false));
+  };
+  const sendNegativeFeedback = () => {
+    if (feedbackBusy) return;
+    setFeedbackBusy(true); setFeedback(null);
+    void api.evolutionNegativeFeedback(goal.workbench.workbenchId, goal.goalId)
+      .then((status) => setFeedback(status.reason === "rolled_back"
+        ? "已回退该策略并暂停自动进化；运行中的目标保留原策略。"
+        : "已记录反馈。这条目标没有运行当前策略，无需回退。"))
+      .catch((reason: unknown) => setFeedback(reason instanceof ApiError && reason.code === "evolution_goal_invalid"
+        ? "这条目标没有绑定进化策略，无需反馈。"
+        : "没能提交策略反馈，请重试。"))
+      .finally(() => setFeedbackBusy(false));
   };
   return <div className="joi-goal-retry joi-clarify">
     <p className="joi-clarify-reason">{goalRetryHint(goal.status)}</p>
@@ -900,6 +915,10 @@ function GoalRetryPanel({ api, goal, onDone }: {
       <button className="button quiet" disabled={busy} onClick={submit} type="button">{busy ? "正在交给 joi…" : "继续"}</button>
     </div>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
+    <div className="joi-goal-feedback">
+      <button className="button ghost" disabled={feedbackBusy} onClick={sendNegativeFeedback} title="如果这条目标的结果明显糟糕，向运行它的进化策略提交负反馈；命中当前策略时会回退并暂停自动进化" type="button">{feedbackBusy ? "正在提交反馈…" : "反馈策略没帮上忙"}</button>
+      {feedback === null ? null : <p className="field-hint" role="status">{feedback}</p>}
+    </div>
   </div>;
 }
 

@@ -1,4 +1,5 @@
 export interface JoiSystemPromptContext {
+  strategyInstructions?: string | undefined;
   attachments?: readonly { attachmentId: string; filename: string; mimeType: string; size: number }[];
   workbenchName: string;
   modelCapability?: "release-tested" | "custom-unverified-tools";
@@ -17,7 +18,7 @@ export function buildJoiSystemPrompt(context: JoiSystemPromptContext): string {
     "Grill the spec before dispatch: unless the request already states the final deliverable, its boundary, and how completion will be judged, first align with the user through user_ask — one focused alignment question per turn (the deliverable, the depth, the acceptance), wait for the answer, and continue until the spec is sharp; only then fix the destination with harness_name_destination and dispatch. Small self-evident requests skip the grill and act directly.",
     "Maintain the goal map: name the destination with harness_name_destination; chart each layer's paths with harness_chart_path; record every resolution once with harness_record_decision (one-line summary; the detail lives in the decision row); park known-but-unsharp questions in harness_note_fog and graduate them into paths as the frontier advances; rule exclusions out of scope explicitly. Only advance to the next layer once the current layer's paths are complete.",
     "Harness review turns resolve at most one decision. Work dispatched for the goal is mirrored into path facts automatically; do not chart a duplicate path for the same Work. When the destination is reached and no way remains, call turn_complete with MAP_CLEARED; never use MAP_CLEARED while open paths remain.",
-    "harness_refine_workbench may only narrow a workbench's scope or sharpen its persona, never broaden it, and always requires a reason.",
+    "Workbench identity and persona are user-managed. Do not mutate them autonomously; never broaden the user's scope through a learned strategy.",
     "Classify every unit of work as AFK (a partner can finish it alone) or HITL (it needs the user's own judgement). Only AFK work may be dispatched, and only AFK work may fan out in parallel. Never answer a HITL question on the user's behalf. Call user_ask with one concrete blocking question, then stop until the user answers the card.",
     "A versioned goal recovery input means the user has answered a blocking question. Review the answer and every queued Work before continuing. Cancel affected unstarted Work if requirements changed; if information is still missing, call user_ask again. Otherwise call goal_resume exactly once before resuming, reassigning, supplementing, or dispatching replacement Work.",
     "Forming a team: call partner_list_available first and reuse an existing partner when one fits. Only when no partner fits, create one with partner_create. Name new partners after the durable capability cluster, never after a one-off task, model or version (not “Grok4.6 模型调研搭档” but “模型调研搭档”), so the next similar goal reuses them. Always provide both description (a one-line role summary for the partner card) and prompt, written as a self-contained brief from the Agent-Brief skeleton: what it should DO (behavioral, not step-by-step), durable guidance (no paths or line numbers that go stale), independently verifiable acceptance criteria, and an explicit out-of-scope list. Paste in everything that partner needs — it has no other access to this conversation.",
@@ -40,6 +41,7 @@ export function buildJoiSystemPrompt(context: JoiSystemPromptContext): string {
     `Persona: ${context.personaSummary}`,
     `Project: ${context.projectLabel}`,
     `Task context: ${context.taskContextSummary}`,
+    ...(context.strategyInstructions === undefined ? [] : [`Runtime strategy (subordinate to user requirements and fixed gates): ${context.strategyInstructions}`]),
     ...(context.attachments === undefined ? [] : [
       `Attachments: ${context.attachments.map((item) => `${item.attachmentId} ${item.filename} ${item.mimeType} ${String(item.size)} bytes`).join("; ")}`,
       "Attachment delivery: text attachments are inlined in the user message between <joi-attachment> markers; image attachments are attached to this message as images; anything not inlined can be read in chunks with attachment_read using the attachmentId (continue with nextCursor). Never invent attachment content that was not delivered.",

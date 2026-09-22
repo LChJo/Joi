@@ -18,6 +18,7 @@ function textValue(row: Row, key: string): string {
 
 export class SqliteJoiTaskReader implements JoiTaskInbox {
   constructor(private readonly dependencies: {
+    background?: { pending(): JoiTaskPendingInput[]; canceled(inputId: string): boolean };
     database: TransactionalDatabase;
     recoverInterruptedGoalReviews?: () => Promise<void>;
     failTurn: (inputId: string, turnId: string) => Promise<void>;
@@ -25,7 +26,7 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
   }) {}
 
   async listPendingInputs(): Promise<JoiTaskPendingInput[]> {
-    return (this.dependencies.database.transaction((connection) => connection.prepare(`
+    const pending = (this.dependencies.database.transaction((connection) => connection.prepare(`
       SELECT i.input_id, i.created_at,
              CASE WHEN EXISTS (
                SELECT 1 FROM joi_user_action_requests action
@@ -45,6 +46,7 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
         inputId: textValue(row, "input_id"),
         requiresModelSource: row.requires_model_source !== 0,
       }));
+    return pending.length === 0 ? this.dependencies.background?.pending() ?? [] : pending;
   }
 
   async park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<void> {
@@ -68,6 +70,7 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
   }
 
   async isCanceled(inputId: string): Promise<boolean> {
+    if (inputId.startsWith("evolution:")) return this.dependencies.background?.canceled(inputId) ?? true;
     return this.dependencies.database.transaction((connection) => connection.prepare(
       "SELECT 1 AS hit FROM joi_inbox_messages WHERE input_id = ? AND canceled_at IS NOT NULL LIMIT 1",
     ).get(inputId)) !== undefined;

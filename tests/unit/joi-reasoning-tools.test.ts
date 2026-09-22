@@ -72,12 +72,6 @@ function makeTools(options: {
       suggestArchive: async (input) => ({ ...changeBase, ...input, kind: "ARCHIVE" as const, sourceWorkbenchId: input.workbenchId }),
       suggestMerge: async (input) => ({ ...changeBase, ...input, kind: "MERGE" as const }),
     },
-    workbenchRefine: {
-      update: async (workbenchId, input) => {
-        options.refineCalls?.args.push({ workbenchId, input });
-        return {} as never;
-      },
-    },
     directoryPicker: options.workspacePicker ?? (() => Promise.resolve(null)),
     workbenchWorkspaces: {
       bindExisting: async (workbenchId, rootPath) => {
@@ -633,17 +627,12 @@ describe("joi reasoning tools", () => {
     await expect(harness.call("harness_note_fog", {})).rejects.toMatchObject({ code: "harness_fog_invalid" });
   });
 
-  it("refines the Workbench through the management service and records an audit decision", async () => {
+  it("does not expose autonomous persona or scope mutation", () => {
     const recorder: HarnessRecorder = { calls: [] };
     const refineCalls = { args: [] as { workbenchId: string; input: Record<string, unknown> }[] };
     const harness = makeTools({ goalInputId: "goal-1", harness: recorder, refineCalls });
-    const result = await harness.call("harness_refine_workbench", { reason: "完成后收窄范围", scopeSummary: "只做股票分析" });
-    expect(result).toMatchObject({ workbenchId: "workbench_1", refined: true });
-    expect(refineCalls.args).toEqual([{ workbenchId: "workbench_1", input: { responsibility: "只做股票分析" } }]);
-    expect(recorder.calls).toEqual([
-      { args: { goalInputId: "goal-1", kind: "WORKBENCH_REFINE", summary: "完成后收窄范围", turnId: "turn_1" }, method: "recordDecision" },
-    ]);
-    await expect(harness.call("harness_refine_workbench", { reason: "缺少字段" })).rejects.toMatchObject({ code: "harness_refine_invalid" });
+    expect(harness.tools.map((tool) => tool.name)).not.toContain("harness_refine_workbench");
+    expect(refineCalls.args).toEqual([]);
   });
 
   it("lets only a harness review turn clear the goal map", async () => {

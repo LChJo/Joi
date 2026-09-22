@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+AC-EVO-01..06 受限策略进化：[ADR 0020](adr/0020-bounded-strategy-evolution.md)。对应 `evolution-policy.test.ts`、`evolution-scenarios.test.ts`、`evolution-component.test.ts`、`sqlite-evolution-store.test.ts`、`evolution-evidence.test.ts`、`evolution-service.test.ts`、`pi-evolution-model.test.ts`、`evolution-http.test.ts`、`evolution-settings.test.tsx`、`joi-home-single-entry.test.tsx`（目标卡片负反馈入口）、`composition-root.test.ts`（审计 outbox 不进入通用调度器），以及原有 Joi 工具、提示词与运行时契约回归和 Electron 设置页 E2E。覆盖声明式单模块变更、工作台/目标隔离、最终验收事实采样、预算与恢复、失败批次续跑与有界重试、开发/独立封存评测、自动晋升与回滚。真实供应商收益未由测试替身证明。
+
 AC-57 全文导出与安卓诊断入口：[规格与设备待验](19-result-export-acceptance.md)。对应 `tests/unit/result-export.test.ts`、`tests/integration/result-export-persistence.test.ts`、`tests/contract/result-export-http.test.ts`、`tests/renderer/result-export-menu.test.tsx`、`tests/e2e/result-export.spec.ts` 和 Flutter `result_export_test.dart` / `result_reader_test.dart`。复制仅最终 Markdown；文件导出使用快照、离线字体和下载/Joi，诊断图标按当前状态显示。
 
 AC-57 原生 stdio 协议回归：`native/joi-remote/tests/sidecar_contract.rs` 必须启动真实 sidecar，以桌面 camelCase 命令验证 ready、QUIC peerOpen/peerFrame、send 回包、close/peerClose 与 shutdown；Rust 枚举同时指定 variant 与 field 的 camelCase。可选 relayUrl/relayAuthentication 有独立反序列化断言，防止静默丢弃配置。桌面原生构建在复制可执行文件前强制运行该契约，模拟 sidecar 测试不作为跨语言兼容证据。

@@ -148,6 +148,19 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await expect(window.getByText("栖光")).toBeVisible();
     await expectNoHorizontalOverflow(window);
 
+    await window.getByRole("button", { name: "打开工作台 栖光" }).click();
+    await window.getByRole("tab", { name: "自主进化" }).click();
+    // Fresh installs start on the low preset: collecting evidence, bounded background budget.
+    await expect(window.getByText("正在积累可评价的经验")).toBeVisible();
+    await expect(window.getByRole("radio", { name: "低（每日 50 次）" })).toBeChecked();
+    await window.getByRole("radio", { name: "关（只记录经验）" }).click();
+    await expect(window.getByText("已关闭评测预算，只记录经验。")).toBeVisible();
+    await expect(window.getByText("尚未启用自动进化")).toBeVisible();
+    await expectNoHorizontalOverflow(window);
+    await window.screenshot({ path: path.resolve("test-results/e2e-evolution-960.png") });
+    await window.getByRole("radio", { name: "低（每日 50 次）" }).click();
+    await expect(window.getByText("正在积累可评价的经验")).toBeVisible();
+
     await window.getByRole("button", { exact: true, name: "joi" }).click();
     const composer = window.locator(".joi-composer");
     await expect(composer).toBeVisible();

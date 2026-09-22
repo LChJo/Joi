@@ -1,4 +1,5 @@
 import path from "node:path";
+import { EvolutionComponent } from "../application/actors/components/evolution-component.js";
 import { app } from "electron";
 import { createHash } from "node:crypto";
 import { SqliteResultExports } from "../infrastructure/persistence/sqlite-result-exports.js";
@@ -152,15 +153,20 @@ export function wireRuntime(input: {
     roots: [new JoiActor({
       workbenchComponent: new JoiWorkbenchComponent({ workbenches: persistence.workbenches }),
       components: [
+        new EvolutionComponent(joiStack.evolution),
         new JoiAutomationComponent({ store: persistence.automationStore }),
         new JoiTaskComponent({
-          driver: { handle: (inputId, signal) => joiStack.joiCoordinator.handle(inputId, signal) },
+          driver: { handle: (inputId, signal) => inputId.startsWith("evolution:") ? joiStack.evolution.handle(inputId, signal) : joiStack.joiCoordinator.handle(inputId, signal) },
           gate: { hasReadySource: () => modelSourceStack.modelSources.hasReadySource() },
           inbox: new SqliteJoiTaskReader({
+            background: joiStack.evolution,
             database,
             failTurn: (inputId, turnId) => persistence.joiInboxRepository.failTurn(inputId, turnId),
             recoverInterruptedGoalReviews: () => persistence.joiInboxRepository.recoverInterruptedGoalReviews(),
-            park: async (inputId, failure) => { await persistence.joiInboxRepository.park(inputId, failure); },
+            park: async (inputId, failure) => {
+              if (inputId.startsWith("evolution:")) joiStack.evolution.park(inputId);
+              else await persistence.joiInboxRepository.park(inputId, failure);
+            },
           }),
         }),
         new JoiHarnessComponent({
@@ -219,7 +225,9 @@ export function wireRuntime(input: {
   const outboxDispatcher = new OutboxDispatcher({
     clock,
     diagnostics,
-    excludeKinds: ["partner.dispatch"],
+    // evolution.model rows are audit-only outbox records written by the evolution store; the
+    // bounded model call itself runs inside EvolutionService, so the dispatcher must never claim them.
+    excludeKinds: ["partner.dispatch", "evolution.model"],
     handlers: {
       "result.export": record => exporter.handle(String(record.payload.exportId)),
       "a2a.send": async (record) => {

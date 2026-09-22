@@ -2,6 +2,8 @@
 
 - 状态：Accepted
 - 日期：2026-08-06
+
+2026-09-22 更新：ADR 0020 取代下文参数通道的自主 `harness_refine_workbench` 工具入口。完成摘要反哺和地图复盘保留；人格/职责由用户编辑，运行策略改进转入独立评测、版本与回退闭环。历史 WORKBENCH_REFINE 决策继续保留。
 - 关联：ADR 0002（唯一 joi 与唯一调度权威）、ADR 0005（wayfinder 编排方法论；本 ADR 推翻其「不加新存储」不做项）、ADR 0006（工作台私有实例与结果闭环，顺序不动）、ADR 0009（actor/component/tick 词汇与遍历规则）
 
 ## 背景

@@ -9,7 +9,6 @@ import { DISPATCH_POLICY_REASONS } from "../../application/work/dispatch-policy.
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
 import type { WorkbenchChangeService } from "../../application/joi/workbench-change-service.js";
-import type { WorkbenchManagementService } from "../../application/joi/workbench-management-service.js";
 import type { WorkbenchWorkspaceService } from "../../application/joi/workbench-workspace-service.js";
 import type { WorkResultService } from "../../application/work/work-result-service.js";
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
@@ -107,7 +106,6 @@ export function createJoiReasoningTools(input: {
   automation?: Pick<AutomationService, "create" | "delete" | "get" | "list" | "revealPrompt" | "runNow" | "setEnabled" | "update">;
   workbenchId: string;
   workbenchChanges: Pick<WorkbenchChangeService, "suggestArchive" | "suggestMerge">;
-  workbenchRefine?: Pick<WorkbenchManagementService, "update">;
   workbenchWorkspaces: Pick<WorkbenchWorkspaceService, "bindExisting">;
   directoryPicker: () => Promise<string | null>;
   workbenches: WorkbenchCatalog;
@@ -739,36 +737,6 @@ export function createJoiReasoningTools(input: {
     name: "harness_note_fog",
     parameters: harnessFogParameters,
   };
-  const harnessRefineParameters = Type.Object({
-    persona: Type.Optional(Type.String({ maxLength: 4_000, minLength: 1 })),
-    reason: Type.String({ maxLength: 240, minLength: 1 }),
-    scopeSummary: Type.Optional(Type.String({ maxLength: 1_000, minLength: 1 })),
-  });
-  const harnessRefineWorkbenchTool: AgentTool<typeof harnessRefineParameters> = {
-    description: "Refine the current workbench's parameters from what completing this goal revealed: narrow its scope summary or sharpen its persona. Never broaden scope, never change name or project label, and always give the reason; the refinement is recorded as a WORKBENCH_REFINE decision.",
-    execute: async (_toolCallId, arguments_) => {
-      if (input.workbenchRefine === undefined) {
-        throw new DomainError("harness_refine_invalid", "Workbench refinement is not configured.");
-      }
-      if (arguments_.persona === undefined && arguments_.scopeSummary === undefined) {
-        throw new DomainError("harness_refine_invalid", "Pass at least one of scopeSummary or persona.");
-      }
-      await input.workbenchRefine.update(input.workbenchId, {
-        ...(arguments_.persona === undefined ? {} : { persona: arguments_.persona }),
-        ...(arguments_.scopeSummary === undefined ? {} : { responsibility: arguments_.scopeSummary }),
-      });
-      const decision = await requireHarness().recordDecision({
-        goalInputId: goalContext(),
-        kind: "WORKBENCH_REFINE",
-        summary: arguments_.reason,
-        turnId: input.turnId,
-      });
-      return result({ workbenchId: input.workbenchId, decisionId: decision.decisionId, refined: true });
-    },
-    label: "Refine Workbench parameters",
-    name: "harness_refine_workbench",
-    parameters: harnessRefineParameters,
-  };
   const bindWorkspaceParameters = Type.Object({
     workspacePath: Type.Optional(Type.String({ maxLength: 4_000, minLength: 1 })),
   });
@@ -905,7 +873,6 @@ export function createJoiReasoningTools(input: {
     harnessChartPathTool,
     harnessRecordDecisionTool,
     harnessNoteFogTool,
-    harnessRefineWorkbenchTool,
     bindWorkspaceTool,
   ];
 }

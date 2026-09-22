@@ -1,4 +1,8 @@
 import path from "node:path";
+import { EvolutionService } from "../application/evolution/evolution-service.js";
+import { SqliteEvolutionStore } from "../infrastructure/persistence/sqlite-evolution-store.js";
+import { PiEvolutionModel } from "../infrastructure/pi/pi-evolution-model.js";
+import { ReasoningSourceSelector } from "../application/model-sources/reasoning-source-selector.js";
 import type { SystemSettingsPort } from "../application/ports/system-settings.js";
 import { JoiSkillRuntime } from "../infrastructure/pi/joi-skill-runtime.js";
 
@@ -36,6 +40,10 @@ export function wireJoi(input: {
   workbenchStack: WorkbenchBundle;
 }) {
   const { clock, database, diagnostics, directoryPicker, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
+  const evolution = new EvolutionService({ store: new SqliteEvolutionStore(database),
+    // Read-only selection: freshness probes would spend unreserved calls outside evolution's outbox.
+    model: new PiEvolutionModel({ resolver: modelSourceStack.configuredModelResolver, sources: new ReasoningSourceSelector(persistence.modelSourceRepository) }),
+    now: () => clock.now().toISOString(), id: () => ids.next("evolution") });
   const joiInbox = new JoiInboxService({
     clock,
     diagnostics,
@@ -66,7 +74,6 @@ export function wireJoi(input: {
       automation,
       workbenchChanges: workbenchStack.workbenchChanges,
       workbenchId: turn.workbenchId,
-      workbenchRefine: workbenchStack.workbenchManagement,
       workbenchWorkspaces: workbenchStack.workbenchWorkspaces,
       directoryPicker,
       workbenches: persistence.workbenches,
@@ -88,6 +95,7 @@ export function wireJoi(input: {
     }), turn.inputId),
   });
   const joiCoordinator = new JoiCoordinator({
+    evolution,
     automation,
     attachments: joiAttachmentStorage,
     clock,
@@ -105,7 +113,7 @@ export function wireJoi(input: {
     workbenchRegistry: workbenchStack.workbenchRegistry,
     workbenches: persistence.workbenches,
   });
-  return { automation, joiAttachmentStorage, joiCoordinator, joiInbox, joiReasoning };
+  return { automation, evolution, joiAttachmentStorage, joiCoordinator, joiInbox, joiReasoning };
 }
 
 export type JoiBundle = ReturnType<typeof wireJoi>;

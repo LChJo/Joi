@@ -4,6 +4,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
 import type { WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution.js";
 
 const readySource: ModelSourceDto = {
   accessMode: "api",
@@ -1108,6 +1109,41 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-canceled", {}));
   });
 
+  it("sends negative evolution feedback from a terminal goal card", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-feedback", "反馈工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        canDelete: false,
+        completionSummary: "结果已汇总",
+        completedAt: workbench.updatedAt,
+        goalId: "goal-feedback",
+        status: "COMPLETED" as const,
+        title: "完成的目标",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 1, failed: 0, total: 1 },
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const feedback = vi.spyOn(api, "evolutionNegativeFeedback")
+      .mockRejectedValueOnce(new ApiError("evolution_goal_invalid", "Goal does not belong to this workbench.", 400))
+      .mockResolvedValueOnce({ workbenchId: workbench.workbenchId, dailyCallLimit: 5, callsUsedToday: 1, evidenceCount: 12, evaluableCount: 10, activeRevisionId: null, reason: "rolled_back", versions: [] });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "继续「完成的目标」" }));
+    const button = await screen.findByRole("button", { name: "反馈策略没帮上忙" });
+    fireEvent.click(button);
+    expect(await screen.findByText("这条目标没有绑定进化策略，无需反馈。")).toBeInTheDocument();
+    fireEvent.click(button);
+    await waitFor(() => expect(feedback).toHaveBeenCalledTimes(2));
+    expect(feedback).toHaveBeenCalledWith(workbench.workbenchId, "goal-feedback");
+    expect(await screen.findByText("已回退该策略并暂停自动进化；运行中的目标保留原策略。")).toBeInTheDocument();
+  });
+
   it("shows a result-drawer retry as arranging before the follow-up feed refresh completes", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-result-retry", "结果继续工程");
@@ -1913,4 +1949,25 @@ describe("joi home single entry", () => {
       expect(await screen.findByText(new RegExp(entry[2]))).toBeInTheDocument();
     }
   });
+});
+
+it("exposes the evolution panel on a dedicated workbench detail tab", async () => {
+  const api = new DigitalLifeApi("");
+  const workbench = workbenchDto("workbench-evo", "进化工作台");
+  vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+  vi.spyOn(api, "getWorkbench").mockResolvedValue({
+    activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+    personaRevisionId: "persona", projectLabel: "project", recentOutcomes: [], recentResults: [], responsibility: "scope",
+    updatedAt: workbench.updatedAt, workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
+  });
+  vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, activeRevisionId: null, reason: "collecting", versions: [] });
+
+  render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+  const tabButton = await screen.findByRole("tab", { name: "自主进化" });
+  expect(tabButton).toHaveAttribute("aria-selected", "false");
+  fireEvent.click(tabButton);
+  expect(await screen.findByText(/从执行经验中改进本工作台的上下文整理/u)).toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: "低（每日 50 次）" })).toBeChecked();
+  expect(screen.getByText("正在积累可评价的经验")).toBeInTheDocument();
 });

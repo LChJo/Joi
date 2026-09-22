@@ -23,4 +23,8 @@ describe("composition root boundaries", () => {
       expect(composition).toContain(wiringCall);
     }
   });
+  it("excludes audit-only evolution outbox rows from the generic dispatcher wiring", async () => {
+    const wiring = await readFile("src/main/composition/wire-runtime.ts", "utf8");
+    expect(wiring).toMatch(/excludeKinds:\s*\[[^\]]*"evolution\.model"[^\]]*\]/u);
+  });
 });

@@ -24,3 +24,5 @@ Migration 052 让声明的 Work 依赖在派发时真正生效：依赖反查索
 Migration 054 持久记录每个 Work 的执行目录及准备状态；默认目录使用日期时间与 UUID，绑定目录记录实际目标，恢复、重试和产物解析复用同一记录。绝对路径仅限基础设施内部使用。
 
 Migration 055 为目标保存可空 last_opened_at，仅用户继续/重试更新；首页排序回退 created_at，不再随进度和结果更新时间跳动。
+
+Migration 059 增加 evolution_states、evolution_goal_pins、evolution_evidence。存量已绑定工作台的原始目标固定基线且不采样；新目标保留策略与模型源版本。后台调用使用既有 outbox 的 evolution.model 类型，只含稳定标识，不保存模型正文，且不进入通用出站调度器。预算默认低档预设（每日 50 次调用），迁移不触发历史任务重放。

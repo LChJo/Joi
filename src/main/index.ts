@@ -274,6 +274,7 @@ async function startRuntime(): Promise<void> {
     resultExports: runtimeStack.resultExports,
     joiAttachments: joiStack.joiAttachmentStorage,
     joiInbox: joiStack.joiInbox,
+    evolution: joiStack.evolution,
     knowledge: partnerStack.partnerKnowledge,
     partnerModelProbe: partnerStack.partnerModelProbe,
     lives,
@@ -290,6 +291,7 @@ async function startRuntime(): Promise<void> {
     work: workbenchStack.workRepository,
   };
   emergencyStopAll = async () => {
+    joiStack.evolution.emergencyStop();
     await joiStack.joiInbox.emergencyStopQueued();
     let after: { createdAt: string; lifeId: string } | undefined;
     do {

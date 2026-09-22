@@ -52,7 +52,7 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("Only advance to the next layer once the current layer's paths are complete");
     expect(prompt).toContain("Harness review turns resolve at most one decision");
     expect(prompt).toContain("MAP_CLEARED");
-    expect(prompt).toContain("harness_refine_workbench");
+    expect(prompt).not.toContain("harness_refine_workbench");
     expect(prompt).toContain("never broaden");
     expect(prompt).toContain("Workbench: Rex");
     expect(prompt).toContain("PERSONA_SENTINEL");

@@ -59,7 +59,6 @@ export const JOI_REASONING_TOOL_NAMES = [
   "harness_chart_path",
   "harness_record_decision",
   "harness_note_fog",
-  "harness_refine_workbench",
 ] as const;
 
 const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);

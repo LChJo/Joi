@@ -1,4 +1,5 @@
 import { DomainError } from "../../domain/errors.js";
+import type { EvolutionService } from "../evolution/evolution-service.js";
 import type { WorkbenchCatalog } from "../ports/workbench-context.js";
 import type { JoiAttachmentPort } from "../ports/managed-file-ports.js";
 import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
@@ -118,6 +119,7 @@ function workbenchDecision(value: unknown, known: Set<string>, canCreate: boolea
 
 export class JoiCoordinator {
   constructor(private readonly dependencies: {
+    evolution?: Pick<EvolutionService, "strategyForGoal">;
     workbenches: WorkbenchCatalog;
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     /** Verified attachment reader; without it attachments stay metadata-only. */
@@ -337,6 +339,7 @@ export class JoiCoordinator {
       for (;;) {
         if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
         attemptedSources.add(pin.sourceId);
+        const strategy = this.dependencies.evolution?.strategyForGoal(workbenchId, goalId, pin);
       try {
         let attemptCompletionText = "";
         const finishedTurnIds = new Set<string>();
@@ -412,6 +415,7 @@ export class JoiCoordinator {
               projectLabel: workbench.project.label,
               scopeSummary: workbench.profile.scopeSummary,
               taskContextSummary: `Current goal: ${goalId}. Use only this goal's request and execution evidence.`,
+              strategyInstructions: strategy?.instructions,
             }),
             turnId,
           });
