@@ -10,9 +10,12 @@ import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.j
 import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
+import type { UsageRecorder } from "../../application/ports/usage.js";
+import { trackPiStream } from "./pi-usage.js";
 
 export class PiCodingPartnerRunner implements PartnerAdapterRunner {
   constructor(private readonly dependencies: {
+    usage?: UsageRecorder;
     contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
     resolver: PiConfiguredModelResolver;
@@ -75,7 +78,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
         tools,
       },
       sessionId: externalRunId,
-      streamFn: resolved.models.streamSimple.bind(resolved.models),
+      streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
       toolExecution: "sequential",
     });
     await agent.prompt(request.taskProjection);

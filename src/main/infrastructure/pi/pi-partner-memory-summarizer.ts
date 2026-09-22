@@ -3,6 +3,8 @@ import { generateSummary, type AgentMessage } from "@earendil-works/pi-agent-cor
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PartnerMemorySummarizer, PartnerWorkMemoryEntry } from "../../application/ports/partner-memory.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
+import type { UsageRecorder } from "../../application/ports/usage.js";
+import { trackPiModels } from "./pi-usage.js";
 
 /**
  * Rolls the partner work ledger into a bounded summary using the global joi model
@@ -11,6 +13,7 @@ import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.j
  */
 export class PiPartnerMemorySummarizer implements PartnerMemorySummarizer {
   constructor(private readonly dependencies: {
+    usage?: UsageRecorder;
     resolver: PiConfiguredModelResolver;
     sources: Pick<ReasoningSourceSelector, "selectInitial">;
   }) {}
@@ -25,7 +28,7 @@ export class PiPartnerMemorySummarizer implements PartnerMemorySummarizer {
       const messages: AgentMessage[] = [{ content: ledger, role: "user", timestamp: Date.now() }];
       const generated = await generateSummary(
         messages,
-        resolved.models,
+        trackPiModels(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: input.workbenchId, partnerId: input.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
         resolved.model,
         512,
         undefined,

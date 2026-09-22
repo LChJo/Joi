@@ -7,6 +7,7 @@ import type { NativeAgentEvent } from "../../application/ports/native-agent-even
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import type { RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
+import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { NativeAgentEventProjector } from "../../application/partners/native-agent-event-projector.js";
 import type { AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../application/partners/native-agent-session-reference.js";
@@ -16,6 +17,7 @@ import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundar
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, NativeCliRunError, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
+import { beginUsage, normalizeClaudeModelUsage, type SafeUsageSession, unknownUsageObservation, usageFailureStatus } from "../usage/sdk-usage.js";
 
 export const CLAUDE_CODE_TOOL_OPTIONS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "NotebookEdit"] as const;
 const CLAUDE_WORKSPACE_TOOLS = new Set(["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"]);
@@ -38,6 +40,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     prompts: Pick<PartnerPromptStore, "read">;
     resolveExecutable?: () => ResolvedLocalCliExecutable;
     sdk?: ClaudeAgentSdkSurface;
+    usage?: UsageRecorder;
   }) {}
 
   engineOf(): "claude-code" { return "claude-code"; }
@@ -59,16 +62,23 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     if (resolved.executablePath === undefined) return settle({ available: false, reasonCode: "engine_unavailable" });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.dependencies.probeTimeoutMillis ?? 45_000);
+    let usageCapture: NativeUsageCapture | undefined;
     try {
       phase = "create";
       const sdk = await this.#sdk();
       phase = "invoke";
+      usageCapture = createNativeUsageCapture(this.dependencies.usage, {
+        engine: "claude-code", purpose: "probe", sourceName: "Claude Code",
+        ...(input.modelId === undefined ? {} : { modelId: input.modelId }),
+      });
       await this.#consume(sdk.query({
         prompt: "Reply with exactly OK. Do not use tools.",
         options: this.#options({ allowedTools: [], controller, ...(input.modelId === undefined ? {} : { modelId: input.modelId }), permissionMode: "plan", resolved, tools: [] }),
-      }));
+      }), undefined, undefined, usageCapture);
+      finishNativeUsage(usageCapture, "completed");
       return settle({ available: true });
     } catch (error) {
+      finishNativeUsage(usageCapture, "failed");
       return settle({ available: false, reasonCode: controller.signal.aborted ? "partner_cli_probe_timed_out" : error instanceof NativeCliRunError ? error.probeReasonCode : classifyNativeCliFailure(error) });
     } finally { clearTimeout(timer); }
   }
@@ -114,6 +124,15 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       totalMillis: this.dependencies.deadlines.totalMillis,
     });
     let consumed: { body: string; sessionId?: string };
+    const usageCapture = createNativeUsageCapture(this.dependencies.usage, {
+      engine: "claude-code",
+      purpose: "partner",
+      workbenchId: request.workbenchId,
+      workId: request.workId,
+      partnerId: revision.partnerId,
+      sourceName: "Claude Code",
+      ...(revision.engineModelId === undefined ? {} : { modelId: revision.engineModelId }),
+    });
     try {
       consumed = await this.#consume((await this.#sdk()).query({
         prompt: request.taskProjection,
@@ -128,8 +147,10 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           systemPrompt,
           tools,
         }),
-      }), emit, () => guard?.onProgress());
+      }), emit, () => guard?.onProgress(), usageCapture);
+      finishNativeUsage(usageCapture, "completed");
     } catch (error) {
+      finishNativeUsage(usageCapture, timedOut === undefined ? usageFailureStatus(signal) : "failed");
       if (timedOut !== undefined) {
         await emit({ type: "status", state: "failed" });
         throw new DomainError(
@@ -148,7 +169,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     return { conversation: projector.snapshot(), externalRunId: `native_claude:${request.actionId}`, ...(consumed.sessionId === undefined ? {} : { nativeSessionId: consumed.sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
   }
 
-  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void): Promise<{ body: string; sessionId?: string }> {
+  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture): Promise<{ body: string; sessionId?: string }> {
     let body = "";
     let completed = false;
     let sessionId: string | undefined;
@@ -195,6 +216,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
         }
       }
       if (row.type === "result") {
+        recordClaudeUsage(usage, row.modelUsage);
         if (row.subtype !== "success" || row.is_error === true) throw new NativeCliRunError(classifyNativeCliFailure(row));
         completed = true;
         if (typeof row.result === "string") {
@@ -255,4 +277,28 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     if (this.#surface === undefined) { const module = await import("@anthropic-ai/claude-agent-sdk"); this.#surface = { query: (input) => module.query(input) }; }
     return this.#surface;
   }
+}
+
+interface NativeUsageCapture {
+  context: UsageContext;
+  observed: boolean;
+  session: SafeUsageSession;
+}
+
+function createNativeUsageCapture(recorder: UsageRecorder | undefined, context: UsageContext): NativeUsageCapture {
+  return { context, observed: false, session: beginUsage(recorder, context) };
+}
+
+function recordClaudeUsage(capture: NativeUsageCapture | undefined, value: unknown): void {
+  if (capture === undefined || value === null || typeof value !== "object" || Array.isArray(value)) return;
+  for (const [modelId, modelUsage] of Object.entries(value as Record<string, unknown>)) {
+    capture.session.record({ key: `model:${modelId}`, modelId, sourceName: "Claude Code", tokens: normalizeClaudeModelUsage(modelUsage) });
+    capture.observed = true;
+  }
+}
+
+function finishNativeUsage(capture: NativeUsageCapture | undefined, status: "canceled" | "completed" | "failed"): void {
+  if (capture === undefined) return;
+  if (!capture.observed) capture.session.record(unknownUsageObservation(capture.context));
+  capture.session.finish(status);
 }

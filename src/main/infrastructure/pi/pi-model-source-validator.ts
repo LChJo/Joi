@@ -5,6 +5,8 @@ import type { Clock } from "../../application/ports/runtime-store.js";
 import { createPiSourceProvider } from "./source-provider-factory.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { classifyHttp403Detail } from "../../application/partners/partner-run-failure.js";
+import type { UsageRecorder } from "../../application/ports/usage.js";
+import { trackPiModels } from "./pi-usage.js";
 
 type Probe = (record: ModelSourceRecord) => Promise<void>;
 
@@ -74,9 +76,9 @@ export class PiModelSourceValidator implements ModelSourceValidator {
   readonly #clock: Clock;
   readonly #probe: Probe;
 
-  constructor(input: { clock: Clock; credentials?: CredentialStore; probe?: Probe }) {
+  constructor(input: { clock: Clock; credentials?: CredentialStore; probe?: Probe; usage?: UsageRecorder }) {
     this.#clock = input.clock;
-    this.#probe = input.probe ?? this.#createProbe(input.credentials);
+    this.#probe = input.probe ?? this.#createProbe(input.credentials, input.usage);
   }
 
   async validate(record: ModelSourceRecord) {
@@ -89,7 +91,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
     }
   }
 
-  #createProbe(credentials: CredentialStore | undefined): Probe {
+  #createProbe(credentials: CredentialStore | undefined, usage: UsageRecorder | undefined): Probe {
     if (credentials === undefined) throw new Error("pi_credential_store_required");
     return async (record) => {
       const source = record.source;
@@ -131,7 +133,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       try {
         const timestamp = Date.now();
         for (let attempt = 0; attempt < 2; attempt++) {
-          const response = await models.completeSimple(probeModel, {
+          const response = await trackPiModels(models, usage, () => ({ engine: "pi", purpose: "probe", sourceId: source.sourceId, sourceName: source.activeSourceRevision.displayName, modelId: source.activeModelRevision.modelId })).completeSimple(probeModel, {
             messages: [{ content: "Reply with OK.", role: "user", timestamp }],
           }, {
             maxTokens: attempt === 0 ? (alwaysOn ? 256 : 64) : 1024,

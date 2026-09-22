@@ -12,7 +12,9 @@ import type {
 } from "../../application/ports/a2a-ports.js";
 import { DomainError } from "../../domain/errors.js";
 import { RUNTIME_EXTENSION_URI } from "../../../shared/product.js";
+import type { UsageRecorder } from "../../application/ports/usage.js";
 import type { OutboundNetworkPolicy } from "./outbound-network-policy.js";
+import { beginUsage, unknownUsageObservation, usageFailureStatus } from "../usage/sdk-usage.js";
 
 export class A2aTransportHttpError extends Error {
   constructor(public readonly status: 429 | 503, public readonly retryAfter: string | null) {
@@ -129,24 +131,48 @@ function toPart(part: A2aInvocationRequest["parts"][number]): Part {
 }
 
 export class SdkA2aInvocationTransport implements A2aInvocationTransport {
-  constructor(private readonly dependencies: { fetchImpl?: typeof fetch; policy: OutboundNetworkPolicy }) {}
+  constructor(private readonly dependencies: { fetchImpl?: typeof fetch; policy: OutboundNetworkPolicy; usage?: UsageRecorder }) {}
 
   async *sendStream(input: { config: A2aTransportConfig; request: A2aInvocationRequest; signal?: AbortSignal; token: string }): AsyncIterable<A2aRemoteEvent> {
-    const transport = this.transport(input.config);
-    const request: MessageSendParams = {
-      message: {
-        ...(input.request.contextId === undefined ? {} : { contextId: input.request.contextId }),
-        ...(input.request.extensions === undefined ? {} : { extensions: input.request.extensions }),
-        kind: "message",
-        messageId: input.request.messageId,
-        parts: input.request.parts.map(toPart),
-        role: "user",
-      },
+    const scope = input.request.parts.find((part) => part.kind === "data" && part.data.sourceBoundary === "joi-work");
+    const usageContext = { engine: "a2a" as const, purpose: "partner" as const, sourceId: input.config.agentConnectionId, sourceName: "A2A",
+      ...(scope?.kind === "data" && typeof scope.data.workbenchId === "string" ? { workbenchId: scope.data.workbenchId } : {}),
+      ...(scope?.kind === "data" && typeof scope.data.workId === "string" ? { workId: scope.data.workId } : {}),
     };
-    const timeout = AbortSignal.timeout(5 * 60_000);
-    const signal = input.signal === undefined ? timeout : AbortSignal.any([input.signal, timeout]);
-    for await (const event of transport.sendMessageStream(request, { signal })) {
-      yield mapEvent(event);
+    const usage = beginUsage(this.dependencies.usage, usageContext);
+    usage.record(unknownUsageObservation(usageContext));
+    let settled = false;
+    try {
+      const transport = this.transport(input.config);
+      const request: MessageSendParams = {
+        message: {
+          ...(input.request.contextId === undefined ? {} : { contextId: input.request.contextId }),
+          ...(input.request.extensions === undefined ? {} : { extensions: input.request.extensions }),
+          kind: "message",
+          messageId: input.request.messageId,
+          parts: input.request.parts.map(toPart),
+          role: "user",
+        },
+      };
+      const timeout = AbortSignal.timeout(5 * 60_000);
+      const signal = input.signal === undefined ? timeout : AbortSignal.any([input.signal, timeout]);
+      let outcome: "completed" | "failed" | "canceled" = "completed";
+      for await (const event of transport.sendMessageStream(request, { signal })) {
+        const mapped = mapEvent(event);
+        if (mapped.kind === "task" || mapped.kind === "status") {
+          if (mapped.state === "failed" || mapped.state === "rejected") outcome = "failed";
+          else if (mapped.state === "canceled") outcome = "canceled";
+        }
+        yield mapped;
+      }
+      settled = true;
+      usage.finish(outcome);
+    } catch (error) {
+      settled = true;
+      usage.finish(usageFailureStatus(input.signal));
+      throw error;
+    } finally {
+      if (!settled) usage.finish(input.signal?.aborted === true ? "canceled" : "interrupted");
     }
   }
 

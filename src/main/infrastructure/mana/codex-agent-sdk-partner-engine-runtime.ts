@@ -7,6 +7,7 @@ import type { NativeAgentEvent } from "../../application/ports/native-agent-even
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import type { RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
+import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { NativeAgentEventProjector } from "../../application/partners/native-agent-event-projector.js";
 import type { AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../application/partners/native-agent-session-reference.js";
@@ -16,6 +17,7 @@ import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundar
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
+import { beginUsage, normalizeCodexUsage, type SafeUsageSession, unknownUsageObservation, usageFailureStatus } from "../usage/sdk-usage.js";
 
 export interface CodexThreadSurface {
   readonly id: string | null;
@@ -39,6 +41,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     prompts: Pick<PartnerPromptStore, "read">;
     resolveExecutable?: () => ResolvedLocalCliExecutable;
     sdk?: CodexAgentSdkSurface;
+    usage?: UsageRecorder;
   }) {}
 
   engineOf(): "codex" { return "codex"; }
@@ -61,14 +64,21 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     if (resolved.executablePath === undefined) return settle({ available: false, reasonCode: "engine_unavailable" });
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), this.dependencies.probeTimeoutMillis ?? 45_000);
+    let usageCapture: NativeUsageCapture | undefined;
     try {
       phase = "create";
       const client = this.#client(resolved, "Reply with exactly OK. Do not use tools.");
       const thread = client.startThread({ approvalPolicy: "never", ...(input.modelId === undefined ? {} : { model: input.modelId }), networkAccessEnabled: false, sandboxMode: "read-only", webSearchMode: "disabled" });
       phase = "invoke";
-      await this.#consume(thread, "Reply with exactly OK. Do not use tools.", controller.signal);
+      usageCapture = createNativeUsageCapture(this.dependencies.usage, {
+        engine: "codex", purpose: "probe", sourceName: "Codex",
+        ...(input.modelId === undefined ? {} : { modelId: input.modelId }),
+      });
+      await this.#consume(thread, "Reply with exactly OK. Do not use tools.", controller.signal, undefined, undefined, usageCapture);
+      finishNativeUsage(usageCapture, "completed");
       return settle({ available: true });
     } catch (error) {
+      finishNativeUsage(usageCapture, "failed");
       return settle({ available: false, reasonCode: controller.signal.aborted ? "partner_cli_probe_timed_out" : classifyNativeCliFailure(error) });
     } finally { clearTimeout(timer); }
   }
@@ -124,9 +134,20 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       totalMillis: this.dependencies.deadlines.totalMillis,
     });
     let consumed: { body: string; threadId?: string };
+    const usageCapture = createNativeUsageCapture(this.dependencies.usage, {
+      engine: "codex",
+      purpose: "partner",
+      workbenchId: request.workbenchId,
+      workId: request.workId,
+      partnerId: revision.partnerId,
+      sourceName: "Codex",
+      ...(revision.engineModelId === undefined ? {} : { modelId: revision.engineModelId }),
+    });
     try {
-      consumed = await this.#consume(thread, request.taskProjection, controller.signal, emit, () => guard?.onProgress());
+      consumed = await this.#consume(thread, request.taskProjection, controller.signal, emit, () => guard?.onProgress(), usageCapture);
+      finishNativeUsage(usageCapture, "completed");
     } catch (error) {
+      finishNativeUsage(usageCapture, timedOut === undefined ? usageFailureStatus(signal) : "failed");
       if (timedOut !== undefined) {
         await emit({ type: "status", state: "failed" });
         throw new DomainError(
@@ -146,7 +167,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     return { conversation: projector.snapshot(), externalRunId: `native_codex:${request.actionId}`, ...(sessionId === undefined ? {} : { nativeSessionId: sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
   }
 
-  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void): Promise<{ body: string; threadId?: string }> {
+  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture): Promise<{ body: string; threadId?: string }> {
     const streamed = await thread.runStreamed(prompt, signal === undefined ? undefined : { signal });
     let completed = false;
     let threadId: string | undefined;
@@ -156,7 +177,18 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     for await (const event of streamed.events) {
       onProgress?.();
       if (event.type === "thread.started") threadId = event.thread_id;
-      else if (event.type === "turn.completed") completed = true;
+      else if (event.type === "turn.completed") {
+        completed = true;
+        if (usage !== undefined) {
+          usage.session.record({
+            key: usage.context.modelId === undefined ? "result" : `model:${usage.context.modelId}`,
+            ...(usage.context.modelId === undefined ? {} : { modelId: usage.context.modelId }),
+            sourceName: "Codex",
+            tokens: normalizeCodexUsage(event.usage),
+          });
+          usage.observed = true;
+        }
+      }
       else if (event.type === "turn.failed" || event.type === "error") throw new Error("codex_turn_failed", { cause: event });
       else if (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed") {
         const item = event.item;
@@ -201,6 +233,22 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   #resolve(): ResolvedLocalCliExecutable { return (this.dependencies.resolveExecutable ?? (() => resolveLocalCliExecutable("codex")))(); }
+}
+
+interface NativeUsageCapture {
+  context: UsageContext;
+  observed: boolean;
+  session: SafeUsageSession;
+}
+
+function createNativeUsageCapture(recorder: UsageRecorder | undefined, context: UsageContext): NativeUsageCapture {
+  return { context, observed: false, session: beginUsage(recorder, context) };
+}
+
+function finishNativeUsage(capture: NativeUsageCapture | undefined, status: "canceled" | "completed" | "failed"): void {
+  if (capture === undefined) return;
+  if (!capture.observed) capture.session.record(unknownUsageObservation(capture.context, capture.context.modelId === undefined ? "result" : `model:${capture.context.modelId}`));
+  capture.session.finish(status);
 }
 
 export function nestedCodexEnvironment(source: NodeJS.ProcessEnv): Record<string, string> | undefined {

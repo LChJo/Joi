@@ -4,9 +4,12 @@ import type { WorkbenchRoutingRuntime } from "../../application/ports/joi-coordi
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
+import type { UsageRecorder } from "../../application/ports/usage.js";
+import { trackPiModels } from "./pi-usage.js";
 
 export class PiWorkbenchRoutingRuntime implements WorkbenchRoutingRuntime {
   constructor(private readonly dependencies: {
+    usage?: UsageRecorder;
     resolver: PiConfiguredModelResolver;
     sources: Pick<ReasoningSourceSelector, "selectInitial">;
   }) {}
@@ -15,7 +18,7 @@ export class PiWorkbenchRoutingRuntime implements WorkbenchRoutingRuntime {
     const routeId = `routing_${crypto.randomUUID()}`;
     const pin = await this.dependencies.sources.selectInitial(routeId);
     const { model, models } = await this.dependencies.resolver.resolve(pin);
-    const response = await models.completeSimple(model, {
+    const response = await trackPiModels(models, this.dependencies.usage, () => ({ engine: "pi", purpose: "routing", sourceId: pin.sourceId, modelId: pin.modelId })).completeSimple(model, {
       messages: [{
         content: [
           input.repair

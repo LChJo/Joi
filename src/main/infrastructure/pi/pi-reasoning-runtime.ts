@@ -5,6 +5,8 @@ import type { Api, Context, ImageContent, Model, Models } from "@earendil-works/
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
+import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
+import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import type {
   JoiReasoningSessionSnapshot,
   JoiReasoningOutcome,
@@ -64,6 +66,7 @@ export const JOI_REASONING_TOOL_NAMES = [
 const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);
 
 interface PiReasoningRuntimeOptions {
+  usage?: UsageRecorder;
   compaction?: {
     keepRecentMessages: number;
     maxMessages: number;
@@ -168,6 +171,7 @@ function isCheckpoint(message: AgentMessage | undefined): boolean {
 export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #model: Model<Api>;
   readonly #models: Models;
+  readonly #usage: UsageRecorder | undefined;
   readonly #compaction: CompactionOptions;
   readonly #sessionStore: ReasoningSessionStore;
   readonly #sessions = new Map<string, SessionRuntime>();
@@ -177,6 +181,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     if (Array.isArray(options.tools)) validateToolNames(options.tools);
     this.#model = options.model;
     this.#models = options.models;
+    this.#usage = options.usage;
     this.#compaction = options.compaction ?? DEFAULT_COMPACTION;
     if (this.#compaction.keepRecentMessages < 2
       || this.#compaction.maxMessages <= this.#compaction.keepRecentMessages
@@ -316,7 +321,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       },
       sessionId: metadata.sessionId,
       steeringMode: "one-at-a-time",
-      streamFn: this.#models.streamSimple.bind(this.#models),
+      streamFn: trackPiStream(this.#models, this.#usage, () => this.#usageContext(runtime, "orchestration")),
       toolExecution: "sequential",
     });
     const runtime: SessionRuntime = { agent, current: undefined, delivered: { text: false, tool: false }, metadata };
@@ -363,7 +368,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           try {
             const generated = await generateSummary(
               withoutCheckpoint,
-              this.#models,
+              trackPiModels(this.#models, this.#usage, () => this.#usageContext(runtime, "summary")),
               this.#model,
               Math.max(256, Math.ceil(this.#compaction.maxSummaryCharacters / 4)),
               undefined,
@@ -461,5 +466,12 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const session = this.#sessions.get(sessionId);
     if (session === undefined) throw new Error("reasoning_session_not_found");
     return session;
+  }
+
+  #usageContext(runtime: SessionRuntime, purpose: "orchestration" | "summary"): UsageContext {
+    const current = runtime.current;
+    return { engine: "pi", purpose, workbenchId: runtime.metadata.workbenchId,
+      ...(current === undefined ? {} : { goalId: current.goalInputId ?? current.inputId, sourceId: current.sourceId, modelId: current.modelId }),
+    };
   }
 }

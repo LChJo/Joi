@@ -8,6 +8,7 @@ import type {
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { JoiSkillContext } from "./joi-skill-runtime.js";
 import { PiReasoningRuntime } from "./pi-reasoning-runtime.js";
+import type { UsageRecorder } from "../../application/ports/usage.js";
 
 /** One global runtime facade whose individual Workbench sessions use their pinned source revision. */
 export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
@@ -15,6 +16,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #runtimes = new Map<string, { runtime: PiReasoningRuntime; sourceRevisionId: string }>();
 
   constructor(private readonly dependencies: {
+    usage?: UsageRecorder;
     resolver: PiConfiguredModelResolver;
     skills?: { prepare(): Promise<JoiSkillContext> };
     sessionStore: ReasoningSessionStore;
@@ -28,6 +30,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
     if (selected?.sourceRevisionId !== input.sourceRevisionId) {
       const resolved = await this.dependencies.resolver.resolve(input);
       const runtime = new PiReasoningRuntime({
+        ...(this.dependencies.usage === undefined ? {} : { usage: this.dependencies.usage }),
         model: resolved.model,
         models: resolved.models,
         sessionStore: this.dependencies.sessionStore,

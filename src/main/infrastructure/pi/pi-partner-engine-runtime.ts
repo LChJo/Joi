@@ -25,6 +25,8 @@ import { draftAgentConversation, type AgentConversationDraft } from "../../appli
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
+import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
+import { trackPiStream } from "./pi-usage.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
@@ -66,6 +68,7 @@ interface RunTracker {
 }
 
 interface WarmAgent {
+  usageContext: { current: UsageContext };
   agent: Agent;
   partnerRevisionId: string;
   sideEffectTracker: { current: RunTracker };
@@ -221,6 +224,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   readonly #warm = new Map<string, WarmAgent>();
 
   constructor(private readonly dependencies: {
+    usage?: UsageRecorder;
     maxWarmAgents?: number;
     contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
@@ -293,7 +297,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         tools,
       },
       sessionId: externalRunId,
-      streamFn: resolved.models.streamSimple.bind(resolved.models),
+      streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
       toolExecution: "sequential",
       transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages)),
     });
@@ -338,6 +342,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     assertSkillWorkspace(revision, execution.workspacePath);
     const pin = input.sourcePin ?? await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
+    const currentUsage: UsageContext = { engine: "pi", purpose: "partner", workbenchId: input.request.workbenchId, workId: input.request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId };
     let warm = this.#warm.get(input.instanceId);
     if (warm !== undefined && (warm.partnerRevisionId !== revision.partnerRevisionId
       || warm.workspacePath !== execution.workspacePath
@@ -351,6 +356,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const effectiveToolNames = this.#effectiveToolNames(revision);
     if (warm === undefined) {
       const resolved = await this.dependencies.resolver.resolve(pin);
+      const usageContext = { current: currentUsage };
       const sideEffectTracker = { current: tracker };
       const tools = this.#toolsWithTimeout([
         ...this.#toolsForRun(execution.workspacePath, effectiveToolNames, input.skillEnvironmentKeys),
@@ -375,11 +381,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
           tools,
         },
         sessionId: `local_pi_instance:${input.instanceId}`,
-        streamFn: resolved.models.streamSimple.bind(resolved.models),
+        streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => usageContext.current),
         toolExecution: "sequential",
         transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages)),
       });
       warm = {
+        usageContext,
         agent,
         partnerRevisionId: revision.partnerRevisionId,
         sideEffectTracker,
@@ -390,6 +397,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       };
       this.#trackWarm(input.instanceId, warm);
     }
+    warm.usageContext.current = currentUsage;
     const residentToolNames = warm.agent.state.tools.map((tool) => tool.name);
     const systemPrompt = this.#systemPrompt(
       await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
