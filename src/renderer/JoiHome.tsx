@@ -1120,8 +1120,9 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
 const JOI_MAX_ATTACHMENTS = 8;
 const JOI_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
 
-function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
+function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }: {
   api: DigitalLifeApi;
+  focusGoalId?: string;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
   onScheduleGoal?: (goalId: string) => void;
   snapshot: JoiSnapshotDto;
@@ -1133,7 +1134,8 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
   const targetWorkbench = snapshot.workbenches.find((workbench) => workbench.workbenchId === targetWorkbenchId);
   const [feed, setFeed] = useState<JoiHomeFeedDto>({ goals: [], thinking: [], unassignedActions: [] });
   const [feedError, setFeedError] = useState(false);
-  const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [feedLoaded, setFeedLoaded] = useState(false);
+  const [openGoalId, setOpenGoalId] = useState<string | null>(focusGoalId ?? null);
   const [openGoalAgentStatus, setOpenGoalAgentStatus] = useState<WorkbenchAgentStatusDto | undefined>(undefined);
   const [resultGoal, setResultGoal] = useState<JoiGoalCardDto | null>(null);
   const [retryGoalId, setRetryGoalId] = useState<string | null>(null);
@@ -1147,6 +1149,7 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
       if (!Array.isArray(loaded.goals) || !Array.isArray(loaded.thinking) || !Array.isArray(loaded.unassignedActions)) throw new Error("joi_home_feed_invalid");
       if (revision !== feedRevisionRef.current) return;
       setFeed(loaded);
+      setFeedLoaded(true);
       setFeedError(false);
     } catch {
       if (revision !== feedRevisionRef.current) return;
@@ -1228,6 +1231,7 @@ function JoiComposer({ api, onNavigate, onScheduleGoal, snapshot }: {
   };
   return <section className="joi-home" aria-labelledby="joi-home-title">
     <header><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。工作台归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
+    {focusGoalId !== undefined && openGoalId === focusGoalId && feedLoaded && !feedError && openGoal === undefined ? <p className="inline-notice" role="status">目标已移除或不可用，历史用量仍保留。</p> : null}
     {feedError ? <div className="inline-notice danger" role="alert"><p>任务状态暂时无法刷新，已保留上次成功获取的数据。</p><button className="button quiet" onClick={() => void loadFeed()} type="button">重新加载任务状态</button></div> : null}
     {workbenchChanges.length === 0 ? null : <section className="joi-workbench-confirmations" aria-label="工作台变更确认"><h2>需要你确认</h2>{workbenchChanges.map((change) => <article key={change.requestId}>
       <div><strong>{change.kind === "MERGE" ? "joi 建议合并工作台" : "joi 建议归档工作台"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceWorkbenchId} → ${change.targetWorkbenchId ?? ""}` : change.sourceWorkbenchId}</small></div>
@@ -1310,8 +1314,9 @@ function clarificationText(code: string | undefined, prompt?: string, workbenchN
   return prompt ?? "joi 需要你补充信息后才能继续。在下方补充细节，它会接着这条输入往下做。";
 }
 
-export function JoiHome({ api, onNavigate, onScheduleGoal }: {
+export function JoiHome({ api, focusGoalId, onNavigate, onScheduleGoal }: {
   api: DigitalLifeApi;
+  focusGoalId?: string;
   onNavigate?: (section: "agents" | "joi", tab?: "partners" | "scenarios") => void;
   onScheduleGoal?: (goalId: string) => void;
 }) {
@@ -1324,5 +1329,5 @@ export function JoiHome({ api, onNavigate, onScheduleGoal }: {
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   if (error !== null) return <section className="content-state" role="alert"><p>{error}</p><button className="button quiet" onClick={() => void load()} type="button">再试一次</button></section>;
   if (snapshot === null) return <section className="content-state" role="status">joi 正在整理全局状态…</section>;
-  return snapshot.runtime.configured ? <JoiComposer api={api} {...(onNavigate === undefined ? {} : { onNavigate })} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
+  return snapshot.runtime.configured ? <JoiComposer api={api} {...(focusGoalId === undefined ? {} : { focusGoalId })} {...(onNavigate === undefined ? {} : { onNavigate })} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
 }

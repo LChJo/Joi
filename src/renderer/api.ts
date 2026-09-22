@@ -20,6 +20,7 @@ import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
 import { randomUuid } from "./random-uuid";
 import type { EvolutionStatusDto } from "../shared/evolution";
+import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 
 export class ApiError extends Error {
   constructor(public readonly code: string, message: string, public readonly status: number) {
@@ -66,6 +67,13 @@ export class DigitalLifeApi {
   }
 
   authStatus() { return this.request<{ configured: boolean }>("/api/v1/auth/status"); }
+  statistics(query: StatisticsQuery) {
+    const parameters = new URLSearchParams({ from: query.from, to: query.to, timeZone: query.timeZone });
+    if (query.workbenchId !== undefined) parameters.set("workbenchId", query.workbenchId);
+    if (query.modelKey !== undefined) parameters.set("modelKey", query.modelKey);
+    if (query.purpose !== undefined) parameters.set("purpose", query.purpose);
+    return this.request<StatisticsDto>(`/api/v1/statistics?${parameters.toString()}`);
+  }
   bootstrap(nonce: string) { return this.request<{ csrfToken: string }>("/api/v1/auth/bootstrap", { body: { nonce }, method: "POST" }); }
   login(password: string) { return this.request<{ csrfToken: string }>("/api/v1/auth/login", { body: { password }, method: "POST" }); }
   setup(password: string) { return this.request<undefined>("/api/v1/auth/setup", { body: { password }, method: "POST" }); }
