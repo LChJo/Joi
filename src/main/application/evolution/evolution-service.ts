@@ -206,7 +206,7 @@ export class EvolutionService {
     this.dependencies.store.update(id, (state) => { required(state.call).state = "RUNNING"; });
     try {
       const prompt = call.batch.phase === "PROPOSE" ? this.#proposalPrompt(call.batch, call.history) : this.#simulationPrompt(call.batch);
-      const result = await this.dependencies.model.call({ pin, ...prompt, idempotencyId: call.id, ...(signal === undefined ? {} : { signal }) });
+      const result = await this.dependencies.model.call({ pin, ...prompt, workbenchId: id, idempotencyId: call.id, ...(signal === undefined ? {} : { signal }) });
       const stillPinned = JSON.stringify(await this.dependencies.model.pin()) === JSON.stringify(pin);
       this.dependencies.store.update(id, (state) => {
         if (state.call?.id !== call.id) return;

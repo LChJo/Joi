@@ -1,4 +1,5 @@
 import type { Clock } from "../application/ports/runtime-store.js";
+import { SqliteUsageStore } from "../infrastructure/persistence/sqlite-usage-store.js";
 import path from "node:path";
 import { WorkRunDirectoryProvisioner } from "../infrastructure/persistence/work-run-directory-provisioner.js";
 import { LegacyLifeStoreAdapter } from "../infrastructure/persistence/legacy-life-store-adapter.js";
@@ -43,6 +44,7 @@ export function wirePersistence(input: {
 }) {
   const { clock, database, pid, userDataDirectory } = input;
   return {
+    usageStore: new SqliteUsageStore(database, () => clock.now().toISOString()),
     runDirectories: new WorkRunDirectoryProvisioner({ database, clock, baseDirectory: input.runDirectory ?? path.join(userDataDirectory, "runs") }),
     automationStore: new SqliteAutomationStore(database),
     dispatchClaims: new SqlitePartnerDispatchClaims(database),

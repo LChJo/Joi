@@ -1,16 +1,6 @@
-import type { TokenUsage, UsageEngine, UsagePurpose, UsageStatus } from "../../../shared/statistics.js";
-
-export interface UsageContext {
-  engine: UsageEngine;
-  purpose: UsagePurpose;
-  workbenchId?: string;
-  goalId?: string;
-  workId?: string;
-  partnerId?: string;
-  sourceId?: string;
-  sourceName?: string;
-  modelId?: string;
-}
+import type { TokenUsage, UsageStatus } from "../../../shared/statistics.js";
+import type { UsageContext, StatisticsSnapshot } from "../../domain/statistics/usage-types.js";
+export type { UsageContext, UsageRecord, StatisticsGoalFact, StatisticsSnapshot } from "../../domain/statistics/usage-types.js";
 export interface UsageObservation {
   /** Stable within this invocation. Cumulative updates replace this key, never add to it. */
   key: string;
@@ -28,27 +18,8 @@ export interface UsageSession {
 export interface UsageRecorder {
   begin(context: UsageContext): UsageSession;
 }
-export interface UsageRecord extends UsageContext {
-  id: string;
-  invocationId: string;
-  at: string;
-  status: UsageStatus;
-  tokens: TokenUsage | null;
-}
-export interface StatisticsGoalFact {
-  goalId: string;
-  workbenchId: string;
-  title: string;
-  status: "completed" | "failed" | "waiting" | "running" | "canceled";
-  completedAt: string | null;
-}
-export interface StatisticsSnapshot {
-  collectedSince: string;
-  records: UsageRecord[];
-  workbenches: { workbenchId: string; name: string; archived: boolean }[];
-  goals: StatisticsGoalFact[];
-}
 export interface UsageStore {
+  markDegraded(): void;
   begin(id: string, context: UsageContext, at: string): void;
   observe(id: string, observation: UsageObservation, at: string): void;
   finish(id: string, status: Exclude<UsageStatus, "running">): void;

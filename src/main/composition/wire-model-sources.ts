@@ -1,4 +1,5 @@
 import { lookup } from "node:dns/promises";
+import { StatisticsService } from "../application/statistics/statistics-service.js";
 
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import { ModelSourceService } from "../application/model-sources/model-source-service.js";
@@ -18,6 +19,8 @@ export function wireModelSources(input: {
   vault: ElectronCredentialVault;
 }) {
   const { clock, ids, persistence, vault } = input;
+  const statistics = new StatisticsService({ store: persistence.usageStore, now: () => clock.now().toISOString(), id: () => ids.next("usage") });
+  statistics.recover();
   const piCredentials = new SafeStoragePiCredentialStore({
     records: persistence.piCredentialRepository,
     vault,
@@ -35,6 +38,7 @@ export function wireModelSources(input: {
     validator,
   });
   return {
+    statistics,
     configuredModelResolver: new RepositoryPiConfiguredModelResolver({
       credentials: piCredentials,
       repository: persistence.modelSourceRepository,

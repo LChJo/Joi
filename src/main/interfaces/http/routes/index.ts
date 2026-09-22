@@ -1,4 +1,5 @@
 import type { RouteDefinition } from "../route-types.js";
+import { STATISTICS_ROUTES } from "./statistics-routes.js";
 import { EVOLUTION_ROUTES } from "./evolution-routes.js";
 import { RESULT_EXPORT_ROUTES } from "./result-export-routes.js";
 import { AUTH_MUTATION_ROUTES, AUTH_SESSION_ROUTES } from "./auth-routes.js";
@@ -17,6 +18,7 @@ import { AUTOMATION_READ_ROUTES, AUTOMATION_WRITE_ROUTES } from "./automation-ro
  * order is behavior-neutral; within a family the historical if-chain order is kept.
  */
 export const AUTHENTICATED_ROUTES: RouteDefinition[] = [
+  ...STATISTICS_ROUTES,
   ...EVOLUTION_ROUTES,
   ...RESULT_EXPORT_ROUTES,
   ...AUTH_SESSION_ROUTES,

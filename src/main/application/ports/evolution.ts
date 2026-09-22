@@ -92,7 +92,7 @@ export interface EvolutionStore {
 }
 export interface EvolutionModel {
   pin(): Promise<EvolutionSourcePin>;
-  call(input: { pin: EvolutionSourcePin; systemPrompt: string; prompt: string; mode: "proposal" | "simulation"; signal?: AbortSignal; idempotencyId: string }): Promise<unknown>;
+  call(input: { pin: EvolutionSourcePin; systemPrompt: string; prompt: string; mode: "proposal" | "simulation"; signal?: AbortSignal; idempotencyId: string; workbenchId?: string }): Promise<unknown>;
 }
 export interface EvolutionCandidate {
   module: EvolutionModule;
