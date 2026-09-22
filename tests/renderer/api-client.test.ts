@@ -15,6 +15,7 @@ describe("renderer API client", () => {
     const api = new DigitalLifeApi("http://127.0.0.1:43130");
     api.setCsrfToken("csrf");
     await api.authStatus(); await api.bootstrap("nonce"); await api.login("password"); await api.setup("password");
+    await api.statistics({ from: "2026-09-01", to: "2026-09-22", timeZone: "Asia/Shanghai", workbenchId: "unassigned", modelKey: "codex:gpt 5", purpose: "summary" });
     await api.logout(); await api.listSessions(); await api.logoutAllLan(); await api.changePassword("old password", "new password");
     await api.joiSnapshot(); await api.listWorkbenches(); await api.createWorkbench({ name: "Workbench", personaSummary: "Persona", projectLabel: "Project", scopeSummary: "Scope" });
     await api.archiveWorkbench("workbench 1");
@@ -44,6 +45,7 @@ describe("renderer API client", () => {
     expect(api.artifactUrl("life 1", "artifact 1", "preview")).toContain("artifact%201/preview");
     expect(api.diagnosticsExportUrl()).toContain("/api/v1/diagnostics/export");
     expect(fetchMock).toHaveBeenCalled();
+    expect(fetchMock.mock.calls.some((call) => call[0] === "http://127.0.0.1:43130/api/v1/statistics?from=2026-09-01&to=2026-09-22&timeZone=Asia%2FShanghai&workbenchId=unassigned&modelKey=codex%3Agpt+5&purpose=summary")).toBe(true);
     const write = fetchMock.mock.calls.find((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/auth/setup"));
     expect(write?.[1]?.headers).toMatchObject({ "content-type": "application/json", "x-csrf-token": "csrf" });
     const sendCalls = fetchMock.mock.calls.filter((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/joi/messages") && call[1]?.method === "POST");
