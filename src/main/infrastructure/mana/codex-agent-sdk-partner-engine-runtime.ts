@@ -68,7 +68,9 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     try {
       phase = "create";
       const client = this.#client(resolved, "Reply with exactly OK. Do not use tools.");
-      const thread = client.startThread({ approvalPolicy: "never", ...(input.modelId === undefined ? {} : { model: input.modelId }), networkAccessEnabled: false, sandboxMode: "read-only", webSearchMode: "disabled" });
+      // The probe runs from the app process cwd (e.g. an install directory), which is neither a
+      // git repository nor a trusted Codex project; without this flag codex exec exits immediately.
+      const thread = client.startThread({ approvalPolicy: "never", ...(input.modelId === undefined ? {} : { model: input.modelId }), networkAccessEnabled: false, sandboxMode: "read-only", skipGitRepoCheck: true, webSearchMode: "disabled" });
       phase = "invoke";
       usageCapture = createNativeUsageCapture(this.dependencies.usage, {
         engine: "codex", purpose: "probe", sourceName: "Codex",
@@ -112,6 +114,8 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       ...(revision.engineModelId === undefined ? {} : { model: revision.engineModelId }),
       networkAccessEnabled: permissions.networkAccessEnabled,
       sandboxMode: permissions.sandboxMode,
+      // A partner workspace is not necessarily a git repository or a trusted Codex project.
+      skipGitRepoCheck: true,
       webSearchMode: permissions.webSearchMode,
       ...(execution.workspacePath === undefined ? {} : { workingDirectory: execution.workspacePath }),
     };
