@@ -50,6 +50,12 @@ function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string
   connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
     WHERE status IN ('WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
       SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(now, inputId);
+  // Pending child inputs (resume/review turns) are the scheduler's fuel: leaving them
+  // PENDING would let the task actor pick them up after the cancel and keep invoking
+  // partners for a goal the user already revoked.
+  connection.prepare(`UPDATE joi_inbox_messages
+    SET status = 'CONSUMED', canceled_at = ?, updated_at = ?
+    WHERE goal_input_id = ? AND status = 'PENDING' AND canceled_at IS NULL`).run(now, now, inputId);
 }
 
 /**
@@ -334,28 +340,27 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const current = mapRow(row);
       const now = this.#clock.now().toISOString();
       if (current.status === "CONSUMED") {
-        // A consumed goal can still hold live work: a partner may be mid-run or paused
-        // with a question whose answer turn never resumed the work. The home feed offers
-        // a cancel affordance on every non-terminal card, so honor it: hard-cancel the
-        // goal's not-yet-final work (in-flight runs are aborted by their dispatch actors
-        // and converge as non-authoritative late results); otherwise the card could
-        // never be canceled or dismissed.
+        // A consumed goal can still hold live work or an in-flight turn: a partner may be
+        // mid-run or paused with a question, a resume/review turn may still be looping,
+        // or an ACTIVE map may be advancing. The home feed offers a cancel affordance on
+        // every non-terminal card, so honor it: hard-cancel the goal's not-yet-final work
+        // and pending child inputs (in-flight runs are aborted by their dispatch actors
+        // and converge as non-authoritative late results); otherwise a looping summary
+        // turn would keep invoking partners with no way to stop it.
         if (current.dismissedAt !== undefined || current.canceledAt !== undefined || current.failedAt !== undefined) return null;
-        const cancelableWork = connection.prepare(`SELECT 1 FROM work_items
-          WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') LIMIT 1`).get(inputId);
-        if (cancelableWork === undefined) {
-          // No live work: only a stalled lifecycle is cancelable here — an ACTIVE map with
-          // nothing in flight can neither advance nor always be re-prompted, so without this
-          // exit the card would stay non-terminal and un-actionable forever.
-          const stalled = connection.prepare(`SELECT 1 FROM joi_harness_maps m
-            WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
-              AND NOT EXISTS (SELECT 1 FROM joi_turns live
-                               JOIN joi_inbox_messages source ON source.input_id = live.input_id
-                               WHERE live.status IN ('PENDING', 'RUNNING', 'WAITING')
-                                 AND COALESCE(source.goal_input_id, source.input_id) = m.goal_input_id)
-            LIMIT 1`).get(inputId);
-          if (stalled === undefined) return null;
-        }
+        const live = connection.prepare(`SELECT 1 AS hit FROM (
+            SELECT 1 FROM work_items
+              WHERE input_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING')
+            UNION ALL
+            SELECT 1 FROM joi_harness_maps
+              WHERE goal_input_id = ? AND status = 'ACTIVE'
+            UNION ALL
+            SELECT 1 FROM joi_turns live
+              JOIN joi_inbox_messages source ON source.input_id = live.input_id
+              WHERE live.status IN ('PENDING', 'RUNNING', 'WAITING')
+                AND COALESCE(source.goal_input_id, source.input_id) = ?
+          ) LIMIT 1`).get(inputId, inputId, inputId);
+        if (live === undefined) return null;
         const result = connection.prepare(`UPDATE joi_inbox_messages
           SET canceled_at = ?, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
           WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(now, now, inputId);
@@ -388,13 +393,21 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async cancelQueued(): Promise<number> {
     return this.database.transaction((connection) => {
       // Emergency stop honors the same hard-cancel semantics as a single cancel: routed
-      // goals and goals with in-flight runs are revoked too; their live runs are aborted
-      // by their actors and converge as late, non-authoritative results.
+      // goals, goals with in-flight runs, and consumed goals still holding an ACTIVE map
+      // or a live turn are revoked too; their live runs are aborted by their actors and
+      // converge as late, non-authoritative results.
       const rows = connection.prepare(`SELECT i.input_id FROM joi_inbox_messages i
         WHERE i.dismissed_at IS NULL AND i.canceled_at IS NULL
           AND (i.status IN ('PENDING', 'CLARIFICATION_REQUIRED', 'ROUTED') OR (
             i.status = 'CONSUMED'
-            AND EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING'))
+            AND (
+              EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING'))
+              OR EXISTS (SELECT 1 FROM joi_harness_maps m WHERE m.goal_input_id = i.input_id AND m.status = 'ACTIVE')
+              OR EXISTS (SELECT 1 FROM joi_turns live
+                           JOIN joi_inbox_messages source ON source.input_id = live.input_id
+                          WHERE live.status IN ('PENDING', 'RUNNING', 'WAITING')
+                            AND COALESCE(source.goal_input_id, source.input_id) = i.input_id)
+            )
           ))`).all() as { input_id?: unknown }[];
       const now = this.#clock.now().toISOString();
       let canceled = 0;

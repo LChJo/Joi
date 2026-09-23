@@ -40,6 +40,11 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
               AND (gate.status = 'WAITING_INPUT'
                 OR (gate.status = 'REVIEWING' AND gate.resume_input_id <> i.input_id))
          )
+         AND NOT EXISTS (
+           SELECT 1 FROM joi_inbox_messages goal
+            WHERE goal.input_id = COALESCE(i.goal_input_id, i.input_id)
+              AND goal.canceled_at IS NOT NULL
+         )
        ORDER BY i.created_at, i.input_id LIMIT 50`).all()) as Row[])
       .map((row) => ({
         createdAt: textValue(row, "created_at"),
@@ -71,8 +76,15 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
 
   async isCanceled(inputId: string): Promise<boolean> {
     if (inputId.startsWith("evolution:")) return this.dependencies.background?.canceled(inputId) ?? true;
-    return this.dependencies.database.transaction((connection) => connection.prepare(
-      "SELECT 1 AS hit FROM joi_inbox_messages WHERE input_id = ? AND canceled_at IS NOT NULL LIMIT 1",
-    ).get(inputId)) !== undefined;
+    // A turn may run under a derived child input (resume/review) whose goal row carries
+    // the cancellation, so resolve the goal through goal_input_id as well: without this
+    // the in-flight turn would never be aborted after the user cancels the goal.
+    return this.dependencies.database.transaction((connection) => connection.prepare(`
+      SELECT 1 AS hit FROM joi_inbox_messages me
+       WHERE me.input_id = ?
+         AND (me.canceled_at IS NOT NULL
+           OR EXISTS (SELECT 1 FROM joi_inbox_messages goal
+                       WHERE goal.input_id = me.goal_input_id AND goal.canceled_at IS NOT NULL))
+       LIMIT 1`).get(inputId)) !== undefined;
   }
 }

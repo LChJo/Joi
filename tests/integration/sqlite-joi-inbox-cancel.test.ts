@@ -6,6 +6,7 @@ import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-servic
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteWorkbenchAttentionReconciler } from "../../src/main/infrastructure/persistence/sqlite-workbench-attention-reconciler.js";
+import { SqliteJoiTaskReader } from "../../src/main/infrastructure/persistence/sqlite-joi-task-reader.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -392,6 +393,66 @@ describe("sqlite joi inbox cancel", () => {
       expect(states).toEqual({ attempt: { status: "FAILED" }, run: { status: "FAILED" }, work: { status: "CANCELED" } });
       const feedAfter = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(now));
       expect(feedAfter.goals[0]).toMatchObject({ goalId: accepted.inputId, status: "CANCELED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("cancels a consumed goal whose summary turn is still looping and terminates its pending child inputs", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "总结", personaSummary: "persona", projectLabel: "任务", scopeSummary: "取消总结中" });
+      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-summary-cancel", text: "正在汇总的目标" });
+      const now = "2026-08-21T05:00:00.000Z";
+      const reviewInputId = `joi_harness_review:goal:${accepted.inputId}:r1`;
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES (?, 'summary-review:1', '汇总评审', 'PENDING', ?, ?, ?, ?)`).run(reviewInputId, workbench.workbenchId, accepted.inputId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn_summary_done', ?, ?, 'joi_session:test', 'COMPLETED', ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn_summary_live', ?, ?, 'joi_session:test', 'RUNNING', ?, ?)`)
+          .run(reviewInputId, workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED', workbench_id = ? WHERE input_id = ?").run(workbench.workbenchId, accepted.inputId);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
+          VALUES (?, ?, '汇总', 'ACTIVE', 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        const insertWork = connection.prepare(`
+          INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES (?, ?, ?, ?, '{}', 'READ', 'COMPLETED', ?, ?)`);
+        insertWork.run("work_summary_done_1", workbench.workbenchId, accepted.inputId, "已完成一", now, now);
+        insertWork.run("work_summary_done_2", workbench.workbenchId, accepted.inputId, "已完成二", now, now);
+      });
+
+      // Terminal work plus a looping summary turn is the card the home feed shows as
+      // "正在总结" (FINALIZING): cancel must go through instead of being refused.
+      const feedBefore = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(now));
+      expect(feedBefore.goals[0]).toMatchObject({ goalId: accepted.inputId, status: "FINALIZING" });
+
+      const canceled = await inbox.cancel({ inputId: accepted.inputId });
+      expect(canceled).toMatchObject({ canceled: true, status: "CONSUMED" });
+      const states = fixture.database.transaction((connection) => ({
+        goal: connection.prepare("SELECT canceled_at FROM joi_inbox_messages WHERE input_id = ?").get(accepted.inputId) as { canceled_at: string | null },
+        child: connection.prepare("SELECT status, canceled_at FROM joi_inbox_messages WHERE input_id = ?").get(reviewInputId) as { canceled_at: string | null; status: string },
+      }));
+      expect(typeof states.goal.canceled_at).toBe("string");
+      expect(states.child).toMatchObject({ status: "CONSUMED" });
+      expect(typeof states.child.canceled_at).toBe("string");
+
+      // The scheduler must not pick the canceled goal's pending children back up, and
+      // the live child turn must resolve its cancellation through the goal row.
+      const reader = new SqliteJoiTaskReader({
+        database: fixture.database,
+        failTurn: () => Promise.resolve(undefined),
+        park: () => Promise.resolve(undefined),
+      });
+      await expect(reader.listPendingInputs()).resolves.not.toContainEqual(expect.objectContaining({ inputId: reviewInputId }));
+      await expect(reader.isCanceled(reviewInputId)).resolves.toBe(true);
     } finally {
       await fixture.close();
     }

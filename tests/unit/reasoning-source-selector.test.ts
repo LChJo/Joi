@@ -136,6 +136,33 @@ describe("deterministic-source-fallback-classification", () => {
     await expect(selector.selectById("first", "turn-pinned")).rejects.toMatchObject({ code: "partner_model_source_auth_forbidden" });
   });
 
+  it("skips a route that rejected a run for lacking completion budget until the window lapses", async () => {
+    let nowMs = Date.parse("2026-09-03T10:00:00.000Z");
+    const freshFirst = { ...first, lastValidatedAt: "2026-09-03T10:00:00.000Z" };
+    const freshSecond = { ...second, lastValidatedAt: "2026-09-03T10:00:00.000Z" };
+    const validate = vi.fn(async () => ({ status: "READY" as const, validatedAt: new Date(nowMs).toISOString() }));
+    const selector = new ReasoningSourceSelector({ ...repository, list: async () => [freshFirst, freshSecond] }, {
+      clock: { now: () => new Date(nowMs) },
+      validator: { validate },
+    });
+
+    await selector.reportRunFailure("first", { detail: "max_completion_tokens is larger than the route allowance" });
+    await expect(selector.selectInitial("turn-avoid")).resolves.toMatchObject({ sourceId: "second" });
+    expect(validate).not.toHaveBeenCalled();
+
+    nowMs += 31 * 60_000;
+    await expect(selector.selectInitial("turn-after-avoidance")).resolves.toMatchObject({ sourceId: "first" });
+    expect(validate).toHaveBeenCalledOnce();
+  });
+
+  it("does not offer a capacity-avoided route as a fallback", async () => {
+    const selector = new ReasoningSourceSelector(repository);
+    await selector.reportRunFailure("second", { detail: "completion budget exhausted for this route" });
+    await expect(selector.selectFallback({
+      currentSourceId: "first", failure: "timeout", formalOutputStarted: false, sideEffectStarted: false, turnId: "turn-fallback-avoid",
+    })).resolves.toBeNull();
+  });
+
   it("removes a runtime 403 source before running one diagnostic probe", async () => {
     const states: ModelSourceRecord[] = [];
     const validate = vi.fn(async () => ({ reasonCode: "model_access_forbidden", status: "NEEDS_AUTH" as const, validatedAt: "2026-09-03T10:00:01.000Z" }));

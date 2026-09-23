@@ -32,6 +32,9 @@ const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
 const PARTNER_CONTEXT_MAX_CHARS = 120_000;
 const PARTNER_CONTEXT_MAX_MESSAGES = 32;
+const PARTNER_CONTEXT_OUTPUT_RESERVE_TOKENS = 16_000;
+const PARTNER_CONTEXT_MIN_CHARS = 8_000;
+const MISSING_BODY_CONTINUATION_PROMPT = "Your turn ended without any textual reply. Respond now with a concise plain-text summary of what you did and the outcome; do not call tools.";
 
 function assertSkillWorkspace(revision: PartnerRevision, workspacePath: string | undefined): void {
   if (revision.skills.length > 0 && workspacePath === undefined) {
@@ -41,9 +44,22 @@ function assertSkillWorkspace(revision: PartnerRevision, workspacePath: string |
   }
 }
 
+/**
+ * Sizes a run's prompt char budget to the pinned route's window. CJK-heavy partner text can
+ * approach one token per character, so chars map 1:1 to tokens and a fixed output reserve
+ * stays free; the legacy fixed cap remains the ceiling for large-window routes. A route whose
+ * window cannot hold even the floor is still bounded by the floor so the tail stays usable.
+ */
+export function partnerContextMaxChars(model: { contextWindow?: number }): number {
+  const window = model.contextWindow;
+  if (window === undefined || !Number.isFinite(window) || window <= 0) return PARTNER_CONTEXT_MAX_CHARS;
+  const reserve = Math.min(PARTNER_CONTEXT_OUTPUT_RESERVE_TOKENS, Math.floor(window / 2));
+  return Math.max(PARTNER_CONTEXT_MIN_CHARS, Math.min(PARTNER_CONTEXT_MAX_CHARS, window - reserve));
+}
+
 /** Keeps the current request plus a structurally valid recent tail before every provider call. */
-export function boundPartnerModelContext(messages: AgentMessage[]): AgentMessage[] {
-  if (messages.length <= PARTNER_CONTEXT_MAX_MESSAGES && JSON.stringify(messages).length <= PARTNER_CONTEXT_MAX_CHARS) return messages;
+export function boundPartnerModelContext(messages: AgentMessage[], maxChars: number = PARTNER_CONTEXT_MAX_CHARS): AgentMessage[] {
+  if (messages.length <= PARTNER_CONTEXT_MAX_MESSAGES && JSON.stringify(messages).length <= maxChars) return messages;
   let start = Math.max(0, messages.length - PARTNER_CONTEXT_MAX_MESSAGES);
   while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
   const latestUserBefore = (): AgentMessage | undefined => {
@@ -52,7 +68,7 @@ export function boundPartnerModelContext(messages: AgentMessage[]): AgentMessage
   };
   const initialAnchor = latestUserBefore();
   let context = [...(initialAnchor === undefined ? [] : [initialAnchor]), ...messages.slice(start)];
-  while (context.length > 2 && JSON.stringify(context).length > PARTNER_CONTEXT_MAX_CHARS) {
+  while (context.length > 2 && JSON.stringify(context).length > maxChars) {
     start += 1;
     while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
     const anchor = latestUserBefore();
@@ -276,6 +292,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const externalRunId = `local_pi:${request.actionId}`;
     const pin = await this.#selectSource(revision, externalRunId);
     const resolved = await this.dependencies.resolver.resolve(pin);
+    const contextMaxChars = partnerContextMaxChars(resolved.model);
     const configuredPrompt = await this.#configuredPrompt(revision);
     const trackerRef = { current: tracker };
     const tools = this.#toolsWithTimeout([
@@ -299,7 +316,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       sessionId: externalRunId,
       streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
       toolExecution: "sequential",
-      transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages)),
+      transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, contextMaxChars)),
     });
     const live = context.onEvent === undefined ? undefined : new LiveConversationPublisher(request.taskProjection, context.onEvent);
     await live?.start();
@@ -309,6 +326,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0, live, context.onProgress);
       const failure = assistantFailureSignal(agent.state.messages);
       if (failure !== null) throw failure;
+      await this.#continueForMissingBody(agent, tracker, 0, live, context.onProgress);
       const body = assistantText(agent.state.messages);
       const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       return {
@@ -356,6 +374,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const effectiveToolNames = this.#effectiveToolNames(revision);
     if (warm === undefined) {
       const resolved = await this.dependencies.resolver.resolve(pin);
+      const contextMaxChars = partnerContextMaxChars(resolved.model);
       const usageContext = { current: currentUsage };
       const sideEffectTracker = { current: tracker };
       const tools = this.#toolsWithTimeout([
@@ -383,7 +402,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         sessionId: `local_pi_instance:${input.instanceId}`,
         streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => usageContext.current),
         toolExecution: "sequential",
-        transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages)),
+        transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, contextMaxChars)),
       });
       warm = {
         usageContext,
@@ -411,9 +430,10 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     try {
       await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live, input.onProgress);
       if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live, input.onProgress);
-      const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
-      const failure = assistantFailureSignal(turnMessages);
+      const failure = assistantFailureSignal(warm.agent.state.messages.slice(previousMessageCount));
       if (failure !== null) throw failure;
+      await this.#continueForMissingBody(warm.agent, tracker, previousMessageCount, live, input.onProgress);
+      const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
       const body = assistantText(turnMessages);
       const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       return {
@@ -452,6 +472,20 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       agent.state.messages = [...agent.state.messages, failedMessage];
       throw error;
     }
+  }
+
+  /**
+   * A run can end on tool calls or thinking frames alone, leaving BODY_PRESENT acceptance
+   * with nothing to verify even though the work itself succeeded. Ask once for a textual
+   * deliverable before reporting completion; a run that still answers silently keeps
+   * failing at the acceptance gate instead of looping here.
+   */
+  async #continueForMissingBody(agent: Agent, tracker: RunTracker, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
+    if (tracker.question !== undefined) return;
+    if (assistantText(agent.state.messages.slice(messageStart)) !== "") return;
+    await this.#promptWithIdleTimeout(agent, MISSING_BODY_CONTINUATION_PROMPT, live, onProgress);
+    const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
+    if (failure !== null) throw failure;
   }
 
   async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {

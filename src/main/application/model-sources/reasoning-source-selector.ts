@@ -2,13 +2,17 @@ import { DomainError } from "../../domain/errors.js";
 import { classifySourceFailure, pinModelSourceForTurn, type SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import type { ModelSourceHealthRevision, ModelSourceRecord, ModelSourceRepository, ModelSourceValidator } from "../ports/model-source-ports.js";
 import type { Clock } from "../ports/runtime-store.js";
-import { classifyHttp403Detail } from "../partners/partner-run-failure.js";
+import { classifyHttp403Detail, classifyPartnerRunFailure } from "../partners/partner-run-failure.js";
 
 type SourcePin = ReturnType<typeof pinModelSourceForTurn>;
 type SelectorRepository = Pick<ModelSourceRepository, "list"> & Partial<Pick<ModelSourceRepository, "get" | "recordToolProof" | "save" | "saveHealthIfCurrent">>;
 
+/** A route that rejected a run for lacking completion budget stays skipped for this window. */
+const CAPACITY_AVOIDANCE_MILLIS = 30 * 60_000;
+
 export class ReasoningSourceSelector {
   readonly #probes = new Map<string, Promise<ModelSourceRecord | undefined>>();
+  readonly #capacityAvoided = new Map<string, number>();
 
   constructor(
     private readonly repository: SelectorRepository,
@@ -16,9 +20,25 @@ export class ReasoningSourceSelector {
   ) {}
 
   async selectInitial(turnId: string): Promise<SourcePin> {
-    for (const candidate of await this.#readySources()) {
-      const source = await this.#fresh(candidate);
-      if (source?.source.status === "READY") return pinModelSourceForTurn(source.source, turnId);
+    const ready = await this.#readySources();
+    // A capacity-mismatched route stays reachable but unusable for large contexts, so prefer
+    // routes without a recent budget failure; only fall back to avoided routes when no other
+    // READY source exists, keeping the original not-ready error for a fully unusable pool.
+    // Freshness probes are memoized per selection so the second pass never re-probes.
+    const freshened = new Map<string, Promise<ModelSourceRecord | undefined>>();
+    const freshOf = (record: ModelSourceRecord): Promise<ModelSourceRecord | undefined> => {
+      const existing = freshened.get(record.source.sourceId);
+      if (existing !== undefined) return existing;
+      const pending = this.#fresh(record);
+      freshened.set(record.source.sourceId, pending);
+      return pending;
+    };
+    for (const includeAvoided of [false, true]) {
+      for (const candidate of ready) {
+        if (!includeAvoided && this.#isCapacityAvoided(candidate.source.sourceId)) continue;
+        const source = await freshOf(candidate);
+        if (source?.source.status === "READY") return pinModelSourceForTurn(source.source, turnId);
+      }
     }
     throw new DomainError("model_source_not_ready", "No model source is ready.");
   }
@@ -38,6 +58,12 @@ export class ReasoningSourceSelector {
 
   /** Removes a failed auth route from dispatch immediately, then runs one coalesced no-tool diagnostic probe. */
   async reportRunFailure(sourceId: string, error: unknown): Promise<void> {
+    // Readiness probes only prove a route is reachable, not that it can hold a large partner
+    // context, so a budget rejection is remembered in-memory and skipped by selection for a
+    // bounded window instead of being rediscovered by every large dispatch.
+    if (classifyPartnerRunFailure(error, { phase: "MODEL", sideEffectState: "NONE" }).reasonCode === "model_context_budget_exhausted") {
+      this.#capacityAvoided.set(sourceId, this.#nowMillis() + CAPACITY_AVOIDANCE_MILLIS);
+    }
     if (this.options === undefined || this.repository.get === undefined
       || (this.repository.save === undefined && this.repository.saveHealthIfCurrent === undefined)) return;
     const status = numericStatus(error);
@@ -72,7 +98,7 @@ export class ReasoningSourceSelector {
     const currentIndex = sources.findIndex((record) => record.source.sourceId === input.currentSourceId);
     if (currentIndex < 0) return null;
     for (const candidate of sources.slice(currentIndex + 1)) {
-      if (candidate.source.status !== "READY") continue;
+      if (candidate.source.status !== "READY" || this.#isCapacityAvoided(candidate.source.sourceId)) continue;
       const fresh = await this.#fresh(candidate);
       if (fresh?.source.status === "READY") return pinModelSourceForTurn(fresh.source, input.turnId);
     }
@@ -88,6 +114,18 @@ export class ReasoningSourceSelector {
     return (await this.repository.list())
       .filter((record) => record.source.status === "READY")
       .sort((left, right) => left.order - right.order);
+  }
+
+  #nowMillis(): number {
+    return this.options?.clock.now().getTime() ?? Date.now();
+  }
+
+  #isCapacityAvoided(sourceId: string): boolean {
+    const until = this.#capacityAvoided.get(sourceId);
+    if (until === undefined) return false;
+    if (until > this.#nowMillis()) return true;
+    this.#capacityAvoided.delete(sourceId);
+    return false;
   }
 
   async #fresh(record: ModelSourceRecord): Promise<ModelSourceRecord | undefined> {

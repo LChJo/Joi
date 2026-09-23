@@ -7,7 +7,7 @@ import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinkin
 import { vi } from "vitest";
 
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
-import { boundPartnerModelContext, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
+import { boundPartnerModelContext, partnerContextMaxChars, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
@@ -29,6 +29,25 @@ describe("local Pi coding partner runtime", () => {
     expect(bounded.length).toBeLessThan(messages.length);
     expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(120_000);
     expect(bounded[0]).toMatchObject({ content: "original", role: "user" });
+  });
+
+  it("bounds the partner context budget to the pinned model window", () => {
+    expect(partnerContextMaxChars({ contextWindow: 32_000 })).toBe(16_000);
+    expect(partnerContextMaxChars({ contextWindow: 200_000 })).toBe(120_000);
+    expect(partnerContextMaxChars({ contextWindow: 4_000 })).toBe(8_000);
+    expect(partnerContextMaxChars({})).toBe(120_000);
+    const messages = [
+      { content: "original", role: "user", timestamp: 1 },
+      ...Array.from({ length: 10 }, (_, index) => ({
+        content: [{ type: "text", text: `${String(index)}-${"x".repeat(4_000)}` }],
+        role: "assistant",
+        timestamp: index + 2,
+      })),
+    ] as never[];
+    const bounded = boundPartnerModelContext(messages, partnerContextMaxChars({ contextWindow: 32_000 }));
+    expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(16_000);
+    expect(bounded[0]).toMatchObject({ content: "original", role: "user" });
+    expect(boundPartnerModelContext(messages)).toHaveLength(messages.length);
   });
 
   it("runs one isolated Pi session with the pinned workspace, prompt and tool allowlist", async () => {
@@ -361,6 +380,117 @@ describe("Pi partner engine runtime", () => {
     )).resolves.toMatchObject({ output: { body: "review completed after reconnect" }, status: "COMPLETED" });
     expect(toolRuns).toBe(1);
     expect(faux.state.callCount).toBe(3);
+  });
+
+  it("asks once for a textual deliverable when a run ends without any assistant text", async () => {
+    const faux = fauxProvider({ provider: "local-partner-missing-body" });
+    let continuationPrompt = "";
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("bash", { command: "npm test" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([]),
+      (context) => {
+        const users = (context.messages as { content?: unknown; role?: string }[]).filter((message) => message.role === "user");
+        const last = users.at(-1)?.content;
+        continuationPrompt = typeof last === "string" ? last : JSON.stringify(last);
+        return fauxAssistantMessage([fauxText("tests passed; change verified")]);
+      },
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    let toolRuns = 0;
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "test bash",
+          execute: async () => { toolRuns += 1; return { content: [{ text: "all tests green", type: "text" as const }], details: {} }; },
+          label: "bash",
+          name: "bash",
+          parameters: Type.Object({ command: Type.String() }),
+        }],
+        names: ["bash"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Silent worker", kind: "local-pi",
+      partnerId: "partner_silent", partnerRevisionId: "partner_revision_silent", registryRevision: 1,
+      skills: [], tools: ["bash"],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_silent", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "implement", workId: "work_silent" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ output: { body: "tests passed; change verified" }, status: "COMPLETED" });
+    expect(toolRuns).toBe(1);
+    expect(faux.state.callCount).toBe(3);
+    expect(continuationPrompt).toContain("plain-text summary");
+  });
+
+  it("requests the missing textual deliverable once on resident turns as well", async () => {
+    const faux = fauxProvider({ provider: "local-partner-missing-body-resident" });
+    faux.setResponses([
+      fauxAssistantMessage([]),
+      fauxAssistantMessage([fauxText("resident summary delivered")]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Silent resident", kind: "local-pi",
+      partnerId: "partner_silent_resident", partnerRevisionId: "partner_revision_silent_resident", registryRevision: 1,
+      skills: [], tools: [],
+    });
+
+    const result = await runtime.runResidentTurn({
+      instanceId: "instance_silent",
+      knowledgeSection: "",
+      request: { actionId: "action_silent_resident", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "analyze", workId: "work_silent_resident" },
+      restoredMessages: null,
+      revision,
+      skillEnvironmentKeys: [],
+      skillSection: "",
+    });
+    expect(result).toMatchObject({ output: { body: "resident summary delivered" }, status: "COMPLETED" });
+    expect(faux.state.callCount).toBe(2);
+  });
+
+  it("reports completion with an empty body when the single continuation also answers silently", async () => {
+    const faux = fauxProvider({ provider: "local-partner-missing-body-twice" });
+    faux.setResponses([
+      fauxAssistantMessage([]),
+      fauxAssistantMessage([]),
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-07-28T12:00:00.000Z", displayName: "Still silent", kind: "local-pi",
+      partnerId: "partner_still_silent", partnerRevisionId: "partner_revision_still_silent", registryRevision: 1,
+      skills: [], tools: [],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_still_silent", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "implement", workId: "work_still_silent" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ output: { body: "" }, status: "COMPLETED" });
+    expect(faux.state.callCount).toBe(2);
   });
 
   it("classifies an exhausted generic connection failure as safely retryable before side effects", async () => {
