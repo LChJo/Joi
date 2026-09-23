@@ -431,7 +431,13 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // no event listener is attached. Tool execution is sequential, so aborting at
     // the successful end prevents any later calls emitted in the same response.
     if (event.type === "tool_execution_end") {
-      if (event.toolName === "work_dispatch" && event.isError) runtime.agent.abort();
+      // A structured dispatch rejection (the execute handler's reasonCode) is terminal for
+      // this run: the coordinator turns it into a clarification or a failed Turn. An
+      // argument-validation failure is raised before execute runs and therefore carries no
+      // reasonCode; aborting on it would kill the Turn before the model can even see the
+      // error and correct its own call, so those errors stay recoverable in-run.
+      if (event.toolName === "work_dispatch" && event.isError
+        && safeToolResultReasonCode(event.result) !== undefined) runtime.agent.abort();
       if (event.toolName === "user_ask" && !event.isError) runtime.agent.abort();
     }
     const active = runtime.current;

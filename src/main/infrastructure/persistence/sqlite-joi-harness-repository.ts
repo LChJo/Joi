@@ -201,7 +201,17 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          AND i.input_id NOT LIKE 'joi_result_input:%'
          AND i.input_id NOT LIKE 'joi_harness_review:%'
          AND i.input_id NOT LIKE 'joi_signal_input:%'
-         AND EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id)
+         -- A goal-resume/recovery row is an orchestration continuation of an existing goal:
+         -- it never owns a map of its own. Adopting one here would key the map to the
+         -- synthetic id, leaving the real goal mapless (its decisions, paths and work all
+         -- attach to the goal id) and exposing that orphan map to the trivial clear.
+         AND i.input_id NOT LIKE 'joi_goal_resume:%'
+         AND i.input_id NOT LIKE 'joi_recovery:%'
+         -- A goal whose first Turn raised a clarification gate at routing time never gets a
+         -- joi_turns row, but its gate row proves the goal exists: without this arm such a
+         -- goal is never adopted and stays mapless for the rest of its life.
+         AND (EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id)
+           OR EXISTS (SELECT 1 FROM joi_goal_execution_gates g WHERE g.goal_input_id = i.input_id))
          AND NOT EXISTS (SELECT 1 FROM joi_harness_maps m WHERE m.goal_input_id = i.input_id)
        ORDER BY i.created_at, i.input_id LIMIT 20`).all()) as Row[])
       .map((row) => ({ workbenchId: textValue(row, "workbench_id"), goalInputId: textValue(row, "input_id") }));

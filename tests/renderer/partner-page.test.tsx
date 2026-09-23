@@ -148,7 +148,7 @@ describe("partner page", () => {
     fireEvent.change(screen.getByLabelText("描述（给 joi 做参考）"), { target: { value: "写文档的搭档" } });
     fireEvent.click(screen.getByRole("button", { name: "保存搭档" }));
     await waitFor(() => expect(create).toHaveBeenCalledWith({
-      description: "写文档的搭档", displayName: "Writer", kind: "local-pi", skills: [], toolPolicyMode: "ALL", tools: [],
+      description: "写文档的搭档", displayName: "Writer", engine: "pi-core", kind: "local-pi", skills: [], toolPolicyMode: "ALL", tools: [],
     }));
   });
 
@@ -174,6 +174,24 @@ describe("partner page", () => {
     await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1", expect.objectContaining({
       description: "擅长重构", displayName: "Local Coder", modelIdOverride: "kimi-k2.5",
     })));
+  });
+
+  it("sends the engine when a partner is switched away from Codex back to Pi core", async () => {
+    const api = new DigitalLifeApi("");
+    const codexPartner: PartnerDto = {
+      ...coder, engine: "codex", engineModelId: "gpt-6-sol", partnerId: "partner-codex",
+      partnerRevisionId: "revision-codex", skills: [], tools: [],
+    };
+    mockCatalog(api, [codexPartner]);
+    const update = vi.spyOn(api, "updatePartner").mockResolvedValue({ ...codexPartner, engine: "pi-core" });
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑" }));
+    fireEvent.click(screen.getByRole("tab", { name: "高级" }));
+    fireEvent.change(screen.getByLabelText("搭档引擎"), { target: { value: "pi-core" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存修改" }));
+    // The update endpoint keeps the current engine when the payload omits the field, so a
+    // payload without `engine` silently pinned the partner to its previous engine.
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-codex", expect.objectContaining({ engine: "pi-core" })));
   });
 
   it("reveals a configured prompt only after an explicit click and appends new instructions", async () => {

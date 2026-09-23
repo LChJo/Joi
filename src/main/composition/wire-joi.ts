@@ -15,6 +15,7 @@ import { ConfiguredPiReasoningRuntime } from "../infrastructure/pi/configured-pi
 import { PiWorkbenchRoutingRuntime } from "../infrastructure/pi/pi-workbench-routing-runtime.js";
 import { PiReasoningFailureClassifier } from "../infrastructure/pi/pi-reasoning-failure-classifier.js";
 import { JoiAttachmentService } from "../infrastructure/artifacts/joi-attachment-service.js";
+import { transcodeBitmapToPng } from "../infrastructure/artifacts/bitmap-transcoder.js";
 import {
   createJoiReasoningTools,
   goalFromInputIdPrefix,
@@ -65,6 +66,7 @@ export function wireJoi(input: {
     database,
     ids,
     rootDirectory: path.join(userDataDirectory, "artifacts"),
+    transcodeBitmap: transcodeBitmapToPng,
   });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     usage: modelSourceStack.statistics,

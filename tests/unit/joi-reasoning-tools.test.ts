@@ -1,4 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
+import { validateToolArguments } from "@earendil-works/pi-ai";
 import { createJoiReasoningTools, goalFromInputIdPrefix, selectJoiReasoningToolsForInput } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
 import { JOI_REASONING_TOOL_NAMES } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { DomainError } from "../../src/main/domain/errors.js";
@@ -167,6 +168,12 @@ function makeTools(options: {
   });
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
   return {
+    /** Mirrors the runtime's pi-ai argument validation (throws on schema violation). */
+    async validate(name: string, args: Record<string, unknown>): Promise<unknown> {
+      const tool = byName.get(name);
+      if (tool === undefined) throw new Error(`missing tool ${name}`);
+      return validateToolArguments(tool as never, { arguments: args as never, id: "tool_call_1", name, type: "toolCall" });
+    },
     async call(name: string, args: Record<string, unknown>): Promise<unknown> {
       const tool = byName.get(name);
       if (tool === undefined) throw new Error(`missing tool ${name}`);
@@ -412,6 +419,19 @@ describe("joi reasoning tools", () => {
       instanceId: "instance_1", instructions: "写入用户要求的原始拼写",
     });
     expect(planned[0]).not.toHaveProperty("sessionPolicy");
+  });
+
+  it("tolerates omitted dependencies when a model dispatches an edge-free DAG", async () => {
+    // glm-style models drop empty required arrays; a failed argument validation
+    // aborts the whole Turn (pi-ai validateToolArguments throws), so both the
+    // schema and the execution path must accept the missing field.
+    const harness = makeTools();
+    const args = { work: [{ accessMode: "WRITE", key: "w1", partnerId: "partner_1", title: "落实修复" }] };
+    // Schema accepts the omission; the execute path coerces it to [].
+    await expect(harness.validate("work_dispatch", args)).resolves.toEqual(args);
+    await harness.call("work_dispatch", args);
+    expect(harness.planCalls).toHaveLength(1);
+    expect((harness.planCalls[0] as { dependencies?: unknown }).dependencies).toEqual([]);
   });
 
   it("lets joi expand a local partner to all bounded built-in tools", async () => {

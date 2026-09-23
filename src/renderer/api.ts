@@ -215,6 +215,12 @@ export class DigitalLifeApi {
       method: "POST",
     });
   }
+  importJoiAttachment(path: string) {
+    return this.request<JoiAttachmentDto>("/api/v1/joi/attachments/import", {
+      body: { path },
+      method: "POST",
+    });
+  }
   listModelSources() { return this.request<{ items: ModelSourceDto[] }>("/api/v1/model-sources"); }
   engineCatalog() {
     return this.request<{ items: { available: boolean; id: PartnerEngineDto; reason?: string; tools: string[] }[] }>("/api/v1/engines");

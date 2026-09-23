@@ -184,12 +184,15 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     const prompt = partner === null ? textValue(form.get("prompt")) : promptTouched ? textValue(promptDraft) : undefined;
     const fields = {
       displayName: fieldName(form.get("displayName")),
+      // Always carry the engine. The registry derives it from the payload
+      // (`input.engine ?? current.engine`), so omitting it for Pi core silently kept the
+      // partner's previous engine: switching Codex/Claude Code back to Pi core never stuck.
+      engine,
       skills: selectedSkills,
       ...(engine === "codex" ? {} : { toolPolicyMode }),
       tools: selectedTools,
       ...(engine === "codex" ? { codexPermissions } : {}),
       ...(description === undefined ? {} : { description }),
-      ...(engine === "pi-core" ? {} : { engine }),
       ...(prompt === undefined ? {} : { prompt }),
     };
     try {

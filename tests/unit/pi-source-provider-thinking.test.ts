@@ -55,3 +55,24 @@ describe("createPiSourceProvider thinking config", () => {
     expect(model.compat).toBeUndefined();
   });
 });
+
+describe("createPiSourceProvider image input", () => {
+  it("declares image input for generic openai gateways so pi-ai keeps image blocks", () => {
+    const model = singleModel({ baseUrl: "https://llm.example.net/", displayName: "通用平台", kind: "generic-openai", modelId: "glm-5.3-flash", protocol: "openai", sourceId: "gateway" });
+    expect(model.input).toEqual(["text", "image"]);
+  });
+
+  it("keeps image input declared for the kimi coding plan anthropic endpoint", () => {
+    const model = singleModel({ accessMode: "coding-plan", kind: "kimi", modelId: "kimi-for-coding", protocol: "anthropic", sourceId: "kimi_cp" });
+    expect(model.input).toEqual(["text", "image"]);
+  });
+
+  const textOnlySources: readonly PiSourceProviderInput[] = [
+    { accessMode: "api", kind: "kimi", modelId: "kimi-k2.5", protocol: "openai", sourceId: "kimi_api" },
+    { accessMode: "token-plan", kind: "qwen", modelId: "qwen3.7-plus", protocol: "anthropic", sourceId: "qwen_tp_an" },
+    { accessMode: "api", kind: "deepseek", modelId: "deepseek-chat", protocol: "openai", sourceId: "deepseek_api" },
+  ];
+  it.each(textOnlySources)("keeps unproven vision sources text-only ($sourceId)", (input) => {
+    expect(singleModel(input).input).toEqual(["text"]);
+  });
+});

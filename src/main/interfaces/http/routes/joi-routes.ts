@@ -167,4 +167,14 @@ export const JOI_WRITE_ROUTES: RouteDefinition[] = [
       }));
     },
   },
+  {
+    auth: "write",
+    id: "POST /api/v1/joi/attachments/import",
+    match: exact("POST", "/api/v1/joi/attachments/import"),
+    handle: async (ctx) => {
+      if (ctx.dependencies.joiAttachments === undefined) throw new HttpError("joi_attachment_service_unavailable", "joi attachment storage is unavailable.", 503);
+      const body = await readJson(ctx.request, MAX_ATTACHMENT_REQUEST_BYTES);
+      sendJson(ctx.response, 201, await ctx.dependencies.joiAttachments.importPath({ path: stringField(body, "path") }));
+    },
+  },
 ];

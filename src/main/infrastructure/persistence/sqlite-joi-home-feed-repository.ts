@@ -76,6 +76,11 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0) return "ARRANGED";
   if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
+  // The goal's latest Turn failed and left nothing running, no Work and no outcome: it
+  // stopped without producing anything. Without this the card falls through to the
+  // "consumed inbox means COMPLETED" fallback and reports attainment for a Turn that
+  // never dispatched (an earlier Turn had already consumed the row).
+  if (row.latest_turn_status === "FAILED" && number(row, "work_total") === 0 && number(row, "outcome_current") === 0) return "FAILED";
   // A synthesized result is one completed Wayfinder layer. It becomes the goal's
   // terminal outcome only after the active map is explicitly cleared by review.
   if (number(row, "outcome_current") === 1 && activeMap) return "REVIEWING";
@@ -172,6 +177,12 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.clarification_reason_code, i.clarification_prompt,
         gate.status AS gate_status, gate.question_id, gate.question_version,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
+        -- Latest orchestration Turn of this goal, resolve rows included: a goal-resume row
+        -- carries the goal id in goal_input_id, so its failed recovery Turn must count too.
+        (SELECT t.status FROM joi_turns t
+          JOIN joi_inbox_messages source ON source.input_id = t.input_id
+          WHERE COALESCE(source.goal_input_id, source.input_id) = i.input_id
+          ORDER BY t.created_at DESC, t.turn_id DESC LIMIT 1) AS latest_turn_status,
         COALESCE(o.completed_at, tc.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,

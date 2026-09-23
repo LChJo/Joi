@@ -6,6 +6,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { JoiAttachmentDto } from "../../../shared/joi.js";
 import type { Clock, IdGenerator } from "../../application/ports/runtime-store.js";
 import { DomainError } from "../../domain/errors.js";
+import type { BitmapTranscodeInput, BitmapTranscodeResult } from "./bitmap-transcoder.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -13,12 +14,36 @@ interface TransactionalDatabase {
 
 const MAX_BYTES = 10 * 1024 * 1024;
 
+const IMPORTABLE_IMAGE_MIME_TYPES: Readonly<Record<string, string>> = {
+  ".bmp": "image/bmp",
+  ".gif": "image/gif",
+  ".jpeg": "image/jpeg",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+};
+
 export class JoiAttachmentService {
-  constructor(private readonly dependencies: { clock: Clock; database: TransactionalDatabase; ids: IdGenerator; rootDirectory: string }) {}
+  constructor(private readonly dependencies: {
+    clock: Clock;
+    database: TransactionalDatabase;
+    ids: IdGenerator;
+    rootDirectory: string;
+    /** Normalizes clipboard bitmaps before storage; absent in unit tests without Electron. */
+    transcodeBitmap?: (input: BitmapTranscodeInput) => BitmapTranscodeResult | undefined;
+  }) {}
 
   async upload(input: { bytes: Uint8Array; filename: string; mimeType: string }): Promise<JoiAttachmentDto> {
     this.#assertFilename(input.filename);
-    if (input.bytes.byteLength > MAX_BYTES) throw new DomainError("attachment_too_large", "A message attachment cannot exceed 10 MiB.");
+    // Transcode before the size check: a 10+ MiB uncompressed BMP typically
+    // collapses well under the limit once re-encoded as PNG.
+    const transcoded = this.dependencies.transcodeBitmap?.({
+      bytes: input.bytes, filename: input.filename, mimeType: this.#mimeType(input.mimeType),
+    });
+    const bytes = transcoded?.bytes ?? input.bytes;
+    const filename = transcoded?.filename ?? input.filename;
+    const declaredMimeType = transcoded === undefined ? this.#mimeType(input.mimeType) : transcoded.mimeType;
+    if (bytes.byteLength > MAX_BYTES) throw new DomainError("attachment_too_large", "A message attachment cannot exceed 10 MiB.");
     const attachmentId = this.dependencies.ids.next("joi_attachment");
     const createdAt = this.dependencies.clock.now().toISOString();
     const relativePath = path.join("joi-attachments", `${attachmentId}.bin`);
@@ -27,20 +52,36 @@ export class JoiAttachmentService {
     const resolvedRoot = await realpath(root);
     const target = path.resolve(resolvedRoot, relativePath);
     if (!target.startsWith(`${resolvedRoot}${path.sep}`)) throw new DomainError("attachment_path_invalid", "Attachment storage path is invalid.");
-    await writeFile(target, input.bytes, { flag: "wx" });
-    const mimeType = this.#mimeType(input.mimeType);
+    await writeFile(target, bytes, { flag: "wx" });
     try {
       this.dependencies.database.transaction((connection) => connection.prepare(`INSERT INTO joi_attachments
         (attachment_id, filename, mime_type, size, relative_path, sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`
       ).run(
-        attachmentId, input.filename, mimeType, input.bytes.byteLength, relativePath,
-        createHash("sha256").update(input.bytes).digest("hex"), createdAt,
+        attachmentId, filename, declaredMimeType, bytes.byteLength, relativePath,
+        createHash("sha256").update(bytes).digest("hex"), createdAt,
       ));
     } catch (error) {
       await rm(target, { force: true }).catch(() => undefined);
       throw error;
     }
-    return { attachmentId, createdAt, filename: input.filename, mimeType, size: input.bytes.byteLength };
+    return { attachmentId, createdAt, filename, mimeType: declaredMimeType, size: bytes.byteLength };
+  }
+
+  /**
+   * Imports a local image file (e.g. a Codux clipboard-paste path) as a regular
+   * attachment. Restricted to image extensions so the endpoint cannot be used
+   * to pull arbitrary documents into the attachment store; bitmap inputs flow
+   * through the same transcode path as uploads.
+   */
+  async importPath(input: { path: string }): Promise<JoiAttachmentDto> {
+    if (!path.isAbsolute(input.path)) throw new DomainError("attachment_import_path_invalid", "An imported attachment path must be absolute.");
+    const extension = path.extname(input.path).toLowerCase();
+    const mimeType = IMPORTABLE_IMAGE_MIME_TYPES[extension];
+    if (mimeType === undefined) throw new DomainError("attachment_import_not_image", "Only image files can be imported as attachments.");
+    const metadata = await stat(input.path).catch(() => undefined);
+    if (metadata?.isFile() !== true) throw new DomainError("attachment_import_not_found", "The referenced image file does not exist.");
+    const bytes = new Uint8Array(await readFile(input.path));
+    return this.upload({ bytes, filename: path.basename(input.path), mimeType });
   }
 
   async read(attachmentId: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }> {

@@ -203,7 +203,10 @@ export function createJoiReasoningTools(input: {
     },
   ];
   const workDispatchParameters = Type.Object({
-    dependencies: Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() })),
+    // Optional in the schema: models routinely omit the array when the DAG has
+    // no edges, and a failed argument validation aborts the whole Turn before
+    // any repair path can run. The execute path coerces the missing value.
+    dependencies: Type.Optional(Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() }))),
     work: Type.Array(Type.Object({
       acceptanceChecks: Type.Optional(Type.Array(Type.Union([
         Type.Object({ kind: Type.Literal("BODY_PRESENT") }),
@@ -228,7 +231,7 @@ export function createJoiReasoningTools(input: {
     execute: async (_toolCallId, arguments_) => {
       try {
         const currentKeys = new Set(arguments_.work.map((item) => item.key));
-        const currentDependencies = arguments_.dependencies.filter((dependency) => (
+        const currentDependencies = (arguments_.dependencies ?? []).filter((dependency) => (
           currentKeys.has(dependency.workKey) && currentKeys.has(dependency.dependsOnKey)
         ));
         return result(await input.work.plan({

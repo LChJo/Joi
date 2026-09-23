@@ -297,11 +297,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         `questionId=${questionId}`,
         `questionVersion=${String(questionVersion)}`,
         `answer=${answer}`,
-        ...(current.clarificationReasonCode === "goal_review_interrupted"
-          // Cap the embedded history: every interrupt/retry cycle appends a supplement to
-          // the goal body, and an unbounded copy would inflate each recovery prompt.
-          ? [`savedGoalAndAnswers=${current.body.length > 4000 ? `${current.body.slice(0, 4000)}…` : current.body}`]
-          : []),
+        // Always embed the goal body: a resumed Turn may run in a session with
+        // no persisted reasoning history (e.g. the goal only got as far as a
+        // workbench-selection clarification), so the body is its only record
+        // of what the goal actually asks. Cap it: every interrupt/retry cycle
+        // appends a supplement, and an unbounded copy would inflate each
+        // recovery prompt.
+        [`savedGoalAndAnswers=${current.body.length > 4000 ? `${current.body.slice(0, 4000)}…` : current.body}`],
         ...queued.map((item) => `queuedWorkId=${String(item.work_id)} status=${String(item.status)}${typeof item.resolved_action_id === "string" ? ` resolvedActionId=${item.resolved_action_id}` : ""} title=${String(item.title).slice(0, 240)}`),
         "If the original plan still applies, call goal_resume, then resume or leave the existing Work as appropriate.",
         "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements.",
@@ -571,9 +573,21 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     if (row.resolved_action_id !== null && row.resolved_action_id !== undefined && typeof row.resolved_action_id !== "string") throw new Error("joi_user_action_invalid");
     if (row.resolved_work_id !== null && row.resolved_work_id !== undefined && typeof row.resolved_work_id !== "string") throw new Error("joi_user_action_invalid");
     if (row.resolved_decision !== null && row.resolved_decision !== undefined && row.resolved_decision !== "RESUME") throw new Error("joi_user_action_invalid");
-    const attachments = this.database.transaction((connection) => connection.prepare(`SELECT a.attachment_id, a.filename, a.mime_type, a.size
-      FROM joi_inbox_attachments ia JOIN joi_attachments a ON a.attachment_id = ia.attachment_id
-      WHERE ia.input_id = ? ORDER BY a.created_at, a.attachment_id`).all(inputId)) as Record<string, unknown>[];
+    const attachments = this.database.transaction((connection) => {
+      const boundTo = (forInputId: string) => connection.prepare(`SELECT a.attachment_id, a.filename, a.mime_type, a.size
+        FROM joi_inbox_attachments ia JOIN joi_attachments a ON a.attachment_id = ia.attachment_id
+        WHERE ia.input_id = ? ORDER BY a.created_at, a.attachment_id`).all(forInputId) as Record<string, unknown>[];
+      const own = boundTo(inputId);
+      // Attachment bindings are UNIQUEly owned by their original input, but a
+      // goal-resume input is a fresh row created after a clarification. The
+      // resumed Turn must still receive the goal's attachments (image parts,
+      // inlined text, staged workspace files), so inherit the goal's bindings
+      // when the resume row has none of its own.
+      if (own.length === 0 && inputId.startsWith("joi_goal_resume:goal:") && typeof row.goal_input_id === "string") {
+        return boundTo(row.goal_input_id);
+      }
+      return own;
+    });
     return {
       ...(typeof row.workbench_id === "string" ? { workbenchId: row.workbench_id } : {}),
       ...(typeof row.automation_routine_id === "string" ? { automationRoutineId: row.automation_routine_id } : {}),

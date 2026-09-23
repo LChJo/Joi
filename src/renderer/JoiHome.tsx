@@ -5,7 +5,7 @@ import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { ApiError, type DigitalLifeApi } from "./api";
 
@@ -1155,6 +1155,14 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
 
 const JOI_MAX_ATTACHMENTS = 8;
 const JOI_MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024;
+// A pasted Codux clipboard image arrives as a plain text path, not a file.
+// Recognize absolute image-file paths so the composer can import them as
+// attachments instead of leaving the model a string it cannot act on.
+const JOI_IMAGE_PATH_PATTERN = /^(?:[a-zA-Z]:[\\/][^\n]*|\\\\[^\n]*|\/[^\n]*)\.(?:bmp|gif|jpe?g|png|webp)$/i;
+function joiImagePathFromText(value: string): string | null {
+  const candidate = value.trim().replace(/^['"]+|['"]+$/g, "").trim();
+  return JOI_IMAGE_PATH_PATTERN.test(candidate) ? candidate : null;
+}
 
 function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }: {
   api: DigitalLifeApi;
@@ -1165,6 +1173,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
 }) {
   const [text, setText] = useState("");
   const [files, setFiles] = useState<File[]>([]);
+  const [imported, setImported] = useState<JoiAttachmentDto[]>([]);
   const [dragOver, setDragOver] = useState(false);
   const [targetWorkbenchId, setTargetWorkbenchId] = useState<string | null>(null);
   const targetWorkbench = snapshot.workbenches.find((workbench) => workbench.workbenchId === targetWorkbenchId);
@@ -1216,7 +1225,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
         oversized.push(file.name);
         continue;
       }
-      if (files.length + accepted.length >= JOI_MAX_ATTACHMENTS) {
+      if (files.length + imported.length + accepted.length >= JOI_MAX_ATTACHMENTS) {
         dropped += 1;
         continue;
       }
@@ -1229,6 +1238,21 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     if (dropped > 0) notices.push(`最多只能添加 ${String(JOI_MAX_ATTACHMENTS)} 个附件，多出的没有添加。`);
     setError(notices.length === 0 ? null : notices.join(" "));
   };
+  const importImagePath = (imagePath: string) => {
+    if (files.length + imported.length >= JOI_MAX_ATTACHMENTS) {
+      setError(`最多只能添加 ${String(JOI_MAX_ATTACHMENTS)} 个附件。`);
+      return;
+    }
+    api.importJoiAttachment(imagePath)
+      .then((attachment) => {
+        setImported((current) => current.some((item) => item.attachmentId === attachment.attachmentId) ? current : [...current, attachment]);
+        setError(null);
+      })
+      .catch((reason: unknown) => {
+        setError(reason instanceof ApiError ? reason.message : "没能把图片路径导入为附件，请直接粘贴图片本体。");
+        setText((current) => current === "" ? imagePath : `${current}\n${imagePath}`);
+      });
+  };
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     const message = text.trim();
@@ -1236,11 +1260,13 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     setText(""); setError(null);
     try {
       const uploaded = await Promise.all(files.map((file) => api.uploadJoiAttachment(file)));
+      const attachmentIds = [...imported.map((item) => item.attachmentId), ...uploaded.map((item) => item.attachmentId)];
       const saved = await api.sendJoiMessage(message, {
-        ...(uploaded.length === 0 ? {} : { attachmentIds: uploaded.map((item) => item.attachmentId) }),
+        ...(attachmentIds.length === 0 ? {} : { attachmentIds }),
         ...(targetWorkbench === undefined ? {} : { workbenchId: targetWorkbench.workbenchId }),
       });
       setFiles([]);
+      setImported([]);
       setFeed((current) => ({ ...current, thinking: [{
         agentCount: 0,
         goalId: saved.inputId,
@@ -1320,14 +1346,20 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
         <label className="joi-composer-label" htmlFor="joi-input">给 joi 输入</label>
         <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} onPaste={(event) => {
           const pasted = Array.from(event.clipboardData.files);
-          if (pasted.length === 0) return;
+          if (pasted.length > 0) {
+            event.preventDefault();
+            addFiles(pasted);
+            return;
+          }
+          const imagePath = joiImagePathFromText(event.clipboardData.getData("text/plain"));
+          if (imagePath === null) return;
           event.preventDefault();
-          addFiles(pasted);
+          importImagePath(imagePath);
         }} placeholder="描述目标、补充想法，或继续上一段对话…" rows={2} value={text} />
         <div className="joi-composer-toolbar">
           <label className="joi-attachment-button">添加附件<input aria-label="给 joi 添加附件" multiple onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} type="file" /></label>
           <ComposerWorkbenchPicker workbenches={snapshot.workbenches} onSelect={setTargetWorkbenchId} selected={targetWorkbench} />
-          {files.length === 0 ? null : <span className="joi-file-summary">{files.map((file) => file.name).join("、")}</span>}
+          {files.length === 0 && imported.length === 0 ? null : <span className="joi-file-summary">{[...imported.map((item) => item.filename), ...files.map((file) => file.name)].join("、")}</span>}
           <button className="button primary" disabled={text.trim() === ""} type="submit">交给 joi</button>
         </div>
       </form>

@@ -69,6 +69,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/joi/messages/:inputId/close-historical-review",
   "POST /api/v1/joi/messages/:inputId/retry",
   "POST /api/v1/joi/attachments",
+  "POST /api/v1/joi/attachments/import",
   "POST /api/v1/automations",
   "POST /api/v1/automations/:routineId/prompt/reveal",
   "PATCH /api/v1/automations/:routineId",

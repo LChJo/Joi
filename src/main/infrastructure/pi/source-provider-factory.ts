@@ -49,6 +49,22 @@ function isExplicitLocalUrl(value: string): boolean {
   }
 }
 
+// pi-ai 只在 model.input 含 "image" 时保留多模态图片块；否则 transform-messages
+// 的 downgradeUnsupportedImages 会把图片替换成 "(image omitted: model does not
+// support images)" 占位符，模型随即告知用户无法看图。按源类型声明视觉输入能力：
+// - generic-openai 网关把请求转发到所选模型（含视觉模型），按支持图片处理；
+// - kimi coding-plan 的 anthropic 端点已实测接受图片；
+// 其余直连源（glm/qwen/doubao/minimax/deepseek 的 api/token-plan 等）暂无视觉
+// 实测证据，保持纯文本声明。加条目即放开。
+const IMAGE_INPUT_SOURCES: ReadonlySet<string> = new Set([
+  "generic-openai",
+  "kimi:coding-plan",
+]);
+
+function supportsImageInput(input: PiSourceProviderInput): boolean {
+  return IMAGE_INPUT_SOURCES.has(input.kind === "generic-openai" ? "generic-openai" : `${input.kind}:${input.accessMode}`);
+}
+
 export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   const providerId = `joi-source:${input.sourceId}`;
   const direct = input.kind === "generic-openai" ? undefined : getDirectModelSourcePreset(input.kind, input.accessMode, input.protocol);
@@ -72,7 +88,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
       cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
       ...(headers === undefined ? {} : { headers }),
       id: input.modelId,
-      input: kimiCode ? ["text", "image"] : ["text"],
+      input: supportsImageInput(input) ? ["text", "image"] : ["text"],
       maxTokens: kimiK3 ? 131_072 : 32_768,
       name: knownModel?.label ?? input.modelId,
       provider: providerId,
@@ -99,7 +115,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     contextWindow: 128_000,
     cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
     id: input.modelId,
-    input: ["text"],
+    input: supportsImageInput(input) ? ["text", "image"] : ["text"],
     maxTokens: 8_192,
     name: knownModel?.label ?? input.modelId,
     provider: providerId,

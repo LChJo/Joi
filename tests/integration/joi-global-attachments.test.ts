@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -62,6 +62,64 @@ describe("global joi attachments", () => {
       const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("guarded body"), filename: "brief.txt", mimeType: "text/plain" });
       await writeFile(path.join(root, "artifacts", "joi-attachments", `${uploaded.attachmentId}.bin`), "tampered body!");
       await expect(attachments.read(uploaded.attachmentId)).rejects.toMatchObject({ code: "joi_attachment_integrity_failed" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("imports a local image file by absolute path and rejects invalid import targets", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const attachments = new JoiAttachmentService({ clock: new TestClock(), database, ids: new TestIds(), rootDirectory: path.join(root, "artifacts") });
+      const imagePath = path.join(root, "captures", "terminal-paste.bmp");
+      await mkdir(path.dirname(imagePath), { recursive: true });
+      await writeFile(imagePath, new TextEncoder().encode("bmp payload"));
+
+      const imported = await attachments.importPath({ path: imagePath });
+      expect(imported).toMatchObject({ filename: "terminal-paste.bmp", mimeType: "image/bmp", size: 11 });
+      expect(await attachments.read(imported.attachmentId)).toMatchObject({ filename: "terminal-paste.bmp" });
+
+      await expect(attachments.importPath({ path: "captures/relative.bmp" })).rejects.toMatchObject({ code: "attachment_import_path_invalid" });
+      await expect(attachments.importPath({ path: path.join(root, "notes.txt") })).rejects.toMatchObject({ code: "attachment_import_not_image" });
+      await expect(attachments.importPath({ path: path.join(root, "missing.png") })).rejects.toMatchObject({ code: "attachment_import_not_found" });
+      const directoryPng = path.join(root, "folder.png");
+      await mkdir(directoryPng, { recursive: true });
+      await expect(attachments.importPath({ path: directoryPng })).rejects.toMatchObject({ code: "attachment_import_not_found" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("transcodes bitmap uploads through the injected normalizer and keeps undecodable bytes as-is", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const oversizedBitmap = new Uint8Array(10 * 1024 * 1024 + 1);
+      oversizedBitmap.set([0x42, 0x4d], 0);
+      const attachments = new JoiAttachmentService({
+        clock: new TestClock(),
+        database,
+        ids: new TestIds(),
+        rootDirectory: path.join(root, "artifacts"),
+        // Mirrors transcodeBitmapToPng: only decodes real bitmaps, keeps
+        // everything else (including undecodable ones) untouched.
+        transcodeBitmap: (input) => input.mimeType !== "image/bmp" || input.bytes[0] !== 0x42 || input.bytes[1] !== 0x4d
+          ? undefined
+          : { bytes: new TextEncoder().encode("png bytes"), filename: `${input.filename.replace(/\.bmp$/i, "")}.png`, mimeType: "image/png" },
+      });
+      const transcoded = await attachments.upload({ bytes: oversizedBitmap, filename: "clipboard.bmp", mimeType: "image/bmp" });
+      expect(transcoded).toMatchObject({ filename: "clipboard.png", mimeType: "image/png", size: 9 });
+      expect(await attachments.read(transcoded.attachmentId)).toEqual({
+        bytes: new TextEncoder().encode("png bytes"),
+        filename: "clipboard.png",
+        mimeType: "image/png",
+      });
+
+      const undecodable = await attachments.upload({ bytes: new TextEncoder().encode("not a real bitmap"), filename: "broken.bmp", mimeType: "image/bmp" });
+      expect(undecodable).toMatchObject({ filename: "broken.bmp", mimeType: "image/bmp" });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

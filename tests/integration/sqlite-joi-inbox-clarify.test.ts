@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
+import { JoiAttachmentService } from "../../src/main/infrastructure/artifacts/joi-attachment-service.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";
 import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
@@ -156,6 +157,43 @@ describe("sqlite joi inbox clarify", () => {
       expect(clarified).toMatchObject({ workbenchId: "workbench-1", body: "研究登录改造", inputId: accepted.inputId, status: "ROUTED" });
       expect(clarified?.clarificationReasonCode).toBeUndefined();
       expect(await repository.clarify(accepted.inputId, { text: "too late" })).toBeNull();
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("inherits the goal's attachments and embeds the goal body when building the resume input", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-resume-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const clock = new TestClock();
+      const ids = new TestIds();
+      const attachments = new JoiAttachmentService({ clock, database, ids, rootDirectory: path.join(root, "artifacts") });
+      const repository = new SqliteJoiInboxRepository(database, clock);
+      const inbox = new JoiInboxService({ clock, ids, repository });
+      database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        "workbench-resume", "前端搭档", "pr-resume", "persona", "scope", "proj", "ns-resume", "ACTIVE", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z",
+      ));
+      const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("screenshot bytes"), filename: "image.png", mimeType: "image/png" });
+      const accepted = await inbox.accept({ attachmentIds: [uploaded.attachmentId], idempotencyKey: "key-resume-attachments", text: "分析报错：如图" });
+
+      // A workbench-selection clarification never reaches a reasoning Turn, so
+      // the resumed input is the model's first and only view of the goal.
+      await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
+      await repository.clarify(accepted.inputId, {
+        ...await questionVersion(repository, accepted.inputId), workbenchId: "workbench-resume",
+      });
+
+      const resumeInput = database.transaction((connection) => connection.prepare(
+        "SELECT input_id, body FROM joi_inbox_messages WHERE goal_input_id = ? AND input_id LIKE 'joi_goal_resume:goal:%'",
+      ).get(accepted.inputId)) as { body: string; input_id: string };
+      expect(resumeInput.body).toContain("savedGoalAndAnswers=分析报错：如图");
+      expect(await repository.loadInput(resumeInput.input_id)).toMatchObject({
+        attachments: [{ attachmentId: uploaded.attachmentId, filename: "image.png", mimeType: "image/png", size: 16 }],
+      });
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

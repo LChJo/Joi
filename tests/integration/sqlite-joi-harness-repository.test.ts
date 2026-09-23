@@ -98,11 +98,61 @@ describe("SqliteJoiHarnessRepository", () => {
       ]);
     });
 
+    it("adopts a goal that only reached a clarification gate and never its continuation rows", async () => {
+      // A goal whose first Turn raised a workbench-selection clarification never gets a
+      // joi_turns row: the gate row is the only proof the goal exists. Its resume/recovery
+      // rows are orchestration continuations of that goal and must never own the map.
+      seedGoal(fixture, { goalInputId: "goal-gated" });
+      seedGoal(fixture, { goalInputId: "goal-resumed", turn: true });
+      await new SqliteJoiInboxRepository(fixture.database, fixture.clock)
+        .requireClarification("goal-gated", "workbench_selection_invalid");
+      fixture.database.transaction((connection) => {
+        for (const [inputId, turnId] of [
+          ["joi_goal_resume:goal:goal-resumed:v1", "turn-resume"],
+          ["joi_recovery:goal:goal-resumed:work:work-1", "turn-recovery"],
+        ] as const) {
+          connection.prepare(`INSERT INTO joi_inbox_messages
+            (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+            VALUES (?, ?, 'continuation body', 'CONSUMED', 'workbench-goal-resumed', 'goal-resumed', ?, ?)`)
+            .run(inputId, `key-${turnId}`, NOW, NOW);
+          connection.prepare(`INSERT INTO joi_turns
+            (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+            VALUES (?, ?, 'workbench-goal-resumed', 'session-continuation', 'COMPLETED', ?, ?)`)
+            .run(turnId, inputId, NOW, NOW);
+        }
+      });
+
+      expect(await repository.listGoalsWithoutMap()).toEqual([
+        { workbenchId: "workbench-goal-gated", goalInputId: "goal-gated" },
+        { workbenchId: "workbench-goal-resumed", goalInputId: "goal-resumed" },
+      ]);
+    });
+
     it("creates a map exactly once", async () => {
       seedGoal(fixture, { goalInputId: "goal-once", turn: true });
       expect(await repository.createMap({ workbenchId: "workbench-goal-once", goalInputId: "goal-once", now: NOW })).toBe(true);
       expect(await repository.createMap({ workbenchId: "workbench-goal-once", goalInputId: "goal-once", now: NOW })).toBe(false);
       expect(await repository.listGoalsWithoutMap()).toEqual([]);
+    });
+  });
+
+  describe("home feed goal status", () => {
+    it("keeps a direct-answer goal completed but reports a failed arrangement Turn as FAILED", async () => {
+      // Mirrors the observed incident: one Turn consumed the inbox row with a text answer,
+      // then the Turn that actually tried to dispatch died. The card must not keep claiming
+      // attainment for a goal that stopped with no Work and no outcome.
+      const answered = seedGoal(fixture, { goalInputId: "goal-answered", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: answered.workbenchId, goalInputId: "goal-answered", now: NOW });
+      const stalled = seedGoal(fixture, { goalInputId: "goal-stalled", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: stalled.workbenchId, goalInputId: "goal-stalled", now: NOW });
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_turns SET status = 'FAILED' WHERE turn_id = 'turn-goal-stalled'",
+      ).run());
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+      const statusOf = (goalId: string) => feed.goals.find((goal) => goal.goalId === goalId)?.status;
+      expect(statusOf("goal-answered")).toBe("COMPLETED");
+      expect(statusOf("goal-stalled")).toBe("FAILED");
     });
   });
 
