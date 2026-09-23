@@ -24,6 +24,25 @@ describe("workspace output artifacts", () => {
     }
   });
 
+  it("ignores VCS and dependency metadata written during a run", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-artifacts-"));
+    try {
+      const before = await captureWorkspaceSnapshot(root);
+      await mkdir(path.join(root, ".git", "objects", "00"), { recursive: true });
+      await writeFile(path.join(root, ".git", "objects", "00", "aa"), "obj", "utf8");
+      await writeFile(path.join(root, ".git", "FETCH_HEAD"), "fetch", "utf8");
+      await mkdir(path.join(root, "node_modules", "pkg"), { recursive: true });
+      await writeFile(path.join(root, "node_modules", "pkg", "index.js"), "x", "utf8");
+      await writeFile(path.join(root, "result.md"), "# done", "utf8");
+
+      await expect(collectChangedWorkspaceArtifacts(root, before)).resolves.toEqual([
+        { artifactRef: "workspace:result.md", mimeType: "text/markdown", name: "result.md", size: 6 },
+      ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("does not expose absolute paths when the workspace is unavailable", async () => {
     const missing = path.join(os.tmpdir(), "joi-workspace-artifacts-missing");
     await expect(captureWorkspaceSnapshot(missing)).resolves.toHaveLength(0);

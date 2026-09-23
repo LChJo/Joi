@@ -29,11 +29,28 @@ describe("Workbench artifact opening", () => {
           artifact: { artifactRef: "workspace:reports", mimeType: "inode/directory", name: "reports", size: 0 },
           kind: "ARTIFACT", role: "AGENT",
         },
+        {
+          artifact: { artifactRef: "workspace:notes.md", mimeType: "text/plain", name: "notes.md", size: 4 },
+          kind: "ARTIFACT", role: "AGENT",
+        },
+        {
+          artifact: { mimeType: "application/octet-stream", name: "legacy.bin", size: 2 },
+          kind: "ARTIFACT", role: "AGENT",
+        },
       ]));
 
       const page = await repository.conversation({ agentId: instance.instanceId, workbenchId: workbench.workbenchId, limit: 50 });
       expect(page.items[0]?.artifact).toEqual({
-        artifactId: page.items[0]?.entryId, kind: "FILE", mimeType: "text/markdown", name: "report.md", size: 8,
+        artifactId: page.items[0]?.entryId, directory: "reports", kind: "FILE", mimeType: "text/markdown", name: "report.md", size: 8,
+      });
+      expect(page.items[1]?.artifact).toEqual({
+        artifactId: page.items[1]?.entryId, directory: "reports", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0,
+      });
+      expect(page.items[2]?.artifact).toEqual({
+        artifactId: page.items[2]?.entryId, kind: "FILE", mimeType: "text/plain", name: "notes.md", size: 4,
+      });
+      expect(page.items[3]?.artifact).toEqual({
+        kind: "FILE", mimeType: "application/octet-stream", name: "legacy.bin", size: 2,
       });
       expect(JSON.stringify(page)).not.toContain(workspacePath);
       expect(JSON.stringify(page)).not.toContain("reports/report.md");
@@ -94,8 +111,8 @@ describe("Workbench artifact opening", () => {
       });
       const goal = (await fixture.joiHomeFeed.load()).goals.find((candidate) => candidate.goalId === "goal-artifact");
       expect(goal?.artifacts).toEqual([
-        { artifactId: "work_result_artifact:result-artifact:0", kind: "FILE", mimeType: "text/markdown", name: "report.md", size: 8 },
-        { artifactId: "work_result_artifact:result-artifact:1", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0 },
+        { artifactId: "work_result_artifact:result-artifact:0", directory: "reports", kind: "FILE", mimeType: "text/markdown", name: "report.md", size: 8 },
+        { artifactId: "work_result_artifact:result-artifact:1", directory: "reports", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0 },
       ]);
       expect(JSON.stringify(goal)).not.toContain(workspacePath);
       await expect(fixture.workbenchAgents.openArtifact({

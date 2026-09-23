@@ -10,7 +10,7 @@ import type { WorkbenchAgentRepository } from "../../application/ports/workbench
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
 import { DomainError } from "../../domain/errors.js";
-import { workResultArtifactId, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
+import { workResultArtifactId, workspaceArtifactDirectory, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import { mapStoredEngine } from "./partner-engine-storage.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
@@ -40,10 +40,13 @@ function storedArtifact(value: unknown): StoredConversationArtifact | undefined 
 }
 
 function publicArtifact(artifact: StoredConversationArtifact, artifactId: string): WorkbenchArtifactDto {
-  const openable = workspaceArtifactRelativePath(artifact.artifactRef) !== undefined;
+  const relativePath = workspaceArtifactRelativePath(artifact.artifactRef);
+  const isDirectory = artifact.mimeType === "inode/directory";
+  const directory = relativePath === undefined ? undefined : isDirectory ? relativePath : workspaceArtifactDirectory(relativePath);
   return {
-    ...(openable ? { artifactId } : {}),
-    kind: artifact.mimeType === "inode/directory" ? "DIRECTORY" : "FILE",
+    ...(relativePath === undefined ? {} : { artifactId }),
+    ...(directory === undefined ? {} : { directory }),
+    kind: isDirectory ? "DIRECTORY" : "FILE",
     mimeType: artifact.mimeType,
     name: artifact.name,
     size: artifact.size,

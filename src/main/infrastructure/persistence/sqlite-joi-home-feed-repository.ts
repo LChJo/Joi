@@ -7,7 +7,7 @@ import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-fee
 import type { HarnessGoalProjection } from "../../application/ports/joi-harness.js";
 import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "../../application/joi/joi-input-failure.js";
 import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
-import { workResultArtifactId, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
+import { workResultArtifactId, workspaceArtifactDirectory, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
@@ -149,9 +149,12 @@ function goalArtifacts(connection: DatabaseSync, goalId: string, workbenchId: st
       if (relativePath === undefined || seen.has(relativePath) || typeof artifact.name !== "string" || typeof artifact.size !== "number") return;
       seen.add(relativePath);
       const mimeType = typeof artifact.mimeType === "string" ? artifact.mimeType : "application/octet-stream";
+      const isDirectory = mimeType === "inode/directory";
+      const directory = isDirectory ? relativePath : workspaceArtifactDirectory(relativePath);
       result.push({
         artifactId: workResultArtifactId(row.result_id as string, index),
-        kind: mimeType === "inode/directory" ? "DIRECTORY" : "FILE",
+        ...(directory === undefined ? {} : { directory }),
+        kind: isDirectory ? "DIRECTORY" : "FILE",
         mimeType,
         name: artifact.name,
         size: artifact.size,

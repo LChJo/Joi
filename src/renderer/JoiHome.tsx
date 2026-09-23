@@ -6,6 +6,7 @@ import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const SAFE_MARKDOWN_COMPONENTS: Components = {
@@ -237,6 +238,24 @@ function ArtifactCard({ api, artifact, source, sourceId, workbenchId }: {
   </div>;
 }
 
+function ArtifactFolder({ api, directory, items, source, sourceId, timestamp, workbenchId }: {
+  api: DigitalLifeApi;
+  directory: string | undefined;
+  items: WorkbenchArtifactDto[];
+  source: "AGENT" | "GOAL";
+  sourceId: string;
+  timestamp?: string;
+  workbenchId: string;
+}) {
+  return <details className="agent-artifact-group">
+    <summary><span>文件</span><code>{artifactGroupLabel(directory)} · {String(items.length)} 个文件</code>{timestamp === undefined ? null : <time dateTime={timestamp}>{new Date(timestamp).toLocaleString()}</time>}</summary>
+    {items.map((artifact) => <ArtifactCard
+      api={api} artifact={artifact} key={artifact.artifactId ?? `${artifact.name}:${String(artifact.size)}`}
+      source={source} sourceId={sourceId} workbenchId={workbenchId}
+    />)}
+  </details>;
+}
+
 function groupAgentEntries(items: AgentConversationEntryDto[]) {
   const groups: { entry: AgentConversationEntryDto; entries: AgentConversationEntryDto[] }[] = [];
   for (const entry of items) {
@@ -272,10 +291,15 @@ function GoalArtifacts({ api, goal }: { api: DigitalLifeApi; goal: JoiGoalCardDt
   if (goal.artifacts === undefined || goal.artifacts.length === 0) return null;
   return <section aria-label="结论产物" className="joi-goal-artifacts">
     <h3>产物</h3>
-    {goal.artifacts.map((artifact) => <ArtifactCard
-      api={api} artifact={artifact} key={artifact.artifactId ?? `${artifact.name}:${String(artifact.size)}`}
-      source="GOAL" sourceId={goal.goalId} workbenchId={goal.workbench.workbenchId}
-    />)}
+    {groupArtifactsForDisplay(goal.artifacts, (artifact) => artifact).map((row, index) => row.kind === "FOLDER"
+      ? <ArtifactFolder
+        api={api} directory={row.directory} items={row.items} key={`folder:${row.directory ?? ""}:${String(index)}`}
+        source="GOAL" sourceId={goal.goalId} workbenchId={goal.workbench.workbenchId}
+      />
+      : <ArtifactCard
+        api={api} artifact={row.item} key={row.item.artifactId ?? `${row.item.name}:${String(row.item.size)}`}
+        source="GOAL" sourceId={goal.goalId} workbenchId={goal.workbench.workbenchId}
+      />)}
   </section>;
 }
 
@@ -391,7 +415,19 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
       if (element.scrollTop < 64 && !atBottom) void loadMore();
     }}>
     {page?.nextCursor === undefined ? null : <p className="agent-history-hint">{loadingHistory ? "正在加载历史记录…" : "向上滚动查看更早记录"}</p>}
-    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : groupAgentEntries(page.items).map(({ entry, entries }) => entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
+    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : groupArtifactsForDisplay(groupAgentEntries(page.items), (group) => group.entry.kind === "ARTIFACT" ? group.entry.artifact : undefined).map((row) => {
+      if (row.kind === "FOLDER") {
+        const first = row.items[0];
+        if (first === undefined) return null;
+        return <article className="agent-message tool" key={first.entry.entryId}>
+          <ArtifactFolder
+            api={api} directory={row.directory} items={row.items.flatMap((group) => group.entry.artifact === undefined ? [] : [group.entry.artifact])}
+            source="AGENT" sourceId={agent.agentId} timestamp={first.entry.createdAt} workbenchId={workbenchId}
+          />
+        </article>;
+      }
+      const { entry, entries } = row.item;
+      return entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
       ? <ToolEntry entry={entry} entries={entries} key={entry.entryId} />
       : <article className={`agent-message ${entry.role.toLowerCase()} ${entry.kind.toLowerCase()}`} key={entry.entryId}>
       <header><strong>{entry.role === "USER" ? "任务" : entry.role === "AGENT" ? agent.partnerName : entry.role === "TOOL" ? "工具" : "系统"}</strong><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></header>
@@ -399,7 +435,7 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
         ? <ArtifactCard api={api} artifact={entry.artifact} source="AGENT" sourceId={agent.agentId} workbenchId={workbenchId} />
         : entry.kind === "ARTIFACT" ? <div className="agent-artifact"><span className="agent-artifact-copy"><strong>产物</strong><span>文件 · 0 B</span></span></div>
           : <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{entry.text ?? ""}</ReactMarkdown>}
-    </article>)}</div>}
+    </article>;})}</div>}
     </div>
     {following ? null : <button className="button ghost agent-load-more" onClick={() => {
       followLatest.current = true;

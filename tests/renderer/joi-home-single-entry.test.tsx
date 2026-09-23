@@ -198,8 +198,11 @@ describe("Workbench context center", () => {
         { createdAt: workbench.updatedAt, entryId: "entry-result-fallback", kind: "TOOL_RESULT", role: "TOOL", sequence: 6, toolName: "shell" },
         { createdAt: workbench.updatedAt, entryId: "entry-artifact-fallback", kind: "ARTIFACT", role: "AGENT", sequence: 7 },
         { artifact: { artifactId: "entry-directory", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0 }, createdAt: workbench.updatedAt, entryId: "entry-directory", kind: "ARTIFACT", role: "AGENT", sequence: 8 },
-        { artifact: { kind: "FILE", mimeType: "text/plain", name: "legacy.txt", size: 12 }, createdAt: workbench.updatedAt, entryId: "entry-legacy", kind: "ARTIFACT", role: "AGENT", sequence: 9 },
-        ...Array.from({ length: 6 }, (_, index) => ({ createdAt: workbench.updatedAt, entryId: `bash-${String(index)}`, kind: index % 2 === 0 ? "TOOL_CALL" as const : "TOOL_RESULT" as const, role: "TOOL" as const, sequence: 10 + index, toolName: "bash", ...(index === 5 ? { text: "执行失败" } : {}) })),
+        { artifact: { artifactId: "entry-code-dir", directory: "src", kind: "DIRECTORY", mimeType: "inode/directory", name: "src", size: 0 }, createdAt: workbench.updatedAt, entryId: "entry-code-dir", kind: "ARTIFACT", role: "AGENT", sequence: 9 },
+        { artifact: { artifactId: "entry-code-1", directory: "src", kind: "FILE", mimeType: "text/typescript", name: "a.ts", size: 64 }, createdAt: workbench.updatedAt, entryId: "entry-code-1", kind: "ARTIFACT", role: "AGENT", sequence: 10 },
+        { artifact: { artifactId: "entry-code-2", directory: "src", kind: "FILE", mimeType: "text/typescript", name: "b.ts", size: 96 }, createdAt: workbench.updatedAt, entryId: "entry-code-2", kind: "ARTIFACT", role: "AGENT", sequence: 11 },
+        { artifact: { kind: "FILE", mimeType: "text/plain", name: "legacy.txt", size: 12 }, createdAt: workbench.updatedAt, entryId: "entry-legacy", kind: "ARTIFACT", role: "AGENT", sequence: 12 },
+        ...Array.from({ length: 6 }, (_, index) => ({ createdAt: workbench.updatedAt, entryId: `bash-${String(index)}`, kind: index % 2 === 0 ? "TOOL_CALL" as const : "TOOL_RESULT" as const, role: "TOOL" as const, sequence: 13 + index, toolName: "bash", ...(index === 5 ? { text: "执行失败" } : {}) })),
       ], nextCursor: "page-2" })
       .mockResolvedValueOnce({ agent: ephemeral, items: [
         { createdAt: workbench.updatedAt, entryId: "entry-5", kind: "ERROR", role: "SYSTEM", sequence: 4, text: "**已恢复**" },
@@ -209,7 +212,8 @@ describe("Workbench context center", () => {
       .mockResolvedValueOnce({ opened: true })
       .mockResolvedValueOnce({ opened: true })
       .mockRejectedValueOnce(new Error("desktop unavailable"))
-      .mockRejectedValueOnce(new ApiError("artifact_missing", "产物已经移动。", 404));
+      .mockRejectedValueOnce(new ApiError("artifact_missing", "产物已经移动。", 404))
+      .mockResolvedValue({ opened: true });
 
     render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
     expect(await screen.findByRole("button", { name: "查看 实现者 详情" })).toBeInTheDocument();
@@ -247,6 +251,16 @@ describe("Workbench context center", () => {
     expect(await screen.findByText("产物已经移动。")).toBeInTheDocument();
     expect(screen.getByText("legacy.txt")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打开产物 legacy.txt" })).not.toBeInTheDocument();
+    const folderSummary = screen.getByText("src · 2 个文件");
+    const collapsedCode = screen.getByRole("button", { name: "打开产物 a.ts" });
+    expect(collapsedCode).not.toBeVisible();
+    expect(screen.queryByRole("button", { name: "打开产物 src" })).not.toBeInTheDocument();
+    fireEvent.click(folderSummary);
+    expect(collapsedCode).toBeVisible();
+    fireEvent.click(collapsedCode);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "entry-code-1", mode: "OPEN", source: "AGENT", sourceId: ephemeral.agentId,
+    }));
     expect(screen.getByText("原始任务投影")).toBeInTheDocument();
     expect(screen.getByText("tool")).toBeInTheDocument();
     expect(screen.getByText("shell")).toBeInTheDocument();
@@ -847,7 +861,11 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
       goals: [{
         agentCount: 0, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
-        artifacts: [{ artifactId: "goal-artifact-1", kind: "FILE", mimeType: "text/markdown", name: "answer.md", size: 256 }],
+        artifacts: [
+          { artifactId: "goal-artifact-1", kind: "FILE", mimeType: "text/markdown", name: "answer.md", size: 256 },
+          { artifactId: "goal-artifact-2", directory: "out", kind: "FILE", mimeType: "text/typescript", name: "build.ts", size: 64 },
+          { artifactId: "goal-artifact-3", directory: "out", kind: "FILE", mimeType: "application/octet-stream", name: "build.zip", size: 1024 },
+        ],
         completedAt: "2026-08-24T09:00:00.000Z", completionSummary: "## 身份\n\n我是 **Joi**，你的 AI 助手。",
         goalId: "input-direct", status: "COMPLETED", title: "你是谁", updatedAt: "2026-08-24T09:00:00.000Z",
         work: { active: 0, completed: 0, failed: 0, total: 0 },
@@ -872,6 +890,15 @@ describe("joi home single entry", () => {
     fireEvent.contextMenu(artifactButton);
     await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
       artifactId: "goal-artifact-1", mode: "REVEAL", source: "GOAL", sourceId: "input-direct",
+    }));
+    const folderSummary = within(drawer).getByText("out · 2 个文件");
+    const collapsedZip = within(drawer).getByRole("button", { name: "打开产物 build.zip" });
+    expect(collapsedZip).not.toBeVisible();
+    fireEvent.click(folderSummary);
+    expect(collapsedZip).toBeVisible();
+    fireEvent.click(collapsedZip);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "goal-artifact-3", mode: "OPEN", source: "GOAL", sourceId: "input-direct",
     }));
   });
 

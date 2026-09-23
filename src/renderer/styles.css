@@ -578,6 +578,11 @@
 .agent-artifact-notice { grid-column: 1 / -1; }
 .joi-goal-artifacts { display: grid; gap: 7px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .joi-goal-artifacts h3 { margin: 0; font-size: .78rem; color: var(--muted); }
+.agent-artifact-group { border: 1px solid var(--line); border-left: 3px solid var(--moss); border-radius: 8px; background: color-mix(in srgb, var(--wash) 72%, transparent); }
+.agent-artifact-group summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; min-height: 30px; padding: 3px 9px; color: var(--muted); cursor: pointer; font-size: .72rem; list-style-position: inside; }
+.agent-artifact-group summary code { overflow: hidden; color: var(--ink); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.agent-artifact-group summary time { color: var(--faint); font-size: .66rem; }
+.agent-artifact-group .agent-artifact { margin: 6px 9px 9px; border-style: solid; }
 .agent-remote-image { color: var(--faint); font-style: italic; }
 .agent-load-more { justify-self: center; }
 

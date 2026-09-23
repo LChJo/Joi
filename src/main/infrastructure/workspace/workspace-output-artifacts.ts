@@ -13,6 +13,9 @@ interface WorkspaceFileState {
 
 export type WorkspaceSnapshot = ReadonlyMap<string, WorkspaceFileState>;
 
+/** VCS and dependency metadata is never a deliverable; partners routinely write it (git commits, installs). */
+const IGNORED_DIRECTORIES = new Set([".git", "node_modules"]);
+
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".csv": "text/csv",
   ".css": "text/css",
@@ -43,6 +46,7 @@ async function walk(root: string, directory: string, files: Map<string, Workspac
   for (const entry of entries) {
     const candidate = path.join(directory, entry.name);
     if (entry.isDirectory()) {
+      if (IGNORED_DIRECTORIES.has(entry.name)) continue;
       try {
         const facts = await lstat(candidate);
         const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");

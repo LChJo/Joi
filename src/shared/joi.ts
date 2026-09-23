@@ -364,6 +364,13 @@ export interface WorkbenchAgentCardDto {
 
 export interface WorkbenchArtifactDto {
   artifactId?: string;
+  /**
+   * POSIX relative directory used for folder grouping in the renderer.
+   * - FILE: dirname of the workspace-relative path; undefined for workspace-root
+   *   files and for non-workspace refs (e.g. "work_result_artifact:").
+   * - DIRECTORY: the directory's own workspace-relative path (undefined when unknown).
+   */
+  directory?: string;
   kind: "DIRECTORY" | "FILE";
   mimeType: string;
   name: string;

@@ -161,6 +161,65 @@ describe("persisted joi Turn completions", () => {
     }
   });
 
+  it("projects workspace artifact directories onto goal cards for folder grouping", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "交付", personaSummary: "private", projectLabel: "joi", scopeSummary: "产物目录" });
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "交付搭档", kind: "local-pi", skills: [], tools: [] });
+      const instance = await fixture.instances.ensure({ workbenchId: workbench.workbenchId, partnerId: partner.partnerId, sessionPolicy: "RESIDENT" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-dirs', 'key-dirs', '实现插件', 'CONSUMED', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-dirs', 'goal-dirs', ?, 'session-dirs', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO dispatch_plans
+          (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+          VALUES ('plan-dirs', 'turn-dirs', '{}', '{}', ?)`).run(now);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-dirs', ?, 'goal-dirs', '实现插件', '{}', 'WRITE', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, instance_id, status, created_at, updated_at)
+          VALUES ('attempt-dirs', 'plan-dirs', 'work-dirs', ?, 1, 'action-dirs', ?, 'COMPLETED', ?, ?)`)
+          .run(partner.partnerRevisionId, instance.instanceId, now, now);
+        connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          VALUES ('run-dirs', 'attempt-dirs', 'action-dirs', ?, 'work-dirs', ?, 'LOCAL_PI', 'local:dirs', 'COMPLETED', ?, ?)`)
+          .run(workbench.workbenchId, partner.partnerRevisionId, now, now);
+        connection.prepare(`INSERT INTO work_result_bodies (body_ref, body, created_at)
+          VALUES ('body-dirs', '完成', ?)`).run(now);
+        connection.prepare(`INSERT INTO work_results
+          (result_id, run_id, action_id, workbench_id, work_id, partner_revision_id, instance_id, status, summary, body_ref,
+           artifacts_json, is_late, is_authoritative, created_at)
+          VALUES ('result-dirs', 'run-dirs', 'action-dirs', ?, 'work-dirs', ?, ?, 'COMPLETED', '完成', 'body-dirs', ?, 0, 1, ?)`)
+          .run(workbench.workbenchId, partner.partnerRevisionId, instance.instanceId, JSON.stringify([
+            { artifactRef: "workspace:out/report.csv", mimeType: "text/csv", name: "report.csv", size: 8 },
+            { artifactRef: "workspace:out/build.zip", mimeType: "application/octet-stream", name: "build.zip", size: 64 },
+            { artifactRef: "workspace:out/build.zip", mimeType: "application/octet-stream", name: "build.zip", size: 64 },
+            { artifactRef: "workspace:out", mimeType: "inode/directory", name: "out", size: 0 },
+          ]), now);
+        connection.prepare(`INSERT INTO work_result_verifications (result_id, status, created_at)
+          VALUES ('result-dirs', 'NOT_REQUIRED', ?)`).run(now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES ('goal-dirs', 1, 1, ?)`).run(now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES ('goal-dirs', 1, 'COMPLETED', '已完成。', ?, ?)`).run(now, now);
+      });
+      const goal = (await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now())).goals.find((candidate) => candidate.goalId === "goal-dirs");
+      expect(goal?.artifacts).toEqual([
+        { artifactId: "work_result_artifact:result-dirs:0", directory: "out", kind: "FILE", mimeType: "text/csv", name: "report.csv", size: 8 },
+        { artifactId: "work_result_artifact:result-dirs:1", directory: "out", kind: "FILE", mimeType: "application/octet-stream", name: "build.zip", size: 64 },
+        { artifactId: "work_result_artifact:result-dirs:3", directory: "out", kind: "DIRECTORY", mimeType: "inode/directory", name: "out", size: 0 },
+      ]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("rejects a completion whose Turn belongs to another input", async () => {
     const fixture = await createRuntimeFixture();
     try {
