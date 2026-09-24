@@ -5,7 +5,7 @@ import { DigitalLifeApi } from "../../src/renderer/api";
 import type { EvolutionStatusDto } from "../../src/shared/evolution";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution";
 
-const status: EvolutionStatusDto = { workbenchId: "a", dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 4, evaluableCount: 2, activeRevisionId: null, reason: "collecting", versions: [] };
+const status: EvolutionStatusDto = { workbenchId: "a", dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 4, evaluableCount: 2, poolEvaluable: 7, poolVerificationFailed: 2, activeRevisionId: null, reason: "collecting", versions: [] };
 it("starts on the low preset and applies preset changes immediately", async () => {
   const api = new DigitalLifeApi("");
   vi.spyOn(api, "evolutionStatus").mockResolvedValue(status);
@@ -14,6 +14,10 @@ it("starts on the low preset and applies preset changes immediately", async () =
   expect(await screen.findByText("正在积累可评价的经验")).toBeInTheDocument();
   expect(screen.getByRole("radio", { name: "低（每日 50 次）" })).toBeChecked();
   expect(screen.getByText(/约两周跑完一轮完整评测/u)).toBeInTheDocument();
+  // The trigger is a shared pool, so the panel has to show the pool the gate actually uses; a
+  // per-workbench count alone no longer explains why a batch has not started.
+  expect(screen.getByText(/合计 10 个可客观评价目标/u)).toBeInTheDocument();
+  expect(screen.getByText(/当前为 7 个与 2 个/u)).toBeInTheDocument();
   fireEvent.click(screen.getByRole("radio", { name: "关（只记录经验）" }));
   await waitFor(() => expect(save).toHaveBeenCalledWith("a", 0));
   expect(await screen.findByText("尚未启用自动进化")).toBeInTheDocument();
@@ -38,6 +42,57 @@ it("surfaces save failures, custom limits and rolls back the active version", as
   fireEvent.click(screen.getByRole("button", { name: "回退当前策略并暂停" }));
   await screen.findByText("已回退并暂停自动进化，运行中的目标保留原策略。");
   expect(rollback).toHaveBeenCalledWith("a", "r1");
+});
+
+it("dry-runs the pipeline and reports what each phase did", async () => {
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue(status);
+  const run = vi.spyOn(api, "dryRunEvolution").mockResolvedValue({
+    workbenchId: "a", outcome: "promoted", verdict: "promoted", promoted: true, steps: 721, truncated: false, blockedAt: null,
+    phases: [
+      { phase: "DEVELOP", steps: 90, rollouts: 30 },
+      { phase: "PROPOSE", steps: 1, rollouts: 0 },
+      { phase: "VALIDATE", steps: 90, rollouts: 30 },
+      { phase: "EVALUATE", steps: 540, rollouts: 180 },
+    ],
+    revision: { revisionId: "r1", parentRevisionId: null, module: "completion", status: "ACTIVE", createdAt: "2026-09-24", reason: "promoted", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 },
+    evaluation: { scenarios: 30, baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 },
+    selfCheck: { expectedVerdict: "promote", matched: true },
+    syntheticEvidence: { evaluable: 10, verificationFailed: 3 },
+    events: [], durationMs: 700,
+  });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  await screen.findByText("正在积累可评价的经验");
+  fireEvent.click(screen.getByRole("button", { name: "干跑一次" }));
+  await waitFor(() => expect(run).toHaveBeenCalledWith("a"));
+  expect(await screen.findByText("链路跑通：批次一路走到晋升裁决。")).toBeInTheDocument();
+  expect(screen.getByText(/开发 30 轮 \/ 90 次调用/u)).toBeInTheDocument();
+  expect(screen.getByText(/封存评测 180 轮 \/ 540 次调用/u)).toBeInTheDocument();
+  expect(screen.getByText(/合计 721 次合成调用/u)).toBeInTheDocument();
+});
+
+it("reports a failed or truncated dry run instead of implying the pipeline is sound", async () => {
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue(status);
+  const run = vi.spyOn(api, "dryRunEvolution").mockRejectedValue(new Error("private"));
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  await screen.findByText("正在积累可评价的经验");
+  fireEvent.click(screen.getByRole("button", { name: "干跑一次" }));
+  expect(await screen.findByText("干跑没能完成，请稍后重试。")).toBeInTheDocument();
+  run.mockResolvedValue({
+    workbenchId: "a", outcome: "truncated", verdict: "evaluating", promoted: false, steps: 1600, truncated: true,
+    blockedAt: { phase: "EVALUATE", reason: "evaluating" },
+    phases: [{ phase: "DEVELOP", steps: 90, rollouts: 30 }],
+    revision: null, evaluation: null,
+    selfCheck: { expectedVerdict: "promote", matched: false },
+    syntheticEvidence: { evaluable: 10, verificationFailed: 3 },
+    events: [], durationMs: 10_000,
+  });
+  fireEvent.click(screen.getByRole("button", { name: "干跑一次" }));
+  expect(await screen.findByText("链路未跑完：达到了步数或时间上限。")).toBeInTheDocument();
+  // A missed self check is the signal that the stand-in drifted, so it has to be visible rather than
+  // left for the operator to infer from a verdict they may not recognise.
+  expect(screen.getByText(/自检未通过/u)).toBeInTheDocument();
 });
 
 it("shows a retryable notice when the evolution status cannot be read", async () => {

@@ -19,7 +19,7 @@ import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
 import { randomUuid } from "./random-uuid";
-import type { EvolutionStatusDto } from "../shared/evolution";
+import type { EvolutionDryRunReportDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 
 export class ApiError extends Error {
@@ -89,6 +89,7 @@ export class DigitalLifeApi {
   configureEvolution(workbenchId: string, dailyCallLimit: number) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`, { method: "PATCH", body: { dailyCallLimit } }); }
   rollbackEvolution(workbenchId: string, revisionId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/rollback`, { method: "POST", body: { revisionId } }); }
   evolutionNegativeFeedback(workbenchId: string, goalId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/feedback`, { method: "POST", body: { goalId } }); }
+  dryRunEvolution(workbenchId: string) { return this.request<EvolutionDryRunReportDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/dry-run`, { method: "POST" }); }
   listAutomations() { return this.request<{ items: AutomationDto[] }>("/api/v1/automations"); }
   getAutomation(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`); }
   createAutomation(body: CreateAutomationInput) { return this.request<AutomationDto>("/api/v1/automations", { body: body as unknown as Record<string, unknown>, idempotencyKey: randomUuid(), method: "POST" }); }

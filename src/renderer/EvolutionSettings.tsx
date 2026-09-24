@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { DigitalLifeApi } from "./api";
-import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
-import { EVOLUTION_BUDGET_PRESETS } from "../shared/evolution";
+import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
+import { EVOLUTION_BUDGET_PRESETS, EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../shared/evolution";
 
 const labels: Record<EvolutionReason, string> = {
   collecting: "正在积累可评价的经验", disabled: "尚未启用自动进化", budget_exhausted: "今日预算已用完，下个计费日继续", evaluating: "正在评估候选策略",
@@ -18,10 +18,19 @@ const presetHints: Record<EvolutionBudgetPresetKey, string> = {
   high: "约两天跑完一轮完整评测，最快看到结果，单日花费也最高。",
 };
 const presetName = (preset: EvolutionBudgetPreset) => preset.key === "off" ? "关（只记录经验）" : `${presetLabels[preset.key]}（每日 ${String(preset.limit)} 次）`;
+const phaseLabels: Record<EvolutionPhase, string> = { DEVELOP: "开发", PROPOSE: "提案", VALIDATE: "候选复测", EVALUATE: "封存评测" };
+const dryRunOutcomes: Record<EvolutionDryRunOutcome, string> = {
+  promoted: "链路跑通：批次一路走到晋升裁决。",
+  rejected: "链路跑通，但候选被门禁拒绝。",
+  truncated: "链路未跑完：达到了步数或时间上限。",
+  not_started: "批次没能启动，合成证据未达标。",
+};
 export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLifeApi; workbenchId: string }) {
   const [status, setStatus] = useState<EvolutionStatusDto | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dryRun, setDryRun] = useState<EvolutionDryRunReportDto | null>(null);
+  const [dryRunning, setDryRunning] = useState(false);
   useEffect(() => {
     let canceled = false;
     const load = () => api.evolutionStatus(workbenchId).then((value) => { if (!canceled) setStatus(value); }).catch(() => { if (!canceled) setNotice("没能读取进化状态，请稍后重试。"); });
@@ -43,6 +52,12 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
     try { setStatus(await api.rollbackEvolution(workbenchId, status.activeRevisionId)); setNotice("已回退并暂停自动进化，运行中的目标保留原策略。"); }
     catch { setNotice("没能回退策略，请刷新状态后重试。"); } finally { setSaving(false); }
   };
+  const runDryRun = async () => {
+    if (dryRunning) return;
+    setDryRunning(true);
+    try { setDryRun(await api.dryRunEvolution(workbenchId)); setNotice(null); }
+    catch { setDryRun(null); setNotice("干跑没能完成，请稍后重试。"); } finally { setDryRunning(false); }
+  };
   const current = status === null ? null : EVOLUTION_BUDGET_PRESETS.find((preset) => preset.limit === status.dailyCallLimit) ?? null;
   return <div className="inline-settings workbench-evolution-panel">
     <p className="workbench-evolution-intro">从执行经验中改进本工作台的上下文整理和完成检查。只有独立评测确认改善后，新目标才会使用新策略。</p>
@@ -60,7 +75,17 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
       </fieldset>
       <p className="field-hint">{current === null ? `当前为自定义额度：每日 ${String(status.dailyCallLimit)} 次；选择预设可覆盖。` : presetHints[current.key]}</p>
       <p className="field-hint">额度按 UTC 日重置，只在工作台空闲时使用，日常任务永远优先；一轮完整评测约需 700–1450 次调用，可跨多天完成，不影响日常任务预算。</p>
-      <p>今日调用 {status.callsUsedToday} / {status.dailyCallLimit} · 已记录 {status.evidenceCount} 个目标，其中 {status.evaluableCount} 个可客观评价</p>
+      <p>今日调用 {status.callsUsedToday} / {status.dailyCallLimit} · 本工作台已记录 {status.evidenceCount} 个目标，其中 {status.evaluableCount} 个可客观评价</p>
+      <p className="field-hint">启动一轮评测需要全部工作台合计 {String(EVOLUTION_EVIDENCE_THRESHOLD)} 个可客观评价目标、其中 {String(EVOLUTION_FAILURE_THRESHOLD)} 个验收失败；当前为 {String(status.poolEvaluable)} 个与 {String(status.poolVerificationFailed)} 个。评测在固定合成场景上进行，产出的策略修订只作用于本工作台。</p>
+      <h3>手工干跑</h3>
+      <p className="field-hint">用确定性替身把整条评测链路走一遍，不消耗任何真实模型调用，也不会改动上面的状态和策略。用来在证据攒够之前确认链路本身是通的。</p>
+      <button className="button ghost" type="button" disabled={saving || dryRunning} onClick={() => void runDryRun()}>{dryRunning ? "正在干跑…" : "干跑一次"}</button>
+      {dryRun === null ? null : <div>
+        <p role="status">{dryRunOutcomes[dryRun.outcome]}</p>
+        <p className="field-hint">{dryRun.phases.map((entry) => `${phaseLabels[entry.phase]} ${String(entry.rollouts)} 轮 / ${String(entry.steps)} 次调用`).join(" · ")}</p>
+        <p className="field-hint">合计 {String(dryRun.steps)} 次合成调用，耗时 {String(dryRun.durationMs)} 毫秒；没有发出任何真实模型调用。{dryRun.selfCheck.matched ? "" : "自检未通过：替身可能已与当前场景不匹配，请检查场景定义。"}</p>
+        {dryRun.promoted || dryRun.verdict === null ? null : <p>{labels[dryRun.verdict]}</p>}
+      </div>}
       <h3>策略历史</h3>
       {status.versions.length === 0 ? <p>尚无候选策略，积累足够证据后自动评估。</p> : <ul>{status.versions.map((version) => <li key={version.revisionId}>
         <strong>{version.module === "context" ? "上下文整理" : "完成检查"}</strong> · {labels[version.reason]}<br />

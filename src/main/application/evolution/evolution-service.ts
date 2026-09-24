@@ -1,13 +1,15 @@
 import { DomainError } from "../../domain/errors.js";
 import { baselineStrategy, composeStrategyInstructions, parseStrategy, promotionDecision } from "../../domain/evolution/strategy.js";
 import { EVOLUTION_EVALUATOR_VERSION, evolutionScenarios, scenarioPrompt, simulateAction } from "../../domain/evolution/scenarios.js";
-import type { EvolutionReason, EvolutionStatusDto } from "../../../shared/evolution.js";
+import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD, type EvolutionReason, type EvolutionStatusDto } from "../../../shared/evolution.js";
 import type { EvolutionBatch, EvolutionEvidence, EvolutionModel, EvolutionRevision, EvolutionRollout, EvolutionSourcePin, EvolutionState, EvolutionStore } from "../ports/evolution.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import { buildJoiSystemPrompt } from "../joi/joi-system-prompt.js";
 
 const MAX_CALLS_PER_ROLLOUT = 6;
 const MAX_CONSECUTIVE_CALL_FAILURES = 3;
 const MAX_STRATEGY_ATTEMPTS = 2;
+type GateReason = "not_idle" | "no_candidate" | "evidence_below_threshold" | "aborted";
 /** Verdicts that freeze a strategy for the pinned source. Infrastructure failures only allow a bounded retry. */
 const FROZEN_REJECTION_REASONS: ReadonlySet<EvolutionReason> = new Set(["hard_violation", "cost_regression", "rolled_back"]);
 function required<T>(value: T | null | undefined): T {
@@ -39,14 +41,34 @@ function revert(state: EvolutionState, now: string): void {
 export class EvolutionService {
   #running = new Set<string>();
   #recovered = new Set<string>();
-  constructor(private readonly dependencies: { store: EvolutionStore; model: EvolutionModel; now: () => string; id: () => string }) {}
+  #gateSignature: string | null = null;
+  constructor(private readonly dependencies: { store: EvolutionStore; model: EvolutionModel; now: () => string; id: () => string; diagnostics?: RuntimeDiagnostics }) {}
+
+  /**
+   * Records why a batch was declined. pending() runs on every idle tick, so this emits only when
+   * the signature changes: the log stays a readable trace of the gate moving instead of a flood.
+   */
+  #skipGate(reason: GateReason, totals?: { evaluable: number; verificationFailed: number }, workbenchCount?: number): void {
+    const pool = totals ?? this.dependencies.store.evidenceTotals(null);
+    const workbenches = workbenchCount ?? this.dependencies.store.listWorkbenchIds().length;
+    const signature = `${reason}|${String(pool.evaluable)}|${String(pool.verificationFailed)}|${String(workbenches)}`;
+    if (signature === this.#gateSignature) return;
+    this.#gateSignature = signature;
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.gate_skipped", {
+      reason, evaluable: pool.evaluable, verificationFailed: pool.verificationFailed,
+      thresholdEvaluable: EVOLUTION_EVIDENCE_THRESHOLD, thresholdFailed: EVOLUTION_FAILURE_THRESHOLD, workbenchCount: workbenches,
+    });
+  }
 
   status(workbenchId: string): EvolutionStatusDto {
     const state = this.dependencies.store.read(workbenchId);
     const evidence = this.dependencies.store.evidence(workbenchId);
     const used = state.usage[dayOf(this.dependencies.now())] ?? 0;
+    // The same window #eligible uses, so the panel explains the actual gate instead of a proxy.
+    const pool = this.dependencies.store.evidenceTotals(state.lastBatchFinishedAt ?? null);
     return { workbenchId, dailyCallLimit: state.dailyCallLimit, callsUsedToday: used, evidenceCount: evidence.length,
       evaluableCount: evidence.filter(evaluable).length, activeRevisionId: state.activeRevisionId,
+      poolEvaluable: pool.evaluable, poolVerificationFailed: pool.verificationFailed,
       reason: state.paused ? state.reason : state.dailyCallLimit === 0 ? "disabled" : used >= state.dailyCallLimit ? "budget_exhausted" : state.reason,
       versions: state.revisions.slice(-30).reverse().map(({ revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns }) =>
         ({ revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns })),
@@ -96,14 +118,31 @@ export class EvolutionService {
     return { strategyRevisionId: revisionId, instructions: composeStrategyInstructions(strategy) };
   }
   scan(): void {
-    for (const seed of this.dependencies.store.evidenceSeeds()) {
-      const outcome: EvolutionEvidence["outcome"] = seed.canceled ? "CANCELED"
-        : seed.disposition === "ACCEPTED_WITH_GAPS" ? "ACCEPTED_WITH_GAPS"
-          : seed.failed > 0 ? "VERIFICATION_FAILED"
+    const seeds = this.dependencies.store.evidenceSeeds();
+    // One lookup per affected workbench, so the diagnostic can tell a first classification from an
+    // upgrade of an earlier, weaker one. Skipped entirely when there is nothing to classify.
+    const previous = new Map<string, Map<string, string>>();
+    for (const workbenchId of new Set(seeds.map((seed) => seed.workbenchId))) {
+      previous.set(workbenchId, new Map(this.dependencies.store.evidence(workbenchId).map((entry) => [entry.goalId, entry.outcome])));
+    }
+    for (const seed of seeds) {
+      // An objective verification failure outranks a revocation. A goal the user abandoned after its
+      // acceptance checks kept failing is the strongest orchestration signal we have, and ranking the
+      // revocation first would make the classification depend on whether the goal was sampled before
+      // or after it was revoked. Revoked goals are exactly where those failures concentrate.
+      const outcome: EvolutionEvidence["outcome"] = seed.failed > 0 ? "VERIFICATION_FAILED"
+        : seed.canceled ? "CANCELED"
+          : seed.disposition === "ACCEPTED_WITH_GAPS" ? "ACCEPTED_WITH_GAPS"
             : seed.workFailed > 0 ? "ENVIRONMENT_FAILED"
               : seed.verified > 0 && seed.unverified === 0 && seed.disposition === "COMPLETED" ? "VERIFIED" : "UNEVALUABLE";
-      this.dependencies.store.recordEvidence({ goalId: seed.goalId, workbenchId: seed.workbenchId, observedAt: seed.observedAt, outcome,
+      const persisted = this.dependencies.store.recordEvidence({ goalId: seed.goalId, workbenchId: seed.workbenchId, observedAt: seed.observedAt, outcome,
         revisionId: this.dependencies.store.goalRevision(seed.workbenchId, seed.goalId) ?? null });
+      const before = previous.get(seed.workbenchId)?.get(seed.goalId);
+      // Report the classification that was actually stored, and only when it is news: a re-scan that
+      // merely refreshes the idempotence guard, or one whose upgrade was refused, logs nothing.
+      if (persisted === null || persisted === before) continue;
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.evidence_recorded",
+        { goalInputId: seed.goalId, workbenchId: seed.workbenchId, outcome: persisted, ...(before === undefined ? {} : { previousOutcome: before }) });
     }
     for (const id of this.dependencies.store.listWorkbenchIds()) {
       const state = this.dependencies.store.read(id);
@@ -130,10 +169,29 @@ export class EvolutionService {
     }
   }
   pending(): { inputId: string; createdAt: string }[] {
-    if (!this.dependencies.store.idle()) return [];
+    const workbenchIds = this.dependencies.store.listWorkbenchIds();
+    if (!this.dependencies.store.idle()) { this.#skipGate("not_idle", undefined, workbenchIds.length); return []; }
     const now = this.dependencies.now();
-    return this.dependencies.store.listWorkbenchIds().filter((id) => this.#eligible(id)).slice(0, 1)
-      .map((id) => ({ inputId: `evolution:${id}`, createdAt: now }));
+    const candidates = workbenchIds.filter((id) => this.#eligible(id));
+    if (candidates.length === 0) {
+      // The pool is shared, so a single query explains why every workbench declined. Distinguish
+      // "not enough evidence yet" from "enough evidence, but every workbench is out of budget,
+      // parked, or already proposed today" — they need completely different responses.
+      const totals = this.dependencies.store.evidenceTotals(null);
+      this.#skipGate(totals.verificationFailed >= EVOLUTION_FAILURE_THRESHOLD && totals.evaluable >= EVOLUTION_EVIDENCE_THRESHOLD
+        ? "no_candidate" : "evidence_below_threshold", totals, workbenchIds.length);
+      return [];
+    }
+    this.#gateSignature = null;
+    // The trigger pool is global but the revision lands on one workbench, so prefer the workbench
+    // whose own goals contributed most to the signal. Tie-break on the id to keep the pick
+    // deterministic across restarts.
+    // `candidates` is non-empty here, so reduce without a seed is total and needs no assertion.
+    const strongest = candidates
+      .map((id) => ({ id, weight: this.dependencies.store.evidence(id).filter(evaluable).length }))
+      .reduce((best, entry) => (entry.weight > best.weight
+        || (entry.weight === best.weight && entry.id.localeCompare(best.id) < 0) ? entry : best));
+    return [{ inputId: `evolution:${strongest.id}`, createdAt: now }];
   }
   #eligible(id: string): boolean {
     const state = this.dependencies.store.read(id);
@@ -144,19 +202,34 @@ export class EvolutionService {
     if (state.lastCandidateDay === day || state.revisions.length >= 30) return false;
     // A verdict consumes its trigger: only evidence observed after the last verdict starts a new
     // batch, so historical failures the pipeline already addressed never re-run evaluation daily.
-    const since = state.lastBatchFinishedAt ?? null;
-    const evidence = this.dependencies.store.evidence(id).filter((e) => since === null || e.observedAt > since);
-    return evidence.filter(evaluable).length >= 10 && evidence.filter((e) => e.outcome === "VERIFICATION_FAILED").length >= 3;
+    // The pool spans every workbench (see evidenceTotals); this workbench's own verdict is the
+    // window, because that is the point before which its strategy was already judged.
+    const totals = this.dependencies.store.evidenceTotals(state.lastBatchFinishedAt ?? null);
+    return totals.evaluable >= EVOLUTION_EVIDENCE_THRESHOLD && totals.verificationFailed >= EVOLUTION_FAILURE_THRESHOLD;
   }
   async handle(inputId: string, signal?: AbortSignal): Promise<void> {
+    if (!inputId.startsWith("evolution:")) return;
     const id = inputId.slice("evolution:".length);
-    if (!inputId.startsWith("evolution:") || signal?.aborted === true || !this.dependencies.store.idle() || !this.#eligible(id)) return;
+    // Re-checked after pending() rather than trusted from it: a user task can arrive on the same
+    // tick, and user input always wins the single slot.
+    if (signal?.aborted === true) { this.#skipGate("aborted"); return; }
+    if (!this.dependencies.store.idle()) { this.#skipGate("not_idle"); return; }
+    if (!this.#eligible(id)) { this.#skipGate("no_candidate"); return; }
     this.#running.add(id);
     this.#recovered.add(id);
     try { await this.#step(id, signal); }
     catch {
       this.dependencies.store.update(id, (state) => { this.#failStep(state, dayOf(this.dependencies.now())); });
+      this.#emitCallFailure(id, null);
     } finally { this.#running.delete(id); }
+  }
+  /** Read back after the transaction commits, so the log reflects persisted state. */
+  #emitCallFailure(id: string, callId: string | null): void {
+    const state = this.dependencies.store.read(id);
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.call_failed", {
+      workbenchId: id, callId: callId ?? "unknown", consecutiveFailures: state.callFailures ?? 0,
+      parkedDay: state.parkedDay ?? dayOf(this.dependencies.now()),
+    });
   }
   /**
    * Infrastructure failure semantics match crash recovery: keep the batch and every completed
@@ -204,6 +277,8 @@ export class EvolutionService {
     });
     if (call === null) return;
     this.dependencies.store.update(id, (state) => { required(state.call).state = "RUNNING"; });
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.batch_step_started",
+      { workbenchId: id, batchId: call.batch.id, callId: call.id, phase: call.batch.phase });
     try {
       const prompt = call.batch.phase === "PROPOSE" ? this.#proposalPrompt(call.batch, call.history) : this.#simulationPrompt(call.batch);
       const result = await this.dependencies.model.call({ pin, ...prompt, workbenchId: id, idempotencyId: call.id, ...(signal === undefined ? {} : { signal }) });
@@ -222,6 +297,7 @@ export class EvolutionService {
         if (state.call?.id === call.id) state.call.state = "DONE";
         this.#failStep(state, day);
       });
+      this.#emitCallFailure(id, call.id);
     }
   }
   #ensureRollout(batch: EvolutionBatch): void {

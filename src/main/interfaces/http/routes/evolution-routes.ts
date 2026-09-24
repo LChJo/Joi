@@ -19,4 +19,15 @@ export const EVOLUTION_ROUTES: RouteDefinition[] = [
     handle: async (ctx, match) => { const body = await readJson(ctx.request); sendJson(ctx.response, 200, service(ctx).rollback(id(match), stringField(body, "revisionId"))); } },
   { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/feedback", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/feedback$/),
     handle: async (ctx, match) => { const body = await readJson(ctx.request); sendJson(ctx.response, 200, service(ctx).negativeFeedback(id(match), stringField(body, "goalId"))); } },
+  // Runs a batch against a stand-in model: no provider calls, no durable writes, and the answer is
+  // synchronous because a full batch takes under a second when nothing reaches the network.
+  { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/dry-run", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/dry-run$/),
+    handle: async (ctx, match) => {
+      const dryRun = ctx.dependencies.evolutionDryRun;
+      if (dryRun === undefined) throw new HttpError("evolution_dry_run_unavailable", "Evolution dry run is unavailable.", 503);
+      const workbenchId = id(match);
+      // The status read is the ownership check: it rejects an unknown workbench before any work starts.
+      service(ctx).status(workbenchId);
+      sendJson(ctx.response, 200, await dryRun.run(workbenchId));
+    } },
 ];

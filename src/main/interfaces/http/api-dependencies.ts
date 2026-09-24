@@ -1,6 +1,7 @@
 import type { AgentService } from "../../application/agents/agent-service.js";
 import type { StatisticsService } from "../../application/statistics/statistics-service.js";
 import type { EvolutionService } from "../../application/evolution/evolution-service.js";
+import type { EvolutionDryRun } from "../../application/evolution/evolution-dry-run.js";
 import type { ResultExportService } from "../../application/operations/result-export-service.js";
 import type { AgentOnboardingService } from "../../application/agents/agent-onboarding-service.js";
 import type { InteractionService } from "../../application/agents/interaction-service.js";
@@ -38,6 +39,8 @@ import type { IncomingMessage } from "node:http";
 export interface ApiDependencies {
   statistics?: Pick<StatisticsService, "query">;
   evolution?: Pick<EvolutionService, "status" | "configure" | "rollback" | "negativeFeedback">;
+  /** Separate from `evolution`: the dry run is its own object and never shares the live service. */
+  evolutionDryRun?: Pick<EvolutionDryRun, "run">;
   resultExports?: ResultExportService;
   agentOnboarding?: AgentOnboardingService;
   automation?: Pick<AutomationService, "create" | "delete" | "get" | "list" | "revealPrompt" | "runNow" | "setEnabled" | "update">;

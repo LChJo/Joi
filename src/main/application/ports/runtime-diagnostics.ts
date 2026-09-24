@@ -540,6 +540,38 @@ export interface RuntimeDiagnosticEventMap {
     status: string;
     workId: string;
   };
+  /**
+   * Every path that declines to run an evolution batch used to be a bare `return`, so "no evolution
+   * ever happened" was indistinguishable from "the scheduler is broken". Emitted only when the
+   * signature changes, otherwise the 2s tick would flood the log.
+   */
+  "joi.evolution.gate_skipped": {
+    evaluable: number;
+    reason: "not_idle" | "no_candidate" | "evidence_below_threshold" | "aborted";
+    thresholdEvaluable: number;
+    thresholdFailed: number;
+    verificationFailed: number;
+    workbenchCount: number;
+  };
+  "joi.evolution.evidence_recorded": {
+    goalInputId: string;
+    outcome: string;
+    /** Present only when a later scan upgraded an earlier, weaker classification. */
+    previousOutcome?: string;
+    workbenchId: string;
+  };
+  "joi.evolution.batch_step_started": {
+    batchId: string;
+    callId: string;
+    phase: string;
+    workbenchId: string;
+  };
+  "joi.evolution.call_failed": {
+    callId: string;
+    consecutiveFailures: number;
+    parkedDay: string;
+    workbenchId: string;
+  };
 }
 
 export type RuntimeDiagnosticName = keyof RuntimeDiagnosticEventMap;

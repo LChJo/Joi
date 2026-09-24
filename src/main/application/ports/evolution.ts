@@ -1,4 +1,4 @@
-import type { EvolutionModule, EvolutionReason, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
+import type { EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
 
 export interface EvolutionEvidence {
   goalId: string;
@@ -39,7 +39,7 @@ export interface EvolutionBatch {
   parentRevisionId: string | null;
   strategy: EvolutionStrategy;
   pin: EvolutionSourcePin;
-  phase: "DEVELOP" | "PROPOSE" | "VALIDATE" | "EVALUATE";
+  phase: EvolutionPhase;
   evidenceIds: string[];
   rollouts: EvolutionRollout[];
   revisionId?: string;
@@ -84,8 +84,19 @@ export interface EvolutionStore {
   read(workbenchId: string): EvolutionState;
   update<T>(workbenchId: string, operation: (state: EvolutionState) => T): T;
   evidence(workbenchId: string): EvolutionEvidence[];
+  /**
+   * Aggregate evaluable evidence across every workbench, restricted to what was observed after
+   * `since`. Batches are triggered from this pool because evaluation uses fixed synthetic scenarios
+   * shared by all workbenches; the resulting revision is still bound to a single workbench.
+   */
+  evidenceTotals(since: string | null): { evaluable: number; verificationFailed: number };
   evidenceSeeds(): EvolutionEvidenceSeed[];
-  recordEvidence(evidence: EvolutionEvidence): boolean;
+  /**
+   * Returns the classification actually persisted, or null when nothing changed. A re-scan may only
+   * upgrade a goal's outcome, so the persisted value can differ from the one passed in — callers
+   * that report what happened must report this, not their own input.
+   */
+  recordEvidence(evidence: EvolutionEvidence): EvolutionEvidence["outcome"] | null;
   bindGoal(workbenchId: string, goalId: string, revisionId: string | null, sourcePin?: EvolutionSourcePin): string | null;
   goalRevision(workbenchId: string, goalId: string): string | null | undefined;
   idle(): boolean;

@@ -59,6 +59,27 @@ function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string
 }
 
 /**
+ * A revoked goal has no future review or continuation, so its map must close in the same
+ * transaction that revokes it. Leaving the map ACTIVE is not merely untidy: the evolution evidence
+ * scan requires no ACTIVE map, so the goal's outcome — including the verification failures that are
+ * the entire point of the signal — stays invisible forever, and the home feed keeps advertising
+ * recoverable failures on work nobody will ever resume. Neither the review nor the AUTO_CLEAR path
+ * can rescue it, because both require a COMPLETED disposition, and trivial clear requires the goal
+ * to have dispatched no work at all.
+ *
+ * `feedback_recorded_at` is stamped as well, so a revoked goal never surfaces as a completion
+ * feedback candidate. Retry and goal continuation both re-ACTIVATE a CLEARED map, so reviving the
+ * goal afterwards still works exactly as before.
+ */
+function clearRevokedGoalMap(connection: DatabaseSync, goalInputId: string, now: string): void {
+  connection.prepare(`UPDATE joi_harness_maps
+    SET status = 'CLEARED', cleared_at = COALESCE(cleared_at, ?),
+        feedback_recorded_at = COALESCE(feedback_recorded_at, ?),
+        revision = revision + 1, updated_at = ?
+    WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, now, now, goalInputId);
+}
+
+/**
  * A review is a derived input, so its successful Turn must close the goal map in
  * the same transaction that consumes the review row. The checks mirror the harness
  * store's clearMap guard and deliberately remain false when the review opened work
@@ -368,6 +389,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(now, now, inputId);
         if (result.changes === 0) return null;
         cancelQueuedWork(connection, inputId, now);
+        clearRevokedGoalMap(connection, inputId, now);
         finishAutomationRun(connection, inputId, "CANCELED", now);
         const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
         return updated === undefined ? null : mapRow(updated);
@@ -382,6 +404,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // Canceling a goal also cancels its not-yet-final work; a WAITING work would
       // otherwise block the goal's synthesis forever with nobody left to answer it.
       cancelQueuedWork(connection, inputId, now);
+      clearRevokedGoalMap(connection, inputId, now);
       finishAutomationRun(connection, inputId, "CANCELED", now);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
@@ -421,6 +444,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL`).run(now, now, row.input_id);
         if (result.changes === 0) continue;
         cancelQueuedWork(connection, row.input_id, now);
+        clearRevokedGoalMap(connection, row.input_id, now);
         finishAutomationRun(connection, row.input_id, "CANCELED", now);
         canceled += 1;
       }
@@ -512,6 +536,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         SET dismissed_at = ?, updated_at = ?
         WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(now, now, inputId);
       if (result.changes === 0) return null;
+      // A dismissed goal cannot be retried, so this is the last chance to close its map: review and
+      // AUTO_CLEAR both need a COMPLETED disposition it will never reach.
+      clearRevokedGoalMap(connection, inputId, now);
       connection.prepare(`UPDATE joi_automation_runs SET status = 'CANCELED', result = 'CANCELED', completed_at = ?, reason_code = 'goal_removed'
         WHERE input_id IS NULL AND status IN ('PENDING', 'RUNNING', 'BLOCKED') AND routine_id IN (
           SELECT routine_id FROM joi_automations

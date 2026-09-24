@@ -1,6 +1,7 @@
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners";
 import { EvolutionService } from "../../src/main/application/evolution/evolution-service";
+import { EvolutionDryRun } from "../../src/main/application/evolution/evolution-dry-run";
 import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/sqlite-evolution-store";
 import { createRuntimeFixture } from "../support/runtime-fixture";
 
@@ -26,5 +27,38 @@ it("authenticates evolution settings, validates limits and exposes only safe sta
     const state: unknown = await saved.json();
     expect(state).toMatchObject({ dailyCallLimit: 3, callsUsedToday: 0, versions: [] });
     expect(JSON.stringify(state)).not.toContain("private");
+  } finally { await listeners.close(); await fixture.close(); }
+});
+
+it("dry-runs a batch over HTTP without reaching a provider or the live service", async () => {
+  const fixture = await createRuntimeFixture();
+  fixture.database.transaction((db) => db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('a','A','p','private persona','','','m','ACTIVE','2026-09-22','2026-09-22')`).run());
+  const pin = vi.fn();
+  const call = vi.fn();
+  const evolution = new EvolutionService({ store: new SqliteEvolutionStore(fixture.database), model: { pin, call }, now: () => "2026-09-22T00:00:00Z", id: () => "id" });
+  const evolutionDryRun = new EvolutionDryRun({ now: () => "2026-09-24T00:00:00.000Z", id: () => "dry-run" });
+  const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, evolution, evolutionDryRun }), loopbackPort: 0 });
+  try {
+    const url = `${listeners.loopback.url}/api/v1/workbenches/a/evolution/dry-run`;
+    expect((await fetch(url, { method: "POST" })).status).toBe(401);
+    const bootstrap = await fixture.auth.issueDesktopBootstrap();
+    const auth = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, { method: "POST", headers: { "content-type": "application/json", origin: "null" }, body: JSON.stringify({ nonce: bootstrap.nonce }) });
+    const cookie = auth.headers.get("set-cookie")?.split(";")[0] ?? "";
+    const { csrfToken } = await auth.json() as { csrfToken: string };
+    const headers = { cookie, origin: listeners.loopback.url, "content-type": "application/json", "x-csrf-token": csrfToken };
+    // A dry run mutates nothing but still has to be as hard to trigger cross-site as any other write.
+    expect((await fetch(url, { method: "POST", headers: { cookie, "content-type": "application/json" } })).status).toBe(403);
+    expect((await fetch(`${listeners.loopback.url}/api/v1/workbenches/missing/evolution/dry-run`, { method: "POST", headers })).status).toBe(404);
+    const response = await fetch(url, { method: "POST", headers });
+    expect(response.status).toBe(200);
+    const report = await response.json() as unknown;
+    expect(report).toMatchObject({ outcome: "promoted", promoted: true, steps: 721, truncated: false, selfCheck: { matched: true } });
+    expect(JSON.stringify(report)).not.toContain("private");
+    expect(JSON.stringify(report)).not.toContain("record-");
+    // The point of routing this through the real service is that it tells us nothing about the live
+    // one: it never received a call, and the workbench state it reports on is untouched.
+    expect(pin).not.toHaveBeenCalled();
+    expect(call).not.toHaveBeenCalled();
+    expect(new SqliteEvolutionStore(fixture.database).read("a")).toMatchObject({ callSequence: 0, batch: null, usage: {} });
   } finally { await listeners.close(); await fixture.close(); }
 });

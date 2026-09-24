@@ -1,5 +1,6 @@
 import path from "node:path";
 import { EvolutionService } from "../application/evolution/evolution-service.js";
+import { EvolutionDryRun } from "../application/evolution/evolution-dry-run.js";
 import { SqliteEvolutionStore } from "../infrastructure/persistence/sqlite-evolution-store.js";
 import { PiEvolutionModel } from "../infrastructure/pi/pi-evolution-model.js";
 import { ReasoningSourceSelector } from "../application/model-sources/reasoning-source-selector.js";
@@ -41,10 +42,13 @@ export function wireJoi(input: {
   workbenchStack: WorkbenchBundle;
 }) {
   const { clock, database, diagnostics, directoryPicker, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
-  const evolution = new EvolutionService({ store: new SqliteEvolutionStore(database),
+  const evolution = new EvolutionService({ store: new SqliteEvolutionStore(database), diagnostics,
     // Read-only selection: freshness probes would spend unreserved calls outside evolution's outbox.
     model: new PiEvolutionModel({ resolver: modelSourceStack.configuredModelResolver, sources: new ReasoningSourceSelector(persistence.modelSourceRepository), usage: modelSourceStack.statistics }),
     now: () => clock.now().toISOString(), id: () => ids.next("evolution") });
+  // Shares the clock and id source with the real service but none of its dependencies: a dry run
+  // builds its own stand-in model and in-memory store, so it can never reach a provider or this database.
+  const evolutionDryRun = new EvolutionDryRun({ now: () => clock.now().toISOString(), id: () => ids.next("evolution-dry-run") });
   const joiInbox = new JoiInboxService({
     clock,
     diagnostics,
@@ -117,7 +121,7 @@ export function wireJoi(input: {
     workbenchRegistry: workbenchStack.workbenchRegistry,
     workbenches: persistence.workbenches,
   });
-  return { automation, evolution, joiAttachmentStorage, joiCoordinator, joiInbox, joiReasoning };
+  return { automation, evolution, evolutionDryRun, joiAttachmentStorage, joiCoordinator, joiInbox, joiReasoning };
 }
 
 export type JoiBundle = ReturnType<typeof wireJoi>;

@@ -71,6 +71,76 @@ describe("JOI-01 non-destructive migration", () => {
     }
   });
 
+  it("repairs evolution evidence state without re-sampling settled history", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-evolution-repair-"));
+    const oldMigrations = path.join(root, "old-migrations");
+    await copyMigrationsThrough(oldMigrations, 60);
+    const databasePath = path.join(root, "runtime.sqlite");
+    const oldDatabase = await openRuntimeDatabase({ databasePath, migrationsDirectory: oldMigrations });
+    // 059 stamped every then-existing goal as unsampled at the instant it ran. The repair has to use
+    // that same instant as its boundary rather than a hardcoded date, so read it back.
+    const appliedAt = (oldDatabase.transaction((connection) => connection.prepare(
+      "SELECT applied_at FROM schema_migrations WHERE version = 59").get()) as { applied_at: string }).applied_at;
+    const before = "2026-08-01T00:00:00.000Z";
+    const after = new Date(Date.parse(appliedAt) + 3_600_000).toISOString();
+    oldDatabase.transaction((connection) => {
+      connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+        VALUES ('wb', 'W', 'wb', '', '', '', 'wb', 'ACTIVE', ?, ?)`).run(before, before);
+      const insertGoal = connection.prepare(`INSERT INTO joi_inbox_messages
+        (input_id, idempotency_key, body, status, workbench_id, canceled_at, created_at, updated_at)
+        VALUES (?, ?, 'private', 'CONSUMED', 'wb', ?, ?, ?)`);
+      // Settled before the migration: stays unsampled, per "固定基线且不采样" and zero historical replay.
+      insertGoal.run("settled", "settled", null, before, before);
+      // Revoked after it: its whole outcome landed post-migration, so 059's blanket exclusion was wrong.
+      insertGoal.run("in-flight", "in-flight", after, before, after);
+      // Revoked before the migration too: it stays unsampled, but its map is closed all the same,
+      // because map clearing keys off the revocation rather than the sampling boundary.
+      insertGoal.run("revoked", "revoked", before, before, before);
+      insertGoal.run("pinned", "pinned", null, before, before);
+      connection.prepare(`INSERT INTO evolution_goal_pins (goal_id, workbench_id, revision_id, eligible)
+        VALUES ('settled', 'wb', NULL, 0), ('in-flight', 'wb', NULL, 0),
+               ('revoked', 'wb', NULL, 0), ('pinned', 'wb', 'rev-1', 0)`).run();
+      connection.prepare(`INSERT INTO joi_harness_maps
+        (goal_input_id, workbench_id, destination, status, created_at, updated_at)
+        VALUES ('settled', 'wb', '产出定稿', 'ACTIVE', ?, ?), ('in-flight', 'wb', '产出定稿', 'ACTIVE', ?, ?),
+               ('revoked', 'wb', '产出定稿', 'ACTIVE', ?, ?)`).run(before, before, before, before, before, before);
+      connection.prepare(`INSERT INTO evolution_evidence
+        (goal_id, workbench_id, revision_id, outcome, observed_at) VALUES ('settled', 'wb', NULL, 'VERIFIED', ?)`).run(before);
+    });
+    oldDatabase.close();
+
+    const upgraded = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      expect(upgraded.inspect().schemaVersion).toBe(await expectedSchemaVersion());
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT goal_id, eligible FROM evolution_goal_pins ORDER BY goal_id").all())).toEqual([
+        // Still in flight at 059, so its outcome postdates the migration and is observable.
+        { eligible: 1, goal_id: "in-flight" },
+        // Already bound to a real revision: first bind wins, so it stays attributable to that strategy.
+        { eligible: 0, goal_id: "pinned" },
+        { eligible: 0, goal_id: "revoked" },
+        { eligible: 0, goal_id: "settled" },
+      ]);
+      // Revoked goals close their map at the revocation instant; a goal that was merely settled
+      // before the migration keeps its ACTIVE map, which the ordinary review path still owns.
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT goal_input_id, status, cleared_at, feedback_recorded_at FROM joi_harness_maps ORDER BY goal_input_id").all())).toEqual([
+        { cleared_at: after, feedback_recorded_at: after, goal_input_id: "in-flight", status: "CLEARED" },
+        { cleared_at: before, feedback_recorded_at: before, goal_input_id: "revoked", status: "CLEARED" },
+        { cleared_at: null, feedback_recorded_at: null, goal_input_id: "settled", status: "ACTIVE" },
+      ]);
+      // classified_at separates the idempotence guard from observed_at, which drives the verdict
+      // window; existing rows are backfilled so nothing is re-sampled spuriously.
+      expect(upgraded.transaction((connection) => connection.prepare(
+        "SELECT outcome, observed_at, classified_at FROM evolution_evidence WHERE goal_id = 'settled'").get()))
+        .toEqual({ classified_at: before, observed_at: before, outcome: "VERIFIED" });
+    } finally {
+      upgraded.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("recovers legacy crash-loop parking without reclassifying real user cancellations", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-input-failure-upgrade-"));
     const oldMigrations = path.join(root, "old-migrations");

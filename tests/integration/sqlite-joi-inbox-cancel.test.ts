@@ -105,11 +105,26 @@ describe("sqlite joi inbox cancel", () => {
       const canceledRow = fixture.database.transaction((connection) => connection.prepare(
         "SELECT canceled_at FROM joi_inbox_messages WHERE input_id = ?").get(accepted.inputId)) as { canceled_at: string | null };
       expect(typeof canceledRow.canceled_at).toBe("string");
+      // A revoked goal has no future review, so its map must close in the same transaction. Left
+      // ACTIVE it would be unreachable by every clearing path (review and AUTO_CLEAR both need a
+      // COMPLETED disposition, trivial clear needs zero Work) and the evolution evidence scan would
+      // exclude the goal forever. feedback_recorded_at is stamped so it never becomes a
+      // completion-feedback candidate.
+      const revokedMap = fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, cleared_at, feedback_recorded_at FROM joi_harness_maps WHERE goal_input_id = ?")
+        .get(accepted.inputId)) as { status: string; cleared_at: string | null; feedback_recorded_at: string | null };
+      expect(revokedMap.status).toBe("CLEARED");
+      expect(typeof revokedMap.cleared_at).toBe("string");
+      expect(typeof revokedMap.feedback_recorded_at).toBe("string");
 
       // A cleared map with nothing in flight is already terminal: cancel keeps refusing.
       const settled = await inbox.accept({ idempotencyKey: "key-settled", text: "产出定稿报告二", workbenchId: workbench.workbenchId });
       seedStalled(settled.inputId, "CLEARED");
       await expect(inbox.cancel({ inputId: settled.inputId })).rejects.toMatchObject({ code: "joi_cancel_unavailable" });
+      // A refused cancel must not touch the map either.
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, cleared_at FROM joi_harness_maps WHERE goal_input_id = ?").get(settled.inputId)))
+        .toEqual({ status: "CLEARED", cleared_at: null });
     } finally {
       fixture.database.close();
     }

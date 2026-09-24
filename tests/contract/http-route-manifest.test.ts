@@ -16,6 +16,7 @@ const GOLDEN_ROUTES = [
   "PATCH /api/v1/workbenches/:workbenchId/evolution",
   "POST /api/v1/workbenches/:workbenchId/evolution/rollback",
   "POST /api/v1/workbenches/:workbenchId/evolution/feedback",
+  "POST /api/v1/workbenches/:workbenchId/evolution/dry-run",
   "POST /api/v1/result-exports",
   "GET /api/v1/result-exports/:id",
   "POST /api/v1/result-exports/:id/open",

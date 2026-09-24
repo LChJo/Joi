@@ -64,10 +64,23 @@ describe("sqlite joi inbox retry", () => {
       const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
 
       const canceled = await inbox.accept({ idempotencyKey: "key-retry-canceled", text: "被取消的目标" });
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
+          VALUES (?, ?, '取消前已画出的目标', 'ACTIVE', 2, '2026-08-20T09:00:00.000Z', '2026-08-20T09:00:00.000Z')`)
+          .run(canceled.inputId, workbench.workbenchId);
+      });
       await repository.cancel(canceled.inputId);
+      // Cancel closes the map so the goal stops blocking the evolution evidence scan; reviving the
+      // goal must re-open it, otherwise the retry would resume without its charted state.
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM joi_harness_maps WHERE goal_input_id = ?").get(canceled.inputId))).toEqual({ status: "CLEARED" });
       const revivedCanceled = await repository.retry(canceled.inputId, {});
       expect(revivedCanceled).toMatchObject({ status: "PENDING" });
       expect(revivedCanceled?.canceledAt).toBeUndefined();
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, cleared_at, feedback_recorded_at FROM joi_harness_maps WHERE goal_input_id = ?").get(canceled.inputId)))
+        .toEqual({ status: "ACTIVE", cleared_at: null, feedback_recorded_at: null });
 
       const completed = await inbox.accept({ idempotencyKey: "key-retry-completed", text: "已完成的目标" });
       fixture.database.transaction((connection) => {

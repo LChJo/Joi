@@ -1,4 +1,5 @@
 import { EvolutionService } from "../../src/main/application/evolution/evolution-service";
+import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../../src/shared/evolution";
 import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/sqlite-evolution-store";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
 import { evolutionScenarios, EVOLUTION_EVALUATOR_VERSION } from "../../src/main/domain/evolution/scenarios";
@@ -266,6 +267,26 @@ describe("evolution execution and budget", () => {
     service.configure("a", 10);
     expect(service.pending()).toEqual([]);
   });
+  it("keeps a revoked goal's verification failure whichever order its facts arrive in", () => {
+    fixture.database.transaction((db) => db.prepare("DELETE FROM evolution_evidence").run());
+    // Disposition stays null, so the revocation is the only fact that could speak for this goal.
+    const common = { workbenchId: "a", observedAt: day, disposition: null, verified: 2, failed: 0, unverified: 0, workFailed: 0 };
+    const seeds = vi.spyOn(store, "evidenceSeeds");
+    const outcomeOf = (goalId: string) => store.evidence("a").find((entry) => entry.goalId === goalId)?.outcome;
+    // Sampled while nothing had failed yet: the revocation is all we know.
+    seeds.mockReturnValue([{ ...common, goalId: "g0", canceled: true }]);
+    service.scan();
+    expect(outcomeOf("g0")).toBe("CANCELED");
+    // The verification failure then lands. Revoked goals are exactly where these concentrate, so the
+    // revocation must not keep them out — that is the whole signal the trigger pool is built on.
+    seeds.mockReturnValue([{ ...common, goalId: "g0", canceled: true, failed: 1 }]);
+    service.scan();
+    expect(outcomeOf("g0")).toBe("VERIFICATION_FAILED");
+    // A later re-look that no longer reports the failure must not be able to walk it back.
+    seeds.mockReturnValue([{ ...common, goalId: "g0", canceled: true }]);
+    service.scan();
+    expect(outcomeOf("g0")).toBe("VERIFICATION_FAILED");
+  });
   it("does not publish when disabled during a call and skips canceled requests", async () => {
     service.configure("a", 10);
     const controller = new AbortController(); controller.abort();
@@ -277,6 +298,82 @@ describe("evolution execution and budget", () => {
     expect(store.read("a").batch?.rollouts[0]?.success).toBeUndefined();
     expect(service.status("a").activeRevisionId).toBeNull();
     expect(service.status("a").callsUsedToday).toBe(1);
+  });
+  it("arms a batch from the shared evidence pool and picks the strongest local signal", () => {
+    fixture.database.transaction((db) => {
+      db.prepare("DELETE FROM evolution_evidence").run();
+      db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('b','B','p','','','','mem-b','ACTIVE',?,?)`).run(day, day);
+      for (let i = 0; i < 5; i++) db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,'private','CONSUMED','b',?,?)`).run(`h${String(i)}`, `h${String(i)}`, day, day);
+    });
+    // Neither workbench reaches ten evaluable with three failures on its own; the shared pool does.
+    for (let i = 0; i < 6; i++) store.recordEvidence({ workbenchId: "a", goalId: `g${String(i)}`, revisionId: null, outcome: i < 2 ? "VERIFICATION_FAILED" : "VERIFIED", observedAt: day });
+    for (let i = 0; i < 5; i++) store.recordEvidence({ workbenchId: "b", goalId: `h${String(i)}`, revisionId: null, outcome: i < 1 ? "VERIFICATION_FAILED" : "VERIFIED", observedAt: day });
+    expect(store.evidenceTotals(null)).toEqual({ evaluable: 11, verificationFailed: 3 });
+    // The status DTO reports the pool the gate uses, so the settings panel can explain itself.
+    expect(service.status("a")).toMatchObject({ evaluableCount: 6, poolEvaluable: 11, poolVerificationFailed: 3 });
+    service.configure("a", 10);
+    service.configure("b", 10);
+    // The trigger pool is shared but the revision lands on one workbench, so the strongest local
+    // signal wins.
+    expect(service.pending()).toEqual([{ inputId: "evolution:a", createdAt: day }]);
+    // With the local signal tied the pick falls back to the workbench id, so it stays stable across
+    // restarts instead of depending on row order.
+    fixture.database.transaction((db) => db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES ('h5','h5','private','CONSUMED','b',?,?)`).run(day, day));
+    store.recordEvidence({ workbenchId: "b", goalId: "h5", revisionId: null, outcome: "VERIFIED", observedAt: day });
+    expect(store.evidence("a").length).toBe(store.evidence("b").length);
+    expect(service.pending()).toEqual([{ inputId: "evolution:a", createdAt: day }]);
+    // Negative control: drop the pool below the threshold and nothing fires despite both budgets.
+    fixture.database.transaction((db) => db.prepare("DELETE FROM evolution_evidence WHERE workbench_id = 'b'").run());
+    expect(service.pending()).toEqual([]);
+  });
+  it("reports why a batch was declined, once per change instead of every tick", () => {
+    const emit = vi.fn();
+    const observed = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "batch-1", diagnostics: { emit } });
+    fixture.database.transaction((db) => db.prepare("DELETE FROM evolution_evidence").run());
+    observed.configure("a", 10);
+    expect(observed.pending()).toEqual([]);
+    expect(emit).toHaveBeenCalledWith("joi.evolution.gate_skipped", expect.objectContaining({
+      reason: "evidence_below_threshold", evaluable: 0, verificationFailed: 0,
+      thresholdEvaluable: EVOLUTION_EVIDENCE_THRESHOLD, thresholdFailed: EVOLUTION_FAILURE_THRESHOLD,
+    }));
+    // pending() runs on every idle tick, so an unchanged gate must not repeat itself.
+    expect(observed.pending()).toEqual([]);
+    expect(observed.pending()).toEqual([]);
+    expect(emit).toHaveBeenCalledTimes(1);
+    // A busy instance is a different reason and is reported again.
+    fixture.database.transaction((db) => db.prepare("UPDATE joi_inbox_messages SET status = 'PENDING' WHERE input_id = 'g0'").run());
+    expect(observed.pending()).toEqual([]);
+    expect(emit).toHaveBeenCalledTimes(2);
+    expect(emit).toHaveBeenLastCalledWith("joi.evolution.gate_skipped", expect.objectContaining({ reason: "not_idle" }));
+  });
+  it("logs evidence upgrades so a masked verification failure stays visible", () => {
+    const emit = vi.fn();
+    const observed = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "batch-1", diagnostics: { emit } });
+    // Start from an empty pool: the shared beforeEach fixture already recorded g0 as a failure, and
+    // a classification may only be upgraded, never downgraded.
+    fixture.database.transaction((db) => db.prepare("DELETE FROM evolution_evidence").run());
+    const seed = { workbenchId: "a", observedAt: day, canceled: false, disposition: "COMPLETED", verified: 1, failed: 0, unverified: 0, workFailed: 0 };
+    const seeds = vi.spyOn(store, "evidenceSeeds");
+    seeds.mockReturnValue([{ ...seed, goalId: "g0" }]);
+    observed.scan();
+    expect(emit).toHaveBeenCalledWith("joi.evolution.evidence_recorded", { goalInputId: "g0", workbenchId: "a", outcome: "VERIFIED" });
+    // Re-observing the same facts is not news.
+    emit.mockClear();
+    observed.scan();
+    expect(emit).not.toHaveBeenCalledWith("joi.evolution.evidence_recorded", expect.anything());
+    // The failure that follows the premature snapshot upgrades it, and the log names what it replaced.
+    seeds.mockReturnValue([{ ...seed, goalId: "g0", verified: 0, failed: 1, observedAt: "2026-09-23T01:00:00.000Z" }]);
+    observed.scan();
+    expect(emit).toHaveBeenCalledWith("joi.evolution.evidence_recorded",
+      { goalInputId: "g0", workbenchId: "a", outcome: "VERIFICATION_FAILED", previousOutcome: "VERIFIED" });
+    expect(store.evidence("a").find((entry) => entry.goalId === "g0")).toMatchObject({ outcome: "VERIFICATION_FAILED" });
+    // A refused downgrade (here: the goal is canceled after failing) still refreshes the guard, but
+    // must not be logged as a new outcome — the stored classification did not change.
+    emit.mockClear();
+    seeds.mockReturnValue([{ ...seed, goalId: "g0", verified: 0, failed: 0, canceled: true, observedAt: "2026-09-24T01:00:00.000Z" }]);
+    observed.scan();
+    expect(emit).not.toHaveBeenCalledWith("joi.evolution.evidence_recorded", expect.anything());
+    expect(store.evidence("a").find((entry) => entry.goalId === "g0")).toMatchObject({ outcome: "VERIFICATION_FAILED" });
   });
   it("parks unusable sources for the day without unbudgeted model attempts", async () => {
     service.configure("a", 10);
