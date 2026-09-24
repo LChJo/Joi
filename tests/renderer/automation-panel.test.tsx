@@ -88,6 +88,20 @@ describe("AutomationPanel", () => {
     expect(fixture.listAutomations).toHaveBeenCalled();
   });
 
+  it("folds the run history until the user opens it", async () => {
+    const fixture = mockApi();
+    render(<AutomationPanel api={fixture.api} />);
+    await screen.findByRole("heading", { name: "定时任务" });
+
+    const summary = await screen.findByText("运行记录");
+    const runs = summary.closest("details");
+    expect(runs?.open).toBe(false);
+    expect(summary.closest("summary")).toHaveTextContent("1 次 · 最近 PENDING");
+    expect(screen.getByText(/合并 1/)).toBeInTheDocument();
+    fireEvent.click(summary);
+    expect(runs?.open).toBe(true);
+  });
+
   it("shows empty and failure states and lets users cancel the editor", async () => {
     const fixture = mockApi();
     fixture.listAutomations.mockResolvedValueOnce({ items: [] });

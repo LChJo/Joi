@@ -982,6 +982,11 @@ body:has(.remote-joi-shell) { min-width: 0; background: radial-gradient(circle a
 .automation-editor fieldset label { display: inline-flex; grid-template-columns: none; align-items: center; gap: 5px; }
 .automation-preview { grid-column: 1 / -1; color: var(--muted); font-size: 12px; }
 .automation-goal-link { display: inline-block; margin-left: 8px; padding: 2px 6px; font-size: 10px; }
+.automation-runs { display: grid; gap: 4px; }
+.automation-runs > summary { display: flex; align-items: center; gap: 8px; color: var(--muted); cursor: pointer; font-size: 11px; list-style-position: inside; }
+.automation-runs > summary small { color: var(--faint); }
+.automation-runs > summary:hover { color: var(--ink); }
+.automation-runs > small { padding-left: 14px; }
 .automation-list { display: grid; }
 .automation-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px; padding: 20px 0; border-bottom: 1px solid var(--line); }
 .automation-row > div:first-child { display: grid; gap: 5px; min-width: 0; }
