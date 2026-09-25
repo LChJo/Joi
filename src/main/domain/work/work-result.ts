@@ -1,4 +1,8 @@
+import { truncateAtSentenceBoundary } from "../text/sentence-truncation.js";
+
 export type WorkResultStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
+
+const SUMMARY_PREVIEW_LIMIT = 320;
 
 export interface WorkResult {
   actionId: string;
@@ -32,7 +36,7 @@ function sanitizeSummary(value: string): string {
 
 export function summarizeWorkResult(body: string, status: WorkResultStatus): string {
   const compact = sanitizeSummary(body);
-  return (compact === "" ? `Partner run ${status.toLowerCase()}.` : compact).slice(0, 320);
+  return truncateAtSentenceBoundary(compact === "" ? `Partner run ${status.toLowerCase()}.` : compact, SUMMARY_PREVIEW_LIMIT);
 }
 
 export function createWorkResult(input: Omit<WorkResult, "summary" | "verification"> & {
@@ -42,7 +46,10 @@ export function createWorkResult(input: Omit<WorkResult, "summary" | "verificati
   return {
     ...input,
     artifacts: input.artifacts.map((artifact) => ({ ...artifact })),
-    summary: (input.summary === undefined ? summarizeWorkResult(input.body, input.status) : sanitizeSummary(input.summary)).slice(0, 320),
+    summary: truncateAtSentenceBoundary(
+      input.summary === undefined ? summarizeWorkResult(input.body, input.status) : sanitizeSummary(input.summary),
+      SUMMARY_PREVIEW_LIMIT,
+    ),
     verification: input.verification ?? { status: "NOT_REQUIRED" },
   };
 }

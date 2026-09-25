@@ -634,6 +634,55 @@ describe("SqliteJoiHarnessRepository", () => {
       expect(await repository.listReviewRecoveries()).toEqual([]);
     });
 
+    it("requeues a review whose turn completed without any side effect, then quarantines a repeat", async () => {
+      // A review truncated by its output budget ends COMPLETED with zero tool calls:
+      // no work completion ever re-arms the goal and disposition stays CONTINUE, so
+      // without this arm the goal idles forever behind an ACTIVE map.
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-wasted", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-review-wasted", now: NOW });
+      seedCompletedLayer(fixture, "goal-review-wasted", 1, "CONTINUE");
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED', body = 'stale body' WHERE input_id = ?").run(reviewInputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, formal_output_started, side_effect_started, created_at, updated_at)
+          VALUES ('turn-review-wasted', ?, ?, 'review-wasted', 'COMPLETED', 0, 0, ?, ?)`).run(reviewInputId, workbenchId, NOW, NOW);
+      });
+
+      const candidates = await repository.listReviewRecoveries();
+      expect(candidates).toHaveLength(1);
+      const candidate = candidates[0];
+      if (candidate === undefined) throw new Error("review recovery candidate missing");
+      expect(candidate).toMatchObject({ action: "REQUEUE", reasonCode: "review_completed_without_side_effect" });
+      const result = await repository.reconcileReview({ candidate, now: NOW });
+      expect(result).toEqual({ action: "REQUEUED", inputId: reviewInputId });
+      const requeued = fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, body FROM joi_inbox_messages WHERE input_id = ?").get(reviewInputId)) as { body: string; status: string };
+      expect(requeued.status).toBe("PENDING");
+      // The replay must not reuse the prompt the wasted turn choked on.
+      expect(requeued.body).not.toBe("stale body");
+      expect(requeued.body).toContain("goalInputId=goal-review-wasted");
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(reviewInputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, formal_output_started, side_effect_started, created_at, updated_at)
+          VALUES ('turn-review-wasted-2', ?, ?, 'review-wasted-2', 'COMPLETED', 0, 0, ?, ?)`).run(reviewInputId, workbenchId, NOW, NOW);
+      });
+      const [second] = await repository.listReviewRecoveries();
+      expect(second).toMatchObject({ action: "QUARANTINE", reasonCode: "review_repeatedly_completed_without_side_effect" });
+      if (second === undefined) throw new Error("second review recovery candidate missing");
+      expect(await repository.reconcileReview({ candidate: second, now: NOW })).toEqual({ action: "QUARANTINED" });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, clarification_reason_code FROM joi_inbox_messages WHERE input_id = 'goal-review-wasted'").get()))
+        .toMatchObject({ clarification_reason_code: "harness_review_unrecoverable", status: "CLARIFICATION_REQUIRED" });
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+    });
+
     it("quarantines a consumed review when a historical side effect is present", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-unsafe", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-review-unsafe", now: NOW });
@@ -820,8 +869,10 @@ describe("SqliteJoiHarnessRepository", () => {
       })]);
     });
 
+    // "continue" is deliberately absent: a wasted review over a CONTINUE outcome with
+    // converged facts is the dead zone the recovery scan must requeue, covered below.
     it.each([
-      "live-review", "active-work", "open-path", "missing-path", "continue", "blocked",
+      "live-review", "active-work", "open-path", "missing-path", "blocked",
       "waiting-gate", "reviewing-gate", "canceled", "new-revision",
     ])("does not auto-close completed review when %s appears, including after scanning", async (blocker) => {
       const goalInputId = "goal-review-recheck";
@@ -849,8 +900,8 @@ describe("SqliteJoiHarnessRepository", () => {
           (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
           VALUES ('work-review-recheck', ?, ?, '新证据', '{}', 'READ', ?, ?, ?)`)
           .run(workbenchId, goalInputId, blocker === "active-work" ? "READY" : "COMPLETED", NOW, NOW);
-        if (blocker === "continue" || blocker === "blocked") connection.prepare("UPDATE joi_goal_outcomes SET disposition = ? WHERE input_id = ?")
-          .run(blocker === "continue" ? "CONTINUE" : "BLOCKED", goalInputId);
+        if (blocker === "blocked") connection.prepare("UPDATE joi_goal_outcomes SET disposition = 'BLOCKED' WHERE input_id = ?")
+          .run(goalInputId);
         if (blocker === "waiting-gate" || blocker === "reviewing-gate") connection.prepare(`INSERT INTO joi_goal_execution_gates
           (goal_input_id, question_id, question_version, status, reason_code, created_at, updated_at)
           VALUES (?, 'question-recheck', 1, ?, 'question_required', ?, ?)`)

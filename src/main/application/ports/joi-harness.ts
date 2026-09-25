@@ -15,6 +15,16 @@ export interface HarnessGoalSeed {
   goalInputId: string;
 }
 
+/** One persisted work result of the revision under review, bounded by the scan. */
+export interface HarnessReviewResultRef {
+  resultId: string;
+  workId: string;
+  title: string;
+  status: string;
+  verification: string;
+  summary: string;
+}
+
 /** Bounded digest handed to a harness review turn (limits enforced by the scan). */
 export interface HarnessReviewDigest {
   continuationRequested?: true;
@@ -27,6 +37,7 @@ export interface HarnessReviewDigest {
   goalInputId: string;
   openPaths: { layer: number; pathId: string; title: string }[];
   resultRevision: number;
+  results: HarnessReviewResultRef[];
 }
 
 export type HarnessReviewRecoveryAction = "AUTO_CLEAR" | "REQUEUE" | "QUARANTINE";

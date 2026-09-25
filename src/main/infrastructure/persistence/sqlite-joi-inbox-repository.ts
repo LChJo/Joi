@@ -7,6 +7,7 @@ import type { JoiCoordinatorStore, JoiPendingInput } from "../../application/por
 import type { Clock } from "../../application/ports/runtime-store.js";
 import type { JoiActivityDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
+import { truncateAtSentenceBoundary } from "../../domain/text/sentence-truncation.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
@@ -697,7 +698,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           const verification = row.verification_status === "PASSED" ? "PASSED"
             : row.verification_status === "FAILED" ? `FAILED(${verificationReason})`
               : "NOT_REQUIRED";
-          return `resultId=${String(row.result_id)} workId=${String(row.work_id)} title=${String(row.title).slice(0, 240)} status=${String(row.status)} verification=${verification} summary=${String(row.summary).slice(0, 320)}`;
+          return `resultId=${String(row.result_id)} workId=${String(row.work_id)} title=${String(row.title).slice(0, 240)} status=${String(row.status)} verification=${verification} summary=${truncateAtSentenceBoundary(String(row.summary), 320)}`;
         }),
         "Only COMPLETED results with verification=PASSED are verified evidence. A COMPLETED result with verification=NOT_REQUIRED is an unverified self-report: it may support the answer, but say so when the distinction matters. A FAILED/UNKNOWN result or verification=FAILED is a coverage gap; it does not invalidate other evidence and must not dominate the final answer unless that missing coverage is essential to the original goal.",
         "If verified completed results already answer the original goal, synthesize that answer, mention non-critical failures only as a brief trailing warning, and call turn_complete with RESULT_SYNTHESIZED.",

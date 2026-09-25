@@ -1,8 +1,10 @@
 import type { HarnessReviewDigest } from "../ports/joi-harness.js";
+import { truncateAtSentenceBoundary } from "../../domain/text/sentence-truncation.js";
 
 const DECISION_LINE_LIMIT = 8;
 const FOG_LINE_LIMIT = 6;
 const OPEN_PATH_LINE_LIMIT = 6;
+const RESULT_LINE_LIMIT = 8;
 const COMPLETION_SUMMARY_LIMIT = 320;
 
 /**
@@ -19,6 +21,16 @@ export function composeReviewBody(digest: HarnessReviewDigest): string {
   lines.push(digest.destination === null
     ? "destination=（尚未命名：先调用 harness_name_destination 命名这次努力的最终目标）"
     : `destination=${digest.destination}`);
+  if (digest.results.length > 0) {
+    lines.push("Results in this revision:");
+    for (const result of digest.results.slice(0, RESULT_LINE_LIMIT)) {
+      lines.push(`resultId=${result.resultId} workId=${result.workId} title=${result.title} status=${result.status} verification=${result.verification} summary=${truncateAtSentenceBoundary(result.summary, COMPLETION_SUMMARY_LIMIT)}`);
+    }
+    if (digest.results.length > RESULT_LINE_LIMIT) {
+      lines.push(`- （另有 ${String(digest.results.length - RESULT_LINE_LIMIT)} 条更早的结果）`);
+    }
+    lines.push("Use work_read_result with a resultId above when a bounded summary is insufficient.");
+  }
   if (digest.decisions.length > 0) {
     lines.push("Decisions so far:");
     const listed = digest.decisions.slice(0, DECISION_LINE_LIMIT);
@@ -41,7 +53,7 @@ export function composeReviewBody(digest: HarnessReviewDigest): string {
       lines.push(`- L${String(openPath.layer)} ${openPath.title}`);
     }
   }
-  lines.push(`Latest completion: ${digest.completionSummary.slice(0, COMPLETION_SUMMARY_LIMIT)}`);
+  lines.push(`Latest completion: ${truncateAtSentenceBoundary(digest.completionSummary, COMPLETION_SUMMARY_LIMIT)}`);
   lines.push(digest.continuationRequested === true
     ? "Continuation rule: result synthesis explicitly found the evidence incomplete and requested a safe next layer. Do not call MAP_CLEARED in this review. Resolve at most ONE decision with harness_record_decision and dispatch the concrete next evidence layer with work_dispatch (its Work facts are mirrored into paths automatically, so do not chart the same Work again); use harness_chart_path only for a non-Work path; send new fog to harness_note_fog and graduate now-specifiable fog."
     : "Close-first rule: if the latest completion satisfies the original goal and there is no active or open path to pursue, call turn_complete with MAP_CLEARED immediately; do not use DIRECT_ANSWER for a review. Otherwise resolve at most ONE decision with harness_record_decision; dispatch the next evidence layer with work_dispatch (its Work facts are mirrored into paths automatically, so do not chart the same Work again); use harness_chart_path only for a non-Work path; send new fog to harness_note_fog and graduate now-specifiable fog.");

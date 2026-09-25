@@ -130,6 +130,7 @@ describe("joi actor tick over persisted facts", () => {
       goalInputId: "input_goal",
       openPaths: [],
       resultRevision: 1,
+      results: [],
     };
     let digestPending = true;
     const handled: string[] = [];
@@ -209,6 +210,7 @@ describe("joi actor tick over persisted facts", () => {
         goalInputId: "input_goal",
         openPaths: [],
         resultRevision: 1,
+        results: [],
       },
       reasonCode: "review_turn_failed_without_side_effect",
     };

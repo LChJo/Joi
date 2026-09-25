@@ -54,6 +54,28 @@ const REVIEW_FACTS_COMPLETE_SQL = `
                                  WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
                 AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
                                  AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`;
+// A review turn can end COMPLETED without having done anything: an output-budget
+// truncation or a prose-only answer leaves zero tool calls, so side_effect_started
+// stays 0 (dispatch/decision/turn_complete all flip it). With disposition CONTINUE
+// the synthesis already promised a safe next layer, yet nothing else ever re-arms the
+// goal — no work completion to trigger synthesis, REVIEW_FACTS_COMPLETE_SQL never
+// matches — making it a silent dead zone. Restricted to CONTINUE with converged path
+// facts: BLOCKED outcomes and open/missing paths keep their own (user-facing or
+// self-converging) recovery surfaces instead of being replayed here.
+const REVIEW_WASTED_TURN_SQL = `
+                o.disposition = 'CONTINUE'
+                AND EXISTS (SELECT 1 FROM joi_turns wasted_review
+                             WHERE wasted_review.input_id = r.input_id AND wasted_review.status = 'COMPLETED'
+                               AND wasted_review.side_effect_started = 0)
+                AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
+                                 WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
+                AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
+                                 AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`;
+const REVIEW_WASTED_TURN_COUNT_SQL = `
+                (SELECT COUNT(*) FROM joi_turns wasted_review
+                  WHERE wasted_review.input_id = r.input_id AND wasted_review.status = 'COMPLETED'
+                    AND wasted_review.side_effect_started = 0)`;
+const WASTED_REVIEW_REQUEUE_LIMIT = 1;
 
 function textValue(row: Row, key: string): string {
   const value = row[key];
@@ -115,6 +137,34 @@ function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
       pathId: textValue(pathRow, "path_id"),
       title: textValue(pathRow, "title"),
     }));
+  // Mirror the synthesis input's result lines: a review that must arrange the next
+  // layer needs the resultIds/workIds to read persisted evidence or reuse it verbatim.
+  const results = (connection.prepare(`
+    SELECT r.result_id, r.work_id, r.status, r.summary, w.title,
+           v.status AS verification_status, v.reason_code AS verification_reason
+      FROM joi_goal_result_members m
+      JOIN partner_result_events e ON e.event_id = m.event_id
+      JOIN work_results r ON r.run_id = e.run_id AND r.status = e.status AND r.is_authoritative = 1
+      JOIN work_items w ON w.work_id = r.work_id
+      LEFT JOIN work_result_verifications v ON v.result_id = r.result_id
+     WHERE m.original_input_id = ? AND m.revision <= ?
+     ORDER BY m.revision, m.event_id LIMIT 8`).all(
+    goalInputId, numberValue(row, "result_revision"),
+  ) as Row[])
+    .map((resultRow) => {
+      const verificationReason = optionalText(resultRow, "verification_reason");
+      const verificationStatus = optionalText(resultRow, "verification_status");
+      return {
+        resultId: textValue(resultRow, "result_id"),
+        workId: textValue(resultRow, "work_id"),
+        title: textValue(resultRow, "title").slice(0, 240),
+        status: textValue(resultRow, "status"),
+        verification: verificationStatus === "PASSED" ? "PASSED"
+          : verificationStatus === "FAILED" ? `FAILED(${verificationReason === null || verificationReason === "" ? "verification_failed" : verificationReason})`
+            : "NOT_REQUIRED",
+        summary: optionalText(resultRow, "summary") ?? "",
+      };
+    });
   return {
     ...(optionalText(row, "outcome_disposition") === "CONTINUE" ? { continuationRequested: true as const } : {}),
     workbenchId: textValue(row, "workbench_id"),
@@ -126,6 +176,7 @@ function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
     goalInputId,
     openPaths,
     resultRevision: numberValue(row, "result_revision"),
+    results,
   };
 }
 
@@ -374,6 +425,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                o.completion_summary, o.disposition AS outcome_disposition, r.input_id AS review_input_id,
                (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id) AS review_turn_count,
                (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1) AS side_effect_turn_count,
+               ${REVIEW_WASTED_TURN_COUNT_SQL} AS wasted_turn_count,
                (SELECT COUNT(*) FROM work_items w
                  WHERE w.input_id = m.goal_input_id AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')) AS active_work_count,
                (SELECT COUNT(*) FROM joi_harness_paths p
@@ -421,6 +473,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                 SELECT 1 FROM joi_turns failed_review
                  WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
               ) OR (${REVIEW_FACTS_COMPLETE_SQL}
+              ) OR (${REVIEW_WASTED_TURN_SQL}
               ))
               AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
                                WHERE live_review.input_id = r.input_id
@@ -440,6 +493,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         const reviewInput = optionalText(row, "review_input_id");
         const turnCount = numberValue(row, "review_turn_count");
         const sideEffectTurns = numberValue(row, "side_effect_turn_count");
+        const wastedTurns = numberValue(row, "wasted_turn_count");
         const activeWork = numberValue(row, "active_work_count");
         const openPaths = numberValue(row, "open_path_count");
         const missingPaths = numberValue(row, "missing_path_count");
@@ -448,6 +502,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         const action = factsComplete && outcomeCompleted
           ? "AUTO_CLEAR" as const
           : reviewInput === null || turnCount === 0 || sideEffectTurns > 0 || activeWork > 0 || openPaths > 0 || missingPaths > 0
+            || wastedTurns > WASTED_REVIEW_REQUEUE_LIMIT
           ? "QUARANTINE" as const
           : "REQUEUE" as const;
         const reasonCode = factsComplete && outcomeCompleted
@@ -458,7 +513,11 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
             ? "review_turn_missing"
             : sideEffectTurns > 0 || activeWork > 0 || openPaths > 0 || missingPaths > 0
               ? "review_side_effect_unknown"
-              : "review_turn_failed_without_side_effect";
+              : wastedTurns > WASTED_REVIEW_REQUEUE_LIMIT
+                ? "review_repeatedly_completed_without_side_effect"
+                : wastedTurns > 0
+                  ? "review_completed_without_side_effect"
+                  : "review_turn_failed_without_side_effect";
         return { action, digest: reviewDigest(connection, row), reasonCode };
       });
     });
@@ -681,6 +740,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                SELECT 1 FROM joi_turns failed_review
                 WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
              ) OR (${REVIEW_FACTS_COMPLETE_SQL}
+             ) OR (${REVIEW_WASTED_TURN_SQL}
              ))
              AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
                               WHERE live_review.input_id = r.input_id
@@ -746,6 +806,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              AND EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id)
              AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))
              AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1)
+             AND ${REVIEW_WASTED_TURN_COUNT_SQL} <= ${String(WASTED_REVIEW_REQUEUE_LIMIT)}
              AND NOT EXISTS (SELECT 1 FROM work_items w
                               WHERE w.input_id = ? AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
              AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
@@ -756,10 +817,12 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
           reviewId, goalInputId, goalInputId, goalInputId,
         );
         if (safe === undefined) return null;
+        // Refresh the body on replay: the retried review must see the current result
+        // ids and digests, not the stale prompt the wasted turn choked on.
         const updated = connection.prepare(`UPDATE joi_inbox_messages
-          SET status = 'PENDING', failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
+          SET status = 'PENDING', body = ?, failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
               canceled_at = NULL, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
-          WHERE input_id = ? AND status IN ('CONSUMED', 'ROUTED')`).run(now, reviewId);
+          WHERE input_id = ? AND status IN ('CONSUMED', 'ROUTED')`).run(composeReviewBody(candidate.digest), now, reviewId);
         return updated.changes === 1 ? { action: "REQUEUED" as const, inputId: reviewId } : null;
       }
 

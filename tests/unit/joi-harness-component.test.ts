@@ -124,6 +124,7 @@ function digest(goalInputId: string): HarnessReviewDigest {
     goalInputId,
     openPaths: [],
     resultRevision: 1,
+    results: [],
   };
 }
 
