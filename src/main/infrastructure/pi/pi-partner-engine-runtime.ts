@@ -25,6 +25,7 @@ import { draftAgentConversation, type AgentConversationDraft } from "../../appli
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiStream } from "./pi-usage.js";
 
@@ -241,6 +242,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
 
   constructor(private readonly dependencies: {
     usage?: UsageRecorder;
+    diagnostics?: RuntimeDiagnostics;
     maxWarmAgents?: number;
     contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
@@ -536,7 +538,18 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         ? (() => { throw new DomainError("partner_model_source_not_ready", "The partner model source cannot be selected."); })()
         : await this.dependencies.sources.selectById(revision.modelSourceId, turnId);
     if (revision.modelIdOverride !== undefined && revision.modelIdOverride !== pin.modelId) {
-      throw new DomainError("partner_model_override_not_ready", "The pinned model is not active on the selected source.");
+      // A pinned model goes stale when its source rotates the active model (health
+      // recovery, order change). Failing the Work would lose real effort over a
+      // configuration detail the partner cannot repair mid-run; run on the source's
+      // active model and keep the substitution visible in diagnostics instead.
+      // Configuration-time validation (registry update, model probe) still rejects
+      // bad pins up front, so this only ever catches pins that drifted after setup.
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.model_override_fallback", {
+        activeModelId: pin.modelId,
+        partnerId: revision.partnerId,
+        pinnedModelId: revision.modelIdOverride,
+        sourceId: pin.sourceId,
+      });
     }
     return pin;
   }

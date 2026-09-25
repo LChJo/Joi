@@ -202,6 +202,11 @@ export function createJoiReasoningTools(input: {
       description: "Queue one immediate execution of a routine using an idempotent key.", execute: async (toolCallId, raw) => { const args = raw as Record<string, unknown>; return result(await automation.runNow(args.routineId as string, `${input.inputId}:${toolCallId}`)); }, label: "Run routine now", name: "run_automation_now", parameters: Type.Object({ routineId: Type.String() }),
     },
   ];
+  // Acceptance file checks resolve against the Work execution root the executing
+  // partner is told about; a path naming another tree (a sibling repo checkout)
+  // fails verification no matter what the partner writes. Say so where the checks
+  // are authored so joi binds that checkout as the workbench workspace instead.
+  const ACCEPTANCE_RELATIVE_PATH_DESCRIPTION = "Path relative to this Work's execution root (the workspace root announced to the executing partner), without repeating the root's own folder name: when the root is a repository checkout, use repo-relative paths like plugins/x/docs/report.md, not <repo-folder>/plugins/x/docs/report.md. A check naming a file outside the root — e.g. inside a sibling repository checkout — always fails verification, so bind that checkout as the workbench workspace instead of referencing it here.";
   const workDispatchParameters = Type.Object({
     // Optional in the schema: models routinely omit the array when the DAG has
     // no edges, and a failed argument validation aborts the whole Turn before
@@ -213,9 +218,9 @@ export function createJoiReasoningTools(input: {
         Type.Object({ kind: Type.Literal("ARTIFACT_PRESENT"), name: Type.String({ maxLength: 240, minLength: 1 }) }),
         Type.Object({
           expectedText: Type.String({ maxLength: 8_000 }), kind: Type.Literal("FILE_CONTAINS_EXACT"),
-          relativePath: Type.String({ maxLength: 500, minLength: 1 }),
+          relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }),
         }),
-        Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ maxLength: 500, minLength: 1 }) }),
+        Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
       ]), { maxItems: 8, minItems: 1 })),
       accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
       instanceId: Type.Optional(Type.String()),
@@ -296,8 +301,8 @@ export function createJoiReasoningTools(input: {
     acceptanceChecks: Type.Optional(Type.Array(Type.Union([
       Type.Object({ kind: Type.Literal("BODY_PRESENT") }),
       Type.Object({ kind: Type.Literal("ARTIFACT_PRESENT"), name: Type.String({ maxLength: 240, minLength: 1 }) }),
-      Type.Object({ expectedText: Type.String({ maxLength: 8_000 }), kind: Type.Literal("FILE_CONTAINS_EXACT"), relativePath: Type.String({ maxLength: 500, minLength: 1 }) }),
-      Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ maxLength: 500, minLength: 1 }) }),
+      Type.Object({ expectedText: Type.String({ maxLength: 8_000 }), kind: Type.Literal("FILE_CONTAINS_EXACT"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
+      Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
     ]), { maxItems: 8 })),
     accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
     instructions: Type.Optional(Type.String({ maxLength: 12_000 })),
@@ -474,7 +479,7 @@ export function createJoiReasoningTools(input: {
     })),
   });
   const partnerCreateTool: AgentTool<typeof partnerCreateParameters> = {
-    description: "Register a new local Pi capability cluster when no existing partner fits the work. Name the card after a reusable work cluster, not a person or narrow role: use names like 编码工坊 instead of 资深程序员搭档. Never name a partner after a one-off task, model or version (bad: Grok4.6 模型调研搭档); name the durable capability cluster (good: 模型调研搭档) so the next similar goal reuses it. Keep description focused on the capability boundary; keep environment, workspace and directory decisions in the Workbench. Reuses an active local partner whose normalized cluster key matches — one-off model/version tokens and quoted or parenthetical notes are ignored when matching. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work. Call partner_list_skills before passing skills; selected ids are injected into the partner, not executed by joi. tools accepts built-in coding and public web tools: bash, edit, find, grep, ls, read, write, web_search, fetch_content and get_search_content; omit it or pass [] to grant all built-in Pi tools. Web access is read-only and bounded; it never receives cookies or credentials. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
+    description: "Register a new local Pi capability cluster when no existing partner fits the work. Name the card after a reusable work cluster, not a person or narrow role: use names like 编码搭档 or 模型调研搭档. Partners are always named …搭档; never use a …工坊 name (workbench-style labels belong to the Workbench, not the partner card). Never name a partner after a one-off task, model or version (bad: Grok4.6 模型调研搭档); name the durable capability cluster (good: 模型调研搭档) so the next similar goal reuses it. Keep description focused on the capability boundary; keep environment, workspace and directory decisions in the Workbench. Reuses an active local partner whose normalized cluster key matches — one-off model/version tokens and quoted or parenthetical notes are ignored when matching. Always write description (card-visible one-line role summary) and prompt (working directive with DO / acceptance criteria / out-of-scope) for the concrete work. Call partner_list_skills before passing skills; selected ids are injected into the partner, not executed by joi. tools accepts built-in coding and public web tools: bash, edit, find, grep, ls, read, write, web_search, fetch_content and get_search_content; omit it or pass [] to grant all built-in Pi tools. Web access is read-only and bounded; it never receives cookies or credentials. Optionally pin a READY model source (modelSourceId from model_list_sources, with modelIdOverride for its model id); omit both to follow the global preferred source. The user sees the new partner card (badged as joi-created) and can edit, disable or delete it.",
     execute: async (_toolCallId, arguments_) => {
       const displayName = partnerClusterName(arguments_.displayName);
       const tools = normalizePartnerTools(arguments_.tools);

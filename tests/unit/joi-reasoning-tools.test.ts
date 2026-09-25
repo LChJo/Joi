@@ -283,7 +283,7 @@ describe("joi reasoning tools", () => {
   it("uses a cluster name when joi creates a role-named senior programmer partner", async () => {
     const harness = makeTools();
     await harness.call("partner_create", { description: "负责前端调试分析", displayName: "资深程序员搭档" });
-    expect(harness.addCalls[0]).toMatchObject({ createdBy: "joi", displayName: "编码工坊", description: "负责前端调试分析" });
+    expect(harness.addCalls[0]).toMatchObject({ createdBy: "joi", displayName: "编码搭档", description: "负责前端调试分析" });
   });
 
   it("pins a chosen model source when creating a partner", async () => {

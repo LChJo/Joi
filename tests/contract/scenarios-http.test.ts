@@ -137,7 +137,7 @@ describe("scenarios HTTP API", () => {
       const skillsPack = packs.find((item) => item.id === "builtin-skills");
       expect(skillsPack).toMatchObject({ title: "内置 Skills 套件", totalRoleCount: 1 });
       expect(skillsPack?.teams).toEqual([
-        expect.objectContaining({ title: "演示技能", roles: [expect.objectContaining({ title: "演示技能工坊" })] }),
+        expect.objectContaining({ title: "演示技能", roles: [expect.objectContaining({ title: "演示技能搭档" })] }),
       ]);
 
       const installed = await fetch(`${session.url}/api/v1/scenario-packs/builtin-skills/install`, {

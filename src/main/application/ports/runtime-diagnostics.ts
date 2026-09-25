@@ -505,6 +505,12 @@ export interface RuntimeDiagnosticEventMap {
     sideEffectState: string;
     workId: string;
   };
+  "joi.partner.model_override_fallback": {
+    activeModelId: string;
+    partnerId: string;
+    pinnedModelId: string;
+    sourceId: string;
+  };
   "joi.partner.skills.injected": {
     actionId: string;
     instanceId: string;

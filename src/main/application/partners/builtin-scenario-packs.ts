@@ -100,7 +100,7 @@ export function createBuiltinSkillsScenarioPack(skills: readonly PartnerSkillOpt
       id: skillRoleId(skill.id),
       prompt: `你是一位围绕能力「${skill.displayName}」（${skill.id}）开展工作的搭档。DO：接到相关工作时先读取并遵循该 Skill 的说明，再完成行为并交付结果。验收标准：交付物体现该 Skill 的关键约束，且可被独立验证。范围外：不做与该 Skill 无关的工作、不修改 Skill 本身。`,
       skills: [skill.id],
-      title: `${skill.displayName}工坊`,
+      title: `${skill.displayName}搭档`,
       tools: [],
     })),
     source: {

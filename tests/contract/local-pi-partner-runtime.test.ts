@@ -104,6 +104,46 @@ describe("local Pi coding partner runtime", () => {
     expect(sourceRequests).toEqual([{ sourceId: "source_partner", turnId: "local_pi:action_1" }]);
   });
 
+  it("falls back to the source active model when a pinned model override goes stale", async () => {
+    const faux = fauxProvider({ provider: "local-partner" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const events: { fields: unknown; name: string }[] = [];
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      diagnostics: { emit: (name, fields) => { events.push({ name, fields }); } },
+      prompts: { read: async () => "LOCAL_PARTNER_SYSTEM_SENTINEL" },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: {
+        selectById: async (sourceId, turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId, sourceRevisionId: "sr", turnId }),
+        selectInitial: async () => { throw new Error("global source must not be selected for a pinned partner"); },
+      },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: ["code"],
+      createdAt: "2026-07-28T12:00:00.000Z",
+      displayName: "Local coder",
+      kind: "local-pi",
+      modelIdOverride: "stale-model",
+      modelSourceId: "source_partner",
+      partnerId: "partner_local",
+      partnerRevisionId: "partner_revision_local",
+      promptRef: "prompt_ref_1",
+      registryRevision: 1,
+      skills: [],
+      toolPolicyMode: "ALL",
+      tools: [],
+    });
+
+    await expect(runtime.preflight({ revision, turnId: "turn_stale_pin" }))
+      .resolves.toMatchObject({ modelId: "faux", sourceId: "source_partner" });
+    expect(events).toEqual([{
+      name: "joi.partner.model_override_fallback",
+      fields: { activeModelId: "faux", partnerId: "partner_local", pinnedModelId: "stale-model", sourceId: "source_partner" },
+    }]);
+  });
+
   it("fails closed when the prompt reference cannot be resolved", async () => {
     const runner = new PiCodingPartnerRunner({
       contexts,

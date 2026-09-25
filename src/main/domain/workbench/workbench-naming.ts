@@ -7,12 +7,17 @@ export interface WorkbenchNamingContext {
 const FRONTEND_DEBUG_PATTERN = /(?:前端|frontend)[\s\S]*(?:调试|debug)[\s\S]*(?:分析|analysis)?|(?:调试|debug)[\s\S]*(?:前端|frontend)[\s\S]*(?:分析|analysis)?/iu;
 const ROLE_NAME_PATTERN = /(?:(?:资深|高级|senior|lead)\s*(?:程序员|工程师|开发者|developer|coder)|(?:程序员|工程师|开发者)\s*(?:搭档|partner))/iu;
 
-/** Workbench labels describe a durable work cluster/environment, not a partner role. */
+/**
+ * Workbench labels describe a durable work cluster/environment and are named 工坊
+ * (partner cards are named 搭档, so the two surfaces stay tellable apart). A name
+ * that already carries the suffix is kept as-is instead of double-suffixing.
+ */
 export function workbenchWorkspaceDisplayName(context: WorkbenchNamingContext): string {
   const searchable = [context.name, context.projectLabel, context.scopeSummary].filter((value): value is string => value !== undefined).join(" ");
   if (FRONTEND_DEBUG_PATTERN.test(searchable)) return "aimanadebug";
   const name = context.name.trim();
-  return name.length === 0 ? "工作区" : `${name} 工作区`;
+  if (name.length === 0) return "工坊";
+  return name.endsWith("工坊") ? name : `${name} 工坊`;
 }
 
 /** Keep the user-facing cluster label as the final directory segment while rejecting path syntax. */
@@ -21,17 +26,29 @@ export function workspaceDirectoryName(displayName: string): string {
   return normalized.length === 0 ? "workbench" : normalized.slice(0, 80);
 }
 
-/** Agent cards use capability clusters; role/persona labels are too narrow and duplicate Workbench scope. */
+const WORKSHOP_SUFFIX_PATTERN = /工坊$/u;
+const CLUSTER_SUFFIX_PATTERN = /(?:工坊|搭档)$/u;
+
+/**
+ * Agent cards use capability clusters named as 搭档; role/persona labels are too
+ * narrow and duplicate Workbench scope, and 工坊-style labels belong to the
+ * Workbench, not the partner card. A lingering 工坊 suffix (older prompts asked for
+ * it) is normalized back to 搭档 so the convention holds whatever the model emits.
+ */
 export function partnerClusterName(displayName: string): string {
   const normalized = displayName.trim();
-  return ROLE_NAME_PATTERN.test(normalized) ? "编码工坊" : normalized;
+  if (ROLE_NAME_PATTERN.test(normalized)) return "编码搭档";
+  return normalized.replace(WORKSHOP_SUFFIX_PATTERN, "搭档");
 }
 
 const QUOTED_SPAN_PATTERN = /「[^」]*」|『[^』]*』|“[^”]*”|‘[^’]*’|"[^"]*"|'[^']*'|\([^)]*\)|（[^）]*）|\[[^\]]*\]/gu;
 const INSTANCE_TOKEN_PATTERN = /\b[a-z]+[._-]?\d+(?:\.\d+)*\b|\bv?\d+(?:\.\d+)+\b|\b\d+\b/giu;
 
-/** Stable reuse key: strips one-off instance tokens (model names, version numbers, quoted/parenthetical notes) so task-instance names fall back to their capability cluster. */
+/** Stable reuse key: strips one-off instance tokens (model names, version numbers, quoted/parenthetical notes) and the 工坊/搭档 cluster suffix so task-instance names — and pre-rename stored names — fall back to their capability cluster. */
 export function partnerClusterKey(displayName: string): string {
-  const key = partnerClusterName(displayName).replace(QUOTED_SPAN_PATTERN, " ").replace(INSTANCE_TOKEN_PATTERN, " ").replace(/\s+/gu, " ").trim().toLocaleLowerCase();
+  const compacted = partnerClusterName(displayName).replace(QUOTED_SPAN_PATTERN, " ").replace(INSTANCE_TOKEN_PATTERN, " ").replace(/\s+/gu, " ").trim();
+  // Strip the cluster suffix last: quoted-span removal can leave a trailing space
+  // that would otherwise block the end anchor.
+  const key = compacted.replace(CLUSTER_SUFFIX_PATTERN, "").trim().toLocaleLowerCase();
   return key.length === 0 ? displayName.trim().toLocaleLowerCase() : key;
 }

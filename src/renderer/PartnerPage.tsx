@@ -274,7 +274,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       </div>
       <div className="tab-panel" style={tab === "basic" ? undefined : { display: "none" }}>
         <div className="partner-basic-grid">
-          <label>名称<input defaultValue={partner?.displayName} name="displayName" placeholder="能力聚类名称，如：编码工坊" required /></label>
+          <label>名称<input defaultValue={partner?.displayName} name="displayName" placeholder="能力聚类名称，如：编码搭档" required /></label>
           <label>描述（给 joi 做参考）<textarea defaultValue={partner?.description} name="description" placeholder="能力范围：一句话说清它擅长什么；不要重复工作区环境" rows={3} /></label>
           {partner === null ? <label>搭档提示词<textarea name="prompt" placeholder="交给它工作时附带的工作提示，仅本机保存" rows={5} /></label> : <div className="prompt-editor-field">
             <div className="prompt-editor-heading">

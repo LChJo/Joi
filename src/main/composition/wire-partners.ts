@@ -40,6 +40,7 @@ export function wirePartners(input: {
   const partnerEngines = new Map<string, PartnerEngineRuntime>([
     ["pi-core", new PiPartnerEngineRuntime({
       usage: modelSourceStack.statistics,
+      diagnostics,
       contexts: persistence.workbenchContextRepository,
       prompts: persistence.partnerPromptStore,
       resolver: modelSourceStack.configuredModelResolver,
