@@ -163,6 +163,25 @@ describe("deterministic-source-fallback-classification", () => {
     })).resolves.toBeNull();
   });
 
+  it("deprioritizes a route that rejected the request for exceeding its window", async () => {
+    const freshFirst = { ...first, lastValidatedAt: "2026-09-03T10:00:00.000Z" };
+    const freshSecond = { ...second, lastValidatedAt: "2026-09-03T10:00:00.000Z" };
+    const selector = new ReasoningSourceSelector({ ...repository, list: async () => [freshFirst, freshSecond] }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate: vi.fn() },
+    });
+    await expect(selector.selectInitial("turn-before")).resolves.toMatchObject({ sourceId: "first" });
+
+    // An input that exceeded the window outright is the same capacity mismatch as one that left no
+    // completion budget; unhandled, the next large dispatch rediscovers it on the same route.
+    await selector.reportRunFailure("first", { code: "context_too_large" });
+    await expect(selector.selectInitial("turn-after")).resolves.toMatchObject({ sourceId: "second" });
+
+    // Avoiding every route must never strand a dispatch: the second pass still reaches them.
+    await selector.reportRunFailure("second", { code: "context_too_large" });
+    await expect(selector.selectInitial("turn-all-avoided")).resolves.toMatchObject({ sourceId: "first" });
+  });
+
   it("removes a runtime 403 source before running one diagnostic probe", async () => {
     const states: ModelSourceRecord[] = [];
     const validate = vi.fn(async () => ({ reasonCode: "model_access_forbidden", status: "NEEDS_AUTH" as const, validatedAt: "2026-09-03T10:00:01.000Z" }));

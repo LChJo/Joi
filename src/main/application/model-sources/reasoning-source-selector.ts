@@ -59,9 +59,13 @@ export class ReasoningSourceSelector {
   /** Removes a failed auth route from dispatch immediately, then runs one coalesced no-tool diagnostic probe. */
   async reportRunFailure(sourceId: string, error: unknown): Promise<void> {
     // Readiness probes only prove a route is reachable, not that it can hold a large partner
-    // context, so a budget rejection is remembered in-memory and skipped by selection for a
-    // bounded window instead of being rediscovered by every large dispatch.
-    if (classifyPartnerRunFailure(error, { phase: "MODEL", sideEffectState: "NONE" }).reasonCode === "model_context_budget_exhausted") {
+    // context, so a capacity rejection is remembered in-memory and skipped by selection for a
+    // bounded window instead of being rediscovered by every large dispatch. An input that exceeded
+    // the window outright is the same capacity mismatch as one that left no completion budget;
+    // both stay reachable through selectInitial's second pass, so avoiding every route cannot
+    // strand a dispatch.
+    const capacityReason = classifyPartnerRunFailure(error, { phase: "MODEL", sideEffectState: "NONE" }).reasonCode;
+    if (capacityReason === "model_context_budget_exhausted" || capacityReason === "context_too_large") {
       this.#capacityAvoided.set(sourceId, this.#nowMillis() + CAPACITY_AVOIDANCE_MILLIS);
     }
     if (this.options === undefined || this.repository.get === undefined
