@@ -28,9 +28,12 @@ export class NativeAgentEventProjector {
     }
     if (event.type === "tool_activity") {
       const toolName = event.toolName.slice(0, 120);
+      const toolCallId = event.toolCallId.slice(0, 200);
+      // A call without a summary keeps no `text` key at all, so an engine that cannot
+      // describe a call renders exactly as it did before.
       this.#drafts.push(event.state === "started"
-        ? { ...this.#stamp(), kind: "TOOL_CALL", role: "TOOL", toolName }
-        : { ...this.#stamp(), kind: "TOOL_RESULT", role: "TOOL", text: event.state === "completed" ? "执行完成" : "执行失败", toolName });
+        ? { ...this.#stamp(), kind: "TOOL_CALL", role: "TOOL", toolCallId, toolName, ...(event.summary === undefined ? {} : { text: event.summary }) }
+        : { ...this.#stamp(), kind: "TOOL_RESULT", role: "TOOL", text: event.state === "completed" ? "执行完成" : "执行失败", toolCallId, toolName });
       return;
     }
     if (event.type === "artifact") {

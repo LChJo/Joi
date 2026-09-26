@@ -2,7 +2,7 @@ import { normalizeAgentConversationEntries } from "../../src/main/application/pa
 import { createApiHandler } from "../../src/main/interfaces/http/api-handler.js";
 import { startRuntimeListeners } from "../../src/main/interfaces/http/runtime-listeners.js";
 import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository.js";
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, JoiHomeFeedDto } from "../../src/shared/joi.js";
+import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchToolTraceDto, JoiHomeFeedDto } from "../../src/shared/joi.js";
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 function cookieFrom(response: Response): string {
@@ -31,6 +31,7 @@ describe("Workbench Agent HTTP API", () => {
       dismiss: fixture.workbenchAgents.dismiss.bind(fixture.workbenchAgents),
       list: fixture.workbenchAgents.list.bind(fixture.workbenchAgents),
       openArtifact,
+      revealToolTrace: fixture.workbenchAgents.revealToolTrace.bind(fixture.workbenchAgents),
     };
     const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, workbenchAgents }), loopbackPort: 0 });
     try {
@@ -105,6 +106,77 @@ describe("Workbench Agent HTTP API", () => {
 
       const removed = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/agents/${encodeURIComponent(ephemeral.instanceId)}`, { headers: writeHeaders, method: "DELETE" });
       expect(removed.status).toBe(204);
+    } finally {
+      await listeners.close();
+      await fixture.close();
+    }
+  });
+
+  it("keeps tool bodies off the conversation and returns them only through the desktop reveal", async () => {
+    const fixture = await createRuntimeFixture();
+    const workbench = await fixture.workbenchRegistry.create({ name: "工程", personaSummary: "persona", projectLabel: "joi", scopeSummary: "调试" });
+    const partner = await fixture.partners.add({ capabilities: [], displayName: "实现搭档", kind: "local-pi", skills: [], tools: [] });
+    const instance = await fixture.instances.ensure({ workbenchId: workbench.workbenchId, partnerId: partner.partnerId, sessionPolicy: "RESIDENT" });
+    const repository = new SqliteWorkbenchAgentRepository(fixture.database);
+    const runId = "run-trace-http";
+    await repository.replaceRun(instance.instanceId, runId, normalizeAgentConversationEntries({
+      agentId: instance.instanceId, runId, startedAt: fixture.clock.now().toISOString(),
+    }, [
+      { kind: "TOOL_CALL", role: "TOOL", text: "npm test", toolCallId: "toolu_http", toolName: "bash" },
+      { kind: "TOOL_RESULT", role: "TOOL", text: "执行完成", toolCallId: "toolu_http", toolName: "bash" },
+    ]));
+    await repository.appendToolTrace({
+      agentId: instance.instanceId, createdAt: fixture.clock.now().toISOString(), runId,
+      trace: { command: "cd /home/private/repo && npm test", isError: false, result: "42 passing", toolCallId: "toolu_http", toolName: "bash", truncated: false },
+    });
+    const workbenchAgents = {
+      conversation: fixture.workbenchAgents.conversation.bind(fixture.workbenchAgents),
+      dismiss: fixture.workbenchAgents.dismiss.bind(fixture.workbenchAgents),
+      list: fixture.workbenchAgents.list.bind(fixture.workbenchAgents),
+      openArtifact: vi.fn(() => Promise.resolve({ opened: true as const })),
+      revealToolTrace: fixture.workbenchAgents.revealToolTrace.bind(fixture.workbenchAgents),
+    };
+    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, workbenchAgents }), loopbackPort: 0 });
+    try {
+      const bootstrap = await fixture.auth.issueDesktopBootstrap();
+      const authenticated = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
+        body: JSON.stringify({ nonce: bootstrap.nonce }), headers: { "content-type": "application/json", origin: "null" }, method: "POST",
+      });
+      const { csrfToken } = await authenticated.json() as { csrfToken: string };
+      const headers = { cookie: cookieFrom(authenticated), origin: "null" };
+      const writeHeaders = { ...headers, "content-type": "application/json", "x-csrf-token": csrfToken };
+      const base = `${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/agents/${encodeURIComponent(instance.instanceId)}`;
+
+      // The shared projection carries the summary and the opaque id, never the body.
+      const page = await (await fetch(`${base}/conversation`, { headers })).json() as AgentConversationPageDto;
+      expect(page.items[0]).toMatchObject({ kind: "TOOL_CALL", text: "npm test", toolCallId: "toolu_http" });
+      expect(JSON.stringify(page)).not.toMatch(/\/home\/private|42 passing/u);
+
+      const reveal = await fetch(`${base}/tool-traces/toolu_http/reveal`, { headers: writeHeaders, method: "POST" });
+      expect(reveal.status).toBe(200);
+      expect(reveal.headers.get("cache-control")).toBe("no-store");
+      const revealed = await reveal.json() as WorkbenchToolTraceDto;
+      expect(revealed.command).toContain("/home/private/repo");
+      expect(revealed).toMatchObject({ isError: false, result: "42 passing", toolCallId: "toolu_http", toolName: "bash", truncated: false });
+
+      expect((await fetch(`${base}/tool-traces/toolu_missing/reveal`, { headers: writeHeaders, method: "POST" })).status).toBe(404);
+      const foreign = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent("workbench_elsewhere")}/agents/${encodeURIComponent(instance.instanceId)}/tool-traces/toolu_http/reveal`, { headers: writeHeaders, method: "POST" });
+      expect(foreign.status).toBe(404);
+
+      await fetch(`${listeners.loopback.url}/api/v1/auth/setup`, {
+        body: JSON.stringify({ password: "correct horse battery staple" }), headers: writeHeaders, method: "POST",
+      });
+      const login = await fetch(`${listeners.loopback.url}/api/v1/auth/login`, {
+        body: JSON.stringify({ password: "correct horse battery staple" }),
+        headers: { "content-type": "application/json", origin: listeners.loopback.url }, method: "POST",
+      });
+      const lanGrant = await login.json() as { csrfToken: string };
+      const lanDenied = await fetch(`${base}/tool-traces/toolu_http/reveal`, {
+        headers: { "content-type": "application/json", cookie: cookieFrom(login), origin: listeners.loopback.url, "x-csrf-token": lanGrant.csrfToken },
+        method: "POST",
+      });
+      expect(lanDenied.status).toBe(403);
+      expect(await lanDenied.json()).toMatchObject({ code: "desktop_required" });
     } finally {
       await listeners.close();
       await fixture.close();

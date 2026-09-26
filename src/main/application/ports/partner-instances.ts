@@ -2,10 +2,22 @@ import type { PartnerEngine, PartnerRevision } from "../../domain/partners/partn
 import type { ModelSourceTurnPin } from "../../domain/model-sources/model-source.js";
 import type { PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "./partner-execution.js";
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
+import type { ToolTraceDraft } from "../partners/tool-trace-presentation.js";
 import type { NativeAgentEvent } from "./native-agent-events.js";
 
 export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
 export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE";
+
+/**
+ * One completed tool call's private body, on its way to the local store. This is a
+ * deliberate, explicit side channel: it never travels as a `NativeAgentEvent`, so the
+ * event surface keeps its "parameters and results are dropped before the port" contract
+ * (AC-62). Only engines that can supply it opt in.
+ */
+export interface PartnerToolTraceProgress {
+  instanceId: string;
+  trace: ToolTraceDraft;
+}
 
 export interface PartnerInstanceRecord {
   workbenchId: string;
@@ -49,6 +61,8 @@ export interface ResidentTurnInput {
   onEvent?: (event: NativeAgentEvent) => Promise<void>;
   /** Payload-free execution activity; independent of conversation projection. */
   onProgress?: () => void;
+  /** Private per-call tool body for local debugging; never a `NativeAgentEvent`. */
+  onToolTrace?: (trace: ToolTraceDraft) => Promise<void>;
   request: PartnerRunRequest;
   restoredMessages: unknown[] | null;
   revision: PartnerRevision;
@@ -65,6 +79,8 @@ export interface PartnerExecutionContext {
   onEvent?: (event: NativeAgentEvent) => Promise<void>;
   /** Payload-free execution activity; independent of conversation projection. */
   onProgress?: () => void;
+  /** Private per-call tool body for local debugging; never a `NativeAgentEvent`. */
+  onToolTrace?: (trace: ToolTraceDraft) => Promise<void>;
   skillEnvironmentKeys: readonly string[];
   skillSection: string;
 }

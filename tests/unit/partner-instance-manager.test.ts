@@ -3,6 +3,7 @@
 import { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager.js";
 import type { NativeAgentEvent } from "../../src/main/application/ports/native-agent-events.js";
 import type { PartnerRunRequest, PartnerRunStatus } from "../../src/main/application/ports/partner-execution.js";
+import type { ToolTraceDraft } from "../../src/main/application/partners/tool-trace-presentation.js";
 import type {
   PartnerEngineRuntime,
   PartnerInstanceRecord,
@@ -84,6 +85,10 @@ class MemoryInstanceMessageStore implements PartnerInstanceMessageStore {
   async save(instanceId: string, messages: unknown[]) { this.saved.set(instanceId, messages); }
 }
 
+function traceDraft(toolName: string): ToolTraceDraft {
+  return { command: `${toolName} --private`, isError: false, result: "PRIVATE_TRACE_RESULT", toolCallId: `toolu_${toolName}`, toolName, truncated: false };
+}
+
 class FakeEngine implements PartnerEngineRuntime {
   readonly ephemeralRuns: { knowledgeSection: string; request: PartnerRunRequest; skillEnvironmentKeys?: readonly string[]; skillSection: string }[] = [];
   readonly evicted: string[] = [];
@@ -100,9 +105,10 @@ class FakeEngine implements PartnerEngineRuntime {
   async health() { return { available: true }; }
   async preflight() { return this.preflightPin; }
   toolOptions() { return [] as readonly string[]; }
-  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { onEvent?: (event: NativeAgentEvent) => void | Promise<void>; onProgress?: () => void; knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
+  async runEphemeral(runRequest: PartnerRunRequest, _revision: PartnerRevision, context: { onEvent?: (event: NativeAgentEvent) => void | Promise<void>; onProgress?: () => void; onToolTrace?: (trace: ToolTraceDraft) => void | Promise<void>; knowledgeSection: string; skillEnvironmentKeys?: readonly string[]; skillSection: string }) {
     context.onProgress?.();
     for (const event of this.events) await context.onEvent?.(event);
+    await context.onToolTrace?.(traceDraft("read"));
     this.ephemeralRuns.push({
       knowledgeSection: context.knowledgeSection,
       request: runRequest,
@@ -126,6 +132,7 @@ class FakeEngine implements PartnerEngineRuntime {
   async runResidentTurn(input: ResidentTurnInput) {
     input.onProgress?.();
     for (const event of this.events) await input.onEvent?.(event);
+    await input.onToolTrace?.(traceDraft("bash"));
     this.residentTurns.push(input);
     if (this.failResident) throw new Error("turn_failed");
     const messages = [...(input.restoredMessages ?? []), { content: input.request.taskProjection, role: "user" }];
@@ -180,8 +187,8 @@ describe("partner-instance-manager", () => {
     const first = clock.now().toISOString();
     engine.events = [
       { type: "message", role: "agent", parts: [{ type: "text", text: "investigating" }] },
-      { type: "tool_activity", toolName: "read", state: "started" },
-      { type: "tool_activity", toolName: "read", state: "completed" },
+      { type: "tool_activity", toolCallId: "toolu_read", toolName: "read", state: "started" },
+      { type: "tool_activity", toolCallId: "toolu_read", toolName: "read", state: "completed" },
       { type: "message", role: "agent", parts: [{ type: "text", text: "done" }] },
     ];
     const result = await manager.dispatch({ request, revision, sessionPolicy, onConversation: async () => { clock.advance(1000); } });
@@ -194,6 +201,22 @@ describe("partner-instance-manager", () => {
     const onProgress = vi.fn();
     await manager.dispatch({ request, revision, sessionPolicy, onProgress });
     expect(onProgress).toHaveBeenCalledExactlyOnceWith();
+  });
+
+  it.each(["EPHEMERAL", "RESIDENT"] as const)("stamps the running instance onto %s tool traces", async (sessionPolicy) => {
+    const { manager } = makeManager();
+    const onToolTrace = vi.fn();
+    const result = await manager.dispatch({ onToolTrace, request, revision, sessionPolicy });
+
+    expect(onToolTrace).toHaveBeenCalledTimes(1);
+    expect(onToolTrace).toHaveBeenCalledWith({ instanceId: result.instanceId, trace: traceDraft(sessionPolicy === "EPHEMERAL" ? "read" : "bash") });
+  });
+
+  it("leaves the private tool body out of everything the dispatch returns", async () => {
+    const { manager } = makeManager();
+    const result = await manager.dispatch({ onToolTrace: vi.fn(), request, revision, sessionPolicy: "EPHEMERAL" });
+    // The trace travels only on its own channel; the conversation projection stays payload-free.
+    expect(JSON.stringify(result)).not.toContain("PRIVATE_TRACE_RESULT");
   });
 
   it("passes the preflight source pin into resident turns", async () => {

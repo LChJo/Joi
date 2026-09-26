@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, Type } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
 
+import type { ToolTraceDraft } from "../../src/main/application/partners/tool-trace-presentation.js";
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
 import { boundPartnerModelContext, partnerContextMaxChars, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import {
@@ -258,6 +259,7 @@ describe("Pi partner engine runtime", () => {
       partnerId: "partner_live", partnerRevisionId: "partner_revision_live", registryRevision: 1, skills: [], tools: ["read"],
     });
     const snapshots: unknown[] = [];
+    const traces: ToolTraceDraft[] = [];
     let publishAttempts = 0;
     const context = {
       knowledgeSection: "",
@@ -266,6 +268,7 @@ describe("Pi partner engine runtime", () => {
         snapshots.push(event);
         if (publishAttempts === 1) throw new Error("display projection temporarily unavailable");
       },
+      onToolTrace: async (trace: ToolTraceDraft) => { traces.push(trace); },
       skillEnvironmentKeys: [],
       skillSection: "",
     };
@@ -290,6 +293,18 @@ describe("Pi partner engine runtime", () => {
     expect(serialized).not.toContain("PRIVATE_TOOL_RESULT");
     expect(serialized).not.toContain("PRIVATE_REASONING");
     expect(serialized).not.toContain("live-secret");
+
+    // The same run's private channel keeps the body the event surface must not carry. The
+    // `token` argument survives masking on purpose: the named-secret rule only matches
+    // `token=value`, not JSON's `"token":"value"`, so these sentinels stay greppable here.
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.command).toContain("/PRIVATE/live-secret.txt");
+    expect(traces[0]?.command).toContain("PRIVATE_TOOL_ARGUMENT");
+    expect(traces[0]?.result).toContain("PRIVATE_TOOL_RESULT");
+    expect(traces[0]).toMatchObject({ isError: false, toolName: "read", truncated: false });
+    // The opaque id is the one thing both surfaces share: it is a correlation key, not a payload.
+    expect(traces[0]?.toolCallId).toEqual(expect.any(String));
+    expect(serialized).toContain(traces[0]?.toolCallId ?? "unreachable");
   });
 
   it("pauses with actionable input when a Skill command cannot access its credential environment variable", async () => {

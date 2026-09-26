@@ -38,7 +38,7 @@ describe("Agent conversation presentation", () => {
       { kind: "TOOL_CALL", role: "TOOL", toolName: "edit" },
       { kind: "TOOL_CALL", role: "TOOL", toolName: "shell" },
       { kind: "TOOL_RESULT", role: "TOOL", text: "text result" },
-      { kind: "TOOL_RESULT", role: "TOOL", text: "result value" },
+      { kind: "TOOL_RESULT", role: "TOOL", text: "result value", toolName: "shell" },
       { kind: "TOOL_RESULT", role: "TOOL", text: "content value" },
       { kind: "MARKDOWN", role: "AGENT", text: "final" },
     ]));
@@ -47,6 +47,26 @@ describe("Agent conversation presentation", () => {
     expect(draftAgentConversation("task", "  ", [null, "primitive"])).toEqual([{ kind: "MARKDOWN", role: "USER", text: "task" }]);
     expect(sanitizeAgentConversationText("https://example.com/x apiKey=abc csrf_token=def /workspace/a"))
       .toBe("https://example.com/x apiKey=[redacted] csrf_token=[redacted] [redacted-path]");
+  });
+
+  it("keeps one entry per call with its correlation id and reads pi's nested tool output", () => {
+    const drafts = draftAgentConversation("task", "final", [
+      { content: [{ text: "I will look", type: "text" }, { arguments: { command: "npm test" }, id: "toolu_a", name: "bash", type: "toolCall" }], role: "assistant" },
+      { content: [{ text: "42 passing", type: "text" }], role: "toolResult", toolCallId: "toolu_a", toolName: "bash" },
+      { content: [{ arguments: { command: "npm run lint" }, id: "toolu_b", name: "bash", type: "toolCall" }], role: "assistant" },
+      { content: [{ text: "clean", type: "text" }], role: "toolResult", toolCallId: "toolu_b", toolName: "bash" },
+    ]);
+
+    // Two same-named calls stay two entries: collapsing them by name would drop the id that
+    // opens each call's private body.
+    expect(drafts.filter((entry) => entry.kind === "TOOL_CALL")).toEqual([
+      { kind: "TOOL_CALL", role: "TOOL", toolCallId: "toolu_a", toolName: "bash" },
+      { kind: "TOOL_CALL", role: "TOOL", toolCallId: "toolu_b", toolName: "bash" },
+    ]);
+    expect(drafts.filter((entry) => entry.kind === "TOOL_RESULT").map((entry) => entry.text)).toEqual(["42 passing", "clean"]);
+    expect(drafts.at(-1)).toEqual({ kind: "MARKDOWN", role: "AGENT", text: "final" });
+    // Arguments never travel as text on this surface.
+    expect(JSON.stringify(drafts)).not.toContain("npm test");
   });
 
   it("drops path placeholders for card-facing text while keeping secret masking", () => {

@@ -291,6 +291,8 @@ WakeRecoveryService → src/ 内零引用，仅 tests/integration/wake-audit-rep
 
 **9 个稳定失败全部同因**：迁移 `051`（未纳入 git）把 schema 推到 51，而 4 个测试文件硬编码 50。分布：`sqlite-runtime.test.ts:17`、`sqlite-partner-registry.test.ts:102`、`joi-orchestration-migration.test.ts`（4 例）、`backup-restore.test.ts`、`diagnostics-backup.test.ts`、`remote-joi-app.test.tsx`。这是已知的维护耦合——每加一个迁移都要手改多处测试。
 
+> **2026-09-26 补注**：该耦合已消除。上列测试文件现均改用 `latestMigrationVersion(resources/migrations)` 动态取值，`remote-joi-app.test.tsx` 已无 `schemaVersion` 断言。新增迁移真正的 lockstep 项只剩两处：`tests/contract/http-route-manifest.test.ts` 的 `GOLDEN_ROUTES`（仅当新增 HTTP 路由）与 `resources/migrations/README.md` 的逐条说明。
+
 **2 个 flake 是实测区分出来的**（3 次全量 + 1 次隔离对比）：
 
 | 测试 | 全量运行 | 隔离运行 | 判断 |

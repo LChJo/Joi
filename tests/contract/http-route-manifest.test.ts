@@ -41,6 +41,7 @@ const GOLDEN_ROUTES = [
   "GET /api/v1/workbenches",
   "GET /api/v1/workbenches/:workbenchId/agents",
   "GET /api/v1/workbenches/:workbenchId/agents/:agentId/conversation",
+  "POST /api/v1/workbenches/:workbenchId/agents/:agentId/tool-traces/:toolCallId/reveal",
   "POST /api/v1/workbenches/:workbenchId/artifacts/:artifactId/open",
   "DELETE /api/v1/workbenches/:workbenchId/agents/:agentId",
   "GET /api/v1/workbenches/:workbenchId",
@@ -129,6 +130,7 @@ describe("HTTP route manifest", () => {
     }
     expect(AUTHENTICATED_ROUTES.find((route) => route.id === "POST /api/v1/partners/:partnerId/prompt/reveal")?.auth).toBe("write");
     expect(AUTHENTICATED_ROUTES.find((route) => route.id === "POST /api/v1/workbenches/:workbenchId/artifacts/:artifactId/open")?.auth).toBe("write");
+    expect(AUTHENTICATED_ROUTES.find((route) => route.id === "POST /api/v1/workbenches/:workbenchId/agents/:agentId/tool-traces/:toolCallId/reveal")?.auth).toBe("write");
     expect(PUBLIC_ROUTES.length).toBe(6);
   });
 });

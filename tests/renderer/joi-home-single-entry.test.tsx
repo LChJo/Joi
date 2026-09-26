@@ -2,8 +2,8 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
-import { WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
-import type { WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import { AgentMessageStream, WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
+import type { WorkbenchAgentCardDto, WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution.js";
 
 const readySource: ModelSourceDto = {
@@ -1997,4 +1997,75 @@ it("exposes the evolution panel on a dedicated workbench detail tab", async () =
   expect(await screen.findByText(/从执行经验中改进本工作台的上下文整理/u)).toBeInTheDocument();
   expect(screen.getByRole("radio", { name: "低（每日 50 次）" })).toBeChecked();
   expect(screen.getByText("正在积累可评价的经验")).toBeInTheDocument();
+});
+
+describe("tool trace reveal", () => {
+  const agent: WorkbenchAgentCardDto = {
+    agentId: "agent-trace", canDelete: false, createdAt: "2026-09-26T10:00:00.000Z", engine: "pi-core",
+    lastActivityAt: "2026-09-26T10:00:00.000Z", partnerId: "partner-1", partnerName: "实现者",
+    sessionPolicy: "RESIDENT", status: "RUNNING", transport: "LOCAL", workbenchId: "workbench-1",
+  };
+  const runCall = { createdAt: "2026-09-26T10:00:00.000Z", entryId: "call-1", kind: "TOOL_CALL" as const, role: "TOOL" as const, sequence: 0, text: "npm test", toolCallId: "toolu_1", toolName: "bash" };
+  const runResult = { createdAt: "2026-09-26T10:00:01.000Z", entryId: "result-1", kind: "TOOL_RESULT" as const, role: "TOOL" as const, sequence: 1, text: "执行完成", toolCallId: "toolu_1", toolName: "bash" };
+  const liveCall = { createdAt: "2026-09-26T10:00:02.000Z", entryId: "call-2", kind: "TOOL_CALL" as const, role: "TOOL" as const, sequence: 2, text: "npm run lint", toolCallId: "toolu_2", toolName: "bash" };
+
+  it("names the running call, shows its summary folded, and reveals the body only on demand", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "agentConversation").mockResolvedValue({ agent, items: [runCall, runResult, liveCall] });
+    const reveal = vi.spyOn(api, "revealWorkbenchToolTrace").mockResolvedValue({
+      command: "npm test", isError: false, result: "42 passing", toolCallId: "toolu_1", toolName: "bash", truncated: false,
+    });
+
+    render(<AgentMessageStream agent={agent} api={api} workbenchId="workbench-1" />);
+
+    // The folded line marks the in-flight call and still names what it is running.
+    expect(await screen.findByText("bash ×2")).toBeInTheDocument();
+    expect(screen.getByText("运行中")).toBeInTheDocument();
+    expect(screen.getByText("npm run lint", { selector: ".agent-tool-summary" })).toBeInTheDocument();
+
+    const details = screen.getByText("bash ×2").closest("details");
+    if (details === null) throw new Error("missing tool group");
+    const revealButton = within(details).getByText("查看完整输出");
+    expect(revealButton).not.toBeVisible();
+    expect(reveal).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("bash ×2"));
+    expect(revealButton).toBeVisible();
+    fireEvent.click(revealButton);
+    expect(reveal).toHaveBeenCalledWith("workbench-1", "agent-trace", "toolu_1");
+    expect(await within(details).findByText("42 passing")).toBeInTheDocument();
+    expect(within(details).getByText("命令")).toBeInTheDocument();
+  });
+
+  it("reports a failed read and never offers a body for calls recorded without an id", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "agentConversation").mockResolvedValue({
+      agent: { ...agent, status: "COMPLETED" },
+      items: [
+        runCall, runResult,
+        { createdAt: "2026-09-26T10:00:03.000Z", entryId: "legacy-call", kind: "TOOL_CALL", role: "TOOL", sequence: 3, text: "历史调用", toolName: "read" },
+        { createdAt: "2026-09-26T10:00:04.000Z", entryId: "legacy-result", kind: "TOOL_RESULT", role: "TOOL", sequence: 4, text: "执行完成", toolName: "read" },
+      ],
+    });
+    vi.spyOn(api, "revealWorkbenchToolTrace").mockRejectedValue(new ApiError("workbench_tool_trace_not_found", "这条工具调用没有保存输出。", 404));
+
+    render(<AgentMessageStream agent={agent} api={api} workbenchId="workbench-1" />);
+
+    // A finished run must not keep claiming a live call.
+    expect(await screen.findByText("bash ×1")).toBeInTheDocument();
+    expect(screen.queryByText("运行中")).not.toBeInTheDocument();
+
+    // Entries persisted before tool call ids existed simply have nothing to reveal.
+    const legacy = screen.getByText("read ×1").closest("details");
+    if (legacy === null) throw new Error("missing legacy tool entry");
+    fireEvent.click(screen.getByText("read ×1"));
+    expect(within(legacy).queryByText("查看完整输出")).not.toBeInTheDocument();
+
+    const bash = screen.getByText("bash ×1").closest("details");
+    if (bash === null) throw new Error("missing tool entry");
+    fireEvent.click(screen.getByText("bash ×1"));
+    fireEvent.click(within(bash).getByText("查看完整输出"));
+    expect(await within(bash).findByRole("alert")).toHaveTextContent("这条工具调用没有保存输出。");
+    expect(within(bash).getByText("重试")).toBeInTheDocument();
+  });
 });

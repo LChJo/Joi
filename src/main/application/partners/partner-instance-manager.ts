@@ -7,8 +7,10 @@ import type {
   PartnerInstanceMessageStore,
   PartnerInstanceRecord,
   PartnerInstanceRepository,
+  PartnerToolTraceProgress,
   SessionPolicy,
 } from "../ports/partner-instances.js";
+import type { ToolTraceDraft } from "./tool-trace-presentation.js";
 import type { PartnerRegistryRepository } from "../ports/partner-registry.js";
 import {
   emitRuntimeDiagnostic,
@@ -83,6 +85,8 @@ export class PartnerInstanceManager {
     instanceId?: string;
     onConversation?: (progress: PartnerConversationProgress) => Promise<void>;
     onProgress?: () => void;
+    /** Receives each completed call's private body for the local debug store. */
+    onToolTrace?: (progress: PartnerToolTraceProgress) => Promise<void>;
     request: PartnerRunRequest;
     revision: PartnerRevision;
     sessionPolicy?: SessionPolicy;
@@ -216,6 +220,10 @@ export class PartnerInstanceManager {
       liveProjector.apply(event);
       await input.onConversation?.({ conversation: liveProjector.snapshot(), instanceId: record.instanceId });
     };
+    // The engine knows the call but not which instance ran it; the manager supplies the id.
+    const onToolTrace = input.onToolTrace === undefined ? undefined : async (trace: ToolTraceDraft) => {
+      await input.onToolTrace?.({ instanceId: record.instanceId, trace });
+    };
     try {
       if (input.revision.skills.length > 0) {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.skills.injected", {
@@ -233,6 +241,7 @@ export class PartnerInstanceManager {
           knowledgeSection,
           ...(onEvent === undefined ? {} : { onEvent }),
           ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
+          ...(onToolTrace === undefined ? {} : { onToolTrace }),
           skillEnvironmentKeys,
           skillSection,
         }, input.signal === undefined ? undefined : { signal: input.signal });
@@ -266,6 +275,7 @@ export class PartnerInstanceManager {
         knowledgeSection,
         ...(onEvent === undefined ? {} : { onEvent }),
         ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
+        ...(onToolTrace === undefined ? {} : { onToolTrace }),
         request: input.request,
         restoredMessages: restored,
         revision: input.revision,

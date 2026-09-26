@@ -385,7 +385,22 @@ export interface AgentConversationEntryDto {
   role: "USER" | "AGENT" | "TOOL" | "SYSTEM";
   sequence: number;
   text?: string;
+  /** Opaque link to the private tool body; never a payload, so it stays safe on this surface. */
+  toolCallId?: string;
   toolName?: string;
+}
+
+/**
+ * Private per-call tool body for local debugging (AC-61). Read on demand only, never part
+ * of the conversation projection, the home feed, diagnostics, SSE or the remote surface.
+ */
+export interface WorkbenchToolTraceDto {
+  command: string;
+  isError: boolean;
+  result: string;
+  toolCallId: string;
+  toolName: string;
+  truncated: boolean;
 }
 
 export interface AgentConversationPageDto {

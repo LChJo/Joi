@@ -204,9 +204,9 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
         if (item.type === "agent_message" && event.type === "item.completed") { texts.push(item.text); await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: item.text }] }); continue; }
         const toolName = codexToolName(item);
         if (toolName === undefined) continue;
-        if (event.type === "item.started" && !started.has(item.id)) { started.add(item.id); await emit?.({ type: "tool_activity", toolName, state: "started" }); }
+        if (event.type === "item.started" && !started.has(item.id)) { started.add(item.id); await emit?.({ type: "tool_activity", toolCallId: item.id, toolName, state: "started" }); }
         const state = codexToolState(item, event.type);
-        if (state !== undefined && !ended.has(item.id)) { ended.add(item.id); await emit?.({ type: "tool_activity", toolName, state }); }
+        if (state !== undefined && !ended.has(item.id)) { ended.add(item.id); await emit?.({ type: "tool_activity", toolCallId: item.id, toolName, state }); }
       }
     }
     if (!completed) throw new DomainError("local_cli_run_incomplete", "Codex ended without a successful turn.");

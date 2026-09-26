@@ -65,6 +65,23 @@ export const WORKBENCH_ROUTES: RouteDefinition[] = [
     },
   },
   {
+    // Private tool bodies are machine-generated facts about this computer (commands and local
+    // paths), not text the user typed, so they are desktop-only rather than merely write-gated.
+    auth: "write",
+    id: "POST /api/v1/workbenches/:workbenchId/agents/:agentId/tool-traces/:toolCallId/reveal",
+    match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/agents\/([^/]+)\/tool-traces\/([^/]+)\/reveal$/),
+    handle: async (ctx, match) => {
+      const session = await ctx.dependencies.auth.authenticate(sessionToken(ctx.request));
+      if (session.kind !== "desktop") throw new AuthError("desktop_required", "Tool output can only be read from this computer.", 403);
+      const groups = match as RegExpExecArray;
+      sendJson(ctx.response, 200, await workbenchAgentService(ctx.dependencies).revealToolTrace({
+        agentId: decodeURIComponent(groups[2] ?? ""),
+        toolCallId: decodeURIComponent(groups[3] ?? ""),
+        workbenchId: decodeURIComponent(groups[1] ?? ""),
+      }));
+    },
+  },
+  {
     auth: "write",
     id: "POST /api/v1/workbenches/:workbenchId/artifacts/:artifactId/open",
     match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/artifacts\/([^/]+)\/open$/),

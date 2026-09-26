@@ -5,7 +5,7 @@ import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { ApiError, type DigitalLifeApi } from "./api";
 
@@ -269,20 +269,87 @@ function groupAgentEntries(items: AgentConversationEntryDto[]) {
   return groups;
 }
 
-function ToolEntry({ entry, entries }: { entry: AgentConversationEntryDto; entries: AgentConversationEntryDto[] }) {
-  if (entries.length > 1) {
-    const calls = entries.filter((item) => item.kind === "TOOL_CALL").length;
-    const results = entries.length - calls;
-    return <article className="agent-message tool"><details className="agent-tool-compact">
-      <summary><span>工具</span><code>{entry.toolName} ×{Math.max(calls, results)}</code><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></summary>
-      {entries.map((item) => <div key={item.entryId}><small>{item.kind === "TOOL_CALL" ? "调用工具" : "工具结果"} · <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time></small>{item.text ? <pre>{item.text}</pre> : null}</div>)}
-    </details></article>;
+type ToolTraceView =
+  | { status: "loading" }
+  | { status: "ready"; trace: WorkbenchToolTraceDto }
+  | { status: "error"; message: string };
+
+/** The newest call in a group is the one worth surfacing: it is what is running now. */
+function newestCallSummary(entries: AgentConversationEntryDto[]): string | undefined {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const item = entries[index];
+    if (item?.kind === "TOOL_CALL" && item.text !== undefined && item.text !== "") return item.text;
   }
-  const label = entry.kind === "TOOL_CALL" ? "调用工具" : "工具结果";
-  return <article className={`agent-message tool ${entry.kind.toLowerCase()}`}>
+  return undefined;
+}
+
+/**
+ * The call whose full body the group can reveal. Only a call that already produced a result
+ * qualifies, which also means its private body is committed — the engine writes the status
+ * frame before the trace.
+ */
+function lastRevealableCall(entries: AgentConversationEntryDto[]): { toolCallId: string; toolName: string } | undefined {
+  const completed = new Set(entries
+    .filter((item) => item.kind === "TOOL_RESULT" && item.toolCallId !== undefined)
+    .map((item) => item.toolCallId));
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const item = entries[index];
+    if (item?.kind === "TOOL_CALL" && item.toolCallId !== undefined && completed.has(item.toolCallId)) {
+      return { toolCallId: item.toolCallId, toolName: item.toolName ?? "tool" };
+    }
+  }
+  return undefined;
+}
+
+function ToolTraceBody({ view, onReveal }: { view: ToolTraceView | undefined; onReveal: () => void }) {
+  if (view?.status === "ready") {
+    return <div className="agent-tool-trace">
+      <p className="agent-tool-trace-label">命令</p>
+      <pre>{view.trace.command === "" ? "（没有命令正文）" : view.trace.command}</pre>
+      <p className="agent-tool-trace-label">输出{view.trace.isError ? "（失败）" : ""}</p>
+      <pre>{view.trace.result === "" ? "（没有输出）" : view.trace.result}</pre>
+      {view.trace.truncated ? <p className="agent-tool-trace-note">内容超过 8 KB，已截断。</p> : null}
+      <button className="button ghost agent-tool-trace-open" onClick={onReveal} type="button">重新读取</button>
+    </div>;
+  }
+  return <div className="agent-tool-trace">
+    {view?.status === "error" ? <p className="agent-tool-trace-error" role="alert">{view.message}</p> : null}
+    <button className="button quiet agent-tool-trace-open" disabled={view?.status === "loading"} onClick={onReveal} type="button">
+      {view?.status === "loading" ? "读取中…" : view?.status === "error" ? "重试" : "查看完整输出"}
+    </button>
+  </div>;
+}
+
+function ToolEntry({ entry, entries, running, traces, onReveal, desktop }: {
+  entry: AgentConversationEntryDto;
+  entries: AgentConversationEntryDto[];
+  running: boolean;
+  traces: Record<string, ToolTraceView>;
+  onReveal: (toolCallId: string) => void;
+  desktop: boolean;
+}) {
+  const grouped = entries.length > 1;
+  const calls = entries.filter((item) => item.kind === "TOOL_CALL").length;
+  const results = entries.length - calls;
+  const label = grouped ? "工具" : entry.kind === "TOOL_CALL" ? "调用工具" : "工具结果";
+  const summary = newestCallSummary(entries);
+  const target = desktop ? lastRevealableCall(entries) : undefined;
+  return <article className={grouped ? "agent-message tool" : `agent-message tool ${entry.kind.toLowerCase()}`}>
     <details className={`agent-tool-compact ${entry.kind === "TOOL_RESULT" ? "result" : ""}`}>
-      <summary><span>{label}</span><code>{entry.toolName ?? (entry.kind === "TOOL_CALL" ? "tool" : "")}</code><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></summary>
-      {entry.text === undefined || entry.text === "" ? null : <pre>{entry.text}</pre>}
+      <summary>
+        <span>{label}</span>
+        {/* The tool name stays its own element so a group still reads as `bash ×3`. */}
+        <span className="agent-tool-line">
+          <code>{grouped ? `${entry.toolName ?? "tool"} ×${String(Math.max(calls, results))}` : entry.toolName ?? (entry.kind === "TOOL_CALL" ? "tool" : "")}</code>
+          {running ? <span className="agent-tool-running">运行中</span> : null}
+          {summary === undefined ? null : <span className="agent-tool-summary">{summary}</span>}
+        </span>
+        <time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time>
+      </summary>
+      {grouped
+        ? entries.map((item) => <div key={item.entryId}><small>{item.kind === "TOOL_CALL" ? "调用工具" : "工具结果"} · <time dateTime={item.createdAt}>{new Date(item.createdAt).toLocaleString()}</time></small>{item.text ? <pre>{item.text}</pre> : null}</div>)
+        : entry.text === undefined || entry.text === "" ? null : <pre>{entry.text}</pre>}
+      {target === undefined ? null : <ToolTraceBody onReveal={() => { onReveal(target.toolCallId); }} view={traces[target.toolCallId]} />}
     </details>
   </article>;
 }
@@ -319,6 +386,9 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
   const [following, setFollowing] = useState(true);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  // Revealed bodies live here rather than in ToolEntry so the 750 ms poll cannot drop an
+  // expanded view, and so ToolEntry stays stateless.
+  const [toolTraces, setToolTraces] = useState<Record<string, ToolTraceView>>({});
   const viewport = useRef<HTMLDivElement>(null);
   const currentPage = useRef<AgentConversationPageDto | null>(null);
   const followLatest = useRef(true);
@@ -374,6 +444,16 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
       element.scrollIntoView({ block: "end", inline: "nearest" });
     }
   }, [page]);
+  const revealToolTrace = useCallback(async (toolCallId: string) => {
+    setToolTraces((current) => ({ ...current, [toolCallId]: { status: "loading" } }));
+    try {
+      const trace = await api.revealWorkbenchToolTrace(workbenchId, agent.agentId, toolCallId);
+      setToolTraces((current) => ({ ...current, [toolCallId]: { status: "ready", trace } }));
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "没能读取工具的完整输出。";
+      setToolTraces((current) => ({ ...current, [toolCallId]: { status: "error", message } }));
+    }
+  }, [agent.agentId, api, workbenchId]);
   const loadMore = useCallback(async () => {
     const cursor = currentPage.current?.nextCursor;
     if (cursor === undefined || historyBusy.current) return;
@@ -404,6 +484,10 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
     }, 0);
     return () => clearTimeout(timer);
   }, [loadMore, page]);
+  const trailing = page?.items.at(-1);
+  // pi executes tools sequentially, so a trailing TOOL_CALL with no result after it is the
+  // one running now. The RUNNING gate keeps a crashed run's dangling call from claiming life.
+  const runningEntryId = page?.agent.status === "RUNNING" && trailing?.kind === "TOOL_CALL" ? trailing.entryId : undefined;
   return <>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
     <div className="agent-stream-viewport" ref={viewport} role="log" aria-label="Agent 执行记录" aria-live="off" tabIndex={0} onScroll={() => {
@@ -428,7 +512,12 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
       }
       const { entry, entries } = row.item;
       return entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT"
-      ? <ToolEntry entry={entry} entries={entries} key={entry.entryId} />
+      ? <ToolEntry
+        desktop={api.desktop} entries={entries} entry={entry} key={entry.entryId}
+        onReveal={(toolCallId) => void revealToolTrace(toolCallId)}
+        running={entries.some((item) => item.entryId === runningEntryId)}
+        traces={toolTraces}
+      />
       : <article className={`agent-message ${entry.role.toLowerCase()} ${entry.kind.toLowerCase()}`} key={entry.entryId}>
       <header><strong>{entry.role === "USER" ? "任务" : entry.role === "AGENT" ? agent.partnerName : entry.role === "TOOL" ? "工具" : "系统"}</strong><time dateTime={entry.createdAt}>{new Date(entry.createdAt).toLocaleString()}</time></header>
       {entry.kind === "ARTIFACT" && entry.artifact !== undefined

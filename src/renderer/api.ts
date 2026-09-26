@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
+import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchToolTraceDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
 import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
@@ -138,6 +138,14 @@ export class DigitalLifeApi {
     return this.request<undefined>(
       `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents/${encodeURIComponent(agentId)}`,
       { method: "DELETE" },
+    );
+  }
+  /** Reads one tool call's private command and output; desktop-only and never cached. */
+  revealWorkbenchToolTrace(workbenchId: string, agentId: string, toolCallId: string) {
+    return this.request<WorkbenchToolTraceDto>(
+      `/api/v1/workbenches/${encodeURIComponent(workbenchId)}/agents/${encodeURIComponent(agentId)}`
+      + `/tool-traces/${encodeURIComponent(toolCallId)}/reveal`,
+      { method: "POST" },
     );
   }
   openWorkbenchArtifact(workbenchId: string, input: {

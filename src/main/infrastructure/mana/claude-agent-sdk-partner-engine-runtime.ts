@@ -196,7 +196,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           if (block.type === "tool_use" && typeof block.name === "string" && typeof block.id === "string") {
             toolNames.set(block.id, block.name);
             started.add(block.id);
-            await emit?.({ type: "tool_activity", toolName: block.name, state: "started" });
+            await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started" });
           }
         }
       }
@@ -209,12 +209,12 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
             if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && !started.has(block.id)) {
               toolNames.set(block.id, block.name);
               started.add(block.id);
-              await emit?.({ type: "tool_activity", toolName: block.name, state: "started" });
+              await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started" });
             } else if (block.type === "tool_result" && typeof block.tool_use_id === "string" && !ended.has(block.tool_use_id)) {
               const name = toolNames.get(block.tool_use_id);
               if (name !== undefined) {
                 ended.add(block.tool_use_id);
-                await emit?.({ type: "tool_activity", toolName: name, state: block.is_error === true ? "failed" : "completed" });
+                await emit?.({ type: "tool_activity", toolCallId: block.tool_use_id, toolName: name, state: block.is_error === true ? "failed" : "completed" });
               }
             }
           }

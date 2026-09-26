@@ -5,10 +5,11 @@ import { realpath, stat } from "node:fs/promises";
 import type { DatabaseSync } from "node:sqlite";
 import path from "node:path";
 
-import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto, WorkbenchArtifactDto } from "../../../shared/joi.js";
-import type { WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
+import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentStatusDto, WorkbenchArtifactDto, WorkbenchToolTraceDto } from "../../../shared/joi.js";
+import type { WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
+import { TOOL_TRACE_MAX_BODY_CHARS } from "../../application/partners/tool-trace-presentation.js";
 import { DomainError } from "../../domain/errors.js";
 import { workResultArtifactId, workspaceArtifactDirectory, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import { mapStoredEngine } from "./partner-engine-storage.js";
@@ -200,12 +201,24 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
         .get(agentId) as { value?: unknown } | undefined;
       const start = typeof base?.value === "number" ? base.value + 1 : 0;
       const insert = connection.prepare(`INSERT OR IGNORE INTO workbench_agent_conversation_entries
-        (entry_id, agent_id, run_id, sequence, role, kind, text, tool_name, artifact_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        (entry_id, agent_id, run_id, sequence, role, kind, text, tool_name, tool_call_id, artifact_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
       for (const entry of entries) insert.run(
         entry.entryId, agentId, entry.runId, start + entry.order,
-        entry.role, entry.kind, entry.text ?? null, entry.toolName ?? null,
+        entry.role, entry.kind, entry.text ?? null, entry.toolName ?? null, entry.toolCallId ?? null,
         entry.artifact === undefined ? null : JSON.stringify(entry.artifact), entry.createdAt,
+      );
+    });
+  }
+
+  async appendToolTrace(input: WorkbenchToolTraceInput): Promise<void> {
+    this.database.transaction((connection) => {
+      connection.prepare(`INSERT OR REPLACE INTO workbench_agent_tool_traces
+        (agent_id, run_id, tool_call_id, tool_name, command, result, is_error, truncated, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        input.agentId, input.runId, input.trace.toolCallId.slice(0, 200), input.trace.toolName,
+        input.trace.command, input.trace.result, input.trace.isError ? 1 : 0,
+        input.trace.truncated ? 1 : 0, input.createdAt,
       );
     });
   }
@@ -221,19 +234,48 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
         .get(agentId) as { value?: unknown } | undefined;
       let sequence = typeof base?.value === "number" ? base.value + 1 : 0;
       const insert = connection.prepare(`INSERT INTO workbench_agent_conversation_entries
-        (entry_id, agent_id, run_id, sequence, role, kind, text, tool_name, artifact_json, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+        (entry_id, agent_id, run_id, sequence, role, kind, text, tool_name, tool_call_id, artifact_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      // `tool_call_id` must stay inside the change guard: an entry persisted before this
+      // column existed carries NULL, and without the comparison the live snapshot would
+      // never backfill the id and the reveal affordance would silently stay missing.
       const update = connection.prepare(`UPDATE workbench_agent_conversation_entries
-        SET role = ?, kind = ?, text = ?, tool_name = ?, artifact_json = ?, created_at = ?
+        SET role = ?, kind = ?, text = ?, tool_name = ?, tool_call_id = ?, artifact_json = ?, created_at = ?
         WHERE agent_id = ? AND run_id = ? AND entry_id = ?
-        AND (role IS NOT ? OR kind IS NOT ? OR text IS NOT ? OR tool_name IS NOT ? OR artifact_json IS NOT ? OR created_at IS NOT ?)`);
+        AND (role IS NOT ? OR kind IS NOT ? OR text IS NOT ? OR tool_name IS NOT ? OR tool_call_id IS NOT ? OR artifact_json IS NOT ? OR created_at IS NOT ?)`);
       for (const entry of entries) {
-        const values = [entry.role, entry.kind, entry.text ?? null, entry.toolName ?? null,
+        const values = [entry.role, entry.kind, entry.text ?? null, entry.toolName ?? null, entry.toolCallId ?? null,
           entry.artifact === undefined ? null : JSON.stringify(entry.artifact), entry.createdAt];
         if (known.has(entry.entryId)) update.run(...values, agentId, runId, entry.entryId, ...values);
         else insert.run(entry.entryId, agentId, runId, sequence++, ...values);
       }
     });
+  }
+
+  async revealToolTrace(input: WorkbenchToolTraceRevealInput): Promise<WorkbenchToolTraceDto> {
+    const row = this.database.transaction((connection) => {
+      // Same gate shape as resolveArtifact: prove the agent belongs to this workbench first.
+      const card = cardRows(connection, input.workbenchId, 1, 0, input.agentId)[0];
+      if (card === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
+      // The join to a visible TOOL_CALL entry is the authorization link: a trace is only
+      // readable while its call is still part of this agent's conversation.
+      return connection.prepare(`SELECT t.command, t.is_error, t.result, t.tool_name, t.truncated
+        FROM workbench_agent_tool_traces t
+        JOIN workbench_agent_conversation_entries e
+          ON e.agent_id = t.agent_id AND e.run_id = t.run_id AND e.tool_call_id = t.tool_call_id
+        WHERE t.agent_id = ? AND t.tool_call_id = ? AND e.kind = 'TOOL_CALL'
+        ORDER BY e.sequence DESC LIMIT 1`).get(input.agentId, input.toolCallId);
+    });
+    if (row === undefined) throw new DomainError("workbench_tool_trace_not_found", "This tool call has no stored output.");
+    return {
+      // Defensive re-clamp: rows written under an older or larger budget still leave bounded.
+      command: String(row.command).slice(0, TOOL_TRACE_MAX_BODY_CHARS),
+      isError: row.is_error === 1,
+      result: String(row.result).slice(0, TOOL_TRACE_MAX_BODY_CHARS),
+      toolCallId: input.toolCallId,
+      toolName: String(row.tool_name),
+      truncated: row.truncated === 1,
+    };
   }
 
   async conversation(input: { agentId: string; workbenchId: string; goalId?: string; cursor?: string; latest?: boolean; limit: number }): Promise<AgentConversationPageDto> {
@@ -246,7 +288,7 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
       const scope = input.goalId === undefined ? "" : ` AND run_id IN (
         SELECT pr.run_id FROM partner_runs pr JOIN work_items w ON w.work_id = pr.work_id
         WHERE w.input_id = ? AND w.workbench_id = ?)`;
-      const rows = connection.prepare(`SELECT entry_id, sequence, role, kind, text, tool_name, artifact_json, created_at
+      const rows = connection.prepare(`SELECT entry_id, sequence, role, kind, text, tool_name, tool_call_id, artifact_json, created_at
         FROM workbench_agent_conversation_entries WHERE agent_id = ?${scope}${boundary === undefined ? "" : " AND (sequence, entry_id) < (?, ?)"}
         ORDER BY sequence ${input.latest ? "DESC" : "ASC"}, entry_id ${input.latest ? "DESC" : "ASC"} LIMIT ? OFFSET ?`)
         .all(input.agentId, ...(input.goalId === undefined ? [] : [input.goalId, input.workbenchId]), ...(boundary ?? []), limit + 1, offset) as Row[];
@@ -261,6 +303,7 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
           role: required(row, "role") as AgentConversationPageDto["items"][number]["role"],
           sequence: typeof row.sequence === "number" ? row.sequence : 0,
           ...(typeof row.text === "string" ? { text: row.text } : {}),
+          ...(typeof row.tool_call_id === "string" ? { toolCallId: row.tool_call_id } : {}),
           ...(typeof row.tool_name === "string" ? { toolName: row.tool_name } : {}),
         };
       });
@@ -334,6 +377,7 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
       if (row === undefined) throw new DomainError("workbench_agent_not_found", "Agent was not found.");
       if (row.session_policy !== "EPHEMERAL") throw new DomainError("workbench_agent_resident_delete_forbidden", "Resident Agents cannot be deleted.");
       if (!terminal(mapStatus(row))) throw new DomainError("workbench_agent_not_terminal", "Agent is still running.");
+      connection.prepare("DELETE FROM workbench_agent_tool_traces WHERE agent_id = ?").run(input.agentId);
       connection.prepare("DELETE FROM workbench_agent_conversation_entries WHERE agent_id = ?").run(input.agentId);
       connection.prepare("UPDATE workbench_agent_sessions SET dismissed_at = ? WHERE agent_id = ? AND workbench_id = ?")
         .run(input.dismissedAt, input.agentId, input.workbenchId);

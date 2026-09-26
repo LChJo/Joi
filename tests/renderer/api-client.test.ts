@@ -25,6 +25,7 @@ describe("renderer API client", () => {
     await api.joiHomeFeed(); await api.listWorkbenchAgents("workbench 1", { cursor: "agent cursor", limit: 12 });
     await api.agentConversation("workbench 1", "agent 1", { cursor: "entry cursor", limit: 30 });
     await api.openWorkbenchArtifact("workbench 1", { artifactId: "artifact 1", mode: "REVEAL", source: "GOAL", sourceId: "goal 1" });
+    await api.revealWorkbenchToolTrace("workbench 1", "agent 1", "toolu 1");
     await api.deleteWorkbenchAgent("workbench 1", "agent 1");
     await api.decideWorkbenchChange("change 1", "CONFIRM"); await api.listPartners(); await api.deletePartner("partner 1");
     await api.listJoiMessages(); await api.listJoiActivity(); await api.sendJoiMessage("hi"); await api.sendJoiMessage("hi", { attachmentIds: ["attachment 1"] }); await api.sendJoiMessage("hi", { workbenchId: "workbench-1" });
@@ -66,6 +67,9 @@ describe("renderer API client", () => {
       && call[0].endsWith("/api/v1/workbenches/workbench%201/agents?cursor=agent%20cursor&limit=12"))).toBe(true);
     expect(fetchMock.mock.calls.some((call) => typeof call[0] === "string"
       && call[0].endsWith("/api/v1/workbenches/workbench%201/agents/agent%201/conversation?cursor=entry%20cursor&limit=30"))).toBe(true);
+    const revealTrace = fetchMock.mock.calls.find((call) => typeof call[0] === "string"
+      && call[0].endsWith("/api/v1/workbenches/workbench%201/agents/agent%201/tool-traces/toolu%201/reveal"));
+    expect(revealTrace?.[1]).toMatchObject({ method: "POST" });
     const openArtifact = fetchMock.mock.calls.find((call) => typeof call[0] === "string"
       && call[0].endsWith("/api/v1/workbenches/workbench%201/artifacts/artifact%201/open"));
     expect(openArtifact?.[1]).toMatchObject({

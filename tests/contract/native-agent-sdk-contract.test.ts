@@ -74,16 +74,20 @@ describe("official native Agent SDK adapters", () => {
     } };
     const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, environment: { ANTHROPIC_API_KEY: "private-key" }, prompts, resolveExecutable: resolvedClaude, sdk });
     const events: unknown[] = [];
-    const first = await runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", onEvent: async (event) => { events.push(event); }, request, restoredMessages: null, revision: revision("claude-code"), skillEnvironmentKeys: [], skillSection: "" });
+    const traces: unknown[] = [];
+    const first = await runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", onEvent: async (event) => { events.push(event); }, onToolTrace: async (trace) => { traces.push(trace); }, request, restoredMessages: null, revision: revision("claude-code"), skillEnvironmentKeys: [], skillSection: "" });
     expect(first.externalSessionRef).toBe("native-agent:v1:claude:claude-session");
+    // The private tool-body channel is pi-only this round; a half-wired adapter would be worse
+    // than none, so pin the absence explicitly.
+    expect(traces).toHaveLength(0);
     expect(first.messages).toBeUndefined();
     expect(calls[0]?.options).toMatchObject({ allowedTools: ["Read"], includePartialMessages: true, model: "claude-sonnet", pathToClaudeCodeExecutable: "user-claude", systemPrompt: expect.stringContaining("CUSTOM_SYSTEM"), tools: ["Read"] });
     expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("Enabled tools: Read"));
     expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("Disabled tools:"));
     expect((calls[0]?.options as { env?: Record<string, string> }).env?.ANTHROPIC_API_KEY).toBe("private-key");
     expect(events).toEqual(expect.arrayContaining([
-      { type: "tool_activity", toolName: "Read", state: "started" },
-      { type: "tool_activity", toolName: "Read", state: "completed" },
+      { type: "tool_activity", toolCallId: "tool-1", toolName: "Read", state: "started" },
+      { type: "tool_activity", toolCallId: "tool-1", toolName: "Read", state: "completed" },
       { type: "message", role: "agent", parts: [{ type: "text", text: "done" }] },
     ]));
     expect(JSON.stringify(events)).not.toContain("private");
@@ -159,7 +163,8 @@ describe("official native Agent SDK adapters", () => {
       prompts, resolveExecutable: resolvedCodex, sdk,
     });
     const events: unknown[] = [];
-    const first = await runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", onEvent: async (event) => { events.push(event); }, request, restoredMessages: null, revision: revision("codex"), skillEnvironmentKeys: [], skillSection: "" });
+    const traces: unknown[] = [];
+    const first = await runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", onEvent: async (event) => { events.push(event); }, onToolTrace: async (trace) => { traces.push(trace); }, request, restoredMessages: null, revision: revision("codex"), skillEnvironmentKeys: [], skillSection: "" });
     expect(first.externalSessionRef).toBe("native-agent:v1:codex:thread-new");
     expect(starts[0]).toMatchObject({ approvalPolicy: "never", model: "gpt-5.6-sol", networkAccessEnabled: true, sandboxMode: "read-only", webSearchMode: "cached" });
     expect(clientOptions[0]).toMatchObject({ codexPathOverride: "user-codex", config: { developer_instructions: expect.stringContaining("CUSTOM_SYSTEM") }, env: { CODEX_SESSION_ID: "nested", PATH: "user-path" } });
@@ -168,6 +173,7 @@ describe("official native Agent SDK adapters", () => {
     expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("Web search: cached"));
     expect(JSON.stringify(events)).not.toContain("PRIVATE_COMMAND");
     expect(JSON.stringify(events)).not.toContain("PRIVATE_RESULT");
+    expect(traces).toHaveLength(0);
 
     await runtime.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance", knowledgeSection: "", request, restoredMessages: null, revision: revision("codex"), skillEnvironmentKeys: [], skillSection: "" });
     expect(resumes[0]?.id).toBe("thread-new");

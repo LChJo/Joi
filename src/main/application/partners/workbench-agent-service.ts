@@ -30,6 +30,11 @@ export class WorkbenchAgentService {
     return this.dependencies.repository.dismiss({ ...input, dismissedAt: this.dependencies.clock.now().toISOString() });
   }
 
+  /** Reads one tool call's private body. The HTTP layer owns the desktop gate; this only resolves. */
+  revealToolTrace(input: { agentId: string; toolCallId: string; workbenchId: string }) {
+    return this.dependencies.repository.revealToolTrace(input);
+  }
+
   async openArtifact(input: {
     artifactId: string;
     mode: WorkbenchArtifactOpenMode;

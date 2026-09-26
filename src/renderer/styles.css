@@ -570,6 +570,17 @@
 .agent-tool-compact summary code { overflow: hidden; color: var(--ink); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
 .agent-tool-compact summary time { color: var(--faint); font-size: .66rem; }
 .agent-tool-compact pre { max-height: 240px; margin: 0; padding: 8px 10px; border-top: 1px solid var(--line); overflow: auto; font: .74rem/1.45 ui-monospace, "Cascadia Code", Consolas, monospace; }
+.agent-tool-compact summary .agent-tool-line { display: flex; min-width: 0; align-items: baseline; gap: 8px; }
+.agent-tool-compact summary .agent-tool-summary { overflow: hidden; color: var(--muted); font-size: .7rem; text-overflow: ellipsis; white-space: nowrap; }
+.agent-tool-running { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--blue); font-size: .68rem; white-space: nowrap; }
+.agent-tool-running::before { width: 6px; height: 6px; border-radius: 50%; background: var(--blue); content: ""; animation: agent-tool-pulse 1.2s ease-in-out infinite; }
+@keyframes agent-tool-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.agent-tool-trace { display: grid; gap: 6px; padding: 8px 10px; border-top: 1px solid var(--line); }
+.agent-tool-trace pre { max-height: 320px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); }
+.agent-tool-trace-label { margin: 0; color: var(--muted); font-size: .7rem; }
+.agent-tool-trace-note { margin: 0; color: var(--amber); font-size: .7rem; }
+.agent-tool-trace-error { margin: 0; color: var(--red); font-size: .7rem; }
+.agent-tool-trace-open { justify-self: start; min-height: 28px; padding: 4px 9px; }
 .agent-artifact { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; padding: 9px 11px; border: 1px dashed var(--line-strong); border-radius: 8px; }
 .agent-artifact-copy { display: grid; min-width: 0; gap: 2px; }
 .agent-artifact-copy strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

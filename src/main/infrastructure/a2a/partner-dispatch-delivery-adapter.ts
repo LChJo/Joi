@@ -223,7 +223,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
 
 export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   constructor(private readonly dependencies: {
-    agentConversations?: Pick<WorkbenchAgentRepository, "append" | "replaceRun">;
+    agentConversations?: Pick<WorkbenchAgentRepository, "append" | "appendToolTrace" | "replaceRun">;
     /** Stages source-input attachments into the workspace for file-capable local work. */
     attachmentStager?: Pick<WorkAttachmentStagerPort, "stage">;
     clock: Clock;
@@ -411,6 +411,13 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
               ));
             };
           })(),
+          // Private tool bodies are appended one call at a time and never ride along with the
+          // 500 ms whole-run snapshot rewrite above.
+          onToolTrace: async ({ instanceId, trace }) => {
+            await this.dependencies.agentConversations?.appendToolTrace({
+              agentId: instanceId, createdAt: this.dependencies.clock.now().toISOString(), runId, trace,
+            });
+          },
         }),
         request: {
           actionId: row.action_id, workbenchId: row.workbench_id, contextSnapshotId: row.context_snapshot_id ?? "",

@@ -12,6 +12,8 @@ export interface AgentConversationDraft {
   kind: AgentConversationEntryDto["kind"];
   role: AgentConversationEntryDto["role"];
   text?: string;
+  /** Opaque engine call id; links the entry to its private tool body. Never a payload. */
+  toolCallId?: string;
   toolName?: string;
 }
 
@@ -66,10 +68,46 @@ function closeOpenCodeFence(value: string): string {
   return fences !== null && fences.length % 2 === 1 ? `${value}\n\`\`\`` : value;
 }
 
+/** An engine's own identifier for one tool call, whatever its protocol calls it. */
+function toolCallIdOf(row: Record<string, unknown>): string | undefined {
+  for (const key of ["id", "toolCallId", "tool_call_id", "tool_use_id"]) {
+    const value = row[key];
+    if (typeof value === "string" && value !== "") return value.slice(0, 200);
+  }
+  return undefined;
+}
+
+/**
+ * pi and the official SDKs nest output as `content: [{type:"text",text}]`, which the flat
+ * `row.text ?? row.result ?? row.content` lookup silently missed — every such tool result was
+ * dropped from the transcript. Longer form first, then the older flat shapes.
+ */
+function toolResultText(row: Record<string, unknown>): string | undefined {
+  const content = row.content;
+  if (Array.isArray(content)) {
+    const parts: string[] = [];
+    for (const block of content) {
+      if (typeof block === "string") parts.push(block);
+      else if (block !== null && typeof block === "object") {
+        const text = (block as Record<string, unknown>).text;
+        if (typeof text === "string") parts.push(text);
+      }
+    }
+    if (parts.length > 0) return parts.join("\n");
+  }
+  if (typeof row.text === "string") return row.text;
+  if (typeof row.result === "string") return row.result;
+  return typeof content === "string" ? content : undefined;
+}
+
 /**
  * Converts engine-owned messages to a bounded display projection. Tool payloads and
- * internal reasoning are intentionally excluded; only tool names, textual results,
- * and the final answer cross the presentation boundary.
+ * internal reasoning are intentionally excluded; only tool names, correlation ids,
+ * textual results, and the final answer cross the presentation boundary.
+ *
+ * Tool calls are emitted one per call in message order rather than collapsed by name: the
+ * id is what links an entry to its private body, so de-duplicating them would silently
+ * strip the debug affordance from every run that lands on this fallback path.
  */
 export function draftAgentConversation(
   taskProjection: string,
@@ -78,10 +116,8 @@ export function draftAgentConversation(
 ): AgentConversationDraft[] {
   const drafts: AgentConversationDraft[] = [{ kind: "MARKDOWN", role: "USER", text: taskProjection }];
   const seen = new Set<unknown>();
-  const toolCalls = new Set<string>();
-  const toolResults: string[] = [];
   const visit = (candidate: unknown, depth: number): void => {
-    if (depth > 6 || drafts.length + toolResults.length > 200 || candidate === null || typeof candidate !== "object") return;
+    if (depth > 6 || drafts.length > 200 || candidate === null || typeof candidate !== "object") return;
     if (seen.has(candidate)) return;
     seen.add(candidate);
     if (Array.isArray(candidate)) {
@@ -94,12 +130,22 @@ export function draftAgentConversation(
     const name = typeof row.name === "string" ? row.name
       : typeof row.toolName === "string" ? row.toolName
         : typeof row.tool_name === "string" ? row.tool_name : undefined;
-    if (name !== undefined && (type.includes("tool") || row.input !== undefined || row.arguments !== undefined)) toolCalls.add(name.slice(0, 120));
+    const toolCallId = toolCallIdOf(row);
+    if (name !== undefined && (type.includes("tool") || row.input !== undefined || row.arguments !== undefined)) {
+      drafts.push({
+        kind: "TOOL_CALL", role: "TOOL", toolName: name.slice(0, 120),
+        ...(toolCallId === undefined ? {} : { toolCallId }),
+      });
+    }
     if (role.includes("tool") || type.includes("tool_result")) {
-      const text = typeof row.text === "string" ? row.text
-        : typeof row.result === "string" ? row.result
-          : typeof row.content === "string" ? row.content : undefined;
-      if (text !== undefined && text.trim() !== "") toolResults.push(text);
+      const text = toolResultText(row);
+      if (text !== undefined && text.trim() !== "") {
+        drafts.push({
+          kind: "TOOL_RESULT", role: "TOOL", text,
+          ...(toolCallId === undefined ? {} : { toolCallId }),
+          ...(name === undefined ? {} : { toolName: name.slice(0, 120) }),
+        });
+      }
     }
     for (const [key, value] of Object.entries(row)) {
       if (["input", "arguments", "thinking", "reasoning", "systemPrompt"].includes(key)) continue;
@@ -107,8 +153,6 @@ export function draftAgentConversation(
     }
   };
   for (const message of messages) visit(message, 0);
-  for (const toolName of toolCalls) drafts.push({ kind: "TOOL_CALL", role: "TOOL", toolName });
-  for (const text of toolResults) drafts.push({ kind: "TOOL_RESULT", role: "TOOL", text });
   if (outputBody.trim() !== "") drafts.push({ kind: "MARKDOWN", role: "AGENT", text: outputBody });
   return drafts;
 }
@@ -142,6 +186,7 @@ export function normalizeAgentConversationEntries(
         role: draft.role,
         runId: context.runId,
         ...(text === undefined ? {} : { text }),
+        ...(draft.toolCallId === undefined ? {} : { toolCallId: draft.toolCallId.slice(0, 200) }),
         ...(draft.toolName === undefined ? {} : { toolName: draft.toolName.slice(0, 120) }),
       });
     });

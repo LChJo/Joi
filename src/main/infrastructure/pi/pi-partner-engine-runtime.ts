@@ -33,6 +33,7 @@ import {
 import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
+import { toolCallCommand, toolCallResultBody, toolCallSummary, type ToolTraceDraft } from "../../application/partners/tool-trace-presentation.js";
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
@@ -87,13 +88,24 @@ const MUTATING_TOOLS = new Set(["bash", "edit", "write"]);
  * Builds a user-facing run snapshot from safe lifecycle facts only. Text deltas
  * are visible, while thinking, tool arguments and raw tool results never enter
  * this object. Persistence failures are deliberately non-fatal to the Work run.
+ *
+ * It is also the only place that sees a tool's real arguments, so it is where the
+ * private debug trace is captured — on a separate callback, never inside the event
+ * above (AC-62).
  */
 class LiveConversationPublisher {
+  /**
+   * `tool_execution_end` carries no arguments, so the start frame's arguments are held here
+   * until that call ends. Tool execution is sequential, so this holds one entry in practice;
+   * the cap is only a backstop against an engine that starts calls without ending them.
+   */
+  readonly #pendingArgs = new Map<string, unknown>();
   readonly #toolIds = new Set<string>();
 
   constructor(
     private readonly taskProjection: string,
     private readonly publish: (event: NativeAgentEvent) => Promise<void>,
+    private readonly recordTrace?: (trace: ToolTraceDraft) => Promise<void>,
   ) {}
 
   async start(): Promise<void> {
@@ -106,13 +118,39 @@ class LiveConversationPublisher {
       await this.#safePublish({ type: "message", role: "agent", parts: [{ type: "text", text: event.assistantMessageEvent.delta }] });
     } else if (event.type === "tool_execution_start" && !this.#toolIds.has(`start:${event.toolCallId}`)) {
       this.#toolIds.add(`start:${event.toolCallId}`);
-      await this.#safePublish({ type: "tool_activity", toolName: event.toolName, state: "started" });
+      this.#rememberArgs(event.toolCallId, event.args);
+      await this.#safePublish({
+        type: "tool_activity", toolCallId: event.toolCallId, toolName: event.toolName,
+        state: "started", summary: toolCallSummary(event.toolName, event.args),
+      });
     } else if (event.type === "tool_execution_end" && !this.#toolIds.has(`end:${event.toolCallId}`)) {
       this.#toolIds.add(`end:${event.toolCallId}`);
-      await this.#safePublish({ type: "tool_activity", toolName: event.toolName, state: event.isError ? "failed" : "completed" });
+      const args = this.#pendingArgs.get(event.toolCallId);
+      this.#pendingArgs.delete(event.toolCallId);
+      // The status frame is published before the trace is written, so a TOOL_RESULT entry
+      // becoming visible always implies its private body is already committed.
+      await this.#safePublish({ type: "tool_activity", toolCallId: event.toolCallId, toolName: event.toolName, state: event.isError ? "failed" : "completed" });
+      if (this.recordTrace !== undefined && args !== undefined) {
+        const command = toolCallCommand(event.toolName, args);
+        const result = toolCallResultBody(event.result);
+        await this.#safeTrace({
+          command: command.body, isError: event.isError, result: result.body,
+          toolCallId: event.toolCallId, toolName: event.toolName.slice(0, 120),
+          truncated: command.truncated || result.truncated,
+        });
+      }
     } else if (event.type === "agent_end") {
       await this.#safePublish({ type: "status", state: "completed" });
     }
+  }
+
+  #rememberArgs(toolCallId: string, args: unknown): void {
+    while (this.#pendingArgs.size >= 64) {
+      const oldest = this.#pendingArgs.keys().next();
+      if (oldest.done === true) break;
+      this.#pendingArgs.delete(oldest.value);
+    }
+    this.#pendingArgs.set(toolCallId, args);
   }
 
   async #safePublish(event: NativeAgentEvent): Promise<void> {
@@ -120,6 +158,14 @@ class LiveConversationPublisher {
       await this.publish(event);
     } catch {
       // The conversation is a non-authoritative display projection; execution must continue.
+    }
+  }
+
+  async #safeTrace(trace: ToolTraceDraft): Promise<void> {
+    try {
+      await this.recordTrace?.(trace);
+    } catch {
+      // The trace is a debugging aid; losing it must never fail the Work.
     }
   }
 }
@@ -306,7 +352,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       toolExecution: "sequential",
       transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, budget.messagesMaxChars)),
     });
-    const live = context.onEvent === undefined ? undefined : new LiveConversationPublisher(request.taskProjection, context.onEvent);
+    const live = context.onEvent === undefined && context.onToolTrace === undefined
+      ? undefined
+      : new LiveConversationPublisher(
+        request.taskProjection,
+        context.onEvent ?? (() => Promise.resolve()),
+        context.onToolTrace,
+      );
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     try {
@@ -417,7 +469,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     );
     warm.agent.state.systemPrompt = systemPrompt;
     const previousMessageCount = warm.agent.state.messages.length;
-    const live = input.onEvent === undefined ? undefined : new LiveConversationPublisher(input.request.taskProjection, input.onEvent);
+    const live = input.onEvent === undefined && input.onToolTrace === undefined
+      ? undefined
+      : new LiveConversationPublisher(
+        input.request.taskProjection,
+        input.onEvent ?? (() => Promise.resolve()),
+        input.onToolTrace,
+      );
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     try {
