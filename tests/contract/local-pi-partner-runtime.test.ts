@@ -866,7 +866,11 @@ describe("Pi partner engine runtime", () => {
   it("classifies provider failures into distinct actionable codes", async () => {
     const cases: { errorMessage: string; reasonCode: string; retryable: boolean }[] = [
       { errorMessage: "529 {\"type\":\"overloaded_error\",\"message\":\"upstream busy\"}", reasonCode: "server_error", retryable: true },
-      { errorMessage: "400 {\"error\":{\"message\":\"prompt is too long: 210000 tokens > 128000 maximum\"}}", reasonCode: "context_too_large", retryable: false },
+      // The route stated the window it allows, so a fresh attempt is sized to it rather than being
+      // the same refused request.
+      { errorMessage: "400 {\"error\":{\"message\":\"prompt is too long: 210000 tokens > 128000 maximum\"}}", reasonCode: "context_too_large", retryable: true },
+      // Nothing was learned from this one, so a retry would be the identical request.
+      { errorMessage: "400 prompt is too long", reasonCode: "context_too_large", retryable: false },
       { errorMessage: "HTTP 400: invalid model for this route", reasonCode: "invalid_model", retryable: false },
       { errorMessage: "status 400: unsupported parameter reasoning_effort", reasonCode: "unsupported_parameter", retryable: false },
       { errorMessage: "Request failed with status code 403: model access denied", reasonCode: "model_access_forbidden", retryable: true },

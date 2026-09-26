@@ -154,6 +154,23 @@ describe("partner run failure classification", () => {
     expect(body).not.toContain("absolute path");
   });
 
+  it("permits a retry only when the refusal taught the route its real limit", () => {
+    expect(classifyPartnerRunFailure({ code: "context_too_large" }, { phase: "MODEL", sideEffectState: "NONE" }).retryable).toBe(false);
+    // The engine sets the flag after parsing the limit the provider stated; the carrier owns the
+    // retryable rule and honours the flag, so it survives every later re-derivation of the failure.
+    const learned = wrapPartnerRunFailure(
+      Object.assign(new Error("partner_run_failed"), { partnerRunFailure: {
+        phase: "MODEL", reasonCode: "context_too_large", retryable: true, routeLimitLearned: true, sideEffectState: "NONE",
+      } }),
+      { phase: "MODEL", sideEffectState: "NONE" },
+    );
+    expect(partnerRunFailureFromError(learned)).toMatchObject({ reasonCode: "context_too_large", retryable: true, routeLimitLearned: true });
+    expect(safePartnerRunFailureBody(learned.partnerRunFailure)).toContain("reassigning this Work is safe");
+    // The same code without the flag keeps warning against an unchanged replay.
+    expect(safePartnerRunFailureBody({ phase: "MODEL", reasonCode: "context_too_large", retryable: false, sideEffectState: "NONE" }))
+      .toContain("do not replay it unchanged");
+  });
+
   it("describes OBSERVED as a possibly side-effecting tool call", () => {
     expect(safePartnerRunFailureBody({ phase: "MODEL", reasonCode: "http_403", retryable: false, sideEffectState: "OBSERVED" }))
       .toContain("may have side effects");

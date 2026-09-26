@@ -324,10 +324,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
-      this.#learnRouteLimits(pin.sourceId, pin.modelId, error);
+      const learned = this.#learnRouteLimits(pin.sourceId, pin.modelId, error);
       await this.dependencies.sources.reportRunFailure?.(pin.sourceId, error).catch(() => undefined);
       const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
-      throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
+      const failure = wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state });
+      allowLearnedCapacityRetry(failure, learned, tracker.state);
+      throw Object.assign(failure, { partialArtifacts });
     }
   }
 
@@ -436,10 +438,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
-      this.#learnRouteLimits(warm.sourceId, warm.modelId, error);
+      const learned = this.#learnRouteLimits(warm.sourceId, warm.modelId, error);
       await this.dependencies.sources.reportRunFailure?.(warm.sourceId, error).catch(() => undefined);
       const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
-      throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
+      const failure = wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state });
+      allowLearnedCapacityRetry(failure, learned, tracker.state);
+      throw Object.assign(failure, { partialArtifacts });
     }
   }
 
@@ -450,15 +454,16 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
    * nobody has verified. The refused Work still fails — this is what stops the next one failing
    * the same way.
    */
-  #learnRouteLimits(sourceId: string, modelId: string, error: unknown): void {
+  #learnRouteLimits(sourceId: string, modelId: string, error: unknown): boolean {
     const detail = error !== null && typeof error === "object" && typeof (error as { detail?: unknown }).detail === "string"
       ? (error as { detail: string }).detail
       : "";
-    if (detail === "") return;
+    if (detail === "") return false;
     const contextWindow = parseContextWindowFromError(detail);
     if (contextWindow !== undefined) rememberObservedContextWindow(sourceId, modelId, contextWindow);
     const maxOutputTokens = parseMaxOutputTokensFromError(detail);
     if (maxOutputTokens !== undefined) rememberObservedMaxOutputTokens(sourceId, modelId, maxOutputTokens);
+    return contextWindow !== undefined || maxOutputTokens !== undefined;
   }
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */
@@ -715,6 +720,22 @@ function isAssistantErrorMessage(candidate: unknown): candidate is AgentMessage 
 
 function codedProviderError(code: string, detail?: string): Error & { code: string; detail?: string } {
   return Object.assign(new Error("partner_provider_failed"), { code, ...(detail === undefined ? {} : { detail }) });
+}
+
+/**
+ * A capacity rejection that named the limit it refused on is not the same request when it is
+ * replayed: the next attempt is sized to what the provider said it accepts. Marking it retryable is
+ * what lets a synthesis turn reassign the Work instead of being told not to replay it unchanged —
+ * and the durable two-round recovery cap still bounds the attempt.
+ */
+function allowLearnedCapacityRetry(
+  error: Error & { partnerRunFailure: { retryable: boolean; routeLimitLearned?: boolean } },
+  learned: boolean,
+  sideEffectState: PartnerRunSideEffectState,
+): void {
+  if (!learned || sideEffectState !== "NONE") return;
+  error.partnerRunFailure.routeLimitLearned = true;
+  error.partnerRunFailure.retryable = true;
 }
 
 function allowUnpinnedForbiddenFallback(error: Error & { partnerRunFailure: { reasonCode: string; retryable: boolean; sideEffectState: PartnerRunSideEffectState } }, revision: PartnerRevision): void {

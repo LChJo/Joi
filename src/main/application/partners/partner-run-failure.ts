@@ -8,6 +8,12 @@ export interface PartnerRunFailure {
   reasonCode: string;
   retryable: boolean;
   sideEffectState: PartnerRunSideEffectState;
+  /**
+   * Set only by the engine that just learned this route's real limit from the refusal itself, which
+   * makes a replay a different request. That is the single case where a capacity rejection may be
+   * retried: without it the next attempt would be the identical one that was already refused.
+   */
+  routeLimitLearned?: boolean;
 }
 
 interface PartnerRunFailureCarrier {
@@ -83,6 +89,11 @@ export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
   const facts = `phase=${failure.phase}; reasonCode=${failure.reasonCode}; retryable=${String(failure.retryable)}; sideEffectState=${failure.sideEffectState}`;
   const next = failure.phase === "CONFIGURATION" && failure.sideEffectState === "NONE"
     ? "No partner model or tool was started, so it is safe to retry after correction. Open Partner settings, reselect an installed Skill, and enable the read tool when using a narrowed tool list."
+    // A capacity refusal that named the limit it refused on is not the same request when it is
+    // replayed: the next attempt is sized to what the provider said it accepts, so reassigning the
+    // Work is safe. Without a stated limit the retry would be identical, hence the warning below.
+    : (failure.reasonCode === "context_too_large" || failure.reasonCode === "model_context_budget_exhausted") && failure.routeLimitLearned === true
+    ? "The model route refused this request for size and stated the limit it accepts. A fresh attempt on this route is sized to that limit, so reassigning this Work is safe."
     : failure.reasonCode === "context_too_large"
     ? "The request exceeded the model route's context window. Split the Work into smaller units or shrink its inputs; do not replay it unchanged."
     : failure.reasonCode === "invalid_model"
@@ -116,10 +127,13 @@ function failureCarrier(error: unknown): PartnerRunFailure | null {
     || !PHASES.has(phase)
     || !SIDE_EFFECT_STATES.has(sideEffectState)
     || typeof candidate.reasonCode !== "string" || !STABLE_CODE.test(candidate.reasonCode)) return null;
+  const routeLimitLearned = candidate.routeLimitLearned === true;
   return {
     phase,
     reasonCode: candidate.reasonCode,
-    retryable: candidate.retryable === true && sideEffectState === "NONE" && (transientReasonCode(candidate.reasonCode) || ALTERNATE_SOURCE_CODES.has(candidate.reasonCode)),
+    retryable: candidate.retryable === true && sideEffectState === "NONE"
+      && (transientReasonCode(candidate.reasonCode) || ALTERNATE_SOURCE_CODES.has(candidate.reasonCode) || routeLimitLearned),
+    ...(routeLimitLearned ? { routeLimitLearned: true } : {}),
     sideEffectState,
   };
 }
