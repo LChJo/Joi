@@ -13,8 +13,18 @@ interface WorkspaceFileState {
 
 export type WorkspaceSnapshot = ReadonlyMap<string, WorkspaceFileState>;
 
-/** VCS and dependency metadata is never a deliverable; partners routinely write it (git commits, installs). */
-const IGNORED_DIRECTORIES = new Set([".git", "node_modules"]);
+/**
+ * Reports what the run delivered, not everything it touched. Hidden directories are tooling by
+ * convention, and a partner that stands up its own host, cache or profile tree materializes
+ * thousands of files that say nothing about the Work's output — one such run recorded 6,195 paths,
+ * and that manifest then travelled into every later prompt in the Workbench. `.git` and
+ * `node_modules` are the two partners touch most, and the hidden-directory rule covers those and
+ * the rest. A deliverable deliberately written inside a hidden directory is the accepted cost of
+ * keeping tooling noise out of the deliverable list.
+ */
+function isIgnoredDirectory(name: string): boolean {
+  return name === "node_modules" || name.startsWith(".");
+}
 
 const MIME_BY_EXTENSION: Record<string, string> = {
   ".csv": "text/csv",
@@ -46,7 +56,7 @@ async function walk(root: string, directory: string, files: Map<string, Workspac
   for (const entry of entries) {
     const candidate = path.join(directory, entry.name);
     if (entry.isDirectory()) {
-      if (IGNORED_DIRECTORIES.has(entry.name)) continue;
+      if (isIgnoredDirectory(entry.name)) continue;
       try {
         const facts = await lstat(candidate);
         const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");

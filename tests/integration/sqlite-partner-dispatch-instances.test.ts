@@ -355,6 +355,51 @@ describe("partner dispatch instance routing", () => {
     }
   });
 
+  it("bounds a sibling file manifest and an oversized body so evidence cannot outgrow the model window", async () => {
+    const { database, root } = await openWithPartner();
+    try {
+      const smallBody = "small sibling output SMALL_EVIDENCE_OK";
+      await makeHandler(database, {
+        dispatch: async () => ({ actionId: "action_1", artifacts: [], body: smallBody, externalRunId: "local:action_1", status: "COMPLETED", workId: "work_1" }),
+      }).handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }));
+      // One verification run can touch thousands of workspace paths; only a sample may travel.
+      const manifest = JSON.stringify(Array.from({ length: 5_000 }, (_, index) => ({
+        artifactRef: `workspace:scratch/file-${String(index)}.js`, name: `file-${String(index)}.js`, size: 1,
+      })));
+      database.transaction((connection) => {
+        connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          SELECT ?, workbench_id, input_id, ?, intent_json, access_mode, status, created_at, updated_at FROM work_items WHERE work_id = 'work_1'`).run("noisy", "Noisy verification");
+        connection.prepare(`INSERT INTO dispatch_attempts (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+          SELECT ?, dispatch_plan_id, ?, partner_revision_id, registry_revision, ?, status, created_at, updated_at FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt_1'`).run("noisy", "noisy", "noisy");
+        connection.prepare(`INSERT INTO partner_runs (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at)
+          SELECT ?, ?, ?, workbench_id, ?, partner_revision_id, kind, ?, status, created_at, updated_at FROM partner_runs WHERE action_id = 'action_1'`).run("noisy", "noisy", "noisy", "noisy", "noisy");
+        connection.prepare("INSERT INTO work_result_bodies (body_ref, body, created_at) VALUES ('noisy_body', ?, '2026-07-29T10:00:00.000Z')").run(`${"N".repeat(100_000)} NOISY_TAIL`);
+        connection.prepare(`INSERT INTO work_results (result_id, run_id, action_id, workbench_id, work_id, partner_revision_id, status, summary, body_ref, artifacts_json, is_late, is_authoritative, created_at)
+          SELECT ?, ?, ?, workbench_id, ?, partner_revision_id, status, 'preview', 'noisy_body', ?, 0, 1, created_at FROM work_results WHERE action_id = 'action_1'`).run("noisy", "noisy", "noisy", "noisy", manifest);
+        connection.prepare("INSERT INTO work_result_verifications (result_id, status, created_at) VALUES ('noisy', 'PASSED', '2026-07-29T10:00:00.000Z')").run();
+        connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          SELECT 'successor', workbench_id, input_id, 'Successor', '{}', 'READ', 'READY', created_at, updated_at FROM work_items WHERE work_id = 'work_1'`).run();
+        connection.prepare("INSERT INTO work_access_policies (work_id, access_mode) VALUES ('successor', 'NONE')").run();
+      });
+      const contexts = new SqliteWorkbenchContextRepository(database);
+      const snapshot = await new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: { next: () => "successor_snapshot" }, projections: contexts, snapshots: contexts })
+        .assemble({ workbenchId: "workbench_1", workId: "successor" });
+      const promptSection = (await contexts.loadForExecution(snapshot.contextSnapshotId))?.promptSection ?? "";
+
+      // The section stays a bounded fragment of the model window instead of inlining every path.
+      expect(promptSection.length).toBeLessThan(140_000);
+      expect(promptSection).toContain('"artifactCount":5000');
+      expect(promptSection).not.toContain("scratch/file-4999.js");
+      expect(promptSection).toContain("exceeded the evidence budget");
+      expect(promptSection).not.toContain("NOISY_TAIL");
+      // A modest sibling body is still delivered whole.
+      expect(promptSection).toContain(smallBody);
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("fails a candidate completion when its private acceptance checks do not pass", async () => {
     const { database, root } = await openWithPartner();
     try {

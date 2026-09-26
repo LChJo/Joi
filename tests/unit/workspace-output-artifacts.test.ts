@@ -24,6 +24,28 @@ describe("workspace output artifacts", () => {
     }
   });
 
+  it("keeps a run's scratch host and cache trees out of the deliverable list", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-artifacts-"));
+    try {
+      const before = await captureWorkspaceSnapshot(root);
+      const profile = path.join(root, ".mld-host-run", "profile", "AppData", "Local", "D3DSCache");
+      await mkdir(profile, { recursive: true });
+      await writeFile(path.join(profile, "shader.dxcache"), "cache", "utf8");
+      await mkdir(path.join(root, ".cache"), { recursive: true });
+      await writeFile(path.join(root, ".cache", "tmp.bin"), "cache", "utf8");
+      await mkdir(path.join(root, "mldesigner", "docs"), { recursive: true });
+      await writeFile(path.join(root, "mldesigner", "docs", "report.md"), "# Report", "utf8");
+
+      await expect(collectChangedWorkspaceArtifacts(root, before)).resolves.toEqual([
+        { artifactRef: "workspace:mldesigner", mimeType: "inode/directory", name: "mldesigner", size: 0 },
+        { artifactRef: "workspace:mldesigner/docs", mimeType: "inode/directory", name: "docs", size: 0 },
+        { artifactRef: "workspace:mldesigner/docs/report.md", mimeType: "text/markdown", name: "report.md", size: 8 },
+      ]);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("ignores VCS and dependency metadata written during a run", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-artifacts-"));
     try {
