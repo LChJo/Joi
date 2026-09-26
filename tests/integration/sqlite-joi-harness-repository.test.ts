@@ -1130,4 +1130,56 @@ describe("SqliteJoiHarnessRepository", () => {
       ]);
     });
   });
+
+  describe("stalled synthesis recovery", () => {
+    it("finds and re-drives a synthesis that no other scan can reach", async () => {
+      const goalInputId = "goal-stalled-synthesis";
+      seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      seedCompletedLayer(fixture, goalInputId, 3);
+      const staleAt = "2026-08-06T09:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        // A later revision landed after the goal's synthesis had already run and been consumed, so
+        // review and continuation both skip it — nothing else would ever revisit the goal.
+        connection.prepare("UPDATE joi_goal_result_sets SET revision = 4, updated_at = ? WHERE original_input_id = ?").run(NOW, goalInputId);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, result_revision, goal_input_id, created_at, updated_at)
+          VALUES (?, 'key-synth-stalled', 'synthesize', 'CONSUMED', 3, ?, ?, ?)`)
+          .run(`joi_result_input:goal:${goalInputId}`, goalInputId, staleAt, staleAt);
+      });
+
+      const stalled = await repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW });
+      expect(stalled).toEqual([{ goalInputId, resultRevision: 4 }]);
+
+      const [seed] = stalled;
+      if (seed === undefined) throw new Error("expected a stalled synthesis seed");
+      await expect(repository.redriveSynthesis({ now: NOW, seed })).resolves.toBe(true);
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, result_revision FROM joi_inbox_messages WHERE input_id = ?")
+        .get(`joi_result_input:goal:${goalInputId}`)))
+        .toEqual({ result_revision: 4, status: "PENDING" });
+
+      // Re-driving moves it, so the cooldown holds the next scan off until the attempt has run.
+      await expect(repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW })).resolves.toEqual([]);
+    });
+
+    it("leaves a goal alone while it is still waiting on the user or its Work", async () => {
+      const goalInputId = "goal-stalled-guarded";
+      seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      seedCompletedLayer(fixture, goalInputId, 3);
+      const staleAt = "2026-08-06T09:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_goal_result_sets SET revision = 4, updated_at = ? WHERE original_input_id = ?").run(NOW, goalInputId);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, result_revision, goal_input_id, created_at, updated_at)
+          VALUES (?, 'key-synth-guarded', 'synthesize', 'CONSUMED', 3, ?, ?, ?)`)
+          .run(`joi_result_input:goal:${goalInputId}`, goalInputId, staleAt, staleAt);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-still-running', ?, ?, '还在跑', '{}', 'READ', 'RUNNING', ?, ?)`)
+          .run(`workbench-${goalInputId}`, goalInputId, NOW, NOW);
+      });
+
+      await expect(repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW })).resolves.toEqual([]);
+    });
+  });
 });

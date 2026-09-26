@@ -7,6 +7,8 @@ import type { JoiHarnessScan, JoiHarnessWriter } from "../../ports/joi-harness.j
 
 const DEFAULT_SCAN_EVERY_MILLIS = 10_000;
 const FEEDBACK_ENTRY_SUMMARY_LIMIT = 160;
+/** How long a re-driven synthesis is given to run before the scan may re-drive it again. */
+const STALLED_SYNTHESIS_COOLDOWN_MILLIS = 10 * 60_000;
 
 /**
  * Traversal over harness map facts: adopts goals into maps on their first turn,
@@ -39,6 +41,7 @@ export class JoiHarnessComponent implements ActorComponent {
     await this.#step(ctx, "feedback", () => this.#recordCompletionFeedback(ctx));
     await this.#step(ctx, "trivial_clear", () => this.#clearTrivialMaps(ctx));
     await this.#step(ctx, "work_recovery", () => this.#enqueueWorkRecoveries(ctx));
+    await this.#step(ctx, "stalled_synthesis", () => this.#redriveStalledSyntheses(ctx));
     if (this.dependencies.reviewEnabled === true) {
       await this.#step(ctx, "review", () => this.#enqueueReviews(ctx));
       await this.#step(ctx, "continuation_decision", () => this.#requestContinuationDecisions(ctx));
@@ -135,6 +138,28 @@ export class JoiHarnessComponent implements ActorComponent {
     for (const seed of await this.dependencies.scan.listContinuationDecisionSeeds()) {
       const created = await this.dependencies.writer.requestContinuationDecision({ now: ctx.now.toISOString(), seed });
       if (created) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.continuation_decision_requested", {
+        goalInputId: seed.goalInputId,
+        resultRevision: seed.resultRevision,
+      });
+    }
+  }
+
+  /**
+   * Re-drives a synthesis that no other scan can reach: once every Work is terminal and the
+   * synthesis input has been consumed, a result revision that never got synthesized has no path
+   * back into the scheduler. The cooldown bounds this to one attempt per goal per window, so a
+   * synthesis that keeps failing settles into a slow retry instead of a hot loop.
+   */
+  async #redriveStalledSyntheses(ctx: ActorTickContext): Promise<void> {
+    if (this.dependencies.scan.listStalledSyntheses === undefined
+      || this.dependencies.writer.redriveSynthesis === undefined) return;
+    const stalled = await this.dependencies.scan.listStalledSyntheses({
+      cooldownMillis: STALLED_SYNTHESIS_COOLDOWN_MILLIS,
+      now: ctx.now.toISOString(),
+    });
+    for (const seed of stalled) {
+      const redriven = await this.dependencies.writer.redriveSynthesis({ now: ctx.now.toISOString(), seed });
+      if (redriven) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.stalled_synthesis_redriven", {
         goalInputId: seed.goalInputId,
         resultRevision: seed.resultRevision,
       });

@@ -91,6 +91,17 @@ export interface HarnessGoalProjection {
 }
 
 /** Read-only traversal surface. Queries are transaction-wrapped, bounded, and stably ordered. */
+/**
+ * A goal whose Work is all terminal, whose result set moved on without a synthesis, and whose
+ * synthesis input is already consumed: nothing else in the system will pick it up, so it sits in
+ * "finalizing" forever. Detected and re-driven so that state cannot outlive the evidence that
+ * explains it — every earlier one of these was only ever found by hand.
+ */
+export interface HarnessStalledSynthesisSeed {
+  goalInputId: string;
+  resultRevision: number;
+}
+
 export interface JoiHarnessScan {
   listFeedbackTargets(): Promise<HarnessFeedbackTarget[]>;
   listGoalsWithoutMap(): Promise<HarnessGoalSeed[]>;
@@ -100,6 +111,7 @@ export interface JoiHarnessScan {
   loadGoalProjections(): Promise<HarnessGoalProjection[]>;
   listWorkRecoverySeeds?(): Promise<HarnessWorkRecoverySeed[]>;
   listContinuationDecisionSeeds?(): Promise<HarnessContinuationDecisionSeed[]>;
+  listStalledSyntheses?(input: { now: string; cooldownMillis: number }): Promise<HarnessStalledSynthesisSeed[]>;
 }
 
 /** Deterministic write surface used by the traversal. Never reasons and never dispatches. */
@@ -112,6 +124,7 @@ export interface JoiHarnessWriter {
   synchronizeWorkPaths(input: { now: string }): Promise<{ closed: number; created: number }>;
   enqueueWorkRecovery?(input: { now: string; seed: HarnessWorkRecoverySeed }): Promise<string | null>;
   requestContinuationDecision?(input: { now: string; seed: HarnessContinuationDecisionSeed }): Promise<boolean>;
+  redriveSynthesis?(input: { now: string; seed: HarnessStalledSynthesisSeed }): Promise<boolean>;
 }
 
 /** Reasoning-side write surface injected into the harness tools; always goal-scoped. */

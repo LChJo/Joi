@@ -14,6 +14,7 @@ import type {
   HarnessReviewDigest,
   HarnessReviewRecoveryCandidate,
   HarnessReviewRecoveryResult,
+  HarnessStalledSynthesisSeed,
   HarnessWorkRecoverySeed,
   JoiHarnessScan,
   JoiHarnessStore,
@@ -711,7 +712,71 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         prompt, input.now, input.seed.goalInputId,
       );
       if (raised.changes !== 1) throw new Error("joi_goal_continuation_request_conflict");
+      // Raise the matching gate question too. Every other clarification path does, and `clarify`
+      // refuses to resolve a card whose gate is not WAITING_INPUT — so without this a goal that
+      // still carried an OPEN gate from an earlier answered question showed a decision card whose
+      // buttons resolved to nothing. The version advances so the answer cannot be replayed against
+      // the question the user already answered, and so the resume input gets a fresh id.
+      const currentGate = connection.prepare(`SELECT question_version FROM joi_goal_execution_gates
+        WHERE goal_input_id = ?`).get(input.seed.goalInputId) as { question_version?: unknown } | undefined;
+      const questionVersion = (typeof currentGate?.question_version === "number" ? currentGate.question_version : 0) + 1;
+      connection.prepare(`INSERT INTO joi_goal_execution_gates
+        (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
+        VALUES (?, ?, ?, 'WAITING_INPUT', 'goal_continuation_required', NULL, ?, NULL, ?)
+        ON CONFLICT(goal_input_id) DO UPDATE SET question_id = excluded.question_id,
+          question_version = excluded.question_version, status = 'WAITING_INPUT',
+          reason_code = excluded.reason_code, resume_input_id = NULL, answered_at = NULL,
+          updated_at = excluded.updated_at`).run(
+        input.seed.goalInputId, `goal_question:${input.seed.goalInputId}:v${String(questionVersion)}`,
+        questionVersion, input.now, input.now,
+      );
       return true;
+    });
+  }
+
+  /**
+   * Goals whose Work is all terminal while their synthesis is behind the result set and the
+   * synthesis input is already consumed. No other scan reaches them — both review and continuation
+   * require the synthesis to have caught up — so without this they sit in "finalizing" forever.
+   * The cooldown keeps a re-driven attempt that fails again from being re-driven in a hot loop.
+   */
+  async listStalledSyntheses(input: { now: string; cooldownMillis: number }): Promise<HarnessStalledSynthesisSeed[]> {
+    const staleBefore = new Date(Date.parse(input.now) - input.cooldownMillis).toISOString();
+    return (this.database.transaction((connection) => connection.prepare(`
+      SELECT rs.original_input_id AS goal_input_id, rs.revision AS result_revision
+        FROM joi_goal_result_sets rs
+        JOIN joi_inbox_messages goal ON goal.input_id = rs.original_input_id
+        JOIN joi_inbox_messages synth ON synth.input_id = 'joi_result_input:goal:' || rs.original_input_id
+       WHERE rs.synthesized_revision < rs.revision
+         AND goal.canceled_at IS NULL AND goal.dismissed_at IS NULL AND goal.failed_at IS NULL
+         AND goal.clarification_reason_code IS NULL
+         AND synth.status = 'CONSUMED'
+         AND synth.updated_at <= ?
+         AND NOT EXISTS (SELECT 1 FROM work_items w
+                          WHERE w.input_id = rs.original_input_id
+                            AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+         AND NOT EXISTS (SELECT 1 FROM joi_turns t
+                          JOIN joi_inbox_messages source ON source.input_id = t.input_id
+                          WHERE COALESCE(source.goal_input_id, source.input_id) = rs.original_input_id
+                            AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))
+         AND NOT EXISTS (SELECT 1 FROM joi_user_action_requests action
+                          WHERE action.input_id = rs.original_input_id AND action.status = 'OPEN')
+       ORDER BY rs.updated_at, rs.original_input_id LIMIT 20`).all(staleBefore)) as Row[])
+      .map((row) => ({
+        goalInputId: textValue(row, "goal_input_id"),
+        resultRevision: numberValue(row, "result_revision"),
+      }));
+  }
+
+  /** Returns a stalled synthesis to the scheduler for the revision the result set currently holds. */
+  async redriveSynthesis(input: { now: string; seed: HarnessStalledSynthesisSeed }): Promise<boolean> {
+    return this.database.transaction((connection) => {
+      const updated = connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'PENDING', result_revision = ?, updated_at = ?
+        WHERE input_id = 'joi_result_input:goal:' || ? AND status = 'CONSUMED'`).run(
+        input.seed.resultRevision, input.now, input.seed.goalInputId,
+      );
+      return updated.changes === 1;
     });
   }
 

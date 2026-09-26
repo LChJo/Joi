@@ -363,4 +363,36 @@ describe("JoiHarnessComponent", () => {
 
     expect(diagnostics.events).toEqual([]);
   });
+
+  it("re-drives a stalled synthesis and records that it did", async () => {
+    const diagnostics: Diagnostics = { events: [] };
+    const redriven: { goalInputId: string; resultRevision: number }[] = [];
+    const component = new JoiHarnessComponent({
+      scan: {
+        listFeedbackTargets: async () => [],
+        listGoalsWithoutMap: async () => [],
+        listReviewDigests: async () => [],
+        listReviewRecoveries: async () => [],
+        listStalledSyntheses: async () => [{ goalInputId: "goal-stalled", resultRevision: 7 }],
+        listTrivialMapCandidates: async () => [],
+        loadGoalProjections: async () => [],
+      },
+      writer: {
+        clearTrivialMap: async () => false,
+        createMap: async () => false,
+        enqueueReview: async () => null,
+        reconcileReview: async () => null,
+        recordCompletionFeedback: async () => false,
+        redriveSynthesis: async (input) => { redriven.push(input.seed); return true; },
+        synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
+      },
+    });
+    const ctx = ctxAt(0);
+    await component.update({ ...ctx, diagnostics: { emit: (name, payload) => diagnostics.events.push({ name, payload }) } });
+
+    expect(redriven).toEqual([{ goalInputId: "goal-stalled", resultRevision: 7 }]);
+    expect(diagnostics.events).toEqual([
+      { name: "joi.harness.stalled_synthesis_redriven", payload: { goalInputId: "goal-stalled", resultRevision: 7 } },
+    ]);
+  });
 });

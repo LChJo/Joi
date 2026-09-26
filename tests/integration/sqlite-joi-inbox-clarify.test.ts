@@ -314,6 +314,65 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
+  it("resolves a continuation decision that is raised while the goal gate is still open", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "研究", personaSummary: "persona", projectLabel: "joi", scopeSummary: "研究" });
+      const inboxRepository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository: inboxRepository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-gate-open-continuation", text: "研究 AI 资讯", workbenchId: workbench.workbenchId });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-gate-open', ?, ?, 'session-gate-open', 'COMPLETED', ?, ?)`)
+          .run(accepted.inputId, workbench.workbenchId, now, now);
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(accepted.inputId);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, continuation_allowance, created_at, updated_at)
+          VALUES (?, ?, '完成资讯横评', 'ACTIVE', 2, ?, ?)`).run(accepted.inputId, workbench.workbenchId, now, now);
+        const insertPath = connection.prepare(`INSERT INTO joi_harness_paths
+          (path_id, goal_input_id, layer, title, status, created_at, updated_at)
+          VALUES (?, ?, ?, '补充证据', 'CLOSED', ?, ?)`);
+        for (let layer = 1; layer <= 4; layer += 1) insertPath.run(`path-gate-open-${String(layer)}`, accepted.inputId, layer, now, now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 7, 7, ?)`).run(accepted.inputId, now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, completion_summary, completed_at, updated_at, disposition)
+          VALUES (?, 7, '已有横评，近七天来源仍不足。', ?, ?, 'CONTINUE')`).run(accepted.inputId, now, now);
+        // An earlier goal question was already answered, which leaves the gate OPEN rather than
+        // WAITING_INPUT — the state the decision card has to survive.
+        connection.prepare(`INSERT INTO joi_goal_execution_gates
+          (goal_input_id, question_id, question_version, status, reason_code, created_at, updated_at)
+          VALUES (?, ?, 1, 'OPEN', 'question_required', ?, ?)`)
+          .run(accepted.inputId, `goal_question:${accepted.inputId}:v1`, now, now);
+      });
+      const harness = new SqliteJoiHarnessRepository(fixture.database);
+      const [seed] = await harness.listContinuationDecisionSeeds();
+      if (seed === undefined) throw new Error("expected continuation decision seed");
+      await expect(harness.requestContinuationDecision({ now, seed })).resolves.toBe(true);
+
+      const gate = fixture.database.transaction((connection) => connection.prepare(
+        "SELECT question_id, question_version, status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(accepted.inputId)) as {
+          question_id: string; question_version: number; status: string;
+        };
+      expect(gate.status).toBe("WAITING_INPUT");
+      expect(gate.question_version).toBe(2);
+
+      // The card must be resolvable with the question the gate actually advertises.
+      await expect(inbox.clarify({
+        actionChoice: "CONTINUE", inputId: accepted.inputId,
+        questionId: gate.question_id, questionVersion: gate.question_version,
+      })).resolves.toMatchObject({ status: "CONSUMED" });
+      // Deciding clears the gate back to OPEN, which is what review recovery requires to resume.
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(accepted.inputId)))
+        .toEqual({ status: "OPEN" });
+    } finally {
+      fixture.database.close();
+    }
+  });
+
   it("applies a goal continuation decision without rerouting the original input", async () => {
     const fixture = await createRuntimeFixture();
     try {
