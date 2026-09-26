@@ -73,11 +73,17 @@ function supportsImageInput(input: PiSourceProviderInput): boolean {
  * takes precedence the moment a provider tells us the truth.
  */
 const DEFAULT_CONTEXT_WINDOW = 128_000;
-const DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
 /**
- * OpenAI-compatible gateways cap completions well below the direct APIs; the old 8,192 ceiling was
- * reached long before the window was, so a route with room to spare still answered short.
+ * An output cap is a property of the model, not of its window: a route with a 128k window may still
+ * allow only 8k of completion, and exceeding the cap is a hard provider rejection that fails the
+ * whole Work rather than merely shortening an answer. `clampMaxTokensToContext` cannot protect this
+ * — it only enforces window minus input. So the ceiling is set per how well the route is known.
+ *
+ * A direct vendor is known: joi already drives these same models at 32,768 over their anthropic
+ * endpoints with no rejections, so the OpenAI-compatible route to the same vendor matches it. A
+ * generic gateway forwards to a model joi cannot know, so it keeps a conservative ceiling.
  */
+const DIRECT_MAX_OUTPUT_TOKENS = 32_768;
 const GATEWAY_MAX_OUTPUT_TOKENS = 16_384;
 
 function contextWindowFor(input: PiSourceProviderInput, presetWindow: number): number {
@@ -108,7 +114,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
       ...(headers === undefined ? {} : { headers }),
       id: input.modelId,
       input: supportsImageInput(input) ? ["text", "image"] : ["text"],
-      maxTokens: kimiK3 ? 131_072 : DEFAULT_MAX_OUTPUT_TOKENS,
+      maxTokens: kimiK3 ? 131_072 : DIRECT_MAX_OUTPUT_TOKENS,
       name: knownModel?.label ?? input.modelId,
       provider: providerId,
       reasoning: true,
@@ -135,7 +141,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
     id: input.modelId,
     input: supportsImageInput(input) ? ["text", "image"] : ["text"],
-    maxTokens: GATEWAY_MAX_OUTPUT_TOKENS,
+    maxTokens: input.kind === "generic-openai" ? GATEWAY_MAX_OUTPUT_TOKENS : DIRECT_MAX_OUTPUT_TOKENS,
     name: knownModel?.label ?? input.modelId,
     provider: providerId,
     reasoning: alwaysOn,
