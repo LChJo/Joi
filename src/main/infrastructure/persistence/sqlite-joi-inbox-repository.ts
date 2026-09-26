@@ -1021,8 +1021,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // Such inputs converge through their live work / result synthesis instead of being re-queued.
       const liveWork = connection.prepare(`SELECT 1 FROM work_items
         WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(inputId);
-      const sideEffects = connection.prepare(`SELECT 1 FROM joi_turns
-        WHERE input_id = ? AND side_effect_started = 1 LIMIT 1`).get(inputId);
+      // A result-synthesis input keeps one row for every revision, so "has any turn on this input
+      // ever started a side effect" answers yes almost immediately and stays yes forever — which
+      // consumed a failed synthesis silently even when every Work was already terminal and there
+      // was nothing left to converge through, leaving the goal parked with no retry and no card.
+      // Judge the turn that actually failed instead; a goal's own input row keeps the historical
+      // check, where an earlier side effect still means a replay could duplicate work.
+      const sideEffects = inputId.startsWith("joi_result_input:")
+        ? connection.prepare("SELECT 1 FROM joi_turns WHERE turn_id = ? AND side_effect_started = 1 LIMIT 1").get(turnId)
+        : connection.prepare("SELECT 1 FROM joi_turns WHERE input_id = ? AND side_effect_started = 1 LIMIT 1").get(inputId);
       const nextStatus = liveWork !== undefined || sideEffects !== undefined ? "CONSUMED" : "PENDING";
       // Never kick a row that is waiting on the user back into the scheduler: an orphan
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
