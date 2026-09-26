@@ -54,6 +54,9 @@ function setup(dto = statistics()) {
   return { api, openGoal, request };
 }
 
+// jsdom reports zero-sized rects; the tooltip skips zero-area triggers, so give it a real box.
+const box = (x: number, y: number, width: number, height: number): DOMRect => ({ x, y, width, height, top: y, left: x, right: x + width, bottom: y + height, toJSON: () => ({}) });
+
 describe("statistics page", () => {
   beforeEach(() => vi.setSystemTime(new Date("2026-09-22T08:00:00.000Z")));
   afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
@@ -75,22 +78,86 @@ describe("statistics page", () => {
     expect(screen.getByRole("table", { name: "星期小时 Token 明细" })).toBeInTheDocument();
   });
 
-  it("updates the whole-page query from presets and ranking filters while heatmap drilldown keeps the range", async () => {
+  it("updates the whole-page query from presets and the workbench dropdown", async () => {
     const { request } = setup();
     await screen.findByRole("heading", { name: "用量统计" });
     fireEvent.click(screen.getByRole("button", { name: "最近 7 天" }));
     await waitFor(() => expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-09-16", to: "2026-09-22" })));
 
-    fireEvent.click(screen.getByRole("button", { name: /查看 2026-09-21/u }));
-    await waitFor(() => expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ from: "2026-09-21", to: "2026-09-21" })));
-    expect(await screen.findByRole("heading", { name: "2026-09-21 明细" })).toBeInTheDocument();
-    expect(screen.getByLabelText("开始日期")).toHaveValue("2026-09-16");
-    expect(within(screen.getByRole("region", { name: "当日明细" })).getByText("完成统计前端")).toBeInTheDocument();
-
-    fireEvent.click(screen.getByRole("button", { name: /筛选模型 Codex/u }));
-    await waitFor(() => expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ modelKey: "codex:gpt-5" })));
-    fireEvent.click(screen.getByRole("button", { name: /筛选工作台 统计设计/u }));
+    fireEvent.change(screen.getByRole("combobox", { name: "工作台" }), { target: { value: "workbench-stats" } });
     await waitFor(() => expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ workbenchId: "workbench-stats" })));
+  });
+
+  it("switches the trend to hourly buckets for a single-day range", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "用量统计" });
+    fireEvent.click(screen.getByRole("button", { name: "今天" }));
+    expect(await screen.findByRole("img", { name: "当日每小时 Token 趋势图" })).toBeInTheDocument();
+    expect(screen.getByText("查看每小时数据表")).toBeInTheDocument();
+  });
+
+  it("shows calendar day usage as a hover tooltip instead of a click drilldown", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "用量统计" });
+    const day = screen.getByRole("img", { name: /^2026-09-21/u });
+    expect(day.tagName).toBe("SPAN");
+    expect(day).not.toHaveAttribute("title");
+    expect(day).toHaveAttribute("aria-label", expect.stringContaining("Token"));
+    expect(screen.queryByRole("region", { name: "当日明细" })).not.toBeInTheDocument();
+  });
+
+  it("renders a styled popup tooltip on hover and hides it on leave", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "用量统计" });
+    const day = screen.getByRole("img", { name: /^2026-09-21/u });
+    day.getBoundingClientRect = () => box(100, 100, 24, 24);
+    fireEvent.mouseOver(day);
+    const popup = await screen.findByText(/2026-09-21 · 总/u);
+    expect(popup).toHaveClass("app-tooltip");
+    fireEvent.mouseOut(day);
+    expect(screen.queryByText(/2026-09-21 · 总/u)).not.toBeInTheDocument();
+  });
+
+  it("presents model ranking rows as hover info instead of page filters", async () => {
+    const { request } = setup();
+    await screen.findByRole("heading", { name: "用量统计" });
+    expect(screen.queryByRole("button", { name: /筛选模型/u })).not.toBeInTheDocument();
+    const row = screen.getByLabelText(/Codex \/ gpt-5/u);
+    expect(row.tagName).toBe("DIV");
+    expect(row).toHaveAttribute("aria-label", expect.stringContaining("占比"));
+    const before = request.mock.calls.length;
+    fireEvent.click(row);
+    expect(request.mock.calls.length).toBe(before);
+  });
+
+  it("presents purpose and workbench rows as hover info instead of page filters", async () => {
+    const { request } = setup();
+    await screen.findByRole("heading", { name: "用量统计" });
+    expect(screen.queryByRole("button", { name: /筛选工作台/u })).not.toBeInTheDocument();
+    const purpose = screen.getByLabelText(/^编排/u);
+    expect(purpose.tagName).toBe("DIV");
+    expect(purpose).toHaveAttribute("aria-label", expect.stringContaining("占比"));
+    const before = request.mock.calls.length;
+    fireEvent.click(purpose);
+    expect(request.mock.calls.length).toBe(before);
+  });
+
+  it("adds a hover tooltip to ranked goals while keeping click navigation", async () => {
+    const { openGoal } = setup();
+    await screen.findByRole("heading", { name: "用量统计" });
+    const goal = screen.getByRole("button", { name: "打开目标 完成统计前端" });
+    goal.getBoundingClientRect = () => box(50, 200, 100, 40);
+    fireEvent.mouseOver(goal);
+    expect(await screen.findByText(/完成统计前端 · 统计设计/u)).toHaveClass("app-tooltip");
+    fireEvent.click(goal);
+    expect(openGoal).toHaveBeenCalledWith("goal-statistics");
+  });
+
+  it("marks a fully unknown day with a hatched stub instead of a stray placeholder", async () => {
+    setup();
+    await screen.findByRole("heading", { name: "用量统计" });
+    expect(document.querySelectorAll(".statistics-bar-unknown")).toHaveLength(1);
+    expect(screen.queryByText("?")).not.toBeInTheDocument();
   });
 
   it("opens a ranked goal and keeps prior data visible when refresh fails", async () => {
@@ -144,15 +211,6 @@ describe("statistics page", () => {
     expect(request).toHaveBeenCalledTimes(2);
   });
 
-  it("supports keyboard activation for filter rows", async () => {
-    const { request } = setup();
-    const ranking = await screen.findByRole("button", { name: /筛选模型 Codex/u });
-    ranking.focus();
-    fireEvent.keyDown(ranking, { key: "Enter" });
-    await waitFor(() => expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ modelKey: "codex:gpt-5" })));
-    expect(within(screen.getByRole("region", { name: "统计筛选" })).getByLabelText("模型")).toHaveValue("codex:gpt-5");
-  });
-
   it("handles first-load failure and retry without fabricating zeros", async () => {
     const api = new DigitalLifeApi("");
     const request = vi.spyOn(api, "statistics").mockRejectedValueOnce(new Error("offline")).mockResolvedValue(statistics());
@@ -186,20 +244,6 @@ describe("statistics page", () => {
     await waitFor(() => expect(request).toHaveBeenLastCalledWith(expect.objectContaining({ purpose: "evolution" })));
     fireEvent.click(screen.getByRole("button", { name: "清除筛选" }));
     await waitFor(() => expect(request).toHaveBeenLastCalledWith({ from: "2026-09-22", to: "2026-09-22", timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone }));
-  });
-
-  it("retries failed day drilldown independently and opens its goal", async () => {
-    const { request, openGoal } = setup();
-    await screen.findByRole("heading", { name: "用量统计" });
-    request.mockRejectedValueOnce(new Error("day unavailable"));
-    fireEvent.click(screen.getByRole("button", { name: /查看 2026-09-21/u }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("当天数据暂时无法读取");
-    fireEvent.click(screen.getByRole("button", { name: "重试" }));
-    const panel = screen.getByRole("region", { name: "当日明细" });
-    fireEvent.click(await within(panel).findByRole("button", { name: /完成统计前端/u }));
-    expect(openGoal).toHaveBeenCalledWith("goal-statistics");
-    fireEvent.click(within(panel).getByRole("button", { name: "收起" }));
-    expect(screen.queryByRole("region", { name: "当日明细" })).not.toBeInTheDocument();
   });
 
   it("lets both custom dates move into a historical year without querying an invalid intermediate range", async () => {

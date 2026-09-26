@@ -28,7 +28,7 @@ function fixture(query: StatisticsQuery): StatisticsDto {
   };
 }
 
-test("statistics navigation, filters, drilldown, goal routing and desktop themes", async () => {
+test("statistics navigation, filters, hover tooltips, goal routing and desktop themes", async () => {
   test.setTimeout(90_000);
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
   try {
@@ -57,14 +57,15 @@ test("statistics navigation, filters, drilldown, goal routing and desktop themes
     await expect(page.locator(".statistics-bar-input")).toHaveCount(7);
     await page.getByRole("combobox", { name: "工作台", exact: true }).selectOption("statistics-workbench");
     await expect.poll(() => queries.at(-1)?.workbenchId).toBe("statistics-workbench");
-    const mainFrom = await page.getByLabel("开始日期").inputValue();
+    // Calendar days show a popup tooltip on hover now, not a click-to-drilldown button.
     const day = queries.at(-1)?.to;
     if (day === undefined) throw new Error("statistics_query_missing");
-    await page.getByRole("button", { name: new RegExp(`查看 ${day}`) }).click();
-    await expect(page.getByRole("region", { name: "当日明细" }).getByText("整理研究结论")).toBeVisible();
-    await expect.poll(() => queries.at(-1)?.from).toBe(day);
-    await expect(page.getByLabel("开始日期")).toHaveValue(mainFrom);
-    await page.getByRole("button", { name: "收起", exact: true }).click();
+    const dayCell = page.locator(`.statistics-day[aria-label^="${day}"]`).first();
+    await expect(dayCell).toHaveAttribute("aria-label", /Token/);
+    await expect(page.getByRole("button", { name: new RegExp(`查看 ${day}`) })).toHaveCount(0);
+    await expect(page.getByRole("region", { name: "当日明细" })).toHaveCount(0);
+    await dayCell.hover();
+    await expect(page.locator(".app-tooltip")).toContainText(day);
     await page.getByRole("button", { name: "时段热图", exact: true }).click();
     await expect(page.locator(".statistics-hourly [role=img]")).toHaveCount(168);
     await mkdir("test-results", { recursive: true });
