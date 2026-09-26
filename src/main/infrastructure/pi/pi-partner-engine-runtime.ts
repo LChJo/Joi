@@ -19,6 +19,15 @@ import type { ModelSourceTurnPin } from "../../domain/model-sources/model-source
 import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import { type PiCodingToolFactory } from "./pi-coding-tool-factory.js";
+import {
+  boundBackgroundSections,
+  boundModelContext,
+  modelContextMaxChars,
+  modelRequestBudget,
+  parseContextWindowFromError,
+  rememberObservedContextWindow,
+  type ModelRequestBudget,
+} from "./pi-model-budget.js";
 import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
@@ -31,10 +40,6 @@ import { trackPiStream } from "./pi-usage.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
-const PARTNER_CONTEXT_MAX_CHARS = 120_000;
-const PARTNER_CONTEXT_MAX_MESSAGES = 32;
-const PARTNER_CONTEXT_OUTPUT_RESERVE_TOKENS = 16_000;
-const PARTNER_CONTEXT_MIN_CHARS = 8_000;
 const MISSING_BODY_CONTINUATION_PROMPT = "Your turn ended without any textual reply. Respond now with a concise plain-text summary of what you did and the outcome; do not call tools.";
 
 function assertSkillWorkspace(revision: PartnerRevision, workspacePath: string | undefined): void {
@@ -46,37 +51,12 @@ function assertSkillWorkspace(revision: PartnerRevision, workspacePath: string |
 }
 
 /**
- * Sizes a run's prompt char budget to the pinned route's window. CJK-heavy partner text can
- * approach one token per character, so chars map 1:1 to tokens and a fixed output reserve
- * stays free; the legacy fixed cap remains the ceiling for large-window routes. A route whose
- * window cannot hold even the floor is still bounded by the floor so the tail stays usable.
+ * Partner-facing names for the shared window sizing and request bound (see pi-model-budget.ts).
+ * They live there because the legacy coding runner needs the same bound and must not import an
+ * engine to get it.
  */
-export function partnerContextMaxChars(model: { contextWindow?: number }): number {
-  const window = model.contextWindow;
-  if (window === undefined || !Number.isFinite(window) || window <= 0) return PARTNER_CONTEXT_MAX_CHARS;
-  const reserve = Math.min(PARTNER_CONTEXT_OUTPUT_RESERVE_TOKENS, Math.floor(window / 2));
-  return Math.max(PARTNER_CONTEXT_MIN_CHARS, Math.min(PARTNER_CONTEXT_MAX_CHARS, window - reserve));
-}
-
-/** Keeps the current request plus a structurally valid recent tail before every provider call. */
-export function boundPartnerModelContext(messages: AgentMessage[], maxChars: number = PARTNER_CONTEXT_MAX_CHARS): AgentMessage[] {
-  if (messages.length <= PARTNER_CONTEXT_MAX_MESSAGES && JSON.stringify(messages).length <= maxChars) return messages;
-  let start = Math.max(0, messages.length - PARTNER_CONTEXT_MAX_MESSAGES);
-  while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
-  const latestUserBefore = (): AgentMessage | undefined => {
-    for (let index = start - 1; index >= 0; index -= 1) if (messages[index]?.role === "user") return messages[index];
-    return undefined;
-  };
-  const initialAnchor = latestUserBefore();
-  let context = [...(initialAnchor === undefined ? [] : [initialAnchor]), ...messages.slice(start)];
-  while (context.length > 2 && JSON.stringify(context).length > maxChars) {
-    start += 1;
-    while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
-    const anchor = latestUserBefore();
-    context = [...(anchor === undefined ? [] : [anchor]), ...messages.slice(start)];
-  }
-  return context;
-}
+export const partnerContextMaxChars = modelContextMaxChars;
+export const boundPartnerModelContext = boundModelContext;
 
 /** Per-run mutable facts: observed side effects and a pending question for the user. */
 interface RunTracker {
@@ -87,6 +67,10 @@ interface RunTracker {
 interface WarmAgent {
   usageContext: { current: UsageContext };
   agent: Agent;
+  /** Kept with the cached model so a reused instance bounds its background without re-resolving. */
+  requestBudget: ModelRequestBudget;
+  /** The pinned model, so a route failure can be attributed to the model it was pinned to. */
+  modelId: string;
   partnerRevisionId: string;
   sideEffectTracker: { current: RunTracker };
   sourceId: string;
@@ -294,7 +278,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const externalRunId = `local_pi:${request.actionId}`;
     const pin = await this.#selectSource(revision, externalRunId);
     const resolved = await this.dependencies.resolver.resolve(pin);
-    const contextMaxChars = partnerContextMaxChars(resolved.model);
+    const budget = modelRequestBudget(resolved.model);
     const configuredPrompt = await this.#configuredPrompt(revision);
     const trackerRef = { current: tracker };
     const tools = this.#toolsWithTimeout([
@@ -311,14 +295,14 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       initialState: {
         messages: [],
         model: resolved.model,
-        systemPrompt: this.#systemPrompt(configuredPrompt, request, execution.promptSection, context.knowledgeSection, context.skillSection, revision, tools.map((tool) => tool.name), execution.workspacePath !== undefined),
+        systemPrompt: this.#systemPrompt(configuredPrompt, request, execution.promptSection, context.knowledgeSection, context.skillSection, revision, tools.map((tool) => tool.name), execution.workspacePath !== undefined, budget.systemMaxChars),
         thinkingLevel: modelRequiresAlwaysOnThinking(resolved.model.baseUrl) ? "low" : "off",
         tools,
       },
       sessionId: externalRunId,
       streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
       toolExecution: "sequential",
-      transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, contextMaxChars)),
+      transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, budget.messagesMaxChars)),
     });
     const live = context.onEvent === undefined ? undefined : new LiveConversationPublisher(request.taskProjection, context.onEvent);
     await live?.start();
@@ -338,6 +322,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
+      this.#learnContextWindow(pin.sourceId, pin.modelId, error);
       await this.dependencies.sources.reportRunFailure?.(pin.sourceId, error).catch(() => undefined);
       const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
@@ -376,7 +361,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const effectiveToolNames = this.#effectiveToolNames(revision);
     if (warm === undefined) {
       const resolved = await this.dependencies.resolver.resolve(pin);
-      const contextMaxChars = partnerContextMaxChars(resolved.model);
+      const budget = modelRequestBudget(resolved.model);
       const usageContext = { current: currentUsage };
       const sideEffectTracker = { current: tracker };
       const tools = this.#toolsWithTimeout([
@@ -385,7 +370,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       ]);
       const systemPrompt = this.#systemPrompt(
         await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
-        revision, tools.map((tool) => tool.name), execution.workspacePath !== undefined,
+        revision, tools.map((tool) => tool.name), execution.workspacePath !== undefined, budget.systemMaxChars,
       );
       const allowed = new Set(tools.map((tool) => tool.name));
       const agent = new Agent({
@@ -404,11 +389,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         sessionId: `local_pi_instance:${input.instanceId}`,
         streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => usageContext.current),
         toolExecution: "sequential",
-        transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, contextMaxChars)),
+        transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, budget.messagesMaxChars)),
       });
       warm = {
         usageContext,
         agent,
+        requestBudget: budget,
+        modelId: pin.modelId,
         partnerRevisionId: revision.partnerRevisionId,
         sideEffectTracker,
         modelRevisionId: pin.modelRevisionId,
@@ -422,7 +409,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const residentToolNames = warm.agent.state.tools.map((tool) => tool.name);
     const systemPrompt = this.#systemPrompt(
       await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
-      revision, residentToolNames, execution.workspacePath !== undefined,
+      revision, residentToolNames, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars,
     );
     warm.agent.state.systemPrompt = systemPrompt;
     const previousMessageCount = warm.agent.state.messages.length;
@@ -447,10 +434,24 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
+      this.#learnContextWindow(warm.sourceId, warm.modelId, error);
       await this.dependencies.sources.reportRunFailure?.(warm.sourceId, error).catch(() => undefined);
       const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
     }
+  }
+
+  /**
+   * A provider states the route's real window when it rejects an oversized request. Recording it
+   * means every later request on that route is sized to what the provider actually accepts instead
+   * of to a preset nobody has verified.
+   */
+  #learnContextWindow(sourceId: string, modelId: string, error: unknown): void {
+    const detail = error !== null && typeof error === "object" && typeof (error as { detail?: unknown }).detail === "string"
+      ? (error as { detail: string }).detail
+      : "";
+    const observed = detail === "" ? undefined : parseContextWindowFromError(detail);
+    if (observed !== undefined) rememberObservedContextWindow(sourceId, modelId, observed);
   }
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */
@@ -484,7 +485,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
    */
   async #continueForMissingBody(agent: Agent, tracker: RunTracker, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
     if (tracker.question !== undefined) return;
-    if (assistantText(agent.state.messages.slice(messageStart)) !== "") return;
+    if (trailingAssistantText(agent.state.messages.slice(messageStart)) !== "") return;
     await this.#promptWithIdleTimeout(agent, MISSING_BODY_CONTINUATION_PROMPT, live, onProgress);
     const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
     if (failure !== null) throw failure;
@@ -582,6 +583,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     revision: PartnerRevision,
     actualToolNames: readonly string[],
     workspaceAvailable: boolean,
+    backgroundBudgetChars: number,
   ): string {
     const enabled = [...new Set(actualToolNames)];
     const disabled = this.dependencies.tools.names.filter((name) => !enabled.includes(name));
@@ -600,10 +602,28 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       "If you are blocked because only the user can supply missing information or make a decision, call ask_user once with one concrete question and stop; otherwise complete the work without asking.",
       `Workbench scope: ${request.workbenchId}`,
       `Work item: ${request.workId}`,
-      workbenchSection,
-      ...(skillSection === "" ? [] : [skillSection]),
-      ...(knowledgeSection === "" ? [] : [knowledgeSection]),
+      this.#boundedBackground(workbenchSection, knowledgeSection, skillSection, backgroundBudgetChars, request),
     ].join("\n");
+  }
+
+  /**
+   * The message list is bounded to the model window, but the Workbench evidence, knowledge and
+   * Skill sections share that same window and used to reach the provider unbounded — an oversized
+   * section came back as an opaque budget rejection, or as a model that answered with silence. The
+   * authoritative policy lines above are never trimmed; only this background data is.
+   */
+  #boundedBackground(workbenchSection: string, knowledgeSection: string, skillSection: string, budgetChars: number, request: PartnerRunRequest): string {
+    const sections = [workbenchSection, skillSection, knowledgeSection];
+    const backgroundChars = sections.filter((section) => section !== "").join("\n\n").length;
+    if (backgroundChars > budgetChars) {
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.system_prompt_bounded", {
+        backgroundChars,
+        budgetChars,
+        workId: request.workId,
+        workbenchId: request.workbenchId,
+      });
+    }
+    return boundBackgroundSections(sections, budgetChars);
   }
 
   #trackWarm(instanceId: string, warm: WarmAgent): void {
@@ -628,6 +648,25 @@ function assistantText(messages: readonly unknown[]): string {
     }
   }
   return parts.join("\n").trim();
+}
+
+/**
+ * Text the run produced after its last tool result. A weak model can open with a preamble, call a
+ * tool once and then stop without a word, which leaves the joined transcript non-empty while the
+ * run still delivered nothing: judging "has a body" on the whole transcript let that run report
+ * COMPLETED with a one-line preamble. Only text after the final tool call or user prompt counts,
+ * so that shape is asked to finish its deliverable like any other silent ending.
+ */
+function trailingAssistantText(messages: readonly unknown[]): string {
+  let start = 0;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const role = (messages[index] as { role?: unknown } | null)?.role;
+    if (role === "toolResult" || role === "user") {
+      start = index + 1;
+      break;
+    }
+  }
+  return assistantText(messages.slice(start));
 }
 
 const ERROR_DETAIL_CHARS = 240;

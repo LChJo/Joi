@@ -11,6 +11,7 @@ import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
+import { boundBackgroundSections, boundModelContext, modelRequestBudget } from "./pi-model-budget.js";
 import { trackPiStream } from "./pi-usage.js";
 
 export class PiCodingPartnerRunner implements PartnerAdapterRunner {
@@ -53,6 +54,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
       { environmentKeys: skillDispatch.environmentKeys },
     );
     const skillSection = skillDispatch.promptSection;
+    const budget = modelRequestBudget(resolved.model);
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     const allowed = new Set(tools.map((tool) => tool.name));
     const agent = new Agent({
@@ -72,14 +74,16 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
           "The assigned workspace is your home base: create work files there by default. When the task requires it, you may also read and write paths outside the workspace (for example user directories, installed skill folders, or configuration files). List every write outside the workspace (path and change) in your final reply. Placeholders like {baseDir} inside skill instructions refer to the skill's own directory.",
           `Workbench scope: ${request.workbenchId}`,
           `Work item: ${request.workId}`,
-          execution.promptSection,
-          ...(skillSection === "" ? [] : [skillSection]),
+          boundBackgroundSections([execution.promptSection, skillSection], budget.systemMaxChars),
         ].join("\n"),
         tools,
       },
       sessionId: externalRunId,
       streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
       toolExecution: "sequential",
+      // This runner had no context management at all: no per-request bound and a raw background,
+      // so one long run could push its own history past the window and lose the output budget.
+      transformContext: (messages) => Promise.resolve(boundModelContext(messages, budget.messagesMaxChars)),
     });
     await agent.prompt(request.taskProjection);
     const failed = agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error");

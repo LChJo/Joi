@@ -8,6 +8,13 @@ import { vi } from "vitest";
 
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
 import { boundPartnerModelContext, partnerContextMaxChars, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
+import {
+  boundBackgroundSections,
+  modelRequestBudget,
+  observedContextWindow,
+  parseContextWindowFromError,
+  rememberObservedContextWindow,
+} from "../../src/main/infrastructure/pi/pi-model-budget.js";
 import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
@@ -48,6 +55,32 @@ describe("local Pi coding partner runtime", () => {
     expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(16_000);
     expect(bounded[0]).toMatchObject({ content: "original", role: "user" });
     expect(boundPartnerModelContext(messages)).toHaveLength(messages.length);
+  });
+
+  it("learns a route's real window from the provider that rejected the request", () => {
+    // Providers state the truth when they refuse; a wrong guess here would resize every later
+    // request on the route, so only unambiguous wording is read.
+    expect(parseContextWindowFromError("prompt is too long: 210000 tokens > 128000 maximum")).toBe(128_000);
+    expect(parseContextWindowFromError("maximum context length is 65536 tokens")).toBe(65_536);
+    expect(parseContextWindowFromError("connection reset by peer")).toBeUndefined();
+    expect(parseContextWindowFromError("request failed with status 400")).toBeUndefined();
+
+    rememberObservedContextWindow("source_a", "model_a", 65_536);
+    expect(observedContextWindow("source_a", "model_a")).toBe(65_536);
+    // Switching either half of the route invalidates what was learned about the old one.
+    expect(observedContextWindow("source_a", "model_b")).toBeUndefined();
+    expect(observedContextWindow("source_b", "model_a")).toBeUndefined();
+  });
+
+  it("splits one window between the background and the message list", () => {
+    const total = partnerContextMaxChars({ contextWindow: 128_000 });
+    const budget = modelRequestBudget({ contextWindow: 128_000 });
+    // Neither payload may claim the whole window: the provider receives their sum.
+    expect(budget.systemMaxChars + budget.messagesMaxChars).toBeLessThanOrEqual(total);
+    expect(budget.messagesMaxChars).toBeGreaterThan(budget.systemMaxChars);
+    expect(modelRequestBudget({})).toEqual({ messagesMaxChars: 80_000, systemMaxChars: 40_000 });
+    expect(boundBackgroundSections(["", "a".repeat(50)], 40)).toBe(`${"a".repeat(40)}\n[truncated: Workbench background exceeded 40 characters]`);
+    expect(boundBackgroundSections(["short"], 40)).toBe("short");
   });
 
   it("runs one isolated Pi session with the pinned workspace, prompt and tool allowlist", async () => {
@@ -533,6 +566,61 @@ describe("Pi partner engine runtime", () => {
     expect(faux.state.callCount).toBe(2);
   });
 
+  it("asks for the deliverable when a run stops silently after a tool call that followed a preamble", async () => {
+    const faux = fauxProvider({ provider: "local-partner-preamble-then-silence" });
+    let continuationPrompt = "";
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxText("I'll execute this mechanical task. Let me start by checking the current state."),
+        fauxToolCall("bash", { command: "ls -la mldesigner" }),
+      ], { stopReason: "toolUse" }),
+      fauxAssistantMessage([]),
+      (context) => {
+        const users = (context.messages as { content?: unknown; role?: string }[]).filter((message) => message.role === "user");
+        const last = users.at(-1)?.content;
+        continuationPrompt = typeof last === "string" ? last : JSON.stringify(last);
+        return fauxAssistantMessage([fauxText("report written; commit a1b2c3d created")]);
+      },
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    let toolRuns = 0;
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "test bash",
+          execute: async () => { toolRuns += 1; return { content: [{ text: "mldesigner exists", type: "text" as const }], details: {} }; },
+          label: "bash",
+          name: "bash",
+          parameters: Type.Object({ command: Type.String() }),
+        }],
+        names: ["bash"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Preamble worker", kind: "local-pi",
+      partnerId: "partner_preamble", partnerRevisionId: "partner_revision_preamble", registryRevision: 1,
+      skills: [], tools: ["bash"],
+    });
+
+    const result = await runtime.runEphemeral(
+      { actionId: "action_preamble", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "implement", workId: "work_preamble" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    );
+
+    // The preamble alone is not a deliverable: the run is asked to finish its body.
+    expect(result.status).toBe("COMPLETED");
+    expect(result.output.body).toContain("report written; commit a1b2c3d created");
+    expect(toolRuns).toBe(1);
+    expect(faux.state.callCount).toBe(3);
+    expect(continuationPrompt).toContain("plain-text summary");
+  });
+
   it("classifies an exhausted generic connection failure as safely retryable before side effects", async () => {
     const faux = fauxProvider({ provider: "local-partner-connection-error" });
     faux.setResponses([
@@ -883,5 +971,48 @@ describe("Pi partner engine runtime", () => {
 
     expect(runtime.engineOf()).toBe("pi-core");
     await expect(runtime.health()).resolves.toEqual({ available: true });
+  });
+
+  it("bounds an oversized Workbench background section to the model budget and records the trim", async () => {
+    const faux = fauxProvider({ provider: "local-partner-oversized-background" });
+    let firstSystemPrompt = "";
+    faux.setResponses([
+      (context) => {
+        firstSystemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage([fauxText("done")]);
+      },
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const events: { fields: unknown; name: string }[] = [];
+    const runtime = new PiPartnerEngineRuntime({
+      contexts: { loadForExecution: async () => ({ promptSection: "BACKGROUND_".repeat(20_000), sanitized: {} }) },
+      diagnostics: { emit: (name, fields) => { events.push({ name, fields }); } },
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: () => [], names: [] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-08-24T11:30:00.000Z", displayName: "Oversized background", kind: "local-pi",
+      partnerId: "partner_oversized", partnerRevisionId: "partner_revision_oversized", registryRevision: 1, skills: [], tools: [],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_oversized", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "task", workId: "work_oversized" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ output: { body: "done" }, status: "COMPLETED" });
+
+    // The background owns its own share of the window; the message list holds the rest.
+    const budgetChars = modelRequestBudget(faux.getModel()).systemMaxChars;
+    expect(firstSystemPrompt).toContain("[truncated: Workbench background exceeded");
+    expect(firstSystemPrompt.length).toBeLessThan(budgetChars + 5_000);
+    // The authoritative policy lines survive the trim of the background data below them.
+    expect(firstSystemPrompt).toContain("Runtime permission boundary (authoritative");
+    expect(events).toEqual([{
+      fields: { backgroundChars: 220_000, budgetChars, workId: "work_oversized", workbenchId: "workbench_1" },
+      name: "joi.partner.system_prompt_bounded",
+    }]);
   });
 });

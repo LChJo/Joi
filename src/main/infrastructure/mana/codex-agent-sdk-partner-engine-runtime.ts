@@ -18,6 +18,7 @@ import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./lo
 import { classifyNativeCliFailure, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
 import { beginUsage, normalizeCodexUsage, type SafeUsageSession, unknownUsageObservation, usageFailureStatus } from "../usage/sdk-usage.js";
+import { boundBackgroundSections, DEFAULT_BACKGROUND_BUDGET_CHARS } from "../pi/pi-model-budget.js";
 
 export interface CodexThreadSurface {
   readonly id: string | null;
@@ -236,7 +237,10 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       `Enabled capabilities: read${writeAvailable ? ", shell, apply_patch" : ""}${permissions.webSearchMode === "disabled" ? "" : ", web_search"}.`,
       `Disabled or unavailable capabilities: ${[...(!writeAvailable ? ["shell", "apply_patch"] : []), ...(!permissions.networkAccessEnabled ? ["network"] : []), ...(permissions.webSearchMode === "disabled" ? ["web_search"] : [])].join(", ") || "none"}.`,
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable capability.",
-      `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`, workbenchSection, context.skillSection, context.knowledgeSection,
+      `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
+      // The CLI owns its own message history, so this background is the one payload joi controls
+      // here; left unbounded it is the whole request.
+      boundBackgroundSections([workbenchSection, context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
     ].filter((part) => part !== "").join("\n");
   }
 

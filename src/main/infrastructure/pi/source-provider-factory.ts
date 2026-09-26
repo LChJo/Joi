@@ -10,6 +10,7 @@ import {
   type DirectModelSourceKind,
 } from "./provider-presets.js";
 import type { ModelSourceAccessMode, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
+import { observedContextWindow } from "./pi-model-budget.js";
 
 interface DirectSourceProviderInput {
   accessMode: Exclude<ModelSourceAccessMode, "custom">;
@@ -65,6 +66,24 @@ function supportsImageInput(input: PiSourceProviderInput): boolean {
   return IMAGE_INPUT_SOURCES.has(input.kind === "generic-openai" ? "generic-openai" : `${input.kind}:${input.accessMode}`);
 }
 
+/**
+ * Fallbacks for a route whose provider has not yet stated its real limit. They are deliberately
+ * conservative: an over-estimated window is what lets a request exceed the route and come back as a
+ * clamped max_tokens, while an under-estimated one only trims a little earlier. `observedContextWindow`
+ * takes precedence the moment a provider tells us the truth.
+ */
+const DEFAULT_CONTEXT_WINDOW = 128_000;
+const DEFAULT_MAX_OUTPUT_TOKENS = 32_768;
+/**
+ * OpenAI-compatible gateways cap completions well below the direct APIs; the old 8,192 ceiling was
+ * reached long before the window was, so a route with room to spare still answered short.
+ */
+const GATEWAY_MAX_OUTPUT_TOKENS = 16_384;
+
+function contextWindowFor(input: PiSourceProviderInput, presetWindow: number): number {
+  return observedContextWindow(input.sourceId, input.modelId) ?? presetWindow;
+}
+
 export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   const providerId = `joi-source:${input.sourceId}`;
   const direct = input.kind === "generic-openai" ? undefined : getDirectModelSourcePreset(input.kind, input.accessMode, input.protocol);
@@ -84,12 +103,12 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
         ...((input.modelId === "k3" || input.modelId === "kimi-for-coding") ? { allowEmptySignature: true } : {}),
         forceAdaptiveThinking: true,
       } } : {}),
-      contextWindow: input.modelId === "k3" ? 1_048_576 : input.kind === "kimi" ? 262_144 : 128_000,
+      contextWindow: contextWindowFor(input, input.modelId === "k3" ? 1_048_576 : input.kind === "kimi" ? 262_144 : DEFAULT_CONTEXT_WINDOW),
       cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
       ...(headers === undefined ? {} : { headers }),
       id: input.modelId,
       input: supportsImageInput(input) ? ["text", "image"] : ["text"],
-      maxTokens: kimiK3 ? 131_072 : 32_768,
+      maxTokens: kimiK3 ? 131_072 : DEFAULT_MAX_OUTPUT_TOKENS,
       name: knownModel?.label ?? input.modelId,
       provider: providerId,
       reasoning: true,
@@ -112,11 +131,11 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     // Conservative gateway defaults: keep the `system` role (developer can be
     // rejected by non-OpenAI gateways) and never emit the OpenAI-only 24h cache retention.
     compat: { supportsDeveloperRole: false, supportsLongCacheRetention: false },
-    contextWindow: 128_000,
+    contextWindow: contextWindowFor(input, DEFAULT_CONTEXT_WINDOW),
     cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
     id: input.modelId,
     input: supportsImageInput(input) ? ["text", "image"] : ["text"],
-    maxTokens: 8_192,
+    maxTokens: GATEWAY_MAX_OUTPUT_TOKENS,
     name: knownModel?.label ?? input.modelId,
     provider: providerId,
     reasoning: alwaysOn,

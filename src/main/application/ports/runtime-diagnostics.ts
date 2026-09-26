@@ -88,6 +88,15 @@ export interface RuntimeDiagnosticEventMap {
   "joi.harness.review_historically_closed": {
     inputId: string;
   };
+  /**
+   * A goal whose Work is all terminal and whose synthesis fell behind the result set had no scan
+   * that could reach it, so it sat in "finalizing" indefinitely and was only ever found by reading
+   * the database by hand. Emitted when such a goal is detected and put back in the queue.
+   */
+  "joi.harness.stalled_synthesis_redriven": {
+    goalInputId: string;
+    resultRevision: number;
+  };
   "joi.harness.feedback_recorded": {
     workbenchId: string;
     goalInputId: string;
@@ -510,6 +519,19 @@ export interface RuntimeDiagnosticEventMap {
     partnerId: string;
     pinnedModelId: string;
     sourceId: string;
+  };
+  /**
+   * A partner's system prompt carries Workbench evidence, knowledge and Skill sections that share
+   * the model window with the message list, and only the message list was bounded. An oversized
+   * background section therefore reached the provider intact and came back as an opaque budget
+   * rejection, or as a model that answered with silence. Recorded whenever the background was
+   * trimmed to the budget, so the cause stays visible instead of only its downstream symptom.
+   */
+  "joi.partner.system_prompt_bounded": {
+    backgroundChars: number;
+    budgetChars: number;
+    workbenchId: string;
+    workId: string;
   };
   "joi.partner.skills.injected": {
     actionId: string;

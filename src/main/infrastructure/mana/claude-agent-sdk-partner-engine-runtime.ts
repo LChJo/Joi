@@ -18,6 +18,7 @@ import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./lo
 import { classifyNativeCliFailure, NativeCliRunError, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
 import { beginUsage, normalizeClaudeModelUsage, type SafeUsageSession, unknownUsageObservation, usageFailureStatus } from "../usage/sdk-usage.js";
+import { boundBackgroundSections, DEFAULT_BACKGROUND_BUDGET_CHARS } from "../pi/pi-model-budget.js";
 
 export const CLAUDE_CODE_TOOL_OPTIONS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "NotebookEdit"] as const;
 const CLAUDE_WORKSPACE_TOOLS = new Set(["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"]);
@@ -264,7 +265,10 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       `Disabled tools: ${disabled.length === 0 ? "none" : disabled.join(", ")}.`,
       workspaceRootBoundaryLine(workspacePath),
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
-      `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`, workbenchSection, context.skillSection, context.knowledgeSection,
+      `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
+      // The CLI owns its own message history, so this background is the one payload joi controls
+      // here; left unbounded it is the whole request.
+      boundBackgroundSections([workbenchSection, context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
     ].filter((part) => part !== "").join("\n");
   }
 

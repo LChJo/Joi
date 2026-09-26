@@ -4,6 +4,7 @@ import { Agent, generateSummary, type AgentMessage, type AgentTool } from "@eare
 import type { Api, Context, ImageContent, Model, Models } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
+import { boundRequestByChars, modelContextMaxChars } from "./pi-model-budget.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
@@ -323,6 +324,12 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       steeringMode: "one-at-a-time",
       streamFn: trackPiStream(this.#models, this.#usage, () => this.#usageContext(runtime, "orchestration")),
       toolExecution: "sequential",
+      // Compaction only runs at Turn boundaries (startTurn and post-turn), so a Turn that makes many
+      // tool calls could still grow past the window mid-flight: the provider clamps max_tokens down to
+      // whatever is left and the Turn ends truncated, which reads downstream as a model that stopped
+      // talking rather than as an overflow. This bound is request-only — the session keeps its history
+      // and compaction still owns its durable shape.
+      transformContext: (messages) => Promise.resolve(boundRequestByChars(messages, modelContextMaxChars(this.#model))),
     });
     const runtime: SessionRuntime = { agent, current: undefined, delivered: { text: false, tool: false }, metadata };
     agent.subscribe(async (event) => {
@@ -343,12 +350,14 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
 
   /** Compacts when the message count or the estimated token budget says the context is full. */
   async #compactIfNeeded(runtime: SessionRuntime): Promise<void> {
-    const currentMessages = runtime.agent.state.messages;
-    const overflow = !this.#headroomSatisfied(currentMessages);
+    const state = runtime.agent.state;
+    const currentMessages = state.messages;
+    const request = { systemPrompt: state.systemPrompt, tools: state.tools };
+    const overflow = !this.#headroomSatisfied(currentMessages, request);
     if (!overflow && currentMessages.length <= this.#compaction.maxMessages) return;
     // An overflowing session must also shrink its kept tail: the fixed recent-message window
     // can itself exceed the model window, which is exactly what clamped max_tokens to 1.
-    const keep = overflow ? this.#fittingTailKeep(currentMessages) : this.#compaction.keepRecentMessages;
+    const keep = overflow ? this.#fittingTailKeep(currentMessages, request) : this.#compaction.keepRecentMessages;
     {
       const targetIndex = Math.max(1, currentMessages.length - keep);
       let firstKeptIndex = targetIndex;
@@ -400,16 +409,18 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   }
 
   /** True when the estimated context still leaves room for thinking plus a visible answer. */
-  #headroomSatisfied(messages: readonly AgentMessage[]): boolean {
+  #headroomSatisfied(messages: readonly AgentMessage[], request: Pick<Context, "systemPrompt" | "tools">): boolean {
     if (this.#model.contextWindow <= 0) return true;
     // Reuses pi-ai's own estimate and safety margin: if even a headroom-sized request gets
-    // clamped below the headroom, the next real request would be clamped as well.
-    const context = { messages: [...messages] } as unknown as Context;
+    // clamped below the headroom, the next real request would be clamped as well. The system
+    // prompt and tool schemas belong in the context: pi-ai only counts them when no assistant
+    // usage anchors the session yet, and they are fixed overhead every request pays regardless.
+    const context = { messages: [...messages], systemPrompt: request.systemPrompt, tools: request.tools } as unknown as Context;
     return clampMaxTokensToContext(this.#model, context, COMPACTION_OUTPUT_HEADROOM) >= COMPACTION_OUTPUT_HEADROOM;
   }
 
   /** Smallest kept tail (summary checkpoint included) that restores the output headroom. */
-  #fittingTailKeep(messages: readonly AgentMessage[]): number {
+  #fittingTailKeep(messages: readonly AgentMessage[], request: Pick<Context, "systemPrompt" | "tools">): number {
     const checkpoint: AgentMessage = {
       content: `[joi session checkpoint]\n${"x".repeat(this.#compaction.maxSummaryCharacters)}`,
       role: "user",
@@ -417,7 +428,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     };
     for (const keep of COMPACTION_TAIL_STEPS) {
       const tail = messages.slice(Math.max(1, messages.length - keep));
-      if (this.#headroomSatisfied([checkpoint, ...tail])) return keep;
+      if (this.#headroomSatisfied([checkpoint, ...tail], request)) return keep;
     }
     return 2;
   }

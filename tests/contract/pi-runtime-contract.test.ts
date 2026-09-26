@@ -22,6 +22,7 @@ import {
   MODEL_SOURCE_OPTIONS,
   MODEL_SOURCE_PRESETS,
 } from "../../src/main/infrastructure/pi/provider-presets.js";
+import { boundRequestByChars, modelContextMaxChars } from "../../src/main/infrastructure/pi/pi-model-budget.js";
 import { createPiSourceProvider } from "../../src/main/infrastructure/pi/source-provider-factory.js";
 import { ConfiguredPiReasoningRuntime } from "../../src/main/infrastructure/pi/configured-pi-reasoning-runtime.js";
 import { JoiSkillRuntime } from "../../src/main/infrastructure/pi/joi-skill-runtime.js";
@@ -540,6 +541,72 @@ describe("Pi reasoning runtime contract", () => {
       turnId: "turn-after-restore",
     });
     expect(store.snapshots.get("session_compact")?.compaction?.count).toBe(1);
+  });
+
+  it("bounds every request inside the window when one Turn keeps calling tools", async () => {
+    const faux = fauxProvider({ provider: "joi-mid-turn-bound" });
+    // A 32k window sizes the request budget to 16k characters, small enough to exceed mid-Turn.
+    const model = { ...faux.getModel(), contextWindow: 32_000 };
+    const budget = modelContextMaxChars(model);
+    const requestChars: number[] = [];
+    const openings: unknown[] = [];
+    faux.setResponses(Array.from({ length: 6 }, (_, index) => (context: { messages?: unknown }) => {
+      const messages = (context.messages ?? []) as unknown[];
+      requestChars.push(JSON.stringify(messages).length);
+      openings.push(messages[0]);
+      return index < 5
+        ? fauxAssistantMessage([fauxToolCall("memory_search", { query: String(index) })], { stopReason: "toolUse" })
+        : fauxAssistantMessage([fauxText("done")]);
+    }));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiReasoningRuntime({
+      model,
+      models,
+      sessionStore: new MemorySessionStore(),
+      tools: [{
+        name: "memory_search",
+        label: "Search memory",
+        description: "Searches memory.",
+        parameters: Type.Object({ query: Type.String() }),
+        execute: async () => ({ content: [{ type: "text", text: `tool-output ${"x".repeat(5_000)}` }], details: {} }),
+      }],
+    });
+
+    await runtime.startTurn({
+      workbenchId: "workbench_1",
+      inputId: "input_bound",
+      modelId: "contract-model",
+      modelRevisionId: "model_rev_1",
+      prompt: "look things up",
+      sessionId: "session_bound",
+      sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      turnId: "turn-bound",
+    });
+
+    // Compaction only runs at Turn boundaries, so without this bound the later requests of the Turn
+    // would carry the whole grown history past the window and lose their output budget to a clamped
+    // max_tokens — the Turn then ends truncated with no committed outcome.
+    expect(requestChars).toHaveLength(6);
+    expect(Math.max(...requestChars)).toBeLessThanOrEqual(budget + 2_000);
+    expect(requestChars.at(-1)).toBeGreaterThan(requestChars[0] ?? 0);
+    // The opening request survives as the anchor, so the model still sees what it was asked.
+    expect(JSON.stringify(openings.at(-1))).toContain("look things up");
+  });
+
+  it("keeps the request anchor and never opens on an orphaned tool result", () => {
+    const filler = (role: string, text: string) => ({ content: [{ text, type: "text" }], role, timestamp: 1 }) as never;
+    const messages = [
+      filler("user", "TASK_ANCHOR"),
+      ...Array.from({ length: 8 }, (_, index) => filler(index % 2 === 0 ? "assistant" : "toolResult", "y".repeat(1_000))),
+    ];
+    const bounded = boundRequestByChars(messages, 4_000);
+    expect(bounded.length).toBeLessThan(messages.length);
+    expect(JSON.stringify(bounded).length).toBeLessThanOrEqual(4_000 + 2_000);
+    expect(JSON.stringify(bounded[0])).toContain("TASK_ANCHOR");
+    expect((bounded[1] as { role?: string }).role).not.toBe("toolResult");
   });
 
   it("compacts a token-overflowing session before prompting even below the message cap", async () => {
