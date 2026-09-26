@@ -25,7 +25,9 @@ import {
   modelContextMaxChars,
   modelRequestBudget,
   parseContextWindowFromError,
+  parseMaxOutputTokensFromError,
   rememberObservedContextWindow,
+  rememberObservedMaxOutputTokens,
   type ModelRequestBudget,
 } from "./pi-model-budget.js";
 import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
@@ -322,7 +324,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
-      this.#learnContextWindow(pin.sourceId, pin.modelId, error);
+      this.#learnRouteLimits(pin.sourceId, pin.modelId, error);
       await this.dependencies.sources.reportRunFailure?.(pin.sourceId, error).catch(() => undefined);
       const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
@@ -434,7 +436,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
-      this.#learnContextWindow(warm.sourceId, warm.modelId, error);
+      this.#learnRouteLimits(warm.sourceId, warm.modelId, error);
       await this.dependencies.sources.reportRunFailure?.(warm.sourceId, error).catch(() => undefined);
       const partialArtifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       throw Object.assign(wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state }), { partialArtifacts });
@@ -442,16 +444,21 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   /**
-   * A provider states the route's real window when it rejects an oversized request. Recording it
-   * means every later request on that route is sized to what the provider actually accepts instead
-   * of to a preset nobody has verified.
+   * A provider states the route's real limits when it refuses a request that exceeded them: the
+   * window for an oversized prompt, the completion cap for an oversized ask. Recording either means
+   * later requests on that route are sized to what the provider accepts rather than to a preset
+   * nobody has verified. The refused Work still fails — this is what stops the next one failing
+   * the same way.
    */
-  #learnContextWindow(sourceId: string, modelId: string, error: unknown): void {
+  #learnRouteLimits(sourceId: string, modelId: string, error: unknown): void {
     const detail = error !== null && typeof error === "object" && typeof (error as { detail?: unknown }).detail === "string"
       ? (error as { detail: string }).detail
       : "";
-    const observed = detail === "" ? undefined : parseContextWindowFromError(detail);
-    if (observed !== undefined) rememberObservedContextWindow(sourceId, modelId, observed);
+    if (detail === "") return;
+    const contextWindow = parseContextWindowFromError(detail);
+    if (contextWindow !== undefined) rememberObservedContextWindow(sourceId, modelId, contextWindow);
+    const maxOutputTokens = parseMaxOutputTokensFromError(detail);
+    if (maxOutputTokens !== undefined) rememberObservedMaxOutputTokens(sourceId, modelId, maxOutputTokens);
   }
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */

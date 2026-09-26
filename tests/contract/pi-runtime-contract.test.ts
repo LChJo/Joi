@@ -543,6 +543,17 @@ describe("Pi reasoning runtime contract", () => {
     expect(store.snapshots.get("session_compact")?.compaction?.count).toBe(1);
   });
 
+  it("sizes a known model to the completion cap its vendor documents", () => {
+    const glm = createPiSourceProvider({ accessMode: "api", kind: "glm", modelId: "glm-4.7", protocol: "openai", sourceId: "src_glm" });
+    expect(glm.getModels()[0]).toMatchObject({ maxTokens: 131_072 });
+    // A generic gateway forwards to a model joi cannot know, so it keeps the conservative ceiling.
+    const gateway = createPiSourceProvider({
+      baseUrl: "https://gateway.example/v1", displayName: "gw", kind: "generic-openai",
+      modelId: "vendor/unknown", protocol: "openai", sourceId: "src_gw",
+    });
+    expect(gateway.getModels()[0]).toMatchObject({ maxTokens: 16_384 });
+  });
+
   it("bounds every request inside the window when one Turn keeps calling tools", async () => {
     const faux = fauxProvider({ provider: "joi-mid-turn-bound" });
     // A 32k window sizes the request budget to 16k characters, small enough to exceed mid-Turn.

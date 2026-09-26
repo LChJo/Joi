@@ -7,6 +7,11 @@ export interface ModelPresetEntry {
   id: string;
   label: string;
   toolCapability: "release-tested";
+  /** Documented context window in tokens. Omitted when the vendor's page for this exact model does
+   *  not state one — a guessed-high window is what lets a request exceed the route. */
+  contextWindow?: number;
+  /** Documented maximum completion length in tokens, which is a separate limit from the window. */
+  maxOutputTokens?: number;
 }
 
 export interface DirectModelSourcePreset {
@@ -22,7 +27,11 @@ export interface DirectModelSourcePreset {
   protocol: ModelSourceProtocol;
 }
 
-const model = (id: string, label: string): ModelPresetEntry => ({ id, label, toolCapability: "release-tested" });
+const model = (
+  id: string,
+  label: string,
+  limits?: { contextWindow?: number; maxOutputTokens?: number },
+): ModelPresetEntry => ({ id, label, toolCapability: "release-tested", ...limits });
 const presetVersion = "2026-08-06";
 
 export const MODEL_SOURCE_PRESETS = [
@@ -43,17 +52,17 @@ export const MODEL_SOURCE_PRESETS = [
   },
   {
     accessMode: "api", defaultModelId: "glm-4.7", endpoint: "https://open.bigmodel.cn/api/paas/v4", endpointEditable: false,
-    kind: "glm", label: "GLM API", models: [model("glm-4.7", "GLM-4.7"), model("glm-4.5", "GLM-4.5")],
+    kind: "glm", label: "GLM API", models: [model("glm-4.7", "GLM-4.7", { maxOutputTokens: 131_072 }), model("glm-4.5", "GLM-4.5", { maxOutputTokens: 98_304 })],
     piProviderFamily: "openai-compatible", presetVersion, protocol: "openai",
   },
   {
     accessMode: "coding-plan", defaultModelId: "glm-5.2", endpoint: "https://open.bigmodel.cn/api/coding/paas/v4", endpointEditable: false,
-    kind: "glm", label: "GLM Coding Plan", models: [model("glm-5.2", "GLM-5.2"), model("glm-4.7", "GLM-4.7")],
+    kind: "glm", label: "GLM Coding Plan", models: [model("glm-5.2", "GLM-5.2", { contextWindow: 1_000_000, maxOutputTokens: 131_072 }), model("glm-4.7", "GLM-4.7", { maxOutputTokens: 131_072 })],
     piProviderFamily: "openai-compatible", presetVersion, protocol: "openai",
   },
   {
     accessMode: "coding-plan", defaultModelId: "glm-5.2", endpoint: "https://open.bigmodel.cn/api/anthropic", endpointEditable: false,
-    kind: "glm", label: "GLM Coding Plan", models: [model("glm-5.2", "GLM-5.2"), model("glm-4.7", "GLM-4.7")],
+    kind: "glm", label: "GLM Coding Plan", models: [model("glm-5.2", "GLM-5.2", { contextWindow: 1_000_000, maxOutputTokens: 131_072 }), model("glm-4.7", "GLM-4.7", { maxOutputTokens: 131_072 })],
     piProviderFamily: "anthropic-compatible", presetVersion, protocol: "anthropic",
   },
   {
@@ -68,12 +77,12 @@ export const MODEL_SOURCE_PRESETS = [
   },
   {
     accessMode: "coding-plan", defaultModelId: "qwen3.7-plus", endpoint: "https://coding.dashscope.aliyuncs.com/v1", endpointEditable: false,
-    kind: "qwen", label: "百炼 Coding Plan", models: [model("qwen3.7-plus", "Qwen 3.7 Plus"), model("qwen3-coder-next", "Qwen 3 Coder Next")],
+    kind: "qwen", label: "百炼 Coding Plan", models: [model("qwen3.7-plus", "Qwen 3.7 Plus"), model("qwen3-coder-next", "Qwen 3 Coder Next", { contextWindow: 262_144, maxOutputTokens: 65_536 })],
     piProviderFamily: "openai-compatible", presetVersion, protocol: "openai",
   },
   {
     accessMode: "coding-plan", defaultModelId: "qwen3.7-plus", endpoint: "https://coding.dashscope.aliyuncs.com/apps/anthropic", endpointEditable: false,
-    kind: "qwen", label: "百炼 Coding Plan", models: [model("qwen3.7-plus", "Qwen 3.7 Plus"), model("qwen3-coder-next", "Qwen 3 Coder Next")],
+    kind: "qwen", label: "百炼 Coding Plan", models: [model("qwen3.7-plus", "Qwen 3.7 Plus"), model("qwen3-coder-next", "Qwen 3 Coder Next", { contextWindow: 262_144, maxOutputTokens: 65_536 })],
     piProviderFamily: "anthropic-compatible", presetVersion, protocol: "anthropic",
   },
   {
@@ -88,7 +97,7 @@ export const MODEL_SOURCE_PRESETS = [
   },
   {
     accessMode: "api", defaultModelId: "doubao-seed-2-0-pro-260215", endpoint: "https://ark.cn-beijing.volces.com/api/v3", endpointEditable: false,
-    kind: "doubao", label: "Doubao API", models: [model("doubao-seed-2-0-pro-260215", "Doubao Seed 2.0 Pro"), model("doubao-seed-1-8-251228", "Doubao Seed 1.8")],
+    kind: "doubao", label: "Doubao API", models: [model("doubao-seed-2-0-pro-260215", "Doubao Seed 2.0 Pro", { maxOutputTokens: 128_000 }), model("doubao-seed-1-8-251228", "Doubao Seed 1.8")],
     piProviderFamily: "openai-compatible", presetVersion, protocol: "openai",
   },
   {
@@ -103,27 +112,27 @@ export const MODEL_SOURCE_PRESETS = [
   },
   {
     accessMode: "api", defaultModelId: "MiniMax-M2.7", endpoint: "https://api.minimaxi.com/v1", endpointEditable: false,
-    kind: "minimax", label: "MiniMax API", models: [model("MiniMax-M2.7", "MiniMax M2.7"), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed")],
+    kind: "minimax", label: "MiniMax API", models: [model("MiniMax-M2.7", "MiniMax M2.7", { contextWindow: 204_800, maxOutputTokens: 128_000 }), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed", { contextWindow: 204_800, maxOutputTokens: 128_000 })],
     piProviderFamily: "builtin", presetVersion, protocol: "openai",
   },
   {
     accessMode: "api", defaultModelId: "MiniMax-M2.7", endpoint: "https://api.minimaxi.com/anthropic", endpointEditable: false,
-    kind: "minimax", label: "MiniMax API", models: [model("MiniMax-M2.7", "MiniMax M2.7"), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed")],
+    kind: "minimax", label: "MiniMax API", models: [model("MiniMax-M2.7", "MiniMax M2.7", { contextWindow: 204_800, maxOutputTokens: 128_000 }), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed", { contextWindow: 204_800, maxOutputTokens: 128_000 })],
     piProviderFamily: "anthropic-compatible", presetVersion, protocol: "anthropic",
   },
   {
     accessMode: "coding-plan", defaultModelId: "MiniMax-M2.7", endpoint: "https://api.minimaxi.com/v1", endpointEditable: false,
-    kind: "minimax", label: "MiniMax Token Plan", models: [model("MiniMax-M2.7", "MiniMax M2.7"), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed")],
+    kind: "minimax", label: "MiniMax Token Plan", models: [model("MiniMax-M2.7", "MiniMax M2.7", { contextWindow: 204_800, maxOutputTokens: 128_000 }), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed", { contextWindow: 204_800, maxOutputTokens: 128_000 })],
     piProviderFamily: "openai-compatible", presetVersion, protocol: "openai",
   },
   {
     accessMode: "coding-plan", defaultModelId: "MiniMax-M2.7", endpoint: "https://api.minimaxi.com/anthropic", endpointEditable: false,
-    kind: "minimax", label: "MiniMax Token Plan", models: [model("MiniMax-M2.7", "MiniMax M2.7"), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed")],
+    kind: "minimax", label: "MiniMax Token Plan", models: [model("MiniMax-M2.7", "MiniMax M2.7", { contextWindow: 204_800, maxOutputTokens: 128_000 }), model("MiniMax-M2.7-highspeed", "MiniMax M2.7 HighSpeed", { contextWindow: 204_800, maxOutputTokens: 128_000 })],
     piProviderFamily: "anthropic-compatible", presetVersion, protocol: "anthropic",
   },
   {
     accessMode: "api", defaultModelId: "deepseek-chat", endpoint: "https://api.deepseek.com", endpointEditable: false,
-    kind: "deepseek", label: "DeepSeek API", models: [model("deepseek-chat", "DeepSeek Chat"), model("deepseek-reasoner", "DeepSeek Reasoner")],
+    kind: "deepseek", label: "DeepSeek API", models: [model("deepseek-chat", "DeepSeek Chat", { maxOutputTokens: 393_216 }), model("deepseek-reasoner", "DeepSeek Reasoner", { maxOutputTokens: 393_216 })],
     piProviderFamily: "builtin", presetVersion, protocol: "openai",
   },
 ] as const satisfies readonly DirectModelSourcePreset[];

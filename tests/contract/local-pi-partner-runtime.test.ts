@@ -12,8 +12,11 @@ import {
   boundBackgroundSections,
   modelRequestBudget,
   observedContextWindow,
+  observedMaxOutputTokens,
   parseContextWindowFromError,
+  parseMaxOutputTokensFromError,
   rememberObservedContextWindow,
+  rememberObservedMaxOutputTokens,
 } from "../../src/main/infrastructure/pi/pi-model-budget.js";
 import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
@@ -57,7 +60,7 @@ describe("local Pi coding partner runtime", () => {
     expect(boundPartnerModelContext(messages)).toHaveLength(messages.length);
   });
 
-  it("learns a route's real window from the provider that rejected the request", () => {
+  it("learns a route's real limits from the provider that rejected the request", () => {
     // Providers state the truth when they refuse; a wrong guess here would resize every later
     // request on the route, so only unambiguous wording is read.
     expect(parseContextWindowFromError("prompt is too long: 210000 tokens > 128000 maximum")).toBe(128_000);
@@ -65,10 +68,21 @@ describe("local Pi coding partner runtime", () => {
     expect(parseContextWindowFromError("connection reset by peer")).toBeUndefined();
     expect(parseContextWindowFromError("request failed with status 400")).toBeUndefined();
 
+    // The completion cap is a separate limit that the window clamp never enforces, and only an
+    // explicit comparator is trusted: a bare number is as likely to be what joi asked for as what
+    // the route allows.
+    expect(parseMaxOutputTokensFromError("max_tokens: 65536 > 16384, which is the maximum allowed")).toBe(16_384);
+    expect(parseMaxOutputTokensFromError("max_tokens must be less than or equal to 8192")).toBe(8_192);
+    expect(parseMaxOutputTokensFromError("max_tokens: 65536 was rejected")).toBeUndefined();
+    expect(parseMaxOutputTokensFromError("invalid request")).toBeUndefined();
+
     rememberObservedContextWindow("source_a", "model_a", 65_536);
+    rememberObservedMaxOutputTokens("source_a", "model_a", 8_192);
     expect(observedContextWindow("source_a", "model_a")).toBe(65_536);
+    expect(observedMaxOutputTokens("source_a", "model_a")).toBe(8_192);
     // Switching either half of the route invalidates what was learned about the old one.
     expect(observedContextWindow("source_a", "model_b")).toBeUndefined();
+    expect(observedMaxOutputTokens("source_a", "model_b")).toBeUndefined();
     expect(observedContextWindow("source_b", "model_a")).toBeUndefined();
   });
 
