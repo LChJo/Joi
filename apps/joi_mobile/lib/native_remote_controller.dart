@@ -570,6 +570,8 @@ class NativeRemoteController extends ChangeNotifier
     String? workbenchId,
     String? partnerId,
     String? actionChoice,
+    String? questionId,
+    int? questionVersion,
   }) async {
     if (!_state.supportsHome) throw StateError('remote_upgrade_required');
     if (_state.busyGoals.contains(inputId)) return;
@@ -584,6 +586,8 @@ class NativeRemoteController extends ChangeNotifier
         'workbenchId': ?workbenchId,
         'partnerId': ?partnerId,
         'actionChoice': ?actionChoice,
+        'questionId': ?questionId,
+        'questionVersion': ?questionVersion,
       });
       if (generation != _generation) {
         throw StateError('joi_remote_disconnected');

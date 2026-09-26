@@ -25,6 +25,8 @@ class RemoteGoalCard {
     this.summary,
     this.prompt,
     this.reasonCode,
+    this.questionId,
+    this.questionVersion,
     this.agentCount = 0,
     this.failedWork = 0,
     this.stage,
@@ -42,6 +44,10 @@ class RemoteGoalCard {
   final String? summary;
   final String? prompt;
   final String? reasonCode;
+  /// The question this card advertises. The server refuses to resolve a clarification whose
+  /// question does not match, so the answer has to travel back with it.
+  final String? questionId;
+  final int? questionVersion;
   final String? stage;
   final int agentCount;
   final int failedWork;
@@ -84,6 +90,8 @@ class RemoteGoalCard {
       reasonCode:
           question['reasonCode'] as String? ??
           json['clarificationReasonCode'] as String?,
+      questionId: question['questionId'] as String?,
+      questionVersion: question['questionVersion'] as int?,
       stage: stage,
     );
   }
@@ -167,6 +175,8 @@ abstract interface class RemoteController implements Listenable {
     String? workbenchId,
     String? partnerId,
     String? actionChoice,
+    String? questionId,
+    int? questionVersion,
   });
   void setForeground(bool value);
 }
@@ -207,6 +217,8 @@ class PlaceholderRemoteController extends ChangeNotifier
     String? workbenchId,
     String? partnerId,
     String? actionChoice,
+    String? questionId,
+    int? questionVersion,
   }) async {}
   @override
   void setForeground(bool value) {}

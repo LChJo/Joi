@@ -82,6 +82,8 @@ class _GoalActionsState extends State<GoalActions> {
         workbenchId: workbenchId,
         partnerId: partnerId,
         actionChoice: actionChoice,
+        questionId: widget.goal.questionId,
+        questionVersion: widget.goal.questionVersion,
       );
       if (mounted) {
         _draft.clear();

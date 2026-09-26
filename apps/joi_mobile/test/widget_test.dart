@@ -9,7 +9,7 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
 
   final List<String> sentMessages = [];
   final List<String?> sentWorkbenches = [];
-  final List<Map<String, String?>> actions = [];
+  final List<Map<String, Object?>> actions = [];
   bool failSend = false;
   final RemoteViewState _state;
 
@@ -39,6 +39,8 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
     String? workbenchId,
     String? partnerId,
     String? actionChoice,
+    String? questionId,
+    int? questionVersion,
   }) async {
     actions.add({
       'inputId': inputId,
@@ -47,6 +49,8 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
       'workbenchId': workbenchId,
       'partnerId': partnerId,
       'actionChoice': actionChoice,
+      'questionId': questionId,
+      'questionVersion': questionVersion,
     });
   }
 
@@ -284,6 +288,44 @@ void main() {
     expect(controller.actions.single, containsPair('action', 'clarify'));
     expect(controller.actions.single, containsPair('text', '上周'));
     expect(controller.sentMessages, isEmpty);
+  });
+
+  testWidgets('answers a goal continuation with the question the card advertised', (
+    tester,
+  ) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalActions(
+            controller: controller,
+            goal: const RemoteGoalCard(
+              goalId: 'g',
+              title: '任务',
+              status: 'NEEDS_ATTENTION',
+              prompt: '已自动补充两轮，当前结果仍有明确缺口。',
+              reasonCode: 'goal_continuation_required',
+              questionId: 'goal_question:g:v1',
+              questionVersion: 1,
+              activeWork: 0,
+              completedWork: 0,
+              totalWork: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('继续补齐'));
+    await tester.pump();
+    // The server refuses to resolve a clarification whose question does not match the card it is
+    // answering, so a decision sent without these came back as joi_clarification_unavailable.
+    expect(controller.actions.single, containsPair('questionId', 'goal_question:g:v1'));
+    expect(controller.actions.single, containsPair('questionVersion', 1));
   });
 
   testWidgets('unpaired device shows only the QR pairing entry', (
