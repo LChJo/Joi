@@ -14,6 +14,7 @@ import type {
   HarnessReviewDigest,
   HarnessReviewRecoveryCandidate,
   HarnessReviewRecoveryResult,
+  HarnessFinishedGoalSeed,
   HarnessStalledSynthesisSeed,
   HarnessUnreviewedMapSeed,
   HarnessWorkRecoverySeed,
@@ -854,6 +855,72 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         input.now, input.seed.goalInputId, input.seed.resultRevision, input.seed.resultRevision,
       );
       return updated.changes === 1;
+    });
+  }
+
+  /**
+   * Goals whose review has run to its end while routes it superseded are still open.
+   *
+   * The review's own input row is what proves it finished: `reviewed_revision` cannot, because
+   * `enqueueReview` advances it as it queues. A review that ends with a route still open leaves
+   * that route with no successor — close-out requires every path closed, and the next review only
+   * comes with a new revision, of which there will be none while nothing is running.
+   */
+  async listFinishedGoalsWithOpenPaths(): Promise<HarnessFinishedGoalSeed[]> {
+    return (this.database.transaction((connection) => connection.prepare(`
+      SELECT m.goal_input_id, m.workbench_id,
+             (SELECT COUNT(*) FROM joi_harness_paths p
+               WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN') AS open_paths
+        FROM joi_harness_maps m
+        JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+        JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+        JOIN joi_inbox_messages review
+          ON review.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || CAST(rs.revision AS TEXT)
+       WHERE m.status = 'ACTIVE'
+         AND rs.synthesized_revision = rs.revision
+         AND o.disposition = 'COMPLETED'
+         AND review.status = 'CONSUMED'
+         AND EXISTS (SELECT 1 FROM joi_harness_paths p
+                      WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
+         AND NOT EXISTS (SELECT 1 FROM work_items w
+                          WHERE w.input_id = m.goal_input_id
+                            AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+       ORDER BY m.updated_at, m.goal_input_id LIMIT 20`).all()) as Row[])
+      .map((row) => ({
+        goalInputId: textValue(row, "goal_input_id"),
+        openPaths: numberValue(row, "open_paths"),
+        workbenchId: textValue(row, "workbench_id"),
+      }));
+  }
+
+  /**
+   * Closes what is left of a finished goal's route map so the close-out can read it as complete.
+   *
+   * The write re-reads every predicate rather than trusting the scan: a goal that started running
+   * again, gained a revision or lost its COMPLETED outcome between the two must keep its routes,
+   * and only a still-finished goal may have them closed.
+   */
+  async closeFinishedGoalPaths(input: { now: string; seed: HarnessFinishedGoalSeed }): Promise<number> {
+    return this.database.transaction((connection) => {
+      const stillFinished = connection.prepare(`
+        SELECT 1 FROM joi_harness_maps m
+          JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+          JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+          JOIN joi_inbox_messages review
+            ON review.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || CAST(rs.revision AS TEXT)
+         WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
+           AND rs.synthesized_revision = rs.revision
+           AND o.disposition = 'COMPLETED'
+           AND review.status = 'CONSUMED'
+           AND NOT EXISTS (SELECT 1 FROM work_items w
+                            WHERE w.input_id = m.goal_input_id
+                              AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(input.seed.goalInputId);
+      if (stillFinished === undefined) return 0;
+      const closed = connection.prepare(`UPDATE joi_harness_paths
+        SET status = 'CLOSED', updated_at = ?
+        WHERE goal_input_id = ? AND status = 'OPEN'`).run(input.now, input.seed.goalInputId);
+      if (closed.changes > 0) this.#bumpRevision(connection, input.seed.goalInputId, input.now);
+      return Number(closed.changes);
     });
   }
 

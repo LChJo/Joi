@@ -44,6 +44,7 @@ export class JoiHarnessComponent implements ActorComponent {
     await this.#step(ctx, "stalled_synthesis", () => this.#redriveStalledSyntheses(ctx));
     if (this.dependencies.reviewEnabled === true) {
       await this.#step(ctx, "reopen_unreviewed", () => this.#reopenUnreviewedMaps(ctx));
+      await this.#step(ctx, "close_finished_paths", () => this.#closeFinishedPaths(ctx));
       await this.#step(ctx, "review", () => this.#enqueueReviews(ctx));
       await this.#step(ctx, "continuation_decision", () => this.#requestContinuationDecisions(ctx));
       await this.#step(ctx, "review_recovery", () => this.#reconcileReviews(ctx));
@@ -182,6 +183,28 @@ export class JoiHarnessComponent implements ActorComponent {
       if (reopened) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.map_reopened", {
         goalInputId: seed.goalInputId,
         resultRevision: seed.resultRevision,
+      });
+    }
+  }
+
+  /**
+   * Closes the routes a finished goal's review left open.
+   *
+   * `REVIEW_FACTS_COMPLETE_SQL` wants every path closed before a map may clear, and only a review
+   * turn closes one — but a review is queued by a new revision, and `enqueueReview` advances
+   * `reviewed_revision` as it queues. A review that finished with a route still open therefore has
+   * no successor, and the goal sits behind a "reviewing" badge with every other fact already
+   * settled. Such a route is a plan the work moved past rather than work outstanding: nothing is
+   * running, and the goal's own outcome already says COMPLETED.
+   */
+  async #closeFinishedPaths(ctx: ActorTickContext): Promise<void> {
+    if (this.dependencies.scan.listFinishedGoalsWithOpenPaths === undefined
+      || this.dependencies.writer.closeFinishedGoalPaths === undefined) return;
+    for (const seed of await this.dependencies.scan.listFinishedGoalsWithOpenPaths()) {
+      const closed = await this.dependencies.writer.closeFinishedGoalPaths({ now: ctx.now.toISOString(), seed });
+      if (closed > 0) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.finished_paths_closed", {
+        closed,
+        goalInputId: seed.goalInputId,
       });
     }
   }

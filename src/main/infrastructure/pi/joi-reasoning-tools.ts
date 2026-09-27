@@ -696,7 +696,7 @@ export function createJoiReasoningTools(input: {
     summary: Type.String({ maxLength: 240, minLength: 1 }),
   });
   const harnessRecordDecisionTool: AgentTool<typeof harnessDecisionParameters> = {
-    description: "Record one resolution on the goal map (Decisions so far): a one-line summary of what was decided; optional detail stays in the decision row, never in the map index. OUT_OF_SCOPE records work consciously ruled beyond the destination. Pass closePathId to close the path the decision resolves. Resolve at most one decision per review turn.",
+    description: "Record one resolution on the goal map (Decisions so far): a one-line summary of what was decided; optional detail stays in the decision row, never in the map index. OUT_OF_SCOPE records work consciously ruled beyond the destination. Pass closePathId to close the path the decision resolves. Hold to one decision per turn while work remains; when the goal is finished, close every path it leaves behind — a route still open once the review has ended blocks the goal from ever settling, because only a review closes paths and no further review will come.",
     execute: async (_toolCallId, arguments_) => result(await requireHarness().recordDecision({
       ...(arguments_.closePathId === undefined ? {} : { closePathId: arguments_.closePathId }),
       ...(arguments_.detail === undefined ? {} : { detail: arguments_.detail }),

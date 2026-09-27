@@ -117,6 +117,23 @@ export interface HarnessUnreviewedMapSeed {
   workbenchId: string;
 }
 
+/**
+ * A goal the review has finished, whose route map still has paths left open.
+ *
+ * `REVIEW_FACTS_COMPLETE_SQL` requires every path closed before a map may clear, and only a review
+ * turn can close one — but a review is queued when a new revision arrives, and `enqueueReview`
+ * advances `reviewed_revision` as it queues. So a review that finishes while a route it superseded
+ * is still open has no successor: the path stays OPEN, "facts complete" never holds, and the goal
+ * idles behind a "reviewing" badge with nothing left for any scan to do. A route still open at
+ * this point is a plan the work moved past rather than work outstanding — nothing is running, and
+ * the goal's own outcome already says COMPLETED.
+ */
+export interface HarnessFinishedGoalSeed {
+  goalInputId: string;
+  openPaths: number;
+  workbenchId: string;
+}
+
 export interface JoiHarnessScan {
   listFeedbackTargets(): Promise<HarnessFeedbackTarget[]>;
   listGoalsWithoutMap(): Promise<HarnessGoalSeed[]>;
@@ -128,6 +145,7 @@ export interface JoiHarnessScan {
   listContinuationDecisionSeeds?(): Promise<HarnessContinuationDecisionSeed[]>;
   listStalledSyntheses?(input: { now: string; cooldownMillis: number }): Promise<HarnessStalledSynthesisSeed[]>;
   listUnreviewedClearedMaps?(): Promise<HarnessUnreviewedMapSeed[]>;
+  listFinishedGoalsWithOpenPaths?(): Promise<HarnessFinishedGoalSeed[]>;
 }
 
 /** Deterministic write surface used by the traversal. Never reasons and never dispatches. */
@@ -142,6 +160,7 @@ export interface JoiHarnessWriter {
   requestContinuationDecision?(input: { now: string; seed: HarnessContinuationDecisionSeed }): Promise<boolean>;
   redriveSynthesis?(input: { now: string; seed: HarnessStalledSynthesisSeed }): Promise<boolean>;
   reopenUnreviewedMap?(input: { now: string; seed: HarnessUnreviewedMapSeed }): Promise<boolean>;
+  closeFinishedGoalPaths?(input: { now: string; seed: HarnessFinishedGoalSeed }): Promise<number>;
 }
 
 /** Reasoning-side write surface injected into the harness tools; always goal-scoped. */

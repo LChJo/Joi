@@ -327,6 +327,70 @@ describe("SqliteJoiHarnessRepository", () => {
     });
   });
 
+  describe("routes a finished review leaves open", () => {
+    const REVIEW = "joi_harness_review:goal:goal-finished-paths:r1";
+
+    /** A goal whose review ran to its end, with one route the work moved past still open. */
+    async function seedFinishedGoalWithOpenRoute(): Promise<void> {
+      seedGoal(fixture, { goalInputId: "goal-finished-paths", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: "workbench-goal-finished-paths", goalInputId: "goal-finished-paths", now: NOW });
+      seedCompletedLayer(fixture, "goal-finished-paths", 1);
+      fixture.database.transaction((connection) => {
+        // The review's input row being CONSUMED is the only proof it finished: `reviewed_revision`
+        // advances when the review is queued, not when it ends.
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES (?, 'key-finished-review', 'review', 'CONSUMED', 'workbench-goal-finished-paths', 'goal-finished-paths', ?, ?)`)
+          .run(REVIEW, NOW, NOW);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-finished-review', ?, 'workbench-goal-finished-paths', 'session-review', 'COMPLETED', ?, ?)`)
+          .run(REVIEW, NOW, NOW);
+        connection.prepare("UPDATE joi_harness_maps SET reviewed_revision = 1 WHERE goal_input_id = 'goal-finished-paths'").run();
+        connection.prepare(`INSERT INTO joi_harness_paths
+          (path_id, goal_input_id, layer, title, status, created_at, updated_at)
+          VALUES ('stale-route', 'goal-finished-paths', 1, '被工作越过的路线', 'OPEN', ?, ?)`).run(NOW, NOW);
+      });
+    }
+
+    it("closes a route no later review would ever come back for", async () => {
+      await seedFinishedGoalWithOpenRoute();
+
+      const seeds = await repository.listFinishedGoalsWithOpenPaths();
+      expect(seeds).toEqual([{
+        goalInputId: "goal-finished-paths",
+        openPaths: 1,
+        workbenchId: "workbench-goal-finished-paths",
+      }]);
+      const seed = seeds[0];
+      if (seed === undefined) throw new Error("finished goal seed missing");
+      expect(await repository.closeFinishedGoalPaths({ now: NOW, seed })).toBe(1);
+
+      // Closing the route is what lets the ordinary close-out read the facts as complete — the
+      // predicate wanted every path closed, and no review would ever have come back to close it.
+      expect((await repository.listReviewRecoveries()).map((candidate) => candidate.digest.goalInputId))
+        .toContain("goal-finished-paths");
+      // Idempotent, and there is nothing left for a second pass to close.
+      expect(await repository.closeFinishedGoalPaths({ now: NOW, seed })).toBe(0);
+    });
+
+    it("leaves a goal alone once it has work running again", async () => {
+      await seedFinishedGoalWithOpenRoute();
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO work_items
+        (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('work-running', 'workbench-goal-finished-paths', 'goal-finished-paths', '又在跑了', '{}', 'READ', 'RUNNING', ?, ?)`)
+        .run(NOW, NOW));
+
+      // A goal that is running again keeps its routes: the scan skips it, and the write re-reads
+      // the same facts before touching anything.
+      expect(await repository.listFinishedGoalsWithOpenPaths()).toEqual([]);
+      expect(await repository.closeFinishedGoalPaths({
+        now: NOW,
+        seed: { goalInputId: "goal-finished-paths", openPaths: 1, workbenchId: "workbench-goal-finished-paths" },
+      })).toBe(0);
+    });
+  });
+
   describe("completion feedback", () => {
     it("appends one entry to the workbench task summary exactly once per cleared map", async () => {
       seedGoal(fixture, { goalInputId: "goal-feedback", turn: true });

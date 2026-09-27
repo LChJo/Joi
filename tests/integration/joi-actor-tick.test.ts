@@ -195,6 +195,65 @@ describe("joi actor tick over persisted facts", () => {
     expect(handled).toEqual(["input_goal", "joi_harness_review:goal:input_goal:r1"]);
   });
 
+  it("closes the routes a finished review left open, in the tick that finds them", async () => {
+    const database = makeDatabase();
+    const wrapper = { transaction: <T,>(operation: (connection: DatabaseSync) => T): T => operation(database) };
+    const inboxRepository = new SqliteJoiInboxRepository(wrapper);
+    insertInput(database, "input_goal", "PENDING", NOW);
+
+    const closed: string[] = [];
+    const tree = new ActorTree({
+      clock: { now: () => new Date(NOW) },
+      roots: [new JoiActor({
+        workbenchComponent: new JoiWorkbenchComponent({ workbenches: { listSummaries: async () => [] } }),
+        components: [
+          new JoiTaskComponent({
+            driver: { handle: async () => {} },
+            gate: { hasReadySource: async () => true },
+            inbox: new SqliteJoiTaskReader({
+              database: wrapper,
+              failTurn: (inputId, turnId) => inboxRepository.failTurn(inputId, turnId),
+              park: async (inputId, failure) => { await inboxRepository.park(inputId, failure); },
+            }),
+          }),
+          new JoiHarnessComponent({
+            reviewEnabled: true,
+            scan: {
+              listFeedbackTargets: async () => [],
+              listFinishedGoalsWithOpenPaths: async () => [
+                { goalInputId: "input_finished", openPaths: 2, workbenchId: "workbench_h" },
+              ],
+              listGoalsWithoutMap: async () => [],
+              listReviewDigests: async () => [],
+              listReviewRecoveries: async () => [],
+              listTrivialMapCandidates: async () => [],
+              loadGoalProjections: async () => [],
+            },
+            writer: {
+              clearTrivialMap: async () => false,
+              closeFinishedGoalPaths: async (input) => {
+                closed.push(input.seed.goalInputId);
+                return input.seed.openPaths;
+              },
+              createMap: async () => false,
+              enqueueReview: async () => null,
+              reconcileReview: async () => null,
+              recordCompletionFeedback: async () => false,
+              synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
+            },
+          }),
+        ],
+        createChild: (workbenchId) => new WorkbenchActor({ workbenchId }),
+      })],
+    });
+
+    await tree.tick(new Date(NOW));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Wired into the tick ahead of the review scan, so the routes are gone by the time the
+    // close-out predicates are read in the same pass.
+    expect(closed).toEqual(["input_finished"]);
+  });
+
   it("reconciles a stale review from the root actor tick exactly once", async () => {
     const database = makeDatabase();
     const wrapper = { transaction: <T,>(operation: (connection: DatabaseSync) => T): T => operation(database) };

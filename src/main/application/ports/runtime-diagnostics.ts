@@ -106,6 +106,16 @@ export interface RuntimeDiagnosticEventMap {
     goalInputId: string;
     resultRevision: number;
   };
+  /**
+   * Routes a finished goal's review left open were closed so its map could settle. Recorded
+   * because the alternative reading — a goal reporting review while nothing runs — is the same
+   * symptom three different defects produce, and this is the one of them that leaves no other
+   * trace behind.
+   */
+  "joi.harness.finished_paths_closed": {
+    closed: number;
+    goalInputId: string;
+  };
   "joi.harness.feedback_recorded": {
     workbenchId: string;
     goalInputId: string;
