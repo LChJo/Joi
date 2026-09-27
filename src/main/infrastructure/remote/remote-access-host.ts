@@ -95,7 +95,13 @@ export function isRemoteCommand(value: unknown): value is RemoteCommand {
   if (["message.cancel", "message.dismiss", "message.closeHistoricalReview"].includes(String(item.kind))) return true;
   if (item.kind === "message.retry") return item.text === undefined || typeof item.text === "string" && item.text.length <= 8_000;
   if (item.kind === "message.clarify") return string("text", 8_000, true) && string("workbenchId", 160, true)
-    && string("partnerId", 160, true) && (item.actionChoice === undefined || typeof item.actionChoice === "string" && ["RESUME", "CONTINUE", "ACCEPT_CURRENT"].includes(item.actionChoice));
+    && string("partnerId", 160, true) && string("questionId", 160, true)
+    // The pair is what lets a gate-backed card be answered at all: the repository refuses a
+    // resolution whose question does not match the one the gate is waiting on, so a clarification
+    // that travels without them can only come back unavailable. Whether they arrive together is
+    // the service's rule to state, and it states it with its own error code.
+    && (item.questionVersion === undefined || typeof item.questionVersion === "number" && Number.isInteger(item.questionVersion) && item.questionVersion >= 1)
+    && (item.actionChoice === undefined || typeof item.actionChoice === "string" && ["RESUME", "CONTINUE", "ACCEPT_CURRENT"].includes(item.actionChoice));
   return false;
 }
 

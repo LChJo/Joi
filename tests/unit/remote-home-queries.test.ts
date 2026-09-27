@@ -65,6 +65,12 @@ describe("remote home queries", () => {
     expect(isRemoteCommand({ kind: "message.send", requestId: "r", text: "t", idempotencyKey: "k", workbenchId: 42 })).toBe(false);
     expect(isRemoteCommand({ kind: "message.retry", requestId: "r", inputId: "g", text: "x".repeat(8001) })).toBe(false);
     expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", actionChoice: "DELETE" })).toBe(false);
+    // The question a card advertises is what a gate-backed clarification is matched against, so it
+    // has to survive the allowlist. Optional, because a clarification raised by something other
+    // than a gate has no question to name.
+    expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", actionChoice: "CONTINUE", questionId: "q-1", questionVersion: 3 })).toBe(true);
+    expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", questionId: "", questionVersion: 1 })).toBe(false);
+    expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", questionId: "q-1", questionVersion: 0 })).toBe(false);
     expect(isRemoteCommand({ kind: "file.read", requestId: "r", inputId: "g" })).toBe(false);
   });
 });

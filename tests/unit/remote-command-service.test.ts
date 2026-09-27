@@ -49,6 +49,23 @@ describe("RemoteCommandService", () => {
     await expect(service.handle({ kind: "message.dismiss", requestId: "dismiss", inputId: "goal" } as never)).resolves.toMatchObject({ error: { code: "remote_command_failed" } });
   });
 
+  it("carries the question a gate-backed clarification card advertised through to the inbox", async () => {
+    // The repository matches these against the gate's own question and refuses anything that
+    // disagrees, so a phone answering a card while this layer dropped them could only ever come
+    // back unavailable — the card rendered, the button dead, on every gate-backed goal.
+    const clarify = vi.fn().mockResolvedValue({ inputId: "goal", status: "PENDING" });
+    const service = new RemoteCommandService({ homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), clarify } } as never);
+    await expect(service.handle({
+      actionChoice: "CONTINUE", inputId: "goal",
+      kind: "message.clarify", questionId: "joi_action:goal_continuation:goal:r5:s1", questionVersion: 3,
+      requestId: "clarify",
+    } as never)).resolves.toMatchObject({ result: { inputId: "goal" } });
+    expect(clarify).toHaveBeenCalledWith({
+      actionChoice: "CONTINUE", inputId: "goal",
+      questionId: "joi_action:goal_continuation:goal:r5:s1", questionVersion: 3,
+    });
+  });
+
   it("exposes only the home feed and idempotent text submission", async () => {
     const feed = { goals: [], thinking: [], unassignedActions: [] };
     const load = vi.fn().mockResolvedValue(feed);

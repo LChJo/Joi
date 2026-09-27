@@ -60,6 +60,11 @@ export class RemoteCommandService {
         return { ...base, result: safeResult(await this.dependencies.inbox.clarify({ inputId: c.inputId,
           ...(c.text === undefined ? {} : { text: c.text }), ...(c.workbenchId === undefined ? {} : { workbenchId: c.workbenchId }),
           ...(c.partnerId === undefined ? {} : { partnerId: c.partnerId }), ...(c.actionChoice === undefined ? {} : { actionChoice: c.actionChoice }),
+          // Forwarded, not merely accepted: the repository matches these against the gate's own
+          // question, and a resolution that arrives without them is refused for a card the user is
+          // looking at. The desktop route has always passed them through; this one dropped them.
+          ...(c.questionId === undefined ? {} : { questionId: c.questionId }),
+          ...(c.questionVersion === undefined ? {} : { questionVersion: c.questionVersion }),
         })) };
       }
       if (c.kind === "message.retry" && this.dependencies.inbox.retry !== undefined) {
