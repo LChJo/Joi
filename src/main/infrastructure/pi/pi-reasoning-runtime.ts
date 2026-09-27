@@ -1,11 +1,12 @@
 /* Pi hooks require Promise-returning callbacks. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import type { Api, Context, ImageContent, Model, Models } from "@earendil-works/pi-ai";
+import { normalizeContext, type Api, type Context, type ImageContent, type Message, type Model, type Models } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
 import { checkpointMessage, isCheckpointMessage, omissionNotice, summarizeSegment } from "./pi-compaction.js";
-import { boundRequestByChars, modelContextMaxChars } from "./pi-model-budget.js";
+import { withRequestPrompt } from "./pi-request-prompt.js";
+import { boundRequestByChars, leadingSystemMessage, modelContextMaxChars } from "./pi-model-budget.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
@@ -249,7 +250,6 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       sourceRevisionId: input.sourceRevisionId,
       systemPrompt: input.systemPrompt,
     };
-    session.agent.state.systemPrompt = input.systemPrompt;
     session.agent.state.model = this.#model;
     session.agent.state.thinkingLevel = modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off";
     // Refresh per-turn tools: factories bind turn context (inputId/turnId) into tool closures,
@@ -368,6 +368,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     agent.subscribe(async (event) => {
       this.#emit(runtime, event);
     });
+    // The Turn's prompt changes on every turn, and pi keeps the prompt inside the transcript where
+    // it is read-only; install the current one for the length of each request instead.
+    agent.prepareRequest = ({ context }) => Promise.resolve(runtime.current === undefined
+      ? undefined
+      : { context: { ...context, messages: withRequestPrompt(context.messages, runtime.current.systemPrompt) } });
     this.#sessions.set(metadata.sessionId, runtime);
     return runtime;
   }
@@ -415,25 +420,35 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const state = runtime.agent.state;
     const currentMessages = state.messages;
     const request = { systemPrompt: state.systemPrompt, tools: state.tools };
+    // pi 0.83 and later keep the system prompt inside the transcript as its leading message. It is
+    // fixed overhead rather than conversation, so it neither counts against the message cap nor is
+    // covered by a summary — and a rebuild of the shape `[summary, ...tail]`, correct while the
+    // prompt lived in `AgentState.systemPrompt`, would now delete it along with the runtime
+    // permission boundary on the first compaction.
+    const leading = currentMessages[0];
+    const prompt = leadingSystemMessage(currentMessages) === undefined || leading === undefined ? [] : [leading];
+    const floor = prompt.length;
+    const conversationLength = currentMessages.length - floor;
     const overflow = !this.#headroomSatisfied(currentMessages, request);
-    if (!overflow && currentMessages.length <= this.#compaction.maxMessages) return;
+    if (!overflow && conversationLength <= this.#compaction.maxMessages) return;
     // An overflowing session must also shrink its kept tail: the fixed recent-message window
     // can itself exceed the model window, which is exactly what clamped max_tokens to 1.
     const keep = overflow ? this.#fittingTailKeep(currentMessages, request) : this.#compaction.keepRecentMessages;
     {
-      const targetIndex = Math.max(1, currentMessages.length - keep);
+      const targetIndex = Math.max(floor, currentMessages.length - keep);
       let firstKeptIndex = targetIndex;
-      while (firstKeptIndex > 0) {
+      while (firstKeptIndex > floor) {
         const candidate = currentMessages[firstKeptIndex];
         if (candidate !== undefined && roleOf(candidate) === "user") break;
         firstKeptIndex -= 1;
       }
-      if (firstKeptIndex > 0) {
+      if (firstKeptIndex > floor) {
         const previous = runtime.metadata.compaction;
-        const prefix = currentMessages.slice(0, firstKeptIndex);
-        const withoutCheckpoint = previous !== undefined && isCheckpointMessage(prefix[0])
-          ? prefix.slice(1)
-          : prefix;
+        // Everything between the preserved prompt and the cut is what the summary replaces. The
+        // prompt is not history and a previous checkpoint is already a summary, so neither is
+        // summarized again; the checkpoint sits directly after the prompt.
+        const prefix = currentMessages.slice(floor, firstKeptIndex);
+        const withoutCheckpoint = isCheckpointMessage(prefix[0]) ? prefix.slice(1) : prefix;
         let generatedSummary: string | undefined;
         if (withoutCheckpoint.length > 0) {
           try {
@@ -450,7 +465,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
             // A provider failure must not prevent a bounded local checkpoint from being saved.
           }
         }
-        const summary = (generatedSummary ?? fallbackSummary(prefix, this.#compaction.maxSummaryCharacters))
+        const summary = (generatedSummary ?? fallbackSummary(withoutCheckpoint, this.#compaction.maxSummaryCharacters))
           .slice(0, this.#compaction.maxSummaryCharacters);
         const lastCompactedAt = new Date().toISOString();
         runtime.metadata.compaction = {
@@ -460,6 +475,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           summary,
         };
         runtime.agent.state.messages = [
+          ...prompt,
           checkpointMessage(summary, Date.parse(lastCompactedAt)),
           ...currentMessages.slice(firstKeptIndex),
         ];
@@ -479,7 +495,14 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // prompt and tool schemas belong in the context: pi-ai only counts them when no assistant
     // usage anchors the session yet, and they are fixed overhead every request pays regardless.
     const headroom = this.#compactionHeadroom();
-    const context = { messages: [...messages], systemPrompt: request.systemPrompt, tools: request.tools } as unknown as Context;
+    // Providers see a normalized transcript, where the prompt and tool declarations have already
+    // been folded into a leading system message; sizing against a raw `Context` would price a
+    // request shape that is never actually sent.
+    const context = normalizeContext({
+      messages: [...messages] as Message[],
+      ...(request.systemPrompt === undefined ? {} : { systemPrompt: request.systemPrompt }),
+      ...(request.tools === undefined ? {} : { tools: request.tools }),
+    });
     return clampMaxTokensToContext(this.#model, context, headroom) >= headroom;
   }
 

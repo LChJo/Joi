@@ -39,9 +39,9 @@
   "dependencies": {
     "@a2a-js/sdk": "0.3.14",
     "@anthropic-ai/claude-agent-sdk": "0.3.251",
-    "@earendil-works/pi-agent-core": "0.82.1",
-    "@earendil-works/pi-ai": "0.82.1",
-    "@earendil-works/pi-coding-agent": "0.82.1",
+    "@earendil-works/pi-agent-core": "0.87.1",
+    "@earendil-works/pi-ai": "0.87.1",
+    "@earendil-works/pi-coding-agent": "0.87.1",
     "@mozilla/readability": "^0.6.0",
     "@openai/codex-sdk": "0.151.0",
     "@phosphor-icons/react": "2.1.10",
@@ -98,6 +98,8 @@
     "files": [
       "dist/**/*",
       "!dist/remote-relay/**/*",
+      "!node_modules/@esbuild/**",
+      "!node_modules/esbuild/**",
       "!node_modules/@openai/codex/**",
       "!node_modules/@openai/codex-darwin-arm64/**",
       "!node_modules/@openai/codex-darwin-x64/**",

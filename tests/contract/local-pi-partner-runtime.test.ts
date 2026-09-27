@@ -26,6 +26,20 @@ import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-
 const contexts = { loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: "workspace_ref_1" }) };
 const wait = async (milliseconds: number): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
 
+/**
+ * The prompt a request actually carries. pi 0.83 and later fold `systemPrompt` into a leading system
+ * message and hand providers a transcript that has no such field, so reading it directly no longer
+ * describes what the model was sent.
+ */
+function requestSystemPrompt(context: { messages?: readonly unknown[] }): string {
+  const leading = context.messages?.[0] as { content?: unknown; role?: string } | undefined;
+  if (leading?.role !== "system") return "";
+  if (typeof leading.content === "string") return leading.content;
+  return Array.isArray(leading.content)
+    ? leading.content.map((block) => (block as { text?: string }).text ?? "").join("")
+    : "";
+}
+
 describe("local Pi coding partner runtime", () => {
   it("bounds accumulated partner context while retaining the latest user request and a valid tail", () => {
     const messages = [
@@ -233,7 +247,7 @@ describe("Pi partner engine runtime", () => {
     });
     faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
       // The summarization call is an ordinary provider request and is answered as one.
-      if ((context.systemPrompt ?? "").includes("context summarization assistant")) {
+      if (requestSystemPrompt(context).includes("context summarization assistant")) {
         summaries += 1;
         return fauxAssistantMessage([fauxText(`## Goal\nFINISH_THE_TASK\n\n## Progress\n### Done\n- [x] ${SENTINEL}`)]);
       }
@@ -277,8 +291,8 @@ describe("Pi partner engine runtime", () => {
     expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(budget.messagesMaxChars + 2_000);
     // The task itself is never lost: it is the anchor every request opens on.
     const lastMessages = JSON.parse(requests.at(-1) ?? "[]") as { role?: string }[];
-    expect(lastMessages[0]?.role).toBe("user");
-    expect(JSON.stringify(lastMessages[0])).toContain("TASK_ANCHOR：实现 P0 并交付报告");
+    expect(lastMessages[0]?.role).toBe("system");
+    expect(JSON.stringify(lastMessages.find((message) => message.role === "user"))).toContain("TASK_ANCHOR：实现 P0 并交付报告");
     // And the run's own earlier output survives — summarized, not dropped. Without compaction this
     // is the assertion that fails: the sentinel scrolls out of a 32-message window long before the
     // last request, which is exactly how the run lost track of what it had already produced.
@@ -296,7 +310,7 @@ describe("Pi partner engine runtime", () => {
     });
     faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
       // Every summarization attempt fails, so the run has to fall back to dropping history.
-      if ((context.systemPrompt ?? "").includes("context summarization assistant")) {
+      if (requestSystemPrompt(context).includes("context summarization assistant")) {
         return fauxAssistantMessage([fauxText("")], { errorMessage: "summarization unavailable", stopReason: "error" });
       }
       requests.push(JSON.stringify(context.messages));
@@ -447,7 +461,7 @@ describe("Pi partner engine runtime", () => {
     let firstSystemPrompt = "";
     faux.setResponses([
       (context) => {
-        firstSystemPrompt = context.systemPrompt ?? "";
+        firstSystemPrompt = requestSystemPrompt(context);
         return fauxAssistantMessage([fauxToolCall("bash", { command: "run selected skill" })], { stopReason: "toolUse" });
       },
       fauxAssistantMessage([fauxText("BLOCKED")]),
@@ -510,7 +524,7 @@ describe("Pi partner engine runtime", () => {
     let firstSystemPrompt = "";
     faux.setResponses([
       (context) => {
-        firstSystemPrompt = context.systemPrompt ?? "";
+        firstSystemPrompt = requestSystemPrompt(context);
         return fauxAssistantMessage([fauxToolCall("read", { path: skillFile })], { stopReason: "toolUse" });
       },
       fauxAssistantMessage([fauxText("verified workflow followed")]),
@@ -1146,7 +1160,7 @@ describe("Pi partner engine runtime", () => {
     let firstSystemPrompt = "";
     faux.setResponses([
       (context) => {
-        firstSystemPrompt = context.systemPrompt ?? "";
+        firstSystemPrompt = requestSystemPrompt(context);
         return fauxAssistantMessage([fauxText("done")]);
       },
     ]);

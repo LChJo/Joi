@@ -1,7 +1,9 @@
 import {
+  BACKGROUND_CONTEXT,
   COMPACTION_SUMMARY_PREFIX,
   COMPACTION_SUMMARY_SUFFIX,
   generateSummary,
+  withAbortSignal,
   type AgentMessage,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
@@ -85,10 +87,16 @@ export async function summarizeSegment(input: {
       input.models,
       input.model,
       input.reserveTokens,
-      input.signal,
       SUMMARY_INSTRUCTIONS,
       input.previousSummary,
       input.thinkingLevel,
+      // No retry policy and no callbacks: a summary that fails is reported to the caller, which is
+      // better placed to decide whether to retry the whole compaction than this call is.
+      undefined,
+      undefined,
+      // A summary is not part of a user turn, and it must be cancellable when the run is — the
+      // signal moved out of the argument list into the context, so cancellation is derived here.
+      input.signal === undefined ? BACKGROUND_CONTEXT : withAbortSignal(input.signal, BACKGROUND_CONTEXT),
     );
     return generated.ok
       ? { ok: true, summary: generated.value }

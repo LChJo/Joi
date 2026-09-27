@@ -545,11 +545,15 @@ describe("Pi reasoning runtime contract", () => {
     }
 
     const compacted = store.snapshots.get("session_compact");
-    expect(compacted?.messages.length).toBeLessThanOrEqual(3);
-    expect(compacted?.messages[0]).toMatchObject({ role: "user" });
-    expect(JSON.stringify(compacted?.messages[0])).toContain("joi session checkpoint");
+    // The transcript leads with the prompt pi keeps inside it; the checkpoint replaces the turns
+    // that follow. The list is held at the configured cap rather than growing with the session,
+    // and the cap now counts the prompt too, because the prompt is inside the list.
+    expect(compacted?.messages[0]).toMatchObject({ role: "system" });
+    expect(compacted?.messages.length).toBeLessThanOrEqual(6);
+    expect(JSON.stringify(compacted?.messages[1])).toContain("joi session checkpoint");
     expect(compacted?.compaction).toMatchObject({ count: 1 });
-    expect(compacted?.compaction?.compactedMessages).toBeGreaterThanOrEqual(6);
+    // The prompt is preserved rather than summarized, so it is not part of this count.
+    expect(compacted?.compaction?.compactedMessages).toBeGreaterThanOrEqual(4);
 
     const restored = new PiReasoningRuntime({
       compaction: { keepRecentMessages: 2, maxMessages: 6, maxSummaryCharacters: 240 },
@@ -595,7 +599,9 @@ describe("Pi reasoning runtime contract", () => {
     faux.setResponses(Array.from({ length: 6 }, (_, index) => (context: { messages?: unknown }) => {
       const messages = (context.messages ?? []) as unknown[];
       requestChars.push(JSON.stringify(messages).length);
-      openings.push(messages[0]);
+      // The task is what the model must still be told; the prompt now leads the transcript, so it
+      // is no longer the message that carries it.
+      openings.push(messages.find((message) => (message as { role?: string }).role === "user"));
       return index < 5
         ? fauxAssistantMessage([fauxToolCall("memory_search", { query: String(index) })], { stopReason: "toolUse" })
         : fauxAssistantMessage([fauxText("done")]);
@@ -764,7 +770,7 @@ describe("Pi reasoning runtime contract", () => {
     });
     const saved = store.snapshots.get("session_overflow");
     expect(saved?.messages.length).toBeLessThan(flood.length);
-    expect(JSON.stringify(saved?.messages[0])).toContain("joi session checkpoint");
+    expect(JSON.stringify(saved?.messages)).toContain("joi session checkpoint");
     expect(saved?.compaction).toMatchObject({ count: 1 });
   });
 

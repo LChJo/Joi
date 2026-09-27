@@ -41,6 +41,7 @@ import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../applicatio
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiStream } from "./pi-usage.js";
 import { createPiContextManager, type PiContextDiagnostic, type PiContextManager } from "./pi-context-manager.js";
+import { withRequestPrompt } from "./pi-request-prompt.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
@@ -509,7 +510,9 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
       revision, residentToolNames, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars,
     );
-    warm.agent.state.systemPrompt = systemPrompt;
+    warm.agent.prepareRequest = ({ context }) => Promise.resolve({
+      context: { ...context, messages: withRequestPrompt(context.messages, systemPrompt) },
+    });
     const previousMessageCount = warm.agent.state.messages.length;
     const live = input.onEvent === undefined && input.onToolTrace === undefined
       ? undefined

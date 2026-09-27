@@ -34,3 +34,8 @@ Desktop.ini
 *.db
 *.db-shm
 *.db-wal
+
+# Agent runtime state: local settings, and the worktree copies a delegated task works in.
+# They are whole checkouts of this repository, so tracking one records another branch's
+# files as a gitlink — and `git add -A` picks it up silently.
+.claude/

@@ -1,4 +1,4 @@
-import { generateSummary, type AgentMessage } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, generateSummary, type AgentMessage } from "@earendil-works/pi-agent-core";
 
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PartnerMemorySummarizer, PartnerWorkMemoryEntry } from "../../application/ports/partner-memory.js";
@@ -31,9 +31,13 @@ export class PiPartnerMemorySummarizer implements PartnerMemorySummarizer {
         trackPiModels(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: input.workbenchId, partnerId: input.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
         resolved.model,
         512,
-        undefined,
         "Summarize what this partner has worked on and how reliably it completed work. Do not invent facts.",
         input.previousSummary,
+        undefined,
+        undefined,
+        undefined,
+        // A memory refresh runs outside any user turn and has no cancellation of its own.
+        BACKGROUND_CONTEXT,
       );
       return generated.ok ? generated.value : null;
     } catch {
