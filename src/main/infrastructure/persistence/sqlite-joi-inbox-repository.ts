@@ -506,6 +506,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,
           revision = revision + 1, updated_at = ?
         WHERE goal_input_id = ? AND status = 'CLEARED'`).run(now, inputId);
+      // The gate is the other half of the clarification state cleared above, and leaving it
+      // waiting strands the goal between the two scans that could pick it up: the queue refuses
+      // anything whose gate is not open, while the continuation scan only offers a card to a goal
+      // that is still CONSUMED — which this one no longer is. `clarify` opens the gate when it
+      // answers the question; a retry abandons the question, so it opens the gate too.
+      const goalInputId = typeof row.goal_input_id === "string" ? row.goal_input_id : inputId;
+      connection.prepare(`UPDATE joi_goal_execution_gates
+        SET status = 'OPEN', resume_input_id = NULL, updated_at = ?
+        WHERE goal_input_id = ? AND status = 'WAITING_INPUT'`).run(now, goalInputId);
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });

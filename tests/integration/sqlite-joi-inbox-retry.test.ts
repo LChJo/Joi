@@ -111,6 +111,32 @@ describe("sqlite joi inbox retry", () => {
     }
   });
 
+  it("opens a gate left waiting, so a revived goal is not stranded between the two scans", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const repository = new SqliteJoiInboxRepository(fixture.database);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-retry-gate", text: "停在一个问题前的目标" });
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(accepted.inputId);
+        connection.prepare(`INSERT INTO joi_goal_execution_gates
+          (goal_input_id, question_id, question_version, status, reason_code, created_at, updated_at)
+          VALUES (?, ?, 1, 'WAITING_INPUT', 'question_required', ?, ?)`)
+          .run(accepted.inputId, `goal_question:${accepted.inputId}:v1`, "2026-08-20T09:00:00.000Z", "2026-08-20T09:00:00.000Z");
+      });
+
+      await expect(repository.retry(accepted.inputId, { text: "跳过这个问题" })).resolves.toMatchObject({ status: "PENDING" });
+      // Retry clears the clarification state, and the gate is the other half of it. Left waiting,
+      // the revived goal is refused by the pending-input scan and no longer offered a card by the
+      // continuation scan, so nothing would ever pick it up again.
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, resume_input_id FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(accepted.inputId)))
+        .toEqual({ resume_input_id: null, status: "OPEN" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("refuses synthetic inputs, dismissed rows and goals with live work", async () => {
     const fixture = await createRuntimeFixture();
     try {
