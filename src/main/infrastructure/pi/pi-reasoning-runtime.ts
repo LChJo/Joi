@@ -1,9 +1,10 @@
 /* Pi hooks require Promise-returning callbacks. */
 /* eslint-disable @typescript-eslint/require-await */
-import { Agent, generateSummary, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
 import type { Api, Context, ImageContent, Model, Models } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
+import { checkpointMessage, isCheckpointMessage, omissionNotice, summarizeSegment } from "./pi-compaction.js";
 import { boundRequestByChars, modelContextMaxChars } from "./pi-model-budget.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
@@ -192,12 +193,6 @@ function safeTurnOutcome(toolName: string, result: unknown): JoiReasoningOutcome
     : undefined;
 }
 
-function isCheckpoint(message: AgentMessage | undefined): boolean {
-  if (message === undefined) return false;
-  const record = message as unknown as Record<string, unknown>;
-  return typeof record.content === "string" && record.content.startsWith("[joi session checkpoint]");
-}
-
 export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #model: Model<Api>;
   readonly #models: Models;
@@ -367,7 +362,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // whatever is left and the Turn ends truncated, which reads downstream as a model that stopped
       // talking rather than as an overflow. This bound is request-only — the session keeps its history
       // and compaction still owns its durable shape.
-      transformContext: (messages) => Promise.resolve(boundRequestByChars(messages, modelContextMaxChars(this.#model))),
+      transformContext: (messages) => Promise.resolve(this.#boundRequest(messages)),
     });
     const runtime: SessionRuntime = { agent, current: undefined, delivered: { text: false, tool: false }, metadata };
     agent.subscribe(async (event) => {
@@ -375,6 +370,30 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     });
     this.#sessions.set(metadata.sessionId, runtime);
     return runtime;
+  }
+
+  /**
+   * Bounds one request inside the route's window, and says so when that costs the session history.
+   *
+   * A Turn that makes many tool calls cannot compact mid-flight — compaction runs at Turn
+   * boundaries, which is what gives the session its durable shape — so the per-request bound is the
+   * only thing standing between a long Turn and a provider that clamps `max_tokens` toward 1. But a
+   * bound that drops the oldest messages without a word is the same silent loss a long partner run
+   * was diagnosed with, and it produced the same wrong conclusion: a model that finds its own work
+   * on disk and cannot remember doing it decides something else must have changed its files. The
+   * request therefore carries the omission rather than only its effect.
+   */
+  #boundRequest(messages: readonly AgentMessage[]): AgentMessage[] {
+    const bounded = boundRequestByChars(messages, modelContextMaxChars(this.#model));
+    const omitted = messages.length - bounded.length;
+    if (omitted <= 0) return bounded;
+    // The bound keeps an opening anchor, and it hands back the very same message objects, so the
+    // prefix it kept can be recovered by identity rather than by re-deriving its rules here.
+    let kept = 0;
+    while (kept < bounded.length && bounded[kept] === messages[kept]) kept += 1;
+    const omittedChars = messages.slice(kept, kept + omitted)
+      .reduce((total, message) => total + JSON.stringify(message).length, 0);
+    return [...bounded.slice(0, kept), omissionNotice(omitted, omittedChars), ...bounded.slice(kept)];
   }
 
   async #compactAndSave(runtime: SessionRuntime): Promise<void> {
@@ -412,23 +431,21 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       if (firstKeptIndex > 0) {
         const previous = runtime.metadata.compaction;
         const prefix = currentMessages.slice(0, firstKeptIndex);
-        const withoutCheckpoint = previous !== undefined && isCheckpoint(prefix[0])
+        const withoutCheckpoint = previous !== undefined && isCheckpointMessage(prefix[0])
           ? prefix.slice(1)
           : prefix;
         let generatedSummary: string | undefined;
         if (withoutCheckpoint.length > 0) {
           try {
-            const generated = await generateSummary(
-              withoutCheckpoint,
-              trackPiModels(this.#models, this.#usage, () => this.#usageContext(runtime, "summary")),
-              this.#model,
-              Math.max(256, Math.ceil(this.#compaction.maxSummaryCharacters / 4)),
-              undefined,
-              "Preserve user intent, decisions, work status, identifiers, constraints, and unresolved questions. Do not invent facts.",
-              previous?.summary,
-              modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off",
-            );
-            if (generated.ok) generatedSummary = generated.value;
+            const generated = await summarizeSegment({
+              model: this.#model,
+              models: trackPiModels(this.#models, this.#usage, () => this.#usageContext(runtime, "summary")),
+              previousSummary: previous?.summary,
+              reserveTokens: Math.max(256, Math.ceil(this.#compaction.maxSummaryCharacters / 4)),
+              segment: withoutCheckpoint,
+              thinkingLevel: modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off",
+            });
+            if (generated.ok) generatedSummary = generated.summary;
           } catch {
             // A provider failure must not prevent a bounded local checkpoint from being saved.
           }
@@ -442,11 +459,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           lastCompactedAt,
           summary,
         };
-        runtime.agent.state.messages = [{
-          content: `[joi session checkpoint]\n${summary}`,
-          role: "user",
-          timestamp: Date.parse(lastCompactedAt),
-        }, ...currentMessages.slice(firstKeptIndex)];
+        runtime.agent.state.messages = [
+          checkpointMessage(summary, Date.parse(lastCompactedAt)),
+          ...currentMessages.slice(firstKeptIndex),
+        ];
       }
     }
   }

@@ -638,6 +638,54 @@ describe("Pi reasoning runtime contract", () => {
     expect(JSON.stringify(openings.at(-1))).toContain("look things up");
   });
 
+  it("names the history a mid-Turn bound had to drop, instead of leaving it as an absence", async () => {
+    const faux = fauxProvider({ provider: "joi-mid-turn-omission" });
+    const model = { ...faux.getModel(), contextWindow: 32_000 };
+    const bound = modelContextMaxChars(model);
+    const requests: string[] = [];
+    faux.setResponses(Array.from({ length: 6 }, (_, index) => (context: { messages?: unknown }) => {
+      requests.push(JSON.stringify(context.messages ?? []));
+      return index < 5
+        ? fauxAssistantMessage([fauxToolCall("memory_search", { query: String(index) })], { stopReason: "toolUse" })
+        : fauxAssistantMessage([fauxText("done")]);
+    }));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiReasoningRuntime({
+      model,
+      models,
+      sessionStore: new MemorySessionStore(),
+      tools: [{
+        name: "memory_search",
+        label: "Search memory",
+        description: "Searches memory.",
+        parameters: Type.Object({ query: Type.String() }),
+        execute: async () => ({ content: [{ type: "text", text: `tool-output ${"x".repeat(5_000)}` }], details: {} }),
+      }],
+    });
+
+    await runtime.startTurn({
+      workbenchId: "workbench_1",
+      inputId: "input_omission",
+      modelId: "contract-model",
+      modelRevisionId: "model_rev_1",
+      prompt: "look things up",
+      sessionId: "session_omission",
+      sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      turnId: "turn-omission",
+    });
+
+    // The bound did drop history: without a word, that is the same silent loss a long partner run
+    // was diagnosed with, and it produced the same wrong conclusion about who changed the workspace.
+    const last = requests.at(-1) ?? "";
+    expect(requests.some((request) => request.includes("joi context notice"))).toBe(true);
+    expect(last).toContain("no other process modified your workspace");
+    // The omission is confined to this request; it is not a new fact about the session.
+    expect(last.length).toBeLessThanOrEqual(bound + 2_000);
+  });
+
   it("keeps the request anchor and never opens on an orphaned tool result", () => {
     const filler = (role: string, text: string) => ({ content: [{ text, type: "text" }], role, timestamp: 1 }) as never;
     const messages = [

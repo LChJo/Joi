@@ -1,14 +1,12 @@
 import {
-  COMPACTION_SUMMARY_PREFIX,
-  COMPACTION_SUMMARY_SUFFIX,
   DEFAULT_COMPACTION_SETTINGS,
   estimateTokens,
-  generateSummary,
   shouldCompact,
   type AgentMessage,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
+import { checkpointMessage, omissionNotice, summarizeSegment } from "./pi-compaction.js";
 import { compactionReserveTokens, leadingSystemMessage } from "./pi-model-budget.js";
 
 /**
@@ -72,43 +70,6 @@ export interface PiContextManager {
   transformContext: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
   /** The checkpoint as it stands, for a caller that carries it across resident turns. */
   checkpoint: () => PiContextCheckpoint | undefined;
-}
-
-const SUMMARY_INSTRUCTIONS = "Preserve user intent, decisions, work status, identifiers, constraints, and unresolved questions. Do not invent facts.";
-
-/**
- * An explicit account of a request the window could not hold, written to the model rather than
- * left as an absence.
- *
- * The failure this prevents is specific and was observed in production: a model that finds work on
- * disk it does not remember doing has no way to tell "my history was trimmed" from "another process
- * changed my files", and the second reading is the one it reaches for. Naming the trim as the run's
- * own decision is what makes that inference unavailable.
- */
-function trimmedNotice(omittedMessages: number, omittedChars: number): AgentMessage {
-  return {
-    content: [{
-      text: `[joi context notice] ${String(omittedMessages)} earlier messages of this run were left out of this one `
-        + `request to keep it inside the model window (${String(omittedChars)} characters over budget). They were not `
-        + "lost, and no other process modified your workspace: this run removed them from this request because the "
-        + "request was too large. The summary above records what they contained, and your earlier work is on disk "
-        + "exactly as you left it. Do not conclude that something else changed your files.",
-      type: "text",
-    }],
-    role: "user",
-    timestamp: Date.now(),
-  };
-}
-
-function checkpointMessage(checkpoint: PiContextCheckpoint): AgentMessage {
-  return {
-    content: [{
-      text: `${COMPACTION_SUMMARY_PREFIX}[joi session checkpoint]\n${checkpoint.summary}${COMPACTION_SUMMARY_SUFFIX}`,
-      type: "text",
-    }],
-    role: "user",
-    timestamp: Date.parse(checkpoint.lastCompactedAt),
-  };
 }
 
 /**
@@ -186,7 +147,7 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
 
   const assemble = (messages: readonly AgentMessage[], cut: number): AgentMessage[] => [
     ...messages.slice(0, anchorEnd(messages)),
-    ...(checkpoint === undefined ? [] : [checkpointMessage(checkpoint)]),
+    ...(checkpoint === undefined ? [] : [checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))]),
     ...messages.slice(cut),
   ];
 
@@ -217,7 +178,7 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     const omitted = start - floor;
     const omittedChars = charsIn(floor, start);
     options.onDiagnostic?.({ omittedChars, omittedMessages: omitted, type: "joi.partner.context_truncated" });
-    return [...messages.slice(0, floor), trimmedNotice(omitted, omittedChars), ...messages.slice(start)];
+    return [...messages.slice(0, floor), omissionNotice(omitted, omittedChars), ...messages.slice(start)];
   };
 
   const compact = async (messages: readonly AgentMessage[], floor: number, signal: AbortSignal | undefined): Promise<boolean> => {
@@ -227,18 +188,17 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     // Nothing safe to cut, or nothing new since the last compaction.
     if (cut === undefined || cut <= from) return false;
     const segment = messages.slice(from, cut);
-    const generated = await generateSummary(
+    const generated = await summarizeSegment({
+      model: options.model,
+      models: options.models,
+      previousSummary: checkpoint?.summary,
+      reserveTokens: settings.reserveTokens,
       segment,
-      options.models,
-      options.model,
-      settings.reserveTokens,
       signal,
-      SUMMARY_INSTRUCTIONS,
-      checkpoint?.summary,
-      options.thinkingLevel,
-    );
+      thinkingLevel: options.thinkingLevel,
+    });
     if (!generated.ok) {
-      options.onDiagnostic?.({ reasonCode: generated.error.code, type: "joi.partner.context_summary_failed" });
+      options.onDiagnostic?.({ reasonCode: generated.reasonCode, type: "joi.partner.context_summary_failed" });
       return false;
     }
     const now = new Date().toISOString();
@@ -248,7 +208,7 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
       cut,
       lastCompactedAt: now,
       messagesBefore: messages.length,
-      summary: generated.value,
+      summary: generated.summary,
       tokensBefore: tokensIn(0, messages.length),
     };
     options.onDiagnostic?.({
@@ -269,11 +229,11 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
         // No checkpoint means nothing has been summarized yet, so the whole transcript after the
         // anchors is the tail and the request is the transcript unchanged.
         let cut = checkpoint === undefined ? floor : Math.max(floor, checkpoint.cut);
-        const standing = checkpoint === undefined ? 0 : JSON.stringify(checkpointMessage(checkpoint)).length;
+        const standing = checkpoint === undefined ? 0 : JSON.stringify(checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))).length;
         if (!overBudget(messages, cut, floor, standing)) return assemble(messages, cut);
         if (await compact(messages, floor, signal)) {
           cut = Math.max(floor, checkpoint?.cut ?? floor);
-          const refreshed = checkpoint === undefined ? 0 : JSON.stringify(checkpointMessage(checkpoint)).length;
+          const refreshed = checkpoint === undefined ? 0 : JSON.stringify(checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))).length;
           if (!overBudget(messages, cut, floor, refreshed)) return assemble(messages, cut);
         }
         return trimWithNotice(messages, floor);
