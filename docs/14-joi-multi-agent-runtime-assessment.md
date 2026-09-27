@@ -123,7 +123,7 @@ setInterval(2000) ── rootTickInFlight 守卫（非空直接 return，不排�
 | 10 | **合成持久化门禁**：revision 不匹配或 outcome 不合法 → 输入退回 PENDING 重跑；合成期间目标被恢复重新激活 → 只置 CONSUMED，不发布过期结论、不抬水位 | `sqlite-joi-inbox-repository.ts:616-707` |
 | 11 | 目标地图推进下一层（每步独立 try/catch） | `joi-harness-component.ts` |
 | 11b | 复盘投递三重门槛：map=ACTIVE 且 `revision > reviewed_revision` 且 `synthesized_revision == revision` | `sqlite-joi-harness-repository.ts:192-216,511-551` |
-| 12 | 结论对外：脱敏（掩密、绝对路径→占位）+ 按行边界截 4096 字符 + 自动补未闭合代码栅栏 | `joi-coordinator.ts:494-549` |
+| 12 | 结论对外：脱敏（掩密、绝对路径→缩写为「盘符/根 + 末三层」）+ 按行边界截 4096 字符 + 自动补未闭合代码栅栏 | `joi-coordinator.ts:494-549` |
 
 ### 2.4 已死的驱动链（重要）
 

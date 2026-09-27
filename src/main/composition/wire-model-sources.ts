@@ -5,6 +5,7 @@ import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import { ModelSourceService } from "../application/model-sources/model-source-service.js";
 import { ReasoningSourceSelector } from "../application/model-sources/reasoning-source-selector.js";
 import { ModelSourceNetworkPolicy } from "../infrastructure/pi/model-source-network-policy.js";
+import { PiModelLimitReader } from "../infrastructure/pi/pi-model-limit-reader.js";
 import { PiModelSourceCatalog } from "../infrastructure/pi/pi-model-source-catalog.js";
 import { PiModelSourceValidator } from "../infrastructure/pi/pi-model-source-validator.js";
 import { SafeStoragePiCredentialStore } from "../infrastructure/pi/pi-credential-store-adapter.js";
@@ -33,6 +34,7 @@ export function wireModelSources(input: {
       resolve: async (hostname) => (await lookup(hostname, { all: true, verbatim: true })).map((record) => record.address),
     }),
     ids,
+    limits: new PiModelLimitReader(),
     repository: persistence.modelSourceRepository,
     secrets: piCredentials,
     validator,

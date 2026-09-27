@@ -96,6 +96,21 @@ export function optionalStringField(body: Record<string, unknown>, key: string):
   throw new HttpError("request_field_invalid", `${key} must be a string or null.`, 400);
 }
 
+/**
+ * The numeric counterpart of `optionalStringField`, with the same three states: `undefined` was
+ * not submitted, `null` clears the value, a number sets it. Range checks belong to the domain
+ * layer — this only guards the wire type, which is what callers that filter on `typeof ===
+ * "string"` get wrong for numeric fields.
+ */
+export function optionalIntegerField(body: Record<string, unknown>, key: string): number | null | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new HttpError("request_field_invalid", `${key} must be an integer or null.`, 400);
+  }
+  return value;
+}
+
 export function optionalStringArray(body: Record<string, unknown>, key: string): string[] | undefined {
   const value = body[key];
   if (value === undefined) return undefined;

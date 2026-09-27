@@ -28,6 +28,17 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
       const field = form.get(key);
       return typeof field === "string" ? field : "";
     };
+    // An empty box means "use the recommended value": the field is left out entirely rather than
+    // sent as 0, so the provider preset keeps applying.
+    const numeric = (key: string): number | undefined => {
+      const raw = value(key).trim();
+      if (raw === "") return undefined;
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? parsed : undefined;
+    };
+    const compactionThresholdPercent = numeric("compactionThresholdPercent");
+    const contextWindow = numeric("contextWindow");
+    const maxOutputTokens = numeric("maxOutputTokens");
     setBusy(true); setNotice("正在检查连接，这可能产生极少量模型费用…");
     try {
       const source = await api.createModelSource({
@@ -35,6 +46,9 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
         apiKey: value("apiKey"),
         kind: selected,
         protocol: selectedProtocol,
+        ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
+        ...(contextWindow === undefined ? {} : { contextWindow }),
+        ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
         ...(selected === "generic-openai" ? {
           baseUrl: value("baseUrl"), displayName: value("displayName"), modelId: value("modelId"),
         } : value("modelId").trim() === "" ? {} : { modelId: value("modelId") }),
@@ -93,6 +107,13 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
         <label>Model ID<input name="modelId" required /></label>
       </> : <label>Model ID（可选，高级设置）<input name="modelId" placeholder="留空使用推荐模型" /></label>}
       <label>API Key{selected === "generic-openai" ? "（本机 localhost 可留空）" : ""}<input autoComplete="off" name="apiKey" required={selected !== "generic-openai"} type="password" /></label>
+      <details className="model-source-advanced">
+        <summary>高级设置（可选）</summary>
+        <p className="model-source-hint">留空就用该模型的推荐值。上下文窗口与最大输出按模型厂商文档填写；填高了会被服务商拒绝，joi 记下它报出的上限后会临时下调，重启恢复。</p>
+        <label>上下文窗口（tokens）<input inputMode="numeric" max={10000000} min={4096} name="contextWindow" placeholder="留空使用推荐值" step={1024} type="number" /></label>
+        <label>最大输出（tokens）<input inputMode="numeric" max={1000000} min={256} name="maxOutputTokens" placeholder="留空使用推荐值" step={1024} type="number" /></label>
+        <label>用到窗口的百分之多少时压缩会话<input inputMode="numeric" max={95} min={50} name="compactionThresholdPercent" placeholder="推荐 85" step={5} type="number" /></label>
+      </details>
       <div className="row-actions"><button className="button primary" disabled={busy} type="submit">{busy ? "正在检查…" : "保存并验证"}</button><button className="button ghost" onClick={cancel} type="button">取消</button></div>
     </form> : null}
     {notice === null ? null : <p className="inline-notice info" role="status">{notice}</p>}
@@ -112,6 +133,19 @@ function modelSourceReasonText(reasonCode: string | undefined): string {
   if (reasonCode === "response_truncated") return "验证回复达到输出上限而被截断，可能与模型思考模式有关。请重新验证，若持续出现请检查模型与协议兼容性。";
   if (reasonCode === "http_error") return "接口返回了错误响应，可展开查看原始报错。";
   return "joi 无法访问所选接口。请检查网络、服务状态和套餐余额后再验证。";
+}
+
+/**
+ * What requests on this route are really sized to. A provider that refused an oversized request
+ * stated its true limit, and joi holds the route to that figure for the rest of the process — so a
+ * configured value can be out of effect without anything on this page saying so.
+ */
+function modelLimitNote(model: JoiSnapshotDto["modelSources"][number]["activeModel"]) {
+  const effective = model.effective;
+  if (effective === undefined) return null;
+  const configured = model.contextWindow;
+  const overruled = configured !== undefined && effective.contextWindow < configured;
+  return <small>{`生效：窗口 ${effective.contextWindow.toLocaleString()} · 输出 ${effective.maxOutputTokens.toLocaleString()}${overruled ? `（服务商实测，已从 ${configured.toLocaleString()} 下调）` : ""}`}</small>;
 }
 
 function accessModeLabel(accessMode: ModelSourceAccessModeDto): string {
@@ -171,10 +205,22 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       const value = form.get(name);
       return typeof value === "string" ? value.trim() : "";
     };
+    // An emptied box must be sent as an explicit null. The revision table is append-only and the
+    // service carries unchanged values forward, so merely omitting the field would keep the old
+    // value and there would be no way back to the provider default.
+    const numericPatch = (name: string, key: string) => {
+      const raw = field(name);
+      if (raw === "") return { [key]: null };
+      const parsed = Number(raw);
+      return Number.isFinite(parsed) ? { [key]: parsed } : {};
+    };
     const apiKey = field("apiKey");
     const body = {
       ...(apiKey === "" ? {} : { apiKey }),
       modelId: field("modelId"),
+      ...numericPatch("compactionThresholdPercent", "compactionThresholdPercent"),
+      ...numericPatch("contextWindow", "contextWindow"),
+      ...numericPatch("maxOutputTokens", "maxOutputTokens"),
       ...(source.kind === "generic-openai" ? {
         baseUrl: field("baseUrl"), displayName: field("displayName"),
       } : {}),
@@ -192,12 +238,19 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     <header><div><h2>大模型网络</h2><p>主源和备用源按这里的顺序使用。页面不会显示已保存的密钥。</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "添加网络"}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
     <div className="model-source-list">{sources.map((source, index) => <article className="model-source-item" key={source.sourceId}>
-      <div className="model-source-summary"><div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div><span className="model-source-meta">{source.primary ? "主源" : `备用 ${String(index)}`} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span><small>模型：{source.activeModel.id}</small>{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}{source.status === "DEGRADED" || source.status === "NEEDS_AUTH" ? <><span className="model-source-reason">⚠ {modelSourceReasonText(source.reasonCode)}</span>{source.lastValidatedAt === undefined ? null : <small>上次验证：{new Date(source.lastValidatedAt).toLocaleString()}</small>}{source.lastError === undefined ? null : <details className="model-source-error"><summary>查看原始报错</summary><pre>{source.lastError}</pre></details>}</> : null}</div>
+      <div className="model-source-summary"><div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div><span className="model-source-meta">{source.primary ? "主源" : `备用 ${String(index)}`} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span><small>模型：{source.activeModel.id}</small>{modelLimitNote(source.activeModel)}{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}{source.status === "DEGRADED" || source.status === "NEEDS_AUTH" ? <><span className="model-source-reason">⚠ {modelSourceReasonText(source.reasonCode)}</span>{source.lastValidatedAt === undefined ? null : <small>上次验证：{new Date(source.lastValidatedAt).toLocaleString()}</small>}{source.lastError === undefined ? null : <details className="model-source-error"><summary>查看原始报错</summary><pre>{source.lastError}</pre></details>}</> : null}</div>
       <div aria-label={`${source.displayName} 操作`} className="row-actions model-source-actions" role="group"><button aria-label={`编辑 ${source.displayName}`} className="button ghost" onClick={() => setEditing(source.sourceId)} type="button">编辑</button><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">上移</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">下移</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice("验证没有通过。"))} type="button">验证</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">停用</button><button className="button danger-text" onClick={() => void removeSource(source.sourceId)} type="button">删除</button></div>
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>编辑显示名称<input defaultValue={source.displayName} name="displayName" required /></label><label>编辑 Base URL<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
         <label>编辑 Model ID<input defaultValue={source.activeModel.id} name="modelId" required /></label>
         <label>替换 API Key（留空则保留）<input autoComplete="off" name="apiKey" type="password" /></label>
+        <details className="model-source-advanced">
+          <summary>高级设置</summary>
+          <p className="model-source-hint">清空即回到该模型的推荐值。压缩阈值只影响 joi 主会话，对搭档与编码线路不生效。改动 Model ID 会重置这三项。</p>
+          <label>上下文窗口（tokens）<input defaultValue={source.activeModel.contextWindow ?? ""} inputMode="numeric" max={10000000} min={4096} name="contextWindow" placeholder="留空使用推荐值" step={1024} type="number" /></label>
+          <label>最大输出（tokens）<input defaultValue={source.activeModel.maxOutputTokens ?? ""} inputMode="numeric" max={1000000} min={256} name="maxOutputTokens" placeholder="留空使用推荐值" step={1024} type="number" /></label>
+          <label>压缩阈值（窗口百分比）<input defaultValue={source.activeModel.compactionThresholdPercent ?? ""} inputMode="numeric" max={95} min={50} name="compactionThresholdPercent" placeholder="推荐 85" step={5} type="number" /></label>
+        </details>
         <div className="row-actions"><button className="button primary" type="submit">保存修改</button><button className="button ghost" onClick={() => setEditing(null)} type="button">取消</button></div>
       </form> : null}
     </article>)}</div>

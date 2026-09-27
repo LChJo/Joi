@@ -24,7 +24,7 @@ Agent-facing run, validation, clean and package commands are indexed in `.agent/
 2. Add and run a failing test before implementation.
 3. Keep external side effects behind an outbox and stable idempotency identifiers.
 4. Use disposable SQLite, userData and credential fakes in tests. Never read real Electron userData.
-5. Never log or return tokens, cookies, CSRF values, message bodies, persona, memory text, A2A payloads or absolute paths.
+5. Never log or return tokens, cookies, CSRF values, message bodies, persona, memory text or A2A payloads. A local, user-facing projection may print an absolute path abbreviated to its root plus its last three segments (`src/main/domain/text/path-abbreviation.ts`); the diagnostics channel still rejects paths outright, and the private tool-trace store still keeps them in full.
 6. Run the fixed validation commands before handing off a milestone.
 
 ## Fixed validation commands

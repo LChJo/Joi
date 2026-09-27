@@ -5,12 +5,14 @@ import { describe, expect, it, vi } from "vitest";
 import { RemoteCommandService } from "../../src/main/application/remote/remote-command-service.js";
 
 describe("RemoteCommandService", () => {
-  it("removes private paths from action receipts and legacy feed projections", async () => {
-    const unsafe = { textPreview: "C:\\private\\report.md", token: "token=private-value" };
+  it("abbreviates private paths in action receipts and legacy feed projections", async () => {
+    const unsafe = { textPreview: "C:\\private\\a\\b\\report.md", token: "token=private-value" };
     const service = new RemoteCommandService({ homeFeed: { load: vi.fn().mockResolvedValue(unsafe) }, inbox: { accept: vi.fn().mockResolvedValue(unsafe) } });
     for (const command of [{ kind: "feed.get", requestId: "feed" }, { kind: "message.send", requestId: "send", text: "hello", idempotencyKey: "key" }] as const) {
       const response = await service.handle(command);
-      expect(JSON.stringify(response)).not.toContain("private");
+      const serialized = JSON.stringify(response);
+      expect(serialized).not.toContain("private-value");
+      expect(serialized).toContain(String.raw`C:\\…\\a\\b\\report.md`);
     }
   });
   it("preserves an explicitly selected workbench when sending", async () => {

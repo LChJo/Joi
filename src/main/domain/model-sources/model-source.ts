@@ -24,7 +24,13 @@ export interface ModelSourceRevision {
 
 export interface ModelRevision {
   capability: ModelCapability;
+  /** Percent of the route's window at which the session is compacted. Absent means the runtime default. */
+  compactionThresholdPercent?: number;
+  /** Documented window for this exact model, overriding what joi would otherwise infer. */
+  contextWindow?: number;
   createdAt: string;
+  /** Documented completion cap, which is a separate limit from the window. */
+  maxOutputTokens?: number;
   modelId: string;
   modelRevisionId: string;
 }
@@ -42,11 +48,14 @@ export interface ModelSource {
 
 export interface CreateModelSourceInput {
   accessMode?: ModelSourceAccessMode;
+  compactionThresholdPercent?: number;
+  contextWindow?: number;
   createdAt: string;
   credentialRef: string;
   credentialVersion: number;
   displayName: string;
   kind: ModelSourceKind;
+  maxOutputTokens?: number;
   modelCapability: ModelCapability;
   modelId: string;
   modelRevisionId: string;
@@ -61,6 +70,44 @@ function required(value: string, code: string): string {
   return normalized;
 }
 
+/** Bounds mirror the CHECK constraints added by migration 063, so an out-of-range value is
+ *  reported as a domain error rather than as a raw SQLite constraint failure. */
+const CONTEXT_WINDOW_RANGE = { max: 10_000_000, min: 4_096 } as const;
+const MAX_OUTPUT_TOKENS_RANGE = { max: 1_000_000, min: 256 } as const;
+/** 100 is excluded on purpose: compacting only once the request fills the whole window is too
+ *  late — the provider clamps max_tokens toward 1 and the Turn truncates first. */
+const COMPACTION_PERCENT_RANGE = { max: 95, min: 50 } as const;
+
+function optionalLimit(
+  value: number | undefined,
+  code: string,
+  range: { max: number; min: number },
+): number | undefined {
+  if (value === undefined) return undefined;
+  if (!Number.isSafeInteger(value) || value < range.min || value > range.max) {
+    throw new DomainError(code, "Model source limit is out of range.");
+  }
+  return value;
+}
+
+/** Applies the shared range check to the three per-model limits and returns them ready to spread. */
+function modelLimits(input: {
+  compactionThresholdPercent?: number;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+}): Pick<ModelRevision, "compactionThresholdPercent" | "contextWindow" | "maxOutputTokens"> {
+  const contextWindow = optionalLimit(input.contextWindow, "model_source_context_window_invalid", CONTEXT_WINDOW_RANGE);
+  const maxOutputTokens = optionalLimit(input.maxOutputTokens, "model_source_max_output_invalid", MAX_OUTPUT_TOKENS_RANGE);
+  const compactionThresholdPercent = optionalLimit(
+    input.compactionThresholdPercent, "model_source_compaction_threshold_invalid", COMPACTION_PERCENT_RANGE,
+  );
+  return {
+    ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
+    ...(contextWindow === undefined ? {} : { contextWindow }),
+    ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+  };
+}
+
 export function createModelSource(input: CreateModelSourceInput): ModelSource {
   if (!Number.isSafeInteger(input.credentialVersion) || input.credentialVersion < 1) {
     throw new DomainError("model_source_credential_version_invalid", "Credential version is invalid.");
@@ -68,6 +115,7 @@ export function createModelSource(input: CreateModelSourceInput): ModelSource {
   return {
     activeModelRevision: {
       capability: input.modelCapability,
+      ...modelLimits(input),
       createdAt: input.createdAt,
       modelId: required(input.modelId, "model_id_invalid"),
       modelRevisionId: required(input.modelRevisionId, "model_revision_id_invalid"),
@@ -92,8 +140,11 @@ export function createModelSource(input: CreateModelSourceInput): ModelSource {
 export function reviseModelSource(
   source: ModelSource,
   input: {
+    compactionThresholdPercent?: number;
+    contextWindow?: number;
     credentialVersion: number;
     displayName?: string;
+    maxOutputTokens?: number;
     modelCapability: ModelCapability;
     modelId: string;
     modelRevisionId: string;
@@ -104,10 +155,14 @@ export function reviseModelSource(
   if (input.sourceRevisionId === source.activeSourceRevision.sourceRevisionId || input.modelRevisionId === source.activeModelRevision.modelRevisionId) {
     throw new DomainError("model_source_revision_reused", "Model source revisions must be immutable.");
   }
+  // The caller owns "unchanged": anything it omits here is dropped from the new revision, because
+  // this table is append-only and nothing merges the previous row back in. Callers that mean
+  // "keep the current value" must pass it explicitly (see ModelSourceService.update).
   return {
     ...source,
     activeModelRevision: {
       capability: input.modelCapability,
+      ...modelLimits(input),
       createdAt: input.updatedAt,
       modelId: required(input.modelId, "model_id_invalid"),
       modelRevisionId: required(input.modelRevisionId, "model_revision_id_invalid"),

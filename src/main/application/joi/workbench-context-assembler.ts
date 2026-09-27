@@ -1,4 +1,5 @@
 import { DomainError } from "../../domain/errors.js";
+import { abbreviateAbsolutePaths } from "../../domain/text/path-abbreviation.js";
 import type {
   WorkbenchCatalog,
   WorkbenchContextProjectionReader,
@@ -10,7 +11,7 @@ import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 const PATH_FRAGMENT = /(?:[A-Za-z]:[\\/][^\s]+|\\\\[^\s\\]+\\[^\s]+|(?:^|\s)\/(?:Users|home|var|tmp|opt|mnt)\/[^\s]+)/gu;
 
 function safeText(value: string): string {
-  return value.replace(PATH_FRAGMENT, " [redacted-path]").trim();
+  return abbreviateAbsolutePaths(value, PATH_FRAGMENT).trim();
 }
 
 export class WorkbenchContextAssembler {

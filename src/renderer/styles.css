@@ -362,6 +362,27 @@
   font: inherit;
 }
 
+/* Optional per-model sizing sits behind a disclosure: it is not needed to connect a source, and
+   three more numeric fields would otherwise compete with the ones that are. */
+.model-source-advanced {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.model-source-advanced > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.model-source-advanced label,
+.model-source-advanced input {
+  width: 100%;
+}
+
 .joi-work-overview {
   padding: 16px 18px;
   display: flex;

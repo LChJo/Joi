@@ -9,6 +9,8 @@ import {
 } from "../../domain/model-sources/model-source.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type {
+  EffectiveModelLimits,
+  ModelLimitReader,
   ModelSourceCatalog,
   ModelSourceEndpointPolicy,
   ModelSourceHealthRevision,
@@ -22,8 +24,11 @@ export interface CreateModelSourceRequest {
   accessMode?: ModelSourceAccessMode;
   apiKey: string;
   baseUrl?: string;
+  compactionThresholdPercent?: number;
+  contextWindow?: number;
   displayName?: string;
   kind: ModelSourceKind;
+  maxOutputTokens?: number;
   modelId?: string;
   protocol?: ModelSourceProtocol;
 }
@@ -31,8 +36,19 @@ export interface CreateModelSourceRequest {
 export interface UpdateModelSourceRequest {
   apiKey?: string;
   baseUrl?: string;
+  /** `null` clears the limit back to the provider preset; `undefined` leaves it unchanged. */
+  compactionThresholdPercent?: number | null;
+  contextWindow?: number | null;
   displayName?: string;
+  maxOutputTokens?: number | null;
   modelId?: string;
+}
+
+/** `undefined` keeps the current value, `null` clears it, a number sets it. */
+function resolveLimit(patch: number | null | undefined, current: number | undefined): number | undefined {
+  if (patch === undefined) return current;
+  // `null ?? undefined` is undefined, which is exactly "cleared".
+  return patch ?? undefined;
 }
 
 export class ModelSourceService {
@@ -41,6 +57,8 @@ export class ModelSourceService {
     clock: Clock;
     endpointPolicy: ModelSourceEndpointPolicy;
     ids: IdGenerator;
+    /** Absent only in tests that do not exercise the effective-value projection. */
+    limits?: ModelLimitReader;
     repository: ModelSourceRepository;
     secrets: ModelSourceSecretStore;
     validator: ModelSourceValidator;
@@ -74,11 +92,14 @@ export class ModelSourceService {
     const existing = await this.dependencies.repository.list();
     const source = createModelSource({
       accessMode: catalog.accessMode,
+      ...(input.compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent: input.compactionThresholdPercent }),
+      ...(input.contextWindow === undefined ? {} : { contextWindow: input.contextWindow }),
       createdAt: now,
       credentialRef: providerId,
       credentialVersion,
       displayName,
       kind: input.kind,
+      ...(input.maxOutputTokens === undefined ? {} : { maxOutputTokens: input.maxOutputTokens }),
       modelCapability: catalog.capability,
       modelId: catalog.modelId,
       modelRevisionId: this.dependencies.ids.next("model_revision"),
@@ -100,11 +121,33 @@ export class ModelSourceService {
       await this.dependencies.secrets.delete(providerId).catch(() => undefined);
       throw error;
     }
-    return toDto(record);
+    return this.#toDto(record);
+  }
+
+  /**
+   * The size requests on this route will really use. Shown next to the configured value so a
+   * window the provider has since overruled reads as a fact rather than as a setting that did
+   * not take.
+   */
+  #effectiveLimits(record: ModelSourceRecord): EffectiveModelLimits | undefined {
+    const revision = record.source.activeModelRevision;
+    return this.dependencies.limits?.effective({
+      accessMode: record.source.activeSourceRevision.accessMode,
+      ...(revision.contextWindow === undefined ? {} : { contextWindow: revision.contextWindow }),
+      kind: record.source.activeSourceRevision.kind,
+      ...(revision.maxOutputTokens === undefined ? {} : { maxOutputTokens: revision.maxOutputTokens }),
+      modelId: revision.modelId,
+      protocol: record.source.activeSourceRevision.protocol,
+      sourceId: record.source.sourceId,
+    });
+  }
+
+  #toDto(record: ModelSourceRecord): ModelSourceDto {
+    return toDto(record, this.#effectiveLimits(record));
   }
 
   async list(): Promise<ModelSourceDto[]> {
-    return (await this.dependencies.repository.list()).map(toDto);
+    return (await this.dependencies.repository.list()).map((record) => this.#toDto(record));
   }
 
   async update(sourceId: string, input: UpdateModelSourceRequest): Promise<ModelSourceDto> {
@@ -137,10 +180,23 @@ export class ModelSourceService {
         normalizedKey.length === 0 ? undefined : normalizedKey,
       );
     }
+    // The limits describe a model's geometry, so they do not survive a change of Model ID: the
+    // window a user measured for glm-5.2 is simply wrong for glm-4.7. They must still be carried
+    // across every *other* edit explicitly — the revision table is append-only and nothing merges
+    // the previous row back in, so omitting them here would silently reset them on any edit.
+    const modelChanged = catalog.modelId !== current.source.activeModelRevision.modelId;
+    const carried = (value: number | undefined): number | undefined => (modelChanged ? undefined : value);
+    const previous = current.source.activeModelRevision;
+    const compactionThresholdPercent = resolveLimit(input.compactionThresholdPercent, carried(previous.compactionThresholdPercent));
+    const contextWindow = resolveLimit(input.contextWindow, carried(previous.contextWindow));
+    const maxOutputTokens = resolveLimit(input.maxOutputTokens, carried(previous.maxOutputTokens));
     const updatedAt = this.dependencies.clock.now().toISOString();
     const source = reviseModelSource(current.source, {
+      ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
+      ...(contextWindow === undefined ? {} : { contextWindow }),
       credentialVersion,
       displayName,
+      ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
       modelCapability: catalog.capability,
       modelId: catalog.modelId,
       modelRevisionId: this.dependencies.ids.next("model_revision"),
@@ -156,7 +212,7 @@ export class ModelSourceService {
       source: { ...source, status: "DRAFT" },
     };
     await this.dependencies.repository.revise(revised);
-    return toDto(revised);
+    return this.#toDto(revised);
   }
 
   async disable(sourceId: string): Promise<ModelSourceDto> {
@@ -166,8 +222,8 @@ export class ModelSourceService {
       ...withoutHealthReason(current),
       source: { ...current.source, status: "DISABLED", updatedAt },
     };
-    if (!await this.#saveHealth(disabled, current)) return toDto(await this.#get(sourceId));
-    return toDto(disabled);
+    if (!await this.#saveHealth(disabled, current)) return this.#toDto(await this.#get(sourceId));
+    return this.#toDto(disabled);
   }
 
   async delete(sourceId: string): Promise<void> {
@@ -184,7 +240,7 @@ export class ModelSourceService {
       ...record,
       source: { ...record.source, status: "VALIDATING", updatedAt: this.dependencies.clock.now().toISOString() },
     };
-    if (!await this.#saveHealth(validating, record)) return toDto(await this.#get(sourceId));
+    if (!await this.#saveHealth(validating, record)) return this.#toDto(await this.#get(sourceId));
     const result = await this.dependencies.validator.validate(validating);
     const updated: ModelSourceRecord = {
       ...withoutHealthReason(validating),
@@ -193,8 +249,8 @@ export class ModelSourceService {
       ...(result.error === undefined ? {} : { lastError: truncateError(result.error) }),
       source: { ...validating.source, status: result.status, updatedAt: result.validatedAt },
     };
-    if (!await this.#saveHealth(updated, validating)) return toDto(await this.#get(sourceId));
-    return toDto(updated);
+    if (!await this.#saveHealth(updated, validating)) return this.#toDto(await this.#get(sourceId));
+    return this.#toDto(updated);
   }
 
   async setOrder(sourceIds: string[]): Promise<ModelSourceDto[]> {
@@ -259,12 +315,16 @@ function sameHealthRevision(left: ModelSourceRecord | null, right: ModelSourceRe
     && left.source.updatedAt === right.source.updatedAt;
 }
 
-function toDto(record: ModelSourceRecord): ModelSourceDto {
+function toDto(record: ModelSourceRecord, limits: EffectiveModelLimits | undefined): ModelSourceDto {
   return {
     accessMode: record.source.activeSourceRevision.accessMode,
     activeModel: {
       capability: record.source.activeModelRevision.capability,
+      ...(record.source.activeModelRevision.compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent: record.source.activeModelRevision.compactionThresholdPercent }),
+      ...(record.source.activeModelRevision.contextWindow === undefined ? {} : { contextWindow: record.source.activeModelRevision.contextWindow }),
+      ...(limits === undefined ? {} : { effective: limits }),
       id: record.source.activeModelRevision.modelId,
+      ...(record.source.activeModelRevision.maxOutputTokens === undefined ? {} : { maxOutputTokens: record.source.activeModelRevision.maxOutputTokens }),
       revisionId: record.source.activeModelRevision.modelRevisionId,
     },
     activeSourceRevisionId: record.source.activeSourceRevision.sourceRevisionId,

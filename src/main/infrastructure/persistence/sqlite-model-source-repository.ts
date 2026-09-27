@@ -16,6 +16,7 @@ const SELECT_RECORDS = `
          sr.source_revision_id, sr.kind, sr.access_mode, sr.protocol, sr.display_name, sr.base_url,
          sr.credential_ref, sr.credential_version, sr.created_at AS source_revision_created_at,
          mr.model_revision_id, mr.model_id, mr.capability, mr.preset_version,
+         mr.context_window, mr.max_output_tokens, mr.compaction_threshold_percent,
          mr.created_at AS model_revision_created_at,
          (SELECT p.proven_at FROM model_source_tool_proofs p
            WHERE p.source_revision_id = sr.source_revision_id AND p.model_revision_id = mr.model_revision_id) AS tool_proof_at,
@@ -45,6 +46,15 @@ function optionalText(row: Row, field: string): string | undefined {
   return value;
 }
 
+/** NULL is the "not configured" state for the per-model size limits, so unlike `integer` this
+ *  treats it as absent rather than as corruption. */
+function optionalInteger(row: Row, field: string): number | undefined {
+  const value = row[field];
+  if (value === null || value === undefined) return undefined;
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) throw new Error("model_source_record_invalid");
+  return value;
+}
+
 function isLocal(baseUrl: string | undefined): boolean {
   if (baseUrl === undefined) return false;
   try {
@@ -62,6 +72,9 @@ function mapRow(row: Row): ModelSourceRecord {
   const lastValidatedAt = optionalText(row, "last_validated_at");
   const presetVersion = optionalText(row, "preset_version");
   const toolProofAt = optionalText(row, "tool_proof_at");
+  const contextWindow = optionalInteger(row, "context_window");
+  const maxOutputTokens = optionalInteger(row, "max_output_tokens");
+  const compactionThresholdPercent = optionalInteger(row, "compaction_threshold_percent");
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(lastError === undefined ? {} : { lastError }),
@@ -74,7 +87,10 @@ function mapRow(row: Row): ModelSourceRecord {
     source: {
       activeModelRevision: {
         capability: text(row, "capability") as ModelCapability,
+        ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
+        ...(contextWindow === undefined ? {} : { contextWindow }),
         createdAt: text(row, "model_revision_created_at"),
+        ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
         modelId: text(row, "model_id"),
         modelRevisionId: text(row, "model_revision_id"),
       },
@@ -114,10 +130,15 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
           source.activeSourceRevision.credentialVersion, source.activeSourceRevision.createdAt,
         );
         connection.prepare(`INSERT INTO model_source_model_revisions
-          (model_revision_id, source_id, model_id, capability, preset_version, created_at)
-          VALUES (?, ?, ?, ?, ?, ?)`).run(
+          (model_revision_id, source_id, model_id, capability, preset_version,
+           context_window, max_output_tokens, compaction_threshold_percent, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           source.activeModelRevision.modelRevisionId, source.sourceId, source.activeModelRevision.modelId,
-          source.activeModelRevision.capability, record.presetVersion ?? null, source.activeModelRevision.createdAt,
+          source.activeModelRevision.capability, record.presetVersion ?? null,
+          source.activeModelRevision.contextWindow ?? null,
+          source.activeModelRevision.maxOutputTokens ?? null,
+          source.activeModelRevision.compactionThresholdPercent ?? null,
+          source.activeModelRevision.createdAt,
         );
         connection.prepare(`UPDATE model_sources SET active_source_revision_id = ?, active_model_revision_id = ? WHERE source_id = ?`).run(
           source.activeSourceRevision.sourceRevisionId, source.activeModelRevision.modelRevisionId, source.sourceId,
@@ -202,10 +223,15 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         source.activeSourceRevision.credentialVersion, source.activeSourceRevision.createdAt,
       );
       connection.prepare(`INSERT INTO model_source_model_revisions
-        (model_revision_id, source_id, model_id, capability, preset_version, created_at)
-        VALUES (?, ?, ?, ?, ?, ?)`).run(
+        (model_revision_id, source_id, model_id, capability, preset_version,
+         context_window, max_output_tokens, compaction_threshold_percent, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         source.activeModelRevision.modelRevisionId, source.sourceId, source.activeModelRevision.modelId,
-        source.activeModelRevision.capability, record.presetVersion ?? null, source.activeModelRevision.createdAt,
+        source.activeModelRevision.capability, record.presetVersion ?? null,
+        source.activeModelRevision.contextWindow ?? null,
+        source.activeModelRevision.maxOutputTokens ?? null,
+        source.activeModelRevision.compactionThresholdPercent ?? null,
+        source.activeModelRevision.createdAt,
       );
       connection.prepare(`UPDATE model_sources
         SET status = ?, active_source_revision_id = ?, active_model_revision_id = ?, updated_at = ? WHERE source_id = ?`).run(

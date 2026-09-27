@@ -17,9 +17,9 @@
 
 点击目标卡进入工作台。工作台默认页签列出它启动过且未被删除的所有 Agent，本机 instance 与远端 A2A run 使用相同卡片契约。`EPHEMERAL` 只有终态可删，`RESIDENT` 不可删；上下文编辑降为次级页签。点击 Agent 才进入只读对话，不允许绕过 joi 直接续聊。
 
-新增独立展示表而不改变运行事实权威。Migration 033 不回填历史，只让迁移后的新 instance/run 创建 Agent session。执行适配器把任务、最终 Markdown、工具名、文本工具结果、产物和错误转换为规范化条目；内部 reasoning、工具参数正文与 A2A data part 不进入这些展示条目，**展示条目**的路径与凭据在持久化前脱敏。工具轨迹是另一类独立的私密正文通道：它不属于展示条目，凭据在持久化前脱敏、绝对路径保留（本机调试必需），单条 ≤8 KB 超出截断并标记，只在本机落 `workbench_agent_tool_traces`，只在桌面上按写权限按需读取，不进入首页、诊断、SSE 或远端。条目以稳定 ID 幂等写入并按大小分块。删除展示 Agent 不级联删除 Work、Run、Result、event 或审计事实。
+新增独立展示表而不改变运行事实权威。Migration 033 不回填历史，只让迁移后的新 instance/run 创建 Agent session。执行适配器把任务、最终 Markdown、工具名、文本工具结果、产物和错误转换为规范化条目；内部 reasoning、工具参数正文与 A2A data part 不进入这些展示条目，**展示条目**的凭据在持久化前脱敏，绝对路径缩写为「盘符/根 + 末三层」。工具轨迹是另一类独立的私密正文通道：它不属于展示条目，凭据在持久化前脱敏、绝对路径保留（本机调试必需），单条 ≤8 KB 超出截断并标记，只在本机落 `workbench_agent_tool_traces`，只在桌面上按写权限按需读取，不进入首页、诊断、SSE 或远端。条目以稳定 ID 幂等写入并按大小分块。删除展示 Agent 不级联删除 Work、Run、Result、event 或审计事实。
 
-Migration 034–036 补足展示面的事实来源：Work 强关联原始目标、每个 run 只有一个权威终态；目标级 result-set revision 在所有 Work 终态后生成唯一综合输入；joi 在隔离 session 中仅用结果读取与完成工具形成目标级 outcome。首页不从单个 Agent 结果或共享 Pi session 猜测结论。原始请求、私有 Work brief、结果正文和路径不进入首页或诊断，诊断只保留安全字段并滚动持久化。
+Migration 034–036 补足展示面的事实来源：Work 强关联原始目标、每个 run 只有一个权威终态；目标级 result-set revision 在所有 Work 终态后生成唯一综合输入；joi 在隔离 session 中仅用结果读取与完成工具形成目标级 outcome。首页不从单个 Agent 结果或共享 Pi session 猜测结论。原始请求、私有 Work brief、结果正文和完整路径不进入首页或诊断，诊断只保留安全字段并滚动持久化。
 
 Migration 042 为不创建 Work 的普通回答增加独立 `joi_turn_completions` read model。Pi runtime 只把 `turn_complete` 的安全 outcome 枚举交给 Coordinator，不透出工具 payload；Coordinator 捕获本轮最终文本并用与 Goal outcome 相同的有界 Markdown 脱敏规则处理，SQLite 在同一事务中校验 Turn 属于 Input、完成 Turn/Inbox 并按 `input_id` 幂等写 projection。Home feed 仅在 Input 为 `CONSUMED` 且没有 result-set 时使用该值；Goal outcome 的当前 revision 永远优先。首页不得反查共享 reasoning transcript，诊断不得携带 completion 正文。
 

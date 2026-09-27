@@ -215,7 +215,15 @@ export interface ModelSourceDto {
   accessMode: ModelSourceAccessModeDto;
   activeModel: {
     capability: "release-tested" | "custom-unverified-tools";
+    /** Percent of the route's window at which the session is compacted; absent means joi's default. */
+    compactionThresholdPercent?: number;
+    contextWindow?: number;
+    /** What the route will actually accept. `contextWindow`/`maxOutputTokens` are what the user
+     *  configured; this is what the request is sized to — a provider that rejected an oversized
+     *  request states its real limit, and joi holds the route to that until the process restarts. */
+    effective?: { contextWindow: number; maxOutputTokens: number };
     id: string;
+    maxOutputTokens?: number;
     revisionId: string;
   };
   activeSourceRevisionId: string;

@@ -7,17 +7,18 @@ describe("Agent conversation presentation", () => {
       runId: "run-1",
       startedAt: "2026-08-03T12:00:00.000Z",
     }, [
-      { kind: "MARKDOWN", role: "AGENT", text: `完成 C:\\Users\\owner\\secret.txt Bearer abcdefghijklmnop\n${"x".repeat(70_000)}` },
+      { kind: "MARKDOWN", role: "AGENT", text: `完成 C:\\Users\\owner\\deep\\secret.txt Bearer abcdefghijklmnop\n${"x".repeat(70_000)}` },
       { kind: "TOOL_CALL", role: "TOOL", text: "read_file /home/owner/private.md cookie=session-secret", toolName: "read_file" },
-      { artifact: { mimeType: "text/plain", name: "/workspace/private/report.txt", size: 42 }, kind: "ARTIFACT", role: "AGENT" },
+      { artifact: { mimeType: "text/plain", name: "/workspace/private/nested/report.txt", size: 42 }, kind: "ARTIFACT", role: "AGENT" },
     ]);
 
+    const joined = entries.map((entry) => entry.text ?? "").join("\n");
     expect(entries.filter((entry) => entry.kind === "MARKDOWN").length).toBeGreaterThan(2);
-    expect(entries.map((entry) => entry.text ?? "").join("\n")).not.toMatch(/C:\\Users|\/home\/owner|abcdefghijklmnop/u);
-    expect(entries.map((entry) => entry.text ?? "").join("\n")).toContain("[redacted-path]");
-    expect(entries.map((entry) => entry.text ?? "").join("\n")).toContain("Bearer [redacted]");
-    expect(entries.map((entry) => entry.text ?? "").join("\n")).not.toContain("session-secret");
-    expect(entries.at(-1)).toMatchObject({ artifact: { name: "[redacted-path]", size: 42 }, kind: "ARTIFACT" });
+    expect(joined).toContain("C:\\…\\owner\\deep\\secret.txt");
+    expect(joined).not.toMatch(/C:\\Users|abcdefghijklmnop/u);
+    expect(joined).toContain("Bearer [redacted]");
+    expect(joined).not.toContain("session-secret");
+    expect(entries.at(-1)).toMatchObject({ artifact: { name: "/…/private/nested/report.txt", size: 42 }, kind: "ARTIFACT" });
     expect(new Set(entries.map((entry) => entry.entryId)).size).toBe(entries.length);
   });
 
@@ -46,7 +47,7 @@ describe("Agent conversation presentation", () => {
     expect(JSON.stringify(drafts)).not.toContain("secret");
     expect(draftAgentConversation("task", "  ", [null, "primitive"])).toEqual([{ kind: "MARKDOWN", role: "USER", text: "task" }]);
     expect(sanitizeAgentConversationText("https://example.com/x apiKey=abc csrf_token=def /workspace/a"))
-      .toBe("https://example.com/x apiKey=[redacted] csrf_token=[redacted] [redacted-path]");
+      .toBe("https://example.com/x apiKey=[redacted] csrf_token=[redacted] /workspace/a");
   });
 
   it("keeps one entry per call with its correlation id and reads pi's nested tool output", () => {
@@ -69,9 +70,9 @@ describe("Agent conversation presentation", () => {
     expect(JSON.stringify(drafts)).not.toContain("npm test");
   });
 
-  it("drops path placeholders for card-facing text while keeping secret masking", () => {
-    expect(stripPathRedactions(sanitizeAgentConversationText("C:\\work\\prd.md 审查一下这个prd方案"))).toBe("审查一下这个prd方案");
-    expect(stripPathRedactions(sanitizeAgentConversationText("done /workspace/a apiKey=abc"))).toBe("done apiKey=[redacted]");
+  it("erases the legacy path placeholder on card-facing text while keeping secret masking", () => {
+    expect(stripPathRedactions(sanitizeAgentConversationText("C:\\work\\prd.md 审查一下这个prd方案"))).toBe("C:\\work\\prd.md 审查一下这个prd方案");
+    expect(stripPathRedactions(sanitizeAgentConversationText("done /workspace/a apiKey=abc"))).toBe("done /workspace/a apiKey=[redacted]");
     expect(stripPathRedactions("## 结论\n\n[redacted-path] 已隐藏。")).toBe("## 结论\n\n已隐藏。");
   });
 

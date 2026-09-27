@@ -13,7 +13,21 @@ import {
 import type { ModelSourceAccessMode, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
 
-interface DirectSourceProviderInput {
+/** A model's own documented geometry, as configured on the settings page. */
+export interface ModelLimitOverrides {
+  contextWindow?: number;
+  maxOutputTokens?: number;
+}
+
+/** Picks the configured limits off a model revision, ready to spread into a provider input. */
+export function modelLimitOverrides(revision: { contextWindow?: number; maxOutputTokens?: number }): ModelLimitOverrides {
+  return {
+    ...(revision.contextWindow === undefined ? {} : { contextWindow: revision.contextWindow }),
+    ...(revision.maxOutputTokens === undefined ? {} : { maxOutputTokens: revision.maxOutputTokens }),
+  };
+}
+
+interface DirectSourceProviderInput extends ModelLimitOverrides {
   accessMode: Exclude<ModelSourceAccessMode, "custom">;
   kind: DirectModelSourceKind;
   modelId: string;
@@ -21,7 +35,7 @@ interface DirectSourceProviderInput {
   sourceId: string;
 }
 
-interface GenericSourceProviderInput {
+interface GenericSourceProviderInput extends ModelLimitOverrides {
   baseUrl: string;
   displayName: string;
   kind: "generic-openai";
@@ -87,14 +101,48 @@ const DEFAULT_CONTEXT_WINDOW = 128_000;
 const DIRECT_MAX_OUTPUT_TOKENS = 32_768;
 const GATEWAY_MAX_OUTPUT_TOKENS = 16_384;
 
-function contextWindowFor(input: PiSourceProviderInput, presetWindow: number): number {
-  return observedContextWindow(input.sourceId, input.modelId) ?? presetWindow;
+/** The window the vendor documents for this exact model, else the kind's default. */
+function presetWindowFor(input: PiSourceProviderInput, preset: ModelPresetEntry | undefined): number {
+  if (preset?.contextWindow !== undefined) return preset.contextWindow;
+  if (input.protocol !== "anthropic") return DEFAULT_CONTEXT_WINDOW;
+  if (input.modelId === "k3") return 1_048_576;
+  return input.kind === "kimi" ? 262_144 : DEFAULT_CONTEXT_WINDOW;
 }
 
-/** What the vendor documents for this exact model, else the kind default — unless a rejection
- *  taught us better, since a learned value came from the very route that refused the request. */
-function maxOutputTokensFor(knownModel: ModelPresetEntry | undefined, fallback: number, input: PiSourceProviderInput): number {
-  return observedMaxOutputTokens(input.sourceId, input.modelId) ?? knownModel?.maxOutputTokens ?? fallback;
+/** The completion cap the vendor documents, else the kind's fallback. */
+function presetOutputFor(input: PiSourceProviderInput, preset: ModelPresetEntry | undefined, kimiK3: boolean): number {
+  if (kimiK3) return 131_072;
+  if (preset?.maxOutputTokens !== undefined) return preset.maxOutputTokens;
+  return input.kind === "generic-openai" ? GATEWAY_MAX_OUTPUT_TOKENS : DIRECT_MAX_OUTPUT_TOKENS;
+}
+
+/**
+ * Sizes a route against one ceiling assembled from three sources, weakest first: what the preset
+ * claims (an unverified hand-written guess), what the user configured (intent), and what the
+ * provider itself said when it refused an oversized request (fact). The smallest wins.
+ *
+ * The provider's own figure has to stay on top. If a configured value could exceed it, a route
+ * that once rejected an oversized request would keep sending that same request verbatim — the
+ * learned limit would never take effect — and `allowLearnedCapacityRetry` would be retrying a
+ * request already known to fail.
+ */
+export function effectiveModelLimits(
+  input: PiSourceProviderInput,
+  preset: ModelPresetEntry | undefined,
+  kimiK3 = false,
+): { contextWindow: number; maxOutputTokens: number } {
+  const observedWindow = observedContextWindow(input.sourceId, input.modelId);
+  const observedOutput = observedMaxOutputTokens(input.sourceId, input.modelId);
+  return {
+    contextWindow: Math.min(
+      observedWindow ?? Number.POSITIVE_INFINITY,
+      input.contextWindow ?? presetWindowFor(input, preset),
+    ),
+    maxOutputTokens: Math.min(
+      observedOutput ?? Number.POSITIVE_INFINITY,
+      input.maxOutputTokens ?? presetOutputFor(input, preset, kimiK3),
+    ),
+  };
 }
 
 export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
@@ -109,6 +157,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   if (input.protocol === "anthropic") {
     const kimiCode = input.kind === "kimi" && input.accessMode === "coding-plan";
     const kimiK3 = kimiCode && (input.modelId === "k3" || input.modelId === "k3-256k");
+    const limits = effectiveModelLimits(input, knownModel, kimiK3);
     const model: Model<"anthropic-messages"> = {
       api: "anthropic-messages",
       baseUrl,
@@ -116,12 +165,12 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
         ...((input.modelId === "k3" || input.modelId === "kimi-for-coding") ? { allowEmptySignature: true } : {}),
         forceAdaptiveThinking: true,
       } } : {}),
-      contextWindow: contextWindowFor(input, knownModel?.contextWindow ?? (input.modelId === "k3" ? 1_048_576 : input.kind === "kimi" ? 262_144 : DEFAULT_CONTEXT_WINDOW)),
+      contextWindow: limits.contextWindow,
       cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
       ...(headers === undefined ? {} : { headers }),
       id: input.modelId,
       input: supportsImageInput(input) ? ["text", "image"] : ["text"],
-      maxTokens: kimiK3 ? 131_072 : maxOutputTokensFor(knownModel, DIRECT_MAX_OUTPUT_TOKENS, input),
+      maxTokens: limits.maxOutputTokens,
       name: knownModel?.label ?? input.modelId,
       provider: providerId,
       reasoning: true,
@@ -138,17 +187,18 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     });
   }
   const alwaysOn = modelRequiresAlwaysOnThinking(baseUrl);
+  const limits = effectiveModelLimits(input, knownModel);
   const model: Model<"openai-responses"> = {
     api: "openai-responses",
     baseUrl,
     // Conservative gateway defaults: keep the `system` role (developer can be
     // rejected by non-OpenAI gateways) and never emit the OpenAI-only 24h cache retention.
     compat: { supportsDeveloperRole: false, supportsLongCacheRetention: false },
-    contextWindow: contextWindowFor(input, knownModel?.contextWindow ?? DEFAULT_CONTEXT_WINDOW),
+    contextWindow: limits.contextWindow,
     cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
     id: input.modelId,
     input: supportsImageInput(input) ? ["text", "image"] : ["text"],
-    maxTokens: maxOutputTokensFor(knownModel, input.kind === "generic-openai" ? GATEWAY_MAX_OUTPUT_TOKENS : DIRECT_MAX_OUTPUT_TOKENS, input),
+    maxTokens: limits.maxOutputTokens,
     name: knownModel?.label ?? input.modelId,
     provider: providerId,
     reasoning: alwaysOn,

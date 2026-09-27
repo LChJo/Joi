@@ -1,6 +1,7 @@
 import type { ModelSourceService } from "../../../application/model-sources/model-source-service.js";
 import {
   HttpError,
+  optionalIntegerField,
   optionalStringArray,
   readJson,
   sendEmpty,
@@ -40,6 +41,11 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
       if (protocol !== undefined && !["openai", "anthropic"].includes(protocol)) {
         throw new HttpError("model_source_protocol_invalid", "Model source protocol is invalid.", 400);
       }
+      // These three are numbers, so they need explicit parsing: the string-typed filters used for
+      // the remaining fields silently drop anything that is not a string.
+      const compactionThresholdPercent = optionalIntegerField(body, "compactionThresholdPercent");
+      const contextWindow = optionalIntegerField(body, "contextWindow");
+      const maxOutputTokens = optionalIntegerField(body, "maxOutputTokens");
       const source = await modelSourceService(ctx.dependencies).create({
         ...(accessMode === undefined ? {} : { accessMode: accessMode as "api" | "coding-plan" | "token-plan" | "custom" }),
         apiKey: stringField(body, "apiKey"),
@@ -48,6 +54,9 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
         ...(typeof body.displayName === "string" ? { displayName: body.displayName } : {}),
         ...(typeof body.modelId === "string" ? { modelId: body.modelId } : {}),
         ...(protocol === undefined ? {} : { protocol: protocol as "openai" | "anthropic" }),
+        ...(typeof compactionThresholdPercent === "number" ? { compactionThresholdPercent } : {}),
+        ...(typeof contextWindow === "number" ? { contextWindow } : {}),
+        ...(typeof maxOutputTokens === "number" ? { maxOutputTokens } : {}),
       });
       sendJson(ctx.response, 201, source);
     },
@@ -78,6 +87,10 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
     handle: async (ctx, match) => {
       const sourceId = decodeURIComponent((match as RegExpExecArray)[1] ?? "");
       const body = await readJson(ctx.request);
+      // Keeps all three states: omitted leaves the value alone, null clears it, a number sets it.
+      const compactionThresholdPercent = optionalIntegerField(body, "compactionThresholdPercent");
+      const contextWindow = optionalIntegerField(body, "contextWindow");
+      const maxOutputTokens = optionalIntegerField(body, "maxOutputTokens");
       const source = body.disabled === true
         ? await modelSourceService(ctx.dependencies).disable(sourceId)
         : await modelSourceService(ctx.dependencies).update(sourceId, {
@@ -85,6 +98,9 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
           ...(typeof body.baseUrl === "string" ? { baseUrl: body.baseUrl } : {}),
           ...(typeof body.displayName === "string" ? { displayName: body.displayName } : {}),
           ...(typeof body.modelId === "string" ? { modelId: body.modelId } : {}),
+          ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
+          ...(contextWindow === undefined ? {} : { contextWindow }),
+          ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
         });
       sendJson(ctx.response, 200, source);
     },

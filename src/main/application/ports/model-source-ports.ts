@@ -76,6 +76,31 @@ export interface ModelSourceEndpointPolicy {
   validate(url: string): Promise<{ local: boolean; url: string }>;
 }
 
+/** The size a route will actually be driven at, after every source of truth is folded in. */
+export interface EffectiveModelLimits {
+  contextWindow: number;
+  maxOutputTokens: number;
+}
+
+/**
+ * Read-only view of the limits a route resolves to. A provider that refuses an oversized request
+ * states its real limit in the rejection, and joi holds the route to that figure for the life of
+ * the process — overriding whatever the user configured. Without this the settings page would show
+ * a value that is silently not in effect, and the user has no way to tell that from a broken
+ * setting.
+ */
+export interface ModelLimitReader {
+  effective(input: {
+    accessMode: ModelSourceAccessMode;
+    contextWindow?: number;
+    kind: ModelSourceKind;
+    maxOutputTokens?: number;
+    modelId: string;
+    protocol: ModelSourceProtocol;
+    sourceId: string;
+  }): EffectiveModelLimits;
+}
+
 export interface ModelSourceValidator {
   validate(record: ModelSourceRecord): Promise<{
     error?: string;

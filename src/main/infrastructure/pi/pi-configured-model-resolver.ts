@@ -1,9 +1,12 @@
 import { createModels, type Api, type CredentialStore, type Model, type Models } from "@earendil-works/pi-ai";
 
 import type { ModelSourceRepository } from "../../application/ports/model-source-ports.js";
-import { createPiSourceProvider } from "./source-provider-factory.js";
+import { createPiSourceProvider, modelLimitOverrides } from "./source-provider-factory.js";
 
 export interface ResolvedPiModel {
+  /** The session-compaction threshold configured on the model source; absent means the runtime
+   *  falls back to its own default. Only the reasoning runtime has a session to compact. */
+  compactionThresholdPercent?: number;
   model: Model<Api>;
   models: Models;
 }
@@ -37,8 +40,13 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
       throw new Error("model_source_revision_mismatch");
     }
     const source = record.source;
+    const activeModelRevision = source.activeModelRevision;
+    // The configured limits are the user's declaration about this model; the factory folds them
+    // in underneath whatever size the provider itself has stated.
+    const limits = modelLimitOverrides(activeModelRevision);
     const provider = createPiSourceProvider(source.activeSourceRevision.kind === "generic-openai"
       ? {
+        ...limits,
         baseUrl: record.baseUrl ?? "",
         displayName: source.activeSourceRevision.displayName,
         kind: "generic-openai",
@@ -47,6 +55,7 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
         sourceId: input.sourceId,
       }
       : {
+        ...limits,
         accessMode: source.activeSourceRevision.accessMode === "token-plan" ? "token-plan" as const
           : source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
         kind: source.activeSourceRevision.kind,
@@ -61,6 +70,14 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
     models.setProvider(provider);
     const model = provider.getModels().find((candidate) => candidate.id === input.modelId);
     if (model === undefined) throw new Error("model_not_found");
-    return { model, models };
+    return {
+      // Re-clamped as a backstop against a hand-edited database: an out-of-range value would
+      // otherwise make the runtime constructor throw and take the whole session down.
+      ...(activeModelRevision.compactionThresholdPercent === undefined ? {} : {
+        compactionThresholdPercent: Math.min(95, Math.max(50, activeModelRevision.compactionThresholdPercent)),
+      }),
+      model,
+      models,
+    };
   }
 }

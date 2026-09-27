@@ -253,7 +253,7 @@ export class DigitalLifeApi {
       body: { roleIds }, method: "POST",
     });
   }
-  createModelSource(body: { accessMode: ModelSourceAccessModeDto; apiKey: string; baseUrl?: string; displayName?: string; kind: ModelSourceKindDto; modelId?: string; protocol: ModelSourceProtocolDto }) {
+  createModelSource(body: { accessMode: ModelSourceAccessModeDto; apiKey: string; baseUrl?: string; compactionThresholdPercent?: number; contextWindow?: number; displayName?: string; kind: ModelSourceKindDto; maxOutputTokens?: number; modelId?: string; protocol: ModelSourceProtocolDto }) {
     return this.request<ModelSourceDto>("/api/v1/model-sources", { body, method: "POST" });
   }
   validateModelSource(sourceId: string) {

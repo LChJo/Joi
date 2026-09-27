@@ -25,21 +25,21 @@ describe("persisted joi Turn completions", () => {
         turnId: string,
         completion: { completionSummary: string; outcome: "DIRECT_ANSWER" },
       ) => Promise<unknown>)("input-direct", "turn-direct", {
-        completionSummary: "## 身份\n\n我是 Joi。 token=abcdefghijklmnop C:\\private\\answer.md",
+        completionSummary: "## 身份\n\n我是 Joi。 token=abcdefghijklmnop C:\\private\\nested\\deep\\answer.md",
         outcome: "DIRECT_ANSWER",
       });
 
       const persisted = fixture.database.transaction((connection) => connection.prepare(`SELECT input_id, turn_id,
         outcome_kind, completion_summary FROM joi_turn_completions WHERE input_id = 'input-direct'`).get());
       expect(persisted).toEqual({
-        completion_summary: "## 身份\n\n我是 Joi。 token=[redacted] [redacted-path]",
+        completion_summary: "## 身份\n\n我是 Joi。 token=[redacted] C:\\…\\nested\\deep\\answer.md",
         input_id: "input-direct",
         outcome_kind: "DIRECT_ANSWER",
         turn_id: "turn-direct",
       });
       const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
       expect(feed.goals).toEqual([expect.objectContaining({
-        completionSummary: "## 身份\n\n我是 Joi。 token=[redacted]",
+        completionSummary: "## 身份\n\n我是 Joi。 token=[redacted] C:\\…\\nested\\deep\\answer.md",
         goalId: "input-direct",
         status: "COMPLETED",
         work: { active: 0, completed: 0, failed: 0, total: 0 },
@@ -49,6 +49,35 @@ describe("persisted joi Turn completions", () => {
       const retrying = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
       expect(retrying.goals[0]).toMatchObject({ goalId: "input-direct", status: "ARRANGING" });
       expect(retrying.goals[0]?.completionSummary).toBeUndefined();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("erases the legacy path placeholder a pre-abbreviation row persisted", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "问答", personaSummary: "private", projectLabel: "joi", scopeSummary: "直接回答" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('input-legacy', 'key-legacy', '旧目标', 'CONSUMED', ?, ?, ?)`)
+          .run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-legacy', 'input-legacy', ?, 'session-legacy', 'COMPLETED', ?, ?)`)
+          .run(workbench.workbenchId, now, now);
+        // Written before paths were abbreviated, so the summary holds the placeholder rather
+        // than a path. Abbreviation can no longer recover the original, but the card must not
+        // keep showing the marker either.
+        connection.prepare(`INSERT INTO joi_turn_completions
+          (input_id, turn_id, outcome_kind, completion_summary, completed_at, updated_at)
+          VALUES ('input-legacy', 'turn-legacy', 'DIRECT_ANSWER', ?, ?, ?)`)
+          .run("## 结论\n\n[redacted-path] 已隐藏。", now, now);
+      });
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+      expect(feed.goals.find((item) => item.goalId === "input-legacy")?.completionSummary).toBe("## 结论\n\n已隐藏。");
     } finally {
       await fixture.close();
     }

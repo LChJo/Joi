@@ -64,6 +64,64 @@ function forceMapCleared(fixture: RuntimeFixture, goalInputId: string): void {
     .run(NOW, NOW, goalInputId));
 }
 
+/**
+ * A Work turns terminal a few milliseconds before `enqueuePartnerResult` puts its result into the
+ * goal's result set. `absorbed: false` models the gap: the authoritative result and its event exist,
+ * but the member row that would make the close-out see them has not been written yet.
+ */
+function seedCompletedWorkWithResult(fixture: RuntimeFixture, options: {
+  absorbed: boolean;
+  goalInputId: string;
+  partnerRevisionId: string;
+  workId: string;
+}): void {
+  const workbenchId = `workbench-${options.goalInputId}`;
+  fixture.database.transaction((connection) => {
+    connection.prepare(`INSERT INTO dispatch_plans
+      (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+      VALUES (?, ?, '{}', '[]', ?)`).run(`plan-${options.workId}`, `turn-${options.goalInputId}`, NOW);
+    connection.prepare(`INSERT INTO work_items
+      (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+      VALUES (?, ?, ?, '关键分析', '{}', 'READ', 'COMPLETED', ?, ?)`)
+      .run(options.workId, workbenchId, options.goalInputId, NOW, NOW);
+    connection.prepare(`INSERT INTO dispatch_attempts
+      (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision,
+       action_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 1, ?, 'COMPLETED', ?, ?)`)
+      .run(`attempt-${options.workId}`, `plan-${options.workId}`, options.workId,
+        options.partnerRevisionId, `action-${options.workId}`, NOW, NOW);
+    connection.prepare(`INSERT INTO partner_runs
+      (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
+       external_run_id, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'LOCAL_PI', ?, 'COMPLETED', ?, ?)`)
+      .run(`run-${options.workId}`, `attempt-${options.workId}`, `action-${options.workId}`,
+        workbenchId, options.workId, options.partnerRevisionId, `local:${options.workId}`, NOW, NOW);
+    connection.prepare(`INSERT INTO work_result_bodies (body_ref, body, created_at) VALUES (?, 'RAW', ?)`)
+      .run(`body-${options.workId}`, NOW);
+    connection.prepare(`INSERT INTO work_results
+      (result_id, run_id, action_id, workbench_id, work_id, partner_revision_id, status, summary,
+       body_ref, artifacts_json, is_late, is_authoritative, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, 'COMPLETED', '摘要', ?, '[]', 0, 1, ?)`)
+      .run(`result-${options.workId}`, `run-${options.workId}`, `action-${options.workId}`,
+        workbenchId, options.workId, options.partnerRevisionId, `body-${options.workId}`, NOW);
+    connection.prepare(`INSERT INTO partner_result_events
+      (event_id, run_id, workbench_id, work_id, partner_revision_id, status, created_at)
+      VALUES (?, ?, ?, ?, ?, 'COMPLETED', ?)`)
+      .run(`event-${options.workId}`, `run-${options.workId}`, workbenchId,
+        options.workId, options.partnerRevisionId, NOW);
+    if (options.absorbed) {
+      connection.prepare(`INSERT INTO joi_goal_result_members (original_input_id, event_id, revision)
+        VALUES (?, ?, 1)`).run(options.goalInputId, `event-${options.workId}`);
+    }
+  });
+}
+
+function harnessSnapshot(fixture: RuntimeFixture, goalInputId: string): Record<string, unknown> {
+  return fixture.database.transaction((connection) => connection.prepare(
+    `SELECT status, cleared_at, reviewed_revision, feedback_recorded_at FROM joi_harness_maps
+      WHERE goal_input_id = ?`).get(goalInputId)) as Record<string, unknown>;
+}
+
 describe("SqliteJoiHarnessRepository", () => {
   let fixture: RuntimeFixture;
   let repository: SqliteJoiHarnessRepository;
@@ -153,6 +211,119 @@ describe("SqliteJoiHarnessRepository", () => {
       const statusOf = (goalId: string) => feed.goals.find((goal) => goal.goalId === goalId)?.status;
       expect(statusOf("goal-answered")).toBe("COMPLETED");
       expect(statusOf("goal-stalled")).toBe("FAILED");
+    });
+
+    it("reports a CONTINUE outcome on a closed map as completed, not as an unresolvable review", async () => {
+      // A CONTINUE outcome is one evidence layer, and the card projects review while a live map
+      // lets the harness adopt that layer. On a CLEARED map nothing can ever adopt it, so the same
+      // projection strands the card behind a badge that can never resolve.
+      const closed = seedGoal(fixture, { goalInputId: "goal-continue-closed", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: closed.workbenchId, goalInputId: "goal-continue-closed", now: NOW });
+      seedCompletedLayer(fixture, "goal-continue-closed", 1, "CONTINUE");
+      forceMapCleared(fixture, "goal-continue-closed");
+      const live = seedGoal(fixture, { goalInputId: "goal-continue-live", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: live.workbenchId, goalInputId: "goal-continue-live", now: NOW });
+      seedCompletedLayer(fixture, "goal-continue-live", 1, "CONTINUE");
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+      const statusOf = (goalId: string) => feed.goals.find((goal) => goal.goalId === goalId)?.status;
+      expect(statusOf("goal-continue-closed")).toBe("COMPLETED");
+      expect(statusOf("goal-continue-live")).toBe("REVIEWING");
+    });
+  });
+
+  describe("close-out race with in-flight results", () => {
+    it("withholds AUTO_CLEAR until the result set has absorbed every completed result", async () => {
+      // The incident: a Work turned COMPLETED, the close-out read the still-stale result set as
+      // "facts complete" and cleared the map, and the synthesis landing 16ms later published a
+      // revision the map had already outrun. Both arms pin the same facts and differ only in
+      // whether the member row exists yet.
+      const partner = await fixture.partners.add({
+        capabilities: [], displayName: "分析搭档", kind: "local-pi", skills: [], tools: [],
+      });
+      // Both arms pin identical close-out facts — every Work terminal, the revision synthesized
+      // and reviewed, the outcome COMPLETED — and differ only in whether the member row that
+      // proves the result was absorbed exists yet.
+      for (const goalInputId of ["goal-inflight", "goal-absorbed"]) {
+        seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+        await repository.createMap({ workbenchId: `workbench-${goalInputId}`, goalInputId, now: NOW });
+        seedCompletedLayer(fixture, goalInputId, 1);
+        const [digest] = await repository.listReviewDigests();
+        if (digest === undefined) throw new Error("review digest missing");
+        const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+        if (reviewInputId === null) throw new Error("review input missing");
+        fixture.database.transaction((connection) => {
+          connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(reviewInputId);
+          connection.prepare(`INSERT INTO joi_turns
+            (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'COMPLETED', 1, ?, ?)`).run(
+            `turn-${goalInputId}-review`, reviewInputId, `workbench-${goalInputId}`,
+            `session-${goalInputId}-review`, NOW, NOW,
+          );
+        });
+      }
+      seedCompletedWorkWithResult(fixture, {
+        absorbed: false, goalInputId: "goal-inflight", partnerRevisionId: partner.partnerRevisionId, workId: "work-inflight",
+      });
+      seedCompletedWorkWithResult(fixture, {
+        absorbed: true, goalInputId: "goal-absorbed", partnerRevisionId: partner.partnerRevisionId, workId: "work-absorbed",
+      });
+      // A terminal Work with no path of its own is an unresolved fact in its own right, which
+      // would quarantine the candidate for an unrelated reason and hide what this arm tests.
+      await repository.synchronizeWorkPaths({ now: NOW });
+
+      const candidates = await repository.listReviewRecoveries();
+      expect(candidates.map((candidate) => candidate.digest.goalInputId)).toEqual(["goal-absorbed"]);
+      expect(candidates[0]).toMatchObject({ action: "AUTO_CLEAR", reasonCode: "review_facts_complete" });
+    });
+
+    it("re-opens a map that was closed while a newer layer was still arriving", async () => {
+      seedGoal(fixture, { goalInputId: "goal-reopen", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: "workbench-goal-reopen", goalInputId: "goal-reopen", now: NOW });
+      // The close-out ran against revision 1 and cleared the map; the synthesis that landed right
+      // after published revision 2, which no scan can adopt while the map stays CLEARED.
+      seedCompletedLayer(fixture, "goal-reopen", 2);
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_harness_maps SET reviewed_revision = 1 WHERE goal_input_id = 'goal-reopen'",
+      ).run());
+      forceMapCleared(fixture, "goal-reopen");
+
+      const seeds = await repository.listUnreviewedClearedMaps();
+      expect(seeds).toEqual([{ goalInputId: "goal-reopen", resultRevision: 2, workbenchId: "workbench-goal-reopen" }]);
+      const seed = seeds[0];
+      if (seed === undefined) throw new Error("unreviewed cleared map missing");
+      expect(await repository.reopenUnreviewedMap({ now: NOW, seed })).toBe(true);
+      expect(harnessSnapshot(fixture, "goal-reopen")).toMatchObject({
+        cleared_at: null, feedback_recorded_at: null, reviewed_revision: 1, status: "ACTIVE",
+      });
+      // The point of re-opening: the ordinary review scan reaches the layer it outran.
+      expect((await repository.listReviewDigests()).map((digest) => digest.resultRevision)).toEqual([2]);
+      // Re-opening is one-way — the map is ACTIVE now, so the scan must not offer it again.
+      expect(await repository.listUnreviewedClearedMaps()).toEqual([]);
+      expect(await repository.reopenUnreviewedMap({ now: NOW, seed })).toBe(false);
+    });
+
+    it("leaves a map that closed on its own revision alone", async () => {
+      const settled = seedGoal(fixture, { goalInputId: "goal-settled", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: settled.workbenchId, goalInputId: "goal-settled", now: NOW });
+      seedCompletedLayer(fixture, "goal-settled", 1);
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_harness_maps SET reviewed_revision = 1 WHERE goal_input_id = 'goal-settled'",
+      ).run());
+      forceMapCleared(fixture, "goal-settled");
+      // A goal the user revoked mid-layer must not be re-opened either.
+      const revoked = seedGoal(fixture, { goalInputId: "goal-revoked", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId: revoked.workbenchId, goalInputId: "goal-revoked", now: NOW });
+      seedCompletedLayer(fixture, "goal-revoked", 2);
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_harness_maps SET reviewed_revision = 1 WHERE goal_input_id = 'goal-revoked'",
+      ).run());
+      forceMapCleared(fixture, "goal-revoked");
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_inbox_messages SET canceled_at = ? WHERE input_id = 'goal-revoked'",
+      ).run(NOW));
+
+      expect(await repository.listUnreviewedClearedMaps()).toEqual([]);
     });
   });
 

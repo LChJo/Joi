@@ -97,6 +97,15 @@ export interface RuntimeDiagnosticEventMap {
     goalInputId: string;
     resultRevision: number;
   };
+  /**
+   * A map was closed while a newer evidence layer was still arriving, which no later scan could
+   * reach: its card reported review forever. Emitted when such a map is returned to ACTIVE so the
+   * ordinary review path can adopt the layer the close-out outran.
+   */
+  "joi.harness.map_reopened": {
+    goalInputId: string;
+    resultRevision: number;
+  };
   "joi.harness.feedback_recorded": {
     workbenchId: string;
     goalInputId: string;

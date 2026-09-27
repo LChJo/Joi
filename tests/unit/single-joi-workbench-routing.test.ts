@@ -64,7 +64,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       runtime: {
         abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
         startTurn: async (turn) => {
-          turn.onEvent?.({ delta: "## 身份\n\n我是 Joi。 token=abcdefghijklmnop C:\\private\\answer.md", turnId: turn.turnId, type: "text_delta" });
+          turn.onEvent?.({ delta: "## 身份\n\n我是 Joi。 token=abcdefghijklmnop C:\\private\\a\\b\\answer.md", turnId: turn.turnId, type: "text_delta" });
         },
         steer: () => undefined, waitForIdle: async () => undefined,
       },
@@ -80,7 +80,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     await coordinator.handle("input-direct");
     expect(completions).toEqual([expect.objectContaining({
       completion: {
-        completionSummary: "## 身份\n\n我是 Joi。 token=[redacted] [redacted-path]",
+        completionSummary: "## 身份\n\n我是 Joi。 token=[redacted] C:\\…\\a\\b\\answer.md",
         outcome: "DIRECT_ANSWER",
       },
       inputId: "input-direct",
@@ -130,7 +130,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
         abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
         startTurn: async (turn) => {
           sessions.push(turn.sessionId);
-          turn.onEvent?.({ delta: "两项工作已完成。 C:\\private\\file 已隐藏。", turnId: turn.turnId, type: "text_delta" });
+          turn.onEvent?.({ delta: "两项工作已完成。 C:\\private\\a\\b\\file。", turnId: turn.turnId, type: "text_delta" });
           turn.onEvent?.({ toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_started" });
           turn.onEvent?.({ isError: false, outcome: "RESULT_SYNTHESIZED", toolCallId: "complete", toolName: "turn_complete", turnId: turn.turnId, type: "tool_finished" });
         },
@@ -154,7 +154,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     await coordinator.handle("joi_result_input:goal:goal-1");
     expect(sessions).toEqual(["joi_synthesis_session:research:goal-1"]);
     expect(completions).toEqual([expect.objectContaining({
-      completion: { completionSummary: "两项工作已完成。 [redacted-path] 已隐藏。", outcome: "RESULT_SYNTHESIZED" },
+      completion: { completionSummary: "两项工作已完成。 C:\\…\\a\\b\\file。", outcome: "RESULT_SYNTHESIZED" },
       inputId: "joi_result_input:goal:goal-1",
     })]);
     expect(diagnostics.map((entry) => entry.event)).toEqual(expect.arrayContaining([

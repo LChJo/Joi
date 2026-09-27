@@ -102,6 +102,21 @@ export interface HarnessStalledSynthesisSeed {
   resultRevision: number;
 }
 
+/**
+ * A goal whose map was closed while a newer evidence layer was still in flight. A Work reaches
+ * its terminal state a few milliseconds before its result joins the goal's result set, and the
+ * close-out reads the second fact through the first: in that window every "facts complete"
+ * predicate holds while a result is still on its way. The map is then CLEARED, and the synthesis
+ * that lands immediately after can only publish a revision the map has already outrun. Both
+ * surfaces that could arrange that layer (review and continuation) require an ACTIVE map, so the
+ * goal idles behind a "reviewing" badge forever. Re-opened so the ordinary review path adopts it.
+ */
+export interface HarnessUnreviewedMapSeed {
+  goalInputId: string;
+  resultRevision: number;
+  workbenchId: string;
+}
+
 export interface JoiHarnessScan {
   listFeedbackTargets(): Promise<HarnessFeedbackTarget[]>;
   listGoalsWithoutMap(): Promise<HarnessGoalSeed[]>;
@@ -112,6 +127,7 @@ export interface JoiHarnessScan {
   listWorkRecoverySeeds?(): Promise<HarnessWorkRecoverySeed[]>;
   listContinuationDecisionSeeds?(): Promise<HarnessContinuationDecisionSeed[]>;
   listStalledSyntheses?(input: { now: string; cooldownMillis: number }): Promise<HarnessStalledSynthesisSeed[]>;
+  listUnreviewedClearedMaps?(): Promise<HarnessUnreviewedMapSeed[]>;
 }
 
 /** Deterministic write surface used by the traversal. Never reasons and never dispatches. */
@@ -125,6 +141,7 @@ export interface JoiHarnessWriter {
   enqueueWorkRecovery?(input: { now: string; seed: HarnessWorkRecoverySeed }): Promise<string | null>;
   requestContinuationDecision?(input: { now: string; seed: HarnessContinuationDecisionSeed }): Promise<boolean>;
   redriveSynthesis?(input: { now: string; seed: HarnessStalledSynthesisSeed }): Promise<boolean>;
+  reopenUnreviewedMap?(input: { now: string; seed: HarnessUnreviewedMapSeed }): Promise<boolean>;
 }
 
 /** Reasoning-side write surface injected into the harness tools; always goal-scoped. */

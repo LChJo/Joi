@@ -197,6 +197,65 @@ describe("SqliteModelSourceRepository", () => {
     }
   });
 
+  it("round-trips configured limits without rewriting the revision they replaced", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-source-limits-"));
+    const databasePath = path.join(root, "runtime.sqlite");
+    const database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const repository = new SqliteModelSourceRepository(database);
+      const sourceId = "source-limits";
+      // The revision row references its credential, so the credential has to exist first.
+      await new SqlitePiCredentialRepository(database).write({
+        encryptedBlob: new Uint8Array([1, 2, 3]), providerId: `joi-source:${sourceId}`, type: "api_key", version: 1,
+      });
+      const limits = { compactionThresholdPercent: 70, contextWindow: 400_000, maxOutputTokens: 65_536 };
+      const source = createModelSource({
+        accessMode: "api",
+        createdAt: "2026-07-28T10:00:00.000Z",
+        credentialRef: `joi-source:${sourceId}`,
+        credentialVersion: 1,
+        displayName: "GLM",
+        kind: "glm",
+        modelCapability: "release-tested",
+        modelId: "glm-5.2",
+        modelRevisionId: "model-limits-1",
+        protocol: "openai",
+        sourceId,
+        sourceRevisionId: "revision-limits-1",
+        ...limits,
+      });
+      await repository.create({ local: false, order: 0, primary: true, source });
+      expect((await repository.get(sourceId))?.source.activeModelRevision).toMatchObject(limits);
+
+      // The table is append-only, so the revision this one replaced must keep its own values —
+      // that is what makes an edit leave the previous configuration readable in history.
+      const revised = reviseModelSource(source, {
+        compactionThresholdPercent: 60,
+        contextWindow: 400_000,
+        credentialVersion: 2,
+        maxOutputTokens: 65_536,
+        modelCapability: "release-tested",
+        modelId: "glm-5.2",
+        modelRevisionId: "model-limits-2",
+        sourceRevisionId: "revision-limits-2",
+        updatedAt: "2026-07-28T11:00:00.000Z",
+      });
+      await repository.revise({ local: false, order: 0, primary: true, source: revised });
+      expect((await repository.get(sourceId))?.source.activeModelRevision)
+        .toMatchObject({ compactionThresholdPercent: 60, contextWindow: 400_000, maxOutputTokens: 65_536 });
+      expect(database.transaction((connection) => connection.prepare(
+        `SELECT model_revision_id, compaction_threshold_percent, context_window
+           FROM model_source_model_revisions WHERE source_id = ? ORDER BY created_at, model_revision_id`,
+      ).all(sourceId))).toEqual([
+        { compaction_threshold_percent: 70, context_window: 400_000, model_revision_id: "model-limits-1" },
+        { compaction_threshold_percent: 60, context_window: 400_000, model_revision_id: "model-limits-2" },
+      ]);
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("rejects health writes from an obsolete source revision", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-model-source-health-race-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });

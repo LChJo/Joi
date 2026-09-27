@@ -68,11 +68,12 @@ const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);
 
 interface PiReasoningRuntimeOptions {
   usage?: UsageRecorder;
-  compaction?: {
-    keepRecentMessages: number;
-    maxMessages: number;
-    maxSummaryCharacters: number;
-  };
+  /**
+   * Any field left out falls back to DEFAULT_COMPACTION. Only `compactAtPercent` is reachable
+   * from the settings page (it is set per model); the rest stay runtime defaults, because a
+   * percent threshold scales with the route's window while a message count does not.
+   */
+  compaction?: Partial<ResolvedCompactionOptions>;
   model: Model<Api>;
   models: Models;
   sessionStore: ReasoningSessionStore;
@@ -92,18 +93,46 @@ interface SessionRuntime {
  * Output headroom a Turn needs (thinking budget plus a visible answer). When the estimated
  * context leaves less than this, pi-ai clamps max_tokens toward 1 and providers reject the
  * request, so the session must be compacted before prompting instead of after the damage.
+ * The configured threshold normally exceeds this; it is the floor for routes so small that a
+ * percentage of the window would leave too little to write the summary itself.
  */
-const COMPACTION_OUTPUT_HEADROOM = 8_192;
+const COMPACTION_MIN_OUTPUT_HEADROOM = 4_096;
 /** Progressively smaller tails tried when an overflowing session is compacted by token budget. */
 const COMPACTION_TAIL_STEPS = [32, 16, 8, 4, 2] as const;
 
+/** The threshold may not be the whole window: by then the provider has already clamped
+ *  max_tokens toward 1, which is the failure compaction exists to prevent. */
+const COMPACTION_PERCENT_FLOOR = 50;
+const COMPACTION_PERCENT_CEILING = 95;
+const COMPACTION_DEFAULT_PERCENT = 85;
+
 const DEFAULT_COMPACTION = {
+  compactAtPercent: COMPACTION_DEFAULT_PERCENT,
   keepRecentMessages: 80,
   maxMessages: 200,
   maxSummaryCharacters: 12_000,
 } as const;
 
-type CompactionOptions = NonNullable<PiReasoningRuntimeOptions["compaction"]>;
+/**
+ * The output headroom a percent threshold implies. "Compact once the input reaches p% of the
+ * window" and "leave (100−p)% of the window free for output" are the same inequality, so the
+ * threshold folds into the existing check without changing how it is evaluated — pi-ai's own
+ * estimate and safety margin still do the counting.
+ *
+ * Exported so the contract test can pin the arithmetic directly: measuring it through a real
+ * session would need a hundred thousand tokens of input to separate two thresholds.
+ */
+export function compactionHeadroom(contextWindow: number, compactAtPercent: number): number {
+  if (!Number.isFinite(contextWindow) || contextWindow <= 0) return COMPACTION_MIN_OUTPUT_HEADROOM;
+  return Math.max(COMPACTION_MIN_OUTPUT_HEADROOM, Math.floor(contextWindow * (1 - compactAtPercent / 100)));
+}
+
+interface ResolvedCompactionOptions {
+  compactAtPercent: number;
+  keepRecentMessages: number;
+  maxMessages: number;
+  maxSummaryCharacters: number;
+}
 
 function roleOf(message: AgentMessage): string | undefined {
   return "role" in message
@@ -173,7 +202,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #model: Model<Api>;
   readonly #models: Models;
   readonly #usage: UsageRecorder | undefined;
-  readonly #compaction: CompactionOptions;
+  readonly #compaction: ResolvedCompactionOptions;
   readonly #sessionStore: ReasoningSessionStore;
   readonly #sessions = new Map<string, SessionRuntime>();
   readonly #tools: AgentTool[] | ((input: StartReasoningTurnInput) => AgentTool[]);
@@ -183,10 +212,19 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     this.#model = options.model;
     this.#models = options.models;
     this.#usage = options.usage;
-    this.#compaction = options.compaction ?? DEFAULT_COMPACTION;
+    // Field by field rather than a spread: an explicitly passed `undefined` would otherwise
+    // overwrite the default it is meant to fall back to.
+    this.#compaction = {
+      compactAtPercent: options.compaction?.compactAtPercent ?? DEFAULT_COMPACTION.compactAtPercent,
+      keepRecentMessages: options.compaction?.keepRecentMessages ?? DEFAULT_COMPACTION.keepRecentMessages,
+      maxMessages: options.compaction?.maxMessages ?? DEFAULT_COMPACTION.maxMessages,
+      maxSummaryCharacters: options.compaction?.maxSummaryCharacters ?? DEFAULT_COMPACTION.maxSummaryCharacters,
+    };
     if (this.#compaction.keepRecentMessages < 2
       || this.#compaction.maxMessages <= this.#compaction.keepRecentMessages
-      || this.#compaction.maxSummaryCharacters < 80) throw new Error("reasoning_compaction_invalid");
+      || this.#compaction.maxSummaryCharacters < 80
+      || this.#compaction.compactAtPercent < COMPACTION_PERCENT_FLOOR
+      || this.#compaction.compactAtPercent > COMPACTION_PERCENT_CEILING) throw new Error("reasoning_compaction_invalid");
     this.#sessionStore = options.sessionStore;
     this.#tools = Array.isArray(options.tools) ? [...options.tools] : options.tools;
   }
@@ -348,7 +386,12 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     });
   }
 
-  /** Compacts when the message count or the estimated token budget says the context is full. */
+  /**
+   * Compacts once the context reaches the configured share of the route's window, or once the
+   * message count trips the safety net below. That count is deliberately not configurable: a
+   * large window may never reach the percentage, but a session stuffed with tiny messages still
+   * must not grow without bound.
+   */
   async #compactIfNeeded(runtime: SessionRuntime): Promise<void> {
     const state = runtime.agent.state;
     const currentMessages = state.messages;
@@ -408,6 +451,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     }
   }
 
+  #compactionHeadroom(): number {
+    return compactionHeadroom(this.#model.contextWindow, this.#compaction.compactAtPercent);
+  }
+
   /** True when the estimated context still leaves room for thinking plus a visible answer. */
   #headroomSatisfied(messages: readonly AgentMessage[], request: Pick<Context, "systemPrompt" | "tools">): boolean {
     if (this.#model.contextWindow <= 0) return true;
@@ -415,8 +462,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // clamped below the headroom, the next real request would be clamped as well. The system
     // prompt and tool schemas belong in the context: pi-ai only counts them when no assistant
     // usage anchors the session yet, and they are fixed overhead every request pays regardless.
+    const headroom = this.#compactionHeadroom();
     const context = { messages: [...messages], systemPrompt: request.systemPrompt, tools: request.tools } as unknown as Context;
-    return clampMaxTokensToContext(this.#model, context, COMPACTION_OUTPUT_HEADROOM) >= COMPACTION_OUTPUT_HEADROOM;
+    return clampMaxTokensToContext(this.#model, context, headroom) >= headroom;
   }
 
   /** Smallest kept tail (summary checkpoint included) that restores the output headroom. */

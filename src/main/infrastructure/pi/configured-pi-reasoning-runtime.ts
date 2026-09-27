@@ -31,6 +31,12 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
       const resolved = await this.dependencies.resolver.resolve(input);
       const runtime = new PiReasoningRuntime({
         ...(this.dependencies.usage === undefined ? {} : { usage: this.dependencies.usage }),
+        // The one compaction field the settings page owns; the runtime fills the rest with its
+        // defaults. A cache miss here is guaranteed to pick the new value up: `#runtimes` is keyed
+        // by sourceRevisionId, and editing a model source always mints a new revision.
+        ...(resolved.compactionThresholdPercent === undefined ? {} : {
+          compaction: { compactAtPercent: resolved.compactionThresholdPercent },
+        }),
         model: resolved.model,
         models: resolved.models,
         sessionStore: this.dependencies.sessionStore,

@@ -43,6 +43,7 @@ export class JoiHarnessComponent implements ActorComponent {
     await this.#step(ctx, "work_recovery", () => this.#enqueueWorkRecoveries(ctx));
     await this.#step(ctx, "stalled_synthesis", () => this.#redriveStalledSyntheses(ctx));
     if (this.dependencies.reviewEnabled === true) {
+      await this.#step(ctx, "reopen_unreviewed", () => this.#reopenUnreviewedMaps(ctx));
       await this.#step(ctx, "review", () => this.#enqueueReviews(ctx));
       await this.#step(ctx, "continuation_decision", () => this.#requestContinuationDecisions(ctx));
       await this.#step(ctx, "review_recovery", () => this.#reconcileReviews(ctx));
@@ -160,6 +161,25 @@ export class JoiHarnessComponent implements ActorComponent {
     for (const seed of stalled) {
       const redriven = await this.dependencies.writer.redriveSynthesis({ now: ctx.now.toISOString(), seed });
       if (redriven) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.stalled_synthesis_redriven", {
+        goalInputId: seed.goalInputId,
+        resultRevision: seed.resultRevision,
+      });
+    }
+  }
+
+  /**
+   * A close-out can outrun the result it was reading: a Work turns terminal a few milliseconds
+   * before its result joins the goal's result set, so the map may be CLEARED while a newer layer
+   * is still arriving. Both surfaces that could arrange that layer — review and continuation —
+   * require an ACTIVE map, so nothing ever revisits the goal and its card reports review forever.
+   * Returning the map to ACTIVE lets the review scan below adopt the layer within this same tick.
+   */
+  async #reopenUnreviewedMaps(ctx: ActorTickContext): Promise<void> {
+    if (this.dependencies.scan.listUnreviewedClearedMaps === undefined
+      || this.dependencies.writer.reopenUnreviewedMap === undefined) return;
+    for (const seed of await this.dependencies.scan.listUnreviewedClearedMaps()) {
+      const reopened = await this.dependencies.writer.reopenUnreviewedMap({ now: ctx.now.toISOString(), seed });
+      if (reopened) emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.map_reopened", {
         goalInputId: seed.goalInputId,
         resultRevision: seed.resultRevision,
       });

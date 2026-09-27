@@ -24,7 +24,7 @@ describe("Workbench Agent HTTP API", () => {
     const repository = new SqliteWorkbenchAgentRepository(fixture.database);
     await repository.append(ephemeral.instanceId, normalizeAgentConversationEntries({
       agentId: ephemeral.instanceId, runId: "run-http", startedAt: fixture.clock.now().toISOString(),
-    }, [{ kind: "MARKDOWN", role: "AGENT", text: "完成 /home/private/result.md Bearer abcdefghijklmnop" }]));
+    }, [{ kind: "MARKDOWN", role: "AGENT", text: "完成 /home/private/nested/deep/result.md Bearer abcdefghijklmnop" }]));
     const openArtifact = vi.fn(() => Promise.resolve({ opened: true as const }));
     const workbenchAgents = {
       conversation: fixture.workbenchAgents.conversation.bind(fixture.workbenchAgents),
@@ -54,7 +54,7 @@ describe("Workbench Agent HTTP API", () => {
       const conversation = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/agents/${encodeURIComponent(ephemeral.instanceId)}/conversation`, { headers });
       expect(conversation.status).toBe(200);
       const page = await conversation.json() as AgentConversationPageDto;
-      expect(page.items[0]?.text).toContain("[redacted-path]");
+      expect(page.items[0]?.text).toContain("/…/nested/deep/result.md");
       expect(JSON.stringify(page)).not.toMatch(/\/home\/private|abcdefghijklmnop/u);
 
       await repository.append(ephemeral.instanceId, normalizeAgentConversationEntries({

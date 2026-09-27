@@ -1,22 +1,25 @@
 import { createWorkResult, summarizeWorkResult } from "../../src/main/domain/work/work-result.js";
 
 describe("WorkResult", () => {
-  it("redacts absolute paths and common credentials from bounded summaries", () => {
+  it("abbreviates absolute paths and redacts common credentials from bounded summaries", () => {
     const summary = summarizeWorkResult(
-      "done C:\\Users\\owner\\private.txt /home/owner/private \\\\server\\share\\private token=super-secret-token Bearer abcdefghijklmnop",
+      "done C:\\Users\\owner\\deep\\private.txt /home/owner/deep/private \\\\server\\share\\a\\b\\c\\d token=super-secret-token Bearer abcdefghijklmnop",
       "COMPLETED",
     );
-    expect(summary).toContain("[redacted-path]");
-    expect(summary).not.toMatch(/C:\\Users|\/home\/owner|\\\\server|super-secret-token|abcdefghijklmnop/u);
+    expect(summary).toContain("C:\\…\\owner\\deep\\private.txt");
+    expect(summary).toContain("/…/owner/deep/private");
+    expect(summary).toContain("\\\\server\\share\\…\\b\\c\\d");
+    expect(summary).not.toMatch(/C:\\Users|\/home\/owner|\\\\server\\share\\a|super-secret-token|abcdefghijklmnop/u);
   });
 
   it("sanitizes an engine-supplied summary as well as a derived one", () => {
     const result = createWorkResult({
       actionId: "action", artifacts: [], workbenchId: "workbench", body: "restricted body", createdAt: "2026-08-02T00:00:00.000Z",
       isLate: false, partnerRevisionId: "revision", resultId: "result", runId: "run", status: "COMPLETED",
-      summary: "artifact at D:/private/out.txt api_key=private-key-value", workId: "work",
+      summary: "artifact at D:/private/a/b/out.txt api_key=private-key-value", workId: "work",
     });
-    expect(result.summary).not.toMatch(/D:\/private|private-key-value/u);
+    expect(result.summary).toContain("D:/…/a/b/out.txt");
+    expect(result.summary).not.toContain("private-key-value");
   });
 
   it("derives a fallback summary and clones artifacts", () => {

@@ -29,6 +29,8 @@ Migration 055 为目标保存可空 last_opened_at，仅用户继续/重试更�
 
 Migration 059 增加 evolution_states、evolution_goal_pins、evolution_evidence。存量已绑定工作台的原始目标固定基线且不采样；新目标保留策略与模型源版本。后台调用使用既有 outbox 的 evolution.model 类型，只含稳定标识，不保存模型正文，且不进入通用出站调度器。预算默认低档预设（每日 50 次调用），迁移不触发历史任务重放。
 
+Migration 063 让上下文窗口、最大输出与压缩触发阈值成为按 model revision 可配置的三个可空列；NULL 即未配置，存量行自动退回厂商 preset 与 provider 实测值，无需回填。表仍是 append-only：一个值要在编辑后活下来，唯一的原因是服务层把它带进了新 revision，仓储从不做 UPDATE 合并。三列的上界刻意排除"压缩阈值 = 100"，那等价于撞满整窗才压缩，而那一刻 provider 已经把 `max_tokens` 夹向 1。
+
 Migration 062 增加 `workbench_agent_tool_traces`（工具轨迹私密正文）与 `workbench_agent_conversation_entries.tool_call_id`。主时间线只保留一行 ≤200 字符的脱敏调用摘要；完整命令与输出按 `(run_id, tool_call_id)` 每条追加一次，凭据写入前脱敏、绝对路径保留（本机调试必需）、单条 ≤8 KB 超出截断并标记，只经桌面写权限路由按需读取，不进首页、诊断、SSE 或远端。只登记迁移后的新 run，不回填历史：存量 TOOL_CALL 行既无 `tool_call_id` 也无正文来源。
 
 Migration 061 修复进化证据无法收敛的三处遗留状态，不新增表。为 evolution_evidence 增加 classified_at 承载幂等判定，使证据分类可随目标收敛单调升级，而 observed_at 仍是裁决窗口时间戳、只在真正升级时前移；关闭已撤销（取消 / 忽略）目标上永久停留在 ACTIVE 的清图，撤销时刻取自目标行本身，迁移不依赖时钟；按 059 的实际落库时间精确放行当时仍在途、结局发生在迁移之后的目标，已终结的历史目标继续遵循 059 的"固定基线且不采样"。触发口径改为跨工作台共享证据池见 ADR 0020 的 2026-09-24 修订。

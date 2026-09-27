@@ -101,6 +101,88 @@ describe("ModelSourceService", () => {
     ]);
   });
 
+  it("carries configured limits across an unrelated edit and resets them when the model changes", async () => {
+    const repository = new MemoryModelSourceRepository();
+    const catalog: ModelSourceCatalog = {
+      resolve: (kind, requestedModelId, requestedAccessMode, requestedProtocol) => ({
+        accessMode: requestedAccessMode ?? (kind === "generic-openai" ? "custom" : "api"),
+        capability: "release-tested",
+        displayName: "GLM",
+        modelId: requestedModelId ?? "glm-5.2",
+        protocol: requestedProtocol ?? "openai",
+      }),
+    };
+    const service = new ModelSourceService({
+      catalog,
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => ({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" }) },
+    });
+
+    const created = await service.create({
+      apiKey: "model-source-test-secret",
+      compactionThresholdPercent: 70,
+      contextWindow: 400_000,
+      kind: "glm",
+      maxOutputTokens: 65_536,
+      modelId: "glm-5.2",
+    });
+    expect(created.activeModel).toMatchObject({
+      compactionThresholdPercent: 70, contextWindow: 400_000, maxOutputTokens: 65_536,
+    });
+
+    // An unrelated edit must carry the limits into the new revision. The revision table is
+    // append-only and nothing merges the previous row back in, so a service that forgot them
+    // would silently reset every limit the user configured on any edit at all.
+    const rotated = await service.update(created.sourceId, { apiKey: "rotated" });
+    expect(rotated.activeModel).toMatchObject({
+      compactionThresholdPercent: 70, contextWindow: 400_000, maxOutputTokens: 65_536,
+    });
+
+    // null is the explicit "back to the provider default", and it clears only that one field.
+    const cleared = await service.update(created.sourceId, { contextWindow: null });
+    expect(cleared.activeModel.contextWindow).toBeUndefined();
+    expect(cleared.activeModel.maxOutputTokens).toBe(65_536);
+
+    // Switching Model ID drops the geometry: it described the model that was just replaced.
+    const switched = await service.update(created.sourceId, { modelId: "glm-4.7" });
+    expect(switched.activeModel.id).toBe("glm-4.7");
+    expect(switched.activeModel.maxOutputTokens).toBeUndefined();
+    expect(switched.activeModel.compactionThresholdPercent).toBeUndefined();
+  });
+
+  it("rejects out-of-range limits at the domain boundary", async () => {
+    const repository = new MemoryModelSourceRepository();
+    const service = new ModelSourceService({
+      catalog: {
+        resolve: (kind, requestedModelId, requestedAccessMode, requestedProtocol) => ({
+          accessMode: requestedAccessMode ?? "api",
+          capability: "release-tested",
+          displayName: "GLM",
+          modelId: requestedModelId ?? "glm-5.2",
+          protocol: requestedProtocol ?? "openai",
+        }),
+      },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => ({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" }) },
+    });
+    const base = { apiKey: "model-source-test-secret", kind: "glm" as const };
+    await expect(service.create({ ...base, contextWindow: 100 }))
+      .rejects.toMatchObject({ code: "model_source_context_window_invalid" });
+    await expect(service.create({ ...base, maxOutputTokens: 10 }))
+      .rejects.toMatchObject({ code: "model_source_max_output_invalid" });
+    // 100 would mean compacting only once the request already fills the window.
+    await expect(service.create({ ...base, compactionThresholdPercent: 100 }))
+      .rejects.toMatchObject({ code: "model_source_compaction_threshold_invalid" });
+  });
+
   it("keeps composer-gating failures visible without deleting drafts or source metadata", async () => {
     const repository = new MemoryModelSourceRepository();
     const service = new ModelSourceService({

@@ -1,10 +1,10 @@
 -- Private per-call tool bodies for local debugging. The main timeline keeps only a
--- one-line redacted summary (AC-60/AC-61); the full command and output are appended here
--- once per completed call, keyed by the opaque tool call id, and read on demand only.
--- Credentials are masked before insert; absolute paths are deliberately kept, because a
--- shell command is mostly its paths and `cd "[redacted-path]" && npm test` documents
--- nothing. No history is backfilled: pre-062 TOOL_CALL rows carry neither a tool_call_id
--- nor any source for a body.
+-- one-line summary (AC-60/AC-61), with absolute paths abbreviated to their last three
+-- segments; the full command and output are appended here once per completed call, keyed by
+-- the opaque tool call id, and read on demand only. Credentials are masked before insert;
+-- absolute paths are deliberately kept in full here, because this table is how a reader
+-- recovers the part the timeline summary elided. No history is backfilled: pre-062
+-- TOOL_CALL rows carry neither a tool_call_id nor any source for a body.
 CREATE TABLE workbench_agent_tool_traces (
   agent_id TEXT NOT NULL,
   run_id TEXT NOT NULL,

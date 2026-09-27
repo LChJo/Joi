@@ -9,6 +9,7 @@ import type { AgentConversationPageDto, WorkbenchAgentCardDto, WorkbenchAgentSta
 import type { WorkbenchAgentRepository, WorkbenchToolTraceInput, WorkbenchToolTraceRevealInput } from "../../application/ports/workbench-agents.js";
 import type { ResolvedWorkbenchArtifact, WorkbenchArtifactResolutionInput } from "../../application/ports/workbench-artifacts.js";
 import type { NormalizedAgentConversationEntry } from "../../application/partners/agent-conversation-presentation.js";
+import { stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { TOOL_TRACE_MAX_BODY_CHARS } from "../../application/partners/tool-trace-presentation.js";
 import { DomainError } from "../../domain/errors.js";
 import { workResultArtifactId, workspaceArtifactDirectory, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
@@ -302,7 +303,7 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
           kind: required(row, "kind") as AgentConversationPageDto["items"][number]["kind"],
           role: required(row, "role") as AgentConversationPageDto["items"][number]["role"],
           sequence: typeof row.sequence === "number" ? row.sequence : 0,
-          ...(typeof row.text === "string" ? { text: row.text } : {}),
+          ...(typeof row.text === "string" ? { text: stripPathRedactions(row.text) } : {}),
           ...(typeof row.tool_call_id === "string" ? { toolCallId: row.tool_call_id } : {}),
           ...(typeof row.tool_name === "string" ? { toolName: row.tool_name } : {}),
         };

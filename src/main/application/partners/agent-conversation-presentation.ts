@@ -1,3 +1,4 @@
+import { abbreviateAbsolutePaths } from "../../domain/text/path-abbreviation.js";
 import type { AgentConversationEntryDto } from "../../../shared/joi.js";
 
 const MAX_CHUNK = 32 * 1024;
@@ -30,15 +31,24 @@ export function maskSecretText(value: string): string {
     .replace(NAMED_SECRET, (_match, name: string) => `${name}=[redacted]`);
 }
 
+/**
+ * Masks secrets and prints absolute paths as their root plus their last few segments.
+ * UNC paths go first: the posix shape would otherwise match a fragment of the same path
+ * and leave the rest of it untouched.
+ */
 export function sanitizeAgentConversationText(value: string): string {
-  return maskSecretText(value)
-    .replace(UNC_PATH, "[redacted-path]")
-    .replace(ABSOLUTE_PATH, "[redacted-path]");
+  return abbreviateAbsolutePaths(abbreviateAbsolutePaths(maskSecretText(value), UNC_PATH), ABSOLUTE_PATH);
 }
 
-/** Card-facing projections drop the path placeholder entirely: the raw path stays hidden and secret masking is untouched. */
+/**
+ * Erases the `[redacted-path]` literal still stored in rows written before paths were
+ * abbreviated. This is a legacy-data eraser, not a display policy: rows written since the
+ * change carry no marker, so it is a no-op for them. The trailing-space collapse it used
+ * to perform is gone — on new rows that would be its only remaining effect, and it
+ * silently destroys GFM hard breaks (a trailing double space) in home-feed markdown.
+ */
 export function stripPathRedactions(value: string): string {
-  return value.replace(/\[redacted-path\][ \t]?/gu, "").replace(/[ \t]{2,}/gu, " ").replace(/[ \t]+$/gmu, "").trim();
+  return value.replace(/\[redacted-path\][ \t]?/gu, "").trim();
 }
 
 export const COMPLETION_SUMMARY_LIMIT = 4096;

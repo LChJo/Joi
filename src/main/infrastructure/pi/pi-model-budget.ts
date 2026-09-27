@@ -8,13 +8,24 @@ import type { AgentMessage } from "@earendil-works/pi-agent-core";
  * A route whose window cannot hold even the floor is still bounded by the floor so the tail stays
  * usable.
  */
-const CONTEXT_MAX_CHARS = 120_000;
+/**
+ * Used whenever a route's window is unknown — including by `DEFAULT_BACKGROUND_BUDGET_CHARS`
+ * below, which CLI-backed partners that own their own window rely on. Deliberately kept at its
+ * historical value: raising it would silently widen those partners' system-prompt budget instead
+ * of this route's message budget.
+ */
+const CONTEXT_UNKNOWN_WINDOW_MAX_CHARS = 120_000;
+/**
+ * A request body is JSON-encoded whole and sent in one go, so even a million-token route must not
+ * assemble a multi-megabyte payload. This bounds transport, not the model.
+ */
+const CONTEXT_CEILING_CHARS = 1_000_000;
 const CONTEXT_OUTPUT_RESERVE_TOKENS = 16_000;
 const CONTEXT_MIN_CHARS = 8_000;
 const CONTEXT_MAX_MESSAGES = 32;
 
 /** Keeps the current request plus a structurally valid recent tail before every provider call. */
-export function boundModelContext(messages: AgentMessage[], maxChars: number = CONTEXT_MAX_CHARS): AgentMessage[] {
+export function boundModelContext(messages: AgentMessage[], maxChars: number = CONTEXT_UNKNOWN_WINDOW_MAX_CHARS): AgentMessage[] {
   if (messages.length <= CONTEXT_MAX_MESSAGES && JSON.stringify(messages).length <= maxChars) return messages;
   let start = Math.max(0, messages.length - CONTEXT_MAX_MESSAGES);
   while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
@@ -33,11 +44,20 @@ export function boundModelContext(messages: AgentMessage[], maxChars: number = C
   return context;
 }
 
+/**
+ * The character budget a route can hold. Characters approximate tokens closely enough for CJK
+ * text that this doubles as the token estimate the rest of the pipeline is sized against.
+ *
+ * The reserve is at most half the window, so `window - reserve` never collapses on small routes
+ * and no separate share floor is needed. The only remaining bound is the transport ceiling: the
+ * old fixed 120k cap made every window above ~136k behave identically, which is why a model
+ * advertising a million tokens was still being fed the same context as a 128k one.
+ */
 export function modelContextMaxChars(model: { contextWindow?: number }): number {
   const window = model.contextWindow;
-  if (window === undefined || !Number.isFinite(window) || window <= 0) return CONTEXT_MAX_CHARS;
+  if (window === undefined || !Number.isFinite(window) || window <= 0) return CONTEXT_UNKNOWN_WINDOW_MAX_CHARS;
   const reserve = Math.min(CONTEXT_OUTPUT_RESERVE_TOKENS, Math.floor(window / 2));
-  return Math.max(CONTEXT_MIN_CHARS, Math.min(CONTEXT_MAX_CHARS, window - reserve));
+  return Math.max(CONTEXT_MIN_CHARS, Math.min(CONTEXT_CEILING_CHARS, window - reserve));
 }
 
 /**

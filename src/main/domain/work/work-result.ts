@@ -1,3 +1,4 @@
+import { abbreviateAbsolutePaths } from "../text/path-abbreviation.js";
 import { truncateAtSentenceBoundary } from "../text/sentence-truncation.js";
 
 export type WorkResultStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
@@ -26,8 +27,7 @@ const BEARER_TOKEN = /\bBearer\s+[A-Za-z0-9._~+/=-]{8,}/giu;
 const NAMED_SECRET = /\b(?:api[_-]?key|csrf|token)\s*[:=]\s*\S+/giu;
 
 function sanitizeSummary(value: string): string {
-  return value
-    .replace(ABSOLUTE_PATH, " [redacted-path]")
+  return abbreviateAbsolutePaths(value, ABSOLUTE_PATH)
     .replace(BEARER_TOKEN, "Bearer [redacted]")
     .replace(NAMED_SECRET, "secret=[redacted]")
     .replace(/\s+/gu, " ")

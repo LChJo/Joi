@@ -15,6 +15,7 @@ import type {
   ReasoningSessionStore,
 } from "../../src/main/application/ports/primary-reasoning-runtime.js";
 import {
+  compactionHeadroom,
   JOI_REASONING_TOOL_NAMES,
   PiReasoningRuntime,
 } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
@@ -480,6 +481,36 @@ describe("Pi reasoning runtime contract", () => {
       sourceRevisionId: "source_rev_1", systemPrompt: "You are joi.", turnId: "turn_ask",
     });
     expect(calls).toEqual(["user_ask"]);
+  });
+
+  it("turns the configured threshold into the output headroom compaction waits for", () => {
+    // A lower threshold leaves more headroom, so it compacts sooner; a higher one waits longer.
+    // This is the whole effect of the setting, and it scales with the route's window — which a
+    // fixed message count could never do.
+    expect(compactionHeadroom(200_000, 50)).toBe(100_000);
+    expect(compactionHeadroom(200_000, 85)).toBe(30_000);
+    expect(compactionHeadroom(200_000, 95)).toBe(10_000);
+    // Small or unknown windows fall back to a floor, so the summary request itself still fits.
+    expect(compactionHeadroom(8_000, 85)).toBe(4_096);
+    expect(compactionHeadroom(0, 85)).toBe(4_096);
+  });
+
+  it("rejects a compaction threshold outside the supported range", () => {
+    const faux = fauxProvider({ provider: "joi-compaction-range" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const build = (compactAtPercent: number) => new PiReasoningRuntime({
+      compaction: { compactAtPercent, keepRecentMessages: 2, maxMessages: 6, maxSummaryCharacters: 240 },
+      model: faux.getModel(),
+      models,
+      sessionStore: new MemorySessionStore(),
+      tools: [],
+    });
+    // 100 would mean the request already fills the window before compaction runs, which is the
+    // failure the threshold exists to prevent.
+    expect(() => build(100)).toThrow("reasoning_compaction_invalid");
+    expect(() => build(49)).toThrow("reasoning_compaction_invalid");
+    expect(() => build(50)).not.toThrow();
   });
 
   it("compacts completed turns into a bounded recoverable checkpoint", async () => {

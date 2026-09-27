@@ -11,35 +11,37 @@ describe("tool trace presentation", () => {
   describe("inline summary", () => {
     it("collapses a multi-line command into one readable line instead of keeping its first line", () => {
       const summary = toolCallSummary("bash", { command: "set -euo pipefail\ncd /repo && npm test\n" });
-      expect(summary).toBe("set -euo pipefail cd [redacted-path] && npm test");
+      expect(summary).toBe("set -euo pipefail cd /repo && npm test");
     });
 
-    it("redacts absolute paths and masks credentials", () => {
-      const summary = toolCallSummary("bash", { command: "cd C:\\Users\\owner\\repo && curl -H 'Authorization: Bearer abcdefghijklmnop' x" });
-      expect(summary).toContain("[redacted-path]");
+    it("abbreviates absolute paths and masks credentials", () => {
+      const summary = toolCallSummary("bash", { command: "cd C:\\Users\\owner\\deep\\repo && curl -H 'Authorization: Bearer abcdefghijklmnop' x" });
+      expect(summary).toContain("C:\\…\\owner\\deep\\repo");
       expect(summary).toContain("Bearer [redacted]");
       expect(summary).not.toContain("C:\\Users");
       expect(summary).not.toContain("abcdefghijklmnop");
     });
 
-    it("holds the post-sanitize cap even when masking makes the line much longer", () => {
-      // `[redacted-path]` is longer than the `/a` it replaces, so one path per short token
-      // grows the line far past the limit. The second cap is what enforces the invariant.
-      const summary = toolCallSummary("bash", { command: "/a ".repeat(60) });
+    it("holds the post-sanitize cap once abbreviation has rewritten the line", () => {
+      // A bare four-segment path is the one shape abbreviation lengthens (`C:\a\b\c\d` gains
+      // an elision marker), so masking can still push a line past the limit. The second cap
+      // is what enforces the invariant.
+      const summary = toolCallSummary("bash", { command: `${"cd C:\\a\\b\\c\\d && ".repeat(20)}npm test` });
       expect(summary.length).toBe(TOOL_CALL_SUMMARY_MAX_CHARS);
       expect(summary.endsWith("…")).toBe(true);
     });
 
     it("bounds the regex input before sanitizing an oversized argument", () => {
       const summary = toolCallSummary("write", { content: "x".repeat(200_000), path: "/tmp/out" });
-      expect(summary).toBe("[redacted-path] · 200000 字符");
+      expect(summary).toBe("/tmp/out · 200000 字符");
       expect(summary.length).toBeLessThanOrEqual(TOOL_CALL_SUMMARY_MAX_CHARS);
     });
 
     it.each([
-      ["read", { path: "/tmp/a.md" }, "[redacted-path]"],
-      ["ls", { path: "/tmp/dir" }, "[redacted-path]"],
-      ["grep", { ignoreCase: true, path: "/tmp/src", pattern: "monitor" }, "monitor @ [redacted-path]"],
+      ["read", { path: "/tmp/a.md" }, "/tmp/a.md"],
+      ["ls", { path: "/tmp/dir" }, "/tmp/dir"],
+      ["read", { path: "/tmp/a/b/c/d.md" }, "/…/b/c/d.md"],
+      ["grep", { ignoreCase: true, path: "/tmp/src", pattern: "monitor" }, "monitor @ /tmp/src"],
       ["web_search", { query: "pi agent core" }, "pi agent core"],
       ["fetch_content", { url: "https://example.com/doc" }, "https://example.com/doc"],
       ["ask_user", { question: "Which account?" }, "Which account?"],

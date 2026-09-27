@@ -4,7 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { WorkbenchDetailDto } from "../../../shared/joi.js";
 import type { WorkbenchManagementRepository } from "../../application/ports/workbench-context.js";
-import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
+import { sanitizeAgentConversationText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { mapStoredEngine } from "./partner-engine-storage.js";
 import { workbenchWorkspaceDisplayName } from "../../domain/workbench/workbench-naming.js";
 
@@ -58,7 +58,7 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
           partnerRevisionId: required(item, "partner_revision_id"),
           resultId: required(item, "result_id"),
           status: required(item, "status") as WorkbenchDetailDto["recentResults"][number]["status"],
-          summary: required(item, "summary"),
+          summary: stripPathRedactions(required(item, "summary")),
           workId: required(item, "work_id"),
         };
       });
@@ -82,7 +82,7 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
               : item.disposition === "ACCEPTED_WITH_GAPS" ? "COMPLETED_WITH_GAPS" as const
                 : "COMPLETED" as const
             : "CANCELED" as const,
-          summary: sanitizeAgentConversationText(required(item, "completion_summary")),
+          summary: stripPathRedactions(sanitizeAgentConversationText(required(item, "completion_summary"))),
           title: safeTitle(required(item, "body")),
         };
       });

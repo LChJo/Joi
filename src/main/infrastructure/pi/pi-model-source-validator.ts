@@ -2,7 +2,7 @@ import { createModels, type CredentialStore } from "@earendil-works/pi-ai";
 
 import type { ModelSourceRecord, ModelSourceValidator } from "../../application/ports/model-source-ports.js";
 import type { Clock } from "../../application/ports/runtime-store.js";
-import { createPiSourceProvider } from "./source-provider-factory.js";
+import { createPiSourceProvider, modelLimitOverrides } from "./source-provider-factory.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { classifyHttp403Detail } from "../../application/partners/partner-run-failure.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
@@ -95,8 +95,13 @@ export class PiModelSourceValidator implements ModelSourceValidator {
     if (credentials === undefined) throw new Error("pi_credential_store_required");
     return async (record) => {
       const source = record.source;
+      // Probe with the same limits the real turns will use. Sizing the probe from the preset
+      // while the turns use the configured value would hide exactly the mistake — a window or
+      // completion cap the route rejects — that validating is meant to surface.
+      const limits = modelLimitOverrides(source.activeModelRevision);
       const provider = createPiSourceProvider(source.activeSourceRevision.kind === "generic-openai"
         ? {
+          ...limits,
           baseUrl: record.baseUrl ?? "",
           displayName: source.activeSourceRevision.displayName,
           kind: "generic-openai",
@@ -105,6 +110,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
           sourceId: source.sourceId,
         }
         : {
+          ...limits,
           accessMode: source.activeSourceRevision.accessMode === "token-plan" ? "token-plan" as const
             : source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
           kind: source.activeSourceRevision.kind,

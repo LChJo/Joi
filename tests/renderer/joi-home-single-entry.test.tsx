@@ -551,8 +551,30 @@ describe("joi home single entry", () => {
     fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
     await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", {
       apiKey: "replacement-key", baseUrl: "https://new.example/v1", displayName: "Private 2", modelId: "new-model",
+      // Left blank in the advanced section, which is the explicit "back to the provider default":
+      // sending nothing at all would leave the current value in place, since the service carries
+      // unchanged limits into the new revision.
+      compactionThresholdPercent: null, contextWindow: null, maxOutputTokens: null,
     }));
     expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
+  });
+
+  it("sends the advanced model limits from the edit form", async () => {
+    const api = new DigitalLifeApi("");
+    const generic = {
+      ...readySource, accessMode: "custom" as const, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
+      displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(generic);
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    fireEvent.change(screen.getByLabelText("上下文窗口（tokens）"), { target: { value: "1000000" } });
+    fireEvent.change(screen.getByLabelText("压缩阈值（窗口百分比）"), { target: { value: "70" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", expect.objectContaining({
+      compactionThresholdPercent: 70, contextWindow: 1_000_000,
+    })));
   });
 
   it("renders a human-readable label for every model-source status", async () => {

@@ -44,8 +44,13 @@ describe("local Pi coding partner runtime", () => {
 
   it("bounds the partner context budget to the pinned model window", () => {
     expect(partnerContextMaxChars({ contextWindow: 32_000 })).toBe(16_000);
-    expect(partnerContextMaxChars({ contextWindow: 200_000 })).toBe(120_000);
+    // A window wider than the old fixed 120k cap has to actually yield a wider budget, or every
+    // route above ~136k is fed the same context and a model advertising a million tokens is
+    // indistinguishable from a 128k one.
+    expect(partnerContextMaxChars({ contextWindow: 200_000 })).toBe(184_000);
+    expect(partnerContextMaxChars({ contextWindow: 1_000_000 })).toBe(984_000);
     expect(partnerContextMaxChars({ contextWindow: 4_000 })).toBe(8_000);
+    // A route whose window is unknown keeps the historical conservative budget.
     expect(partnerContextMaxChars({})).toBe(120_000);
     const messages = [
       { content: "original", role: "user", timestamp: 1 },
@@ -233,7 +238,7 @@ describe("Pi partner engine runtime", () => {
   it("publishes bounded visible text and tool lifecycle snapshots while a run is active", async () => {
     const faux = fauxProvider({ provider: "local-partner-live-conversation", tokenSize: { max: 1, min: 1 }, tokensPerSecond: 100 });
     faux.setResponses([
-      fauxAssistantMessage([fauxThinking("PRIVATE_REASONING"), fauxToolCall("read", { path: "/PRIVATE/live-secret.txt", token: "PRIVATE_TOOL_ARGUMENT" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxThinking("PRIVATE_REASONING"), fauxToolCall("read", { path: "/PRIVATE/a/b/live-secret.txt", token: "PRIVATE_TOOL_ARGUMENT" })], { stopReason: "toolUse" }),
       fauxAssistantMessage([fauxText("正在整理可见结论。")]),
     ]);
     const models = createModels();
@@ -292,13 +297,16 @@ describe("Pi partner engine runtime", () => {
     expect(serialized).not.toContain("PRIVATE_TOOL_ARGUMENT");
     expect(serialized).not.toContain("PRIVATE_TOOL_RESULT");
     expect(serialized).not.toContain("PRIVATE_REASONING");
-    expect(serialized).not.toContain("live-secret");
+    // The tool's target does reach the live summary — abbreviated to its last three segments —
+    // while the argument payload beside it still must not.
+    expect(serialized).toContain("/…/a/b/live-secret.txt");
+    expect(serialized).not.toContain("/PRIVATE/a/b/live-secret.txt");
 
     // The same run's private channel keeps the body the event surface must not carry. The
     // `token` argument survives masking on purpose: the named-secret rule only matches
     // `token=value`, not JSON's `"token":"value"`, so these sentinels stay greppable here.
     expect(traces).toHaveLength(1);
-    expect(traces[0]?.command).toContain("/PRIVATE/live-secret.txt");
+    expect(traces[0]?.command).toContain("/PRIVATE/a/b/live-secret.txt");
     expect(traces[0]?.command).toContain("PRIVATE_TOOL_ARGUMENT");
     expect(traces[0]?.result).toContain("PRIVATE_TOOL_RESULT");
     expect(traces[0]).toMatchObject({ isError: false, toolName: "read", truncated: false });

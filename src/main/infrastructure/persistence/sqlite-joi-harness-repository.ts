@@ -15,6 +15,7 @@ import type {
   HarnessReviewRecoveryCandidate,
   HarnessReviewRecoveryResult,
   HarnessStalledSynthesisSeed,
+  HarnessUnreviewedMapSeed,
   HarnessWorkRecoverySeed,
   JoiHarnessScan,
   JoiHarnessStore,
@@ -77,6 +78,23 @@ const REVIEW_WASTED_TURN_COUNT_SQL = `
                   WHERE wasted_review.input_id = r.input_id AND wasted_review.status = 'COMPLETED'
                     AND wasted_review.side_effect_started = 0)`;
 const WASTED_REVIEW_REQUEUE_LIMIT = 1;
+// A Work reaching its terminal state and its result joining the goal's result set are two
+// separate writes, milliseconds apart. Everything else these predicates read — reviewed_revision,
+// rs.revision, the outcome for that revision — still describes the previous layer during that
+// window, so "facts complete" holds while evidence is demonstrably in flight. Auto-clearing on
+// that reading closes the map under a synthesis that lands a moment later; the map is never
+// re-visited, so the goal idles forever behind a review badge. Require the result set to have
+// absorbed every authoritative completed result before any close-out may fire.
+const REVIEW_RESULTS_ABSORBED_SQL = `NOT EXISTS (
+                SELECT 1 FROM partner_result_events pending_event
+                  JOIN work_items pending_work ON pending_work.work_id = pending_event.work_id
+                  JOIN work_results pending_result ON pending_result.run_id = pending_event.run_id
+                    AND pending_result.status = pending_event.status
+                 WHERE pending_work.input_id = m.goal_input_id
+                   AND pending_work.status = 'COMPLETED'
+                   AND pending_result.is_authoritative = 1
+                   AND NOT EXISTS (SELECT 1 FROM joi_goal_result_members pending_member
+                                    WHERE pending_member.event_id = pending_event.event_id))`;
 
 function textValue(row: Row, key: string): string {
   const value = row[key];
@@ -463,6 +481,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
            AND NOT EXISTS (SELECT 1 FROM work_items w
                             WHERE w.input_id = m.goal_input_id
                               AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+           AND ${REVIEW_RESULTS_ABSORBED_SQL}
            AND NOT (o.disposition = 'BLOCKED' AND EXISTS (
              SELECT 1 FROM joi_inbox_messages recovery
               WHERE recovery.goal_input_id = m.goal_input_id
@@ -780,6 +799,64 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     });
   }
 
+  /**
+   * Maps that were closed while a newer evidence layer was still arriving. The close-out reads
+   * "every Work is terminal" as "every result is in", but a Work finishes a few milliseconds
+   * before its result joins the result set, so a map can be CLEARED with `result_revision` already
+   * past `reviewed_revision`. Every surface that could arrange that layer — review and
+   * continuation — requires an ACTIVE map, so nothing revisits the goal and its card reports
+   * review forever. Terminal-reaching goals settle to `reviewed_revision = result_revision`, so a
+   * CLEARED map is only ever a candidate here when the close-out truly outran its evidence.
+   */
+  async listUnreviewedClearedMaps(): Promise<HarnessUnreviewedMapSeed[]> {
+    return (this.database.transaction((connection) => connection.prepare(`
+      SELECT m.goal_input_id, m.workbench_id, rs.revision AS result_revision
+        FROM joi_harness_maps m
+        JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
+        JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+        JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
+       WHERE m.status = 'CLEARED'
+         AND rs.revision > m.reviewed_revision
+         AND rs.synthesized_revision = rs.revision
+         AND o.disposition IN ('COMPLETED', 'CONTINUE')
+         AND g.status = 'CONSUMED'
+         AND g.clarification_reason_code IS NULL
+         AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+         AND ${REVIEW_GATE_OPEN_SQL}
+         AND NOT EXISTS (SELECT 1 FROM work_items w
+                          WHERE w.input_id = m.goal_input_id
+                            AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+       ORDER BY m.updated_at, m.goal_input_id LIMIT 20`).all()) as Row[])
+      .map((row) => ({
+        goalInputId: textValue(row, "goal_input_id"),
+        resultRevision: numberValue(row, "result_revision"),
+        workbenchId: textValue(row, "workbench_id"),
+      }));
+  }
+
+  /**
+   * Returns the map to ACTIVE so the ordinary review path can adopt the layer it outran. The
+   * recheck re-reads the revision under the write lock: a goal that moved on (or that the user
+   * retried, which also re-activates) must not be re-opened a second time. `feedback_recorded_at`
+   * is cleared with it — the completion feedback already written described the layer the map was
+   * closed on, and the adopted layer needs its own record once it settles.
+   */
+  async reopenUnreviewedMap(input: { now: string; seed: HarnessUnreviewedMapSeed }): Promise<boolean> {
+    return this.database.transaction((connection) => {
+      const updated = connection.prepare(`UPDATE joi_harness_maps
+        SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,
+            revision = revision + 1, updated_at = ?
+        WHERE goal_input_id = ? AND status = 'CLEARED'
+          AND (SELECT rs.revision FROM joi_goal_result_sets rs
+                WHERE rs.original_input_id = joi_harness_maps.goal_input_id) = ?
+          AND (SELECT rs.synthesized_revision FROM joi_goal_result_sets rs
+                WHERE rs.original_input_id = joi_harness_maps.goal_input_id) = ?`).run(
+        input.now, input.seed.goalInputId, input.seed.resultRevision, input.seed.resultRevision,
+      );
+      return updated.changes === 1;
+    });
+  }
+
   async reconcileReview(input: { candidate: HarnessReviewRecoveryCandidate; now: string }): Promise<HarnessReviewRecoveryResult | null> {
     return this.database.transaction((connection) => {
       const { candidate, now } = input;
@@ -817,7 +894,8 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
            )
            AND NOT EXISTS (SELECT 1 FROM work_items w
                             WHERE w.input_id = m.goal_input_id
-                              AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(
+                              AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+           AND ${REVIEW_RESULTS_ABSORBED_SQL}`).get(
         reviewId, goalInputId, resultRevision,
       ) as Row | undefined;
       if (current === undefined) return null;
@@ -835,7 +913,8 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                               WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
              AND NOT EXISTS (SELECT 1 FROM work_items w
                               WHERE w.input_id = m.goal_input_id
-                                AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`).get(goalInputId);
+                                AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))
+             AND ${REVIEW_RESULTS_ABSORBED_SQL}`).get(goalInputId);
         if (safe === undefined) return null;
         const cleared = connection.prepare(`UPDATE joi_harness_maps
           SET status = 'CLEARED', cleared_at = COALESCE(cleared_at, ?), revision = revision + 1, updated_at = ?

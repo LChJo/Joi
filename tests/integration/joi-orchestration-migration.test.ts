@@ -537,6 +537,14 @@ describe("JOI-01 non-destructive migration", () => {
       ]);
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_revisions)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "access_mode" }), expect.objectContaining({ name: "protocol" })]));
+      // Nullable by design: NULL is the "not configured" state these three start in, so every
+      // row written before this migration keeps resolving through the provider preset.
+      expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_model_revisions)").all()))
+        .toEqual(expect.arrayContaining([
+          expect.objectContaining({ name: "compaction_threshold_percent", notnull: 0 }),
+          expect.objectContaining({ name: "context_window", notnull: 0 }),
+          expect.objectContaining({ name: "max_output_tokens", notnull: 0 }),
+        ]));
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(model_source_health)").all()))
         .toEqual(expect.arrayContaining([expect.objectContaining({ name: "last_error" })]));
       expect(database.transaction((connection) => connection.prepare("PRAGMA table_info(joi_inbox_messages)").all()))

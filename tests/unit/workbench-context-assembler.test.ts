@@ -18,7 +18,7 @@ const workbench = createWorkbench({
 });
 
 describe("WorkbenchContextAssembler", () => {
-  it("persists a bounded, path-clean snapshot without persona or memory bodies", async () => {
+  it("persists a bounded snapshot with abbreviated paths and without persona or memory bodies", async () => {
     const saved: WorkbenchContextSnapshot[] = [];
     const assembler = new WorkbenchContextAssembler({
       workbenches: { getWorkbench: async () => workbench, listSummaries: async () => [] },
@@ -27,7 +27,7 @@ describe("WorkbenchContextAssembler", () => {
       projections: { loadSnapshotFacts: async () => ({
         activeWork: [{ status: "RUNNING", title: "读取 C:\\Users\\owner\\private\\a.md", workId: "work-old" }],
         memorySummaryRefs: ["memory-summary:approved"],
-        recentResults: [{ resultId: "result-old", status: "COMPLETED", summary: "完成 /tmp/private/out", workId: "work-old" }],
+        recentResults: [{ resultId: "result-old", status: "COMPLETED", summary: "完成 /tmp/private/deep/out", workId: "work-old" }],
         work: { accessMode: "READ", title: "更新 C:\\Users\\owner\\private\\b.md", workId: "work-a" },
         workspace: { displayName: "文档", kind: "BOUND", status: "READY", workspaceRef: "workbench_workspace:workbench-a" },
       }) },
@@ -44,8 +44,12 @@ describe("WorkbenchContextAssembler", () => {
     });
     const serialized = JSON.stringify(snapshot.safeContext);
     expect(serialized).not.toContain("SECRET_PERSONA");
-    expect(serialized).not.toMatch(/(?:C:\\Users|\/home|\/tmp)/u);
-    expect(serialized).toContain("[redacted-path]");
+    // `serialized` is JSON, so every path separator arrives doubled.
+    expect(serialized).toContain(String.raw`C:\\…\\owner\\private\\a.md`);
+    expect(serialized).toContain("/…/private/deep/out");
+    // Three-segment paths are already as short as they can usefully be.
+    expect(serialized).toContain(String.raw`工程 C:\\Users\\owner\\private`);
+    expect(serialized).not.toContain(String.raw`C:\\Users\\owner\\private\\a.md`);
   });
 
   it("does not bind a workspace for NONE work and blocks file work until READY", async () => {
