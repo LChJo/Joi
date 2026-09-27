@@ -570,6 +570,24 @@ export interface RuntimeDiagnosticEventMap {
     omittedChars: number;
     omittedMessages: number;
   };
+  /**
+   * A run kept calling tools while changing nothing in its workspace, and has been told so. This is
+   * the warning shot, not a failure: the run continues, and a run that was merely reading a great
+   * deal can say so and carry on. Recorded because the shape it detects — busy but unproductive —
+   * is invisible to every other guard the runtime has.
+   */
+  "joi.partner.progress_stalled": {
+    toolCallsWithoutChange: number;
+  };
+  /**
+   * A run that had already been warned kept changing nothing and was closed out, or reached the
+   * tool-call ceiling. The partial work is kept and the run converges as a failure rather than
+   * being left to spin; recorded with which limit fired so the two are never confused.
+   */
+  "joi.partner.run_closed_out": {
+    reason: "no-deliverable" | "tool-call-ceiling";
+    toolCallsWithoutChange: number;
+  };
   "joi.partner.skills.injected": {
     actionId: string;
     instanceId: string;

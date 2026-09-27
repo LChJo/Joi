@@ -106,6 +106,11 @@ export function safePartnerRunFailureBody(failure: PartnerRunFailure): string {
       ? "The model refused this request. Restate the task or ask the user for guidance; do not replay it unchanged."
     : failure.reasonCode === "partner_run_timed_out" || failure.reasonCode === "partner_run_idle_timed_out" || failure.reasonCode === "dispatch_watchdog_timed_out"
       ? "The run exceeded its deadline and was terminated. Treat any produced artifacts as unverified until checked, then cover the remaining gap with a supplemental Work instead of replaying the run unchanged."
+    // A stalled run was already warned before it was ended, so replaying it unchanged would repeat
+    // the same shape. What it did produce is kept; what it did not is best covered by a Work small
+    // enough to finish — the size is usually the reason it stalled.
+    : failure.reasonCode === "partner_run_stalled"
+      ? "The run kept calling tools without changing anything in its workspace, was told so, and was ended. Verify any produced artifacts, then split the remaining work into a smaller Work rather than replaying this one unchanged."
       : failure.retryable
     ? "Joi may reassign this Work to another suitable available partner, or select another READY model source and create a new immutable partner revision when no suitable alternative partner exists."
     : failure.sideEffectState === "NONE"

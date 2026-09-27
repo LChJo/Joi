@@ -42,6 +42,7 @@ import type { UsageContext, UsageRecorder } from "../../application/ports/usage.
 import { trackPiStream } from "./pi-usage.js";
 import { createPiContextManager, type PiContextDiagnostic, type PiContextManager } from "./pi-context-manager.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
+import { createRunProgressWatch, stallNudgeMessage, type RunProgressDiagnostic, type RunProgressSignal, type RunProgressThresholds, type RunProgressWatch } from "./pi-run-progress.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
@@ -62,6 +63,26 @@ function assertSkillWorkspace(revision: PartnerRevision, workspacePath: string |
  */
 export const partnerContextMaxChars = modelContextMaxChars;
 export const boundPartnerModelContext = boundModelContext;
+
+/** How a run's progress watch ended it, if it did. */
+interface RunCloseOut {
+  reason: "no-deliverable" | "tool-call-ceiling";
+  toolCallsWithoutChange: number;
+}
+
+/**
+ * A run's progress watch and the outcome it reported.
+ *
+ * The outcome is read through a method rather than a property because it is written from the agent
+ * event listener and read after an await: a property would be narrowed to `undefined` by the first
+ * check that rules it out, and every later check would then be statically unreachable. Stopping a
+ * run is a real transition, so it is expressed as one.
+ */
+interface RunProgressControl {
+  watch: RunProgressWatch;
+  closeOut: () => RunCloseOut | undefined;
+  markClosedOut: (outcome: RunCloseOut) => void;
+}
 
 /** Per-run mutable facts: observed side effects and a pending question for the user. */
 interface RunTracker {
@@ -293,6 +314,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     /** Mandatory upper bound for each individual tool invocation. */
     toolTimeoutMillis?: number;
     tools: PiCodingToolFactory;
+    /**
+     * Test seam for the run-progress watch, in the same spirit as `runIdleTimeoutMillis` and
+     * `toolTimeoutMillis`: a contract test cannot wait out a thirty-second probe interval.
+     */
+    progress?: { now?: () => number; thresholds?: RunProgressThresholds };
   }) {}
 
   engineOf(): "pi-core" {
@@ -348,6 +374,44 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     });
   }
 
+  /**
+   * The watch that notices a run producing nothing, and the diagnostic sink for it.
+   */
+  #progressControl(input: { canWrite: boolean; request: PartnerRunRequest; workspacePath: string | undefined }): RunProgressControl {
+    const where = { workbenchId: input.request.workbenchId, workId: input.request.workId };
+    let closedOut: RunCloseOut | undefined;
+    return {
+      closeOut: () => closedOut,
+      markClosedOut: (outcome) => { closedOut = outcome; },
+      watch: createRunProgressWatch({
+        canWrite: input.canWrite,
+        onDiagnostic: (event: RunProgressDiagnostic) => {
+          emitRuntimeDiagnostic(this.dependencies.diagnostics, event.type, { ...event, ...where });
+        },
+        ...(this.dependencies.progress?.now === undefined ? {} : { now: this.dependencies.progress.now }),
+        ...(this.dependencies.progress?.thresholds === undefined ? {} : { thresholds: this.dependencies.progress.thresholds }),
+        workspacePath: input.workspacePath,
+      }),
+    };
+  }
+
+  /**
+   * Ends a run the progress watch closed out.
+   *
+   * An aborted run produces no body and its assistant frame carries `stopReason: "aborted"`, which
+   * the transient-failure classifier does not match. Without this the run would fall through to the
+   * success path and report an empty deliverable as COMPLETED — the same shape as the ten-hour run
+   * that delivered nothing, which is the outcome this whole mechanism exists to prevent.
+   */
+  #stalledRunFailure(control: RunProgressControl, tracker: RunTracker): Error {
+    return wrapPartnerRunFailure(
+      new DomainError("partner_run_stalled", control.closeOut()?.reason === "tool-call-ceiling"
+        ? "The partner run reached its tool-call ceiling and was ended."
+        : "The partner run kept calling tools without changing anything in its workspace and was ended."),
+      { phase: "MODEL", sideEffectState: tracker.state },
+    );
+  }
+
   async #runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, tracker: RunTracker): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
@@ -364,6 +428,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       createAskUserTool(trackerRef),
     ]);
     const allowed = new Set(tools.map((tool) => tool.name));
+    const progress = this.#progressControl({
+      canWrite: tools.some((tool) => MUTATING_TOOLS.has(tool.name)),
+      request,
+      workspacePath: execution.workspacePath,
+    });
     const window = this.#contextManager({
       messagesMaxChars: budget.messagesMaxChars,
       model: resolved.model,
@@ -398,11 +467,16 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     try {
-      await this.#promptWithIdleTimeout(agent, request.taskProjection, live, context.onProgress);
-      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(agent, 0, live, context.onProgress);
+      await this.#promptWithIdleTimeout(agent, request.taskProjection, live, context.onProgress, progress);
+      if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
+      if (tracker.state === "OBSERVED") {
+        await this.#continueAfterTransientFailure(agent, 0, live, context.onProgress, progress);
+        if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
+      }
       const failure = assistantFailureSignal(agent.state.messages);
       if (failure !== null) throw failure;
-      await this.#continueForMissingBody(agent, tracker, 0, live, context.onProgress);
+      await this.#continueForMissingBody(agent, tracker, 0, live, context.onProgress, progress);
+      if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
       const body = assistantText(agent.state.messages);
       const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       return {
@@ -514,6 +588,14 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       context: { ...context, messages: withRequestPrompt(context.messages, systemPrompt) },
     });
     const previousMessageCount = warm.agent.state.messages.length;
+    // One watch per turn, reading the tools the agent actually holds rather than the revision's
+    // intent: a resident instance that was rebuilt under a narrower tool policy can no longer write,
+    // and a run that cannot write cannot stall on producing nothing.
+    const progress = this.#progressControl({
+      canWrite: warm.agent.state.tools.some((tool) => MUTATING_TOOLS.has(tool.name)),
+      request: input.request,
+      workspacePath: execution.workspacePath,
+    });
     const live = input.onEvent === undefined && input.onToolTrace === undefined
       ? undefined
       : new LiveConversationPublisher(
@@ -524,11 +606,16 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     try {
-      await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live, input.onProgress);
-      if (tracker.state === "OBSERVED") await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live, input.onProgress);
+      await this.#promptWithIdleTimeout(warm.agent, input.request.taskProjection, live, input.onProgress, progress);
+      if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
+      if (tracker.state === "OBSERVED") {
+        await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live, input.onProgress, progress);
+        if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
+      }
       const failure = assistantFailureSignal(warm.agent.state.messages.slice(previousMessageCount));
       if (failure !== null) throw failure;
-      await this.#continueForMissingBody(warm.agent, tracker, previousMessageCount, live, input.onProgress);
+      await this.#continueForMissingBody(warm.agent, tracker, previousMessageCount, live, input.onProgress, progress);
+      if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
       const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
       const body = assistantText(turnMessages);
       const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
@@ -570,22 +657,22 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */
-  async #promptWithIdleTimeout(agent: Agent, text: string, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
-    await this.#runWithIdleTimeout(agent, () => agent.prompt(text), live, onProgress);
+  async #promptWithIdleTimeout(agent: Agent, text: string, live?: LiveConversationPublisher, onProgress?: () => void, progress?: RunProgressControl): Promise<void> {
+    await this.#runWithIdleTimeout(agent, () => agent.prompt(text), live, onProgress, progress);
   }
 
   /**
    * A provider disconnect after tools ran cannot safely replay the whole Work. Remove only
    * the failed assistant frame and continue from the persisted tool result once instead.
    */
-  async #continueAfterTransientFailure(agent: Agent, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
+  async #continueAfterTransientFailure(agent: Agent, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void, progress?: RunProgressControl): Promise<void> {
     const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
     if (failure === null || !classifyPartnerRunFailure(failure, { phase: "MODEL", sideEffectState: "NONE" }).retryable) return;
     const failedMessage = agent.state.messages.at(-1);
     if (!isAssistantErrorMessage(failedMessage)) return;
     agent.state.messages = agent.state.messages.slice(0, -1);
     try {
-      await this.#runWithIdleTimeout(agent, () => agent.continue(), live, onProgress);
+      await this.#runWithIdleTimeout(agent, () => agent.continue(), live, onProgress, progress);
     } catch (error) {
       agent.state.messages = [...agent.state.messages, failedMessage];
       throw error;
@@ -598,15 +685,15 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
    * deliverable before reporting completion; a run that still answers silently keeps
    * failing at the acceptance gate instead of looping here.
    */
-  async #continueForMissingBody(agent: Agent, tracker: RunTracker, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
+  async #continueForMissingBody(agent: Agent, tracker: RunTracker, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void, progress?: RunProgressControl): Promise<void> {
     if (tracker.question !== undefined) return;
     if (trailingAssistantText(agent.state.messages.slice(messageStart)) !== "") return;
-    await this.#promptWithIdleTimeout(agent, MISSING_BODY_CONTINUATION_PROMPT, live, onProgress);
+    await this.#promptWithIdleTimeout(agent, MISSING_BODY_CONTINUATION_PROMPT, live, onProgress, progress);
     const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
     if (failure !== null) throw failure;
   }
 
-  async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>, live?: LiveConversationPublisher, onProgress?: () => void): Promise<void> {
+  async #runWithIdleTimeout(agent: Agent, run: () => Promise<void>, live?: LiveConversationPublisher, onProgress?: () => void, progress?: RunProgressControl): Promise<void> {
     let timer: ReturnType<typeof setTimeout> | undefined;
     let signalIdle: (() => void) | undefined;
     const idle = new Promise<"idle">((resolve) => {
@@ -623,6 +710,24 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       refreshIdleDeadline();
       onProgress?.();
       await live?.handle(event);
+      // A run that keeps calling tools refreshes every deadline the runtime has, which is exactly
+      // how the run this watches for went ten hours unremarked. The progress watch asks the one
+      // question none of them ask: whether any of it produced anything.
+      if (event.type === "tool_execution_start" && progress !== undefined && progress.closeOut() === undefined) {
+        const signal: RunProgressSignal = await progress.watch.observeToolCall();
+        if (signal.kind === "nudge") {
+          // Correction first: the model may simply be reading a great deal, and it is the only
+          // party that can tell the difference. Steering injects this into the running turn.
+          agent.steer({
+            content: [{ text: stallNudgeMessage(signal.nudge), type: "text" }],
+            role: "user",
+            timestamp: Date.now(),
+          });
+        } else if (signal.kind === "close-out") {
+          progress.markClosedOut({ reason: signal.reason, toolCallsWithoutChange: signal.toolCallsWithoutChange });
+          agent.abort();
+        }
+      }
     });
     refreshIdleDeadline();
     try {

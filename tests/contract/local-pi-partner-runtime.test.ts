@@ -235,6 +235,106 @@ describe("Pi partner engine runtime", () => {
   // editing its workspace and announced it was investigating. Nothing had touched the disk. The
   // run's own history had been dropped by a window that kept the newest 32 messages and said
   // nothing about the rest, leaving it anchored to its original task description alone.
+  // The incident this reproduces, from the other side: a run that keeps calling tools while its
+  // workspace never changes. Every deadline the runtime had was refreshed by those calls, so ten
+  // hours passed unremarked and the run reported nothing. Thresholds are driven down because no
+  // contract test can wait out a thirty-second probe interval.
+  const stalledRunThresholds = {
+    probeEveryToolCalls: 1,
+    probeMinIntervalMillis: 0,
+    probesBeforeCloseOut: 2,
+    probesBeforeNudge: 1,
+    toolCallCeiling: 1_000,
+  };
+
+  /**
+   * A partner that can write and, when `mutating` is false, chooses not to. A read-only partner is
+   * never watched at all, so an inert mutation is what separates "chose not to produce" from
+   * "cannot produce" — and the distinction is the whole reason this check is safe to ship.
+   */
+  const stalledPartner = (input: { mutating: boolean; turns: number; workspacePath: string; onRequest: (requestMessages: string) => void }) => {
+    const faux = fauxProvider({
+      models: [{ contextWindow: 200_000, id: "stall", maxTokens: 4_096 }],
+      provider: `local-partner-stall-${String(input.mutating)}-${String(input.turns)}`,
+    });
+    faux.setResponses(Array.from({ length: input.turns }, (_, index) => ((context: { messages?: readonly unknown[] }) => {
+      // The nudge is a user message, not part of the prompt, so the whole request is recorded.
+      input.onRequest(JSON.stringify(context.messages ?? []));
+      return index === input.turns - 1
+        ? fauxAssistantMessage([fauxText("交付完成")])
+        : fauxAssistantMessage([fauxToolCall("bash", { command: "ls" })], { stopReason: "toolUse" });
+    }) as never));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    // A new file each turn, so the evidence is a change nothing can round away: the fingerprint is
+    // path, size and mtime, and a rewrite of identical bytes could satisfy all three.
+    let deliveries = 0;
+    return new PiPartnerEngineRuntime({
+      contexts: { ...contexts, loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: input.workspacePath }) },
+      diagnostics: { emit: () => undefined } as never,
+      progress: { thresholds: stalledRunThresholds },
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "run a command",
+          execute: async () => {
+            if (input.mutating) {
+              deliveries += 1;
+              writeFileSync(join(input.workspacePath, `deliverable-${String(deliveries)}.md`), "work");
+            }
+            return { content: [{ text: "ok", type: "text" as const }], details: {} };
+          },
+          label: "bash",
+          name: "bash",
+          parameters: Type.Object({ command: Type.String() }),
+        }],
+        names: ["bash"],
+      },
+    });
+  };
+  const stalledRevision = createPartnerRevision({
+    capabilities: [], createdAt: "2026-09-27T00:00:00.000Z", displayName: "Stall", kind: "local-pi",
+    partnerId: "partner_stall", partnerRevisionId: "partner_revision_stall", registryRevision: 1, skills: [], tools: ["bash"],
+  });
+
+  it("tells a run that it stopped producing, before it ends it", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "joi-stall-"));
+    const prompts: string[] = [];
+    try {
+      const runtime = stalledPartner({ mutating: false, onRequest: (prompt) => prompts.push(prompt), turns: 12, workspacePath: workspace });
+      await expect(runtime.runEphemeral(
+        { actionId: "action_stall", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "交付一个文件", workId: "work_stall" },
+        stalledRevision,
+        { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+      )).rejects.toMatchObject({ partnerRunFailure: { reasonCode: "partner_run_stalled", retryable: false } });
+
+      // The warning reached the model before the run was ended, which is the difference between
+      // correcting a stalled run and merely killing it.
+      expect(prompts.filter((prompt) => prompt.includes("[joi progress notice]")).length).toBe(1);
+    } finally {
+      rmSync(workspace, { force: true, recursive: true });
+    }
+  });
+
+  it("never accuses a run that is still delivering", async () => {
+    const workspace = mkdtempSync(join(tmpdir(), "joi-delivering-"));
+    const prompts: string[] = [];
+    try {
+      const runtime = stalledPartner({ mutating: true, onRequest: (prompt) => prompts.push(prompt), turns: 6, workspacePath: workspace });
+      await expect(runtime.runEphemeral(
+        { actionId: "action_delivering", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "交付一个文件", workId: "work_delivering" },
+        stalledRevision,
+        { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+      )).resolves.toMatchObject({ status: "COMPLETED" });
+      expect(prompts.length).toBeGreaterThan(1);
+      expect(prompts.every((prompt) => !prompt.includes("[joi progress notice]"))).toBe(true);
+    } finally {
+      rmSync(workspace, { force: true, recursive: true });
+    }
+  });
+
   it("keeps a long run's own earlier output in view instead of silently forgetting it", async () => {
     const SENTINEL = "SENTINEL_wrote_docs/phase1-parity-impl-report.md";
     const TURNS = 40;
