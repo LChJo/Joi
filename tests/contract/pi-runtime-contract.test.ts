@@ -651,6 +651,27 @@ describe("Pi reasoning runtime contract", () => {
     expect((bounded[1] as { role?: string }).role).not.toBe("toolResult");
   });
 
+  // pi 0.82 keeps the system prompt out of the transcript (`AgentState.systemPrompt`), so the
+  // message list opens on the user's request; later pi versions seed a leading system message
+  // instead. A trim that only recognised the first shape would drop the second — taking the runtime
+  // permission boundary with it, so the model reads its own constraints as ordinary conversation.
+  it("keeps a leading system message through a trim, in both transcript shapes", () => {
+    const filler = (role: string, text: string) => ({ content: [{ text, type: "text" }], role, timestamp: 1 }) as never;
+    const tail = Array.from({ length: 8 }, (_, index) => filler(index % 2 === 0 ? "assistant" : "toolResult", "y".repeat(1_000)));
+
+    const withSystem = [filler("system", "PERMISSION_BOUNDARY"), filler("user", "TASK_ANCHOR"), ...tail];
+    const bounded = boundRequestByChars(withSystem, 4_000);
+    expect(bounded.length).toBeLessThan(withSystem.length);
+    expect((bounded[0] as { role?: string }).role).toBe("system");
+    expect(JSON.stringify(bounded[0])).toContain("PERMISSION_BOUNDARY");
+    expect(JSON.stringify(bounded[1])).toContain("TASK_ANCHOR");
+    // The anchor is not re-added on top of a tail that still carries it.
+    expect(bounded.filter((message) => JSON.stringify(message).includes("TASK_ANCHOR"))).toHaveLength(1);
+
+    const withoutSystem = [filler("user", "TASK_ANCHOR"), ...tail];
+    expect((boundRequestByChars(withoutSystem, 4_000)[0] as { role?: string }).role).toBe("user");
+  });
+
   it("compacts a token-overflowing session before prompting even below the message cap", async () => {
     const faux = fauxProvider({ provider: "joi-token-overflow" });
     faux.setResponses([

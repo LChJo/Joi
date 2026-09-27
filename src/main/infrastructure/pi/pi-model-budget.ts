@@ -29,19 +29,51 @@ export function boundModelContext(messages: AgentMessage[], maxChars: number = C
   if (messages.length <= CONTEXT_MAX_MESSAGES && JSON.stringify(messages).length <= maxChars) return messages;
   let start = Math.max(0, messages.length - CONTEXT_MAX_MESSAGES);
   while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
+  const leading = leadingSystemMessage(messages);
   const latestUserBefore = (): AgentMessage | undefined => {
     for (let index = start - 1; index >= 0; index -= 1) if (messages[index]?.role === "user") return messages[index];
     return undefined;
   };
-  const initialAnchor = latestUserBefore();
-  let context = [...(initialAnchor === undefined ? [] : [initialAnchor]), ...messages.slice(start)];
+  const assemble = (): AgentMessage[] => {
+    const anchor = latestUserBefore();
+    return [
+      ...(leading === undefined ? [] : [leading]),
+      ...(anchor === undefined ? [] : [anchor]),
+      ...messages.slice(start),
+    ];
+  };
+  let context = assemble();
   while (context.length > 2 && JSON.stringify(context).length > maxChars) {
     start += 1;
     while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
-    const anchor = latestUserBefore();
-    context = [...(anchor === undefined ? [] : [anchor]), ...messages.slice(start)];
+    context = assemble();
   }
   return context;
+}
+
+/**
+ * The transcript's leading system message, when it has one. Never dropped by a trim.
+ *
+ * pi 0.82 carries the system prompt outside the transcript, in `AgentState.systemPrompt`, so the
+ * message list opens on the user's request. Later pi versions move it into a leading system message
+ * instead. A trim that only knew the first shape would drop that message — and with it the runtime
+ * permission boundary, leaving the model to read its own constraints as ordinary conversation.
+ */
+export function leadingSystemMessage(messages: readonly AgentMessage[]): AgentMessage | undefined {
+  return messages[0]?.role === "system" ? messages[0] : undefined;
+}
+
+/**
+ * The opening messages a trim must never drop, limited to those the retained tail does not already
+ * carry. Covers both transcript shapes described on `leadingSystemMessage`, plus pi 0.82's habit of
+ * opening on the task itself.
+ */
+function anchorBefore(messages: readonly AgentMessage[], start: number): AgentMessage[] {
+  const leading = messages[0];
+  const candidates = leading?.role === "system"
+    ? [leading, ...(messages[1]?.role === "user" ? [messages[1]] : [])]
+    : leading?.role === "user" ? [leading] : [];
+  return candidates.filter((_, index) => index < start);
 }
 
 /**
@@ -191,6 +223,5 @@ export function boundRequestByChars(messages: readonly AgentMessage[], maxChars:
   // A request must never begin on an orphaned tool result: providers reject a result whose call is gone.
   while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
   if (start === 0) return [...messages];
-  const anchor = messages[0]?.role === "user" ? [messages[0]] : [];
-  return [...anchor, ...messages.slice(start)];
+  return [...anchorBefore(messages, start), ...messages.slice(start)];
 }
