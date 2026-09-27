@@ -542,6 +542,34 @@ export interface RuntimeDiagnosticEventMap {
     workbenchId: string;
     workId: string;
   };
+  /**
+   * A partner run summarized the part of its transcript that no longer fits the request. This is
+   * the ordinary way a long run keeps its history: the summary replaces those messages in every
+   * later request, and the run's own transcript is left intact for the result body and the UI
+   * timeline. `tokensBefore` is the estimate that tripped the threshold, not a billed figure.
+   */
+  "joi.partner.context_compacted": {
+    compactedMessages: number;
+    count: number;
+    tokensBefore: number;
+  };
+  /**
+   * The summary call failed, so the history could not be compacted this request. The run continues
+   * on the last usable checkpoint plus whatever bound applied; recorded because a route that keeps
+   * failing here is silently back to losing history, which is the defect this replaced.
+   */
+  "joi.partner.context_summary_failed": {
+    reasonCode: string;
+  };
+  /**
+   * A request had to drop history outright — summary unavailable, or a summary that still left the
+   * request over budget. The messages are gone from that request and the model was told so in the
+   * request itself; recorded so the honest-degradation path is never mistaken for silent trimming.
+   */
+  "joi.partner.context_truncated": {
+    omittedChars: number;
+    omittedMessages: number;
+  };
   "joi.partner.skills.injected": {
     actionId: string;
     instanceId: string;

@@ -60,7 +60,19 @@ export function boundModelContext(messages: AgentMessage[], maxChars: number = C
  * permission boundary, leaving the model to read its own constraints as ordinary conversation.
  */
 export function leadingSystemMessage(messages: readonly AgentMessage[]): AgentMessage | undefined {
-  return messages[0]?.role === "system" ? messages[0] : undefined;
+  return roleOf(messages[0]) === "system" ? messages[0] : undefined;
+}
+
+/**
+ * A message's role, read without committing to the transcript's own union.
+ *
+ * pi 0.82 keeps the system prompt outside `AgentMessage`, in `AgentState.systemPrompt`, so
+ * `"system"` is not one of its roles; later versions seed it as a leading message, where it is.
+ * Reading the role as a plain string lets one rule cover both shapes rather than being written
+ * against whichever version happens to be installed.
+ */
+function roleOf(message: AgentMessage | undefined): string | undefined {
+  return message === undefined ? undefined : (message as { role?: string }).role;
 }
 
 /**
@@ -70,10 +82,16 @@ export function leadingSystemMessage(messages: readonly AgentMessage[]): AgentMe
  */
 function anchorBefore(messages: readonly AgentMessage[], start: number): AgentMessage[] {
   const leading = messages[0];
-  const candidates = leading?.role === "system"
-    ? [leading, ...(messages[1]?.role === "user" ? [messages[1]] : [])]
-    : leading?.role === "user" ? [leading] : [];
-  return candidates.filter((_, index) => index < start);
+  const task = messages[1];
+  const anchor: AgentMessage[] = [];
+  if (leading !== undefined && roleOf(leading) === "system") {
+    anchor.push(leading);
+    if (task !== undefined && roleOf(task) === "user") anchor.push(task);
+  } else if (leading !== undefined && roleOf(leading) === "user") {
+    anchor.push(leading);
+  }
+  // The candidate positions are their own indices, so one filter drops whatever the tail keeps.
+  return anchor.filter((_, index) => index < start);
 }
 
 /**
@@ -90,6 +108,23 @@ export function modelContextMaxChars(model: { contextWindow?: number }): number 
   if (window === undefined || !Number.isFinite(window) || window <= 0) return CONTEXT_UNKNOWN_WINDOW_MAX_CHARS;
   const reserve = Math.min(CONTEXT_OUTPUT_RESERVE_TOKENS, Math.floor(window / 2));
   return Math.max(CONTEXT_MIN_CHARS, Math.min(CONTEXT_CEILING_CHARS, window - reserve));
+}
+
+/** Share of a route's window a compaction holds back for the summary call and the reply after it. */
+const SUMMARIZATION_RESERVE_SHARE = 0.15;
+
+/**
+ * Tokens a compaction holds back for its own summary call and the reply that follows.
+ *
+ * pi's default is sized for the windows pi was written against. On a small route it exceeds the
+ * whole window, which makes `shouldCompact` true for every request — so the route would summarize
+ * on each one, spending its window on summaries of summaries. The reserve is therefore capped at a
+ * share of the window and floored so a narrow route can still write one.
+ */
+export function compactionReserveTokens(model: { contextWindow?: number }, fallback = 16_384): number {
+  const window = model.contextWindow;
+  if (window === undefined || !Number.isFinite(window) || window <= 0) return fallback;
+  return Math.max(4_096, Math.min(fallback, Math.floor(window * SUMMARIZATION_RESERVE_SHARE)));
 }
 
 /**

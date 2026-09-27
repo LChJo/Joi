@@ -216,6 +216,133 @@ describe("local Pi coding partner runtime", () => {
 });
 
 describe("Pi partner engine runtime", () => {
+  // The incident this reproduces: a partner run worked for hours, wrote files, and then found them
+  // on disk while unable to remember writing them — so it concluded another process had been
+  // editing its workspace and announced it was investigating. Nothing had touched the disk. The
+  // run's own history had been dropped by a window that kept the newest 32 messages and said
+  // nothing about the rest, leaving it anchored to its original task description alone.
+  it("keeps a long run's own earlier output in view instead of silently forgetting it", async () => {
+    const SENTINEL = "SENTINEL_wrote_docs/phase1-parity-impl-report.md";
+    const TURNS = 40;
+    const requests: string[] = [];
+    let summaries = 0;
+    let turn = 0;
+    const faux = fauxProvider({
+      models: [{ contextWindow: 32_000, id: "long-run", maxTokens: 4_096 }],
+      provider: "local-partner-long-run",
+    });
+    faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
+      // The summarization call is an ordinary provider request and is answered as one.
+      if ((context.systemPrompt ?? "").includes("context summarization assistant")) {
+        summaries += 1;
+        return fauxAssistantMessage([fauxText(`## Goal\nFINISH_THE_TASK\n\n## Progress\n### Done\n- [x] ${SENTINEL}`)]);
+      }
+      requests.push(JSON.stringify(context.messages));
+      turn += 1;
+      if (turn >= TURNS) return fauxAssistantMessage([fauxText("交付完成")]);
+      return fauxAssistantMessage([fauxToolCall("read", { path: `/tmp/file-${String(turn)}.ts` })], { stopReason: "toolUse" });
+    }) as never));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "read a large file",
+          execute: async () => ({ content: [{ text: `-${"x".repeat(3_000)}`, type: "text" as const }], details: {} }),
+          label: "read",
+          name: "read",
+          parameters: Type.Object({ path: Type.String() }),
+        }],
+        names: ["read"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-09-27T00:00:00.000Z", displayName: "Long run", kind: "local-pi",
+      partnerId: "partner_long", partnerRevisionId: "partner_revision_long", registryRevision: 1, skills: [], tools: ["read"],
+    });
+    const budget = modelRequestBudget({ contextWindow: 32_000 });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_long", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "TASK_ANCHOR：实现 P0 并交付报告", workId: "work_long" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentIds: undefined, skillEnvironmentKeys: [], skillSection: "" } as never,
+    )).resolves.toMatchObject({ status: "COMPLETED" });
+
+    // Every request stayed inside the budget the route was sized to, for the whole run.
+    expect(requests.length).toBeGreaterThan(20);
+    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(budget.messagesMaxChars + 2_000);
+    // The task itself is never lost: it is the anchor every request opens on.
+    const lastMessages = JSON.parse(requests.at(-1) ?? "[]") as { role?: string }[];
+    expect(lastMessages[0]?.role).toBe("user");
+    expect(JSON.stringify(lastMessages[0])).toContain("TASK_ANCHOR：实现 P0 并交付报告");
+    // And the run's own earlier output survives — summarized, not dropped. Without compaction this
+    // is the assertion that fails: the sentinel scrolls out of a 32-message window long before the
+    // last request, which is exactly how the run lost track of what it had already produced.
+    expect(summaries).toBeGreaterThan(0);
+    expect(requests.at(-1)).toContain(SENTINEL);
+  });
+
+  it("says so when a request has to drop history, instead of leaving a silent gap", async () => {
+    const TURNS = 30;
+    let turn = 0;
+    const requests: string[] = [];
+    const faux = fauxProvider({
+      models: [{ contextWindow: 32_000, id: "no-summary", maxTokens: 4_096 }],
+      provider: "local-partner-no-summary",
+    });
+    faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
+      // Every summarization attempt fails, so the run has to fall back to dropping history.
+      if ((context.systemPrompt ?? "").includes("context summarization assistant")) {
+        return fauxAssistantMessage([fauxText("")], { errorMessage: "summarization unavailable", stopReason: "error" });
+      }
+      requests.push(JSON.stringify(context.messages));
+      turn += 1;
+      if (turn >= TURNS) return fauxAssistantMessage([fauxText("交付完成")]);
+      return fauxAssistantMessage([fauxToolCall("read", { path: `/tmp/file-${String(turn)}.ts` })], { stopReason: "toolUse" });
+    }) as never));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const diagnostics: { type?: string }[] = [];
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      diagnostics: { emit: (event: never) => { diagnostics.push(event); } } as never,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "read a large file",
+          execute: async () => ({ content: [{ text: `-${"x".repeat(3_000)}`, type: "text" as const }], details: {} }),
+          label: "read",
+          name: "read",
+          parameters: Type.Object({ path: Type.String() }),
+        }],
+        names: ["read"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-09-27T00:00:00.000Z", displayName: "No summary", kind: "local-pi",
+      partnerId: "partner_plain", partnerRevisionId: "partner_revision_plain", registryRevision: 1, skills: [], tools: ["read"],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_plain", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "TASK_ANCHOR", workId: "work_plain" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ status: "COMPLETED" });
+
+    // The gap is announced in the request itself, in words aimed at the inference the run made last
+    // time: that something outside it had been changing the workspace.
+    const last = requests.at(-1) ?? "";
+    expect(last).toContain("joi context notice");
+    expect(last).toContain("no other process modified your workspace");
+    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + 2_000);
+  });
+
   it.each(["ephemeral", "resident"])("rejects %s Skill runs without a workspace before model initialization", async (mode) => {
     const resolve = vi.fn(async () => { throw new Error("must not initialize model"); });
     const runtime = new PiPartnerEngineRuntime({

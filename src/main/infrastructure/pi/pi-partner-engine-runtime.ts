@@ -8,7 +8,7 @@ import {
   type AgentMessage,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { Type, type Api, type Model, type Models } from "@earendil-works/pi-ai";
 
 import { DomainError } from "../../domain/errors.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
@@ -40,6 +40,7 @@ import type { NativeAgentEvent } from "../../application/ports/native-agent-even
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiStream } from "./pi-usage.js";
+import { createPiContextManager, type PiContextDiagnostic, type PiContextManager } from "./pi-context-manager.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
 const DEFAULT_TOOL_TIMEOUT_MILLIS = 15 * 60_000;
@@ -70,6 +71,12 @@ interface RunTracker {
 interface WarmAgent {
   usageContext: { current: UsageContext };
   agent: Agent;
+  /**
+   * Carried with the agent so a later turn of the same instance inherits the summary instead of
+   * re-deriving it. It is dropped with the warm entry: its `cut` indexes a transcript, so a
+   * rebuilt agent must start over rather than point into one it never saw.
+   */
+  context: PiContextManager;
   /** Kept with the cached model so a reused instance bounds its background without re-resolving. */
   requestBudget: ModelRequestBudget;
   /** The pinned model, so a route failure can be attributed to the model it was pinned to. */
@@ -318,6 +325,28 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     }
   }
 
+  /**
+   * Builds the request-time context manager for one run.
+   *
+   * A partner run is a single `agent.prompt()` that then works for as long as the task takes, so
+   * nothing inside pi ever reaches a Turn boundary and no compaction would otherwise run: the run
+   * would keep every request inside the window by forgetting its own history, silently. This is the
+   * compaction that replaces that, and the diagnostics below are how a route that keeps failing to
+   * summarize stays visible instead of quietly reverting to the old behaviour.
+   */
+  #contextManager(input: { messagesMaxChars: number; model: Model<Api>; models: Models; request: PartnerRunRequest }): PiContextManager {
+    const where = { workbenchId: input.request.workbenchId, workId: input.request.workId };
+    return createPiContextManager({
+      messagesMaxChars: input.messagesMaxChars,
+      model: input.model,
+      models: input.models,
+      onDiagnostic: (event: PiContextDiagnostic) => {
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, event.type, { ...event, ...where });
+      },
+      thinkingLevel: modelRequiresAlwaysOnThinking(input.model.baseUrl) ? "low" : "off",
+    });
+  }
+
   async #runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, tracker: RunTracker): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
@@ -334,6 +363,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       createAskUserTool(trackerRef),
     ]);
     const allowed = new Set(tools.map((tool) => tool.name));
+    const window = this.#contextManager({
+      messagesMaxChars: budget.messagesMaxChars,
+      model: resolved.model,
+      models: resolved.models,
+      request,
+    });
     const agent = new Agent({
       afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(trackerRef, context)),
       beforeToolCall: ({ toolCall }) => {
@@ -350,7 +385,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       sessionId: externalRunId,
       streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
       toolExecution: "sequential",
-      transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, budget.messagesMaxChars)),
+      transformContext: (messages, signal) => window.transformContext(messages, signal),
     });
     const live = context.onEvent === undefined && context.onToolTrace === undefined
       ? undefined
@@ -429,6 +464,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         revision, tools.map((tool) => tool.name), execution.workspacePath !== undefined, budget.systemMaxChars,
       );
       const allowed = new Set(tools.map((tool) => tool.name));
+      const window = this.#contextManager({
+        messagesMaxChars: budget.messagesMaxChars,
+        model: resolved.model,
+        models: resolved.models,
+        request: input.request,
+      });
       const agent = new Agent({
         afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(sideEffectTracker, context)),
         beforeToolCall: ({ toolCall }) => {
@@ -445,11 +486,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         sessionId: `local_pi_instance:${input.instanceId}`,
         streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => usageContext.current),
         toolExecution: "sequential",
-        transformContext: (messages) => Promise.resolve(boundPartnerModelContext(messages, budget.messagesMaxChars)),
+        transformContext: (messages, signal) => window.transformContext(messages, signal),
       });
       warm = {
         usageContext,
         agent,
+        context: window,
         requestBudget: budget,
         modelId: pin.modelId,
         partnerRevisionId: revision.partnerRevisionId,
