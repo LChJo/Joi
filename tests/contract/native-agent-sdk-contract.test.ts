@@ -86,11 +86,16 @@ describe("official native Agent SDK adapters", () => {
     expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("Disabled tools:"));
     expect((calls[0]?.options as { env?: Record<string, string> }).env?.ANTHROPIC_API_KEY).toBe("private-key");
     expect(events).toEqual(expect.arrayContaining([
-      { type: "tool_activity", toolCallId: "tool-1", toolName: "Read", state: "started" },
+      // The started frame names what kind of action it is. The label comes from the tool name, not
+      // from the arguments: a CLI's arguments are what ADR 0014 keeps inside the infrastructure.
+      { type: "tool_activity", toolCallId: "tool-1", toolName: "Read", state: "started", summary: "读取文件" },
       { type: "tool_activity", toolCallId: "tool-1", toolName: "Read", state: "completed" },
       { type: "message", role: "agent", parts: [{ type: "text", text: "done" }] },
     ]));
+    // The fixture's arguments and its result are both sentinels; neither may cross, and the label
+    // above is why the second assertion is not simply a weaker restatement of the first.
     expect(JSON.stringify(events)).not.toContain("private");
+    expect(JSON.stringify(events)).not.toContain("PRIVATE_RESULT");
 
     await runtime.runResidentTurn({ ...(first.externalSessionRef === undefined ? {} : { externalSessionRef: first.externalSessionRef }), instanceId: "instance", knowledgeSection: "", request, restoredMessages: null, revision: revision("claude-code"), skillEnvironmentKeys: [], skillSection: "" });
     expect(calls[1]?.options).toMatchObject({ resume: "claude-session" });

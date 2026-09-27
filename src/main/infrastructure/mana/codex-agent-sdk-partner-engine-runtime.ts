@@ -8,6 +8,7 @@ import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRu
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
+import { toolCallLabel } from "../../application/partners/tool-trace-presentation.js";
 import { NativeAgentEventProjector } from "../../application/partners/native-agent-event-projector.js";
 import type { AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../application/partners/native-agent-session-reference.js";
@@ -204,7 +205,12 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
         if (item.type === "agent_message" && event.type === "item.completed") { texts.push(item.text); await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: item.text }] }); continue; }
         const toolName = codexToolName(item);
         if (toolName === undefined) continue;
-        if (event.type === "item.started" && !started.has(item.id)) { started.add(item.id); await emit?.({ type: "tool_activity", toolCallId: item.id, toolName, state: "started" }); }
+        // A readable verb for the row. ADR 0014 keeps this call's arguments — a command, a patch —
+        // inside the infrastructure, so the label is derived from the tool name alone.
+        if (event.type === "item.started" && !started.has(item.id)) {
+          started.add(item.id);
+          await emit?.({ type: "tool_activity", toolCallId: item.id, toolName, state: "started", summary: toolCallLabel(toolName) });
+        }
         const state = codexToolState(item, event.type);
         if (state !== undefined && !ended.has(item.id)) { ended.add(item.id); await emit?.({ type: "tool_activity", toolCallId: item.id, toolName, state }); }
       }

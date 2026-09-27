@@ -8,6 +8,7 @@ import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRu
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
+import { toolCallLabel } from "../../application/partners/tool-trace-presentation.js";
 import { NativeAgentEventProjector } from "../../application/partners/native-agent-event-projector.js";
 import type { AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../application/partners/native-agent-session-reference.js";
@@ -26,6 +27,17 @@ const CLAUDE_MUTATING_TOOLS = new Set(["Bash", "Edit", "Write", "NotebookEdit"])
 
 export interface ClaudeAgentSdkSurface {
   query(input: { options?: ClaudeOptions; prompt: string }): AsyncIterable<SDKMessage>;
+}
+
+/**
+ * A readable verb for the row, derived from the tool name alone.
+ *
+ * ADR 0014 requires a CLI-backed call's arguments — its command, its patch — to be dropped before
+ * the event port, so unlike pi there is nothing here to describe the call with. The name is still
+ * enough to say what kind of action it was, which is what the timeline was missing.
+ */
+function describedCall(toolName: string): { summary: string } {
+  return { summary: toolCallLabel(toolName) };
 }
 
 export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
@@ -196,7 +208,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           if (block.type === "tool_use" && typeof block.name === "string" && typeof block.id === "string") {
             toolNames.set(block.id, block.name);
             started.add(block.id);
-            await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started" });
+            await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started", ...describedCall(block.name) });
           }
         }
       }
@@ -209,7 +221,8 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
             if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && !started.has(block.id)) {
               toolNames.set(block.id, block.name);
               started.add(block.id);
-              await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started" });
+              // The whole block is present here, so this path always has arguments to describe.
+              await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started", ...describedCall(block.name) });
             } else if (block.type === "tool_result" && typeof block.tool_use_id === "string" && !ended.has(block.tool_use_id)) {
               const name = toolNames.get(block.tool_use_id);
               if (name !== undefined) {

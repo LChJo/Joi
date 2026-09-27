@@ -32,6 +32,14 @@ Claude 与 Codex 能独立升级并按官方契约测试；用户 CLI 所有权�
 
 事件表面与展示投影对绝对路径的处理从「整段丢弃」改为「缩写后显示」：conversation 条目、tool activity 摘要、WorkResult 摘要、首页卡片结论、统计标签、workbench 上下文快照以及 LAN/远端响应统一缩写为「盘符/根 + 末三层」（`src/main/domain/text/path-abbreviation.ts`，幂等，重复脱敏不会继续吃掉路径段）。凭据的掩码规则一字未改；`onToolTrace` 私密通道仍保留完整路径，因此「摘要里看不到的东西，展开后仍看得到」这一对比仍然成立。诊断链路不受影响，仍整条拒写含路径的事件。上一条修订中「载荷禁止条款逐字不变」由此被本条取代。
 
+## 2026-09-27 修订（native 工具行的可读标签）
+
+工具 activity 事件的 `started` 帧此前只带 `toolCallId` / `toolName` / `state`。pi 引擎一直额外带一行摘要（由工具**参数**派生，脱敏并限定 ≤200 字符），两个 CLI 引擎没有，于是同一个 UI 里 pi 的工具行有内容、Claude/Codex 的行只有内部工具名——`apply_patch`、`shell` 这种。
+
+现在两个 CLI 引擎也带一行标签，但**由工具名派生，不由参数派生**（`toolCallLabel`，见 `src/main/application/partners/tool-trace-presentation.ts`）。本条不是放松上面「参数、命令、结果一律先丢弃再越过端口」的约束，而是维持它：一个 shell 命令的正文正是这条规则针对的东西，而工具名是标识符、不是载荷。
+
+因此两引擎的摘要**刻意不同**：pi 的由参数派生，CLI 的由名字派生。差异来自参数来源不同——pi 的参数由 joi 自己产生，CLI 的参数来自一个不可观测的黑盒——而不是实现不一致。若将来要让两者完全一致，需要先改本 ADR 的载荷约束。
+
 ## 2026-09-18 修订（AC-33 / AC-55 / AC-62）
 
 已配置的 Claude 不应被环境 API key 检查误判为未安装。health 只检查用户 CLI；probe、ephemeral 和 resident 统一交由原生 CLI 处理认证。仅用户发起的无工具真实 probe 成功才代表调用可用；原生认证失败继续归一为安全原因码。

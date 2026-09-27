@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -60,7 +60,7 @@ describe("Pi coding tool workspace scope", () => {
     }
   });
 
-  it("treats the workspace as a home base without enforcing path boundaries", async () => {
+  it("still reads outside the workspace, which the write boundary deliberately does not confine", async () => {
     const root = mkdtempSync(join(tmpdir(), "joi-pi-open-scope-"));
     const workspace = join(root, "workspace");
     const outside = join(root, "outside.txt");
@@ -74,10 +74,63 @@ describe("Pi coding tool workspace scope", () => {
     const outsideResult = await read.execute("call-outside", { path: outside });
     const traversalResult = await read.execute("call-traversal", { path: "../outside.txt" });
     expect(JSON.stringify(workspaceResult.content)).toContain("workspace body");
-    // External access is prompt governance plus audit, not tool enforcement: partners may
-    // leave the workspace when the task requires it and must report outside writes.
+    // Reads are not what the boundary protects: installed skills, user configuration and reference
+    // trees are all legitimately outside the workspace, and refusing them would break the work.
     expect(JSON.stringify(outsideResult.content)).toContain("external body");
     expect(JSON.stringify(traversalResult.content)).toContain("external body");
+  });
+
+  it("refuses every write that lands outside the workspace, and allows the ones inside", async () => {
+    const root = mkdtempSync(join(tmpdir(), "joi-pi-write-scope-"));
+    const workspace = join(root, "workspace");
+    const elsewhere = join(root, "elsewhere");
+    mkdirSync(workspace);
+    mkdirSync(elsewhere);
+
+    const tools = new BuiltinPiCodingToolFactory().create(workspace, ["write", "edit"]);
+    const write = tools.find((tool) => tool.name === "write");
+    const edit = tools.find((tool) => tool.name === "edit");
+    if (write === undefined || edit === undefined) throw new Error("write tools missing");
+
+    await expect(write.execute("call-inside", { content: "kept", path: join(workspace, "kept.md") })).resolves.toBeDefined();
+    // Absolute, traversal and `~` spellings all resolve outward, so all three are refused rather
+    // than only the one that happens to be written as an absolute path.
+    await expect(write.execute("call-absolute", { content: "x", path: join(elsewhere, "no.md") }))
+      .rejects.toThrow(/outside the assigned workspace/u);
+    await expect(write.execute("call-traversal", { content: "x", path: "../elsewhere/no.md" }))
+      .rejects.toThrow(/outside the assigned workspace/u);
+    // The file has to exist for `edit` to reach its write: it reads before it replaces. The
+    // refusal still reaches the model, wrapped in the tool's own wording with the reason intact.
+    writeFileSync(join(elsewhere, "existing.md"), "kept");
+    await expect(edit.execute("call-edit", { edits: [{ newText: "x", oldText: "kept" }], path: join(elsewhere, "existing.md") }))
+      .rejects.toThrow(/outside the assigned workspace/u);
+    expect(readFileSync(join(elsewhere, "existing.md"), "utf8")).toBe("kept");
+    expect(readdirSync(elsewhere)).toEqual(["existing.md"]);
+
+    // The refusal teaches the boundary instead of only enforcing it: the model reads the error.
+    expect(readFileSync(join(workspace, "kept.md"), "utf8")).toBe("kept");
+  });
+
+  it("refuses a write that leaves the workspace through a symlinked directory", async () => {
+    const root = mkdtempSync(join(tmpdir(), "joi-pi-link-scope-"));
+    const workspace = join(root, "workspace");
+    const target = join(root, "target");
+    mkdirSync(workspace);
+    mkdirSync(target);
+    try {
+      // A junction works without elevation on Windows; the equivalent on POSIX is a plain symlink.
+      symlinkSync(target, join(workspace, "link"), process.platform === "win32" ? "junction" : "dir");
+    } catch {
+      return; // No permission to create one here; the containment rule is covered by the tests above.
+    }
+
+    const [write] = new BuiltinPiCodingToolFactory().create(workspace, ["write"]);
+    if (write === undefined) throw new Error("write tool missing");
+    // `<workspace>/link/no.md` is inside as a string and outside once the filesystem resolves it,
+    // which is exactly the escape a string comparison would miss.
+    await expect(write.execute("call-link", { content: "x", path: join(workspace, "link", "no.md") }))
+      .rejects.toThrow(/outside the assigned workspace/u);
+    expect(readdirSync(target)).toEqual([]);
   });
 
   it("returns staged PNG files as image content for a vision-capable partner model", async () => {

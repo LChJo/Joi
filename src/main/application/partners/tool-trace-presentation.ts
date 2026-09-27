@@ -197,3 +197,47 @@ export function toolCallCommand(toolName: string, args: unknown): BoundedToolBod
 export function toolCallResultBody(result: unknown): BoundedToolBody {
   return bound(maskSecretText(resultText(result)));
 }
+
+/**
+ * A short label for a call whose arguments must not leave the infrastructure.
+ *
+ * The CLI-backed engines can describe a call from the tool's name but not from its arguments:
+ * ADR 0014 requires parameters, commands and results to be dropped before the event port, and a
+ * shell command's text is exactly what that rule is about. The timeline therefore gets a readable
+ * verb instead of the engine's internal tool name, which is the difference between a row that says
+ * "apply_patch" and one a reader understands.
+ *
+ * pi derives its summary from arguments instead, because its arguments never came from a black box
+ * the way a CLI's do. The two are deliberately not the same thing.
+ */
+export function toolCallLabel(toolName: string): string {
+  // The CLI engines capitalise their tool names (`Read`, `Write`) where pi does not, and the two
+  // should read the same in the timeline.
+  switch (toolName.toLowerCase()) {
+    case "bash":
+    case "shell":
+    case "command_execution":
+      return "运行命令";
+    case "read":
+      return "读取文件";
+    case "write":
+      return "写入文件";
+    case "edit":
+    case "apply_patch":
+    case "file_change":
+      return "修改文件";
+    case "find":
+    case "grep":
+    case "ls":
+      return "检索文件";
+    case "web_search":
+    case "fetch_content":
+    case "get_search_content":
+      return "检索网络";
+    case "ask_user":
+      return "询问用户";
+    default:
+      // An unknown tool still gets a bounded label; its name is an identifier, not a payload.
+      return toolName.slice(0, TOOL_CALL_SUMMARY_MAX_CHARS);
+  }
+}

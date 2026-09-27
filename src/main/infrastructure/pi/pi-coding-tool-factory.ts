@@ -9,6 +9,7 @@ import {
   createWriteTool,
 } from "@earendil-works/pi-coding-agent";
 import { realpathSync, statSync } from "node:fs";
+import { guardedEditOperations, guardedWriteOperations } from "./pi-filesystem-boundary.js";
 import { PI_WEB_ACCESS_TOOL_NAMES, PiWebAccessToolFactory } from "./pi-web-access-tools.js";
 import { PI_FINANCIAL_RESEARCH_TOOL_NAMES, PiFinancialResearchToolFactory } from "./pi-financial-research-tools.js";
 
@@ -60,9 +61,14 @@ const factories: Record<string, (cwd: string) => AgentTool> = {
 };
 
 /**
- * Tools carry no path sandbox: the workspace scope is prompt governance, not tool
- * enforcement. Partners may leave the workspace when the task requires it and must
- * report every outside write in their final reply (see the engine system prompt).
+ * The two tools that write are given operations that refuse a path outside the workspace; the rest
+ * read, and reads are not confined (see pi-filesystem-boundary.ts for why enforcement sits here
+ * rather than in argument inspection).
+ *
+ * `bash` is deliberately not on this list, and cannot be: a shell command's writes are whatever it
+ * chooses to run, and no argument inspection decides that. It is the honest limit of this
+ * boundary — a partner with `bash` can still write outside the workspace — and the prompt says so
+ * rather than implying a containment the runtime does not have.
  */
 export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
   readonly names: readonly string[] = PI_PARTNER_TOOL_NAMES;
@@ -84,6 +90,8 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
           env: safeEnvironment(context.env, options?.environmentKeys ?? []),
         }),
       });
+      if (name === "write") return createWriteTool(canonical, { operations: guardedWriteOperations(canonical) });
+      if (name === "edit") return createEditTool(canonical, { operations: guardedEditOperations(canonical) });
       if ((PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name)) {
         const [tool] = this.webAccess.create([name]);
         if (tool === undefined) throw new Error("partner_tool_not_allowed");
