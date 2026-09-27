@@ -11,6 +11,43 @@ enum RemoteConnectionState {
 
 enum RemoteConnectionPath { none, direct, relay, mixed }
 
+/// A refusal from the host, carrying the reason code it answered with.
+///
+/// The host does not drop the session when it refuses an operation — it answers with an error
+/// envelope, and the code in it is the only thing that says *why*. Collapsing that into a generic
+/// failure is what made a refused action look like a button that does nothing: the draft cleared,
+/// the form collapsed, the card unchanged. The code travels as far as the screen so the sentence
+/// can differ, and so a bug report carries the one detail worth having.
+class RemoteActionFailure implements Exception {
+  const RemoteActionFailure(this.code, [this.detail = '']);
+
+  /// The host's own reason code, e.g. `joi_clarification_unavailable`.
+  final String code;
+
+  /// The host's message for the refusal, when it sent one.
+  final String detail;
+
+  @override
+  String toString() => 'RemoteActionFailure($code)';
+}
+
+/// The refusal a response carries, or a generic one when the host named no reason.
+///
+/// The host does not drop the session when it refuses an operation — it answers with an error
+/// envelope, and the code inside is the only thing that says *why*. Reporting every refusal as one
+/// anonymous failure is what made a dead button indistinguishable from a phone that was never
+/// paired: the screen had a single sentence, so every cause got that sentence.
+RemoteActionFailure remoteFailureOf(Map<String, dynamic> response) {
+  final error = response['error'];
+  if (error is Map<String, dynamic>) {
+    return RemoteActionFailure(
+      error['code'] as String? ?? 'remote_command_failed',
+      error['message'] as String? ?? '',
+    );
+  }
+  return const RemoteActionFailure('remote_command_failed');
+}
+
 class RemoteGoalCard {
   const RemoteGoalCard({
     required this.activeWork,

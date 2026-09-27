@@ -45,6 +45,37 @@ class GoalActions extends StatefulWidget {
   State<GoalActions> createState() => _GoalActionsState();
 }
 
+/// What to tell the user when an action did not go through.
+///
+/// One sentence for every cause is what made this look like a button that does nothing: a phone
+/// that has not been paired, a host that is too old, a dropped session, a host that never
+/// answered, and a host that answered "no" all read identically, and none of them said which. Each
+/// now says what it is — and a refusal keeps the host's own reason code, which is the one part of
+/// this a bug report actually needs.
+String actFailureNotice(Object error) {
+  if (error is RemoteActionFailure) {
+    return switch (error.code) {
+      'joi_clarification_unavailable' => '这张卡片已经不需要回答了，下拉刷新看看最新状态。',
+      'joi_retry_unavailable' => '这个任务现在不能继续，下拉刷新看看最新状态。',
+      'joi_workbench_invalid' || 'joi_partner_selection_invalid' =>
+        '你选的工作台或搭档已经不可用了，请重新选择。',
+      'remote_operation_forbidden' => '这版 joi 还不支持这个操作，请在电脑端完成。',
+      'remote_read_busy' || 'remote_cursor_expired' => 'joi 正在忙，稍后重试。',
+      _ => 'joi 没有接受这个操作（${error.code}）。下拉刷新看看最新状态。',
+    };
+  }
+  if (error is TimeoutException) return 'joi 超过 20 秒没有响应，请稍后重试。输入已保留。';
+  if (error is StateError) {
+    return switch (error.message) {
+      'remote_upgrade_required' => '手机端和 joi 的版本不匹配，请在电脑端更新 joi 后重新配对。',
+      'joi_remote_not_ready' => '还没和 joi 建立会话，请稍等或重新扫码。',
+      'joi_remote_disconnected' => '和 joi 的连接断了，正在重连，稍后重试。输入已保留。',
+      _ => '操作未完成，请刷新查看最新状态后重试。输入已保留。',
+    };
+  }
+  return '操作未完成，请刷新查看最新状态后重试。输入已保留。';
+}
+
 class _GoalActionsState extends State<GoalActions> {
   final _draft = TextEditingController();
   bool _showContinue = false;
@@ -90,8 +121,8 @@ class _GoalActionsState extends State<GoalActions> {
         setState(() => _showContinue = false);
         widget.onChanged?.call();
       }
-    } catch (_) {
-      if (mounted) setState(() => _notice = '操作未确认，请刷新查看最新状态后重试。输入已保留。');
+    } catch (error) {
+      if (mounted) setState(() => _notice = actFailureNotice(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }

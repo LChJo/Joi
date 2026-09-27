@@ -31,6 +31,8 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
 
   @override
   void setForeground(bool value) {}
+  /// Set to make the next action fail the way the real controller does.
+  Object? actError;
   @override
   Future<void> act(
     String inputId,
@@ -42,6 +44,8 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
     String? questionId,
     int? questionVersion,
   }) async {
+    final failure = actError;
+    if (failure != null) throw failure;
     actions.add({
       'inputId': inputId,
       'action': action,
@@ -252,6 +256,49 @@ void main() {
       expect(controller.actions.last, containsPair('inputId', 'g'));
     },
   );
+
+  testWidgets('names the refusal instead of one sentence for every cause', (
+    tester,
+  ) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+      ),
+    )..actError = const RemoteActionFailure('joi_clarification_unavailable');
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalActions(
+            controller: controller,
+            goal: const RemoteGoalCard(
+              goalId: 'g',
+              title: '任务',
+              status: 'COMPLETED',
+              canDelete: true,
+              activeWork: 0,
+              completedWork: 1,
+              totalWork: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('继续对话'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextField), '继续补证');
+    await tester.tap(find.text('提交继续'));
+    await tester.pump();
+
+    // The host's reason reaches the screen, and the draft survives so it can be retried — a
+    // failure that clears the input is a failure the user has to type out again.
+    expect(find.textContaining('已经不需要回答'), findsOneWidget);
+    expect(find.textContaining('操作未确认'), findsNothing);
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller?.text,
+      '继续补证',
+    );
+  });
 
   testWidgets('answers a partner question without creating a new message', (
     tester,

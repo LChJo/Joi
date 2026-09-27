@@ -838,7 +838,9 @@ class NativeRemoteController extends ChangeNotifier
     final completer = _pending[response['requestId'] as String];
     if (response['error'] != null) {
       if (completer != null && !completer.isCompleted) {
-        completer.completeError(StateError('joi_remote_command_failed'));
+        // The code travels: a refusal the screen can name is a refusal the user can act on and a
+        // bug report can quote. Flattening them all into one failure threw that away here.
+        completer.completeError(remoteFailureOf(response));
       }
     } else {
       if (completer != null && !completer.isCompleted) {

@@ -43,6 +43,9 @@ class Peer implements NativeTransport {
   bool modern = true;
   bool failSend = false;
   bool failFeed = false;
+  /// Set to make every command come back refused, the way the host answers an operation it will
+  /// not perform: an error envelope on the same session, never a dropped connection.
+  String? refuseWith;
   SecretKey? key;
   int sequence = 0;
   String tail = '';
@@ -161,11 +164,14 @@ class Peer implements NativeTransport {
     if (command['kind'] == 'read.next') {
       result = {'encoding': 'json', 'chunk': tail};
     }
+    final refusal =
+        refuseWith ??
+        (command['kind'] == 'feed.get' && failFeed ? 'failed' : null);
     final response = {
       'requestId': command['requestId'],
       'kind': 'response',
-      if (command['kind'] == 'feed.get' && failFeed)
-        'error': {'code': 'failed'}
+      if (refusal != null)
+        'error': {'code': refusal}
       else
         'result': result,
     };
@@ -376,6 +382,37 @@ void main() {
       await peer.bus.close();
     },
   );
+  test('a refused action carries the host reason instead of looking like it worked', () async {
+    final peer = Peer();
+    final controller = NativeRemoteController(
+      credentials: MemoryCredentials(),
+      transport: peer,
+    );
+    try {
+      await controller.initialize();
+      await settleUntil(() => controller.state.workbenches.isNotEmpty);
+      // The host answers a refused operation with an error envelope on the same session. A client
+      // that reads only `result` takes that for success: the draft clears, the form collapses,
+      // and the card never moves — the same shape for every cause.
+      peer.refuseWith = 'joi_clarification_unavailable';
+      await expectLater(
+        controller.act('goal', 'clarify', actionChoice: 'CONTINUE'),
+        throwsA(
+          isA<RemoteActionFailure>().having(
+            (failure) => failure.code,
+            'code',
+            'joi_clarification_unavailable',
+          ),
+        ),
+      );
+      // A refusal is not a disconnect: the session stays up for the next attempt.
+      expect(controller.state.connection, RemoteConnectionState.connected);
+    } finally {
+      controller.dispose();
+      await peer.bus.close();
+    }
+  });
+
   test(
     'encrypted retries keep the original key; successful send is independent of refresh',
     () async {
