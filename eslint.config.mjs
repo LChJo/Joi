@@ -7,6 +7,10 @@ import tseslint from "typescript-eslint";
 export default tseslint.config(
   {
     ignores: [
+      // Agent worktrees are whole copies of this repository, checked out under .claude so a
+      // delegated task can work in isolation. Linting them reports another branch's in-progress
+      // state against this checkout's rules, which is noise on every run.
+      ".claude/worktrees/**",
       "coverage/**",
       "dist/**",
       "node_modules/**",

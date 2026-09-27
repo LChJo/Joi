@@ -1,7 +1,11 @@
 /**
  * Prints an absolute path as its root plus its last few segments, e.g.
- * `C:\Users\Bry\AppData\Roaming\joi\runtime.sqlite` becomes
- * `C:\…\Roaming\joi\runtime.sqlite`.
+ * `C:\work\projects\checkout\src\index.ts` becomes
+ * `C:\…\checkout\src\index.ts`.
+ *
+ * Examples here deliberately name no real install directory. `tsc` keeps comments in its output,
+ * and the packaging check rejects any bundled text containing this project's own name after a path
+ * separator — an illustrative example is indistinguishable from a leaked build path.
  *
  * joi used to replace absolute paths with an opaque `[redacted-path]` marker. For a local,
  * single-user desktop app that hid more than it protected: the user's own working paths are
