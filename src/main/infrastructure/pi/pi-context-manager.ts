@@ -145,9 +145,24 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     return index;
   };
 
+  /**
+   * The summary message a request carries, when a checkpoint exists.
+   *
+   * Every path that assembles a request goes through this. A request that dropped the summary
+   * while still announcing a drop would point the model at a summary it does not contain, and
+   * would cost the run the compaction it had just paid a model call for.
+   */
+  const summaryMessages = (): AgentMessage[] => checkpoint === undefined
+    ? []
+    : [checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))];
+
+  /** What the summary costs the request's budget, measured as it is actually sent. */
+  const summaryChars = (): number => summaryMessages()
+    .reduce((total, message) => total + JSON.stringify(message).length, 0);
+
   const assemble = (messages: readonly AgentMessage[], cut: number): AgentMessage[] => [
     ...messages.slice(0, anchorEnd(messages)),
-    ...(checkpoint === undefined ? [] : [checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))]),
+    ...summaryMessages(),
     ...messages.slice(cut),
   ];
 
@@ -168,6 +183,11 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
    * Last resort when a summary could not be produced: keep inside the window by dropping the oldest
    * messages, but say so. Never silent — an unexplained gap in its own history is what made a run
    * decide that something outside it had been rewriting the workspace.
+   *
+   * A checkpoint that already exists still travels with the request. The summary stands in for the
+   * messages it covers, so only what it does not cover is a loss, and only that is announced as
+   * one: measuring the loss from the floor would report ordinary compression as data loss, and
+   * dropping the summary would leave the notice pointing at something the request no longer holds.
    */
   const trimWithNotice = (messages: readonly AgentMessage[], floor: number): AgentMessage[] => {
     let start = Math.max(floor, targetCut(messages, floor));
@@ -175,10 +195,13 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     if (nextUser !== undefined) start = nextUser;
     while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
     if (start <= floor) return assemble(messages, floor);
-    const omitted = start - floor;
-    const omittedChars = charsIn(floor, start);
+    const head = [...messages.slice(0, floor), ...summaryMessages()];
+    const covered = checkpoint === undefined ? floor : Math.min(start, Math.max(floor, checkpoint.cut));
+    if (start <= covered) return [...head, ...messages.slice(start)];
+    const omitted = start - covered;
+    const omittedChars = charsIn(covered, start);
     options.onDiagnostic?.({ omittedChars, omittedMessages: omitted, type: "joi.partner.context_truncated" });
-    return [...messages.slice(0, floor), omissionNotice(omitted, omittedChars), ...messages.slice(start)];
+    return [...head, omissionNotice(omitted, omittedChars), ...messages.slice(start)];
   };
 
   const compact = async (messages: readonly AgentMessage[], floor: number, signal: AbortSignal | undefined): Promise<boolean> => {
@@ -229,12 +252,11 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
         // No checkpoint means nothing has been summarized yet, so the whole transcript after the
         // anchors is the tail and the request is the transcript unchanged.
         let cut = checkpoint === undefined ? floor : Math.max(floor, checkpoint.cut);
-        const standing = checkpoint === undefined ? 0 : JSON.stringify(checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))).length;
+        const standing = summaryChars();
         if (!overBudget(messages, cut, floor, standing)) return assemble(messages, cut);
         if (await compact(messages, floor, signal)) {
           cut = Math.max(floor, checkpoint?.cut ?? floor);
-          const refreshed = checkpoint === undefined ? 0 : JSON.stringify(checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))).length;
-          if (!overBudget(messages, cut, floor, refreshed)) return assemble(messages, cut);
+          if (!overBudget(messages, cut, floor, summaryChars())) return assemble(messages, cut);
         }
         return trimWithNotice(messages, floor);
       } catch {

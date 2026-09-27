@@ -565,6 +565,10 @@ export interface RuntimeDiagnosticEventMap {
    * A request had to drop history outright — summary unavailable, or a summary that still left the
    * request over budget. The messages are gone from that request and the model was told so in the
    * request itself; recorded so the honest-degradation path is never mistaken for silent trimming.
+   *
+   * Both counts cover only what no summary stands in for: a checkpoint that already exists travels
+   * with the request, so the messages it covers are represented rather than lost and are not
+   * reported here. Counting from the anchors instead would price ordinary compression as data loss.
    */
   "joi.partner.context_truncated": {
     omittedChars: number;

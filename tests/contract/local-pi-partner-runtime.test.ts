@@ -457,6 +457,70 @@ describe("Pi partner engine runtime", () => {
     expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + 2_000);
   });
 
+  it("keeps the summary it already paid for when a later summarization fails", async () => {
+    const SENTINEL = "SENTINEL_checkpoint_survives_a_failed_summary";
+    const TURNS = 30;
+    let summaries = 0;
+    let turn = 0;
+    const requests: string[] = [];
+    const faux = fauxProvider({
+      models: [{ contextWindow: 32_000, id: "summary-then-fail", maxTokens: 4_096 }],
+      provider: "local-partner-summary-then-fail",
+    });
+    faux.setResponses(Array.from({ length: TURNS * 4 + 20 }, () => ((context: { messages: unknown[]; systemPrompt?: string }) => {
+      if (requestSystemPrompt(context).includes("context summarization assistant")) {
+        summaries += 1;
+        // The first compaction lands and establishes a checkpoint; every later one fails. That is
+        // the shape this covers — history that had been summarized, and then could not be again.
+        if (summaries > 1) return fauxAssistantMessage([fauxText("")], { errorMessage: "summarization unavailable", stopReason: "error" });
+        return fauxAssistantMessage([fauxText(`## Goal\nFINISH_THE_TASK\n\n## Progress\n### Done\n- [x] ${SENTINEL}`)]);
+      }
+      requests.push(JSON.stringify(context.messages));
+      turn += 1;
+      if (turn >= TURNS) return fauxAssistantMessage([fauxText("交付完成")]);
+      return fauxAssistantMessage([fauxToolCall("read", { path: `/tmp/file-${String(turn)}.ts` })], { stopReason: "toolUse" });
+    }) as never));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: {
+        create: () => [{
+          description: "read a large file",
+          execute: async () => ({ content: [{ text: `-${"x".repeat(3_000)}`, type: "text" as const }], details: {} }),
+          label: "read",
+          name: "read",
+          parameters: Type.Object({ path: Type.String() }),
+        }],
+        names: ["read"],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-09-27T00:00:00.000Z", displayName: "Summary then fail", kind: "local-pi",
+      partnerId: "partner_then_fail", partnerRevisionId: "partner_revision_then_fail", registryRevision: 1, skills: [], tools: ["read"],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_then_fail", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "TASK_ANCHOR", workId: "work_then_fail" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ status: "COMPLETED" });
+
+    // Both halves of the fallback really happened: one summary was produced, a later one failed.
+    expect(summaries).toBeGreaterThan(1);
+    const truncated = requests.filter((request) => request.includes("joi context notice"));
+    expect(truncated.length).toBeGreaterThan(0);
+    // Every request that had to announce a drop still carried the summary it already had, so the
+    // notice's "the summary above records what they contained" names something that is actually
+    // there. Dropping it would cost the run the compaction it had paid a model call for, and leave
+    // the notice pointing at a message the request no longer holds.
+    expect(truncated.every((request) => request.includes(SENTINEL))).toBe(true);
+    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + 2_000);
+  });
+
   it.each(["ephemeral", "resident"])("rejects %s Skill runs without a workspace before model initialization", async (mode) => {
     const resolve = vi.fn(async () => { throw new Error("must not initialize model"); });
     const runtime = new PiPartnerEngineRuntime({
