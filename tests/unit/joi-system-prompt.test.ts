@@ -40,10 +40,12 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("Grill the spec before dispatch");
     expect(prompt).toContain("one focused alignment question per turn");
     expect(prompt).toContain("Every dispatched work must carry the aligned spec");
-    expect(prompt).toContain("never dispatch a bare title");
+    expect(prompt).toContain("Acceptance checks verify only this Work's own deliverable");
+    expect(prompt).toContain("copy expectedText verbatim from its actual content");
+    expect(prompt).toContain("Never dispatch a bare title");
     expect(prompt).toContain("copy it exactly as workspacePath");
     expect(prompt).toContain("never invent or broaden a path");
-    expect(prompt).toContain("omit workspacePath so the tool persists a user-visible clarification");
+    expect(prompt).toContain("otherwise persists a user-visible clarification");
     expect(prompt).toContain("Maintain the goal map");
     expect(prompt).toContain("harness_name_destination");
     expect(prompt).toContain("harness_chart_path");
@@ -55,6 +57,7 @@ describe("joi system prompt", () => {
     expect(prompt).not.toContain("harness_refine_workbench");
     expect(prompt).toContain("never broaden");
     expect(prompt).toContain("Workbench: Rex");
+    expect(prompt).toContain("Workbench workspace: no directory bound yet — file work needs workbench_bind_workspace first");
     expect(prompt).toContain("PERSONA_SENTINEL");
     expect(prompt).toContain("SCOPE_SENTINEL");
     expect(prompt).toContain("TASK_SENTINEL");
@@ -74,6 +77,16 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("Attachment delivery: text attachments are inlined in the user message");
     expect(prompt).toContain("attachment_read");
     expect(prompt).toContain("Never invent attachment content");
+  });
+
+  it("reports the current workspace binding so a bound directory is never re-asked", () => {
+    const prompt = buildJoiSystemPrompt({
+      ...base,
+      workspace: { displayName: "Zgame_20190440", kind: "BOUND", status: "READY" },
+    });
+    expect(prompt).toContain("Workbench workspace: Zgame_20190440 · BOUND · READY");
+    expect(prompt).toContain("not READY, call workbench_bind_workspace before dispatching");
+    expect(prompt).toContain("the tool reports the existing binding when one is already READY");
   });
 
   it("tells joi that partner work auto-receives the input attachments staged in the workspace", () => {

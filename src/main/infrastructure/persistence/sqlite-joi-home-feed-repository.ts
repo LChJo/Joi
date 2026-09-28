@@ -51,6 +51,23 @@ function toHarnessDto(projection: {
   };
 }
 
+/** Turn statuses that mean the orchestrator still owns the goal right now. */
+const LIVE_TURN_STATUSES: ReadonlySet<string> = new Set(["PENDING", "RUNNING", "WAITING"]);
+
+/**
+ * Evidence that the goal attained something.
+ *
+ * A consumed inbox row is not evidence — it only records that a Turn took the input, which is
+ * equally true of a Turn that ended without dispatching anything. Work, a synthesized result, and
+ * a committed turn completion are. A direct answer is the one completion that legitimately has no
+ * Work behind it, and that path always writes the completion row this reads.
+ */
+function producedGoalEvidence(row: Row): boolean {
+  return number(row, "work_total") > 0
+    || number(row, "result_revision") > 0
+    || typeof row.turn_completed_at === "string";
+}
+
 function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGoalStatusDto {
   if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
@@ -99,7 +116,20 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   // A retry may reuse the same goal and evidence revision. Its older completion remains an
   // audit fact, but cannot settle the newly opened request if the new Turn made no progress.
   if (number(row, "outcome_stale") === 1 && text(row, "inbox_status") === "CONSUMED") return "FAILED";
-  if (text(row, "inbox_status") === "CONSUMED") return "COMPLETED";
+  // A Turn still on the wire is active backend work, so the goal cannot be terminal yet. This sits
+  // below every evidence arm on purpose: a goal that already attained something kept its own
+  // branch, and a synthesized outcome stays COMPLETED even while a long wait Turn is still open.
+  // Nothing above this point speaks for a goal carrying no Work at all, and that is the shape a
+  // gate-paused goal resumes into — before its first dispatch it owns no Work to make it active.
+  const latestTurn = row.latest_turn_status;
+  if (typeof latestTurn === "string" && LIVE_TURN_STATUSES.has(latestTurn)) return "ARRANGING";
+  if (text(row, "inbox_status") === "CONSUMED") {
+    if (producedGoalEvidence(row)) return "COMPLETED";
+    // Consumed, but empty: the Turn ended without producing Work, a result, or a committed
+    // completion. Report the closed lifecycle the goal actually reached, the same way a failed
+    // Turn that left nothing behind is reported above, instead of claiming an attainment.
+    return "FAILED";
+  }
   return "ARRANGING";
 }
 
@@ -174,6 +204,33 @@ function goalArtifacts(connection: DatabaseSync, goalId: string, workbenchId: st
   return result;
 }
 
+/**
+ * Failed Works a recovery chain has already superseded, per goal.
+ *
+ * The chain is followed to its end rather than one step, because a replacement may itself fail and
+ * be replaced again; only a chain that finishes on a completed Work means the failure was actually
+ * answered. A bare failure count cannot say that, and the card would otherwise report a failure that
+ * is still open and one that was fixed as the same thing.
+ */
+function resolvedFailureCounts(connection: DatabaseSync): Map<string, number> {
+  const rows = connection.prepare(`
+    WITH RECURSIVE chain(origin, node, depth) AS (
+      SELECT r.source_work_id, r.replacement_work_id, 1 FROM work_recovery_attempts r
+       WHERE r.replacement_work_id IS NOT NULL
+      UNION ALL
+      SELECT c.origin, r.replacement_work_id, c.depth + 1 FROM chain c
+        JOIN work_recovery_attempts r ON r.source_work_id = c.node AND r.replacement_work_id IS NOT NULL
+       WHERE c.depth < 8
+    )
+    SELECT w.input_id AS goal_input_id, COUNT(DISTINCT w.work_id) AS resolved
+      FROM work_items w
+      JOIN chain c ON c.origin = w.work_id
+      JOIN work_items replacement ON replacement.work_id = c.node AND replacement.status = 'COMPLETED'
+     WHERE w.status = 'FAILED'
+     GROUP BY w.input_id`).all() as Row[];
+  return new Map(rows.map((row) => [text(row, "goal_input_id"), number(row, "resolved")]));
+}
+
 export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
@@ -240,6 +297,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           AND NOT (i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED')
         GROUP BY i.input_id ORDER BY COALESCE(i.last_opened_at, i.created_at) DESC, i.input_id DESC`).all() as Row[];
       const harnessByGoal = new Map(queryHarnessGoalProjections(connection).map((projection) => [projection.goalInputId, projection]));
+      const resolvedFailures = resolvedFailureCounts(connection);
       const goals: JoiGoalCardDto[] = rows.map((row) => {
         const goalId = text(row, "input_id");
         const harnessProjection = harnessByGoal.get(goalId);
@@ -292,7 +350,13 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
               : {}),
           title: title === "" ? "未命名目标" : title,
           updatedAt: text(row, "projection_updated_at"),
-          work: { active, completed: number(row, "completed_count"), failed: number(row, "failed_count"), total },
+          work: {
+            active,
+            completed: number(row, "completed_count"),
+            failed: number(row, "failed_count"),
+            failedResolved: resolvedFailures.get(goalId) ?? 0,
+            total,
+          },
         };
         if (status === "NEEDS_ATTENTION") {
           if (typeof row.clarification_reason_code !== "string") throw new Error("joi_home_feed_attention_invalid");
@@ -350,7 +414,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           stage: thinkingStage(goal, phase, activityInputId),
           startedAt: text(row, "created_at"),
           turnId: text(row, "turn_id"),
-          work: goal?.work ?? { active: 0, completed: 0, failed: 0, total: 0 },
+          work: goal?.work ?? { active: 0, completed: 0, failed: 0, failedResolved: 0, total: 0 },
         };
       }).filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime()));
       const unassignedActions = (connection.prepare(`SELECT i.input_id, i.workbench_id, i.status, i.clarification_reason_code,

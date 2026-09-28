@@ -18,6 +18,12 @@ export class WorkbenchWorkspaceService {
     return safeWorkspace(value);
   }
 
+  /** Null when the Workbench has no binding row yet; callers decide what absence means. */
+  async current(workbenchId: string): Promise<WorkbenchWorkspaceDto | null> {
+    const value = await this.dependencies.repository.getWorkspace(workbenchId);
+    return value === null ? null : safeWorkspace(value);
+  }
+
   async bindExisting(workbenchId: string, rootPath: string): Promise<WorkbenchWorkspaceDto> {
     await this.#assertSwitchable(workbenchId);
     const normalized = normalizeWorkspaceRoot(rootPath);

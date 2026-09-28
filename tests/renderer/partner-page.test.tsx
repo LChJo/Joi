@@ -776,6 +776,22 @@ describe("partner page", () => {
     expect(screen.getByText("模型名与供应商当前模型不一致")).toBeInTheDocument();
   });
 
+  it("warns about a partner pinned to a source that is not READY, with no validation stamp", async () => {
+    const api = new DigitalLifeApi("");
+    mockCatalog(api, [{ ...coder, displayName: "Pinned Coder", modelSourceId: "source-draft" }]);
+    // Editing a source resets it to DRAFT and clears `lastValidatedAt`, which is how a pinned
+    // partner silently becomes undispatched. The card has to say so before a run is wasted.
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [{
+      accessMode: "token-plan", activeModel: { capability: "release-tested", id: "qwen3.8-max", revisionId: "model-1" },
+      activeSourceRevisionId: "source-revision-1", credential: { configured: true, version: 1 }, displayName: "百炼 Token Plan",
+      kind: "qwen", order: 0, primary: true, protocol: "anthropic", sourceId: "source-draft", status: "DRAFT",
+    }] });
+    render(<PartnerPage api={api} />);
+
+    expect(await screen.findByText("供应商尚未就绪")).toBeInTheDocument();
+    expect(screen.getByText("百炼 Token Plan · qwen3.8-max")).toBeInTheDocument();
+  });
+
   it("maps model-source readiness failures and rejected requests to safe card states", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, [coder]);

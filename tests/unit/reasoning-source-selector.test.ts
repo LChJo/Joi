@@ -348,6 +348,32 @@ describe("deterministic-source-fallback-classification", () => {
     await expect(selector.selectById("first", "turn-no-reason")).rejects.toMatchObject({ code: "partner_model_source_not_ready" });
   });
 
+  it("names the pinned source and its state when a pin is no longer READY", async () => {
+    // Editing a source drops it back to DRAFT while the partners pinned to it keep the old pin.
+    const draft = { ...first, source: { ...first.source, status: "DRAFT" as const } };
+    const selector = new ReasoningSourceSelector({ ...repository, list: async () => [draft] }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate: async () => ({ status: "READY" as const, validatedAt: "2026-09-03T10:00:00.000Z" }) },
+    });
+
+    await expect(selector.selectById("first", "turn-draft-pin")).rejects.toMatchObject({
+      code: "partner_model_source_not_ready",
+      message: 'The partner is pinned to "first", which is DRAFT rather than READY.',
+    });
+  });
+
+  it("reports a pin whose source is gone without inventing a state for it", async () => {
+    const selector = new ReasoningSourceSelector({ ...repository, list: async () => [first] }, {
+      clock: { now: () => new Date("2026-09-03T10:00:00.000Z") },
+      validator: { validate: async () => ({ status: "READY" as const, validatedAt: "2026-09-03T10:00:00.000Z" }) },
+    });
+
+    await expect(selector.selectById("deleted-source", "turn-missing-pin")).rejects.toMatchObject({
+      code: "partner_model_source_not_ready",
+      message: "The partner is pinned to a model source that no longer exists.",
+    });
+  });
+
   it("keeps list-only selector compatibility even when freshness options are supplied", async () => {
     const validate = vi.fn();
     const selector = new ReasoningSourceSelector({ list: async () => [first] }, {

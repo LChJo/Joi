@@ -208,7 +208,8 @@ export interface PartnerModelTestDto {
   sourceDisplayName?: string;
   sourceId?: string;
   status: "FAILED" | "READY";
-  testedAt: string;
+  /** Absent when the state was derived from the pinned source alone and nothing has been tested. */
+  testedAt?: string;
 }
 
 export interface ModelSourceDto {
@@ -315,6 +316,18 @@ export interface JoiGoalHarnessDto {
   topPaths: { pathId: string; status: "CLOSED" | "OPEN" | "OUT_OF_SCOPE"; title: string }[];
 }
 
+export interface JoiGoalWorkDto {
+  active: number;
+  completed: number;
+  failed: number;
+  /**
+   * How many of `failed` a recovery chain has superseded by finishing a replacement Work.
+   * Optional so a caller that only needs the counts can omit a fact it does not project.
+   */
+  failedResolved?: number;
+  total: number;
+}
+
 export interface JoiGoalCardBaseDto {
   agentCount: number;
   artifacts?: WorkbenchArtifactDto[];
@@ -327,7 +340,7 @@ export interface JoiGoalCardBaseDto {
   harness?: JoiGoalHarnessDto;
   title: string;
   updatedAt: string;
-  work: { active: number; completed: number; failed: number; total: number };
+  work: JoiGoalWorkDto;
 }
 
 export type JoiGoalCardDto = JoiGoalCardBaseDto & (
@@ -345,7 +358,7 @@ export interface JoiThinkingItemDto {
   stage: JoiThinkingStageDto;
   startedAt: string;
   turnId: string;
-  work: { active: number; completed: number; failed: number; total: number };
+  work: JoiGoalWorkDto;
 }
 
 export interface JoiHomeFeedDto {

@@ -87,6 +87,38 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     })]);
   });
 
+  it("keeps streaming deltas past the legacy 4096-char capture budget in the final answer", async () => {
+    const completions: unknown[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
+      clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input must not route"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
+        startTurn: async (turn) => {
+          const paragraph = "这一段总结一个开源项目的价值与技术要点，长度足以把全文推过旧的截断线。\n\n";
+          for (let index = 0; index < 120; index += 1) {
+            turn.onEvent?.({ delta: `${paragraph}第 ${String(index)} 条。\n\n`, turnId: turn.turnId, type: "text_delta" });
+          }
+        },
+        steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async (_inputId, _turnId, completion) => { completions.push(completion); },
+        createTurn: async () => undefined,
+        loadInput: async () => ({ body: "收集并总结", inputId: "input-long-direct", status: "PENDING", workbenchId: "research" }),
+        requireClarification: async () => undefined,
+      },
+    });
+
+    await coordinator.handle("input-long-direct");
+    expect(completions).toHaveLength(1);
+    const summary = (completions[0] as { completionSummary: string }).completionSummary;
+    expect(summary.length).toBeGreaterThan(4_096);
+    expect(summary).toContain("第 119 条。");
+  });
+
   it("repairs one empty direct response before committing a visible answer", async () => {
     let starts = 0;
     const completions: unknown[] = [];

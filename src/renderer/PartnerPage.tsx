@@ -55,10 +55,11 @@ function PartnerModelStatus({ engine, result }: { engine: PartnerEngineDto; resu
   const modelManaged = engine === "pi-core";
   if (result === "TESTING") return <div className="partner-model-status" role="status"><span>{modelManaged ? "正在测试模型…" : "正在真实调用搭档…"}</span></div>;
   if (result === undefined) return <div className="partner-model-status" role="status"><span>{modelManaged ? "模型状态尚未测试" : "搭档可用性尚未测试"}</span></div>;
-  const detail = [result.sourceDisplayName, result.modelId].filter(Boolean).join(" · ");
+  const tested = result.testedAt === undefined ? "" : new Date(result.testedAt).toLocaleString("zh-CN");
+  const detail = [result.sourceDisplayName, result.modelId, tested].filter(Boolean).join(" · ");
   return <div className="partner-model-status" role="status">
     <span>{modelTestMessage(result, engine)}</span>
-    <small>{detail}{detail === "" ? "" : " · "}{new Date(result.testedAt).toLocaleString("zh-CN")}</small>
+    <small>{detail}</small>
   </div>;
 }
 
@@ -67,8 +68,23 @@ function persistedModelTest(partner: PartnerDto, sources: ModelSourceDto[]): Par
   const source = partner.modelSourceId === undefined
     ? ordered.find((candidate) => candidate.status === "READY") ?? ordered[0]
     : sources.find((candidate) => candidate.sourceId === partner.modelSourceId);
-  if (source?.lastValidatedAt === undefined) return undefined;
+  if (source === undefined) return undefined;
   const modelMismatch = partner.modelIdOverride !== undefined && partner.modelIdOverride !== source.activeModel.id;
+  // Editing a model source resets it to DRAFT and clears its validation stamp, and that is exactly
+  // the state the next dispatch fails on. Waiting for `lastValidatedAt` would hide it, so a partner
+  // the user pinned to a source that is not READY says so now rather than after a wasted run.
+  if (partner.modelSourceId !== undefined && source.status !== "READY") {
+    return {
+      modelId: partner.modelIdOverride ?? source.activeModel.id,
+      partnerId: partner.partnerId,
+      reasonCode: "partner_model_source_not_ready",
+      sourceDisplayName: source.displayName,
+      sourceId: source.sourceId,
+      status: "FAILED",
+      ...(source.lastValidatedAt === undefined ? {} : { testedAt: source.lastValidatedAt }),
+    };
+  }
+  if (source.lastValidatedAt === undefined) return undefined;
   return {
     modelId: partner.modelIdOverride ?? source.activeModel.id,
     partnerId: partner.partnerId,

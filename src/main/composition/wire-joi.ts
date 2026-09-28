@@ -120,6 +120,7 @@ export function wireJoi(input: {
     work: workbenchStack.work,
     workbenchRegistry: workbenchStack.workbenchRegistry,
     workbenches: persistence.workbenches,
+    workspaces: workbenchStack.workbenchWorkspaces,
   });
   return { automation, evolution, evolutionDryRun, joiAttachmentStorage, joiCoordinator, joiInbox, joiReasoning };
 }

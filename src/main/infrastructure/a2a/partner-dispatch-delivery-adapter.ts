@@ -792,7 +792,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
             text: terminalFailureSummary({
               ...(output.failure === undefined ? {} : { failure: output.failure }),
               status: committedStatus,
-              ...(verification.status === "FAILED" ? { verificationReasonCode: verification.reasonCode ?? "verification_failed" } : {}),
+              ...(verification.status === "FAILED"
+                ? {
+                    verificationDetail: verification.detail,
+                    verificationReasonCode: verification.reasonCode ?? "verification_failed",
+                  }
+                : {}),
             }),
           }]
         : [];
@@ -834,7 +839,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   }
 }
 
-function terminalFailureSummary(input: { failure?: PartnerRunFailure; status: "FAILED" | "UNKNOWN"; verificationReasonCode?: string }): string {
+function terminalFailureSummary(input: { failure?: PartnerRunFailure; status: "FAILED" | "UNKNOWN"; verificationDetail?: string; verificationReasonCode?: string }): string {
   const reasonCode = input.failure?.reasonCode ?? input.verificationReasonCode ?? "partner_run_failed";
   const health = input.failure !== undefined && ["auth_forbidden", "model_access_forbidden", "region_forbidden", "request_policy_forbidden", "http_401", "http_403"].includes(reasonCode)
     ? "The model source was removed from dispatch and a no-tool health diagnostic was requested."
@@ -844,5 +849,8 @@ function terminalFailureSummary(input: { failure?: PartnerRunFailure; status: "F
     : input.failure?.sideEffectState === "UNKNOWN"
       ? "Possible side effects cannot be ruled out; the original Work will not be replayed. Existing artifacts must be verified before supplemental recovery."
       : "No possibly side-effecting tool call was recorded; any replacement attempt must still follow the bounded recovery policy.";
-  return `Partner terminal error: status=${input.status}; reasonCode=${reasonCode}. ${health} ${recovery}`;
+  // Verification failures name the exact check that failed: without it the card looks like a
+  // delivery failure even when the deliverable exists and only an acceptance check mismatched.
+  const detail = input.failure === undefined && input.verificationDetail !== undefined ? ` ${input.verificationDetail}` : "";
+  return `Partner terminal error: status=${input.status}; reasonCode=${reasonCode}.${detail} ${health} ${recovery}`;
 }

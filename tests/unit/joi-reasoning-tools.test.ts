@@ -42,6 +42,7 @@ function makeTools(options: {
   resumeCalls?: { inputId: string; turnId: string }[];
   refineCalls?: { args: { workbenchId: string; input: Record<string, unknown> }[] };
   workspaceBindCalls?: { workbenchId: string; rootPath: string }[];
+  workspaceCurrent?: { displayName: string; kind: "BOUND" | "MANAGED"; status: "FAILED" | "PROVISIONING" | "READY" } | null;
   workspacePicker?: () => Promise<string | null>;
   workspaceBlocked?: boolean;
   workResumeCalls?: Record<string, unknown>[];
@@ -79,6 +80,7 @@ function makeTools(options: {
         options.workspaceBindCalls?.push({ workbenchId, rootPath });
         return { displayName: "绑定目录", kind: "BOUND", status: "READY" };
       },
+      current: async () => options.workspaceCurrent ?? null,
     },
     clarifications: {
       requireClarification: async (inputId, reasonCode, prompt) => {
@@ -242,6 +244,12 @@ describe("joi reasoning tools", () => {
     }]);
     expect(workspacePicker).not.toHaveBeenCalled();
     expect(workspaceBindCalls).toEqual([]);
+  });
+  it("reports an existing READY binding instead of re-asking for an already bound directory", async () => {
+    const harness = makeTools({ workspaceCurrent: { displayName: "Zgame_20190440", kind: "BOUND", status: "READY" } });
+    const result = await harness.call("workbench_bind_workspace", {});
+    expect(result).toEqual({ alreadyBound: true, displayName: "Zgame_20190440", kind: "BOUND", status: "READY" });
+    expect(harness.clarificationCalls).toEqual([]);
   });
   it("binds an explicit workspace path from the user request without another card action", async () => {
     const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];

@@ -11,6 +11,17 @@ interface GoalSeedOptions {
   goalInputId: string;
   status?: string;
   turn?: boolean;
+  /**
+   * Turn status override; defaults to COMPLETED. A live status is what a goal looks like while
+   * the orchestrator still owns it, which is a different shape from a Turn that already ended.
+   */
+  turnStatus?: string;
+  /**
+   * Committed answer summary. Writes the `joi_turn_completions` row that a real direct answer
+   * leaves behind — the row the card reads its summary from. A Turn that ends on bare prose
+   * without calling `turn_complete` leaves no such row, and that is not a direct answer.
+   */
+  directAnswer?: string;
 }
 
 function seedGoal(fixture: RuntimeFixture, options: GoalSeedOptions): { workbenchId: string } {
@@ -26,10 +37,17 @@ function seedGoal(fixture: RuntimeFixture, options: GoalSeedOptions): { workbenc
       VALUES (?, ?, 'goal body', ?, ?, ?, ?)`)
       .run(options.goalInputId, `key-${options.goalInputId}`, options.status ?? "ROUTED", workbenchId, NOW, NOW);
     if (options.turn === true) {
+      const turnId = `turn-${options.goalInputId}`;
       connection.prepare(`INSERT INTO joi_turns
         (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'COMPLETED', ?, ?)`)
-        .run(`turn-${options.goalInputId}`, options.goalInputId, workbenchId, `session-${options.goalInputId}`, NOW, NOW);
+        VALUES (?, ?, ?, ?, ?, ?, ?)`)
+        .run(turnId, options.goalInputId, workbenchId, `session-${options.goalInputId}`, options.turnStatus ?? "COMPLETED", NOW, NOW);
+      if (options.directAnswer !== undefined) {
+        connection.prepare(`INSERT INTO joi_turn_completions
+          (input_id, turn_id, outcome_kind, completion_summary, completed_at, updated_at)
+          VALUES (?, ?, 'DIRECT_ANSWER', ?, ?, ?)`)
+          .run(options.goalInputId, turnId, options.directAnswer, NOW, NOW);
+      }
     }
   });
   return { workbenchId };
@@ -198,8 +216,11 @@ describe("SqliteJoiHarnessRepository", () => {
     it("keeps a direct-answer goal completed but reports a failed arrangement Turn as FAILED", async () => {
       // Mirrors the observed incident: one Turn consumed the inbox row with a text answer,
       // then the Turn that actually tried to dispatch died. The card must not keep claiming
-      // attainment for a goal that stopped with no Work and no outcome.
-      const answered = seedGoal(fixture, { goalInputId: "goal-answered", status: "CONSUMED", turn: true });
+      // attainment for a goal that stopped with no Work and no outcome. The control case is a
+      // real answer, so it carries the turn completion a committed answer always leaves behind.
+      const answered = seedGoal(fixture, {
+        goalInputId: "goal-answered", status: "CONSUMED", turn: true, directAnswer: "已直接回答。",
+      });
       await repository.createMap({ workbenchId: answered.workbenchId, goalInputId: "goal-answered", now: NOW });
       const stalled = seedGoal(fixture, { goalInputId: "goal-stalled", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId: stalled.workbenchId, goalInputId: "goal-stalled", now: NOW });
@@ -211,6 +232,21 @@ describe("SqliteJoiHarnessRepository", () => {
       const statusOf = (goalId: string) => feed.goals.find((goal) => goal.goalId === goalId)?.status;
       expect(statusOf("goal-answered")).toBe("COMPLETED");
       expect(statusOf("goal-stalled")).toBe("FAILED");
+    });
+
+    it("reports a consumed goal that produced nothing as FAILED, and one mid-flight as ARRANGING", async () => {
+      // The observed shape: a gate pauses the first dispatch, the user answers, and the resumed
+      // Turn ends on prose that claims the Work "is already queued" without ever dispatching it.
+      // Nothing is produced, so nothing may read as attained.
+      seedGoal(fixture, { goalInputId: "goal-empty", status: "CONSUMED", turn: true });
+      // Before that Turn ends it owns no Work at all, so no Work-derived branch speaks for it.
+      // Calling it attained here is what put "已完成" on a card joi was still working on.
+      seedGoal(fixture, { goalInputId: "goal-inflight", status: "CONSUMED", turn: true, turnStatus: "RUNNING" });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+      const statusOf = (goalId: string) => feed.goals.find((goal) => goal.goalId === goalId)?.status;
+      expect(statusOf("goal-empty")).toBe("FAILED");
+      expect(statusOf("goal-inflight")).toBe("ARRANGING");
     });
 
     it("reports a CONTINUE outcome on a closed map as completed, not as an unresolvable review", async () => {

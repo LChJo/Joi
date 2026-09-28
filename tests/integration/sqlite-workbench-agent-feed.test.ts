@@ -62,10 +62,44 @@ describe("Workbench Agent and joi home projections", () => {
       expect(feed.goals[0]).toMatchObject({
         completionSummary: "现有证据已经足够形成结论。",
         status: "COMPLETED",
-        work: { active: 0, completed: 1, failed: 1, total: 2 },
+        work: { active: 0, completed: 1, failed: 1, failedResolved: 0, total: 2 },
       });
       expect((await fixture.workbenchManagement.get(workbench.workbenchId)).recentOutcomes[0])
         .toMatchObject({ goalId: "goal-partial", status: "COMPLETED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("counts a failure as resolved only when its recovery chain finished a replacement", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "分析", personaSummary: "persona", projectLabel: "joi", scopeSummary: "综合" });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+          VALUES ('goal-chain', 'key-chain', '把失败的活重派一次', 'PENDING', ?, ?, ?)`).run(workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('turn-chain', 'goal-chain', ?, 'session-chain', 'COMPLETED', ?, ?)`).run(workbench.workbenchId, now, now);
+        const insertWork = connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES (?, ?, 'goal-chain', ?, '{}', 'READ', ?, ?, ?)`);
+        insertWork.run("work-open", workbench.workbenchId, "没人接手的失败", "FAILED", now, now);
+        insertWork.run("work-fixed", workbench.workbenchId, "被直接替代的失败", "FAILED", now, now);
+        insertWork.run("work-relay", workbench.workbenchId, "替代者自己也失败了", "FAILED", now, now);
+        insertWork.run("work-replacement", workbench.workbenchId, "最后完成了", "COMPLETED", now, now);
+        const insertRecovery = connection.prepare(`INSERT INTO work_recovery_attempts
+          (recovery_id, source_work_id, replacement_work_id, attempt_no, strategy, status, created_at, updated_at)
+          VALUES (?, ?, ?, 1, 'SUPPLEMENT', 'FAILED', ?, ?)`);
+        insertRecovery.run("recovery-fixed", "work-fixed", "work-replacement", now, now);
+        // A chain has to be followed past a replacement that failed on, or this failure reads as open.
+        insertRecovery.run("recovery-relay", "work-relay", "work-fixed", now, now);
+      });
+
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+      expect(feed.goals[0]?.work).toMatchObject({ failed: 3, failedResolved: 2 });
     } finally {
       await fixture.close();
     }
@@ -423,7 +457,7 @@ describe("Workbench Agent and joi home projections", () => {
         goalId: "goal-running",
         phase: "progressing",
         stage: "RUNNING",
-        work: { active: 1, completed: 0, failed: 0, total: 1 },
+        work: { active: 1, completed: 0, failed: 0, failedResolved: 0, total: 1 },
       })]);
       fixture.database.transaction((connection) => connection.prepare(
         "UPDATE joi_turns SET status = 'COMPLETED', updated_at = '2026-08-03T12:00:10.000Z' WHERE turn_id = 'turn-running'",
@@ -490,7 +524,7 @@ describe("Workbench Agent and joi home projections", () => {
       const repository = new SqliteJoiHomeFeedRepository(fixture.database);
       expect((await repository.load(new Date("2026-08-03T12:00:05.000Z"))).thinking).toEqual([expect.objectContaining({
         stage: "DISPATCHING",
-        work: { active: 1, completed: 0, failed: 0, total: 1 },
+        work: { active: 1, completed: 0, failed: 0, failedResolved: 0, total: 1 },
       })]);
 
       fixture.database.transaction((connection) => connection.prepare(
@@ -503,7 +537,7 @@ describe("Workbench Agent and joi home projections", () => {
       ).run("2026-08-03T12:00:08.000Z"));
       expect((await repository.load(new Date("2026-08-03T12:00:09.000Z"))).thinking).toEqual([expect.objectContaining({
         stage: "FINALIZING",
-        work: { active: 0, completed: 1, failed: 0, total: 1 },
+        work: { active: 0, completed: 1, failed: 0, failedResolved: 0, total: 1 },
       })]);
     } finally {
       await fixture.close();
@@ -530,7 +564,7 @@ describe("Workbench Agent and joi home projections", () => {
         phase: "queued",
         stage: "ROUTING",
         turnId: "pending:derived-queued",
-        work: { active: 0, completed: 0, failed: 0, total: 0 },
+        work: { active: 0, completed: 0, failed: 0, failedResolved: 0, total: 0 },
       })]);
     } finally {
       await fixture.close();

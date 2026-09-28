@@ -1,6 +1,6 @@
 import { ResultExportMenu } from './ResultExportMenu';
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
-import { type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -170,13 +170,21 @@ function protocolLabel(protocol: ModelSourceProtocolDto): string {
 
 export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   const [sources, setSources] = useState<JoiSnapshotDto["modelSources"]>([]);
+  const [partners, setPartners] = useState<PartnerDto[]>([]);
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [noticeWarns, setNoticeWarns] = useState(false);
+  const tell = useCallback((text: string, warn = false) => { setNotice(text); setNoticeWarns(warn); }, []);
   const load = useCallback(async () => {
     try { setSources((await api.listModelSources()).items); }
-    catch { setNotice("没能读取模型网络设置。"); }
-  }, [api]);
+    catch { tell("没能读取模型网络设置。"); return; }
+    // Partners come along because editing a source resets it to DRAFT, which strands every partner
+    // pinned to it; the save has to be able to say how many that is. Advisory only, so a partner
+    // list that will not load must not keep the sources off the screen.
+    try { setPartners((await api.listPartners()).items); }
+    catch { /* the warning is best-effort; the sources themselves are not */ }
+  }, [api, tell]);
   useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
   const reorder = async (index: number, direction: -1 | 1) => {
     const target = index + direction;
@@ -192,10 +200,10 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     try {
       await api.deleteModelSource(sourceId);
       setEditing((current) => current === sourceId ? null : current);
-      setNotice("模型网络已删除。");
+      tell("模型网络已删除。");
       await load();
     } catch {
-      setNotice("模型网络未删除，请重试。");
+      tell("模型网络未删除，请重试。");
     }
   };
   const saveEdit = async (event: SyntheticEvent<HTMLFormElement>, source: JoiSnapshotDto["modelSources"][number]) => {
@@ -228,10 +236,15 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     try {
       await api.updateModelSource(source.sourceId, body);
       setEditing(null);
-      setNotice("修改已保存为草稿 revision，请验证后启用。");
+      const pinned = partners.filter((partner) => partner.status !== "DELETED" && partner.modelSourceId === source.sourceId);
+      const named = pinned.slice(0, 3).map((partner) => partner.displayName).join("、");
+      tell(pinned.length === 0
+        ? "修改已保存为草稿 revision，请验证后启用。"
+        : `修改已保存为草稿 revision，请验证后启用。钉在这个网络上的 ${String(pinned.length)} 个搭档（${named}${pinned.length > 3 ? " 等" : ""}）在你验证通过前会派发失败。`,
+      pinned.length > 0);
       await load();
     } catch (error) {
-      setNotice(error instanceof ApiError ? error.message : "模型网络修改未保存。");
+      tell(error instanceof ApiError ? error.message : "模型网络修改未保存。");
     }
   };
   return <section className="model-source-manager">
@@ -254,7 +267,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         <div className="row-actions"><button className="button primary" type="submit">保存修改</button><button className="button ghost" onClick={() => setEditing(null)} type="button">取消</button></div>
       </form> : null}
     </article>)}</div>
-    {notice === null ? null : <p className="inline-notice info">{notice}</p>}
+    {notice === null ? null : <p className={noticeWarns ? "inline-notice warning" : "inline-notice info"} {...(noticeWarns ? { role: "alert" as const } : {})}>{notice}</p>}
   </section>;
 }
 
@@ -671,7 +684,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     if (detail === null) return;
     try {
       if (action === "bind") await api.bindWorkbenchWorkspace(detail.workbenchId); else await api.rebuildWorkbenchWorkspace(detail.workbenchId);
-      await open(detail.workbenchId); setTab("context");
+      await open(detail.workbenchId, tab);
       setNotice(action === "bind" ? "已绑定现有目录。" : "已切换为默认运行目录，新任务将创建独立目录。");
     } catch (error) { setNotice(error instanceof ApiError ? error.message : "工作区操作没有完成。"); }
   };
@@ -716,9 +729,16 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" placeholder="工作聚类名称，如：前端调试分析" required /></label><label>工程名称<input name="projectLabel" placeholder="工作环境 / 工程，如：数字生活" required /></label><label>职责范围<textarea name="scopeSummary" placeholder="描述这类工作共享的环境和边界" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" placeholder="描述工作环境的长期约束，不要写单个 Agent 角色" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
     {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <article className="workbench-catalog-entry" key={workbench.workbenchId}><button aria-label={`打开工作台 ${workbench.name}`} className="workbench-catalog-open" onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-catalog-head"><span aria-hidden="true" className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong></span><span className="workbench-catalog-scope" title={workbench.scopeSummary}>{workbench.scopeSummary}</span></button><footer className="workbench-catalog-footer"><time dateTime={workbench.updatedAt} title={new Date(workbench.updatedAt).toLocaleString()}>更新于 {formatWorkbenchUpdated(workbench.updatedAt)}</time><span className="workbench-catalog-actions"><button aria-label={`管理上下文 ${workbench.name}`} className="workbench-catalog-manage" onClick={() => void open(workbench.workbenchId, "context")} type="button">管理上下文</button><button aria-label={`移除工作台 ${workbench.name}`} className="button danger-text workbench-catalog-remove" onClick={() => requestRemoval(workbench)} type="button">移除工作台</button></span></footer></article>)}</div>) : <>
       <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button><button aria-selected={tab === "evolution"} onClick={() => setTab("evolution")} role="tab" type="button">自主进化</button></div>
+      <article aria-label="工作区" className="workbench-workspace-bar">
+        <div className="workbench-workspace-info">
+          <h3>工作区</h3>
+          <p>{detail.workspace.kind === "BOUND" ? "此工作台的新任务固定使用指定目录。" : "每个新任务在用户主目录 joi/runs 下创建独立目录；恢复和重试复用原目录。"}</p>
+          <p className="workbench-workspace-state"><strong>{detail.workspace.kind === "BOUND" ? detail.workspace.displayName : "默认运行目录"}</strong> · {detail.workspace.kind} · {detail.workspace.status}{detail.workspace.failureReasonCode === undefined ? null : <small> · {detail.workspace.failureReasonCode}</small>}</p>
+        </div>
+        <div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">使用默认运行目录</button></div>
+      </article>
       {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : tab === "context" ? <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
-        <article className="context-card"><h3>工作区</h3><p>{detail.workspace.kind === "BOUND" ? "此工作台的新任务固定使用指定目录。" : "每个新任务在用户主目录 joi/runs 下创建独立目录；恢复和重试复用原目录。"}</p><p><strong>{detail.workspace.kind === "BOUND" ? detail.workspace.displayName : "默认运行目录"}</strong> · {detail.workspace.kind} · {detail.workspace.status}</p>{detail.workspace.failureReasonCode === undefined ? null : <small>{detail.workspace.failureReasonCode}</small>}<div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">使用默认运行目录</button></div></article>
         <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
         <article className="context-card"><h3>最近结果总结</h3>{detail.recentOutcomes.length === 0 ? <p>还没有目标级结果总结。</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{recentOutcomeLabel(item.status)} · {new Date(item.completedAt).toLocaleString()}</small></li>)}</ul>}</article>
       </div> : <div className="workbench-context-center"><WorkbenchEvolutionPanel api={api} key={detail.workbenchId} workbenchId={detail.workbenchId} /></div>}
@@ -761,6 +781,27 @@ function workbenchProposals(seed?: string): WorkbenchProposal[] {
       scopeSummary: "monitor、日志、告警、性能分析和线上问题排查。",
     },
   ];
+}
+
+// 单行起步的补充说明输入框：内容超行时自动长高，封顶后内部滚动；Enter 提交、Shift+Enter 换行。
+function ClarifyTextarea({ "aria-label": ariaLabel, disabled, onChange, onKeyDown, placeholder, value }: {
+  "aria-label": string;
+  disabled: boolean;
+  onChange: (event: ChangeEvent<HTMLTextAreaElement>) => void;
+  onKeyDown: (event: ReactKeyboardEvent<HTMLTextAreaElement>) => void;
+  placeholder: string;
+  value: string;
+}) {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useLayoutEffect(() => {
+    const node = ref.current;
+    if (node === null) return;
+    const computed = getComputedStyle(node);
+    const borders = Number.parseFloat(computed.borderTopWidth) + Number.parseFloat(computed.borderBottomWidth);
+    node.style.height = "auto";
+    node.style.height = `${String(node.scrollHeight + borders)}px`;
+  }, [value]);
+  return <textarea aria-label={ariaLabel} disabled={disabled} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder} ref={ref} rows={1} value={value} />;
 }
 
 function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, suggestionSeed }: {
@@ -909,7 +950,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       <div><strong>{assignedWorkbench?.name ?? "当前工作台"}</strong><span>选择后只保存安全的工作区标识，不会在页面或接口中暴露绝对路径。</span></div>
       <button className="button primary" disabled={busy || workbenchId === undefined} onClick={() => void chooseWorkspace()} type="button">{busy ? "选择中…" : "选择工作目录"}</button>
     </div> : creatingWorkbench ? null : <div className="joi-clarify-add">
-      <input aria-label={isQuestion ? "你的回答" : "补充信息"} disabled={busy} onChange={(event) => setDraft(event.target.value)} placeholder={isQuestion ? "输入回答，joi 会接着原任务继续…" : "补充细节，让 joi 接着这条输入往下做…"} value={draft} />
+      <ClarifyTextarea aria-label={isQuestion ? "你的回答" : "补充信息"} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && draft.trim() !== "") { event.preventDefault(); submitDraft(); } }} placeholder={isQuestion ? "输入回答，joi 会接着原任务继续…（Shift+Enter 换行）" : "补充细节，让 joi 接着这条输入往下做…（Shift+Enter 换行）"} value={draft} />
       <button className="button quiet" disabled={busy || draft.trim() === ""} onClick={submitDraft} type="button">{isQuestion ? "回答并继续" : "补充并继续"}</button>
     </div>}
     {notice === null ? null : <p className="inline-notice info" role="status">{notice}</p>}
@@ -1009,12 +1050,27 @@ function GoalStatusBadge({ status }: { status: JoiGoalCardDto["status"] }) {
 }
 
 function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
+  // A Work that ended is finished whether or not it produced what was asked, so a failure has to
+  // move the bar too. Counting completions alone leaves a goal that is already over displayed at a
+  // partial percentage, which reads as work still owed.
+  const settled = goal.work.completed + goal.work.failed;
   const percent = goal.status === "COMPLETED" || goal.status === "COMPLETED_WITH_GAPS"
     ? 100
-    : goal.work.total === 0 ? 0 : Math.round((goal.work.completed / goal.work.total) * 100);
+    : goal.work.total === 0 ? 0 : Math.round((settled / goal.work.total) * 100);
+  // A count of "6/11" hides what the other five are: the reader cannot tell a running Work from a
+  // failed one, or a failure that a replacement already answered from one that is still open.
+  const parts: string[] = [`${String(goal.agentCount)} Agent`];
+  const resolvedFailures = goal.work.failedResolved ?? 0;
+  if (goal.work.completed > 0) parts.push(`${String(goal.work.completed)} 工作完成`);
+  if (goal.work.failed > 0) {
+    parts.push(resolvedFailures > 0
+      ? `${String(goal.work.failed)} 失败(${String(resolvedFailures)} 已解决)`
+      : `${String(goal.work.failed)} 失败`);
+  }
+  if (goal.work.active > 0) parts.push(`${String(goal.work.active)} 进行中`);
   return <span className="joi-goal-progress">
     <span aria-hidden="true" className="joi-goal-progress-track"><i style={{ width: `${String(percent)}%` }} /></span>
-    <i>{goal.agentCount} Agent · {goal.work.completed}/{goal.work.total} 工作完成</i>
+    <i>{parts.join(" · ")}</i>
   </span>;
 }
 
@@ -1089,7 +1145,7 @@ function GoalRetryPanel({ api, goal, onDone }: {
       <span><strong>正在提交继续请求</strong><small>joi 确认接收后，会立即进入“正在安排”。</small></span>
     </div> : null}
     <div className="joi-clarify-add">
-      <input aria-label="补充说明" disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); submit(); } }} placeholder="补充要求（可留空，直接继续）" value={draft} />
+      <ClarifyTextarea aria-label="补充说明" disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit(); } }} placeholder="补充要求，可换行（留空则直接继续；Shift+Enter 换行）" value={draft} />
       <button className="button quiet" disabled={busy} onClick={submit} type="button">{busy ? "正在交给 joi…" : "继续"}</button>
     </div>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}

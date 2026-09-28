@@ -47,7 +47,14 @@ export class ReasoningSourceSelector {
     const candidate = (await this.#readySources()).find((record) => record.source.sourceId === sourceId);
     const record = candidate === undefined ? undefined : await this.#fresh(candidate);
     if (record === undefined) {
-      throw new DomainError("partner_model_source_not_ready", "The partner model source is not ready.");
+      // A pin outlives the readiness it was chosen under: editing a source puts it back to DRAFT,
+      // and nothing revisits the partners still pointing at it until one of them runs. Name that
+      // source and its state, or the only report left is "the partner model source is not ready",
+      // which tells the user nothing about what to repair.
+      const pinned = (await this.repository.list()).find((entry) => entry.source.sourceId === sourceId);
+      throw new DomainError("partner_model_source_not_ready", pinned === undefined
+        ? "The partner is pinned to a model source that no longer exists."
+        : `The partner is pinned to "${pinned.source.activeSourceRevision.displayName.slice(0, 80)}", which is ${pinned.source.status} rather than READY.`);
     }
     if (record.source.status !== "READY") {
       const suffix = record.reasonCode === undefined ? "not_ready" : safeReasonSuffix(record.reasonCode);

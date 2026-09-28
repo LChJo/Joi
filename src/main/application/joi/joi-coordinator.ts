@@ -13,6 +13,7 @@ import {
 } from "../ports/runtime-diagnostics.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
+import type { WorkbenchWorkspaceService } from "./workbench-workspace-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
 import { COMPLETION_SUMMARY_LIMIT, normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
 import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
@@ -166,6 +167,8 @@ export class JoiCoordinator {
     evolution?: Pick<EvolutionService, "strategyForGoal">;
     workbenches: WorkbenchCatalog;
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
+    /** Current workspace binding, injected into the system prompt so the model never re-asks for a bound directory. */
+    workspaces?: Pick<WorkbenchWorkspaceService, "current">;
     /** Verified attachment reader; without it attachments stay metadata-only. */
     attachments?: Pick<JoiAttachmentPort, "read">;
     automation?: { promptForExecution(routineId: string): Promise<{ prompt: string } | null> };
@@ -192,6 +195,12 @@ export class JoiCoordinator {
     store: JoiCoordinatorStore;
     work?: Pick<WorkOrchestrationService, "resume">;
   }) {}
+
+  /** Spread into buildJoiSystemPrompt arguments; empty when no workspace service or binding exists. */
+  private async currentWorkspaceSummary(workbenchId: string): Promise<{ workspace?: { displayName: string; kind: string; status: string } }> {
+    const workspace = await this.dependencies.workspaces?.current(workbenchId);
+    return workspace === null || workspace === undefined ? {} : { workspace: { displayName: workspace.displayName, kind: workspace.kind, status: workspace.status } };
+  }
 
   async handle(inputId: string, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled before it started.");
@@ -484,6 +493,7 @@ export class JoiCoordinator {
               scopeSummary: workbench.profile.scopeSummary,
               taskContextSummary: `Current goal: ${goalId}. Use only this goal's request and execution evidence.`,
               strategyInstructions: strategy?.instructions,
+              ...(await this.currentWorkspaceSummary(workbenchId)),
             }),
             turnId,
           });

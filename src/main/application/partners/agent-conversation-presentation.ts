@@ -51,7 +51,7 @@ export function stripPathRedactions(value: string): string {
   return value.replace(/\[redacted-path\][ \t]?/gu, "").trim();
 }
 
-export const COMPLETION_SUMMARY_LIMIT = 4096;
+export const COMPLETION_SUMMARY_LIMIT = 32_768;
 
 /**
  * Goal-outcome final answer. Unlike flattened feed previews this keeps markdown

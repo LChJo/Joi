@@ -147,6 +147,8 @@ describe("Workbench context center", () => {
     fireEvent.click(await screen.findByRole("button", { name: "打开工作台 发布 Workbench" }));
     expect(await screen.findByRole("heading", { name: "发布 Workbench" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看 写作者 详情" })).toBeInTheDocument();
+    // The workspace binding sits at tab level: visible on the Agent tab before any context drill-in.
+    expect(screen.getByRole("heading", { name: "工作区" }).closest("article")).toHaveTextContent("release · BOUND · READY");
     fireEvent.click(screen.getByRole("tab", { name: "上下文设置" }));
     expect(screen.getByRole("heading", { name: "工作区" }).closest("article")).toHaveTextContent("release · BOUND · READY");
     expect(screen.getByText(/更新发布文档 · RUNNING/u)).toBeInTheDocument();
@@ -557,6 +559,29 @@ describe("joi home single entry", () => {
       compactionThresholdPercent: null, contextWindow: null, maxOutputTokens: null,
     }));
     expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
+  });
+
+  it("warns that saving an edit strands the partners pinned to that source", async () => {
+    const api = new DigitalLifeApi("");
+    const pinnedPartner: PartnerDto = {
+      capabilities: [], createdBy: "user", displayName: "绑在 DeepSeek 上的搭档", engine: "pi-core",
+      inFlightCount: 0, kind: "local-pi", knowledgeDocCount: 0, lifecyclePolicy: "DRAIN",
+      modelSourceId: "source-1", partnerId: "partner-pinned", partnerRevisionId: "revision-pinned",
+      registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource] });
+    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [pinnedPartner] });
+    vi.spyOn(api, "updateModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
+    render(<ModelSourceManager api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 DeepSeek" }));
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+
+    // Saving drops the source to DRAFT, so every partner pinned to it stops dispatching until the
+    // user validates again. That is worth saying at the moment it is caused, not at the next run.
+    const warning = await screen.findByText(/钉在这个网络上的 1 个搭档（绑在 DeepSeek 上的搭档）在你验证通过前会派发失败。/u);
+    expect(warning).toHaveClass("inline-notice", "warning");
+    expect(warning).toHaveAttribute("role", "alert");
   });
 
   it("sends the advanced model limits from the edit form", async () => {
@@ -1227,6 +1252,34 @@ describe("joi home single entry", () => {
     expect(await screen.findByText("正在安排")).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "queued" })).toBeInTheDocument();
     releaseRefresh?.();
+  });
+
+  it("breaks the work counts down and counts failures toward progress", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-goal-progress", "进度工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 7,
+        canDelete: false,
+        goalId: "goal-progress",
+        status: "ARRANGING" as const,
+        title: "十一个工作",
+        updatedAt: workbench.updatedAt,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        work: { active: 1, completed: 6, failed: 4, failedResolved: 3, total: 11 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+
+    render(<JoiHome api={api} />);
+    // The five Works that are not completions have to be readable, and a failure a replacement
+    // answered is not the same fact as one that is still open.
+    const label = await screen.findByText("7 Agent · 6 工作完成 · 4 失败(3 已解决) · 1 进行中");
+    // A settled Work is settled whatever it produced, so ten of the eleven fill the bar.
+    expect(label.closest(".joi-goal-progress")?.querySelector(".joi-goal-progress-track i"))
+      .toHaveStyle({ width: "91%" });
   });
 
   it("shows a retry as arranging before the follow-up feed refresh completes", async () => {

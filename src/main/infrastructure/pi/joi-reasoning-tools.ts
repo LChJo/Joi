@@ -106,7 +106,7 @@ export function createJoiReasoningTools(input: {
   automation?: Pick<AutomationService, "create" | "delete" | "get" | "list" | "revealPrompt" | "runNow" | "setEnabled" | "update">;
   workbenchId: string;
   workbenchChanges: Pick<WorkbenchChangeService, "suggestArchive" | "suggestMerge">;
-  workbenchWorkspaces: Pick<WorkbenchWorkspaceService, "bindExisting">;
+  workbenchWorkspaces: Pick<WorkbenchWorkspaceService, "bindExisting" | "current">;
   directoryPicker: () => Promise<string | null>;
   workbenches: WorkbenchCatalog;
   /** Attachment ids bound to the current input; scopes attachment_read. */
@@ -757,13 +757,18 @@ export function createJoiReasoningTools(input: {
     workspacePath: Type.Optional(Type.String({ maxLength: 4_000, minLength: 1 })),
   });
   const bindWorkspaceTool: AgentTool<typeof bindWorkspaceParameters> = {
-    description: "Bind the current Workbench to an explicit absolute directory from the user's request when local file work needs one. Copy the path exactly; never invent or broaden it. When the user did not provide an absolute directory, omit workspacePath so joi can persist a clarification and the user can choose it on the card. The bound path is never returned to the user.",
+    description: "Bind the current Workbench to an explicit absolute directory from the user's request when local file work needs one. Copy the path exactly; never invent or broaden it. When the user did not provide an absolute directory, omit workspacePath: the tool reports the current binding when one is already READY, and otherwise persists a clarification so the user can choose the directory on the card. The bound path is never returned to the user.",
     execute: async (_toolCallId, arguments_) => {
       const workspacePath = nonBlank(arguments_.workspacePath);
       if (workspacePath !== undefined) {
         if (!isAbsoluteWorkspacePath(workspacePath)) throw new DomainError("workbench_workspace_path_invalid", "An explicit absolute workspace directory is required.");
         const workspace = await input.workbenchWorkspaces.bindExisting(input.workbenchId, workspacePath);
         return result({ displayName: workspace.displayName, kind: workspace.kind, status: workspace.status });
+      }
+      // A binding the user already made must win: never re-ask for a directory that is READY.
+      const existing = await input.workbenchWorkspaces.current(input.workbenchId);
+      if (existing?.status === "READY") {
+        return result({ alreadyBound: true, displayName: existing.displayName, kind: existing.kind, status: existing.status });
       }
       await input.clarifications.requireClarification(
         goalContext(),
