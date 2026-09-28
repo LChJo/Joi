@@ -29,7 +29,8 @@ function makeDatabase(): DatabaseSync {
       canceled_at TEXT,
       dismissed_at TEXT,
       clarification_prompt TEXT,
-      clarification_reason_code TEXT
+      clarification_reason_code TEXT,
+      reopened_at TEXT
     );
     CREATE TABLE joi_turns (
       turn_id TEXT PRIMARY KEY,
@@ -208,7 +209,7 @@ describe("joi actor tick over persisted facts", () => {
         workbenchComponent: new JoiWorkbenchComponent({ workbenches: { listSummaries: async () => [] } }),
         components: [
           new JoiTaskComponent({
-            driver: { handle: async () => {} },
+            driver: { handle: async () => undefined },
             gate: { hasReadySource: async () => true },
             inbox: new SqliteJoiTaskReader({
               database: wrapper,

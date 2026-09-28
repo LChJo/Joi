@@ -96,6 +96,9 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
     if (row.outcome_disposition === "CONTINUE") return "COMPLETED";
     return "COMPLETED";
   }
+  // A retry may reuse the same goal and evidence revision. Its older completion remains an
+  // audit fact, but cannot settle the newly opened request if the new Turn made no progress.
+  if (number(row, "outcome_stale") === 1 && text(row, "inbox_status") === "CONSUMED") return "FAILED";
   if (text(row, "inbox_status") === "CONSUMED") return "COMPLETED";
   return "ARRANGING";
 }
@@ -206,7 +209,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           LEFT JOIN work_items aw ON aw.work_id = COALESCE(da.work_id, pr.work_id)
           WHERE s.dismissed_at IS NULL AND aw.input_id = i.input_id) AS agent_count,
         COALESCE(rs.revision, 0) AS result_revision,
-        CASE WHEN o.result_revision = rs.revision AND rs.revision > 0 THEN 1 ELSE 0 END AS outcome_current,
+        CASE WHEN o.result_revision = rs.revision AND rs.revision > 0
+          AND o.completed_at >= COALESCE(i.reopened_at, i.created_at) THEN 1 ELSE 0 END AS outcome_current,
+        CASE WHEN o.completed_at < i.reopened_at THEN 1 ELSE 0 END AS outcome_stale,
         o.disposition AS outcome_disposition, o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
         tc.completed_at AS turn_completed_at,
         (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id

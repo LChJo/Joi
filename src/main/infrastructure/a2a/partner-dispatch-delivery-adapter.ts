@@ -531,6 +531,17 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     return "completed";
   }
 
+  /**
+   * Stamps the run as still owned by a live process. Guarded on RUNNING so a beat that races the
+   * terminal write cannot revive a finished run's heartbeat and make a dead owner look alive.
+   */
+  async heartbeatRun(input: { dispatchAttemptId: string; now: string }): Promise<void> {
+    this.dependencies.database.transaction((connection) => {
+      connection.prepare(`UPDATE partner_runs SET heartbeat_at = ?
+        WHERE dispatch_attempt_id = ? AND status = 'RUNNING'`).run(input.now, input.dispatchAttemptId);
+    });
+  }
+
   async handle(record: OutboxRecord): Promise<void> {
     const dispatchAttemptId = record.payload.dispatchAttemptId;
     const actionId = record.payload.actionId;

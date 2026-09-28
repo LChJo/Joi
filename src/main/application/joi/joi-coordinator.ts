@@ -91,6 +91,47 @@ const EMPTY_COMPLETION_REPAIR_PROMPT = [
   "Emit the concise final answer for the user now; if tools were used, keep the already committed outcome.",
 ].join(" ");
 
+const LEAKED_TOOL_CALL_REPAIR_PROMPT = [
+  "[joi tool-call repair] Your preceding response wrote tool-call markup as plain text (DSML-style tags), so none of those tools actually ran.",
+  "Re-issue the tool calls through the real tool-call mechanism; never write markup as message text.",
+  "If the markup was merely quoted content rather than an attempted tool call, restate the answer in plain text without any markup.",
+].join(" ");
+
+// Models behind some gateways render tool calls as literal special-token text instead of
+// structured calls. The turn then looks like a finished prose answer while every intended
+// tool silently never ran, so it must not be treated as a direct answer.
+const LEAKED_TOOL_CALL_PATTERNS = [
+  /<[｜|]{1,2}\s*(?:DSML|tool|calls?|invoke)/iu,
+  /[｜|]{1,2}\s*invoke\s+name\s*=/iu,
+] as const;
+
+function containsLeakedToolCallMarkup(text: string): boolean {
+  return LEAKED_TOOL_CALL_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+/**
+ * Whether a failed Turn's transcript should be dropped from its session.
+ *
+ * Only a Turn whose input is re-queued is worth taking back, and the schedule makes that call by
+ * exactly this condition: `failTurn` re-queues an input whose Turn committed nothing, and consumes
+ * the rest for good. For those, the transcript is the only account the next Turn has of what this
+ * one already dispatched, so dropping it would erase real work. A cancel re-runs nothing either.
+ *
+ * Kept as a function so the compiler does not narrow the caller's flag to its initial literal —
+ * the assignment that can make it true happens in a stream callback.
+ */
+function shouldRollbackTurn(sideEffectStarted: boolean, signal: AbortSignal | undefined): boolean {
+  return !sideEffectStarted && !signal?.aborted;
+}
+
+// A deterministic model-side failure (protocol garbage, capacity mismatch) should not be
+// rediscovered by the very next Turn: skip the route for this window.
+const PROTOCOL_AVOID_MILLIS = 30 * 60_000;
+// Consecutive failed Turns on one goal poison the shared session: each retry appends the
+// previous failure's transcript, so the next retry reproduces it. After this many, the
+// next attempt starts from a fresh session generation instead.
+const SESSION_RESET_AFTER_CONSECUTIVE_FAILURES = 4;
+
 const DISPATCH_CLARIFICATION_REASONS = new Set([
   DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady,
   "partner_selection_required",
@@ -118,6 +159,9 @@ function workbenchDecision(value: unknown, known: Set<string>, canCreate: boolea
 }
 
 export class JoiCoordinator {
+  #sessionFailures = new Map<string, number>();
+  #sessionGenerations = new Map<string, number>();
+
   constructor(private readonly dependencies: {
     evolution?: Pick<EvolutionService, "strategyForGoal">;
     workbenches: WorkbenchCatalog;
@@ -133,6 +177,8 @@ export class JoiCoordinator {
     router: WorkbenchRoutingRuntime;
     runtime: PrimaryReasoningRuntime;
     sources: {
+      /** Skips a deterministically broken route for a window so the next Turn picks another. */
+      avoidSource?(sourceId: string, millis: number): void;
       selectFallback?(input: {
         currentSourceId: string;
         failure: SourceFailureKind;
@@ -226,7 +272,21 @@ export class JoiCoordinator {
     // New submissions are independent goals even when their text and Workbench match.
     // Clarification/recovery keep the persisted input id; internal reviews keep their goal id.
     const goalId = input.goalInputId ?? input.inputId;
-    const sessionId = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}:${goalId}` : `joi_session:${workbenchId}:${goalId}`;
+    // A poisoned session is part of why retries reproduce their own failure; bump the
+    // generation after consecutive flops so the next attempt starts with clean history.
+    let sessionGeneration = this.#sessionGenerations.get(goalId) ?? 0;
+    if ((this.#sessionFailures.get(goalId) ?? 0) >= SESSION_RESET_AFTER_CONSECUTIVE_FAILURES) {
+      sessionGeneration += 1;
+      this.#sessionGenerations.set(goalId, sessionGeneration);
+      this.#sessionFailures.delete(goalId);
+      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.session.reset", {
+        generation: sessionGeneration,
+        goalId,
+        inputId,
+      });
+    }
+    const sessionBase = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}:${goalId}` : `joi_session:${workbenchId}:${goalId}`;
+    const sessionId = sessionGeneration === 0 ? sessionBase : `${sessionBase}#${String(sessionGeneration)}`;
     if (input.resolvedAction !== undefined) {
       if (this.dependencies.work === undefined || this.dependencies.store.completeResolvedAction === undefined) {
         throw new DomainError("joi_action_resume_unavailable", "The persisted user action cannot be resumed right now.");
@@ -320,6 +380,7 @@ export class JoiCoordinator {
     let committedTurnOutcome: JoiReasoningOutcome | undefined;
     const attemptedSources = new Set<string>();
     let completionRepairAttempted = false;
+    let toolLeakRepairAttempted = false;
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = requestText;
@@ -342,6 +403,11 @@ export class JoiCoordinator {
         const strategy = this.dependencies.evolution?.strategyForGoal(workbenchId, goalId, pin);
       try {
         let attemptCompletionText = "";
+        // Per-pass facts: a repair pass must be judged on its own output, not on the
+        // cumulative history of earlier passes in the same Turn. Held in an object so the
+        // compiler does not narrow them to their initial literals — the assignments that
+        // can make them true happen in the stream callback below.
+        const pass = { committedOutcome: false, observedToolCalls: 0 };
         const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
             workbenchId,
@@ -362,6 +428,7 @@ export class JoiCoordinator {
               if (event.type === "tool_started") {
                 sideEffectStarted = sideEffectStarted || !REPLAY_SAFE_TOOL_NAMES.has(event.toolName);
                 observedToolCalls.add(event.toolCallId);
+                pass.observedToolCalls += 1;
                 toolStartedAt.set(event.toolCallId, this.dependencies.clock.now().getTime());
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.started", {
                   workbenchId,
@@ -397,6 +464,7 @@ export class JoiCoordinator {
               }
               if (event.type === "tool_finished" && !event.isError && COMMITTED_OUTCOME_TOOL_NAMES.has(event.toolName)) {
                 committedOutcomeTools.add(event.toolName);
+                pass.committedOutcome = true;
                 if (event.outcome !== undefined) committedTurnOutcome = event.outcome;
               }
               if (formalOutputStarted || sideEffectStarted) {
@@ -444,6 +512,24 @@ export class JoiCoordinator {
           // (zero tool calls) is a valid outcome instead of a capability failure.
           if (pin.modelCapability === "custom-unverified-tools" && pin.toolCapabilityProven !== true && observedToolCalls.size === 0) {
             throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
+          }
+          // A pass that rendered tool-call markup as plain text ran nothing: let the model
+          // re-emit real calls once, then treat the source as protocol-broken so a fallback
+          // route can take the request. The text must never masquerade as a direct answer.
+          if (pass.observedToolCalls === 0 && !pass.committedOutcome && containsLeakedToolCallMarkup(attemptCompletionText)) {
+            if (toolLeakRepairAttempted) {
+              throw new DomainError("joi_model_toolcall_leak", "The model rendered tool-call markup as plain text, so the response is not a real answer.");
+            }
+            toolLeakRepairAttempted = true;
+            emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.toolcall_leak_repair_requested", {
+              workbenchId,
+              inputId,
+              sourceId: pin.sourceId,
+              turnId,
+            });
+            prompt = LEAKED_TOOL_CALL_REPAIR_PROMPT;
+            turnImages = undefined;
+            continue;
           }
           const synthesisOutcomeCommitted = committedTurnOutcome === "RESULT_SYNTHESIZED" || committedTurnOutcome === "RESULT_CONTINUE" || committedTurnOutcome === "RESULT_BLOCKED";
           if (observedToolCalls.size > 0 && committedOutcomeTools.size === 0 || isGoalSynthesis && !synthesisOutcomeCommitted) {
@@ -543,6 +629,7 @@ export class JoiCoordinator {
         outcome: synthesisOutcome ?? "RESULT_BLOCKED",
       } : directOutcome === undefined ? undefined : {
         completionSummary,
+        ...(committedTurnOutcome === directOutcome ? { committedByTool: true } : {}),
         outcome: directOutcome,
       });
       if (goalSynthesis !== null) {
@@ -578,6 +665,7 @@ export class JoiCoordinator {
         sourceId: pin.sourceId,
         turnId,
       });
+      this.#sessionFailures.delete(goalId);
       await this.dependencies.events?.emit("joi.turn.completed", turnId, { workbenchId, inputId, turnId });
     } catch (error) {
       // A failed turn must not leave its reasoning session streaming: a leftover
@@ -587,6 +675,34 @@ export class JoiCoordinator {
         this.dependencies.runtime.abort(sessionId);
       } catch {
         // The session may not exist yet; nothing to abort.
+      }
+      if (!signal?.aborted) {
+        const failureKind = this.dependencies.failureClassifier?.classify(error) ?? null;
+        if (failureKind === "protocol") {
+          this.dependencies.sources.avoidSource?.(pin.sourceId, PROTOCOL_AVOID_MILLIS);
+          emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.source.avoided", {
+            millis: PROTOCOL_AVOID_MILLIS,
+            reason: failureKind,
+            sourceId: pin.sourceId,
+            turnId,
+          });
+        }
+        this.#sessionFailures.set(goalId, (this.#sessionFailures.get(goalId) ?? 0) + 1);
+      }
+      // Drop the failed attempt from the session, but only when this input will be re-queued.
+      // `failTurn` re-queues exactly the turns that committed nothing: once a turn started a side
+      // effect, or its work is still live, the row is consumed and never replayed, and the
+      // transcript is then the only record the next Turn has of what this one already dispatched.
+      // A user cancel is the same reasoning — nothing will re-run, so there is nothing to undo.
+      if (shouldRollbackTurn(sideEffectStarted, signal)) {
+        const rolledBack = await this.dependencies.runtime.rollbackTurn(sessionId, turnId);
+        if (!rolledBack) {
+          emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.session.rollback_skipped", {
+            inputId,
+            turnId,
+            workbenchId,
+          });
+        }
       }
       await this.dependencies.store.failTurn?.(inputId, turnId);
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.failed", {

@@ -51,6 +51,7 @@ const REVIEW_GATE_OPEN_SQL = `NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates
                             WHERE gate.goal_input_id = m.goal_input_id AND gate.status <> 'OPEN')`;
 const REVIEW_FACTS_COMPLETE_SQL = `
                 r.status = 'CONSUMED' AND o.disposition = 'COMPLETED'
+                AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
                 AND EXISTS (SELECT 1 FROM joi_turns finished_review
                              WHERE finished_review.input_id = r.input_id AND finished_review.status = 'COMPLETED')
                 AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
@@ -300,6 +301,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.status = 'ACTIVE'
            AND rs.revision > m.reviewed_revision
            AND rs.synthesized_revision = rs.revision
+           AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
            AND (o.disposition = 'COMPLETED' OR (
              o.disposition = 'CONTINUE'
              AND g.status = 'CONSUMED'
@@ -462,6 +464,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.status IN ('ACTIVE', 'CLEARED')
            AND rs.revision > 0
            AND rs.synthesized_revision = rs.revision
+           AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
            AND m.reviewed_revision = rs.revision
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND ${REVIEW_GATE_OPEN_SQL}
@@ -645,6 +648,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
            AND rs.revision > m.reviewed_revision
            AND rs.synthesized_revision = rs.revision
+           AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND (o.disposition = 'COMPLETED' OR (
              o.disposition = 'CONTINUE'
@@ -876,9 +880,11 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
         JOIN joi_inbox_messages review
           ON review.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || CAST(rs.revision AS TEXT)
+        JOIN joi_inbox_messages goal ON goal.input_id = m.goal_input_id
        WHERE m.status = 'ACTIVE'
          AND rs.synthesized_revision = rs.revision
          AND o.disposition = 'COMPLETED'
+         AND o.completed_at >= COALESCE(goal.reopened_at, goal.created_at)
          AND review.status = 'CONSUMED'
          AND EXISTS (SELECT 1 FROM joi_harness_paths p
                       WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
@@ -908,9 +914,11 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
           JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
           JOIN joi_inbox_messages review
             ON review.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || CAST(rs.revision AS TEXT)
+          JOIN joi_inbox_messages goal ON goal.input_id = m.goal_input_id
          WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
            AND rs.synthesized_revision = rs.revision
            AND o.disposition = 'COMPLETED'
+           AND o.completed_at >= COALESCE(goal.reopened_at, goal.created_at)
            AND review.status = 'CONSUMED'
            AND NOT EXISTS (SELECT 1 FROM work_items w
                             WHERE w.input_id = m.goal_input_id
@@ -939,6 +947,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.goal_input_id = ? AND m.status IN ('ACTIVE', 'CLEARED')
            AND rs.synthesized_revision = rs.revision
            AND rs.revision = ? AND m.reviewed_revision = rs.revision
+           AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
            AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
            AND ${REVIEW_GATE_OPEN_SQL}
            AND (g.status = 'CONSUMED' OR (g.status = 'CLARIFICATION_REQUIRED'

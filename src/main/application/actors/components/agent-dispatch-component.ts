@@ -19,6 +19,12 @@ import type { LocalDispatchCapacityController } from "../../work/local-dispatch-
 const CLAIM_LEASE_MILLIS = 120_000;
 const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
 const DEFAULT_WAITING_RETRY_EVERY_MILLIS = 30_000;
+/**
+ * How often an in-flight run's liveness reaches the database. A tick is two seconds, and the
+ * readers only need to tell "a live process owns this" from "nothing does", so beating faster
+ * than this buys nothing and costs a write per run per tick.
+ */
+const DEFAULT_RUN_HEARTBEAT_EVERY_MILLIS = 30_000;
 /** Scheduling contention is expected while another Work owns a write lease. */
 const WORKSPACE_CONTENTION_RETRY_MILLIS = 5_000;
 /** Renew the workspace lease once its remaining lifetime drops below this margin. */
@@ -37,6 +43,8 @@ interface InFlightRun {
   prepared: PreparedDispatch;
   settled: DispatchRunOutput | undefined;
   lastProgressAt: number;
+  /** Last time this run's liveness was written to the database; 0 beats on the first tick. */
+  lastHeartbeatAt: number;
   completeFailures: number;
   nextWaitingRetryAt: number;
   capacityReserved: boolean;
@@ -66,6 +74,7 @@ export class AgentDispatchComponent implements ActorComponent {
     claims: PartnerDispatchClaims;
     capacity?: LocalDispatchCapacityController;
     delivery: PartnerDispatchDelivery;
+    heartbeatEveryMillis?: number;
     leases?: WorkspaceLeaseRenewal;
     orphanScanEveryMillis?: number;
     outbox: Pick<RuntimeStore, "claimOutboxById" | "completeOutbox" | "releaseOutbox">;
@@ -83,10 +92,32 @@ export class AgentDispatchComponent implements ActorComponent {
 
   async update(ctx: ActorTickContext): Promise<void> {
     await this.#renewLease(ctx);
+    await this.#heartbeatRuns(ctx);
     await this.#converge(ctx);
     await this.#scanOrphans(ctx);
     if (this.#orphanInFlight.size > 0) return;
     await this.#claimAndStart(ctx);
+  }
+
+  /**
+   * Tells the database that this process still owns its in-flight runs.
+   *
+   * `updated_at` on a run means "when did its state last change" and nothing writes it while a
+   * partner works, so a long run is indistinguishable from an abandoned one. This is the only
+   * runtime evidence that separates them, and a goal's recovery path waits on it: without a
+   * live heartbeat the recovery cannot tell "still working" from "died", and the safe reading
+   * of an unknown is to keep waiting forever.
+   */
+  async #heartbeatRuns(ctx: ActorTickContext): Promise<void> {
+    if (this.dependencies.delivery.heartbeatRun === undefined) return;
+    const everyMillis = this.dependencies.heartbeatEveryMillis ?? DEFAULT_RUN_HEARTBEAT_EVERY_MILLIS;
+    const now = ctx.now.getTime();
+    const stamp = ctx.now.toISOString();
+    for (const run of this.#inFlight.values()) {
+      if (run.settled !== undefined || now - run.lastHeartbeatAt < everyMillis) continue;
+      run.lastHeartbeatAt = now;
+      await this.dependencies.delivery.heartbeatRun({ dispatchAttemptId: run.dispatchAttemptId, now: stamp });
+    }
   }
 
   /**
@@ -374,6 +405,9 @@ export class AgentDispatchComponent implements ActorComponent {
         outboxId: claim.outboxId,
         prepared,
         settled: undefined,
+        // Not the dispatch moment: zero makes the next tick write this run's first beat instead
+        // of waiting out a whole interval with no liveness on record.
+        lastHeartbeatAt: 0,
         lastProgressAt: ctx.clock.now().getTime(),
         nextWaitingRetryAt: 0,
       };

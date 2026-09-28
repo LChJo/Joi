@@ -18,6 +18,8 @@ export type JoiCompletionOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNT
 export interface JoiInputCompletion {
   completionSummary: string;
   outcome: JoiCompletionOutcome;
+  /** The model explicitly committed this outcome with turn_complete. */
+  committedByTool?: boolean;
 }
 
 export interface JoiCoordinatorStore {

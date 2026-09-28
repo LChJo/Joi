@@ -1,0 +1,14 @@
+-- A partner run's liveness signal, kept separate from updated_at.
+--
+-- updated_at means "when did this run's state last change", and the workbench agent feed
+-- already reads it as "last activity". A run that executes for an hour without a state
+-- transition is healthy, but by that column it looks untouched since it was dispatched —
+-- which is exactly how a live partner became indistinguishable from a dead one and left a
+-- goal stranded on a review gate. The dispatch actor heartbeats this column on every tick
+-- while a run is in flight, so an expired heartbeat means the process that owned the run is
+-- gone, and it is the only runtime evidence that separates "still working" from "died".
+--
+-- NULL for rows written before this migration, and NULL must keep the old meaning: readers
+-- fall back to the pre-heartbeat rule for those rows instead of reading NULL as expired, or
+-- the first start after an upgrade would declare every historical run dead at once.
+ALTER TABLE partner_runs ADD COLUMN heartbeat_at TEXT;

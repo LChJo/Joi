@@ -801,4 +801,181 @@ describe("Pi reasoning runtime contract", () => {
       turnId: "turn_stream_error",
     })).rejects.toMatchObject({ code: "reasoning_stream_error" });
   });
+
+  // A failed Turn is re-queued and prompted again on the same session, so whatever it wrote is
+  // read back as this run's own precedent. A Turn that answered with its tool calls written as
+  // plain text taught every retry to do the same until the crash-loop breaker parked the input.
+  const rollbackTurnInput = (turnId: string, prompt: string) => ({
+    workbenchId: "workbench_1",
+    inputId: `input_${turnId}`,
+    modelId: "contract-model",
+    modelRevisionId: "model_rev_1",
+    prompt,
+    sessionId: "session_rollback",
+    sourceId: "contract-source",
+    sourceRevisionId: "source_rev_1",
+    systemPrompt: "You are joi.",
+    turnId,
+  });
+
+  it("takes a Turn that failed at the provider back out of the session", async () => {
+    const faux = fauxProvider({ provider: "joi-failed-turn-rollback" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+
+    faux.setResponses([fauxAssistantMessage([fauxText("第一次回答")])]);
+    await runtime.startTurn(rollbackTurnInput("turn_ok", "第一次"));
+
+    faux.setResponses([fauxAssistantMessage([], { errorMessage: "400 aborted", stopReason: "error" })]);
+    await expect(runtime.startTurn(rollbackTurnInput("turn_killed", "第二次")))
+      .rejects.toMatchObject({ code: "reasoning_stream_error" });
+
+    const saved = JSON.stringify(store.snapshots.get("session_rollback")?.messages);
+    expect(saved).toContain("第一次回答");
+    expect(saved).not.toContain("第二次");
+  });
+
+  it("keeps a committed tool call in the session when a later provider request fails", async () => {
+    const faux = fauxProvider({ provider: "joi-tool-then-provider-error" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    let calls = 0;
+    const runtime = new PiReasoningRuntime({
+      model: faux.getModel(), models, sessionStore: store,
+      tools: [{
+        name: "work_dispatch", label: "Dispatch Work", description: "Commit a plan.",
+        parameters: Type.Object({}),
+        execute: async () => {
+          calls += 1;
+          return { content: [{ type: "text" as const, text: "committed" }], details: {} };
+        },
+      }],
+    });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("work_dispatch", {})], { stopReason: "toolUse" }),
+      () => { throw new Error("provider unavailable after dispatch"); },
+    ]);
+    await expect(runtime.startTurn(rollbackTurnInput("turn_after_dispatch", "派发并继续"))).rejects.toThrow();
+    expect(calls).toBe(1);
+    const saved = JSON.stringify(store.snapshots.get("session_rollback")?.messages);
+    expect(saved).toContain("work_dispatch");
+    expect(saved).toContain("committed");
+  });
+
+  it("rolls a Turn's transcript back on request, for a failure only the caller can see", async () => {
+    const faux = fauxProvider({ provider: "joi-explicit-rollback" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+
+    faux.setResponses([fauxAssistantMessage([fauxText("保留的回答")])]);
+    await runtime.startTurn(rollbackTurnInput("turn_keep", "第一个问题"));
+    faux.setResponses([fauxAssistantMessage([fauxText("要回滚的回答")])]);
+    await runtime.startTurn(rollbackTurnInput("turn_undo", "第二个问题"));
+    expect(JSON.stringify(store.snapshots.get("session_rollback")?.messages)).toContain("要回滚的回答");
+
+    // The Turn ended normally; only the caller knows it failed — a recovery Turn that never
+    // called the tool its gate required rejects after startTurn has already resolved.
+    expect(await runtime.rollbackTurn("session_rollback", "turn_undo")).toBe(true);
+
+    const saved = JSON.stringify(store.snapshots.get("session_rollback")?.messages);
+    expect(saved).toContain("保留的回答");
+    expect(saved).not.toContain("要回滚的回答");
+    expect(saved).not.toContain("第二个问题");
+  });
+
+  it("removes every attempt of a Turn, not just the last one", async () => {
+    const faux = fauxProvider({ provider: "joi-turn-attempts" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+
+    faux.setResponses([fauxAssistantMessage([fauxText("原回答")])]);
+    await runtime.startTurn(rollbackTurnInput("turn_base", "原问题"));
+
+    // The coordinator repairs an uncommitted outcome by continuing the same session, and every
+    // attempt shares the turnId. Rolling back only the last would leave the earlier ones behind.
+    faux.setResponses([
+      fauxAssistantMessage([fauxText("第一次尝试")]),
+      fauxAssistantMessage([fauxText("第二次尝试")]),
+      fauxAssistantMessage([fauxText("第三次尝试")]),
+    ]);
+    await runtime.startTurn(rollbackTurnInput("turn_retry", "重试问题"));
+    await runtime.startTurn(rollbackTurnInput("turn_retry", "重试问题"));
+    await runtime.startTurn(rollbackTurnInput("turn_retry", "重试问题"));
+    expect(await runtime.rollbackTurn("session_rollback", "turn_retry")).toBe(true);
+
+    const saved = JSON.stringify(store.snapshots.get("session_rollback")?.messages);
+    expect(saved).toContain("原回答");
+    for (const attempt of ["第一次尝试", "第二次尝试", "第三次尝试", "重试问题"]) expect(saved).not.toContain(attempt);
+  });
+
+  it("reports a rollback it could not perform instead of silently keeping the failure", async () => {
+    const faux = fauxProvider({ provider: "joi-rollback-miss" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiReasoningRuntime({
+      model: faux.getModel(),
+      models,
+      sessionStore: new MemorySessionStore(),
+      tools: [],
+    });
+    // No Turn has marked a point for this session, so there is nothing to take back — the caller
+    // needs the false to know the retry will inherit whatever the failed Turn wrote.
+    expect(await runtime.rollbackTurn("session_unknown", "turn_unknown")).toBe(false);
+  });
+
+  it("leaves an empty assistant message out of the request a killed stream parked in the session", async () => {
+    const faux = fauxProvider({ provider: "joi-empty-assistant" });
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    // An assistant message with no content is not a legal request input, and this one survives
+    // every save and restore. Re-sending it is the other half of the poisoning above: the filter
+    // lives in request shaping, so it covers history read back from the store as well.
+    await store.save({
+      compaction: undefined,
+      messages: [
+        { content: [{ text: "先看这个", type: "text" }], role: "user", timestamp: 1 },
+        { content: [], role: "assistant", stopReason: "error", timestamp: 2 },
+        { content: [{ text: "继续", type: "text" }], role: "user", timestamp: 3 },
+      ],
+      modelRevisionId: "model_rev_1",
+      sessionId: "session_empty_assistant",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      updatedAt: "2026-07-15T12:00:00.000Z",
+      workbenchId: "workbench_1",
+    });
+
+    let seen: readonly unknown[] = [];
+    faux.setResponses([(context) => {
+      seen = context.messages;
+      return fauxAssistantMessage([fauxText("好")]);
+    }]);
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+    await runtime.startTurn({
+      workbenchId: "workbench_1",
+      inputId: "input_empty_assistant",
+      modelId: "contract-model",
+      modelRevisionId: "model_rev_1",
+      prompt: "接着做",
+      sessionId: "session_empty_assistant",
+      sourceId: "contract-source",
+      sourceRevisionId: "source_rev_1",
+      systemPrompt: "You are joi.",
+      turnId: "turn_empty_assistant",
+    });
+
+    const empties = seen.filter((message) => {
+      const record = message as { content?: unknown[]; role?: unknown };
+      return record.role === "assistant" && Array.isArray(record.content) && record.content.length === 0;
+    });
+    expect(empties).toEqual([]);
+  });
 });

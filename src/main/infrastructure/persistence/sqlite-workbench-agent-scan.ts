@@ -49,6 +49,11 @@ export class SqliteWorkbenchAgentScan implements WorkbenchAgentScan {
   }
 
   async listUnsynthesizedResults(workbenchId: string): Promise<WorkbenchUnsynthesizedResult[]> {
+    // The gate predicate here must stay identical to the one `enqueuePartnerResult` refuses on.
+    // That method deliberately leaves a paused goal's result unclaimed so a later tick can still
+    // reconsider it, which means a scan that offered it anyway would offer it on every tick
+    // forever. Excluding it on both sides keeps the pair convergent: the result is reconsidered
+    // as soon as the gate opens, and never before.
     return (this.database.transaction((connection) => connection.prepare(`
       SELECT r.result_id, r.work_id, r.status, r.summary, e.event_id,
              rev.partner_id, w.title, pr.kind, pr.action_id, r.instance_id,
@@ -61,6 +66,8 @@ export class SqliteWorkbenchAgentScan implements WorkbenchAgentScan {
        WHERE r.workbench_id = ? AND r.is_authoritative = 1 AND r.is_late = 0
          AND r.status IN ('COMPLETED', 'FAILED', 'UNKNOWN')
          AND NOT EXISTS (SELECT 1 FROM joi_goal_result_members m WHERE m.event_id = e.event_id)
+         AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates g
+                          WHERE g.goal_input_id = w.input_id AND g.status <> 'OPEN')
        ORDER BY r.created_at, r.result_id LIMIT 50`).all(workbenchId)) as Row[])
       .map((row) => {
         const kind = textValue(row, "kind");

@@ -20,7 +20,7 @@ const unproven = (): ToolProofState => ({ proven: false, recorded: [] });
 
 function coordinator(mode: "lookup" | "none" | "outcome", completed: string[], failed: string[], diagnostics: string[] = [], proof: ToolProofState = unproven()) {
   const runtime: PrimaryReasoningRuntime = {
-    abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+    abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
     startTurn: async (turn) => {
       if (mode === "none") return;
       const toolName = mode === "lookup" ? "partner_list_available" : "turn_complete";
@@ -98,7 +98,7 @@ describe("custom model tool capability gate", () => {
     const completed: string[] = [];
     const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
     const runtime: PrimaryReasoningRuntime = {
-      abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+      abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
       startTurn: async (turn) => {
         prompts.push(turn.prompt);
         const toolName = prompts.length === 1 ? "partner_list_available" : "work_dispatch";

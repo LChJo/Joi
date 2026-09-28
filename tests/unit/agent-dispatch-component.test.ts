@@ -42,6 +42,7 @@ function makeHarness(options: HarnessOptions = {}) {
   const completionOutputs: (DispatchRunOutput & { kind: "terminal" })[] = [];
   const diagnosticEvents: { event: string; fields: Record<string, unknown> }[] = [];
   const finalized: string[] = [];
+  const heartbeats: { dispatchAttemptId: string; now: string }[] = [];
   const released: string[] = [];
   const releaseAvailableAt: string[] = [];
   const runSignals: (AbortSignal | undefined)[] = [];
@@ -72,6 +73,7 @@ function makeHarness(options: HarnessOptions = {}) {
         return "completed" as const;
       },
       handle: async () => undefined,
+      heartbeatRun: async (input) => { heartbeats.push(input); },
       prepare: async (claim) => {
         if (options.prepareOverride !== undefined) return options.prepareOverride(claim);
         const result = options.prepareResult ?? PREPARED;
@@ -109,7 +111,7 @@ function makeHarness(options: HarnessOptions = {}) {
     ...(options.watchdogMillis === undefined ? {} : { watchdogMillis: options.watchdogMillis }),
     ...(options.workCanceled === undefined ? {} : { workCanceled: options.workCanceled }),
   });
-  return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, releaseAvailableAt, released, runSignals, progressCallbacks };
+  return { abandoned, calls, completed, completionOutputs, component, diagnosticEvents, finalized, heartbeats, releaseAvailableAt, released, runSignals, progressCallbacks };
 }
 
 function diagnosticsSink(events: { event: string; fields: Record<string, unknown> }[]) {
@@ -138,6 +140,28 @@ describe("AgentDispatchComponent", () => {
     expect(harness.calls.filter((call) => call === "run")).toHaveLength(2);
 
     pending.forEach((resolve) => resolve());
+  });
+
+  it("beats an in-flight run's liveness on a throttled cadence", async () => {
+    const harness = makeHarness({
+      claims: [CLAIM],
+      runOverride: () => new Promise<DispatchRunOutput>(() => undefined),
+    });
+
+    // The first tick starts the run, the second writes its first beat rather than waiting out an
+    // interval with no liveness on record.
+    await harness.component.update(ctxAt(0));
+    expect(harness.heartbeats).toEqual([]);
+    await harness.component.update(ctxAt(2_000));
+    expect(harness.heartbeats.map((beat) => beat.dispatchAttemptId)).toEqual(["attempt_1"]);
+
+    // A tick is two seconds; a beat per tick would be a database write every two seconds for a
+    // signal readers only need often enough to tell a live owner from a dead one.
+    await harness.component.update(ctxAt(10_000));
+    expect(harness.heartbeats).toHaveLength(1);
+    await harness.component.update(ctxAt(40_000));
+    expect(harness.heartbeats).toHaveLength(2);
+    expect(harness.heartbeats[1]?.now).toBe(new Date(new Date(BASE).getTime() + 40_000).toISOString());
   });
 
   it("continues to another claim when the first Work is waiting on a resource lease", async () => {

@@ -20,6 +20,20 @@ interface TransactionalDatabase {
 
 type Row = Record<string, unknown>;
 
+/**
+ * How long a run may go without a heartbeat before its owner is presumed gone. The dispatch
+ * actor beats every 30 seconds while a run is in flight, so this is ten missed beats: long
+ * enough that a busy or briefly stalled process is never mistaken for a dead one, short enough
+ * that a goal stranded by a crash becomes actionable in minutes rather than never.
+ */
+const REVIEW_RECOVERY_HEARTBEAT_STALE_MILLIS = 5 * 60_000;
+/**
+ * How long a goal-derived Turn may go without progress before it stops holding back the repair.
+ * Turns have no heartbeat, only `updated_at`, and the task actor already aborts a stalled Turn
+ * after 15 minutes — staying above that keeps this from racing the abort it depends on.
+ */
+const REVIEW_RECOVERY_TURN_STALE_MILLIS = 20 * 60_000;
+
 function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string): void {
   connection.prepare(`UPDATE joi_user_action_requests
     SET status = 'CANCELED', updated_at = ? WHERE input_id = ? AND status IN ('OPEN', 'RESOLVED')`).run(now, inputId);
@@ -110,11 +124,13 @@ function clearCompletedReviewMap(connection: DatabaseSync, goalInputId: string, 
          SELECT 1 FROM joi_goal_result_sets rs
          JOIN joi_goal_outcomes o ON o.input_id = rs.original_input_id
                                   AND o.result_revision = rs.revision
+         JOIN joi_inbox_messages goal ON goal.input_id = rs.original_input_id
           WHERE rs.original_input_id = m.goal_input_id
             AND rs.revision > 0
             AND rs.synthesized_revision = rs.revision
             AND m.reviewed_revision = rs.revision
             AND o.disposition = 'COMPLETED'
+            AND o.completed_at >= COALESCE(goal.reopened_at, goal.created_at)
        )`).run(now, now, goalInputId, turnId).changes > 0;
 }
 
@@ -277,9 +293,11 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             SET status = 'APPLIED', decision = ?, resolved_at = ?, applied_at = ?, updated_at = ?
             WHERE action_id = ? AND status = 'OPEN'`).run(patch.actionChoice, now, now, now, action.action_id);
           if (applied.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+          // Continuing or accepting a closed-out result is a user decision on this goal,
+          // so it reopens the goal's position in the home feed the same way an answer does.
           const consumed = connection.prepare(`UPDATE joi_inbox_messages
-            SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
-            WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(now, inputId);
+            SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
+            WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(now, now, inputId);
           if (consumed.changes !== 1) throw new Error("joi_goal_continuation_conflict");
           connection.prepare(`UPDATE joi_goal_execution_gates SET status = 'OPEN', resume_input_id = NULL,
             answered_at = COALESCE(answered_at, ?), updated_at = ? WHERE goal_input_id = ?`).run(now, now, goalInputId);
@@ -295,10 +313,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const questionId = typeof gate?.question_id === "string" ? gate.question_id : `goal_question:${goalInputId}:v1`;
       const questionVersion = typeof gate?.question_version === "number" ? gate.question_version : 1;
       const resumeInputId = `joi_goal_resume:goal:${goalInputId}:v${String(questionVersion)}`;
+      // Answering a clarification is a user opening, exactly like a retry: the goal the
+      // user just replied to belongs at the top of the home feed. Without this the card
+      // stays wherever its original creation time put it, so the goal being worked on
+      // sinks under finished ones that were retried more recently.
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET body = ?, workbench_id = ?, status = 'ROUTED', clarification_reason_code = NULL,
-          clarification_prompt = NULL, updated_at = ?
-        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, goalInputId);
+          clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
+        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, now, goalInputId);
       if (result.changes === 0) return null;
       if (action !== undefined) {
         const resolved = connection.prepare(`UPDATE joi_user_action_requests
@@ -306,12 +328,16 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE action_id = ? AND status = 'OPEN'`).run(now, now, action.action_id as string);
         if (resolved.changes !== 1) throw new Error("joi_user_action_resolution_conflict");
       }
-      const queued = connection.prepare(`SELECT w.work_id, w.title, w.status,
+      // Every Work that is not terminal, RUNNING ones included. Listing only the queued ones
+      // left the resumed Turn blind to Work already executing: this prompt is its only view of
+      // what exists, and a Work it cannot see is one it will happily dispatch a second time.
+      const liveWork = connection.prepare(`SELECT w.work_id, w.title, w.status,
           (SELECT action_id FROM joi_user_action_requests action
             WHERE action.work_id = w.work_id AND action.status = 'RESOLVED'
             ORDER BY action.updated_at DESC, action.action_id DESC LIMIT 1) AS resolved_action_id
         FROM work_items w
-        WHERE w.input_id = ? AND w.status IN ('PLANNED','READY','WAITING') ORDER BY w.created_at, w.work_id LIMIT 24`).all(goalInputId) as Row[];
+        WHERE w.input_id = ? AND w.status NOT IN ('COMPLETED','FAILED','CANCELED')
+        ORDER BY w.created_at, w.work_id LIMIT 24`).all(goalInputId) as Row[];
       const answer = patch.text ?? (patch.workbenchId === undefined ? "已提交结构化选择。" : "已确认工作台选择。");
       const resumeBody = [
         "A blocking question for this goal has been answered. Review the saved Work before resuming execution.",
@@ -326,9 +352,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         // appends a supplement, and an unbounded copy would inflate each
         // recovery prompt.
         [`savedGoalAndAnswers=${current.body.length > 4000 ? `${current.body.slice(0, 4000)}…` : current.body}`],
-        ...queued.map((item) => `queuedWorkId=${String(item.work_id)} status=${String(item.status)}${typeof item.resolved_action_id === "string" ? ` resolvedActionId=${item.resolved_action_id}` : ""} title=${String(item.title).slice(0, 240)}`),
-        "If the original plan still applies, call goal_resume, then resume or leave the existing Work as appropriate.",
-        "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements.",
+        ...liveWork.map((item) => `existingWorkId=${String(item.work_id)} status=${String(item.status)}${typeof item.resolved_action_id === "string" ? ` resolvedActionId=${item.resolved_action_id}` : ""} title=${String(item.title).slice(0, 240)}`),
+        "A Work with status RUNNING is executing right now. Leave it alone: its result arrives as its own input when it finishes, and dispatching it again duplicates the work instead of replacing it.",
+        "If the original plan still applies, call goal_resume, then leave any RUNNING Work alone and resume or leave the queued Work as appropriate.",
+        "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements. Cancel a RUNNING Work only when its result is no longer wanted at all.",
         "If information is still missing, call user_ask; do not call goal_resume.",
       ].join("\n");
       connection.prepare(`INSERT INTO joi_inbox_messages
@@ -499,8 +526,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET body = ?, status = 'PENDING', canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL,
-          failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
-        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, now, inputId);
+          failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL,
+          updated_at = ?, last_opened_at = ?, reopened_at = ?
+        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, now, now, inputId);
       if (result.changes === 0) return null;
       connection.prepare(`UPDATE joi_harness_maps
         SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,
@@ -806,6 +834,31 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     });
   }
 
+  // A follow-up Turn answered a reopened goal with prose instead of new Work: hand the
+  // decision to the user. Mirrors requireClarification's gate mechanics but runs inside the
+  // caller's transaction, so the turn completion and the raised question commit atomically.
+  #raiseFollowupConfirmation(connection: DatabaseSync, goalInputId: string, summary: string, now: string): void {
+    const reasonCode = "joi_goal_followup_answer_unconfirmed";
+    const prompt = `joi 对这个继续目标只给出了回答、没有留下新工作。请确认是否接受该回答，或补充指示：\n\n${summary.slice(0, 2000)}`;
+    const existingGate = connection.prepare(`SELECT question_version FROM joi_goal_execution_gates
+      WHERE goal_input_id = ?`).get(goalInputId) as { question_version?: unknown } | undefined;
+    const questionVersion = (typeof existingGate?.question_version === "number" ? existingGate.question_version : 0) + 1;
+    const questionId = `goal_question:${goalInputId}:v${String(questionVersion)}`;
+    const raised = connection.prepare(`UPDATE joi_inbox_messages
+      SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = ?, clarification_prompt = ?, updated_at = ?
+      WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(
+      reasonCode, prompt, now, goalInputId,
+    );
+    if (raised.changes === 1) connection.prepare(`INSERT INTO joi_goal_execution_gates
+      (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
+      VALUES (?, ?, ?, 'WAITING_INPUT', ?, NULL, ?, NULL, ?)
+      ON CONFLICT(goal_input_id) DO UPDATE SET question_id = excluded.question_id,
+        question_version = excluded.question_version, status = 'WAITING_INPUT', reason_code = excluded.reason_code,
+        resume_input_id = NULL, answered_at = NULL, updated_at = excluded.updated_at`).run(
+      goalInputId, questionId, questionVersion, reasonCode, now, now,
+    );
+  }
+
   async resumeGoal(input: { inputId: string; turnId: string }): Promise<{ status: "OPEN" }> {
     return this.database.transaction((connection) => {
       const row = connection.prepare(`SELECT i.goal_input_id, gate.goal_input_id AS gated_goal_input_id,
@@ -902,6 +955,40 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             WHERE input_id = ? AND status <> 'CLARIFICATION_REQUIRED'`).run(pendingStatus, now, inputId);
         }
         return undefined;
+      }
+      // A user retry reuses the goal id, so its prior result row remains present. A Turn that
+      // finishes without adding Work must not inherit that old completion as its own outcome.
+      // An explicit direct answer may close a follow-up about the existing evidence; an inferred
+      // answer (including planning prose from a tool-less Turn) cannot silently finish the goal.
+      // When the Turn did produce a visible answer, raise it as a question instead of failing:
+      // a retry would re-run the same answer and burn the crash-loop breaker on it.
+      const staleFollowup = connection.prepare(`SELECT i.reopened_at, o.disposition
+        FROM joi_inbox_messages i JOIN joi_goal_outcomes o ON o.input_id = i.input_id
+        WHERE i.input_id = ? AND i.goal_input_id IS NULL AND i.reopened_at IS NOT NULL
+          AND o.completed_at < i.reopened_at`).get(inputId) as { disposition?: unknown; reopened_at?: unknown } | undefined;
+      if (typeof staleFollowup?.reopened_at === "string") {
+        const newWork = connection.prepare(`SELECT 1 FROM work_items
+          WHERE input_id = ? AND created_at >= ? LIMIT 1`).get(inputId, staleFollowup.reopened_at);
+        if (newWork === undefined) {
+          const explicitDirect = completion?.outcome === "DIRECT_ANSWER" && completion.committedByTool === true
+            && (staleFollowup.disposition === "COMPLETED" || staleFollowup.disposition === "ACCEPTED_WITH_GAPS");
+          const inferredSummary = completion === undefined ? "" : normalizeCompletionSummary(completion.completionSummary);
+          if (!explicitDirect && inferredSummary !== "") {
+            const completedTurn = connection.prepare(`UPDATE joi_turns SET status = 'COMPLETED', updated_at = ?
+              WHERE turn_id = ? AND input_id = ?`).run(now, turnId, inputId);
+            if (completedTurn.changes !== 1) throw new Error("joi_turn_input_mismatch");
+            this.#raiseFollowupConfirmation(connection, inputId, inferredSummary, now);
+            return undefined;
+          }
+          if (!explicitDirect) {
+            throw new DomainError("joi_goal_followup_without_work", "A continued goal needs new Work or an explicit direct answer.");
+          }
+          const summary = normalizeCompletionSummary(completion.completionSummary);
+          if (summary === "") throw new DomainError("joi_goal_followup_summary_empty", "A direct follow-up needs a visible answer.");
+          connection.prepare(`UPDATE joi_goal_outcomes SET disposition = 'COMPLETED',
+            completion_summary = ?, completed_at = ?, updated_at = ? WHERE input_id = ?`)
+            .run(summary, now, now, inputId);
+        }
       }
       const review = connection.prepare(`SELECT goal_input_id FROM joi_inbox_messages
         WHERE input_id = ? AND input_id LIKE 'joi_harness_review:goal:%'`).get(inputId) as Row | undefined;
@@ -1036,9 +1123,13 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // was nothing left to converge through, leaving the goal parked with no retry and no card.
       // Judge the turn that actually failed instead; a goal's own input row keeps the historical
       // check, where an earlier side effect still means a replay could duplicate work.
+      const opened = connection.prepare("SELECT reopened_at FROM joi_inbox_messages WHERE input_id = ?")
+        .get(inputId) as { reopened_at?: unknown } | undefined;
+      const openedAt = typeof opened?.reopened_at === "string" ? opened.reopened_at : null;
       const sideEffects = inputId.startsWith("joi_result_input:")
         ? connection.prepare("SELECT 1 FROM joi_turns WHERE turn_id = ? AND side_effect_started = 1 LIMIT 1").get(turnId)
-        : connection.prepare("SELECT 1 FROM joi_turns WHERE input_id = ? AND side_effect_started = 1 LIMIT 1").get(inputId);
+        : connection.prepare(`SELECT 1 FROM joi_turns WHERE input_id = ? AND side_effect_started = 1
+          AND (? IS NULL OR created_at >= ?) LIMIT 1`).get(inputId, openedAt, openedAt);
       const nextStatus = liveWork !== undefined || sideEffects !== undefined ? "CONSUMED" : "PENDING";
       // Never kick a row that is waiting on the user back into the scheduler: an orphan
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
@@ -1075,8 +1166,19 @@ function recoverInterruptedGoalReviews(connection: DatabaseSync, now: string): v
   // Terminal recovery inputs cannot open their gate. Surface a versioned retry
   // instead of replaying a turn that may already have committed side effects.
   // Deferred while goal-bound Work is still live or any goal-derived turn is in
-  // flight: the retry turn would otherwise orchestrate concurrently with them. The
-  // closed gate already blocks derived inputs, so waiting cannot stall convergence.
+  // flight: the retry turn would otherwise orchestrate concurrently with them.
+  //
+  // "Still live" is judged by liveness, not by the mere absence of a terminal status. Waiting on
+  // a status that only ever changes when the owning process writes it means waiting forever once
+  // that process is gone: the goal that prompted this check had a partner instance stuck BUSY for
+  // half an hour, its Work never reached a terminal state, and the card that would have let the
+  // user retry was withheld for as long as the wait lasted — which was indefinitely. A run
+  // heartbeats while it works and stops when its process dies, so an expired heartbeat is the
+  // signal that the wait cannot end. The heartbeat interval is seconds and this window is
+  // minutes, so a live partner is never mistaken for a dead one; a run predating the heartbeat
+  // column reads as absent and keeps the old, conservative rule.
+  const heartbeatBefore = new Date(Date.parse(now) - REVIEW_RECOVERY_HEARTBEAT_STALE_MILLIS).toISOString();
+  const turnBefore = new Date(Date.parse(now) - REVIEW_RECOVERY_TURN_STALE_MILLIS).toISOString();
   const rows = connection.prepare(`SELECT gate.goal_input_id, gate.question_version
     FROM joi_goal_execution_gates gate
     JOIN joi_inbox_messages goal ON goal.input_id = gate.goal_input_id
@@ -1087,12 +1189,22 @@ function recoverInterruptedGoalReviews(connection: DatabaseSync, now: string): v
       AND (resume.input_id IS NULL OR resume.status = 'CONSUMED')
       AND NOT EXISTS (SELECT 1 FROM joi_turns turn WHERE turn.input_id = gate.resume_input_id
         AND turn.status IN ('PENDING', 'RUNNING', 'WAITING'))
-      AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = gate.goal_input_id
-        AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
+      -- A Work parked on the user is waiting by design, not stalled; only an executing Work can
+      -- hold this repair back, and only while its run is still beating.
+      AND NOT EXISTS (SELECT 1 FROM work_items w
+        WHERE w.input_id = gate.goal_input_id
+          AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') AND w.status <> 'WAITING'
+          AND NOT EXISTS (SELECT 1 FROM partner_runs run
+            JOIN dispatch_attempts attempt ON attempt.dispatch_attempt_id = run.dispatch_attempt_id
+            WHERE run.work_id = w.work_id AND run.status = 'RUNNING'
+              AND attempt.dispatch_attempt_id = (SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest
+                WHERE latest.work_id = w.work_id ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1)
+              AND run.heartbeat_at IS NOT NULL AND run.heartbeat_at <= ?))
       AND NOT EXISTS (SELECT 1 FROM joi_turns live JOIN joi_inbox_messages source ON source.input_id = live.input_id
         WHERE live.status IN ('PENDING', 'RUNNING', 'WAITING')
-          AND COALESCE(source.goal_input_id, source.input_id) = goal.input_id)
-    ORDER BY gate.updated_at, gate.goal_input_id LIMIT 50`).all() as { goal_input_id: string; question_version: number }[];
+          AND COALESCE(source.goal_input_id, source.input_id) = goal.input_id
+          AND live.updated_at > ?)
+    ORDER BY gate.updated_at, gate.goal_input_id LIMIT 50`).all(heartbeatBefore, turnBefore) as { goal_input_id: string; question_version: number }[];
   for (const row of rows) {
     const version = row.question_version + 1;
     // Guarded transitions: this repair runs unattended, so it must never resurrect a

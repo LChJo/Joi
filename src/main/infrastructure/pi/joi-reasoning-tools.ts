@@ -275,6 +275,14 @@ export function createJoiReasoningTools(input: {
           );
           return result({ reasonCode: DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady, status: "CLARIFICATION_REQUIRED" }, true);
         }
+        if (reasonCode === "goal_execution_paused" && input.inputId.startsWith("joi_goal_resume:goal:")) {
+          // The recovery Turn is allowed to open its gate with goal_resume. Keep this tool call
+          // nonterminal so the model can correct its order in the same Turn.
+          return result({
+            hint: "Call goal_resume first, then retry this dispatch once the goal gate is open.",
+            reasonCode, status: "RETRY_REQUIRED",
+          });
+        }
         const correctable = reasonCode === "partner_not_available"
           || reasonCode === "work_dependency_unknown"
           || reasonCode.startsWith("partner_instance_");

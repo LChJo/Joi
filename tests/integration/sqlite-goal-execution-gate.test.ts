@@ -3,7 +3,7 @@ import { WorkOrchestrationService } from "../../src/main/application/work/work-o
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteJoiTaskReader } from "../../src/main/infrastructure/persistence/sqlite-joi-task-reader.js";
-import { createRuntimeFixture } from "../support/runtime-fixture.js";
+import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("goal execution gate", () => {
   it("versions answers, enters review, and opens only from the matching recovery turn", async () => {
@@ -283,6 +283,222 @@ describe("goal execution gate", () => {
       expect(fixture.database.transaction((connection) => connection.prepare(
         "SELECT goal_input_id FROM joi_goal_execution_gates",
       ).get())).toEqual({ goal_input_id: goal.inputId });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  /**
+   * An interrupted recovery with one Work still under the goal. Whether that Work holds the retry
+   * card back depends on its run's heartbeat: a live partner beats, a dead one does not, and the
+   * status alone cannot tell them apart.
+   */
+  async function seedInterruptedRecovery(
+    fixture: RuntimeFixture,
+    options: { heartbeatAt?: string | null; workStatus?: string },
+  ) {
+    const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+    const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+    const workbench = await fixture.workbenchRegistry.create({ name: "兜底", personaSummary: "persona", projectLabel: "joi", scopeSummary: "兜底" });
+    const partner = await fixture.partners.add({ capabilities: [], displayName: "执行搭档", kind: "local-pi", skills: [], tools: [] });
+    const goal = await inbox.accept({ idempotencyKey: "heartbeat-goal", text: "继续收尾", workbenchId: workbench.workbenchId });
+    await repository.requireClarification(goal.inputId, "question_required", "范围？");
+    await inbox.clarify({ inputId: goal.inputId, questionId: `goal_question:${goal.inputId}:v1`, questionVersion: 1, text: "全部" });
+    const resumeId = `joi_goal_resume:goal:${goal.inputId}:v1`;
+    const now = fixture.clock.now().toISOString();
+    fixture.database.transaction((connection) => {
+      // The recovery Turn is over and left the gate REVIEWING; only the Work is still open.
+      connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(resumeId);
+      connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('goal-turn', ?, ?, 'session', 'COMPLETED', ?, ?)`).run(goal.inputId, workbench.workbenchId, now, now);
+      connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('live-work', ?, ?, '进行中', '{}', 'READ', ?, ?, ?)`)
+        .run(workbench.workbenchId, goal.inputId, options.workStatus ?? "RUNNING", now, now);
+      connection.prepare(`INSERT INTO dispatch_plans (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+        VALUES ('plan-live', 'goal-turn', '{}', '[]', ?)`).run(now);
+      connection.prepare(`INSERT INTO dispatch_attempts
+        (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+        VALUES ('attempt-live', 'plan-live', 'live-work', ?, 1, 'action-live', 'RUNNING', ?, ?)`)
+        .run(partner.partnerRevisionId, now, now);
+      connection.prepare(`INSERT INTO partner_runs
+        (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind, external_run_id, status, created_at, updated_at, heartbeat_at)
+        VALUES ('run-live', 'attempt-live', 'action-live', ?, 'live-work', ?, 'LOCAL_PI', 'local_pi:live', 'RUNNING', ?, ?, ?)`)
+        .run(workbench.workbenchId, partner.partnerRevisionId, now, now, options.heartbeatAt ?? null);
+    });
+    return { goal, inbox, repository };
+  }
+
+  it("holds the retry card while the Work under the goal is still beating", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { goal, inbox, repository } = await seedInterruptedRecovery(fixture, {
+        heartbeatAt: fixture.clock.now().toISOString(),
+      });
+      await repository.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)).toMatchObject({ status: "ROUTED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("does not treat an old attempt's stale heartbeat as the current run dying", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { goal, inbox, repository } = await seedInterruptedRecovery(fixture, {
+        heartbeatAt: fixture.clock.now().toISOString(),
+      });
+      const old = new Date(fixture.clock.now().getTime() - 30 * 60_000).toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+          SELECT 'attempt-old', dispatch_plan_id, work_id, partner_revision_id, registry_revision,
+                 'action-old', 'FAILED', ?, ? FROM dispatch_attempts WHERE dispatch_attempt_id = 'attempt-live'`)
+          .run(old, old);
+        connection.prepare(`INSERT INTO partner_runs
+          (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id,
+           kind, external_run_id, status, created_at, updated_at, heartbeat_at)
+          SELECT 'run-old', 'attempt-old', 'action-old', workbench_id, work_id, partner_revision_id,
+                 kind, 'local_pi:old', 'FAILED', ?, ?, ? FROM partner_runs WHERE run_id = 'run-live'`)
+          .run(old, old, old);
+      });
+      await repository.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId))
+        .toMatchObject({ status: "ROUTED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("offers the retry card once that Work's heartbeat goes quiet", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      // A half hour without a beat is far past the window; the owner that would have written one
+      // is gone, and waiting on a status only that owner can change is waiting forever.
+      const { goal, inbox, repository } = await seedInterruptedRecovery(fixture, {
+        heartbeatAt: new Date(fixture.clock.now().getTime() - 30 * 60_000).toISOString(),
+      });
+      await repository.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)).toMatchObject({
+        clarificationReasonCode: "goal_review_interrupted",
+        status: "CLARIFICATION_REQUIRED",
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("keeps the old conservative rule for runs written before heartbeats existed", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      // No heartbeat at all is not the same as an expired one: treating NULL as expired would
+      // declare every historical run dead the first time this scan runs after an upgrade.
+      const { goal, inbox, repository } = await seedInterruptedRecovery(fixture, { heartbeatAt: null });
+      await repository.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)).toMatchObject({ status: "ROUTED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("does not let a Work parked on the user hold the retry card back", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      // A WAITING Work is parked by design and its own question card is what surfaces it. Waiting
+      // on it here would mean waiting on an answer that no amount of liveness can produce, which
+      // is the same dead end as waiting on a dead process.
+      const { goal, inbox, repository } = await seedInterruptedRecovery(fixture, {
+        heartbeatAt: null,
+        workStatus: "WAITING",
+      });
+      await repository.recoverInterruptedGoalReviews();
+      expect((await inbox.list()).find((item) => item.inputId === goal.inputId)).toMatchObject({
+        clarificationReasonCode: "goal_review_interrupted",
+        status: "CLARIFICATION_REQUIRED",
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  async function seedRecoveryDispatch(fixture: RuntimeFixture) {
+    const workbench = await fixture.workbenchRegistry.create({ name: "恢复派发", personaSummary: "persona", projectLabel: "joi", scopeSummary: "恢复派发" });
+    const partner = await fixture.partners.add({ capabilities: [], displayName: "执行搭档", kind: "local-pi", skills: [], tools: [] });
+    const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+    const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+    const goal = await inbox.accept({ idempotencyKey: "recovery-dispatch", text: "继续收尾", workbenchId: workbench.workbenchId });
+    const now = fixture.clock.now().toISOString();
+    fixture.database.transaction((connection) => {
+      // The goal Turn satisfies the work_items goal-binding trigger (migration 034).
+      connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+        VALUES ('goal-turn', ?, ?, 'session', 'COMPLETED', ?, ?)`).run(goal.inputId, workbench.workbenchId, now, now);
+      connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+        VALUES ('already-running', ?, ?, '写接口', '{}', 'READ', 'RUNNING', ?, ?)`).run(workbench.workbenchId, goal.inputId, now, now);
+    });
+    const workRepository = new SqliteWorkPlanRepository(fixture.database);
+    const service = new WorkOrchestrationService({
+      clock: fixture.clock,
+      goalGate: workRepository,
+      ids: fixture.ids,
+      partners: fixture.partners,
+      policy: { evaluate: () => Promise.resolve({ allowed: true }) },
+      repository: workRepository,
+    });
+    // A plan is bound to the Turn that dispatched it, and a Turn's input has to exist, so each
+    // request gets its own derived input row and Turn row.
+    const planFor = (inputId: string) => {
+      const turnId = `turn:${inputId}`;
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT OR IGNORE INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES (?, ?, '继续', 'ROUTED', ?, ?, ?, ?)`)
+          .run(inputId, `key:${inputId}`, workbench.workbenchId, inputId === goal.inputId ? null : goal.inputId, now, now);
+        connection.prepare(`INSERT OR IGNORE INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES (?, ?, ?, 'session', 'RUNNING', ?, ?)`).run(turnId, inputId, workbench.workbenchId, now, now);
+      });
+      return {
+        dependencies: [],
+        inputId,
+        turnId,
+        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" as const }], accessMode: "READ" as const, key: "run", partnerId: partner.partnerId, title: "执行" }],
+        workbenchId: workbench.workbenchId,
+      };
+    };
+    return { goal, planFor, service };
+  }
+
+  it("requires goal_resume before recovery dispatch, then permits new Work beside live Work", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { goal, planFor, service } = await seedRecoveryDispatch(fixture);
+      const recoveryInput = `joi_goal_resume:goal:${goal.inputId}:v1`;
+      const request = { ...planFor(recoveryInput), inputId: goal.inputId };
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => connection.prepare(`INSERT INTO joi_goal_execution_gates
+        (goal_input_id, question_id, question_version, status, reason_code, created_at, updated_at)
+        VALUES (?, ?, 1, 'REVIEWING', 'question_required', ?, ?)`).run(
+        goal.inputId, `goal_question:${goal.inputId}:v1`, now, now,
+      ));
+      await expect(service.plan(request)).rejects.toMatchObject({ code: "goal_execution_paused" });
+      fixture.database.transaction((connection) => connection.prepare(
+        "UPDATE joi_goal_execution_gates SET status = 'OPEN' WHERE goal_input_id = ?").run(goal.inputId));
+      await expect(service.plan(request))
+        .resolves.toMatchObject({ dispatchPlanId: expect.any(String) as unknown as string });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = 'already-running'").get())).toEqual({ status: "RUNNING" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("does not block an ordinary Turn from adding Work beside a running one", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const { goal, planFor, service } = await seedRecoveryDispatch(fixture);
+      // Adding work to a goal that already has some is ordinary; only re-entering a goal through
+      // its recovery gate risks duplicating what the question was asked about.
+      await expect(service.plan(planFor(goal.inputId))).resolves.toMatchObject({
+        dispatchPlanId: expect.any(String) as unknown as string,
+      });
     } finally {
       await fixture.close();
     }

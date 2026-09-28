@@ -59,6 +59,13 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
   abort(sessionId: string): void { this.#runtimes.get(sessionId)?.runtime.abort(sessionId); }
   followUp(sessionId: string, text: string): void { this.#require(sessionId).followUp(sessionId, text); }
   isRunning(sessionId: string): boolean { return this.#runtimes.get(sessionId)?.runtime.isRunning(sessionId) ?? false; }
+  // A source fallback swaps the PiReasoningRuntime under a session mid-Turn (a new
+  // sourceRevisionId mints a new instance), and the replacement's transcript was restored from
+  // the store, not carried over — so it holds no rollback point and this reports false. That is
+  // the honest answer: the failed attempt stays in the session, as it did before this existed.
+  async rollbackTurn(sessionId: string, turnId: string): Promise<boolean> {
+    return await this.#runtimes.get(sessionId)?.runtime.rollbackTurn(sessionId, turnId) ?? false;
+  }
   restore(_sessionId: string): Promise<boolean> { return Promise.resolve(false); }
   steer(sessionId: string, text: string): void { this.#require(sessionId).steer(sessionId, text); }
   async waitForIdle(sessionId: string): Promise<void> { await this.#runtimes.get(sessionId)?.runtime.waitForIdle(sessionId); }

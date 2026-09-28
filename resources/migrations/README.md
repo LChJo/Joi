@@ -25,11 +25,15 @@ Migration 051 区分可自动补证的 `CONTINUE` 与硬阻断，并为每个目
 Migration 052 让声明的 Work 依赖在派发时真正生效：依赖反查索引支撑认领门控（前置未全部完成不可认领），`work_items.cancel_reason` 记录依赖失败/取消触发的确定性级联取消原因。
 Migration 054 持久记录每个 Work 的执行目录及准备状态；默认目录使用日期时间与 UUID，绑定目录记录实际目标，恢复、重试和产物解析复用同一记录。绝对路径仅限基础设施内部使用。
 
-Migration 055 为目标保存可空 last_opened_at，仅用户继续/重试更新；首页排序回退 created_at，不再随进度和结果更新时间跳动。
+Migration 055 为目标保存可空 last_opened_at，仅用户的显式动作（继续/重试、补充回复与回答、续跑决策）更新；首页排序回退 created_at，不再随进度和结果更新时间跳动。
 
 Migration 059 增加 evolution_states、evolution_goal_pins、evolution_evidence。存量已绑定工作台的原始目标固定基线且不采样；新目标保留策略与模型源版本。后台调用使用既有 outbox 的 evolution.model 类型，只含稳定标识，不保存模型正文，且不进入通用出站调度器。预算默认低档预设（每日 50 次调用），迁移不触发历史任务重放。
 
 Migration 063 让上下文窗口、最大输出与压缩触发阈值成为按 model revision 可配置的三个可空列；NULL 即未配置，存量行自动退回厂商 preset 与 provider 实测值，无需回填。表仍是 append-only：一个值要在编辑后活下来，唯一的原因是服务层把它带进了新 revision，仓储从不做 UPDATE 合并。三列的上界刻意排除"压缩阈值 = 100"，那等价于撞满整窗才压缩，而那一刻 provider 已经把 `max_tokens` 夹向 1。
+
+Migration 064 为 partner_runs 增加可空 heartbeat_at：updated_at 的语义是"状态变更时刻"（已被工作台 agent 流当作"最后活动"展示），一个执行一小时却不发生状态迁移的 run 在那里看着像早已停摆，正是活着的搭档与死掉的搭档无法区分的由来。派发 actor 在 run 在途时每 tick 续写这一列，心跳过期即意味着持有该 run 的进程已经不在，这是运行期唯一能把"还在干活"和"已经死了"分开的证据。存量行为 NULL，且 NULL 必须保持旧语义——读取方对 NULL 回退旧规则而非视为过期，否则升级后第一次启动会把所有历史 run 一次性判死。
+
+Migration 065 为目标输入增加可空 reopened_at，仅显式重试已消费目标时更新。它是旧综合结果是否属于当前执行轮次的水位；last_opened_at 仍只负责首页排序，回答澄清或授权续跑不能让有效旧结果失效。存量 NULL 保持原有结果有效。
 
 Migration 062 增加 `workbench_agent_tool_traces`（工具轨迹私密正文）与 `workbench_agent_conversation_entries.tool_call_id`。主时间线只保留一行 ≤200 字符的脱敏调用摘要；完整命令与输出按 `(run_id, tool_call_id)` 每条追加一次，凭据写入前脱敏、绝对路径保留（本机调试必需）、单条 ≤8 KB 超出截断并标记，只经桌面写权限路由按需读取，不进首页、诊断、SSE 或远端。只登记迁移后的新 run，不回填历史：存量 TOOL_CALL 行既无 `tool_call_id` 也无正文来源。
 

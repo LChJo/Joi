@@ -54,6 +54,12 @@ export interface PrimaryReasoningRuntime {
   followUp(sessionId: string, text: string): void;
   isRunning(sessionId: string): boolean;
   restore(sessionId: string): Promise<boolean>;
+  /**
+   * Drops this Turn's transcript from the session, for a Turn that failed after `startTurn`
+   * returned. Resolves false when nothing was rolled back — an unknown session, a stream still
+   * running, or a Turn that never marked a rollback point — so the caller can report it.
+   */
+  rollbackTurn(sessionId: string, turnId: string): Promise<boolean>;
   startTurn(input: StartReasoningTurnInput): Promise<void>;
   steer(sessionId: string, text: string): void;
   waitForIdle(sessionId: string): Promise<void>;

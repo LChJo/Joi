@@ -11,6 +11,7 @@ describe("Pi reasoning failure classifier", () => {
     [{ status: 401 }, "auth"],
     [{ status: 402 }, "balance"],
     [{ status: 400 }, "configuration"],
+    [{ code: "joi_model_toolcall_leak" }, "protocol"],
   ] as const)("maps infrastructure error %j to %s", (error, expected) => {
     expect(classifier.classify(error)).toBe(expected);
   });

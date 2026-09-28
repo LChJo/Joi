@@ -9,7 +9,8 @@ export type ModelCapability = "release-tested" | "custom-unverified-tools";
 export type SourceFailureKind =
   | "timeout" | "connect" | "rate_limited" | "server_error"
   | "auth" | "balance" | "configuration"
-  | "safety_refusal" | "content_refusal";
+  | "safety_refusal" | "content_refusal"
+  | "protocol";
 
 export interface ModelSourceRevision {
   accessMode: ModelSourceAccessMode;
@@ -202,7 +203,7 @@ export function pinModelSourceForTurn(source: ModelSource, turnId: string): Mode
 }
 
 export function classifySourceFailure(failure: SourceFailureKind): { fallbackAllowed: boolean; sourceNeedsAttention: boolean } {
-  if (failure === "timeout" || failure === "connect" || failure === "rate_limited" || failure === "server_error") {
+  if (failure === "timeout" || failure === "connect" || failure === "rate_limited" || failure === "server_error" || failure === "protocol") {
     return { fallbackAllowed: true, sourceNeedsAttention: false };
   }
   if (failure === "auth" || failure === "balance" || failure === "configuration") {

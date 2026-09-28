@@ -388,6 +388,15 @@ describe("deterministic-source-fallback-classification", () => {
     expect(await selector.selectFallback({ currentSourceId: "first", failure: "timeout", formalOutputStarted: false, sideEffectStarted: true, turnId: "turn-1" })).toBeNull();
   });
 
+  it("replays a protocol failure after text output but never after a side effect", async () => {
+    const selector = new ReasoningSourceSelector(repository);
+    // Leaked tool-call markup only ever produced garbage text, so redoing the Turn on
+    // another route is safe even though formal output started.
+    await expect(selector.selectFallback({ currentSourceId: "first", failure: "protocol", formalOutputStarted: true, sideEffectStarted: false, turnId: "turn-1" }))
+      .resolves.toMatchObject({ modelId: "second-model", sourceId: "second" });
+    expect(await selector.selectFallback({ currentSourceId: "first", failure: "protocol", formalOutputStarted: true, sideEffectStarted: true, turnId: "turn-1" })).toBeNull();
+  });
+
   it("fails when no source is ready and returns no fallback for unknown or last sources", async () => {
     const empty = new ReasoningSourceSelector({ list: async () => [] });
     await expect(empty.selectInitial("turn-1")).rejects.toMatchObject({ code: "model_source_not_ready" });

@@ -12,7 +12,7 @@ const CAPACITY_AVOIDANCE_MILLIS = 30 * 60_000;
 
 export class ReasoningSourceSelector {
   readonly #probes = new Map<string, Promise<ModelSourceRecord | undefined>>();
-  readonly #capacityAvoided = new Map<string, number>();
+  readonly #avoidedUntil = new Map<string, number>();
 
   constructor(
     private readonly repository: SelectorRepository,
@@ -66,7 +66,7 @@ export class ReasoningSourceSelector {
     // strand a dispatch.
     const capacityReason = classifyPartnerRunFailure(error, { phase: "MODEL", sideEffectState: "NONE" }).reasonCode;
     if (capacityReason === "model_context_budget_exhausted" || capacityReason === "context_too_large") {
-      this.#capacityAvoided.set(sourceId, this.#nowMillis() + CAPACITY_AVOIDANCE_MILLIS);
+      this.avoidSource(sourceId, CAPACITY_AVOIDANCE_MILLIS);
     }
     if (this.options === undefined || this.repository.get === undefined
       || (this.repository.save === undefined && this.repository.saveHealthIfCurrent === undefined)) return;
@@ -97,7 +97,11 @@ export class ReasoningSourceSelector {
     sideEffectStarted: boolean;
     turnId: string;
   }): Promise<SourcePin | null> {
-    if (input.formalOutputStarted || input.sideEffectStarted || !classifySourceFailure(input.failure).fallbackAllowed) return null;
+    // A protocol failure (e.g. tool-call markup leaked as plain text) only ever produced
+    // garbage text, so redoing the Turn after formal output is safe; any real side effect
+    // still bars a fallback outright.
+    if (input.sideEffectStarted || !classifySourceFailure(input.failure).fallbackAllowed) return null;
+    if (input.formalOutputStarted && input.failure !== "protocol") return null;
     const sources = (await this.repository.list()).sort((left, right) => left.order - right.order);
     const currentIndex = sources.findIndex((record) => record.source.sourceId === input.currentSourceId);
     if (currentIndex < 0) return null;
@@ -107,6 +111,15 @@ export class ReasoningSourceSelector {
       if (fresh?.source.status === "READY") return pinModelSourceForTurn(fresh.source, input.turnId);
     }
     return null;
+  }
+
+  /**
+   * Skips a route for the given window after a deterministic failure (capacity mismatch,
+   * protocol garbage): selection prefers other READY sources first and only returns to the
+   * avoided one when nothing else can serve, so avoidance never strands a dispatch.
+   */
+  avoidSource(sourceId: string, millis: number): void {
+    this.#avoidedUntil.set(sourceId, this.#nowMillis() + millis);
   }
 
   /** Persists that the pinned revision pair demonstrated structured tool calling, so later Turns skip the first-Turn gate. */
@@ -125,10 +138,10 @@ export class ReasoningSourceSelector {
   }
 
   #isCapacityAvoided(sourceId: string): boolean {
-    const until = this.#capacityAvoided.get(sourceId);
+    const until = this.#avoidedUntil.get(sourceId);
     if (until === undefined) return false;
     if (until > this.#nowMillis()) return true;
-    this.#capacityAvoided.delete(sourceId);
+    this.#avoidedUntil.delete(sourceId);
     return false;
   }
 

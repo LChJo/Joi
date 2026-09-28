@@ -12,6 +12,11 @@ const DEFAULT_ORPHAN_SCAN_EVERY_MILLIS = 30_000;
 const DEFAULT_STALE_TURN_OLDER_THAN_MILLIS = 20 * 60_000;
 const DEFAULT_STALLED_TURN_AFTER_MILLIS = 15 * 60_000;
 const DEFAULT_MAX_CONSECUTIVE_FAILURES = 8;
+// A deterministic failure re-claimed the very next tick would burn the whole crash-loop
+// budget in seconds while reproducing itself. Back each retry off exponentially so the
+// breaker measures patience in minutes, not milliseconds.
+const DEFAULT_RETRY_BACKOFF_BASE_MILLIS = 30_000;
+const DEFAULT_RETRY_BACKOFF_MAX_MILLIS = 10 * 60_000;
 
 interface InFlightTurn {
   abortController: AbortController;
@@ -30,6 +35,7 @@ interface InFlightTurn {
  */
 export class JoiTaskComponent implements ActorComponent {
   readonly componentName = "joi-task";
+  #backoffUntil = new Map<string, number>();
   #failures = new Map<string, number>();
   #inFlight: InFlightTurn | null = null;
   #lastOrphanScanAt = 0;
@@ -40,6 +46,8 @@ export class JoiTaskComponent implements ActorComponent {
     inbox: JoiTaskInbox;
     maxConsecutiveFailures?: number;
     orphanScanEveryMillis?: number;
+    retryBackoffBaseMillis?: number;
+    retryBackoffMaxMillis?: number;
     staleTurnOlderThanMillis?: number;
     stalledTurnAfterMillis?: number;
   }) {}
@@ -94,6 +102,7 @@ export class JoiTaskComponent implements ActorComponent {
       // A canceled goal is a user decision, not a scheduler fault: never count it toward
       // the crash-loop breaker and never park the (already terminal) input.
       this.#failures.delete(turn.inputId);
+      this.#backoffUntil.delete(turn.inputId);
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.turn_canceled", {
         durationMs: Math.max(0, ctx.now.getTime() - turn.startedAt),
         inputId: turn.inputId,
@@ -109,6 +118,7 @@ export class JoiTaskComponent implements ActorComponent {
       const failures = (this.#failures.get(turn.inputId) ?? 0) + 1;
       if (failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
         this.#failures.delete(turn.inputId);
+        this.#backoffUntil.delete(turn.inputId);
         await this.dependencies.inbox.park(turn.inputId, {
           failureCount: failures,
           reasonCode: errorCode ?? "joi_task_turn_failed",
@@ -120,9 +130,19 @@ export class JoiTaskComponent implements ActorComponent {
         });
       } else {
         this.#failures.set(turn.inputId, failures);
+        const base = this.dependencies.retryBackoffBaseMillis ?? DEFAULT_RETRY_BACKOFF_BASE_MILLIS;
+        const max = this.dependencies.retryBackoffMaxMillis ?? DEFAULT_RETRY_BACKOFF_MAX_MILLIS;
+        const backoff = Math.min(max, base * 2 ** (failures - 1));
+        this.#backoffUntil.set(turn.inputId, ctx.now.getTime() + backoff);
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_backoff", {
+          backoffMillis: backoff,
+          consecutiveFailures: failures,
+          inputId: turn.inputId,
+        });
       }
     } else {
       this.#failures.delete(turn.inputId);
+      this.#backoffUntil.delete(turn.inputId);
     }
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.turn_settled", {
       durationMs: Math.max(0, ctx.now.getTime() - turn.startedAt),
@@ -132,7 +152,23 @@ export class JoiTaskComponent implements ActorComponent {
   }
 
   async #startNext(ctx: ActorTickContext): Promise<void> {
-    const [next] = await this.dependencies.inbox.listPendingInputs();
+    const pending = await this.dependencies.inbox.listPendingInputs();
+    const now = ctx.now.getTime();
+    // A cooldown throttles the scheduler's own retry of a queued row, so it only means something
+    // while that row is still queued. A row a failure consumed (side effect already started), a
+    // cancel, or a gate that parked it has nothing left to throttle — and keeping the window
+    // would swallow the user's next retry, because `retry` re-queues the row at once and it must
+    // start at once.
+    const queued = new Set(pending.map((candidate) => candidate.inputId));
+    for (const inputId of [...this.#backoffUntil.keys()]) {
+      if (!queued.has(inputId)) this.#backoffUntil.delete(inputId);
+    }
+    // An input cooling down after a failure is skipped, not blocking: later pending
+    // inputs stay claimable while it waits out its backoff.
+    const next = pending.find((candidate) => {
+      const until = this.#backoffUntil.get(candidate.inputId);
+      return until === undefined || until <= now;
+    });
     if (next === undefined) return;
     if (next.requiresModelSource !== false && !(await this.dependencies.gate.hasReadySource())) return;
     const inputId = next.inputId;

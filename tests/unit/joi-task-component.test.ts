@@ -129,17 +129,69 @@ describe("JoiTaskComponent traversal scheduling", () => {
   it("parks a crash-looping input after the consecutive-failure cap", async () => {
     const harness = makeHarness();
     harness.state.pending = [{ createdAt: BASE, inputId: "input_loop" }];
-    for (let tick = 0; tick < 8; tick += 1) {
-      await harness.component.update(ctxAt(tick * 2_000));
+    // Each failure backs the next attempt off exponentially (30s doubling to a 10min cap):
+    // one tick records the failure and starts the cooldown, the next starts past it.
+    const settleDelay = 1_000;
+    const backoffAfterFailure = [30_000, 60_000, 120_000, 240_000, 480_000, 600_000, 600_000];
+    let at = 0;
+    for (const backoff of backoffAfterFailure) {
+      await harness.component.update(ctxAt(at));
       harness.settle("input_loop", "fail");
       await flush();
+      await harness.component.update(ctxAt(at + settleDelay));
+      at += settleDelay + backoff;
     }
-    expect(harness.calls.filter((entry) => entry === "input_loop")).toHaveLength(8);
+    await harness.component.update(ctxAt(at));
+    harness.settle("input_loop", "fail");
+    await flush();
     // The 8th consecutive failure converges here: park instead of retrying forever.
-    await harness.component.update(ctxAt(16_000));
-    expect(harness.parks).toEqual([{ failureCount: 8, inputId: "input_loop", reasonCode: "turn_boom" }]);
-    await harness.component.update(ctxAt(18_000));
+    await harness.component.update(ctxAt(at + settleDelay));
     expect(harness.calls.filter((entry) => entry === "input_loop")).toHaveLength(8);
+    expect(harness.parks).toEqual([{ failureCount: 8, inputId: "input_loop", reasonCode: "turn_boom" }]);
+    await harness.component.update(ctxAt(at + settleDelay + 2_000));
+    expect(harness.calls.filter((entry) => entry === "input_loop")).toHaveLength(8);
+  });
+
+  it("backs a failed input off without blocking later pending inputs", async () => {
+    const harness = makeHarness();
+    harness.state.pending = [
+      { createdAt: BASE, inputId: "input_slow" },
+      { createdAt: BASE, inputId: "input_next" },
+    ];
+    await harness.component.update(ctxAt(0));
+    harness.settle("input_slow", "fail");
+    await flush();
+
+    // The failed input is still cooling down, so the next claimable input starts instead.
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.calls).toEqual(["input_slow", "input_next"]);
+
+    harness.settle("input_next");
+    await flush();
+    await harness.component.update(ctxAt(31_000));
+    expect(harness.calls).toEqual(["input_slow", "input_next", "input_slow"]);
+  });
+
+  it("drops a cooldown once the row leaves the queue, so a user retry starts at once", async () => {
+    const harness = makeHarness();
+    harness.state.pending = [{ createdAt: BASE, inputId: "input_retried" }];
+    await harness.component.update(ctxAt(0));
+    harness.settle("input_retried", "fail");
+    await flush();
+
+    // Still queued, so the cooldown holds it back: this is the scheduler throttling itself.
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.calls).toEqual(["input_retried"]);
+
+    // A failure that consumed the row (a side effect had started), a cancel, or a gate takes it
+    // out of the queue. There is nothing left to throttle, so the window must not outlive it.
+    harness.state.pending = [];
+    await harness.component.update(ctxAt(2_000));
+
+    // The user's retry re-queues the row; it must start now rather than wait out the stale window.
+    harness.state.pending = [{ createdAt: BASE, inputId: "input_retried" }];
+    await harness.component.update(ctxAt(3_000));
+    expect(harness.calls).toEqual(["input_retried", "input_retried"]);
   });
 
   it("recovers orphaned RUNNING turns and throttles the scan", async () => {
@@ -208,7 +260,8 @@ describe("JoiTaskComponent traversal scheduling", () => {
 
     await flush();
     harness.state.pending = [{ createdAt: BASE, inputId: "input_a" }];
-    await harness.component.update(ctxAt(16 * 60_000 + 1));
+    await harness.component.update(ctxAt(16 * 60_000 + 1_000));
+    await harness.component.update(ctxAt(16 * 60_000 + 31_000));
     expect(harness.calls).toEqual(["input_a", "input_a"]);
   });
 
@@ -223,7 +276,8 @@ describe("JoiTaskComponent traversal scheduling", () => {
 
     harness.settle("input_a");
     await flush();
-    await harness.component.update(ctxAt(18 * 60_000));
+    await harness.component.update(ctxAt(18 * 60_000 + 1_000));
+    await harness.component.update(ctxAt(18 * 60_000 + 31_000));
     expect(harness.calls).toEqual(["input_a", "input_a"]);
   });
 

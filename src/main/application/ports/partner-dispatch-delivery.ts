@@ -77,6 +77,16 @@ export interface PartnerDispatchDelivery {
   run(prepared: PreparedDispatch, options?: { onProgress?: () => void; signal?: AbortSignal }): Promise<DispatchRunOutput>;
   complete(input: { output: DispatchRunOutput & { kind: "terminal" }; prepared: PreparedDispatch }): Promise<{ isAuthoritative: boolean; resultId: string }>;
   finalizeOrphan(orphan: PartnerDispatchOrphanRow): Promise<"completed" | "waiting">;
+  /**
+   * Records that the process owning an in-flight run is still alive.
+   *
+   * A run that executes for an hour without a state transition leaves `updated_at` at its
+   * dispatch time — the column means "when did this run change state", and nothing else writes
+   * it while a partner works. That is how a healthy long-running partner became indistinguishable
+   * from a dead one and left a goal stranded on its review gate. An expired heartbeat means the
+   * owner is gone; it is NULL until the first beat, and readers keep the old meaning for NULL.
+   */
+  heartbeatRun?(input: { dispatchAttemptId: string; now: string }): Promise<void>;
   /** Compatibility composition: prepare → run → complete in one await (tests, one-shot callers). */
   handle(record: OutboxRecord): Promise<void>;
   publish?(event: SseEvent): Promise<unknown>;

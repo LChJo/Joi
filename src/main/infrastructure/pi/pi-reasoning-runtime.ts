@@ -86,9 +86,34 @@ interface PiReasoningRuntimeOptions {
 interface SessionRuntime {
   agent: Agent;
   current: StartReasoningTurnInput | undefined;
-  /** Whether the current Turn already delivered visible text or a tool call to the coordinator. */
-  delivered: { text: boolean; tool: boolean };
+  /** Whether this Turn started a tool whose effects may need to stay in the transcript. */
+  delivered: { tool: boolean };
+  /** A successful user_ask or structured dispatch rejection intentionally stopped the stream. */
+  terminatedByTool: boolean;
   metadata: Omit<JoiReasoningSessionSnapshot, "messages" | "updatedAt">;
+  /**
+   * Where this Turn's transcript began, so a Turn that fails without committing anything can be
+   * taken back out of the session instead of being replayed into the next attempt.
+   *
+   * A failed Turn is re-queued and prompted again on this same session. Whatever it wrote stays
+   * in the history and is read back as this run's own precedent — a Turn that answered with its
+   * tool calls written as plain text taught every retry to do the same, and the retries degraded
+   * identically until the crash-loop breaker parked the input. Removing the failed attempt is
+   * what makes a retry an actual retry.
+   *
+   * A snapshot of the whole message array rather than one anchor message: compaction only ever
+   * drops a prefix and reuses the surviving message objects, but the array itself is replaced on
+   * every write, and a boundary that can go missing needs a fallback path this does not.
+   */
+  rollbackPoint: {
+    compaction: Omit<JoiReasoningSessionSnapshot, "messages" | "updatedAt">["compaction"];
+    messages: AgentMessage[];
+    turnId: string;
+  } | undefined;
+}
+
+function streamStoppedByTool(session: SessionRuntime): boolean {
+  return session.terminatedByTool;
 }
 
 /**
@@ -139,6 +164,29 @@ interface ResolvedCompactionOptions {
 function roleOf(message: AgentMessage): string | undefined {
   return "role" in message
     && typeof message.role === "string" ? message.role : undefined;
+}
+
+/**
+ * An assistant turn that carries nothing at all.
+ *
+ * A stream killed mid-flight leaves one behind — answering a parked question aborts the turn
+ * that asked it — and an assistant message with no content is not a legal request input for
+ * most providers. It survives every save and restore, so once a session had one it kept
+ * re-sending it. The session that was diagnosed with this then answered with its tool calls
+ * written as plain text instead of native calls, which downstream reads as turns that never
+ * called the tool they were required to call: the goal kept failing its resume gate, retried
+ * on the same transcript, and degraded the same way until the crash-loop breaker parked it.
+ *
+ * Dropping it belongs here rather than at the write site. This method is the one place that
+ * shapes a request, so the same filter covers the live transcript and the history read back
+ * from the store. It is silent on purpose: the message has no content, so its absence tells
+ * the model nothing that `omissionNotice` — written to explain history a request was too
+ * small to hold — would not misstate.
+ */
+function isEmptyAssistantMessage(message: AgentMessage): boolean {
+  if (roleOf(message) !== "assistant") return false;
+  const content = (message as { content?: unknown }).content;
+  return Array.isArray(content) && content.length === 0;
 }
 
 function fallbackSummary(messages: AgentMessage[], maxCharacters: number): string {
@@ -241,7 +289,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     if (session.metadata.workbenchId !== input.workbenchId) throw new Error("reasoning_session_workbench_mismatch");
 
     session.current = input;
-    session.delivered = { text: false, tool: false };
+    session.delivered = { tool: false };
+    session.terminatedByTool = false;
     session.metadata = {
       workbenchId: input.workbenchId,
       compaction: session.metadata.compaction,
@@ -261,6 +310,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // call fail opaque; compact before prompting so the Turn starts inside the model window.
     // The snapshot save stays with the post-turn checkpoint write.
     await this.#compactIfNeeded(session);
+    this.#markRollbackPoint(session, input.turnId);
     input.onEvent?.({ type: "turn_started", turnId: input.turnId });
     let promptError: unknown;
     try {
@@ -271,10 +321,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     } catch (error) {
       promptError = error;
     }
-    // A provider can kill a stream without any delivery (bad request, thinking-budget
-    // clashes, ...): the agent parks an empty assistant message with stopReason "error" and
-    // the Turn would otherwise be misreported as an empty answer or a missing tool call.
-    if (promptError === undefined && !session.delivered.text && !session.delivered.tool) {
+    // Pi can resolve prompt() after a provider error. Inspect the current attempt's final
+    // assistant message even when an earlier provider request already delivered a tool call:
+    // otherwise a failed follow-up request is reported as a successful Turn.
+    if (promptError === undefined && !streamStoppedByTool(session)) {
       const failed = [...session.agent.state.messages].reverse().find((message) => roleOf(message) === "assistant") as
         | { errorMessage?: string; stopReason?: string }
         | undefined;
@@ -285,6 +335,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         );
       }
     }
+    // A tool call may already have committed durable work before the provider failed. Keep
+    // that transcript so the next Turn can see what happened; the coordinator decides whether
+    // an attempt with only replay-safe tools can be rolled back later.
+    if (promptError !== undefined && !session.delivered.tool) this.#applyRollbackPoint(session, input.turnId);
     // A checkpoint failure must not mask the turn's true outcome: by this point the turn's
     // side effects are already committed, and reporting the save error as a turn failure would
     // re-drive the input and duplicate those side effects. The next turn's save repairs the
@@ -311,6 +365,55 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
 
   abort(sessionId: string): void {
     this.#sessions.get(sessionId)?.agent.abort();
+  }
+
+  /**
+   * Takes this Turn's transcript back out of the session.
+   *
+   * A Turn can fail after `startTurn` has already returned — the resume gate refusing a recovery
+   * Turn that never called `goal_resume` is exactly that shape — and by then its failing attempt
+   * has been checkpointed. The coordinator calls this in the same catch that re-queues the input,
+   * so the next attempt starts from the history the Turn was given rather than from its own
+   * failure.
+   *
+   * Returns whether anything was rolled back. The caller reports the false case: a rollback that
+   * quietly did nothing is how this failure would keep looking like the model's own doing.
+   */
+  async rollbackTurn(sessionId: string, turnId: string): Promise<boolean> {
+    const session = this.#sessions.get(sessionId);
+    // `abort()` only signals the stream, so truncating under one that is still writing would race
+    // it. Keeping the transcript is the pre-rollback behaviour rather than a corrupted one.
+    if (session === undefined || session.agent.state.isStreaming) return false;
+    if (!this.#applyRollbackPoint(session, turnId)) return false;
+    try {
+      await this.#compactAndSave(session);
+    } catch {
+      // Same rule as the post-turn checkpoint: the next Turn's save repairs the snapshot.
+    }
+    return true;
+  }
+
+  #markRollbackPoint(session: SessionRuntime, turnId: string): void {
+    // One Turn may prompt more than once — the coordinator repairs an uncommitted outcome by
+    // continuing the same session — and every attempt carries the same turnId. Keeping the first
+    // marker is what makes a rollback drop all of them instead of only the last one.
+    if (session.rollbackPoint?.turnId === turnId) return;
+    session.rollbackPoint = {
+      compaction: session.metadata.compaction,
+      messages: [...session.agent.state.messages],
+      turnId,
+    };
+  }
+
+  #applyRollbackPoint(session: SessionRuntime, turnId: string): boolean {
+    const point = session.rollbackPoint;
+    if (point?.turnId !== turnId) return false;
+    session.rollbackPoint = undefined;
+    session.agent.state.messages = [...point.messages];
+    // The compaction metadata describes what the history holds. Restoring the messages without it
+    // would leave the next compaction summarising a transcript that is no longer there.
+    session.metadata = { ...session.metadata, compaction: point.compaction };
+    return true;
   }
 
   async waitForIdle(sessionId: string): Promise<void> {
@@ -364,7 +467,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // and compaction still owns its durable shape.
       transformContext: (messages) => Promise.resolve(this.#boundRequest(messages)),
     });
-    const runtime: SessionRuntime = { agent, current: undefined, delivered: { text: false, tool: false }, metadata };
+    const runtime: SessionRuntime = { agent, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false };
     agent.subscribe(async (event) => {
       this.#emit(runtime, event);
     });
@@ -389,14 +492,15 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
    * request therefore carries the omission rather than only its effect.
    */
   #boundRequest(messages: readonly AgentMessage[]): AgentMessage[] {
-    const bounded = boundRequestByChars(messages, modelContextMaxChars(this.#model));
-    const omitted = messages.length - bounded.length;
+    const usable = messages.filter((message) => !isEmptyAssistantMessage(message));
+    const bounded = boundRequestByChars(usable, modelContextMaxChars(this.#model));
+    const omitted = usable.length - bounded.length;
     if (omitted <= 0) return bounded;
     // The bound keeps an opening anchor, and it hands back the very same message objects, so the
     // prefix it kept can be recovered by identity rather than by re-deriving its rules here.
     let kept = 0;
-    while (kept < bounded.length && bounded[kept] === messages[kept]) kept += 1;
-    const omittedChars = messages.slice(kept, kept + omitted)
+    while (kept < bounded.length && bounded[kept] === usable[kept]) kept += 1;
+    const omittedChars = usable.slice(kept, kept + omitted)
       .reduce((total, message) => total + JSON.stringify(message).length, 0);
     return [...bounded.slice(0, kept), omissionNotice(omitted, omittedChars), ...bounded.slice(kept)];
   }
@@ -521,22 +625,28 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   }
 
   #emit(runtime: SessionRuntime, event: Parameters<Parameters<Agent["subscribe"]>[0]>[0]): void {
-    // Delivery is tracked before the onEvent guard: surfacing a killed stream must not
-    // depend on whether the coordinator attached a listener for this Turn.
-    if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") runtime.delivered.text = true;
+    // Track tool execution before the onEvent guard: a later provider failure must preserve
+    // any committed tool transcript even when this Turn has no coordinator listener.
     if (event.type === "tool_execution_start") runtime.delivered.tool = true;
     // Terminating orchestration tools must stop the current model turn even when
     // no event listener is attached. Tool execution is sequential, so aborting at
     // the successful end prevents any later calls emitted in the same response.
     if (event.type === "tool_execution_end") {
+      if ((event.result as { terminate?: unknown } | undefined)?.terminate === true) runtime.terminatedByTool = true;
       // A structured dispatch rejection (the execute handler's reasonCode) is terminal for
       // this run: the coordinator turns it into a clarification or a failed Turn. An
       // argument-validation failure is raised before execute runs and therefore carries no
       // reasonCode; aborting on it would kill the Turn before the model can even see the
       // error and correct its own call, so those errors stay recoverable in-run.
       if (event.toolName === "work_dispatch" && event.isError
-        && safeToolResultReasonCode(event.result) !== undefined) runtime.agent.abort();
-      if (event.toolName === "user_ask" && !event.isError) runtime.agent.abort();
+        && safeToolResultReasonCode(event.result) !== undefined) {
+        runtime.terminatedByTool = true;
+        runtime.agent.abort();
+      }
+      if (event.toolName === "user_ask" && !event.isError) {
+        runtime.terminatedByTool = true;
+        runtime.agent.abort();
+      }
     }
     const active = runtime.current;
     if (active?.onEvent === undefined) return;

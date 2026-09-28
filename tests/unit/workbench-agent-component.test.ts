@@ -10,12 +10,18 @@ import type {
   PartnerDispatchDelivery,
 } from "../../src/main/application/ports/partner-dispatch-delivery";
 import type { RuntimeStore } from "../../src/main/application/ports/runtime-store";
+import type { RuntimeDiagnostics } from "../../src/main/application/ports/runtime-diagnostics";
 
 const BASE = "2026-08-05T10:00:00.000Z";
 
-function ctxAt(offsetMillis: number): ActorTickContext {
+function ctxAt(offsetMillis: number, diagnostics?: RuntimeDiagnostics): ActorTickContext {
   const now = new Date(new Date(BASE).getTime() + offsetMillis);
-  return { clock: { now: () => now }, now, tickId: 1 };
+  return {
+    clock: { now: () => now },
+    ...(diagnostics === undefined ? {} : { diagnostics }),
+    now,
+    tickId: 1,
+  };
 }
 
 interface HarnessState {
@@ -24,6 +30,7 @@ interface HarnessState {
 }
 
 function makeHarness(state: HarnessState, options?: {
+  enqueueRefused?: boolean;
   memoryReject?: boolean;
   sweepEveryMillis?: number;
   withDispatch?: boolean;
@@ -67,7 +74,7 @@ function makeHarness(state: HarnessState, options?: {
     synthesis: {
       enqueuePartnerResult: async (event: { eventId: string; resultId: string }) => {
         enqueued.push({ eventId: event.eventId, resultId: event.resultId });
-        return "joi_result_input:goal:input_1";
+        return options?.enqueueRefused === true ? null : "joi_result_input:goal:input_1";
       },
     },
     ...(options?.sweepEveryMillis === undefined ? {} : { sweepEveryMillis: options.sweepEveryMillis }),
@@ -100,6 +107,19 @@ describe("WorkbenchAgentComponent", () => {
     await harness.component.update(ctxAt(1_000));
     expect(harness.enqueued).toHaveLength(1);
     expect(harness.recorded).toHaveLength(1);
+  });
+
+  it("does not report an enqueue the store refused", async () => {
+    const state: HarnessState = { keys: [], unsynthesized: [RESULT] };
+    const harness = makeHarness(state, { enqueueRefused: true });
+    const emitted: string[] = [];
+
+    await harness.component.update(ctxAt(0, { emit: (event) => { emitted.push(event); } }));
+
+    // The store declines a result it cannot admit yet and leaves it for a later tick. Reporting
+    // that as an enqueue made the diagnostics claim progress on every refused retry.
+    expect(harness.enqueued).toHaveLength(1);
+    expect(emitted).not.toContain("joi.workbench.synthesis_enqueued");
   });
 
   it("reconciles leaf agent actors from partner keys", async () => {

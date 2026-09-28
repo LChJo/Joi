@@ -55,6 +55,11 @@ export interface RuntimeDiagnosticEventMap {
     errorCode: string;
     inputId: string;
   };
+  "joi.task.input_backoff": {
+    backoffMillis: number;
+    consecutiveFailures: number;
+    inputId: string;
+  };
   "joi.harness.map_created": {
     goalInputId: string;
   };
@@ -310,12 +315,30 @@ export interface RuntimeDiagnosticEventMap {
     observedToolCount: number;
     turnId: string;
   };
+  "joi.turn.toolcall_leak_repair_requested": {
+    inputId: string;
+    sourceId: string;
+    turnId: string;
+    workbenchId: string;
+  };
   "joi.turn.source_fallback": {
     workbenchId: string;
     fromSourceId: string;
     inputId: string;
     toSourceId: string;
     turnId: string;
+  };
+  "joi.source.avoided": {
+    inputId?: string;
+    millis: number;
+    reason: string;
+    sourceId: string;
+    turnId?: string;
+  };
+  "joi.session.reset": {
+    generation: number;
+    goalId: string;
+    inputId: string;
   };
   "joi.turn.tool_capability_proven": {
     modelRevisionId: string;
@@ -343,6 +366,13 @@ export interface RuntimeDiagnosticEventMap {
     repaired: boolean;
     sourceId: string;
     turnId: string;
+  };
+  /** A failed Turn's transcript could not be taken back out of its session; the retry will read
+   * its own failure as precedent. Emitted so a degraded retry loop is visible as such. */
+  "joi.session.rollback_skipped": {
+    inputId: string;
+    turnId: string;
+    workbenchId: string;
   };
   "joi.goal.synthesis.started": {
     workbenchId: string;

@@ -586,6 +586,25 @@ describe("joi reasoning tools", () => {
     })]);
   });
 
+  it("lets a recovery Turn call goal_resume after an early dispatch hits the closed gate", async () => {
+    const harness = makeTools({
+      inputId: "joi_goal_resume:goal:goal-1:v2",
+      goalInputId: "goal-1",
+      planError: new DomainError("goal_execution_paused", "private detail"),
+      resumeCalls: [],
+    });
+    await expect(harness.call("work_dispatch", {
+      dependencies: [],
+      work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "补充证据" }],
+    })).resolves.toEqual({
+      hint: "Call goal_resume first, then retry this dispatch once the goal gate is open.",
+      reasonCode: "goal_execution_paused",
+      status: "RETRY_REQUIRED",
+    });
+    expect(harness.clarificationCalls).toEqual([]);
+    await expect(harness.call("goal_resume", {})).resolves.toMatchObject({ status: "OPEN" });
+  });
+
   it("documents that instanceId is an exact queried instance and is mutually exclusive with sessionPolicy", () => {
     const tool = makeTools().tools.find((candidate) => candidate.name === "work_dispatch");
     expect(tool?.description).toContain("exact instance id returned by partner_list_available or partner_list_instances");

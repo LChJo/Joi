@@ -72,7 +72,7 @@ export class WorkbenchAgentComponent implements ActorComponent {
   async #synthesize(ctx: ActorTickContext): Promise<void> {
     const results = await this.dependencies.scan.listUnsynthesizedResults(this.dependencies.workbenchId);
     for (const result of results) {
-      await this.dependencies.synthesis.enqueuePartnerResult({
+      const enqueuedInputId = await this.dependencies.synthesis.enqueuePartnerResult({
         workbenchId: result.workbenchId,
         eventId: result.eventId,
         resultId: result.resultId,
@@ -80,11 +80,16 @@ export class WorkbenchAgentComponent implements ActorComponent {
         summary: result.summary,
         workId: result.workId,
       });
-      emitRuntimeDiagnostic(ctx.diagnostics, "joi.workbench.synthesis_enqueued", {
-        workbenchId: result.workbenchId,
-        eventId: result.eventId,
-        workId: result.workId,
-      });
+      // A refused result is not an enqueue: the store declines it on purpose (goal paused, already
+      // synthesized, or Work still live) and leaves it for a later tick. Reporting it here would
+      // claim progress that did not happen.
+      if (enqueuedInputId !== null) {
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.workbench.synthesis_enqueued", {
+          workbenchId: result.workbenchId,
+          eventId: result.eventId,
+          workId: result.workId,
+        });
+      }
       // Best-effort side memory, exactly once per discovered result (member row dedupes future ticks).
       await this.dependencies.memory.recordResult({
         at: ctx.now.toISOString(),

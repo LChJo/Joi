@@ -26,7 +26,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("bound input must not route"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async () => { reasoningStarts += 1; },
         steer: () => undefined, waitForIdle: async () => undefined,
       },
@@ -62,7 +62,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("bound input must not route"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           turn.onEvent?.({ delta: "## 身份\n\n我是 Joi。 token=abcdefghijklmnop C:\\private\\a\\b\\answer.md", turnId: turn.turnId, type: "text_delta" });
         },
@@ -95,7 +95,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("bound input must not route"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           starts += 1;
           if (starts === 2) turn.onEvent?.({ delta: "我是 Joi。", turnId: turn.turnId, type: "text_delta" });
@@ -127,7 +127,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
       router: { decide: async () => { throw new Error("synthesis input is pre-bound"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           sessions.push(turn.sessionId);
           turn.onEvent?.({ delta: "两项工作已完成。 C:\\private\\a\\b\\file。", turnId: turn.turnId, type: "text_delta" });
@@ -169,7 +169,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("synthesis input is pre-bound"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           turn.onEvent?.({ delta: "关键证据缺失，当前无法给出可靠结论。", turnId: turn.turnId, type: "text_delta" });
           turn.onEvent?.({ toolCallId: "blocked", toolName: "turn_complete", turnId: turn.turnId, type: "tool_started" });
@@ -205,7 +205,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("synthesis input is pre-bound"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           starts += 1;
           prompts.push(turn.prompt);
@@ -245,7 +245,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("bound input must not route again"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           starts += 1;
           turn.onEvent?.({ toolCallId: "dispatch", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_started" });
@@ -277,7 +277,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("bound input must not route again"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           turn.onEvent?.({ toolCallId: "dispatch", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_started" });
           turn.onEvent?.({ isError: false, reasonCode: "partner_selection_required", toolCallId: "dispatch", toolName: "work_dispatch", turnId: turn.turnId, type: "tool_finished" });
@@ -310,7 +310,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
         abort: () => { aborts += 1; },
         followUp: () => undefined,
         isRunning: () => false,
-        restore: async () => false,
+        restore: async () => false, rollbackTurn: async () => false,
         startTurn: async () => { controller.abort(); },
         steer: () => undefined,
         waitForIdle: async () => undefined,
@@ -338,7 +338,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
-      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store: { completeInput: async () => undefined, createTurn: async () => undefined, loadInput: async () => { throw new Error("must not load"); }, requireClarification: async () => undefined },
     });
@@ -356,7 +356,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("bound input must not route"); } },
       runtime: {
-        abort: () => { aborts += 1; }, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => { aborts += 1; }, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async () => { starts += 1; }, steer: () => undefined, waitForIdle: async () => undefined,
       },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
@@ -388,7 +388,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { throw new Error("bound input must not route"); } },
-      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store: {
         completeInput: async () => { completions += 1; },
@@ -415,7 +415,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       requireClarification: async () => { statuses.push("clarify"); },
     };
     const runtime: PrimaryReasoningRuntime = {
-      abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+      abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
       startTurn: async (turn) => { turns.push(turn); }, steer: () => undefined, waitForIdle: async () => undefined,
     };
     const coordinator = new JoiCoordinator({
@@ -444,7 +444,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       workbenches: { getWorkbench: async () => research, listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => { calls += 1; return { action: "select", workbenchId: "missing" }; } },
-      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store: { completeInput: async () => undefined, createTurn: async () => undefined, loadInput: async () => ({ body: "ambiguous", inputId: "input-1", status: "PENDING" }), requireClarification: async () => { statuses.push("clarify"); } },
     });
@@ -458,7 +458,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       workbenches: { getWorkbench: async () => null, listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
-      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId: string) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
     };
     const missing = new JoiCoordinator({ ...base, store: { completeInput: async () => undefined, createTurn: async () => undefined, loadInput: async () => null, requireClarification: async () => undefined } });
@@ -494,7 +494,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
         abort: () => undefined,
         followUp: () => undefined,
         isRunning: () => false,
-        restore: async () => false,
+        restore: async () => false, rollbackTurn: async () => false,
         startTurn: async () => { throw new Error("provider offline"); },
         steer: () => undefined,
         waitForIdle: async () => undefined,
@@ -528,7 +528,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
         abort: () => undefined,
         followUp: () => undefined,
         isRunning: () => false,
-        restore: async () => false,
+        restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => { turns.push(turn); },
         steer: () => undefined,
         waitForIdle: async () => undefined,
@@ -555,7 +555,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       workbenches: { getWorkbench: async () => null, listSummaries: async () => [] },
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => ({ action: "create", name: "New", personaSummary: "Context", projectLabel: "Project", scopeSummary: "Scope" }) },
-      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store: {
         completeInput: async () => undefined,
@@ -572,7 +572,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     const turns: StartReasoningTurnInput[] = [];
     const sourceUpdates: string[] = [];
     const runtime: PrimaryReasoningRuntime = {
-      abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+      abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
       startTurn: async (turn) => {
         turns.push(turn);
         if (turn.sourceId === "primary") throw new Error("network timeout");
@@ -613,7 +613,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(), ids: new TestIds(),
       router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => { sessions.push(turn.sessionId); prompts.push(turn.systemPrompt); }, steer: () => undefined, waitForIdle: async () => undefined,
       },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
@@ -641,7 +641,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       failureClassifier: { classify: () => "timeout" }, ids: new TestIds(),
       router: { decide: async () => { throw new Error("pre-bound result must not route again"); } },
       runtime: {
-        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           turn.onEvent?.({ delta: "", turnId: turn.turnId, type: "text_delta" });
           turn.onEvent?.({ delta: "visible", turnId: turn.turnId, type: "text_delta" });
@@ -680,7 +680,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       router: { decide: async () => { throw new Error("pre-bound result must not route again"); } },
       runtime: {
         abort: () => undefined, followUp: () => undefined, isRunning: () => false,
-        restore: async () => false,
+        restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => {
           turn.onEvent?.({ toolCallId: "read-1", toolName: "work_read_result", turnId: turn.turnId, type: "tool_started" });
           throw new Error("timeout after read");

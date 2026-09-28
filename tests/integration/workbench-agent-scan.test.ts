@@ -96,6 +96,21 @@ describe("SqliteWorkbenchAgentScan traversal sources", () => {
     await expect(scan.listUnsynthesizedResults("workbench_1")).resolves.toEqual([]);
   });
 
+  it("withholds a paused goal's result, then offers it again once the gate opens", async () => {
+    const database = makeDatabase();
+    seed(database);
+    database.prepare("INSERT INTO joi_goal_execution_gates VALUES ('input_goal', 'WAITING_INPUT')").run();
+    const scan = new SqliteWorkbenchAgentScan({ transaction: (op) => op(database) });
+
+    // The store declines to admit a paused goal's result on purpose and leaves it unclaimed for a
+    // later tick. A scan that offered it anyway would offer it on every tick forever, which is how
+    // one paused goal re-enqueued the same result thousands of times.
+    await expect(scan.listUnsynthesizedResults("workbench_1")).resolves.toEqual([]);
+
+    database.prepare("UPDATE joi_goal_execution_gates SET status = 'OPEN' WHERE goal_input_id = 'input_goal'").run();
+    await expect(scan.listUnsynthesizedResults("workbench_1")).resolves.toHaveLength(1);
+  });
+
   it("unions partner keys from attempts, instances and sessions", async () => {
     const database = makeDatabase();
     seed(database);

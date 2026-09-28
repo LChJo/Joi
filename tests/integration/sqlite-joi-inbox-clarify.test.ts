@@ -220,6 +220,33 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
+  it("opens the goal a user just answered so the home feed puts it back on top", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const older = await inbox.accept({ idempotencyKey: "key-open-older", text: "旧目标：改造登录" });
+      fixture.clock.advance(60_000);
+      const newer = await inbox.accept({ idempotencyKey: "key-open-newer", text: "新目标：整理文档" });
+      const feed = () => new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now());
+
+      // Creation order decides until someone acts on a goal.
+      expect((await feed()).goals.map((goal) => goal.goalId)).toEqual([newer.inputId, older.inputId]);
+
+      fixture.clock.advance(60_000);
+      await repository.requireClarification(older.inputId, "workbench_selection_invalid");
+      await repository.clarify(older.inputId, {
+        ...await questionVersion(repository, older.inputId), text: "是登录模块",
+      });
+
+      // Answering is an explicit user action on that goal, so it outranks the newer one's
+      // untouched creation time instead of sinking under it.
+      expect((await feed()).goals.map((goal) => goal.goalId)).toEqual([older.inputId, newer.inputId]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("atomically applies a partner choice only to the matching clarification reason", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-choice-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
@@ -445,6 +472,32 @@ describe("sqlite joi inbox clarify", () => {
         status: "COMPLETED_WITH_GAPS",
       });
       expect(feed.thinking).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("names a Work that is already running in the recovery prompt", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "收尾", personaSummary: "persona", projectLabel: "joi", scopeSummary: "收尾" });
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const goal = await inbox.accept({ idempotencyKey: "resume-live-work", text: "继续收尾", workbenchId: workbench.workbenchId });
+      const now = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('goal-turn', ?, ?, 'session', 'COMPLETED', ?, ?)`).run(goal.inputId, workbench.workbenchId, now, now);
+        connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-running', ?, ?, '写接口', '{}', 'READ', 'RUNNING', ?, ?)`).run(workbench.workbenchId, goal.inputId, now, now);
+      });
+      await repository.requireClarification(goal.inputId, "question_required", "范围？");
+      await inbox.clarify({ inputId: goal.inputId, questionId: `goal_question:${goal.inputId}:v1`, questionVersion: 1, text: "全部" });
+
+      // The prompt is the resumed Turn's only view of what exists. A Work it cannot see is one it
+      // dispatches a second time, and the two then run side by side under the same goal.
+      const resumeId = `joi_goal_resume:goal:${goal.inputId}:v1`;
+      expect((await repository.loadInput(resumeId))?.body).toContain("existingWorkId=work-running status=RUNNING");
     } finally {
       await fixture.close();
     }

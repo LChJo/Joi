@@ -5,6 +5,7 @@ import path from "node:path";
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
+import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
@@ -105,6 +106,176 @@ describe("sqlite joi inbox retry", () => {
         feedback_recorded_at: null,
         reviewed_revision: 2,
         status: "ACTIVE",
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("does not close a retried goal using the prior completed result and review", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "续做", personaSummary: "persona", projectLabel: "joi", scopeSummary: "续做" });
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const goal = await inbox.accept({ idempotencyKey: "retry-stale-outcome", text: "完成第一阶段", workbenchId: workbench.workbenchId });
+      const old = fixture.clock.now().toISOString();
+      fixture.clock.advance(60_000);
+      const reviewId = `joi_harness_review:goal:${goal.inputId}:r1`;
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(goal.inputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at)
+          VALUES ('old-goal-turn', ?, ?, 'old-session', 'COMPLETED', 1, ?, ?)`).run(goal.inputId, workbench.workbenchId, old, old);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('old-completed-work', ?, ?, '第一阶段', '{}', 'READ', 'COMPLETED', ?, ?)`)
+          .run(workbench.workbenchId, goal.inputId, old, old);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 1, 1, ?)`).run(goal.inputId, old);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES (?, 1, 'COMPLETED', '第一阶段完成', ?, ?)`).run(goal.inputId, old, old);
+        connection.prepare(`INSERT INTO joi_harness_maps
+          (goal_input_id, workbench_id, destination, status, revision, reviewed_revision, created_at, updated_at)
+          VALUES (?, ?, '完成目标', 'CLEARED', 2, 1, ?, ?)`).run(goal.inputId, workbench.workbenchId, old, old);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES (?, ?, '旧评审', 'CONSUMED', ?, ?, ?, ?)`).run(reviewId, `review:${goal.inputId}`, workbench.workbenchId, goal.inputId, old, old);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('old-review-turn', ?, ?, 'old-session', 'COMPLETED', ?, ?)`).run(reviewId, workbench.workbenchId, old, old);
+      });
+
+      await repository.retry(goal.inputId, { text: "继续第二阶段" });
+      await repository.createTurn({
+        createdAt: fixture.clock.now().toISOString(), inputId: goal.inputId,
+        sessionId: "new-session", turnId: "new-goal-turn", workbenchId: workbench.workbenchId,
+      });
+      await expect(repository.completeInput(goal.inputId, "new-goal-turn"))
+        .rejects.toMatchObject({ code: "joi_goal_followup_without_work" });
+      await repository.failTurn(goal.inputId, "new-goal-turn");
+      const harness = new SqliteJoiHarnessRepository(fixture.database);
+      expect((await harness.listReviewRecoveries()).filter((candidate) => candidate.digest.goalInputId === goal.inputId)).toEqual([]);
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now())).goals
+        .find((item) => item.goalId === goal.inputId)?.status).toBe("ARRANGING");
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("hands an inferred follow-up answer to the user instead of failing the goal", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "续问", personaSummary: "persona", projectLabel: "joi", scopeSummary: "续问" });
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const goal = await inbox.accept({ idempotencyKey: "retry-inferred-answer", text: "分析当前进度" });
+      const old = fixture.clock.now().toISOString();
+      fixture.clock.advance(60_000);
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(goal.inputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at)
+          VALUES ('old-goal-turn', ?, ?, 'old-session', 'COMPLETED', 1, ?, ?)`).run(goal.inputId, workbench.workbenchId, old, old);
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('old-completed-work', ?, ?, '第一阶段', '{}', 'READ', 'COMPLETED', ?, ?)`)
+          .run(workbench.workbenchId, goal.inputId, old, old);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 1, 1, ?)`).run(goal.inputId, old);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES (?, 1, 'COMPLETED', '第一阶段完成', ?, ?)`).run(goal.inputId, old, old);
+      });
+
+      await repository.retry(goal.inputId, { text: "继续第二阶段" });
+      await repository.createTurn({
+        createdAt: fixture.clock.now().toISOString(), inputId: goal.inputId,
+        sessionId: "new-session", turnId: "new-goal-turn", workbenchId: workbench.workbenchId,
+      });
+      // A text-only answer without new Work cannot silently finish the goal — but it also
+      // must not crash-loop: the answer goes to the user as a confirmation question.
+      await repository.completeInput(goal.inputId, "new-goal-turn", {
+        completionSummary: "第一阶段的结论如下……剩余待办需要你确认优先级。",
+        outcome: "DIRECT_ANSWER",
+      });
+
+      expect((await repository.list()).find((record) => record.inputId === goal.inputId)).toMatchObject({
+        clarificationReasonCode: "joi_goal_followup_answer_unconfirmed",
+        status: "CLARIFICATION_REQUIRED",
+      });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(goal.inputId)))
+        .toEqual({ status: "WAITING_INPUT" });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM joi_turns WHERE turn_id = 'new-goal-turn'").get()))
+        .toEqual({ status: "COMPLETED" });
+      // The stale outcome stays untouched until the user confirms.
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT completed_at FROM joi_goal_outcomes WHERE input_id = ?").get(goal.inputId)))
+        .toEqual({ completed_at: old });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("keeps an earlier result current when the user merely answers a clarification", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const goal = await inbox.accept({ idempotencyKey: "answer-keeps-outcome", text: "已完成阶段" });
+      const old = fixture.clock.now().toISOString();
+      fixture.clock.advance(60_000);
+      fixture.database.transaction((connection) => {
+        connection.prepare(`UPDATE joi_inbox_messages
+          SET status = 'CONSUMED', last_opened_at = ? WHERE input_id = ?`)
+          .run(fixture.clock.now().toISOString(), goal.inputId);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 1, 1, ?)`).run(goal.inputId, old);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES (?, 1, 'COMPLETED', '已完成', ?, ?)`).run(goal.inputId, old, old);
+      });
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now())).goals
+        .find((item) => item.goalId === goal.inputId)).toMatchObject({
+        completionSummary: "已完成",
+        status: "COMPLETED",
+      });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("accepts an explicit direct follow-up and replaces the older completion summary", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "追问", personaSummary: "persona", projectLabel: "joi", scopeSummary: "追问" });
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const inbox = new JoiInboxService({ clock: fixture.clock, ids: fixture.ids, repository });
+      const goal = await inbox.accept({ idempotencyKey: "retry-direct-followup", text: "第一阶段", workbenchId: workbench.workbenchId });
+      const old = fixture.clock.now().toISOString();
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(goal.inputId);
+        connection.prepare(`INSERT INTO joi_goal_result_sets
+          (original_input_id, revision, synthesized_revision, updated_at) VALUES (?, 1, 1, ?)`).run(goal.inputId, old);
+        connection.prepare(`INSERT INTO joi_goal_outcomes
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at)
+          VALUES (?, 1, 'COMPLETED', '旧结论', ?, ?)`).run(goal.inputId, old, old);
+      });
+      fixture.clock.advance(60_000);
+      await repository.retry(goal.inputId, { text: "解释旧结论" });
+      await repository.createTurn({
+        createdAt: fixture.clock.now().toISOString(), inputId: goal.inputId,
+        sessionId: "direct-session", turnId: "direct-followup-turn", workbenchId: workbench.workbenchId,
+      });
+      await repository.completeInput(goal.inputId, "direct-followup-turn", {
+        committedByTool: true, completionSummary: "新的直接回答", outcome: "DIRECT_ANSWER",
+      });
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now())).goals
+        .find((item) => item.goalId === goal.inputId)).toMatchObject({
+        completionSummary: "新的直接回答", status: "COMPLETED",
       });
     } finally {
       await fixture.close();

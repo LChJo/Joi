@@ -17,7 +17,7 @@ const pngBytes = "iVBOR-fake";
 function capturedRuntime(mode: "lookup-then-outcome" | "outcome") {
   const turns: StartReasoningTurnInput[] = [];
   const runtime: PrimaryReasoningRuntime = {
-    abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+    abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
     startTurn: async (turn) => {
       turns.push(turn);
       const toolName = mode === "outcome" || turns.length > 1 ? "turn_complete" : "partner_list_available";
