@@ -147,10 +147,12 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
 
   async countInFlight(partnerId: string): Promise<number> {
     return this.database.transaction((connection) => {
+      // UNKNOWN is a settled outcome (the attempt ended in an undetermined side-effect state),
+      // not an in-flight one, so it never holds a partner in drain. Mirrors attemptTerminal().
       const row = connection.prepare(`SELECT COUNT(*) AS count
         FROM dispatch_attempts d JOIN partner_revisions r ON r.partner_revision_id = d.partner_revision_id
         WHERE r.partner_id = ? AND d.status IN
-          ('PENDING', 'DISPATCHED', 'ACCEPTED', 'RUNNING', 'WAITING_INPUT', 'WAITING_AUTH', 'UNKNOWN')`
+          ('PENDING', 'DISPATCHED', 'ACCEPTED', 'RUNNING', 'WAITING_INPUT', 'WAITING_AUTH')`
       ).get(partnerId) as { count: number };
       return row.count;
     });
@@ -164,8 +166,10 @@ export class SqlitePartnerRegistryRepository implements PartnerRegistryRepositor
   }
 
   async listActive(): Promise<PartnerRevision[]> {
+    // Ordered by creation, never by registry_revision: registry_revision rises on every edit,
+    // enable or disable, so sorting on it would reorder the directory on each toggle.
     return this.database.transaction((connection) => connection.prepare(
-      `${SELECT_REVISIONS} WHERE r.partner_revision_id = p.active_revision_id AND p.status <> 'DELETED' ORDER BY r.registry_revision`,
+      `${SELECT_REVISIONS} WHERE r.partner_revision_id = p.active_revision_id AND p.status <> 'DELETED' ORDER BY p.created_at, p.partner_id`,
     ).all()).map((row) => mapRow(row as Row));
   }
 }

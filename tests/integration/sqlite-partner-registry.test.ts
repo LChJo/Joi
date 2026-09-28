@@ -4,8 +4,29 @@ import path from "node:path";
 
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
-import { latestMigrationVersion, openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { latestMigrationVersion, openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+
+/** Seeds the foreign-key chain a dispatch attempt needs: workbench -> inbox -> turn -> plan -> work. */
+function seedDispatchableWork(database: RuntimeDatabase, partnerRevisionId: string, status: string): void {
+  database.transaction((connection) => {
+    connection.prepare(`INSERT INTO workbenches
+      (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+      VALUES ('workbench_seed', 'A', 'persona_1', 'summary', 'scope', 'project', 'memory_namespace_1', 'ACTIVE', '2026-07-15T12:00:00.000Z', '2026-07-15T12:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, workbench_id, created_at, updated_at)
+      VALUES ('input_seed', 'idem_seed', 'body', 'ROUTED', 'workbench_seed', '2026-07-15T12:00:00.000Z', '2026-07-15T12:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+      VALUES ('turn_seed', 'input_seed', 'workbench_seed', 'joi_session:workbench_seed', 'RUNNING', '2026-07-15T12:00:00.000Z', '2026-07-15T12:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO dispatch_plans (dispatch_plan_id, turn_id, candidate_json, policy_result_json, created_at)
+      VALUES ('plan_seed', 'turn_seed', '{}', '{}', '2026-07-15T12:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+      VALUES ('work_seed', 'workbench_seed', 'input_seed', 'the task', '{}', 'WRITE', 'READY', '2026-07-15T12:00:00.000Z', '2026-07-15T12:00:00.000Z')`).run();
+    connection.prepare(`INSERT INTO dispatch_attempts
+      (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at)
+      VALUES ('attempt_seed', 'plan_seed', 'work_seed', ?, 1, 'action_seed', ?, '2026-07-15T12:00:00.000Z', '2026-07-15T12:00:00.000Z')`)
+      .run(partnerRevisionId, status);
+  });
+}
 
 describe("SQLite partner registry", () => {
   it("persists immutable revisions and restores the active revision after restart", async () => {
@@ -73,6 +94,60 @@ describe("SQLite partner registry", () => {
       const repository = new SqlitePartnerRegistryRepository(database);
       await expect(repository.getRevision(all.partnerRevisionId)).resolves.toMatchObject({ toolPolicyMode: "CUSTOM", tools: ["read"] });
       await expect(repository.getRevision(none.partnerRevisionId)).resolves.toMatchObject({ toolPolicyMode: "ALL", tools: [] });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("keeps the directory in creation order across enable, disable and edit", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-order-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const clock = new TestClock();
+      const service = new PartnerRegistryService({ clock, ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
+      const first = await service.add({ capabilities: [], displayName: "First", kind: "local-pi", skills: [], tools: ["read"] });
+      clock.advance(1_000);
+      const second = await service.add({ capabilities: [], displayName: "Second", kind: "local-pi", skills: [], tools: ["read"] });
+      clock.advance(1_000);
+      const third = await service.add({ capabilities: [], displayName: "Third", kind: "local-pi", skills: [], tools: ["read"] });
+      const names = async () => (await service.list()).map((partner) => partner.displayName);
+      await expect(names()).resolves.toEqual(["First", "Second", "Third"]);
+
+      // Each of these appends a revision with a higher registry_revision for that partner.
+      await service.disable(first.partnerId);
+      await expect(names()).resolves.toEqual(["First", "Second", "Third"]);
+      await service.enable(first.partnerId);
+      await expect(names()).resolves.toEqual(["First", "Second", "Third"]);
+      await service.update(second.partnerId, { capabilities: [], displayName: "Second", skills: [], tools: ["read", "edit"] });
+      await service.disable(third.partnerId);
+      await expect(names()).resolves.toEqual(["First", "Second", "Third"]);
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("treats an UNKNOWN dispatch attempt as settled so a disabled partner can still be deleted", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-unknown-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const repository = new SqlitePartnerRegistryRepository(database);
+      const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
+      const partner = await service.add({ capabilities: [], displayName: "Draining", kind: "local-pi", skills: [], tools: [] });
+      await service.disable(partner.partnerId);
+      seedDispatchableWork(database, partner.partnerRevisionId, "RUNNING");
+
+      // A genuinely in-flight attempt still holds the partner in drain.
+      await expect(repository.countInFlight(partner.partnerId)).resolves.toBe(1);
+      await expect(service.delete(partner.partnerId)).rejects.toMatchObject({ code: "partner_delete_in_flight" });
+
+      database.transaction((connection) => {
+        connection.prepare("UPDATE dispatch_attempts SET status = 'UNKNOWN' WHERE dispatch_attempt_id = 'attempt_seed'").run();
+      });
+      await expect(repository.countInFlight(partner.partnerId)).resolves.toBe(0);
+      await expect(service.delete(partner.partnerId)).resolves.toMatchObject({ status: "DELETED" });
+      await expect(service.list()).resolves.toEqual([]);
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });
