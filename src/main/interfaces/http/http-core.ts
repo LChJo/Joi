@@ -111,6 +111,17 @@ export function optionalIntegerField(body: Record<string, unknown>, key: string)
   return value;
 }
 
+/** The enum counterpart of `optionalIntegerField`, same three states; the allowed set check
+ *  mirrors what the domain layer re-validates, so bad values fail at the wire, not in SQLite. */
+export function optionalEnumField<T extends string>(body: Record<string, unknown>, key: string, allowed: readonly T[]): T | null | undefined {
+  const value = body[key];
+  if (value === undefined || value === null) return value;
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    throw new HttpError("request_field_invalid", `${key} must be one of ${allowed.join(", ")} or null.`, 400);
+  }
+  return value as T;
+}
+
 export function optionalStringArray(body: Record<string, unknown>, key: string): string[] | undefined {
   const value = body[key];
   if (value === undefined) return undefined;

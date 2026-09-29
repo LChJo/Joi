@@ -1,4 +1,5 @@
 import { DomainError } from "../errors.js";
+import { THINKING_EFFORTS, type ThinkingEffort } from "../../../shared/joi.js";
 
 export const MODEL_SOURCE_STATUSES = ["DRAFT", "VALIDATING", "READY", "DEGRADED", "NEEDS_AUTH", "DISABLED"] as const;
 export type ModelSourceStatus = (typeof MODEL_SOURCE_STATUSES)[number];
@@ -34,6 +35,8 @@ export interface ModelRevision {
   maxOutputTokens?: number;
   modelId: string;
   modelRevisionId: string;
+  /** User-chosen thinking effort for this exact model. Absent means joi's endpoint allowlist decides. */
+  thinkingEffort?: ThinkingEffort;
 }
 
 export interface ModelSource {
@@ -63,6 +66,7 @@ export interface CreateModelSourceInput {
   protocol?: ModelSourceProtocol;
   sourceId: string;
   sourceRevisionId: string;
+  thinkingEffort?: ThinkingEffort;
 }
 
 function required(value: string, code: string): string {
@@ -91,21 +95,32 @@ function optionalLimit(
   return value;
 }
 
+function optionalEnum(value: string | undefined, allowed: readonly string[], code: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (!allowed.includes(value)) throw new DomainError(code, "Model source value is invalid.");
+  return value;
+}
+
 /** Applies the shared range check to the three per-model limits and returns them ready to spread. */
 function modelLimits(input: {
   compactionThresholdPercent?: number;
   contextWindow?: number;
   maxOutputTokens?: number;
-}): Pick<ModelRevision, "compactionThresholdPercent" | "contextWindow" | "maxOutputTokens"> {
+  thinkingEffort?: ThinkingEffort;
+}): Pick<ModelRevision, "compactionThresholdPercent" | "contextWindow" | "maxOutputTokens" | "thinkingEffort"> {
   const contextWindow = optionalLimit(input.contextWindow, "model_source_context_window_invalid", CONTEXT_WINDOW_RANGE);
   const maxOutputTokens = optionalLimit(input.maxOutputTokens, "model_source_max_output_invalid", MAX_OUTPUT_TOKENS_RANGE);
   const compactionThresholdPercent = optionalLimit(
     input.compactionThresholdPercent, "model_source_compaction_threshold_invalid", COMPACTION_PERCENT_RANGE,
   );
+  const thinkingEffort = optionalEnum(input.thinkingEffort, THINKING_EFFORTS, "model_source_thinking_effort_invalid") as
+    | ThinkingEffort
+    | undefined;
   return {
     ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
     ...(contextWindow === undefined ? {} : { contextWindow }),
     ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+    ...(thinkingEffort === undefined ? {} : { thinkingEffort }),
   };
 }
 
@@ -150,6 +165,7 @@ export function reviseModelSource(
     modelId: string;
     modelRevisionId: string;
     sourceRevisionId: string;
+    thinkingEffort?: ThinkingEffort;
     updatedAt: string;
   },
 ): ModelSource {

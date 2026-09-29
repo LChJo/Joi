@@ -78,6 +78,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
           `Work item: ${request.workId}`,
           boundBackgroundSections([execution.promptSection, skillSection], budget.systemMaxChars),
         ].join("\n"),
+        thinkingLevel: resolved.thinkingLevel,
         tools,
       },
       sessionId: externalRunId,

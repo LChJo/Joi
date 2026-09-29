@@ -208,7 +208,7 @@ describe("SqliteModelSourceRepository", () => {
       await new SqlitePiCredentialRepository(database).write({
         encryptedBlob: new Uint8Array([1, 2, 3]), providerId: `joi-source:${sourceId}`, type: "api_key", version: 1,
       });
-      const limits = { compactionThresholdPercent: 70, contextWindow: 400_000, maxOutputTokens: 65_536 };
+      const limits = { compactionThresholdPercent: 70, contextWindow: 400_000, maxOutputTokens: 65_536, thinkingEffort: "low" as const };
       const source = createModelSource({
         accessMode: "api",
         createdAt: "2026-07-28T10:00:00.000Z",
@@ -238,17 +238,18 @@ describe("SqliteModelSourceRepository", () => {
         modelId: "glm-5.2",
         modelRevisionId: "model-limits-2",
         sourceRevisionId: "revision-limits-2",
+        thinkingEffort: "high",
         updatedAt: "2026-07-28T11:00:00.000Z",
       });
       await repository.revise({ local: false, order: 0, primary: true, source: revised });
       expect((await repository.get(sourceId))?.source.activeModelRevision)
-        .toMatchObject({ compactionThresholdPercent: 60, contextWindow: 400_000, maxOutputTokens: 65_536 });
+        .toMatchObject({ compactionThresholdPercent: 60, contextWindow: 400_000, maxOutputTokens: 65_536, thinkingEffort: "high" });
       expect(database.transaction((connection) => connection.prepare(
-        `SELECT model_revision_id, compaction_threshold_percent, context_window
+        `SELECT model_revision_id, compaction_threshold_percent, context_window, thinking_effort
            FROM model_source_model_revisions WHERE source_id = ? ORDER BY created_at, model_revision_id`,
       ).all(sourceId))).toEqual([
-        { compaction_threshold_percent: 70, context_window: 400_000, model_revision_id: "model-limits-1" },
-        { compaction_threshold_percent: 60, context_window: 400_000, model_revision_id: "model-limits-2" },
+        { compaction_threshold_percent: 70, context_window: 400_000, model_revision_id: "model-limits-1", thinking_effort: "low" },
+        { compaction_threshold_percent: 60, context_window: 400_000, model_revision_id: "model-limits-2", thinking_effort: "high" },
       ]);
     } finally {
       database.close();

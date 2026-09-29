@@ -40,3 +40,5 @@ Migration 066 为 10 秒 harness/evolution 安全扫描补齐按目标、Work、
 Migration 062 增加 `workbench_agent_tool_traces`（工具轨迹私密正文）与 `workbench_agent_conversation_entries.tool_call_id`。主时间线只保留一行 ≤200 字符的脱敏调用摘要；完整命令与输出按 `(run_id, tool_call_id)` 每条追加一次，凭据写入前脱敏、绝对路径保留（本机调试必需）、单条 ≤8 KB 超出截断并标记，只经桌面写权限路由按需读取，不进首页、诊断、SSE 或远端。只登记迁移后的新 run，不回填历史：存量 TOOL_CALL 行既无 `tool_call_id` 也无正文来源。
 
 Migration 061 修复进化证据无法收敛的三处遗留状态，不新增表。为 evolution_evidence 增加 classified_at 承载幂等判定，使证据分类可随目标收敛单调升级，而 observed_at 仍是裁决窗口时间戳、只在真正升级时前移；关闭已撤销（取消 / 忽略）目标上永久停留在 ACTIVE 的清图，撤销时刻取自目标行本身，迁移不依赖时钟；按 059 的实际落库时间精确放行当时仍在途、结局发生在迁移之后的目标，已终结的历史目标继续遵循 059 的"固定基线且不采样"。触发口径改为跨工作台共享证据池见 ADR 0020 的 2026-09-24 修订。
+
+Migration 067 让思考强度成为按 model revision 可配置的第五个可空列（off/low/medium/high/xhigh/max）。NULL 即未配置，存量行退回 baseUrl 白名单判定（always-on 主机 low，其余 off），无需回填。与 063 的三列同属 append-only revision：服务层在保留 Model ID 的编辑里显式携带，改 Model ID 时随三列一并重置——思考档位是"这个模型在这家端点上的事实"，换了模型旧档位可能直接 400。

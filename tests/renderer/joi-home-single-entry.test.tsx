@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
 import { AgentMessageStream, WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
-import type { WorkbenchAgentCardDto, WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import type { ThinkingEffort, WorkbenchAgentCardDto, WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution.js";
 
 const readySource: ModelSourceDto = {
@@ -559,8 +559,34 @@ describe("joi home single entry", () => {
       // sending nothing at all would leave the current value in place, since the service carries
       // unchanged limits into the new revision.
       compactionThresholdPercent: null, contextWindow: null, maxOutputTokens: null,
+      thinkingEffort: null,
     }));
     expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
+  });
+
+  it("edits the thinking effort tier and shows it on the source card", async () => {
+    const api = new DigitalLifeApi("");
+    let active: ModelSourceDto = {
+      ...readySource,
+      activeModel: { ...readySource.activeModel, thinkingEffort: "low" },
+      protocol: "anthropic",
+    };
+    // The list has to follow the save: the card renders whatever `listModelSources` returned, so a
+    // static mock would keep showing the pre-edit tier and the last assertion would be passing on
+    // the fixture rather than on the save path.
+    vi.spyOn(api, "listModelSources").mockImplementation(() => Promise.resolve({ items: [active] }));
+    const update = vi.spyOn(api, "updateModelSource").mockImplementation((_sourceId, body) => {
+      const requested = body.thinkingEffort as ThinkingEffort | undefined;
+      active = { ...active, status: "DRAFT", activeModel: { ...active.activeModel, ...(requested === undefined ? {} : { thinkingEffort: requested }) } };
+      return Promise.resolve(active);
+    });
+    render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText("思考强度：低")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑 DeepSeek" }));
+    fireEvent.change(screen.getByLabelText("思考强度"), { target: { value: "high" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("思考强度")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-1", expect.objectContaining({ thinkingEffort: "high" })));
+    expect(await screen.findByText("思考强度：高")).toBeInTheDocument();
   });
 
   it("warns that saving an edit strands the partners pinned to that source", async () => {

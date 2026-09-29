@@ -31,7 +31,7 @@ import {
   type ModelRequestBudget,
 } from "./pi-model-budget.js";
 import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
-import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
+import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { toolCallCommand, toolCallResultBody, toolCallSummary, type ToolTraceDraft } from "../../application/partners/tool-trace-presentation.js";
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
@@ -362,7 +362,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
    * compaction that replaces that, and the diagnostics below are how a route that keeps failing to
    * summarize stays visible instead of quietly reverting to the old behaviour.
    */
-  #contextManager(input: { messagesMaxChars: number; model: Model<Api>; models: Models; request: PartnerRunRequest }): PiContextManager {
+  #contextManager(input: { messagesMaxChars: number; model: Model<Api>; models: Models; request: PartnerRunRequest; thinkingLevel: ModelThinkingLevel }): PiContextManager {
     const where = { workbenchId: input.request.workbenchId, workId: input.request.workId };
     return createPiContextManager({
       messagesMaxChars: input.messagesMaxChars,
@@ -371,7 +371,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       onDiagnostic: (event: PiContextDiagnostic) => {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, event.type, { ...event, ...where });
       },
-      thinkingLevel: modelRequiresAlwaysOnThinking(input.model.baseUrl) ? "low" : "off",
+      thinkingLevel: input.thinkingLevel,
     });
   }
 
@@ -439,6 +439,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       model: resolved.model,
       models: resolved.models,
       request,
+      thinkingLevel: resolved.thinkingLevel,
     });
     const agent = new Agent({
       afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(trackerRef, context)),
@@ -450,7 +451,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         messages: [],
         model: resolved.model,
         systemPrompt: this.#systemPrompt(configuredPrompt, request, execution.promptSection, context.knowledgeSection, context.skillSection, revision, tools.map((tool) => tool.name), execution.workspacePath !== undefined, budget.systemMaxChars),
-        thinkingLevel: modelRequiresAlwaysOnThinking(resolved.model.baseUrl) ? "low" : "off",
+        thinkingLevel: resolved.thinkingLevel,
         tools,
       },
       sessionId: externalRunId,
@@ -545,6 +546,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         model: resolved.model,
         models: resolved.models,
         request: input.request,
+        thinkingLevel: resolved.thinkingLevel,
       });
       const agent = new Agent({
         afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(sideEffectTracker, context)),
@@ -556,7 +558,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
           messages: (input.restoredMessages ?? []) as AgentMessage[],
           model: resolved.model,
           systemPrompt,
-          thinkingLevel: modelRequiresAlwaysOnThinking(resolved.model.baseUrl) ? "low" : "off",
+          thinkingLevel: resolved.thinkingLevel,
           tools,
         },
         sessionId: `local_pi_instance:${input.instanceId}`,

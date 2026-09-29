@@ -1,6 +1,8 @@
 import type { ModelSourceService } from "../../../application/model-sources/model-source-service.js";
+import { THINKING_EFFORTS } from "../../../../shared/joi.js";
 import {
   HttpError,
+  optionalEnumField,
   optionalIntegerField,
   optionalStringArray,
   readJson,
@@ -46,6 +48,7 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
       const compactionThresholdPercent = optionalIntegerField(body, "compactionThresholdPercent");
       const contextWindow = optionalIntegerField(body, "contextWindow");
       const maxOutputTokens = optionalIntegerField(body, "maxOutputTokens");
+      const thinkingEffort = optionalEnumField(body, "thinkingEffort", THINKING_EFFORTS);
       const source = await modelSourceService(ctx.dependencies).create({
         ...(accessMode === undefined ? {} : { accessMode: accessMode as "api" | "coding-plan" | "token-plan" | "custom" }),
         apiKey: stringField(body, "apiKey"),
@@ -57,6 +60,7 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
         ...(typeof compactionThresholdPercent === "number" ? { compactionThresholdPercent } : {}),
         ...(typeof contextWindow === "number" ? { contextWindow } : {}),
         ...(typeof maxOutputTokens === "number" ? { maxOutputTokens } : {}),
+        ...(typeof thinkingEffort === "string" ? { thinkingEffort } : {}),
       });
       sendJson(ctx.response, 201, source);
     },
@@ -91,6 +95,7 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
       const compactionThresholdPercent = optionalIntegerField(body, "compactionThresholdPercent");
       const contextWindow = optionalIntegerField(body, "contextWindow");
       const maxOutputTokens = optionalIntegerField(body, "maxOutputTokens");
+      const thinkingEffort = optionalEnumField(body, "thinkingEffort", THINKING_EFFORTS);
       const source = body.disabled === true
         ? await modelSourceService(ctx.dependencies).disable(sourceId)
         : await modelSourceService(ctx.dependencies).update(sourceId, {
@@ -101,6 +106,7 @@ export const MODEL_SOURCE_WRITE_ROUTES: RouteDefinition[] = [
           ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
           ...(contextWindow === undefined ? {} : { contextWindow }),
           ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+          ...(thinkingEffort === undefined ? {} : { thinkingEffort }),
         });
       sendJson(ctx.response, 200, source);
     },

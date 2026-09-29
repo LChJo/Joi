@@ -13,7 +13,7 @@ describe("Pi Workbench routing runtime", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const runtime = new PiWorkbenchRoutingRuntime({
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: {
         selectInitial: async (turnId) => ({
           modelId: "routing-model",
@@ -47,7 +47,7 @@ describe("Pi Workbench routing runtime", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const textOnly = new PiWorkbenchRoutingRuntime({
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
     });
     await expect(textOnly.decide({ workbenches: [], input: "new work", repair: false })).resolves.toEqual({

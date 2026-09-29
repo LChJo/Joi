@@ -1,7 +1,7 @@
-import { createModels, type Api, type CredentialStore, type Model, type Models } from "@earendil-works/pi-ai";
+import { createModels, type Api, type CredentialStore, type Model, type ModelThinkingLevel, type Models } from "@earendil-works/pi-ai";
 
 import type { ModelSourceRepository } from "../../application/ports/model-source-ports.js";
-import { createPiSourceProvider, modelLimitOverrides } from "./source-provider-factory.js";
+import { createPiSourceProvider, defaultThinkingLevel, piSourceProviderInput } from "./source-provider-factory.js";
 
 export interface ResolvedPiModel {
   /** The session-compaction threshold configured on the model source; absent means the runtime
@@ -9,6 +9,9 @@ export interface ResolvedPiModel {
   compactionThresholdPercent?: number;
   model: Model<Api>;
   models: Models;
+  /** The level every request on this route runs at: the user's configured thinking effort,
+   *  else joi's endpoint allowlist. Runtimes must use this instead of re-deriving it. */
+  thinkingLevel: ModelThinkingLevel;
 }
 
 export interface PiConfiguredModelResolver {
@@ -43,26 +46,7 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
     const activeModelRevision = source.activeModelRevision;
     // The configured limits are the user's declaration about this model; the factory folds them
     // in underneath whatever size the provider itself has stated.
-    const limits = modelLimitOverrides(activeModelRevision);
-    const provider = createPiSourceProvider(source.activeSourceRevision.kind === "generic-openai"
-      ? {
-        ...limits,
-        baseUrl: record.baseUrl ?? "",
-        displayName: source.activeSourceRevision.displayName,
-        kind: "generic-openai",
-        modelId: input.modelId,
-        protocol: source.activeSourceRevision.protocol,
-        sourceId: input.sourceId,
-      }
-      : {
-        ...limits,
-        accessMode: source.activeSourceRevision.accessMode === "token-plan" ? "token-plan" as const
-          : source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
-        kind: source.activeSourceRevision.kind,
-        modelId: input.modelId,
-        protocol: source.activeSourceRevision.protocol,
-        sourceId: input.sourceId,
-      });
+    const provider = createPiSourceProvider(piSourceProviderInput(record));
     const models = createModels({
       authContext: { env: () => Promise.resolve(undefined), fileExists: () => Promise.resolve(false) },
       credentials: this.dependencies.credentials,
@@ -78,6 +62,7 @@ export class RepositoryPiConfiguredModelResolver implements PiConfiguredModelRes
       }),
       model,
       models,
+      thinkingLevel: defaultThinkingLevel(activeModelRevision.thinkingEffort, model.baseUrl),
     };
   }
 }

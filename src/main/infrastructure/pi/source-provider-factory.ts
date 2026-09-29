@@ -2,8 +2,9 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { anthropicMessagesApi } from "@earendil-works/pi-ai/api/anthropic-messages.lazy";
 import { openAIResponsesApi } from "@earendil-works/pi-ai/api/openai-responses.lazy";
-import { createProvider, type ApiKeyAuth, type Model, type Provider } from "@earendil-works/pi-ai";
+import { createProvider, type ApiKeyAuth, type Model, type ModelThinkingLevel, type Provider } from "@earendil-works/pi-ai";
 
+import type { ModelSourceRecord } from "../../application/ports/model-source-ports.js";
 import {
   getDirectModelSourcePreset,
   modelRequiresAlwaysOnThinking,
@@ -11,6 +12,7 @@ import {
   type ModelPresetEntry,
 } from "./provider-presets.js";
 import type { ModelSourceAccessMode, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
+import type { ThinkingEffort } from "../../../shared/joi.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
 
 /** A model's own documented geometry, as configured on the settings page. */
@@ -27,12 +29,48 @@ export function modelLimitOverrides(revision: { contextWindow?: number; maxOutpu
   };
 }
 
+/** The thinking level a route will run at: the user's explicit choice, else joi's endpoint
+ *  allowlist (a few hosts only accept requests that carry thinking, so they get "low"). */
+export function defaultThinkingLevel(effort: ThinkingEffort | undefined, baseUrl: string | undefined): ModelThinkingLevel {
+  return effort ?? (modelRequiresAlwaysOnThinking(baseUrl) ? "low" : "off");
+}
+
+/** Assembles the provider input a real turn would use, limits and thinking effort included.
+ *  The validation probe shares this path so that what "验证" tests is what turns run. */
+export function piSourceProviderInput(record: ModelSourceRecord): PiSourceProviderInput {
+  const source = record.source;
+  const overrides = {
+    ...modelLimitOverrides(source.activeModelRevision),
+    ...(source.activeModelRevision.thinkingEffort === undefined ? {} : { thinkingEffort: source.activeModelRevision.thinkingEffort }),
+  };
+  return source.activeSourceRevision.kind === "generic-openai"
+    ? {
+      ...overrides,
+      baseUrl: record.baseUrl ?? "",
+      displayName: source.activeSourceRevision.displayName,
+      kind: "generic-openai",
+      modelId: source.activeModelRevision.modelId,
+      protocol: source.activeSourceRevision.protocol,
+      sourceId: source.sourceId,
+    }
+    : {
+      ...overrides,
+      accessMode: source.activeSourceRevision.accessMode === "token-plan" ? "token-plan" as const
+        : source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
+      kind: source.activeSourceRevision.kind,
+      modelId: source.activeModelRevision.modelId,
+      protocol: source.activeSourceRevision.protocol,
+      sourceId: source.sourceId,
+    };
+}
+
 interface DirectSourceProviderInput extends ModelLimitOverrides {
   accessMode: Exclude<ModelSourceAccessMode, "custom">;
   kind: DirectModelSourceKind;
   modelId: string;
   protocol: ModelSourceProtocol;
   sourceId: string;
+  thinkingEffort?: ThinkingEffort;
 }
 
 interface GenericSourceProviderInput extends ModelLimitOverrides {
@@ -42,9 +80,17 @@ interface GenericSourceProviderInput extends ModelLimitOverrides {
   modelId: string;
   protocol: ModelSourceProtocol;
   sourceId: string;
+  thinkingEffort?: ThinkingEffort;
 }
 
 export type PiSourceProviderInput = DirectSourceProviderInput | GenericSourceProviderInput;
+
+/** The tiers Kimi's coding-plan K3 endpoint is known to offer. `null` marks one joi believes it
+ *  refuses, which for "off" also keeps pi-ai from sending a `thinking: disabled` block the
+ *  endpoint would reject. A user-picked tier is layered on top of this, never replaced by it. */
+const KIMI_K3_THINKING_LEVELS = {
+  off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max",
+} as const;
 
 const noAmbientCredentialAuth = (allowKeyless: boolean): ApiKeyAuth => ({
   name: "joi model source credential",
@@ -154,15 +200,24 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   const knownModel = direct?.models.find((candidate) => candidate.id === input.modelId);
   const headers = input.kind === "kimi" && input.accessMode === "coding-plan" ? { "User-Agent": "KimiCLI/1.5" } : undefined;
   const allowKeyless = input.kind === "generic-openai" && isExplicitLocalUrl(baseUrl);
+  // The tier the user actually asked for, or undefined when they left it to joi's allowlist
+  // ("默认") or explicitly chose "关闭" — both mean "send no effort of our own". Both wires need
+  // this same value: on anthropic it decides whether to opt into the adaptive path, on responses
+  // whether to switch `reasoning` on, and either way the tier has to be declared to pi-ai.
+  const effort = input.thinkingEffort !== undefined && input.thinkingEffort !== "off" ? input.thinkingEffort : undefined;
   if (input.protocol === "anthropic") {
     const kimiCode = input.kind === "kimi" && input.accessMode === "coding-plan";
     const kimiK3 = kimiCode && (input.modelId === "k3" || input.modelId === "k3-256k");
     const limits = effectiveModelLimits(input, knownModel, kimiK3);
+    // pi-ai only sends an effort string on the adaptive-thinking path (`output_config.effort`);
+    // without it a chosen level degrades to budget_tokens, which always-thinking gateways
+    // reject. Kimi's coding-plan endpoint and any user-configured effort opt into it.
+    const userEffort = effort !== undefined;
     const model: Model<"anthropic-messages"> = {
       api: "anthropic-messages",
       baseUrl,
-      ...(kimiCode ? { compat: {
-        ...((input.modelId === "k3" || input.modelId === "kimi-for-coding") ? { allowEmptySignature: true } : {}),
+      ...(kimiCode || userEffort ? { compat: {
+        ...(kimiCode && (input.modelId === "k3" || input.modelId === "kimi-for-coding") ? { allowEmptySignature: true } : {}),
         forceAdaptiveThinking: true,
       } } : {}),
       contextWindow: limits.contextWindow,
@@ -174,7 +229,16 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
       name: knownModel?.label ?? input.modelId,
       provider: providerId,
       reasoning: true,
-      ...(kimiK3 ? { thinkingLevelMap: { off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max" } } : {}),
+      // The map passes the chosen tier through verbatim; without an entry pi-ai folds
+      // "xhigh"/"max" down to "high". K3 layers the chosen tier *on top of* its own table rather
+      // than losing to it: pi-ai sends a map entry only when it is a string and otherwise falls
+      // back to a switch that folds everything past "high" down to "high", so letting K3's table
+      // win outright would silently send the user's "极高" as "high" — the responses wire's bug,
+      // reached through the map instead of the clamp. The table's own nulls still stand for the
+      // tiers the user did not pick, so nothing accidental goes out.
+      ...(kimiK3
+        ? { thinkingLevelMap: effort === undefined ? KIMI_K3_THINKING_LEVELS : { ...KIMI_K3_THINKING_LEVELS, [effort]: effort } }
+        : userEffort ? { thinkingLevelMap: { [effort]: effort } } : {}),
     };
     return createProvider({
       api: anthropicMessagesApi(),
@@ -188,6 +252,11 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   }
   const alwaysOn = modelRequiresAlwaysOnThinking(baseUrl);
   const limits = effectiveModelLimits(input, knownModel);
+  // The effort string does pass through as reasoning.effort, but the tier still has to be
+  // *declared* first: pi-ai counts "xhigh" and "max" as unavailable unless thinkingLevelMap
+  // names them, and openai-responses clamps the request with clampThinkingLevel before the body
+  // is built — so an undeclared "max" goes out as "high" with nothing to show for the choice.
+  // One entry is all it takes: it is the tier every request on this route runs at.
   const model: Model<"openai-responses"> = {
     api: "openai-responses",
     baseUrl,
@@ -201,7 +270,8 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     maxTokens: limits.maxOutputTokens,
     name: knownModel?.label ?? input.modelId,
     provider: providerId,
-    reasoning: alwaysOn,
+    reasoning: alwaysOn || effort !== undefined,
+    ...(effort === undefined ? {} : { thinkingLevelMap: { [effort]: effort } }),
     ...(headers === undefined ? {} : { headers }),
   };
 

@@ -5,7 +5,7 @@ import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { MODEL_SOURCE_CHOICES, type AgentConversationEntryDto, type AgentConversationPageDto, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { MODEL_SOURCE_CHOICES, THINKING_EFFORTS, THINKING_EFFORT_LABELS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { ApiError, type DigitalLifeApi } from "./api";
 
@@ -51,6 +51,7 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
     const compactionThresholdPercent = numeric("compactionThresholdPercent");
     const contextWindow = numeric("contextWindow");
     const maxOutputTokens = numeric("maxOutputTokens");
+    const thinkingEffort = value("thinkingEffort");
     setBusy(true); setNotice("正在检查连接，这可能产生极少量模型费用…");
     try {
       const source = await api.createModelSource({
@@ -61,6 +62,7 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
         ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
         ...(contextWindow === undefined ? {} : { contextWindow }),
         ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
+        ...(thinkingEffort === "" ? {} : { thinkingEffort: thinkingEffort as ThinkingEffort }),
         ...(selected === "generic-openai" ? {
           baseUrl: value("baseUrl"), displayName: value("displayName"), modelId: value("modelId"),
         } : value("modelId").trim() === "" ? {} : { modelId: value("modelId") }),
@@ -125,6 +127,13 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
         <label>上下文窗口（tokens）<input inputMode="numeric" max={10000000} min={4096} name="contextWindow" placeholder="留空使用推荐值" step={1024} type="number" /></label>
         <label>最大输出（tokens）<input inputMode="numeric" max={1000000} min={256} name="maxOutputTokens" placeholder="留空使用推荐值" step={1024} type="number" /></label>
         <label>用到窗口的百分之多少时压缩会话<input inputMode="numeric" max={95} min={50} name="compactionThresholdPercent" placeholder="推荐 85" step={5} type="number" /></label>
+        <label>思考强度
+          <select defaultValue="" name="thinkingEffort">
+            <option value="">默认（跟随 joi 判定）</option>
+            {thinkingEffortOptions()}
+          </select>
+        </label>
+        <p className="model-source-hint">模型始终思考、不支持关闭思考时（如 glm-5.3-flash），请在低/中/高/极高/最高中选择。</p>
       </details>
       <div className="row-actions"><button className="button primary" disabled={busy} type="submit">{busy ? "正在检查…" : "保存并验证"}</button><button className="button ghost" onClick={cancel} type="button">取消</button></div>
     </form> : null}
@@ -178,6 +187,10 @@ function modelSourceStatusLabel(status: JoiSnapshotDto["modelSources"][number]["
 
 function protocolLabel(protocol: ModelSourceProtocolDto): string {
   return protocol === "anthropic" ? "Anthropic-compatible" : "OpenAI-compatible";
+}
+
+function thinkingEffortOptions() {
+  return THINKING_EFFORTS.map((value) => <option key={value} value={value}>{THINKING_EFFORT_LABELS[value]}</option>);
 }
 
 export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
@@ -235,12 +248,16 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       return Number.isFinite(parsed) ? { [key]: parsed } : {};
     };
     const apiKey = field("apiKey");
+    const thinkingEffort = field("thinkingEffort");
     const body = {
       ...(apiKey === "" ? {} : { apiKey }),
       modelId: field("modelId"),
       ...numericPatch("compactionThresholdPercent", "compactionThresholdPercent"),
       ...numericPatch("contextWindow", "contextWindow"),
       ...numericPatch("maxOutputTokens", "maxOutputTokens"),
+      // Same explicit-clear shape as the numeric fields: the revision is append-only, so an
+      // emptied select has to reach the service as null to mean "back to joi's own judgement".
+      ...(thinkingEffort === "" ? { thinkingEffort: null } : { thinkingEffort }),
       ...(source.kind === "generic-openai" ? {
         baseUrl: field("baseUrl"), displayName: field("displayName"),
       } : {}),
@@ -263,7 +280,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
     <header><div><h2>大模型网络</h2><p>主源和备用源按这里的顺序使用。页面不会显示已保存的密钥。</p></div><button className="button quiet" onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "添加网络"}</button></header>
     {adding ? <ModelSourceSetup api={api} changed={async () => { await load(); setAdding(false); }} /> : null}
     <div className="model-source-list">{sources.map((source, index) => <article className="model-source-item" key={source.sourceId}>
-      <div className="model-source-summary"><div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div><span className="model-source-meta">{source.primary ? "主源" : `备用 ${String(index)}`} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span><small>模型：{source.activeModel.id}</small>{modelLimitNote(source.activeModel)}{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}{source.status === "DEGRADED" || source.status === "NEEDS_AUTH" ? <><span className="model-source-reason">⚠ {modelSourceReasonText(source.reasonCode)}</span>{source.lastValidatedAt === undefined ? null : <small>上次验证：{new Date(source.lastValidatedAt).toLocaleString()}</small>}{source.lastError === undefined ? null : <details className="model-source-error"><summary>查看原始报错</summary><pre>{source.lastError}</pre></details>}</> : null}</div>
+      <div className="model-source-summary"><div className="model-source-heading"><strong>{source.displayName}</strong><span className={`model-source-status ${source.status.toLowerCase()}`}>{modelSourceStatusLabel(source.status)}</span></div><span className="model-source-meta">{source.primary ? "主源" : `备用 ${String(index)}`} · {accessModeLabel(source.accessMode)} · {protocolLabel(source.protocol)}</span><small>模型：{source.activeModel.id}</small>{source.activeModel.thinkingEffort === undefined ? null : <small>思考强度：{THINKING_EFFORT_LABELS[source.activeModel.thinkingEffort]}</small>}{modelLimitNote(source.activeModel)}{source.baseUrl === undefined ? null : <small>{source.baseUrl}</small>}{source.status === "DEGRADED" || source.status === "NEEDS_AUTH" ? <><span className="model-source-reason">⚠ {modelSourceReasonText(source.reasonCode)}</span>{source.lastValidatedAt === undefined ? null : <small>上次验证：{new Date(source.lastValidatedAt).toLocaleString()}</small>}{source.lastError === undefined ? null : <details className="model-source-error"><summary>查看原始报错</summary><pre>{source.lastError}</pre></details>}</> : null}</div>
       <div aria-label={`${source.displayName} 操作`} className="row-actions model-source-actions" role="group"><button aria-label={`编辑 ${source.displayName}`} className="button ghost" onClick={() => setEditing(source.sourceId)} type="button">编辑</button><button className="button ghost" disabled={index === 0} onClick={() => void reorder(index, -1)} type="button">上移</button><button className="button ghost" disabled={index === sources.length - 1} onClick={() => void reorder(index, 1)} type="button">下移</button><button className="button quiet" onClick={() => void api.validateModelSource(source.sourceId).then(load).catch(() => setNotice("验证没有通过。"))} type="button">验证</button><button className="button ghost" onClick={() => void api.updateModelSource(source.sourceId, { disabled: true }).then(load)} type="button">停用</button><button className="button danger-text" onClick={() => void removeSource(source.sourceId)} type="button">删除</button></div>
       {editing === source.sourceId ? <form className="model-source-form" onSubmit={(event) => void saveEdit(event, source)}>
         {source.kind === "generic-openai" ? <><label>编辑显示名称<input defaultValue={source.displayName} name="displayName" required /></label><label>编辑 Base URL<input defaultValue={source.baseUrl} name="baseUrl" required type="url" /></label></> : null}
@@ -271,10 +288,16 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         <label>替换 API Key（留空则保留）<input autoComplete="off" name="apiKey" type="password" /></label>
         <details className="model-source-advanced">
           <summary>高级设置</summary>
-          <p className="model-source-hint">清空即回到该模型的推荐值。压缩阈值只影响 joi 主会话，对搭档与编码线路不生效。改动 Model ID 会重置这三项。</p>
+          <p className="model-source-hint">清空即回到该模型的推荐值。压缩阈值只影响 joi 主会话，对搭档与编码线路不生效。改动 Model ID 会重置这四项。模型始终思考、不支持关闭思考时（如 glm-5.3-flash），请在低/中/高/极高/最高中选择。</p>
           <label>上下文窗口（tokens）<input defaultValue={source.activeModel.contextWindow ?? ""} inputMode="numeric" max={10000000} min={4096} name="contextWindow" placeholder="留空使用推荐值" step={1024} type="number" /></label>
           <label>最大输出（tokens）<input defaultValue={source.activeModel.maxOutputTokens ?? ""} inputMode="numeric" max={1000000} min={256} name="maxOutputTokens" placeholder="留空使用推荐值" step={1024} type="number" /></label>
           <label>压缩阈值（窗口百分比）<input defaultValue={source.activeModel.compactionThresholdPercent ?? ""} inputMode="numeric" max={95} min={50} name="compactionThresholdPercent" placeholder="推荐 85" step={5} type="number" /></label>
+          <label>思考强度
+            <select defaultValue={source.activeModel.thinkingEffort ?? ""} name="thinkingEffort">
+              <option value="">默认（跟随 joi 判定）</option>
+              {thinkingEffortOptions()}
+            </select>
+          </label>
         </details>
         <div className="row-actions"><button className="button primary" type="submit">保存修改</button><button className="button ghost" onClick={() => setEditing(null)} type="button">取消</button></div>
       </form> : null}

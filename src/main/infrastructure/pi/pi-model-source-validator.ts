@@ -2,7 +2,7 @@ import { createModels, type CredentialStore } from "@earendil-works/pi-ai";
 
 import type { ModelSourceRecord, ModelSourceValidator } from "../../application/ports/model-source-ports.js";
 import type { Clock } from "../../application/ports/runtime-store.js";
-import { createPiSourceProvider, modelLimitOverrides } from "./source-provider-factory.js";
+import { createPiSourceProvider, defaultThinkingLevel, piSourceProviderInput } from "./source-provider-factory.js";
 import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import { classifyHttp403Detail } from "../../application/partners/partner-run-failure.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
@@ -95,29 +95,11 @@ export class PiModelSourceValidator implements ModelSourceValidator {
     if (credentials === undefined) throw new Error("pi_credential_store_required");
     return async (record) => {
       const source = record.source;
-      // Probe with the same limits the real turns will use. Sizing the probe from the preset
-      // while the turns use the configured value would hide exactly the mistake — a window or
-      // completion cap the route rejects — that validating is meant to surface.
-      const limits = modelLimitOverrides(source.activeModelRevision);
-      const provider = createPiSourceProvider(source.activeSourceRevision.kind === "generic-openai"
-        ? {
-          ...limits,
-          baseUrl: record.baseUrl ?? "",
-          displayName: source.activeSourceRevision.displayName,
-          kind: "generic-openai",
-          modelId: source.activeModelRevision.modelId,
-          protocol: source.activeSourceRevision.protocol,
-          sourceId: source.sourceId,
-        }
-        : {
-          ...limits,
-          accessMode: source.activeSourceRevision.accessMode === "token-plan" ? "token-plan" as const
-            : source.activeSourceRevision.accessMode === "coding-plan" ? "coding-plan" as const : "api" as const,
-          kind: source.activeSourceRevision.kind,
-          modelId: source.activeModelRevision.modelId,
-          protocol: source.activeSourceRevision.protocol,
-          sourceId: source.sourceId,
-        });
+      // Probe with the same limits and thinking effort the real turns will use. Sizing the probe
+      // from the preset while the turns use the configured value would hide exactly the mistake —
+      // a window or completion cap the route rejects, or a thinking tier the gateway refuses —
+      // that validating is meant to surface.
+      const provider = createPiSourceProvider(piSourceProviderInput(record));
       const models = createModels({
         authContext: { env: () => Promise.resolve(undefined), fileExists: () => Promise.resolve(false) },
         credentials,
@@ -127,14 +109,15 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       if (auth === undefined) throw new Error("credential missing");
       const model = provider.getModels().find((candidate) => candidate.id === source.activeModelRevision.modelId);
       if (model === undefined) throw new Error("model not found");
-      const alwaysOn = modelRequiresAlwaysOnThinking(model.baseUrl);
+      const thinkingLevel = defaultThinkingLevel(source.activeModelRevision.thinkingEffort, model.baseUrl);
+      const thinks = thinkingLevel !== "off" || modelRequiresAlwaysOnThinking(model.baseUrl);
       // DeepSeek defaults to thinking even when Pi's model metadata says false.
       // For this no-tool probe only, let Pi emit reasoning.effort=none; otherwise
       // thinking can exhaust the tiny output budget before any visible answer.
       const probeModel = model.api === "openai-responses" && new URL(model.baseUrl).hostname === "api.deepseek.com"
         ? { ...model, reasoning: true } : model;
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), alwaysOn ? 30_000 : 15_000);
+      const timer = setTimeout(() => controller.abort(), thinks ? 30_000 : 15_000);
       timer.unref();
       try {
         const timestamp = Date.now();
@@ -142,9 +125,9 @@ export class PiModelSourceValidator implements ModelSourceValidator {
           const response = await trackPiModels(models, usage, () => ({ engine: "pi", purpose: "probe", sourceId: source.sourceId, sourceName: source.activeSourceRevision.displayName, modelId: source.activeModelRevision.modelId })).completeSimple(probeModel, {
             messages: [{ content: "Reply with OK.", role: "user", timestamp }],
           }, {
-            maxTokens: attempt === 0 ? (alwaysOn ? 256 : 64) : 1024,
+            maxTokens: attempt === 0 ? (thinks ? 256 : 64) : 1024,
             signal: controller.signal,
-            ...(alwaysOn ? { reasoning: "low" as const } : {}),
+            ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
           });
           if (controller.signal.aborted || response.stopReason === "aborted") {
             throw new Error("validation probe timed out");

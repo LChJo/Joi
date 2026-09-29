@@ -153,4 +153,70 @@ describe("model source HTTP API", () => {
       await fixture.close();
     }
   });
+
+  it("passes the thinking effort through PATCH in all three states and rejects unknown tiers", async () => {
+    const fixture = await createRuntimeFixture();
+    const updates: { input: UpdateModelSourceRequest; sourceId: string }[] = [];
+    const source: ModelSourceDto = {
+      accessMode: "api",
+      activeModel: { capability: "release-tested", id: "glm-5.3-flash", revisionId: "model-1", thinkingEffort: "low" },
+      activeSourceRevisionId: "source-revision-1",
+      credential: { configured: true, version: 1 },
+      displayName: "GLM",
+      kind: "glm",
+      order: 0,
+      primary: true,
+      protocol: "anthropic",
+      sourceId: "source-1",
+      status: "DRAFT",
+    };
+    const modelSources = {
+      create: async () => source,
+      delete: async () => undefined,
+      disable: async () => source,
+      hasReadySource: async () => false,
+      list: async () => [source],
+      setOrder: async () => [source],
+      update: async (sourceId: string, input: UpdateModelSourceRequest) => {
+        updates.push({ input, sourceId });
+        return source;
+      },
+      validate: async () => ({ ...source, status: "READY" as const }),
+    };
+    const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, modelSources }), loopbackPort: 0 });
+    try {
+      const bootstrap = await fixture.auth.issueDesktopBootstrap();
+      const grantResponse = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, {
+        body: JSON.stringify({ nonce: bootstrap.nonce }),
+        headers: { "content-type": "application/json", origin: "null" },
+        method: "POST",
+      });
+      const cookie = cookieFrom(grantResponse);
+      const grant = await grantResponse.json() as { csrfToken: string };
+      const writeHeaders = { "content-type": "application/json", cookie, origin: "null", "x-csrf-token": grant.csrfToken };
+      await fetch(`${listeners.loopback.url}/api/v1/auth/setup`, {
+        body: JSON.stringify({ password: "correct horse battery staple" }), headers: writeHeaders, method: "POST",
+      });
+      const patch = (body: Record<string, unknown>) => fetch(`${listeners.loopback.url}/api/v1/model-sources/source-1`, {
+        body: JSON.stringify(body), headers: writeHeaders, method: "PATCH",
+      });
+
+      expect((await patch({ thinkingEffort: "high" })).status).toBe(200);
+      expect(updates[0]?.input).toEqual({ thinkingEffort: "high" });
+
+      // null is the "back to joi's allowlist judgement" state and must survive the filter.
+      expect((await patch({ thinkingEffort: null })).status).toBe(200);
+      expect(updates[1]?.input).toEqual({ thinkingEffort: null });
+
+      // Omitted leaves it alone; the enum check rejects anything outside the tier list.
+      expect((await patch({ displayName: "GLM" })).status).toBe(200);
+      expect(updates[2]?.input).toEqual({ displayName: "GLM" });
+      // "minimal" is a real pi-ai tier that joi deliberately does not expose.
+      expect((await patch({ thinkingEffort: "minimal" })).status).toBe(400);
+      expect((await patch({ thinkingEffort: 3 })).status).toBe(400);
+    } finally {
+      await listeners.close();
+      await fixture.close();
+    }
+  });
 });

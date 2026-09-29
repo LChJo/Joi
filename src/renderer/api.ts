@@ -14,7 +14,7 @@ import type {
   SystemSettingsDto,
   UserAttachmentDto,
 } from "./types";
-import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchToolTraceDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto } from "../shared/joi";
+import type { AgentConversationPageDto, CodexPermissionsDto, WorkbenchAgentCardDto, WorkbenchChangeRequestDto, WorkbenchDetailDto, WorkbenchDto, WorkbenchToolTraceDto, WorkbenchWorkspaceDto, JoiAcceptedMessageDto, JoiActivityDto, JoiAttachmentDto, JoiHomeFeedDto, JoiSnapshotDto, ModelSourceAccessModeDto, ModelSourceDto, ModelSourceKindDto, ModelSourceProtocolDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, PartnerPromptDto, ScenarioDto, ScenarioPackDto, ScenarioPackInstallResultDto, ThinkingEffort } from "../shared/joi";
 import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
@@ -254,7 +254,7 @@ export class DigitalLifeApi {
       body: { roleIds }, method: "POST",
     });
   }
-  createModelSource(body: { accessMode: ModelSourceAccessModeDto; apiKey: string; baseUrl?: string; compactionThresholdPercent?: number; contextWindow?: number; displayName?: string; kind: ModelSourceKindDto; maxOutputTokens?: number; modelId?: string; protocol: ModelSourceProtocolDto }) {
+  createModelSource(body: { accessMode: ModelSourceAccessModeDto; apiKey: string; baseUrl?: string; compactionThresholdPercent?: number; contextWindow?: number; displayName?: string; kind: ModelSourceKindDto; maxOutputTokens?: number; modelId?: string; protocol: ModelSourceProtocolDto; thinkingEffort?: ThinkingEffort }) {
     return this.request<ModelSourceDto>("/api/v1/model-sources", { body, method: "POST" });
   }
   validateModelSource(sourceId: string) {

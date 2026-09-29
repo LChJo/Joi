@@ -13,6 +13,18 @@ export const MODEL_SOURCE_ACCESS_MODES = ["api", "coding-plan", "token-plan", "c
 export type ModelSourceAccessModeDto = (typeof MODEL_SOURCE_ACCESS_MODES)[number];
 export const MODEL_SOURCE_PROTOCOLS = ["openai", "anthropic"] as const;
 export type ModelSourceProtocolDto = (typeof MODEL_SOURCE_PROTOCOLS)[number];
+/** Ordered least-to-most, mirroring pi-ai's own thinking ladder with `minimal` left out. The
+ *  order is also the order the settings page renders, so the array must stay sorted. */
+export const THINKING_EFFORTS = ["off", "low", "medium", "high", "xhigh", "max"] as const;
+export type ThinkingEffort = (typeof THINKING_EFFORTS)[number];
+export const THINKING_EFFORT_LABELS: Record<ThinkingEffort, string> = {
+  off: "关闭",
+  low: "低",
+  medium: "中",
+  high: "高",
+  xhigh: "极高",
+  max: "最高",
+};
 export const MODEL_SOURCE_CHOICES = [
   { kind: "kimi", label: "Kimi", options: [
     { accessMode: "api", description: "开放平台按量计费", label: "开放平台 API", protocols: [
@@ -226,6 +238,8 @@ export interface ModelSourceDto {
     id: string;
     maxOutputTokens?: number;
     revisionId: string;
+    /** Absent means joi falls back to its endpoint allowlist (always-on hosts get "low", others "off"). */
+    thinkingEffort?: ThinkingEffort;
   };
   activeSourceRevisionId: string;
   baseUrl?: string;

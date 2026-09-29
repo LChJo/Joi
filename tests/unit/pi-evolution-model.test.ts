@@ -5,7 +5,7 @@ describe("Pi evolution adapter", () => {
   it("pins only immutable source identifiers and never executes returned tools", async () => {
     const pin = { modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" };
     const completeSimple = vi.fn().mockResolvedValue({ content: [{ type: "toolCall", name: "finish", arguments: { decision: "wait", evidenceIds: ["record-11"] } }] });
-    const resolve = vi.fn().mockResolvedValue({ model: { baseUrl: "https://example.test" }, models: { completeSimple } });
+    const resolve = vi.fn().mockResolvedValue({ model: { baseUrl: "https://example.test" }, models: { completeSimple }, thinkingLevel: "off" });
     const selectInitial = vi.fn().mockResolvedValue({ ...pin, turnId: "ephemeral" });
     const model = new PiEvolutionModel({ resolver: { resolve }, sources: { selectInitial } });
     expect(await model.pin()).toEqual(pin);

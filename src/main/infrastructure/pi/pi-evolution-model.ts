@@ -3,7 +3,6 @@ import { DomainError } from "../../domain/errors.js";
 import type { EvolutionModel, EvolutionSourcePin } from "../../application/ports/evolution.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
-import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels } from "./pi-usage.js";
 
@@ -16,7 +15,7 @@ export class PiEvolutionModel implements EvolutionModel {
     return { modelId, modelRevisionId, sourceId, sourceRevisionId };
   }
   async call(input: Parameters<EvolutionModel["call"]>[0] & { workbenchId?: string }): Promise<unknown> {
-    const { model, models } = await this.dependencies.resolver.resolve(input.pin);
+    const { model, models, thinkingLevel } = await this.dependencies.resolver.resolve(input.pin);
     const signal = input.signal === undefined ? AbortSignal.timeout(60_000) : AbortSignal.any([input.signal, AbortSignal.timeout(60_000)]);
     const tools = input.mode === "proposal" ? [{
       name: "propose_strategy", description: "Propose exactly one module change with supporting development scenario IDs.",
@@ -25,7 +24,7 @@ export class PiEvolutionModel implements EvolutionModel {
       { name: "finish", description: "Submit the completion decision and evidence IDs read.", parameters: Type.Object({ decision: Type.Union([Type.Literal("complete"), Type.Literal("continue"), Type.Literal("wait")]), evidenceIds: Type.Array(Type.String(), { maxItems: 10 }) }) }];
     const response = await trackPiModels(models, this.dependencies.usage, () => ({ engine: "pi", purpose: "evolution", sourceId: input.pin.sourceId, modelId: input.pin.modelId, ...(input.workbenchId === undefined ? {} : { workbenchId: input.workbenchId }) })).completeSimple(model, { systemPrompt: input.systemPrompt,
       messages: [{ role: "user", content: input.prompt, timestamp: Date.now() }], tools,
-    }, { maxTokens: 2048, signal, headers: { "Idempotency-Key": input.idempotencyId }, ...(modelRequiresAlwaysOnThinking(model.baseUrl) ? { reasoning: "low" as const } : {}) });
+    }, { maxTokens: 2048, signal, headers: { "Idempotency-Key": input.idempotencyId }, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }) });
     const calls = response.content.filter((block) => block.type === "toolCall");
     const call = calls[0];
     // A typed code, not a bare Error: the service's failure classification routes this to a

@@ -127,7 +127,7 @@ describe("local Pi coding partner runtime", () => {
     const runner = new PiCodingPartnerRunner({
       contexts,
       prompts: { read: async (promptRef) => promptRef === "prompt_ref_1" ? "LOCAL_PARTNER_SYSTEM_SENTINEL" : null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       skills: { resolveForPi: () => ({ environmentKeys: ["TAVILY_API_KEY"], promptSection: "skill metadata", skillCount: 1 }) },
       sources: {
         selectById: async (sourceId, turnId) => {
@@ -180,7 +180,7 @@ describe("local Pi coding partner runtime", () => {
       contexts,
       diagnostics: { emit: (name, fields) => { events.push({ name, fields }); } },
       prompts: { read: async () => "LOCAL_PARTNER_SYSTEM_SENTINEL" },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: {
         selectById: async (sourceId, turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId, sourceRevisionId: "sr", turnId }),
         selectInitial: async () => { throw new Error("global source must not be selected for a pinned partner"); },
@@ -274,7 +274,7 @@ describe("Pi partner engine runtime", () => {
       diagnostics: { emit: () => undefined } as never,
       progress: { thresholds: stalledRunThresholds },
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -361,7 +361,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -425,7 +425,7 @@ describe("Pi partner engine runtime", () => {
       contexts,
       diagnostics: { emit: (event: never) => { diagnostics.push(event); } } as never,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -485,7 +485,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -551,7 +551,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -636,7 +636,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: (_cwd, _names, options) => {
@@ -698,7 +698,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts: { loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: workspace }) },
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: new BuiltinPiCodingToolFactory(),
     });
@@ -736,7 +736,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
     });
@@ -769,7 +769,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -816,7 +816,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -856,7 +856,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
     });
@@ -890,7 +890,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
     });
@@ -930,7 +930,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
         create: () => [{
@@ -974,7 +974,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
     });
@@ -1005,7 +1005,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       runIdleTimeoutMillis: 25,
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
@@ -1032,7 +1032,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       runIdleTimeoutMillis: 40,
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
@@ -1066,7 +1066,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       runIdleTimeoutMillis: 35,
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: {
@@ -1113,7 +1113,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       runIdleTimeoutMillis: 200,
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       toolTimeoutMillis: 30,
@@ -1160,7 +1160,7 @@ describe("Pi partner engine runtime", () => {
       const runtime = new PiPartnerEngineRuntime({
         contexts,
         prompts: { read: async () => null },
-        resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+        resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
         runIdleTimeoutMillis: 1_000,
         sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
         toolTimeoutMillis: 1_000,
@@ -1212,7 +1212,7 @@ describe("Pi partner engine runtime", () => {
       const runtime = new PiPartnerEngineRuntime({
         contexts,
         prompts: { read: async () => null },
-        resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+        resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
         sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
         tools: { create: () => [], names: [] },
       });
@@ -1237,7 +1237,7 @@ describe("Pi partner engine runtime", () => {
     models.setProvider(faux.provider);
     const pinA: ModelSourceTurnPin = { modelId: "faux", modelRevisionId: "model-a", sourceId: "source-a", sourceRevisionId: "source-revision-a", turnId: "action_source_a" };
     const pinB: ModelSourceTurnPin = { modelId: "faux", modelRevisionId: "model-b", sourceId: "source-b", sourceRevisionId: "source-revision-b", turnId: "action_source_b" };
-    const resolved = vi.fn(async (pin: ModelSourceTurnPin) => ({ model: faux.getModel(), models, pin }));
+    const resolved = vi.fn(async (pin: ModelSourceTurnPin) => ({ model: faux.getModel(), models, pin, thinkingLevel: "off" as const }));
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
@@ -1271,7 +1271,7 @@ describe("Pi partner engine runtime", () => {
     const runtime = new PiPartnerEngineRuntime({
       contexts,
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
     });
@@ -1335,7 +1335,7 @@ describe("Pi partner engine runtime", () => {
       contexts: { loadForExecution: async () => ({ promptSection: "BACKGROUND_".repeat(20_000), sanitized: {} }) },
       diagnostics: { emit: (name, fields) => { events.push({ name, fields }); } },
       prompts: { read: async () => null },
-      resolver: { resolve: async () => ({ model: faux.getModel(), models }) },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
       tools: { create: () => [], names: [] },
     });

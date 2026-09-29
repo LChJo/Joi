@@ -68,7 +68,7 @@ describe("Pi reasoning runtime contract", () => {
     let joiSkills = ["agents/example"];
     const readInstructions = vi.fn(() => "private skill body");
     const store = new MemorySessionStore();
-    const resolve = vi.fn(async () => ({ model: faux.getModel(), models }));
+    const resolve = vi.fn(async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }));
     const runtime = new ConfiguredPiReasoningRuntime({
       resolver: { resolve }, sessionStore: store, tools: [],
       skills: new JoiSkillRuntime({
@@ -106,6 +106,7 @@ describe("Pi reasoning runtime contract", () => {
     const events: unknown[] = [];
     const runtime = new PiReasoningRuntime({
       model: faux.getModel(),
+      thinkingLevel: "off" as const,
       models,
       sessionStore: new MemorySessionStore(),
       tools: [{
@@ -254,6 +255,7 @@ describe("Pi reasoning runtime contract", () => {
     const events: string[] = [];
     const runtime = new PiReasoningRuntime({
       model: faux.getModel(),
+      thinkingLevel: "off" as const,
       models,
       sessionStore: store,
       tools: [{
@@ -300,6 +302,7 @@ describe("Pi reasoning runtime contract", () => {
     const restoredEvents: string[] = [];
     const restored = new PiReasoningRuntime({
       model: faux.getModel(),
+      thinkingLevel: "off" as const,
       models,
       sessionStore: store,
       tools: [],
@@ -327,7 +330,7 @@ describe("Pi reasoning runtime contract", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const store = new MemorySessionStore();
-    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off" as const, tools: [] });
     await runtime.startTurn({
       workbenchId: "workbench_1",
       images: [{ data: "aGVsbG8=", mimeType: "image/png" }],
@@ -402,6 +405,7 @@ describe("Pi reasoning runtime contract", () => {
     try {
       new PiReasoningRuntime({
         model: fauxProvider({ provider: "unsafe-registration" }).getModel(),
+        thinkingLevel: "off" as const,
         models: createModels(),
         sessionStore: new MemorySessionStore(),
         tools: [{
@@ -423,6 +427,7 @@ describe("Pi reasoning runtime contract", () => {
     models.setProvider(faux.provider);
     const runtime = new PiReasoningRuntime({
       model: faux.getModel(),
+      thinkingLevel: "off" as const,
       models,
       sessionStore: new MemorySessionStore(),
       tools: [],
@@ -470,6 +475,7 @@ describe("Pi reasoning runtime contract", () => {
     });
     const runtime = new PiReasoningRuntime({
       model: faux.getModel(),
+      thinkingLevel: "off" as const,
       models,
       sessionStore: new MemorySessionStore(),
       tools: [tool("user_ask"), tool("turn_complete")],
@@ -504,6 +510,7 @@ describe("Pi reasoning runtime contract", () => {
       model: faux.getModel(),
       models,
       sessionStore: new MemorySessionStore(),
+      thinkingLevel: "off" as const,
       tools: [],
     });
     // 100 would mean the request already fills the window before compaction runs, which is the
@@ -526,6 +533,7 @@ describe("Pi reasoning runtime contract", () => {
       model: faux.getModel(),
       models,
       sessionStore: store,
+      thinkingLevel: "off" as const,
       tools: [],
     });
 
@@ -560,6 +568,7 @@ describe("Pi reasoning runtime contract", () => {
       model: faux.getModel(),
       models,
       sessionStore: store,
+      thinkingLevel: "off" as const,
       tools: [],
     });
     expect(await restored.restore("session_compact")).toBe(true);
@@ -610,6 +619,7 @@ describe("Pi reasoning runtime contract", () => {
     models.setProvider(faux.provider);
     const runtime = new PiReasoningRuntime({
       model,
+      thinkingLevel: "off" as const,
       models,
       sessionStore: new MemorySessionStore(),
       tools: [{
@@ -659,6 +669,7 @@ describe("Pi reasoning runtime contract", () => {
     models.setProvider(faux.provider);
     const runtime = new PiReasoningRuntime({
       model,
+      thinkingLevel: "off" as const,
       models,
       sessionStore: new MemorySessionStore(),
       tools: [{
@@ -754,6 +765,7 @@ describe("Pi reasoning runtime contract", () => {
       model: { ...faux.getModel(), contextWindow: 16_000, maxTokens: 8_000 },
       models,
       sessionStore: store,
+      thinkingLevel: "off" as const,
       tools: [],
     });
     await runtime.startTurn({
@@ -784,6 +796,7 @@ describe("Pi reasoning runtime contract", () => {
     models.setProvider(faux.provider);
     const runtime = new PiReasoningRuntime({
       model: faux.getModel(),
+      thinkingLevel: "off" as const,
       models,
       sessionStore: new MemorySessionStore(),
       tools: [],
@@ -823,7 +836,7 @@ describe("Pi reasoning runtime contract", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const store = new MemorySessionStore();
-    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off" as const, tools: [] });
 
     faux.setResponses([fauxAssistantMessage([fauxText("第一次回答")])]);
     await runtime.startTurn(rollbackTurnInput("turn_ok", "第一次"));
@@ -844,7 +857,7 @@ describe("Pi reasoning runtime contract", () => {
     const store = new MemorySessionStore();
     let calls = 0;
     const runtime = new PiReasoningRuntime({
-      model: faux.getModel(), models, sessionStore: store,
+      model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off" as const,
       tools: [{
         name: "work_dispatch", label: "Dispatch Work", description: "Commit a plan.",
         parameters: Type.Object({}),
@@ -870,7 +883,7 @@ describe("Pi reasoning runtime contract", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const store = new MemorySessionStore();
-    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off" as const, tools: [] });
 
     faux.setResponses([fauxAssistantMessage([fauxText("保留的回答")])]);
     await runtime.startTurn(rollbackTurnInput("turn_keep", "第一个问题"));
@@ -893,7 +906,7 @@ describe("Pi reasoning runtime contract", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const store = new MemorySessionStore();
-    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off" as const, tools: [] });
 
     faux.setResponses([fauxAssistantMessage([fauxText("原回答")])]);
     await runtime.startTurn(rollbackTurnInput("turn_base", "原问题"));
@@ -921,6 +934,7 @@ describe("Pi reasoning runtime contract", () => {
     models.setProvider(faux.provider);
     const runtime = new PiReasoningRuntime({
       model: faux.getModel(),
+      thinkingLevel: "off" as const,
       models,
       sessionStore: new MemorySessionStore(),
       tools: [],
@@ -958,7 +972,7 @@ describe("Pi reasoning runtime contract", () => {
       seen = context.messages;
       return fauxAssistantMessage([fauxText("好")]);
     }]);
-    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, tools: [] });
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off" as const, tools: [] });
     await runtime.startTurn({
       workbenchId: "workbench_1",
       inputId: "input_empty_assistant",

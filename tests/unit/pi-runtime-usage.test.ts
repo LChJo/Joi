@@ -19,7 +19,7 @@ describe("Pi runtime usage attribution", () => {
     const f = fixture();
     const runtime = new PiPartnerEngineRuntime({ usage: f.usage,
       contexts: { loadForExecution: () => Promise.resolve({ promptSection: "", sanitized: {} }) },
-      prompts: { read: () => Promise.resolve(null) }, resolver: { resolve: () => Promise.resolve({ model: f.faux.getModel(), models: f.models }) },
+      prompts: { read: () => Promise.resolve(null) }, resolver: { resolve: () => Promise.resolve({ model: f.faux.getModel(), models: f.models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: () => Promise.resolve(f.pin) }, tools: { create: () => [], names: [] },
     });
     const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-09-22T00:00:00Z", displayName: "test", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: [] });
@@ -29,7 +29,7 @@ describe("Pi runtime usage attribution", () => {
   });
   it("attributes compaction separately while retaining the goal and source", async () => {
     const f = fixture();
-    const runtime = new PiReasoningRuntime({ usage: f.usage, model: f.faux.getModel(), models: f.models, tools: [],
+    const runtime = new PiReasoningRuntime({ usage: f.usage, model: f.faux.getModel(), models: f.models, tools: [], thinkingLevel: "off" as const,
       compaction: { keepRecentMessages: 2, maxMessages: 4, maxSummaryCharacters: 80 },
       sessionStore: { load: () => Promise.resolve(null), save: () => Promise.resolve() },
     });

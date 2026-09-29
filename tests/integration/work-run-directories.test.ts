@@ -60,7 +60,7 @@ describe("per-run working directories", () => {
       const observed: { name: string; text: string }[] = [];
       const builtin = new BuiltinPiCodingToolFactory();
       const engine = new PiPartnerEngineRuntime({ contexts, prompts: { read: () => Promise.resolve(null) },
-        resolver: { resolve: () => Promise.resolve({ model: faux.getModel(), models }) },
+        resolver: { resolve: () => Promise.resolve({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
         sources: { selectInitial: (turnId) => Promise.resolve({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
         tools: { names: builtin.names, create: (cwd, names, options) => builtin.create(cwd, names, options).map((tool) => ({ ...tool,
           execute: async (...args: Parameters<typeof tool.execute>) => {

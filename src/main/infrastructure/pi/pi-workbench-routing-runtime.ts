@@ -3,7 +3,6 @@ import { Type } from "@earendil-works/pi-ai";
 import type { WorkbenchRoutingRuntime } from "../../application/ports/joi-coordinator.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
-import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels } from "./pi-usage.js";
 
@@ -17,7 +16,7 @@ export class PiWorkbenchRoutingRuntime implements WorkbenchRoutingRuntime {
   async decide(input: Parameters<WorkbenchRoutingRuntime["decide"]>[0]): Promise<unknown> {
     const routeId = `routing_${crypto.randomUUID()}`;
     const pin = await this.dependencies.sources.selectInitial(routeId);
-    const { model, models } = await this.dependencies.resolver.resolve(pin);
+    const { model, models, thinkingLevel } = await this.dependencies.resolver.resolve(pin);
     const response = await trackPiModels(models, this.dependencies.usage, () => ({ engine: "pi", purpose: "routing", sourceId: pin.sourceId, modelId: pin.modelId })).completeSimple(model, {
       messages: [{
         content: [
@@ -51,7 +50,7 @@ export class PiWorkbenchRoutingRuntime implements WorkbenchRoutingRuntime {
           scopeSummary: Type.String(),
         }),
       }],
-    }, { maxTokens: 128, ...(modelRequiresAlwaysOnThinking(model.baseUrl) ? { reasoning: "low" as const } : {}) });
+    }, { maxTokens: 128, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }) });
     const call = response.content.find((block) => block.type === "toolCall"
       && (block.name === "workbench_select" || block.name === "workbench_create"));
     return call?.type === "toolCall" ? call.arguments : null;

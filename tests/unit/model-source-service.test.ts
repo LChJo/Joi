@@ -154,6 +154,49 @@ describe("ModelSourceService", () => {
     expect(switched.activeModel.compactionThresholdPercent).toBeUndefined();
   });
 
+  it("carries a configured thinking effort across an unrelated edit, clears it on null, and resets it when the model changes", async () => {
+    const repository = new MemoryModelSourceRepository();
+    const service = new ModelSourceService({
+      catalog: {
+        resolve: (kind, requestedModelId, requestedAccessMode, requestedProtocol) => ({
+          accessMode: requestedAccessMode ?? (kind === "generic-openai" ? "custom" : "api"),
+          capability: "release-tested",
+          displayName: "GLM",
+          modelId: requestedModelId ?? "glm-5.3-flash",
+          protocol: requestedProtocol ?? "anthropic",
+        }),
+      },
+      clock: new TestClock(),
+      endpointPolicy: { validate: async (url) => ({ local: false, url }) },
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey: async () => 1 },
+      validator: { validate: async () => ({ status: "READY", validatedAt: "2026-07-28T10:00:30.000Z" }) },
+    });
+
+    const created = await service.create({ apiKey: "model-source-test-secret", kind: "glm", thinkingEffort: "low" });
+    expect(created.activeModel.thinkingEffort).toBe("low");
+
+    // An unrelated edit must carry the tier into the new revision, like the limits.
+    const rotated = await service.update(created.sourceId, { apiKey: "rotated" });
+    expect(rotated.activeModel.thinkingEffort).toBe("low");
+
+    // A different tier overwrites; null returns to joi's own allowlist judgement.
+    const raised = await service.update(created.sourceId, { thinkingEffort: "max" });
+    expect(raised.activeModel.thinkingEffort).toBe("max");
+    const cleared = await service.update(created.sourceId, { thinkingEffort: null });
+    expect(cleared.activeModel.thinkingEffort).toBeUndefined();
+
+    // Switching Model ID drops the tier with the geometry: it described the replaced model.
+    await service.update(created.sourceId, { thinkingEffort: "high" });
+    const switched = await service.update(created.sourceId, { modelId: "glm-4.7" });
+    expect(switched.activeModel.id).toBe("glm-4.7");
+    expect(switched.activeModel.thinkingEffort).toBeUndefined();
+
+    await expect(service.create({ apiKey: "model-source-test-secret", kind: "glm", thinkingEffort: "minimal" as never }))
+      .rejects.toMatchObject({ code: "model_source_thinking_effort_invalid" });
+  });
+
   it("rejects out-of-range limits at the domain boundary", async () => {
     const repository = new MemoryModelSourceRepository();
     const service = new ModelSourceService({

@@ -1,13 +1,12 @@
 /* Pi hooks require Promise-returning callbacks. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
-import { normalizeContext, type Api, type Context, type ImageContent, type Message, type Model, type Models } from "@earendil-works/pi-ai";
+import { normalizeContext, type Api, type Context, type ImageContent, type Message, type Model, type ModelThinkingLevel, type Models } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
 import { checkpointMessage, isCheckpointMessage, omissionNotice, summarizeSegment } from "./pi-compaction.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
 import { boundRequestByChars, leadingSystemMessage, modelContextMaxChars } from "./pi-model-budget.js";
-import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import type {
@@ -79,6 +78,8 @@ interface PiReasoningRuntimeOptions {
   model: Model<Api>;
   models: Models;
   sessionStore: ReasoningSessionStore;
+  /** The level every request on this route runs at, resolved once from the model source. */
+  thinkingLevel: ModelThinkingLevel;
   /** Fixed tools, or a per-turn factory when tool closures bind turn context (inputId/turnId). */
   tools: AgentTool[] | ((input: StartReasoningTurnInput) => AgentTool[]);
 }
@@ -245,6 +246,7 @@ function safeTurnOutcome(toolName: string, result: unknown): JoiReasoningOutcome
 export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #model: Model<Api>;
   readonly #models: Models;
+  readonly #thinkingLevel: ModelThinkingLevel;
   readonly #usage: UsageRecorder | undefined;
   readonly #compaction: ResolvedCompactionOptions;
   readonly #sessionStore: ReasoningSessionStore;
@@ -255,6 +257,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     if (Array.isArray(options.tools)) validateToolNames(options.tools);
     this.#model = options.model;
     this.#models = options.models;
+    this.#thinkingLevel = options.thinkingLevel;
     this.#usage = options.usage;
     // Field by field rather than a spread: an explicitly passed `undefined` would otherwise
     // overwrite the default it is meant to fall back to.
@@ -300,7 +303,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       systemPrompt: input.systemPrompt,
     };
     session.agent.state.model = this.#model;
-    session.agent.state.thinkingLevel = modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off";
+    session.agent.state.thinkingLevel = this.#thinkingLevel;
     // Refresh per-turn tools: factories bind turn context (inputId/turnId) into tool closures,
     // so a cached session must never reuse a previous turn's closures.
     const turnTools = typeof this.#tools === "function" ? this.#tools(input) : this.#tools;
@@ -452,7 +455,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         messages,
         model: this.#model,
         systemPrompt: metadata.systemPrompt,
-        thinkingLevel: modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off",
+        thinkingLevel: this.#thinkingLevel,
         // Placeholder for factory-provided tools; startTurn assigns the per-turn set before prompting.
         tools: Array.isArray(this.#tools) ? this.#tools : [],
       },
@@ -562,7 +565,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
               previousSummary: previous?.summary,
               reserveTokens: Math.max(256, Math.ceil(this.#compaction.maxSummaryCharacters / 4)),
               segment: withoutCheckpoint,
-              thinkingLevel: modelRequiresAlwaysOnThinking(this.#model.baseUrl) ? "low" : "off",
+              thinkingLevel: this.#thinkingLevel,
             });
             if (generated.ok) generatedSummary = generated.summary;
           } catch {

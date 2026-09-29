@@ -40,6 +40,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
         model: resolved.model,
         models: resolved.models,
         sessionStore: this.dependencies.sessionStore,
+        thinkingLevel: resolved.thinkingLevel,
         // Pass the factory through: PiReasoningRuntime refreshes per-turn tools on every startTurn,
         // so cached sessions never reuse a previous turn's tool closures.
         tools: (turn) => [

@@ -4,6 +4,7 @@ import type { DatabaseSync } from "node:sqlite";
 
 import type { ModelSourceHealthRevision, ModelSourceRecord, ModelSourceRepository } from "../../application/ports/model-source-ports.js";
 import type { ModelCapability, ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol, ModelSourceStatus } from "../../domain/model-sources/model-source.js";
+import type { ThinkingEffort } from "../../../shared/joi.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -16,7 +17,7 @@ const SELECT_RECORDS = `
          sr.source_revision_id, sr.kind, sr.access_mode, sr.protocol, sr.display_name, sr.base_url,
          sr.credential_ref, sr.credential_version, sr.created_at AS source_revision_created_at,
          mr.model_revision_id, mr.model_id, mr.capability, mr.preset_version,
-         mr.context_window, mr.max_output_tokens, mr.compaction_threshold_percent,
+         mr.context_window, mr.max_output_tokens, mr.compaction_threshold_percent, mr.thinking_effort,
          mr.created_at AS model_revision_created_at,
          (SELECT p.proven_at FROM model_source_tool_proofs p
            WHERE p.source_revision_id = sr.source_revision_id AND p.model_revision_id = mr.model_revision_id) AS tool_proof_at,
@@ -75,6 +76,7 @@ function mapRow(row: Row): ModelSourceRecord {
   const contextWindow = optionalInteger(row, "context_window");
   const maxOutputTokens = optionalInteger(row, "max_output_tokens");
   const compactionThresholdPercent = optionalInteger(row, "compaction_threshold_percent");
+  const thinkingEffort = optionalText(row, "thinking_effort");
   return {
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(lastError === undefined ? {} : { lastError }),
@@ -93,6 +95,7 @@ function mapRow(row: Row): ModelSourceRecord {
         ...(maxOutputTokens === undefined ? {} : { maxOutputTokens }),
         modelId: text(row, "model_id"),
         modelRevisionId: text(row, "model_revision_id"),
+        ...(thinkingEffort === undefined ? {} : { thinkingEffort: thinkingEffort as ThinkingEffort }),
       },
       activeSourceRevision: {
         accessMode: text(row, "access_mode") as ModelSourceAccessMode,
@@ -131,13 +134,14 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         );
         connection.prepare(`INSERT INTO model_source_model_revisions
           (model_revision_id, source_id, model_id, capability, preset_version,
-           context_window, max_output_tokens, compaction_threshold_percent, created_at)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+           context_window, max_output_tokens, compaction_threshold_percent, thinking_effort, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
           source.activeModelRevision.modelRevisionId, source.sourceId, source.activeModelRevision.modelId,
           source.activeModelRevision.capability, record.presetVersion ?? null,
           source.activeModelRevision.contextWindow ?? null,
           source.activeModelRevision.maxOutputTokens ?? null,
           source.activeModelRevision.compactionThresholdPercent ?? null,
+          source.activeModelRevision.thinkingEffort ?? null,
           source.activeModelRevision.createdAt,
         );
         connection.prepare(`UPDATE model_sources SET active_source_revision_id = ?, active_model_revision_id = ? WHERE source_id = ?`).run(
@@ -224,13 +228,14 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
       );
       connection.prepare(`INSERT INTO model_source_model_revisions
         (model_revision_id, source_id, model_id, capability, preset_version,
-         context_window, max_output_tokens, compaction_threshold_percent, created_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+         context_window, max_output_tokens, compaction_threshold_percent, thinking_effort, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
         source.activeModelRevision.modelRevisionId, source.sourceId, source.activeModelRevision.modelId,
         source.activeModelRevision.capability, record.presetVersion ?? null,
         source.activeModelRevision.contextWindow ?? null,
         source.activeModelRevision.maxOutputTokens ?? null,
         source.activeModelRevision.compactionThresholdPercent ?? null,
+        source.activeModelRevision.thinkingEffort ?? null,
         source.activeModelRevision.createdAt,
       );
       connection.prepare(`UPDATE model_sources

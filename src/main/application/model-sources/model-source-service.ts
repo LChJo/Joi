@@ -1,4 +1,4 @@
-import type { ModelSourceDto } from "../../../shared/joi.js";
+import type { ModelSourceDto, ThinkingEffort } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import {
   createModelSource,
@@ -31,6 +31,7 @@ export interface CreateModelSourceRequest {
   maxOutputTokens?: number;
   modelId?: string;
   protocol?: ModelSourceProtocol;
+  thinkingEffort?: ThinkingEffort;
 }
 
 export interface UpdateModelSourceRequest {
@@ -42,10 +43,12 @@ export interface UpdateModelSourceRequest {
   displayName?: string;
   maxOutputTokens?: number | null;
   modelId?: string;
+  /** Same three-state shape as the limits: `null` clears back to the endpoint allowlist. */
+  thinkingEffort?: ThinkingEffort | null;
 }
 
-/** `undefined` keeps the current value, `null` clears it, a number sets it. */
-function resolveLimit(patch: number | null | undefined, current: number | undefined): number | undefined {
+/** `undefined` keeps the current value, `null` clears it, a value sets it. */
+function resolveLimit<T>(patch: T | null | undefined, current: T | undefined): T | undefined {
   if (patch === undefined) return current;
   // `null ?? undefined` is undefined, which is exactly "cleared".
   return patch ?? undefined;
@@ -106,6 +109,7 @@ export class ModelSourceService {
       protocol: catalog.protocol,
       sourceId,
       sourceRevisionId: this.dependencies.ids.next("source_revision"),
+      ...(input.thinkingEffort === undefined ? {} : { thinkingEffort: input.thinkingEffort }),
     });
     const record: ModelSourceRecord = {
       ...(baseUrl === undefined ? {} : { baseUrl }),
@@ -185,11 +189,12 @@ export class ModelSourceService {
     // across every *other* edit explicitly — the revision table is append-only and nothing merges
     // the previous row back in, so omitting them here would silently reset them on any edit.
     const modelChanged = catalog.modelId !== current.source.activeModelRevision.modelId;
-    const carried = (value: number | undefined): number | undefined => (modelChanged ? undefined : value);
+    const carried = <T,>(value: T | undefined): T | undefined => (modelChanged ? undefined : value);
     const previous = current.source.activeModelRevision;
     const compactionThresholdPercent = resolveLimit(input.compactionThresholdPercent, carried(previous.compactionThresholdPercent));
     const contextWindow = resolveLimit(input.contextWindow, carried(previous.contextWindow));
     const maxOutputTokens = resolveLimit(input.maxOutputTokens, carried(previous.maxOutputTokens));
+    const thinkingEffort = resolveLimit(input.thinkingEffort, carried(previous.thinkingEffort));
     const updatedAt = this.dependencies.clock.now().toISOString();
     const source = reviseModelSource(current.source, {
       ...(compactionThresholdPercent === undefined ? {} : { compactionThresholdPercent }),
@@ -201,6 +206,7 @@ export class ModelSourceService {
       modelId: catalog.modelId,
       modelRevisionId: this.dependencies.ids.next("model_revision"),
       sourceRevisionId: this.dependencies.ids.next("source_revision"),
+      ...(thinkingEffort === undefined ? {} : { thinkingEffort }),
       updatedAt,
     });
     const revised: ModelSourceRecord = {
@@ -326,6 +332,7 @@ function toDto(record: ModelSourceRecord, limits: EffectiveModelLimits | undefin
       id: record.source.activeModelRevision.modelId,
       ...(record.source.activeModelRevision.maxOutputTokens === undefined ? {} : { maxOutputTokens: record.source.activeModelRevision.maxOutputTokens }),
       revisionId: record.source.activeModelRevision.modelRevisionId,
+      ...(record.source.activeModelRevision.thinkingEffort === undefined ? {} : { thinkingEffort: record.source.activeModelRevision.thinkingEffort }),
     },
     activeSourceRevisionId: record.source.activeSourceRevision.sourceRevisionId,
     ...(record.source.activeSourceRevision.kind === "generic-openai" && record.baseUrl !== undefined ? { baseUrl: record.baseUrl } : {}),
