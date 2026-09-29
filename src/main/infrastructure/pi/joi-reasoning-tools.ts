@@ -757,16 +757,28 @@ export function createJoiReasoningTools(input: {
     workspacePath: Type.Optional(Type.String({ maxLength: 4_000, minLength: 1 })),
   });
   const bindWorkspaceTool: AgentTool<typeof bindWorkspaceParameters> = {
-    description: "Bind the current Workbench to an explicit absolute directory from the user's request when local file work needs one. Copy the path exactly; never invent or broaden it. When the user did not provide an absolute directory, omit workspacePath: the tool reports the current binding when one is already READY, and otherwise persists a clarification so the user can choose the directory on the card. The bound path is never returned to the user.",
+    description: "Bind the current Workbench to an explicit absolute directory from the user's request when local file work needs one. A directory the user already bound (kind BOUND) belongs to the user: joi never rebinds it, and the tool reports that binding instead of changing it — never pass workspacePath to move such a Workbench, ask the user to change it on the card. Only a Workbench that has no binding, or one still on its default managed run directory, can be bound. Copy the path exactly; never invent or broaden it. When the user did not provide an absolute directory, omit workspacePath: the tool reports the current binding when one is already READY, and otherwise persists a clarification so the user can choose the directory on the card. The bound path is never returned to the user.",
     execute: async (_toolCallId, arguments_) => {
       const workspacePath = nonBlank(arguments_.workspacePath);
+      const existing = await input.workbenchWorkspaces.current(input.workbenchId);
+      // A binding the user already made must win: a BOUND workspace is theirs to change, never joi's,
+      // so an inferred path is dropped instead of rewriting it.
+      if (existing?.kind === "BOUND") {
+        if (existing.status === "READY") {
+          return result({ alreadyBound: true, displayName: existing.displayName, kind: existing.kind, status: existing.status });
+        }
+        await input.clarifications.requireClarification(
+          goalContext(),
+          "workbench_workspace_not_ready",
+          "这个工作台已由你绑定工作目录，但它当前不可用。请在 joi 卡片上重新绑定后我再继续派发。",
+        );
+        return result({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" }, true);
+      }
       if (workspacePath !== undefined) {
         if (!isAbsoluteWorkspacePath(workspacePath)) throw new DomainError("workbench_workspace_path_invalid", "An explicit absolute workspace directory is required.");
         const workspace = await input.workbenchWorkspaces.bindExisting(input.workbenchId, workspacePath);
         return result({ displayName: workspace.displayName, kind: workspace.kind, status: workspace.status });
       }
-      // A binding the user already made must win: never re-ask for a directory that is READY.
-      const existing = await input.workbenchWorkspaces.current(input.workbenchId);
       if (existing?.status === "READY") {
         return result({ alreadyBound: true, displayName: existing.displayName, kind: existing.kind, status: existing.status });
       }

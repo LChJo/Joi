@@ -267,6 +267,38 @@ describe("joi reasoning tools", () => {
       .rejects.toMatchObject({ code: "workbench_workspace_path_invalid" });
     expect(workspaceBindCalls).toEqual([]);
   });
+  it("never rebinds a directory the user bound, even when a path is supplied", async () => {
+    const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
+    const harness = makeTools({
+      workspaceBindCalls,
+      workspaceCurrent: { displayName: "manaagentsdk", kind: "BOUND", status: "READY" },
+    });
+    const result = await harness.call("workbench_bind_workspace", { workspacePath: "I:\\aimana\\ai_mana_front_debug" });
+    expect(result).toEqual({ alreadyBound: true, displayName: "manaagentsdk", kind: "BOUND", status: "READY" });
+    expect(workspaceBindCalls).toEqual([]);
+    expect(harness.clarificationCalls).toEqual([]);
+  });
+  it("still binds an explicit path onto a Workbench that only runs on its default managed directory", async () => {
+    const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
+    const harness = makeTools({
+      workspaceBindCalls,
+      workspaceCurrent: { displayName: "ManaAgentSDK 工作区", kind: "MANAGED", status: "READY" },
+    });
+    const result = await harness.call("workbench_bind_workspace", { workspacePath: "I:\\aimana\\manaagentsdk" });
+    expect(result).toEqual({ displayName: "绑定目录", kind: "BOUND", status: "READY" });
+    expect(workspaceBindCalls).toEqual([{ workbenchId: "workbench_1", rootPath: "I:\\aimana\\manaagentsdk" }]);
+  });
+  it("asks the user to repair a bound workspace that is not usable instead of rebinding it", async () => {
+    const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
+    const harness = makeTools({
+      workspaceBindCalls,
+      workspaceCurrent: { displayName: "manaagentsdk", kind: "BOUND", status: "FAILED" },
+    });
+    const result = await harness.call("workbench_bind_workspace", { workspacePath: "I:\\aimana\\other" });
+    expect(result).toEqual({ reasonCode: "workbench_workspace_not_ready", status: "CLARIFICATION_REQUIRED" });
+    expect(workspaceBindCalls).toEqual([]);
+    expect(harness.clarificationCalls).toHaveLength(1);
+  });
   it("creates partners on behalf of joi with the joi creator badge", async () => {
     const harness = makeTools();
     const created = await harness.call("partner_create", { description: "写文档", displayName: "Writer" }) as { partnerId: string };
