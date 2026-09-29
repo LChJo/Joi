@@ -89,6 +89,7 @@ export class DigitalLifeApi {
   configureEvolution(workbenchId: string, dailyCallLimit: number) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`, { method: "PATCH", body: { dailyCallLimit } }); }
   rollbackEvolution(workbenchId: string, revisionId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/rollback`, { method: "POST", body: { revisionId } }); }
   evolutionNegativeFeedback(workbenchId: string, goalId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/feedback`, { method: "POST", body: { goalId } }); }
+  runEvolutionNow(workbenchId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/run-now`, { method: "POST" }); }
   dryRunEvolution(workbenchId: string) { return this.request<EvolutionDryRunReportDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/dry-run`, { method: "POST" }); }
   listAutomations() { return this.request<{ items: AutomationDto[] }>("/api/v1/automations"); }
   getAutomation(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`); }
@@ -442,6 +443,7 @@ export class DigitalLifeApi {
     return `${this.origin}/api/v1/lives/${encodeURIComponent(lifeId)}/artifacts/${encodeURIComponent(artifactId)}/${mode}`;
   }
   diagnostics() { return this.request<DiagnosticsDto>("/api/v1/diagnostics"); }
+  checkDatabaseIntegrity() { return this.request<{ checkedAt?: string; checking: boolean; status: string }>("/api/v1/diagnostics/integrity-check", { method: "POST" }); }
   diagnosticsExportUrl() { return `${this.origin}/api/v1/diagnostics/export`; }
   settings() { return this.request<SystemSettingsDto>("/api/v1/settings"); }
   updateSettings(body: UpdateSystemSettingsInput) { return this.request<SystemSettingsDto>("/api/v1/settings", { body: body as Record<string, unknown>, method: "POST" }); }

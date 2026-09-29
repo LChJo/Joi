@@ -334,6 +334,43 @@ describe("JoiHarnessComponent", () => {
     ]);
   });
 
+  it("reports a rate-limited bounded duration for a slow scan step", async () => {
+    const diagnostics: Diagnostics = { events: [] };
+    let monotonicTime = 0;
+    const component = new JoiHarnessComponent({
+      monotonicNow: () => monotonicTime,
+      slowScanMillis: 50,
+      scan: {
+        listFeedbackTargets: async () => [],
+        listGoalsWithoutMap: async () => { monotonicTime += 75; return []; },
+        listReviewDigests: async () => [],
+        listReviewRecoveries: async () => [],
+        listTrivialMapCandidates: async () => [],
+        loadGoalProjections: async () => [],
+      },
+      writer: {
+        clearTrivialMap: async () => false,
+        createMap: async () => false,
+        enqueueReview: async () => null,
+        reconcileReview: async () => null,
+        recordCompletionFeedback: async () => false,
+        synchronizeWorkPaths: async () => ({ closed: 0, created: 0 }),
+      },
+    });
+    const first = ctxAt(0);
+    const second = ctxAt(11_000);
+    const sink = { emit: (name: string, payload: Record<string, unknown>) => diagnostics.events.push({ name, payload }) };
+
+    await component.update({ ...first, diagnostics: sink });
+    await component.update({ ...second, diagnostics: sink });
+
+    expect(diagnostics.events).toEqual([{
+      name: "joi.actor.scan_slow",
+      payload: { componentName: "joi-harness", durationMs: 75, step: "adopt" },
+    }]);
+    expect(JSON.stringify(diagnostics.events)).not.toMatch(/goal|workbench|path/u);
+  });
+
   it("treats duplicate writer results as idempotent no-ops", async () => {
     const diagnostics: Diagnostics = { events: [] };
     const component = new JoiHarnessComponent({

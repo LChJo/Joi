@@ -1,4 +1,5 @@
 import { Type } from "@earendil-works/pi-ai";
+import { DomainError } from "../../domain/errors.js";
 import type { EvolutionModel, EvolutionSourcePin } from "../../application/ports/evolution.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
@@ -9,7 +10,9 @@ import { trackPiModels } from "./pi-usage.js";
 export class PiEvolutionModel implements EvolutionModel {
   constructor(private readonly dependencies: { resolver: PiConfiguredModelResolver; sources: Pick<ReasoningSourceSelector, "selectInitial">; usage?: UsageRecorder }) {}
   async pin(): Promise<EvolutionSourcePin> {
-    const { modelId, modelRevisionId, sourceId, sourceRevisionId } = await this.dependencies.sources.selectInitial("evolution");
+    // Evaluation needs strict single-tool-call discipline, which is a stronger requirement than an
+    // orchestration turn's; prefer sources that have proven it, falling back rather than failing.
+    const { modelId, modelRevisionId, sourceId, sourceRevisionId } = await this.dependencies.sources.selectInitial("evolution", { requireToolProof: true });
     return { modelId, modelRevisionId, sourceId, sourceRevisionId };
   }
   async call(input: Parameters<EvolutionModel["call"]>[0] & { workbenchId?: string }): Promise<unknown> {
@@ -25,7 +28,9 @@ export class PiEvolutionModel implements EvolutionModel {
     }, { maxTokens: 2048, signal, headers: { "Idempotency-Key": input.idempotencyId }, ...(modelRequiresAlwaysOnThinking(model.baseUrl) ? { reasoning: "low" as const } : {}) });
     const calls = response.content.filter((block) => block.type === "toolCall");
     const call = calls[0];
-    if (calls.length !== 1 || call === undefined || !tools.some((tool) => tool.name === call.name)) throw new Error("evolution_response_invalid");
+    // A typed code, not a bare Error: the service's failure classification routes this to a
+    // model-quality retry path instead of the infrastructure park-and-retry one.
+    if (calls.length !== 1 || call === undefined || !tools.some((tool) => tool.name === call.name)) throw new DomainError("evolution_response_invalid", "The model did not answer with exactly one supported tool call.");
     return input.mode === "proposal" ? call.arguments : { ...call.arguments, action: call.name };
   }
 }

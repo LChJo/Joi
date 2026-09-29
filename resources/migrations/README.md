@@ -35,6 +35,8 @@ Migration 064 为 partner_runs 增加可空 heartbeat_at：updated_at 的语义�
 
 Migration 065 为目标输入增加可空 reopened_at，仅显式重试已消费目标时更新。它是旧综合结果是否属于当前执行轮次的水位；last_opened_at 仍只负责首页排序，回答澄清或授权续跑不能让有效旧结果失效。存量 NULL 保持原有结果有效。
 
+Migration 066 为 10 秒 harness/evolution 安全扫描补齐按目标、Work、Turn 和权威结果读取的窄索引。它不改变恢复与回滚节拍；代价是相关状态写入增加有限索引维护和数据库体积，换取历史数据增长后不再反复全表扫描。
+
 Migration 062 增加 `workbench_agent_tool_traces`（工具轨迹私密正文）与 `workbench_agent_conversation_entries.tool_call_id`。主时间线只保留一行 ≤200 字符的脱敏调用摘要；完整命令与输出按 `(run_id, tool_call_id)` 每条追加一次，凭据写入前脱敏、绝对路径保留（本机调试必需）、单条 ≤8 KB 超出截断并标记，只经桌面写权限路由按需读取，不进首页、诊断、SSE 或远端。只登记迁移后的新 run，不回填历史：存量 TOOL_CALL 行既无 `tool_call_id` 也无正文来源。
 
 Migration 061 修复进化证据无法收敛的三处遗留状态，不新增表。为 evolution_evidence 增加 classified_at 承载幂等判定，使证据分类可随目标收敛单调升级，而 observed_at 仍是裁决窗口时间戳、只在真正升级时前移；关闭已撤销（取消 / 忽略）目标上永久停留在 ACTIVE 的清图，撤销时刻取自目标行本身，迁移不依赖时钟；按 059 的实际落库时间精确放行当时仍在途、结局发生在迁移之后的目标，已终结的历史目标继续遵循 059 的"固定基线且不采样"。触发口径改为跨工作台共享证据池见 ADR 0020 的 2026-09-24 修订。

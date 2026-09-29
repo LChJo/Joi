@@ -6,6 +6,8 @@ import type { ActorComponent, ActorTickContext } from "../../ports/actor-runtime
 import type { JoiHarnessScan, JoiHarnessWriter } from "../../ports/joi-harness.js";
 
 const DEFAULT_SCAN_EVERY_MILLIS = 10_000;
+const DEFAULT_SLOW_SCAN_MILLIS = 50;
+const SLOW_SCAN_REPORT_EVERY_MILLIS = 5 * 60_000;
 const FEEDBACK_ENTRY_SUMMARY_LIMIT = 160;
 /** How long a re-driven synthesis is given to run before the scan may re-drive it again. */
 const STALLED_SYNTHESIS_COOLDOWN_MILLIS = 10 * 60_000;
@@ -24,11 +26,14 @@ const STALLED_SYNTHESIS_COOLDOWN_MILLIS = 10 * 60_000;
 export class JoiHarnessComponent implements ActorComponent {
   readonly componentName = "joi-harness";
   #lastScanAt = 0;
+  readonly #lastSlowReportAt = new Map<string, number>();
 
   constructor(private readonly dependencies: {
     reviewEnabled?: boolean;
+    monotonicNow?: () => number;
     scan: JoiHarnessScan;
     scanEveryMillis?: number;
+    slowScanMillis?: number;
     writer: JoiHarnessWriter;
   }) {}
 
@@ -59,11 +64,24 @@ export class JoiHarnessComponent implements ActorComponent {
   }
 
   async #step(ctx: ActorTickContext, step: string, action: () => Promise<void>): Promise<void> {
+    const monotonicNow = this.dependencies.monotonicNow ?? (() => performance.now());
+    const startedAt = monotonicNow();
     try {
       await action();
     } catch (error) {
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.harness.scan_failed", {
         errorCode: runtimeDiagnosticErrorCode(error),
+        step,
+      });
+    }
+    const durationMs = Math.max(0, Math.round(monotonicNow() - startedAt));
+    const lastReportedAt = this.#lastSlowReportAt.get(step) ?? Number.NEGATIVE_INFINITY;
+    if (durationMs >= (this.dependencies.slowScanMillis ?? DEFAULT_SLOW_SCAN_MILLIS)
+      && ctx.now.getTime() - lastReportedAt >= SLOW_SCAN_REPORT_EVERY_MILLIS) {
+      this.#lastSlowReportAt.set(step, ctx.now.getTime());
+      emitRuntimeDiagnostic(ctx.diagnostics, "joi.actor.scan_slow", {
+        componentName: this.componentName,
+        durationMs,
         step,
       });
     }

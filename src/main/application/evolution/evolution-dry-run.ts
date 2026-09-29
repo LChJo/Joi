@@ -43,6 +43,9 @@ export class EvolutionDryRun {
       model: new DeterministicEvolutionModel(store, workbenchId),
       now: this.dependencies.now,
       id: () => `${this.dependencies.id()}:dry`,
+      // One step per handle, matching the scheduler cadence the step accounting below was written
+      // against; production defaults to the multi-step handle instead.
+      stepsPerHandle: 1,
     });
 
     const inputId = `evolution:${workbenchId}`;

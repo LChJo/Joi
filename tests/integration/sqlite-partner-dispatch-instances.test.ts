@@ -592,33 +592,34 @@ describe("partner dispatch instance routing", () => {
     const { database, root } = await openWithPartner();
     try {
       let liveRows: unknown[] = [];
+      let builtSnapshots = 0;
       const clock = new TestClock();
       const handler = makeHandler(database, {
         dispatch: async (rawInput) => {
           const input = rawInput as typeof rawInput & {
-            onConversation?: (event: { conversation: { kind: "MARKDOWN"; role: "AGENT" | "USER"; text: string }[]; instanceId: string }) => Promise<void>;
+            onConversation?: (event: { conversation: () => { kind: "MARKDOWN"; role: "AGENT" | "USER"; text: string }[]; instanceId: string }) => Promise<void>;
           };
           database.transaction((connection) => connection.prepare(
             "UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = ?",
           ).run("instance_9", input.dispatchAttemptId ?? ""));
           expect(input.onConversation).toBeTypeOf("function");
-          await input.onConversation?.({
-            conversation: [
-              { kind: "MARKDOWN", role: "USER", text: "the task" },
-              { kind: "MARKDOWN", role: "AGENT", text: "正在生成" },
-            ],
-            instanceId: "instance_9",
-          });
+          const snapshot = (text: string) => () => {
+            builtSnapshots += 1;
+            return [
+              { kind: "MARKDOWN" as const, role: "USER" as const, text: "the task" },
+              { kind: "MARKDOWN" as const, role: "AGENT" as const, text },
+            ];
+          };
+          await input.onConversation?.({ conversation: snapshot("正在生成"), instanceId: "instance_9" });
+          // Inside the throttle window the snapshot must not be built at all: the copy is the
+          // cost, and a discarded frame must not pay it.
+          await input.onConversation?.({ conversation: snapshot("正在生成安全结论"), instanceId: "instance_9" });
+          expect(builtSnapshots).toBe(1);
           // Live snapshots are throttled (display-only; #complete rewrites the authoritative
           // conversation); advance past the throttle window so the second snapshot lands.
           clock.advance(600);
-          await input.onConversation?.({
-            conversation: [
-              { kind: "MARKDOWN", role: "USER", text: "the task" },
-              { kind: "MARKDOWN", role: "AGENT", text: "正在生成安全结论" },
-            ],
-            instanceId: "instance_9",
-          });
+          await input.onConversation?.({ conversation: snapshot("正在生成安全结论"), instanceId: "instance_9" });
+          expect(builtSnapshots).toBe(2);
           liveRows = database.transaction((connection) => connection.prepare(`SELECT role, kind, text
             FROM workbench_agent_conversation_entries WHERE agent_id = 'instance_9' ORDER BY sequence`).all());
           return {
@@ -684,7 +685,7 @@ describe("partner dispatch instance routing", () => {
           database.transaction((connection) => connection.prepare(
             "UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = ?",
           ).run("instance_9", input.dispatchAttemptId ?? ""));
-          await input.onConversation?.({ instanceId: "instance_9", conversation: [
+          await input.onConversation?.({ instanceId: "instance_9", conversation: () => [
             { kind: "MARKDOWN", role: "USER", text: "original task", createdAt: "2026-07-29T10:00:00.000Z" },
             { kind: "TOOL_CALL", role: "TOOL", toolName: "read", createdAt: "2026-07-29T10:01:00.000Z" },
           ] });

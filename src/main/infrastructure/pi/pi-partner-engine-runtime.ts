@@ -36,6 +36,7 @@ import { draftAgentConversation, type AgentConversationDraft } from "../../appli
 import { toolCallCommand, toolCallResultBody, toolCallSummary, type ToolTraceDraft } from "../../application/partners/tool-trace-presentation.js";
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
+import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
@@ -818,6 +819,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       `Disabled or unavailable tools: ${disabled.length === 0 ? "none" : disabled.join(", ")}.`,
       `Workspace: ${workspaceAvailable ? "available" : "unavailable; file and shell tools are disabled"}.`,
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
+      partnerCommentDisciplineLine,
       ...(webEnabled ? ["For public web research, use web_search first, then fetch_content for the relevant URL and get_search_content to page a long response. Web tools are read-only, bounded, and never receive cookies, authorization headers or credentials; cite the URL in your answer and label uncertainty."] : []),
       "If you are blocked because only the user can supply missing information or make a decision, call ask_user once with one concrete question and stop; otherwise complete the work without asking.",
       `Workbench scope: ${request.workbenchId}`,

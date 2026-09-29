@@ -9,6 +9,7 @@ const labels: Record<EvolutionReason, string> = {
   insufficient_samples: "评测样本不足，保留当前策略", insufficient_gain: "改善幅度不足，保留当前策略", quality_regression: "候选质量下降，已拒绝",
   cost_regression: "候选调用成本超限，已拒绝", hard_violation: "候选违反完成约束，已拒绝", invalid_evaluation: "评测无效，保留当前策略",
   invalid_candidate: "候选缺少充分证据，保留当前策略", call_failed: "后台调用未完成，保留当前策略",
+  model_response_invalid: "模型响应不符合评测要求，已暂停自动进化；请检查模型源后重新启用",
 };
 const presetLabels: Record<EvolutionBudgetPresetKey, string> = { off: "关", low: "低", medium: "中", high: "高" };
 const presetHints: Record<EvolutionBudgetPresetKey, string> = {
@@ -58,6 +59,12 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
     try { setDryRun(await api.dryRunEvolution(workbenchId)); setNotice(null); }
     catch { setDryRun(null); setNotice("干跑没能完成，请稍后重试。"); } finally { setDryRunning(false); }
   };
+  const runNow = async () => {
+    if (saving) return;
+    setSaving(true);
+    try { setStatus(await api.runEvolutionNow(workbenchId)); setNotice("已请求立即评测：等工作台空闲且预算可用后自动开始，无需等证据攒满。"); }
+    catch { setNotice("没能发起评测：请确认自动进化未处于暂停或关闭状态。"); } finally { setSaving(false); }
+  };
   const current = status === null ? null : EVOLUTION_BUDGET_PRESETS.find((preset) => preset.limit === status.dailyCallLimit) ?? null;
   return <div className="inline-settings workbench-evolution-panel">
     <p className="workbench-evolution-intro">从执行经验中改进本工作台的上下文整理和完成检查。只有独立评测确认改善后，新目标才会使用新策略。</p>
@@ -77,6 +84,10 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
       <p className="field-hint">额度按 UTC 日重置，只在工作台空闲时使用，日常任务永远优先；一轮完整评测约需 700–1450 次调用，可跨多天完成，不影响日常任务预算。</p>
       <p>今日调用 {status.callsUsedToday} / {status.dailyCallLimit} · 本工作台已记录 {status.evidenceCount} 个目标，其中 {status.evaluableCount} 个可客观评价</p>
       <p className="field-hint">启动一轮评测需要全部工作台合计 {String(EVOLUTION_EVIDENCE_THRESHOLD)} 个可客观评价目标、其中 {String(EVOLUTION_FAILURE_THRESHOLD)} 个验收失败；当前为 {String(status.poolEvaluable)} 个与 {String(status.poolVerificationFailed)} 个。评测在固定合成场景上进行，产出的策略修订只作用于本工作台。</p>
+      <p className="field-hint">每轮评测每天最多启动一个候选；被拒绝后需要重新积累触发证据，或用下面的按钮立即再试。</p>
+      <button className="button ghost" type="button" disabled={saving} onClick={() => void runNow()}>立即评测一次</button>
+      {status.runRequestedAt === null ? null : <p className="field-hint" role="status">已排入队列（{status.runRequestedAt.slice(0, 16).replace("T", " ")} 请求）：等待工作台空闲。</p>}
+      {status.lastVerdict === null ? null : <p className="field-hint">上一轮裁决：{labels[status.lastVerdict.reason]} · 原策略通过 {status.lastVerdict.baselineSuccesses} 次 / 候选通过 {status.lastVerdict.candidateSuccesses} 次（共 {status.lastVerdict.evaluatedRuns} 次评测）</p>}
       <h3>手工干跑</h3>
       <p className="field-hint">用确定性替身把整条评测链路走一遍，不消耗任何真实模型调用，也不会改动上面的状态和策略。用来在证据攒够之前确认链路本身是通的。</p>
       <button className="button ghost" type="button" disabled={saving || dryRunning} onClick={() => void runDryRun()}>{dryRunning ? "正在干跑…" : "干跑一次"}</button>

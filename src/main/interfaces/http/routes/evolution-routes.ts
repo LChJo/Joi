@@ -19,6 +19,10 @@ export const EVOLUTION_ROUTES: RouteDefinition[] = [
     handle: async (ctx, match) => { const body = await readJson(ctx.request); sendJson(ctx.response, 200, service(ctx).rollback(id(match), stringField(body, "revisionId"))); } },
   { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/feedback", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/feedback$/),
     handle: async (ctx, match) => { const body = await readJson(ctx.request); sendJson(ctx.response, 200, service(ctx).negativeFeedback(id(match), stringField(body, "goalId"))); } },
+  // Queues a real batch start that bypasses the evidence gate; it still waits for the idle slot and
+  // the daily budget, so the answer is the queued status rather than a finished batch.
+  { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/run-now", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/run-now$/),
+    handle: (ctx, match) => { sendJson(ctx.response, 200, service(ctx).requestRun(id(match))); } },
   // Runs a batch against a stand-in model: no provider calls, no durable writes, and the answer is
   // synchronous because a full batch takes under a second when nothing reaches the network.
   { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/dry-run", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/dry-run$/),

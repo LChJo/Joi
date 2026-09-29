@@ -14,6 +14,7 @@ import type { AgentConversationDraft } from "../../application/partners/agent-co
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../application/partners/native-agent-session-reference.js";
 import { wrapPartnerRunFailure } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
+import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, NativeCliRunError, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
@@ -278,6 +279,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       `Disabled tools: ${disabled.length === 0 ? "none" : disabled.join(", ")}.`,
       workspaceRootBoundaryLine(workspacePath),
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
+      partnerCommentDisciplineLine,
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
       // The CLI owns its own message history, so this background is the one payload joi controls
       // here; left unbounded it is the whole request.

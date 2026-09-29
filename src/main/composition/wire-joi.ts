@@ -44,7 +44,9 @@ export function wireJoi(input: {
   const { clock, database, diagnostics, directoryPicker, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
   const evolution = new EvolutionService({ store: new SqliteEvolutionStore(database), diagnostics,
     // Read-only selection: freshness probes would spend unreserved calls outside evolution's outbox.
-    model: new PiEvolutionModel({ resolver: modelSourceStack.configuredModelResolver, sources: new ReasoningSourceSelector(persistence.modelSourceRepository), usage: modelSourceStack.statistics }),
+    model: new PiEvolutionModel({ resolver: modelSourceStack.configuredModelResolver,
+      sources: new ReasoningSourceSelector(persistence.modelSourceRepository, { diagnostics }),
+      usage: modelSourceStack.statistics }),
     now: () => clock.now().toISOString(), id: () => ids.next("evolution") });
   // Shares the clock and id source with the real service but none of its dependencies: a dry run
   // builds its own stand-in model and in-memory store, so it can never reach a provider or this database.

@@ -41,10 +41,11 @@ describe("renderer API client", () => {
     await api.answerInteraction("interaction 1", "answer"); await api.resumeAuthorization("interaction 1"); await api.extendBudget("life 1"); await api.remindTodo("life 1", "todo 1");
     await api.createTodo("life 1", "todo"); await api.createTodo("life 1", "todo", "later"); await api.createTodo("life 1", "todo", { assignee: "agent" }); await api.updateTodo("life 1", "todo 1", { status: "DONE" });
     await api.createAlarm("life 1", "wake", "later"); await api.cancelAlarm("life 1", "alarm 1");
-    await api.correctMemory("life 1", "memory 1", "fixed"); await api.forgetMemory("life 1", "memory 1"); await api.diagnostics();
+    await api.correctMemory("life 1", "memory 1", "fixed"); await api.forgetMemory("life 1", "memory 1"); await api.diagnostics(); await api.checkDatabaseIntegrity();
     await api.settings(); await api.updateSettings({ launchAtLogin: true }); await api.listBackups(); await api.createBackup(); await api.restoreBackup("backup 1");
     expect(api.artifactUrl("life 1", "artifact 1", "preview")).toContain("artifact%201/preview");
     expect(api.diagnosticsExportUrl()).toContain("/api/v1/diagnostics/export");
+    expect(fetchMock.mock.calls.some((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/diagnostics/integrity-check") && call[1]?.method === "POST")).toBe(true);
     expect(fetchMock).toHaveBeenCalled();
     expect(fetchMock.mock.calls.some((call) => call[0] === "http://127.0.0.1:43130/api/v1/statistics?from=2026-09-01&to=2026-09-22&timeZone=Asia%2FShanghai&workbenchId=unassigned&modelKey=codex%3Agpt+5&purpose=summary")).toBe(true);
     const write = fetchMock.mock.calls.find((call) => typeof call[0] === "string" && call[0].endsWith("/api/v1/auth/setup"));

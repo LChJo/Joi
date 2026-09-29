@@ -147,8 +147,10 @@ describe("Workbench context center", () => {
     fireEvent.click(await screen.findByRole("button", { name: "打开工作台 发布 Workbench" }));
     expect(await screen.findByRole("heading", { name: "发布 Workbench" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "查看 写作者 详情" })).toBeInTheDocument();
-    // The workspace binding sits at tab level: visible on the Agent tab before any context drill-in.
-    expect(screen.getByRole("heading", { name: "工作区" }).closest("article")).toHaveTextContent("release · BOUND · READY");
+    // The workspace binding sits above the tab strip: visible regardless of tab, before any context drill-in.
+    const workspaceBar = screen.getByRole("heading", { name: "工作区" }).closest("article");
+    expect(workspaceBar).toHaveTextContent("release · BOUND · READY");
+    expect(workspaceBar?.compareDocumentPosition(screen.getByRole("tablist"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     fireEvent.click(screen.getByRole("tab", { name: "上下文设置" }));
     expect(screen.getByRole("heading", { name: "工作区" }).closest("article")).toHaveTextContent("release · BOUND · READY");
     expect(screen.getByText(/更新发布文档 · RUNNING/u)).toBeInTheDocument();
@@ -1205,7 +1207,7 @@ describe("joi home single entry", () => {
     });
     const feedback = vi.spyOn(api, "evolutionNegativeFeedback")
       .mockRejectedValueOnce(new ApiError("evolution_goal_invalid", "Goal does not belong to this workbench.", 400))
-      .mockResolvedValueOnce({ workbenchId: workbench.workbenchId, dailyCallLimit: 5, callsUsedToday: 1, evidenceCount: 12, evaluableCount: 10, poolEvaluable: 12, poolVerificationFailed: 4, activeRevisionId: null, reason: "rolled_back", versions: [] });
+      .mockResolvedValueOnce({ workbenchId: workbench.workbenchId, dailyCallLimit: 5, callsUsedToday: 1, evidenceCount: 12, evaluableCount: 10, poolEvaluable: 12, poolVerificationFailed: 4, activeRevisionId: null, reason: "rolled_back", runRequestedAt: null, lastVerdict: null, versions: [] });
 
     render(<JoiHome api={api} />);
     fireEvent.click(await screen.findByRole("button", { name: "继续「完成的目标」" }));
@@ -1415,7 +1417,8 @@ describe("joi home single entry", () => {
 
     const view = render(<JoiHome api={api} />);
     fireEvent.click(await screen.findByRole("button", { name: "继续「防旧响应目标」" }));
-    await new Promise((resolve) => setTimeout(resolve, 1_600));
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => expect(releaseOldPoll).toBeDefined());
     fireEvent.click(await screen.findByRole("button", { name: "继续" }));
     expect(await screen.findByText("正在安排")).toBeInTheDocument();
     await act(async () => { releaseOldPoll?.(); await Promise.resolve(); });
@@ -2063,7 +2066,7 @@ it("exposes the evolution panel on a dedicated workbench detail tab", async () =
     updatedAt: workbench.updatedAt, workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
   });
   vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
-  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, poolEvaluable: 5, poolVerificationFailed: 1, activeRevisionId: null, reason: "collecting", versions: [] });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, poolEvaluable: 5, poolVerificationFailed: 1, activeRevisionId: null, reason: "collecting", runRequestedAt: null, lastVerdict: null, versions: [] });
 
   render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
   const tabButton = await screen.findByRole("tab", { name: "自主进化" });

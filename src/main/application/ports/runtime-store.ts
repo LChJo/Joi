@@ -230,7 +230,6 @@ export interface RuntimeStats {
   agentConnections: number;
   backupHistory: number;
   enabledSchedules: number;
-  integrity: string;
   journalMode: string;
   lives: number;
   openBreakers: number;

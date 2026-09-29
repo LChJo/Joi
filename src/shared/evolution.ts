@@ -26,7 +26,23 @@ export const DEFAULT_EVOLUTION_DAILY_CALL_LIMIT = 50;
  */
 export const EVOLUTION_EVIDENCE_THRESHOLD = 10;
 export const EVOLUTION_FAILURE_THRESHOLD = 3;
-export type EvolutionReason = "collecting" | "disabled" | "budget_exhausted" | "evaluating" | "promoted" | "rolled_back" | "model_changed" | "insufficient_samples" | "insufficient_gain" | "quality_regression" | "cost_regression" | "hard_violation" | "invalid_evaluation" | "invalid_candidate" | "call_failed";
+/** Verification failures among the first monitored goals after promotion that force a rollback. Deliberately lower than the trigger threshold: a freshly promoted strategy is expected to beat its parent, so its elimination line is stricter. */
+export const EVOLUTION_MONITOR_REVERT_THRESHOLD = 2;
+/** One driver step is one bounded model call; a single handle() advances at most this many. */
+export const EVOLUTION_MAX_STEPS_PER_HANDLE = 20;
+/**
+ * Wall-clock budget for one handle(). Must stay far below the 15-minute stalled-turn watchdog in
+ * JoiTaskComponent, or a legitimately long-running handle would be aborted as a stuck turn, feed the
+ * crash-loop breaker and eventually park the workbench.
+ */
+export const EVOLUTION_HANDLE_TIME_BUDGET_MS = 120_000;
+/** Consecutive invalid model responses tolerated on one workbench before its batch is abandoned. */
+export const EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT = 2;
+/** Consecutive invalid model responses across every workbench that trip the global breaker. */
+export const EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT = 10;
+/** How long a run-now request stays eligible while waiting for an idle slot. */
+export const EVOLUTION_RUN_NOW_TTL_MILLIS = 15 * 60_000;
+export type EvolutionReason = "collecting" | "disabled" | "budget_exhausted" | "evaluating" | "promoted" | "rolled_back" | "model_changed" | "insufficient_samples" | "insufficient_gain" | "quality_regression" | "cost_regression" | "hard_violation" | "invalid_evaluation" | "invalid_candidate" | "call_failed" | "model_response_invalid";
 export interface EvolutionVersionDto {
   revisionId: string;
   parentRevisionId: string | null;
@@ -75,6 +91,14 @@ export interface EvolutionDryRunReportDto {
   events: { name: string; count: number }[];
   durationMs: number;
 }
+/** The verdict statistics of the most recently finished batch, kept so the panel can show how close a rejection came to promotion. */
+export interface EvolutionLastVerdict {
+  reason: EvolutionReason;
+  at: string;
+  baselineSuccesses: number;
+  candidateSuccesses: number;
+  evaluatedRuns: number;
+}
 export interface EvolutionStatusDto {
   workbenchId: string;
   dailyCallLimit: number;
@@ -90,5 +114,8 @@ export interface EvolutionStatusDto {
   poolVerificationFailed: number;
   activeRevisionId: string | null;
   reason: EvolutionReason;
+  /** Set while a run-now request waits for an idle slot; null once consumed or expired. */
+  runRequestedAt: string | null;
+  lastVerdict: EvolutionLastVerdict | null;
   versions: EvolutionVersionDto[];
 }

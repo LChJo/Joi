@@ -2620,7 +2620,6 @@ class SqliteRuntimeStore implements RuntimeStore {
       return row === undefined ? 0 : numberValue(row, "count");
     };
     const journal = asRow(this.database.prepare("PRAGMA journal_mode").get());
-    const integrity = asRow(this.database.prepare("PRAGMA quick_check").get());
     const schema = asRow(this.database.prepare("SELECT COALESCE(MAX(version), 0) AS version FROM schema_migrations").get());
     return {
       activeInvocations: count("invocations", "WHERE status NOT IN ('CANCELED', 'COMPLETED', 'FAILED', 'UNKNOWN_REQUIRES_REVIEW')"),
@@ -2628,7 +2627,6 @@ class SqliteRuntimeStore implements RuntimeStore {
       agentConnections: count("agent_connections", "WHERE deleted_at IS NULL"),
       backupHistory: count("backup_history"),
       enabledSchedules: count("schedules", "WHERE enabled = 1"),
-      integrity: integrity === undefined ? "unknown" : textValue(integrity, "quick_check"),
       journalMode: journal === undefined ? "unknown" : textValue(journal, "journal_mode"),
       lives: count("lives"),
       openBreakers: count("connection_breakers", `WHERE open_until > '${new Date().toISOString()}'`),

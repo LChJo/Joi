@@ -123,6 +123,14 @@ export const SYSTEM_ROUTES: RouteDefinition[] = [
     },
   },
   {
+    auth: "write",
+    id: "POST /api/v1/diagnostics/integrity-check",
+    match: exact("POST", "/api/v1/diagnostics/integrity-check"),
+    handle: async (ctx) => {
+      sendJson(ctx.response, 200, await ctx.dependencies.operations.checkDatabaseIntegrity());
+    },
+  },
+  {
     auth: "read",
     id: "GET /api/v1/diagnostics/export",
     match: exact("GET", "/api/v1/diagnostics/export"),

@@ -38,7 +38,7 @@ import type { IncomingMessage } from "node:http";
 
 export interface ApiDependencies {
   statistics?: Pick<StatisticsService, "query">;
-  evolution?: Pick<EvolutionService, "status" | "configure" | "rollback" | "negativeFeedback">;
+  evolution?: Pick<EvolutionService, "status" | "configure" | "rollback" | "negativeFeedback" | "requestRun">;
   /** Separate from `evolution`: the dry run is its own object and never shares the live service. */
   evolutionDryRun?: Pick<EvolutionDryRun, "run">;
   resultExports?: ResultExportService;

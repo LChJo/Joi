@@ -209,7 +209,7 @@ export interface InteractionDto {
 
 export interface DiagnosticsDto {
   agents: { activeInvocations?: number; connections: number; openBreakers?: number };
-  database: { integrity?: string; journalMode: string; state: string };
+  database: { integrity?: string; integrityCheckedAt?: string; integrityChecking?: boolean; journalMode: string; state: string };
   recovery?: { uncleanShutdown: boolean };
   runtime: { activeWakes?: number; enabledSchedules?: number; leases?: number; pendingOutbox: number; scheduledAlarms?: number; staleWakeTurns?: number };
   schemaVersion: number;

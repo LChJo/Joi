@@ -564,7 +564,7 @@
 .workbench-detail-tabs button { padding: 10px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); cursor: pointer; font: inherit; }
 .workbench-detail-tabs button[aria-selected="true"] { border-bottom-color: var(--forest); color: var(--ink); font-weight: 700; }
 .workbench-detail-tabs span { margin-left: 5px; color: var(--faint); }
-.workbench-workspace-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-top: 14px; padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow-card); }
+.workbench-workspace-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 14px 0; padding: 12px 16px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); box-shadow: var(--shadow-card); }
 .workbench-workspace-info { display: grid; gap: 2px; min-width: 0; }
 .workbench-workspace-info h3 { margin: 0; font-size: .92rem; }
 .workbench-workspace-info p { margin: 0; color: var(--muted); font-size: .8rem; }

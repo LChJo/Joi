@@ -62,3 +62,29 @@ it("dry-runs a batch over HTTP without reaching a provider or the live service",
     expect(new SqliteEvolutionStore(fixture.database).read("a")).toMatchObject({ callSequence: 0, batch: null, usage: {} });
   } finally { await listeners.close(); await fixture.close(); }
 });
+
+it("queues a run-now request through the same auth surface as every other write", async () => {
+  const fixture = await createRuntimeFixture();
+  fixture.database.transaction((db) => db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('a','A','p','private persona','','','m','ACTIVE','2026-09-22','2026-09-22')`).run());
+  const evolution = new EvolutionService({ store: new SqliteEvolutionStore(fixture.database), model: { pin: vi.fn(), call: vi.fn() }, now: () => "2026-09-22T00:00:00Z", id: () => "id" });
+  const listeners = await startRuntimeListeners({ handler: createApiHandler({ ...fixture, evolution }), loopbackPort: 0 });
+  try {
+    const url = `${listeners.loopback.url}/api/v1/workbenches/a/evolution/run-now`;
+    expect((await fetch(url, { method: "POST" })).status).toBe(401);
+    const bootstrap = await fixture.auth.issueDesktopBootstrap();
+    const auth = await fetch(`${listeners.loopback.url}/api/v1/auth/bootstrap`, { method: "POST", headers: { "content-type": "application/json", origin: "null" }, body: JSON.stringify({ nonce: bootstrap.nonce }) });
+    const cookie = auth.headers.get("set-cookie")?.split(";")[0] ?? "";
+    const { csrfToken } = await auth.json() as { csrfToken: string };
+    const headers = { cookie, origin: listeners.loopback.url, "content-type": "application/json", "x-csrf-token": csrfToken };
+    expect((await fetch(url, { method: "POST", headers: { cookie, "content-type": "application/json" } })).status).toBe(403);
+    expect((await fetch(`${listeners.loopback.url}/api/v1/workbenches/missing/evolution/run-now`, { method: "POST", headers })).status).toBe(404);
+    const response = await fetch(url, { method: "POST", headers });
+    expect(response.status).toBe(200);
+    const state: unknown = await response.json();
+    expect(state).toMatchObject({ runRequestedAt: "2026-09-22T00:00:00Z" });
+    expect(JSON.stringify(state)).not.toContain("private");
+    // A disabled workbench refuses the request with a domain error instead of queueing a dead one.
+    await fetch(`${listeners.loopback.url}/api/v1/workbenches/a/evolution`, { method: "PATCH", headers, body: JSON.stringify({ dailyCallLimit: 0 }) });
+    expect((await fetch(url, { method: "POST", headers })).status).toBe(400);
+  } finally { await listeners.close(); await fixture.close(); }
+});

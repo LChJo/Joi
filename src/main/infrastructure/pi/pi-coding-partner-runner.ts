@@ -9,6 +9,7 @@ import { DomainError } from "../../domain/errors.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
+import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { boundBackgroundSections, boundModelContext, modelRequestBudget } from "./pi-model-budget.js";
@@ -71,6 +72,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
           `Disabled or unavailable tools: ${this.dependencies.tools.names.filter((name) => !tools.some((tool) => tool.name === name)).join(", ") || "none"}.`,
           workspaceRootBoundaryLine(execution.workspacePath),
           "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
+          partnerCommentDisciplineLine,
           "The assigned workspace is your home base, and the only place your file tools will write. Reading outside it is allowed when the task requires it (user directories, installed skill folders, configuration files). Writing outside it is refused by the tools themselves, so do not plan work that depends on it: if the task genuinely needs a write elsewhere, say so in your reply instead of retrying the path. Note that a shell command is not covered by that boundary and can still write anywhere the process can, so do not use one to route around it. Placeholders like {baseDir} inside skill instructions refer to the skill's own directory.",
           `Workbench scope: ${request.workbenchId}`,
           `Work item: ${request.workId}`,

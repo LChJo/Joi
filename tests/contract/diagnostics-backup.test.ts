@@ -46,9 +46,62 @@ describe("safe operations projections", () => {
       const { OperationsService } = await import("../../src/main/application/operations/operations-service");
       const operations = new OperationsService({ backup, clock: fixture.clock, startup: { uncleanShutdown: true }, store: fixture.database.store, webHealth: () => ({ lan: { status: "listening" } }) });
       expect(await operations.diagnostics()).toMatchObject({ recovery: { uncleanShutdown: true }, storage: { state: "ok" }, web: { lan: { status: "listening" } } });
+      expect(await operations.diagnostics()).toMatchObject({ storage: { state: "ok" } });
+      expect(backup.storageHealth).toHaveBeenCalledOnce();
       await expect(operations.createBackup()).resolves.toEqual(summary);
       await expect(operations.listBackups()).resolves.toEqual([summary]);
       await expect(operations.stageRestore(summary.backupId)).resolves.toMatchObject({ restartRequired: true });
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("projects cached database integrity and only runs a check when explicitly requested", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const snapshot = vi.fn().mockReturnValue({ checkedAt: "2026-09-29T03:00:00.000Z", checking: false, status: "ok" });
+      const check = vi.fn().mockResolvedValue({ checkedAt: "2026-09-29T03:01:00.000Z", checking: false, status: "ok" });
+      const { OperationsService } = await import("../../src/main/application/operations/operations-service");
+      const operations = new OperationsService({ clock: fixture.clock, integrity: { check, snapshot }, store: fixture.database.store });
+
+      await operations.diagnostics();
+      await operations.diagnostics();
+
+      expect(snapshot).toHaveBeenCalledTimes(2);
+      expect(check).not.toHaveBeenCalled();
+      await expect(operations.checkDatabaseIntegrity()).resolves.toMatchObject({ status: "ok" });
+      expect(check).toHaveBeenCalledOnce();
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("coalesces storage-health reads and safely handles an unavailable integrity monitor", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      let resolveStorage: ((value: { artifactsBytes: number; backupsBytes: number; databaseBytes: number; diskAvailableBytes: number; state: "ok" }) => void) | undefined;
+      const storageHealth = vi.fn().mockImplementation(() => new Promise((resolve) => { resolveStorage = resolve; }));
+      const { OperationsService } = await import("../../src/main/application/operations/operations-service");
+      const operations = new OperationsService({
+        backup: {
+          create: vi.fn(),
+          list: vi.fn(),
+          stageRestore: vi.fn(),
+          storageHealth,
+        },
+        clock: fixture.clock,
+        storageCacheMillis: 1,
+        store: fixture.database.store,
+      });
+
+      const first = operations.diagnostics();
+      const second = operations.diagnostics();
+      await vi.waitFor(() => expect(storageHealth).toHaveBeenCalledOnce());
+      resolveStorage?.({ artifactsBytes: 1, backupsBytes: 2, databaseBytes: 3, diskAvailableBytes: 4, state: "ok" });
+
+      await expect(first).resolves.toMatchObject({ storage: { databaseBytes: 3 } });
+      await expect(second).resolves.toMatchObject({ storage: { databaseBytes: 3 } });
+      await expect(operations.checkDatabaseIntegrity()).resolves.toEqual({ checking: false, status: "unknown" });
     } finally {
       await fixture.close();
     }

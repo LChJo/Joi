@@ -2,6 +2,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { ReasoningSourceSelector } from "../../src/main/application/model-sources/reasoning-source-selector.js";
 import type { ModelSourceRecord, ModelSourceRepository } from "../../src/main/application/ports/model-source-ports.js";
+import type { RuntimeDiagnostics } from "../../src/main/application/ports/runtime-diagnostics.js";
 import { createModelSource, type SourceFailureKind } from "../../src/main/domain/model-sources/model-source.js";
 
 function source(sourceId: string, order: number): ModelSourceRecord {
@@ -438,5 +439,42 @@ describe("deterministic-source-fallback-classification", () => {
     });
     await expect(selector.selectById("missing", "partner-run-2"))
       .rejects.toMatchObject({ code: "partner_model_source_not_ready" });
+  });
+
+  describe("tool-proof-aware selection", () => {
+    const custom = (sourceId: string, order: number, toolProofAt?: string): ModelSourceRecord => {
+      const model = createModelSource({
+        createdAt: "2026-07-28T10:00:00.000Z", credentialRef: `joi-source:${sourceId}`, credentialVersion: 1,
+        displayName: sourceId, kind: "deepseek", modelCapability: "custom-unverified-tools",
+        modelId: `${sourceId}-model`, modelRevisionId: `${sourceId}-model-revision`, sourceId, sourceRevisionId: `${sourceId}-revision`,
+      });
+      return { local: false, order, primary: false, source: { ...model, status: "READY", ...(toolProofAt === undefined ? {} : { toolProofAt }) } };
+    };
+    const events: [string, unknown][] = [];
+    const diagnostics: RuntimeDiagnostics = { emit: (name, fields) => { events.push([name, fields]); } };
+    const unprovenFirst = custom("unproven", 0);
+    const provenSecond = custom("proven", 1, "2026-09-20T00:00:00.000Z");
+
+    it("skips an earlier unproven source when a proven one is ready", async () => {
+      const selector = new ReasoningSourceSelector({ list: async () => [unprovenFirst, provenSecond] });
+      await expect(selector.selectInitial("turn-proof", { requireToolProof: true })).resolves.toMatchObject({ sourceId: "proven" });
+      // A release-tested model counts as proven without a runtime proof.
+      const released = source("released", 2);
+      const selector2 = new ReasoningSourceSelector({ list: async () => [unprovenFirst, custom("unproven-b", 1), released] });
+      await expect(selector2.selectInitial("turn-release-tested", { requireToolProof: true })).resolves.toMatchObject({ sourceId: "released" });
+    });
+
+    it("falls back to the full pool and reports it when nothing is proven", async () => {
+      const selector = new ReasoningSourceSelector({ list: async () => [unprovenFirst] }, { diagnostics });
+      await expect(selector.selectInitial("evolution", { requireToolProof: true })).resolves.toMatchObject({ sourceId: "unproven" });
+      expect(events).toEqual([["joi.model_source.tool_proof_fallback", { context: "evolution", provenCount: 0, totalCount: 1 }]]);
+    });
+
+    it("keeps the unfiltered order when the option is absent", async () => {
+      events.length = 0; // the collector is shared across this describe block
+      const selector = new ReasoningSourceSelector({ list: async () => [unprovenFirst, provenSecond] });
+      await expect(selector.selectInitial("turn-unfiltered")).resolves.toMatchObject({ sourceId: "unproven" });
+      expect(events).toEqual([]);
+    });
   });
 });

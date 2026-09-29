@@ -395,6 +395,37 @@ describe("settings panel", () => {
     await waitFor(() => expect(emergencyStopAll).toHaveBeenCalledOnce());
     expect(await screen.findByText("所有工作已紧急暂停，未确认的搭档过程仍会保留。", {}, { timeout: 4_000 })).toBeInTheDocument();
   });
+
+  it("runs database integrity only from the explicit diagnostic action", async () => {
+    const api = new DigitalLifeApi("");
+    const check = vi.spyOn(api, "checkDatabaseIntegrity").mockResolvedValue({ checkedAt: "2026-09-29T03:01:00.000Z", checking: false, status: "ok" });
+    render(<SystemPanel api={api} diagnostics={diagnostics} interactions={[]} onIntegrityCheck={() => api.checkDatabaseIntegrity().then(() => undefined)} />);
+
+    expect(check).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "重新检查本机数据" }));
+    await waitFor(() => expect(check).toHaveBeenCalledOnce());
+  });
+
+  it("labels pending and unknown integrity states and reports a failed manual check", async () => {
+    const api = new DigitalLifeApi("");
+    const onIntegrityCheck = vi.fn().mockRejectedValue(new Error("private failure"));
+    const view = render(<SystemPanel api={api} diagnostics={{
+      ...diagnostics,
+      database: { integrity: "unknown", integrityChecking: true, journalMode: "wal", state: "open" },
+    }} interactions={[]} onIntegrityCheck={onIntegrityCheck} />);
+
+    expect(screen.getByText("检查中")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新检查本机数据" })).toBeDisabled();
+    view.rerender(<SystemPanel api={api} diagnostics={{
+      ...diagnostics,
+      database: { integrity: "unknown", integrityChecking: false, journalMode: "wal", state: "open" },
+    }} interactions={[]} onIntegrityCheck={onIntegrityCheck} />);
+    expect(screen.getByText("尚未检查")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "重新检查本机数据" }));
+    expect(await screen.findByText("本机数据检查暂时无法完成。")).toBeInTheDocument();
+    expect(onIntegrityCheck).toHaveBeenCalledOnce();
+  });
 });
 
 describe("console shell", () => {

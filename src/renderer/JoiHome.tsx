@@ -1,6 +1,6 @@
 import { ResultExportMenu } from './ResultExportMenu';
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
-import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ClockIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -13,6 +13,18 @@ const SAFE_MARKDOWN_COMPONENTS: Components = {
   a: ({ href, children }) => href !== undefined && /^https?:\/\//iu.test(href) ? <a href={href} rel="noreferrer" target="_blank">{children}</a> : <span>{children}</span>,
   img: ({ alt }) => <span className="agent-remote-image">[图片{alt === undefined ? "" : `：${alt}`}]</span>,
 };
+
+// A fresh array on every render defeats react-markdown's own memoization, and this stream
+// re-renders on a poll timer, so the plugin list has to be module-scoped.
+const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
+
+/**
+ * Parsing a document is the expensive part of displaying it. Memoizing here means a poll that
+ * returns identical text costs a prop comparison instead of a full reparse.
+ */
+const Markdown = memo(function Markdown({ children }: { children: string }) {
+  return <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={MARKDOWN_REMARK_PLUGINS} skipHtml>{children}</ReactMarkdown>;
+});
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
   const [selected, setSelected] = useState<ModelSourceKindDto | null>(null);
@@ -554,6 +566,12 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
   // pi executes tools sequentially, so a trailing TOOL_CALL with no result after it is the
   // one running now. The RUNNING gate keeps a crashed run's dangling call from claiming life.
   const runningEntryId = page?.agent.status === "RUNNING" && trailing?.kind === "TOOL_CALL" ? trailing.entryId : undefined;
+  // Grouping walks the whole page, and the poll timer re-renders this component even when the
+  // page came back unchanged, so the derivation is memoized on the item list.
+  const streamRows = useMemo(
+    () => groupArtifactsForDisplay(groupAgentEntries(page?.items ?? []), (group) => group.entry.kind === "ARTIFACT" ? group.entry.artifact : undefined),
+    [page?.items],
+  );
   return <>
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
     <div className="agent-stream-viewport" ref={viewport} role="log" aria-label="Agent 执行记录" aria-live="off" tabIndex={0} onScroll={() => {
@@ -565,7 +583,7 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
       if (element.scrollTop < 64 && !atBottom) void loadMore();
     }}>
     {page?.nextCursor === undefined ? null : <p className="agent-history-hint">{loadingHistory ? "正在加载历史记录…" : "向上滚动查看更早记录"}</p>}
-    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : groupArtifactsForDisplay(groupAgentEntries(page.items), (group) => group.entry.kind === "ARTIFACT" ? group.entry.artifact : undefined).map((row) => {
+    {page === null ? <p className="content-state">正在整理对话…</p> : <div className="agent-message-stream">{page.items.length === 0 ? <p className="plain-empty">这位 Agent 还没有可展示的执行消息。</p> : streamRows.map((row) => {
       if (row.kind === "FOLDER") {
         const first = row.items[0];
         if (first === undefined) return null;
@@ -589,7 +607,7 @@ export function AgentMessageStream({ agent, api, workbenchId, goalId, live = fal
       {entry.kind === "ARTIFACT" && entry.artifact !== undefined
         ? <ArtifactCard api={api} artifact={entry.artifact} source="AGENT" sourceId={agent.agentId} workbenchId={workbenchId} />
         : entry.kind === "ARTIFACT" ? <div className="agent-artifact"><span className="agent-artifact-copy"><strong>产物</strong><span>文件 · 0 B</span></span></div>
-          : <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{entry.text ?? ""}</ReactMarkdown>}
+          : <Markdown>{entry.text ?? ""}</Markdown>}
     </article>;})}</div>}
     </div>
     {following ? null : <button className="button ghost agent-load-more" onClick={() => {
@@ -728,7 +746,6 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
     <header className="page-title-row"><div><p className="eyebrow">工作台 / Agent</p><h1>{detail?.name ?? "工作台"}</h1><p>{detail === null ? "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。" : "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"}</p></div>{detail === null ? <button className={adding ? "button quiet" : "button primary"} onClick={() => setAdding((value) => !value)} type="button">{adding ? "收起" : "创建工作台"}</button> : <div className="row-actions"><button className="button danger-text" onClick={() => requestRemoval(detail)} type="button">移除工作台</button><button className="button ghost" onClick={() => { setDetail(null); setAgents([]); }} type="button">返回工作台列表</button></div>}</header>
     {detail === null && adding ? <form className="partner-form" onSubmit={(event) => void submit(event)}><label>名称<input name="name" placeholder="工作聚类名称，如：前端调试分析" required /></label><label>工程名称<input name="projectLabel" placeholder="工作环境 / 工程，如：数字生活" required /></label><label>职责范围<textarea name="scopeSummary" placeholder="描述这类工作共享的环境和边界" required rows={4} /></label><label>人格摘要<textarea name="personaSummary" placeholder="描述工作环境的长期约束，不要写单个 Agent 角色" required rows={4} /></label><button className="button primary" type="submit">保存工作台</button></form> : null}
     {detail === null ? (workbenches.length === 0 ? <div className="plain-empty"><h2>还没有工作台</h2><p>直接从首页告诉 joi 目标，它也可以按需要创建。</p></div> : <div className="workbench-catalog">{workbenches.map((workbench) => <article className="workbench-catalog-entry" key={workbench.workbenchId}><button aria-label={`打开工作台 ${workbench.name}`} className="workbench-catalog-open" onClick={() => void open(workbench.workbenchId)} type="button"><span className="workbench-catalog-head"><span aria-hidden="true" className="workbench-orb">{workbench.name.slice(0, 1)}</span><strong>{workbench.name}</strong></span><span className="workbench-catalog-scope" title={workbench.scopeSummary}>{workbench.scopeSummary}</span></button><footer className="workbench-catalog-footer"><time dateTime={workbench.updatedAt} title={new Date(workbench.updatedAt).toLocaleString()}>更新于 {formatWorkbenchUpdated(workbench.updatedAt)}</time><span className="workbench-catalog-actions"><button aria-label={`管理上下文 ${workbench.name}`} className="workbench-catalog-manage" onClick={() => void open(workbench.workbenchId, "context")} type="button">管理上下文</button><button aria-label={`移除工作台 ${workbench.name}`} className="button danger-text workbench-catalog-remove" onClick={() => requestRemoval(workbench)} type="button">移除工作台</button></span></footer></article>)}</div>) : <>
-      <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button><button aria-selected={tab === "evolution"} onClick={() => setTab("evolution")} role="tab" type="button">自主进化</button></div>
       <article aria-label="工作区" className="workbench-workspace-bar">
         <div className="workbench-workspace-info">
           <h3>工作区</h3>
@@ -737,6 +754,7 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
         </div>
         <div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">使用默认运行目录</button></div>
       </article>
+      <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button><button aria-selected={tab === "evolution"} onClick={() => setTab("evolution")} role="tab" type="button">自主进化</button></div>
       {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : tab === "context" ? <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
         <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
@@ -1220,6 +1238,37 @@ function thinkingWorkSummary(item: JoiThinkingRenderItem): string {
   return parts.join(" · ");
 }
 
+/**
+ * The elapsed clock is owned by the row rather than the feed: a running turn ticks once a second,
+ * and that repaint must stay inside this row instead of reaching the composer and every goal card.
+ */
+function ThinkingRow({ item }: { item: JoiThinkingItemDto }) {
+  const renderItem = item as JoiThinkingRenderItem;
+  const isProgressing = item.phase !== "queued";
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!isProgressing) return;
+    const timer = setInterval(() => setNow(Date.now()), 1_000);
+    return () => clearInterval(timer);
+  }, [isProgressing]);
+  const stageLabel = thinkingStageLabel(renderItem.stage);
+  const workSummary = thinkingWorkSummary(renderItem);
+  const accessibleSummary = isProgressing
+    ? `${stageLabel}${workSummary === "" ? "" : `，${workSummary}`}`
+    : "queued";
+  return <div aria-label={accessibleSummary} className={`joi-thinking ${item.phase}`} role="status">
+    <span aria-hidden="true" className="joi-thinking-dot" />
+    <div className="joi-thinking-copy">
+      <strong>{item.phase === "queued" ? "queued" : "progressing"}</strong>
+      {isProgressing ? <span className="joi-thinking-summary">
+        <span className="joi-thinking-stage">{stageLabel}</span>
+        {workSummary === "" ? null : <span className="joi-thinking-meta">{workSummary}</span>}
+        <span aria-hidden="true" className="joi-thinking-elapsed"> · 已用 {thinkingElapsed(item.startedAt, now)}</span>
+      </span> : null}
+    </div>
+  </div>;
+}
+
 function HarnessPanel({ harness }: { harness: JoiGoalHarnessDto }) {
   return <article className="joi-goal-harness">
     <p className="joi-goal-harness-destination">
@@ -1290,7 +1339,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
       <div className="joi-goal-drawer-body">
         {goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
-        {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div><GoalArtifacts api={api} goal={goal} /></article>}
+        {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
@@ -1342,7 +1391,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
         <div className="row-actions"><button className="button ghost" disabled={goal.workbench.workbenchId === ""} onClick={() => onOpenDetail()} type="button">查看详情</button><button className="button quiet" onClick={close} type="button">关闭</button></div>
       </header>
       <div className="joi-goal-drawer-body">
-        <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{body}</ReactMarkdown></div><GoalArtifacts api={api} goal={goal} /></article>
+        <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><Markdown>{body}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>
         <GoalAgentWarning goal={goal} onOpen={() => onOpenDetail("FAILED")} />
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
       </div>
@@ -1361,6 +1410,10 @@ function joiImagePathFromText(value: string): string | null {
   const candidate = value.trim().replace(/^['"]+|['"]+$/g, "").trim();
   return JOI_IMAGE_PATH_PATTERN.test(candidate) ? candidate : null;
 }
+
+const THINKING_EXPIRY_TICK_MILLIS = 5_000;
+const ACTIVE_FEED_REFRESH_MILLIS = 1_500;
+const IDLE_FEED_REFRESH_MILLIS = 7_500;
 
 function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }: {
   api: DigitalLifeApi;
@@ -1382,16 +1435,27 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   const [openGoalAgentStatus, setOpenGoalAgentStatus] = useState<WorkbenchAgentStatusDto | undefined>(undefined);
   const [resultGoal, setResultGoal] = useState<JoiGoalCardDto | null>(null);
   const [retryGoalId, setRetryGoalId] = useState<string | null>(null);
-  const [now, setNow] = useState(() => Date.now());
+  const [expiryTick, setExpiryTick] = useState(() => Date.now());
   const [workbenchChanges, setWorkbenchChanges] = useState(snapshot.workbenchChanges);
   const [error, setError] = useState<string | null>(null);
   const feedRevisionRef = useRef(0);
+  const feedInFlightRef = useRef<{ promise: Promise<void>; revision: number } | null>(null);
+  const feedNeedsFastRefreshRef = useRef(false);
   const loadFeed = useCallback(async (revision = feedRevisionRef.current) => {
+    const existing = feedInFlightRef.current;
+    if (existing !== null) {
+      await existing.promise;
+      if (existing.revision === revision || revision !== feedRevisionRef.current) return;
+    }
+    const request = (async () => {
     try {
       const loaded = await api.joiHomeFeed();
       if (!Array.isArray(loaded.goals) || !Array.isArray(loaded.thinking) || !Array.isArray(loaded.unassignedActions)) throw new Error("joi_home_feed_invalid");
       if (revision !== feedRevisionRef.current) return;
+      feedNeedsFastRefreshRef.current = loaded.thinking.some((item) => item.phase === "queued" || item.phase === "progressing")
+        || loaded.goals.some((goal) => !TERMINAL_GOAL_STATUSES.includes(goal.status));
       setFeed(loaded);
+      setWorkbenchChanges(loaded.workbenchChanges ?? []);
       setFeedLoaded(true);
       setFeedError(false);
     } catch {
@@ -1400,20 +1464,49 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
       // Keep the last authoritative projection until this endpoint recovers.
       setFeedError(true);
     }
+    })();
+    feedInFlightRef.current = { promise: request, revision };
+    await request.finally(() => {
+      if (feedInFlightRef.current?.promise === request) feedInFlightRef.current = null;
+    });
   }, [api]);
-  const refresh = useCallback(async () => {
-    const revision = feedRevisionRef.current;
-    const state = await api.joiSnapshot();
-    await loadFeed(revision);
-    if (revision !== feedRevisionRef.current) return;
-    setWorkbenchChanges(state.workbenchChanges);
-  }, [api, loadFeed]);
+  // The feed already carries the pending workbench changes, so one poll covers both. The separate
+  // snapshot call this replaced ran six queries per poll and only its workbenchChanges survived.
+  const refresh = useCallback(async () => { await loadFeed(); }, [loadFeed]);
   useEffect(() => {
-    const initial = setTimeout(() => void loadFeed().catch(() => undefined), 0);
-    const interval = setInterval(() => void refresh().catch(() => undefined), 1_500);
-    const clock = setInterval(() => setNow(Date.now()), 1_000);
-    return () => { clearTimeout(initial); clearInterval(interval); clearInterval(clock); };
-  }, [loadFeed, refresh]);
+    let stopped = false;
+    let polling = false;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const schedule = () => {
+      if (stopped || document.visibilityState === "hidden") return;
+      timer = setTimeout(run, feedNeedsFastRefreshRef.current ? ACTIVE_FEED_REFRESH_MILLIS : IDLE_FEED_REFRESH_MILLIS);
+    };
+    const run = () => {
+      if (stopped || polling || document.visibilityState === "hidden") return;
+      polling = true;
+      void refresh().finally(() => {
+        polling = false;
+        schedule();
+      });
+    };
+    const onVisibilityChange = () => {
+      if (timer !== null) clearTimeout(timer);
+      timer = null;
+      if (document.visibilityState !== "hidden") run();
+    };
+    const initial = setTimeout(run, 0);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    // Only decided when an already-settled row should stop showing; per-second precision is not
+    // needed here, and a coarser tick keeps this repaint off the second-by-second path.
+    const expiryClock = setInterval(() => setExpiryTick(Date.now()), THINKING_EXPIRY_TICK_MILLIS);
+    return () => {
+      stopped = true;
+      clearTimeout(initial);
+      if (timer !== null) clearTimeout(timer);
+      clearInterval(expiryClock);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [refresh]);
   const addFiles = (incoming: Iterable<File>) => {
     const oversized: string[] = [];
     const accepted: File[] = [];
@@ -1480,7 +1573,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
       setError(reason instanceof ApiError ? reason.message : "输入没保存成功，请再试一次。");
     }
   };
-  const visibleThinking = useMemo(() => feed.thinking.filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now), [feed.thinking, now]);
+  const visibleThinking = useMemo(() => feed.thinking.filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > expiryTick), [feed.thinking, expiryTick]);
   const openGoal = feed.goals.find((goal) => goal.goalId === openGoalId);
   const dismissGoal = (goalId: string) => setFeed((current) => ({ ...current, goals: current.goals.filter((goal) => goal.goalId !== goalId) }));
   const dismissAction = (inputId: string) => setFeed((current) => ({ ...current, unassignedActions: current.unassignedActions.filter((item) => item.inputId !== inputId) }));
@@ -1500,33 +1593,14 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     {openGoal === undefined ? null : <GoalDetail api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} {...(openGoalAgentStatus === undefined ? {} : { initialAgentStatus: openGoalAgentStatus })} onBack={() => { setOpenGoalId(null); setOpenGoalAgentStatus(undefined); }} onResolved={() => void refresh().catch(() => undefined)} onRetried={markRetryStarted} />}
     {resultGoal?.completionSummary === undefined ? null : <GoalResultView api={api} goal={resultGoal} onBack={() => setResultGoal(null)} onOpenDetail={(preferredStatus) => { setResultGoal(null); setOpenGoalAgentStatus(preferredStatus); setOpenGoalId(resultGoal.goalId); }} onRetried={(retriedGoal) => { setResultGoal(null); markRetryStarted(retriedGoal); }} />}
     <div aria-label="joi 信息流" className="joi-feed joi-feed-single">
-      {visibleThinking.map((item) => {
-        const renderItem = item as JoiThinkingRenderItem;
-        const isProgressing = item.phase !== "queued";
-        const stageLabel = thinkingStageLabel(renderItem.stage);
-        const workSummary = thinkingWorkSummary(renderItem);
-        const accessibleSummary = isProgressing
-          ? `${stageLabel}${workSummary === "" ? "" : `，${workSummary}`}`
-          : "queued";
-        return <div aria-label={accessibleSummary} className={`joi-thinking ${item.phase}`} key={item.turnId} role="status">
-          <span aria-hidden="true" className="joi-thinking-dot" />
-          <div className="joi-thinking-copy">
-            <strong>{item.phase === "queued" ? "queued" : "progressing"}</strong>
-            {isProgressing ? <span className="joi-thinking-summary">
-              <span className="joi-thinking-stage">{stageLabel}</span>
-              {workSummary === "" ? null : <span className="joi-thinking-meta">{workSummary}</span>}
-              <span aria-hidden="true" className="joi-thinking-elapsed"> · 已用 {thinkingElapsed(item.startedAt, now)}</span>
-            </span> : null}
-          </div>
-        </div>;
-      })}
+      {visibleThinking.map((item) => <ThinkingRow item={item} key={item.turnId} />)}
       {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} /></article>)}
       {feed.goals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
           <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => { setResultGoal(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong><GoalProgress goal={goal} /></span></button>
           <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><div aria-label={`${goal.title} 操作`} className="joi-goal-actions" role="group">{TERMINAL_GOAL_STATUSES.includes(goal.status) ? null : <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} />}{TERMINAL_GOAL_STATUSES.includes(goal.status) ? <button aria-label={`继续「${goal.title}」`} className="joi-goal-link" onClick={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} type="button">{retryGoalId === goal.goalId ? "收起" : "继续"}</button> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div></div>
         </div>
-        {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoal(goal); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoal(goal); setOpenGoalId(null); } }}><ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={[remarkGfm]} skipHtml>{goal.completionSummary}</ReactMarkdown></div>}
+        {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoal(goal); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoal(goal); setOpenGoalId(null); } }}><Markdown>{goal.completionSummary}</Markdown></div>}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); markRetryStarted(goal); }} /> : null}

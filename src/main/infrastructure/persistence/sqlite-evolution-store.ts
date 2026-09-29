@@ -140,6 +140,21 @@ export class SqliteEvolutionStore implements EvolutionStore {
       OR EXISTS(SELECT 1 FROM joi_turns WHERE status = 'RUNNING')
       OR EXISTS(SELECT 1 FROM work_items WHERE status IN ('PLANNED','READY','RUNNING','WAITING'))`).get() === undefined);
   }
+  /**
+   * The newest candidate day across ACTIVE workbenches only. Archived workbenches keep their
+   * evolution_states row, so without the join a stale "today" value on an archived row would lock
+   * every candidate out for the rest of the day. States that never created a batch have no
+   * `lastCandidateDay` key; json_extract yields SQL NULL and MAX ignores it.
+   */
+  lastCandidateDay(): string | null {
+    return this.database.transaction((db) => {
+      const row = db.prepare(`SELECT MAX(json_extract(e.state_json, '$.lastCandidateDay')) AS day
+        FROM evolution_states e
+        JOIN workbenches w ON w.workbench_id = e.workbench_id AND w.status = 'ACTIVE'`).get() as Row | undefined;
+      const day = row?.day;
+      return typeof day === "string" ? day : null;
+    });
+  }
   evidenceSeeds(): EvolutionEvidenceSeed[] {
     return this.database.transaction((db) => (db.prepare(`WITH latest_verifications AS (
       SELECT r.work_id,v.status,ROW_NUMBER() OVER (PARTITION BY r.work_id ORDER BY r.created_at DESC,r.rowid DESC) AS position

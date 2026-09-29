@@ -8,7 +8,6 @@ import { fileURLToPath } from "node:url";
 import { AgentService } from "./application/agents/agent-service.js";
 import { AuthService } from "./application/auth/auth-service.js";
 import { LifeService } from "./application/lives/life-service.js";
-import { OperationsService } from "./application/operations/operations-service.js";
 import { RemoteCommandService } from "./application/remote/remote-command-service.js";
 import { RemoteHomeQueryService } from "./application/remote/remote-home-queries.js";
 import type { RemoteAccessControl } from "./application/ports/remote-access.js";
@@ -20,6 +19,7 @@ import { wirePartners } from "./composition/wire-partners.js";
 import { wireWorkbenches } from "./composition/wire-workbenches.js";
 import { wireJoi } from "./composition/wire-joi.js";
 import { wireRuntime } from "./composition/wire-runtime.js";
+import { wireOperations } from "./composition/wire-operations.js";
 import { LifeFileDeletionService } from "./infrastructure/artifacts/life-file-deletion-service.js";
 import { applyPendingRestore, BackupService } from "./infrastructure/operations/backup-service.js";
 import { LocalSkillScanner } from "./infrastructure/skills/local-skill-scanner.js";
@@ -65,6 +65,7 @@ if (!hasSingleInstanceLock) {
 let mainWindow: BrowserWindow | null = null;
 let authService: AuthService | null = null;
 let runtimeDatabase: RuntimeDatabase | null = null;
+let databaseIntegrityMonitor: ReturnType<typeof wireOperations>["integrity"] | null = null;
 let runtimeListeners: RuntimeListeners | null = null;
 let outboxTimer: NodeJS.Timeout | null = null;
 let tray: Tray | null = null;
@@ -108,8 +109,9 @@ async function startRuntime(): Promise<void> {
     validateJoiSkills: (refs) => new LocalSkillScanner().validateRefs("pi-core", refs),
   });
   const runtimeSettings = await settings.get();
+  const databasePath = path.join(userDataDirectory, "runtime.sqlite");
   const database = await openRuntimeDatabase({
-    databasePath: path.join(userDataDirectory, "runtime.sqlite"),
+    databasePath,
     migrationsDirectory,
   });
   if (database.inspect().mode === "read-only-recovery") {
@@ -233,9 +235,10 @@ async function startRuntime(): Promise<void> {
     migrationsDirectory,
     userDataDirectory,
   });
-  const operations = new OperationsService({
+  const operationsBundle = wireOperations({
     backup,
     clock,
+    databasePath,
     startup: startupEvidence,
     store: database.store,
     webHealth: () => {
@@ -250,6 +253,8 @@ async function startRuntime(): Promise<void> {
       };
     },
   });
+  const { integrity, operations } = operationsBundle;
+  databaseIntegrityMonitor = integrity;
   const dependencies = {
     a2aGateway: runtimeStack.a2aGateway,
     agentOnboarding: runtimeStack.agentOnboarding,
@@ -318,6 +323,7 @@ async function startRuntime(): Promise<void> {
     authService = auth;
     runtimeDatabase = database;
     runtimeListeners = listeners;
+    integrity.start();
     let rootTickInFlight: Promise<void> | null = null;
     outboxTimer = setInterval(() => {
       if (rootTickInFlight !== null) return;
@@ -340,6 +346,8 @@ async function startRuntime(): Promise<void> {
     }, 2_000);
     outboxTimer.unref();
   } catch (error) {
+    integrity.close();
+    databaseIntegrityMonitor = null;
     database.close();
     throw error;
   }
@@ -443,6 +451,8 @@ async function shutdownRuntime(): Promise<void> {
   remoteAccessHost = null;
   await drainRuntime?.();
   drainRuntime = null;
+  databaseIntegrityMonitor?.close();
+  databaseIntegrityMonitor = null;
   runtimeDatabase?.close();
   runtimeDatabase = null;
   authService = null;

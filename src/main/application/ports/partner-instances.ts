@@ -86,7 +86,8 @@ export interface PartnerExecutionContext {
 }
 
 export interface PartnerConversationProgress {
-  conversation: AgentConversationDraft[];
+  /** Built on demand: a consumer that throttles live snapshots must be able to skip the copy. */
+  conversation: () => AgentConversationDraft[];
   instanceId: string;
 }
 

@@ -1356,6 +1356,7 @@ describe("Pi partner engine runtime", () => {
     expect(firstSystemPrompt.length).toBeLessThan(budgetChars + 5_000);
     // The authoritative policy lines survive the trim of the background data below them.
     expect(firstSystemPrompt).toContain("Runtime permission boundary (authoritative");
+    expect(firstSystemPrompt).toContain("keep code comments clean and clear");
     expect(events).toEqual([{
       fields: { backgroundChars: 220_000, budgetChars, workId: "work_oversized", workbenchId: "workbench_1" },
       name: "joi.partner.system_prompt_bounded",

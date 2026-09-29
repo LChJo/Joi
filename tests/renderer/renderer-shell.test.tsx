@@ -68,7 +68,7 @@ function mockApi() {
   const createWorkbench = vi.spyOn(api, "createWorkbench").mockResolvedValue({ workbenchId: "workbench_2", name: "研究", scopeSummary: "研究范围", updatedAt: life.updatedAt });
   vi.spyOn(api, "listAgents").mockResolvedValue({ items: [agent, collaborator] });
   vi.spyOn(api, "listPartners").mockResolvedValue({ items: [partner] });
-  vi.spyOn(api, "listInteractions").mockResolvedValue({ items: [interaction] });
+  const interactionsRequest = vi.spyOn(api, "listInteractions").mockResolvedValue({ items: [interaction] });
   const diagnosticsRequest = vi.spyOn(api, "diagnostics").mockResolvedValue(diagnostics);
   vi.spyOn(api, "listBackups").mockResolvedValue({ items: [{ backupId: "backup_1", createdAt: life.createdAt, databaseBytes: 1024, manifestHash: "a".repeat(64), schemaVersion: 4 }] });
   vi.spyOn(api, "listSessions").mockResolvedValue({ items: [
@@ -117,14 +117,15 @@ function mockApi() {
   const deleteAgent = vi.spyOn(api, "deleteAgent").mockResolvedValue(undefined);
   vi.spyOn(api, "getAgentDeletionImpact").mockResolvedValue({ activeInvocations: 0, bindings: [] });
   const disablePartner = vi.spyOn(api, "disablePartner").mockResolvedValue({ ...partner, status: "DISABLED" });
-  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createWorkbench, createBackup, createLife, createTodo, deleteAgent, deleteLife, diagnosticsRequest, disablePartner, emergencyStopAll, extendBudget, forgetMemory, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
+  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createWorkbench, createBackup, createLife, createTodo, deleteAgent, deleteLife, diagnosticsRequest, disablePartner, emergencyStopAll, extendBudget, forgetMemory, interactionsRequest, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
 }
 
 describe("joi renderer console", () => {
   it("returns the content viewport to the top when primary navigation changes", async () => {
     const fixture = mockApi();
     const view = render(<ConsoleApp api={fixture.api} />);
-    await waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce());
+    await waitFor(() => expect(fixture.interactionsRequest).toHaveBeenCalledOnce());
+    expect(fixture.diagnosticsRequest).not.toHaveBeenCalled();
     const main = view.container.querySelector(".console-main");
     if (!(main instanceof HTMLElement)) throw new Error("Expected the console content viewport.");
     main.scrollTop = 240;
@@ -150,14 +151,14 @@ describe("joi renderer console", () => {
     }));
   });
 
-  it("recovers the console snapshot and keeps every new management page reachable", async () => {
+  it("recovers the lightweight console status and keeps every new management page reachable", async () => {
     const fixture = mockApi();
-    fixture.diagnosticsRequest.mockRejectedValueOnce(new ApiError("diagnostics_unavailable", "状态暂不可用", 503));
+    fixture.interactionsRequest.mockRejectedValueOnce(new ApiError("diagnostics_unavailable", "状态暂不可用", 503));
     render(<ConsoleApp api={fixture.api} />);
 
     expect(await screen.findByText("状态暂不可用")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
-    await waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fixture.interactionsRequest).toHaveBeenCalledTimes(2));
     const navigation = screen.getByRole("navigation", { name: "主导航" });
     fireEvent.click(within(navigation).getByRole("button", { name: "搭档" }));
     expect(await screen.findByRole("heading", { name: "搭档" })).toBeInTheDocument();
@@ -167,17 +168,83 @@ describe("joi renderer console", () => {
     expect(await screen.findByRole("heading", { name: "joi 的设置" })).toBeInTheDocument();
   });
 
-  it("polls for status updates on a fixed interval (SSE retired, ADR 0009)", async () => {
+  it("polls lightweight status globally without polling full diagnostics", async () => {
     vi.useFakeTimers();
     try {
       const fixture = mockApi();
       const view = render(<ConsoleApp api={fixture.api} />);
       await vi.advanceTimersByTimeAsync(0);
-      await vi.waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce());
+      await vi.waitFor(() => expect(fixture.interactionsRequest).toHaveBeenCalledOnce());
+      expect(fixture.diagnosticsRequest).not.toHaveBeenCalled();
       await vi.waitFor(() => expect(screen.getByText("状态自动刷新")).toBeInTheDocument());
 
       await vi.advanceTimersByTimeAsync(2_500);
+      await vi.waitFor(() => expect(fixture.interactionsRequest).toHaveBeenCalledTimes(2));
+      expect(fixture.diagnosticsRequest).not.toHaveBeenCalled();
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces lightweight status polls while the previous request is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = mockApi();
+      let resolveInteractions: ((value: { items: (typeof interaction)[] }) => void) | undefined;
+      fixture.interactionsRequest.mockImplementation(() => new Promise((resolve) => { resolveInteractions = resolve; }));
+      const view = render(<ConsoleApp api={fixture.api} />);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.interactionsRequest).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fixture.interactionsRequest).toHaveBeenCalledOnce();
+      resolveInteractions?.({ items: [interaction] });
+      await vi.advanceTimersByTimeAsync(0);
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("polls full diagnostics only while the diagnostics settings tab is active", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = mockApi();
+      const view = render(<SettingsPanel api={fixture.api} diagnostics={diagnostics} />);
+      await vi.advanceTimersByTimeAsync(10_000);
+      expect(fixture.diagnosticsRequest).not.toHaveBeenCalled();
+
+      fireEvent.click(screen.getByRole("tab", { name: "诊断" }));
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce());
+      await vi.advanceTimersByTimeAsync(10_000);
       await vi.waitFor(() => expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2));
+
+      fireEvent.click(screen.getByRole("tab", { name: "数据" }));
+      await vi.advanceTimersByTimeAsync(20_000);
+      expect(fixture.diagnosticsRequest).toHaveBeenCalledTimes(2);
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("coalesces diagnostics polling while a settings request is pending", async () => {
+    vi.useFakeTimers();
+    try {
+      const fixture = mockApi();
+      let resolveDiagnostics: ((value: DiagnosticsDto) => void) | undefined;
+      fixture.diagnosticsRequest.mockImplementation(() => new Promise((resolve) => { resolveDiagnostics = resolve; }));
+      const view = render(<SettingsPanel api={fixture.api} diagnostics={diagnostics} />);
+
+      fireEvent.click(screen.getByRole("tab", { name: "诊断" }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce();
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(fixture.diagnosticsRequest).toHaveBeenCalledOnce();
+      resolveDiagnostics?.(diagnostics);
+      await vi.advanceTimersByTimeAsync(0);
       view.unmount();
     } finally {
       vi.useRealTimers();

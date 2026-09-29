@@ -1,6 +1,7 @@
 import { DomainError } from "../../domain/errors.js";
 import { classifySourceFailure, pinModelSourceForTurn, type SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import type { ModelSourceHealthRevision, ModelSourceRecord, ModelSourceRepository, ModelSourceValidator } from "../ports/model-source-ports.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import type { Clock } from "../ports/runtime-store.js";
 import { classifyHttp403Detail, classifyPartnerRunFailure } from "../partners/partner-run-failure.js";
 
@@ -10,16 +11,26 @@ type SelectorRepository = Pick<ModelSourceRepository, "list"> & Partial<Pick<Mod
 /** A route that rejected a run for lacking completion budget stays skipped for this window. */
 const CAPACITY_AVOIDANCE_MILLIS = 30 * 60_000;
 
+export interface SelectInitialOptions {
+  /**
+   * Prefer sources whose active revision either ships as release-tested or has demonstrated
+   * structured tool calling in a real turn. Callers whose contract demands well-formed tool calls
+   * (the strategy evaluation, say) pass this; when no such source is ready the selection falls
+   * back to the full pool and says so in diagnostics rather than failing outright.
+   */
+  requireToolProof?: boolean;
+}
+
 export class ReasoningSourceSelector {
   readonly #probes = new Map<string, Promise<ModelSourceRecord | undefined>>();
   readonly #avoidedUntil = new Map<string, number>();
 
   constructor(
     private readonly repository: SelectorRepository,
-    private readonly options?: { clock: Pick<Clock, "now">; freshnessMillis?: number; validator: ModelSourceValidator },
+    private readonly options?: { clock?: Pick<Clock, "now">; freshnessMillis?: number; validator?: ModelSourceValidator; diagnostics?: RuntimeDiagnostics },
   ) {}
 
-  async selectInitial(turnId: string): Promise<SourcePin> {
+  async selectInitial(turnId: string, options?: SelectInitialOptions): Promise<SourcePin> {
     const ready = await this.#readySources();
     // A capacity-mismatched route stays reachable but unusable for large contexts, so prefer
     // routes without a recent budget failure; only fall back to avoided routes when no other
@@ -33,14 +44,30 @@ export class ReasoningSourceSelector {
       freshened.set(record.source.sourceId, pending);
       return pending;
     };
+    if (options?.requireToolProof === true) {
+      const proven = ready.filter((record) => record.source.activeModelRevision.capability === "release-tested" || record.source.toolProofAt !== undefined);
+      const provenPin = proven.length > 0 ? await this.#firstReady(proven, turnId, freshOf) : null;
+      if (provenPin !== null) return provenPin;
+      // Falling back to an unproven source is exactly how a caller with a strict tool-call contract
+      // ends up rejecting responses; make that visible at the moment it happens.
+      emitRuntimeDiagnostic(this.options?.diagnostics, "joi.model_source.tool_proof_fallback",
+        { context: turnId, provenCount: proven.length, totalCount: ready.length });
+    }
+    const pin = await this.#firstReady(ready, turnId, freshOf);
+    if (pin !== null) return pin;
+    throw new DomainError("model_source_not_ready", "No model source is ready.");
+  }
+
+  /** The original two-pass capacity-avoiding scan, over whichever pool the caller narrowed to. */
+  async #firstReady(pool: ModelSourceRecord[], turnId: string, freshOf: (record: ModelSourceRecord) => Promise<ModelSourceRecord | undefined>): Promise<SourcePin | null> {
     for (const includeAvoided of [false, true]) {
-      for (const candidate of ready) {
+      for (const candidate of pool) {
         if (!includeAvoided && this.#isCapacityAvoided(candidate.source.sourceId)) continue;
         const source = await freshOf(candidate);
         if (source?.source.status === "READY") return pinModelSourceForTurn(source.source, turnId);
       }
     }
-    throw new DomainError("model_source_not_ready", "No model source is ready.");
+    return null;
   }
 
   async selectById(sourceId: string, turnId: string): Promise<SourcePin> {
@@ -75,7 +102,7 @@ export class ReasoningSourceSelector {
     if (capacityReason === "model_context_budget_exhausted" || capacityReason === "context_too_large") {
       this.avoidSource(sourceId, CAPACITY_AVOIDANCE_MILLIS);
     }
-    if (this.options === undefined || this.repository.get === undefined
+    if (this.options?.clock === undefined || this.repository.get === undefined
       || (this.repository.save === undefined && this.repository.saveHealthIfCurrent === undefined)) return;
     const status = numericStatus(error);
     if (status !== 401 && status !== 403) return;
@@ -141,7 +168,7 @@ export class ReasoningSourceSelector {
   }
 
   #nowMillis(): number {
-    return this.options?.clock.now().getTime() ?? Date.now();
+    return this.options?.clock?.now().getTime() ?? Date.now();
   }
 
   #isCapacityAvoided(sourceId: string): boolean {
@@ -153,16 +180,20 @@ export class ReasoningSourceSelector {
   }
 
   async #fresh(record: ModelSourceRecord): Promise<ModelSourceRecord | undefined> {
-    if (this.options === undefined) return record;
+    // Probing needs a validator and a clock; a selector constructed for read-only selection
+    // (diagnostics only) must never reach for one even though its options object exists.
+    const options = this.options;
+    if (options?.validator === undefined || options.clock === undefined) return record;
     const validatedAt = record.lastValidatedAt === undefined ? Number.NaN : Date.parse(record.lastValidatedAt);
-    const age = this.options.clock.now().getTime() - validatedAt;
-    if (Number.isFinite(age) && age >= 0 && age <= (this.options.freshnessMillis ?? 5 * 60_000)) return record;
+    const age = options.clock.now().getTime() - validatedAt;
+    if (Number.isFinite(age) && age >= 0 && age <= (options.freshnessMillis ?? 5 * 60_000)) return record;
     return this.#probe(record, false);
   }
 
   async #probe(record: ModelSourceRecord, force: boolean): Promise<ModelSourceRecord | undefined> {
-    if (this.options === undefined || (this.repository.save === undefined && this.repository.saveHealthIfCurrent === undefined)) return record;
-    const options = this.options;
+    const validator = this.options?.validator;
+    const clock = this.options?.clock;
+    if (validator === undefined || clock === undefined || (this.repository.save === undefined && this.repository.saveHealthIfCurrent === undefined)) return record;
     const repository = this.repository;
     const source = record.source;
     const key = [source.sourceId, source.activeSourceRevision.sourceRevisionId, source.activeModelRevision.modelRevisionId, String(source.activeSourceRevision.credentialVersion)].join(":");
@@ -171,10 +202,10 @@ export class ReasoningSourceSelector {
     const probe = (async () => {
       if (!force) {
         const validatedAt = record.lastValidatedAt === undefined ? Number.NaN : Date.parse(record.lastValidatedAt);
-        const age = options.clock.now().getTime() - validatedAt;
-        if (Number.isFinite(age) && age >= 0 && age <= (options.freshnessMillis ?? 5 * 60_000)) return record;
+        const age = clock.now().getTime() - validatedAt;
+        if (Number.isFinite(age) && age >= 0 && age <= (this.options?.freshnessMillis ?? 5 * 60_000)) return record;
       }
-      const result = await options.validator.validate(record);
+      const result = await validator.validate(record);
       const updated: ModelSourceRecord = {
         ...withoutHealthText(record),
         lastValidatedAt: result.validatedAt,

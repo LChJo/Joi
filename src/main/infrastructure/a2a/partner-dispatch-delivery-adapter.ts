@@ -402,12 +402,14 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         ...(this.dependencies.agentConversations === undefined ? {} : {
           onConversation: (() => {
             let lastSnapshotAt = 0;
-            return async ({ conversation, instanceId }: { conversation: AgentConversationDraft[]; instanceId: string }) => {
+            return async ({ conversation, instanceId }: { conversation: () => AgentConversationDraft[]; instanceId: string }) => {
               const nowMs = this.dependencies.clock.now().getTime();
+              // Check the window before reading the snapshot: the copy is the cost, and a frame
+              // that this throttle discards must not pay it.
               if (nowMs - lastSnapshotAt < LIVE_CONVERSATION_SNAPSHOT_INTERVAL_MS) return;
               lastSnapshotAt = nowMs;
               await this.dependencies.agentConversations?.replaceRun(instanceId, runId, normalizeAgentConversationEntries(
-                { agentId: instanceId, runId, startedAt: progressStartedAt }, conversation,
+                { agentId: instanceId, runId, startedAt: progressStartedAt }, conversation(),
               ));
             };
           })(),

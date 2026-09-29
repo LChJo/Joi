@@ -1,4 +1,6 @@
 import { EvolutionService } from "../../src/main/application/evolution/evolution-service";
+import { DomainError } from "../../src/main/domain/errors";
+import type { RuntimeDiagnosticEventMap } from "../../src/main/application/ports/runtime-diagnostics";
 import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../../src/shared/evolution";
 import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/sqlite-evolution-store";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
@@ -19,7 +21,8 @@ describe("evolution execution and budget", () => {
     store = new SqliteEvolutionStore(fixture.database);
     day = "2026-09-22T01:00:00.000Z";
     call.mockReset().mockResolvedValue({ action: "read_evidence", evidenceId: "record-11" });
-    service = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "batch-1" });
+    // One step per handle for the legacy single-step semantics; multi-step advancing has its own tests.
+    service = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "batch-1", stepsPerHandle: 1 });
     fixture.database.transaction((db) => {
       db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('a','A','p','','','','mem','ACTIVE',?,?)`).run(day, day);
       for (let i = 0; i < 10; i++) db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,'private','CONSUMED','a',?,?)`).run(`g${String(i)}`, `g${String(i)}`, day, day);
@@ -98,6 +101,7 @@ describe("evolution execution and budget", () => {
     const promoted = service.status("a");
     expect(promoted.reason).toBe("promoted");
     expect(promoted.versions[0]).toMatchObject({ status: "ACTIVE", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
+    expect(promoted.lastVerdict).toMatchObject({ reason: "promoted", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
     expect(store.read("a").revisions[0]?.evaluation).toHaveLength(30);
     expect(service.strategyForGoal("a", "g0", pin)).toEqual(original);
     const updated = service.strategyForGoal("a", "g1", pin);
@@ -116,7 +120,7 @@ describe("evolution execution and budget", () => {
     store.update("a", (s) => { assert(s.call); s.call.state = "RUNNING"; });
     const previous = store.read("a").call?.id;
     service.scan(); // Already owned by this instance: no concurrent recovery.
-    const restored = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "b2" });
+    const restored = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "b2", stepsPerHandle: 1 });
     restored.scan();
     expect(store.read("a").batch?.rollouts).toEqual([]);
     await restored.handle("evolution:a");
@@ -146,6 +150,126 @@ describe("evolution execution and budget", () => {
     expect(store.read("a").callFailures).toBe(3);
     expect(store.read("a").lastBatchFinishedAt).toBeUndefined(); // infrastructure aborts keep the trigger
     expect(service.status("a").reason).toBe("call_failed");
+  });
+  it("retries an invalid model response without parking and abandons the batch on the second", async () => {
+    service.configure("a", 10);
+    call.mockRejectedValue(new DomainError("evolution_response_invalid", "bad shape"));
+    await service.handle("evolution:a");
+    await service.handle("evolution:a");
+    const failed = store.read("a");
+    expect(failed.batch).toBeNull();
+    expect(failed.reason).toBe("model_response_invalid");
+    expect(failed.parkedDay).toBeUndefined(); // a bad response is a model-quality signal, not a fault: no day is lost
+    expect(failed.callFailures).toBeUndefined(); // and the infrastructure retry budget is untouched
+    expect(failed.responseInvalidStreak).toBe(2);
+    expect(failed.lastBatchFinishedAt).toBe(day); // consumes the trigger, so a broken source cannot re-pay daily
+    expect(service.pending()).toEqual([]);
+  });
+  it("trips the global breaker after repeated invalid responses and recovers via configure", async () => {
+    const events: string[] = [];
+    const breaker = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "bk", stepsPerHandle: 5,
+      diagnostics: { emit: (name) => { events.push(name); } } });
+    call.mockRejectedValue(new DomainError("evolution_response_invalid", "bad shape"));
+    service.configure("a", 100);
+    for (let cycle = 0; cycle < 5; cycle++) {
+      breaker.requestRun("a");
+      await breaker.handle("evolution:a");
+    }
+    const state = store.read("a");
+    expect(state.paused).toBe(true);
+    expect(state.reason).toBe("model_response_invalid");
+    expect(state.batch).toBeNull();
+    expect(events).toContain("joi.evolution.breaker_tripped");
+    expect(() => breaker.requestRun("a")).toThrow(); // re-enable first; run-now is not a pause bypass
+    expect(breaker.configure("a", 50).reason).toBe("collecting");
+  });
+  it("pauses a batch-less workbench without consuming the evidence it had already accumulated", async () => {
+    service.configure("a", 100);
+    fixture.database.transaction((db) => {
+      db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('b','B','pb','','','','pb','ACTIVE',?,?)`).run(day, day);
+      for (let i = 0; i < 11; i++) db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,'private','CONSUMED','b',?,?)`).run(`bg${String(i)}`, `bg${String(i)}`, day, day);
+    });
+    for (let i = 0; i < 11; i++) store.recordEvidence({ workbenchId: "b", goalId: `bg${String(i)}`, revisionId: null, outcome: i < 4 ? "VERIFICATION_FAILED" : "VERIFIED", observedAt: day });
+    call.mockRejectedValue(new DomainError("evolution_response_invalid", "bad shape"));
+    const breaker = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "bk2", stepsPerHandle: 5 });
+    for (let cycle = 0; cycle < 5; cycle++) {
+      breaker.requestRun("a");
+      await breaker.handle("evolution:a");
+    }
+    const stopped = store.read("b");
+    expect(stopped.paused).toBe(true);
+    expect(stopped.reason).toBe("model_response_invalid"); // the panel still explains why it stopped
+    expect(stopped.lastBatchFinishedAt).toBeUndefined(); // but no verdict consumed its trigger window
+    expect(breaker.configure("b", 50).reason).toBe("collecting");
+    // Re-enabled, b resumes on the backlog it already had. A trigger stamped at the trip would have
+    // pushed its window past this evidence and left it waiting for failures that already happened.
+    const resumed = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => "2026-09-23T01:00:00.000Z", id: () => "res", stepsPerHandle: 1 });
+    expect(resumed.pending().map((entry) => entry.inputId)).toContain("evolution:b");
+  });
+  it("lets the day's first candidate lock out every other workbench, run-now aside", async () => {
+    service.configure("a", 10);
+    fixture.database.transaction((db) => {
+      db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('b','B','pb','','','','pb','ACTIVE',?,?)`).run(day, day);
+      for (let i = 0; i < 11; i++) db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,'private','CONSUMED','b',?,?)`).run(`bg${String(i)}`, `bg${String(i)}`, day, day);
+    });
+    for (let i = 0; i < 11; i++) store.recordEvidence({ workbenchId: "b", goalId: `bg${String(i)}`, revisionId: null, outcome: i < 4 ? "VERIFICATION_FAILED" : "VERIFIED", observedAt: day });
+    // b holds the stronger local signal, but an explicit run-now on a wins the pick.
+    service.requestRun("a");
+    expect(service.pending().map((entry) => entry.inputId)).toEqual(["evolution:a"]);
+    await service.handle("evolution:a");
+    // The day's candidate slot is spent globally: b never gets one, and a's live batch continues.
+    expect(store.lastCandidateDay()).toBe("2026-09-22");
+    expect(service.pending().map((entry) => entry.inputId)).toEqual(["evolution:a"]);
+    expect(store.read("b").batch).toBeNull();
+  });
+  it("starts a batch on request without waiting for the evidence gate", async () => {
+    fixture.database.transaction((db) => db.prepare("DELETE FROM evolution_evidence").run());
+    service.configure("a", 10);
+    expect(service.pending()).toEqual([]);
+    service.requestRun("a");
+    expect(service.pending()).toHaveLength(1);
+    await service.handle("evolution:a");
+    expect(call).toHaveBeenCalledTimes(1);
+    expect(store.read("a").runRequestedAt).toBeNull(); // consumed by the batch it started
+    // An expired request is a dead letter, not a permanent bypass.
+    store.update("a", (s) => { s.batch = null; s.runRequestedAt = "2026-09-21T00:00:00.000Z"; });
+    expect(service.pending()).toEqual([]);
+    // Paused or disabled workbenches refuse the request outright instead of silently queueing.
+    expect(() => { service.configure("a", 0); service.requestRun("a"); }).toThrow();
+  });
+  it("refuses a run-now request while a batch is in flight instead of buying a second one", async () => {
+    service.configure("a", 10);
+    await service.handle("evolution:a"); // opens a batch and issues its first call
+    expect(store.read("a").batch).not.toBeNull();
+    expect(() => service.requestRun("a")).toThrow(expect.objectContaining({ code: "evolution_run_now_invalid" }));
+    expect(store.read("a").runRequestedAt).toBeNull(); // the refused request leaves nothing queued
+    // The in-flight batch already spent the day's candidate slot: had the request been queued it
+    // would outlive the verdict and open a second batch, so once the batch closes nothing restarts.
+    store.update("a", (s) => { s.batch = null; s.lastBatchFinishedAt = day; });
+    expect(service.pending()).toEqual([]);
+    await service.handle("evolution:a");
+    expect(store.read("a").batch).toBeNull();
+    expect(call).toHaveBeenCalledTimes(1);
+  });
+  it("treats a cancelled handle as crash recovery, not as an infrastructure failure", async () => {
+    service.configure("a", 10);
+    await service.handle("evolution:a"); // one successful read; the rollout stays open
+    call.mockRejectedValue(Object.assign(new Error("canceled"), { name: "AbortError" }));
+    await service.handle("evolution:a");
+    const state = store.read("a");
+    expect(state.batch).not.toBeNull();
+    expect(state.batch?.rollouts).toEqual([]); // only the interrupted attempt is dropped
+    expect(state.parkedDay).toBeUndefined(); // a cancellation must not cost the day's candidate
+    expect(state.callFailures).toBe(0); // nor feed the infrastructure retry budget
+    expect(service.pending()).toHaveLength(1); // still allowed to continue today
+  });
+  it("advances several calls per handle while the slot stays idle", async () => {
+    const multi = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "multi", stepsPerHandle: 5 });
+    multi.configure("a", 100);
+    await multi.handle("evolution:a");
+    expect(call).toHaveBeenCalledTimes(5);
+    expect(multi.status("a").callsUsedToday).toBe(5);
+    expect(store.read("a").batch).not.toBeNull();
   });
   it("freezes merit rejections but lets infrastructure failures retry the same strategy once", async () => {
     service.configure("a", 100);
@@ -213,6 +337,8 @@ describe("evolution execution and budget", () => {
     expect(service.status("a").reason).toBe(reason);
     expect(service.status("a").activeRevisionId).toBeNull();
     expect(service.status("a").versions[0]?.status).toBe("REJECTED");
+    // The verdict statistics survive the finished batch so the panel can show how close it came.
+    expect(service.status("a").lastVerdict?.reason).toBe(reason);
   });
   it("restores the superseded parent and rejects late results after source changes", async () => {
     store.update("a", (s) => { s.revisions = [{ ...revision("parent"), status: "SUPERSEDED" }, { ...revision(), parentRevisionId: "parent" }]; s.activeRevisionId = "r1"; });
@@ -229,14 +355,21 @@ describe("evolution execution and budget", () => {
     // The rollback verdict stamped the trigger; the infrastructure abort leaves that stamp unchanged.
     expect(store.read("a").lastBatchFinishedAt).toBe(day);
   });
-  it("automatically rolls back verification failures only in the first ten monitored goals", () => {
+  it("warns on the first monitored verification failure and rolls back on the second", () => {
     store.update("a", (s) => { s.revisions = [revision()]; s.activeRevisionId = "r1"; });
     fixture.database.transaction((db) => db.prepare("UPDATE evolution_evidence SET revision_id = 'r1' WHERE goal_id = 'g0'").run());
-    service.scan();
-    expect(service.status("a").activeRevisionId).toBeNull();
+    const warnings: RuntimeDiagnosticEventMap["joi.evolution.monitor_warning"][] = [];
+    const watching = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => day, id: () => "w", stepsPerHandle: 1,
+      diagnostics: { emit: (name, fields) => { if (name === "joi.evolution.monitor_warning") warnings.push(fields as unknown as RuntimeDiagnosticEventMap["joi.evolution.monitor_warning"]); } } });
+    watching.scan();
+    expect(service.status("a").activeRevisionId).toBe("r1"); // one unlucky failure does not kill a fresh strategy
+    expect(warnings).toEqual([{ workbenchId: "a", failedCount: 1, threshold: 2 }]);
+    fixture.database.transaction((db) => db.prepare("UPDATE evolution_evidence SET revision_id = 'r1' WHERE goal_id = 'g1'").run());
+    watching.scan();
+    expect(service.status("a").activeRevisionId).toBeNull(); // the second failure in the window reverts
     store.update("a", (s) => { s.paused = false; s.revisions = [{ ...revision(), monitoredGoals: Array.from({length:10}, (_, i) => `old-${String(i)}`) }]; s.activeRevisionId = "r1"; });
     service.scan();
-    expect(service.status("a").activeRevisionId).toBe("r1");
+    expect(service.status("a").activeRevisionId).toBe("r1"); // the window stops growing at ten goals
   });
   it("validates feedback scope and makes emergency stop cancel background calls", () => {
     store.update("a", (s) => { s.revisions = [revision()]; s.activeRevisionId = "r1"; });

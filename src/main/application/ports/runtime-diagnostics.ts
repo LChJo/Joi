@@ -141,6 +141,11 @@ export interface RuntimeDiagnosticEventMap {
     componentName: string;
     errorCode: string;
   };
+  "joi.actor.scan_slow": {
+    componentName: string;
+    durationMs: number;
+    step: string;
+  };
   "joi.actor.failed": {
     actorId: string;
     errorCode: string;
@@ -698,6 +703,33 @@ export interface RuntimeDiagnosticEventMap {
     consecutiveFailures: number;
     parkedDay: string;
     workbenchId: string;
+    /** Bounded identifier for the failure class; the raw message never enters diagnostics. */
+    errorKind: string;
+    /** Structured engine detail when the provider supplied one; absent otherwise. */
+    errorDetail?: string;
+  };
+  /** The model answered, but not with the single well-formed tool call the evaluation contract requires. */
+  "joi.evolution.response_invalid": {
+    callId: string;
+    consecutive: number;
+    workbenchId: string;
+  };
+  /** Every workbench is paused after too many consecutive invalid responses; recovery is manual. */
+  "joi.evolution.breaker_tripped": {
+    consecutive: number;
+    pausedWorkbenches: number;
+  };
+  /** A newly promoted strategy drew one monitored verification failure; rollback needs more than one. */
+  "joi.evolution.monitor_warning": {
+    failedCount: number;
+    threshold: number;
+    workbenchId: string;
+  };
+  "joi.model_source.tool_proof_fallback": {
+    /** The selector's caller label (its first argument), e.g. "evolution". */
+    context: string;
+    provenCount: number;
+    totalCount: number;
   };
 }
 

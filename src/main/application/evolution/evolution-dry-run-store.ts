@@ -60,6 +60,8 @@ export class InMemoryEvolutionStore implements EvolutionStore {
   bindGoal(): string | null { return null; }
   goalRevision(): string | null { return null; }
   idle(): boolean { return true; }
+  /** Single-workbench store, so the "global" candidate day is this state's own value. */
+  lastCandidateDay(): string | null { return this.#state.lastCandidateDay; }
   /** Exposed for the report, so the operator can see which pool the dry run started from. */
   syntheticPool(): { evaluable: number; verificationFailed: number } { return this.evidenceTotals(null); }
 }

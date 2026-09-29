@@ -84,6 +84,7 @@ describe("official native Agent SDK adapters", () => {
     expect(calls[0]?.options).toMatchObject({ allowedTools: ["Read"], includePartialMessages: true, model: "claude-sonnet", pathToClaudeCodeExecutable: "user-claude", systemPrompt: expect.stringContaining("CUSTOM_SYSTEM"), tools: ["Read"] });
     expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("Enabled tools: Read"));
     expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("Disabled tools:"));
+    expect(calls[0]?.options?.systemPrompt).toEqual(expect.stringContaining("keep code comments clean and clear"));
     expect((calls[0]?.options as { env?: Record<string, string> }).env?.ANTHROPIC_API_KEY).toBe("private-key");
     expect(events).toEqual(expect.arrayContaining([
       // The started frame names what kind of action it is. The label comes from the tool name, not
@@ -176,6 +177,7 @@ describe("official native Agent SDK adapters", () => {
     expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("Workspace access: read-only"));
     expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("Network access: enabled"));
     expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("Web search: cached"));
+    expect(clientOptions[0]?.config?.developer_instructions).toEqual(expect.stringContaining("keep code comments clean and clear"));
     expect(JSON.stringify(events)).not.toContain("PRIVATE_COMMAND");
     expect(JSON.stringify(events)).not.toContain("PRIVATE_RESULT");
     expect(traces).toHaveLength(0);

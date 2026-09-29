@@ -1,4 +1,4 @@
-import type { EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
+import type { EvolutionLastVerdict, EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
 
 export interface EvolutionEvidence {
   goalId: string;
@@ -67,6 +67,12 @@ export interface EvolutionState {
   parkedDay?: string | null;
   /** When the last batch reached a verdict. Verdicts consume the evidence trigger; infrastructure aborts do not. */
   lastBatchFinishedAt?: string | null;
+  /** Consecutive invalid model responses on this workbench; reset by any other outcome. Optional: absent in state persisted before this field existed. */
+  responseInvalidStreak?: number;
+  /** Pending run-now request; consumed when a batch starts, stale after EVOLUTION_RUN_NOW_TTL_MILLIS. */
+  runRequestedAt?: string | null;
+  /** Statistics of the most recently finished batch, for the settings panel. */
+  lastVerdict?: EvolutionLastVerdict;
 }
 export interface EvolutionEvidenceSeed {
   goalId: string;
@@ -100,6 +106,12 @@ export interface EvolutionStore {
   bindGoal(workbenchId: string, goalId: string, revisionId: string | null, sourcePin?: EvolutionSourcePin): string | null;
   goalRevision(workbenchId: string, goalId: string): string | null | undefined;
   idle(): boolean;
+  /**
+   * The most recent UTC day on which any ACTIVE workbench created a batch candidate. The ADR allows
+   * one candidate per day in total, not one per workbench, so the gate consults this shared value
+   * instead of each state's own lastCandidateDay. null means no candidate today.
+   */
+  lastCandidateDay(): string | null;
 }
 export interface EvolutionModel {
   pin(): Promise<EvolutionSourcePin>;

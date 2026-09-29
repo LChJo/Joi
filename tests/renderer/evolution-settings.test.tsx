@@ -5,7 +5,7 @@ import { DigitalLifeApi } from "../../src/renderer/api";
 import type { EvolutionStatusDto } from "../../src/shared/evolution";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution";
 
-const status: EvolutionStatusDto = { workbenchId: "a", dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 4, evaluableCount: 2, poolEvaluable: 7, poolVerificationFailed: 2, activeRevisionId: null, reason: "collecting", versions: [] };
+const status: EvolutionStatusDto = { workbenchId: "a", dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 4, evaluableCount: 2, poolEvaluable: 7, poolVerificationFailed: 2, activeRevisionId: null, reason: "collecting", runRequestedAt: null, lastVerdict: null, versions: [] };
 it("starts on the low preset and applies preset changes immediately", async () => {
   const api = new DigitalLifeApi("");
   vi.spyOn(api, "evolutionStatus").mockResolvedValue(status);
@@ -69,6 +69,31 @@ it("dry-runs the pipeline and reports what each phase did", async () => {
   expect(screen.getByText(/开发 30 轮 \/ 90 次调用/u)).toBeInTheDocument();
   expect(screen.getByText(/封存评测 180 轮 \/ 540 次调用/u)).toBeInTheDocument();
   expect(screen.getByText(/合计 721 次合成调用/u)).toBeInTheDocument();
+});
+
+it("queues an immediate run and shows the queued state plus the last verdict", async () => {
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue(status);
+  const runNow = vi.spyOn(api, "runEvolutionNow").mockRejectedValueOnce(new Error("private")).mockResolvedValue({
+    ...status, runRequestedAt: "2026-09-28T09:30:00.000Z",
+    lastVerdict: { reason: "insufficient_gain", at: "2026-09-27T00:00:00.000Z", baselineSuccesses: 85, candidateSuccesses: 87, evaluatedRuns: 180 },
+  });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  await screen.findByText("正在积累可评价的经验");
+  fireEvent.click(screen.getByRole("button", { name: "立即评测一次" }));
+  await screen.findByText("没能发起评测：请确认自动进化未处于暂停或关闭状态。");
+  fireEvent.click(screen.getByRole("button", { name: "立即评测一次" }));
+  await screen.findByText(/已排入队列/u);
+  expect(runNow).toHaveBeenCalledTimes(2);
+  expect(await screen.findByText(/上一轮裁决：改善幅度不足/u)).toBeInTheDocument();
+  expect(screen.getByText(/原策略通过 85 次 \/ 候选通过 87 次/u)).toBeInTheDocument();
+});
+
+it("names the paused state after invalid model responses", async () => {
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, reason: "model_response_invalid" });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  expect(await screen.findByText(/模型响应不符合评测要求，已暂停自动进化/u)).toBeInTheDocument();
 });
 
 it("reports a failed or truncated dry run instead of implying the pipeline is sound", async () => {

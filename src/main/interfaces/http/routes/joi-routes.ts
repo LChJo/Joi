@@ -58,7 +58,11 @@ export const JOI_READ_ROUTES: RouteDefinition[] = [
     id: "GET /api/v1/joi/home-feed",
     match: exact("GET", "/api/v1/joi/home-feed"),
     handle: async (ctx) => {
-      sendJson(ctx.response, 200, await joiHomeFeedService(ctx.dependencies).load());
+      const feed = await joiHomeFeedService(ctx.dependencies).load();
+      sendJson(ctx.response, 200, {
+        ...feed,
+        workbenchChanges: ctx.dependencies.workbenchChanges === undefined ? [] : await ctx.dependencies.workbenchChanges.listPending(),
+      });
     },
   },
   {

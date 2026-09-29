@@ -46,38 +46,76 @@ function mimeType(filename: string): string | undefined {
   return MIME_BY_EXTENSION[path.extname(filename).toLowerCase()];
 }
 
-async function walk(root: string, directory: string, files: Map<string, WorkspaceFileState>): Promise<void> {
+/**
+ * A serial walk leaves the disk idle between every round-trip, which dominates a snapshot on a
+ * large bound repository. The traversal is bounded rather than unlimited so a wide tree cannot
+ * exhaust file handles.
+ */
+const WALK_CONCURRENCY = 64;
+
+/** Hands out a fixed number of slots so only that many filesystem operations are in flight. */
+class WalkLimiter {
+  #available: number;
+  readonly #waiting: (() => void)[] = [];
+
+  constructor(limit: number) {
+    this.#available = limit;
+  }
+
+  async run<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.#available === 0) {
+      await new Promise<void>((resolve) => { this.#waiting.push(resolve); });
+    } else {
+      this.#available -= 1;
+    }
+    try {
+      return await operation();
+    } finally {
+      const next = this.#waiting.shift();
+      if (next === undefined) this.#available += 1;
+      else next();
+    }
+  }
+}
+
+async function walk(root: string, directory: string, files: Map<string, WorkspaceFileState>, limiter: WalkLimiter): Promise<void> {
   let entries;
   try {
-    entries = await readdir(directory, { withFileTypes: true });
+    entries = await limiter.run(() => readdir(directory, { withFileTypes: true }));
   } catch {
     return;
   }
+  const pending: Promise<void>[] = [];
   for (const entry of entries) {
     const candidate = path.join(directory, entry.name);
     if (entry.isDirectory()) {
       if (isIgnoredDirectory(entry.name)) continue;
-      try {
-        const facts = await lstat(candidate);
-        const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");
-        if (relativePath !== "") files.set(relativePath, { kind: "DIRECTORY", mtimeMs: facts.mtimeMs, size: 0 });
-      } catch {
-        continue;
-      }
-      await walk(root, candidate, files);
+      pending.push((async () => {
+        try {
+          const facts = await limiter.run(() => lstat(candidate));
+          const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");
+          if (relativePath !== "") files.set(relativePath, { kind: "DIRECTORY", mtimeMs: facts.mtimeMs, size: 0 });
+        } catch {
+          return;
+        }
+        await walk(root, candidate, files, limiter);
+      })());
       continue;
     }
     if (!entry.isFile()) continue;
-    let facts: Stats;
-    try {
-      facts = await lstat(candidate);
-    } catch {
-      continue;
-    }
-    if (!facts.isFile()) continue;
-    const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");
-    if (relativePath !== "") files.set(relativePath, { kind: "FILE", mtimeMs: facts.mtimeMs, size: facts.size });
+    pending.push((async () => {
+      let facts: Stats;
+      try {
+        facts = await limiter.run(() => lstat(candidate));
+      } catch {
+        return;
+      }
+      if (!facts.isFile()) return;
+      const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");
+      if (relativePath !== "") files.set(relativePath, { kind: "FILE", mtimeMs: facts.mtimeMs, size: facts.size });
+    })());
   }
+  await Promise.all(pending);
 }
 
 export async function captureWorkspaceSnapshot(workspacePath: string | undefined): Promise<WorkspaceSnapshot> {
@@ -91,7 +129,7 @@ export async function captureWorkspaceSnapshot(workspacePath: string | undefined
     return new Map();
   }
   const files = new Map<string, WorkspaceFileState>();
-  await walk(root, root, files);
+  await walk(root, root, files, new WalkLimiter(WALK_CONCURRENCY));
   return files;
 }
 
@@ -109,7 +147,7 @@ export async function collectChangedWorkspaceArtifacts(
     return [];
   }
   const after = new Map<string, WorkspaceFileState>();
-  await walk(root, root, after);
+  await walk(root, root, after, new WalkLimiter(WALK_CONCURRENCY));
   return [...after.entries()]
     .filter(([relativePath, state]) => {
       const previous = before.get(relativePath);

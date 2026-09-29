@@ -365,6 +365,11 @@ export interface JoiHomeFeedDto {
   goals: JoiGoalCardDto[];
   thinking: JoiThinkingItemDto[];
   unassignedActions: JoiAcceptedMessageDto[];
+  /**
+   * Pending workbench confirmations ride along with the feed so the home screen polls one endpoint.
+   * Absent on transports that do not carry them.
+   */
+  workbenchChanges?: WorkbenchChangeRequestDto[];
 }
 
 export type WorkbenchAgentStatusDto = "IDLE" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED" | "UNKNOWN";

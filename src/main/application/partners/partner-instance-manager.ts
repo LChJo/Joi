@@ -218,7 +218,7 @@ export class PartnerInstanceManager {
     const liveProjector = input.onConversation === undefined ? undefined : new NativeAgentEventProjector(this.dependencies.clock);
     const onEvent = liveProjector === undefined ? undefined : async (event: Parameters<NativeAgentEventProjector["apply"]>[0]) => {
       liveProjector.apply(event);
-      await input.onConversation?.({ conversation: liveProjector.snapshot(), instanceId: record.instanceId });
+      await input.onConversation?.({ conversation: () => liveProjector.snapshot(), instanceId: record.instanceId });
     };
     // The engine knows the call but not which instance ran it; the manager supplies the id.
     const onToolTrace = input.onToolTrace === undefined ? undefined : async (trace: ToolTraceDraft) => {

@@ -89,6 +89,16 @@ describe("evolution durable state", () => {
     record("k", "a", "UNEVALUABLE", "2026-09-22T04:00:00.000Z");
     expect(store.evidenceTotals(null)).toEqual({ evaluable: 2, verificationFailed: 1 });
   });
+  it("reports the newest candidate day across active workbenches only", () => {
+    expect(store.lastCandidateDay()).toBeNull();
+    store.update("a", (state) => { state.lastCandidateDay = "2026-09-22"; });
+    store.update("b", (state) => { state.lastCandidateDay = "2026-09-21"; });
+    expect(store.lastCandidateDay()).toBe("2026-09-22");
+    // Archived workbenches keep their state row; a stale "today" on one of them must not hold the
+    // once-per-day candidate lock against every remaining active workbench.
+    fixture.database.transaction((db) => db.prepare("UPDATE workbenches SET status = 'ARCHIVED' WHERE workbench_id = 'a'").run());
+    expect(store.lastCandidateDay()).toBe("2026-09-21");
+  });
   it("writes the model outbox atomically and rolls back failed mutations", () => {
     store.update("a", (state) => { state.call = { id: "evo-call", state: "RUNNING", createdAt: "2026-09-22" }; });
     expect(fixture.database.transaction((db) => db.prepare("SELECT kind,status FROM outbox WHERE outbox_id = 'evo-call'").get())).toMatchObject({ kind: "evolution.model", status: "CLAIMED" });

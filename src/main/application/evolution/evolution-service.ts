@@ -1,9 +1,9 @@
 import { DomainError } from "../../domain/errors.js";
 import { baselineStrategy, composeStrategyInstructions, parseStrategy, promotionDecision } from "../../domain/evolution/strategy.js";
 import { EVOLUTION_EVALUATOR_VERSION, evolutionScenarios, scenarioPrompt, simulateAction } from "../../domain/evolution/scenarios.js";
-import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD, type EvolutionReason, type EvolutionStatusDto } from "../../../shared/evolution.js";
+import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD, EVOLUTION_HANDLE_TIME_BUDGET_MS, EVOLUTION_MAX_STEPS_PER_HANDLE, EVOLUTION_MONITOR_REVERT_THRESHOLD, EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT, EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT, EVOLUTION_RUN_NOW_TTL_MILLIS, type EvolutionReason, type EvolutionStatusDto } from "../../../shared/evolution.js";
 import type { EvolutionBatch, EvolutionEvidence, EvolutionModel, EvolutionRevision, EvolutionRollout, EvolutionSourcePin, EvolutionState, EvolutionStore } from "../ports/evolution.js";
-import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
+import { emitRuntimeDiagnostic, runtimeDiagnosticErrorCode, runtimeDiagnosticErrorDetail, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import { buildJoiSystemPrompt } from "../joi/joi-system-prompt.js";
 
 const MAX_CALLS_PER_ROLLOUT = 6;
@@ -22,10 +22,15 @@ const activeStrategy = (state: EvolutionState) => state.revisions.find((r) => r.
 function finishBatch(state: EvolutionState, reason: EvolutionReason, now: string): void {
   const revision = state.revisions.find((r) => r.revisionId === state.batch?.revisionId);
   if (revision !== undefined) { revision.status = "REJECTED"; revision.reason = reason; }
+  // Keep the outcome counts of the finished batch visible: a rejection that consumed its trigger
+  // window should also show how far from promotion it landed.
+  if (revision !== undefined) state.lastVerdict = { reason, at: now, baselineSuccesses: revision.baselineSuccesses, candidateSuccesses: revision.candidateSuccesses, evaluatedRuns: revision.evaluatedRuns };
   state.reason = reason;
   state.batch = null;
   // A verdict consumes the evidence trigger, so resolved historical failures never re-run daily.
   // Infrastructure aborts (call_failed/model_changed) leave the trigger intact for a later retry.
+  // model_response_invalid is deliberately NOT in that exception: a model that cannot answer the
+  // evaluation contract would otherwise restart a paying batch every day. Recovery is via run-now.
   if (reason !== "call_failed" && reason !== "model_changed") state.lastBatchFinishedAt = now;
 }
 function revert(state: EvolutionState, now: string): void {
@@ -42,7 +47,12 @@ export class EvolutionService {
   #running = new Set<string>();
   #recovered = new Set<string>();
   #gateSignature: string | null = null;
-  constructor(private readonly dependencies: { store: EvolutionStore; model: EvolutionModel; now: () => string; id: () => string; diagnostics?: RuntimeDiagnostics }) {}
+  /** Consecutive invalid responses across all workbenches; any other outcome resets it. In-memory on purpose: the breaker's durable effect is the paused state it writes. */
+  #responseInvalidStreak = 0;
+  #stepsPerHandle: number;
+  constructor(private readonly dependencies: { store: EvolutionStore; model: EvolutionModel; now: () => string; id: () => string; diagnostics?: RuntimeDiagnostics; stepsPerHandle?: number }) {
+    this.#stepsPerHandle = Math.max(1, dependencies.stepsPerHandle ?? EVOLUTION_MAX_STEPS_PER_HANDLE);
+  }
 
   /**
    * Records why a batch was declined. pending() runs on every idle tick, so this emits only when
@@ -70,13 +80,34 @@ export class EvolutionService {
       evaluableCount: evidence.filter(evaluable).length, activeRevisionId: state.activeRevisionId,
       poolEvaluable: pool.evaluable, poolVerificationFailed: pool.verificationFailed,
       reason: state.paused ? state.reason : state.dailyCallLimit === 0 ? "disabled" : used >= state.dailyCallLimit ? "budget_exhausted" : state.reason,
+      runRequestedAt: state.runRequestedAt ?? null,
+      lastVerdict: state.lastVerdict ?? null,
       versions: state.revisions.slice(-30).reverse().map(({ revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns }) =>
         ({ revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns })),
     };
   }
   configure(workbenchId: string, dailyCallLimit: number): EvolutionStatusDto {
     if (!Number.isInteger(dailyCallLimit) || dailyCallLimit < 0 || dailyCallLimit > 10_000) throw new DomainError("evolution_budget_invalid", "Daily call limit must be an integer between 0 and 10000.");
-    this.dependencies.store.update(workbenchId, (state) => { state.dailyCallLimit = dailyCallLimit; state.paused = false; if (state.reason === "disabled" || state.reason === "rolled_back") state.reason = "collecting"; });
+    this.dependencies.store.update(workbenchId, (state) => { state.dailyCallLimit = dailyCallLimit; state.paused = false; if (state.reason === "disabled" || state.reason === "rolled_back" || state.reason === "model_response_invalid") state.reason = "collecting"; });
+    return this.status(workbenchId);
+  }
+  /**
+   * Queue an out-of-band batch start. It bypasses the evidence gate and the once-per-day candidate
+   * lock — that is the point: after a rejection consumed the trigger window, waiting weeks for new
+   * failures is not the only way back. Budget, the idle slot and the revision cap still apply, and
+   * the request expires so a workbench stuck non-idle cannot accumulate a permanent bypass.
+   */
+  requestRun(workbenchId: string): EvolutionStatusDto {
+    const now = this.dependencies.now();
+    // Both guards run inside the write transaction so the check and the write cannot be split. A
+    // batch in flight refuses the request rather than queueing it: the batch-creation branch in
+    // #step is the only place that clears a request, so one set now would survive that batch's
+    // verdict and start a second batch on the same day.
+    this.dependencies.store.update(workbenchId, (state) => {
+      if (state.paused || state.dailyCallLimit === 0) throw new DomainError("evolution_run_now_invalid", "Evolution is paused or disabled; re-enable it before requesting a run.");
+      if (state.batch !== null) throw new DomainError("evolution_run_now_invalid", "A batch is already in flight; wait for its verdict before requesting another run.");
+      state.runRequestedAt = now;
+    });
     return this.status(workbenchId);
   }
   rollback(workbenchId: string, revisionId: string): EvolutionStatusDto {
@@ -162,17 +193,30 @@ export class EvolutionService {
       if (active === undefined || active.monitoredGoals.length >= 10) continue;
       const first = this.dependencies.store.evidence(id).filter((e) => e.revisionId === state.activeRevisionId && evaluable(e) && !active.monitoredGoals.includes(e.goalId))
         .sort((a, b) => a.observedAt.localeCompare(b.observedAt) || a.goalId.localeCompare(b.goalId)).slice(0, 10 - active.monitoredGoals.length);
-      if (first.length > 0) this.dependencies.store.update(id, (s) => {
+      if (first.length === 0) continue;
+      // A single unlucky failure must not kill a fresh strategy; the elimination line is cumulative
+      // across the whole monitored window. Counted outside the transaction from the persisted
+      // classifications, so the read does not nest inside the store's write transaction.
+      const monitored = [...active.monitoredGoals, ...first.map((e) => e.goalId)];
+      const failing = this.dependencies.store.evidence(id).filter((e) => monitored.includes(e.goalId) && e.outcome === "VERIFICATION_FAILED").length;
+      this.dependencies.store.update(id, (s) => {
         required(s.revisions.find((r) => r.revisionId === s.activeRevisionId)).monitoredGoals.push(...first.map((e) => e.goalId));
-        if (first.some((e) => e.outcome === "VERIFICATION_FAILED")) revert(s, this.dependencies.now());
+        if (failing >= EVOLUTION_MONITOR_REVERT_THRESHOLD) revert(s, this.dependencies.now());
       });
+      if (failing > 0 && failing < EVOLUTION_MONITOR_REVERT_THRESHOLD) {
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.monitor_warning",
+          { workbenchId: id, failedCount: failing, threshold: EVOLUTION_MONITOR_REVERT_THRESHOLD });
+      }
     }
   }
   pending(): { inputId: string; createdAt: string }[] {
     const workbenchIds = this.dependencies.store.listWorkbenchIds();
     if (!this.dependencies.store.idle()) { this.#skipGate("not_idle", undefined, workbenchIds.length); return []; }
     const now = this.dependencies.now();
-    const candidates = workbenchIds.filter((id) => this.#eligible(id));
+    // One query per tick, passed down: reading it inside #eligible would re-parse every state's JSON
+    // on every check.
+    const globalCandidateDay = this.dependencies.store.lastCandidateDay();
+    const candidates = workbenchIds.filter((id) => this.#eligible(id, globalCandidateDay));
     if (candidates.length === 0) {
       // The pool is shared, so a single query explains why every workbench declined. Distinguish
       // "not enough evidence yet" from "enough evidence, but every workbench is out of budget,
@@ -183,23 +227,41 @@ export class EvolutionService {
       return [];
     }
     this.#gateSignature = null;
+    // An explicit run-now request outranks the evidence-weighted pick: the user asked for this
+    // workbench, and the weighted choice could otherwise starve it behind a stronger signal.
+    const requested = candidates.filter((id) => EvolutionService.#runNowActive(this.dependencies.store.read(id), now));
+    const pool = requested.length > 0 ? requested : candidates;
     // The trigger pool is global but the revision lands on one workbench, so prefer the workbench
     // whose own goals contributed most to the signal. Tie-break on the id to keep the pick
     // deterministic across restarts.
-    // `candidates` is non-empty here, so reduce without a seed is total and needs no assertion.
-    const strongest = candidates
+    // `pool` is non-empty here, so reduce without a seed is total and needs no assertion.
+    const strongest = pool
       .map((id) => ({ id, weight: this.dependencies.store.evidence(id).filter(evaluable).length }))
       .reduce((best, entry) => (entry.weight > best.weight
         || (entry.weight === best.weight && entry.id.localeCompare(best.id) < 0) ? entry : best));
     return [{ inputId: `evolution:${strongest.id}`, createdAt: now }];
   }
-  #eligible(id: string): boolean {
+  /** A run-now request counts only while it is younger than its TTL; older ones are dead letters. */
+  static #runNowActive(state: EvolutionState, now: string): boolean {
+    const requestedAt = state.runRequestedAt;
+    if (requestedAt === null || requestedAt === undefined) return false;
+    return Date.parse(now) - Date.parse(requestedAt) <= EVOLUTION_RUN_NOW_TTL_MILLIS;
+  }
+  #eligible(id: string, globalCandidateDay: string | null): boolean {
     const state = this.dependencies.store.read(id);
-    const day = dayOf(this.dependencies.now());
+    const now = this.dependencies.now();
+    const day = dayOf(now);
     if (state.paused || state.dailyCallLimit === 0 || (state.usage[day] ?? 0) >= state.dailyCallLimit || this.#running.has(id)) return false;
     if (state.parkedDay === day) return false;
     if (state.batch !== null) return true;
-    if (state.lastCandidateDay === day || state.revisions.length >= 30) return false;
+    if (state.revisions.length >= 30) return false;
+    const requested = EvolutionService.#runNowActive(state, now);
+    // The ADR allows one candidate per day in total, not one per workbench: the first workbench to
+    // open a batch today takes the whole day's slot, so a failing candidate no longer burns a call
+    // on every remaining workbench. An explicit run-now bypasses both this lock and the evidence
+    // gate; the revision cap and the budget checks above still apply.
+    if (!requested && globalCandidateDay === day) return false;
+    if (requested) return true;
     // A verdict consumes its trigger: only evidence observed after the last verdict starts a new
     // batch, so historical failures the pipeline already addressed never re-run evaluation daily.
     // The pool spans every workbench (see evidenceTotals); this workbench's own verdict is the
@@ -207,6 +269,12 @@ export class EvolutionService {
     const totals = this.dependencies.store.evidenceTotals(state.lastBatchFinishedAt ?? null);
     return totals.evaluable >= EVOLUTION_EVIDENCE_THRESHOLD && totals.verificationFailed >= EVOLUTION_FAILURE_THRESHOLD;
   }
+  /**
+   * Advances the batch by up to stepsPerHandle bounded calls instead of exactly one: a batch needs
+   * hundreds of calls, and at the scheduler's 2s cadence a strict one-call-per-handle budget only
+   * ever completes on workbenches that stay idle for weeks. Every step re-checks idleness, so a
+   * user task arriving mid-handle takes the slot back at the next step boundary.
+   */
   async handle(inputId: string, signal?: AbortSignal): Promise<void> {
     if (!inputId.startsWith("evolution:")) return;
     const id = inputId.slice("evolution:".length);
@@ -214,21 +282,51 @@ export class EvolutionService {
     // tick, and user input always wins the single slot.
     if (signal?.aborted === true) { this.#skipGate("aborted"); return; }
     if (!this.dependencies.store.idle()) { this.#skipGate("not_idle"); return; }
-    if (!this.#eligible(id)) { this.#skipGate("no_candidate"); return; }
+    const globalCandidateDay = this.dependencies.store.lastCandidateDay();
+    if (!this.#eligible(id, globalCandidateDay)) { this.#skipGate("no_candidate"); return; }
     this.#running.add(id);
     this.#recovered.add(id);
-    try { await this.#step(id, signal); }
-    catch {
+    const startedAt = Date.now();
+    try {
+      for (let step = 0; step < this.#stepsPerHandle; step += 1) {
+        // The first step runs unconditionally: the entry checks above already passed #eligible, and
+        // the batch it may create does not exist yet, so a continuation check would block it.
+        if (step > 0 && !this.#mayContinue(id, signal, startedAt)) break;
+        // A step that could not claim a call (verdict reached, budget gone, day rolled over) ends
+        // the handle; there is nothing left to advance inside it.
+        if (!await this.#step(id, signal)) break;
+      }
+    } catch (error) {
       this.dependencies.store.update(id, (state) => { this.#failStep(state, dayOf(this.dependencies.now())); });
-      this.#emitCallFailure(id, null);
+      this.#emitCallFailure(id, null, error);
     } finally { this.#running.delete(id); }
   }
-  /** Read back after the transaction commits, so the log reflects persisted state. */
-  #emitCallFailure(id: string, callId: string | null): void {
+  /**
+   * The handle's own continuation gate. Deliberately not #eligible: that method checks #running,
+   * which this handle is holding. Steps stop at the batch's end, the day's budget, an incoming user
+   * task (idle() covers pending inputs and running turns), the wall-clock budget kept well under the
+   * scheduler's 15-minute stalled-turn watchdog, or an abort.
+   */
+  #mayContinue(id: string, signal: AbortSignal | undefined, startedAt: number): boolean {
+    if (signal?.aborted === true) return false;
+    if (Date.now() - startedAt > EVOLUTION_HANDLE_TIME_BUDGET_MS) return false;
+    if (!this.dependencies.store.idle()) return false;
+    const now = this.dependencies.now();
+    const day = dayOf(now);
     const state = this.dependencies.store.read(id);
+    if (state.paused || state.dailyCallLimit === 0 || (state.usage[day] ?? 0) >= state.dailyCallLimit) return false;
+    if (state.parkedDay === day) return false;
+    return state.batch !== null;
+  }
+  /** Read back after the transaction commits, so the log reflects persisted state. */
+  #emitCallFailure(id: string, callId: string | null, error: unknown): void {
+    const state = this.dependencies.store.read(id);
+    const detail = runtimeDiagnosticErrorDetail(error);
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.call_failed", {
       workbenchId: id, callId: callId ?? "unknown", consecutiveFailures: state.callFailures ?? 0,
       parkedDay: state.parkedDay ?? dayOf(this.dependencies.now()),
+      errorKind: runtimeDiagnosticErrorCode(error),
+      ...(detail === undefined ? {} : { errorDetail: detail }),
     });
   }
   /**
@@ -245,21 +343,30 @@ export class EvolutionService {
     if (state.batch.phase !== "PROPOSE" && state.batch.rollouts.at(-1)?.success === undefined) state.batch.rollouts.pop();
     if ((state.callFailures ?? 0) >= MAX_CONSECUTIVE_CALL_FAILURES) finishBatch(state, "call_failed", this.dependencies.now());
   }
-  async #step(id: string, signal?: AbortSignal): Promise<void> {
+  /** Claims one bounded call, runs it and accepts the result. True when a call was actually issued. */
+  async #step(id: string, signal?: AbortSignal): Promise<boolean> {
     const pin = await this.dependencies.model.pin();
-    if (signal?.aborted === true || !this.dependencies.store.idle()) return;
+    if (signal?.aborted === true || !this.dependencies.store.idle()) return false;
     const now = this.dependencies.now();
     const day = dayOf(now);
     const evidenceIds = this.dependencies.store.evidence(id).filter(evaluable).slice(0, 30).map((e) => e.goalId);
     const call = this.dependencies.store.update(id, (state) => {
       if (state.paused || (state.usage[day] ?? 0) >= state.dailyCallLimit) return null;
       if (state.batch === null) {
-        if (state.lastCandidateDay === day) return null;
+        // A pending run-now request also bypasses the once-per-day candidate lock here: the gate
+        // above already admitted it, and a request that could not actually start a batch would be
+        // silently swallowed by this check on a day when a batch already ran.
+        const requested = state.runRequestedAt !== null && state.runRequestedAt !== undefined;
+        if (state.lastCandidateDay === day && !requested) return null;
         const batchId = this.dependencies.id();
         const active = state.revisions.find((r) => r.revisionId === state.activeRevisionId);
         const baseline = active !== undefined && JSON.stringify(active.pin) === JSON.stringify(pin) && active.evaluatorVersion === EVOLUTION_EVALUATOR_VERSION ? activeStrategy(state) : baselineStrategy;
         state.batch = { id: batchId, evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentStrategy: baseline, parentRevisionId: state.activeRevisionId, strategy: baseline, pin, phase: "DEVELOP", evidenceIds, rollouts: [] };
         state.lastCandidateDay = day;
+        // The run-now request is consumed by the batch it started; the response streak belongs to
+        // the previous batch and says nothing about the new one.
+        state.runRequestedAt = null;
+        state.responseInvalidStreak = 0;
       }
       if (JSON.stringify(state.batch.pin) !== JSON.stringify(pin) || state.batch.evaluatorVersion !== EVOLUTION_EVALUATOR_VERSION) { finishBatch(state, "model_changed", now); return null; }
       const batch = state.batch;
@@ -275,7 +382,7 @@ export class EvolutionService {
       state.reason = "evaluating";
       return { batch: structuredClone(batch), history: state.developmentHistory, id: callId };
     });
-    if (call === null) return;
+    if (call === null) return false;
     this.dependencies.store.update(id, (state) => { required(state.call).state = "RUNNING"; });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.batch_step_started",
       { workbenchId: id, batchId: call.batch.id, callId: call.id, phase: call.batch.phase });
@@ -287,18 +394,79 @@ export class EvolutionService {
         if (state.call?.id !== call.id) return;
         state.call.state = "DONE";
         state.callFailures = 0;
+        state.responseInvalidStreak = 0;
         if (state.batch?.id !== call.batch.id || state.paused || state.dailyCallLimit === 0) return;
         if (!stillPinned) { finishBatch(state, "model_changed", now); return; }
         if (call.batch.phase === "PROPOSE") this.#acceptProposal(state, result, now);
         else this.#acceptSimulation(state, result, now);
       });
-    } catch {
+      this.#responseInvalidStreak = 0;
+    } catch (error) {
+      const kind = EvolutionService.#classifyStepFailure(error, signal);
+      let consecutive = 0;
       this.dependencies.store.update(id, (state) => {
-        if (state.call?.id === call.id) state.call.state = "DONE";
-        this.#failStep(state, day);
+        if (state.call?.id !== call.id) return;
+        state.call.state = "DONE";
+        if (kind === "response_invalid") {
+          // The provider answered, so the call was consumed — but this is a model-quality signal,
+          // not an infrastructure fault: retry the same rollout tomorrow-grade rather than parking
+          // the day, and only abandon the batch after the retry limit.
+          state.responseInvalidStreak = (state.responseInvalidStreak ?? 0) + 1;
+          consecutive = state.responseInvalidStreak;
+          if (state.responseInvalidStreak >= EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT) finishBatch(state, "model_response_invalid", now);
+        } else if (kind === "aborted") {
+          // Crash-recovery semantics: keep the batch and every completed trial, drop only the
+          // interrupted attempt, and leave parkedDay and callFailures alone — a user cancelling
+          // must not cost the workbench its daily candidate.
+          if (state.batch?.phase !== "PROPOSE" && state.batch?.rollouts.at(-1)?.success === undefined) state.batch?.rollouts.pop();
+          state.reason = "call_failed";
+        } else {
+          this.#failStep(state, day);
+        }
       });
-      this.#emitCallFailure(id, call.id);
+      if (kind === "response_invalid") {
+        this.#responseInvalidStreak += 1;
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.response_invalid",
+          { workbenchId: id, callId: call.id, consecutive });
+        if (this.#responseInvalidStreak >= EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT) this.#tripBreaker();
+      } else {
+        this.#responseInvalidStreak = 0;
+        this.#emitCallFailure(id, call.id, error);
+      }
     }
+    return true;
+  }
+  static #classifyStepFailure(error: unknown, signal: AbortSignal | undefined): "response_invalid" | "aborted" | "infra" {
+    if (signal?.aborted === true) return "aborted";
+    if (error instanceof DomainError && error.code === "evolution_response_invalid") return "response_invalid";
+    if (error instanceof Error && error.name === "AbortError") return "aborted";
+    return "infra";
+  }
+  /**
+   * Too many consecutive invalid responses across every workbench mean the pinned model cannot meet
+   * the evaluation contract at all; continuing would just keep paying for rejections. Pausing is the
+   * durable effect (it survives restarts); recovery is a manual configure() once the model source
+   * has been fixed, or run-now afterwards.
+   */
+  #tripBreaker(): void {
+    this.#responseInvalidStreak = 0;
+    const now = this.dependencies.now();
+    let paused = 0;
+    for (const id of this.dependencies.store.listWorkbenchIds()) {
+      this.dependencies.store.update(id, (state) => {
+        // Only a batch in flight has a verdict to record. Finishing a batch-less state would stamp
+        // its evidence trigger with no verdict behind it, discarding the backlog it accumulated
+        // before the breaker tripped — so a workbench re-enabled through configure() would sit idle
+        // waiting for fresh failures instead of resuming on the ones it already had.
+        if (state.batch === null) state.reason = "model_response_invalid";
+        else finishBatch(state, "model_response_invalid", now);
+        state.paused = true;
+        state.responseInvalidStreak = 0;
+        paused += 1;
+      });
+    }
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.breaker_tripped",
+      { consecutive: EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT, pausedWorkbenches: paused });
   }
   #ensureRollout(batch: EvolutionBatch): void {
     if (batch.rollouts.at(-1)?.success === undefined && batch.rollouts.length > 0) return;
@@ -398,6 +566,7 @@ export class EvolutionService {
     revision.status = "ACTIVE"; revision.reason = "promoted";
     state.activeRevisionId = revision.revisionId; state.reason = "promoted"; state.batch = null;
     state.lastBatchFinishedAt = now;
+    state.lastVerdict = { reason: "promoted", at: now, baselineSuccesses: revision.baselineSuccesses, candidateSuccesses: revision.candidateSuccesses, evaluatedRuns: revision.evaluatedRuns };
   }
   get evaluatorVersion(): string { return EVOLUTION_EVALUATOR_VERSION; }
 }
