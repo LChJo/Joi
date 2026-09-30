@@ -843,6 +843,32 @@ describe("SqliteJoiHarnessRepository", () => {
         .toMatchObject({ goalId: "goal-self-heal", status: "FAILED" });
     });
 
+    it("does not report a BLOCKED outcome as settled failure while a replacement work still runs", async () => {
+      // The shape a review-arranged recovery leaves behind: the latest outcome reads BLOCKED, but
+      // the replacement Work answering it is already RUNNING. The card must read supplementary
+      // execution here — FAILED would hold until the Work ends while the progress line next to it
+      // still counts it as in progress.
+      const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-blocked-extending", status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId: "goal-blocked-extending", now: NOW });
+      seedCompletedLayer(fixture, "goal-blocked-extending", 1, "BLOCKED");
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_harness_maps SET reviewed_revision = 1 WHERE goal_input_id = 'goal-blocked-extending'").run();
+        connection.prepare(`INSERT INTO work_items
+          (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+          VALUES ('work-blocked-extending', ?, 'goal-blocked-extending', 'replacement audit', '{}', 'READ', 'RUNNING', ?, ?)`)
+          .run(workbenchId, NOW, NOW);
+      });
+
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
+        .toMatchObject({ canDelete: false, goalId: "goal-blocked-extending", status: "EXTENDING" });
+
+      // Once the replacement settles without overturning the block, the failure is the truth.
+      fixture.database.transaction((connection) => connection.prepare(`UPDATE work_items
+        SET status = 'COMPLETED', updated_at = ? WHERE work_id = 'work-blocked-extending'`).run(NOW));
+      expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
+        .toMatchObject({ goalId: "goal-blocked-extending", status: "FAILED" });
+    });
+
     it("does not let historical review recovery quarantine a goal owned by work recovery", async () => {
       const goalInputId = "goal-recovery-owns-blocked";
       const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });

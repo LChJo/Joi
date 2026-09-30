@@ -8,7 +8,7 @@ AC-57 全文导出与安卓诊断入口：[规格与设备待验](19-result-expo
 
 AC-57 原生 stdio 协议回归：`native/joi-remote/tests/sidecar_contract.rs` 必须启动真实 sidecar，以桌面 camelCase 命令验证 ready、QUIC peerOpen/peerFrame、send 回包、close/peerClose 与 shutdown；Rust 枚举同时指定 variant 与 field 的 camelCase。可选 relayUrl/relayAuthentication 有独立反序列化断言，防止静默丢弃配置。桌面原生构建在复制可执行文件前强制运行该契约，模拟 sidecar 测试不作为跨语言兼容证据。
 
-AC-57 的 2026-09-07 首页增量证据：`remote-home-queries.test.ts` 覆盖能力命令校验、目标解析与游标失效/连接隔离；`remote-command-service.test.ts` 覆盖工作台透传、动作映射和 Unicode 长结果有界分页；`sqlite-workbench-agent-feed.test.ts` 覆盖同实例跨目标记录隔离；Flutter `widget_test.dart` 覆盖工作台发送、详情/产物/记录、回答/继续/移除和草稿保留，`remote_session_test.dart` 覆盖真实加密帧顺序、幂等键复用、成功回执与刷新分离及旧主机兼容。下表初版两命令限制由 ADR 0013 的 `home.v2` 增量取代；真机网络与多设备验收仍待执行。
+AC-57 的 2026-09-07 首页增量证据：`remote-home-queries.test.ts` 覆盖能力命令校验、目标解析与游标失效/连接隔离；`remote-command-service.test.ts` 覆盖工作台透传、动作映射和 Unicode 长结果有界分页；`sqlite-workbench-agent-feed.test.ts` 覆盖同实例跨目标记录隔离；Flutter `widget_test.dart` 覆盖工作台发送、详情/产物/记录、回答/继续/移除和草稿保留，`remote_session_test.dart` 覆盖真实加密帧顺序、幂等键复用、成功回执与刷新分离及旧主机兼容。2026-09-30 增量由 `joi-home-single-entry.test.tsx` 覆盖桌面新增入口层级，`remote-command-service.test.ts` / `remote-home-queries.test.ts` 覆盖 `inputId` 绑定的受限创建、字段校验与越界拒绝，Flutter `widget_test.dart` / `remote_session_test.dart` 覆盖 capability 门禁、建议方案、加密创建命令、恢复原输入及部分失败提示。下表初版两命令限制由 ADR 0013 的 `home.v2` 增量取代；真机网络与多设备验收仍待执行。
 
 ## JOI-01 验收追踪（目标架构）
 

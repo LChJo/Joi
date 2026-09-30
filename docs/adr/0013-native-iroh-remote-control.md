@@ -1,5 +1,12 @@
 # ADR 0013: Android 原生控制端复用 iroh 直连与中继
 
+## 2026-09-30：工作台归属卡受限创建
+
+- 握手新增独立 `workbench.create` capability；旧主机仍可使用 `home.v2`，手机不会展示一个不受支持的创建入口。
+- `workbench.create` 只接受建议方案所需的 `name/personaSummary/projectLabel/scopeSummary` 和当前 `inputId`。主机必须先确认该输入仍处于 `CLARIFICATION_REQUIRED`，且原因属于工作台选择/创建/未找到；其他状态、原因和超长字段一律拒绝。
+- 创建复用应用层 `WorkbenchRegistryService`，回包只含 `workbenchId/name/scopeSummary/updatedAt`。手机随后通过既有 `message.clarify` 恢复同一输入；若创建已成功而恢复失败，新工作台保留在本地目录中并提示用户选择它继续，客户端不自动重放创建动作。
+- 这是首页工作台归属澄清的窄入口，不是远程工作台管理：不开放任意创建表单、编辑、归档、工作目录、文件或设置命令。
+
 ## 2026-09-07：首页能力增量
 
 - 握手可选能力 `home.v2`；无该能力的桌面继续使用旧版 feed/send。

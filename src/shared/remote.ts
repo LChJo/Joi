@@ -51,6 +51,7 @@ export type RemoteCommand =
   | { kind: "goal.get" | "goal.agents"; requestId: string; goalId: string; cursor?: string }
   | { kind: "agent.conversation"; requestId: string; goalId: string; agentId: string; cursor?: string }
   | { kind: "read.next"; requestId: string; cursor: string }
+  | { kind: "workbench.create"; requestId: string; inputId: string; name: string; personaSummary: string; projectLabel: string; scopeSummary: string }
   | { idempotencyKey: string; kind: "message.send"; requestId: string; text: string; workbenchId?: string }
   | { kind: "message.retry"; requestId: string; inputId: string; text?: string }
   | { kind: "message.clarify"; requestId: string; inputId: string; text?: string; workbenchId?: string; partnerId?: string; questionId?: string; questionVersion?: number; actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT" }
@@ -62,11 +63,18 @@ export interface RemoteReadPage {
   nextCursor?: string;
 }
 
+export interface RemoteWorkbenchDto {
+  name: string;
+  scopeSummary: string;
+  updatedAt: string;
+  workbenchId: string;
+}
+
 export interface RemoteCommandResponse {
   error?: { code: string; message: string };
   kind: "response";
   requestId: string;
-  result?: JoiAcceptedMessageDto | JoiHomeFeedDto | RemoteReadPage;
+  result?: JoiAcceptedMessageDto | JoiHomeFeedDto | RemoteReadPage | RemoteWorkbenchDto;
 }
 
 export interface RemoteEncryptedFrame {

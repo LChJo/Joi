@@ -71,6 +71,14 @@ describe("remote home queries", () => {
     expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", actionChoice: "CONTINUE", questionId: "q-1", questionVersion: 3 })).toBe(true);
     expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", questionId: "", questionVersion: 1 })).toBe(false);
     expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", questionId: "q-1", questionVersion: 0 })).toBe(false);
+    expect(isRemoteCommand({
+      inputId: "g", kind: "workbench.create", requestId: "r", name: "研究工作台", personaSummary: "专注研究与核验。",
+      projectLabel: "研究", scopeSummary: "研究资料与结论。",
+    })).toBe(true);
+    expect(isRemoteCommand({
+      inputId: "g", kind: "workbench.create", requestId: "r", name: "x".repeat(81), personaSummary: "专注研究与核验。",
+      projectLabel: "研究", scopeSummary: "研究资料与结论。",
+    })).toBe(false);
     expect(isRemoteCommand({ kind: "file.read", requestId: "r", inputId: "g" })).toBe(false);
   });
 });

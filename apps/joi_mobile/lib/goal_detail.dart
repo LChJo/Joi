@@ -57,8 +57,8 @@ String actFailureNotice(Object error) {
     return switch (error.code) {
       'joi_clarification_unavailable' => '这张卡片已经不需要回答了，下拉刷新看看最新状态。',
       'joi_retry_unavailable' => '这个任务现在不能继续，下拉刷新看看最新状态。',
-      'joi_workbench_invalid' || 'joi_partner_selection_invalid' =>
-        '你选的工作台或搭档已经不可用了，请重新选择。',
+      'joi_workbench_invalid' ||
+      'joi_partner_selection_invalid' => '你选的工作台或搭档已经不可用了，请重新选择。',
       'remote_operation_forbidden' => '这版 joi 还不支持这个操作，请在电脑端完成。',
       'remote_read_busy' || 'remote_cursor_expired' => 'joi 正在忙，稍后重试。',
       _ => 'joi 没有接受这个操作（${error.code}）。下拉刷新看看最新状态。',
@@ -75,6 +75,90 @@ String actFailureNotice(Object error) {
   }
   return '操作未完成，请刷新查看最新状态后重试。输入已保留。';
 }
+
+class WorkbenchProposal {
+  const WorkbenchProposal({
+    required this.description,
+    required this.name,
+    required this.personaSummary,
+    required this.projectLabel,
+    required this.scopeSummary,
+  });
+
+  final String description;
+  final String name;
+  final String personaSummary;
+  final String projectLabel;
+  final String scopeSummary;
+}
+
+List<WorkbenchProposal> workbenchProposals(String seed) {
+  final cleaned = seed
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAll(RegExp(r'''[「」"'`]'''), '')
+      .trim();
+  final runes = cleaned.runes.toList();
+  final label = cleaned.isEmpty
+      ? '当前任务'
+      : runes.length > 18
+      ? '${String.fromCharCodes(runes.take(18))}…'
+      : cleaned;
+  return [
+    WorkbenchProposal(
+      description: '按这条输入隔离上下文，由 joi 持续整理目标、资料和执行结果。',
+      name: '$label 工作台',
+      personaSummary: '由 joi 维护长期上下文，先确认事实，再安排可验证的执行。',
+      projectLabel: label,
+      scopeSummary: '围绕“$label”的目标、资料与执行过程。',
+    ),
+    const WorkbenchProposal(
+      description: '适合 SDK、API、应用开发和调试，保留连续的工程上下文。',
+      name: 'AI 应用开发工作台',
+      personaSummary: '关注 SDK/API 集成、应用开发和可验证交付，保持工程上下文连续。',
+      projectLabel: 'AI 应用开发',
+      scopeSummary: 'Claude Code、SDK、API 集成、应用开发与调试。',
+    ),
+    const WorkbenchProposal(
+      description: '适合 monitor、告警、性能和线上问题，集中沉淀排查结论。',
+      name: '监控与可观测性工作台',
+      personaSummary: '优先建立可观察事实，谨慎分析告警、性能和线上行为，不把猜测当结论。',
+      projectLabel: '监控与可观测性',
+      scopeSummary: 'monitor、日志、告警、性能分析和线上问题排查。',
+    ),
+  ];
+}
+
+Future<WorkbenchProposal?> chooseWorkbenchProposal(
+  BuildContext context,
+  String seed,
+) => showModalBottomSheet<WorkbenchProposal>(
+  context: context,
+  isScrollControlled: true,
+  useSafeArea: true,
+  builder: (context) => Padding(
+    padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('新增工作台', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 4),
+        const Text('选择一个建议方案，joi 会创建工作台并继续这条输入。'),
+        const SizedBox(height: 12),
+        for (final proposal in workbenchProposals(seed))
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: ListTile(
+              title: Text(proposal.name),
+              subtitle: Text(proposal.description),
+              trailing: const Icon(Icons.add_rounded),
+              onTap: () => Navigator.pop(context, proposal),
+            ),
+          ),
+      ],
+    ),
+  ),
+);
 
 class _GoalActionsState extends State<GoalActions> {
   final _draft = TextEditingController();
@@ -123,6 +207,42 @@ class _GoalActionsState extends State<GoalActions> {
       }
     } catch (error) {
       if (mounted) setState(() => _notice = actFailureNotice(error));
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _createAndAct(WorkbenchProposal proposal) async {
+    if (_busy) return;
+    RemoteChoice? created;
+    setState(() {
+      _busy = true;
+      _notice = null;
+    });
+    try {
+      created = await widget.controller.createWorkbench(
+        inputId: widget.goal.goalId,
+        name: proposal.name,
+        personaSummary: proposal.personaSummary,
+        projectLabel: proposal.projectLabel,
+        scopeSummary: proposal.scopeSummary,
+      );
+      await widget.controller.act(
+        widget.goal.goalId,
+        'clarify',
+        workbenchId: created.id,
+        questionId: widget.goal.questionId,
+        questionVersion: widget.goal.questionVersion,
+      );
+      if (mounted) widget.onChanged?.call();
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _notice = created == null
+              ? actFailureNotice(error)
+              : '工作台已创建，但这条任务还没有继续。请点“选择工作台继续”，选择刚创建的“${created.name}”。';
+        });
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -179,24 +299,46 @@ class _GoalActionsState extends State<GoalActions> {
           if (directory) const Text('请回到桌面为工作台选择工作目录，然后继续。'),
           if (historical) const Text('请确认历史工作已结束，再安全收尾。'),
           if (workbench || partner)
-            TextButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final choice = await chooseRemote(
-                        context,
-                        workbench ? '选择工作台' : '选择搭档',
-                        workbench ? state.workbenches : state.partners,
-                      );
-                      if (choice != null && mounted) {
-                        await _act(
-                          'clarify',
-                          workbenchId: workbench ? choice.id : null,
-                          partnerId: partner ? choice.id : null,
-                        );
-                      }
-                    },
-              child: Text(workbench ? '选择工作台继续' : '选择搭档继续'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton(
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final choice = await chooseRemote(
+                            context,
+                            workbench ? '选择工作台' : '选择搭档',
+                            workbench ? state.workbenches : state.partners,
+                          );
+                          if (choice != null && mounted) {
+                            await _act(
+                              'clarify',
+                              workbenchId: workbench ? choice.id : null,
+                              partnerId: partner ? choice.id : null,
+                            );
+                          }
+                        },
+                  child: Text(workbench ? '选择工作台继续' : '选择搭档继续'),
+                ),
+                if (workbench && state.supportsWorkbenchCreation)
+                  FilledButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final proposal = await chooseWorkbenchProposal(
+                              context,
+                              goal.title,
+                            );
+                            if (proposal != null && mounted) {
+                              await _createAndAct(proposal);
+                            }
+                          },
+                    icon: const Icon(Icons.add_rounded),
+                    label: const Text('新增工作台'),
+                  ),
+              ],
             ),
           if (resume)
             FilledButton(

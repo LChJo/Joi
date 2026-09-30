@@ -236,7 +236,7 @@
 .joi-clarify-workbench-option:disabled { opacity: .6; cursor: default; }
 .joi-clarify-workbench-option strong { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .joi-clarify-workbench-option span { display: -webkit-box; min-width: 0; overflow: hidden; color: var(--muted); font-size: .76rem; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
-.joi-clarify-new-workbench { justify-self: start; }
+.joi-clarify-new-workbench { justify-self: start; box-shadow: 0 6px 16px color-mix(in srgb, var(--forest-dark) 20%, transparent); }
 .joi-clarify-chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .joi-clarify-chip {
   border: 1px solid var(--line-strong); border-radius: 999px; background: var(--paper-strong);

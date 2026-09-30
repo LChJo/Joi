@@ -88,8 +88,13 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   // state even when the goal still owns planned work from an earlier attempt.
   if (text(row, "inbox_status") === "PENDING") return "ARRANGING";
   const activeMap = harness?.mapStatus === "ACTIVE";
-  if (blockedOutcome) return "FAILED";
+  // Work still on the floor is the review's answer to a BLOCKED outcome: the replacement it
+  // arranged is already running, so the goal is in supplementary execution, not settled. Reporting
+  // FAILED here would call a goal joi is still executing a finished failure and hold the badge
+  // until that Work ends, while the progress line next to it reads "进行中". Only a BLOCKED
+  // outcome with nothing left running is the settled failure this arm exists to report.
   if (activeMap && harness.reviewedRevision > 0 && number(row, "work_active") > 0) return "EXTENDING";
+  if (blockedOutcome) return "FAILED";
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0) return "ARRANGED";
   if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";

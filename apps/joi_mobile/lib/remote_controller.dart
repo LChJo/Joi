@@ -81,6 +81,7 @@ class RemoteGoalCard {
   final String? summary;
   final String? prompt;
   final String? reasonCode;
+
   /// The question this card advertises. The server refuses to resolve a clarification whose
   /// question does not match, so the answer has to travel back with it.
   final String? questionId;
@@ -148,6 +149,7 @@ class RemoteViewState {
     this.path = RemoteConnectionPath.none,
     this.sending = false,
     this.supportsHome = false,
+    this.supportsWorkbenchCreation = false,
     this.workbenches = const [],
     this.partners = const [],
     this.busyGoals = const {},
@@ -160,6 +162,7 @@ class RemoteViewState {
   final RemoteConnectionPath path;
   final bool sending;
   final bool supportsHome;
+  final bool supportsWorkbenchCreation;
   final List<RemoteChoice> workbenches;
   final List<RemoteChoice> partners;
   final Set<String> busyGoals;
@@ -171,6 +174,7 @@ class RemoteViewState {
     RemoteConnectionPath? path,
     bool? sending,
     bool? supportsHome,
+    bool? supportsWorkbenchCreation,
     List<RemoteChoice>? workbenches,
     List<RemoteChoice>? partners,
     Set<String>? busyGoals,
@@ -183,6 +187,8 @@ class RemoteViewState {
     path: path ?? this.path,
     sending: sending ?? this.sending,
     supportsHome: supportsHome ?? this.supportsHome,
+    supportsWorkbenchCreation:
+        supportsWorkbenchCreation ?? this.supportsWorkbenchCreation,
     workbenches: workbenches ?? this.workbenches,
     partners: partners ?? this.partners,
     busyGoals: busyGoals ?? this.busyGoals,
@@ -199,6 +205,13 @@ abstract interface class RemoteController implements Listenable {
   Future<void> refresh();
 
   Future<void> sendMessage(String text, {String? workbenchId});
+  Future<RemoteChoice> createWorkbench({
+    required String inputId,
+    required String name,
+    required String personaSummary,
+    required String projectLabel,
+    required String scopeSummary,
+  });
   Future<Map<String, dynamic>> read(
     String kind, {
     String? goalId,
@@ -239,6 +252,14 @@ class PlaceholderRemoteController extends ChangeNotifier
 
   @override
   Future<void> sendMessage(String text, {String? workbenchId}) async {}
+  @override
+  Future<RemoteChoice> createWorkbench({
+    required String inputId,
+    required String name,
+    required String personaSummary,
+    required String projectLabel,
+    required String scopeSummary,
+  }) async => RemoteChoice('', name, scopeSummary);
   @override
   Future<Map<String, dynamic>> read(
     String kind, {

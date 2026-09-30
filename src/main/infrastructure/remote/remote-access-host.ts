@@ -86,6 +86,8 @@ export function isRemoteCommand(value: unknown): value is RemoteCommand {
   if (!string("requestId")) return false;
   if (item.kind === "feed.get") return item.paged === undefined || typeof item.paged === "boolean";
   if (item.kind === "catalog.get") return true;
+  if (item.kind === "workbench.create") return string("inputId") && string("name", 80) && string("personaSummary", 4_000)
+    && string("projectLabel", 160) && string("scopeSummary", 1_000);
   if (item.kind === "read.next") return string("cursor", 240);
   if (item.kind === "goal.get" || item.kind === "goal.agents" || item.kind === "agent.conversation") {
     return string("goalId") && string("cursor", 240, true) && (item.kind !== "agent.conversation" || string("agentId"));
@@ -389,7 +391,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       await this.#touchDevice(value.deviceId);
     }
     await this.#send(session.connectionId, {
-      capabilities: ["home.v2"],
+      capabilities: ["home.v2", "workbench.create"],
       hostNonce,
       kind: "handshake.ready",
       proof: remoteReadyProof(secret, context, hostNonce),

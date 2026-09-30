@@ -1,5 +1,6 @@
 import type { JoiInboxService } from "../joi/joi-inbox-service.js";
 import type { JoiHomeFeedService } from "../joi/joi-home-feed-service.js";
+import type { WorkbenchRegistryService } from "../joi/workbench-registry-service.js";
 import type { RemoteCommand, RemoteCommandResponse, RemoteReadPage } from "../../../shared/remote.js";
 import { DomainError } from "../../domain/errors.js";
 import { sanitizeAgentConversationText } from "../partners/agent-conversation-presentation.js";
@@ -27,7 +28,8 @@ export class RemoteCommandService {
   readonly #pages = new Map<string, { scope: string; body: string; offset: number; expires: number }>();
   constructor(private readonly dependencies: {
     homeFeed: Pick<JoiHomeFeedService, "load">;
-    inbox: Pick<JoiInboxService, "accept"> & Partial<Pick<JoiInboxService, "clarify" | "retry" | "cancel" | "dismiss" | "closeHistoricalReview">>;
+    inbox: Pick<JoiInboxService, "accept"> & Partial<Pick<JoiInboxService, "list" | "clarify" | "retry" | "cancel" | "dismiss" | "closeHistoricalReview">>;
+    workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     queries?: RemoteHomeQueries;
     now?: () => number;
   }) {}
@@ -50,6 +52,22 @@ export class RemoteCommandService {
       if (c.kind === "goal.get" && queries !== undefined) return { ...base, result: this.#page(await queries.goal(c.goalId), scope) };
       if (c.kind === "goal.agents" && queries !== undefined) return { ...base, result: this.#page(await queries.agents(c.goalId, c.cursor), scope) };
       if (c.kind === "agent.conversation" && queries !== undefined) return { ...base, result: this.#page(await queries.conversation(c.goalId, c.agentId, c.cursor), scope) };
+      if (c.kind === "workbench.create" && this.dependencies.workbenchRegistry !== undefined) {
+        const messages = await this.dependencies.inbox.list?.() ?? [];
+        const pending = messages.find((message) => message.inputId === c.inputId);
+        if (pending?.status !== "CLARIFICATION_REQUIRED" || ![
+          "workbench_selection_invalid", "workbench_creation_unavailable", "workbench_not_found",
+        ].includes(pending.clarificationReasonCode ?? "")) {
+          throw new DomainError("joi_clarification_unavailable", "This input is not awaiting a workbench choice.");
+        }
+        const workbench = await this.dependencies.workbenchRegistry.create({
+          name: c.name, personaSummary: c.personaSummary, projectLabel: c.projectLabel, scopeSummary: c.scopeSummary,
+        });
+        return { ...base, result: {
+          name: workbench.profile.name, scopeSummary: workbench.profile.scopeSummary,
+          updatedAt: workbench.updatedAt, workbenchId: workbench.workbenchId,
+        } };
+      }
       if (c.kind === "message.send" && typeof c.text === "string" && typeof c.idempotencyKey === "string") {
         return { ...base, result: safeResult(await this.dependencies.inbox.accept({
           idempotencyKey: c.idempotencyKey, text: c.text.trim(),

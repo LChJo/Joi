@@ -465,6 +465,52 @@ class NativeRemoteController extends ChangeNotifier
     }
   }
 
+  @override
+  Future<RemoteChoice> createWorkbench({
+    required String inputId,
+    required String name,
+    required String personaSummary,
+    required String projectLabel,
+    required String scopeSummary,
+  }) async {
+    if (!_state.supportsWorkbenchCreation) {
+      throw StateError('remote_upgrade_required');
+    }
+    final generation = _generation;
+    final response = await _sendCommand({
+      'kind': 'workbench.create',
+      'requestId': _requestId('workbench'),
+      'inputId': inputId,
+      'name': name,
+      'personaSummary': personaSummary,
+      'projectLabel': projectLabel,
+      'scopeSummary': scopeSummary,
+    });
+    final result = response['result'];
+    if (generation != _generation || result is! Map<String, dynamic>) {
+      throw StateError('remote_read_invalid');
+    }
+    final workbenchId = result['workbenchId'];
+    final resultName = result['name'];
+    if (workbenchId is! String || resultName is! String) {
+      throw StateError('remote_read_invalid');
+    }
+    final choice = RemoteChoice(
+      workbenchId,
+      resultName,
+      result['scopeSummary'] as String? ?? '',
+    );
+    _setState(
+      _state.copyWith(
+        workbenches: [
+          ..._state.workbenches.where((item) => item.id != choice.id),
+          choice,
+        ],
+      ),
+    );
+    return choice;
+  }
+
   Future<void> _refreshSafely() async {
     final generation = _generation;
     try {
@@ -804,6 +850,9 @@ class NativeRemoteController extends ChangeNotifier
           supportsHome:
               value['capabilities'] is List &&
               (value['capabilities'] as List).contains('home.v2'),
+          supportsWorkbenchCreation:
+              value['capabilities'] is List &&
+              (value['capabilities'] as List).contains('workbench.create'),
           sending: false,
           busyGoals: {},
         ),

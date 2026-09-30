@@ -22,6 +22,52 @@ describe("RemoteCommandService", () => {
     expect(accept).toHaveBeenCalledWith({ text: "hello", idempotencyKey: "same-key", workbenchId: "bench-1" });
   });
 
+  it("creates a workbench through the narrow remote command and returns only its safe summary", async () => {
+    const create = vi.fn().mockResolvedValue({
+      createdAt: "2026-09-30T00:00:00.000Z",
+      memory: { namespaceId: "private-memory" },
+      profile: { name: "AI 应用开发工作台", personaRevisionId: "private-persona", personaSummary: "private persona", scopeSummary: "SDK 与 API 调试" },
+      project: { label: "AI 应用开发" },
+      taskContext: { activeWorkIds: [], summary: "private task context" },
+      updatedAt: "2026-09-30T00:00:00.000Z",
+      workbenchId: "workbench-new",
+    });
+    const service = new RemoteCommandService({
+      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), list: vi.fn().mockResolvedValue([{
+        acceptedAt: "2026-09-30T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid",
+        inputId: "goal", status: "CLARIFICATION_REQUIRED",
+      }]) }, workbenchRegistry: { create },
+    } as never);
+
+    await expect(service.handle({
+      inputId: "goal", kind: "workbench.create", requestId: "create-workbench", name: "AI 应用开发工作台",
+      personaSummary: "关注 SDK/API 集成、应用开发和可验证交付。", projectLabel: "AI 应用开发",
+      scopeSummary: "SDK 与 API 调试",
+    } as never)).resolves.toEqual({
+      kind: "response", requestId: "create-workbench",
+      result: { name: "AI 应用开发工作台", scopeSummary: "SDK 与 API 调试", updatedAt: "2026-09-30T00:00:00.000Z", workbenchId: "workbench-new" },
+    });
+    expect(create).toHaveBeenCalledWith({
+      name: "AI 应用开发工作台", personaSummary: "关注 SDK/API 集成、应用开发和可验证交付。",
+      projectLabel: "AI 应用开发", scopeSummary: "SDK 与 API 调试",
+    });
+  });
+
+  it("refuses remote workbench creation outside an active workbench clarification", async () => {
+    const create = vi.fn();
+    const service = new RemoteCommandService({
+      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), list: vi.fn().mockResolvedValue([{
+        acceptedAt: "2026-09-30T00:00:00.000Z", inputId: "goal", status: "PENDING",
+      }]) }, workbenchRegistry: { create },
+    } as never);
+
+    await expect(service.handle({
+      inputId: "goal", kind: "workbench.create", requestId: "create-workbench", name: "越界工作台",
+      personaSummary: "不应创建。", projectLabel: "越界", scopeSummary: "不应创建。",
+    } as never)).resolves.toMatchObject({ error: { code: "joi_clarification_unavailable" } });
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("pages long read results without splitting Unicode and binds cursors to the connection", async () => {
     const feed = { goals: [], thinking: [], unassignedActions: [], text: "中文😀\n".repeat(30_000) };
     const service = new RemoteCommandService({ homeFeed: { load: vi.fn().mockResolvedValue(feed) }, inbox: { accept: vi.fn() } });

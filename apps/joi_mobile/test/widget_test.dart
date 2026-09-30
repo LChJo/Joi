@@ -10,6 +10,7 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
   final List<String> sentMessages = [];
   final List<String?> sentWorkbenches = [];
   final List<Map<String, Object?>> actions = [];
+  final List<Map<String, String>> createdWorkbenches = [];
   bool failSend = false;
   final RemoteViewState _state;
 
@@ -30,7 +31,26 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
   }
 
   @override
+  Future<RemoteChoice> createWorkbench({
+    required String inputId,
+    required String name,
+    required String personaSummary,
+    required String projectLabel,
+    required String scopeSummary,
+  }) async {
+    createdWorkbenches.add({
+      'inputId': inputId,
+      'name': name,
+      'personaSummary': personaSummary,
+      'projectLabel': projectLabel,
+      'scopeSummary': scopeSummary,
+    });
+    return RemoteChoice('workbench-new', name, scopeSummary);
+  }
+
+  @override
   void setForeground(bool value) {}
+
   /// Set to make the next action fail the way the real controller does.
   Object? actError;
   @override
@@ -337,6 +357,92 @@ void main() {
     expect(controller.sentMessages, isEmpty);
   });
 
+  testWidgets('creates a suggested workbench from a workbench clarification', (
+    tester,
+  ) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+        supportsWorkbenchCreation: true,
+        workbenches: [RemoteChoice('existing', '已有工作台')],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalActions(
+            controller: controller,
+            goal: const RemoteGoalCard(
+              goalId: 'g',
+              title: '调试 AI 应用',
+              status: 'NEEDS_ATTENTION',
+              reasonCode: 'workbench_selection_invalid',
+              activeWork: 0,
+              completedWork: 0,
+              totalWork: 0,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('选择工作台继续'), findsOneWidget);
+    expect(find.text('新增工作台'), findsOneWidget);
+    await tester.tap(find.text('新增工作台'));
+    await tester.pumpAndSettle();
+    expect(find.text('AI 应用开发工作台'), findsOneWidget);
+    expect(find.text('监控与可观测性工作台'), findsOneWidget);
+    expect(find.text('调试 AI 应用 工作台'), findsOneWidget);
+    await tester.tap(find.text('AI 应用开发工作台'));
+    await tester.pumpAndSettle();
+
+    expect(controller.createdWorkbenches.single['projectLabel'], 'AI 应用开发');
+    expect(controller.actions.single, containsPair('action', 'clarify'));
+    expect(
+      controller.actions.single,
+      containsPair('workbenchId', 'workbench-new'),
+    );
+  });
+
+  testWidgets(
+    'keeps a created workbench selectable when resuming the goal fails',
+    (tester) async {
+      final controller = FakeRemoteController(
+        const RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+          supportsWorkbenchCreation: true,
+        ),
+      )..actError = const RemoteActionFailure('joi_clarification_unavailable');
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: GoalActions(
+              controller: controller,
+              goal: const RemoteGoalCard(
+                goalId: 'g',
+                title: '移动端任务',
+                status: 'NEEDS_ATTENTION',
+                reasonCode: 'workbench_selection_invalid',
+                activeWork: 0,
+                completedWork: 0,
+                totalWork: 0,
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('新增工作台'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('AI 应用开发工作台'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('工作台已创建'), findsOneWidget);
+      expect(find.textContaining('选择工作台继续'), findsWidgets);
+    },
+  );
+
   testWidgets('answers a goal continuation with the question the card advertised', (
     tester,
   ) async {
@@ -371,7 +477,10 @@ void main() {
     await tester.pump();
     // The server refuses to resolve a clarification whose question does not match the card it is
     // answering, so a decision sent without these came back as joi_clarification_unavailable.
-    expect(controller.actions.single, containsPair('questionId', 'goal_question:g:v1'));
+    expect(
+      controller.actions.single,
+      containsPair('questionId', 'goal_question:g:v1'),
+    );
     expect(controller.actions.single, containsPair('questionVersion', 1));
   });
 

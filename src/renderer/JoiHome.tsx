@@ -1,7 +1,7 @@
 import { ResultExportMenu } from './ResultExportMenu';
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ClockIcon, XIcon } from "@phosphor-icons/react";
+import { ClockIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -40,7 +40,7 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
       const field = form.get(key);
       return typeof field === "string" ? field : "";
     };
-    // An empty box means "use the recommended value": the field is left out entirely rather than
+    // An empty choice means "use the recommended value": the field is left out entirely rather than
     // sent as 0, so the provider preset keeps applying.
     const numeric = (key: string): number | undefined => {
       const raw = value(key).trim();
@@ -123,10 +123,10 @@ export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; change
       <label>API Key{selected === "generic-openai" ? "（本机 localhost 可留空）" : ""}<input autoComplete="off" name="apiKey" required={selected !== "generic-openai"} type="password" /></label>
       <details className="model-source-advanced">
         <summary>高级设置（可选）</summary>
-        <p className="model-source-hint">留空就用该模型的推荐值。上下文窗口与最大输出按模型厂商文档填写；填高了会被服务商拒绝，joi 记下它报出的上限后会临时下调，重启恢复。</p>
-        <label>上下文窗口（tokens）<input inputMode="numeric" max={10000000} min={4096} name="contextWindow" placeholder="留空使用推荐值" step={1024} type="number" /></label>
-        <label>最大输出（tokens）<input inputMode="numeric" max={1000000} min={256} name="maxOutputTokens" placeholder="留空使用推荐值" step={1024} type="number" /></label>
-        <label>用到窗口的百分之多少时压缩会话<input inputMode="numeric" max={95} min={50} name="compactionThresholdPercent" placeholder="推荐 85" step={5} type="number" /></label>
+        <p className="model-source-hint">留空就用该模型的推荐值。上下文窗口与最大输出按模型厂商文档选择；选大了会被服务商拒绝，joi 记下它报出的上限后会临时下调，重启恢复。</p>
+        <label>上下文窗口（tokens）<select defaultValue="" name="contextWindow">{limitOptions(CONTEXT_WINDOW_TIERS)}</select></label>
+        <label>最大输出（tokens）<select defaultValue="" name="maxOutputTokens">{limitOptions(MAX_OUTPUT_TIERS)}</select></label>
+        <label>用到窗口的百分之多少时压缩会话<select defaultValue="" name="compactionThresholdPercent">{limitOptions(COMPACTION_TIERS, undefined, "%")}</select></label>
         <label>思考强度
           <select defaultValue="" name="thinkingEffort">
             <option value="">默认（跟随 joi 判定）</option>
@@ -193,6 +193,66 @@ function thinkingEffortOptions() {
   return THINKING_EFFORTS.map((value) => <option key={value} value={value}>{THINKING_EFFORT_LABELS[value]}</option>);
 }
 
+interface LimitTier {
+  label: string;
+  value: number;
+}
+
+/**
+ * The tiers the token fields offer. A hand-typed figure is unchecked until a real run is refused,
+ * and a refused run is what the user gets instead of an answer — so the sizes joi already reasons
+ * about (its own reserve, the direct and gateway output caps, the windows vendors document) are
+ * offered as choices rather than as a box that invites an arbitrary number.
+ *
+ * The window ladder is decimal and the output ladder binary because that is how each is documented
+ * in practice. Decimal is also safe by construction: a decimal figure is never above the
+ * same-labelled power of two, so picking "128K" here cannot exceed a route that accepts 128 Ki.
+ */
+const CONTEXT_WINDOW_TIERS: readonly LimitTier[] = [
+  { label: "1M", value: 1_000_000 },
+  { label: "500K", value: 500_000 },
+  { label: "200K", value: 200_000 },
+  { label: "128K", value: 128_000 },
+  { label: "100K", value: 100_000 },
+  { label: "64K", value: 64_000 },
+  { label: "32K", value: 32_000 },
+];
+
+const MAX_OUTPUT_TIERS: readonly LimitTier[] = [
+  { label: "128K", value: 131_072 },
+  { label: "64K", value: 65_536 },
+  { label: "32K", value: 32_768 },
+  { label: "16K", value: 16_384 },
+  { label: "8K", value: 8_192 },
+  { label: "4K", value: 4_096 },
+];
+
+const COMPACTION_TIERS: readonly LimitTier[] = [
+  { label: "50%", value: 50 },
+  { label: "60%", value: 60 },
+  { label: "70%", value: 70 },
+  { label: "75%", value: 75 },
+  { label: "80%", value: 80 },
+  { label: "85%（推荐）", value: 85 },
+  { label: "90%", value: 90 },
+  { label: "95%", value: 95 },
+];
+
+/**
+ * A tier list as options, preceded by the source's own figure whenever the tiers do not name it.
+ * Without that entry a select can only submit one of its own options, so merely opening the form
+ * and saving would rewrite a limit the user never touched.
+ */
+function limitOptions(tiers: readonly LimitTier[], current?: number, unit = "") {
+  const kept = current === undefined || tiers.some((tier) => tier.value === current)
+    ? []
+    : [{ label: `${String(current)}${unit}（当前值）`, value: current }];
+  return <>
+    <option value="">留空使用推荐值</option>
+    {[...kept, ...tiers].map((tier) => <option key={tier.value} value={tier.value}>{tier.label}</option>)}
+  </>;
+}
+
 export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
   const [sources, setSources] = useState<JoiSnapshotDto["modelSources"]>([]);
   const [partners, setPartners] = useState<PartnerDto[]>([]);
@@ -238,7 +298,7 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
       const value = form.get(name);
       return typeof value === "string" ? value.trim() : "";
     };
-    // An emptied box must be sent as an explicit null. The revision table is append-only and the
+    // "Leave blank" must be sent as an explicit null. The revision table is append-only and the
     // service carries unchanged values forward, so merely omitting the field would keep the old
     // value and there would be no way back to the provider default.
     const numericPatch = (name: string, key: string) => {
@@ -288,10 +348,10 @@ export function ModelSourceManager({ api }: { api: DigitalLifeApi }) {
         <label>替换 API Key（留空则保留）<input autoComplete="off" name="apiKey" type="password" /></label>
         <details className="model-source-advanced">
           <summary>高级设置</summary>
-          <p className="model-source-hint">清空即回到该模型的推荐值。压缩阈值只影响 joi 主会话，对搭档与编码线路不生效。改动 Model ID 会重置这四项。模型始终思考、不支持关闭思考时（如 glm-5.3-flash），请在低/中/高/极高/最高中选择。</p>
-          <label>上下文窗口（tokens）<input defaultValue={source.activeModel.contextWindow ?? ""} inputMode="numeric" max={10000000} min={4096} name="contextWindow" placeholder="留空使用推荐值" step={1024} type="number" /></label>
-          <label>最大输出（tokens）<input defaultValue={source.activeModel.maxOutputTokens ?? ""} inputMode="numeric" max={1000000} min={256} name="maxOutputTokens" placeholder="留空使用推荐值" step={1024} type="number" /></label>
-          <label>压缩阈值（窗口百分比）<input defaultValue={source.activeModel.compactionThresholdPercent ?? ""} inputMode="numeric" max={95} min={50} name="compactionThresholdPercent" placeholder="推荐 85" step={5} type="number" /></label>
+          <p className="model-source-hint">选「留空使用推荐值」即回到该模型的推荐值。压缩阈值只影响 joi 主会话，对搭档与编码线路不生效。改动 Model ID 会重置这四项。模型始终思考、不支持关闭思考时（如 glm-5.3-flash），请在低/中/高/极高/最高中选择。</p>
+          <label>上下文窗口（tokens）<select defaultValue={source.activeModel.contextWindow ?? ""} name="contextWindow">{limitOptions(CONTEXT_WINDOW_TIERS, source.activeModel.contextWindow)}</select></label>
+          <label>最大输出（tokens）<select defaultValue={source.activeModel.maxOutputTokens ?? ""} name="maxOutputTokens">{limitOptions(MAX_OUTPUT_TIERS, source.activeModel.maxOutputTokens)}</select></label>
+          <label>压缩阈值（窗口百分比）<select defaultValue={source.activeModel.compactionThresholdPercent ?? ""} name="compactionThresholdPercent">{limitOptions(COMPACTION_TIERS, source.activeModel.compactionThresholdPercent, "%")}</select></label>
           <label>思考强度
             <select defaultValue={source.activeModel.thinkingEffort ?? ""} name="thinkingEffort">
               <option value="">默认（跟随 joi 判定）</option>
@@ -961,7 +1021,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
             <strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span>
           </button>)}
         </div>
-        <button className="joi-clarify-chip joi-clarify-new-workbench" disabled={busy} onClick={() => { setCreatingWorkbench(true); setNotice(null); }} type="button">新增工作台</button>
+        <button className="button primary joi-clarify-new-workbench" disabled={busy} onClick={() => { setCreatingWorkbench(true); setNotice(null); }} type="button"><PlusIcon aria-hidden size={16} />新增工作台</button>
       </div>
       {creatingWorkbench ? <section aria-label="joi 建议的工作台方案" className="joi-clarify-proposals">
         <div><strong>joi 建议了几个工作台方案</strong><span>选择一个后，joi 会直接创建并继续这条输入。</span></div>

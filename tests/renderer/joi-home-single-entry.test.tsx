@@ -630,6 +630,53 @@ describe("joi home single entry", () => {
     })));
   });
 
+  it("sends a chosen tier from the create form's advanced section", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([]));
+    const generic = { ...readySource, baseUrl: "http://127.0.0.1:11434/v1", displayName: "本机", kind: "generic-openai" as const, status: "DRAFT" as const };
+    const create = vi.spyOn(api, "createModelSource").mockResolvedValue(generic);
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(generic);
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接 通用平台" }));
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI-compatible" }));
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "本机" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "http://127.0.0.1:11434/v1" } });
+    fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "local-model" } });
+    // The section opens on "use the recommended value"; a picked tier is what has to reach the
+    // service, and its figure is the tier's own rather than whatever a box happened to hold.
+    fireEvent.change(screen.getByLabelText("上下文窗口（tokens）"), { target: { value: "200000" } });
+    fireEvent.change(screen.getByLabelText("最大输出（tokens）"), { target: { value: "32768" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("API Key（本机 localhost 可留空）")));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      contextWindow: 200_000, maxOutputTokens: 32_768,
+    })));
+  });
+
+  it("offers the token limits as tiers and keeps a figure the tiers do not name", async () => {
+    const api = new DigitalLifeApi("");
+    const generic = {
+      ...readySource, accessMode: "custom" as const,
+      activeModel: { ...readySource.activeModel, contextWindow: 999_424, id: "old-model", maxOutputTokens: 119_040 },
+      baseUrl: "https://old.example/v1", displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(generic);
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    const windowTier = screen.getByLabelText("上下文窗口（tokens）");
+    // A select can only submit one of its own options, so a revision sized by hand has to keep an
+    // entry of its own: otherwise merely opening this form and saving would rewrite a limit nobody
+    // touched. The tiers themselves are the sizes joi already sizes requests against.
+    expect(windowTier).toHaveValue("999424");
+    expect(screen.getByRole("option", { name: "999424（当前值）" })).toBeInTheDocument();
+    expect(within(windowTier).getByRole("option", { name: "1M" })).toHaveValue("1000000");
+    fireEvent.change(windowTier, { target: { value: "500000" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", expect.objectContaining({
+      contextWindow: 500_000, maxOutputTokens: 119_040,
+    })));
+  });
+
   it("renders a human-readable label for every model-source status", async () => {
     const api = new DigitalLifeApi("");
     const states: ModelSourceDto["status"][] = ["DRAFT", "VALIDATING", "DEGRADED", "NEEDS_AUTH", "DISABLED"];
@@ -1828,7 +1875,9 @@ describe("joi home single entry", () => {
     const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "proposal-1", status: "PENDING" });
     render(<JoiHome api={api} />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
+    const createWorkbenchButton = await screen.findByRole("button", { name: "新增工作台" });
+    expect(createWorkbenchButton).toHaveClass("button", "primary");
+    fireEvent.click(createWorkbenchButton);
     expect(await screen.findByText("joi 建议了几个工作台方案")).toBeInTheDocument();
     expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /AI 应用开发工作台/u }));
