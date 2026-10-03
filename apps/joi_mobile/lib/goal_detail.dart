@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'remote_controller.dart';
+import 'workbench_suggestions.dart';
 import 'home_screen.dart';
 
 class MessageBody extends StatelessWidget {
@@ -76,62 +77,20 @@ String actFailureNotice(Object error) {
   return '操作未完成，请刷新查看最新状态后重试。输入已保留。';
 }
 
-class WorkbenchProposal {
-  const WorkbenchProposal({
-    required this.description,
-    required this.name,
-    required this.personaSummary,
-    required this.projectLabel,
-    required this.scopeSummary,
-  });
+List<WorkbenchMatchSource> _matchSources(List<RemoteChoice> workbenches) =>
+    [
+      for (final workbench in workbenches)
+        WorkbenchMatchSource(
+          name: workbench.name,
+          scopeSummary: workbench.description,
+          workbenchId: workbench.id,
+        ),
+    ];
 
-  final String description;
-  final String name;
-  final String personaSummary;
-  final String projectLabel;
-  final String scopeSummary;
-}
-
-List<WorkbenchProposal> workbenchProposals(String seed) {
-  final cleaned = seed
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .replaceAll(RegExp(r'''[「」"'`]'''), '')
-      .trim();
-  final runes = cleaned.runes.toList();
-  final label = cleaned.isEmpty
-      ? '当前任务'
-      : runes.length > 18
-      ? '${String.fromCharCodes(runes.take(18))}…'
-      : cleaned;
-  return [
-    WorkbenchProposal(
-      description: '按这条输入隔离上下文，由 joi 持续整理目标、资料和执行结果。',
-      name: '$label 工作台',
-      personaSummary: '由 joi 维护长期上下文，先确认事实，再安排可验证的执行。',
-      projectLabel: label,
-      scopeSummary: '围绕“$label”的目标、资料与执行过程。',
-    ),
-    const WorkbenchProposal(
-      description: '适合 SDK、API、应用开发和调试，保留连续的工程上下文。',
-      name: 'AI 应用开发工作台',
-      personaSummary: '关注 SDK/API 集成、应用开发和可验证交付，保持工程上下文连续。',
-      projectLabel: 'AI 应用开发',
-      scopeSummary: 'Claude Code、SDK、API 集成、应用开发与调试。',
-    ),
-    const WorkbenchProposal(
-      description: '适合 monitor、告警、性能和线上问题，集中沉淀排查结论。',
-      name: '监控与可观测性工作台',
-      personaSummary: '优先建立可观察事实，谨慎分析告警、性能和线上行为，不把猜测当结论。',
-      projectLabel: '监控与可观测性',
-      scopeSummary: 'monitor、日志、告警、性能分析和线上问题排查。',
-    ),
-  ];
-}
-
-Future<WorkbenchProposal?> chooseWorkbenchProposal(
+Future<WorkbenchSuggestion?> chooseWorkbenchSuggestion(
   BuildContext context,
-  String seed,
-) => showModalBottomSheet<WorkbenchProposal>(
+  List<WorkbenchSuggestion> suggestions,
+) => showModalBottomSheet<WorkbenchSuggestion>(
   context: context,
   isScrollControlled: true,
   useSafeArea: true,
@@ -141,18 +100,22 @@ Future<WorkbenchProposal?> chooseWorkbenchProposal(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('新增工作台', style: Theme.of(context).textTheme.titleLarge),
+        Text('归到哪里', style: Theme.of(context).textTheme.titleLarge),
         const SizedBox(height: 4),
-        const Text('选择一个建议方案，joi 会创建工作台并继续这条输入。'),
+        const Text('优先复用已有工作台；都不合适时再新建一个工作范围。'),
         const SizedBox(height: 12),
-        for (final proposal in workbenchProposals(seed))
+        for (final suggestion in suggestions)
           Card(
             clipBehavior: Clip.antiAlias,
             child: ListTile(
-              title: Text(proposal.name),
-              subtitle: Text(proposal.description),
-              trailing: const Icon(Icons.add_rounded),
-              onTap: () => Navigator.pop(context, proposal),
+              title: Text(suggestion.name),
+              subtitle: Text(suggestion.description),
+              trailing: Icon(
+                suggestion.reusesExisting
+                    ? Icons.subdirectory_arrow_right_rounded
+                    : Icons.add_rounded,
+              ),
+              onTap: () => Navigator.pop(context, suggestion),
             ),
           ),
       ],
@@ -165,6 +128,12 @@ class _GoalActionsState extends State<GoalActions> {
   bool _showContinue = false;
   bool _busy = false;
   String? _notice;
+
+  /// A workbench this card already created. Remembered so a retry binds it instead of minting a
+  /// duplicate — the host returns `bound: false` when the input had already moved on, and that is
+  /// recoverable by selecting the workbench, not by creating a second one.
+  RemoteWorkbenchCreation? _createdWorkbench;
+
   @override
   void dispose() {
     _draft.dispose();
@@ -212,35 +181,49 @@ class _GoalActionsState extends State<GoalActions> {
     }
   }
 
-  Future<void> _createAndAct(WorkbenchProposal proposal) async {
+  /// Apply a picked candidate: reuse an existing workbench, or create the suggested cluster.
+  Future<void> _applySuggestion(WorkbenchSuggestion suggestion) async {
     if (_busy) return;
-    RemoteChoice? created;
+    final existing = suggestion.workbenchId;
+    if (existing != null) {
+      // Reuse never needs a creation step, so it cannot half-succeed.
+      await _act('clarify', workbenchId: existing);
+      return;
+    }
+    if (_createdWorkbench?.name == suggestion.name) {
+      await _act('clarify', workbenchId: _createdWorkbench!.id);
+      return;
+    }
     setState(() {
       _busy = true;
       _notice = null;
     });
     try {
-      created = await widget.controller.createWorkbench(
+      final created = await widget.controller.createWorkbench(
         inputId: widget.goal.goalId,
-        name: proposal.name,
-        personaSummary: proposal.personaSummary,
-        projectLabel: proposal.projectLabel,
-        scopeSummary: proposal.scopeSummary,
+        name: suggestion.name,
+        personaSummary: suggestion.personaSummary,
+        projectLabel: suggestion.projectLabel,
+        scopeSummary: suggestion.scopeSummary,
       );
-      await widget.controller.act(
-        widget.goal.goalId,
-        'clarify',
-        workbenchId: created.id,
-        questionId: widget.goal.questionId,
-        questionVersion: widget.goal.questionVersion,
-      );
-      if (mounted) widget.onChanged?.call();
+      if (!mounted) return;
+      if (created.bound) {
+        _createdWorkbench = null;
+        widget.onChanged?.call();
+        return;
+      }
+      // The workbench exists; the input had already moved past awaiting one. Selecting it is the
+      // way forward, so say that instead of reporting a failure the user cannot act on.
+      setState(() {
+        _createdWorkbench = created;
+        _notice = '「${created.name}」已创建，但这条卡片已经不等待归属了。请在「选择工作台继续」里选它。';
+      });
     } catch (error) {
       if (mounted) {
         setState(() {
-          _notice = created == null
+          _notice = _createdWorkbench == null
               ? actFailureNotice(error)
-              : '工作台已创建，但这条任务还没有继续。请点“选择工作台继续”，选择刚创建的“${created.name}”。';
+              : '「${_createdWorkbench!.name}」已经建好了，请在「选择工作台继续」里选它。';
         });
       }
     } finally {
@@ -327,16 +310,19 @@ class _GoalActionsState extends State<GoalActions> {
                     onPressed: busy
                         ? null
                         : () async {
-                            final proposal = await chooseWorkbenchProposal(
+                            final suggestion = await chooseWorkbenchSuggestion(
                               context,
-                              goal.title,
+                              workbenchSuggestions(
+                                seed: goal.title,
+                                workbenches: _matchSources(state.workbenches),
+                              ),
                             );
-                            if (proposal != null && mounted) {
-                              await _createAndAct(proposal);
+                            if (suggestion != null && mounted) {
+                              await _applySuggestion(suggestion);
                             }
                           },
                     icon: const Icon(Icons.add_rounded),
-                    label: const Text('新增工作台'),
+                    label: const Text('归到哪里'),
                   ),
               ],
             ),

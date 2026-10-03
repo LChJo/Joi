@@ -957,6 +957,25 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
   letter-spacing: -.03em;
 }
 
+/* The setup journey embeds the same model network gate as its final step; it keeps the page
+   framing there, so it must not bring the standalone gate's full-viewport height and headline. */
+.setup-copy > .joi-network-gate {
+  width: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 28px;
+  justify-content: flex-start;
+  gap: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--paper);
+}
+.setup-copy > .joi-network-gate h1 {
+  font-size: clamp(1.75rem, 4vw, 2.4rem);
+  line-height: 1.15;
+  letter-spacing: -.03em;
+}
+
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 74px minmax(0, 1fr); }
   .sidebar { padding-inline: 9px; }.brand-bar { justify-content: center; padding-inline: 0; }.brand-bar > span:last-child, .sidebar nav span, .sidebar footer span:not(.stream-indicator) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }.sidebar nav button { justify-content: center; }.sidebar footer { justify-content: center; }.sidebar footer .icon-button { display: none; }

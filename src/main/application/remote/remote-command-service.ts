@@ -28,7 +28,7 @@ export class RemoteCommandService {
   readonly #pages = new Map<string, { scope: string; body: string; offset: number; expires: number }>();
   constructor(private readonly dependencies: {
     homeFeed: Pick<JoiHomeFeedService, "load">;
-    inbox: Pick<JoiInboxService, "accept"> & Partial<Pick<JoiInboxService, "list" | "clarify" | "retry" | "cancel" | "dismiss" | "closeHistoricalReview">>;
+    inbox: Pick<JoiInboxService, "accept"> & Partial<Pick<JoiInboxService, "attachWorkbench" | "clarify" | "retry" | "cancel" | "dismiss" | "closeHistoricalReview">>;
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     queries?: RemoteHomeQueries;
     now?: () => number;
@@ -53,18 +53,19 @@ export class RemoteCommandService {
       if (c.kind === "goal.agents" && queries !== undefined) return { ...base, result: this.#page(await queries.agents(c.goalId, c.cursor), scope) };
       if (c.kind === "agent.conversation" && queries !== undefined) return { ...base, result: this.#page(await queries.conversation(c.goalId, c.agentId, c.cursor), scope) };
       if (c.kind === "workbench.create" && this.dependencies.workbenchRegistry !== undefined) {
-        const messages = await this.dependencies.inbox.list?.() ?? [];
-        const pending = messages.find((message) => message.inputId === c.inputId);
-        if (pending?.status !== "CLARIFICATION_REQUIRED" || ![
-          "workbench_selection_invalid", "workbench_creation_unavailable", "workbench_not_found",
-        ].includes(pending.clarificationReasonCode ?? "")) {
-          throw new DomainError("joi_clarification_unavailable", "This input is not awaiting a workbench choice.");
-        }
+        // Creating a workbench is a deliberate user action, so it is not gated on the card still
+        // being on screen: the phone creates and binds in one request, and a card that moved on
+        // in between must not turn into an error the user cannot act on. Binding is what can
+        // legitimately fail, and `bound` reports that instead of failing the creation.
         const workbench = await this.dependencies.workbenchRegistry.create({
           name: c.name, personaSummary: c.personaSummary, projectLabel: c.projectLabel, scopeSummary: c.scopeSummary,
         });
+        const attached = c.bindInputId === undefined
+          ? undefined
+          : await this.dependencies.inbox.attachWorkbench?.({ inputId: c.bindInputId, workbenchId: workbench.workbenchId });
+        const bound = attached !== undefined && attached !== null;
         return { ...base, result: {
-          name: workbench.profile.name, scopeSummary: workbench.profile.scopeSummary,
+          bound, name: workbench.profile.name, scopeSummary: workbench.profile.scopeSummary,
           updatedAt: workbench.updatedAt, workbenchId: workbench.workbenchId,
         } };
       }

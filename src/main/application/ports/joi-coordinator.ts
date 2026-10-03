@@ -52,5 +52,14 @@ export interface ReasoningFailureClassifier {
 }
 
 export interface WorkbenchRoutingRuntime {
-  decide(input: { workbenches: WorkbenchSummary[]; input: string; repair: boolean }): Promise<unknown>;
+  /**
+   * `route` picks among the listed workbenches and may create one; `abstract` is asked only after
+   * routing failed, and must name a durable cluster rather than pick or restate the request.
+   */
+  decide(input: {
+    workbenches: WorkbenchSummary[];
+    input: string;
+    mode?: "abstract" | "route";
+    repair: boolean;
+  }): Promise<unknown>;
 }

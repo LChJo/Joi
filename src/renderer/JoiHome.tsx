@@ -7,6 +7,7 @@ import remarkGfm from "remark-gfm";
 
 import { MODEL_SOURCE_CHOICES, THINKING_EFFORTS, THINKING_EFFORT_LABELS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
+import { workbenchSuggestions, type WorkbenchSuggestion } from "../shared/workbench-suggestions";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const SAFE_MARKDOWN_COMPONENTS: Components = {
@@ -848,42 +849,6 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
   </section>;
 }
 
-interface WorkbenchProposal {
-  description: string;
-  name: string;
-  personaSummary: string;
-  projectLabel: string;
-  scopeSummary: string;
-}
-
-function workbenchProposals(seed?: string): WorkbenchProposal[] {
-  const cleaned = seed?.replace(/\s+/gu, " ").replace(/[「」"'`]/gu, "").trim();
-  const label = cleaned === undefined || cleaned === "" ? "当前任务" : cleaned.length > 18 ? `${cleaned.slice(0, 18)}…` : cleaned;
-  return [
-    {
-      description: "按这条输入隔离上下文，由 joi 持续整理目标、资料和执行结果。",
-      name: `${label} 工作台`,
-      personaSummary: "由 joi 维护长期上下文，先确认事实，再安排可验证的执行。",
-      projectLabel: label,
-      scopeSummary: `围绕“${label}”的目标、资料与执行过程。`,
-    },
-    {
-      description: "适合 SDK、API、应用开发和调试，保留连续的工程上下文。",
-      name: "AI 应用开发工作台",
-      personaSummary: "关注 SDK/API 集成、应用开发和可验证交付，保持工程上下文连续。",
-      projectLabel: "AI 应用开发",
-      scopeSummary: "Claude Code、SDK、API 集成、应用开发与调试。",
-    },
-    {
-      description: "适合 monitor、告警、性能和线上问题，集中沉淀排查结论。",
-      name: "监控与可观测性工作台",
-      personaSummary: "优先建立可观察事实，谨慎分析告警、性能和线上行为，不把猜测当结论。",
-      projectLabel: "监控与可观测性",
-      scopeSummary: "monitor、日志、告警、性能分析和线上问题排查。",
-    },
-  ];
-}
-
 // 单行起步的补充说明输入框：内容超行时自动长高，封顶后内部滚动；Enter 提交、Shift+Enter 换行。
 function ClarifyTextarea({ "aria-label": ariaLabel, disabled, onChange, onKeyDown, placeholder, value }: {
   "aria-label": string;
@@ -933,7 +898,8 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const needsWorkbenchChoice = reasonCode === "workbench_selection_invalid" || reasonCode === "workbench_creation_unavailable" || reasonCode === "workbench_not_found";
   const needsHistoricalReview = reasonCode === "harness_review_unrecoverable";
   const assignedWorkbench = workbenches.find((workbench) => workbench.workbenchId === workbenchId);
-  const proposals = workbenchProposals(suggestionSeed);
+  // Reuse first, abstract clusters second — never a workbench named after this one request.
+  const proposals = workbenchSuggestions({ seed: suggestionSeed ?? "", workbenches });
   const selectableWorkbenches = createdWorkbench === null || workbenches.some((workbench) => workbench.workbenchId === createdWorkbench.workbenchId)
     ? workbenches
     : [...workbenches, createdWorkbench];
@@ -957,9 +923,16 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     }
   };
   const submitDraft = () => { void resolve({ text: draft.trim() }); };
-  const createWorkbenchAndResolve = async (proposal: WorkbenchProposal) => {
-    if (createdWorkbench?.name === proposal.name) {
-      await resolve({ workbenchId: createdWorkbench.workbenchId });
+  const createWorkbenchAndResolve = async (proposal: WorkbenchSuggestion) => {
+    // Reusing an existing workbench is a single step, so it cannot half-succeed.
+    if (proposal.workbenchId !== undefined) {
+      await resolve({ workbenchId: proposal.workbenchId });
+      return;
+    }
+    // A workbench this card already created must not be created a second time.
+    let existing = createdWorkbench;
+    if (existing?.name === proposal.name) {
+      await resolve({ workbenchId: existing.workbenchId });
       return;
     }
     setBusy(true); setNotice(null);
@@ -970,6 +943,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
         projectLabel: proposal.projectLabel,
         scopeSummary: proposal.scopeSummary,
       });
+      existing = created;
       setCreatedWorkbench(created);
       setCreatingWorkbench(false);
       await api.clarifyJoiMessage(inputId, { workbenchId: created.workbenchId, ...(questionId === undefined || questionVersion === undefined ? {} : { questionId, questionVersion }) });
@@ -977,7 +951,11 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       setDraft("");
       onResolved();
     } catch (error) {
-      setNotice(error instanceof ApiError ? error.message : "工作台没有创建成功，请重试。");
+      // The creation and the continuation are separate requests here, so a failure after the
+      // creation is not "it was not created" — saying so made the user retry into a duplicate.
+      setNotice(existing === null
+        ? error instanceof ApiError ? error.message : "工作台没有创建成功，请重试。"
+        : `「${existing.name}」已经建好了，直接选它即可。`);
     } finally {
       setBusy(false);
     }
@@ -1024,10 +1002,10 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
         <button className="button primary joi-clarify-new-workbench" disabled={busy} onClick={() => { setCreatingWorkbench(true); setNotice(null); }} type="button"><PlusIcon aria-hidden size={16} />新增工作台</button>
       </div>
       {creatingWorkbench ? <section aria-label="joi 建议的工作台方案" className="joi-clarify-proposals">
-        <div><strong>joi 建议了几个工作台方案</strong><span>选择一个后，joi 会直接创建并继续这条输入。</span></div>
+        <div><strong>这条输入归到哪里？</strong><span>优先复用已有工作台；都不合适时新建一个工作范围，而不是照着这句话起名字。</span></div>
         <div className="joi-clarify-proposal-list">
-          {proposals.map((proposal) => <button className="joi-clarify-proposal" disabled={busy} key={proposal.name} onClick={() => void createWorkbenchAndResolve(proposal)} type="button">
-            <strong>{proposal.name}</strong><span>{proposal.description}</span>
+          {proposals.map((proposal) => <button className="joi-clarify-proposal" disabled={busy} key={`${proposal.kind}:${proposal.name}`} onClick={() => void createWorkbenchAndResolve(proposal)} type="button">
+            <strong>{proposal.kind === "existing" ? `复用 ${proposal.name}` : proposal.name}</strong><span>{proposal.description}</span>
           </button>)}
         </div>
         <div className="row-actions">

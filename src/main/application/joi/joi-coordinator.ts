@@ -15,6 +15,7 @@ import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime
 import type { WorkbenchRegistryService } from "./workbench-registry-service.js";
 import type { WorkbenchWorkspaceService } from "./workbench-workspace-service.js";
 import { buildJoiSystemPrompt } from "./joi-system-prompt.js";
+import { resolveWorkbenchAssignment } from "./workbench-assignment.js";
 import { COMPLETION_SUMMARY_LIMIT, normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
 import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
 import type { WorkOrchestrationService } from "../work/work-orchestration-service.js";
@@ -28,22 +29,6 @@ interface SourcePin {
   toolCapabilityProven?: boolean;
   turnId: string;
 }
-
-type WorkbenchDecision = { action: "select"; workbenchId: string } | {
-  action: "create";
-  name: string;
-  personaSummary: string;
-  projectLabel: string;
-  scopeSummary: string;
-};
-
-/** Deterministic first context when no Workbench exists and routing cannot produce a valid decision. */
-const BOOTSTRAP_WORKBENCH = {
-  name: "joi 工作台",
-  personaSummary: "承接第一批输入的通用 joi 上下文；可在上下文中心改名或调整范围。",
-  projectLabel: "joi 工作台",
-  scopeSummary: "尚无 Workbench 时自动创建的通用工作台；只承接不成独立目标的杂项输入，明确的新目标应创建新 Workbench。",
-};
 
 const COMMITTED_OUTCOME_TOOL_NAMES = new Set([
   "workbench_suggest_archive",
@@ -139,26 +124,6 @@ const DISPATCH_CLARIFICATION_REASONS = new Set([
   "work_dispatch_failed",
 ]);
 
-function workbenchDecision(value: unknown, known: Set<string>, canCreate: boolean): WorkbenchDecision | null {
-  if (value === null || Array.isArray(value) || typeof value !== "object") return null;
-  const record = value as Record<string, unknown>;
-  if (record.action === "select" && typeof record.workbenchId === "string" && known.has(record.workbenchId)) {
-    return { action: "select", workbenchId: record.workbenchId };
-  }
-  if (canCreate && record.action === "create" && typeof record.name === "string"
-    && typeof record.personaSummary === "string" && typeof record.projectLabel === "string"
-    && typeof record.scopeSummary === "string") {
-    return {
-      action: "create",
-      name: record.name,
-      personaSummary: record.personaSummary,
-      projectLabel: record.projectLabel,
-      scopeSummary: record.scopeSummary,
-    };
-  }
-  return null;
-}
-
 export class JoiCoordinator {
   #sessionFailures = new Map<string, number>();
   #sessionGenerations = new Map<string, number>();
@@ -224,36 +189,26 @@ export class JoiCoordinator {
     let workbenchId = input.workbenchId;
     let workbenchResolution: "bound" | "bootstrap" | "created" | "selected" = "bound";
     if (workbenchId === undefined) {
-      const known = new Set(workbenches.map((workbench) => workbench.workbenchId));
-      let decision: WorkbenchDecision | null = null;
-      for (let attempt = 0; attempt < 2 && decision === null; attempt += 1) {
-        decision = workbenchDecision(
-          await this.dependencies.router.decide({ workbenches, input: requestText, repair: attempt === 1 }),
-          known,
-          this.dependencies.workbenchRegistry !== undefined,
-        );
+      const assignment = await resolveWorkbenchAssignment({
+        canCreate: this.dependencies.workbenchRegistry !== undefined,
+        requestText,
+        router: this.dependencies.router,
+        workbenches,
+      });
+      if (assignment.action === "clarify") {
+        await this.dependencies.store.requireClarification(inputId, assignment.reasonCode);
+        emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {
+          inputId,
+          reasonCode: assignment.reasonCode,
+        });
+        await this.dependencies.events?.emit("joi.message.clarification_required", inputId, { inputId });
+        return;
       }
-      if (decision === null) {
-        if (workbenches.length === 0 && this.dependencies.workbenchRegistry !== undefined) {
-          createdWorkbench = await this.dependencies.workbenchRegistry.create(BOOTSTRAP_WORKBENCH);
-          workbenchId = createdWorkbench.workbenchId;
-          workbenchResolution = "bootstrap";
-        } else {
-          await this.dependencies.store.requireClarification(inputId, "workbench_selection_invalid");
-          emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {
-            inputId,
-            reasonCode: "workbench_selection_invalid",
-          });
-          await this.dependencies.events?.emit("joi.message.clarification_required", inputId, { inputId });
-          return;
-        }
-      } else {
-        createdWorkbench = decision.action === "create"
-          ? await this.dependencies.workbenchRegistry?.create(decision)
-          : undefined;
-        workbenchId = decision.action === "select" ? decision.workbenchId : createdWorkbench?.workbenchId;
-        workbenchResolution = decision.action === "select" ? "selected" : "created";
-      }
+      createdWorkbench = assignment.action === "create"
+        ? await this.dependencies.workbenchRegistry?.create(assignment.draft)
+        : undefined;
+      workbenchId = assignment.action === "create" ? createdWorkbench?.workbenchId : assignment.workbenchId;
+      workbenchResolution = assignment.resolution;
     }
     if (workbenchId === undefined) {
       await this.dependencies.store.requireClarification(inputId, "workbench_creation_unavailable");

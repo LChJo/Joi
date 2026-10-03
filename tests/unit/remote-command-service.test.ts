@@ -33,10 +33,7 @@ describe("RemoteCommandService", () => {
       workbenchId: "workbench-new",
     });
     const service = new RemoteCommandService({
-      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), list: vi.fn().mockResolvedValue([{
-        acceptedAt: "2026-09-30T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid",
-        inputId: "goal", status: "CLARIFICATION_REQUIRED",
-      }]) }, workbenchRegistry: { create },
+      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn() }, workbenchRegistry: { create },
     } as never);
 
     await expect(service.handle({
@@ -45,7 +42,7 @@ describe("RemoteCommandService", () => {
       scopeSummary: "SDK 与 API 调试",
     } as never)).resolves.toEqual({
       kind: "response", requestId: "create-workbench",
-      result: { name: "AI 应用开发工作台", scopeSummary: "SDK 与 API 调试", updatedAt: "2026-09-30T00:00:00.000Z", workbenchId: "workbench-new" },
+      result: { bound: false, name: "AI 应用开发工作台", scopeSummary: "SDK 与 API 调试", updatedAt: "2026-09-30T00:00:00.000Z", workbenchId: "workbench-new" },
     });
     expect(create).toHaveBeenCalledWith({
       name: "AI 应用开发工作台", personaSummary: "关注 SDK/API 集成、应用开发和可验证交付。",
@@ -53,19 +50,43 @@ describe("RemoteCommandService", () => {
     });
   });
 
-  it("refuses remote workbench creation outside an active workbench clarification", async () => {
-    const create = vi.fn();
+  it("creates and binds the workbench for the input in the same request", async () => {
+    // The phone has no second request to fall back on: if these two are not one operation, a card
+    // that moved on between them leaves a workbench nobody is bound to and a user with no way
+    // forward. Binding travels with the creation.
+    const create = vi.fn().mockResolvedValue({
+      profile: { name: "行程规划工坊", scopeSummary: "目的地资料整理、路线与时间安排。" },
+      updatedAt: "2026-09-30T00:00:00.000Z", workbenchId: "workbench-new",
+    });
+    const attachWorkbench = vi.fn().mockResolvedValue({ inputId: "goal", status: "ROUTED" });
     const service = new RemoteCommandService({
-      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), list: vi.fn().mockResolvedValue([{
-        acceptedAt: "2026-09-30T00:00:00.000Z", inputId: "goal", status: "PENDING",
-      }]) }, workbenchRegistry: { create },
+      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), attachWorkbench }, workbenchRegistry: { create },
     } as never);
 
     await expect(service.handle({
-      inputId: "goal", kind: "workbench.create", requestId: "create-workbench", name: "越界工作台",
-      personaSummary: "不应创建。", projectLabel: "越界", scopeSummary: "不应创建。",
-    } as never)).resolves.toMatchObject({ error: { code: "joi_clarification_unavailable" } });
-    expect(create).not.toHaveBeenCalled();
+      bindInputId: "goal", inputId: "goal", kind: "workbench.create", requestId: "create-workbench",
+      name: "行程规划工坊", personaSummary: "先确认约束再比较方案。", projectLabel: "行程规划",
+      scopeSummary: "目的地资料整理、路线与时间安排。",
+    } as never)).resolves.toMatchObject({ requestId: "create-workbench", result: { bound: true, workbenchId: "workbench-new" } });
+    expect(attachWorkbench).toHaveBeenCalledWith({ inputId: "goal", workbenchId: "workbench-new" });
+  });
+
+  it("keeps the workbench and reports it unbound when the input no longer awaits a choice", async () => {
+    const create = vi.fn().mockResolvedValue({
+      profile: { name: "行程规划工坊", scopeSummary: "目的地资料整理。" },
+      updatedAt: "2026-09-30T00:00:00.000Z", workbenchId: "workbench-new",
+    });
+    const attachWorkbench = vi.fn().mockResolvedValue(null);
+    const service = new RemoteCommandService({
+      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), attachWorkbench }, workbenchRegistry: { create },
+    } as never);
+
+    await expect(service.handle({
+      bindInputId: "goal", inputId: "goal", kind: "workbench.create", requestId: "create-workbench",
+      name: "行程规划工坊", personaSummary: "先确认约束再比较方案。", projectLabel: "行程规划",
+      scopeSummary: "目的地资料整理。",
+    } as never)).resolves.toMatchObject({ result: { bound: false, workbenchId: "workbench-new" } });
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it("pages long read results without splitting Unicode and binds cursors to the connection", async () => {

@@ -4,11 +4,11 @@ import {
   CheckCircleIcon,
   LockKeyIcon,
   NetworkIcon,
-  RobotIcon,
 } from "@phosphor-icons/react";
 import { type SyntheticEvent, useState } from "react";
 
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
+import { ModelSourceSetup } from "./JoiHome";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 function FieldError({ message }: { message: string | null }) {
@@ -60,8 +60,7 @@ export function SetupJourney({ api, onComplete }: { api: DigitalLifeApi; onCompl
   const [step, setStep] = useState(1);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
-  const [cardUrl, setCardUrl] = useState("");
-  const [token, setToken] = useState("");
+  const [connected, setConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -73,12 +72,12 @@ export function SetupJourney({ api, onComplete }: { api: DigitalLifeApi; onCompl
     catch (reason) { setError(reason instanceof ApiError ? reason.message : "密码没存上，再试一次。"); }
     finally { setBusy(false); }
   };
-  const saveAgent = async (event: SyntheticEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setBusy(true); setError(null);
-    try { await api.addAgent(cardUrl, token); onComplete(); }
-    catch (reason) { setError(reason instanceof ApiError ? reason.message : "没连上这位搭档。"); }
-    finally { setBusy(false); }
+  // The model network form reports back after every save attempt, including drafts that failed
+  // validation. The runtime status — not the form's own notice — decides whether the final
+  // button reads as "done" or still skippable.
+  const refreshConnection = async () => {
+    try { setConnected((await api.joiRuntime()).configured); }
+    catch { setConnected(false); }
   };
 
   return (
@@ -86,7 +85,7 @@ export function SetupJourney({ api, onComplete }: { api: DigitalLifeApi; onCompl
       <header className="setup-header">
         <div className="wordmark"><span className="wordmark-symbol">JOI</span><strong>joi</strong></div>
         <ol className="setup-progress" aria-label="首次设置进度">
-          {["设密码", "选择访问范围", "找搭档"].map((label, index) => <li aria-current={step === index + 1 ? "step" : undefined} className={step > index + 1 ? "done" : ""} key={label}><span>{step > index + 1 ? <CheckCircleIcon aria-hidden /> : index + 1}</span>{label}</li>)}
+          {["设密码", "选择访问范围", "连接模型网络"].map((label, index) => <li aria-current={step === index + 1 ? "step" : undefined} className={step > index + 1 ? "done" : ""} key={label}><span>{step > index + 1 ? <CheckCircleIcon aria-hidden /> : index + 1}</span>{label}</li>)}
         </ol>
       </header>
       <section className="setup-stage">
@@ -110,16 +109,13 @@ export function SetupJourney({ api, onComplete }: { api: DigitalLifeApi; onCompl
           <div className="notice-row"><strong>当前</strong><span className="status-dot muted">仅限本机</span><small>随时可在设置中更改</small></div>
           <div className="button-row"><button className="button ghost" onClick={() => setStep(1)} type="button"><ArrowLeftIcon aria-hidden />返回</button><button className="button primary" onClick={() => setStep(3)} type="button">先只用本机<ArrowRightIcon aria-hidden /></button></div>
         </div> : null}
-        {step === 3 ? <form className="setup-copy form-stack" onSubmit={(event) => void saveAgent(event)}>
-          <RobotIcon className="stage-icon" aria-hidden size={30} />
-          <p className="eyebrow">给 joi 找一位可靠搭档</p>
-          <h1>给 joi 找个搭档。</h1>
-          <p>joi 会先试试能不能连上。密钥只存本机，看一眼就没了。</p>
-          <label>搭档地址（Agent Card URL）<input autoFocus onChange={(event) => setCardUrl(event.target.value)} placeholder="http://192.168.1.20:8000/.well-known/agent-card.json" required type="url" value={cardUrl} /></label>
-          <label>密钥（Bearer Token）<input autoComplete="off" onChange={(event) => setToken(event.target.value)} required type="password" value={token} /></label>
-          <FieldError message={error} />
-          <div className="button-row"><button className="button ghost" onClick={() => setStep(2)} type="button"><ArrowLeftIcon aria-hidden />返回</button><button className="button quiet" onClick={onComplete} type="button">暂时跳过</button><button className="button primary" disabled={busy} type="submit">{busy ? "检查中…" : "检查并连接"}</button></div>
-        </form> : null}
+        {step === 3 ? <div className="setup-copy setup-model-network">
+          <ModelSourceSetup api={api} changed={refreshConnection} />
+          <div className="button-row">
+            <button className="button ghost" onClick={() => setStep(2)} type="button"><ArrowLeftIcon aria-hidden />返回</button>
+            <button className={connected ? "button primary" : "button quiet"} onClick={onComplete} type="button">{connected ? "进入 joi" : "暂时跳过"}</button>
+          </div>
+        </div> : null}
       </section>
     </main>
   );

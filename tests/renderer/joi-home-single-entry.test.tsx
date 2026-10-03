@@ -1862,10 +1862,10 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(reason).not.toBeInTheDocument());
   });
 
-  it("shows joi workbench proposals instead of a manual creation form", async () => {
+  it("offers abstract clusters instead of a workbench named after the input", async () => {
     const api = new DigitalLifeApi("");
     const existing = workbenchDto("workbench-existing", "已有工程");
-    const created = workbenchDto("workbench-proposal", "AI 应用开发工作台");
+    const created = workbenchDto("workbench-proposal", "工程开发与调试工坊");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
     mockHomeMessages(api).mockResolvedValue({ items: [
@@ -1878,12 +1878,33 @@ describe("joi home single entry", () => {
     const createWorkbenchButton = await screen.findByRole("button", { name: "新增工作台" });
     expect(createWorkbenchButton).toHaveClass("button", "primary");
     fireEvent.click(createWorkbenchButton);
-    expect(await screen.findByText("joi 建议了几个工作台方案")).toBeInTheDocument();
+    expect(await screen.findByText("这条输入归到哪里？")).toBeInTheDocument();
     expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /AI 应用开发工作台/u }));
+    // The candidate list must never hand back the request itself as a workbench name.
+    expect(screen.queryByRole("button", { name: /使用 Claude Code 开发 AI 应用并排查 monitor 问题/u })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /工程开发与调试工坊/u }));
 
-    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "AI 应用开发工作台" })));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "工程开发与调试工坊" })));
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("proposal-1", { workbenchId: "workbench-proposal" }));
+  });
+
+  it("reuses an existing workbench straight from the candidate list", async () => {
+    const api = new DigitalLifeApi("");
+    const existing = workbenchDto("workbench-existing", "皖南川藏线片区景点调研环境");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [{ ...existing, scopeSummary: "皖南川藏线的景点资料整理与出行信息比较。" }] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "reuse-1", status: "CLARIFICATION_REQUIRED", textPreview: "皖南川藏线民宿周边哪些景点值得去，要不要门票" },
+    ] });
+    const create = vi.spyOn(api, "createWorkbench");
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "reuse-1", status: "PENDING" });
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
+    fireEvent.click(await screen.findByRole("button", { name: /复用 皖南川藏线片区景点调研环境/u }));
+
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("reuse-1", { workbenchId: "workbench-existing" }));
+    expect(create).not.toHaveBeenCalled();
   });
 
   it("creates a new workbench from the clarification card and resumes the same input", async () => {
@@ -1901,13 +1922,13 @@ describe("joi home single entry", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
     expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /AI 应用开发工作台/u }));
+    fireEvent.click(screen.getByRole("button", { name: /工程开发与调试工坊/u }));
 
     await waitFor(() => expect(create).toHaveBeenCalledWith({
-      name: "AI 应用开发工作台",
-      personaSummary: "关注 SDK/API 集成、应用开发和可验证交付，保持工程上下文连续。",
-      projectLabel: "AI 应用开发",
-      scopeSummary: "Claude Code、SDK、API 集成、应用开发与调试。",
+      name: "工程开发与调试工坊",
+      personaSummary: "围绕代码、构建与运行证据推进，改动要可复现、可验证。",
+      projectLabel: "工程开发与调试",
+      scopeSummary: "代码阅读与修改、构建与运行、故障排查与回归验证。",
     }));
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("create-workbench-1", { workbenchId: "workbench-new" }));
     expect(clarify).not.toHaveBeenCalledWith("create-workbench-1", { text: "新增工作台" });
@@ -1929,10 +1950,12 @@ describe("joi home single entry", () => {
     render(<JoiHome api={api} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
-    fireEvent.click(screen.getByRole("button", { name: /当前任务 工作台/u }));
+    fireEvent.click(screen.getByRole("button", { name: /工程开发与调试工坊/u }));
 
-    expect(await screen.findByText("暂时无法继续，请重试")).toBeInTheDocument();
+    expect(await screen.findByText("「新工作台」已经建好了，直接选它即可。")).toBeInTheDocument();
     expect(create).toHaveBeenCalledTimes(1);
+    // The workbench the card already created is offered in the picker, so retrying continues with
+    // it instead of minting a second one.
     fireEvent.click(screen.getByRole("button", { name: "新工作台" }));
     await waitFor(() => expect(clarify).toHaveBeenLastCalledWith("create-workbench-retry", { workbenchId: "workbench-new-retry" }));
     expect(create).toHaveBeenCalledTimes(1);
@@ -1964,9 +1987,9 @@ describe("joi home single entry", () => {
     render(<JoiHome api={api} />);
 
     fireEvent.click(await screen.findByRole("button", { name: "新增工作台" }));
-    expect(await screen.findByText("joi 建议了几个工作台方案")).toBeInTheDocument();
+    expect(await screen.findByText("这条输入归到哪里？")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "取消" }));
-    expect(screen.queryByText("joi 建议了几个工作台方案")).not.toBeInTheDocument();
+    expect(screen.queryByText("这条输入归到哪里？")).not.toBeInTheDocument();
   });
 
   it("surfaces a clarification failure inline at the card", async () => {

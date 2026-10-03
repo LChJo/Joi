@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { partnerClusterKey, partnerClusterName, workbenchWorkspaceDisplayName, workspaceDirectoryName } from "../../src/main/domain/workbench/workbench-naming.js";
+import { partnerClusterKey, partnerClusterName, proposedWorkbenchRejection, workbenchWorkspaceDisplayName, workspaceDirectoryName } from "../../src/main/domain/workbench/workbench-naming.js";
 
 describe("workbench and partner naming", () => {
   it("groups frontend debugging work under the aimanadebug environment", () => {
@@ -34,5 +34,32 @@ describe("workbench and partner naming", () => {
 
   it("treats the legacy 工坊 suffix and 搭档 as the same reuse cluster", () => {
     expect(partnerClusterKey("前端集成工坊")).toBe(partnerClusterKey("前端集成搭档"));
+  });
+});
+
+describe("proposed workbench rejection", () => {
+  const travel = "民宿周边有皖南川藏线，落羽红杉林，青龙湾度假区，分析哪些是最值得去的景点";
+  const cluster = { name: "行程规划工坊", projectLabel: "行程规划", scopeSummary: "目的地资料整理、路线与时间安排。" };
+
+  it("accepts a durable cluster label", () => {
+    expect(proposedWorkbenchRejection(travel, cluster)).toBeNull();
+  });
+
+  it("rejects a name lifted from the request", () => {
+    expect(proposedWorkbenchRejection(travel, { ...cluster, name: "民宿周边有皖南川藏线，落羽红杉林，青… 工作台" })).toBe("workbench_name_echoes_input");
+  });
+
+  it("rejects a project label or scope summary that quotes the request", () => {
+    expect(proposedWorkbenchRejection(travel, { ...cluster, projectLabel: "民宿周边有皖南川藏线，落羽红杉林，青龙湾度假区" })).toBe("workbench_project_label_echoes_input");
+    expect(proposedWorkbenchRejection(travel, { ...cluster, scopeSummary: "围绕“民宿周边有皖南川藏线，落羽红杉林”的目标与执行过程。" })).toBe("workbench_scope_summary_echoes_input");
+  });
+
+  it("rejects an empty or run-on name", () => {
+    expect(proposedWorkbenchRejection(travel, { ...cluster, name: "工坊" })).toBe("workbench_name_empty");
+    expect(proposedWorkbenchRejection(travel, { ...cluster, name: "这是一段被模型当成工作台名字倒出来的很长很长的句子，读起来完全不像一个工作簇" })).toBe("workbench_name_too_long");
+  });
+
+  it("measures the name without its cluster suffix", () => {
+    expect(proposedWorkbenchRejection(travel, { ...cluster, name: "皖南川藏线片区景点调研工坊" })).toBeNull();
   });
 });

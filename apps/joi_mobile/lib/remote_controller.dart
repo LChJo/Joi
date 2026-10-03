@@ -128,8 +128,14 @@ class RemoteGoalCard {
       reasonCode:
           question['reasonCode'] as String? ??
           json['clarificationReasonCode'] as String?,
-      questionId: question['questionId'] as String?,
-      questionVersion: question['questionVersion'] as int?,
+      // Goal cards nest these under `clarification`; the flat unassigned-action shape puts them
+      // at the top level. Reading only the nested one left the phone unable to answer a card the
+      // server would then refuse, so both shapes are read here.
+      questionId:
+          question['questionId'] as String? ?? json['questionId'] as String?,
+      questionVersion:
+          question['questionVersion'] as int? ??
+          json['questionVersion'] as int?,
       stage: stage,
     );
   }
@@ -140,6 +146,18 @@ class RemoteChoice {
   final String id;
   final String name;
   final String description;
+}
+
+/// The outcome of creating a workbench from a clarification card.
+///
+/// [bound] says whether the same request also moved the input onto it. The host does both in one
+/// call, so `bound: false` means the input was no longer waiting for a workbench — the workbench
+/// exists, and the user is told to pick it instead of being told the card is stale.
+class RemoteWorkbenchCreation {
+  const RemoteWorkbenchCreation(this.id, this.name, {required this.bound});
+  final String id;
+  final String name;
+  final bool bound;
 }
 
 class RemoteViewState {
@@ -205,7 +223,11 @@ abstract interface class RemoteController implements Listenable {
   Future<void> refresh();
 
   Future<void> sendMessage(String text, {String? workbenchId});
-  Future<RemoteChoice> createWorkbench({
+  /// Creates the workbench and binds [inputId] to it, in one request.
+  ///
+  /// One request, not two: the previous create-then-clarify pair could leave a workbench that
+  /// nothing was bound to and a card that then refused every further attempt.
+  Future<RemoteWorkbenchCreation> createWorkbench({
     required String inputId,
     required String name,
     required String personaSummary,
@@ -253,13 +275,13 @@ class PlaceholderRemoteController extends ChangeNotifier
   @override
   Future<void> sendMessage(String text, {String? workbenchId}) async {}
   @override
-  Future<RemoteChoice> createWorkbench({
+  Future<RemoteWorkbenchCreation> createWorkbench({
     required String inputId,
     required String name,
     required String personaSummary,
     required String projectLabel,
     required String scopeSummary,
-  }) async => RemoteChoice('', name, scopeSummary);
+  }) async => RemoteWorkbenchCreation('', name, bound: false);
   @override
   Future<Map<String, dynamic>> read(
     String kind, {

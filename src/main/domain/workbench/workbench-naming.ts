@@ -1,7 +1,37 @@
+import { WORKBENCH_NAME_MAX_LENGTH, echoedWorkbenchSpan } from "../../../shared/workbench-suggestions.js";
+
 export interface WorkbenchNamingContext {
   name: string;
   projectLabel?: string;
   scopeSummary?: string;
+}
+
+/** A proposed workbench, before it becomes one. Structurally a subset of the router's create decision. */
+export interface ProposedWorkbench {
+  name: string;
+  projectLabel: string;
+  scopeSummary: string;
+}
+
+/** Anything a label may carry after the cluster itself: 工坊 is the convention, the rest are older spellings. */
+const CLUSTER_LABEL_SUFFIX_PATTERN = /(?:\s*(?:工作台|工坊|环境))+$/u;
+
+/**
+ * Why a proposed workbench is not a workbench, or null when it is one.
+ *
+ * A name lifted from the request reads as a workbench but behaves as a per-request folder: nothing
+ * later can reuse it, so the next similar request mints another one beside it. This is the
+ * deterministic half of that judgement — the router prompt asks for a cluster, and this refuses
+ * the answer when it comes back as a restatement anyway.
+ */
+export function proposedWorkbenchRejection(input: string, draft: ProposedWorkbench): string | null {
+  const stem = draft.name.trim().replace(CLUSTER_LABEL_SUFFIX_PATTERN, "").trim();
+  if (stem.length === 0) return "workbench_name_empty";
+  if (Array.from(stem).length > WORKBENCH_NAME_MAX_LENGTH) return "workbench_name_too_long";
+  if (echoedWorkbenchSpan(draft.name, input) !== null) return "workbench_name_echoes_input";
+  if (echoedWorkbenchSpan(draft.projectLabel, input) !== null) return "workbench_project_label_echoes_input";
+  if (echoedWorkbenchSpan(draft.scopeSummary, input) !== null) return "workbench_scope_summary_echoes_input";
+  return null;
 }
 
 const FRONTEND_DEBUG_PATTERN = /(?:前端|frontend)[\s\S]*(?:调试|debug)[\s\S]*(?:分析|analysis)?|(?:调试|debug)[\s\S]*(?:前端|frontend)[\s\S]*(?:分析|analysis)?/iu;

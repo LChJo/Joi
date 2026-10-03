@@ -163,6 +163,56 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
+  it("binds a workbench for a card whose question was re-raised under a newer version", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-workbench-stale-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const clock = new TestClock();
+      const repository = new SqliteJoiInboxRepository(database, clock);
+      const inbox = new JoiInboxService({ clock, ids: new TestIds(), repository });
+      database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
+        (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        "workbench-1", "前端工坊", "pr-1", "persona", "scope", "proj", "ns-1", "ACTIVE", "2026-01-01T00:00:00.000Z", "2026-01-01T00:00:00.000Z",
+      ));
+      const accepted = await inbox.accept({ idempotencyKey: "key-stale", text: "研究登录改造" });
+
+      // The card the user is looking at advertises one question; a later re-raise bumps the gate.
+      await repository.requireClarification(accepted.inputId, "workbench_selection_invalid");
+      const onScreen = await questionVersion(repository, accepted.inputId);
+      database.transaction((connection) => connection.prepare(
+        "UPDATE joi_goal_execution_gates SET question_version = question_version + 1, question_id = ? WHERE goal_input_id = ?",
+      ).run(`goal_question:${accepted.inputId}:v2`, accepted.inputId));
+
+      expect(await repository.clarify(accepted.inputId, { ...onScreen, workbenchId: "workbench-1" }))
+        .toMatchObject({ status: "ROUTED", workbenchId: "workbench-1" });
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("still refuses an answer that does not match the question on screen", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-stale-answer-"));
+    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    try {
+      const clock = new TestClock();
+      const repository = new SqliteJoiInboxRepository(database, clock);
+      const inbox = new JoiInboxService({ clock, ids: new TestIds(), repository });
+      const accepted = await inbox.accept({ idempotencyKey: "key-stale-answer", text: "继续实现" });
+      await repository.requireClarification(accepted.inputId, "question_required", "使用哪个配置？");
+      const onScreen = await questionVersion(repository, accepted.inputId);
+      database.transaction((connection) => connection.prepare(
+        "UPDATE joi_goal_execution_gates SET question_version = question_version + 1, question_id = ? WHERE goal_input_id = ?",
+      ).run(`goal_question:${accepted.inputId}:v2`, accepted.inputId));
+
+      expect(await repository.clarify(accepted.inputId, { ...onScreen, text: "用 A 配置" })).toBeNull();
+    } finally {
+      database.close();
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
   it("inherits the goal's attachments and embeds the goal body when building the resume input", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-resume-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });

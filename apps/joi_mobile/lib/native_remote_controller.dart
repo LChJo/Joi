@@ -466,7 +466,7 @@ class NativeRemoteController extends ChangeNotifier
   }
 
   @override
-  Future<RemoteChoice> createWorkbench({
+  Future<RemoteWorkbenchCreation> createWorkbench({
     required String inputId,
     required String name,
     required String personaSummary,
@@ -485,6 +485,9 @@ class NativeRemoteController extends ChangeNotifier
       'personaSummary': personaSummary,
       'projectLabel': projectLabel,
       'scopeSummary': scopeSummary,
+      // The host creates and binds in one request; a second clarify on top of it was the step
+      // that failed while the workbench already existed, stranding the task.
+      'bindInputId': inputId,
     });
     final result = response['result'];
     if (generation != _generation || result is! Map<String, dynamic>) {
@@ -508,7 +511,11 @@ class NativeRemoteController extends ChangeNotifier
         ],
       ),
     );
-    return choice;
+    return RemoteWorkbenchCreation(
+      choice.id,
+      choice.name,
+      bound: result['bound'] == true,
+    );
   }
 
   Future<void> _refreshSafely() async {

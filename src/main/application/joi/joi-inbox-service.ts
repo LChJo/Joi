@@ -116,6 +116,21 @@ export class JoiInboxService {
     return toDto(record);
   }
 
+  /**
+   * Bind a workbench to an input that is waiting for one, without the clarify contract's refusals.
+   *
+   * The phone creates the workbench and binds it in the same request, so there is no card left to
+   * match against by the time the bind runs. Returns null when the input is no longer waiting for
+   * a workbench at all — the caller reports that honestly instead of failing the creation.
+   */
+  async attachWorkbench(input: { inputId: string; workbenchId: string }): Promise<JoiAcceptedMessageDto | null> {
+    const inputId = input.inputId.trim();
+    const workbenchId = input.workbenchId.trim();
+    if (inputId.length === 0 || inputId.length > 160 || workbenchId.length === 0 || workbenchId.length > 160) return null;
+    const record = await this.dependencies.repository.clarify(inputId, { workbenchId });
+    return record === null ? null : toDto(record);
+  }
+
   async cancel(input: { inputId: string }): Promise<JoiAcceptedMessageDto> {
     const inputId = input.inputId.trim();
     if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");

@@ -240,7 +240,12 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         WHERE goal_input_id = ?`).get(goalInputId) as { question_id?: unknown; question_version?: unknown; status?: unknown } | undefined;
       if (gate !== undefined) {
         if (gate.status !== "WAITING_INPUT" || typeof gate.question_id !== "string" || typeof gate.question_version !== "number") return null;
-        if (patch.expectedQuestionId !== gate.question_id || patch.expectedQuestionVersion !== gate.question_version) return null;
+        // Choosing a Workbench answers "where does this input belong", not the question's content,
+        // so it is not tied to a question version. Matching it anyway made a card the user is
+        // looking at unusable the moment the same input was re-raised under a newer question —
+        // the user sees buttons, presses one, and is told the card is stale. Answers stay strict.
+        const choosingWorkbench = patch.workbenchId !== undefined;
+        if (!choosingWorkbench && (patch.expectedQuestionId !== gate.question_id || patch.expectedQuestionVersion !== gate.question_version)) return null;
       }
       const action = connection.prepare(`SELECT action.action_id, action.kind, action.result_revision
         FROM joi_user_action_requests action

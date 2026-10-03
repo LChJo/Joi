@@ -84,6 +84,7 @@ export class DigitalLifeApi {
     return this.request<undefined>("/api/v1/auth/password", { body: { currentPassword, newPassword }, method: "POST" });
   }
   joiSnapshot() { return this.request<JoiSnapshotDto>("/api/v1/joi"); }
+  joiRuntime() { return this.request<{ configured: boolean; status: "NOT_CONFIGURED" | "READY" }>("/api/v1/joi/runtime"); }
   listWorkbenches() { return this.request<{ items: WorkbenchDto[] }>("/api/v1/workbenches"); }
   evolutionStatus(workbenchId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`); }
   configureEvolution(workbenchId: string, dailyCallLimit: number) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`, { method: "PATCH", body: { dailyCallLimit } }); }

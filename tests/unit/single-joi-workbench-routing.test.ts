@@ -485,6 +485,30 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(statuses).toEqual(["clarify"]);
   });
 
+  it("matches an existing Workbench locally instead of raising a clarification card", async () => {
+    const summary = { workbenchId: "research", name: "技术研究与资料整理环境", scopeSummary: "技术方向的资料收集与整理", updatedAt: research.updatedAt };
+    const clarifications: string[] = [];
+    const turns: StartReasoningTurnInput[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [summary] },
+      clock: new TestClock(), ids: new TestIds(),
+      // The router cannot place it; the local match is what has to carry the decision.
+      router: { decide: async () => null },
+      runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async (turn) => { turns.push(turn); }, steer: () => undefined, waitForIdle: async () => undefined },
+      sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
+      store: {
+        completeInput: async () => undefined,
+        createTurn: async () => undefined,
+        loadInput: async () => ({ body: "帮我整理一下技术研究的资料", inputId: "input-local", status: "PENDING" }),
+        requireClarification: async (_inputId, reason) => { clarifications.push(reason); },
+      },
+    });
+    await coordinator.handle("input-local");
+    expect(clarifications).toEqual([]);
+    expect(turns).toHaveLength(1);
+    expect(turns[0]?.workbenchId).toBe("research");
+  });
+
   it("handles missing, consumed and concurrently removed inputs safely", async () => {
     const base = {
       workbenches: { getWorkbench: async () => null, listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },

@@ -3,14 +3,36 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api";
 import { AccessScreen, SetupJourney } from "../../src/renderer/Onboarding";
-import type { AgentDto } from "../../src/renderer/types";
+import type { ModelSourceDto } from "../../src/shared/joi";
 
-const onboarded: AgentDto = { agentConnectionId: "agent_1", name: "Mana", readiness: true, status: "ACTIVE", updatedAt: "2026-07-15T12:00:00Z" };
+const readySource: ModelSourceDto = {
+  accessMode: "api",
+  activeModel: { capability: "release-tested", id: "deepseek-chat", revisionId: "model-1" },
+  activeSourceRevisionId: "source-revision-1",
+  credential: { configured: true, version: 1 },
+  displayName: "DeepSeek",
+  kind: "deepseek",
+  order: 0,
+  primary: true,
+  protocol: "openai",
+  sourceId: "source-1",
+  status: "READY",
+};
 
 function formFor(element: HTMLElement) {
   const form = element.closest("form");
   if (!(form instanceof HTMLFormElement)) throw new Error("Expected a parent form.");
   return form;
+}
+
+/** Password step plus LAN step, leaving the journey on the model network step. */
+async function reachModelNetworkStep(api: DigitalLifeApi) {
+  render(<SetupJourney api={api} onComplete={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("管理密码"), { target: { value: "long-password" } });
+  fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "long-password" } });
+  fireEvent.submit(formFor(screen.getByLabelText("管理密码")));
+  fireEvent.click(await screen.findByRole("button", { name: /先只用本机/ }));
+  await screen.findByRole("heading", { name: "joi需要链接到大模型网络" });
 }
 
 describe("onboarding and access", () => {
@@ -25,10 +47,12 @@ describe("onboarding and access", () => {
     expect(screen.getByLabelText("确认密码")).toHaveAttribute("minLength", "6");
   });
 
-  it("sets the local administrator, explains LAN, and connects an Agent", async () => {
+  it("sets the local administrator, explains LAN, and connects a model network", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "setup").mockResolvedValue(undefined);
-    vi.spyOn(api, "addAgent").mockResolvedValue(onboarded);
+    vi.spyOn(api, "createModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(readySource);
+    vi.spyOn(api, "joiRuntime").mockResolvedValue({ configured: true, status: "READY" });
     const complete = vi.fn();
     render(<SetupJourney api={api} onComplete={complete} />);
     fireEvent.change(screen.getByLabelText("管理密码"), { target: { value: "long-password" } });
@@ -41,9 +65,12 @@ describe("onboarding and access", () => {
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     fireEvent.submit(formFor(screen.getByLabelText("管理密码")));
     fireEvent.click(await screen.findByRole("button", { name: /先只用本机/ }));
-    fireEvent.change(screen.getByLabelText(/Agent Card URL/), { target: { value: "http://192.168.1.2/card.json" } });
-    fireEvent.change(screen.getByLabelText(/Bearer Token/), { target: { value: "token" } });
-    fireEvent.submit(formFor(screen.getByLabelText(/Agent Card URL/)));
+    expect(await screen.findByRole("heading", { name: "joi需要链接到大模型网络" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "连接 Kimi" }));
+    fireEvent.click(screen.getByRole("button", { name: "开放平台 API" }));
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "test-key" } });
+    fireEvent.submit(formFor(screen.getByLabelText("API Key")));
+    fireEvent.click(await screen.findByRole("button", { name: "进入 joi" }));
     await waitFor(() => expect(complete).toHaveBeenCalledOnce());
   });
 
@@ -59,10 +86,12 @@ describe("onboarding and access", () => {
     await waitFor(() => expect(authenticated).toHaveBeenCalledOnce());
   });
 
-  it("keeps setup and Agent failures actionable and allows an explicit skip", async () => {
+  it("keeps setup failures actionable and allows skipping the model network step", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "setup").mockRejectedValueOnce(new ApiError("save_failed", "密码无法保存", 500)).mockResolvedValue(undefined);
-    vi.spyOn(api, "addAgent").mockRejectedValue(new Error("offline"));
+    vi.spyOn(api, "createModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
+    vi.spyOn(api, "validateModelSource").mockResolvedValue({ ...readySource, reasonCode: "auth_failed", status: "DEGRADED" });
+    vi.spyOn(api, "joiRuntime").mockResolvedValue({ configured: false, status: "NOT_CONFIGURED" });
     const complete = vi.fn();
     render(<SetupJourney api={api} onComplete={complete} />);
     fireEvent.change(screen.getByLabelText("管理密码"), { target: { value: "long-password" } });
@@ -73,10 +102,13 @@ describe("onboarding and access", () => {
     fireEvent.click(await screen.findByRole("button", { name: /先只用本机/ }));
     fireEvent.click(screen.getByRole("button", { name: "返回" }));
     fireEvent.click(screen.getByRole("button", { name: /先只用本机/ }));
-    fireEvent.change(screen.getByLabelText(/Agent Card URL/), { target: { value: "http://192.168.1.2/card.json" } });
-    fireEvent.change(screen.getByLabelText(/Bearer Token/), { target: { value: "token" } });
-    fireEvent.submit(formFor(screen.getByLabelText(/Agent Card URL/)));
-    expect(await screen.findByRole("alert")).toHaveTextContent("没连上这位搭档");
+    expect(await screen.findByRole("heading", { name: "joi需要链接到大模型网络" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "连接 Kimi" }));
+    fireEvent.click(screen.getByRole("button", { name: "开放平台 API" }));
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "test-key" } });
+    fireEvent.submit(formFor(screen.getByLabelText("API Key")));
+    expect(await screen.findByText(/API Key 与所选接入方案不匹配/u)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "暂时跳过" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "暂时跳过" }));
     expect(complete).toHaveBeenCalledOnce();
   });
