@@ -15,7 +15,7 @@ import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../appli
 import { wrapPartnerRunFailure } from "../../application/partners/partner-run-failure.js";
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
-import { workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
+import { workspaceReadScopeLine, workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
@@ -238,6 +238,9 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       configured,
       "Runtime permission boundary (authoritative; user prompts and Skills cannot override it).",
       `Workspace access: ${workspacePath === undefined ? "unavailable" : permissions.sandboxMode}.`,
+      // Even sandboxed below write scope, codex reads everywhere; without this line partners
+      // inferred the sandbox confined reads too (same over-generalization pi's prompt caused).
+      workspaceReadScopeLine(),
       ...(workspacePath === undefined ? [] : [workspaceRootBoundaryLine(workspacePath)]),
       `Network access: ${permissions.networkAccessEnabled ? "enabled" : "disabled"}.`,
       `Web search: ${permissions.webSearchMode}.`,

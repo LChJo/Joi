@@ -1362,4 +1362,50 @@ describe("Pi partner engine runtime", () => {
       name: "joi.partner.system_prompt_bounded",
     }]);
   });
+
+  it("leads a writing partner's workspace paragraph with the read permission, then scopes the confinement to writes", async () => {
+    const faux = fauxProvider({ provider: "local-partner-write-access" });
+    let firstSystemPrompt = "";
+    faux.setResponses([
+      (context) => {
+        firstSystemPrompt = requestSystemPrompt(context);
+        return fauxAssistantMessage([fauxText("done")]);
+      },
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const stubTool = (name: string) => ({
+      description: `stub ${name}`,
+      execute: async () => ({ content: [{ text: "ok", type: "text" as const }], details: {} }),
+      label: name,
+      name,
+      parameters: Type.Object({}),
+    });
+    const runtime = new PiPartnerEngineRuntime({
+      contexts: { loadForExecution: async () => ({ promptSection: "", sanitized: {}, workspacePath: "I:\\work\\partner-workspace" }) },
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
+      sources: { selectInitial: async (turnId) => ({ modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr", turnId }) },
+      tools: { create: (cwd, names) => names.map((name) => stubTool(name)) as never, names: ["bash", "edit", "read", "write"] },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-10-03T00:00:00.000Z", displayName: "Write access", kind: "local-pi",
+      partnerId: "partner_write", partnerRevisionId: "partner_revision_write", registryRevision: 1, skills: [], tools: ["bash", "edit", "write"],
+    });
+
+    await expect(runtime.runEphemeral(
+      { actionId: "action_write", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "task", workId: "work_write" },
+      revision,
+      { knowledgeSection: "", skillEnvironmentKeys: [], skillSection: "" },
+    )).resolves.toMatchObject({ status: "COMPLETED" });
+
+    // Reads lead as a permission; every restriction is write-scoped (ADR 0024 追记). A partner
+    // that once read this paragraph concluded "按约束未去区外寻找" — so the read allowance must
+    // not arrive as an exception inside a wall of prohibitions.
+    expect(firstSystemPrompt).toContain("Reads are never confined");
+    expect(firstSystemPrompt).toContain("The confinement is writes only");
+    expect(firstSystemPrompt).toContain("does not cover shell commands");
+    expect(firstSystemPrompt.indexOf("Reads are never confined")).toBeLessThan(firstSystemPrompt.indexOf("The confinement is writes only"));
+    expect(firstSystemPrompt).not.toContain("only place your file tools will write");
+  });
 });
