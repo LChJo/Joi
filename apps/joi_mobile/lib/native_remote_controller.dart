@@ -422,7 +422,15 @@ class NativeRemoteController extends ChangeNotifier
           _feedLoaded = true;
           _record(stage: ConnectionStage.ready);
         }
-        _setState(_state.copyWith(goals: cards, clearNotice: true));
+        // The host sends every card in one list and marks the filed-away ones with `archivedAt`;
+        // the home screen and the archive screen each get their own half.
+        _setState(
+          _state.copyWith(
+            goals: cards.where((card) => !card.archived).toList(),
+            archivedGoals: cards.where((card) => card.archived).toList(),
+            clearNotice: true,
+          ),
+        );
       }
     } finally {
       _refreshing = false;
@@ -649,6 +657,39 @@ class NativeRemoteController extends ChangeNotifier
         _setState(
           _state.copyWith(
             goals: _state.goals.where((g) => g.goalId != inputId).toList(),
+            archivedGoals: _state.archivedGoals
+                .where((g) => g.goalId != inputId)
+                .toList(),
+          ),
+        );
+      }
+      // Archiving is a move between two lists, not a disappearance, so both halves are rewritten
+      // here; waiting for the next poll would leave the card sitting where the user just removed it.
+      if (action == 'archive') {
+        final moved = _state.goals.where((g) => g.goalId == inputId);
+        _setState(
+          _state.copyWith(
+            goals: _state.goals.where((g) => g.goalId != inputId).toList(),
+            archivedGoals: [
+              ...moved.map(
+                (g) => g.withArchivedAt(DateTime.now().toUtc().toIso8601String()),
+              ),
+              ..._state.archivedGoals,
+            ],
+          ),
+        );
+      }
+      if (action == 'unarchive') {
+        final moved = _state.archivedGoals.where((g) => g.goalId == inputId);
+        _setState(
+          _state.copyWith(
+            goals: [
+              ...moved.map((g) => g.withArchivedAt(null)),
+              ..._state.goals,
+            ],
+            archivedGoals: _state.archivedGoals
+                .where((g) => g.goalId != inputId)
+                .toList(),
           ),
         );
       }

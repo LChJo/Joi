@@ -55,7 +55,7 @@ export type RemoteCommand =
   | { idempotencyKey: string; kind: "message.send"; requestId: string; text: string; workbenchId?: string }
   | { kind: "message.retry"; requestId: string; inputId: string; text?: string }
   | { kind: "message.clarify"; requestId: string; inputId: string; text?: string; workbenchId?: string; partnerId?: string; questionId?: string; questionVersion?: number; actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT" }
-  | { kind: "message.cancel" | "message.dismiss" | "message.closeHistoricalReview"; requestId: string; inputId: string };
+  | { kind: "message.cancel" | "message.dismiss" | "message.archive" | "message.unarchive" | "message.closeHistoricalReview"; requestId: string; inputId: string };
 
 export interface RemoteReadPage {
   encoding: "json";

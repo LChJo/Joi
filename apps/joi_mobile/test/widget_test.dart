@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:joi_mobile/app.dart';
+import 'package:joi_mobile/archived_goals.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/goal_detail.dart';
 
@@ -12,6 +13,7 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
   final List<Map<String, Object?>> actions = [];
   final List<Map<String, String>> createdWorkbenches = [];
   bool failSend = false;
+  Map<String, dynamic>? goalDetail;
   final RemoteViewState _state;
 
   @override
@@ -89,24 +91,26 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
     String? agentId,
     String? cursor,
   }) async => switch (kind) {
-    'goal.get' => {
-      'text': '完整任务正文',
-      'goal': {
-        'goalId': goalId,
-        'title': '任务一',
-        'status': 'COMPLETED',
-        'completionSummary': '完整结论',
-        'artifacts': [
+    'goal.get' =>
+      goalDetail ??
           {
-            'name': '报告.md',
-            'mimeType': 'text/markdown',
-            'size': 1024,
-            'kind': 'FILE',
+            'text': '完整任务正文',
+            'goal': {
+              'goalId': goalId,
+              'title': '任务一',
+              'status': 'COMPLETED',
+              'completionSummary': '完整结论',
+              'artifacts': [
+                {
+                  'name': '报告.md',
+                  'mimeType': 'text/markdown',
+                  'size': 1024,
+                  'kind': 'FILE',
+                },
+              ],
+              'workbench': {'workbenchId': 'b', 'name': '研究'},
+            },
           },
-        ],
-        'workbench': {'workbenchId': 'b', 'name': '研究'},
-      },
-    },
     'goal.agents' => {
       'items': [
         {'agentId': 'agent', 'partnerName': '研究搭档', 'status': 'COMPLETED'},
@@ -125,6 +129,15 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
     },
     _ => {},
   };
+}
+
+/// Every per-card action lives in the card's 「更多操作」 sheet, so a test that exercises one has to
+/// open the sheet and pick the row first.
+Future<void> tapGoalAction(WidgetTester tester, String label) async {
+  await tester.tap(find.byTooltip('更多操作'));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text(label));
+  await tester.pumpAndSettle();
 }
 
 void main() {
@@ -267,19 +280,136 @@ void main() {
           ),
         ),
       );
-      await tester.tap(find.text('继续对话'));
-      await tester.pump();
+      await tapGoalAction(tester, '继续对话');
       await tester.enterText(find.byType(TextField), '继续补证');
       await tester.tap(find.text('提交继续'));
       await tester.pump();
       expect(controller.actions.first, containsPair('action', 'retry'));
       expect(controller.actions.first, containsPair('text', '继续补证'));
-      await tester.tap(find.text('移除卡片'));
-      await tester.pump();
+      await tapGoalAction(tester, '移除卡片');
       expect(controller.actions.last, containsPair('action', 'dismiss'));
       expect(controller.actions.last, containsPair('inputId', 'g'));
     },
   );
+
+  testWidgets('archives a finished goal from the card menu', (tester) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalActions(
+            controller: controller,
+            goal: const RemoteGoalCard(
+              goalId: 'g',
+              title: '可归档的任务',
+              status: 'COMPLETED',
+              canArchive: true,
+              canDelete: false,
+              activeWork: 0,
+              completedWork: 1,
+              totalWork: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    // A failed goal with work behind it has no finalized outcome, so removal stays out of reach and
+    // archiving is the action that takes it off the feed.
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('移除卡片'), findsNothing);
+    await tester.tap(find.text('归档'));
+    await tester.pumpAndSettle();
+    expect(controller.actions.last, containsPair('action', 'archive'));
+    expect(controller.actions.last, containsPair('inputId', 'g'));
+  });
+
+  testWidgets('offers only cancellation on a running goal card', (tester) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: GoalActions(
+            controller: controller,
+            goal: const RemoteGoalCard(
+              goalId: 'g',
+              title: '在途的任务',
+              status: 'RUNNING',
+              activeWork: 1,
+              completedWork: 0,
+              totalWork: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('取消任务'), findsOneWidget);
+    expect(find.text('归档'), findsNothing);
+    expect(find.text('移除卡片'), findsNothing);
+  });
+
+  testWidgets('shows archived cards with the way back to the feed', (
+    tester,
+  ) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+        archivedGoals: [
+          RemoteGoalCard(
+            goalId: 'archived-1',
+            title: '收起来的目标',
+            status: 'COMPLETED',
+            workbenchName: '归档工程',
+            archivedAt: '2026-10-09T09:00:00.000Z',
+            canArchive: true,
+            canDelete: true,
+            activeWork: 0,
+            completedWork: 1,
+            totalWork: 1,
+          ),
+        ],
+      ),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: ArchivedGoalsPage(controller: controller)),
+    );
+    expect(find.text('收起来的目标'), findsOneWidget);
+    expect(find.text('归档工程'), findsOneWidget);
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('取消归档'), findsOneWidget);
+    expect(find.text('继续对话'), findsOneWidget);
+    expect(find.text('移除卡片'), findsOneWidget);
+    expect(find.text('归档'), findsNothing);
+    await tester.tap(find.text('取消归档'));
+    await tester.pumpAndSettle();
+    expect(controller.actions.last, containsPair('action', 'unarchive'));
+  });
+
+  testWidgets('an empty archive says where archived cards come from', (
+    tester,
+  ) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(connection: RemoteConnectionState.connected),
+    );
+    await tester.pumpWidget(
+      MaterialApp(home: ArchivedGoalsPage(controller: controller)),
+    );
+    expect(find.textContaining('还没有归档的目标'), findsOneWidget);
+  });
 
   testWidgets('names the refusal instead of one sentence for every cause', (
     tester,
@@ -308,8 +438,7 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('继续对话'));
-    await tester.pump();
+    await tapGoalAction(tester, '继续对话');
     await tester.enterText(find.byType(TextField), '继续补证');
     await tester.tap(find.text('提交继续'));
     await tester.pump();
@@ -384,35 +513,38 @@ void main() {
     ),
   );
 
-  testWidgets('offers abstract clusters instead of a workbench named after the input', (
+  testWidgets(
+    'offers abstract clusters instead of a workbench named after the input',
+    (tester) async {
+      final controller = FakeRemoteController(
+        const RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+          supportsWorkbenchCreation: true,
+          workbenches: [RemoteChoice('existing', '已有工作台', '已有范围')],
+        ),
+      );
+      await pumpWorkbenchCard(tester, controller);
+
+      await tester.tap(find.text('归到哪里'));
+      await tester.pumpAndSettle();
+      expect(find.text('调试 AI 应用 工作台'), findsNothing);
+      expect(find.text('调研与分析工坊'), findsOneWidget);
+      expect(find.text('工程开发与调试工坊'), findsOneWidget);
+      expect(find.text('行程与出行规划工坊'), findsOneWidget);
+
+      await tester.tap(find.text('调研与分析工坊'));
+      await tester.pumpAndSettle();
+      expect(controller.createdWorkbenches.single['projectLabel'], '调研与分析');
+      // Creation and binding are one request now; a second clarify is what used to strand the card.
+      expect(controller.actions, isEmpty);
+      expect(find.textContaining('已创建，但'), findsNothing);
+    },
+  );
+
+  testWidgets('reuses an existing workbench instead of creating one', (
     tester,
   ) async {
-    final controller = FakeRemoteController(
-      const RemoteViewState(
-        connection: RemoteConnectionState.connected,
-        supportsHome: true,
-        supportsWorkbenchCreation: true,
-        workbenches: [RemoteChoice('existing', '已有工作台', '已有范围')],
-      ),
-    );
-    await pumpWorkbenchCard(tester, controller);
-
-    await tester.tap(find.text('归到哪里'));
-    await tester.pumpAndSettle();
-    expect(find.text('调试 AI 应用 工作台'), findsNothing);
-    expect(find.text('调研与分析工坊'), findsOneWidget);
-    expect(find.text('工程开发与调试工坊'), findsOneWidget);
-    expect(find.text('行程与出行规划工坊'), findsOneWidget);
-
-    await tester.tap(find.text('调研与分析工坊'));
-    await tester.pumpAndSettle();
-    expect(controller.createdWorkbenches.single['projectLabel'], '调研与分析');
-    // Creation and binding are one request now; a second clarify is what used to strand the card.
-    expect(controller.actions, isEmpty);
-    expect(find.textContaining('已创建，但'), findsNothing);
-  });
-
-  testWidgets('reuses an existing workbench instead of creating one', (tester) async {
     final controller = FakeRemoteController(
       const RemoteViewState(
         connection: RemoteConnectionState.connected,
@@ -423,7 +555,11 @@ void main() {
         ],
       ),
     );
-    await pumpWorkbenchCard(tester, controller, title: '皖南川藏线民宿周边哪些景点值得去，要不要门票');
+    await pumpWorkbenchCard(
+      tester,
+      controller,
+      title: '皖南川藏线民宿周边哪些景点值得去，要不要门票',
+    );
 
     await tester.tap(find.text('归到哪里'));
     await tester.pumpAndSettle();
@@ -434,7 +570,9 @@ void main() {
     expect(controller.actions.single, containsPair('workbenchId', 'existing'));
   });
 
-  testWidgets('reports an unbound workbench instead of a dead end', (tester) async {
+  testWidgets('reports an unbound workbench instead of a dead end', (
+    tester,
+  ) async {
     final controller = FakeRemoteController(
       const RemoteViewState(
         connection: RemoteConnectionState.connected,
@@ -453,30 +591,34 @@ void main() {
     expect(find.textContaining('选择工作台继续'), findsWidgets);
   });
 
-  testWidgets('reuses the workbench it already created instead of minting a duplicate', (
-    tester,
-  ) async {
-    final controller = FakeRemoteController(
-      const RemoteViewState(
-        connection: RemoteConnectionState.connected,
-        supportsHome: true,
-        supportsWorkbenchCreation: true,
-      ),
-    )..createBinds = false;
-    await pumpWorkbenchCard(tester, controller, title: '移动端任务');
+  testWidgets(
+    'reuses the workbench it already created instead of minting a duplicate',
+    (tester) async {
+      final controller = FakeRemoteController(
+        const RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+          supportsWorkbenchCreation: true,
+        ),
+      )..createBinds = false;
+      await pumpWorkbenchCard(tester, controller, title: '移动端任务');
 
-    await tester.tap(find.text('归到哪里'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('调研与分析工坊'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('归到哪里'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('调研与分析工坊'));
-    await tester.pumpAndSettle();
+      await tester.tap(find.text('归到哪里'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('调研与分析工坊'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('归到哪里'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('调研与分析工坊'));
+      await tester.pumpAndSettle();
 
-    expect(controller.createdWorkbenches, hasLength(1));
-    expect(controller.actions.single, containsPair('workbenchId', 'workbench-new'));
-  });
+      expect(controller.createdWorkbenches, hasLength(1));
+      expect(
+        controller.actions.single,
+        containsPair('workbenchId', 'workbench-new'),
+      );
+    },
+  );
 
   testWidgets('reads the question a flat clarification card advertises', (
     tester,
@@ -524,7 +666,20 @@ void main() {
         ),
       ),
     );
-    await tester.tap(find.text('继续补齐'));
+    expect(find.text('是否继续完善结果？'), findsOneWidget);
+    expect(find.text('已自动补充两轮，当前结果仍有明确缺口。'), findsNothing);
+    expect(
+      find.text('当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。'),
+      findsOneWidget,
+    );
+    expect(find.text('当前结果与待补充内容'), findsOneWidget);
+    expect(find.text('暂时没有可展示的结果说明，无法列出具体待补充内容。'), findsOneWidget);
+    expect(find.text('继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。'), findsOneWidget);
+    expect(
+      find.text('保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。'),
+      findsOneWidget,
+    );
+    await tester.tap(find.text('继续完善'));
     await tester.pump();
     // The server refuses to resolve a clarification whose question does not match the card it is
     // answering, so a decision sent without these came back as joi_clarification_unavailable.
@@ -533,6 +688,102 @@ void main() {
       containsPair('questionId', 'goal_question:g:v1'),
     );
     expect(controller.actions.single, containsPair('questionVersion', 1));
+    expect(controller.actions.single, containsPair('actionChoice', 'CONTINUE'));
+    await tester.tap(find.text('保留当前结果'));
+    await tester.pump();
+    expect(
+      controller.actions.last,
+      containsPair('actionChoice', 'ACCEPT_CURRENT'),
+    );
+    expect(
+      controller.actions.last,
+      containsPair('questionId', 'goal_question:g:v1'),
+    );
+    expect(controller.actions.last, containsPair('questionVersion', 1));
+  });
+
+  testWidgets(
+    'shows continuation context once on a narrow home card and opens its current result',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = FakeRemoteController(
+        const RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+          goals: [
+            RemoteGoalCard(
+              goalId: 'g',
+              title: '任务',
+              status: 'NEEDS_ATTENTION',
+              reasonCode: 'goal_continuation_required',
+              summary: '横评维度已建立，但近七天来源不足。',
+              activeWork: 0,
+              completedWork: 3,
+              totalWork: 3,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpWidget(JoiMobileApp(controller: controller));
+      await tester.pumpAndSettle();
+      expect(find.text('横评维度已建立，但近七天来源不足。'), findsOneWidget);
+      expect(find.text('当前结果与待补充内容'), findsOneWidget);
+      await tester.ensureVisible(find.text('查看当前结果全文'));
+      await tester.tap(find.text('查看当前结果全文'));
+      await tester.pumpAndSettle();
+      expect(find.text('当前结果'), findsOneWidget);
+      expect(find.text('完整结论'), findsOneWidget);
+      expect(find.byTooltip('导出全文'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('keeps continuation detail separate from a final result', (
+    tester,
+  ) async {
+    const summary = '横评维度已建立，但近七天来源不足。';
+    final controller =
+        FakeRemoteController(
+            const RemoteViewState(
+              connection: RemoteConnectionState.connected,
+              supportsHome: true,
+            ),
+          )
+          ..goalDetail = {
+            'text': '完整任务正文',
+            'goal': {
+              'goalId': 'g',
+              'title': '任务',
+              'status': 'NEEDS_ATTENTION',
+              'completionSummary': summary,
+              'clarification': {'reasonCode': 'goal_continuation_required'},
+            },
+          };
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GoalDetailPage(
+          controller: controller,
+          initial: const RemoteGoalCard(
+            goalId: 'g',
+            title: '任务',
+            status: 'NEEDS_ATTENTION',
+            reasonCode: 'goal_continuation_required',
+            summary: summary,
+            activeWork: 0,
+            completedWork: 3,
+            totalWork: 3,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('当前结果与待补充内容'), findsOneWidget);
+    expect(find.text(summary), findsOneWidget);
+    expect(find.text('最终结果 · 查看全文'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('unpaired device shows only the QR pairing entry', (

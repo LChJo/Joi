@@ -140,6 +140,7 @@ function mapRow(row: Row): JoiInboxRecord {
   const body = row.body;
   const status = row.status;
   const workbenchId = row.workbench_id;
+  const archivedAt = row.archived_at;
   const canceledAt = row.canceled_at;
   const clarificationPrompt = row.clarification_prompt;
   const clarificationReasonCode = row.clarification_reason_code;
@@ -156,6 +157,7 @@ function mapRow(row: Row): JoiInboxRecord {
   if (typeof inputId !== "string" || typeof idempotencyKey !== "string" || typeof body !== "string"
     || typeof status !== "string" || typeof createdAt !== "string" || typeof updatedAt !== "string"
     || (workbenchId !== null && typeof workbenchId !== "string")
+    || (archivedAt !== null && archivedAt !== undefined && typeof archivedAt !== "string")
     || (canceledAt !== null && canceledAt !== undefined && typeof canceledAt !== "string")
     || (clarificationPrompt !== null && clarificationPrompt !== undefined && typeof clarificationPrompt !== "string")
     || (clarificationReasonCode !== null && clarificationReasonCode !== undefined && typeof clarificationReasonCode !== "string")
@@ -172,6 +174,7 @@ function mapRow(row: Row): JoiInboxRecord {
   return {
     ...(typeof workbenchId === "string" ? { workbenchId } : {}),
     ...(typeof automationRoutineId === "string" ? { automationRoutineId } : {}),
+    ...(typeof archivedAt === "string" ? { archivedAt } : {}),
     body,
     ...(typeof canceledAt === "string" ? { canceledAt } : {}),
     ...(typeof clarificationPrompt === "string" ? { clarificationPrompt } : {}),
@@ -529,8 +532,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       if (activeExecution !== undefined) return null;
       const now = this.#clock.now().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
+      // Continuing a goal also brings it back to the home feed: the card is running again, and
+      // leaving the archive marker set would keep it invisible behind a live task.
       const result = connection.prepare(`UPDATE joi_inbox_messages
-        SET body = ?, status = 'PENDING', canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL,
+        SET body = ?, status = 'PENDING', archived_at = NULL, canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL,
           failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL,
           updated_at = ?, last_opened_at = ?, reopened_at = ?
         WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, now, now, inputId);
@@ -589,6 +594,46 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         )`).run(now, inputId);
       connection.prepare(`UPDATE joi_automations SET enabled = 0, deleted_at = ?, updated_at = ?
         WHERE target_kind = 'GOAL_CONTINUATION' AND target_goal_input_id = ? AND deleted_at IS NULL`).run(now, now, inputId);
+      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      return updated === undefined ? null : mapRow(updated);
+    });
+  }
+
+  async archive(inputId: string): Promise<JoiInboxRecord | null> {
+    return this.database.transaction((connection) => {
+      const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      if (row === undefined) return null;
+      const current = mapRow(row);
+      if (current.status !== "CONSUMED" || current.dismissedAt !== undefined || current.archivedAt !== undefined) return null;
+      // Same liveness guard as a removal: a goal whose Work or partner run has not settled is not
+      // finished, and hiding it would take a running task off the feed.
+      const activeExecution = connection.prepare(`SELECT 1
+        FROM work_items w
+        LEFT JOIN partner_runs pr ON pr.work_id = w.work_id
+        WHERE w.input_id = ?
+          AND (w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')
+            OR pr.status NOT IN ('COMPLETED', 'FAILED', 'UNKNOWN'))
+        LIMIT 1`).get(inputId);
+      if (activeExecution !== undefined) return null;
+      const now = this.#clock.now().toISOString();
+      const result = connection.prepare(`UPDATE joi_inbox_messages
+        SET archived_at = ?, updated_at = ?
+        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND archived_at IS NULL`).run(now, now, inputId);
+      if (result.changes === 0) return null;
+      // Deliberately unlike dismiss: the map stays as it is and scheduled continuations keep
+      // running. Archiving only moves the card; the goal remains intact behind it.
+      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      return updated === undefined ? null : mapRow(updated);
+    });
+  }
+
+  async unarchive(inputId: string): Promise<JoiInboxRecord | null> {
+    return this.database.transaction((connection) => {
+      const now = this.#clock.now().toISOString();
+      const result = connection.prepare(`UPDATE joi_inbox_messages
+        SET archived_at = NULL, updated_at = ?
+        WHERE input_id = ? AND archived_at IS NOT NULL`).run(now, inputId);
+      if (result.changes === 0) return null;
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     });

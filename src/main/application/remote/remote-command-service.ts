@@ -28,7 +28,7 @@ export class RemoteCommandService {
   readonly #pages = new Map<string, { scope: string; body: string; offset: number; expires: number }>();
   constructor(private readonly dependencies: {
     homeFeed: Pick<JoiHomeFeedService, "load">;
-    inbox: Pick<JoiInboxService, "accept"> & Partial<Pick<JoiInboxService, "attachWorkbench" | "clarify" | "retry" | "cancel" | "dismiss" | "closeHistoricalReview">>;
+    inbox: Pick<JoiInboxService, "accept"> & Partial<Pick<JoiInboxService, "archive" | "attachWorkbench" | "clarify" | "retry" | "cancel" | "dismiss" | "closeHistoricalReview" | "unarchive">>;
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     queries?: RemoteHomeQueries;
     now?: () => number;
@@ -91,7 +91,9 @@ export class RemoteCommandService {
       }
       const operation = c.kind === "message.cancel" ? this.dependencies.inbox.cancel
         : c.kind === "message.dismiss" ? this.dependencies.inbox.dismiss
-          : c.kind === "message.closeHistoricalReview" ? this.dependencies.inbox.closeHistoricalReview : undefined;
+          : c.kind === "message.archive" ? this.dependencies.inbox.archive
+            : c.kind === "message.unarchive" ? this.dependencies.inbox.unarchive
+              : c.kind === "message.closeHistoricalReview" ? this.dependencies.inbox.closeHistoricalReview : undefined;
       if (operation !== undefined && "inputId" in c) return { ...base, result: safeResult(await operation.call(this.dependencies.inbox, { inputId: c.inputId })) };
       return { ...base, error: { code: "remote_operation_forbidden", message: "This remote operation is not available." } };
     } catch (error) {

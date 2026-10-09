@@ -99,10 +99,14 @@
 .joi-thinking-stage { color: var(--forest); font-weight: 650; }
 .joi-thinking-meta, .joi-thinking-elapsed { white-space: nowrap; }
 @keyframes joi-pulse { 50% { opacity: .35; transform: scale(.8); } }
-.joi-goal-card { position: relative; display: grid; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); box-shadow: var(--shadow); overflow: hidden; }
+/* Neither the card nor its header row may clip: the action menu hangs below the row and has to stay
+   painted outside it. The corner rounding that clipping used to provide moves onto the one child
+   that paints to the card's edge, so a hovered header still follows the card's radius. */
+.joi-goal-card { position: relative; display: grid; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); box-shadow: var(--shadow); }
+.joi-goal-card.archived { background: color-mix(in srgb, var(--faint) 5%, var(--paper)); }
 .joi-goal-card.needs_attention { border-color: color-mix(in srgb, var(--amber) 46%, var(--line)); }
 .joi-goal-row { display: flex; align-items: stretch; }
-.joi-goal-open { flex: 1 1 auto; width: 100%; min-width: 0; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; align-items: center; padding: 14px 6px 14px 18px; border: 0; background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.joi-goal-open { flex: 1 1 auto; width: 100%; min-width: 0; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; align-items: center; padding: 14px 6px 14px 18px; border: 0; border-radius: 19px 0 0 19px; background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit; }
 .joi-goal-open:hover:not(:disabled) { background: color-mix(in srgb, var(--forest) 5%, transparent); }
 .joi-goal-open:disabled { cursor: default; }
 .workbench-orb, .agent-workbench { display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: linear-gradient(145deg, color-mix(in srgb, var(--forest) 82%, white), var(--forest-dark)); color: white; font-weight: 750; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 22%); }
@@ -118,18 +122,17 @@
 .joi-goal-status.running, .joi-goal-status.arranging, .joi-goal-status.reviewing, .joi-goal-status.extending { border-color: color-mix(in srgb, var(--forest) 40%, var(--line)); color: var(--forest); }
 .joi-goal-status.needs_attention, .joi-goal-status.failed { border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); color: var(--amber); }
 .joi-goal-side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; align-self: stretch; padding: 14px 18px 14px 8px; }
-.joi-goal-actions { display: flex; align-items: center; justify-content: flex-end; gap: 14px; }
-.joi-goal-link,
-.joi-goal-actions .joi-feed-cancel,
-.joi-goal-actions .joi-feed-dismiss { min-height: 0; padding: 0; border: 0; background: none; border-radius: 0; color: var(--faint); font-size: .76rem; font-weight: 600; white-space: nowrap; }
-.joi-goal-link:hover:not(:disabled),
-.joi-goal-actions .joi-feed-cancel:hover:not(:disabled),
-.joi-goal-actions .joi-feed-dismiss:hover:not(:disabled) { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; transform: none; background: none; border-color: transparent; }
-.joi-goal-link:focus-visible,
-.joi-goal-actions .joi-feed-cancel:focus-visible,
-.joi-goal-actions .joi-feed-dismiss:focus-visible { outline: 2px solid color-mix(in srgb, var(--forest) 60%, transparent); outline-offset: 3px; border-radius: 3px; }
-.joi-goal-actions .joi-feed-dismiss:hover:not(:disabled) { color: var(--red); }
-.joi-goal-actions .joi-feed-cancel-error { font-size: .72rem; }
+.joi-goal-menu { position: relative; display: flex; align-items: center; gap: 8px; }
+.joi-goal-menu-trigger { width: 30px; height: 30px; border-color: transparent; background: transparent; color: var(--faint); }
+.joi-goal-menu-trigger:hover:not(:disabled), .joi-goal-menu-trigger[aria-expanded="true"] { border-color: var(--line); background: color-mix(in srgb, var(--forest) 6%, var(--paper)); color: var(--ink); }
+.joi-goal-menu-list { position: absolute; z-index: 6; top: calc(100% + 6px); right: 0; display: grid; min-width: 128px; padding: 5px; border: 1px solid var(--line); border-radius: 11px; background: var(--paper); box-shadow: var(--shadow); }
+.joi-goal-menu-list button { padding: 8px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 600; text-align: left; white-space: nowrap; }
+.joi-goal-menu-list button:hover:not(:disabled) { background: var(--wash); }
+.joi-goal-menu-list button:disabled { cursor: progress; opacity: .55; }
+.joi-goal-menu-list button.danger { color: var(--red); }
+.joi-goal-menu-list button:focus-visible { outline: 2px solid color-mix(in srgb, var(--forest) 60%, transparent); outline-offset: 1px; }
+.joi-goal-menu-error { max-width: 190px; padding: 6px 9px; color: var(--red); font-size: .72rem; line-height: 1.4; }
+.joi-goal-archived-note { margin: 0 18px 10px 80px; color: var(--faint); font-size: .72rem; }
 .joi-goal-card > .joi-clarify { margin: 0 18px 17px 80px; padding-top: 12px; border-top: 1px solid var(--line); }
 .joi-retry-submitting { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--forest) 18%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--forest) 5%, var(--paper)); color: var(--forest); }
 .joi-retry-submitting > span:last-child { display: grid; gap: 2px; }
@@ -284,6 +287,12 @@
 .joi-clarify-workspace strong { color: var(--ink); }
 .joi-clarify-workspace span { color: var(--muted); font-size: .82rem; }
 .joi-clarify-workspace button { flex: 0 0 auto; white-space: nowrap; }
+.joi-continuation-context { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius); }
+.joi-continuation-context > strong { font-size: .85rem; }
+.joi-continuation-context > button { justify-self: start; }
+.joi-continuation-body { max-height: 240px; overflow: auto; overflow-wrap: anywhere; }
+.joi-continuation-body > :first-child { margin-top: 0; }
+.joi-continuation-body > :last-child { margin-bottom: 0; }
 .joi-workbench-confirmations { display: grid; gap: 10px; }
 .joi-workbench-confirmations h2 { margin: 0; font-size: 1rem; }
 
@@ -722,7 +731,7 @@
   .joi-goal-failure { margin-left: 16px; }
   .joi-goal-progress-track { flex-basis: 64px; }
   .joi-goal-side { padding-right: 16px; }
-  .joi-goal-actions { gap: 12px; }
+  .joi-goal-archived-note { margin-left: 16px; }
   .joi-goal-card > .joi-clarify { margin-left: 16px; }
   .joi-composer { grid-template-columns: 1fr; }
   .joi-composer button { grid-column: 1; }

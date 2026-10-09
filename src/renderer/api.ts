@@ -204,6 +204,16 @@ export class DigitalLifeApi {
       method: "POST",
     });
   }
+  archiveJoiMessage(inputId: string) {
+    return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/archive`, {
+      method: "POST",
+    });
+  }
+  unarchiveJoiMessage(inputId: string) {
+    return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/unarchive`, {
+      method: "POST",
+    });
+  }
   dismissJoiMessage(inputId: string) {
     return this.request<JoiAcceptedMessageDto>(`/api/v1/joi/messages/${encodeURIComponent(inputId)}/dismiss`, {
       method: "POST",

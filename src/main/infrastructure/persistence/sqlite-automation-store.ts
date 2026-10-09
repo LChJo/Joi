@@ -394,8 +394,10 @@ function queueGoalContinuation(
     }
     return null;
   }
+  // archived_at is cleared with the rest of the terminal state: a routine that fires on an archived
+  // goal starts it running again, and an archived card is hidden from the home feed by definition.
   const claimed = connection.prepare(`UPDATE joi_inbox_messages
-    SET status = 'PENDING', canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
+    SET status = 'PENDING', archived_at = NULL, canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
       clarification_reason_code = NULL, clarification_prompt = NULL, automation_routine_id = ?, updated_at = ?, last_opened_at = ?
     WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL`).run(
     routine.routineId, occurrence.now, occurrence.now, goal.goalId,

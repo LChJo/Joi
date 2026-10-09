@@ -241,7 +241,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
 
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
-      const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.clarification_reason_code, i.clarification_prompt,
+      const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.archived_at, i.clarification_reason_code, i.clarification_prompt,
         gate.status AS gate_status, gate.question_id, gate.question_version,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
         -- Latest orchestration Turn of this goal, resolve rows included: a goal-resume row
@@ -325,10 +325,15 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const base: JoiGoalCardBaseDto = {
           agentCount: number(row, "agent_count"),
           ...(artifacts.length === 0 ? {} : { artifacts }),
+          ...(typeof row.archived_at === "string" ? { archivedAt: row.archived_at } : {}),
           workbench: {
             workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",
             name: typeof row.workbench_name === "string" ? row.workbench_name : "等待归属",
           },
+          // Archiving is reversible, so it is offered one step earlier than removal: a terminal goal
+          // with nothing still running is fileable even when it never reached a finalized outcome,
+          // which is the state every failed card with work behind it is stuck in.
+          canArchive: terminalStatus && active === 0 && activeRuns === 0,
           canDelete: terminalStatus && (row.canceled_at !== null && row.canceled_at !== undefined
             || text(row, "inbox_status") === "CONSUMED" || finalOutcome)
             && active === 0 && activeRuns === 0

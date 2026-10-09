@@ -1,6 +1,7 @@
 import 'result_reader.dart';
 import 'package:flutter/material.dart';
 
+import 'archived_goals.dart';
 import 'remote_controller.dart';
 import 'goal_detail.dart';
 import 'connection_diagnostics_view.dart';
@@ -26,6 +27,71 @@ String statusLabel(String value) =>
       'DISPATCHING': '安排搭档',
     }[value] ??
     '状态更新中';
+
+/// The tappable part of a goal card.
+///
+/// Shared with the archive page so a filed-away goal is described exactly as it was on the feed —
+/// the two screens differ in what they offer under the card, not in how they read it.
+class GoalCardBody extends StatelessWidget {
+  const GoalCardBody({
+    super.key,
+    required this.goal,
+    required this.supportsHome,
+    required this.onOpen,
+    required this.onOpenResult,
+  });
+
+  final RemoteGoalCard goal;
+  final bool supportsHome;
+  final VoidCallback onOpen;
+  final VoidCallback onOpenResult;
+
+  @override
+  Widget build(BuildContext context) => InkWell(
+    onTap: !supportsHome || goal.goalId.isEmpty ? null : onOpen,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(child: Text(goal.workbenchName)),
+            Text(statusLabel(goal.status)),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Text(goal.title, style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        LinearProgressIndicator(
+          value: goal.totalWork == 0
+              ? 0
+              : (goal.completedWork / goal.totalWork).clamp(0, 1),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          '${goal.agentCount} 位搭档 · ${goal.completedWork}/${goal.totalWork} 已完成${goal.stage == null ? '' : ' · ${statusLabel(goal.stage!)}'}',
+        ),
+        if (goal.summary != null &&
+            (!supportsHome || !goal.needsContinuationDecision))
+          Padding(
+            padding: const EdgeInsets.only(top: 10),
+            child: InkWell(
+              onTap: supportsHome ? onOpenResult : null,
+              child: Text(
+                goal.summary!,
+                maxLines: 3,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+        if (supportsHome)
+          const Padding(
+            padding: EdgeInsets.only(top: 8),
+            child: Text('查看详情 ›'),
+          ),
+      ],
+    ),
+  );
+}
 
 Future<RemoteChoice?> chooseRemote(
   BuildContext context,
@@ -177,6 +243,16 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         title: const Text('joi'),
         actions: [
           Padding(padding: const EdgeInsets.all(16), child: Text(link)),
+          IconButton(
+            tooltip: '已归档',
+            icon: const Icon(Icons.inventory_2_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => ArchivedGoalsPage(controller: widget.controller),
+              ),
+            ),
+          ),
           ConnectionDiagnosticsButton(controller: widget.controller),
         ],
       ),
@@ -213,9 +289,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       Padding(
                         padding: const EdgeInsets.all(24),
                         child: Text(
-                          ready
+                          // An empty feed with a full archive is a state the user caused, so it
+                          // says where the cards went instead of reading as data loss.
+                          !ready
+                              ? '尚未同步首页，连接成功后会显示电脑上的任务。'
+                              : state.archivedGoals.isEmpty
                               ? '暂时没有任务，和 joi 说点什么吧。'
-                              : '尚未同步首页，连接成功后会显示电脑上的任务。',
+                              : '首页没有任务了，归档的卡片在右上角「已归档」里。',
                         ),
                       ),
                     for (final group in groups.entries)
@@ -236,83 +316,26 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  InkWell(
-                                    onTap:
-                                        !state.supportsHome ||
-                                            goal.goalId.isEmpty
-                                        ? null
-                                        : () => Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (_) => GoalDetailPage(
-                                                controller: widget.controller,
-                                                initial: goal,
-                                              ),
-                                            ),
-                                          ),
-                                    child: Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.start,
-                                      children: [
-                                        Row(
-                                          children: [
-                                            Expanded(
-                                              child: Text(goal.workbenchName),
-                                            ),
-                                            Text(statusLabel(goal.status)),
-                                          ],
+                                  GoalCardBody(
+                                    goal: goal,
+                                    supportsHome: state.supportsHome,
+                                    onOpen: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => GoalDetailPage(
+                                          controller: widget.controller,
+                                          initial: goal,
                                         ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          goal.title,
-                                          style: Theme.of(
-                                            context,
-                                          ).textTheme.titleMedium,
+                                      ),
+                                    ),
+                                    onOpenResult: () => Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => ResultReaderPage(
+                                          controller: widget.controller,
+                                          goal: goal,
                                         ),
-                                        const SizedBox(height: 12),
-                                        LinearProgressIndicator(
-                                          value: goal.totalWork == 0
-                                              ? 0
-                                              : (goal.completedWork /
-                                                        goal.totalWork)
-                                                    .clamp(0, 1),
-                                        ),
-                                        const SizedBox(height: 8),
-                                        Text(
-                                          '${goal.agentCount} 位搭档 · ${goal.completedWork}/${goal.totalWork} 已完成${goal.stage == null ? '' : ' · ${statusLabel(goal.stage!)}'}',
-                                        ),
-                                        if (goal.summary != null)
-                                          Padding(
-                                            padding: const EdgeInsets.only(
-                                              top: 10,
-                                            ),
-                                            child: InkWell(
-                                              onTap: !state.supportsHome
-                                                  ? null
-                                                  : () => Navigator.push(
-                                                      context,
-                                                      MaterialPageRoute(
-                                                        builder: (_) =>
-                                                            ResultReaderPage(
-                                                              controller: widget
-                                                                  .controller,
-                                                              goal: goal,
-                                                            ),
-                                                      ),
-                                                    ),
-                                              child: Text(
-                                                goal.summary!,
-                                                maxLines: 3,
-                                                overflow: TextOverflow.ellipsis,
-                                              ),
-                                            ),
-                                          ),
-                                        if (state.supportsHome)
-                                          const Padding(
-                                            padding: EdgeInsets.only(top: 8),
-                                            child: Text('查看详情 ›'),
-                                          ),
-                                      ],
+                                      ),
                                     ),
                                   ),
                                   if (state.supportsHome)

@@ -2,6 +2,7 @@ export type JoiInboxStatus = "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" |
 
 export interface JoiInboxRecord {
   attachmentIds?: string[];
+  archivedAt?: string;
   automationRoutineId?: string;
   workbenchId?: string;
   body: string;
@@ -23,6 +24,8 @@ export interface JoiInboxRecord {
 }
 
 export interface JoiInboxRepository {
+  /** Files a finished goal out of the home feed. Reversible, unlike {@link dismiss}. */
+  archive(inputId: string): Promise<JoiInboxRecord | null>;
   cancel(inputId: string): Promise<JoiInboxRecord | null>;
   /** Compatibility closure for a historical review after deterministic facts prove completion. */
   closeHistoricalReview?(inputId: string): Promise<JoiInboxRecord | null>;
@@ -34,4 +37,5 @@ export interface JoiInboxRepository {
   list(): Promise<JoiInboxRecord[]>;
   park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<JoiInboxRecord | null>;
   retry(inputId: string, patch: { text?: string }): Promise<JoiInboxRecord | null>;
+  unarchive(inputId: string): Promise<JoiInboxRecord | null>;
 }

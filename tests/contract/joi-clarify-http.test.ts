@@ -28,6 +28,8 @@ async function startSession(
   const closeHistoricalReviewCalls: string[] = [];
   const joiInbox = {
     accept: async () => DTO,
+    archive: async () => DTO,
+    unarchive: async () => DTO,
     cancel: async (input: { inputId: string }) => { cancelCalls.push(input.inputId); return cancel(input.inputId); },
     clarify: async (input: { actionChoice?: string; partnerId?: string; workbenchId?: string; inputId: string; text?: string }) => { clarifyCalls.push(input); return clarify(input); },
     closeHistoricalReview: async (input: { inputId: string }) => { closeHistoricalReviewCalls.push(input.inputId); return closeHistoricalReview(input.inputId); },

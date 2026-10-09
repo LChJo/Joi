@@ -1,7 +1,7 @@
 import { ResultExportMenu } from './ResultExportMenu';
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ClockIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
+import { ClockIcon, DotsThreeIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -870,7 +870,7 @@ function ClarifyTextarea({ "aria-label": ariaLabel, disabled, onChange, onKeyDow
   return <textarea aria-label={ariaLabel} disabled={disabled} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder} ref={ref} rows={1} value={value} />;
 }
 
-function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, suggestionSeed }: {
+function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, suggestionSeed, continuationSummary, onShowContinuationResult }: {
   api: DigitalLifeApi;
   partners: PartnerDto[];
   workbenchId: string | undefined;
@@ -882,6 +882,8 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   questionVersion: number | undefined;
   reasonCode: string | undefined;
   suggestionSeed?: string;
+  continuationSummary?: string | undefined;
+  onShowContinuationResult?: () => void;
 }) {
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -978,8 +980,13 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     }
   };
   return <div className="joi-clarify">
-    <p className="joi-clarify-label">{needsHistoricalReview ? "joi 正在整理历史状态" : "joi 需要你确认"}</p>
+    <p className="joi-clarify-label">{needsHistoricalReview ? "joi 正在整理历史状态" : needsGoalContinuation ? "是否继续完善结果？" : "joi 需要你确认"}</p>
     <p className="joi-clarify-reason">{clarificationText(reasonCode, prompt, assignedWorkbench?.name)}</p>
+    {needsGoalContinuation ? <section aria-label="当前结果与待补充内容" className="joi-continuation-context">
+      <strong>当前结果与待补充内容</strong>
+      {continuationSummary?.trim() ? <div aria-label="当前结果说明" className="joi-continuation-body joi-md" role="region" tabIndex={0}><Markdown>{continuationSummary}</Markdown></div> : <p className="joi-clarify-hint">暂时没有可展示的结果说明，无法列出具体待补充内容。</p>}
+      {continuationSummary?.trim() && onShowContinuationResult !== undefined ? <button className="button ghost" onClick={onShowContinuationResult} type="button">查看当前结果全文</button> : null}
+    </section> : null}
     {needsHistoricalReview ? <div className="joi-clarify-workspace">
       <div><strong>已交给 joi 自动校正</strong><span>Joi 会依据已完成的 Work 和闭合路径收敛状态，不会重放历史评审。若事实仍不足以证明完成，请取消这条任务，并用新的输入重新描述后续要求。</span></div>
     </div> : needsPartnerChoice ? <>
@@ -1017,10 +1024,10 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       <div><strong>重新核对已有工作</strong><span>已有回答和工作结果已保留，joi 会核对后继续。</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ text: "沿用已保存的回答，重试评审。" })} type="button">{busy ? "提交中…" : "重试评审"}</button>
     </div> : needsGoalContinuation ? <div className="joi-clarify-workspace">
-      <div><strong>选择如何收口</strong><span>继续会再授权最多两轮自动补充；接受现状会保留当前结论和已注明的缺口。</span></div>
+      <div><span>继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。</span><span>保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。</span></div>
       <span className="row-actions">
-        <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "CONTINUE" })} type="button">{busy ? "提交中…" : "继续补齐"}</button>
-        <button className="button quiet" disabled={busy} onClick={() => void resolve({ actionChoice: "ACCEPT_CURRENT" })} type="button">接受现状</button>
+        <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "CONTINUE" })} type="button">{busy ? "提交中…" : "继续完善"}</button>
+        <button className="button quiet" disabled={busy} onClick={() => void resolve({ actionChoice: "ACCEPT_CURRENT" })} type="button">保留当前结果</button>
       </span>
     </div> : needsWaitingRecovery ? <div className="joi-clarify-workspace">
       <div><strong>恢复原工作</strong><span>joi 会使用已保存的 Work 和搭档会话继续，不会重新创建一份任务。</span></div>
@@ -1051,23 +1058,6 @@ function CancelInputButton({ api, inputId, onCanceled }: { api: DigitalLifeApi; 
     }
   };
   return <span className="joi-feed-cancel-wrap"><button aria-label="取消这条任务" className="button quiet joi-feed-cancel" disabled={busy} onClick={() => void cancel()} type="button">{busy ? "取消中…" : "取消"}</button>{error === null ? null : <span className="joi-feed-cancel-error" role="status">{error}</span>}</span>;
-}
-
-function DismissInputButton({ api, inputId, onDismissed }: { api: DigitalLifeApi; inputId: string; onDismissed: () => void }) {
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const dismiss = async () => {
-    setBusy(true); setError(null);
-    try {
-      await api.dismissJoiMessage(inputId);
-      onDismissed();
-    } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : "没能移除这条卡片，请重试。");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return <span className="joi-feed-cancel-wrap"><button aria-label="移除这条卡片" className="button quiet joi-feed-dismiss" disabled={busy} onClick={() => void dismiss()} type="button">{busy ? "移除中…" : "移除"}</button>{error === null ? null : <span className="joi-feed-cancel-error" role="status">{error}</span>}</span>;
 }
 
 function ComposerWorkbenchPicker({ workbenches, onSelect, selected }: {
@@ -1151,6 +1141,75 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
     <span aria-hidden="true" className="joi-goal-progress-track"><i style={{ width: `${String(percent)}%` }} /></span>
     <i>{parts.join(" · ")}</i>
   </span>;
+}
+
+function GoalCardHead({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
+  return <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={onOpen} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong><GoalProgress goal={goal} /></span></button>;
+}
+
+function GoalResultPreview({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
+  if (goal.completionSummary === undefined || goal.clarification?.reasonCode === "goal_continuation_required") return null;
+  return <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><Markdown>{goal.completionSummary}</Markdown></div>;
+}
+
+/**
+ * Every per-card action, behind one icon button.
+ *
+ * They used to be a row of text links that grew by one with each new action, which made a feed of
+ * finished cards read as a wall of controls. A card that is not the user's current concern should
+ * offer nothing but a way in; the actions are one click deeper instead.
+ */
+function GoalActionMenu({ api, goal, archived, onRetried, onDismissed, onChanged }: {
+  api: DigitalLifeApi;
+  goal: JoiGoalCardDto;
+  archived?: boolean;
+  onRetried: () => void;
+  onDismissed: () => void;
+  onChanged: () => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wrapper = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const close = (event: MouseEvent) => { if (wrapper.current?.contains(event.target as Node) !== true) setOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", close);
+    document.addEventListener("keydown", escape);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
+  }, [open]);
+  const run = async (operation: Promise<unknown>, done: () => void, failure: string) => {
+    setBusy(true); setError(null);
+    try { await operation; setOpen(false); done(); }
+    catch (reason) { setError(reason instanceof ApiError ? reason.message : failure); }
+    finally { setBusy(false); }
+  };
+  const terminal = TERMINAL_GOAL_STATUSES.includes(goal.status);
+  const item = (label: string, onClick: () => void, danger = false) => <button
+    className={danger ? "danger" : undefined}
+    disabled={busy}
+    key={label}
+    onClick={onClick}
+    role="menuitem"
+    type="button">{label}</button>;
+  const items = [
+    terminal ? item("继续", () => { setOpen(false); onRetried(); }) : null,
+    archived === true
+      ? item("取消归档", () => void run(api.unarchiveJoiMessage(goal.goalId), onChanged, "没能取消归档，请重试。"))
+      : goal.canArchive === true ? item("归档", () => void run(api.archiveJoiMessage(goal.goalId), onChanged, "没能归档这张卡片，请重试。")) : null,
+    terminal ? null : item("取消任务", () => void run(api.cancelJoiMessage(goal.goalId), onChanged, "没能取消这条任务，请重试。")),
+    goal.canDelete ? item("移除", () => void run(api.dismissJoiMessage(goal.goalId), onDismissed, "没能移除这张卡片，请重试。"), true) : null,
+  ].filter((entry) => entry !== null);
+  return <div className="joi-goal-menu" onClick={(event) => event.stopPropagation()} ref={wrapper}>
+    <button aria-expanded={open} aria-haspopup="menu" aria-label={`${goal.title} 更多操作`} className="icon-button joi-goal-menu-trigger" disabled={busy} onClick={() => setOpen((current) => !current)} type="button"><DotsThreeIcon aria-hidden weight="bold" /></button>
+    {open ? <div aria-label={`${goal.title} 操作`} className="joi-goal-menu-list" role="menu">
+      {items}
+      {/* A refusal keeps the menu open so the action can be retried without reopening; the reason
+          belongs next to the item that was refused rather than at the card. */}
+      {error === null ? null : <span className="joi-goal-menu-error" role="status">{error}</span>}
+    </div> : null}
+  </div>;
 }
 
 function GoalAgentWarning({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
@@ -1400,9 +1459,9 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
       <div className="joi-goal-drawer-body">
         {goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
-        {goal.completionSummary === undefined ? null : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>}
+        {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} /> : <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
-        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
+        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
         {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
         <div className="joi-goal-detail-body">
@@ -1432,6 +1491,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
   onRetried: (goal: JoiGoalCardDto) => void;
 }) {
   const [body] = useState(goal.completionSummary ?? "");
+  const resultLabel = goal.clarification?.reasonCode === "goal_continuation_required" ? "当前结果" : "最终结果";
   const [exportMenu, setExportMenu] = useState(false);
   const close = () => { if (exportMenu) setExportMenu(false); else onBack(); };
   useEffect(() => {
@@ -1442,7 +1502,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
     return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = previousOverflow; };
   }, [onBack, exportMenu]);
   return <div className="joi-drawer-backdrop" onClick={close} role="presentation">
-    <section aria-label={`${goal.workbench.name} 的最终结果`} aria-modal="true" className="joi-goal-drawer joi-result-drawer" onClick={(event) => { event.stopPropagation(); setExportMenu(false); }} role="dialog">
+    <section aria-label={`${goal.workbench.name} 的${resultLabel}`} aria-modal="true" className="joi-goal-drawer joi-result-drawer" onClick={(event) => { event.stopPropagation(); setExportMenu(false); }} role="dialog">
       <header className="joi-goal-detail-header">
         <div className="joi-goal-detail-title">
           <p className="eyebrow">{goal.workbench.name}</p>
@@ -1452,7 +1512,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
         <div className="row-actions"><button className="button ghost" disabled={goal.workbench.workbenchId === ""} onClick={() => onOpenDetail()} type="button">查看详情</button><button className="button quiet" onClick={close} type="button">关闭</button></div>
       </header>
       <div className="joi-goal-drawer-body">
-        <article className="joi-goal-result"><h2>最终结果</h2><div className="joi-md"><Markdown>{body}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>
+        <article className="joi-goal-result"><h2>{resultLabel}</h2><div className="joi-md"><Markdown>{body}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>
         <GoalAgentWarning goal={goal} onOpen={() => onOpenDetail("FAILED")} />
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
       </div>
@@ -1635,6 +1695,9 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     }
   };
   const visibleThinking = useMemo(() => feed.thinking.filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > expiryTick), [feed.thinking, expiryTick]);
+  // Archived cards travel in the same list (they carry `archivedAt`) and belong to the archive
+  // screen. Lookups still search every goal, so focusing an archived one opens its detail.
+  const visibleGoals = useMemo(() => feed.goals.filter((goal) => goal.archivedAt === undefined), [feed.goals]);
   const openGoal = feed.goals.find((goal) => goal.goalId === openGoalId);
   const dismissGoal = (goalId: string) => setFeed((current) => ({ ...current, goals: current.goals.filter((goal) => goal.goalId !== goalId) }));
   const dismissAction = (inputId: string) => setFeed((current) => ({ ...current, unassignedActions: current.unassignedActions.filter((item) => item.inputId !== inputId) }));
@@ -1656,17 +1719,17 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     <div aria-label="joi 信息流" className="joi-feed joi-feed-single">
       {visibleThinking.map((item) => <ThinkingRow item={item} key={item.turnId} />)}
       {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} /></article>)}
-      {feed.goals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
+      {visibleGoals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
-          <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={() => { setResultGoal(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong><GoalProgress goal={goal} /></span></button>
-          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><div aria-label={`${goal.title} 操作`} className="joi-goal-actions" role="group">{TERMINAL_GOAL_STATUSES.includes(goal.status) ? null : <CancelInputButton api={api} inputId={goal.goalId} onCanceled={() => void refresh().catch(() => undefined)} />}{TERMINAL_GOAL_STATUSES.includes(goal.status) ? <button aria-label={`继续「${goal.title}」`} className="joi-goal-link" onClick={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} type="button">{retryGoalId === goal.goalId ? "收起" : "继续"}</button> : null}{goal.canDelete ? <DismissInputButton api={api} inputId={goal.goalId} onDismissed={() => dismissGoal(goal.goalId)} /> : null}</div></div>
+          <GoalCardHead goal={goal} onOpen={() => { setResultGoal(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} />
+          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><GoalActionMenu api={api} goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={() => dismissGoal(goal.goalId)} onChanged={() => void refresh().catch(() => undefined)} /></div>
         </div>
-        {goal.completionSummary === undefined ? null : <div aria-haspopup="dialog" aria-label={`打开「${goal.title}」的最终结果全文`} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={() => { setResultGoal(goal); setOpenGoalId(null); }} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); setResultGoal(goal); setOpenGoalId(null); } }}><Markdown>{goal.completionSummary}</Markdown></div>}
+        <GoalResultPreview goal={goal} onOpen={() => { setResultGoal(goal); setOpenGoalId(null); }} />
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
-        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} />}
+        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} onShowContinuationResult={() => { setResultGoal(goal); setOpenGoalId(null); }} />}
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); markRetryStarted(goal); }} /> : null}
       </article>)}
-      {!feedError && visibleThinking.length === 0 && feed.unassignedActions.length === 0 && feed.goals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}
+      {!feedError && visibleThinking.length === 0 && feed.unassignedActions.length === 0 && visibleGoals.length === 0 ? <p className="joi-feed-empty">这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。</p> : null}
     </div>
     {snapshot.partners.length >= 2 ? null : <div className="inline-notice warning"><span>{snapshot.partners.length === 0 ? "当前还没有工作搭档。" : `当前只有 ${String(snapshot.partners.length)} 个工作搭档。`}可以先用场景预设一键组建团队，或去搭档页手动创建 2-3 个。</span><span className="row-actions"><button className="button ghost" onClick={() => onNavigate?.("agents", "scenarios")} type="button">看场景预设</button><button className="button ghost" onClick={() => onNavigate?.("agents", "partners")} type="button">去搭档页创建</button></span></div>}
     <div className="joi-composer-dock">
@@ -1705,7 +1768,7 @@ function clarificationText(code: string | undefined, prompt?: string, workbenchN
   if (code === "question_required") return prompt ?? "joi 需要你回答一个问题，才能继续安排这条任务。";
   if (code === "partner_waiting_recovery_required") return prompt ?? "一项搭档工作仍在等待。点击继续原工作即可恢复。";
   if (code === "partner_auth_required") return prompt ?? "搭档需要重新授权。请先在搭档设置完成授权，然后点击继续原工作。";
-  if (code === "goal_continuation_required") return prompt ?? "已自动补充两轮，当前结果仍有明确缺口。可以继续补齐，或接受当前结果。";
+  if (code === "goal_continuation_required") return "当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。";
   if (code === "workbench_workspace_not_ready") return `“${workbenchName ?? "当前工作台"}”还没有可用的工作目录。选择一个目录后，joi 会自动继续这条任务。`;
   if (code === "partner_selection_required") return prompt ?? "请选择一个可用搭档继续这条任务。";
   if (code === "work_dispatch_failed") return prompt ?? "joi 暂时无法把这条任务派发给搭档，任务已暂停。修复搭档配置后可以继续重试。";
@@ -1731,4 +1794,49 @@ export function JoiHome({ api, focusGoalId, onNavigate, onScheduleGoal }: {
   if (error !== null) return <section className="content-state" role="alert"><p>{error}</p><button className="button quiet" onClick={() => void load()} type="button">再试一次</button></section>;
   if (snapshot === null) return <section className="content-state" role="status">joi 正在整理全局状态…</section>;
   return snapshot.runtime.configured ? <JoiComposer api={api} {...(focusGoalId === undefined ? {} : { focusGoalId })} {...(onNavigate === undefined ? {} : { onNavigate })} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} snapshot={snapshot} /> : <ModelSourceSetup api={api} changed={load} />;
+}
+
+/**
+ * The cards the user filed away.
+ *
+ * Archiving is the reversible half of cleaning up the feed, so this screen has to keep every way
+ * back: unarchive restores the card, continue revives the goal (which also unarchives it, and hands
+ * the user back to the home feed where the resumed work will show up), and remove is still the one
+ * action that throws the goal away.
+ */
+export function ArchivedGoals({ api, onContinued }: { api: DigitalLifeApi; onContinued?: (goalId: string) => void }) {
+  const [feed, setFeed] = useState<JoiHomeFeedDto | null>(null);
+  const [snapshot, setSnapshot] = useState<JoiSnapshotDto | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [openGoalId, setOpenGoalId] = useState<string | null>(null);
+  const [retryGoalId, setRetryGoalId] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    try {
+      const [nextFeed, nextSnapshot] = await Promise.all([api.joiHomeFeed(), api.joiSnapshot()]);
+      setFeed(nextFeed); setSnapshot(nextSnapshot); setError(null);
+    } catch (reason) {
+      setError(reason instanceof ApiError ? reason.message : "没能读取已归档的目标。");
+    }
+  }, [api]);
+  useEffect(() => { const timer = setTimeout(() => void load(), 0); return () => clearTimeout(timer); }, [load]);
+  const refresh = () => void load().catch(() => undefined);
+  if (error !== null) return <section className="content-state" role="alert"><p>{error}</p><button className="button quiet" onClick={() => void load()} type="button">再试一次</button></section>;
+  if (feed === null || snapshot === null) return <section className="content-state" role="status">joi 正在整理已归档的目标…</section>;
+  const archived = feed.goals.filter((goal) => goal.archivedAt !== undefined);
+  const openGoal = archived.find((goal) => goal.goalId === openGoalId);
+  return <section className="joi-home" aria-labelledby="joi-archived-title">
+    <header><h1 id="joi-archived-title">已归档</h1><p>归档只是把卡片从首页收起来。取消归档可以放回首页，继续会重新把它跑起来。</p></header>
+    {openGoal === undefined ? null : <GoalDetail api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} onBack={() => setOpenGoalId(null)} onResolved={refresh} onRetried={(goal) => onContinued?.(goal.goalId)} />}
+    <div aria-label="已归档的目标" className="joi-feed joi-feed-single">
+      {archived.length === 0 ? <p className="joi-feed-empty">还没有归档的目标。在首页的卡片菜单里选「归档」，它就会收到这里。</p> : archived.map((goal) => <article className={`joi-goal-card archived ${goal.status.toLowerCase()}`} key={goal.goalId}>
+        <div className="joi-goal-row">
+          <GoalCardHead goal={goal} onOpen={() => { setRetryGoalId(null); setOpenGoalId(goal.goalId); }} />
+          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><GoalActionMenu api={api} archived goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={refresh} onChanged={refresh} /></div>
+        </div>
+        <p className="joi-goal-archived-note">{goal.archivedAt === undefined ? "" : `${new Date(goal.archivedAt).toLocaleString()} 归档`}</p>
+        <GoalResultPreview goal={goal} onOpen={() => { setRetryGoalId(null); setOpenGoalId(goal.goalId); }} />
+        {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); onContinued?.(goal.goalId); }} /> : null}
+      </article>)}
+    </div>
+  </section>;
 }

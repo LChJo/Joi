@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
-import { AgentMessageStream, WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
+import { AgentMessageStream, ArchivedGoals, WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
 import type { ThinkingEffort, WorkbenchAgentCardDto, WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution.js";
 
@@ -53,6 +53,23 @@ function mockHomeMessages(api: DigitalLifeApi) {
     mockResolvedValueOnce: (value: { items: JoiAcceptedMessageDto[] }) => { spy.mockResolvedValueOnce(projection(value)); return mock; },
   };
   return mock;
+}
+
+/**
+ * Every per-card action lives behind the card's ⋯ menu, so an assertion on one of them has to open
+ * the menu first. `menuItem` matches the opened item by its own label.
+ */
+function openGoalMenu(title: string) {
+  fireEvent.click(screen.getByRole("button", { name: `${title} 更多操作` }));
+}
+
+function goalMenuItem(name: "继续" | "取消任务" | "归档" | "取消归档" | "移除") {
+  return screen.getByRole("menuitem", { name });
+}
+
+function openGoalMenuItem(title: string, name: "继续" | "取消任务" | "归档" | "取消归档" | "移除") {
+  openGoalMenu(title);
+  fireEvent.click(goalMenuItem(name));
 }
 
 describe("Workbench context center", () => {
@@ -1116,7 +1133,7 @@ describe("joi home single entry", () => {
     fireEvent.click(await screen.findByRole("button", { name: "定时" }));
     expect(onScheduleGoal).toHaveBeenCalledWith("goal-RUNNING");
     fireEvent.click(screen.getByRole("button", { name: "关闭" }));
-    fireEvent.click(screen.getByRole("button", { name: "移除这条卡片" }));
+    openGoalMenuItem("目标 COMPLETED", "移除");
     await waitFor(() => expect(dismiss).toHaveBeenCalledWith("goal-COMPLETED"));
     expect(screen.queryByText("目标 COMPLETED")).not.toBeInTheDocument();
   });
@@ -1143,7 +1160,7 @@ describe("joi home single entry", () => {
 
     render(<JoiHome api={api} />);
     expect(await screen.findByText("排队中")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "取消这条任务" }));
+    openGoalMenuItem("卡住的排队任务", "取消任务");
     await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-arranged-cancel"));
   });
 
@@ -1169,7 +1186,7 @@ describe("joi home single entry", () => {
 
     render(<JoiHome api={api} />);
     expect(await screen.findByText("执行中")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "取消这条任务" }));
+    openGoalMenuItem("正在执行的主任务", "取消任务");
     await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-running-cancel"));
   });
 
@@ -1230,21 +1247,25 @@ describe("joi home single entry", () => {
     const retry = vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-failed", status: "PENDING" });
 
     render(<JoiHome api={api} />);
-    // Every terminal card exposes a continue toggle; running cards do not.
-    expect(await screen.findByRole("button", { name: "继续「失败的目标」" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "继续「取消的目标」" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "继续「完成的目标」" })).toBeInTheDocument();
-    const failedGoalActions = screen.getByRole("group", { name: "失败的目标 操作" });
-    expect(failedGoalActions).toHaveClass("joi-goal-actions");
-    expect(failedGoalActions.parentElement).toHaveClass("joi-goal-side");
-    const failedGoalStatus = failedGoalActions.closest(".joi-goal-row")?.querySelector(".joi-goal-status");
+    // Every terminal card offers continue from its menu; running cards do not.
+    for (const title of ["失败的目标", "取消的目标", "完成的目标"]) {
+      expect(await screen.findByRole("button", { name: `${title} 更多操作` })).toBeInTheDocument();
+    }
+    const failedGoalTrigger = screen.getByRole("button", { name: "失败的目标 更多操作" });
+    const failedGoalSide = failedGoalTrigger.closest(".joi-goal-side");
+    expect(failedGoalSide).not.toBeNull();
+    const failedGoalStatus = failedGoalSide?.querySelector(".joi-goal-status");
     expect(failedGoalStatus).toHaveTextContent("处理失败");
-    expect(failedGoalStatus?.parentElement).toHaveClass("joi-goal-side");
-    const failedGoalTitle = failedGoalActions.closest(".joi-goal-card")?.querySelector(".joi-goal-title");
+    const failedGoalTitle = failedGoalTrigger.closest(".joi-goal-card")?.querySelector(".joi-goal-title");
     expect(failedGoalTitle).toHaveTextContent("失败的目标");
+    // A failed card with work behind it has no finalized outcome, so removal stays out of reach —
+    // archiving is the action that takes it off the feed.
+    openGoalMenu("失败的目标");
+    expect(goalMenuItem("继续")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "移除" })).not.toBeInTheDocument();
 
     // Expanding the failed card shows the supplementary input and submits with text.
-    fireEvent.click(screen.getByRole("button", { name: "继续「失败的目标」" }));
+    fireEvent.click(goalMenuItem("继续"));
     expect(await screen.findByText(/问题处理好后，可以继续这条任务/u)).toBeInTheDocument();
     const supplementary = screen.getByLabelText("补充说明");
     fireEvent.change(supplementary, { target: { value: "已修复搭档技能，重新派发" } });
@@ -1252,7 +1273,7 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-failed", { text: "已修复搭档技能，重新派发" }));
 
     // The canceled card retries with an empty body (no text field).
-    fireEvent.click(screen.getByRole("button", { name: "继续「取消的目标」" }));
+    openGoalMenuItem("取消的目标", "继续");
     expect(await screen.findByText(/这条任务之前被取消了/u)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "继续" }));
     await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-canceled", {}));
@@ -1283,7 +1304,8 @@ describe("joi home single entry", () => {
       .mockResolvedValueOnce({ workbenchId: workbench.workbenchId, dailyCallLimit: 5, callsUsedToday: 1, evidenceCount: 12, evaluableCount: 10, poolEvaluable: 12, poolVerificationFailed: 4, activeRevisionId: null, reason: "rolled_back", runRequestedAt: null, lastVerdict: null, versions: [] });
 
     render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "继续「完成的目标」" }));
+    await screen.findByRole("button", { name: "完成的目标 更多操作" });
+    openGoalMenuItem("完成的目标", "继续");
     const button = await screen.findByRole("button", { name: "反馈策略没帮上忙" });
     fireEvent.click(button);
     expect(await screen.findByText("这条目标没有绑定进化策略，无需反馈。")).toBeInTheDocument();
@@ -1382,7 +1404,8 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-fast-retry", status: "PENDING" });
 
     render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "继续「马上继续的目标」" }));
+    await screen.findByRole("button", { name: "马上继续的目标 更多操作" });
+    openGoalMenuItem("马上继续的目标", "继续");
     fireEvent.click(await screen.findByRole("button", { name: "继续" }));
     expect(await screen.findByText("正在安排")).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "queued" })).toBeInTheDocument();
@@ -1414,7 +1437,8 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "retryJoiMessage").mockImplementation(() => new Promise((resolve) => { acknowledge = resolve; }));
 
     render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "继续「继续提交不能静默」" }));
+    await screen.findByRole("button", { name: "继续提交不能静默 更多操作" });
+    openGoalMenuItem("继续提交不能静默", "继续");
     fireEvent.click(await screen.findByRole("button", { name: "继续" }));
 
     expect(await screen.findByRole("status", { name: "正在提交继续请求" })).toBeInTheDocument();
@@ -1449,7 +1473,8 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "retryJoiMessage").mockImplementation(() => new Promise((_resolve, reject) => { rejectRetry = reject; }));
 
     render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "继续「提交失败后仍可重试」" }));
+    await screen.findByRole("button", { name: "提交失败后仍可重试 更多操作" });
+    openGoalMenuItem("提交失败后仍可重试", "继续");
     fireEvent.click(await screen.findByRole("button", { name: "继续" }));
     expect(await screen.findByRole("status", { name: "正在提交继续请求" })).toBeInTheDocument();
 
@@ -1489,7 +1514,8 @@ describe("joi home single entry", () => {
     vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-stale-retry", status: "PENDING" });
 
     const view = render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "继续「防旧响应目标」" }));
+    await screen.findByRole("button", { name: "防旧响应目标 更多操作" });
+    openGoalMenuItem("防旧响应目标", "继续");
     act(() => { document.dispatchEvent(new Event("visibilitychange")); });
     await waitFor(() => expect(releaseOldPoll).toBeDefined());
     fireEvent.click(await screen.findByRole("button", { name: "继续" }));
@@ -1620,7 +1646,7 @@ describe("joi home single entry", () => {
     expect(screen.getByText("搭档配置暂不可用，请先检查设置。")).toBeInTheDocument();
   });
 
-  it("offers bounded continuation or acceptance on the original goal card", async () => {
+  it.each([true, false])("explains bounded continuation using available result context (summary: %s)", async (hasSummary) => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-continuation", "研究 Workbench");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
@@ -1633,7 +1659,7 @@ describe("joi home single entry", () => {
           prompt: "已自动补充两轮，当前结果仍有明确缺口。",
           reasonCode: "goal_continuation_required",
         },
-        completionSummary: "横评维度已建立，但近七天来源不足。",
+        ...(hasSummary ? { completionSummary: "横评维度已建立，但近七天来源不足。" } : {}),
         goalId: "goal-continuation",
         status: "NEEDS_ATTENTION",
         title: "评估中文 AI 资讯网站",
@@ -1648,10 +1674,27 @@ describe("joi home single entry", () => {
     });
 
     render(<JoiHome api={api} />);
-    expect(await screen.findByText("已自动补充两轮，当前结果仍有明确缺口。")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "继续补齐" }));
+    expect(await screen.findByText("是否继续完善结果？")).toBeInTheDocument();
+    expect(screen.getByText("当前结果与待补充内容")).toBeInTheDocument();
+    if (hasSummary) {
+      expect(screen.getByText("横评维度已建立，但近七天来源不足。")).toBeInTheDocument();
+    } else {
+      expect(screen.getByText("暂时没有可展示的结果说明，无法列出具体待补充内容。")).toBeInTheDocument();
+    }
+    expect(screen.getByText("继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。")).toBeInTheDocument();
+    expect(screen.getByText("保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。")).toBeInTheDocument();
+    expect(screen.queryByText(/已自动补充两轮/u)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/最终结果全文/u)).not.toBeInTheDocument();
+    if (hasSummary) {
+      fireEvent.click(screen.getByRole("button", { name: "查看当前结果全文" }));
+      const resultDialog = screen.getByRole("dialog", { name: "研究 Workbench 的当前结果" });
+      expect(within(resultDialog).getByRole("heading", { name: "当前结果" })).toBeInTheDocument();
+      expect(within(resultDialog).queryByRole("heading", { name: "最终结果" })).not.toBeInTheDocument();
+      fireEvent.click(within(resultDialog).getByRole("button", { name: "关闭" }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "继续完善" }));
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "CONTINUE" }));
-    fireEvent.click(screen.getByRole("button", { name: "接受现状" }));
+    fireEvent.click(screen.getByRole("button", { name: "保留当前结果" }));
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "ACCEPT_CURRENT" }));
     expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
   });
@@ -2073,13 +2116,23 @@ describe("joi home single entry", () => {
     ] });
     const dismiss = vi.spyOn(api, "dismissJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "done-1", status: "CONSUMED" });
     render(<JoiHome api={api} />);
-    const buttons = await screen.findAllByRole("button", { name: "移除这条卡片" });
-    expect(buttons).toHaveLength(2);
-    const firstDismiss = buttons[0];
-    if (firstDismiss === undefined) throw new Error("expected a dismiss button");
-    fireEvent.click(firstDismiss);
+    // Every card carries the trigger; only the finished ones carry a removal inside it. The cards
+    // render in feed order, so the last trigger is the one still running.
+    const triggers = await screen.findAllByRole("button", { name: "正在安排的新目标 更多操作" });
+    expect(triggers).toHaveLength(3);
+    const liveTrigger = triggers[2];
+    if (liveTrigger === undefined) throw new Error("expected a running card");
+    fireEvent.click(liveTrigger);
+    expect(goalMenuItem("取消任务")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "移除" })).not.toBeInTheDocument();
+    fireEvent.click(liveTrigger);
+
+    const doneTrigger = triggers[0];
+    if (doneTrigger === undefined) throw new Error("expected a finished card");
+    fireEvent.click(doneTrigger);
+    fireEvent.click(goalMenuItem("移除"));
     await waitFor(() => expect(dismiss).toHaveBeenCalledWith("done-1"));
-    await waitFor(() => expect(screen.queryAllByRole("button", { name: "移除这条卡片" })).toHaveLength(1));
+    await waitFor(() => expect(screen.queryAllByRole("button", { name: "正在安排的新目标 更多操作" })).toHaveLength(2));
   });
 
   it("surfaces a dismiss failure inline at the card", async () => {
@@ -2091,8 +2144,49 @@ describe("joi home single entry", () => {
     ] });
     vi.spyOn(api, "dismissJoiMessage").mockRejectedValue(new ApiError("gone", "这条还在处理中", 400));
     render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "移除这条卡片" }));
+    await screen.findByRole("button", { name: "正在安排的新目标 更多操作" });
+    openGoalMenuItem("正在安排的新目标", "移除");
     expect(await screen.findByText("这条还在处理中")).toBeInTheDocument();
+  });
+
+  it("archives a finished goal off the home feed and restores it from the archive", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-archive", "归档工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const goal = {
+      agentCount: 0,
+      workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+      // A failed goal that never reached a finalized outcome: removal stays out of reach here, and
+      // archiving is the action that takes it off the feed.
+      canArchive: true,
+      canDelete: false,
+      goalId: "goal-archive",
+      status: "FAILED" as const,
+      title: "收起来的目标",
+      updatedAt: workbench.updatedAt,
+      work: { active: 0, completed: 0, failed: 1, total: 1 },
+    };
+    const feed = { goals: [goal], thinking: [], unassignedActions: [] };
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockResolvedValue({ ...feed, goals: [{ ...goal, archivedAt: "2026-10-09T09:00:00.000Z" }] });
+    const archive = vi.spyOn(api, "archiveJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-archive", status: "CONSUMED" });
+
+    const view = render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "收起来的目标 更多操作" });
+    openGoalMenuItem("收起来的目标", "归档");
+    await waitFor(() => expect(archive).toHaveBeenCalledWith("goal-archive"));
+    // The poll that follows is what actually moves the card; the feed the host now returns carries
+    // it as archived, and the home screen must not render it any more.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "收起来的目标 更多操作" })).not.toBeInTheDocument());
+    expect(screen.getByText(/这里很干净/u)).toBeInTheDocument();
+    view.unmount();
+
+    const unarchive = vi.spyOn(api, "unarchiveJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-archive", status: "CONSUMED" });
+    render(<ArchivedGoals api={api} />);
+    expect(await screen.findByText("收起来的目标")).toBeInTheDocument();
+    openGoalMenuItem("收起来的目标", "取消归档");
+    await waitFor(() => expect(unarchive).toHaveBeenCalledWith("goal-archive"));
   });
 
   it("surfaces a cancel failure inline at the card", async () => {

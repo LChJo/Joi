@@ -1,4 +1,5 @@
 import {
+  ArchiveIcon,
   ArrowClockwiseIcon,
   ChartBarIcon,
   ChatsCircleIcon,
@@ -19,7 +20,7 @@ import { QRCodeSVG } from "qrcode.react";
 
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
 import { ApiError, type DigitalLifeApi } from "./api";
-import { WorkbenchManager, JoiHome, ModelSourceManager } from "./JoiHome";
+import { ArchivedGoals, WorkbenchManager, JoiHome, ModelSourceManager } from "./JoiHome";
 import { PartnerPage } from "./PartnerPage";
 import { JoiSkillSettings } from "./JoiSkillSettings";
 import { AutomationPanel } from "./AutomationPanel";
@@ -28,7 +29,7 @@ import type { DiagnosticsDto, InteractionDto } from "./types";
 import type { SystemSettingsDto } from "../shared/system-settings";
 import { StatisticsPage } from "./StatisticsPage";
 
-type Section = "agents" | "automations" | "joi" | "lives" | "settings" | "statistics";
+type Section = "agents" | "archived" | "automations" | "joi" | "lives" | "settings" | "statistics";
 type SettingsTab = "connections" | "data" | "diagnostics" | "models" | "security" | "skills";
 
 const SESSION_DISPLAY_LIMIT = 10;
@@ -51,6 +52,7 @@ const NAVIGATION = [
   { icon: PulseIcon, key: "automations", label: "定时任务" },
   { icon: GearSixIcon, key: "settings", label: "设置" },
   { icon: ChartBarIcon, key: "statistics", label: "统计" },
+  { icon: ArchiveIcon, key: "archived", label: "已归档" },
 ] as const;
 
 function Notice({ children, tone = "info" }: { children: React.ReactNode; tone?: "danger" | "info" | "success" }) {
@@ -365,5 +367,5 @@ export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
   const streamHint = streamState === "reconnecting" ? "页面仍可使用，可以手动刷新状态。" : "joi 会按固定节奏刷新最新状态。";
   const reconnectStream = () => { setStreamState("connecting"); void load(); };
   useEffect(() => { if (contentRef.current !== null) contentRef.current.scrollTop = 0; }, [section, selectedWorkbenchId]);
-  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => { if (key === "lives") setSelectedWorkbenchId(undefined); if (key === "automations") setScheduledGoalId(undefined); setFocusedGoalId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={streamHint}>{streamLabel}</span></div>{streamState === "reconnecting" ? <button aria-label="重新连接状态更新" className="icon-button stream-retry" onClick={reconnectStream} title="重新连接状态更新" type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}<button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} {...(focusedGoalId === undefined ? {} : { focusGoalId: focusedGoalId })} onNavigate={go} onScheduleGoal={(goalId) => { setScheduledGoalId(goalId); setSection("automations"); }} /> : section === "lives" ? <WorkbenchManager api={api} {...(selectedWorkbenchId === undefined ? {} : { initialWorkbenchId: selectedWorkbenchId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "automations" ? <AutomationPanel api={api} {...(scheduledGoalId === undefined ? {} : { initialGoalId: scheduledGoalId })} onOpenJoi={() => setSection("joi")} /> : section === "statistics" ? <StatisticsPage api={api} onOpenGoal={(goalId) => { setFocusedGoalId(goalId); setSection("joi"); }} /> : <SettingsPanel api={api} diagnostics={null} interactions={interactions} />}</main></div>;
+  return <div className="app-shell"><aside className="sidebar"><header className="brand-bar" role="banner"><span className="wordmark-symbol">JOI</span><span><strong>joi</strong><small>思考、安排、派发</small></span></header><nav aria-label="主导航">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => { if (key === "lives") setSelectedWorkbenchId(undefined); if (key === "automations") setScheduledGoalId(undefined); setFocusedGoalId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer><div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={streamHint}>{streamLabel}</span></div>{streamState === "reconnecting" ? <button aria-label="重新连接状态更新" className="icon-button stream-retry" onClick={reconnectStream} title="重新连接状态更新" type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}<button aria-label="退出登录" className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">再试一次</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} {...(focusedGoalId === undefined ? {} : { focusGoalId: focusedGoalId })} onNavigate={go} onScheduleGoal={(goalId) => { setScheduledGoalId(goalId); setSection("automations"); }} /> : section === "lives" ? <WorkbenchManager api={api} {...(selectedWorkbenchId === undefined ? {} : { initialWorkbenchId: selectedWorkbenchId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "automations" ? <AutomationPanel api={api} {...(scheduledGoalId === undefined ? {} : { initialGoalId: scheduledGoalId })} onOpenJoi={() => setSection("joi")} /> : section === "statistics" ? <StatisticsPage api={api} onOpenGoal={(goalId) => { setFocusedGoalId(goalId); setSection("joi"); }} /> : section === "archived" ? <ArchivedGoals api={api} onContinued={(goalId) => { setFocusedGoalId(goalId); setSection("joi"); }} /> : <SettingsPanel api={api} diagnostics={null} interactions={interactions} />}</main></div>;
 }

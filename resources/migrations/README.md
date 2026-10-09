@@ -42,3 +42,5 @@ Migration 062 增加 `workbench_agent_tool_traces`（工具轨迹私密正文）
 Migration 061 修复进化证据无法收敛的三处遗留状态，不新增表。为 evolution_evidence 增加 classified_at 承载幂等判定，使证据分类可随目标收敛单调升级，而 observed_at 仍是裁决窗口时间戳、只在真正升级时前移；关闭已撤销（取消 / 忽略）目标上永久停留在 ACTIVE 的清图，撤销时刻取自目标行本身，迁移不依赖时钟；按 059 的实际落库时间精确放行当时仍在途、结局发生在迁移之后的目标，已终结的历史目标继续遵循 059 的"固定基线且不采样"。触发口径改为跨工作台共享证据池见 ADR 0020 的 2026-09-24 修订。
 
 Migration 067 让思考强度成为按 model revision 可配置的第五个可空列（off/low/medium/high/xhigh/max）。NULL 即未配置，存量行退回 baseUrl 白名单判定（always-on 主机 low，其余 off），无需回填。与 063 的三列同属 append-only revision：服务层在保留 Model ID 的编辑里显式携带，改 Model ID 时随三列一并重置——思考档位是"这个模型在这家端点上的事实"，换了模型旧档位可能直接 400。
+
+Migration 068 为目标输入增加可空 `archived_at`，把「归档」做成 `dismissed_at` 的可逆对应物：归档的卡片离开首页信息流、进入「已归档」列表，可在那里撤销归档、继续或移除，因此单开一列而不是复用软删标记。只有终态目标可归档；显式重试与定时续跑在同一次写入里清空该列，重新跑起来的目标不会继续隐身。

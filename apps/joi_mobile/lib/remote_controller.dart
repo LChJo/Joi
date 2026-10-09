@@ -58,7 +58,9 @@ class RemoteGoalCard {
     this.goalId = '',
     this.workbenchId = '',
     this.workbenchName = '等待归属',
+    this.canArchive = false,
     this.canDelete = false,
+    this.archivedAt,
     this.summary,
     this.prompt,
     this.reasonCode,
@@ -78,6 +80,40 @@ class RemoteGoalCard {
   final String workbenchId;
   final String workbenchName;
   final bool canDelete;
+
+  /// Whether the host will file this card away. Removal is stricter than archiving — a failed goal
+  /// that never reached a finalized outcome can be archived but not removed — so the host decides.
+  final bool canArchive;
+
+  /// Set while the card sits in the archive instead of the home feed.
+  final String? archivedAt;
+  bool get archived => archivedAt != null;
+
+  /// The same card, filed away or restored.
+  ///
+  /// The host answers an archive request before the next 2-second feed poll can, and a card that
+  /// stayed on screen that long reads as a button that did nothing.
+  RemoteGoalCard withArchivedAt(String? value) => RemoteGoalCard(
+    activeWork: activeWork,
+    completedWork: completedWork,
+    status: status,
+    title: title,
+    totalWork: totalWork,
+    goalId: goalId,
+    workbenchId: workbenchId,
+    workbenchName: workbenchName,
+    canArchive: canArchive,
+    canDelete: canDelete,
+    archivedAt: value,
+    summary: summary,
+    prompt: prompt,
+    reasonCode: reasonCode,
+    questionId: questionId,
+    questionVersion: questionVersion,
+    agentCount: agentCount,
+    failedWork: failedWork,
+    stage: stage,
+  );
   final String? summary;
   final String? prompt;
   final String? reasonCode;
@@ -89,6 +125,8 @@ class RemoteGoalCard {
   final String? stage;
   final int agentCount;
   final int failedWork;
+  bool get needsContinuationDecision =>
+      status == 'NEEDS_ATTENTION' && reasonCode == 'goal_continuation_required';
   bool get terminal => const [
     'COMPLETED',
     'COMPLETED_WITH_GAPS',
@@ -120,7 +158,9 @@ class RemoteGoalCard {
       totalWork: work['total'] as int? ?? 0,
       failedWork: work['failed'] as int? ?? 0,
       agentCount: json['agentCount'] as int? ?? 0,
+      canArchive: json['canArchive'] == true,
       canDelete: json['canDelete'] == true,
+      archivedAt: json['archivedAt'] as String?,
       summary: json['completionSummary'] as String?,
       prompt:
           question['prompt'] as String? ??
@@ -164,6 +204,7 @@ class RemoteViewState {
   const RemoteViewState({
     this.connection = RemoteConnectionState.unpaired,
     this.goals = const [],
+    this.archivedGoals = const [],
     this.path = RemoteConnectionPath.none,
     this.sending = false,
     this.supportsHome = false,
@@ -177,6 +218,10 @@ class RemoteViewState {
 
   final RemoteConnectionState connection;
   final List<RemoteGoalCard> goals;
+
+  /// Cards the host has filed away. The feed carries them in the same list, marked with
+  /// `archivedAt`; they are split here so the home screen never has to think about archiving.
+  final List<RemoteGoalCard> archivedGoals;
   final RemoteConnectionPath path;
   final bool sending;
   final bool supportsHome;
@@ -189,6 +234,7 @@ class RemoteViewState {
   RemoteViewState copyWith({
     RemoteConnectionState? connection,
     List<RemoteGoalCard>? goals,
+    List<RemoteGoalCard>? archivedGoals,
     RemoteConnectionPath? path,
     bool? sending,
     bool? supportsHome,
@@ -202,6 +248,7 @@ class RemoteViewState {
   }) => RemoteViewState(
     connection: connection ?? this.connection,
     goals: goals ?? this.goals,
+    archivedGoals: archivedGoals ?? this.archivedGoals,
     path: path ?? this.path,
     sending: sending ?? this.sending,
     supportsHome: supportsHome ?? this.supportsHome,
@@ -223,6 +270,7 @@ abstract interface class RemoteController implements Listenable {
   Future<void> refresh();
 
   Future<void> sendMessage(String text, {String? workbenchId});
+
   /// Creates the workbench and binds [inputId] to it, in one request.
   ///
   /// One request, not two: the previous create-then-clarify pair could leave a workbench that

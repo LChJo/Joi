@@ -154,6 +154,22 @@ export class JoiInboxService {
       : this.dependencies.repository.cancelQueued();
   }
 
+  async archive(input: { inputId: string }): Promise<JoiAcceptedMessageDto> {
+    const inputId = input.inputId.trim();
+    if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
+    const record = await this.dependencies.repository.archive(inputId);
+    if (record === null) throw new DomainError("joi_archive_unavailable", "This input is not finished and cannot be archived.");
+    return toDto(record);
+  }
+
+  async unarchive(input: { inputId: string }): Promise<JoiAcceptedMessageDto> {
+    const inputId = input.inputId.trim();
+    if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");
+    const record = await this.dependencies.repository.unarchive(inputId);
+    if (record === null) throw new DomainError("joi_unarchive_unavailable", "This input is not archived.");
+    return toDto(record);
+  }
+
   async dismiss(input: { inputId: string }): Promise<JoiAcceptedMessageDto> {
     const inputId = input.inputId.trim();
     if (inputId.length === 0 || inputId.length > 160) throw new DomainError("joi_input_invalid", "joi input is invalid.");

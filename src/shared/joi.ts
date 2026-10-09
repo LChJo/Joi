@@ -346,8 +346,16 @@ export interface JoiGoalCardBaseDto {
   agentCount: number;
   artifacts?: WorkbenchArtifactDto[];
   workbench: { workbenchId: string; name: string };
+  /**
+   * Whether the user may file this card away. `canDelete` cannot stand in for it: removal also
+   * demands a finalized outcome, and a failed card that never reached one is exactly the card a
+   * user wants out of the feed — archiving is reversible, so it can be offered there.
+   */
+  canArchive?: boolean;
   canDelete: boolean;
   completedAt?: string;
+  /** Set while the card lives in the archived list instead of the home feed. */
+  archivedAt?: string;
   completionSummary?: string;
   failure?: JoiGoalFailureDto;
   goalId: string;
@@ -376,6 +384,15 @@ export interface JoiThinkingItemDto {
 }
 
 export interface JoiHomeFeedDto {
+  /**
+   * Every goal card, archived ones included: a card carries `archivedAt` when the user filed it
+   * away, and the clients partition the list from there.
+   *
+   * Filtering in SQL instead would mean a second run of the feed's projection query for a list
+   * nobody polls — and archived cards would still have to travel here for the archive screen and
+   * for `RemoteHomeQueryService.goal()` to open one. The payload is what it was before archiving
+   * existed, since these cards used to sit in this list until they were removed.
+   */
   goals: JoiGoalCardDto[];
   thinking: JoiThinkingItemDto[];
   unassignedActions: JoiAcceptedMessageDto[];

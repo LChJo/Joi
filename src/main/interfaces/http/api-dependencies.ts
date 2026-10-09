@@ -57,7 +57,7 @@ export interface ApiDependencies {
   events?: EventService;
   globalEmergencyStop?: () => Promise<void>;
   interactions?: InteractionService;
-  joiInbox?: Pick<JoiInboxService, "accept" | "cancel" | "clarify" | "closeHistoricalReview" | "dismiss" | "list" | "retry">;
+  joiInbox?: Pick<JoiInboxService, "accept" | "archive" | "cancel" | "clarify" | "closeHistoricalReview" | "dismiss" | "list" | "retry" | "unarchive">;
   joiHomeFeed?: Pick<JoiHomeFeedService, "load">;
   joiActivity?: { listActivity(limit?: number): Promise<JoiActivityDto[]> };
   joiAttachments?: JoiAttachmentPort;

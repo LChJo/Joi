@@ -135,6 +135,28 @@ export const JOI_WRITE_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "write",
+    id: "POST /api/v1/joi/messages/:inputId/archive",
+    match: pattern("POST", /^\/api\/v1\/joi\/messages\/([^/]+)\/archive$/),
+    handle: async (ctx, match) => {
+      const archived = await joiInboxService(ctx.dependencies).archive({
+        inputId: decodeURIComponent((match as RegExpExecArray)[1] ?? ""),
+      });
+      sendJson(ctx.response, 200, archived);
+    },
+  },
+  {
+    auth: "write",
+    id: "POST /api/v1/joi/messages/:inputId/unarchive",
+    match: pattern("POST", /^\/api\/v1\/joi\/messages\/([^/]+)\/unarchive$/),
+    handle: async (ctx, match) => {
+      const unarchived = await joiInboxService(ctx.dependencies).unarchive({
+        inputId: decodeURIComponent((match as RegExpExecArray)[1] ?? ""),
+      });
+      sendJson(ctx.response, 200, unarchived);
+    },
+  },
+  {
+    auth: "write",
     id: "POST /api/v1/joi/messages/:inputId/close-historical-review",
     match: pattern("POST", /^\/api\/v1\/joi\/messages\/([^/]+)\/close-historical-review$/),
     handle: async (ctx, match) => {

@@ -55,6 +55,24 @@ class FakeInboxRepository implements JoiInboxRepository {
     return next;
   }
 
+  async archive(inputId: string): Promise<JoiInboxRecord | null> {
+    const record = this.records.get(inputId);
+    if (record === undefined) return null;
+    if (record.status !== "CONSUMED" || record.dismissedAt !== undefined || record.archivedAt !== undefined) return null;
+    const next: JoiInboxRecord = { ...record, archivedAt: "2026-08-01T00:00:03.500Z", updatedAt: "2026-08-01T00:00:03.500Z" };
+    this.records.set(inputId, next);
+    return next;
+  }
+
+  async unarchive(inputId: string): Promise<JoiInboxRecord | null> {
+    const record = this.records.get(inputId);
+    if (record?.archivedAt === undefined) return null;
+    const next: JoiInboxRecord = { ...record, updatedAt: "2026-08-01T00:00:03.750Z" };
+    delete next.archivedAt;
+    this.records.set(inputId, next);
+    return next;
+  }
+
   async dismiss(inputId: string): Promise<JoiInboxRecord | null> {
     const record = this.records.get(inputId);
     if (record === undefined) return null;

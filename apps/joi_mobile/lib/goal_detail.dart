@@ -77,15 +77,14 @@ String actFailureNotice(Object error) {
   return '操作未完成，请刷新查看最新状态后重试。输入已保留。';
 }
 
-List<WorkbenchMatchSource> _matchSources(List<RemoteChoice> workbenches) =>
-    [
-      for (final workbench in workbenches)
-        WorkbenchMatchSource(
-          name: workbench.name,
-          scopeSummary: workbench.description,
-          workbenchId: workbench.id,
-        ),
-    ];
+List<WorkbenchMatchSource> _matchSources(List<RemoteChoice> workbenches) => [
+  for (final workbench in workbenches)
+    WorkbenchMatchSource(
+      name: workbench.name,
+      scopeSummary: workbench.description,
+      workbenchId: workbench.id,
+    ),
+];
 
 Future<WorkbenchSuggestion?> chooseWorkbenchSuggestion(
   BuildContext context,
@@ -181,6 +180,69 @@ class _GoalActionsState extends State<GoalActions> {
     }
   }
 
+  /// The card's secondary menu.
+  ///
+  /// A bottom sheet rather than a popup menu: the items are full sentences and this is a phone, so
+  /// the same list the desktop renders as a dropdown arrives here as something a thumb can hit. The
+  /// sheet only collects a choice — the guard that decides what is offerable stays in this widget,
+  /// so the two clients cannot drift on which actions a card has.
+  Future<void> _openActions() async {
+    final goal = widget.goal;
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      useSafeArea: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (goal.terminal)
+              ListTile(
+                leading: const Icon(Icons.play_arrow_rounded),
+                title: Text(_showContinue ? '收起补充输入框' : '继续对话'),
+                onTap: () => Navigator.pop(context, 'continue'),
+              ),
+            if (!goal.terminal)
+              ListTile(
+                leading: const Icon(Icons.stop_circle_outlined),
+                title: const Text('取消任务'),
+                onTap: () => Navigator.pop(context, 'cancel'),
+              ),
+            if (goal.archived)
+              ListTile(
+                leading: const Icon(Icons.unarchive_outlined),
+                title: const Text('取消归档'),
+                onTap: () => Navigator.pop(context, 'unarchive'),
+              )
+            else if (goal.canArchive)
+              ListTile(
+                leading: const Icon(Icons.archive_outlined),
+                title: const Text('归档'),
+                onTap: () => Navigator.pop(context, 'archive'),
+              ),
+            if (goal.canDelete)
+              ListTile(
+                leading: Icon(
+                  Icons.delete_outline_rounded,
+                  color: Theme.of(context).colorScheme.error,
+                ),
+                title: Text(
+                  '移除卡片',
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+                onTap: () => Navigator.pop(context, 'dismiss'),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'continue') {
+      setState(() => _showContinue = !_showContinue);
+      return;
+    }
+    await _act(choice);
+  }
+
   /// Apply a picked candidate: reuse an existing workbench, or create the suggested cluster.
   Future<void> _applySuggestion(WorkbenchSuggestion suggestion) async {
     if (_busy) return;
@@ -253,7 +315,8 @@ class _GoalActionsState extends State<GoalActions> {
         'partner_waiting_recovery_required',
         'partner_auth_required',
       ].contains(reason);
-      final continuation = reason == 'goal_continuation_required';
+      final continuation = goal.needsContinuationDecision;
+      final continuationSummary = goal.summary?.trim();
       final directory = reason == 'workbench_workspace_not_ready';
       final historical = reason == 'harness_review_unrecoverable';
       final answer =
@@ -269,10 +332,73 @@ class _GoalActionsState extends State<GoalActions> {
         children: [
           if (question) ...[
             const SizedBox(height: 12),
+            if (continuation) ...[
+              Text('是否继续完善结果？', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 8),
+            ],
             Text(
-              goal.prompt ?? 'joi 需要你确认',
+              continuation
+                  ? '当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。'
+                  : goal.prompt ?? 'joi 需要你确认',
               style: Theme.of(context).textTheme.bodyMedium,
             ),
+          ],
+          if (continuation) ...[
+            const SizedBox(height: 12),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '当前结果与待补充内容',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: 8),
+                  if (continuationSummary != null &&
+                      continuationSummary.isNotEmpty) ...[
+                    Text(
+                      continuationSummary,
+                      maxLines: 6,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    TextButton(
+                      onPressed: busy
+                          ? null
+                          : () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => ResultReaderPage(
+                                  controller: widget.controller,
+                                  goal: goal,
+                                ),
+                              ),
+                            ),
+                      child: const Text('查看当前结果全文'),
+                    ),
+                  ] else
+                    const Text('暂时没有可展示的结果说明，无法列出具体待补充内容。'),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Text(
+              '继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              '保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 8),
           ],
           if (_busy)
             const Padding(
@@ -336,18 +462,19 @@ class _GoalActionsState extends State<GoalActions> {
           if (continuation)
             Wrap(
               spacing: 8,
+              runSpacing: 8,
               children: [
                 FilledButton(
                   onPressed: busy
                       ? null
                       : () => _act('clarify', actionChoice: 'CONTINUE'),
-                  child: const Text('继续补齐'),
+                  child: const Text('继续完善'),
                 ),
                 TextButton(
                   onPressed: busy
                       ? null
                       : () => _act('clarify', actionChoice: 'ACCEPT_CURRENT'),
-                  child: const Text('接受现状'),
+                  child: const Text('保留当前结果'),
                 ),
               ],
             ),
@@ -377,27 +504,14 @@ class _GoalActionsState extends State<GoalActions> {
               child: Text(answer ? '回答并继续' : '提交继续'),
             ),
           ],
-          Wrap(
-            spacing: 8,
-            children: [
-              if (goal.terminal)
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => setState(() => _showContinue = !_showContinue),
-                  child: Text(_showContinue ? '收起' : '继续对话'),
-                ),
-              if (goal.canCancel)
-                TextButton(
-                  onPressed: busy ? null : () => _act('cancel'),
-                  child: const Text('取消任务'),
-                ),
-              if (goal.canDelete)
-                TextButton(
-                  onPressed: busy ? null : () => _act('dismiss'),
-                  child: const Text('移除卡片'),
-                ),
-            ],
+          // One icon button instead of a row of links that grew with every action the card learned.
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              tooltip: '更多操作',
+              icon: const Icon(Icons.more_horiz_rounded),
+              onPressed: busy ? null : () => _openActions(),
+            ),
           ),
           if (_notice != null)
             Text(
@@ -544,7 +658,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
           const SizedBox(height: 8),
           MessageBody(_text!),
         ],
-        if (_goal.summary != null) ...[
+        if (_goal.summary != null && !_goal.needsContinuationDecision) ...[
           const Divider(height: 32),
           TextButton(
             onPressed: () => Navigator.push(
