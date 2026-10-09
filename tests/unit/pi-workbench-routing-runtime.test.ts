@@ -9,7 +9,7 @@ let captureSerial = 0;
 /** Runs one decision and returns the request the adapter actually sent. */
 async function capturedRequest(
   decide: (runtime: PiWorkbenchRoutingRuntime) => Promise<unknown>,
-  response: Parameters<ReturnType<typeof fauxProvider>["setResponses"]>[0][number],
+  response: ReturnType<typeof fauxAssistantMessage>,
 ): Promise<string> {
   captureSerial += 1;
   const faux = fauxProvider({ provider: `capture-${String(captureSerial)}` });

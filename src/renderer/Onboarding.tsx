@@ -73,7 +73,7 @@ export function SetupJourney({ api, onComplete }: { api: DigitalLifeApi; onCompl
     finally { setBusy(false); }
   };
   // The model network form reports back after every save attempt, including drafts that failed
-  // validation. The runtime status — not the form's own notice — decides whether the final
+  // validation. The runtime status decides whether the final
   // button reads as "done" or still skippable.
   const refreshConnection = async () => {
     try { setConnected((await api.joiRuntime()).configured); }

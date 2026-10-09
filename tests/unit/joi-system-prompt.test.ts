@@ -9,6 +9,12 @@ const base = {
 };
 
 describe("joi system prompt", () => {
+  it("requires actionable context for a continuation decision", () => {
+    const prompt = buildJoiSystemPrompt(base);
+    expect(prompt).toContain("For RESULT_CONTINUE, make the visible answer explain what is already established, what specifically remains unverified or missing, why it matters to the original goal, and what the next bounded evidence layer will try");
+    expect(prompt).toContain("Do not merely say there are gaps or promise that another layer will resolve them");
+  });
+
   it("encodes the wayfinder orchestration method and injects the workbench context", () => {
     const prompt = buildJoiSystemPrompt(base);
     expect(prompt).toContain("foreman, never a worker");

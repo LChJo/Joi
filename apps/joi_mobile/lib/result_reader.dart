@@ -86,7 +86,7 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
     },
     child: Scaffold(
       appBar: AppBar(
-        title: const Text('查看全文'),
+        title: Text(widget.goal.needsContinuationDecision ? '当前结果' : '查看全文'),
         actions: [ConnectionDiagnosticsButton(controller: widget.controller)],
       ),
       body: Stack(

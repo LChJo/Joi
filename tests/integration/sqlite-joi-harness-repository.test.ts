@@ -713,7 +713,10 @@ describe("SqliteJoiHarnessRepository", () => {
       await expect(repository.requestContinuationDecision({ now: NOW, seed: decision })).resolves.toBe(false);
       expect((await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).goals[0])
         .toMatchObject({
-          clarification: { reasonCode: "goal_continuation_required" },
+          clarification: {
+            reasonCode: "goal_continuation_required",
+            prompt: "当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。",
+          },
           goalId: "goal-continue",
           status: "NEEDS_ATTENTION",
         });

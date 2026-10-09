@@ -714,7 +714,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         input.seed.goalInputId, input.seed.workbenchId, input.seed.resultRevision,
       );
       if (eligible === undefined) return false;
-      const prompt = "已自动补充两轮，当前结果仍有明确缺口。可以继续补齐，或接受当前结果并保留缺口说明。";
+      const prompt = "当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。";
       // Sequence the action per (goal, revision): a prior request for this revision may already
       // be APPLIED/RESOLVED while the goal is still exhausted and idle (e.g. recovery-appended
       // layers consumed the grant). Re-raise instead of letting the idempotency row silence it.

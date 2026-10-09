@@ -25,16 +25,6 @@ function formFor(element: HTMLElement) {
   return form;
 }
 
-/** Password step plus LAN step, leaving the journey on the model network step. */
-async function reachModelNetworkStep(api: DigitalLifeApi) {
-  render(<SetupJourney api={api} onComplete={vi.fn()} />);
-  fireEvent.change(screen.getByLabelText("管理密码"), { target: { value: "long-password" } });
-  fireEvent.change(screen.getByLabelText("确认密码"), { target: { value: "long-password" } });
-  fireEvent.submit(formFor(screen.getByLabelText("管理密码")));
-  fireEvent.click(await screen.findByRole("button", { name: /先只用本机/ }));
-  await screen.findByRole("heading", { name: "joi需要链接到大模型网络" });
-}
-
 describe("onboarding and access", () => {
   it("uses a six-character minimum for administrator password fields", () => {
     const api = new DigitalLifeApi("");
