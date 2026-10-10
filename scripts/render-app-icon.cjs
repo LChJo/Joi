@@ -1,13 +1,16 @@
 const { app, BrowserWindow } = require("electron");
 const { Buffer } = require("node:buffer");
 const { createHash } = require("node:crypto");
+const { mkdtempSync } = require("node:fs");
 const { mkdir, readFile, writeFile } = require("node:fs/promises");
+const os = require("node:os");
 const path = require("node:path");
 const process = require("node:process");
 const { setTimeout: delay } = require("node:timers/promises");
 
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch("force-device-scale-factor", "1");
+app.setPath("userData", mkdtempSync(path.join(os.tmpdir(), "joi-icon-render-")));
 
 const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 
@@ -61,21 +64,21 @@ app.whenReady().then(async () => {
     return;
   }
 
-  const svg = svgBuffer.toString("utf8");
   const window = new BrowserWindow({
-    backgroundColor: "#0f1f18",
+    backgroundColor: "#00000000",
     focusable: false,
     frame: false,
     height: 1024,
     show: true,
     skipTaskbar: true,
+    transparent: true,
     webPreferences: { backgroundThrottling: false, sandbox: true },
     width: 1024,
     x: -10_000,
     y: -10_000,
   });
   try {
-    await window.loadURL(`data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`);
+    await window.loadFile(path.join(directory, "icon.svg"));
     const png = await captureIcon(window);
     await writeIconCopies(directory, png);
     await writeFile(sourceHashPath, `${sourceHash} ${createHash("sha256").update(png).digest("hex")}\n`, "utf8");

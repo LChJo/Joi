@@ -1,5 +1,5 @@
 :root {
-  font-family: "Segoe UI Variable", "Segoe UI", "PingFang SC", "Microsoft YaHei UI", system-ui, sans-serif;
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   color: #1c2924;
   background: #eef1ec;
   font-synthesis: none;
@@ -53,14 +53,15 @@
 }
 
 .joi-home {
-  width: min(1080px, 100%);
+  width: min(980px, 100%);
   min-height: 100dvh;
-  padding-top: 24px;
+  padding-top: 32px;
   justify-content: flex-start;
-  gap: 14px;
+  gap: 24px;
 }
-.joi-home > header { flex: 0 0 auto; }
-.joi-home h1 { font-size: clamp(1.5rem, 1rem + 2vw, 2.4rem); }
+.joi-home > header { flex: 0 0 auto; display: grid; gap: 8px; }
+.joi-home h1 { font-size: clamp(2rem, 1.5rem + 1vw, 2.25rem); font-weight: 600; line-height: 1.2; letter-spacing: -.015em; }
+.joi-home > header > p:last-child { max-width: none; font-size: 14px; line-height: 1.6; }
 .joi-feed {
   min-height: 0;
   display: grid;
@@ -88,7 +89,7 @@
 .joi-feed-cancel-error { color: var(--red); font-size: .74rem; white-space: nowrap; }
 .joi-feed-text { margin: 0; color: var(--ink); }
 .joi-feed-note { margin: 0; color: var(--muted); font-size: .9rem; }
-.joi-feed-single { flex: 1 1 auto; width: min(820px, 100%); margin-inline: auto; padding: 2px 6px 10px 2px; }
+.joi-feed-single { flex: 1 1 auto; width: 100%; margin-inline: 0; padding: 0 0 16px; gap: 14px; }
 .joi-thinking { display: flex; align-items: center; gap: 9px; min-height: 28px; padding: 3px 8px; color: var(--forest); }
 .joi-thinking.queued { color: var(--muted); }
 .joi-thinking.settled { min-height: 18px; opacity: .42; font-size: .72rem; }
@@ -99,29 +100,29 @@
 .joi-thinking-stage { color: var(--forest); font-weight: 650; }
 .joi-thinking-meta, .joi-thinking-elapsed { white-space: nowrap; }
 @keyframes joi-pulse { 50% { opacity: .35; transform: scale(.8); } }
-/* Neither the card nor its header row may clip: the action menu hangs below the row and has to stay
-   painted outside it. The corner rounding that clipping used to provide moves onto the one child
-   that paints to the card's edge, so a hovered header still follows the card's radius. */
-.joi-goal-card { position: relative; display: grid; border: 1px solid var(--line); border-radius: 20px; background: var(--paper); box-shadow: var(--shadow); }
+/* The card and header allow overflow so the action menu stays visible outside the row.
+   The clickable header owns its corner rounding. */
+.joi-goal-card { position: relative; display: grid; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: var(--shadow-card); }
 .joi-goal-card.archived { background: color-mix(in srgb, var(--faint) 5%, var(--paper)); }
 .joi-goal-card.needs_attention { border-color: color-mix(in srgb, var(--amber) 46%, var(--line)); }
 .joi-goal-row { display: flex; align-items: stretch; }
-.joi-goal-open { flex: 1 1 auto; width: 100%; min-width: 0; display: grid; grid-template-columns: 48px minmax(0, 1fr); gap: 14px; align-items: center; padding: 14px 6px 14px 18px; border: 0; border-radius: 19px 0 0 19px; background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit; }
+.joi-goal-open { flex: 1 1 auto; width: 100%; min-width: 0; display: grid; grid-template-columns: 44px minmax(0, 1fr); gap: 16px; align-items: center; padding: 18px 6px 16px 20px; border: 0; border-radius: 15px 0 0 15px; background: transparent; color: inherit; text-align: left; cursor: pointer; font: inherit; }
 .joi-goal-open:hover:not(:disabled) { background: color-mix(in srgb, var(--forest) 5%, transparent); }
 .joi-goal-open:disabled { cursor: default; }
 .workbench-orb, .agent-workbench { display: grid; place-items: center; flex: 0 0 auto; border-radius: 50%; background: linear-gradient(145deg, color-mix(in srgb, var(--forest) 82%, white), var(--forest-dark)); color: white; font-weight: 750; box-shadow: inset 0 0 0 1px rgb(255 255 255 / 22%); }
 .workbench-orb { width: 44px; height: 44px; font-size: 1.05rem; }
+.joi-home .workbench-orb { background: var(--forest); color: var(--paper-strong); box-shadow: none; font-size: 16px; font-weight: 600; }
 .agent-workbench { width: 38px; height: 38px; }
-.joi-goal-copy { min-width: 0; display: grid; gap: 3px; }
-.joi-goal-copy small { color: var(--forest); font-size: .94rem; font-weight: 700; line-height: 1.25; }
-.joi-goal-copy > .joi-goal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .9rem; line-height: 1.25; }
+.joi-goal-copy { min-width: 0; display: grid; gap: 4px; }
+.joi-goal-copy small { color: var(--forest); font-size: 16px; font-weight: 600; line-height: 1.35; }
+.joi-goal-copy > .joi-goal-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 16px; font-weight: 500; line-height: 1.35; }
 .joi-goal-copy > span { overflow: hidden; color: var(--muted); font-size: .86rem; text-overflow: ellipsis; white-space: nowrap; }
 .joi-goal-copy i { color: var(--faint); font-size: .74rem; font-style: normal; }
-.joi-goal-status { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 2px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .68rem; font-weight: 650; white-space: nowrap; }
+.joi-goal-status { display: inline-flex; align-items: center; gap: 5px; flex: 0 0 auto; padding: 3px 9px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.4; white-space: nowrap; }
 .joi-goal-status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent); animation: joi-pulse 1.4s ease-in-out infinite; }
 .joi-goal-status.running, .joi-goal-status.arranging, .joi-goal-status.reviewing, .joi-goal-status.extending { border-color: color-mix(in srgb, var(--forest) 40%, var(--line)); color: var(--forest); }
 .joi-goal-status.needs_attention, .joi-goal-status.failed { border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); color: var(--amber); }
-.joi-goal-side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; align-self: stretch; padding: 14px 18px 14px 8px; }
+.joi-goal-side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; align-self: stretch; padding: 18px 20px 16px 8px; }
 .joi-goal-menu { position: relative; display: flex; align-items: center; gap: 8px; }
 /* A quiet, always-visible disc rather than the bordered 38px square `.icon-button` hands out. The
    scope through `.joi-goal-side` is what makes these declarations stick: bare `.joi-goal-menu-trigger`
@@ -163,7 +164,7 @@
 .joi-goal-progress-track { flex: 0 0 96px; height: 5px; border-radius: 999px; background: color-mix(in srgb, var(--line) 72%, transparent); overflow: hidden; }
 .joi-goal-progress-track i { display: block; height: 100%; border-radius: inherit; background: var(--forest); transition: width .3s ease; }
 .joi-goal-progress-track i.failed { background: var(--amber); }
-.joi-goal-progress > i { color: var(--faint); font-size: .74rem; font-style: normal; white-space: nowrap; }
+.joi-goal-progress > i { color: var(--faint); font-size: 12px; font-style: normal; line-height: 1.5; white-space: nowrap; }
 .joi-goal-agent-warning {
   width: fit-content; margin: 0 18px 12px 80px; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--amber) 28%, var(--line));
   border-radius: 999px; background: color-mix(in srgb, var(--amber) 6%, var(--paper)); color: var(--muted); cursor: pointer; font: inherit; font-size: .72rem;
@@ -188,8 +189,8 @@
 .joi-md th, .joi-md td { padding: 5px 10px; border: 1px solid var(--line); text-align: left; }
 .joi-md th { background: var(--wash); }
 .joi-md blockquote { margin: 0 0 8px; padding-left: 12px; border-left: 3px solid var(--line); color: var(--muted); }
-.joi-goal-result-preview { position: relative; margin: 0 18px 16px 80px; padding-top: 10px; border-top: 1px solid var(--line); max-height: 6.8em; overflow: hidden; color: var(--muted); font-size: .84rem; line-height: 1.55; }
-.joi-goal-result-preview::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 2.6em; background: linear-gradient(transparent, var(--paper)); }
+.joi-goal-result-preview { position: relative; margin: 0 20px 20px 80px; padding-top: 12px; border-top: 1px solid var(--line); max-height: 6.8em; overflow: hidden; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.joi-goal-result-preview::after { content: ""; position: absolute; right: 0; bottom: 0; left: 0; height: 1.8em; background: linear-gradient(transparent, var(--paper)); }
 .joi-goal-result-preview .joi-md table, .joi-goal-result-preview table { font-size: .88em; }
 .joi-goal-result-preview[role="button"] { cursor: pointer; }
 .joi-goal-result-preview[role="button"]:focus-visible { outline: 3px solid color-mix(in srgb, var(--forest) 60%, transparent); outline-offset: 2px; border-radius: 8px; }
@@ -427,9 +428,9 @@
 .joi-work-overview strong { color: var(--ink); }
 
 .joi-composer {
-  padding: 10px 14px;
+  padding: 16px 18px;
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 .joi-composer.drag-over {
   border-color: var(--forest);
@@ -440,15 +441,15 @@
   bottom: 0;
   z-index: 4;
   background: var(--canvas);
-  padding-bottom: 10px;
+  padding-bottom: 16px;
 }
 
 .joi-composer-label {
   margin: 0;
   color: var(--faint);
-  font-size: .78rem;
-  font-weight: 600;
-  letter-spacing: .02em;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
 }
 .joi-composer textarea {
   width: 100%;
@@ -459,13 +460,16 @@
   resize: vertical;
   min-height: 40px;
   font: inherit;
+  font-size: 15px;
+  line-height: 1.6;
 }
+.joi-composer textarea::placeholder { color: var(--muted); opacity: 1; }
 .joi-composer textarea:focus { outline: none; }
 .joi-composer-toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding-top: 8px;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
 }
 .joi-composer .joi-attachment-button,
@@ -473,12 +477,12 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
-  border: 1px solid var(--line-strong);
-  border-radius: 999px;
+  padding: 7px 12px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
   background: var(--paper-strong);
   color: var(--muted);
-  font-size: .82rem;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
 }
@@ -870,16 +874,44 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 .notice-row small { grid-column: 1 / -1; }
 
 .app-shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100dvh; }
+.app-shell:has(.joi-home) {
+  --canvas: #f1f3f0;
+  --paper: #fcfdfc;
+  --line: #dee4de;
+  --faint: #6a766e;
+  --shadow: 0 8px 24px rgb(39 55 47 / 6%);
+  --shadow-card: 0 2px 8px rgb(39 55 47 / 4%);
+  background: var(--canvas);
+}
+@media (prefers-color-scheme: dark) {
+  .app-shell:has(.joi-home) {
+    --canvas: #111914;
+    --paper: #17211b;
+    --line: #2e3b33;
+    --faint: #9aa89e;
+    --shadow: 0 8px 24px rgb(0 0 0 / 20%);
+    --shadow-card: 0 2px 8px rgb(0 0 0 / 18%);
+  }
+}
 .sidebar { position: sticky; top: 0; display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; padding: 22px 12px 14px; border-right: 1px solid var(--line); background: var(--paper); }
 .brand-bar { display: flex; align-items: center; gap: 10px; padding: 0 9px 20px; }
 .brand-bar > span:last-child { display: grid; gap: 1px; }
 .brand-bar strong { font-size: 14px; }
 .brand-bar small { font-size: 9px; letter-spacing: .14em; }
+.brand-bar:has(.joi-brand-avatar) { gap: 12px; }
+.brand-bar:has(.joi-brand-avatar) > span:last-child { min-width: 0; gap: 3px; }
+.joi-brand-avatar { display: block; flex: none; width: 44px; height: 44px; overflow: hidden; border: 1px solid color-mix(in srgb, var(--forest) 24%, var(--line)); border-radius: 50%; background: #1c4635; box-shadow: 0 0 0 3px color-mix(in srgb, var(--forest) 5%, transparent); }
+.joi-brand-avatar img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.brand-bar .joi-brand-name { display: block; width: 64px; height: 36px; background: var(--forest-dark); color: transparent; font-size: 0; mask: url("./joi-wordmark.svg") center / contain no-repeat; }
+@media (forced-colors: active) {
+  .brand-bar .joi-brand-name { width: auto; height: auto; background: none; color: CanvasText; font-size: 24px; mask: none; }
+}
 .sidebar nav { display: grid; align-content: start; gap: 3px; padding-top: 14px; border-top: 1px solid var(--line); }
 .sidebar nav button { display: flex; min-height: 42px; align-items: center; gap: 11px; padding: 0 11px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
 .sidebar nav button:hover { background: var(--wash); color: var(--ink); }
 .sidebar nav button[aria-current="page"] { background: color-mix(in srgb, var(--forest) 11%, var(--paper)); color: var(--forest-dark); font-weight: 700; }
 .sidebar nav svg { width: 19px; height: 19px; }
+.app-shell:has(.joi-home) .sidebar nav button { font-size: 14px; gap: 12px; border-radius: 9px; }
 .sidebar footer { display: flex; min-height: 44px; align-items: center; gap: 6px; padding: 8px; color: var(--muted); font-size: 11px; }
 .sidebar footer .icon-button { width: 32px; height: 32px; margin-left: auto; border: 0; }
 .sidebar footer .stream-retry { margin-left: 0; color: var(--amber); }

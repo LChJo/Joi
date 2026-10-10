@@ -133,14 +133,17 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1024,height:720,useCo
 
     const shape = await page.evaluate(() => {
       const measure = (card: Element) => {
+        const orb = card.querySelector('.workbench-orb');
+        const side = card.querySelector('.joi-goal-side');
+        if (orb === null || side === null) throw new Error('missing fixture card chrome');
         const centre = (selector: string) => {
           const rect = card.querySelector(selector)?.getBoundingClientRect();
           if (rect === undefined) throw new Error(`missing ${selector}`);
           return rect.y + rect.height / 2;
         };
         return {
-          orb: getComputedStyle(card.querySelector('.workbench-orb') as Element).width,
-          side: getComputedStyle(card.querySelector('.joi-goal-side') as Element).flexDirection,
+          orb: getComputedStyle(orb).width,
+          side: getComputedStyle(side).flexDirection,
           // Badge and trigger share the card's right edge on one line rather than stacking.
           badgeAndMenuOnOneLine: Math.abs(centre('.joi-goal-status') - centre('.joi-goal-menu-trigger')) < 1,
         };

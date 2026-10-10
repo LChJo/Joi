@@ -1,5 +1,9 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+
+import { JoiBrand } from "../../src/renderer/JoiBrand";
 
 const readProjectFile = (filePath: string) => readFile(path.resolve(filePath), "utf8");
 
@@ -26,7 +30,10 @@ describe("joi product and release contract", () => {
     expect(html).toContain("<title>joi</title>");
     expect(readme.startsWith("# joi")).toBe(true);
     expect(onboarding).toContain("<strong>joi</strong>");
-    expect(consoleSource).toContain("<strong>joi</strong>");
+    expect(consoleSource).toContain("<JoiBrand />");
+    const brandMarkup = renderToStaticMarkup(createElement(JoiBrand));
+    expect(brandMarkup).toContain('aria-label="joi"');
+    expect(brandMarkup).toContain(">joi</strong>");
   });
 
   it("removes the default native menu from the desktop window", async () => {

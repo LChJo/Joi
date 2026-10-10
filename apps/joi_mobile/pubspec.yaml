@@ -68,6 +68,8 @@ flutter:
   # the material Icons class.
   uses-material-design: true
   assets:
+    - assets/joi-portrait.png
+    - assets/joi-wordmark.png
     - assets/fonts/NotoSansSC.ttf
     - assets/fonts/OFL.txt
 

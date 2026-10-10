@@ -178,7 +178,12 @@ void main() {
 
     await tester.pumpWidget(JoiMobileApp(controller: controller));
 
-    expect(find.text('joi'), findsOneWidget);
+    final semantics = tester.ensureSemantics();
+    try {
+      expect(find.bySemanticsLabel('joi'), findsOneWidget);
+    } finally {
+      semantics.dispose();
+    }
     expect(find.text('中继'), findsOneWidget);
     expect(find.text('完成原生远程控制'), findsOneWidget);
     expect(find.text('由 joi 判断'), findsOneWidget);

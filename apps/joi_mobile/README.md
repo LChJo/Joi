@@ -13,3 +13,9 @@ npm run build:mobile:android
 ```
 
 release APK 输出到 `release-joi-mobile/joi-android-0.1.0-arm64.apk`。当前 release 变体使用调试签名，适合手动侧载验收；应用商店发布前必须替换为正式签名。
+
+品牌采用与桌面一致的 C「深绿版画」Joi 肖像和艺术字标，应用于启动图标、配对页与首页。Android 8 及以上使用自适应图标，兼容图标提供五套密度。
+
+构建入口会先同步桌面图标和移动品牌素材。生成器 `scripts/render-mobile-brand.cjs` 从桌面主图、侧栏头像与 SVG 字标派生 Android / Flutter 资产，兼容图标采用无嵌入色彩配置的位图编码，保持安卓资源压缩后的显示颜色。
+
+预览与 APK 校验见 [品牌交付记录](../../docs/design/joi-android-c-package-verification.md)。

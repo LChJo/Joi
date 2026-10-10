@@ -19,6 +19,8 @@ function run(command, args, cwd) {
   });
 }
 
+await run(process.execPath, [path.join(projectRoot, "node_modules/electron/cli.js"), path.join(projectRoot, "scripts/render-app-icon.cjs")], projectRoot);
+await run(process.execPath, [path.join(projectRoot, "node_modules/electron/cli.js"), path.join(projectRoot, "scripts/render-mobile-brand.cjs")], projectRoot);
 await run(process.execPath, [path.join(projectRoot, "scripts", "build-native-remote.mjs"), "--android"], projectRoot);
 const mobileRoot = path.join(projectRoot, "apps", "joi_mobile");
 const flutterCommand = process.platform === "win32" ? process.env.ComSpec ?? "cmd.exe" : "flutter";

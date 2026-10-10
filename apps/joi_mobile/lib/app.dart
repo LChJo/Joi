@@ -4,6 +4,7 @@ import 'remote_controller.dart';
 import 'pairing_scanner.dart';
 import 'home_screen.dart';
 import 'connection_diagnostics_view.dart';
+import 'joi_brand.dart';
 
 class JoiMobileApp extends StatelessWidget {
   const JoiMobileApp({super.key, required this.controller});
@@ -57,16 +58,7 @@ class _PairingScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(),
-              const Text(
-                'joi',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: Color(0xffb8e3c7),
-                  fontSize: 42,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: -2,
-                ),
-              ),
+              const Center(child: JoiBrand(large: true)),
               const SizedBox(height: 12),
               Text(
                 '把正在电脑上运行的 Joi 带到手机上',

@@ -5,6 +5,7 @@ import 'archived_goals.dart';
 import 'remote_controller.dart';
 import 'goal_detail.dart';
 import 'connection_diagnostics_view.dart';
+import 'joi_brand.dart';
 
 String statusLabel(String value) =>
     const {
@@ -300,7 +301,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     };
     return Scaffold(
       appBar: AppBar(
-        title: const Text('joi'),
+        title: const JoiBrand(),
         actions: [
           Padding(padding: const EdgeInsets.all(16), child: Text(link)),
           IconButton(

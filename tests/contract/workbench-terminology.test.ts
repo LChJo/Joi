@@ -6,13 +6,22 @@ import { describe, expect, it } from "vitest";
 const repositoryRoot = path.resolve(".");
 const roots = ["README.md", "docs", "src"];
 const formerProductTerm = new RegExp(["ava", "tar"].join(""), "iu");
+const textExtensions = new Set([".md", ".ts", ".tsx", ".cts", ".css", ".html", ".svg", ".json"]);
+
+function isProductVocabularySurface(relativePath: string): boolean {
+  const normalized = relativePath.replaceAll("\\", "/");
+  // Branding references and image-generation prompts describe portraits, not persistent contexts.
+  return !normalized.startsWith("docs/design/")
+    && normalized !== "docs/joi-brand-assets.md"
+    && textExtensions.has(path.extname(relativePath));
+}
 
 function productionFiles(relativePath: string): string[] {
   const absolutePath = path.join(repositoryRoot, relativePath);
   const entries = readdirSync(absolutePath, { withFileTypes: true });
   return entries.flatMap((entry) => {
     const child = path.join(relativePath, entry.name);
-    return entry.isDirectory() ? productionFiles(child) : [child];
+    return entry.isDirectory() ? productionFiles(child) : isProductVocabularySurface(child) ? [child] : [];
   });
 }
 
@@ -22,6 +31,8 @@ function vocabularySurface(): string[] {
 
 function removeUnrelatedProfileImageVocabulary(source: string): string {
   return source
+    .replaceAll("joi-brand-avatar", "joi-brand-profile-image")
+    .replaceAll("joi-avatar", "joi-profile-image")
     .replaceAll("avatarUrl", "profileImageUrl")
     .replaceAll("avatar_url", "profile_image_url")
     .replaceAll("life_avatar_invalid", "life_profile_image_invalid")
