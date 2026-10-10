@@ -35,6 +35,7 @@ export type WorkAcceptanceCheck =
 
 export interface WorkBrief {
   acceptanceChecks: WorkAcceptanceCheck[];
+  briefVersion?: 2;
   evidenceResultIds?: string[];
   instructions?: string;
   workId: string;
@@ -83,6 +84,8 @@ export interface WorkSupplementContext {
 
 export interface ReassignedWorkPlan {
   accessMode?: WorkAccessMode;
+  /** Complete replacement brief for a resumed Work; other contract fields remain intact. */
+  instructions?: string;
   attempt: PlannedDispatchAttempt;
   createdAt: string;
   dispatchPlanId: string;

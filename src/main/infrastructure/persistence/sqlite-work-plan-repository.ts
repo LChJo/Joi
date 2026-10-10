@@ -150,6 +150,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         insertWork.run(
         item.workId, item.workbenchId, plan.inputId, item.title, JSON.stringify({
           acceptanceChecks: brief.acceptanceChecks,
+          ...(brief.briefVersion === undefined ? {} : { briefVersion: brief.briefVersion }),
           ...(brief.evidenceResultIds === undefined ? {} : { evidenceResultIds: brief.evidenceResultIds }),
           ...(brief.instructions === undefined ? {} : { instructions: brief.instructions }),
         }), item.accessMode === "NONE" ? "READ" : item.accessMode, null,
@@ -361,6 +362,14 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
   async reassign(plan: ReassignedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
       assertWorkGoalOpen(connection, plan.workId);
+      if (plan.instructions !== undefined) {
+        const row = connection.prepare("SELECT intent_json FROM work_items WHERE work_id = ?").get(plan.workId);
+        if (typeof row?.intent_json !== "string") throw new Error("work_brief_missing");
+        const brief = JSON.parse(row.intent_json) as unknown;
+        if (brief === null || typeof brief !== "object" || Array.isArray(brief)) throw new Error("work_brief_invalid");
+        connection.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = ?")
+          .run(JSON.stringify({ ...brief, briefVersion: 2, instructions: plan.instructions }), plan.workId);
+      }
       if (plan.accessMode !== undefined) {
         connection.prepare("UPDATE work_items SET access_mode = ? WHERE work_id = ?")
           .run(plan.accessMode === "NONE" ? "READ" : plan.accessMode, plan.workId);

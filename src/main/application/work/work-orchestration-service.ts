@@ -3,6 +3,7 @@ import { buildWorkExecutionWaves, createWorkItem, type WorkAccessMode, type Work
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import type { PartnerInstanceRepository } from "../ports/partner-instances.js";
 import { DISPATCH_POLICY_REASONS } from "./dispatch-policy.js";
+import { requireWorkInstructions } from "./work-instructions.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type {
   CommittedWorkPlan,
@@ -107,6 +108,7 @@ export class WorkOrchestrationService {
       if ((request.acceptanceChecks ?? []).length === 0) {
         throw new DomainError("work_acceptance_checks_required", "Every Work needs at least one mechanically checkable acceptance check.");
       }
+      requireWorkInstructions(request.instructions);
       byKey.set(request.key, request);
     }
     for (const request of input.work) await this.#validateInstanceSelection(input.workbenchId, request);
@@ -137,6 +139,7 @@ export class WorkOrchestrationService {
       if (request === undefined) throw new Error("work_request_missing");
       return {
         acceptanceChecks: (request.acceptanceChecks ?? []).map((check) => ({ ...check })),
+        briefVersion: 2 as const,
         ...(input.recovery === undefined || input.recovery.evidenceResultIds.length === 0 ? {} : { evidenceResultIds: [...input.recovery.evidenceResultIds] }),
         ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
         workId: item.workId,
@@ -387,7 +390,7 @@ export class WorkOrchestrationService {
    * current partner revision: the point is to feed the answer back into the same work, and
    * the dispatch continues in the original resident instance when it is still alive.
    */
-  async resume(input: { actionId?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+  async resume(input: { actionId?: string; instructions?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
     await this.dependencies.goalGate?.assertWorkOpen(input.workId);
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
@@ -401,6 +404,7 @@ export class WorkOrchestrationService {
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
     if (context.item.status !== "WAITING") throw new DomainError("work_resume_status_invalid", "Only waiting work can be resumed.");
+    const instructions = requireWorkInstructions(input.instructions);
     const pin = await this.dependencies.partners.pinForDispatch(context.lastPartnerId);
     const accessMode = strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
     const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
@@ -434,7 +438,7 @@ export class WorkOrchestrationService {
       workId: input.workId,
     };
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
-    await repository.reassign({ attempt, createdAt, dispatchPlanId, turnId: input.turnId, workId: input.workId,
+    await repository.reassign({ attempt, createdAt, dispatchPlanId, instructions, turnId: input.turnId, workId: input.workId,
       ...(accessMode === context.item.accessMode ? {} : { accessMode }),
     });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {

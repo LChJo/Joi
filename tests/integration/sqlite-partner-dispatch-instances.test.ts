@@ -93,6 +93,45 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it.each([undefined, 2])("delivers only independent instructions for a scoped Work with brief version %s", async (briefVersion) => {
+    const { database, root } = await openWithPartner();
+    try {
+      const instructions = "只核对 T25 最终状态。只读；返回一条裁决。外部原因不提出代码降级方案。";
+      database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET body = ? WHERE input_id = 'input_1'")
+          .run("原始目标\n[用户补充] 旧要求：改代码\n[用户补充] 仅审阅 T25\n[用户补充] 无关话题 T26");
+        connection.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'")
+          .run(JSON.stringify({ ...(briefVersion === undefined ? {} : { briefVersion }), instructions, acceptanceChecks: [{ kind: "BODY_PRESENT" }] }));
+      });
+      const dispatched: string[] = [];
+      const handler = makeHandler(database, { dispatch: async (input) => {
+        dispatched.push(input.request.taskProjection);
+        database.transaction((connection) => connection.prepare("UPDATE dispatch_attempts SET instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run());
+        return { actionId: "action_1", artifacts: [], body: "裁决", externalRunId: "local:action_1", status: "COMPLETED", workId: "work_1" };
+      } });
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }));
+      expect(dispatched[0]).toContain(`Task instructions:\n${instructions}`);
+      expect(dispatched[0]).not.toContain("[用户补充]");
+      expect(dispatched[0]).not.toContain("改代码");
+      expect(dispatched[0]).not.toContain("T26");
+      const entries = database.transaction((connection) => connection.prepare("SELECT text FROM workbench_agent_conversation_entries WHERE role = 'USER'").all());
+      expect(entries).toEqual([{ text: dispatched[0] }]);
+    } finally { database.close(); await rm(root, { force: true, recursive: true }); }
+  });
+
+  it.each([undefined, "", " \n ", "x".repeat(12_001)])("rejects a v2 brief with invalid instructions rather than falling back to goal history", async (instructions) => {
+    const { database, root } = await openWithPartner();
+    try {
+      database.transaction((connection) => connection.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'")
+        .run(JSON.stringify({ briefVersion: 2, instructions, acceptanceChecks: [{ kind: "BODY_PRESENT" }] })));
+      const dispatch = vi.fn(async () => { throw new Error("must not execute an invalid brief"); });
+      await makeHandler(database, { dispatch }).handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }));
+      expect(dispatch).not.toHaveBeenCalled();
+      expect(database.transaction((connection) => connection.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get()))
+        .toEqual({ status: "FAILED" });
+    } finally { database.close(); await rm(root, { force: true, recursive: true }); }
+  });
+
   it("rechecks a question committed during context assembly before persisting any start", async () => {
     const { database, root } = await openWithPartner();
     // eslint-disable-next-line @typescript-eslint/unbound-method -- invoked with the assembler receiver via call below.
@@ -925,6 +964,13 @@ describe("partner dispatch instance routing", () => {
         "SELECT active_revision_id FROM partners WHERE partner_id = 'partner_remote_1'",
       ).get()) as { active_revision_id: string };
       seedDispatchFixture(database, revision.active_revision_id);
+      const effectiveRequirements = "完整有效需求：仅核对最终裁决；以 bot 身份回复；使用 Markdown；外部原因不建议代码降级。";
+      database.transaction((connection) => {
+        connection.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'")
+          .run(JSON.stringify({ briefVersion: 2, instructions: effectiveRequirements, acceptanceChecks: [{ kind: "BODY_PRESENT" }] }));
+        connection.prepare("UPDATE joi_inbox_messages SET body = ? WHERE input_id = 'input_1'")
+          .run("旧要求：使用用户身份\n[用户补充] 以 bot 身份回复\n[用户补充] 外部原因不建议代码降级");
+      });
       const contexts = new SqliteWorkbenchContextRepository(database);
       const handler = new SqlitePartnerDispatchDelivery({
         agentConversations: new SqliteWorkbenchAgentRepository(database),
@@ -939,6 +985,9 @@ describe("partner dispatch instance routing", () => {
           recover: async () => { throw new Error("unexpected recovery"); },
           startWithResult: async (input) => {
             expect(JSON.stringify(input.parts)).toContain("PRIVATE_GOAL_EVIDENCE");
+            expect(JSON.stringify(input.parts)).toContain(effectiveRequirements);
+            expect(JSON.stringify(input.parts)).not.toContain("[用户补充]");
+            expect(JSON.stringify(input.parts)).not.toContain("使用用户身份");
             return {
               invocation: {
                 agentConnectionId: "remote_1", createdAt: "2026-07-29T10:00:00.000Z", invocationId: "invocation_remote_1",
@@ -961,6 +1010,8 @@ describe("partner dispatch instance routing", () => {
       const displayText = database.transaction((connection) => connection.prepare(`SELECT text
         FROM workbench_agent_conversation_entries ORDER BY sequence`).all()) as { text: string | null }[];
       expect(displayText.map((row) => row.text).join("\n")).toContain("远程工作完成");
+      expect(displayText.map((row) => row.text).join("\n")).toContain(effectiveRequirements);
+      expect(displayText.map((row) => row.text).join("\n")).not.toContain("[用户补充]");
       expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_A2A_PAYLOAD");
       expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_GOAL_EVIDENCE");
     } finally {

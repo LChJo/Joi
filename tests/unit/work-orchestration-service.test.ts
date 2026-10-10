@@ -7,6 +7,21 @@ import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
+  it.each([undefined, "", " \n\t", "x".repeat(12_001)])("rejects invalid independent instructions before any plan side effect", async (instructions) => {
+    const commit = vi.fn(async () => undefined);
+    const pinForDispatch = vi.fn(async (partnerId: string) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }));
+    const service = new WorkOrchestrationService({
+      clock: new TestClock(), ids: new TestIds(), partners: { pinForDispatch },
+      policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit },
+    });
+    await expect(service.plan({
+      workbenchId: "workbench-1", inputId: "input-1", turnId: "turn-1", dependencies: [],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "NONE", key: "read", partnerId: "partner", title: "读取", ...(instructions === undefined ? {} : { instructions }) }],
+    })).rejects.toMatchObject({ code: "work_instructions_invalid" });
+    expect(commit).not.toHaveBeenCalled();
+    expect(pinForDispatch).not.toHaveBeenCalled();
+  });
+
   it("normalizes Skill work before building waves and checking workspace policy", async () => {
     const committed: CommittedWorkPlan[] = [];
     const evaluate = vi.fn(async (_item: WorkItem) => ({ allowed: true }));
@@ -17,7 +32,7 @@ describe("work orchestration outbox", () => {
     });
     await service.plan({ workbenchId: "workbench-1", inputId: "input-1", turnId: "turn-1", dependencies: [], work: [
       { key: "skill-a", title: "Analyze tasks", partnerId: "partner", accessMode: "NONE", acceptanceChecks: [{ kind: "BODY_PRESENT" }], instructions: "Use the selected skill", sessionPolicy: "EPHEMERAL" },
-      { key: "skill-b", title: "Analyze more", partnerId: "partner", accessMode: "READ", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+      { instructions: "Complete this scoped deliverable.", key: "skill-b", title: "Analyze more", partnerId: "partner", accessMode: "READ", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
     ] });
     expect(committed[0]?.items.map((item) => item.accessMode)).toEqual(["WRITE", "WRITE"]);
     expect(committed[0]?.waves).toHaveLength(1);
@@ -49,7 +64,7 @@ describe("work orchestration outbox", () => {
 
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", instructions: "Complete this scoped deliverable.", key: "read", partnerId: "partner-a", title: "读取" }],
     })).rejects.toMatchObject({ code });
     expect(committed).toEqual([]);
   });
@@ -64,7 +79,7 @@ describe("work orchestration outbox", () => {
     });
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", sessionPolicy: "RESIDENT", title: "读取" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", instructions: "Complete this scoped deliverable.", key: "read", partnerId: "partner-a", sessionPolicy: "RESIDENT", title: "读取" }],
     })).rejects.toMatchObject({ code: "partner_instance_selection_ambiguous" });
     expect(get).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
@@ -80,7 +95,7 @@ describe("work orchestration outbox", () => {
     });
     await service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", key: "read", partnerId: "partner-a", title: "读取" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instanceId: "instance-1", instructions: "Complete this scoped deliverable.", key: "read", partnerId: "partner-a", title: "读取" }],
     });
     expect(committed[0]?.attempts[0]?.outbox.payload).toMatchObject({ instanceId: "instance-1" });
   });
@@ -93,7 +108,7 @@ describe("work orchestration outbox", () => {
     });
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
-        { accessMode: "WRITE", key: "write", partnerId: "partner", title: "写入", workspaceRef: "caller-path" },
+        { accessMode: "WRITE", instructions: "Complete this scoped deliverable.", key: "write", partnerId: "partner", title: "写入", workspaceRef: "caller-path" },
       ],
     })).rejects.toMatchObject({ code: "work_workspace_forbidden" });
   });
@@ -106,7 +121,7 @@ describe("work orchestration outbox", () => {
     });
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
-        { acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "C:\\Users\\owner\\report.md" }], accessMode: "READ", key: "read", partnerId: "partner", title: "读取" },
+        { acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "C:\\Users\\owner\\report.md" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "read", partnerId: "partner", title: "读取" },
       ],
     })).rejects.toMatchObject({ code: "work_acceptance_path_invalid" });
   });
@@ -120,12 +135,12 @@ describe("work orchestration outbox", () => {
     });
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
-        { accessMode: "READ", key: "read", partnerId: "partner", title: "读取" },
+        { accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "read", partnerId: "partner", title: "读取" },
       ],
     })).rejects.toMatchObject({ code: "work_acceptance_checks_required" });
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
-        { acceptanceChecks: [], accessMode: "READ", key: "read", partnerId: "partner", title: "读取" },
+        { acceptanceChecks: [], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "read", partnerId: "partner", title: "读取" },
       ],
     })).rejects.toMatchObject({ code: "work_acceptance_checks_required" });
     expect(committed).toEqual([]);
@@ -147,7 +162,7 @@ describe("work orchestration outbox", () => {
       inputId: "input-1",
       turnId: "turn-1",
       work: [
-        { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "research", partnerId: "partner-a", title: "研究" },
+        { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "research", partnerId: "partner-a", title: "研究" },
         {
           acceptanceChecks: [{ kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt", expectedText: "hellow" }],
           accessMode: "WRITE", instructions: "保留原始拼写", key: "write", partnerId: "partner-b", title: "写入",
@@ -159,9 +174,10 @@ describe("work orchestration outbox", () => {
     expect(committed[0]?.inputId).toBe("input-1");
     expect(committed[0]?.attempts).toHaveLength(2);
     expect(committed[0]?.briefs).toEqual([
-      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], workId: committed[0]?.items[0]?.workId },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], briefVersion: 2, instructions: "Complete this scoped deliverable.", workId: committed[0]?.items[0]?.workId },
       {
         acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+        briefVersion: 2,
         instructions: "保留原始拼写",
         workId: committed[0]?.items[1]?.workId,
       },
@@ -193,7 +209,7 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: false, reason: "workspace_lease_conflict" }) },
       repository: { commit: async (plan) => { committed.push(plan); } },
     });
-    const result = await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }] });
+    const result = await service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1", work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", instructions: "Complete this scoped deliverable.", key: "write", partnerId: "partner-a", title: "写入" }] });
     // The queued Work still gets a claimable attempt so the delivery-side recheck decides
     // its fate (retry a transient lease conflict, land a terminal FAILED otherwise) instead
     // of silently jamming the goal. The denial is surfaced to the caller and diagnostics.
@@ -220,7 +236,7 @@ describe("work orchestration outbox", () => {
     });
     const result = await service.plan({
       dependencies: [], inputId: "input-1", turnId: "turn-1", workbenchId: "workbench-1",
-      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "denied", partnerId: "partner-a", title: "拒绝" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "denied", partnerId: "partner-a", title: "拒绝" }],
     });
     expect(result.queued).toEqual([]);
     expect(result.denied).toEqual([{ reasonCode: "dispatch_policy_denied", workKey: "denied" }]);
@@ -238,7 +254,7 @@ describe("work orchestration outbox", () => {
 
     await expect(service.plan({
       workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn-1",
-      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", key: "write", partnerId: "partner-a", title: "写入" }],
+      work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", instructions: "Complete this scoped deliverable.", key: "write", partnerId: "partner-a", title: "写入" }],
     })).rejects.toMatchObject({ code: "workbench_workspace_not_ready" });
     expect(committed).toEqual([]);
   });
@@ -250,11 +266,11 @@ describe("work orchestration outbox", () => {
       policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit: async () => undefined },
     });
     await expect(service.plan({ workbenchId: "workbench-1", dependencies: [], inputId: "input-1", turnId: "turn", work: [
-      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "same", partnerId: "partner", title: "A" },
-      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "same", partnerId: "partner", title: "B" },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "same", partnerId: "partner", title: "A" },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "same", partnerId: "partner", title: "B" },
     ] })).rejects.toMatchObject({ code: "work_key_duplicate" });
     await expect(service.plan({ workbenchId: "workbench-1", dependencies: [{ dependsOnKey: "missing", workKey: "a" }], inputId: "input-1", turnId: "turn", work: [
-      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "a", partnerId: "partner", title: "A" },
+      { acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "a", partnerId: "partner", title: "A" },
     ] })).rejects.toMatchObject({ code: "work_dependency_unknown" });
   });
 
@@ -394,16 +410,19 @@ describe("work orchestration outbox", () => {
     });
 
     // A live IDLE instance is referenced directly so the resident conversation continues.
-    await expect(create({ instance: { instanceId: "instance-1", status: "IDLE" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" }))
+    await expect(create({ instance: { instanceId: "instance-1", status: "IDLE" } }).resume({ instructions: "Continue the read-only task using the confirmed user answer.", workbenchId: "workbench-1", turnId: "turn", workId: "work-1" }))
       .resolves.toMatchObject({ outbox: { payload: { instanceId: "instance-1", workId: "work-1" } }, partnerRevisionId: "revision-same" });
     // A disposed instance must never be referenced; the attempt falls back to a resident continuation.
-    await expect(create({ instance: { instanceId: "instance-1", status: "DISPOSED" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" }))
+    await expect(create({ instance: { instanceId: "instance-1", status: "DISPOSED" } }).resume({ instructions: "Continue the read-only task using the confirmed user answer.", workbenchId: "workbench-1", turnId: "turn", workId: "work-1" }))
       .resolves.toMatchObject({ outbox: { payload: { sessionPolicy: "RESIDENT", workId: "work-1" } } });
     expect(reassigned).toHaveLength(2);
     expect(reassigned.map((plan) => plan.accessMode)).toEqual(["WRITE", "WRITE"]);
+    expect(reassigned.map((plan) => plan.instructions)).toEqual(Array(2).fill("Continue the read-only task using the confirmed user answer."));
+    await expect(create({}).resume({ workbenchId: "workbench-1", turnId: "turn-missing", workId: "work-1" })).rejects.toMatchObject({ code: "work_instructions_invalid" });
+    expect(reassigned).toHaveLength(2);
 
-    await expect(create({ item: { ...waitingItem, status: "COMPLETED" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_resume_status_invalid" });
-    await expect(create({ item: { ...waitingItem, workbenchId: "workbench-2" } }).resume({ workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });
+    await expect(create({ item: { ...waitingItem, status: "COMPLETED" } }).resume({ instructions: "Continue the read-only task using the confirmed user answer.", workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_resume_status_invalid" });
+    await expect(create({ item: { ...waitingItem, workbenchId: "workbench-2" } }).resume({ instructions: "Continue the read-only task using the confirmed user answer.", workbenchId: "workbench-1", turnId: "turn", workId: "work-1" })).rejects.toMatchObject({ code: "work_workbench_mismatch" });
   });
 
   it("reuses the dispatch committed for the same persisted user action after a crash", async () => {

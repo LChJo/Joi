@@ -46,7 +46,7 @@ describe("per-run working directories", () => {
       const service = new WorkOrchestrationService({ clock: fixture.clock, ids: fixture.ids, partners: fixture.partners,
         policy: new SqliteDispatchPolicyGate({ clock: fixture.clock, database: fixture.database }), repository: plans });
       await service.plan({ workbenchId, inputId: "cli-input", turnId: "cli-turn", dependencies: [], work: [{
-        key: "cli", title: "Analyze", partnerId: partner.partnerId, accessMode: "NONE",
+        instructions: "Complete this scoped deliverable.", key: "cli", title: "Analyze", partnerId: partner.partnerId, accessMode: "NONE",
         acceptanceChecks: [{ kind: "FILE_CONTAINS_EXACT", relativePath: "report.txt", expectedText: "cli-fixture-ok" }],
       }] });
       const contexts = new SqliteWorkbenchContextRepository(fixture.database);

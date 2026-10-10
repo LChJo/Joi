@@ -39,6 +39,7 @@ function makeTools(options: {
   inputId?: string;
   partners?: PartnerDto[];
   planError?: Error;
+  briefError?: Error;
   resumeCalls?: { inputId: string; turnId: string }[];
   refineCalls?: { args: { workbenchId: string; input: Record<string, unknown> }[] };
   workspaceBindCalls?: { workbenchId: string; rootPath: string }[];
@@ -132,6 +133,7 @@ function makeTools(options: {
         planCalls.push(input);
         if (options.workspaceBlocked === true) throw new DomainError("workbench_workspace_not_ready", "workspace required");
         if (options.planError !== undefined) throw options.planError;
+        if (options.briefError !== undefined && input.work.some((item) => item.instructions === undefined)) throw options.briefError;
         return { denied: [], queued: [], dispatchPlanId: "plan_1", waves: [] };
       },
       reassign: async (input) => ({
@@ -148,6 +150,7 @@ function makeTools(options: {
         registryRevision: 1,
       }),
       resume: async (input) => {
+        if (options.briefError !== undefined && input.instructions === undefined) throw options.briefError;
         options.workResumeCalls?.push(input);
         return {
           actionId: "action_resume",
@@ -165,7 +168,10 @@ function makeTools(options: {
         };
       },
       cancel: async (input) => ({ workId: input.workId }),
-      supplement: async (input) => ({ attemptNo: 1, dispatchPlanId: "plan_recovery", evidenceResultIds: ["result_1"], waves: [[input.sourceWorkId]] }),
+      supplement: async (input) => {
+        if (options.briefError !== undefined && input.instructions === undefined) throw options.briefError;
+        return { attemptNo: 1, dispatchPlanId: "plan_recovery", evidenceResultIds: ["result_1"], waves: [[input.sourceWorkId]] };
+      },
     },
   });
   const byName = new Map(tools.map((tool) => [tool.name, tool]));
@@ -195,6 +201,31 @@ function makeTools(options: {
 }
 
 describe("joi reasoning tools", () => {
+  it.each(["work_dispatch", "work_supplement", "work_resume"])("offers one instruction correction for %s without asking the user", async (name) => {
+    const harness = makeTools({ briefError: new DomainError("work_instructions_invalid", "invalid") });
+    const args = name === "work_dispatch" ? { work: [{ accessMode: "NONE", key: "one", partnerId: "partner_1", title: "核对" }] }
+      : name === "work_supplement" ? { accessMode: "NONE", partnerId: "partner_1", sourceWorkId: "work_1", title: "核对" }
+        : { workId: "work_1" };
+    await expect(harness.call(name, args)).resolves.toMatchObject({ reasonCode: "work_instructions_invalid", status: "RETRY_REQUIRED" });
+    await expect(harness.call(name, args)).resolves.toMatchObject({ reasonCode: "work_instructions_invalid", status: "FAILED" });
+    expect(harness.clarificationCalls).toEqual([]);
+  });
+
+  it.each(["work_dispatch", "work_supplement", "work_resume"])("accepts a corrected brief for %s in the same turn", async (name) => {
+    const harness = makeTools({ briefError: new DomainError("work_instructions_invalid", "invalid") });
+    const work = { accessMode: "NONE", key: "one", partnerId: "partner_1", title: "核对" };
+    const args = name === "work_dispatch" ? { work: [work] }
+      : name === "work_supplement" ? { accessMode: "NONE", partnerId: "partner_1", sourceWorkId: "work_1", title: "核对" }
+        : { workId: "work_1" };
+    await expect(harness.call(name, args)).resolves.toMatchObject({ status: "RETRY_REQUIRED" });
+    const corrected = name === "work_dispatch" ? { work: [{ ...work, instructions: "只核对当前主题，返回裁决。" }] }
+      : { ...args, instructions: "只核对当前主题，返回裁决。" };
+    const response = await harness.call(name, corrected);
+    expect(response).not.toHaveProperty("status", "FAILED");
+    expect(response).not.toHaveProperty("status", "RETRY_REQUIRED");
+    expect(harness.clarificationCalls).toEqual([]);
+  });
+
   it("keeps every registered reasoning tool inside the runtime allowlist", () => {
     const allowed = new Set<string>(JOI_REASONING_TOOL_NAMES);
     expect(makeTools().tools.map((tool) => tool.name).filter((name) => !allowed.has(name))).toEqual([]);
@@ -514,9 +545,9 @@ describe("joi reasoning tools", () => {
   it("preserves a resolved action id when resuming waiting work", async () => {
     const workResumeCalls: Record<string, unknown>[] = [];
     const harness = makeTools({ workResumeCalls });
-    await harness.call("work_resume", { actionId: "attention-1", workId: "work-1" });
+    await harness.call("work_resume", { actionId: "attention-1", instructions: "按用户确认，以 bot 身份只回复 T25。", workId: "work-1" });
     expect(workResumeCalls).toEqual([{
-      actionId: "attention-1", turnId: "turn_1", workbenchId: "workbench_1", workId: "work-1",
+      actionId: "attention-1", instructions: "按用户确认，以 bot 身份只回复 T25。", turnId: "turn_1", workbenchId: "workbench_1", workId: "work-1",
     }]);
   });
 

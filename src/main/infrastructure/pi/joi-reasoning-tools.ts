@@ -6,6 +6,7 @@ import type { PartnerRegistryService } from "../../application/partners/partner-
 import type { PartnerWorkMemoryService } from "../../application/partners/partner-work-memory-service.js";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
 import { DISPATCH_POLICY_REASONS } from "../../application/work/dispatch-policy.js";
+import { WORK_INSTRUCTIONS_MAX_CHARS } from "../../application/work/work-instructions.js";
 import type { ModelSourceService } from "../../application/model-sources/model-source-service.js";
 import type { WorkbenchCatalog } from "../../application/ports/workbench-context.js";
 import type { WorkbenchChangeService } from "../../application/joi/workbench-change-service.js";
@@ -129,6 +130,24 @@ export function createJoiReasoningTools(input: {
   work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume" | "supplement">;
 }): AgentTool[] {
   let dispatchCorrectionOffered = false;
+  const instructionCorrections = new Set<string>();
+  const instructionFailure = (name: string, error: unknown): ReturnType<typeof result> | undefined => {
+    if (!(error instanceof DomainError) || error.code !== "work_instructions_invalid") return undefined;
+    if (instructionCorrections.has(name)) return result({ reasonCode: error.code, status: "FAILED" }, true);
+    instructionCorrections.add(name);
+    return result({
+      hint: "Write nonblank self-contained instructions within 12000 characters: this Work's goal, relevant current requirements and corrections, facts, boundaries and deliverable. Retry this tool once; do not ask the user to repair the brief.",
+      reasonCode: error.code, status: "RETRY_REQUIRED",
+    });
+  };
+  const executeWithInstructions = async (name: string, execute: () => Promise<unknown>, terminate = false): Promise<ReturnType<typeof result>> => {
+    try { return result(await execute(), terminate); }
+    catch (error) {
+      const correction = instructionFailure(name, error);
+      if (correction !== undefined) return correction;
+      throw error;
+    }
+  };
   const goalContext = (): string => input.goalInputId ?? input.inputId;
   const requireHarness = (): NonNullable<typeof input.harness> => {
     if (input.harness === undefined) throw new DomainError("harness_map_unavailable", "The goal map is not configured.");
@@ -224,7 +243,7 @@ export function createJoiReasoningTools(input: {
       ]), { maxItems: 8, minItems: 1 })),
       accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
       instanceId: Type.Optional(Type.String()),
-      instructions: Type.Optional(Type.String({ maxLength: 12_000 })),
+      instructions: Type.Optional(Type.String({ description: "Required self-contained task brief. Include only applicable effective requirements, corrections, facts, boundaries and deliverable. The cumulative user request is not attached automatically.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
       key: Type.String(),
       partnerId: Type.String(),
       sessionPolicy: Type.Optional(Type.Union([Type.Literal("ephemeral"), Type.Literal("resident")])),
@@ -260,6 +279,8 @@ export function createJoiReasoningTools(input: {
           })),
         }));
       } catch (error) {
+        const correction = instructionFailure("work_dispatch", error);
+        if (correction !== undefined) return correction;
         const reasonCode = runtimeDiagnosticErrorCode(error);
         emitRuntimeDiagnostic(input.diagnostics, "joi.work.dispatch_rejected", {
           inputId: input.inputId,
@@ -313,7 +334,7 @@ export function createJoiReasoningTools(input: {
       Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
     ]), { maxItems: 8 })),
     accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
-    instructions: Type.Optional(Type.String({ maxLength: 12_000 })),
+    instructions: Type.Optional(Type.String({ description: "Required self-contained instructions for this supplemental Work, including relevant established facts and current requirements.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
     partnerId: Type.String(),
     sourceWorkId: Type.String(),
     strategy: Type.Optional(Type.Union([Type.Literal("SUPPLEMENT"), Type.Literal("TOOL_EXPANSION")])),
@@ -321,7 +342,7 @@ export function createJoiReasoningTools(input: {
   });
   const workSupplementTool: AgentTool<typeof workSupplementParameters> = {
     description: "Create one independent recovery Work for an essential gap left by a FAILED Work. The source Work's acceptance checks and access mode are enforced automatically as a minimum; acceptanceChecks here are additive only and cannot weaken the original deliverable. Completed authoritative results from the same goal are attached as evidence references. Do not pass historical DAG keys. Each source Work is limited durably to two recovery rounds. For OBSERVED or UNKNOWN side effects, use this instead of replaying the failed Work; for a missing built-in tool, call partner_set_tools first and choose TOOL_EXPANSION.",
-    execute: async (_toolCallId, arguments_) => result(await input.work.supplement({
+    execute: async (_toolCallId, arguments_) => executeWithInstructions("work_supplement", () => input.work.supplement({
       ...(arguments_.acceptanceChecks === undefined ? {} : { acceptanceChecks: arguments_.acceptanceChecks }),
       accessMode: arguments_.accessMode,
       ...(arguments_.instructions === undefined ? {} : { instructions: arguments_.instructions }),
@@ -349,11 +370,16 @@ export function createJoiReasoningTools(input: {
     name: "work_reassign",
     parameters: workReassignParameters,
   };
-  const workResumeParameters = Type.Object({ actionId: Type.Optional(Type.String()), workId: Type.String() });
+  const workResumeParameters = Type.Object({
+    actionId: Type.Optional(Type.String()),
+    instructions: Type.Optional(Type.String({ description: "Required complete replacement brief, incorporating the relevant user answer and current constraints. Replaces the stored instructions rather than appending goal history.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
+    workId: Type.String(),
+  });
   const workResumeTool: AgentTool<typeof workResumeParameters> = {
-    description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Pass the exact resolvedActionId from the recovery input as actionId when present so retries preserve identity. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive; the user's answer is already part of the goal request text. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
-    execute: async (_toolCallId, arguments_) => result(await input.work.resume({
+    description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Provide complete replacement instructions containing the relevant answer, effective requirements, established facts, boundaries and deliverable; the goal request history is not attached. Pass the exact resolvedActionId from the recovery input as actionId when present so retries preserve identity. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
+    execute: async (_toolCallId, arguments_) => executeWithInstructions("work_resume", () => input.work.resume({
       ...(arguments_.actionId === undefined ? {} : { actionId: arguments_.actionId }),
+      ...(arguments_.instructions === undefined ? {} : { instructions: arguments_.instructions }),
       workbenchId: input.workbenchId,
       turnId: input.turnId,
       workId: arguments_.workId,

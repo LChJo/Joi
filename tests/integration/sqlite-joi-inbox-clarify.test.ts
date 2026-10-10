@@ -59,7 +59,7 @@ describe("sqlite joi inbox clarify", () => {
         inputId: accepted.inputId,
         questionId: question.expectedQuestionId,
         questionVersion: question.expectedQuestionVersion,
-        text: "使用现有配置",
+        text: "使用现有配置，以 bot 身份仅回复当前 T25。",
       });
 
       expect(await repository.loadInput(accepted.inputId)).toMatchObject({
@@ -96,19 +96,44 @@ describe("sqlite joi inbox clarify", () => {
         reassignment: workRepository,
         repository: workRepository,
       });
+      const oldBrief = { acceptanceChecks: [{ kind: "BODY_PRESENT" }], evidenceResultIds: ["result-established"], instructions: "旧任务指令" };
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = 'work-action-question'").run(JSON.stringify(oldBrief));
+        connection.exec("CREATE TRIGGER reject_resume_outbox BEFORE INSERT ON outbox BEGIN SELECT RAISE(ABORT, 'fixture_resume_abort'); END");
+      });
+      const newInstructions = "继续原任务：用户已确认以 bot 身份回复，仅处理当前 T25。保留已确认根因，交付 Markdown 裁决。";
+      await expect(work.resume({
+        actionId: "attention-action-question", instructions: newInstructions,
+        turnId: "turn-action-retry-1", workId: "work-action-question", workbenchId: workbench.workbenchId,
+      })).rejects.toThrow("fixture_resume_abort");
+      expect(fixture.database.transaction((connection) => connection.prepare("SELECT intent_json FROM work_items WHERE work_id = 'work-action-question'").get()))
+        .toEqual({ intent_json: JSON.stringify(oldBrief) });
+      fixture.database.transaction((connection) => connection.exec("DROP TRIGGER reject_resume_outbox"));
       const firstResume = await work.resume({
         actionId: "attention-action-question",
+        instructions: newInstructions,
         turnId: "turn-action-retry-1",
         workId: "work-action-question",
         workbenchId: workbench.workbenchId,
       });
       const retriedResume = await work.resume({
         actionId: "attention-action-question",
+        instructions: "This duplicate must not replace the committed answer.",
         turnId: "turn-action-retry-2",
         workId: "work-action-question",
         workbenchId: workbench.workbenchId,
       });
       expect(retriedResume).toEqual(firstResume);
+      const storedBrief = fixture.database.transaction((connection) => connection.prepare("SELECT intent_json FROM work_items WHERE work_id = 'work-action-question'").get()) as { intent_json: string };
+      expect(JSON.parse(storedBrief.intent_json)).toEqual({ ...oldBrief, briefVersion: 2, instructions: newInstructions });
+      const recreated = new WorkOrchestrationService({
+        clock: fixture.clock, ids: fixture.ids, partners: fixture.partners,
+        policy: { evaluate: () => Promise.resolve({ allowed: true }) },
+        reassignment: new SqliteWorkPlanRepository(fixture.database), repository: new SqliteWorkPlanRepository(fixture.database),
+      });
+      await expect(recreated.resume({
+        actionId: "attention-action-question", turnId: "turn-action-retry-2", workId: "work-action-question", workbenchId: workbench.workbenchId,
+      })).resolves.toEqual(firstResume);
       expect(fixture.database.transaction((connection) => connection.prepare(
         "SELECT status, decision FROM joi_user_action_requests WHERE action_id = 'attention-action-question'",
       ).get())).toEqual({ decision: "RESUME", status: "APPLIED" });

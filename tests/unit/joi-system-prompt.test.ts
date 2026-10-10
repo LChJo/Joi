@@ -53,6 +53,10 @@ describe("joi system prompt", () => {
     expect(prompt).toContain("never invent or broaden a path");
     expect(prompt).toContain("otherwise persists a user-visible clarification");
     expect(prompt).toContain("Maintain the goal map");
+    expect(prompt).toContain("merge repeated supplements, apply explicit user corrections");
+    expect(prompt).toContain("Partners receive the brief, not that history");
+    expect(prompt).toContain("complete effective requirement list");
+    expect(prompt).toContain("work_resume with complete replacement instructions");
     expect(prompt).toContain("harness_name_destination");
     expect(prompt).toContain("harness_chart_path");
     expect(prompt).toContain("harness_record_decision");

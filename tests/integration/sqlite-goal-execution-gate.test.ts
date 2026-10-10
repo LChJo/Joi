@@ -198,7 +198,7 @@ describe("goal execution gate", () => {
         dependencies: [],
         inputId: goal.inputId,
         turnId: "race-turn",
-        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "run", partnerId: partner.partnerId, title: "执行" }],
+        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "run", partnerId: partner.partnerId, title: "执行" }],
         workbenchId: workbench.workbenchId,
       })).rejects.toMatchObject({ code: "goal_execution_paused" });
       expect(fixture.database.transaction((connection) => connection.prepare(
@@ -459,7 +459,7 @@ describe("goal execution gate", () => {
         dependencies: [],
         inputId,
         turnId,
-        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" as const }], accessMode: "READ" as const, key: "run", partnerId: partner.partnerId, title: "执行" }],
+        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" as const }], accessMode: "READ" as const, instructions: "Complete this scoped deliverable.", key: "run", partnerId: partner.partnerId, title: "执行" }],
         workbenchId: workbench.workbenchId,
       };
     };

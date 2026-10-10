@@ -34,6 +34,7 @@ import type { WorkResultRepository } from "../../application/ports/work-results.
 import type { WorkAcceptanceCheck } from "../../application/ports/work-orchestration.js";
 import type { WorkVerifier } from "../../application/ports/work-verification.js";
 import { DomainError } from "../../domain/errors.js";
+import { validWorkInstructions } from "../../application/work/work-instructions.js";
 import { createWorkResult } from "../../domain/work/work-result.js";
 import type { WorkAccessMode } from "../../domain/work/work.js";
 import type { SqliteWorkspaceLeaseManager } from "../persistence/sqlite-workspace-lease-manager.js";
@@ -86,28 +87,31 @@ function isValidAcceptanceCheck(value: unknown): value is WorkAcceptanceCheck {
     && typeof candidate.relativePath === "string" && typeof candidate.expectedText === "string";
 }
 
-/** True when the stored brief cannot be read as an object at all (tampering, bad migration). */
+/** Rejects unreadable briefs and invalid or unsupported versioned instruction contracts. */
 function intentJsonCorrupt(intentJson: string): boolean {
   try {
     const parsed = JSON.parse(intentJson) as unknown;
-    return parsed === null || typeof parsed !== "object" || Array.isArray(parsed);
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return true;
+    const brief = parsed as Record<string, unknown>;
+    return brief.briefVersion !== undefined && (brief.briefVersion !== 2 || !validWorkInstructions(brief.instructions));
   } catch {
     return true;
   }
 }
 
-function workBrief(intentJson: string): { acceptanceChecks: WorkAcceptanceCheck[]; droppedChecks: number; instructions?: string } {
+function workBrief(intentJson: string): { acceptanceChecks: WorkAcceptanceCheck[]; droppedChecks: number; instructions?: string; legacy: boolean } {
   try {
-    const parsed = JSON.parse(intentJson) as { acceptanceChecks?: unknown; instructions?: unknown };
+    const parsed = JSON.parse(intentJson) as { acceptanceChecks?: unknown; briefVersion?: unknown; instructions?: unknown };
     const candidates = Array.isArray(parsed.acceptanceChecks) ? parsed.acceptanceChecks : [];
     const acceptanceChecks = candidates.filter(isValidAcceptanceCheck);
     return {
       acceptanceChecks,
       droppedChecks: candidates.length - acceptanceChecks.length,
-      ...(typeof parsed.instructions === "string" && parsed.instructions !== "" ? { instructions: parsed.instructions } : {}),
+      legacy: parsed.briefVersion === undefined,
+      ...(validWorkInstructions(parsed.instructions) ? { instructions: parsed.instructions } : {}),
     };
   } catch {
-    return { acceptanceChecks: [], droppedChecks: 0 };
+    return { acceptanceChecks: [], droppedChecks: 0, legacy: false };
   }
 }
 
@@ -122,8 +126,8 @@ function taskProjection(row: DispatchRow, stagedAttachments?: readonly StagedAtt
   const stagedLines = (stagedAttachments ?? []).map((staged) => `- ${staged.relativePath} (${staged.mimeType}, ${String(staged.size)} bytes)`);
   return [
     `Work title: ${row.title}`,
-    `Original user request (authoritative):\n${row.source_request}`,
-    ...(brief.instructions === undefined ? [] : [`Additional instructions:\n${brief.instructions}`]),
+    brief.instructions !== undefined ? `Task instructions:\n${brief.instructions}`
+      : brief.legacy ? `Original user request (authoritative):\n${row.source_request}` : "Task instructions unavailable.",
     ...(stagedLines.length === 0 ? [] : [`Attachments from the user's original input are staged in this workspace (read them via these relative paths; treat them as read-only inputs):\n${stagedLines.join("\n")}`]),
     ...(checks.length === 0 ? [] : [`Acceptance checks:\n${checks.join("\n")}`]),
   ].join("\n\n");
@@ -281,15 +285,14 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       throw new DomainError(reason, "The dispatch policy denied this Work at delivery time.");
     }
 
-    // A corrupted brief means the acceptance contract is unreadable; converge to a visible
-    // terminal FAILED instead of running an unverifiable Work (the legacy silent downgrade
-    // to "no checks" let unverified results masquerade as completed evidence).
+    // Versioned briefs require valid independent instructions before a partner can start.
+    // An unreadable brief cannot carry an enforceable acceptance contract.
     if (intentJsonCorrupt(row.intent_json)) {
       if (!await this.#ensureRun(row)) return "skipped_terminal";
       row = this.#load(claim.dispatchAttemptId) ?? row;
       await this.#complete(row, "FAILED", {
         artifacts: [],
-        body: "The Work brief is corrupted and its acceptance contract cannot be read.",
+        body: "The Work brief is corrupted or lacks valid instructions, so its contract cannot be executed.",
         failure: { phase: "CONFIGURATION", reasonCode: "work_brief_invalid", retryable: false, sideEffectState: "NONE" },
       });
       return "skipped_terminal";

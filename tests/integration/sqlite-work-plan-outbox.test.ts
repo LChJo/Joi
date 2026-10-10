@@ -100,6 +100,7 @@ describe("SQLite work plan outbox", () => {
         workbench_id: "workbench-1", input_id: "input-1",
         intent_json: JSON.stringify({
           acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+          briefVersion: 2,
           instructions: "写入精确文本",
         }),
         status: "PLANNED",
@@ -154,8 +155,9 @@ describe("SQLite work plan outbox", () => {
         payload,
         status: "CLAIMED",
       });
-      expect(dispatchRequests[0]?.taskProjection).toContain("Original user request (authoritative):\nbody");
-      expect(dispatchRequests[0]?.taskProjection).toContain("Additional instructions:\n写入精确文本");
+      expect(dispatchRequests[0]?.taskProjection).not.toContain("Original user request");
+      expect(dispatchRequests[0]?.taskProjection).not.toContain("\nbody");
+      expect(dispatchRequests[0]?.taskProjection).toContain("Task instructions:\n写入精确文本");
       expect(dispatchRequests[0]?.taskProjection).toContain("FILE_CONTAINS_EXACT hello.txt = hellow");
       await handler.handle({
         attemptCount: 1,
@@ -272,7 +274,7 @@ describe("SQLite work plan outbox", () => {
       // A turn with no goal relationship to the plan input stays rejected.
       await expect(service.plan({
         workbenchId: "workbench-r", dependencies: [], inputId: "goal-r", turnId: "turn-stranger",
-        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", key: "forged", partnerId: partner.partnerId, title: "冒充" }],
+        work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "READ", instructions: "Complete this scoped deliverable.", key: "forged", partnerId: partner.partnerId, title: "冒充" }],
       })).rejects.toThrow("work_plan_goal_binding_invalid");
     } finally {
       database.close();
