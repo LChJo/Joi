@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import type { DigitalLifeApi } from "./api";
-import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
+import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
 import { EVOLUTION_BUDGET_PRESETS, EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../shared/evolution";
 
 const labels: Record<EvolutionReason, string> = {
   collecting: "正在积累可评价的经验", disabled: "尚未启用自动进化", budget_exhausted: "今日预算已用完，下个计费日继续", evaluating: "正在评估候选策略",
+  canary: "候选已通过合成评测，正在小流量生产验证", revalidation_required: "模型或评测器已变化，当前策略暂停生效并等待重新验证", revision_limit_reached: "策略历史已达上限，请先审计后再继续",
   promoted: "已启用通过评测的策略", rolled_back: "已暂停自动进化；回退后的策略用于新目标", model_changed: "模型或评测环境已变化，等待重新评估",
   insufficient_samples: "评测样本不足，保留当前策略", insufficient_gain: "改善幅度不足，保留当前策略", quality_regression: "候选质量下降，已拒绝",
   cost_regression: "候选调用成本超限，已拒绝", hard_violation: "候选违反完成约束，已拒绝", invalid_evaluation: "评测无效，保留当前策略",
@@ -32,9 +33,13 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
   const [saving, setSaving] = useState(false);
   const [dryRun, setDryRun] = useState<EvolutionDryRunReportDto | null>(null);
   const [dryRunning, setDryRunning] = useState(false);
+  const [overview, setOverview] = useState<EvolutionOverviewDto | null>(null);
   useEffect(() => {
     let canceled = false;
-    const load = () => api.evolutionStatus(workbenchId).then((value) => { if (!canceled) setStatus(value); }).catch(() => { if (!canceled) setNotice("没能读取进化状态，请稍后重试。"); });
+    const load = () => {
+      void api.evolutionOverview().then((aggregate) => { if (!canceled) setOverview(aggregate); }).catch(() => undefined);
+      return api.evolutionStatus(workbenchId).then((value) => { if (!canceled) setStatus(value); }).catch(() => { if (!canceled) setNotice("没能读取进化状态，请稍后重试。"); });
+    };
     void load();
     const timer = setInterval(() => void load(), 10_000);
     return () => { canceled = true; clearInterval(timer); };
@@ -48,9 +53,10 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
     } catch { setNotice("没能保存预算，请重试。"); } finally { setSaving(false); }
   };
   const rollback = async () => {
-    if (status?.activeRevisionId == null) return;
+    const revisionId = status?.activeRevisionId ?? status?.globalRevisionId;
+    if (revisionId == null) return;
     setSaving(true);
-    try { setStatus(await api.rollbackEvolution(workbenchId, status.activeRevisionId)); setNotice("已回退并暂停自动进化，运行中的目标保留原策略。"); }
+    try { setStatus(await api.rollbackEvolution(workbenchId, revisionId)); setNotice("已回退并暂停自动进化，运行中的目标保留原策略。"); }
     catch { setNotice("没能回退策略，请刷新状态后重试。"); } finally { setSaving(false); }
   };
   const runDryRun = async () => {
@@ -67,8 +73,16 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
   };
   const current = status === null ? null : EVOLUTION_BUDGET_PRESETS.find((preset) => preset.limit === status.dailyCallLimit) ?? null;
   return <div className="inline-settings workbench-evolution-panel">
-    <p className="workbench-evolution-intro">从执行经验中改进本工作台的上下文整理和完成检查。只有独立评测确认改善后，新目标才会使用新策略。</p>
+    <p className="workbench-evolution-intro">从执行经验中改进上下文整理和完成检查。候选必须先通过独立评测和生产灰度，才会成为全局基线或本工作台覆盖层。</p>
     {notice === null ? null : <p role="status">{notice}</p>}
+    {overview === null ? null : <div>
+      <h3>全部工作台</h3>
+      <p>已启用 {overview.enabled} / {overview.workbenches} · 评测中 {overview.evaluating} · 灰度中 {overview.canary} · 生效策略 {overview.active}</p>
+      <p className="field-hint">策略相关证据池：可评价 {overview.poolEvaluable} 个，其中失败 {overview.poolVerificationFailed} 个。{overview.revalidationRequired > 0 ? `有 ${String(overview.revalidationRequired)} 个工作台需要重新验证。` : ""}</p>
+      {overview.batches.length === 0 ? <p className="field-hint">尚无真实评测批次。</p> : <ul>{overview.batches.slice(0, 5).map((batch) => <li key={`${batch.workbenchId}:${batch.batchId}:${batch.finishedAt ?? "running"}`}>
+        {batch.scope === "GLOBAL" ? "全局基线" : "工作台覆盖"} · {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)} 次调用{batch.tokens === null ? "" : ` / ${String(batch.tokens)} tokens`}
+      </li>)}</ul>}
+    </div>}
     {status === null ? <p>正在读取进化状态…</p> : <>
       <p>{labels[status.reason]}</p>
       <fieldset className="evolution-budget-presets" disabled={saving}>
@@ -83,11 +97,16 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
       <p className="field-hint">{current === null ? `当前为自定义额度：每日 ${String(status.dailyCallLimit)} 次；选择预设可覆盖。` : presetHints[current.key]}</p>
       <p className="field-hint">额度按 UTC 日重置，只在工作台空闲时使用，日常任务永远优先；一轮完整评测约需 700–1450 次调用，可跨多天完成，不影响日常任务预算。</p>
       <p>今日调用 {status.callsUsedToday} / {status.dailyCallLimit} · 本工作台已记录 {status.evidenceCount} 个目标，其中 {status.evaluableCount} 个可客观评价</p>
-      <p className="field-hint">启动一轮评测需要全部工作台合计 {String(EVOLUTION_EVIDENCE_THRESHOLD)} 个可客观评价目标、其中 {String(EVOLUTION_FAILURE_THRESHOLD)} 个验收失败；当前为 {String(status.poolEvaluable)} 个与 {String(status.poolVerificationFailed)} 个。评测在固定合成场景上进行，产出的策略修订只作用于本工作台。</p>
+      <p className="field-hint">启动一轮评测需要全部工作台合计 {String(EVOLUTION_EVIDENCE_THRESHOLD)} 个可客观评价目标、其中 {String(EVOLUTION_FAILURE_THRESHOLD)} 个可归因于上下文或完成判断的验收失败；当前为 {String(status.poolEvaluable)} 个与 {String(status.poolVerificationFailed)} 个。共享证据先改进全局基线；只有本工作台自己的归因证据达到门槛时才生成覆盖层。</p>
+      {status.canaryRevisionId == null ? null : <p className="field-hint" role="status">候选正在生产灰度：稳定分配一小部分新目标，至少收集 5 个候选与 5 个对照结果后才会正式生效。</p>}
+      {status.revalidationRequired !== true ? null : <p className="field-hint" role="status">当前模型固定版本与策略评测版本不一致，策略已退回基线，重新评测前不会静默沿用。</p>}
       <p className="field-hint">每轮评测每天最多启动一个候选；被拒绝后需要重新积累触发证据，或用下面的按钮立即再试。</p>
       <button className="button ghost" type="button" disabled={saving} onClick={() => void runNow()}>立即评测一次</button>
       {status.runRequestedAt === null ? null : <p className="field-hint" role="status">已排入队列（{status.runRequestedAt.slice(0, 16).replace("T", " ")} 请求）：等待工作台空闲。</p>}
       {status.lastVerdict === null ? null : <p className="field-hint">上一轮裁决：{labels[status.lastVerdict.reason]} · 原策略通过 {status.lastVerdict.baselineSuccesses} 次 / 候选通过 {status.lastVerdict.candidateSuccesses} 次（共 {status.lastVerdict.evaluatedRuns} 次评测）</p>}
+      {(status.batchHistory ?? []).length === 0 ? null : <><h3>真实批次历史</h3><ul>{(status.batchHistory ?? []).slice(0, 10).map((batch) => <li key={`${batch.batchId}:${batch.finishedAt ?? "running"}`}>
+        {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)} 次调用{batch.tokens === null ? "" : ` / ${String(batch.tokens)} tokens`}
+      </li>)}</ul></>}
       <h3>手工干跑</h3>
       <p className="field-hint">用确定性替身把整条评测链路走一遍，不消耗任何真实模型调用，也不会改动上面的状态和策略。用来在证据攒够之前确认链路本身是通的。</p>
       <button className="button ghost" type="button" disabled={saving || dryRunning} onClick={() => void runDryRun()}>{dryRunning ? "正在干跑…" : "干跑一次"}</button>
@@ -102,7 +121,7 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
         <strong>{version.module === "context" ? "上下文整理" : "完成检查"}</strong> · {labels[version.reason]}<br />
         <small>{version.createdAt.slice(0, 10)} · 已评测 {version.evaluatedRuns} 次 · 原策略通过 {version.baselineSuccesses} 次 / 候选通过 {version.candidateSuccesses} 次</small>
       </li>)}</ul>}
-      {status.activeRevisionId === null ? null : <button className="button ghost" type="button" disabled={saving} onClick={() => void rollback()}>回退当前策略并暂停</button>}
+      {(status.activeRevisionId ?? status.globalRevisionId) == null ? null : <button className="button ghost" type="button" disabled={saving} onClick={() => void rollback()}>回退当前策略并暂停</button>}
     </>}
   </div>;
 }

@@ -6,18 +6,22 @@ import type { EvolutionStatusDto } from "../../src/shared/evolution";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution";
 
 const status: EvolutionStatusDto = { workbenchId: "a", dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 4, evaluableCount: 2, poolEvaluable: 7, poolVerificationFailed: 2, activeRevisionId: null, reason: "collecting", runRequestedAt: null, lastVerdict: null, versions: [] };
-it("starts on the low preset and applies preset changes immediately", async () => {
+it("starts off and applies preset changes immediately", async () => {
   const api = new DigitalLifeApi("");
-  vi.spyOn(api, "evolutionStatus").mockResolvedValue(status);
-  const save = vi.spyOn(api, "configureEvolution").mockResolvedValue({ ...status, dailyCallLimit: 0, reason: "disabled" });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, reason: "disabled" });
+  vi.spyOn(api, "evolutionOverview").mockResolvedValue({ workbenches: 1, enabled: 0, evaluating: 0, canary: 0, active: 0,
+    revalidationRequired: 0, poolEvaluable: 0, poolVerificationFailed: 0, batches: [] });
+  const save = vi.spyOn(api, "configureEvolution").mockResolvedValueOnce({ ...status, dailyCallLimit: 50, reason: "collecting" }).mockResolvedValue({ ...status, dailyCallLimit: 0, reason: "disabled" });
   render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
-  expect(await screen.findByText("正在积累可评价的经验")).toBeInTheDocument();
-  expect(screen.getByRole("radio", { name: "低（每日 50 次）" })).toBeChecked();
-  expect(screen.getByText(/约两周跑完一轮完整评测/u)).toBeInTheDocument();
+  expect(await screen.findByText("尚未启用自动进化")).toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: "关（只记录经验）" })).toBeChecked();
   // The trigger is a shared pool, so the panel has to show the pool the gate actually uses; a
   // per-workbench count alone no longer explains why a batch has not started.
   expect(screen.getByText(/合计 10 个可客观评价目标/u)).toBeInTheDocument();
   expect(screen.getByText(/当前为 7 个与 2 个/u)).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("radio", { name: "低（每日 50 次）" }));
+  await waitFor(() => expect(save).toHaveBeenCalledWith("a", 50));
+  expect(await screen.findByText("正在积累可评价的经验")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("radio", { name: "关（只记录经验）" }));
   await waitFor(() => expect(save).toHaveBeenCalledWith("a", 0));
   expect(await screen.findByText("尚未启用自动进化")).toBeInTheDocument();
@@ -42,6 +46,15 @@ it("surfaces save failures, custom limits and rolls back the active version", as
   fireEvent.click(screen.getByRole("button", { name: "回退当前策略并暂停" }));
   await screen.findByText("已回退并暂停自动进化，运行中的目标保留原策略。");
   expect(rollback).toHaveBeenCalledWith("a", "r1");
+});
+
+it("offers the same manual rollback for an active global strategy", async () => {
+  const api = new DigitalLifeApi("");
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, globalRevisionId: "global-r1", activeEffective: true, reason: "promoted" });
+  const rollback = vi.spyOn(api, "rollbackEvolution").mockResolvedValue({ ...status, reason: "rolled_back" });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  fireEvent.click(await screen.findByRole("button", { name: "回退当前策略并暂停" }));
+  await waitFor(() => expect(rollback).toHaveBeenCalledWith("a", "global-r1"));
 });
 
 it("dry-runs the pipeline and reports what each phase did", async () => {
@@ -94,6 +107,29 @@ it("names the paused state after invalid model responses", async () => {
   vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, reason: "model_response_invalid" });
   render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
   expect(await screen.findByText(/模型响应不符合评测要求，已暂停自动进化/u)).toBeInTheDocument();
+});
+
+it("shows aggregate batches, canary progress and explicit revalidation", async () => {
+  const api = new DigitalLifeApi("");
+  const batch = { batchId: "b1", workbenchId: "a", scope: "GLOBAL" as const, phase: "EVALUATE" as const,
+    startedAt: "2026-10-10T00:00:00.000Z", finishedAt: "2026-10-10T01:00:00.000Z", reason: "canary" as const,
+    calls: 240, tokens: 12_000, revisionId: "r1" };
+  const localBatch = { ...batch, batchId: "b2", scope: "WORKBENCH" as const, phase: "DEVELOP" as const,
+    finishedAt: null, reason: "call_failed" as const, calls: 1, tokens: null, revisionId: null };
+  vi.spyOn(api, "evolutionOverview").mockResolvedValue({ workbenches: 3, enabled: 2, evaluating: 1, canary: 1, active: 1,
+    revalidationRequired: 1, poolEvaluable: 8, poolVerificationFailed: 2, batches: [batch, localBatch] });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, dailyCallLimit: 50, reason: "revalidation_required",
+    canaryRevisionId: "r1", revalidationRequired: true, activeEffective: false, batchHistory: [localBatch],
+    versions: [{ revisionId: "r-context", parentRevisionId: null, module: "context", status: "REJECTED", createdAt: "2026-10-10",
+      reason: "insufficient_gain", baselineSuccesses: 80, candidateSuccesses: 82, evaluatedRuns: 180 }] });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  expect(await screen.findByText(/已启用 2 \/ 3/u)).toBeInTheDocument();
+  expect(screen.getByText(/全局基线 · 封存评测 · 候选已通过合成评测/u)).toBeInTheDocument();
+  expect(screen.getByText(/工作台覆盖 · 开发 · 后台调用未完成/u)).toBeInTheDocument();
+  expect(screen.getByText(/候选正在生产灰度/u)).toBeInTheDocument();
+  expect(screen.getByText(/当前模型固定版本与策略评测版本不一致/u)).toBeInTheDocument();
+  expect(screen.getByText("真实批次历史")).toBeInTheDocument();
+  expect(screen.getByText("上下文整理")).toBeInTheDocument();
 });
 
 it("reports a failed or truncated dry run instead of implying the pipeline is sound", async () => {

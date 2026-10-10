@@ -34,5 +34,7 @@ describe("evolution strategy boundaries", () => {
     expect(promotionDecision(rows.map((r, i) => i === 0 ? { ...r, violations: 1 } : r))).toBe("hard_violation");
     expect(promotionDecision(rows.map((r, i) => i === 29 ? { ...r, candidate: [false, true, true] } : r))).toBe("quality_regression");
     expect(promotionDecision(rows.map((r) => ({ ...r, candidateCalls: 4 })))).toBe("cost_regression");
+    expect(promotionDecision(rows.map((r) => ({ ...r, baselineTokens: 100, candidateTokens: 111 })))).toBe("cost_regression");
+    expect(promotionDecision(rows.map((r) => ({ ...r, baselineTokens: 100, candidateTokens: 105, candidateCalls: 99 })))).toBe("promote");
   });
 });

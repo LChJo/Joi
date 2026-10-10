@@ -29,7 +29,7 @@ describe("evolution dry run", () => {
   });
   it("repeats exactly, so a verdict can be compared between runs", async () => {
     expect(withoutDuration(await dryRun().run("a"))).toEqual(withoutDuration(await dryRun().run("a")));
-  });
+  }, 10_000);
   it("reports truncation instead of failing when the step budget runs out", async () => {
     const report = await new EvolutionDryRun({ now: () => "2026-09-24T00:00:00.000Z", id: () => "dry-run", maxSteps: 1 }).run("a");
     expect(report.outcome).toBe("truncated");

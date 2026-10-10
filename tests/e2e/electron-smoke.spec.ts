@@ -150,9 +150,11 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
 
     await window.getByRole("button", { name: "打开工作台 栖光" }).click();
     await window.getByRole("tab", { name: "自主进化" }).click();
-    // Fresh installs start on the low preset: collecting evidence, bounded background budget.
-    await expect(window.getByText("正在积累可评价的经验")).toBeVisible();
-    await expect(window.getByRole("radio", { name: "低（每日 50 次）" })).toBeChecked();
+    // Fresh installs require explicit opt-in before any background model budget is available.
+    await expect(window.getByText("尚未启用自动进化")).toBeVisible();
+    await expect(window.getByRole("radio", { name: "关（只记录经验）" })).toBeChecked();
+    await window.getByRole("radio", { name: "低（每日 50 次）" }).click();
+    await expect(window.getByText(/预算已设为「低」/u)).toBeVisible();
     await window.getByRole("radio", { name: "关（只记录经验）" }).click();
     await expect(window.getByText("已关闭评测预算，只记录经验。")).toBeVisible();
     await expect(window.getByText("尚未启用自动进化")).toBeVisible();

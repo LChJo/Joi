@@ -5,6 +5,7 @@ import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.j
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels } from "./pi-usage.js";
+import { normalizePiUsage } from "../usage/sdk-usage.js";
 
 export class PiEvolutionModel implements EvolutionModel {
   constructor(private readonly dependencies: { resolver: PiConfiguredModelResolver; sources: Pick<ReasoningSourceSelector, "selectInitial">; usage?: UsageRecorder }) {}
@@ -30,6 +31,8 @@ export class PiEvolutionModel implements EvolutionModel {
     // A typed code, not a bare Error: the service's failure classification routes this to a
     // model-quality retry path instead of the infrastructure park-and-retry one.
     if (calls.length !== 1 || call === undefined || !tools.some((tool) => tool.name === call.name)) throw new DomainError("evolution_response_invalid", "The model did not answer with exactly one supported tool call.");
-    return input.mode === "proposal" ? call.arguments : { ...call.arguments, action: call.name };
+    const usage = normalizePiUsage(response.usage);
+    return { value: input.mode === "proposal" ? call.arguments : { ...call.arguments, action: call.name },
+      tokens: usage === null ? null : usage.input + usage.output };
   }
 }

@@ -2274,15 +2274,15 @@ it("exposes the evolution panel on a dedicated workbench detail tab", async () =
     updatedAt: workbench.updatedAt, workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
   });
   vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
-  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, poolEvaluable: 5, poolVerificationFailed: 1, activeRevisionId: null, reason: "collecting", runRequestedAt: null, lastVerdict: null, versions: [] });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, poolEvaluable: 5, poolVerificationFailed: 1, activeRevisionId: null, reason: "disabled", runRequestedAt: null, lastVerdict: null, versions: [] });
 
   render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
   const tabButton = await screen.findByRole("tab", { name: "自主进化" });
   expect(tabButton).toHaveAttribute("aria-selected", "false");
   fireEvent.click(tabButton);
-  expect(await screen.findByText(/从执行经验中改进本工作台的上下文整理/u)).toBeInTheDocument();
-  expect(screen.getByRole("radio", { name: "低（每日 50 次）" })).toBeChecked();
-  expect(screen.getByText("正在积累可评价的经验")).toBeInTheDocument();
+  expect(await screen.findByText(/候选必须先通过独立评测和生产灰度/u)).toBeInTheDocument();
+  expect(screen.getByRole("radio", { name: "关（只记录经验）" })).toBeChecked();
+  expect(screen.getByText("尚未启用自动进化")).toBeInTheDocument();
 });
 
 describe("tool trace reveal", () => {

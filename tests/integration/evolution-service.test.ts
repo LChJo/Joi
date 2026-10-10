@@ -30,9 +30,9 @@ describe("evolution execution and budget", () => {
     for (let i = 0; i < 10; i++) store.recordEvidence({ workbenchId: "a", goalId: `g${String(i)}`, revisionId: null, outcome: i < 3 ? "VERIFICATION_FAILED" : "VERIFIED", observedAt: day });
   });
   afterEach(async () => { await fixture.close(); });
-  it("starts on the low preset, spends nothing when off, and validates explicit budgets", async () => {
+  it("starts off, spends nothing until explicitly enabled, and validates budgets", async () => {
     expect(service.status("a").dailyCallLimit).toBe(DEFAULT_EVOLUTION_DAILY_CALL_LIMIT);
-    expect(service.status("a").reason).toBe("collecting");
+    expect(service.status("a").reason).toBe("disabled");
     expect(() => service.configure("a", -1)).toThrow();
     expect(() => service.configure("a", 1.1)).toThrow();
     expect(service.configure("a", 0).dailyCallLimit).toBe(0);
@@ -82,15 +82,15 @@ describe("evolution execution and budget", () => {
       assert(current);
       if (current.phase === "PROPOSE") {
         expect(input.prompt).not.toContain("sealed:");
-        return Promise.resolve({ strategy: { ...baselineStrategy, completion: "evidence_matrix" }, fixes: development.slice(0,3).map((s) => s.id), risks: [] });
+        return Promise.resolve({ value: { strategy: { ...baselineStrategy, completion: "evidence_matrix" }, fixes: development.slice(0,3).map((s) => s.id), risks: [] }, tokens: 100 });
       }
       const run = current.rollouts.at(-1);
       assert(run);
       const scenario = [...development, ...sealed].find((s) => s.id === run.scenarioId);
       assert(scenario);
-      if (run.calls < 2) return Promise.resolve({ action: "read_evidence", evidenceId: scenario.requiredIds[run.calls] });
+      if (run.calls < 2) return Promise.resolve({ value: { action: "read_evidence", evidenceId: scenario.requiredIds[run.calls] }, tokens: 100 });
       const fail = current.phase === "DEVELOP" ? development.indexOf(scenario) < 3 : current.phase === "EVALUATE" && run.variant === "baseline" && run.attempt === 0 && sealed.indexOf(scenario) < 5;
-      return Promise.resolve({ action: "finish", decision: fail ? scenario.expected === "complete" ? "wait" : "complete" : scenario.expected, evidenceIds: scenario.requiredIds });
+      return Promise.resolve({ value: { action: "finish", decision: fail ? scenario.expected === "complete" ? "wait" : "complete" : scenario.expected, evidenceIds: scenario.requiredIds }, tokens: 100 });
     });
     const original = service.strategyForGoal("a", "g0", pin);
     expect(original.strategyRevisionId).toBeNull();
@@ -98,20 +98,33 @@ describe("evolution execution and budget", () => {
       await service.handle("evolution:a");
       if (i > 0 && store.read("a").batch === null) break;
     }
-    const promoted = service.status("a");
-    expect(promoted.reason).toBe("promoted");
-    expect(promoted.versions[0]).toMatchObject({ status: "ACTIVE", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
-    expect(promoted.lastVerdict).toMatchObject({ reason: "promoted", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
+    const canary = service.status("a");
+    expect(canary.reason).toBe("canary");
+    expect(canary.versions[0]).toMatchObject({ status: "CANARY", scope: "GLOBAL", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
+    expect(canary.lastVerdict).toMatchObject({ reason: "canary", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
     expect(store.read("a").revisions[0]?.evaluation).toHaveLength(30);
+    expect(Object.values(store.read("a").sealedBaselineCache ?? {})[0]).toHaveLength(90);
+    expect(canary.batchHistory?.[0]).toMatchObject({ tokens: 72_100 });
     expect(service.strategyForGoal("a", "g0", pin)).toEqual(original);
-    const updated = service.strategyForGoal("a", "g1", pin);
-    expect(updated.instructions).toContain("acceptance-to-evidence matrix");
-    expect(updated.strategyRevisionId).toBe(promoted.activeRevisionId);
+    day = "2026-09-23T01:00:00.000Z";
+    let candidateGoal = "";
+    let candidateCount = 0;
+    let controlCount = 0;
+    for (let index = 0; index < 100 && (candidateCount < 5 || controlCount < 5); index += 1) {
+      const goalId = `canary-${String(index)}`;
+      fixture.database.transaction((db) => db.prepare(`INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES (?,?,'private','CONSUMED','a',?,?)`).run(goalId, goalId, day, day));
+      const selected = service.strategyForGoal("a", goalId, pin);
+      if (selected.strategyRevisionId === canary.canaryRevisionId) { candidateCount += 1; candidateGoal ||= goalId; }
+      else controlCount += 1;
+      store.recordEvidence({ workbenchId: "a", goalId, revisionId: selected.strategyRevisionId, outcome: "VERIFIED", cause: "none", observedAt: day });
+    }
+    service.scan();
+    const promoted = service.status("a");
+    expect(promoted.globalRevisionId).toBe(canary.canaryRevisionId);
+    expect(promoted.versions[0]).toMatchObject({ status: "ACTIVE", reason: "promoted" });
     expect(service.strategyForGoal("a", "g2", { ...pin, modelRevisionId: "new" }).strategyRevisionId).toBeNull();
-    assert(promoted.activeRevisionId);
-    expect(service.rollback("a", promoted.activeRevisionId).activeRevisionId).toBeNull();
-    expect(service.rollback("a", promoted.activeRevisionId).reason).toBe("rolled_back");
-    expect(service.strategyForGoal("a", "g1", pin)).toEqual(updated);
+    expect(service.status("a")).toMatchObject({ revalidationRequired: true, activeEffective: false, reason: "revalidation_required" });
+    expect(service.negativeFeedback("a", candidateGoal)).toMatchObject({ globalRevisionId: null, reason: "rolled_back" });
     expect(service.pending()).toEqual([]);
   }, 60_000);
   it("resumes completed trials after a crash without refunding or reusing the abandoned call", async () => {
@@ -183,7 +196,7 @@ describe("evolution execution and budget", () => {
     expect(() => breaker.requestRun("a")).toThrow(); // re-enable first; run-now is not a pause bypass
     expect(breaker.configure("a", 50).reason).toBe("collecting");
   });
-  it("pauses a batch-less workbench without consuming the evidence it had already accumulated", async () => {
+  it("lets a failed global batch consume its shared trigger without stamping unrelated local state", async () => {
     service.configure("a", 100);
     fixture.database.transaction((db) => {
       db.prepare(`INSERT INTO workbenches (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at) VALUES ('b','B','pb','','','','pb','ACTIVE',?,?)`).run(day, day);
@@ -201,10 +214,10 @@ describe("evolution execution and budget", () => {
     expect(stopped.reason).toBe("model_response_invalid"); // the panel still explains why it stopped
     expect(stopped.lastBatchFinishedAt).toBeUndefined(); // but no verdict consumed its trigger window
     expect(breaker.configure("b", 50).reason).toBe("collecting");
-    // Re-enabled, b resumes on the backlog it already had. A trigger stamped at the trip would have
-    // pushed its window past this evidence and left it waiting for failures that already happened.
+    // A global verdict consumes the shared trigger independently of each workbench's local stamp;
+    // re-enabling another owner must not replay the same evidence.
     const resumed = new EvolutionService({ store, model: { pin: () => Promise.resolve(pin), call }, now: () => "2026-09-23T01:00:00.000Z", id: () => "res", stepsPerHandle: 1 });
-    expect(resumed.pending().map((entry) => entry.inputId)).toContain("evolution:b");
+    expect(resumed.pending()).toEqual([]);
   });
   it("lets the day's first candidate lock out every other workbench, run-now aside", async () => {
     service.configure("a", 10);

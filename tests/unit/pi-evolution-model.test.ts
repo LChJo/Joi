@@ -4,13 +4,13 @@ import { DomainError } from "../../src/main/domain/errors";
 describe("Pi evolution adapter", () => {
   it("pins only immutable source identifiers and never executes returned tools", async () => {
     const pin = { modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" };
-    const completeSimple = vi.fn().mockResolvedValue({ content: [{ type: "toolCall", name: "finish", arguments: { decision: "wait", evidenceIds: ["record-11"] } }] });
+    const completeSimple = vi.fn().mockResolvedValue({ content: [{ type: "toolCall", name: "finish", arguments: { decision: "wait", evidenceIds: ["record-11"] } }], usage: { input: 80, output: 20, cacheRead: 0, cacheWrite: 0 } });
     const resolve = vi.fn().mockResolvedValue({ model: { baseUrl: "https://example.test" }, models: { completeSimple }, thinkingLevel: "off" });
     const selectInitial = vi.fn().mockResolvedValue({ ...pin, turnId: "ephemeral" });
     const model = new PiEvolutionModel({ resolver: { resolve }, sources: { selectInitial } });
     expect(await model.pin()).toEqual(pin);
     expect(selectInitial).toHaveBeenCalledWith("evolution", { requireToolProof: true });
-    expect(await model.call({ pin, systemPrompt: "simulation", prompt: "fixture", mode: "simulation", idempotencyId: "call-1" })).toEqual({ action: "finish", decision: "wait", evidenceIds: ["record-11"] });
+    expect(await model.call({ pin, systemPrompt: "simulation", prompt: "fixture", mode: "simulation", idempotencyId: "call-1" })).toEqual({ value: { action: "finish", decision: "wait", evidenceIds: ["record-11"] }, tokens: 100 });
     expect(completeSimple).toHaveBeenCalledTimes(1);
     expect(completeSimple.mock.calls[0]?.[2]).toMatchObject({ maxTokens: 2048 });
     completeSimple.mockResolvedValue({ content: [] });

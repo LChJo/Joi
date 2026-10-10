@@ -7,6 +7,8 @@ function service(ctx: RouteContext) {
 }
 const id = (match: RouteMatch) => decodeURIComponent((match as RegExpExecArray)[1] ?? "");
 export const EVOLUTION_ROUTES: RouteDefinition[] = [
+  { auth: "read", id: "GET /api/v1/evolution", match: pattern("GET", /^\/api\/v1\/evolution$/),
+    handle: (ctx) => { sendJson(ctx.response, 200, service(ctx).overview()); } },
   { auth: "read", id: "GET /api/v1/workbenches/:workbenchId/evolution", match: pattern("GET", /^\/api\/v1\/workbenches\/([^/]+)\/evolution$/),
     handle: (ctx, match) => { sendJson(ctx.response, 200, service(ctx).status(id(match))); } },
   { auth: "write", id: "PATCH /api/v1/workbenches/:workbenchId/evolution", match: pattern("PATCH", /^\/api\/v1\/workbenches\/([^/]+)\/evolution$/),

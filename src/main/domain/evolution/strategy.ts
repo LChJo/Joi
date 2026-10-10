@@ -32,12 +32,16 @@ export interface EvaluationComparison {
   candidate: boolean[];
   baselineCalls: number;
   candidateCalls: number;
+  baselineTokens?: number;
+  candidateTokens?: number;
   violations: number;
 }
 export function promotionDecision(rows: readonly EvaluationComparison[]): "promote" | EvolutionReason {
   if (new Set(rows.map((row) => row.scenarioId)).size !== rows.length || rows.some((row) =>
     row.baseline.length !== 3 || row.candidate.length !== 3 || [...row.baseline, ...row.candidate].some((v) => typeof v !== "boolean")
     || !Number.isFinite(row.baselineCalls) || row.baselineCalls < 1 || !Number.isFinite(row.candidateCalls) || row.candidateCalls < 1
+    || (row.baselineTokens !== undefined && (!Number.isSafeInteger(row.baselineTokens) || row.baselineTokens < 1))
+    || (row.candidateTokens !== undefined && (!Number.isSafeInteger(row.candidateTokens) || row.candidateTokens < 1))
     || !Number.isInteger(row.violations) || row.violations < 0)) return "invalid_evaluation";
   if (rows.length < 30) return "insufficient_samples";
   if (rows.some((row) => row.violations > 0)) return "hard_violation";
@@ -45,6 +49,9 @@ export function promotionDecision(rows: readonly EvaluationComparison[]): "promo
   const baseline = rows.reduce((sum, row) => sum + row.baseline.filter(Boolean).length, 0);
   const candidate = rows.reduce((sum, row) => sum + row.candidate.filter(Boolean).length, 0);
   if ((candidate - baseline) / (rows.length * 3) < 0.05) return "insufficient_gain";
-  if (rows.reduce((sum, row) => sum + row.candidateCalls, 0) > rows.reduce((sum, row) => sum + row.baselineCalls, 0) * 1.1) return "cost_regression";
+  const measuredTokens = rows.every((row) => row.baselineTokens !== undefined && row.candidateTokens !== undefined);
+  const baselineCost = measuredTokens ? rows.reduce((sum, row) => sum + (row.baselineTokens ?? 0), 0) : rows.reduce((sum, row) => sum + row.baselineCalls, 0);
+  const candidateCost = measuredTokens ? rows.reduce((sum, row) => sum + (row.candidateTokens ?? 0), 0) : rows.reduce((sum, row) => sum + row.candidateCalls, 0);
+  if (candidateCost > baselineCost * 1.1) return "cost_regression";
   return "promote";
 }

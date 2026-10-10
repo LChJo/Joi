@@ -1,7 +1,7 @@
 import { DomainError } from "../../domain/errors.js";
 import { baselineStrategy, composeStrategyInstructions, parseStrategy, promotionDecision } from "../../domain/evolution/strategy.js";
 import { EVOLUTION_EVALUATOR_VERSION, evolutionScenarios, scenarioPrompt, simulateAction } from "../../domain/evolution/scenarios.js";
-import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD, EVOLUTION_HANDLE_TIME_BUDGET_MS, EVOLUTION_MAX_STEPS_PER_HANDLE, EVOLUTION_MONITOR_REVERT_THRESHOLD, EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT, EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT, EVOLUTION_RUN_NOW_TTL_MILLIS, type EvolutionReason, type EvolutionStatusDto } from "../../../shared/evolution.js";
+import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD, EVOLUTION_HANDLE_TIME_BUDGET_MS, EVOLUTION_MAX_STEPS_PER_HANDLE, EVOLUTION_MONITOR_REVERT_THRESHOLD, EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT, EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT, EVOLUTION_RUN_NOW_TTL_MILLIS, type EvolutionBatchRecordDto, type EvolutionOverviewDto, type EvolutionReason, type EvolutionScope, type EvolutionStatusDto } from "../../../shared/evolution.js";
 import type { EvolutionBatch, EvolutionEvidence, EvolutionModel, EvolutionRevision, EvolutionRollout, EvolutionSourcePin, EvolutionState, EvolutionStore } from "../ports/evolution.js";
 import { emitRuntimeDiagnostic, runtimeDiagnosticErrorCode, runtimeDiagnosticErrorDetail, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import { buildJoiSystemPrompt } from "../joi/joi-system-prompt.js";
@@ -18,13 +18,19 @@ function required<T>(value: T | null | undefined): T {
 }
 const evaluable = (e: EvolutionEvidence) => e.outcome === "VERIFIED" || e.outcome === "VERIFICATION_FAILED";
 const dayOf = (now: string) => now.slice(0, 10); // Persisted UTC accounting day, shown explicitly in settings.
-const activeStrategy = (state: EvolutionState) => state.revisions.find((r) => r.revisionId === state.activeRevisionId)?.strategy ?? baselineStrategy;
+function batchRecord(batch: EvolutionBatch, reason: EvolutionReason, finishedAt: string | null): EvolutionBatchRecordDto {
+  return { batchId: batch.id, workbenchId: batch.workbenchId ?? "", scope: batch.scope ?? "WORKBENCH", phase: batch.phase,
+    startedAt: batch.startedAt ?? finishedAt ?? "", finishedAt, reason, calls: batch.calls ?? 0,
+    tokens: batch.tokensComplete === true ? batch.tokens ?? 0 : null, revisionId: batch.revisionId ?? null };
+}
 function finishBatch(state: EvolutionState, reason: EvolutionReason, now: string): void {
-  const revision = state.revisions.find((r) => r.revisionId === state.batch?.revisionId);
+  const batch = state.batch;
+  const revision = state.revisions.find((r) => r.revisionId === batch?.revisionId);
   if (revision !== undefined) { revision.status = "REJECTED"; revision.reason = reason; }
   // Keep the outcome counts of the finished batch visible: a rejection that consumed its trigger
   // window should also show how far from promotion it landed.
   if (revision !== undefined) state.lastVerdict = { reason, at: now, baselineSuccesses: revision.baselineSuccesses, candidateSuccesses: revision.candidateSuccesses, evaluatedRuns: revision.evaluatedRuns };
+  if (batch !== null) state.batchHistory = [batchRecord(batch, reason, now), ...(state.batchHistory ?? [])].slice(0, 50);
   state.reason = reason;
   state.batch = null;
   // A verdict consumes the evidence trigger, so resolved historical failures never re-run daily.
@@ -33,6 +39,17 @@ function finishBatch(state: EvolutionState, reason: EvolutionReason, now: string
   // evaluation contract would otherwise restart a paying batch every day. Recovery is via run-now.
   if (reason !== "call_failed" && reason !== "model_changed") state.lastBatchFinishedAt = now;
 }
+function modelResult(result: unknown): { value: unknown; tokens: number | null } {
+  if (result !== null && typeof result === "object" && !Array.isArray(result) && "value" in result && "tokens" in result) {
+    return { value: result.value, tokens: typeof result.tokens === "number" && Number.isSafeInteger(result.tokens) && result.tokens >= 0 ? result.tokens : null };
+  }
+  return { value: result, tokens: null };
+}
+const compatible = (revision: EvolutionRevision, pin?: EvolutionSourcePin) => revision.evaluatorVersion === EVOLUTION_EVALUATOR_VERSION
+  && (pin === undefined || Object.entries(revision.pin).every(([key, value]) => pin[key as keyof EvolutionSourcePin] === value));
+const canaryBucket = (goalId: string) => Array.from(goalId).reduce((total, character) => (total * 31 + character.charCodeAt(0)) >>> 0, 0) % 5 === 0;
+const baselineCacheKeyFor = (evaluatorVersion: string, pin: EvolutionSourcePin, strategy: EvolutionBatch["parentStrategy"]) => `${evaluatorVersion}|${JSON.stringify(pin)}|${JSON.stringify(strategy)}`;
+const baselineCacheKey = (batch: EvolutionBatch) => baselineCacheKeyFor(batch.evaluatorVersion, batch.pin, batch.parentStrategy);
 function revert(state: EvolutionState, now: string): void {
   const current = state.revisions.find((r) => r.revisionId === state.activeRevisionId);
   if (current !== undefined) { current.status = "ROLLED_BACK"; current.reason = "rolled_back"; }
@@ -70,20 +87,79 @@ export class EvolutionService {
     });
   }
 
-  status(workbenchId: string): EvolutionStatusDto {
+  #allRevisions(): { workbenchId: string; revision: EvolutionRevision }[] {
+    return this.dependencies.store.listWorkbenchIds().flatMap((workbenchId) => this.dependencies.store.read(workbenchId).revisions.map((revision) => ({ workbenchId, revision })));
+  }
+  #globalRevision(status: EvolutionRevision["status"]): { workbenchId: string; revision: EvolutionRevision } | undefined {
+    return this.#allRevisions().filter((entry) => entry.revision.scope === "GLOBAL" && entry.revision.status === status)
+      .sort((a, b) => b.revision.createdAt.localeCompare(a.revision.createdAt))[0];
+  }
+  #globalEvidenceSince(): string | null {
+    return this.dependencies.store.listWorkbenchIds().flatMap((id) => {
+      const state = this.dependencies.store.read(id);
+      const history = state.batchHistory ?? [];
+      const finished = history.filter((batch) => batch.scope === "GLOBAL" && batch.finishedAt !== null && batch.reason !== "call_failed" && batch.reason !== "model_changed")
+        .map((batch) => batch.finishedAt).filter((finishedAt): finishedAt is string => finishedAt !== null);
+      return history.length === 0 && state.lastBatchFinishedAt !== null && state.lastBatchFinishedAt !== undefined ? [...finished, state.lastBatchFinishedAt] : finished;
+    })
+      .sort((a, b) => b.localeCompare(a))[0] ?? null;
+  }
+  #findRevision(revisionId: string | null): { workbenchId: string; revision: EvolutionRevision } | undefined {
+    if (revisionId === null) return undefined;
+    return this.#allRevisions().find((entry) => entry.revision.revisionId === revisionId);
+  }
+  #effectiveActive(workbenchId: string): { workbenchId: string; revision: EvolutionRevision } | undefined {
     const state = this.dependencies.store.read(workbenchId);
+    const local = state.revisions.find((revision) => revision.revisionId === state.activeRevisionId && (revision.scope ?? "WORKBENCH") === "WORKBENCH");
+    return local === undefined ? this.#globalRevision("ACTIVE") : { workbenchId, revision: local };
+  }
+  #applicableCanary(workbenchId: string): { workbenchId: string; revision: EvolutionRevision } | undefined {
+    const local = this.dependencies.store.read(workbenchId).revisions.find((revision) => revision.status === "CANARY" && (revision.scope ?? "WORKBENCH") === "WORKBENCH");
+    return local === undefined ? this.#globalRevision("CANARY") : { workbenchId, revision: local };
+  }
+
+  overview(): EvolutionOverviewDto {
+    const ids = this.dependencies.store.listWorkbenchIds();
+    const states = ids.map((id) => this.dependencies.store.read(id));
+    const revisions = states.flatMap((state) => state.revisions);
+    const pool = this.dependencies.store.evidenceTotals(this.#globalEvidenceSince());
+    const current = states.flatMap((state) => state.batch === null ? [] : [batchRecord(state.batch, state.reason, null)]);
+    const history = states.flatMap((state) => state.batchHistory ?? []);
+    return { workbenches: ids.length, enabled: states.filter((state) => !state.paused && state.dailyCallLimit > 0).length,
+      evaluating: current.length, canary: revisions.filter((revision) => revision.status === "CANARY").length,
+      active: revisions.filter((revision) => revision.status === "ACTIVE").length,
+      revalidationRequired: states.filter((state) => state.revalidationRequired === true).length,
+      poolEvaluable: pool.evaluable, poolVerificationFailed: pool.verificationFailed,
+      batches: [...current, ...history].sort((a, b) => (b.finishedAt ?? b.startedAt).localeCompare(a.finishedAt ?? a.startedAt)).slice(0, 100) };
+  }
+
+  status(workbenchId: string): EvolutionStatusDto {
+    let state = this.dependencies.store.read(workbenchId);
+    const now = this.dependencies.now();
+    if (state.runRequestedAt !== null && state.runRequestedAt !== undefined && !EvolutionService.#runNowActive(state, now)) {
+      this.dependencies.store.update(workbenchId, (current) => { current.runRequestedAt = null; });
+      state = this.dependencies.store.read(workbenchId);
+    }
     const evidence = this.dependencies.store.evidence(workbenchId);
-    const used = state.usage[dayOf(this.dependencies.now())] ?? 0;
+    const used = state.usage[dayOf(now)] ?? 0;
     // The same window #eligible uses, so the panel explains the actual gate instead of a proxy.
-    const pool = this.dependencies.store.evidenceTotals(state.lastBatchFinishedAt ?? null);
+    const pool = this.dependencies.store.evidenceTotals(this.#globalEvidenceSince());
+    const global = this.#globalRevision("ACTIVE");
+    const canary = this.#applicableCanary(workbenchId);
+    const effective = this.#effectiveActive(workbenchId);
+    const capReached = state.batch === null && state.revisions.length >= 30;
     return { workbenchId, dailyCallLimit: state.dailyCallLimit, callsUsedToday: used, evidenceCount: evidence.length,
       evaluableCount: evidence.filter(evaluable).length, activeRevisionId: state.activeRevisionId,
+      globalRevisionId: global?.revision.revisionId ?? null, canaryRevisionId: canary?.revision.revisionId ?? null,
+      activeEffective: effective !== undefined && state.revalidationRequired !== true, revalidationRequired: state.revalidationRequired === true,
       poolEvaluable: pool.evaluable, poolVerificationFailed: pool.verificationFailed,
-      reason: state.paused ? state.reason : state.dailyCallLimit === 0 ? "disabled" : used >= state.dailyCallLimit ? "budget_exhausted" : state.reason,
+      reason: state.revalidationRequired === true ? "revalidation_required" : capReached ? "revision_limit_reached" : state.paused ? state.reason : state.dailyCallLimit === 0 ? "disabled" : used >= state.dailyCallLimit ? "budget_exhausted" : state.reason,
       runRequestedAt: state.runRequestedAt ?? null,
       lastVerdict: state.lastVerdict ?? null,
-      versions: state.revisions.slice(-30).reverse().map(({ revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns }) =>
-        ({ revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns })),
+      currentBatch: state.batch === null ? null : batchRecord(state.batch, state.reason, null),
+      batchHistory: (state.batchHistory ?? []).slice(0, 50),
+      versions: state.revisions.slice(-30).reverse().map(({ revisionId, parentRevisionId, module, status, scope, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns }) =>
+        ({ revisionId, parentRevisionId, module, status, ...(scope === undefined ? {} : { scope }), createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns })),
     };
   }
   configure(workbenchId: string, dailyCallLimit: number): EvolutionStatusDto {
@@ -106,12 +182,37 @@ export class EvolutionService {
     this.dependencies.store.update(workbenchId, (state) => {
       if (state.paused || state.dailyCallLimit === 0) throw new DomainError("evolution_run_now_invalid", "Evolution is paused or disabled; re-enable it before requesting a run.");
       if (state.batch !== null) throw new DomainError("evolution_run_now_invalid", "A batch is already in flight; wait for its verdict before requesting another run.");
+      if (state.revisions.length >= 30) { state.reason = "revision_limit_reached"; throw new DomainError("evolution_revision_limit", "The evolution revision limit has been reached."); }
       state.runRequestedAt = now;
     });
     return this.status(workbenchId);
   }
   rollback(workbenchId: string, revisionId: string): EvolutionStatusDto {
     const now = this.dependencies.now();
+    const owner = this.#findRevision(revisionId);
+    if (owner?.revision.status === "ROLLED_BACK") return this.status(workbenchId);
+    if (owner?.revision.scope === "GLOBAL") {
+      if (owner.revision.status !== "ACTIVE") throw new DomainError("evolution_revision_stale", "The active strategy has changed.");
+      const parent = this.#findRevision(owner.revision.parentRevisionId);
+      this.dependencies.store.update(owner.workbenchId, (state) => {
+        const current = required(state.revisions.find((revision) => revision.revisionId === revisionId));
+        current.status = "ROLLED_BACK"; current.reason = "rolled_back";
+        if (parent?.workbenchId === owner.workbenchId && parent.revision.status === "SUPERSEDED") {
+          const previous = state.revisions.find((revision) => revision.revisionId === parent.revision.revisionId);
+          if (previous !== undefined) previous.status = "ACTIVE";
+        }
+        finishBatch(state, "rolled_back", now);
+        state.paused = true; state.revalidationRequired = false;
+      });
+      if (parent !== undefined && parent.workbenchId !== owner.workbenchId && parent.revision.status === "SUPERSEDED") {
+        this.dependencies.store.update(parent.workbenchId, (state) => {
+          const previous = state.revisions.find((revision) => revision.revisionId === parent.revision.revisionId);
+          if (previous !== undefined) previous.status = "ACTIVE";
+        });
+      }
+      if (workbenchId !== owner.workbenchId) this.dependencies.store.update(workbenchId, (state) => { state.paused = true; state.reason = "rolled_back"; });
+      return this.status(workbenchId);
+    }
     this.dependencies.store.update(workbenchId, (state) => {
       if (state.revisions.some((r) => r.revisionId === revisionId && r.status === "ROLLED_BACK")) return;
       if (state.activeRevisionId !== revisionId) throw new DomainError("evolution_revision_stale", "The active strategy has changed.");
@@ -122,8 +223,26 @@ export class EvolutionService {
   negativeFeedback(workbenchId: string, goalId: string): EvolutionStatusDto {
     const revision = this.dependencies.store.goalRevision(workbenchId, goalId);
     if (revision === undefined) throw new DomainError("evolution_goal_invalid", "Goal does not belong to this workbench.");
-    const state = this.dependencies.store.read(workbenchId);
-    if (revision !== null && revision === state.activeRevisionId) return this.rollback(workbenchId, revision);
+    const owner = this.#findRevision(revision);
+    if (owner?.revision.status === "CANARY") {
+      const now = this.dependencies.now();
+      this.dependencies.store.update(owner.workbenchId, (state) => {
+        const candidate = required(state.revisions.find((entry) => entry.revisionId === revision));
+        candidate.status = "REJECTED"; candidate.reason = "rolled_back"; state.reason = "rolled_back";
+        state.lastVerdict = { reason: "rolled_back", at: now, baselineSuccesses: candidate.baselineSuccesses, candidateSuccesses: candidate.candidateSuccesses, evaluatedRuns: candidate.evaluatedRuns };
+      });
+      return this.status(workbenchId);
+    }
+    if (owner?.revision.status === "ACTIVE") {
+      if (owner.revision.scope === "GLOBAL") {
+        this.dependencies.store.update(owner.workbenchId, (state) => {
+          const active = required(state.revisions.find((entry) => entry.revisionId === revision));
+          active.status = "ROLLED_BACK"; active.reason = "rolled_back"; state.reason = "rolled_back"; state.paused = true; state.revalidationRequired = false;
+        });
+        return this.status(workbenchId);
+      }
+      return this.rollback(owner.workbenchId, revision ?? "");
+    }
     return this.status(workbenchId);
   }
   emergencyStop(): void {
@@ -141,11 +260,16 @@ export class EvolutionService {
     return state.paused || state.dailyCallLimit === 0;
   }
   strategyForGoal(workbenchId: string, goalId: string, pin?: EvolutionSourcePin): { strategyRevisionId: string | null; instructions: string } {
-    const state = this.dependencies.store.read(workbenchId);
-    const active = state.revisions.find((r) => r.revisionId === state.activeRevisionId);
-    const compatible = active === undefined || (active.evaluatorVersion === EVOLUTION_EVALUATOR_VERSION && (pin === undefined || Object.entries(active.pin).every(([key, value]) => pin[key as keyof EvolutionSourcePin] === value)));
-    const revisionId = this.dependencies.store.bindGoal(workbenchId, goalId, compatible ? state.activeRevisionId : null, pin);
-    const strategy = state.revisions.find((r) => r.revisionId === revisionId)?.strategy ?? baselineStrategy;
+    const active = this.#effectiveActive(workbenchId);
+    const canary = this.#applicableCanary(workbenchId);
+    const selected = canary !== undefined && canaryBucket(goalId) ? canary : active;
+    if (selected !== undefined && !compatible(selected.revision, pin)) {
+      this.dependencies.store.update(selected.workbenchId, (state) => { state.revalidationRequired = true; state.reason = "revalidation_required"; });
+      if (selected.workbenchId !== workbenchId) this.dependencies.store.update(workbenchId, (state) => { state.revalidationRequired = true; state.reason = "revalidation_required"; });
+    }
+    const chosen = selected !== undefined && compatible(selected.revision, pin) ? selected.revision.revisionId : null;
+    const revisionId = this.dependencies.store.bindGoal(workbenchId, goalId, chosen, pin);
+    const strategy = this.#findRevision(revisionId)?.revision.strategy ?? baselineStrategy;
     return { strategyRevisionId: revisionId, instructions: composeStrategyInstructions(strategy) };
   }
   scan(): void {
@@ -166,7 +290,10 @@ export class EvolutionService {
           : seed.disposition === "ACCEPTED_WITH_GAPS" ? "ACCEPTED_WITH_GAPS"
             : seed.workFailed > 0 ? "ENVIRONMENT_FAILED"
               : seed.verified > 0 && seed.unverified === 0 && seed.disposition === "COMPLETED" ? "VERIFIED" : "UNEVALUABLE";
-      const persisted = this.dependencies.store.recordEvidence({ goalId: seed.goalId, workbenchId: seed.workbenchId, observedAt: seed.observedAt, outcome,
+      const cause: EvolutionEvidence["cause"] = outcome === "VERIFICATION_FAILED"
+        ? seed.disposition === "COMPLETED" || seed.disposition === "ACCEPTED_WITH_GAPS" ? "completion" : "execution"
+        : outcome === "ENVIRONMENT_FAILED" ? "environment" : "none";
+      const persisted = this.dependencies.store.recordEvidence({ goalId: seed.goalId, workbenchId: seed.workbenchId, observedAt: seed.observedAt, outcome, cause,
         revisionId: this.dependencies.store.goalRevision(seed.workbenchId, seed.goalId) ?? null });
       const before = previous.get(seed.workbenchId)?.get(seed.goalId);
       // Report the classification that was actually stored, and only when it is news: a re-scan that
@@ -208,11 +335,78 @@ export class EvolutionService {
           { workbenchId: id, failedCount: failing, threshold: EVOLUTION_MONITOR_REVERT_THRESHOLD });
       }
     }
+    this.#advanceCanaries();
+  }
+
+  #advanceCanaries(): void {
+    const ids = this.dependencies.store.listWorkbenchIds();
+    const actions: { owner: string; revisionId: string; promote: boolean }[] = [];
+    for (const owner of ids) {
+      const state = this.dependencies.store.read(owner);
+      for (const revision of state.revisions.filter((entry) => entry.status === "CANARY")) {
+        const sourceIds = revision.scope === "GLOBAL" ? ids : [owner];
+        const evidence = sourceIds.flatMap((id) => this.dependencies.store.evidence(id))
+          .filter((entry) => evaluable(entry) && entry.observedAt > revision.createdAt);
+        const candidates = evidence.filter((entry) => entry.revisionId === revision.revisionId).slice(0, 5);
+        const controls = evidence.filter((entry) => entry.revisionId !== revision.revisionId).slice(0, 5);
+        this.dependencies.store.update(owner, (current) => {
+          const live = required(current.revisions.find((entry) => entry.revisionId === revision.revisionId));
+          live.monitoredGoals = candidates.map((entry) => entry.goalId);
+          live.controlGoals = controls.map((entry) => entry.goalId);
+        });
+        const candidateFailures = candidates.filter((entry) => entry.outcome === "VERIFICATION_FAILED").length;
+        const controlFailures = controls.filter((entry) => entry.outcome === "VERIFICATION_FAILED").length;
+        if (candidateFailures >= EVOLUTION_MONITOR_REVERT_THRESHOLD) actions.push({ owner, revisionId: revision.revisionId, promote: false });
+        else if (candidates.length >= 5 && controls.length >= 5) actions.push({ owner, revisionId: revision.revisionId, promote: candidateFailures <= controlFailures });
+      }
+    }
+    for (const action of actions) {
+      if (action.promote) this.#promoteCanary(action.owner, action.revisionId);
+      else this.#rejectCanary(action.owner, action.revisionId);
+    }
+  }
+
+  #rejectCanary(owner: string, revisionId: string): void {
+    const now = this.dependencies.now();
+    this.dependencies.store.update(owner, (state) => {
+      const revision = state.revisions.find((entry) => entry.revisionId === revisionId);
+      if (revision?.status !== "CANARY") return;
+      revision.status = "REJECTED"; revision.reason = "quality_regression"; state.reason = "quality_regression";
+      state.lastVerdict = { reason: "quality_regression", at: now, baselineSuccesses: revision.baselineSuccesses, candidateSuccesses: revision.candidateSuccesses, evaluatedRuns: revision.evaluatedRuns };
+    });
+  }
+
+  #promoteCanary(owner: string, revisionId: string): void {
+    const now = this.dependencies.now();
+    const target = this.dependencies.store.read(owner).revisions.find((entry) => entry.revisionId === revisionId);
+    if (target?.status !== "CANARY") return;
+    if (target.scope === "GLOBAL") {
+      for (const id of this.dependencies.store.listWorkbenchIds()) this.dependencies.store.update(id, (state) => {
+        for (const revision of state.revisions) if (revision.scope === "GLOBAL" && revision.status === "ACTIVE") revision.status = "SUPERSEDED";
+        state.revalidationRequired = false;
+      });
+    }
+    this.dependencies.store.update(owner, (state) => {
+      const revision = required(state.revisions.find((entry) => entry.revisionId === revisionId));
+      if ((revision.scope ?? "WORKBENCH") === "WORKBENCH") {
+        const parent = state.revisions.find((entry) => entry.revisionId === state.activeRevisionId);
+        if (parent !== undefined) parent.status = "SUPERSEDED";
+        state.activeRevisionId = revisionId;
+      }
+      revision.status = "ACTIVE"; revision.reason = "promoted"; state.reason = "promoted"; state.revalidationRequired = false;
+      state.lastVerdict = { reason: "promoted", at: now, baselineSuccesses: revision.baselineSuccesses, candidateSuccesses: revision.candidateSuccesses, evaluatedRuns: revision.evaluatedRuns };
+    });
   }
   pending(): { inputId: string; createdAt: string }[] {
     const workbenchIds = this.dependencies.store.listWorkbenchIds();
     if (!this.dependencies.store.idle()) { this.#skipGate("not_idle", undefined, workbenchIds.length); return []; }
     const now = this.dependencies.now();
+    for (const id of workbenchIds) {
+      const state = this.dependencies.store.read(id);
+      if (state.runRequestedAt !== null && state.runRequestedAt !== undefined && !EvolutionService.#runNowActive(state, now)) {
+        this.dependencies.store.update(id, (current) => { current.runRequestedAt = null; });
+      }
+    }
     // One query per tick, passed down: reading it inside #eligible would re-parse every state's JSON
     // on every check.
     const globalCandidateDay = this.dependencies.store.lastCandidateDay();
@@ -221,7 +415,7 @@ export class EvolutionService {
       // The pool is shared, so a single query explains why every workbench declined. Distinguish
       // "not enough evidence yet" from "enough evidence, but every workbench is out of budget,
       // parked, or already proposed today" — they need completely different responses.
-      const totals = this.dependencies.store.evidenceTotals(null);
+      const totals = this.dependencies.store.evidenceTotals(this.#globalEvidenceSince());
       this.#skipGate(totals.verificationFailed >= EVOLUTION_FAILURE_THRESHOLD && totals.evaluable >= EVOLUTION_EVIDENCE_THRESHOLD
         ? "no_candidate" : "evidence_below_threshold", totals, workbenchIds.length);
       return [];
@@ -266,7 +460,9 @@ export class EvolutionService {
     // batch, so historical failures the pipeline already addressed never re-run evaluation daily.
     // The pool spans every workbench (see evidenceTotals); this workbench's own verdict is the
     // window, because that is the point before which its strategy was already judged.
-    const totals = this.dependencies.store.evidenceTotals(state.lastBatchFinishedAt ?? null);
+    const local = this.#globalRevision("ACTIVE") === undefined ? null : this.dependencies.store.evidenceTotals(state.lastBatchFinishedAt ?? null, id);
+    if (local !== null && local.evaluable >= EVOLUTION_EVIDENCE_THRESHOLD && local.verificationFailed >= EVOLUTION_FAILURE_THRESHOLD) return true;
+    const totals = this.dependencies.store.evidenceTotals(this.#globalEvidenceSince());
     return totals.evaluable >= EVOLUTION_EVIDENCE_THRESHOLD && totals.verificationFailed >= EVOLUTION_FAILURE_THRESHOLD;
   }
   /**
@@ -350,6 +546,24 @@ export class EvolutionService {
     const now = this.dependencies.now();
     const day = dayOf(now);
     const evidenceIds = this.dependencies.store.evidence(id).filter(evaluable).slice(0, 30).map((e) => e.goalId);
+    const snapshot = this.dependencies.store.read(id);
+    let scope: EvolutionScope = "GLOBAL";
+    let effectiveParent: { workbenchId: string; revision: EvolutionRevision } | undefined;
+    let baseline = baselineStrategy;
+    let cacheKey = "";
+    let sharedBaseline: EvolutionRollout[] | undefined;
+    if (snapshot.batch === null) {
+      const globalActive = this.#globalRevision("ACTIVE");
+      const requested = EvolutionService.#runNowActive(snapshot, now);
+      const localTotals = this.dependencies.store.evidenceTotals(snapshot.lastBatchFinishedAt ?? null, id);
+      scope = globalActive !== undefined && compatible(globalActive.revision, pin)
+        && (requested || (localTotals.evaluable >= EVOLUTION_EVIDENCE_THRESHOLD && localTotals.verificationFailed >= EVOLUTION_FAILURE_THRESHOLD)) ? "WORKBENCH" : "GLOBAL";
+      effectiveParent = scope === "GLOBAL" ? globalActive : this.#effectiveActive(id);
+      baseline = effectiveParent !== undefined && compatible(effectiveParent.revision, pin) ? effectiveParent.revision.strategy : baselineStrategy;
+      cacheKey = baselineCacheKeyFor(EVOLUTION_EVALUATOR_VERSION, pin, baseline);
+      sharedBaseline = this.dependencies.store.listWorkbenchIds().map((workbenchId) => this.dependencies.store.read(workbenchId).sealedBaselineCache?.[cacheKey])
+        .find((rollouts) => rollouts !== undefined);
+    }
     const call = this.dependencies.store.update(id, (state) => {
       if (state.paused || (state.usage[day] ?? 0) >= state.dailyCallLimit) return null;
       if (state.batch === null) {
@@ -359,9 +573,8 @@ export class EvolutionService {
         const requested = state.runRequestedAt !== null && state.runRequestedAt !== undefined;
         if (state.lastCandidateDay === day && !requested) return null;
         const batchId = this.dependencies.id();
-        const active = state.revisions.find((r) => r.revisionId === state.activeRevisionId);
-        const baseline = active !== undefined && JSON.stringify(active.pin) === JSON.stringify(pin) && active.evaluatorVersion === EVOLUTION_EVALUATOR_VERSION ? activeStrategy(state) : baselineStrategy;
-        state.batch = { id: batchId, evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentStrategy: baseline, parentRevisionId: state.activeRevisionId, strategy: baseline, pin, phase: "DEVELOP", evidenceIds, rollouts: [] };
+        state.batch = { id: batchId, startedAt: now, workbenchId: id, scope, calls: 0, tokens: 0, tokensComplete: true, evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentStrategy: baseline, parentRevisionId: effectiveParent?.revision.revisionId ?? null, strategy: baseline, pin, phase: "DEVELOP", evidenceIds, rollouts: [] };
+        if (sharedBaseline !== undefined) state.sealedBaselineCache = { ...(state.sealedBaselineCache ?? {}), [cacheKey]: structuredClone(sharedBaseline) };
         state.lastCandidateDay = day;
         // The run-now request is consumed by the batch it started; the response streak belongs to
         // the previous batch and says nothing about the new one.
@@ -374,6 +587,7 @@ export class EvolutionService {
       if (batch.phase === "PROPOSE") state.lastCandidateDay = day;
       if (batch.phase !== "PROPOSE") this.#ensureRollout(batch);
       state.callSequence += 1;
+      batch.calls = (batch.calls ?? 0) + 1;
       const callId = `${batch.id}:call:${String(state.callSequence)}`;
       state.usage[day] = (state.usage[day] ?? 0) + 1;
       const cutoff = new Date(Date.parse(now) - 32 * 86_400_000).toISOString().slice(0, 10);
@@ -388,7 +602,8 @@ export class EvolutionService {
       { workbenchId: id, batchId: call.batch.id, callId: call.id, phase: call.batch.phase });
     try {
       const prompt = call.batch.phase === "PROPOSE" ? this.#proposalPrompt(call.batch, call.history) : this.#simulationPrompt(call.batch);
-      const result = await this.dependencies.model.call({ pin, ...prompt, workbenchId: id, idempotencyId: call.id, ...(signal === undefined ? {} : { signal }) });
+      const raw = await this.dependencies.model.call({ pin, ...prompt, workbenchId: id, idempotencyId: call.id, ...(signal === undefined ? {} : { signal }) });
+      const result = modelResult(raw);
       const stillPinned = JSON.stringify(await this.dependencies.model.pin()) === JSON.stringify(pin);
       this.dependencies.store.update(id, (state) => {
         if (state.call?.id !== call.id) return;
@@ -397,8 +612,10 @@ export class EvolutionService {
         state.responseInvalidStreak = 0;
         if (state.batch?.id !== call.batch.id || state.paused || state.dailyCallLimit === 0) return;
         if (!stillPinned) { finishBatch(state, "model_changed", now); return; }
-        if (call.batch.phase === "PROPOSE") this.#acceptProposal(state, result, now);
-        else this.#acceptSimulation(state, result, now);
+        if (result.tokens === null) state.batch.tokensComplete = false;
+        else state.batch.tokens = (state.batch.tokens ?? 0) + result.tokens;
+        if (call.batch.phase === "PROPOSE") this.#acceptProposal(state, result.value, now);
+        else this.#acceptSimulation(state, result.value, now, result.tokens);
       });
       this.#responseInvalidStreak = 0;
     } catch (error) {
@@ -470,12 +687,21 @@ export class EvolutionService {
   }
   #ensureRollout(batch: EvolutionBatch): void {
     if (batch.rollouts.at(-1)?.success === undefined && batch.rollouts.length > 0) return;
-    const completed = batch.phase === "DEVELOP" ? batch.rollouts.length : batch.phase === "VALIDATE" ? batch.rollouts.filter((r) => r.scenarioId.startsWith("development:") && r.variant === "candidate").length : batch.rollouts.filter((r) => r.scenarioId.startsWith("sealed:")).length;
     const scenarios = evolutionScenarios(batch.phase === "EVALUATE" ? "sealed" : "development");
-    const perScenario = batch.phase === "EVALUATE" ? 6 : 3;
-    const scenario = scenarios[Math.floor(completed / perScenario)];
+    if (batch.phase === "EVALUATE") {
+      for (const scenario of scenarios) {
+        const rows = batch.rollouts.filter((row) => row.scenarioId === scenario.id);
+        const baseline = rows.filter((row) => row.variant === "baseline");
+        const candidate = rows.filter((row) => row.variant === "candidate");
+        if (baseline.length < 3) { batch.rollouts.push({ scenarioId: scenario.id, variant: "baseline", attempt: baseline.length, calls: 0, tokens: 0, tokensComplete: true, observations: [], actions: [] }); return; }
+        if (candidate.length < 3) { batch.rollouts.push({ scenarioId: scenario.id, variant: "candidate", attempt: candidate.length, calls: 0, tokens: 0, tokensComplete: true, observations: [], actions: [] }); return; }
+      }
+      throw new DomainError("evolution_evaluation_invalid", "Evaluation cursor is invalid.");
+    }
+    const completed = batch.phase === "DEVELOP" ? batch.rollouts.length : batch.rollouts.filter((r) => r.scenarioId.startsWith("development:") && r.variant === "candidate").length;
+    const scenario = scenarios[Math.floor(completed / 3)];
     if (scenario === undefined) throw new DomainError("evolution_evaluation_invalid", "Evaluation cursor is invalid.");
-    batch.rollouts.push({ scenarioId: scenario.id, variant: batch.phase === "VALIDATE" ? "candidate" : batch.phase === "DEVELOP" || completed % 6 < 3 ? "baseline" : "candidate", attempt: completed % 3, calls: 0, observations: [], actions: [] });
+    batch.rollouts.push({ scenarioId: scenario.id, variant: batch.phase === "VALIDATE" ? "candidate" : "baseline", attempt: completed % 3, calls: 0, tokens: 0, tokensComplete: true, observations: [], actions: [] });
   }
   #proposalPrompt(batch: EvolutionBatch, history: EvolutionRollout[]): { mode: "proposal"; prompt: string; systemPrompt: string } {
     // Only development traces go to the proposer. Sealed verdicts and bodies never do.
@@ -511,7 +737,7 @@ export class EvolutionService {
       if (fixes.length < 3 || fixes.some((id) => !batch.rollouts.some((r) => r.scenarioId === id && r.success === false))
         || attempts.some((r) => r.status !== "REJECTED" || FROZEN_REJECTION_REASONS.has(r.reason))
         || attempts.length >= MAX_STRATEGY_ATTEMPTS) throw new Error("unsupported");
-      const revision: EvolutionRevision = { revisionId: `${batch.id}:strategy`, monitoredGoals: [], evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentRevisionId: batch.parentRevisionId,
+      const revision: EvolutionRevision = { revisionId: `${batch.id}:strategy`, monitoredGoals: [], controlGoals: [], scope: batch.scope ?? "WORKBENCH", evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentRevisionId: batch.parentRevisionId,
         module: strategy.context !== batch.strategy.context ? "context" : "completion", status: "CANDIDATE", createdAt: now, reason: "evaluating",
         baselineSuccesses: 0, candidateSuccesses: 0, evaluatedRuns: 0, strategy, pin: batch.pin, evidenceIds: batch.evidenceIds, prediction: { fixes, risks } };
       state.revisions.push(revision);
@@ -520,11 +746,13 @@ export class EvolutionService {
       batch.phase = "VALIDATE";
     } catch { finishBatch(state, "invalid_candidate", now); }
   }
-  #acceptSimulation(state: EvolutionState, value: unknown, now: string): void {
+  #acceptSimulation(state: EvolutionState, value: unknown, now: string, tokens: number | null = null): void {
     const batch = required(state.batch);
     const run = required(batch.rollouts.at(-1));
     const scenario = required(evolutionScenarios(batch.phase === "EVALUATE" ? "sealed" : "development").find((s) => s.id === run.scenarioId));
     const next = simulateAction(scenario, { ...run, calls: run.calls + 1 }, value);
+    if (tokens === null) next.tokensComplete = false;
+    else next.tokens = (run.tokens ?? 0) + tokens;
     if (next.calls >= MAX_CALLS_PER_ROLLOUT && next.success === undefined) next.success = false;
     batch.rollouts[batch.rollouts.length - 1] = next;
     if (next.success === undefined) return;
@@ -543,6 +771,10 @@ export class EvolutionService {
       if (improvements.some((r) => r.delta < 0)) { finishBatch(state, "quality_regression", now); return; }
       if (revision.prediction.fixes.some((id) => !improvements.some((r) => r.id === id && r.delta > 0))) { finishBatch(state, "insufficient_gain", now); return; }
       batch.phase = "EVALUATE";
+      const cached = state.sealedBaselineCache?.[baselineCacheKey(batch)] ?? [];
+      if (cached.length === evolutionScenarios("sealed").length * 3 && cached.every((row) => row.variant === "baseline" && row.success !== undefined)) {
+        batch.rollouts.push(...structuredClone(cached));
+      }
       return;
     }
     const sealed = batch.rollouts.filter((r) => r.scenarioId.startsWith("sealed:"));
@@ -550,23 +782,38 @@ export class EvolutionService {
     revision.evaluatedRuns = sealed.filter((r) => r.success !== undefined).length;
     revision.baselineSuccesses = sealed.filter((r) => r.variant === "baseline" && r.success === true).length;
     revision.candidateSuccesses = sealed.filter((r) => r.variant === "candidate" && r.success === true).length;
+    if (next.variant === "candidate" && next.violation === true) { finishBatch(state, "hard_violation", now); return; }
+    const paired = evolutionScenarios("sealed").map((entry) => sealed.filter((row) => row.scenarioId === entry.id)).filter((rows) => rows.filter((row) => row.variant === "baseline").length === 3 && rows.filter((row) => row.variant === "candidate").length === 3);
+    if (paired.some((rows) => rows.filter((row) => row.variant === "candidate" && row.success === true).length < rows.filter((row) => row.variant === "baseline" && row.success === true).length)) {
+      finishBatch(state, "quality_regression", now); return;
+    }
+    const baselines = sealed.filter((row) => row.variant === "baseline");
+    const candidates = sealed.filter((row) => row.variant === "candidate");
+    if (baselines.length === evolutionScenarios("sealed").length * 3) {
+      const bestPossibleGain = candidates.filter((row) => row.success === true).length + (evolutionScenarios("sealed").length * 3 - candidates.length)
+        - baselines.filter((row) => row.success === true).length;
+      if (bestPossibleGain < 5) { finishBatch(state, "insufficient_gain", now); return; }
+    }
     if (sealed.length !== evolutionScenarios("sealed").length * 6) return;
     const comparisons = evolutionScenarios("sealed").map((scenario) => {
       const rows = sealed.filter((r) => r.scenarioId === scenario.id);
       const base = rows.filter((r) => r.variant === "baseline");
       const candidate = rows.filter((r) => r.variant === "candidate");
-      return { scenarioId: scenario.id, baseline: base.map((r) => r.success === true), candidate: candidate.map((r) => r.success === true), baselineCalls: base.reduce((n, r) => n + r.calls, 0), candidateCalls: candidate.reduce((n, r) => n + r.calls, 0), violations: candidate.filter((r) => r.violation === true).length };
+      const baselineTokens = base.every((row) => row.tokensComplete === true) ? base.reduce((total, row) => total + (row.tokens ?? 0), 0) : undefined;
+      const candidateTokens = candidate.every((row) => row.tokensComplete === true) ? candidate.reduce((total, row) => total + (row.tokens ?? 0), 0) : undefined;
+      return { scenarioId: scenario.id, baseline: base.map((r) => r.success === true), candidate: candidate.map((r) => r.success === true), baselineCalls: base.reduce((n, r) => n + r.calls, 0), candidateCalls: candidate.reduce((n, r) => n + r.calls, 0),
+        ...(baselineTokens === undefined ? {} : { baselineTokens }), ...(candidateTokens === undefined ? {} : { candidateTokens }), violations: candidate.filter((r) => r.violation === true).length };
     });
+    state.sealedBaselineCache = { ...(state.sealedBaselineCache ?? {}), [baselineCacheKey(batch)]: structuredClone(sealed.filter((row) => row.variant === "baseline")) };
     const result = promotionDecision(comparisons);
     revision.evaluation = comparisons;
     if (result !== "promote") { finishBatch(state, result, now); return; }
-    if (state.activeRevisionId !== batch.parentRevisionId) { finishBatch(state, "invalid_candidate", now); return; }
-    const parent = state.revisions.find((r) => r.revisionId === state.activeRevisionId);
-    if (parent !== undefined) parent.status = "SUPERSEDED";
-    revision.status = "ACTIVE"; revision.reason = "promoted";
-    state.activeRevisionId = revision.revisionId; state.reason = "promoted"; state.batch = null;
+    revision.status = "CANARY"; revision.reason = "canary";
+    state.reason = "canary";
+    state.batchHistory = [batchRecord(batch, "canary", now), ...(state.batchHistory ?? [])].slice(0, 50);
+    state.batch = null;
     state.lastBatchFinishedAt = now;
-    state.lastVerdict = { reason: "promoted", at: now, baselineSuccesses: revision.baselineSuccesses, candidateSuccesses: revision.candidateSuccesses, evaluatedRuns: revision.evaluatedRuns };
+    state.lastVerdict = { reason: "canary", at: now, baselineSuccesses: revision.baselineSuccesses, candidateSuccesses: revision.candidateSuccesses, evaluatedRuns: revision.evaluatedRuns };
   }
   get evaluatorVersion(): string { return EVOLUTION_EVALUATOR_VERSION; }
 }

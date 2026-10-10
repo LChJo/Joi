@@ -1,10 +1,11 @@
-import type { EvolutionLastVerdict, EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
+import type { EvolutionBatchRecordDto, EvolutionFailureCause, EvolutionLastVerdict, EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionScope, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
 
 export interface EvolutionEvidence {
   goalId: string;
   workbenchId: string;
   revisionId: string | null;
   outcome: "VERIFIED" | "VERIFICATION_FAILED" | "ACCEPTED_WITH_GAPS" | "CANCELED" | "ENVIRONMENT_FAILED" | "UNEVALUABLE";
+  cause?: EvolutionFailureCause;
   observedAt: string;
 }
 export interface EvolutionSourcePin {
@@ -18,6 +19,8 @@ export interface EvolutionRollout {
   variant: "baseline" | "candidate";
   attempt: number;
   calls: number;
+  tokens?: number;
+  tokensComplete?: boolean;
   observations: string[];
   actions: string[];
   success?: boolean;
@@ -25,7 +28,8 @@ export interface EvolutionRollout {
 }
 export interface EvolutionRevision extends EvolutionVersionDto {
   monitoredGoals: string[];
-  evaluation?: { scenarioId: string; baseline: boolean[]; candidate: boolean[]; baselineCalls: number; candidateCalls: number; violations: number }[];
+  controlGoals?: string[];
+  evaluation?: { scenarioId: string; baseline: boolean[]; candidate: boolean[]; baselineCalls: number; candidateCalls: number; baselineTokens?: number; candidateTokens?: number; violations: number }[];
   evaluatorVersion: string;
   strategy: EvolutionStrategy;
   pin: EvolutionSourcePin;
@@ -36,6 +40,12 @@ export interface EvolutionBatch {
   evaluatorVersion: string;
   parentStrategy: EvolutionStrategy;
   id: string;
+  startedAt?: string;
+  scope?: EvolutionScope;
+  workbenchId?: string;
+  calls?: number;
+  tokens?: number;
+  tokensComplete?: boolean;
   parentRevisionId: string | null;
   strategy: EvolutionStrategy;
   pin: EvolutionSourcePin;
@@ -73,6 +83,9 @@ export interface EvolutionState {
   runRequestedAt?: string | null;
   /** Statistics of the most recently finished batch, for the settings panel. */
   lastVerdict?: EvolutionLastVerdict;
+  batchHistory?: EvolutionBatchRecordDto[];
+  revalidationRequired?: boolean;
+  sealedBaselineCache?: Record<string, EvolutionRollout[]>;
 }
 export interface EvolutionEvidenceSeed {
   goalId: string;
@@ -95,7 +108,7 @@ export interface EvolutionStore {
    * `since`. Batches are triggered from this pool because evaluation uses fixed synthetic scenarios
    * shared by all workbenches; the resulting revision is still bound to a single workbench.
    */
-  evidenceTotals(since: string | null): { evaluable: number; verificationFailed: number };
+  evidenceTotals(since: string | null, workbenchId?: string): { evaluable: number; verificationFailed: number };
   evidenceSeeds(): EvolutionEvidenceSeed[];
   /**
    * Returns the classification actually persisted, or null when nothing changed. A re-scan may only

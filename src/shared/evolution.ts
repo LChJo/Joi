@@ -6,7 +6,7 @@ export interface EvolutionStrategy {
 export type EvolutionBudgetPresetKey = "off" | "low" | "medium" | "high";
 export interface EvolutionBudgetPreset {
   key: EvolutionBudgetPresetKey;
-  /** Maximum background model calls per workbench per UTC day. */
+  /** Maximum background model calls charged to one workbench per UTC day. */
   limit: number;
 }
 /** A full evaluation batch needs roughly 700 (typical) to 1441 (worst case) calls; presets pace it from ~2 days to ~4 weeks of idle time. */
@@ -16,13 +16,12 @@ export const EVOLUTION_BUDGET_PRESETS: readonly EvolutionBudgetPreset[] = [
   { key: "medium", limit: 150 },
   { key: "high", limit: 400 },
 ];
-export const DEFAULT_EVOLUTION_DAILY_CALL_LIMIT = 50;
+export const DEFAULT_EVOLUTION_DAILY_CALL_LIMIT = 0;
 /**
  * A batch starts once the evidence pool holds this many objectively evaluable goals, of which at
- * least EVOLUTION_FAILURE_THRESHOLD ended in a verification failure. The pool spans every workbench
- * because evaluation runs on fixed synthetic scenarios identical for all of them; the resulting
- * strategy revision is still bound to a single workbench. Shared so the settings panel can show the
- * same numbers the gate actually uses.
+ * least EVOLUTION_FAILURE_THRESHOLD are attributable to context or completion policy. The shared
+ * pool can create only a global baseline; a workbench overlay uses the same thresholds on local
+ * evidence. Shared constants keep the settings panel and the gate aligned.
  */
 export const EVOLUTION_EVIDENCE_THRESHOLD = 10;
 export const EVOLUTION_FAILURE_THRESHOLD = 3;
@@ -42,12 +41,15 @@ export const EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT = 2;
 export const EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT = 10;
 /** How long a run-now request stays eligible while waiting for an idle slot. */
 export const EVOLUTION_RUN_NOW_TTL_MILLIS = 15 * 60_000;
-export type EvolutionReason = "collecting" | "disabled" | "budget_exhausted" | "evaluating" | "promoted" | "rolled_back" | "model_changed" | "insufficient_samples" | "insufficient_gain" | "quality_regression" | "cost_regression" | "hard_violation" | "invalid_evaluation" | "invalid_candidate" | "call_failed" | "model_response_invalid";
+export type EvolutionReason = "collecting" | "disabled" | "budget_exhausted" | "evaluating" | "canary" | "promoted" | "rolled_back" | "model_changed" | "revalidation_required" | "revision_limit_reached" | "insufficient_samples" | "insufficient_gain" | "quality_regression" | "cost_regression" | "hard_violation" | "invalid_evaluation" | "invalid_candidate" | "call_failed" | "model_response_invalid";
+export type EvolutionScope = "GLOBAL" | "WORKBENCH";
+export type EvolutionFailureCause = "none" | "context" | "completion" | "execution" | "environment" | "unknown";
 export interface EvolutionVersionDto {
   revisionId: string;
   parentRevisionId: string | null;
   module: EvolutionModule;
-  status: "CANDIDATE" | "ACTIVE" | "SUPERSEDED" | "REJECTED" | "ROLLED_BACK";
+  status: "CANDIDATE" | "CANARY" | "ACTIVE" | "SUPERSEDED" | "REJECTED" | "ROLLED_BACK";
+  scope?: EvolutionScope;
   createdAt: string;
   reason: EvolutionReason;
   baselineSuccesses: number;
@@ -99,6 +101,29 @@ export interface EvolutionLastVerdict {
   candidateSuccesses: number;
   evaluatedRuns: number;
 }
+export interface EvolutionBatchRecordDto {
+  batchId: string;
+  workbenchId: string;
+  scope: EvolutionScope;
+  phase: EvolutionPhase;
+  startedAt: string;
+  finishedAt: string | null;
+  reason: EvolutionReason;
+  calls: number;
+  tokens: number | null;
+  revisionId: string | null;
+}
+export interface EvolutionOverviewDto {
+  workbenches: number;
+  enabled: number;
+  evaluating: number;
+  canary: number;
+  active: number;
+  revalidationRequired: number;
+  poolEvaluable: number;
+  poolVerificationFailed: number;
+  batches: EvolutionBatchRecordDto[];
+}
 export interface EvolutionStatusDto {
   workbenchId: string;
   dailyCallLimit: number;
@@ -113,9 +138,15 @@ export interface EvolutionStatusDto {
   poolEvaluable: number;
   poolVerificationFailed: number;
   activeRevisionId: string | null;
+  globalRevisionId?: string | null;
+  canaryRevisionId?: string | null;
+  activeEffective?: boolean;
+  revalidationRequired?: boolean;
   reason: EvolutionReason;
   /** Set while a run-now request waits for an idle slot; null once consumed or expired. */
   runRequestedAt: string | null;
   lastVerdict: EvolutionLastVerdict | null;
+  currentBatch?: EvolutionBatchRecordDto | null;
+  batchHistory?: EvolutionBatchRecordDto[];
   versions: EvolutionVersionDto[];
 }

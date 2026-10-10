@@ -19,7 +19,7 @@ import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
 import { randomUuid } from "./random-uuid";
-import type { EvolutionDryRunReportDto, EvolutionStatusDto } from "../shared/evolution";
+import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 
 export class ApiError extends Error {
@@ -87,6 +87,7 @@ export class DigitalLifeApi {
   joiRuntime() { return this.request<{ configured: boolean; status: "NOT_CONFIGURED" | "READY" }>("/api/v1/joi/runtime"); }
   listWorkbenches() { return this.request<{ items: WorkbenchDto[] }>("/api/v1/workbenches"); }
   evolutionStatus(workbenchId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`); }
+  evolutionOverview() { return this.request<EvolutionOverviewDto>("/api/v1/evolution"); }
   configureEvolution(workbenchId: string, dailyCallLimit: number) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`, { method: "PATCH", body: { dailyCallLimit } }); }
   rollbackEvolution(workbenchId: string, revisionId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/rollback`, { method: "POST", body: { revisionId } }); }
   evolutionNegativeFeedback(workbenchId: string, goalId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/feedback`, { method: "POST", body: { goalId } }); }

@@ -9,7 +9,7 @@ it("uses only the newest authoritative attempt when a failed Work was subsequent
       CREATE TABLE joi_inbox_messages(input_id TEXT,workbench_id TEXT,updated_at TEXT,canceled_at TEXT,goal_input_id TEXT,status TEXT,dismissed_at TEXT);
       CREATE TABLE evolution_goal_pins(goal_id TEXT,eligible INTEGER);
       CREATE TABLE joi_goal_outcomes(input_id TEXT,disposition TEXT);
-      CREATE TABLE evolution_evidence(goal_id TEXT,workbench_id TEXT,revision_id TEXT,outcome TEXT,observed_at TEXT,classified_at TEXT);
+      CREATE TABLE evolution_evidence(goal_id TEXT,workbench_id TEXT,revision_id TEXT,outcome TEXT,cause TEXT NOT NULL DEFAULT 'unknown',observed_at TEXT,classified_at TEXT);
       CREATE TABLE joi_harness_maps(goal_input_id TEXT,status TEXT);
       CREATE TABLE joi_turns(input_id TEXT,status TEXT);
       CREATE TABLE work_items(work_id TEXT,input_id TEXT,status TEXT);
@@ -43,7 +43,7 @@ it("uses only the newest authoritative attempt when a failed Work was subsequent
     // A recorded classification freezes the goal only until its facts move again: without the
     // re-sample, a premature UNEVALUABLE snapshot (taken before the first Work was dispatched)
     // would permanently mask the verification failures that follow.
-    db.exec("INSERT INTO evolution_evidence VALUES('g','a',NULL,'UNEVALUABLE','2026-09-22','2026-09-22')");
+    db.exec("INSERT INTO evolution_evidence VALUES('g','a',NULL,'UNEVALUABLE','unknown','2026-09-22','2026-09-22')");
     expect(store.evidenceSeeds()).toEqual([]);
     db.exec("UPDATE joi_inbox_messages SET updated_at = '2026-09-24' WHERE input_id = 'g'");
     expect(store.evidenceSeeds()).toHaveLength(1);

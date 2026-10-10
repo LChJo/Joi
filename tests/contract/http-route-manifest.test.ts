@@ -12,6 +12,7 @@ const GOLDEN_ROUTES = [
   "POST /api/v1/auth/login",
   "POST /api/v1/auth/setup",
   "GET /api/v1/statistics",
+  "GET /api/v1/evolution",
   "GET /api/v1/workbenches/:workbenchId/evolution",
   "PATCH /api/v1/workbenches/:workbenchId/evolution",
   "POST /api/v1/workbenches/:workbenchId/evolution/rollback",

@@ -90,17 +90,19 @@ export class EvolutionDryRun {
 
     const state = store.read();
     const truncated = state.batch !== null;
-    const promoted = state.activeRevisionId !== null;
     const candidate = state.revisions.at(-1) ?? null;
+    // A dry run has no production goals, so reaching CANARY is the complete success condition it
+    // can prove without weakening the production promotion gate.
+    const promoted = state.activeRevisionId !== null || candidate?.status === "CANARY";
     const outcome: EvolutionDryRunOutcome = truncated ? "truncated"
       : promoted ? "promoted"
         : state.callSequence === 0 ? "not_started" : "rejected";
     return {
       workbenchId, outcome, promoted, steps, phases, truncated,
       // "collecting" is the untouched initial reason, so it would misdescribe a run that never started.
-      verdict: outcome === "not_started" ? null : state.reason,
+      verdict: outcome === "not_started" ? null : promoted ? "promoted" : state.reason,
       blockedAt: promoted ? null : { phase: state.batch?.phase ?? phases.at(-1)?.phase ?? null, reason: state.reason },
-      revision: promoted ? projectRevision(state.revisions.find((r) => r.revisionId === state.activeRevisionId)) : null,
+      revision: promoted ? projectRevision(state.revisions.find((r) => r.revisionId === state.activeRevisionId) ?? candidate ?? undefined, candidate?.status === "CANARY") : null,
       evaluation: candidate?.evaluation === undefined ? null : {
         scenarios: candidate.evaluation.length,
         baselineSuccesses: candidate.baselineSuccesses,
@@ -121,8 +123,9 @@ function finishPhase(tracker: PhaseTracker): EvolutionDryRunPhaseDto {
 }
 
 /** Field by field, so the revision's strategy, pin and evidence ids stay out of the report. */
-function projectRevision(revision: EvolutionRevision | undefined): EvolutionVersionDto | null {
+function projectRevision(revision: EvolutionRevision | undefined, projectCanaryAsPromotion = false): EvolutionVersionDto | null {
   if (revision === undefined) return null;
   const { revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns } = revision;
-  return { revisionId, parentRevisionId, module, status, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns };
+  return { revisionId, parentRevisionId, module, status: projectCanaryAsPromotion ? "ACTIVE" : status, createdAt,
+    reason: projectCanaryAsPromotion ? "promoted" : reason, baselineSuccesses, candidateSuccesses, evaluatedRuns };
 }

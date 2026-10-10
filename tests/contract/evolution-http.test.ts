@@ -19,6 +19,9 @@ it("authenticates evolution settings, validates limits and exposes only safe sta
     const { csrfToken } = await auth.json() as { csrfToken: string };
     const headers = { cookie, origin: listeners.loopback.url, "content-type": "application/json", "x-csrf-token": csrfToken };
     expect((await fetch(url, { headers })).status).toBe(200);
+    const overview = await fetch(`${listeners.loopback.url}/api/v1/evolution`, { headers });
+    expect(overview.status).toBe(200);
+    expect(await overview.json()).toMatchObject({ workbenches: 1, enabled: 0, active: 0, batches: [] });
     expect((await fetch(url, { method: "PATCH", headers: { cookie, "content-type": "application/json" }, body: JSON.stringify({ dailyCallLimit: 3 }) })).status).toBe(403);
     expect((await fetch(url, { method: "PATCH", headers, body: JSON.stringify({ dailyCallLimit: -1 }) })).status).toBe(400);
     expect((await fetch(url, { method: "PATCH", headers, body: JSON.stringify({ dailyCallLimit: "3" }) })).status).toBe(400);
@@ -78,6 +81,7 @@ it("queues a run-now request through the same auth surface as every other write"
     const headers = { cookie, origin: listeners.loopback.url, "content-type": "application/json", "x-csrf-token": csrfToken };
     expect((await fetch(url, { method: "POST", headers: { cookie, "content-type": "application/json" } })).status).toBe(403);
     expect((await fetch(`${listeners.loopback.url}/api/v1/workbenches/missing/evolution/run-now`, { method: "POST", headers })).status).toBe(404);
+    await fetch(`${listeners.loopback.url}/api/v1/workbenches/a/evolution`, { method: "PATCH", headers, body: JSON.stringify({ dailyCallLimit: 50 }) });
     const response = await fetch(url, { method: "POST", headers });
     expect(response.status).toBe(200);
     const state: unknown = await response.json();

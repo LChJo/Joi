@@ -28,7 +28,7 @@ describe("evolution durable state", () => {
     const evidence = { goalId: "g", workbenchId: "a", revisionId: null, outcome: "UNEVALUABLE" as const, observedAt: "2026-09-22" };
     expect(store.recordEvidence(evidence)).toBe("UNEVALUABLE");
     expect(store.recordEvidence(evidence)).toBeNull();
-    expect(store.evidence("a")).toEqual([evidence]);
+    expect(store.evidence("a")).toEqual([{ ...evidence, cause: "none" }]);
     expect(store.evidence("b")).toEqual([]);
     expect(store.evidenceSeeds()).toEqual([]);
   });
@@ -41,7 +41,7 @@ describe("evolution durable state", () => {
     expect(store.recordEvidence(at("2026-09-22T01:00:00.000Z", "UNEVALUABLE"))).toBe("UNEVALUABLE");
     // The verification failures that follow must still be able to replace that snapshot.
     expect(store.recordEvidence(at("2026-09-22T05:00:00.000Z", "VERIFICATION_FAILED"))).toBe("VERIFICATION_FAILED");
-    expect(store.evidence("a")).toEqual([{ goalId: "g", workbenchId: "a", revisionId: null, outcome: "VERIFICATION_FAILED", observedAt: "2026-09-22T05:00:00.000Z" }]);
+    expect(store.evidence("a")).toEqual([{ goalId: "g", workbenchId: "a", revisionId: null, outcome: "VERIFICATION_FAILED", cause: "completion", observedAt: "2026-09-22T05:00:00.000Z" }]);
     // Canceling afterwards must not erase the failure signal, and must not move observed_at: that
     // timestamp is the verdict window, so a batch that already consumed the failure stays consumed.
     // The refused downgrade reports the outcome that was kept, not the one that was offered.

@@ -26,7 +26,7 @@ const EVIDENCE_RANK: Readonly<Record<EvolutionEvidence["outcome"], number>> = {
   UNEVALUABLE: 0, ENVIRONMENT_FAILED: 1, CANCELED: 2, ACCEPTED_WITH_GAPS: 3, VERIFIED: 4, VERIFICATION_FAILED: 5,
 };
 interface Database { transaction<T>(operation: (db: DatabaseSync) => T): T; }
-const initialState = (): EvolutionState => ({ callSequence: 0, developmentHistory: [], dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, usage: {}, activeRevisionId: null, reason: "collecting", lastCandidateDay: null, revisions: [], batch: null, call: null, paused: false });
+const initialState = (): EvolutionState => ({ callSequence: 0, developmentHistory: [], dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, usage: {}, activeRevisionId: null, reason: "disabled", lastCandidateDay: null, revisions: [], batch: null, call: null, paused: false, batchHistory: [], revalidationRequired: false, sealedBaselineCache: {} });
 function assertWorkbench(db: DatabaseSync, id: string): void {
   if (db.prepare("SELECT 1 FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'").get(id) === undefined) throw new DomainError("workbench_not_found", "Workbench was not found.");
 }
@@ -60,7 +60,7 @@ export class SqliteEvolutionStore implements EvolutionStore {
   evidence(id: string): EvolutionEvidence[] {
     return this.database.transaction((db) => (db.prepare("SELECT * FROM evolution_evidence WHERE workbench_id = ? ORDER BY observed_at DESC,goal_id LIMIT 500").all(id) as Row[]).map((r) => ({
       goalId: String(r.goal_id), workbenchId: String(r.workbench_id), revisionId: optionalText(r.revision_id),
-      outcome: r.outcome as EvolutionEvidence["outcome"], observedAt: String(r.observed_at),
+      outcome: r.outcome as EvolutionEvidence["outcome"], cause: (r.cause ?? (r.outcome === "VERIFICATION_FAILED" ? "unknown" : "none")) as NonNullable<EvolutionEvidence["cause"]>, observedAt: String(r.observed_at),
     })));
   }
   /**
@@ -73,26 +73,30 @@ export class SqliteEvolutionStore implements EvolutionStore {
   recordEvidence(evidence: EvolutionEvidence): EvolutionEvidence["outcome"] | null {
     return this.database.transaction((db) => {
       if (db.prepare("SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND workbench_id = ? AND goal_input_id IS NULL").get(evidence.goalId, evidence.workbenchId) === undefined) throw new DomainError("evolution_goal_invalid", "Goal does not belong to this workbench.");
-      const existing = db.prepare("SELECT revision_id,outcome,observed_at,classified_at FROM evolution_evidence WHERE goal_id = ?").get(evidence.goalId) as Row | undefined;
+      const cause = evidence.cause ?? (evidence.outcome === "VERIFICATION_FAILED" ? "completion" : evidence.outcome === "ENVIRONMENT_FAILED" ? "environment" : "none");
+      const existing = db.prepare("SELECT revision_id,outcome,cause,observed_at,classified_at FROM evolution_evidence WHERE goal_id = ?").get(evidence.goalId) as Row | undefined;
       if (existing === undefined) {
         return db.prepare(`INSERT INTO evolution_evidence
-          (goal_id,workbench_id,revision_id,outcome,observed_at,classified_at) VALUES (?,?,?,?,?,?)`)
-          .run(evidence.goalId, evidence.workbenchId, evidence.revisionId, evidence.outcome, evidence.observedAt, evidence.observedAt).changes === 1
+          (goal_id,workbench_id,revision_id,outcome,cause,observed_at,classified_at) VALUES (?,?,?,?,?,?,?)`)
+          .run(evidence.goalId, evidence.workbenchId, evidence.revisionId, evidence.outcome, cause, evidence.observedAt, evidence.observedAt).changes === 1
           ? evidence.outcome : null;
       }
       const previousOutcome = String(existing.outcome) as EvolutionEvidence["outcome"];
       const upgrades = EVIDENCE_RANK[evidence.outcome] > EVIDENCE_RANK[previousOutcome];
+      const previousCause = typeof existing.cause === "string" ? existing.cause : "unknown";
+      const causeUpgrade = previousOutcome === "VERIFICATION_FAILED" && evidence.outcome === "VERIFICATION_FAILED"
+        && !["context", "completion"].includes(previousCause) && ["context", "completion"].includes(cause);
       const previousRevision = optionalText(existing.revision_id);
       const revisionId = evidence.revisionId ?? previousRevision;
       const classifiedAt = String(existing.classified_at ?? existing.observed_at);
-      if (!upgrades && revisionId === previousRevision && classifiedAt >= evidence.observedAt) return null;
+      if (!upgrades && !causeUpgrade && revisionId === previousRevision && classifiedAt >= evidence.observedAt) return null;
       const outcome = upgrades ? evidence.outcome : previousOutcome;
       db.prepare(`UPDATE evolution_evidence
-        SET revision_id = ?, outcome = ?, observed_at = ?, classified_at = ? WHERE goal_id = ?`)
-        .run(revisionId, outcome,
+        SET revision_id = ?, outcome = ?, cause = ?, observed_at = ?, classified_at = ? WHERE goal_id = ?`)
+        .run(revisionId, outcome, upgrades || causeUpgrade ? cause : previousCause,
           // Only a real upgrade is new information about the goal; a re-look that confirms the
           // previous classification leaves the trigger window where it was.
-          upgrades ? evidence.observedAt : String(existing.observed_at), evidence.observedAt, evidence.goalId);
+          upgrades || causeUpgrade ? evidence.observedAt : String(existing.observed_at), evidence.observedAt, evidence.goalId);
       return outcome;
     });
   }
@@ -103,12 +107,12 @@ export class SqliteEvolutionStore implements EvolutionStore {
    * rollbacks stay strictly per workbench. `since` is the asking workbench's last verdict; "" sorts
    * before every ISO-8601 timestamp, so null means "everything".
    */
-  evidenceTotals(since: string | null): { evaluable: number; verificationFailed: number } {
+  evidenceTotals(since: string | null, workbenchId?: string): { evaluable: number; verificationFailed: number } {
     return this.database.transaction((db) => {
       const row = db.prepare(`SELECT
           COALESCE(SUM(CASE WHEN outcome IN ('VERIFIED','VERIFICATION_FAILED') THEN 1 ELSE 0 END), 0) AS evaluable,
-          COALESCE(SUM(CASE WHEN outcome = 'VERIFICATION_FAILED' THEN 1 ELSE 0 END), 0) AS failed
-        FROM evolution_evidence WHERE observed_at > ?`).get(since ?? "") as Row;
+          COALESCE(SUM(CASE WHEN outcome = 'VERIFICATION_FAILED' AND cause IN ('context','completion') THEN 1 ELSE 0 END), 0) AS failed
+        FROM evolution_evidence WHERE observed_at > ? AND (? IS NULL OR workbench_id = ?)`).get(since ?? "", workbenchId ?? null, workbenchId ?? null) as Row;
       return { evaluable: Number(row.evaluable), verificationFailed: Number(row.failed) };
     });
   }
