@@ -225,8 +225,10 @@
 .joi-harness-path.out_of_scope { border-color: var(--line); color: var(--faint); text-decoration: line-through; }
 .joi-goal-harness-counts { margin: 0; color: var(--faint); font-size: .74rem; }
 .joi-goal-harness-fog { margin: 0; color: var(--muted); font-size: .76rem; }
-.joi-goal-detail-body { display: grid; grid-template-columns: 250px minmax(0, 1fr); gap: 14px; align-items: start; }
-.joi-goal-agents { position: sticky; top: 10px; display: grid; gap: 8px; }
+/* The agent list scrolls on its own, so its column carries the scrollbar gutter and the
+   cards keep the 250px of content they had before that scrollbar existed. */
+.joi-goal-detail-body { display: grid; grid-template-columns: calc(250px + 2rem) minmax(0, 1fr); gap: 14px; align-items: start; }
+.joi-goal-agents { position: sticky; top: 10px; display: grid; gap: 8px; max-height: 65vh; overflow-y: auto; scrollbar-gutter: stable; padding-right: 4px; }
 .joi-goal-agents .plain-empty { padding: 22px 4px; font-size: .85rem; }
 .joi-goal-agent { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); color: inherit; cursor: pointer; font: inherit; text-align: left; }
 .joi-goal-agent:hover { background: color-mix(in srgb, var(--forest) 5%, transparent); }
