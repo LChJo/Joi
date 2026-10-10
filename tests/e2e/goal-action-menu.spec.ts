@@ -48,6 +48,16 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1024,height:720,useCo
     await page.addStyleTag({ content: css });
     await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished)));
 
+    // The trigger's own declarations used to lose to `.icon-button`, which sits later in the same
+    // stylesheet at equal specificity: the quiet 28px disc came out as a bordered 38px square, and
+    // the button the user actually saw was the one nobody designed. jsdom never applies the
+    // stylesheet, so the computed box has to be read here, where the real one is in force.
+    const trigger = await page.locator('.joi-goal-menu-trigger').evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { border: style.borderTopWidth, height: style.height, radius: style.borderRadius, width: style.width };
+    });
+    expect(trigger).toEqual({ border: '0px', height: '28px', radius: '999px', width: '28px' });
+
     const card = page.locator('.joi-goal-card');
     const menu = page.locator('.joi-goal-menu-list');
     const cardBox = await card.boundingBox();
@@ -75,5 +85,74 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1024,height:720,useCo
     const dimensions = await page.evaluate(() => ({ clientWidth: document.documentElement.clientWidth, scrollWidth: document.documentElement.scrollWidth }));
     expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
     await page.screenshot({ path: path.resolve('test-results/e2e-goal-action-menu.png') });
+  } finally { await application.close(); }
+});
+
+/**
+ * The archived card is the compact shape, and that shape is mostly CSS.
+ *
+ * jsdom never applies the stylesheet, so the renderer test can only see that the compact markup is
+ * what got rendered — not that `.joi-goal-card.archived` is the scope those refinements actually hang
+ * off. If that scope ever stops matching, the badge and the ⋯ fall back to the home card's stacked
+ * column on a card that is now too short for it, and every jsdom assertion still passes.
+ */
+test('an archived card lays its chrome out in the compact shape', async ({ browserName }) => {
+  expect(browserName).toBe('chromium');
+  const root = await mkdtemp(path.join(tmpdir(), 'joi-goal-compact-'));
+  const entry = path.join(root, 'main.cjs');
+  await writeFile(entry, `const {app,BrowserWindow}=require('electron');
+app.setPath('userData', ${JSON.stringify(path.join(root, 'userdata'))});
+app.whenReady().then(()=>{const w=new BrowserWindow({width:1024,height:720,useContentSize:true});w.loadURL('data:text/html,fixture');});`);
+  const application = await electron.launch({ args: [entry] });
+  try {
+    const page = await application.firstWindow();
+    const css = await readFile('src/renderer/styles.css', 'utf8');
+    // The markup ArchivedGoals renders: no progress bar, no result preview, the 归档 time in the copy.
+    // The second card is the same markup without `.archived`, and exists only as the control below —
+    // it is what tells a passing assertion apart from an assertion that would pass either way.
+    const compactCard = (extraClass: string) => `
+        <article class="joi-goal-card ${extraClass} failed">
+          <div class="joi-goal-row">
+            <button class="joi-goal-open" type="button">
+              <span class="workbench-orb">归</span>
+              <span class="joi-goal-copy"><small>归档工程</small><strong class="joi-goal-title">一个已经归档的目标</strong><i>2026/10/9 18:42:27 归档</i></span>
+            </button>
+            <div class="joi-goal-side">
+              <span class="joi-goal-status failed">处理失败</span>
+              <div class="joi-goal-menu">
+                <button aria-expanded="false" aria-haspopup="menu" class="icon-button joi-goal-menu-trigger" type="button">⋯</button>
+              </div>
+            </div>
+          </div>
+        </article>`;
+    await page.setContent(`<body style="margin:0">
+      <section class="joi-home"><div class="joi-feed joi-feed-single">${compactCard('archived')}${compactCard('control')}</div></section>
+    </body>`);
+    await page.addStyleTag({ content: css });
+    await page.evaluate(() => Promise.all(document.getAnimations().map(animation => animation.finished)));
+
+    const shape = await page.evaluate(() => {
+      const measure = (card: Element) => {
+        const centre = (selector: string) => {
+          const rect = card.querySelector(selector)?.getBoundingClientRect();
+          if (rect === undefined) throw new Error(`missing ${selector}`);
+          return rect.y + rect.height / 2;
+        };
+        return {
+          orb: getComputedStyle(card.querySelector('.workbench-orb') as Element).width,
+          side: getComputedStyle(card.querySelector('.joi-goal-side') as Element).flexDirection,
+          // Badge and trigger share the card's right edge on one line rather than stacking.
+          badgeAndMenuOnOneLine: Math.abs(centre('.joi-goal-status') - centre('.joi-goal-menu-trigger')) < 1,
+        };
+      };
+      const archived = document.querySelector('.joi-goal-card.archived');
+      const control = document.querySelector('.joi-goal-card.control');
+      if (archived === null || control === null) throw new Error('missing fixture card');
+      return { archived: measure(archived), control: measure(control) };
+    });
+    expect(shape.archived).toEqual({ orb: '32px', side: 'row', badgeAndMenuOnOneLine: true });
+    // Without the scope the same markup falls back to the roomy home card: bigger orb, stacked side.
+    expect(shape.control).toEqual({ orb: '44px', side: 'column', badgeAndMenuOnOneLine: false });
+    await page.screenshot({ path: path.resolve('test-results/e2e-goal-archived-card.png') });
   } finally { await application.close(); }
 });

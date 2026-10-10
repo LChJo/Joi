@@ -2160,6 +2160,9 @@ describe("joi home single entry", () => {
       // archiving is the action that takes it off the feed.
       canArchive: true,
       canDelete: false,
+      // Carried so the archive screen's "no result preview" assertion below has something it could
+      // have shown: without a summary that check would pass on a fixture that never had a preview.
+      completionSummary: "## 最终结论\n\n失败原因已经定位。",
       goalId: "goal-archive",
       status: "FAILED" as const,
       title: "收起来的目标",
@@ -2174,6 +2177,10 @@ describe("joi home single entry", () => {
 
     const view = render(<JoiHome api={api} />);
     await screen.findByRole("button", { name: "收起来的目标 更多操作" });
+    // While it is still on the feed it is the full card: progress and the result preview are there.
+    const homeCard = document.querySelector(".joi-goal-card");
+    expect(homeCard?.querySelector(".joi-goal-progress")).not.toBeNull();
+    expect(homeCard?.querySelector(".joi-goal-result-preview")).not.toBeNull();
     openGoalMenuItem("收起来的目标", "归档");
     await waitFor(() => expect(archive).toHaveBeenCalledWith("goal-archive"));
     // The poll that follows is what actually moves the card; the feed the host now returns carries
@@ -2185,6 +2192,15 @@ describe("joi home single entry", () => {
     const unarchive = vi.spyOn(api, "unarchiveJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-archive", status: "CONSUMED" });
     render(<ArchivedGoals api={api} />);
     expect(await screen.findByText("收起来的目标")).toBeInTheDocument();
+    // The archive screen is a list of things filed away, not a second feed: the card keeps the
+    // workbench, the goal and when it was filed, and drops what only means something mid-flight.
+    const archivedCard = document.querySelector(".joi-goal-card.archived");
+    expect(archivedCard).not.toBeNull();
+    expect(archivedCard?.querySelector(".joi-goal-progress")).toBeNull();
+    expect(archivedCard?.querySelector(".joi-goal-result-preview")).toBeNull();
+    // Compared through the same formatter the component uses: the rendered date is locale-dependent,
+    // so a literal would pin the assertion to whatever ICU the machine running it happens to have.
+    expect(archivedCard?.querySelector(".joi-goal-copy i")?.textContent).toBe(`${new Date("2026-10-09T09:00:00.000Z").toLocaleString()} 归档`);
     openGoalMenuItem("收起来的目标", "取消归档");
     await waitFor(() => expect(unarchive).toHaveBeenCalledWith("goal-archive"));
   });

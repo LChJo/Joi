@@ -123,8 +123,16 @@
 .joi-goal-status.needs_attention, .joi-goal-status.failed { border-color: color-mix(in srgb, var(--amber) 50%, var(--line)); color: var(--amber); }
 .joi-goal-side { display: flex; flex: 0 0 auto; flex-direction: column; align-items: flex-end; justify-content: space-between; gap: 8px; align-self: stretch; padding: 14px 18px 14px 8px; }
 .joi-goal-menu { position: relative; display: flex; align-items: center; gap: 8px; }
-.joi-goal-menu-trigger { width: 30px; height: 30px; border-color: transparent; background: transparent; color: var(--faint); }
-.joi-goal-menu-trigger:hover:not(:disabled), .joi-goal-menu-trigger[aria-expanded="true"] { border-color: var(--line); background: color-mix(in srgb, var(--forest) 6%, var(--paper)); color: var(--ink); }
+/* A quiet, always-visible disc rather than the bordered 38px square `.icon-button` hands out. The
+   scope through `.joi-goal-side` is what makes these declarations stick: bare `.joi-goal-menu-trigger`
+   ties `.icon-button` on specificity and loses on source order, since `.icon-button` is defined far
+   below this line. `.joi-goal-detail-actions .joi-goal-detail-close` is the same idiom. */
+.joi-goal-side .joi-goal-menu-trigger { width: 28px; height: 28px; border: 0; border-radius: 999px; background: var(--wash); color: var(--muted); }
+.joi-goal-side .joi-goal-menu-trigger:hover:not(:disabled) { background: color-mix(in srgb, var(--forest) 12%, var(--wash)); color: var(--ink); }
+/* An open menu stays a step darker than hover, so the trigger reads as the thing the list belongs to.
+   Focus needs no rule of its own: the global `button:focus-visible` outline already applies. */
+.joi-goal-side .joi-goal-menu-trigger[aria-expanded="true"] { background: color-mix(in srgb, var(--forest) 18%, var(--wash)); color: var(--ink); }
+.joi-goal-side .joi-goal-menu-trigger:disabled { opacity: .55; }
 .joi-goal-menu-list { position: absolute; z-index: 6; top: calc(100% + 6px); right: 0; display: grid; min-width: 128px; padding: 5px; border: 1px solid var(--line); border-radius: 11px; background: var(--paper); box-shadow: var(--shadow); }
 .joi-goal-menu-list button { padding: 8px 12px; border: 0; border-radius: 7px; background: transparent; color: var(--ink); cursor: pointer; font: inherit; font-size: .8rem; font-weight: 600; text-align: left; white-space: nowrap; }
 .joi-goal-menu-list button:hover:not(:disabled) { background: var(--wash); }
@@ -132,7 +140,20 @@
 .joi-goal-menu-list button.danger { color: var(--red); }
 .joi-goal-menu-list button:focus-visible { outline: 2px solid color-mix(in srgb, var(--forest) 60%, transparent); outline-offset: 1px; }
 .joi-goal-menu-error { max-width: 190px; padding: 6px 9px; color: var(--red); font-size: .72rem; line-height: 1.4; }
-.joi-goal-archived-note { margin: 0 18px 10px 80px; color: var(--faint); font-size: .72rem; }
+/* The archived card is the home card with everything that only means something mid-flight taken out:
+   no progress bar, no Work counts, no result preview — the workbench, the goal, and when it was filed
+   away, with the full result one click in at the drawer. `.archived` is set by the archive screen
+   alone, so it is the switch for the whole compact shape.
+   These rules outrank the narrow-width media query below (0,3,0 against its 0,1,0), and a media query
+   adds no specificity of its own — so the compact paddings hold at every width. Do not "fix" that by
+   copying them into the media block. */
+.joi-goal-card.archived .joi-goal-open { grid-template-columns: 32px minmax(0, 1fr); gap: 12px; padding: 10px 6px 10px 14px; }
+.joi-goal-card.archived .workbench-orb { width: 32px; height: 32px; font-size: .92rem; }
+.joi-goal-card.archived .joi-goal-copy i { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Badge and menu share the right edge on one line: stacked in a column they read as two separate
+   pieces of chrome on a card this short. */
+.joi-goal-card.archived .joi-goal-side { flex-direction: row; align-items: center; align-self: center; justify-content: flex-end; gap: 8px; padding: 10px 14px 10px 8px; }
+.joi-goal-card.archived > .joi-clarify { margin: 0 14px 14px 58px; }
 .joi-goal-card > .joi-clarify { margin: 0 18px 17px 80px; padding-top: 12px; border-top: 1px solid var(--line); }
 .joi-retry-submitting { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid color-mix(in srgb, var(--forest) 18%, var(--line)); border-radius: 8px; background: color-mix(in srgb, var(--forest) 5%, var(--paper)); color: var(--forest); }
 .joi-retry-submitting > span:last-child { display: grid; gap: 2px; }
@@ -731,8 +752,10 @@
   .joi-goal-failure { margin-left: 16px; }
   .joi-goal-progress-track { flex-basis: 64px; }
   .joi-goal-side { padding-right: 16px; }
-  .joi-goal-archived-note { margin-left: 16px; }
   .joi-goal-card > .joi-clarify { margin-left: 16px; }
+  /* The compact archived card keeps its own tighter edge here; see the note on its rules above. */
+  .joi-goal-card.archived .joi-goal-open { padding-left: 12px; }
+  .joi-goal-card.archived > .joi-clarify { margin-left: 12px; }
   .joi-composer { grid-template-columns: 1fr; }
   .joi-composer button { grid-column: 1; }
   .joi-clarify-add, .joi-clarify-workspace { align-items: stretch; flex-direction: column; }

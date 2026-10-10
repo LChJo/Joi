@@ -44,7 +44,7 @@ JOI-01 是当前目标架构任务，按 W0-W7 串行收敛：W0 文档/ADR；W1
 
 2026-09-10 的工作台移除以 AC-40/WEB-04 为门禁：列表和详情提供“移除工作台”，单次确认明确归档后果，保留历史记录与工作目录；服务端事务拒绝仍拥有未结束 Work 的工作台，失败不产生待确认请求。重复提交复用稳定归档记录；成功退出详情并从列表移除，失败保留界面并允许重试。覆盖 `workbench-context-http.test.ts`、`workbench-change-service.test.ts` 与 renderer 测试。
 
-2026-10-09 的目标卡归档增量以 AC-37 为门禁：卡片操作收进 `⋯` 二级菜单，`归档` 让终态目标离开首页信息流并可逆地回到侧边栏「已归档」；归档不销毁事实、不停用定时续跑，任何把目标重新激活的写入都要在同一次提交里清掉归档标记，否则会出现“后台在跑、首页看不见”的任务。桌面与手机共用同一套可用性判定（`canArchive` 由服务端投影），手机端 `act('archive')` 复用既有 `message.$action` 命令通道。覆盖 `sqlite-joi-inbox-archive.test.ts`、`joi-home-single-entry.test.tsx`、`http-route-manifest.test.ts` 与 Flutter `widget_test.dart`。
+2026-10-09 的目标卡归档增量以 AC-37 为门禁：卡片操作收进 `⋯` 二级菜单，`归档` 让终态目标离开首页信息流并可逆地回到侧边栏「已归档」；归档不销毁事实、不停用定时续跑，任何把目标重新激活的写入都要在同一次提交里清掉归档标记，否则会出现“后台在跑、首页看不见”的任务。桌面与手机共用同一套可用性判定（`canArchive` 由服务端投影），手机端 `act('archive')` 复用既有 `message.$action` 命令通道。「已归档」页的卡片是紧凑形态：只保留工作台、目标与归档时间，去掉进度条、Work 计数与结果正文预览，完整结果仍在点开卡片后的详情里；桌面与手机同形。覆盖 `sqlite-joi-inbox-archive.test.ts`、`joi-home-single-entry.test.tsx`、`http-route-manifest.test.ts`、`goal-action-menu.spec.ts`（`⋯` 触发器的计算样式与二级菜单不被卡片裁切）与 Flutter `widget_test.dart`。
 
 2026-08-05 的编排收敛增量以 AC-41/AC-43 为门禁：Work 必须强关联原始目标且每个 run 只有一个权威终态；执行 Agent 接收私有完整 brief，可机械验证的任务必须验收后才能完成；同一目标的全部权威结果按 revision 只综合一次，首页仅展示 joi 持久化的目标级完成结论。
 

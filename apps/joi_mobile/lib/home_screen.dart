@@ -30,8 +30,10 @@ String statusLabel(String value) =>
 
 /// The tappable part of a goal card.
 ///
-/// Shared with the archive page so a filed-away goal is described exactly as it was on the feed —
-/// the two screens differ in what they offer under the card, not in how they read it.
+/// Shared with the archive page, which asks for the [compact] shape: a filed-away goal is not
+/// mid-flight, so its progress bar, Work counts and result preview would only make a list of things
+/// put away harder to scan. What is left is the workbench, the goal and when it was filed; the full
+/// result is still one tap in, at `GoalDetailPage`.
 class GoalCardBody extends StatelessWidget {
   const GoalCardBody({
     super.key,
@@ -39,58 +41,116 @@ class GoalCardBody extends StatelessWidget {
     required this.supportsHome,
     required this.onOpen,
     required this.onOpenResult,
+    this.compact = false,
   });
 
   final RemoteGoalCard goal;
   final bool supportsHome;
   final VoidCallback onOpen;
   final VoidCallback onOpenResult;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) => InkWell(
     onTap: !supportsHome || goal.goalId.isEmpty ? null : onOpen,
-    child: Column(
+    child: compact ? _compact(context) : _full(context),
+  );
+
+  Widget _compact(BuildContext context) {
+    final archivedAt = goal.archivedAt;
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(
           children: [
+            _WorkbenchOrb(name: goal.workbenchName),
+            const SizedBox(width: 10),
             Expanded(child: Text(goal.workbenchName)),
             Text(statusLabel(goal.status)),
           ],
         ),
-        const SizedBox(height: 8),
+        const SizedBox(height: 6),
         Text(goal.title, style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 12),
-        LinearProgressIndicator(
-          value: goal.totalWork == 0
-              ? 0
-              : (goal.completedWork / goal.totalWork).clamp(0, 1),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          '${goal.agentCount} 位搭档 · ${goal.completedWork}/${goal.totalWork} 已完成${goal.stage == null ? '' : ' · ${statusLabel(goal.stage!)}'}',
-        ),
-        if (goal.summary != null &&
-            (!supportsHome || !goal.needsContinuationDecision))
+        if (archivedAt != null)
           Padding(
-            padding: const EdgeInsets.only(top: 10),
-            child: InkWell(
-              onTap: supportsHome ? onOpenResult : null,
-              child: Text(
-                goal.summary!,
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
-              ),
+            padding: const EdgeInsets.only(top: 4),
+            child: Text(
+              '${DateTime.tryParse(archivedAt)?.toLocal().toString() ?? archivedAt} 归档',
+              style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
-        if (supportsHome)
-          const Padding(
-            padding: EdgeInsets.only(top: 8),
-            child: Text('查看详情 ›'),
-          ),
       ],
-    ),
+    );
+  }
+
+  Widget _full(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      Row(
+        children: [
+          Expanded(child: Text(goal.workbenchName)),
+          Text(statusLabel(goal.status)),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Text(goal.title, style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 12),
+      LinearProgressIndicator(
+        value: goal.totalWork == 0
+            ? 0
+            : (goal.completedWork / goal.totalWork).clamp(0, 1),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        '${goal.agentCount} 位搭档 · ${goal.completedWork}/${goal.totalWork} 已完成${goal.stage == null ? '' : ' · ${statusLabel(goal.stage!)}'}',
+      ),
+      if (goal.summary != null &&
+          (!supportsHome || !goal.needsContinuationDecision))
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: InkWell(
+            onTap: supportsHome ? onOpenResult : null,
+            child: Text(
+              goal.summary!,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
+      if (supportsHome)
+        const Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text('查看详情 ›'),
+        ),
+    ],
   );
+}
+
+/// The small round workbench mark that heads a compact card, so a list of archived goals still shows
+/// at a glance which workbench each one belonged to.
+class _WorkbenchOrb extends StatelessWidget {
+  const _WorkbenchOrb({required this.name});
+
+  final String name;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Container(
+      width: 28,
+      height: 28,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(shape: BoxShape.circle, color: scheme.primaryContainer),
+      child: Text(
+        name.isEmpty ? '·' : name.substring(0, 1),
+        style: TextStyle(
+          color: scheme.onPrimaryContainer,
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
 }
 
 Future<RemoteChoice?> chooseRemote(

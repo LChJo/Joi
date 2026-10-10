@@ -1143,8 +1143,15 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
   </span>;
 }
 
-function GoalCardHead({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
-  return <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={onOpen} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong><GoalProgress goal={goal} /></span></button>;
+/**
+ * A card's clickable head.
+ *
+ * `compact` is the archived shape: a goal that has been filed away is not mid-flight any more, so the
+ * progress bar and the Work counts say nothing and give way to the one fact that does — when it was
+ * filed. The full result is still one click in, at the drawer.
+ */
+function GoalCardHead({ goal, onOpen, compact = false }: { goal: JoiGoalCardDto; onOpen: () => void; compact?: boolean }) {
+  return <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={onOpen} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong>{compact ? (goal.archivedAt === undefined ? null : <i>{`${new Date(goal.archivedAt).toLocaleString()} 归档`}</i>) : <GoalProgress goal={goal} />}</span></button>;
 }
 
 function GoalResultPreview({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
@@ -1803,6 +1810,10 @@ export function JoiHome({ api, focusGoalId, onNavigate, onScheduleGoal }: {
  * back: unarchive restores the card, continue revives the goal (which also unarchives it, and hands
  * the user back to the home feed where the resumed work will show up), and remove is still the one
  * action that throws the goal away.
+ *
+ * The cards here are the compact shape (`GoalCardHead compact`): a filed-away goal is not mid-flight,
+ * so its progress and result preview would only make the list harder to scan. The full result stays
+ * reachable by opening the card, which is what the whole row does.
  */
 export function ArchivedGoals({ api, onContinued }: { api: DigitalLifeApi; onContinued?: (goalId: string) => void }) {
   const [feed, setFeed] = useState<JoiHomeFeedDto | null>(null);
@@ -1830,11 +1841,9 @@ export function ArchivedGoals({ api, onContinued }: { api: DigitalLifeApi; onCon
     <div aria-label="已归档的目标" className="joi-feed joi-feed-single">
       {archived.length === 0 ? <p className="joi-feed-empty">还没有归档的目标。在首页的卡片菜单里选「归档」，它就会收到这里。</p> : archived.map((goal) => <article className={`joi-goal-card archived ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
-          <GoalCardHead goal={goal} onOpen={() => { setRetryGoalId(null); setOpenGoalId(goal.goalId); }} />
+          <GoalCardHead compact goal={goal} onOpen={() => { setRetryGoalId(null); setOpenGoalId(goal.goalId); }} />
           <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><GoalActionMenu api={api} archived goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={refresh} onChanged={refresh} /></div>
         </div>
-        <p className="joi-goal-archived-note">{goal.archivedAt === undefined ? "" : `${new Date(goal.archivedAt).toLocaleString()} 归档`}</p>
-        <GoalResultPreview goal={goal} onOpen={() => { setRetryGoalId(null); setOpenGoalId(goal.goalId); }} />
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); onContinued?.(goal.goalId); }} /> : null}
       </article>)}
     </div>

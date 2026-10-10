@@ -388,6 +388,15 @@ void main() {
     );
     expect(find.text('收起来的目标'), findsOneWidget);
     expect(find.text('归档工程'), findsOneWidget);
+    // A filed-away card is the compact shape: the progress bar and the Work counts would only make
+    // a list of things put away harder to scan, and the 归档 time takes their place.
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(
+      find.text(
+        '${DateTime.parse('2026-10-09T09:00:00.000Z').toLocal()} 归档',
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.byTooltip('更多操作'));
     await tester.pumpAndSettle();
     expect(find.text('取消归档'), findsOneWidget);

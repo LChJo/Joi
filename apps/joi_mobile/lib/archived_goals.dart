@@ -40,7 +40,6 @@ class ArchivedGoalsPage extends StatelessWidget {
           itemCount: goals.length,
           itemBuilder: (context, index) {
             final goal = goals[index];
-            final archivedAt = goal.archivedAt;
             return Card(
               key: ValueKey('archived-${goal.goalId}'),
               margin: const EdgeInsets.only(bottom: 12),
@@ -51,6 +50,9 @@ class ArchivedGoalsPage extends StatelessWidget {
                   children: [
                     GoalCardBody(
                       goal: goal,
+                      // The compact shape, and it carries the 归档 timestamp itself — this page is a
+                      // list of things put away, not a second feed.
+                      compact: true,
                       supportsHome: true,
                       onOpen: () => Navigator.push(
                         context,
@@ -71,14 +73,6 @@ class ArchivedGoalsPage extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (archivedAt != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 8),
-                        child: Text(
-                          '${DateTime.tryParse(archivedAt)?.toLocal().toString() ?? archivedAt} 归档',
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ),
                     GoalActions(
                       key: ValueKey('archived-actions-${goal.goalId}'),
                       controller: controller,
