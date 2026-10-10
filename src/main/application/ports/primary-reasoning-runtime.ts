@@ -21,6 +21,10 @@ export interface StartReasoningTurnInput {
   modelRevisionId: string;
   onEvent?: (event: PrimaryReasoningEvent) => void;
   prompt: string;
+  /** Refreshed private reference data for this request, excluded from the durable transcript. */
+  backgroundContext?: string;
+  /** Richer bounded alternatives, ordered from smaller to larger; selected only with spare capacity. */
+  backgroundContextVariants?: readonly string[];
   sessionId: string;
   sourceId: string;
   sourceRevisionId: string;

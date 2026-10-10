@@ -4,6 +4,7 @@ import type { WorkbenchCatalog } from "../ports/workbench-context.js";
 import type { JoiAttachmentPort } from "../ports/managed-file-ports.js";
 import type { WorkbenchRoutingRuntime, JoiCoordinatorStore, ReasoningFailureClassifier } from "../ports/joi-coordinator.js";
 import { buildJoiAttachmentContext } from "./joi-attachment-context.js";
+import { composeJoiContinuationBackground } from "./joi-continuation-prompt.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import type { JoiReasoningOutcome, PrimaryReasoningRuntime } from "../ports/primary-reasoning-runtime.js";
 import {
@@ -176,7 +177,11 @@ export class JoiCoordinator {
       ? undefined
       : (await this.dependencies.automation.promptForExecution(input.automationRoutineId))?.prompt;
     if (input.automationRoutineId !== undefined && automationPrompt === undefined) throw new DomainError("automation_routine_not_found", "The scheduled Routine is unavailable.");
-    const requestText = automationPrompt ?? input.body;
+    const requestText = automationPrompt ?? input.continuationPrompt ?? input.body;
+    const backgroundContext = composeJoiContinuationBackground(input);
+    const backgroundContextVariants = backgroundContext === undefined ? [] : [...new Set([
+      composeJoiContinuationBackground(input, 40_000), composeJoiContinuationBackground(input, 60_000),
+    ])].filter((value): value is string => value !== undefined && value !== backgroundContext);
     const handleStartedAt = this.dependencies.clock.now().getTime();
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.handling_started", {
       attachmentCount: input.attachments?.length ?? 0,
@@ -347,7 +352,7 @@ export class JoiCoordinator {
     let toolLeakRepairAttempted = false;
     let completionText = "";
     let dispatchFailureReason: string | undefined;
-    let prompt = requestText;
+    let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
     let turnImages: readonly { data: string; mimeType: string }[] | undefined;
     let turnAttachmentIds: readonly string[] | undefined;
     if (input.attachments !== undefined && input.attachments.length > 0 && this.dependencies.attachments !== undefined) {
@@ -356,7 +361,7 @@ export class JoiCoordinator {
         attachments: input.attachments,
         reader: (attachmentId) => attachments.read(attachmentId),
       });
-      if (attachmentContext.promptAddendum !== "") prompt = `${requestText}\n\n${attachmentContext.promptAddendum}`;
+      if (attachmentContext.promptAddendum !== "") prompt = `${prompt}\n\n${attachmentContext.promptAddendum}`;
       turnImages = attachmentContext.images.length === 0 ? undefined : attachmentContext.images;
       turnAttachmentIds = attachmentContext.attachmentIds;
     }
@@ -375,6 +380,8 @@ export class JoiCoordinator {
         const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
             workbenchId,
+            ...(backgroundContext === undefined ? {} : { backgroundContext }),
+            ...(backgroundContextVariants.length === 0 ? {} : { backgroundContextVariants }),
             ...(turnAttachmentIds === undefined ? {} : { attachmentIds: turnAttachmentIds }),
             ...(input.goalInputId === undefined ? {} : { goalInputId: input.goalInputId }),
             ...(turnImages === undefined ? {} : { images: turnImages }),

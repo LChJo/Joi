@@ -1,11 +1,31 @@
 import type { WorkbenchSummary } from "./workbench-context.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 
+/** Private persisted evidence for one goal; never a display or diagnostics projection. */
+export interface JoiGoalContext {
+  originalRequest: string;
+  destination?: string;
+  completion?: { summary: string; disposition: string };
+  decisions: { kind: string; summary: string; detail: string }[];
+  fogNotes: string[];
+  totalResults?: number;
+  results: {
+    artifactCount: number;
+    artifacts: unknown[];
+    body: string;
+    resultId: string;
+    title: string;
+    workId: string;
+  }[];
+}
+
 export interface JoiPendingInput {
   automationRoutineId?: string;
   attachments?: { attachmentId: string; filename: string; mimeType: string; size: number }[];
   workbenchId?: string;
   body: string;
+  continuationPrompt?: string;
+  goalContext?: JoiGoalContext;
   goalInputId?: string;
   inputId: string;
   resultRevision?: number;

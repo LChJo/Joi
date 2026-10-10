@@ -6,7 +6,7 @@ import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-option
 
 import { checkpointMessage, isCheckpointMessage, omissionNotice, summarizeSegment } from "./pi-compaction.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
-import { boundRequestByChars, leadingSystemMessage, modelContextMaxChars } from "./pi-model-budget.js";
+import { boundBackgroundSections, boundRequestByChars, leadingSystemMessage, modelContextMaxChars, modelRequestBudget } from "./pi-model-budget.js";
 import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import type {
@@ -312,7 +312,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // An overflowing context would clamp the request's max_tokens to 1 and make every provider
     // call fail opaque; compact before prompting so the Turn starts inside the model window.
     // The snapshot save stays with the post-turn checkpoint write.
-    await this.#compactIfNeeded(session);
+    await this.#compactIfNeeded(session, true);
     this.#markRollbackPoint(session, input.turnId);
     input.onEvent?.({ type: "turn_started", turnId: input.turnId });
     let promptError: unknown;
@@ -468,7 +468,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // whatever is left and the Turn ends truncated, which reads downstream as a model that stopped
       // talking rather than as an overflow. This bound is request-only — the session keeps its history
       // and compaction still owns its durable shape.
-      transformContext: (messages) => Promise.resolve(this.#boundRequest(messages)),
+      transformContext: (messages) => Promise.resolve(this.#boundRequest(messages, runtime.current, runtime.agent.state.tools)),
     });
     const runtime: SessionRuntime = { agent, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false };
     agent.subscribe(async (event) => {
@@ -478,9 +478,43 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // it is read-only; install the current one for the length of each request instead.
     agent.prepareRequest = ({ context }) => Promise.resolve(runtime.current === undefined
       ? undefined
-      : { context: { ...context, messages: withRequestPrompt(context.messages, runtime.current.systemPrompt) } });
+      : { context: { ...context, messages: withRequestPrompt(context.messages, this.#requestPrompt(runtime.current, context.messages, runtime.agent.state.tools)) } });
     this.#sessions.set(metadata.sessionId, runtime);
     return runtime;
+  }
+
+  /** Fixed policy survives even when a small route has no room for reference data. */
+  #requestPrompt(input: StartReasoningTurnInput, messages: readonly AgentMessage[], tools: NonNullable<Context["tools"]>, pendingPrompt = false): string {
+    if (input.backgroundContext === undefined) return input.systemPrompt;
+    const knownWindow = Number.isFinite(this.#model.contextWindow) && this.#model.contextWindow > 0;
+    const history = withRequestPrompt(messages, input.systemPrompt);
+    const requestMessages: AgentMessage[] = pendingPrompt
+      ? [...history, { role: "user", content: [
+        { type: "text", text: input.prompt },
+        ...(input.images ?? []).map((item) => ({ type: "image" as const, ...item })),
+      ], timestamp: 0 }]
+      : history;
+    const maxRequestChars = knownWindow
+      ? Math.min(modelContextMaxChars(this.#model), Math.max(0, this.#model.contextWindow - this.#compactionHeadroom()))
+      : modelContextMaxChars(this.#model);
+    // Transcript declarations and the active tool set represent the same schema overhead.
+    const withoutDeclarations = requestMessages.map((message) => roleOf(message) === "system"
+      ? { ...message, toolsAdded: undefined, toolsRemoved: undefined } : message);
+    const occupied = JSON.stringify(withoutDeclarations).length + JSON.stringify(tools).length;
+    const budget = Math.max(0, Math.min(
+      knownWindow ? 60_000 : 24_000,
+      modelRequestBudget(this.#model).systemMaxChars - input.systemPrompt.length - 2,
+      maxRequestChars - occupied - 2,
+    ));
+    let selected = input.backgroundContext;
+    if (knownWindow) for (const candidate of input.backgroundContextVariants ?? []) {
+      if (candidate.length <= budget && this.#headroomSatisfied(requestMessages, {
+        systemPrompt: `${input.systemPrompt}\n\n${candidate}`, tools,
+      })) selected = candidate;
+    }
+    const background = selected.length <= budget ? selected
+      : boundBackgroundSections([selected], Math.max(0, budget - 128));
+    return `${input.systemPrompt}\n\n${background}`;
   }
 
   /**
@@ -494,8 +528,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
    * on disk and cannot remember doing it decides something else must have changed its files. The
    * request therefore carries the omission rather than only its effect.
    */
-  #boundRequest(messages: readonly AgentMessage[]): AgentMessage[] {
-    const usable = messages.filter((message) => !isEmptyAssistantMessage(message));
+  #boundRequest(messages: readonly AgentMessage[], current?: StartReasoningTurnInput, tools: NonNullable<Context["tools"]> = []): AgentMessage[] {
+    const requestMessages = current?.backgroundContext === undefined ? messages : withRequestPrompt(messages, this.#requestPrompt(current, messages, tools));
+    const usable = requestMessages.filter((message) => !isEmptyAssistantMessage(message));
     const bounded = boundRequestByChars(usable, modelContextMaxChars(this.#model));
     const omitted = usable.length - bounded.length;
     if (omitted <= 0) return bounded;
@@ -523,10 +558,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
    * large window may never reach the percentage, but a session stuffed with tiny messages still
    * must not grow without bound.
    */
-  async #compactIfNeeded(runtime: SessionRuntime): Promise<void> {
+  async #compactIfNeeded(runtime: SessionRuntime, pendingPrompt = false): Promise<void> {
     const state = runtime.agent.state;
     const currentMessages = state.messages;
-    const request = { systemPrompt: state.systemPrompt, tools: state.tools };
+    const systemPrompt = runtime.current === undefined ? state.systemPrompt : this.#requestPrompt(runtime.current, currentMessages, state.tools, pendingPrompt);
+    const request = { systemPrompt, tools: state.tools };
     // pi 0.83 and later keep the system prompt inside the transcript as its leading message. It is
     // fixed overhead rather than conversation, so it neither counts against the message cap nor is
     // covered by a summary — and a rebuild of the shape `[summary, ...tail]`, correct while the
@@ -606,7 +642,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // been folded into a leading system message; sizing against a raw `Context` would price a
     // request shape that is never actually sent.
     const context = normalizeContext({
-      messages: [...messages] as Message[],
+      messages: (request.systemPrompt === undefined ? [...messages] : withRequestPrompt(messages, request.systemPrompt)) as Message[],
       ...(request.systemPrompt === undefined ? {} : { systemPrompt: request.systemPrompt }),
       ...(request.tools === undefined ? {} : { tools: request.tools }),
     });

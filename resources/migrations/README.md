@@ -46,3 +46,5 @@ Migration 061 修复进化证据无法收敛的三处遗留状态，不新增表
 Migration 067 让思考强度成为按 model revision 可配置的第五个可空列（off/low/medium/high/xhigh/max）。NULL 即未配置，存量行退回 baseUrl 白名单判定（always-on 主机 low，其余 off），无需回填。与 063 的三列同属 append-only revision：服务层在保留 Model ID 的编辑里显式携带，改 Model ID 时随三列一并重置——思考档位是"这个模型在这家端点上的事实"，换了模型旧档位可能直接 400。
 
 Migration 068 为目标输入增加可空 `archived_at`，把「归档」做成 `dismissed_at` 的可逆对应物：归档的卡片离开首页信息流、进入「已归档」列表，可在那里撤销归档、继续或移除，因此单开一列而不是复用软删标记。只有终态目标可归档；显式重试与定时续跑在同一次写入里清空该列，重新跑起来的目标不会继续隐身。
+
+Migration 070 增加可空 `continuation_prompt`，将本次用户继续要求与累计展示正文分开持久化；留空继续保存明确的续跑指令。NULL 不改变新目标语义，已存在 reopened_at 的历史续跑回退默认指令。手动继续清除旧 automation_routine_id，避免定时提示词覆盖本次用户要求。已有结论从目标事实按需读取，不复制进 inbox 正文或 transcript。

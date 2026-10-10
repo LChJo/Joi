@@ -56,6 +56,95 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
+  it.each(["empty", "medium", "busy", "prompt", "tools", "unknown"] as const)("chooses continuation evidence using the %s session's remaining capacity", async (state) => {
+    const faux = fauxProvider({ provider: `joi-adaptive-background-${state}` });
+    const requests: string[] = [];
+    faux.setResponses([(context) => {
+      requests.push(JSON.stringify(context.messages));
+      return fauxAssistantMessage([fauxText("done")]);
+    }]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    if (state === "busy") await store.save({
+      workbenchId: "workbench", modelRevisionId: "fake", sourceRevisionId: "fake", sessionId: "adaptive", systemPrompt: "POLICY", updatedAt: "2026-10-10T00:00:00.000Z",
+      messages: [
+        { role: "system", content: "POLICY", timestamp: 0 },
+        { role: "user", content: "OLD_REQUEST", timestamp: 1 },
+        fauxAssistantMessage([fauxText("HISTORY_TO_KEEP " + "x".repeat(135_000))]),
+      ],
+    });
+    const model = { ...faux.getModel(), contextWindow: state === "unknown" ? 0 : 200_000 };
+    const tools = state === "tools" ? [{
+      name: "memory_search", label: "Search", description: "TOOL_SCHEMA " + "x".repeat(135_000),
+      parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }),
+    }] : [];
+    await new PiReasoningRuntime({ model, models, sessionStore: store, thinkingLevel: "off", tools }).startTurn({
+      backgroundContext: `SOFT_EVIDENCE ${"材料".repeat(11_000)}`,
+      backgroundContextVariants: [`MEDIUM_EVIDENCE ${"材料".repeat(19_000)}`, `LARGE_EVIDENCE ${"材料".repeat(29_000)}`],
+      inputId: "input", workbenchId: "workbench", prompt: "REPAIR_NOW" + (state === "prompt" ? "x".repeat(135_000) : ""), sessionId: "adaptive",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake",
+      systemPrompt: "POLICY" + (state === "medium" ? "x".repeat(10_000) : ""), turnId: "adaptive_turn",
+    });
+    const request = requests.at(-1) ?? "";
+    const expectedEvidence = state === "empty" ? "LARGE_EVIDENCE" : state === "medium" ? "MEDIUM_EVIDENCE" : "SOFT_EVIDENCE";
+    expect(request.includes(expectedEvidence)).toBe(true);
+    if (state === "busy") expect(request).toContain("HISTORY_TO_KEEP");
+    expect(request).toContain("REPAIR_NOW");
+    expect(JSON.stringify(store.snapshots.get("adaptive"))).not.toContain("EVIDENCE");
+  });
+
+  it("refreshes continuation evidence without accumulating copies in the session", async () => {
+    const faux = fauxProvider({ provider: "joi-continuation-background" });
+    const requests: string[] = [];
+    faux.setResponses(Array.from({ length: 12 }, () => (context) => {
+      requests.push(JSON.stringify(context.messages));
+      return fauxAssistantMessage([fauxText("done")]);
+    }));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off", tools: [] });
+    for (let index = 0; index < 12; index += 1) {
+      const subject = index < 6 ? runtime : new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: store, thinkingLevel: "off", tools: [] });
+      await subject.startTurn({
+        backgroundContext: `EVIDENCE_VERSION_${String(index)} ${"参考材料".repeat(1000)} CONCLUSION_END`,
+        inputId: "input", workbenchId: "workbench", prompt: `继续 ${String(index)}`, sessionId: "session_background",
+        modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake",
+        systemPrompt: "You are Joi.", turnId: `turn_${String(index)}`,
+      });
+      expect(requests.at(-1)).toContain(`EVIDENCE_VERSION_${String(index)}`);
+      expect((requests.at(-1)?.match(/CONCLUSION_END/gu) ?? [])).toHaveLength(1);
+      expect(JSON.stringify(store.snapshots.get("session_background"))).not.toContain("EVIDENCE_VERSION_");
+    }
+    expect((requests.at(-1)?.length ?? 0) - (requests[0]?.length ?? 0)).toBeLessThan(6000);
+  });
+
+  it("budgets temporary evidence against a small model window while preserving policy and the new request", async () => {
+    const faux = fauxProvider({ provider: "joi-small-background" });
+    let request = "";
+    faux.setResponses([(context) => {
+      request = JSON.stringify(context.messages);
+      return fauxAssistantMessage([fauxText("done")]);
+    }]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const model = { ...faux.getModel(), contextWindow: 32_000 };
+    const store = new MemorySessionStore();
+    await new PiReasoningRuntime({ model, models, sessionStore: store, thinkingLevel: "off", tools: [] }).startTurn({
+      backgroundContext: `CURRENT_ROOT_CAUSE ${"参考材料".repeat(20_000)}`,
+      inputId: "input", workbenchId: "workbench", prompt: "REPAIR_NOW", sessionId: "small_background",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake",
+      systemPrompt: "FIXED_PERMISSION_BOUNDARY", turnId: "small_turn",
+    });
+    expect(request).toContain("CURRENT_ROOT_CAUSE");
+    expect(request).toContain("FIXED_PERMISSION_BOUNDARY");
+    expect(request).toContain("REPAIR_NOW");
+    expect(request).toContain("truncated");
+    expect(request.length).toBeLessThan(modelContextMaxChars(model));
+    expect(JSON.stringify(store.snapshots.get("small_background"))).not.toContain("CURRENT_ROOT_CAUSE");
+  });
+
   it("loads selected main Skills into cached sessions and refreshes them on the next turn", async () => {
     const faux = fauxProvider({ provider: "joi-selected-skills" });
     faux.setResponses([

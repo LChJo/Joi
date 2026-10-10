@@ -13,6 +13,7 @@ import type { JoiInputCompletion } from "../../application/ports/joi-coordinator
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
 import { closeHistoricalReviewInTransaction } from "./sqlite-joi-harness-review-closure.js";
+import { loadJoiGoalContext } from "./sqlite-joi-goal-context.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -537,8 +538,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       const result = connection.prepare(`UPDATE joi_inbox_messages
         SET body = ?, status = 'PENDING', archived_at = NULL, canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL,
           failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL,
-          updated_at = ?, last_opened_at = ?, reopened_at = ?
-        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(nextBody, now, now, now, inputId);
+          updated_at = ?, last_opened_at = ?, reopened_at = ?, continuation_prompt = ?, automation_routine_id = NULL
+        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(
+          nextBody, now, now, now, patch.text ?? "Continue from the established results and complete the remaining work for this goal.", inputId,
+        );
       if (result.changes === 0) return null;
       connection.prepare(`UPDATE joi_harness_maps
         SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,
@@ -669,6 +672,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async loadInput(inputId: string): Promise<JoiPendingInput | null> {
     const row = this.database.transaction((connection) => connection.prepare(
       `SELECT i.input_id, i.body, i.status, i.workbench_id, i.goal_input_id, i.result_revision, i.automation_routine_id,
+        i.continuation_prompt, i.reopened_at,
         (SELECT a.action_id FROM joi_user_action_requests a
           WHERE a.input_id = i.input_id AND a.status = 'RESOLVED' ORDER BY a.updated_at, a.action_id LIMIT 1) AS resolved_action_id,
         (SELECT a.work_id FROM joi_user_action_requests a
@@ -703,6 +707,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       }
       return own;
     });
+    const goalContext = typeof row.workbench_id === "string" && row.result_revision === null
+      ? this.database.transaction((connection) => loadJoiGoalContext(connection,
+        typeof row.goal_input_id === "string" ? row.goal_input_id : inputId, row.workbench_id as string))
+      : undefined;
     return {
       ...(typeof row.workbench_id === "string" ? { workbenchId: row.workbench_id } : {}),
       ...(typeof row.automation_routine_id === "string" ? { automationRoutineId: row.automation_routine_id } : {}),
@@ -712,6 +720,10 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         return { attachmentId: attachment.attachment_id, filename: attachment.filename, mimeType: attachment.mime_type, size: attachment.size };
       }) }),
       body: row.body,
+      ...(goalContext === undefined ? {} : { goalContext }),
+      ...(typeof row.continuation_prompt === "string" ? { continuationPrompt: row.continuation_prompt }
+        : typeof row.reopened_at === "string" && row.goal_input_id === null
+          ? { continuationPrompt: "Continue from the established results and complete the remaining work for this goal." } : {}),
       ...(typeof row.goal_input_id === "string" ? { goalInputId: row.goal_input_id } : {}),
       inputId: row.input_id,
       ...(typeof row.result_revision === "number" ? { resultRevision: row.result_revision } : {}),
