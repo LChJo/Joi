@@ -75,6 +75,7 @@ export function wireJoi(input: {
     transcodeBitmap: transcodeBitmapToPng,
   });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
+    diagnostics,
     usage: modelSourceStack.statistics,
     skills: new JoiSkillRuntime({ catalog: partnerStack.partnerSkillCatalog, settings: input.settings }),
     resolver: modelSourceStack.configuredModelResolver,
@@ -91,6 +92,7 @@ export function wireJoi(input: {
       clarifications: persistence.joiInboxRepository,
       diagnostics,
       goalInputId: turn.goalInputId ?? goalFromInputIdPrefix(turn.inputId),
+      requirements: persistence.goalRequirements,
       harness: persistence.joiHarnessRepository,
       inputId: turn.inputId,
       instances: partnerStack.partnerInstances,
@@ -104,6 +106,7 @@ export function wireJoi(input: {
     }), turn.inputId),
   });
   const joiCoordinator = new JoiCoordinator({
+    requirements: persistence.goalRequirements,
     evolution,
     automation,
     attachments: joiAttachmentStorage,

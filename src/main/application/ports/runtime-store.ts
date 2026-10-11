@@ -251,7 +251,7 @@ export interface RuntimeStore extends LifeStore, AgentStore, AuthStore, AgentInt
   countOutbox(): Promise<number>;
   createManifestHash(payload: Record<string, unknown>): string;
   enqueueOutbox(input: OutboxInput): Promise<void>;
-  releaseOutbox(input: { availableAt: string; outboxId: string; owner: string }): Promise<void>;
+  releaseOutbox(input: { availableAt: string; outboxId: string; owner: string; preserveAttemptCount?: true }): Promise<void>;
   getRuntimeStats(): Promise<RuntimeStats>;
   getSseSequenceWindow(): Promise<SseSequenceWindow>;
   listSseEvents(afterSequence: number, limit: number): Promise<SseEvent[]>;

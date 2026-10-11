@@ -93,7 +93,7 @@ describe("sqlite database integrity monitor", () => {
         status: "ok",
       });
     } finally {
-      await rm(directory, { force: true, recursive: true });
+      await rm(directory, { force: true, recursive: true, maxRetries: 3, retryDelay: 50 });
     }
   });
 });

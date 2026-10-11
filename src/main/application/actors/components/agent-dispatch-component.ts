@@ -336,16 +336,16 @@ export class AgentDispatchComponent implements ActorComponent {
       } catch (error) {
         if (capacityReserved) this.dependencies.capacity?.release(claim.dispatchAttemptId);
         const errorCode = runtimeDiagnosticErrorCode(error);
+        const requirementsWaiting = errorCode === "goal_requirements_pending" || errorCode === "goal_requirements_stale";
         if (errorCode === DISPATCH_POLICY_REASONS.workspaceLeaseConflict || errorCode === "goal_execution_paused"
-          || errorCode === "partner_instance_busy") {
-          // A live Work legitimately owns this workspace. Keep this Work queued and
-          // check again promptly after the owner completes; contention is not a broken
-          // dispatch and must never consume the terminal preparation-failure budget.
+          || errorCode === "partner_instance_busy" || requirementsWaiting) {
+          // Resource and instruction maintenance waits keep the same dispatch queued for prompt recovery.
           const availableAt = new Date(ctx.now.getTime() + WORKSPACE_CONTENTION_RETRY_MILLIS).toISOString();
           await this.dependencies.outbox.releaseOutbox({
             availableAt,
             outboxId: claim.outboxId,
             owner: this.dependencies.owner,
+            ...(requirementsWaiting ? { preserveAttemptCount: true as const } : {}),
           });
           emitRuntimeDiagnostic(ctx.diagnostics, errorCode === DISPATCH_POLICY_REASONS.workspaceLeaseConflict
             ? "joi.agent.workspace_contended" : "joi.agent.resource_queued", {

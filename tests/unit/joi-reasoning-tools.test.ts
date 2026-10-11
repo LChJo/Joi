@@ -545,9 +545,9 @@ describe("joi reasoning tools", () => {
   it("preserves a resolved action id when resuming waiting work", async () => {
     const workResumeCalls: Record<string, unknown>[] = [];
     const harness = makeTools({ workResumeCalls });
-    await harness.call("work_resume", { actionId: "attention-1", instructions: "按用户确认，以 bot 身份只回复 T25。", workId: "work-1" });
+    await harness.call("work_resume", { requirementIds: [], allRequirements: false, actionId: "attention-1", instructions: "按用户确认，以 bot 身份只回复 T25。", workId: "work-1" });
     expect(workResumeCalls).toEqual([{
-      actionId: "attention-1", instructions: "按用户确认，以 bot 身份只回复 T25。", turnId: "turn_1", workbenchId: "workbench_1", workId: "work-1",
+      requirementIds: [], allRequirements: false, actionId: "attention-1", instructions: "按用户确认，以 bot 身份只回复 T25。", turnId: "turn_1", workbenchId: "workbench_1", workId: "work-1",
     }]);
   });
 

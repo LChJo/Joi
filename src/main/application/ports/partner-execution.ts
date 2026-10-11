@@ -8,6 +8,8 @@ export interface PartnerRunRequest {
   workbenchId: string;
   contextSnapshotId: string;
   taskProjection: string;
+  /** Immutable mandatory goal requirements, kept outside trimmable evidence. */
+  requiredContext?: string;
   workId: string;
 }
 

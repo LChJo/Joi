@@ -64,7 +64,7 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
       });
       const recentOutcomes = connection.prepare(`SELECT o.input_id, o.result_revision, o.disposition, o.completion_summary, o.completed_at,
           i.body, i.canceled_at
-        FROM joi_goal_outcomes o
+        FROM joi_current_goal_outcomes o
         JOIN joi_goal_result_sets rs ON rs.original_input_id = o.input_id
         JOIN joi_inbox_messages i ON i.input_id = o.input_id
         WHERE i.workbench_id = ? AND rs.revision > 0

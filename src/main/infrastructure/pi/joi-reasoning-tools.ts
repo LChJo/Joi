@@ -23,6 +23,8 @@ import {
   runtimeDiagnosticErrorCode,
   type RuntimeDiagnostics,
 } from "../../application/ports/runtime-diagnostics.js";
+import type { GoalRequirementsRepository } from "../../application/ports/goal-requirements.js";
+import { withGoalRequirementsTools } from "./joi-requirements-tools.js";
 import { DomainError } from "../../domain/errors.js";
 import { partnerClusterKey, partnerClusterName } from "../../domain/workbench/workbench-naming.js";
 import { PI_PARTNER_TOOL_NAMES } from "./pi-coding-tool-factory.js";
@@ -30,7 +32,10 @@ import { PI_PARTNER_TOOL_NAMES } from "./pi-coding-tool-factory.js";
 /** Extracts the original goal input id from synthetic input ids; undefined for direct goal inputs. */
 export function goalFromInputIdPrefix(inputId: string): string | undefined {
   const resultPrefix = "joi_result_input:goal:";
-  if (inputId.startsWith(resultPrefix)) return inputId.slice(resultPrefix.length);
+  if (inputId.startsWith(resultPrefix)) {
+    const remainder = inputId.slice(resultPrefix.length);
+    return remainder.replace(/:r\d+:q\d+$/u, "");
+  }
   const reviewPrefix = "joi_harness_review:goal:";
   if (inputId.startsWith(reviewPrefix)) {
     const remainder = inputId.slice(reviewPrefix.length);
@@ -93,6 +98,7 @@ function synthesizePartnerProfile(displayName: string, skills: string[], capabil
 }
 
 const SYNTHESIS_TOOL_NAMES = new Set([
+  "goal_read_inputs", "goal_update_requirements", "work_list_goal", "work_read_brief", "work_update_brief",
   "model_list_sources", "partner_list_available", "partner_set_model", "partner_set_tools", "turn_complete", "work_cancel", "work_read_result", "work_reassign", "work_resume", "work_supplement",
 ]);
 
@@ -104,6 +110,7 @@ export function selectJoiReasoningToolsForInput(tools: AgentTool[], inputId: str
 }
 
 export function createJoiReasoningTools(input: {
+  requirements?: GoalRequirementsRepository;
   automation?: Pick<AutomationService, "create" | "delete" | "get" | "list" | "revealPrompt" | "runNow" | "setEnabled" | "update">;
   workbenchId: string;
   workbenchChanges: Pick<WorkbenchChangeService, "suggestArchive" | "suggestMerge">;
@@ -127,7 +134,7 @@ export function createJoiReasoningTools(input: {
   results: Pick<WorkResultService, "read">;
   skills: Pick<PartnerSkillCatalog, "listForEngine">;
   turnId: string;
-  work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume" | "supplement">;
+  work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume" | "supplement"> & Partial<Pick<WorkOrchestrationService, "listForGoal" | "readBrief" | "refreshBrief">>;
 }): AgentTool[] {
   let dispatchCorrectionOffered = false;
   const instructionCorrections = new Set<string>();
@@ -227,6 +234,7 @@ export function createJoiReasoningTools(input: {
   // are authored so joi binds that checkout as the workbench workspace instead.
   const ACCEPTANCE_RELATIVE_PATH_DESCRIPTION = "Path relative to this Work's execution root (the workspace root announced to the executing partner), without repeating the root's own folder name: when the root is a repository checkout, use repo-relative paths like plugins/x/docs/report.md, not <repo-folder>/plugins/x/docs/report.md. A check naming a file outside the root — e.g. inside a sibling repository checkout — always fails verification, so bind that checkout as the workbench workspace instead of referencing it here.";
   const workDispatchParameters = Type.Object({
+    requirementsRevision: Type.Optional(Type.Integer({ minimum: 0 })),
     // Optional in the schema: models routinely omit the array when the DAG has
     // no edges, and a failed argument validation aborts the whole Turn before
     // any repair path can run. The execute path coerces the missing value.
@@ -241,6 +249,8 @@ export function createJoiReasoningTools(input: {
         }),
         Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
       ]), { maxItems: 8, minItems: 1 })),
+      requirementIds: Type.Optional(Type.Array(Type.String())),
+      allRequirements: Type.Optional(Type.Boolean()),
       accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
       instanceId: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String({ description: "Required self-contained task brief. Include only applicable effective requirements, corrections, facts, boundaries and deliverable. The cumulative user request is not attached automatically.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
@@ -259,6 +269,7 @@ export function createJoiReasoningTools(input: {
           currentKeys.has(dependency.workKey) && currentKeys.has(dependency.dependsOnKey)
         ));
         return result(await input.work.plan({
+          ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
           workbenchId: input.workbenchId,
           dependencies: currentDependencies,
           // Derived inputs (harness review) dispatch on behalf of the original goal so the
@@ -327,6 +338,9 @@ export function createJoiReasoningTools(input: {
     parameters: workDispatchParameters,
   };
   const workSupplementParameters = Type.Object({
+    requirementsRevision: Type.Optional(Type.Integer({ minimum: 0 })),
+    requirementIds: Type.Optional(Type.Array(Type.String())),
+    allRequirements: Type.Optional(Type.Boolean()),
     acceptanceChecks: Type.Optional(Type.Array(Type.Union([
       Type.Object({ kind: Type.Literal("BODY_PRESENT") }),
       Type.Object({ kind: Type.Literal("ARTIFACT_PRESENT"), name: Type.String({ maxLength: 240, minLength: 1 }) }),
@@ -343,6 +357,8 @@ export function createJoiReasoningTools(input: {
   const workSupplementTool: AgentTool<typeof workSupplementParameters> = {
     description: "Create one independent recovery Work for an essential gap left by a FAILED Work. The source Work's acceptance checks and access mode are enforced automatically as a minimum; acceptanceChecks here are additive only and cannot weaken the original deliverable. Completed authoritative results from the same goal are attached as evidence references. Do not pass historical DAG keys. Each source Work is limited durably to two recovery rounds. For OBSERVED or UNKNOWN side effects, use this instead of replaying the failed Work; for a missing built-in tool, call partner_set_tools first and choose TOOL_EXPANSION.",
     execute: async (_toolCallId, arguments_) => executeWithInstructions("work_supplement", () => input.work.supplement({
+      ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
+      requirementIds: arguments_.requirementIds ?? [], allRequirements: arguments_.allRequirements ?? false,
       ...(arguments_.acceptanceChecks === undefined ? {} : { acceptanceChecks: arguments_.acceptanceChecks }),
       accessMode: arguments_.accessMode,
       ...(arguments_.instructions === undefined ? {} : { instructions: arguments_.instructions }),
@@ -357,10 +373,13 @@ export function createJoiReasoningTools(input: {
     name: "work_supplement",
     parameters: workSupplementParameters,
   };
-  const workReassignParameters = Type.Object({ partnerId: Type.String(), workId: Type.String() });
+  const workReassignParameters = Type.Object({ partnerId: Type.String(), workId: Type.String(), requirementsRevision: Type.Optional(Type.Integer()), instructions: Type.Optional(Type.String({ maxLength: 12000 })), requirementIds: Type.Optional(Type.Array(Type.String())), allRequirements: Type.Optional(Type.Boolean()) });
   const workReassignTool: AgentTool<typeof workReassignParameters> = {
     description: "Reassign failed work through policy checks to a different suitable partner or a new immutable revision of the current partner.",
     execute: async (_toolCallId, arguments_) => result(await input.work.reassign({
+      ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
+      ...(arguments_.instructions === undefined ? {} : { instructions: arguments_.instructions }),
+      requirementIds: arguments_.requirementIds ?? [], allRequirements: arguments_.allRequirements ?? false,
       workbenchId: input.workbenchId,
       partnerId: arguments_.partnerId,
       turnId: input.turnId,
@@ -371,6 +390,8 @@ export function createJoiReasoningTools(input: {
     parameters: workReassignParameters,
   };
   const workResumeParameters = Type.Object({
+    requirementsRevision: Type.Optional(Type.Integer()),
+    requirementIds: Type.Optional(Type.Array(Type.String())), allRequirements: Type.Optional(Type.Boolean()),
     actionId: Type.Optional(Type.String()),
     instructions: Type.Optional(Type.String({ description: "Required complete replacement brief, incorporating the relevant user answer and current constraints. Replaces the stored instructions rather than appending goal history.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
     workId: Type.String(),
@@ -378,6 +399,8 @@ export function createJoiReasoningTools(input: {
   const workResumeTool: AgentTool<typeof workResumeParameters> = {
     description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Provide complete replacement instructions containing the relevant answer, effective requirements, established facts, boundaries and deliverable; the goal request history is not attached. Pass the exact resolvedActionId from the recovery input as actionId when present so retries preserve identity. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
     execute: async (_toolCallId, arguments_) => executeWithInstructions("work_resume", () => input.work.resume({
+      ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
+      requirementIds: arguments_.requirementIds ?? [], allRequirements: arguments_.allRequirements ?? false,
       ...(arguments_.actionId === undefined ? {} : { actionId: arguments_.actionId }),
       ...(arguments_.instructions === undefined ? {} : { instructions: arguments_.instructions }),
       workbenchId: input.workbenchId,
@@ -614,9 +637,10 @@ export function createJoiReasoningTools(input: {
   const userAskParameters = Type.Object({ question: Type.String() });
   const goalResumeTool: AgentTool = {
     description: "Open the current goal execution gate after reviewing the saved answer and queued Work. This is allowed only in the matching versioned goal recovery turn. Call it before resuming, reassigning, supplementing or dispatching replacement Work; if information is still missing, call user_ask instead.",
-    execute: async () => {
+    execute: async (_id, raw) => {
+      const args = raw as { requirementsRevision?: number };
       if (input.clarifications.resumeGoal === undefined) throw new DomainError("goal_resume_unavailable", "Goal resume is unavailable.");
-      return result(await input.clarifications.resumeGoal({ inputId: input.inputId, turnId: input.turnId }));
+      return result(await input.clarifications.resumeGoal({ inputId: input.inputId, turnId: input.turnId, ...(args.requirementsRevision === undefined ? {} : { requirementsRevision: args.requirementsRevision }) }));
     },
     label: "Resume goal execution",
     name: "goal_resume",
@@ -867,7 +891,7 @@ export function createJoiReasoningTools(input: {
   const attachmentTools = input.attachmentIds === undefined || input.attachmentIds.length === 0 || input.attachments === undefined
     ? []
     : [attachmentReadTool];
-  return [
+  const tools: AgentTool[] = [
     ...automationTools,
     ...attachmentTools,
     {
@@ -934,4 +958,16 @@ export function createJoiReasoningTools(input: {
     harnessNoteFogTool,
     bindWorkspaceTool,
   ];
+  return withGoalRequirementsTools(tools, {
+    ...(input.requirements === undefined ? {} : { requirements: input.requirements }),
+    goalInputId: goalContext(), workbenchId: input.workbenchId, turnId: input.turnId,
+    work: {
+      readBrief: (goalId, wb, workId) => input.work.readBrief?.(goalId, wb, workId) ?? Promise.resolve(null),
+      listForGoal: (goalId, wb) => input.work.listForGoal?.(goalId, wb) ?? Promise.resolve([]),
+      refreshBrief: (args) => {
+        if (input.work.refreshBrief === undefined) throw new DomainError("goal_requirements_unavailable", "Task refresh is unavailable.");
+        return input.work.refreshBrief(args);
+      },
+    },
+  });
 }

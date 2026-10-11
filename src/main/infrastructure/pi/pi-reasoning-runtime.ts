@@ -1,6 +1,7 @@
 /* Pi hooks require Promise-returning callbacks. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent, type AgentMessage, type AgentTool } from "@earendil-works/pi-agent-core";
+import { DomainError } from "../../domain/errors.js";
 import { normalizeContext, type Api, type Context, type ImageContent, type Message, type Model, type ModelThinkingLevel, type Models } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
@@ -8,6 +9,8 @@ import { checkpointMessage, isCheckpointMessage, omissionNotice, summarizeSegmen
 import { withRequestPrompt } from "./pi-request-prompt.js";
 import { boundBackgroundSections, boundRequestByChars, leadingSystemMessage, modelContextMaxChars, modelRequestBudget } from "./pi-model-budget.js";
 import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
+import { GOAL_REQUIREMENTS_MAX_CHARS } from "../../application/ports/goal-requirements.js";
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import type {
   JoiReasoningSessionSnapshot,
@@ -19,6 +22,7 @@ import type {
 } from "../../application/ports/primary-reasoning-runtime.js";
 
 export const JOI_REASONING_TOOL_NAMES = [
+  "goal_read_inputs", "goal_update_requirements", "work_list_goal", "work_read_brief", "work_update_brief",
   "workbench_list_summaries",
   "workbench_select",
   "workbench_create",
@@ -66,8 +70,10 @@ export const JOI_REASONING_TOOL_NAMES = [
 ] as const;
 
 const allowedToolNames = new Set<string>(JOI_REASONING_TOOL_NAMES);
+const HISTORY_OMISSION_RESERVE_CHARS = 1_024;
 
 interface PiReasoningRuntimeOptions {
+  diagnostics?: RuntimeDiagnostics;
   usage?: UsageRecorder;
   /**
    * Any field left out falls back to DEFAULT_COMPACTION. Only `compactAtPercent` is reachable
@@ -85,6 +91,7 @@ interface PiReasoningRuntimeOptions {
 }
 
 interface SessionRuntime {
+  requirementsError: DomainError | undefined;
   agent: Agent;
   current: StartReasoningTurnInput | undefined;
   /** Whether this Turn started a tool whose effects may need to stay in the transcript. */
@@ -162,8 +169,8 @@ interface ResolvedCompactionOptions {
   maxSummaryCharacters: number;
 }
 
-function roleOf(message: AgentMessage): string | undefined {
-  return "role" in message
+function roleOf(message: AgentMessage | undefined): string | undefined {
+  return message !== undefined && "role" in message
     && typeof message.role === "string" ? message.role : undefined;
 }
 
@@ -244,6 +251,7 @@ function safeTurnOutcome(toolName: string, result: unknown): JoiReasoningOutcome
 }
 
 export class PiReasoningRuntime implements PrimaryReasoningRuntime {
+  readonly #diagnostics: RuntimeDiagnostics | undefined;
   readonly #model: Model<Api>;
   readonly #models: Models;
   readonly #thinkingLevel: ModelThinkingLevel;
@@ -255,6 +263,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
 
   constructor(options: PiReasoningRuntimeOptions) {
     if (Array.isArray(options.tools)) validateToolNames(options.tools);
+    this.#diagnostics = options.diagnostics;
     this.#model = options.model;
     this.#models = options.models;
     this.#thinkingLevel = options.thinkingLevel;
@@ -294,6 +303,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     session.current = input;
     session.delivered = { tool: false };
     session.terminatedByTool = false;
+    session.requirementsError = undefined;
     session.metadata = {
       workbenchId: input.workbenchId,
       compaction: session.metadata.compaction,
@@ -308,7 +318,14 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // so a cached session must never reuse a previous turn's closures.
     const turnTools = typeof this.#tools === "function" ? this.#tools(input) : this.#tools;
     if (typeof this.#tools === "function") validateToolNames(turnTools);
-    session.agent.state.tools = turnTools;
+    const refreshRequiredContext = input.refreshRequiredContext;
+    session.agent.state.tools = refreshRequiredContext === undefined ? turnTools : turnTools.map(tool => ({ ...tool,
+      execute: async (id, args, signal, onUpdate) => {
+        input.requiredContext = await refreshRequiredContext();
+        this.#requestPrompt(input, session.agent.state.messages, session.agent.state.tools);
+        return await tool.execute(id, args, signal, onUpdate);
+      },
+    }));
     // An overflowing context would clamp the request's max_tokens to 1 and make every provider
     // call fail opaque; compact before prompting so the Turn starts inside the model window.
     // The snapshot save stays with the post-turn checkpoint write.
@@ -324,6 +341,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     } catch (error) {
       promptError = error;
     }
+    const requirementsError = this.#sessions.get(input.sessionId)?.requirementsError;
+    if (requirementsError !== undefined) promptError = requirementsError;
     // Pi can resolve prompt() after a provider error. Inspect the current attempt's final
     // assistant message even when an earlier provider request already delivered a tool call:
     // otherwise a failed follow-up request is reported as a successful Turn.
@@ -470,51 +489,122 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // and compaction still owns its durable shape.
       transformContext: (messages) => Promise.resolve(this.#boundRequest(messages, runtime.current, runtime.agent.state.tools)),
     });
-    const runtime: SessionRuntime = { agent, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false };
+    const runtime: SessionRuntime = { agent, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false, requirementsError: undefined };
     agent.subscribe(async (event) => {
       this.#emit(runtime, event);
     });
     // The Turn's prompt changes on every turn, and pi keeps the prompt inside the transcript where
     // it is read-only; install the current one for the length of each request instead.
-    agent.prepareRequest = ({ context }) => Promise.resolve(runtime.current === undefined
-      ? undefined
-      : { context: { ...context, messages: withRequestPrompt(context.messages, this.#requestPrompt(runtime.current, context.messages, runtime.agent.state.tools)) } });
+    agent.prepareRequest = async ({ context }) => {
+      const current = runtime.current;
+      if (current === undefined) return undefined;
+      if (current.refreshRequiredContext !== undefined) current.requiredContext = await current.refreshRequiredContext();
+      return { context: { ...context, messages: withRequestPrompt(context.messages, this.#requestPrompt(current, context.messages, runtime.agent.state.tools)) } };
+    };
     this.#sessions.set(metadata.sessionId, runtime);
     return runtime;
   }
 
   /** Fixed policy survives even when a small route has no room for reference data. */
   #requestPrompt(input: StartReasoningTurnInput, messages: readonly AgentMessage[], tools: NonNullable<Context["tools"]>, pendingPrompt = false): string {
-    if (input.backgroundContext === undefined) return input.systemPrompt;
+    if (input.backgroundContext === undefined && input.requiredContext === undefined) return input.systemPrompt;
     const knownWindow = Number.isFinite(this.#model.contextWindow) && this.#model.contextWindow > 0;
-    const history = withRequestPrompt(messages, input.systemPrompt);
+    const required = input.requiredContext ?? "";
+    if (required.length > (knownWindow ? 60_000 : 24_000)) this.#requirementsCapacityError(input);
+    const base = required === "" ? input.systemPrompt : `${input.systemPrompt}\n\n${required}`;
+    const history = withRequestPrompt(messages, base);
     const requestMessages: AgentMessage[] = pendingPrompt
       ? [...history, { role: "user", content: [
         { type: "text", text: input.prompt },
         ...(input.images ?? []).map((item) => ({ type: "image" as const, ...item })),
       ], timestamp: 0 }]
       : history;
-    const maxRequestChars = knownWindow
-      ? Math.min(modelContextMaxChars(this.#model), Math.max(0, this.#model.contextWindow - this.#compactionHeadroom()))
-      : modelContextMaxChars(this.#model);
+    const budgetMessages = input.requiredContext === undefined ? requestMessages
+      : this.#boundRequiredHistory(input, requestMessages, tools);
     // Transcript declarations and the active tool set represent the same schema overhead.
-    const withoutDeclarations = requestMessages.map((message) => roleOf(message) === "system"
+    const withoutDeclarations = budgetMessages.map((message) => roleOf(message) === "system"
       ? { ...message, toolsAdded: undefined, toolsRemoved: undefined } : message);
     const occupied = JSON.stringify(withoutDeclarations).length + JSON.stringify(tools).length;
-    const budget = Math.max(0, Math.min(
-      knownWindow ? 60_000 : 24_000,
-      modelRequestBudget(this.#model).systemMaxChars - input.systemPrompt.length - 2,
-      maxRequestChars - occupied - 2,
+    const omissionReserve = budgetMessages.length < requestMessages.length ? HISTORY_OMISSION_RESERVE_CHARS : 0;
+    // The writable requirements ceiling reserves a share beside the fixed policy prompt.
+    const systemCap = Math.max(
+      modelRequestBudget(this.#model).systemMaxChars,
+      input.systemPrompt.length + GOAL_REQUIREMENTS_MAX_CHARS + 2,
+    );
+    const optionalBudget = Math.max(0, Math.min(
+      (knownWindow ? 60_000 : 24_000) - required.length,
+      systemCap - base.length - 2,
+      this.#maxRequestChars() - occupied - omissionReserve - 2,
     ));
-    let selected = input.backgroundContext;
+    const serializedOptionalBudget = Math.max(0, this.#maxRequestChars() - occupied - omissionReserve);
+    const optionalCost = (text: string): number => text === "" ? 0 : JSON.stringify(`\n\n${text}`).length - 2;
+    let selected = input.backgroundContext ?? "";
     if (knownWindow) for (const candidate of input.backgroundContextVariants ?? []) {
-      if (candidate.length <= budget && this.#headroomSatisfied(requestMessages, {
-        systemPrompt: `${input.systemPrompt}\n\n${candidate}`, tools,
+      if (candidate.length <= optionalBudget && optionalCost(candidate) <= serializedOptionalBudget && this.#headroomSatisfied(budgetMessages, {
+        systemPrompt: `${base}\n\n${candidate}`, tools,
       })) selected = candidate;
     }
-    const background = selected.length <= budget ? selected
-      : boundBackgroundSections([selected], Math.max(0, budget - 128));
-    return `${input.systemPrompt}\n\n${background}`;
+    let background = selected.length <= optionalBudget ? selected
+      : optionalBudget < 128 ? "" : boundBackgroundSections([selected], optionalBudget - 128);
+    // JSON escaping also consumes the optional share; mandatory context never pays that overhead.
+    if (optionalCost(background) > serializedOptionalBudget) {
+      let low = 0;
+      let high = Math.max(0, Math.min(selected.length, optionalBudget - 128));
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (optionalCost(boundBackgroundSections([selected], middle)) <= serializedOptionalBudget) low = middle;
+        else high = middle - 1;
+      }
+      background = boundBackgroundSections([selected], low);
+      if (optionalCost(background) > serializedOptionalBudget) background = "";
+    }
+    return background === "" ? base : `${base}\n\n${background}`;
+  }
+
+  #maxRequestChars(): number {
+    return Number.isFinite(this.#model.contextWindow) && this.#model.contextWindow > 0
+      ? Math.min(modelContextMaxChars(this.#model), Math.max(0, this.#model.contextWindow - this.#compactionHeadroom()))
+      : modelContextMaxChars(this.#model);
+  }
+
+  #requirementsCapacityError(input: StartReasoningTurnInput): never {
+    const error = new DomainError("goal_requirements_capacity_exceeded", "The mandatory goal requirements do not fit this request's remaining context capacity.");
+    const session = this.#sessions.get(input.sessionId);
+    if (session !== undefined) { session.requirementsError = error; session.agent.abort(); }
+    throw error;
+  }
+
+  /** Policy, task anchors and the latest tool exchange are required; older history yields capacity first. */
+  #boundRequiredHistory(input: StartReasoningTurnInput, messages: readonly AgentMessage[], tools: NonNullable<Context["tools"]>): AgentMessage[] {
+    const toolChars = JSON.stringify(tools).length;
+    const maximum = this.#maxRequestChars();
+    const weights = messages.map(message => JSON.stringify(roleOf(message) === "system"
+      ? { ...message, toolsAdded: undefined, toolsRemoved: undefined } : message).length + 1);
+    const suffixWeights = new Array<number>(messages.length + 1).fill(0);
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      suffixWeights[index] = (weights[index] ?? 0) + (suffixWeights[index + 1] ?? 0);
+    }
+    const fullChars = messages.length === 0 ? 2 : (suffixWeights[0] ?? 0) + 1;
+    if (fullChars + toolChars <= maximum) return [...messages];
+    const anchors = new Set([
+      ...(leadingSystemMessage(messages) === undefined ? [] : [0]),
+      messages.findIndex(message => roleOf(message) === "user"),
+      messages.findLastIndex(message => roleOf(message) === "user"),
+    ]);
+    let latestExchange = messages.length - 1;
+    while (latestExchange > 0 && roleOf(messages[latestExchange]) === "toolResult") latestExchange -= 1;
+    // Count retained anchors and the suffix together without serializing the whole history at each cut.
+    for (let start = 1; start <= latestExchange; start += 1) {
+      if (roleOf(messages[start]) === "toolResult") continue;
+      const prefixIndices = [...anchors].filter(index => index >= 0 && index < start).sort((left, right) => left - right);
+      const prefixWeight = prefixIndices.reduce((sum, index) => sum + (weights[index] ?? 0), 0);
+      const chars = prefixWeight + (suffixWeights[start] ?? 0) + 1;
+      if (chars + toolChars + HISTORY_OMISSION_RESERVE_CHARS <= maximum) {
+        const prefix = messages.slice(0, start).filter((_message, index) => anchors.has(index));
+        return [...prefix, ...messages.slice(start)];
+      }
+    }
+    return this.#requirementsCapacityError(input);
   }
 
   /**
@@ -529,21 +619,60 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
    * request therefore carries the omission rather than only its effect.
    */
   #boundRequest(messages: readonly AgentMessage[], current?: StartReasoningTurnInput, tools: NonNullable<Context["tools"]> = []): AgentMessage[] {
-    const requestMessages = current?.backgroundContext === undefined ? messages : withRequestPrompt(messages, this.#requestPrompt(current, messages, tools));
+    const requestMessages = current === undefined ? messages : withRequestPrompt(messages, this.#requestPrompt(current, messages, tools));
     const usable = requestMessages.filter((message) => !isEmptyAssistantMessage(message));
-    const bounded = boundRequestByChars(usable, modelContextMaxChars(this.#model));
+    const bounded = current?.requiredContext === undefined ? boundRequestByChars(usable, modelContextMaxChars(this.#model))
+      : this.#boundRequiredHistory(current, usable, tools);
     const omitted = usable.length - bounded.length;
     if (omitted <= 0) return bounded;
     // The bound keeps an opening anchor, and it hands back the very same message objects, so the
     // prefix it kept can be recovered by identity rather than by re-deriving its rules here.
     let kept = 0;
     while (kept < bounded.length && bounded[kept] === usable[kept]) kept += 1;
-    const omittedChars = usable.slice(kept, kept + omitted)
+    const retained = new Set(bounded);
+    const omittedChars = usable.filter(message => !retained.has(message))
       .reduce((total, message) => total + JSON.stringify(message).length, 0);
     return [...bounded.slice(0, kept), omissionNotice(omitted, omittedChars), ...bounded.slice(kept)];
   }
 
+  /**
+   * Reports a transcript carrying tool calls that no result answers.
+   *
+   * A terminating tool aborts its batch, so the calls behind it in the same response never run —
+   * and a call that never ran emits no event of its own. The assistant message that still names it
+   * is the only trace, which is why it is worth recording rather than inferring from later
+   * failures. Runs before compaction, so a summary cannot hide the shape first.
+   */
+  #reportDanglingToolCalls(runtime: SessionRuntime): void {
+    const diagnostics = this.#diagnostics;
+    if (diagnostics === undefined) return;
+    const calls = new Set<string>();
+    const answered = new Set<string>();
+    const messages = runtime.agent.state.messages as readonly { content?: unknown; role?: string; toolCallId?: string }[];
+    for (const message of messages) {
+      if (message.role === "toolResult") {
+        if (typeof message.toolCallId === "string") answered.add(message.toolCallId);
+        continue;
+      }
+      if (message.role !== "assistant" || !Array.isArray(message.content)) continue;
+      for (const part of message.content as { id?: string; type?: string }[]) {
+        if (part.type === "toolCall" && typeof part.id === "string") calls.add(part.id);
+      }
+    }
+    let danglingCount = 0;
+    for (const id of calls) if (!answered.has(id)) danglingCount += 1;
+    if (danglingCount === 0) return;
+    emitRuntimeDiagnostic(diagnostics, "joi.turn.dangling_tool_call", {
+      danglingCount,
+      inputId: runtime.current?.inputId ?? runtime.metadata.sessionId,
+      observedToolCount: calls.size,
+      turnId: runtime.current?.turnId ?? "",
+      workbenchId: runtime.metadata.workbenchId,
+    });
+  }
+
   async #compactAndSave(runtime: SessionRuntime): Promise<void> {
+    this.#reportDanglingToolCalls(runtime);
     await this.#compactIfNeeded(runtime);
     await this.#sessionStore.save({
       ...runtime.metadata,
@@ -671,7 +800,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // no event listener is attached. Tool execution is sequential, so aborting at
     // the successful end prevents any later calls emitted in the same response.
     if (event.type === "tool_execution_end") {
-      if ((event.result as { terminate?: unknown } | undefined)?.terminate === true) runtime.terminatedByTool = true;
+      if ((event.result as { terminate?: unknown } | undefined)?.terminate === true) {
+        runtime.terminatedByTool = true;
+        runtime.agent.abort();
+      }
       // A structured dispatch rejection (the execute handler's reasonCode) is terminal for
       // this run: the coordinator turns it into a clarification or a failed Turn. An
       // argument-validation failure is raised before execute runs and therefore carries no

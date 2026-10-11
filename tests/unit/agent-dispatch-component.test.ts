@@ -501,6 +501,21 @@ describe("AgentDispatchComponent", () => {
     expect(harness.diagnosticEvents.map((entry) => entry.event)).toContain("joi.agent.prepare_exhausted");
   });
 
+  it.each(["goal_requirements_stale", "goal_requirements_pending"])("keeps %s queued with a short retry even after the generic preparation budget", async reasonCode => {
+    const exhaustedClaim: PartnerDispatchClaimRow = { ...CLAIM, attemptCount: 6 };
+    const harness = makeHarness({
+      claims: [exhaustedClaim],
+      prepareResult: Object.assign(new Error("Process the current requirements."), { code: reasonCode }),
+    });
+    await harness.component.update(ctxWithDiagnostics(0, harness.diagnosticEvents));
+    expect(harness.abandoned).toEqual([]);
+    expect(harness.calls).not.toContain("ack:outbox_1");
+    expect(harness.released).toEqual(["outbox_1"]);
+    expect(harness.releaseAvailableAt).toEqual(["2026-08-05T10:00:05.000Z"]);
+    expect(harness.diagnosticEvents.map((entry) => entry.event)).toEqual(["joi.agent.resource_queued"]);
+    expect(harness.diagnosticEvents[0]?.fields.reasonCode).toBe(reasonCode);
+  });
+
   it("falls back to a bounded backoff when the exhaustion attempt itself fails", async () => {
     const exhaustedClaim: PartnerDispatchClaimRow = { ...CLAIM, attemptCount: 6 };
     const harness = makeHarness({

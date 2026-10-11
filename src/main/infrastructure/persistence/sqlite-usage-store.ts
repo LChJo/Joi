@@ -62,7 +62,7 @@ export class SqliteUsageStore implements UsageStore {
         EXISTS(SELECT 1 FROM joi_inbox_messages child WHERE child.goal_input_id = i.input_id AND child.status IN ('PENDING','ROUTED') AND child.canceled_at IS NULL) AS pending_child,
         EXISTS(SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status IN ('PLANNED','READY','RUNNING','WAITING')) AS active_work,
         EXISTS(SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status = 'FAILED') AS failed_work
-        FROM joi_inbox_messages i LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
+        FROM joi_inbox_messages i LEFT JOIN joi_current_goal_outcomes o ON o.input_id = i.input_id
         LEFT JOIN joi_turn_completions tc ON tc.input_id = i.input_id
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
         LEFT JOIN joi_harness_maps m ON m.goal_input_id = i.input_id

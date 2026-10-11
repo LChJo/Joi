@@ -194,14 +194,14 @@ describe("partner dispatch attachment staging", () => {
     }
   });
 
-  it("converges a corrupted Work brief to a terminal FAILED result instead of running it unverifiable", async () => {
+  it.each(["{not valid json", "null", "[]", "42"])("converges a corrupted Work brief %s to a terminal FAILED result instead of running it unverifiable", async (intentJson) => {
     const fixture = await openFixture();
     try {
       const spy = { calls: [] as unknown[] };
       const delivery = makeDelivery(fixture, spy);
       fixture.database.transaction((connection) => connection.prepare(
-        "UPDATE work_items SET intent_json = '{not valid json' WHERE work_id = 'work_1'",
-      ).run());
+        "UPDATE work_items SET intent_json = ? WHERE work_id = 'work_1'",
+      ).run(intentJson));
       const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
       await expect(delivery.prepare(claim)).resolves.toBe("skipped_terminal");
 

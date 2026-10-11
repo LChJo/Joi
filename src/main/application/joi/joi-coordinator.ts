@@ -20,6 +20,8 @@ import { resolveWorkbenchAssignment } from "./workbench-assignment.js";
 import { COMPLETION_SUMMARY_LIMIT, normalizeCompletionSummary } from "../partners/agent-conversation-presentation.js";
 import { DISPATCH_POLICY_REASONS } from "../work/dispatch-policy.js";
 import type { WorkOrchestrationService } from "../work/work-orchestration-service.js";
+import type { GoalRequirementsRepository } from "../ports/goal-requirements.js";
+import { renderGoalRequirements } from "../../domain/work/goal-requirements.js";
 
 interface SourcePin {
   modelCapability?: "release-tested" | "custom-unverified-tools";
@@ -47,6 +49,7 @@ const COMMITTED_OUTCOME_TOOL_NAMES = new Set([
   "work_supplement",
   "work_reassign",
   "work_resume",
+  "work_update_brief",
   "work_wait",
 ]);
 
@@ -63,6 +66,10 @@ const REPLAY_SAFE_TOOL_NAMES = new Set([
   "workbench_list_summaries",
   "list_automations",
   "get_automation",
+  "goal_read_inputs",
+  "goal_update_requirements",
+  "work_list_goal",
+  "work_read_brief",
 ]);
 
 const OUTCOME_REPAIR_PROMPT = [
@@ -131,6 +138,7 @@ export class JoiCoordinator {
 
   constructor(private readonly dependencies: {
     evolution?: Pick<EvolutionService, "strategyForGoal">;
+    requirements?: GoalRequirementsRepository;
     workbenches: WorkbenchCatalog;
     workbenchRegistry?: Pick<WorkbenchRegistryService, "create">;
     /** Current workspace binding, injected into the system prompt so the model never re-asks for a bound directory. */
@@ -173,11 +181,11 @@ export class JoiCoordinator {
     const input = await this.dependencies.store.loadInput(inputId);
     if (input === null) throw new DomainError("joi_input_not_found", "joi input was not found.");
     if (input.status === "CONSUMED") return;
-    const automationPrompt = input.automationRoutineId === undefined || this.dependencies.automation === undefined
+    const automationPrompt = input.automationExecutionPrompt ?? (input.automationRoutineId === undefined || this.dependencies.automation === undefined
       ? undefined
-      : (await this.dependencies.automation.promptForExecution(input.automationRoutineId))?.prompt;
+      : (await this.dependencies.automation.promptForExecution(input.automationRoutineId))?.prompt);
     if (input.automationRoutineId !== undefined && automationPrompt === undefined) throw new DomainError("automation_routine_not_found", "The scheduled Routine is unavailable.");
-    const requestText = automationPrompt ?? input.continuationPrompt ?? input.body;
+    let requestText = automationPrompt ?? input.continuationPrompt ?? input.body;
     const backgroundContext = composeJoiContinuationBackground(input);
     const backgroundContextVariants = backgroundContext === undefined ? [] : [...new Set([
       composeJoiContinuationBackground(input, 40_000), composeJoiContinuationBackground(input, 60_000),
@@ -241,6 +249,16 @@ export class JoiCoordinator {
     // New submissions are independent goals even when their text and Workbench match.
     // Clarification/recovery keep the persisted input id; internal reviews keep their goal id.
     const goalId = input.goalInputId ?? input.inputId;
+    const contract = await this.dependencies.requirements?.ensure({
+      goalInputId: goalId, workbenchId, ...(automationPrompt === undefined ? {} : { executionPrompt: automationPrompt }),
+      ...(input.automationExecutionId === undefined ? {} : { executionKey: input.automationExecutionId }),
+    });
+    if (input.automationRoutineId !== undefined && contract?.executionPrompt !== undefined) requestText = contract.executionPrompt;
+    const requirementsStore = this.dependencies.requirements;
+    const refreshRequiredContext = requirementsStore === undefined ? undefined : async () => {
+      const current = await requirementsStore.load(goalId, workbenchId);
+      return current === null ? "" : renderGoalRequirements(current);
+    };
     // A poisoned session is part of why retries reproduce their own failure; bump the
     // generation after consecutive flops so the next attempt starts with clean history.
     let sessionGeneration = this.#sessionGenerations.get(goalId) ?? 0;
@@ -256,7 +274,7 @@ export class JoiCoordinator {
     }
     const sessionBase = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}:${goalId}` : `joi_session:${workbenchId}:${goalId}`;
     const sessionId = sessionGeneration === 0 ? sessionBase : `${sessionBase}#${String(sessionGeneration)}`;
-    if (input.resolvedAction !== undefined) {
+    if (input.resolvedAction !== undefined && contract === undefined) {
       if (this.dependencies.work === undefined || this.dependencies.store.completeResolvedAction === undefined) {
         throw new DomainError("joi_action_resume_unavailable", "The persisted user action cannot be resumed right now.");
       }
@@ -320,6 +338,9 @@ export class JoiCoordinator {
       createdAt: this.dependencies.clock.now().toISOString(),
       inputId,
       modelRevisionId: pin.modelRevisionId,
+      // The revision the turn opens against. A turn that never calls a versioned tool has no
+      // other way to record one, and it still has to end on the contract it started from.
+      ...(contract === undefined ? {} : { requirementsRevision: contract.revision }),
       sessionId,
       sourceRevisionId: pin.sourceRevisionId,
       turnId,
@@ -353,6 +374,9 @@ export class JoiCoordinator {
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
+    if (input.resolvedAction !== undefined && contract !== undefined) {
+      prompt += `\nPersisted user action: actionId=${input.resolvedAction.actionId} workId=${input.resolvedAction.workId}. Review current requirements and work_read_brief, then apply work_resume with this stable actionId and complete updated instructions; do not replay a resolved action.`;
+    }
     let turnImages: readonly { data: string; mimeType: string }[] | undefined;
     let turnAttachmentIds: readonly string[] | undefined;
     if (input.attachments !== undefined && input.attachments.length > 0 && this.dependencies.attachments !== undefined) {
@@ -379,6 +403,8 @@ export class JoiCoordinator {
         const pass = { committedOutcome: false, observedToolCalls: 0 };
         const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
+            ...(contract === undefined ? {} : { requiredContext: renderGoalRequirements(contract) }),
+            ...(refreshRequiredContext === undefined ? {} : { refreshRequiredContext }),
             workbenchId,
             ...(backgroundContext === undefined ? {} : { backgroundContext }),
             ...(backgroundContextVariants.length === 0 ? {} : { backgroundContextVariants }),
@@ -677,6 +703,9 @@ export class JoiCoordinator {
         }
       }
       await this.dependencies.store.failTurn?.(inputId, turnId);
+      if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") {
+        await this.dependencies.store.requireClarification(inputId, error.code, "当前有效需求超出了可用上下文容量。请选择更大上下文的模型，或明确精简有效需求后继续。");
+      }
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.failed", {
         workbenchId,
         durationMs: Math.max(0, this.dependencies.clock.now().getTime() - handleStartedAt),

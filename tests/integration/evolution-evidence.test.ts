@@ -9,6 +9,7 @@ it("uses only the newest authoritative attempt when a failed Work was subsequent
       CREATE TABLE joi_inbox_messages(input_id TEXT,workbench_id TEXT,updated_at TEXT,canceled_at TEXT,goal_input_id TEXT,status TEXT,dismissed_at TEXT);
       CREATE TABLE evolution_goal_pins(goal_id TEXT,eligible INTEGER);
       CREATE TABLE joi_goal_outcomes(input_id TEXT,disposition TEXT);
+      CREATE VIEW joi_current_goal_outcomes AS SELECT * FROM joi_goal_outcomes;
       CREATE TABLE evolution_evidence(goal_id TEXT,workbench_id TEXT,revision_id TEXT,outcome TEXT,cause TEXT NOT NULL DEFAULT 'unknown',observed_at TEXT,classified_at TEXT);
       CREATE TABLE joi_harness_maps(goal_input_id TEXT,status TEXT);
       CREATE TABLE joi_turns(input_id TEXT,status TEXT);

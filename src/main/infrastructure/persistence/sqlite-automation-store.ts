@@ -480,7 +480,7 @@ function inspectGoal(connection: DatabaseSync, goalId: string): AutomationGoalIn
     WHERE w.input_id = ? AND (w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')
       OR pr.status IN ('RUNNING', 'WAITING_INPUT', 'WAITING_AUTH')) LIMIT 1`).get(goalId);
   const currentOutcome = connection.prepare(`SELECT o.disposition FROM joi_goal_result_sets s
-    JOIN joi_goal_outcomes o ON o.input_id = s.original_input_id AND o.result_revision = s.revision
+    JOIN joi_current_goal_outcomes o ON o.input_id = s.original_input_id AND o.result_revision = s.revision
     WHERE s.original_input_id = ? AND s.revision > 0`).get(goalId) as Row | undefined;
   const activeMap = connection.prepare("SELECT 1 FROM joi_harness_maps WHERE goal_input_id = ? AND status = 'ACTIVE' LIMIT 1").get(goalId);
   const failedOutcome = currentOutcome?.disposition === "BLOCKED";

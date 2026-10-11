@@ -21,6 +21,8 @@ export interface JoiGoalContext {
 
 export interface JoiPendingInput {
   automationRoutineId?: string;
+  automationExecutionId?: string;
+  automationExecutionPrompt?: string;
   attachments?: { attachmentId: string; filename: string; mimeType: string; size: number }[];
   workbenchId?: string;
   body: string;
@@ -50,6 +52,8 @@ export interface JoiCoordinatorStore {
     createdAt: string;
     inputId: string;
     modelRevisionId?: string;
+    /** The requirements revision this turn starts from; a tool-less turn ends against it. */
+    requirementsRevision?: number;
     sessionId: string;
     sourceRevisionId?: string;
     turnId: string;
@@ -63,7 +67,7 @@ export interface JoiCoordinatorStore {
     runId: string;
     workId: string;
   }): Promise<void>;
-  resumeGoal?(input: { inputId: string; turnId: string }): Promise<{ status: "OPEN" }>;
+  resumeGoal?(input: { inputId: string; turnId: string; requirementsRevision?: number }): Promise<{ status: "OPEN" }>;
   updateTurnSource?(turnId: string, sourceRevisionId: string, modelRevisionId: string): Promise<void>;
 }
 

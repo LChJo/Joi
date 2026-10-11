@@ -293,7 +293,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         FROM joi_inbox_messages i LEFT JOIN workbenches a ON a.workbench_id = i.workbench_id
         LEFT JOIN work_items w ON w.input_id = i.input_id
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
-        LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
+        LEFT JOIN joi_current_goal_outcomes o ON o.input_id = i.input_id
         LEFT JOIN joi_turn_completions tc ON tc.input_id = i.input_id
         LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
         WHERE i.dismissed_at IS NULL AND i.input_id NOT LIKE 'joi_result_input:%'

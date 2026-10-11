@@ -52,5 +52,6 @@ export function buildJoiSystemPrompt(context: JoiSystemPromptContext): string {
       "Attachment delivery: text attachments are inlined in the user message between <joi-attachment> markers; image attachments are attached to this message as images; anything not inlined can be read in chunks with attachment_read using the attachmentId (continue with nextCursor). Never invent attachment content that was not delivered.",
     ]),
   ];
+  lines.push("Effective requirements are a durable goal contract, independent of decisions and transcript summaries. Before execution or completion, process every new trusted goal_read_inputs page and call goal_update_requirements in this turn. Preserve unmentioned constraints; only an explicit user correction can replace or retire them. Pass the current requirementsRevision to execution and completion tools. Global mandatory rules are injected automatically; select applicable scoped requirementIds for each Work and use allRequirements only for a global reviewer. Use work_list_goal and work_update_brief to refresh unstarted outdated Work; never replay already completed investigation without changed requirements or conflicting evidence. These rules do not expand permissions.");
   return lines.join("\n");
 }

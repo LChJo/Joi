@@ -326,6 +326,19 @@ export interface RuntimeDiagnosticEventMap {
     turnId: string;
     workbenchId: string;
   };
+  /**
+   * A response whose tool calls outnumber the results answering them. A terminating tool aborts
+   * the batch so later calls in the same response never run, and any provider rejects a transcript
+   * where a tool call has no result beside it — this is the only place that failure is observable,
+   * because the calls that never ran produce no other event.
+   */
+  "joi.turn.dangling_tool_call": {
+    danglingCount: number;
+    inputId: string;
+    observedToolCount: number;
+    turnId: string;
+    workbenchId: string;
+  };
   "joi.turn.source_fallback": {
     workbenchId: string;
     fromSourceId: string;

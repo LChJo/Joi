@@ -1445,6 +1445,10 @@ describe("SqliteJoiHarnessRepository", () => {
           (input_id, idempotency_key, body, status, result_revision, goal_input_id, created_at, updated_at)
           VALUES (?, 'key-synth-stalled', 'synthesize', 'CONSUMED', 3, ?, ?, ?)`)
           .run(`joi_result_input:goal:${goalInputId}`, goalInputId, staleAt, staleAt);
+        // Enqueueing always records which input is the current synthesis for the result set; the
+        // scans follow that pointer rather than re-deriving the id themselves.
+        connection.prepare("UPDATE joi_goal_result_sets SET synthetic_input_id = ? WHERE original_input_id = ?")
+          .run(`joi_result_input:goal:${goalInputId}`, goalInputId);
       });
 
       const stalled = await repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW });
@@ -1480,6 +1484,35 @@ describe("SqliteJoiHarnessRepository", () => {
       });
 
       await expect(repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW })).resolves.toEqual([]);
+    });
+
+    it("finds and re-drives a stalled synthesis whose input carries the requirements revision", async () => {
+      const goalInputId = "goal-stalled-versioned";
+      seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      seedCompletedLayer(fixture, goalInputId, 3);
+      const staleAt = "2026-08-06T09:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_goal_result_sets SET revision = 4, updated_at = ? WHERE original_input_id = ?").run(NOW, goalInputId);
+        // A goal that has a requirements contract stamps its synthesis input with the result and
+        // requirements revisions, so this is the only id shape production ever writes.
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, result_revision, goal_input_id, created_at, updated_at)
+          VALUES (?, 'key-synth-versioned', 'synthesize', 'CONSUMED', 3, ?, ?, ?)`)
+          .run(`joi_result_input:goal:${goalInputId}:r3:q1`, goalInputId, staleAt, staleAt);
+        connection.prepare("UPDATE joi_goal_result_sets SET synthetic_input_id = ? WHERE original_input_id = ?")
+          .run(`joi_result_input:goal:${goalInputId}:r3:q1`, goalInputId);
+      });
+
+      const stalled = await repository.listStalledSyntheses({ cooldownMillis: 10 * 60_000, now: NOW });
+      expect(stalled).toEqual([{ goalInputId, resultRevision: 4 }]);
+
+      const [seed] = stalled;
+      if (seed === undefined) throw new Error("expected a stalled synthesis seed");
+      await expect(repository.redriveSynthesis({ now: NOW, seed })).resolves.toBe(true);
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status, result_revision FROM joi_inbox_messages WHERE input_id = ?")
+        .get(`joi_result_input:goal:${goalInputId}:r3:q1`)))
+        .toEqual({ result_revision: 4, status: "PENDING" });
     });
   });
 });

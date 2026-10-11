@@ -41,6 +41,53 @@ function requestSystemPrompt(context: { messages?: readonly unknown[] }): string
 }
 
 describe("local Pi coding partner runtime", () => {
+  it.each([100, 17000])("budgets mandatory requirements alongside %i characters of tool schema", async schemaChars => {
+    const faux = fauxProvider({ provider: `required-partner-${String(schemaChars)}`, models: [{ id: "fake", contextWindow: 32000, maxTokens: 4096 }] });
+    const requests: string[] = [];
+    faux.setResponses([context => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("done")]); }]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: { names: ["read"], create: () => [{ name: "read", label: "Read", description: "x".repeat(schemaChars), parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }] },
+    });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM" });
+    const running = runtime.runEphemeral({ actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "Perform the assigned task", requiredContext: "ONLY_CURRENT_DAY" }, revision, { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [] });
+    if (schemaChars > 16000) {
+      await expect(running).rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
+      expect(requests).toHaveLength(0);
+    } else {
+      await running;
+      expect(requests[0]).toContain("ONLY_CURRENT_DAY");
+    }
+  });
+  it("clears a requirements-capacity failure before a resident turn that carries none", async () => {
+    const faux = fauxProvider({ provider: "resident-requirements-leak", models: [{ id: "fake", contextWindow: 32000, maxTokens: 4096 }] });
+    const requests: string[] = [];
+    faux.setResponses([
+      (context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("first answer")]); },
+      (context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("second answer")]); },
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: { names: ["read"], create: () => [{ name: "read", label: "Read", description: "x".repeat(17000), parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }] },
+    });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi",
+      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM" });
+    const request = { actionId: "action_1", workbenchId: "workbench_1", contextSnapshotId: "context_1", taskProjection: "first task", workId: "work_1" };
+    // This resident Agent records a capacity failure against itself for the rest of its life.
+    await expect(runtime.runResidentTurn({ instanceId: "instance_1", knowledgeSection: "KB_SECTION",
+      request: { ...request, requiredContext: "ONLY_CURRENT_DAY" }, restoredMessages: null, revision, skillEnvironmentKeys: [], skillSection: "" }))
+      .rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
+    // The next turn on that same instance carries no required context, so the earlier failure is not
+    // its failure — inheriting it discards a run that has already produced its answer.
+    await expect(runtime.runResidentTurn({ instanceId: "instance_1", knowledgeSection: "KB_SECTION",
+      request: { ...request, actionId: "action_2", taskProjection: "second task" }, restoredMessages: null, revision, skillEnvironmentKeys: [], skillSection: "" }))
+      .resolves.toMatchObject({ status: "COMPLETED" });
+  });
+
   it("bounds accumulated partner context while retaining the latest user request and a valid tail", () => {
     const messages = [
       { content: "original", role: "user", timestamp: 1 },

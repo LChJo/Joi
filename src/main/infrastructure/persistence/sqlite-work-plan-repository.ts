@@ -16,6 +16,10 @@ import type {
 } from "../../application/ports/work-orchestration.js";
 import type { WorkItemDto } from "../../../shared/joi.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
+import { assertGoalRequirementsReady } from "./sqlite-goal-requirements-repository.js";
+import { DomainError } from "../../domain/errors.js";
+import { renderGoalRequirements } from "../../domain/work/goal-requirements.js";
+import { consumeSatisfiedRequirementsReviews } from "./sqlite-goal-requirements-review.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -147,12 +151,18 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
       for (const item of plan.items) {
         const brief = briefs.get(item.workId);
         if (brief === undefined) throw new Error("work_brief_missing");
+        const contract = assertGoalRequirementsReady(connection, plan.inputId, brief.requirementsRevision);
+        if (contract !== null) {
+          if (brief.briefVersion !== 3) throw new DomainError("goal_requirements_stale", "Refresh the task contract.");
+          renderGoalRequirements(contract, brief.requirementIds ?? [], brief.allRequirements ?? false);
+        }
         insertWork.run(
         item.workId, item.workbenchId, plan.inputId, item.title, JSON.stringify({
           acceptanceChecks: brief.acceptanceChecks,
           ...(brief.briefVersion === undefined ? {} : { briefVersion: brief.briefVersion }),
           ...(brief.evidenceResultIds === undefined ? {} : { evidenceResultIds: brief.evidenceResultIds }),
           ...(brief.instructions === undefined ? {} : { instructions: brief.instructions }),
+          ...(brief.requirementsRevision === undefined ? {} : { requirementsRevision: brief.requirementsRevision, requirementIds: brief.requirementIds ?? [], allRequirements: brief.allRequirements ?? false }),
         }), item.accessMode === "NONE" ? "READ" : item.accessMode, null,
         item.status, item.createdAt, item.updatedAt,
       );
@@ -218,6 +228,63 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
     });
   }
 
+  async readBrief(goalInputId: string, workbenchId: string, workId: string) {
+    return this.database.transaction(db => {
+      const row = db.prepare("SELECT title, intent_json FROM work_items WHERE work_id = ? AND input_id = ? AND workbench_id = ?")
+        .get(workId, goalInputId, workbenchId);
+      if (typeof row?.intent_json !== "string" || typeof row.title !== "string") return null;
+      const brief = JSON.parse(row.intent_json) as { instructions?: string; requirementsRevision?: number };
+      return { workId, title: row.title, instructions: brief.instructions ?? "", ...(brief.requirementsRevision === undefined ? {} : { requirementsRevision: brief.requirementsRevision }) };
+    });
+  }
+
+  async listForGoal(goalInputId: string, workbenchId: string) {
+    return this.database.transaction(db => (db.prepare("SELECT work_id, title, status, intent_json FROM work_items WHERE input_id = ? AND workbench_id = ? ORDER BY created_at, work_id")
+      .all(goalInputId, workbenchId) as { work_id: string; title: string; status: string; intent_json: string }[]).map(row => {
+        const brief = JSON.parse(row.intent_json) as { requirementsRevision?: number };
+        return { workId: row.work_id, title: row.title, status: row.status, ...(brief.requirementsRevision === undefined ? {} : { requirementsRevision: brief.requirementsRevision }) };
+      }));
+  }
+
+  async refreshBrief(input: { goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds: string[]; allRequirements: boolean }): Promise<void> {
+    this.database.transaction(db => {
+      const duplicate = db.prepare("SELECT work_id FROM joi_work_brief_updates WHERE action_id = ?").get(input.actionId);
+      if (duplicate !== undefined) {
+        if (duplicate.work_id !== input.workId) throw new DomainError("work_brief_update_conflict", "The update action belongs to another Work.");
+        return;
+      }
+      assertGoalOpen(db, input.goalInputId);
+      const contract = assertGoalRequirementsReady(db, input.goalInputId, input.requirementsRevision);
+      if (contract === null) throw new DomainError("goal_requirements_unavailable", "The goal contract is unavailable.");
+      renderGoalRequirements(contract, input.requirementIds, input.allRequirements);
+      const row = db.prepare(`SELECT w.intent_json FROM work_items w JOIN joi_turns t ON t.turn_id = ?
+        JOIN joi_inbox_messages i ON i.input_id = t.input_id
+        WHERE w.work_id = ? AND w.input_id = ? AND w.workbench_id = ? AND t.workbench_id = w.workbench_id
+          AND COALESCE(i.goal_input_id, i.input_id) = w.input_id AND t.status = 'RUNNING'
+          AND w.status IN ('PLANNED', 'READY')
+          AND NOT EXISTS (SELECT 1 FROM partner_runs r WHERE r.work_id = w.work_id AND r.status = 'RUNNING')
+          AND NOT EXISTS (SELECT 1 FROM partner_runs r WHERE r.dispatch_attempt_id = (
+            SELECT a.dispatch_attempt_id FROM dispatch_attempts a WHERE a.work_id = w.work_id
+            ORDER BY a.created_at DESC, a.dispatch_attempt_id DESC LIMIT 1))`)
+        .get(input.turnId, input.workId, input.goalInputId, input.workbenchId);
+      if (typeof row?.intent_json !== "string") throw new DomainError("work_brief_update_not_allowed", "Only unstarted Work in this goal can be refreshed.");
+      const brief = JSON.parse(row.intent_json) as Record<string, unknown>;
+      db.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = ?")
+        .run(JSON.stringify({ ...brief, briefVersion: 3, instructions: input.instructions, requirementsRevision: input.requirementsRevision,
+          requirementIds: input.requirementIds, allRequirements: input.allRequirements }), input.workId);
+      db.prepare("INSERT INTO joi_work_brief_updates (action_id, work_id) VALUES (?, ?)").run(input.actionId, input.workId);
+      const turn = db.prepare("SELECT updated_at FROM joi_turns WHERE turn_id = ?").get(input.turnId);
+      if (typeof turn?.updated_at === "string") {
+        db.prepare(`UPDATE outbox SET available_at = MIN(available_at, ?)
+          WHERE status = 'PENDING' AND kind = 'partner.dispatch' AND outbox_id = (
+            SELECT outbox_id FROM dispatch_attempts WHERE work_id = ?
+            ORDER BY created_at DESC, dispatch_attempt_id DESC LIMIT 1)`)
+          .run(turn.updated_at, input.workId);
+        consumeSatisfiedRequirementsReviews(db, contract, turn.updated_at);
+      }
+    });
+  }
+
   async listActive(): Promise<WorkItemDto[]> {
     return this.database.transaction((connection) => connection.prepare(`
       SELECT work_id, workbench_id, title, status FROM work_items
@@ -232,7 +299,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
 
   async loadForReassignment(workId: string): Promise<WorkReassignmentContext | null> {
     const row = this.database.transaction((connection) => connection.prepare(`
-      SELECT w.work_id, w.workbench_id, w.title, COALESCE(p.access_mode, w.access_mode) AS access_mode, w.status,
+      SELECT w.work_id, w.workbench_id, w.input_id, w.title, COALESCE(p.access_mode, w.access_mode) AS access_mode, w.status,
              w.created_at, w.updated_at, a.partner_revision_id, a.instance_id, rev.partner_id
         FROM work_items w
         LEFT JOIN work_access_policies p ON p.work_id = w.work_id
@@ -246,6 +313,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
     const required = ["work_id", "workbench_id", "title", "access_mode", "status", "created_at", "updated_at", "partner_revision_id", "partner_id"] as const;
     if (required.some((key) => typeof row[key] !== "string")) throw new Error("work_reassignment_record_invalid");
     return {
+      inputId: row.input_id as string,
       item: {
         accessMode: row.access_mode as WorkReassignmentContext["item"]["accessMode"],
         workbenchId: row.workbench_id as string,
@@ -362,13 +430,26 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
   async reassign(plan: ReassignedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
       assertWorkGoalOpen(connection, plan.workId);
+      const owner = connection.prepare("SELECT input_id FROM work_items WHERE work_id = ?").get(plan.workId);
+      if (typeof owner?.input_id !== "string") throw new Error("work_brief_missing");
+      const contract = assertGoalRequirementsReady(connection, owner.input_id, plan.requirementsRevision);
+      if (contract !== null) {
+        const binding = connection.prepare(`SELECT 1 FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id = t.input_id
+          WHERE t.turn_id = ? AND t.workbench_id = ? AND COALESCE(i.goal_input_id, i.input_id) = ? AND t.status = 'RUNNING'`)
+          .get(plan.turnId, contract.workbenchId, contract.goalInputId);
+        if (binding === undefined) throw new DomainError("goal_requirements_scope_invalid", "The reassignment turn belongs to another goal.");
+        if (plan.instructions === undefined) throw new DomainError("work_instructions_invalid", "Provide current complete instructions.");
+        renderGoalRequirements(contract, plan.requirementIds ?? [], plan.allRequirements ?? false);
+      }
       if (plan.instructions !== undefined) {
         const row = connection.prepare("SELECT intent_json FROM work_items WHERE work_id = ?").get(plan.workId);
         if (typeof row?.intent_json !== "string") throw new Error("work_brief_missing");
         const brief = JSON.parse(row.intent_json) as unknown;
         if (brief === null || typeof brief !== "object" || Array.isArray(brief)) throw new Error("work_brief_invalid");
         connection.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = ?")
-          .run(JSON.stringify({ ...brief, briefVersion: 2, instructions: plan.instructions }), plan.workId);
+          .run(JSON.stringify({ ...brief, briefVersion: contract === null ? 2 : 3, instructions: plan.instructions,
+            ...(contract === null ? {} : { requirementsRevision: contract.revision, requirementIds: plan.requirementIds ?? [], allRequirements: plan.allRequirements ?? false }),
+          }), plan.workId);
       }
       if (plan.accessMode !== undefined) {
         connection.prepare("UPDATE work_items SET access_mode = ? WHERE work_id = ?")

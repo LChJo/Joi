@@ -174,7 +174,7 @@ export class SqliteEvolutionStore implements EvolutionStore {
       (SELECT COUNT(*) FROM work_items w WHERE w.input_id = i.input_id AND w.status = 'FAILED') AS work_failed
       FROM joi_inbox_messages i JOIN evolution_goal_pins p ON p.goal_id = i.input_id AND p.eligible = 1
       JOIN workbenches b ON b.workbench_id = i.workbench_id AND b.status = 'ACTIVE'
-      LEFT JOIN joi_goal_outcomes o ON o.input_id = i.input_id
+      LEFT JOIN joi_current_goal_outcomes o ON o.input_id = i.input_id
       WHERE i.goal_input_id IS NULL AND i.status = 'CONSUMED'
       -- CONTINUE means the goal handed off to a continuation, so the continuation carries its
       -- outcome and this row would double-count it. A revoked goal has no continuation left to do

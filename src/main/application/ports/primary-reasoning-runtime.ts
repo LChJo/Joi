@@ -25,6 +25,9 @@ export interface StartReasoningTurnInput {
   backgroundContext?: string;
   /** Richer bounded alternatives, ordered from smaller to larger; selected only with spare capacity. */
   backgroundContextVariants?: readonly string[];
+  /** Mandatory goal context, refreshed after tools and never saved in the transcript. */
+  requiredContext?: string;
+  refreshRequiredContext?: () => Promise<string>;
   sessionId: string;
   sourceId: string;
   sourceRevisionId: string;

@@ -4,6 +4,8 @@ import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime
 import type { PartnerInstanceRepository } from "../ports/partner-instances.js";
 import { DISPATCH_POLICY_REASONS } from "./dispatch-policy.js";
 import { requireWorkInstructions } from "./work-instructions.js";
+import type { GoalRequirementsRepository } from "../ports/goal-requirements.js";
+import { renderGoalRequirements } from "../../domain/work/goal-requirements.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
 import type {
   CommittedWorkPlan,
@@ -17,6 +19,8 @@ import type {
 } from "../ports/work-orchestration.js";
 
 interface WorkRequest {
+  requirementIds?: string[];
+  allRequirements?: boolean;
   acceptanceChecks?: WorkAcceptanceCheck[];
   accessMode: WorkAccessMode;
   instructions?: string;
@@ -75,6 +79,7 @@ export class WorkOrchestrationService {
     diagnostics?: RuntimeDiagnostics;
     events?: DurableUiEventEmitter;
     ids: IdGenerator;
+    requirements?: GoalRequirementsRepository;
     goalGate?: {
       assertOpen(goalInputId: string): Promise<void>;
       assertWorkOpen(workId: string): Promise<void>;
@@ -89,6 +94,7 @@ export class WorkOrchestrationService {
   }) {}
 
   async plan(input: {
+    requirementsRevision?: number;
     workbenchId: string;
     dependencies: { dependsOnKey: string; workKey: string }[];
     inputId: string;
@@ -97,6 +103,7 @@ export class WorkOrchestrationService {
     recovery?: { attemptNo: number; evidenceResultIds: string[]; recoveryId: string; sourceWorkId: string; strategy: "SUPPLEMENT" | "TOOL_EXPANSION" };
   }): Promise<{ denied: { reasonCode: string; workKey: string }[]; queued: { reasonCode: string; workId: string; workKey: string }[]; dispatchPlanId: string; waves: string[][] }> {
     await this.dependencies.goalGate?.assertOpen(input.inputId);
+    const contract = await this.dependencies.requirements?.assertReady(input.inputId, input.requirementsRevision);
     const byKey = new Map<string, WorkRequest>();
     for (const request of input.work) {
       if (request.workspaceRef !== undefined) throw new DomainError("work_workspace_forbidden", "Work uses its Workbench workspace automatically.");
@@ -139,12 +146,16 @@ export class WorkOrchestrationService {
       if (request === undefined) throw new Error("work_request_missing");
       return {
         acceptanceChecks: (request.acceptanceChecks ?? []).map((check) => ({ ...check })),
-        briefVersion: 2 as const,
+        briefVersion: contract == null ? 2 as const : 3 as const,
+        ...(contract == null ? {} : {
+          requirementsRevision: contract.revision, requirementIds: request.requirementIds ?? [], allRequirements: request.allRequirements ?? false,
+        }),
         ...(input.recovery === undefined || input.recovery.evidenceResultIds.length === 0 ? {} : { evidenceResultIds: [...input.recovery.evidenceResultIds] }),
         ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
         workId: item.workId,
       };
     });
+    if (contract != null) for (const request of input.work) renderGoalRequirements(contract, request.requirementIds ?? [], request.allRequirements ?? false);
     const waves = buildWorkExecutionWaves(items, dependencies);
     const policyResults: CommittedWorkPlan["policyResults"] = [];
     const attempts: PlannedDispatchAttempt[] = [];
@@ -250,6 +261,9 @@ export class WorkOrchestrationService {
 
   /** Creates a new, independent Work for an essential gap; historical Work is evidence, never a DAG key. */
   async supplement(input: {
+    requirementsRevision?: number;
+    requirementIds?: string[];
+    allRequirements?: boolean;
     acceptanceChecks?: WorkAcceptanceCheck[];
     accessMode: WorkAccessMode;
     instructions?: string;
@@ -275,6 +289,7 @@ export class WorkOrchestrationService {
     const planned = await this.plan({
       dependencies: [],
       inputId: context.inputId,
+      ...(input.requirementsRevision === undefined ? {} : { requirementsRevision: input.requirementsRevision }),
       recovery: {
         attemptNo,
         evidenceResultIds: context.evidenceResultIds,
@@ -289,11 +304,28 @@ export class WorkOrchestrationService {
         ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
         key: recoveryId,
         partnerId: input.partnerId,
+        requirementIds: input.requirementIds ?? [], allRequirements: input.allRequirements ?? false,
         title: input.title,
       }],
       workbenchId: input.workbenchId,
     });
     return { attemptNo, dispatchPlanId: planned.dispatchPlanId, evidenceResultIds: context.evidenceResultIds, waves: planned.waves };
+  }
+
+  async listForGoal(goalInputId: string, workbenchId: string) {
+    return await this.dependencies.repository.listForGoal?.(goalInputId, workbenchId) ?? [];
+  }
+
+  async readBrief(goalInputId: string, workbenchId: string, workId: string) {
+    return await this.dependencies.repository.readBrief?.(goalInputId, workbenchId, workId) ?? null;
+  }
+
+  async refreshBrief(input: { goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds?: string[]; allRequirements?: boolean }): Promise<void> {
+    const contract = await this.dependencies.requirements?.assertReady(input.goalInputId, input.requirementsRevision);
+    if (contract == null || this.dependencies.repository.refreshBrief === undefined) throw new DomainError("goal_requirements_unavailable", "Versioned task refresh is unavailable.");
+    requireWorkInstructions(input.instructions);
+    renderGoalRequirements(contract, input.requirementIds ?? [], input.allRequirements ?? false);
+    await this.dependencies.repository.refreshBrief({ ...input, requirementIds: input.requirementIds ?? [], allRequirements: input.allRequirements ?? false });
   }
 
   async #validateInstanceSelection(workbenchId: string, request: WorkRequest): Promise<void> {
@@ -319,13 +351,15 @@ export class WorkOrchestrationService {
     }
   }
 
-  async reassign(input: { workbenchId: string; partnerId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+  async reassign(input: { requirementsRevision?: number; instructions?: string; requirementIds?: string[]; allRequirements?: boolean; workbenchId: string; partnerId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
     await this.dependencies.goalGate?.assertWorkOpen(input.workId);
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
     const context = await repository.loadForReassignment(input.workId);
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
+    const contract = context.inputId === undefined ? null : await this.dependencies.requirements?.assertReady(context.inputId, input.requirementsRevision);
+    if (contract != null) { requireWorkInstructions(input.instructions); renderGoalRequirements(contract, input.requirementIds ?? [], input.allRequirements ?? false); }
     if (!(["FAILED", "WAITING", "READY"] as const).includes(context.item.status as "FAILED" | "WAITING" | "READY")) {
       throw new DomainError("work_reassign_status_invalid", "Work cannot be reassigned in its current state.");
     }
@@ -355,6 +389,7 @@ export class WorkOrchestrationService {
     };
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await repository.reassign({
+      ...(contract == null ? {} : { requirementsRevision: contract.revision, instructions: requireWorkInstructions(input.instructions), requirementIds: input.requirementIds ?? [], allRequirements: input.allRequirements ?? false }),
       ...(accessMode === context.item.accessMode ? {} : { accessMode }),
       attempt,
       createdAt,
@@ -390,7 +425,7 @@ export class WorkOrchestrationService {
    * current partner revision: the point is to feed the answer back into the same work, and
    * the dispatch continues in the original resident instance when it is still alive.
    */
-  async resume(input: { actionId?: string; instructions?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+  async resume(input: { requirementsRevision?: number; requirementIds?: string[]; allRequirements?: boolean; actionId?: string; instructions?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
     await this.dependencies.goalGate?.assertWorkOpen(input.workId);
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
@@ -405,6 +440,8 @@ export class WorkOrchestrationService {
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
     if (context.item.status !== "WAITING") throw new DomainError("work_resume_status_invalid", "Only waiting work can be resumed.");
     const instructions = requireWorkInstructions(input.instructions);
+    const contract = context.inputId === undefined ? null : await this.dependencies.requirements?.assertReady(context.inputId, input.requirementsRevision);
+    if (contract != null) renderGoalRequirements(contract, input.requirementIds ?? [], input.allRequirements ?? false);
     const pin = await this.dependencies.partners.pinForDispatch(context.lastPartnerId);
     const accessMode = strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
     const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
@@ -439,6 +476,7 @@ export class WorkOrchestrationService {
     };
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await repository.reassign({ attempt, createdAt, dispatchPlanId, instructions, turnId: input.turnId, workId: input.workId,
+      ...(contract == null ? {} : { requirementsRevision: contract.revision, requirementIds: input.requirementIds ?? [], allRequirements: input.allRequirements ?? false }),
       ...(accessMode === context.item.accessMode ? {} : { accessMode }),
     });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.dispatch_planned", {

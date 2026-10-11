@@ -35,7 +35,10 @@ export type WorkAcceptanceCheck =
 
 export interface WorkBrief {
   acceptanceChecks: WorkAcceptanceCheck[];
-  briefVersion?: 2;
+  briefVersion?: 2 | 3;
+  requirementsRevision?: number;
+  requirementIds?: string[];
+  allRequirements?: boolean;
   evidenceResultIds?: string[];
   instructions?: string;
   workId: string;
@@ -64,9 +67,13 @@ export interface CommittedWorkPlan {
 
 export interface WorkPlanRepository {
   commit(plan: CommittedWorkPlan): Promise<void>;
+  refreshBrief?(input: { goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds: string[]; allRequirements: boolean }): Promise<void>;
+  listForGoal?(goalInputId: string, workbenchId: string): Promise<{ workId: string; title: string; status: string; requirementsRevision?: number }[]>;
+  readBrief?(goalInputId: string, workbenchId: string, workId: string): Promise<{ workId: string; title: string; instructions: string; requirementsRevision?: number } | null>;
 }
 
 export interface WorkReassignmentContext {
+  inputId?: string;
   item: WorkItem;
   /** Instance that ran the latest attempt, when it was instance-linked; may be disposed by now. */
   lastInstanceId?: string;
@@ -83,6 +90,9 @@ export interface WorkSupplementContext {
 }
 
 export interface ReassignedWorkPlan {
+  requirementsRevision?: number;
+  requirementIds?: string[];
+  allRequirements?: boolean;
   accessMode?: WorkAccessMode;
   /** Complete replacement brief for a resumed Work; other contract fields remain intact. */
   instructions?: string;

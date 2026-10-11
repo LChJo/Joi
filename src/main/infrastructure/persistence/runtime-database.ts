@@ -2484,11 +2484,12 @@ class SqliteRuntimeStore implements RuntimeStore {
     if (result.changes === 0) throw new DomainError("outbox_claim_lost", "Outbox claim is no longer owned by this dispatcher.");
   }
 
-  async releaseOutbox(input: { availableAt: string; outboxId: string; owner: string }): Promise<void> {
+  async releaseOutbox(input: { availableAt: string; outboxId: string; owner: string; preserveAttemptCount?: true }): Promise<void> {
     const result = this.database.prepare(`
-      UPDATE outbox SET status = 'PENDING', available_at = ?, claim_owner = NULL, claim_until = NULL
+      UPDATE outbox SET status = 'PENDING', available_at = ?, claim_owner = NULL, claim_until = NULL,
+        attempt_count = CASE WHEN ? = 1 THEN MAX(0, attempt_count - 1) ELSE attempt_count END
        WHERE outbox_id = ? AND status = 'CLAIMED' AND claim_owner = ?`)
-      .run(input.availableAt, input.outboxId, input.owner);
+      .run(input.availableAt, input.preserveAttemptCount === true ? 1 : 0, input.outboxId, input.owner);
     if (result.changes === 0) throw new DomainError("outbox_claim_lost", "Outbox claim is no longer owned by this dispatcher.");
   }
 

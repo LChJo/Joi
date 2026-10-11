@@ -8,6 +8,7 @@ import type {
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { JoiSkillContext } from "./joi-skill-runtime.js";
 import { PiReasoningRuntime } from "./pi-reasoning-runtime.js";
+import type { RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 
 /** One global runtime facade whose individual Workbench sessions use their pinned source revision. */
@@ -16,6 +17,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
   readonly #runtimes = new Map<string, { runtime: PiReasoningRuntime; sourceRevisionId: string }>();
 
   constructor(private readonly dependencies: {
+    diagnostics?: RuntimeDiagnostics;
     usage?: UsageRecorder;
     resolver: PiConfiguredModelResolver;
     skills?: { prepare(): Promise<JoiSkillContext> };
@@ -30,6 +32,7 @@ export class ConfiguredPiReasoningRuntime implements PrimaryReasoningRuntime {
     if (selected?.sourceRevisionId !== input.sourceRevisionId) {
       const resolved = await this.dependencies.resolver.resolve(input);
       const runtime = new PiReasoningRuntime({
+        ...(this.dependencies.diagnostics === undefined ? {} : { diagnostics: this.dependencies.diagnostics }),
         ...(this.dependencies.usage === undefined ? {} : { usage: this.dependencies.usage }),
         // The one compaction field the settings page owns; the runtime fills the rest with its
         // defaults. A cache miss here is guaranteed to pick the new value up: `#runtimes` is keyed

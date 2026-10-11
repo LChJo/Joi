@@ -1,3 +1,4 @@
+import { goalRequirementsCurrentSql } from "./sqlite-goal-requirements.js";
 import type { DatabaseSync } from "node:sqlite";
 
 import type { JoiInboxRecord, JoiInboxStatus } from "../../application/ports/joi-inbox.js";
@@ -40,10 +41,10 @@ export function closeHistoricalReviewInTransaction(connection: DatabaseSync, inp
     SELECT m.goal_input_id, rs.revision
       FROM joi_harness_maps m
       JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
-      JOIN joi_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
+      JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
       JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
       LEFT JOIN joi_inbox_messages r
-        ON r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || rs.revision
+        ON r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || rs.revision || COALESCE((SELECT ':q' || revision FROM joi_goal_requirements WHERE goal_input_id = m.goal_input_id), '')
      WHERE m.goal_input_id = ? AND m.status IN ('ACTIVE', 'CLEARED')
        AND g.status = 'CLARIFICATION_REQUIRED'
        AND g.clarification_reason_code = 'harness_review_unrecoverable'
@@ -51,6 +52,7 @@ export function closeHistoricalReviewInTransaction(connection: DatabaseSync, inp
        AND rs.revision > 0 AND rs.synthesized_revision = rs.revision
        AND o.disposition = 'COMPLETED'
        AND m.reviewed_revision = rs.revision
+           AND ${goalRequirementsCurrentSql('m.goal_input_id', 'm.reviewed_requirements_revision')}
        AND NOT EXISTS (SELECT 1 FROM work_items w
                         WHERE w.input_id = m.goal_input_id
                           AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))

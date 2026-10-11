@@ -24,6 +24,7 @@ import {
   MODEL_SOURCE_PRESETS,
 } from "../../src/main/infrastructure/pi/provider-presets.js";
 import { boundRequestByChars, modelContextMaxChars } from "../../src/main/infrastructure/pi/pi-model-budget.js";
+import { GOAL_REQUIREMENTS_MAX_CHARS } from "../../src/main/application/ports/goal-requirements.js";
 import { createPiSourceProvider } from "../../src/main/infrastructure/pi/source-provider-factory.js";
 import { ConfiguredPiReasoningRuntime } from "../../src/main/infrastructure/pi/configured-pi-reasoning-runtime.js";
 import { JoiSkillRuntime } from "../../src/main/infrastructure/pi/joi-skill-runtime.js";
@@ -56,6 +57,173 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
+  it("reads a long source in one turn while preserving requirements and bounding every request", async () => {
+    const faux = fauxProvider({ provider: "required-long-source" });
+    const model = { ...faux.getModel(), contextWindow: 64000 };
+    const requiredContext = "REQUIRED_CURRENT_DAY";
+    const requests: string[] = [];
+    faux.setResponses([
+      ...Array.from({ length: 14 }, (_, index) => (context: { messages?: unknown }) => {
+        requests.push(JSON.stringify(context.messages));
+        return fauxAssistantMessage([fauxToolCall("goal_read_inputs", { offset: index * 4000 })], { stopReason: "toolUse" });
+      }),
+      (context: { messages?: unknown }) => {
+        requests.push(JSON.stringify(context.messages));
+        return fauxAssistantMessage([fauxText("Source read completely.")]);
+      },
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const offsets: number[] = [];
+    const tools = [{ name: "goal_read_inputs", label: "Read", description: "Read a source page", parameters: Type.Object({ offset: Type.Integer() }),
+      execute: async (_id: string, raw: unknown) => {
+        const args = raw as { offset: number };
+        offsets.push(args.offset);
+        return { content: [{ type: "text" as const, text: `page=${String(args.offset)} `.padEnd(4000, "x") }], details: {} };
+      } }];
+    const runtime = new PiReasoningRuntime({ model, models, sessionStore: store, thinkingLevel: "off", tools });
+    await expect(runtime.startTurn({ requiredContext, refreshRequiredContext: async () => requiredContext,
+      inputId: "goal", workbenchId: "wb", prompt: "Read the entire source", sessionId: "long-source", modelId: "fake", modelRevisionId: "fake",
+      sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn" })).resolves.toBeUndefined();
+    expect(offsets).toEqual(Array.from({ length: 14 }, (_, index) => index * 4000));
+    expect(requests).toHaveLength(15);
+    for (const request of requests) {
+      expect(request).toContain(requiredContext);
+      expect(request.length + JSON.stringify(tools).length).toBeLessThanOrEqual(modelContextMaxChars(model));
+    }
+    expect(requests.at(-1)).toContain("page=52000");
+    expect(requests.at(-1)).toContain("joi context notice");
+    expect(JSON.stringify(store.snapshots.get("long-source"))).not.toContain(requiredContext);
+  });
+
+  it("compacts an overflowing restored history before checking protected requirements capacity", async () => {
+    const faux = fauxProvider({ provider: "required-restored-history" });
+    const requests: string[] = [];
+    faux.setResponses([
+      fauxAssistantMessage([fauxText("Earlier pages recorded.")]),
+      context => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("continued")]); },
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    await store.save({ workbenchId: "wb", modelRevisionId: "fake", sourceRevisionId: "fake", sessionId: "restored-long", systemPrompt: "POLICY",
+      updatedAt: "2026-10-11T00:00:00Z", messages: Array.from({ length: 70 }, (_, index) => ({ role: "user" as const, content: `page-${String(index)} `.padEnd(4000, "x"), timestamp: index })) });
+    const runtime = new PiReasoningRuntime({ model: { ...faux.getModel(), contextWindow: 64000 }, models, sessionStore: store, thinkingLevel: "off", tools: [] });
+    await expect(runtime.startTurn({ requiredContext: "REQUIRED_CURRENT_DAY", inputId: "goal", workbenchId: "wb", prompt: "Continue reading", sessionId: "restored-long",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn" })).resolves.toBeUndefined();
+    expect(requests.at(-1)).toContain("REQUIRED_CURRENT_DAY");
+    expect(requests.at(-1)).toContain("Continue reading");
+    expect(store.snapshots.get("restored-long")?.compaction?.count).toBeGreaterThan(0);
+  });
+
+  it.each([32000, 200000, 0])("protects current requirements with a %i window without storing copies", async (window) => {
+    const faux = fauxProvider({ provider: `requirements-${String(window)}` });
+    const requests: string[] = [];
+    faux.setResponses(Array.from({ length: 3 }, () => context => {
+      requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("done")]);
+    }));
+    const models = createModels(); models.setProvider(faux.provider);
+    const store = new MemorySessionStore();
+    const runtime = new PiReasoningRuntime({ model: { ...faux.getModel(), contextWindow: window }, models, sessionStore: store, thinkingLevel: "off", tools: [] });
+    for (let index = 0; index < 3; index++) {
+      await runtime.startTurn({ requiredContext: `REQUIRED_DAY_RULE_${String(index)}`, backgroundContext: "x".repeat(24000), backgroundContextVariants: ["y".repeat(40000), "z".repeat(60000)],
+        inputId: "input", workbenchId: "wb", prompt: "continue", sessionId: "requirements", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: `turn-${String(index)}` });
+      expect(requests.at(-1)).toContain(`REQUIRED_DAY_RULE_${String(index)}`);
+      expect((requests.at(-1)?.match(/REQUIRED_DAY_RULE/gu) ?? [])).toHaveLength(1);
+      expect(JSON.stringify(store.snapshots.get("requirements"))).not.toContain("REQUIRED_DAY_RULE");
+    }
+  });
+
+  it("rejects mandatory context that cannot fit rather than truncating it", async () => {
+    const faux = fauxProvider({ provider: "required-capacity" });
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiReasoningRuntime({ model: { ...faux.getModel(), contextWindow: 32000 }, models, sessionStore: new MemorySessionStore(), thinkingLevel: "off", tools: [] });
+    // The policy prompt is measured at its production length here: on a 32k route it leaves only a
+    // few hundred characters of room, so a contract this size has nowhere to go and must be refused
+    // rather than silently cut down.
+    await expect(runtime.startTurn({ requiredContext: "RULE".repeat(3000), inputId: "input", workbenchId: "wb", prompt: "continue", sessionId: "capacity", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY ".repeat(2232).trimEnd(), turnId: "turn" })).rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
+  });
+  it("shrinks escaped optional background before rejecting mandatory requirements", async () => {
+    const faux = fauxProvider({ provider: "required-escaped-background" });
+    const requests: string[] = [];
+    faux.setResponses([context => {
+      requests.push(JSON.stringify(context.messages));
+      return fauxAssistantMessage([fauxText("done")]);
+    }]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const model = { ...faux.getModel(), contextWindow: 32000 };
+    const runtime = new PiReasoningRuntime({ model, models, sessionStore: new MemorySessionStore(), thinkingLevel: "off", tools: [] });
+    await expect(runtime.startTurn({ requiredContext: "REQUIRED_CURRENT_DAY", backgroundContext: "OPTIONAL_EVIDENCE " + "\u0001".repeat(24000),
+      inputId: "input", workbenchId: "wb", prompt: "continue", sessionId: "escaped-background", modelId: "fake", modelRevisionId: "fake",
+      sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn" })).resolves.toBeUndefined();
+    expect(requests[0]).toContain("REQUIRED_CURRENT_DAY");
+    expect(requests[0]).toContain("OPTIONAL_EVIDENCE");
+    expect((requests[0]?.length ?? 0) + 2).toBeLessThanOrEqual(modelContextMaxChars(model));
+  });
+  it("reports a response whose terminating tool left a later call unanswered", async () => {
+    const faux = fauxProvider({ provider: "dangling-report" });
+    const events: { event: string; fields: unknown }[] = [];
+    faux.setResponses([
+      fauxAssistantMessage([
+        fauxToolCall("turn_complete", { outcome: "DIRECT_ANSWER" }),
+        fauxToolCall("memory_search", { query: "unreached" }),
+      ], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("done")]),
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const tools = [
+      { name: "turn_complete", label: "Complete", description: "commits and ends the turn",
+        parameters: Type.Object({ value: Type.Optional(Type.String()) }),
+        execute: async () => ({ content: [{ type: "text" as const, text: "committed" }], details: {}, terminate: true }) },
+      { name: "memory_search", label: "Search", description: "the call behind it",
+        parameters: Type.Object({ query: Type.String() }),
+        execute: async () => ({ content: [{ type: "text" as const, text: "ran" }], details: {} }) },
+    ];
+    const runtime = new PiReasoningRuntime({
+      diagnostics: { emit: (event: string, fields: unknown) => { events.push({ event, fields }); } },
+      model: { ...faux.getModel(), contextWindow: 200000 }, models, sessionStore: new MemorySessionStore(), thinkingLevel: "off", tools,
+    });
+    await runtime.startTurn({ inputId: "input", workbenchId: "wb", prompt: "go", sessionId: "dangling", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn" });
+    // The second call never ran and emits nothing of its own, so this report is the only place its
+    // absence becomes observable — which is the point of recording it.
+    const report = events.find((entry) => entry.event === "joi.turn.dangling_tool_call");
+    expect(report?.fields).toMatchObject({ danglingCount: 1, observedToolCount: 2 });
+  });
+
+  it("carries a requirements contract that the write path accepted on a mid-sized window", async () => {
+    const faux = fauxProvider({ provider: "required-write-ceiling" });
+    const requests: string[] = [];
+    faux.setResponses([(context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("done")]); }]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiReasoningRuntime({ model: { ...faux.getModel(), contextWindow: 64000 }, models, sessionStore: new MemorySessionStore(), thinkingLevel: "off", tools: [] });
+    // The requirements store accepts a contract up to GOAL_REQUIREMENTS_MAX_CHARS, so one at that
+    // ceiling is writable by construction — a route that cannot carry it makes the write ceiling
+    // a lie, and the goal runs until it happens to land on a bigger model.
+    const requiredContext = `Effective user requirements (user scope; runtime permissions remain authoritative):\nrequirementsRevision=1 sourceRevision=1 processedSourceRevision=1 status=READY\n${JSON.stringify({ id: "r1", kind: "CONSTRAINT", mandatory: true, scope: "GLOBAL", text: "x".repeat(15_000) })}`;
+    expect(requiredContext.length).toBeLessThanOrEqual(GOAL_REQUIREMENTS_MAX_CHARS);
+    await runtime.startTurn({ requiredContext, inputId: "input", workbenchId: "wb", prompt: "continue", sessionId: "ceiling", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn" });
+    expect(requests.at(-1)).toContain("requirementsRevision=1");
+  });
+  it("starts a goal turn on a mid-sized window when the real policy prompt fills its share", async () => {
+    const faux = fauxProvider({ provider: "required-share-floor" });
+    const requests: string[] = [];
+    faux.setResponses([(context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("done")]); }]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiReasoningRuntime({ model: { ...faux.getModel(), contextWindow: 64000 }, models, sessionStore: new MemorySessionStore(), thinkingLevel: "off", tools: [] });
+    // The production policy prompt measures 15,621 characters; the share the background budget
+    // reserves for it (a third of the window) is smaller than that on any route under ~64k, so a
+    // real goal turn must still start and carry its requirements rather than fail outright.
+    const systemPrompt = "POLICY ".repeat(2232).trimEnd();
+    const requiredContext = [
+      "Effective user requirements (user scope; runtime permissions remain authoritative):",
+      "requirementsRevision=1 sourceRevision=1 processedSourceRevision=1 status=READY",
+      JSON.stringify({ id: "r1", kind: "DELIVERABLE", mandatory: true, scope: "GLOBAL", text: "The report must name the root cause and cite the file that carries it." }),
+      JSON.stringify({ id: "r2", kind: "CONSTRAINT", mandatory: true, scope: "GLOBAL", text: "Do not modify production data while investigating; read-only access only." }),
+      JSON.stringify({ id: "r3", kind: "OBJECTIVE", mandatory: true, scope: "GLOBAL", text: "Explain why the retry loop reproduced its own failure before proposing a fix." }),
+      JSON.stringify({ id: "r4", kind: "PREFERENCE", mandatory: false, scope: "SCOPED", text: "Prefer Chinese in the final summary." }),
+    ].join("\n");
+    await runtime.startTurn({ requiredContext, inputId: "input", workbenchId: "wb", prompt: "continue", sessionId: "share", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt, turnId: "turn" });
+    expect(requests.at(-1)).toContain("Do not modify production data");
+  });
   it.each(["empty", "medium", "busy", "prompt", "tools", "unknown"] as const)("chooses continuation evidence using the %s session's remaining capacity", async (state) => {
     const faux = fauxProvider({ provider: `joi-adaptive-background-${state}` });
     const requests: string[] = [];
@@ -443,6 +611,7 @@ describe("Pi reasoning runtime contract", () => {
 
   it("never exposes arbitrary execution tools and can abort an active turn", async () => {
     expect(JOI_REASONING_TOOL_NAMES).toEqual([
+      "goal_read_inputs", "goal_update_requirements", "work_list_goal", "work_read_brief", "work_update_brief",
       "workbench_list_summaries",
       "workbench_select",
       "workbench_create",

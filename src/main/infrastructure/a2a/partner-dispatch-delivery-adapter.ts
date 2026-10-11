@@ -1,6 +1,8 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
+import { assertGoalRequirementsReady, loadGoalRequirements } from "../persistence/sqlite-goal-requirements-repository.js";
+import { renderGoalRequirements, type GoalRequirement } from "../../domain/work/goal-requirements.js";
 
 import type { A2aGatewayService } from "../../application/a2a/a2a-gateway-service.js";
 import type { PartnerInstanceManager } from "../../application/partners/partner-instance-manager.js";
@@ -52,6 +54,7 @@ interface TransactionalDatabase {
 const LIVE_CONVERSATION_SNAPSHOT_INTERVAL_MS = 500;
 
 interface DispatchRow {
+  required_context?: string;
   access_mode: WorkAccessMode;
   action_id: string;
   agent_connection_id: string | null;
@@ -93,7 +96,7 @@ function intentJsonCorrupt(intentJson: string): boolean {
     const parsed = JSON.parse(intentJson) as unknown;
     if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return true;
     const brief = parsed as Record<string, unknown>;
-    return brief.briefVersion !== undefined && (brief.briefVersion !== 2 || !validWorkInstructions(brief.instructions));
+    return brief.briefVersion !== undefined && (![2, 3].includes(brief.briefVersion as number) || !validWorkInstructions(brief.instructions));
   } catch {
     return true;
   }
@@ -126,6 +129,7 @@ function taskProjection(row: DispatchRow, stagedAttachments?: readonly StagedAtt
   const stagedLines = (stagedAttachments ?? []).map((staged) => `- ${staged.relativePath} (${staged.mimeType}, ${String(staged.size)} bytes)`);
   return [
     `Work title: ${row.title}`,
+    ...(row.required_context === undefined ? [] : [row.required_context]),
     brief.instructions !== undefined ? `Task instructions:\n${brief.instructions}`
       : brief.legacy ? `Original user request (authoritative):\n${row.source_request}` : "Task instructions unavailable.",
     ...(stagedLines.length === 0 ? [] : [`Attachments from the user's original input are staged in this workspace (read them via these relative paths; treat them as read-only inputs):\n${stagedLines.join("\n")}`]),
@@ -254,6 +258,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     // A persisted start is owned by its live slot or the orphan recovery path.
     // Redelivery must never start it again or finalize a still-live preparation.
     if (row.run_id !== null) return "skipped_terminal";
+    const initialRow = row;
+    this.dependencies.database.transaction(db => this.#assertRequirements(db, initialRow));
     if (!this.#goalExecutionOpen(row.work_id)) {
       throw new DomainError("goal_execution_paused", "The goal is waiting for Joi to review a user answer.");
     }
@@ -427,6 +433,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         request: {
           actionId: row.action_id, workbenchId: row.workbench_id, contextSnapshotId: row.context_snapshot_id ?? "",
           taskProjection: taskProjection(row, prepared.stagedAttachments), workId: row.work_id,
+          ...(row.required_context === undefined ? {} : { requiredContext: row.required_context }),
         },
         revision,
         ...(prepared.sessionPolicy === undefined ? {} : { sessionPolicy: prepared.sessionPolicy }),
@@ -583,7 +590,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   }
 
   #load(dispatchAttemptId: string): DispatchRow | undefined {
-    return this.dependencies.database.transaction((connection) => connection.prepare(`
+    const row = this.dependencies.database.transaction((connection) => connection.prepare(`
       SELECT a.dispatch_attempt_id, a.action_id, a.status, a.partner_revision_id, a.instance_id,
              w.work_id, w.workbench_id, w.input_id, w.title, w.intent_json, i.body AS source_request,
              w.status AS work_status,
@@ -592,7 +599,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
              p.partner_id, p.kind, p.legacy_agent_connection_id AS agent_connection_id,
              r.display_name AS partner_display_name,
              (SELECT invocation_id FROM invocations WHERE message_id = a.action_id) AS invocation_id,
-             pr.run_id, pr.status AS run_status, pr.context_snapshot_id
+             pr.run_id, pr.status AS run_status, pr.context_snapshot_id, pr.requirements_context AS required_context
         FROM dispatch_attempts a
         JOIN work_items w ON w.work_id = a.work_id
         JOIN joi_inbox_messages i ON i.input_id = w.input_id
@@ -603,6 +610,39 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         LEFT JOIN work_run_directories d ON d.work_id = w.work_id
         LEFT JOIN partner_runs pr ON pr.dispatch_attempt_id = a.dispatch_attempt_id
        WHERE a.dispatch_attempt_id = ?`).get(dispatchAttemptId)) as DispatchRow | undefined;
+    if (row !== undefined) {
+      if (typeof row.required_context === "string" && row.run_id !== null) return row;
+      delete row.required_context;
+      if (row.run_id !== null) return row;
+    }
+    if (row !== undefined) this.dependencies.database.transaction(db => {
+      let parsed: unknown;
+      try { parsed = JSON.parse(row.intent_json); } catch { return; }
+      if (parsed === null || typeof parsed !== "object") return;
+      const brief = parsed as { requirementsRevision?: number; requirementIds?: string[]; allRequirements?: boolean };
+      if (brief.requirementsRevision === undefined) return;
+      const current = loadGoalRequirements(db, row.input_id, row.workbench_id);
+      const snapshot = db.prepare("SELECT requirements_json FROM joi_goal_requirement_snapshots WHERE goal_input_id = ? AND revision = ?").get(row.input_id, brief.requirementsRevision);
+      if (current === null || typeof snapshot?.requirements_json !== "string") throw new DomainError("goal_requirements_stale", "The pinned requirements snapshot is unavailable.");
+      row.required_context = renderGoalRequirements({ ...current, revision: brief.requirementsRevision, status: "READY", sourceRevision: current.processedSourceRevision,
+        requirements: JSON.parse(snapshot.requirements_json) as GoalRequirement[] }, brief.requirementIds ?? [], brief.allRequirements ?? false);
+    });
+    return row;
+  }
+
+  #assertRequirements(db: DatabaseSync, row: DispatchRow): void {
+    let parsed: unknown;
+    try { parsed = JSON.parse(row.intent_json); } catch {
+      assertGoalRequirementsReady(db, row.input_id);
+      return;
+    }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      assertGoalRequirementsReady(db, row.input_id);
+      return;
+    }
+    const brief = parsed as { briefVersion?: number; requirementsRevision?: number };
+    const contract = assertGoalRequirementsReady(db, row.input_id, brief.requirementsRevision);
+    if (contract !== null && brief.briefVersion !== 3) throw new DomainError("goal_requirements_stale", "Refresh this queued Work before starting.");
   }
 
   async #ensureRun(row: DispatchRow, payloadJson = "{}"): Promise<boolean> {
@@ -613,7 +653,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     const created = this.dependencies.database.transaction((connection) => {
       // Recheck after asynchronous context assembly: cancellation, terminal results and
       // another preparation can win while the snapshot is being assembled.
-      const current = connection.prepare(`SELECT w.status AS work_status, a.status AS attempt_status,
+      const current = connection.prepare(`SELECT w.status AS work_status, w.intent_json, a.status AS attempt_status,
           i.canceled_at, i.failed_at, pr.run_id
         FROM dispatch_attempts a JOIN work_items w ON w.work_id = a.work_id
         JOIN joi_inbox_messages i ON i.input_id = w.input_id
@@ -621,7 +661,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         WHERE a.dispatch_attempt_id = ? AND a.dispatch_attempt_id = (
           SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest WHERE latest.work_id = w.work_id
           ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1)`).get(row.dispatch_attempt_id) as {
-          work_status: string; attempt_status: string; canceled_at: string | null; failed_at: string | null; run_id: string | null;
+          work_status: string; intent_json: string; attempt_status: string; canceled_at: string | null; failed_at: string | null; run_id: string | null;
         } | undefined;
       if (current?.run_id !== null || attemptTerminal(current.attempt_status)
         || current.canceled_at !== null || current.failed_at !== null
@@ -631,6 +671,13 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
         WHERE w.work_id = ? AND gate.status <> 'OPEN' LIMIT 1`).get(row.work_id);
       if (blocked !== undefined) throw new DomainError("goal_execution_paused", "The goal is waiting for Joi to review a user answer.");
+      this.#assertRequirements(connection, row);
+      if (current.intent_json !== row.intent_json) throw new DomainError("goal_requirements_stale", "The task brief changed during preparation.");
+      let pinnedRevision: number | null = null;
+      try {
+        const brief = JSON.parse(row.intent_json) as { requirementsRevision?: number };
+        pinnedRevision = brief.requirementsRevision ?? null;
+      } catch { /* Invalid legacy briefs are persisted as terminal configuration failures. */ }
       // Reserve an explicitly selected instance by linking this persisted start in the
       // same transaction. BUSY and already-started turns both keep later Work queued.
       let instanceId: string | undefined;
@@ -650,11 +697,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       }
       connection.prepare(`INSERT INTO partner_runs
         (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
-         external_run_id, status, created_at, updated_at, context_snapshot_id)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?)`
+         external_run_id, status, created_at, updated_at, context_snapshot_id, requirements_revision, requirements_context)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?)`
       ).run(
         runId, row.dispatch_attempt_id, row.action_id, row.workbench_id, row.work_id, row.partner_revision_id,
         row.kind, externalRunId, now, now, snapshot.contextSnapshotId,
+        pinnedRevision, row.required_context ?? null,
       );
       connection.prepare("UPDATE dispatch_attempts SET status = 'RUNNING', updated_at = ? WHERE dispatch_attempt_id = ?")
         .run(now, row.dispatch_attempt_id);
