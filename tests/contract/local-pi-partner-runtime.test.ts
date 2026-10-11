@@ -164,6 +164,40 @@ describe("local Pi coding partner runtime", () => {
     expect(boundBackgroundSections(["short"], 40)).toBe("short");
   });
 
+  it("divides the background budget between its sections instead of spending it front to back", () => {
+    // Workbench evidence is the section that grows without bound; Skills and knowledge are the ones
+    // that say how the Work is done. Spending the budget front to back let the first section take it
+    // all and hand the model an empty Skills section, which is a run that rediscovers it by trying.
+    const bounded = boundBackgroundSections(["w".repeat(1_000), "s".repeat(10), "k".repeat(1_000)], 60);
+    const sections = bounded.split("\n\n");
+    // Two separators leave a 56-character pool: 23 each to the two oversized sections, while the
+    // small one keeps all 10 rather than paying for the sections that overflow.
+    expect(sections[1]).toBe("s".repeat(10));
+    expect(sections[0]).toBe(`${"w".repeat(23)}\n[truncated: Workbench background section 1 of 3 exceeded its 23-character share]`);
+    expect(sections[2]).toBe(`${"k".repeat(23)}\n[truncated: Workbench background section 3 of 3 exceeded its 23-character share]`);
+  });
+
+  it("sizes a partner's background against its route's window rather than a fixed ceiling", async () => {
+    // A wide route hands the system prompt a third of a much larger window. A fixed ceiling made
+    // that share smaller than a narrow route's would have been, so Workbench evidence crowded out
+    // the Skills and knowledge sections and the run never received the instructions it needed.
+    const faux = fauxProvider({ provider: "wide-window-background", models: [{ id: "fake", contextWindow: 999_424, maxTokens: 4_096 }] });
+    const requests: string[] = [];
+    faux.setResponses([(context) => { requests.push(JSON.stringify(context.messages)); return fauxAssistantMessage([fauxText("done")]); }]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: { names: ["read"], create: () => [{ name: "read", label: "Read", description: "x".repeat(100), parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }] },
+    });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM" });
+    const skillSection = "SKILL_BODY ".repeat(6_000);
+    await runtime.runEphemeral({ actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "Perform the assigned task", requiredContext: "ONLY_CURRENT_DAY" }, revision, { knowledgeSection: "", skillSection, skillEnvironmentKeys: [] });
+    // 66,000 characters of Skills fit the third of a million-character window this route owns, and a
+    // ceiling fixed below that would have trimmed them away.
+    expect((requests[0] ?? "").includes(skillSection)).toBe(true);
+  });
+
   it("runs one isolated Pi session with the pinned workspace, prompt and tool allowlist", async () => {
     const faux = fauxProvider({ provider: "local-partner" });
     faux.setResponses([fauxAssistantMessage([fauxText("work completed")])]);

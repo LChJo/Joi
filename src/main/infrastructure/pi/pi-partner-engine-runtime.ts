@@ -885,10 +885,18 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       this.#requirementsBackgroundBudget(request, backgroundBudgetChars, mandatory.length), request)].join("\n");
   }
 
+  /**
+   * The mandatory lines — the fixed policy prompt and the goal's requirements — are never trimmed,
+   * so the background takes whatever the route's system share has left after them. Sized against
+   * the pinned window and not against a fixed character count: the share is already a fraction of
+   * that window, and a constant here handed a wide route's Workbench evidence, Skills and knowledge
+   * a smaller slice than a narrow route would have given them, which is the opposite of what the
+   * route can carry. The contract's own size is bounded where it is written, not here.
+   */
   #requirementsBackgroundBudget(request: PartnerRunRequest, budget: number, mandatoryChars: number): number {
     if (request.requiredContext === undefined) return budget;
-    if (request.requiredContext.length > 60_000 || mandatoryChars > budget) throw new DomainError("goal_requirements_capacity_exceeded", "Mandatory requirements exceed the partner context capacity.");
-    return Math.max(0, Math.min(60_000 - request.requiredContext.length - 2, budget - mandatoryChars - 2));
+    if (mandatoryChars > budget) throw new DomainError("goal_requirements_capacity_exceeded", "Mandatory requirements exceed the partner context capacity.");
+    return Math.max(0, budget - mandatoryChars - 2);
   }
 
   /**

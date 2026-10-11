@@ -151,11 +151,63 @@ export function modelRequestBudget(model: { contextWindow?: number }): ModelRequ
  * Joins the background sections and holds them to the share of the window the system prompt owns.
  * Every engine that hands these sections to a model needs this — a CLI-backed partner has no other
  * bound at all, since the CLI owns its own message history.
+ *
+ * The budget is divided between the sections instead of being spent front to back. Spending it
+ * front to back let one oversized section — Workbench evidence is the usual one — consume the whole
+ * share and leave the sections behind it empty, and a run whose Skills and knowledge never arrived
+ * spends its turn rediscovering what they said. A section that fits its equal share keeps all of it
+ * and releases the remainder to the sections that overflow, so the shares still sum to the budget
+ * and a small section only ever pays for itself.
  */
 export function boundBackgroundSections(sections: readonly string[], maxChars: number): string {
-  const background = sections.filter((section) => section !== "").join("\n\n");
+  const present = sections.filter((section) => section !== "");
+  const background = present.join("\n\n");
   if (background.length <= maxChars) return background;
-  return `${background.slice(0, maxChars)}\n[truncated: Workbench background exceeded ${String(maxChars)} characters]`;
+  const separators = Math.max(0, present.length - 1) * 2;
+  const quotable = maxChars - separators;
+  // A budget that cannot give every section a character cannot be divided at all; the historical
+  // front-to-back trim is then the only thing left that keeps the result inside the budget.
+  if (present.length < 2 || quotable < present.length) {
+    return `${background.slice(0, maxChars)}\n[truncated: Workbench background exceeded ${String(maxChars)} characters]`;
+  }
+  const quota = divideBackgroundBudget(present.map((section) => section.length), quotable);
+  return present.map((section, index) => {
+    const share = quota[index] ?? 0;
+    return section.length <= share
+      ? section
+      : `${section.slice(0, share)}\n[truncated: Workbench background section ${String(index + 1)} of ${String(present.length)} exceeded its ${String(share)}-character share]`;
+  }).join("\n\n");
+}
+
+/**
+ * Water-filling division of one budget across sections of unequal length: every section is offered
+ * an equal share first, and what the sections that fit do not claim is offered again to the ones
+ * that overflow, until either the budget or the demand runs out.
+ */
+function divideBackgroundBudget(lengths: readonly number[], budget: number): number[] {
+  const remaining = [...lengths];
+  const quota = lengths.map(() => 0);
+  let active = lengths.map((_, index) => index);
+  let left = budget;
+  while (active.length > 0 && left > 0) {
+    const share = Math.floor(left / active.length);
+    if (share === 0) {
+      // Fewer characters left than sections competing for them: the earliest sections take one each.
+      for (const index of active.slice(0, left)) quota[index] = (quota[index] ?? 0) + 1;
+      break;
+    }
+    const overflowing: number[] = [];
+    for (const index of active) {
+      const need = remaining[index] ?? 0;
+      const taken = Math.min(need, share);
+      quota[index] = (quota[index] ?? 0) + taken;
+      remaining[index] = need - taken;
+      left -= taken;
+      if (need > taken) overflowing.push(index);
+    }
+    active = overflowing;
+  }
+  return quota;
 }
 
 /**
