@@ -63,6 +63,62 @@ async function expectNoHorizontalOverflow(page: Page): Promise<void> {
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.clientWidth);
 }
 
+async function sidebarAppearance(page: Page) {
+  return page.locator(".sidebar").evaluate((sidebar) => {
+    const bounds = (element: Element) => {
+      const { x, y, width, height } = element.getBoundingClientRect();
+      return { x, y, width, height };
+    };
+    const style = getComputedStyle(sidebar);
+    return {
+      background: style.backgroundColor,
+      border: style.borderRightColor,
+      bounds: bounds(sidebar),
+      buttons: Array.from(sidebar.querySelectorAll("nav button"), (button) => {
+        const buttonStyle = getComputedStyle(button);
+        const icon = button.querySelector("svg");
+        const label = button.querySelector("span");
+        if (icon === null || label === null) throw new Error("Expected navigation icon and label.");
+        const labelBounds = label.getBoundingClientRect();
+        return {
+          bounds: bounds(button),
+          fontFamily: buttonStyle.fontFamily,
+          fontSize: buttonStyle.fontSize,
+          lineHeight: buttonStyle.lineHeight,
+          gap: buttonStyle.gap,
+          radius: buttonStyle.borderRadius,
+          padding: buttonStyle.padding,
+          icon: bounds(icon),
+          label: { x: labelBounds.x, y: labelBounds.y, height: labelBounds.height },
+        };
+      }),
+    };
+  });
+}
+
+async function expectStableSidebar(page: Page): Promise<void> {
+  const navigation = page.getByRole("navigation", { name: "主导航" });
+  for (const colorScheme of ["light", "dark"] as const) {
+    await page.emulateMedia({ colorScheme });
+    for (const width of [1280, 960, 768]) {
+      await page.setViewportSize({ height: 760, width });
+      await navigation.getByRole("button", { exact: true, name: "joi" }).click();
+      await expect(page.locator(".joi-home")).toBeVisible();
+      const baseline = await sidebarAppearance(page);
+      for (const label of ["工作台", "搭档", "定时任务", "设置", "统计", "已归档", "joi"]) {
+        await navigation.getByRole("button", { exact: true, name: label }).click();
+        await expect(navigation.locator('[aria-current="page"]')).toHaveText(label);
+        expect(await sidebarAppearance(page), `${colorScheme}/${String(width)}/${label} 的侧栏格式`).toEqual(baseline);
+        if (width === 1280 && (label === "工作台" || label === "joi")) {
+          await page.locator(".sidebar").screenshot({ path: path.resolve(`test-results/e2e-sidebar-${colorScheme}-${label === "joi" ? "home" : "workbench"}.png`) });
+        }
+      }
+      await expectNoHorizontalOverflow(page);
+    }
+  }
+  await page.emulateMedia({ colorScheme: "light" });
+}
+
 test("Electron completes setup, native workbench creation, and responsive joi-console paths", async () => {
   test.setTimeout(60_000);
   const skillsRoot = await mkdtemp(path.join(tmpdir(), "joi-e2e-skills-"));
@@ -92,6 +148,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     const joiHomeTitle = window.getByRole("heading", { name: "现在想让 joi 做什么？" });
     await expect(joiHomeTitle).toBeVisible();
     expect((await joiHomeTitle.boundingBox())?.y).toBeGreaterThanOrEqual(16);
+    await expectStableSidebar(window);
 
     await window.setViewportSize({ height: 760, width: 960 });
     await window.getByRole("button", { exact: true, name: "设置" }).click();

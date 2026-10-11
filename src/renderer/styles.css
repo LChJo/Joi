@@ -875,8 +875,10 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 .notice-row { display: grid; grid-template-columns: 1fr auto; gap: 7px 18px; padding: 18px 0; border-block: 1px solid var(--line); }
 .notice-row small { grid-column: 1 / -1; }
 
-.app-shell { display: grid; grid-template-columns: 208px minmax(0, 1fr); min-height: 100dvh; }
-.app-shell:has(.joi-home) {
+.app-shell {
+  display: grid;
+  grid-template-columns: 208px minmax(0, 1fr);
+  min-height: 100dvh;
   --canvas: #f1f3f0;
   --paper: #fcfdfc;
   --line: #dee4de;
@@ -886,7 +888,7 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
   background: var(--canvas);
 }
 @media (prefers-color-scheme: dark) {
-  .app-shell:has(.joi-home) {
+  .app-shell {
     --canvas: #111914;
     --paper: #17211b;
     --line: #2e3b33;
@@ -909,11 +911,10 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
   .brand-bar .joi-brand-name { width: auto; height: auto; background: none; color: CanvasText; font-size: 24px; mask: none; }
 }
 .sidebar nav { display: grid; align-content: start; gap: 3px; padding-top: 14px; border-top: 1px solid var(--line); }
-.sidebar nav button { display: flex; min-height: 42px; align-items: center; gap: 11px; padding: 0 11px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); cursor: pointer; text-align: left; }
+.sidebar nav button { display: flex; min-height: 42px; align-items: center; gap: 12px; padding: 0 11px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; text-align: left; }
 .sidebar nav button:hover { background: var(--wash); color: var(--ink); }
 .sidebar nav button[aria-current="page"] { background: color-mix(in srgb, var(--forest) 11%, var(--paper)); color: var(--forest-dark); font-weight: 700; }
 .sidebar nav svg { width: 19px; height: 19px; }
-.app-shell:has(.joi-home) .sidebar nav button { font-size: 14px; gap: 12px; border-radius: 9px; }
 .sidebar footer { display: flex; min-height: 44px; align-items: center; gap: 6px; padding: 8px; color: var(--muted); font-size: 11px; }
 .sidebar footer .icon-button { width: 32px; height: 32px; margin-left: auto; border: 0; }
 .sidebar footer .stream-retry { margin-left: 0; color: var(--amber); }
