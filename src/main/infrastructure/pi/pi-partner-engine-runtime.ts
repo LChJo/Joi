@@ -476,7 +476,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       transformContext: (messages, signal) => window.transformContext(messages, signal),
     });
     this.#installRequirementsPrompt(agent, request, configuredPrompt, execution.promptSection, context.knowledgeSection, context.skillSection,
-      revision, execution.workspacePath !== undefined, budget.systemMaxChars);
+      revision, execution.workspacePath !== undefined, budget.systemMaxChars, window);
     const live = context.onEvent === undefined && context.onToolTrace === undefined
       ? undefined
       : new LiveConversationPublisher(
@@ -605,16 +605,14 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
       revision, residentToolNames, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars,
     );
-    // A resident Agent outlives the turn that failed: clear any recorded capacity failure before
-    // either branch installs this turn's request. Only the branch below reaches
-    // #installRequirementsPrompt, so clearing there alone would leave a turn that carries no
-    // required context inheriting the earlier failure and throwing it after producing its answer.
+    // Capacity failures and prepared request frames belong to one resident turn.
     this.#requirementsErrors.delete(warm.agent);
+    warm.agent.transformContext = (messages, signal) => warm.context.transformContext(messages, signal);
     if (input.request.requiredContext === undefined) {
       warm.agent.prepareRequest = ({ context }) => Promise.resolve({ context: { ...context, messages: withRequestPrompt(context.messages, systemPrompt) } });
     } else {
       this.#installRequirementsPrompt(warm.agent, input.request, await this.#configuredPrompt(revision), execution.promptSection,
-        input.knowledgeSection, input.skillSection, revision, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars);
+        input.knowledgeSection, input.skillSection, revision, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars, warm.context);
     }
     const previousMessageCount = warm.agent.state.messages.length;
     // One watch per turn, reading the tools the agent actually holds rather than the revision's
@@ -826,14 +824,17 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   #installRequirementsPrompt(agent: Agent, request: PartnerRunRequest, configured: string, workbench: string, knowledge: string, skill: string,
-    revision: PartnerRevision, workspace: boolean, systemBudget: number): void {
-    // Cleared unconditionally. A resident Agent outlives the turn that failed, so a run carrying no
-    // required context would otherwise inherit the earlier capacity failure and throw it after the
-    // run had already produced its answer, discarding a successful result.
+    revision: PartnerRevision, workspace: boolean, systemBudget: number, manager: PiContextManager): void {
+    // A resident Agent may execute turns with different required contexts.
     this.#requirementsErrors.delete(agent);
     if (request.requiredContext === undefined) return;
-    agent.prepareRequest = ({ context }) => {
-      const withoutSystem = context.messages.map(message => (message as { role?: string }).role === "system"
+    let preparedMessages: AgentMessage[] | undefined;
+    agent.prepareRequest = async ({ context }, signal) => {
+      preparedMessages = undefined;
+      const currentPrompt = this.#systemPrompt(configured, request, workbench, knowledge, skill, revision,
+        agent.state.tools.map(tool => tool.name), workspace, systemBudget);
+      const messages = await manager.transformContext(withRequestPrompt(context.messages, currentPrompt), signal);
+      const withoutSystem = messages.map(message => (message as { role?: string }).role === "system"
         ? { ...message, content: "", toolsAdded: undefined, toolsRemoved: undefined } : message);
       const occupied = JSON.stringify(withoutSystem).length + JSON.stringify(agent.state.tools).length;
       const available = Math.max(0, Math.min(systemBudget, modelContextMaxChars(agent.state.model) - occupied - 2));
@@ -845,7 +846,15 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") this.#requirementsErrors.set(agent, error);
         throw error;
       }
-      return Promise.resolve({ context: { ...context, messages: withRequestPrompt(context.messages, prompt) } });
+      preparedMessages = withRequestPrompt(messages, prompt);
+      // Checkpoint indices address the complete loop history; only the outgoing request is compacted.
+      return { context: { ...context, messages: withRequestPrompt(context.messages, prompt) } };
+    };
+    agent.transformContext = (messages, signal) => {
+      const prepared = preparedMessages;
+      preparedMessages = undefined;
+      // Consume the checked frame once so each provider request performs at most one compaction.
+      return prepared === undefined ? manager.transformContext(messages, signal) : Promise.resolve(prepared);
     };
   }
 

@@ -41,6 +41,94 @@ function requestSystemPrompt(context: { messages?: readonly unknown[] }): string
 }
 
 describe("local Pi coding partner runtime", () => {
+  it.each([
+    ["ephemeral", "summary"],
+    ["resident", "summary"],
+    ["ephemeral", "unavailable"],
+    ["resident", "unavailable"],
+    ["ephemeral", "checkpoint-then-failure"],
+    ["resident", "checkpoint-then-failure"],
+  ] as const)("budgets %s requirements against the prepared request with %s summaries", async (mode, summaryMode) => {
+    const turns = 12;
+    const requests: string[] = [];
+    let summaries = 0;
+    let turn = 0;
+    let completedTools = 0;
+    let required = "CURRENT_REQUIRED_CONSTRAINT";
+    const checkpoint = "CHECKPOINT_PRESERVES_EARLIER_WORK";
+    const faux = fauxProvider({
+      provider: "prepared-requirements-" + mode + "-" + summaryMode,
+      models: [{ id: "fake", contextWindow: 32_000, maxTokens: 4_096 }],
+    });
+    const respond = (context: { messages: readonly unknown[] }) => {
+      if (requestSystemPrompt(context).includes("context summarization assistant")) {
+        summaries += 1;
+        return summaryMode === "unavailable" || (summaryMode === "checkpoint-then-failure" && summaries > 1)
+          ? fauxAssistantMessage([fauxText("")], { errorMessage: "summary unavailable", stopReason: "error" })
+          : fauxAssistantMessage([fauxText("## Goal\nFINISH_TASK\n## Progress\n" + checkpoint)]);
+      }
+      const serialized = JSON.stringify(context.messages);
+      requests.push(serialized);
+      expect(requestSystemPrompt(context)).toContain(required);
+      expect(serialized).toContain("CURRENT_TASK_ANCHOR");
+      if (completedTools > 0) expect(serialized).toContain("TOOL_PAGE_" + String(completedTools) + ":");
+      turn += 1;
+      return turn >= turns
+        ? fauxAssistantMessage([fauxText("finished")])
+        : fauxAssistantMessage([fauxToolCall("read", {})], { stopReason: "toolUse" });
+    };
+    faux.setResponses(Array.from({ length: turns * 4 }, () => respond));
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts,
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: {
+        names: ["read"],
+        create: () => [{
+          name: "read", label: "Read", description: "Read a bounded page", parameters: Type.Object({}),
+          execute: async () => {
+            completedTools += 1;
+            return { content: [{ type: "text", text: "TOOL_PAGE_" + String(completedTools) + ":" + "x".repeat(3_000) }], details: {} };
+          },
+        }],
+      },
+    });
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi",
+      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM",
+    });
+    const request = { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "CURRENT_TASK_ANCHOR", requiredContext: required };
+    const execution = { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [] };
+    const running = mode === "ephemeral"
+      ? runtime.runEphemeral(request, revision, execution)
+      : runtime.runResidentTurn({ ...execution, instanceId: "instance", request, revision, restoredMessages: null });
+    await expect(running).resolves.toMatchObject({ output: { body: "finished" }, status: "COMPLETED" });
+    const result = await running;
+    expect(requests).toHaveLength(turns);
+    expect(summaries).toBeGreaterThan(0);
+    expect(summaries).toBeLessThanOrEqual(turns);
+    expect(Math.max(...requests.map(text => text.length))).toBeLessThan(partnerContextMaxChars({ contextWindow: 32_000 }));
+    if (summaryMode !== "unavailable") expect(requests.at(-1)).toContain(checkpoint);
+    if (summaryMode !== "summary") expect(requests.at(-1)).toContain("joi context notice");
+    if ("messages" in result) {
+      expect(JSON.stringify(result.messages).length).toBeGreaterThan(partnerContextMaxChars({ contextWindow: 32_000 }));
+      expect(JSON.stringify(result.messages)).toContain("TOOL_PAGE_1:");
+      required = "UPDATED_REQUIRED_CONSTRAINT";
+      await expect(runtime.runResidentTurn({
+        ...execution, instanceId: "instance", revision, restoredMessages: result.messages ?? null,
+        request: { ...request, actionId: "next-action", taskProjection: "CURRENT_TASK_ANCHOR: next task", requiredContext: required },
+      })).resolves.toMatchObject({ status: "COMPLETED" });
+      runtime.evictFromMemory("instance");
+      await expect(runtime.runResidentTurn({
+        ...execution, instanceId: "instance", revision, restoredMessages: result.messages ?? null,
+        request: { ...request, actionId: "restored-action", taskProjection: "CURRENT_TASK_ANCHOR: restored task", requiredContext: required },
+      })).resolves.toMatchObject({ status: "COMPLETED" });
+    }
+  });
+
   it.each([100, 17000])("budgets mandatory requirements alongside %i characters of tool schema", async schemaChars => {
     const faux = fauxProvider({ provider: `required-partner-${String(schemaChars)}`, models: [{ id: "fake", contextWindow: 32000, maxTokens: 4096 }] });
     const requests: string[] = [];
