@@ -210,6 +210,8 @@ export class ModelSourceService {
       updatedAt,
     });
     const revised: ModelSourceRecord = {
+      ...(current.anthropicAuthMode !== undefined && input.apiKey === undefined && baseUrl === current.baseUrl
+        ? { anthropicAuthMode: current.anthropicAuthMode } : {}),
       ...(baseUrl === undefined ? {} : { baseUrl }),
       local,
       order: current.order,
@@ -250,6 +252,7 @@ export class ModelSourceService {
     const result = await this.dependencies.validator.validate(validating);
     const updated: ModelSourceRecord = {
       ...withoutHealthReason(validating),
+      ...(result.status === "READY" && result.anthropicAuthMode === "bearer" ? { anthropicAuthMode: result.anthropicAuthMode } : {}),
       lastValidatedAt: result.validatedAt,
       ...(result.reasonCode === undefined ? {} : { reasonCode: result.reasonCode }),
       ...(result.error === undefined ? {} : { lastError: truncateError(result.error) }),
@@ -281,6 +284,7 @@ export class ModelSourceService {
 
   async #saveHealth(record: ModelSourceRecord, expected: ModelSourceRecord): Promise<boolean> {
     const revision: ModelSourceHealthRevision = {
+      sourceStatus: expected.source.status,
       credentialVersion: expected.source.activeSourceRevision.credentialVersion,
       modelRevisionId: expected.source.activeModelRevision.modelRevisionId,
       sourceRevisionId: expected.source.activeSourceRevision.sourceRevisionId,
@@ -302,6 +306,7 @@ function truncateError(message: string): string {
 
 function withoutHealthReason(record: ModelSourceRecord): Omit<ModelSourceRecord, "lastError" | "reasonCode"> {
   return {
+    ...(record.anthropicAuthMode === undefined ? {} : { anthropicAuthMode: record.anthropicAuthMode }),
     ...(record.baseUrl === undefined ? {} : { baseUrl: record.baseUrl }),
     ...(record.lastValidatedAt === undefined ? {} : { lastValidatedAt: record.lastValidatedAt }),
     local: record.local,
@@ -318,11 +323,13 @@ function sameHealthRevision(left: ModelSourceRecord | null, right: ModelSourceRe
     && left.source.activeSourceRevision.sourceRevisionId === right.source.activeSourceRevision.sourceRevisionId
     && left.source.activeModelRevision.modelRevisionId === right.source.activeModelRevision.modelRevisionId
     && left.source.activeSourceRevision.credentialVersion === right.source.activeSourceRevision.credentialVersion
+    && left.source.status === right.source.status
     && left.source.updatedAt === right.source.updatedAt;
 }
 
 function toDto(record: ModelSourceRecord, limits: EffectiveModelLimits | undefined): ModelSourceDto {
   return {
+    ...(record.anthropicAuthMode === undefined ? {} : { anthropicAuthMode: record.anthropicAuthMode }),
     accessMode: record.source.activeSourceRevision.accessMode,
     activeModel: {
       capability: record.source.activeModelRevision.capability,

@@ -50,3 +50,5 @@ Migration 068 为目标输入增加可空 `archived_at`，把「归档」做成 
 Migration 070 增加可空 `continuation_prompt`，将本次用户继续要求与累计展示正文分开持久化；留空继续保存明确的续跑指令。NULL 不改变新目标语义，已存在 reopened_at 的历史续跑回退默认指令。手动继续清除旧 automation_routine_id，避免定时提示词覆盖本次用户要求。已有结论从目标事实按需读取，不复制进 inbox 正文或 transcript。
 
 Migration 071 增加每目标可信输入来源日志、不可变有效需求快照和当前版本指针。Work brief 固定需求版本；运行保存不可变需求投影；综合、评审、用户动作和当前 outcome 投影关联需求版本。旧目标只在下次自然 Joi 编排初始化，既有运行不改写或重放。
+
+Migration 072 在 `model_source_health` 增加可空 `anthropic_auth_mode`；NULL 保持 API Key 行为，`bearer` 仅表示自定义 Anthropic 无工具探测成功后学到的鉴权方式。该事实随健康状态原子比对当前 source/model/credential revision 与状态保存，不修改不可变配置版本或凭据内容。替换凭据或端点重置，普通编辑保留。

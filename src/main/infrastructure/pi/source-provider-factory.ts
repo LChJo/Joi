@@ -40,6 +40,7 @@ export function defaultThinkingLevel(effort: ThinkingEffort | undefined, baseUrl
 export function piSourceProviderInput(record: ModelSourceRecord): PiSourceProviderInput {
   const source = record.source;
   const overrides = {
+    ...(record.anthropicAuthMode === undefined ? {} : { anthropicAuthMode: record.anthropicAuthMode }),
     ...modelLimitOverrides(source.activeModelRevision),
     ...(source.activeModelRevision.thinkingEffort === undefined ? {} : { thinkingEffort: source.activeModelRevision.thinkingEffort }),
   };
@@ -83,7 +84,7 @@ interface GenericSourceProviderInput extends ModelLimitOverrides {
   thinkingEffort?: ThinkingEffort;
 }
 
-export type PiSourceProviderInput = DirectSourceProviderInput | GenericSourceProviderInput;
+export type PiSourceProviderInput = (DirectSourceProviderInput | GenericSourceProviderInput) & { anthropicAuthMode?: "bearer" };
 
 /** The tiers Kimi's coding-plan K3 endpoint is known to offer. `null` marks one joi believes it
  *  refuses, which for "off" also keeps pi-ai from sending a `thinking: disabled` block the
@@ -92,11 +93,14 @@ const KIMI_K3_THINKING_LEVELS = {
   off: null, minimal: null, low: "low", medium: null, high: "high", xhigh: null, max: "max",
 } as const;
 
-const noAmbientCredentialAuth = (allowKeyless: boolean): ApiKeyAuth => ({
+const noAmbientCredentialAuth = (allowKeyless: boolean, bearer = false): ApiKeyAuth => ({
   name: "joi model source credential",
   resolve: async ({ credential }) => {
     if (credential?.key !== undefined && credential.key.length > 0) {
-      return { auth: { apiKey: credential.key }, source: "joi credential store" };
+      return {
+        auth: bearer ? { headers: { Authorization: `Bearer ${credential.key}` } } : { apiKey: credential.key },
+        source: "joi credential store",
+      };
     }
     return allowKeyless ? { auth: {}, source: "keyless local source" } : undefined;
   },
@@ -242,7 +246,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
     };
     return createProvider({
       api: anthropicMessagesApi(),
-      auth: { apiKey: noAmbientCredentialAuth(allowKeyless) },
+      auth: { apiKey: noAmbientCredentialAuth(allowKeyless, input.anthropicAuthMode === "bearer") },
       baseUrl,
       ...(headers === undefined ? {} : { headers }),
       id: providerId,

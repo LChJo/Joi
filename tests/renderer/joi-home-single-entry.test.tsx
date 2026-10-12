@@ -535,6 +535,22 @@ describe("joi home single entry", () => {
     expect(await screen.findByText("验证没有通过。")).toBeInTheDocument();
   });
 
+  it("shows automatically learned Bearer auth after validation without exposing the token", async () => {
+    const api = new DigitalLifeApi("");
+    const input: ModelSourceDto = { ...readySource, accessMode: "custom", kind: "generic-openai", protocol: "anthropic", status: "NEEDS_AUTH" };
+    const list = vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [input] });
+    const validate = vi.spyOn(api, "validateModelSource").mockImplementation(() => {
+      const ready = { ...input, anthropicAuthMode: "bearer" as const, status: "READY" as const };
+      list.mockResolvedValue({ items: [ready] });
+      return Promise.resolve(ready);
+    });
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "验证" }));
+    expect(await screen.findByText("鉴权：Bearer / Auth Token（自动识别）")).toBeInTheDocument();
+    expect(validate).toHaveBeenCalledWith(input.sourceId);
+    expect(screen.getByText("可用")).toBeInTheDocument();
+  });
+
   it("shows a safe deletion failure and refreshes the list after retry", async () => {
     const api = new DigitalLifeApi("");
     const list = vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource] });

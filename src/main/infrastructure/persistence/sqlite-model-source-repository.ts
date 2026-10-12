@@ -21,7 +21,7 @@ const SELECT_RECORDS = `
          mr.created_at AS model_revision_created_at,
          (SELECT p.proven_at FROM model_source_tool_proofs p
            WHERE p.source_revision_id = sr.source_revision_id AND p.model_revision_id = mr.model_revision_id) AS tool_proof_at,
-         h.reason_code, h.last_error, h.last_validated_at, o.position, o.is_primary
+         h.reason_code, h.last_error, h.last_validated_at, h.anthropic_auth_mode, o.position, o.is_primary
     FROM model_sources s
     JOIN model_source_revisions sr ON sr.source_revision_id = s.active_source_revision_id
     JOIN model_source_model_revisions mr ON mr.model_revision_id = s.active_model_revision_id
@@ -77,7 +77,9 @@ function mapRow(row: Row): ModelSourceRecord {
   const maxOutputTokens = optionalInteger(row, "max_output_tokens");
   const compactionThresholdPercent = optionalInteger(row, "compaction_threshold_percent");
   const thinkingEffort = optionalText(row, "thinking_effort");
+  const anthropicAuthMode = optionalText(row, "anthropic_auth_mode");
   return {
+    ...(anthropicAuthMode === "bearer" ? { anthropicAuthMode } : {}),
     ...(baseUrl === undefined ? {} : { baseUrl }),
     ...(lastError === undefined ? {} : { lastError }),
     ...(lastValidatedAt === undefined ? {} : { lastValidatedAt }),
@@ -148,8 +150,8 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
           source.activeSourceRevision.sourceRevisionId, source.activeModelRevision.modelRevisionId, source.sourceId,
         );
         connection.prepare(`INSERT INTO model_source_health
-          (source_id, status, reason_code, last_error, last_validated_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`).run(
-          source.sourceId, source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null, source.updatedAt,
+          (source_id, status, reason_code, last_error, last_validated_at, updated_at, anthropic_auth_mode) VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+          source.sourceId, source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null, source.updatedAt, record.anthropicAuthMode ?? null,
         );
         connection.prepare(`INSERT INTO model_source_order (source_id, position, is_primary) VALUES (?, ?, ?)`).run(
           source.sourceId, record.order, record.primary ? 1 : 0,
@@ -173,9 +175,9 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         record.source.status, record.source.updatedAt, record.source.sourceId,
       );
       connection.prepare(`UPDATE model_source_health
-        SET status = ?, reason_code = ?, last_error = ?, last_validated_at = ?, updated_at = ? WHERE source_id = ?`).run(
+        SET status = ?, reason_code = ?, last_error = ?, last_validated_at = ?, updated_at = ?, anthropic_auth_mode = ? WHERE source_id = ?`).run(
         record.source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null,
-        record.source.updatedAt, record.source.sourceId,
+        record.source.updatedAt, record.anthropicAuthMode ?? null, record.source.sourceId,
       );
     });
   }
@@ -188,6 +190,7 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
           AND active_source_revision_id = ?
           AND active_model_revision_id = ?
           AND updated_at = ?
+          AND (? IS NULL OR status = ?)
           AND EXISTS (
             SELECT 1 FROM model_source_revisions sr
             WHERE sr.source_revision_id = model_sources.active_source_revision_id
@@ -195,13 +198,13 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
               AND sr.credential_version = ?
           )`).run(
         record.source.status, record.source.updatedAt, record.source.sourceId,
-        expected.sourceRevisionId, expected.modelRevisionId, expected.sourceUpdatedAt, expected.credentialVersion,
+        expected.sourceRevisionId, expected.modelRevisionId, expected.sourceUpdatedAt, expected.sourceStatus ?? null, expected.sourceStatus ?? null, expected.credentialVersion,
       );
       if (updated.changes !== 1) return false;
       connection.prepare(`UPDATE model_source_health
-        SET status = ?, reason_code = ?, last_error = ?, last_validated_at = ?, updated_at = ? WHERE source_id = ?`).run(
+        SET status = ?, reason_code = ?, last_error = ?, last_validated_at = ?, updated_at = ?, anthropic_auth_mode = ? WHERE source_id = ?`).run(
         record.source.status, record.reasonCode ?? null, record.lastError ?? null, record.lastValidatedAt ?? null,
-        record.source.updatedAt, record.source.sourceId,
+        record.source.updatedAt, record.anthropicAuthMode ?? null, record.source.sourceId,
       );
       return true;
     });
@@ -244,8 +247,8 @@ export class SqliteModelSourceRepository implements ModelSourceRepository {
         source.updatedAt, source.sourceId,
       );
       connection.prepare(`UPDATE model_source_health
-        SET status = ?, reason_code = NULL, last_error = NULL, last_validated_at = NULL, updated_at = ? WHERE source_id = ?`).run(
-        source.status, source.updatedAt, source.sourceId,
+        SET status = ?, reason_code = NULL, last_error = NULL, last_validated_at = NULL, updated_at = ?, anthropic_auth_mode = ? WHERE source_id = ?`).run(
+        source.status, source.updatedAt, record.anthropicAuthMode ?? null, source.sourceId,
       );
     });
   }

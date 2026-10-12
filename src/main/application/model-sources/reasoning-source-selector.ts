@@ -208,6 +208,7 @@ export class ReasoningSourceSelector {
       const result = await validator.validate(record);
       const updated: ModelSourceRecord = {
         ...withoutHealthText(record),
+        ...(result.status === "READY" && result.anthropicAuthMode === "bearer" ? { anthropicAuthMode: result.anthropicAuthMode } : {}),
         lastValidatedAt: result.validatedAt,
         ...(result.reasonCode === undefined ? {} : { reasonCode: result.reasonCode }),
         ...(result.error === undefined ? {} : { lastError: result.error.slice(0, 1_000) }),
@@ -223,6 +224,7 @@ export class ReasoningSourceSelector {
 
   async #saveHealth(record: ModelSourceRecord, expected: ModelSourceRecord): Promise<boolean> {
     const revision: ModelSourceHealthRevision = {
+      sourceStatus: expected.source.status,
       credentialVersion: expected.source.activeSourceRevision.credentialVersion,
       modelRevisionId: expected.source.activeModelRevision.modelRevisionId,
       sourceRevisionId: expected.source.activeSourceRevision.sourceRevisionId,
@@ -241,6 +243,7 @@ export class ReasoningSourceSelector {
 
 function withoutHealthText(record: ModelSourceRecord): Omit<ModelSourceRecord, "lastError" | "reasonCode"> {
   return {
+    ...(record.anthropicAuthMode === undefined ? {} : { anthropicAuthMode: record.anthropicAuthMode }),
     ...(record.baseUrl === undefined ? {} : { baseUrl: record.baseUrl }),
     ...(record.lastValidatedAt === undefined ? {} : { lastValidatedAt: record.lastValidatedAt }),
     local: record.local,
@@ -261,6 +264,7 @@ function sameRevision(left: ModelSourceRecord, right: ModelSourceRecord): boolea
     && left.source.activeSourceRevision.sourceRevisionId === right.source.activeSourceRevision.sourceRevisionId
     && left.source.activeModelRevision.modelRevisionId === right.source.activeModelRevision.modelRevisionId
     && left.source.activeSourceRevision.credentialVersion === right.source.activeSourceRevision.credentialVersion
+    && left.source.status === right.source.status
     && left.source.updatedAt === right.source.updatedAt;
 }
 

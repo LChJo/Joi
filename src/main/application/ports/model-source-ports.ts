@@ -24,6 +24,8 @@ export interface PiCredentialRecordStore {
 }
 
 export interface ModelSourceRecord {
+  /** A transport fact proven for the current endpoint and credential, absent for API Key auth. */
+  anthropicAuthMode?: "bearer";
   baseUrl?: string;
   lastError?: string;
   lastValidatedAt?: string;
@@ -36,6 +38,7 @@ export interface ModelSourceRecord {
 }
 
 export interface ModelSourceHealthRevision {
+  sourceStatus?: ModelSourceStatus;
   credentialVersion: number;
   modelRevisionId: string;
   sourceRevisionId: string;
@@ -103,6 +106,7 @@ export interface ModelLimitReader {
 
 export interface ModelSourceValidator {
   validate(record: ModelSourceRecord): Promise<{
+    anthropicAuthMode?: "bearer";
     error?: string;
     reasonCode?: string;
     status: Extract<ModelSourceStatus, "READY" | "DEGRADED" | "NEEDS_AUTH">;

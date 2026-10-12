@@ -225,6 +225,7 @@ export interface PartnerModelTestDto {
 }
 
 export interface ModelSourceDto {
+  anthropicAuthMode?: "bearer";
   accessMode: ModelSourceAccessModeDto;
   activeModel: {
     capability: "release-tested" | "custom-unverified-tools";
