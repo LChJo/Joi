@@ -201,6 +201,30 @@ function makeTools(options: {
 }
 
 describe("joi reasoning tools", () => {
+  it.each([undefined, []])("requires nonempty dispatch acceptance checks in the advertised schema: %j", async (acceptanceChecks) => {
+    const harness = makeTools();
+    await expect(harness.validate("work_dispatch", { work: [{
+      accessMode: "READ", key: "read", partnerId: "partner_1", title: "Read", instructions: "Return evidence.",
+      ...(acceptanceChecks === undefined ? {} : { acceptanceChecks }),
+    }] })).rejects.toThrow();
+  });
+
+  it("offers one nonterminating acceptance correction before closing a repeated rejection", async () => {
+    const harness = makeTools({ planError: new DomainError("work_acceptance_checks_required", "invalid") });
+    const tool = harness.tools.find((candidate) => candidate.name === "work_dispatch");
+    if (tool === undefined) throw new Error("missing dispatch tool");
+    const args = { work: [{ accessMode: "READ", key: "read", partnerId: "partner_1", title: "Read", instructions: "Return evidence." }] };
+    const first = await tool.execute("missing-check", args);
+    expect(JSON.parse(first.content[0]?.type === "text" ? first.content[0].text : "null"))
+      .toMatchObject({ reasonCode: "work_acceptance_checks_required", status: "RETRY_REQUIRED" });
+    expect(first).not.toHaveProperty("terminate", true);
+    const second = await tool.execute("still-missing-check", args);
+    expect(JSON.parse(second.content[0]?.type === "text" ? second.content[0].text : "null"))
+      .toMatchObject({ reasonCode: "work_acceptance_checks_required", status: "FAILED" });
+    expect(second).toHaveProperty("terminate", true);
+    expect(harness.clarificationCalls).toEqual([]);
+  });
+
   it.each(["work_dispatch", "work_supplement", "work_resume"])("offers one instruction correction for %s without asking the user", async (name) => {
     const harness = makeTools({ briefError: new DomainError("work_instructions_invalid", "invalid") });
     const args = name === "work_dispatch" ? { work: [{ accessMode: "NONE", key: "one", partnerId: "partner_1", title: "核对" }] }
@@ -497,7 +521,7 @@ describe("joi reasoning tools", () => {
     // aborts the whole Turn (pi-ai validateToolArguments throws), so both the
     // schema and the execution path must accept the missing field.
     const harness = makeTools();
-    const args = { work: [{ accessMode: "WRITE", key: "w1", partnerId: "partner_1", title: "落实修复" }] };
+    const args = { work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", key: "w1", partnerId: "partner_1", title: "落实修复" }] };
     // Schema accepts the omission; the execute path coerces it to [].
     await expect(harness.validate("work_dispatch", args)).resolves.toEqual(args);
     await harness.call("work_dispatch", args);

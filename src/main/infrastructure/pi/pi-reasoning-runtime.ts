@@ -91,6 +91,8 @@ interface PiReasoningRuntimeOptions {
 }
 
 interface SessionRuntime {
+  dispatchArgumentFailures: number;
+  dispatchAcceptanceCalls: Set<string>;
   requirementsError: DomainError | undefined;
   agent: Agent;
   current: StartReasoningTurnInput | undefined;
@@ -303,6 +305,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     session.current = input;
     session.delivered = { tool: false };
     session.terminatedByTool = false;
+    session.dispatchArgumentFailures = 0;
+    session.dispatchAcceptanceCalls.clear();
     session.requirementsError = undefined;
     session.metadata = {
       workbenchId: input.workbenchId,
@@ -489,7 +493,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       // and compaction still owns its durable shape.
       transformContext: (messages) => Promise.resolve(this.#boundRequest(messages, runtime.current, runtime.agent.state.tools)),
     });
-    const runtime: SessionRuntime = { agent, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false, requirementsError: undefined };
+    const runtime: SessionRuntime = { agent, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false, requirementsError: undefined,
+      dispatchArgumentFailures: 0, dispatchAcceptanceCalls: new Set() };
     agent.subscribe(async (event) => {
       this.#emit(runtime, event);
     });
@@ -796,10 +801,26 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // Track tool execution before the onEvent guard: a later provider failure must preserve
     // any committed tool transcript even when this Turn has no coordinator listener.
     if (event.type === "tool_execution_start") runtime.delivered.tool = true;
+    if (event.type === "tool_execution_start" && event.toolName === "work_dispatch") {
+      const args = event.args as { work?: unknown } | null;
+      if (args !== null && typeof args === "object" && Array.isArray(args.work) && args.work.some((item: unknown) => {
+        if (item === null || typeof item !== "object") return false;
+        const checks = (item as { acceptanceChecks?: unknown }).acceptanceChecks;
+        return checks === undefined || (Array.isArray(checks) && checks.length === 0);
+      })) runtime.dispatchAcceptanceCalls.add(event.toolCallId);
+    }
     // Terminating orchestration tools must stop the current model turn even when
     // no event listener is attached. Tool execution is sequential, so aborting at
     // the successful end prevents any later calls emitted in the same response.
     if (event.type === "tool_execution_end") {
+      // Schema errors get one model correction before the run must converge to a failure.
+      if (event.toolName === "work_dispatch" && event.isError && safeToolResultReasonCode(event.result) === undefined) {
+        runtime.dispatchArgumentFailures++;
+        if (runtime.dispatchArgumentFailures >= 2) {
+          runtime.terminatedByTool = true;
+          runtime.agent.abort();
+        }
+      }
       if ((event.result as { terminate?: unknown } | undefined)?.terminate === true) {
         runtime.terminatedByTool = true;
         runtime.agent.abort();
@@ -829,7 +850,9 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     } else if (event.type === "tool_execution_start") {
       mapped = { type: "tool_started", toolCallId: event.toolCallId, toolName: event.toolName, turnId: active.turnId };
     } else if (event.type === "tool_execution_end") {
-      const reasonCode = safeToolResultReasonCode(event.result);
+      const reasonCode = safeToolResultReasonCode(event.result)
+        ?? (event.isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
+      runtime.dispatchAcceptanceCalls.delete(event.toolCallId);
       const outcome = safeTurnOutcome(event.toolName, event.result);
       mapped = {
         type: "tool_finished",
@@ -840,9 +863,6 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         toolName: event.toolName,
         turnId: active.turnId,
       };
-      // Validation errors happen before a tool's execute handler and therefore
-      // cannot return a terminating result. Stop this run at the runtime edge
-      // so the coordinator can persist one clarification instead of retrying.
     }
     if (mapped !== undefined) active.onEvent(mapped);
   }

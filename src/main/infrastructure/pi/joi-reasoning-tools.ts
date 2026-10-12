@@ -137,6 +137,7 @@ export function createJoiReasoningTools(input: {
   work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume" | "supplement"> & Partial<Pick<WorkOrchestrationService, "listForGoal" | "readBrief" | "refreshBrief">>;
 }): AgentTool[] {
   let dispatchCorrectionOffered = false;
+  let acceptanceCorrectionOffered = false;
   const instructionCorrections = new Set<string>();
   const instructionFailure = (name: string, error: unknown): ReturnType<typeof result> | undefined => {
     if (!(error instanceof DomainError) || error.code !== "work_instructions_invalid") return undefined;
@@ -240,7 +241,7 @@ export function createJoiReasoningTools(input: {
     // any repair path can run. The execute path coerces the missing value.
     dependencies: Type.Optional(Type.Array(Type.Object({ dependsOnKey: Type.String(), workKey: Type.String() }))),
     work: Type.Array(Type.Object({
-      acceptanceChecks: Type.Optional(Type.Array(Type.Union([
+      acceptanceChecks: Type.Array(Type.Union([
         Type.Object({ kind: Type.Literal("BODY_PRESENT") }),
         Type.Object({ kind: Type.Literal("ARTIFACT_PRESENT"), name: Type.String({ maxLength: 240, minLength: 1 }) }),
         Type.Object({
@@ -248,7 +249,7 @@ export function createJoiReasoningTools(input: {
           relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }),
         }),
         Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
-      ]), { maxItems: 8, minItems: 1 })),
+      ]), { maxItems: 8, minItems: 1 }),
       requirementIds: Type.Optional(Type.Array(Type.String())),
       allRequirements: Type.Optional(Type.Boolean()),
       accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
@@ -261,7 +262,7 @@ export function createJoiReasoningTools(input: {
     }), { minItems: 1, maxItems: 16 }),
   });
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
-    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. The result's queued entries are normal resource waits with stable reason codes, not denials and never a reason to ask the user for more information. Dependency keys may reference only Work keys declared in the current invocation; historical Work is evidence, not a DAG dependency. Use BODY_PRESENT for a textual answer, ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
+    description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Every Work must include at least one acceptance check. The result's queued entries are normal resource waits with stable reason codes, not denials and never a reason to ask the user for more information. Dependency keys may reference only Work keys declared in the current invocation; historical Work is evidence, not a DAG dependency. Use BODY_PRESENT for a textual answer; it verifies returned text, not a remote document update, so include remote completion evidence in the task instructions. Use ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
     execute: async (_toolCallId, arguments_) => {
       try {
         const currentKeys = new Set(arguments_.work.map((item) => item.key));
@@ -277,7 +278,7 @@ export function createJoiReasoningTools(input: {
           inputId: goalContext(),
           turnId: input.turnId,
           work: arguments_.work.map((item) => ({
-            ...(item.acceptanceChecks === undefined ? {} : { acceptanceChecks: item.acceptanceChecks }),
+            acceptanceChecks: item.acceptanceChecks,
             accessMode: item.accessMode,
             ...(item.instanceId === undefined || item.sessionPolicy === "ephemeral" ? {} : { instanceId: item.instanceId }),
             key: item.key,
@@ -299,6 +300,13 @@ export function createJoiReasoningTools(input: {
           turnId: input.turnId,
           workbenchId: input.workbenchId,
         });
+        if (reasonCode === "work_acceptance_checks_required" && !acceptanceCorrectionOffered) {
+          acceptanceCorrectionOffered = true;
+          return result({
+            hint: "Add at least one acceptanceChecks entry to every Work and retry once. Use BODY_PRESENT for returned text; for remote changes, require completion evidence in the instructions. Do not ask the user to repair these internal parameters.",
+            reasonCode, status: "RETRY_REQUIRED",
+          });
+        }
         if (error instanceof DomainError && error.code === DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady) {
           await input.clarifications.requireClarification(
             input.inputId,

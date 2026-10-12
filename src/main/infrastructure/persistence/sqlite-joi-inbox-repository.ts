@@ -1161,7 +1161,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     ));
   }
 
-  async failTurn(inputId: string, turnId: string): Promise<void> {
+  async failTurn(inputId: string, turnId: string, failure?: { reasonCode: string }): Promise<void> {
     this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
       connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
@@ -1191,6 +1191,19 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages
         SET status = ?, updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(nextStatus, now, inputId);
+      // An empty consumed goal needs a durable failure receipt and an explicit user retry.
+      // Live Work, synthetic inputs, cancellations and committed answers retain their own lifecycle.
+      if (failure !== undefined && nextStatus === "CONSUMED") {
+        connection.prepare(`UPDATE joi_inbox_messages AS i
+          SET failed_at = COALESCE(failed_at, ?), failure_reason_code = ?, failure_count = 1
+          WHERE i.input_id = ? AND i.status = 'CONSUMED' AND i.goal_input_id IS NULL
+            AND i.canceled_at IS NULL AND i.dismissed_at IS NULL
+            AND i.input_id NOT LIKE 'joi_result_input:%' AND i.input_id NOT LIKE 'joi_harness_review:%'
+            AND i.input_id NOT LIKE 'joi_signal_input:%' AND i.input_id NOT LIKE 'joi_goal_resume:%'
+            AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id)
+            AND NOT EXISTS (SELECT 1 FROM joi_turn_completions c WHERE c.input_id = i.input_id AND c.turn_id = ?)`)
+          .run(now, normalizeJoiFailureReasonCode(failure.reasonCode), inputId, turnId);
+      }
       recoverInterruptedGoalReviews(connection, now);
     });
   }

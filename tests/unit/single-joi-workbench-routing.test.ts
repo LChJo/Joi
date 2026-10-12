@@ -1,6 +1,7 @@
 /* Orchestration test doubles resolve immediately. */
 /* eslint-disable @typescript-eslint/require-await */
 import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
+import { DomainError } from "../../src/main/domain/errors.js";
 import type { JoiCoordinatorStore } from "../../src/main/application/ports/joi-coordinator.js";
 import type { PrimaryReasoningRuntime, StartReasoningTurnInput } from "../../src/main/application/ports/primary-reasoning-runtime.js";
 import { createWorkbench } from "../../src/main/domain/workbench/workbench.js";
@@ -16,6 +17,33 @@ const finance = createWorkbench({
 });
 
 describe("single-joi-workbench-scoped-thread-isolation", () => {
+  it("leaves a protected-context capacity failure to its clarification lifecycle after planning writes", async () => {
+    const failures: unknown[][] = [];
+    const clarifications: string[] = [];
+    const coordinator = new JoiCoordinator({
+      workbenches: { getWorkbench: async () => research, listSummaries: async () => [] }, clock: new TestClock(), ids: new TestIds(),
+      router: { decide: async () => { throw new Error("bound input"); } },
+      runtime: {
+        abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
+        startTurn: async turn => {
+          turn.onEvent?.({ type: "tool_started", toolCallId: "destination", toolName: "harness_name_destination", turnId: turn.turnId });
+          throw new DomainError("goal_requirements_capacity_exceeded", "capacity");
+        }, steer: () => undefined, waitForIdle: async () => undefined,
+      },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r" }) },
+      store: {
+        loadInput: async () => ({ inputId: "capacity-goal", body: "Research", status: "PENDING", workbenchId: "research" }),
+        createTurn: async () => undefined, completeInput: async () => undefined,
+        failTurn: async (...args) => { failures.push(args); },
+        requireClarification: async (_id, reason) => { clarifications.push(reason); },
+      },
+    });
+    await expect(coordinator.handle("capacity-goal")).rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.[2]).toBeUndefined();
+    expect(clarifications).toEqual(["goal_requirements_capacity_exceeded"]);
+  });
+
   it("resumes a resolved partner action deterministically without asking the model to rediscover the Work", async () => {
     const resumed: unknown[] = [];
     const completedActions: unknown[] = [];

@@ -702,7 +702,9 @@ export class JoiCoordinator {
           });
         }
       }
-      await this.dependencies.store.failTurn?.(inputId, turnId);
+      const failureReasonCode = runtimeDiagnosticErrorCode(error);
+      await this.dependencies.store.failTurn?.(inputId, turnId,
+        failureReasonCode === dispatchFailureReason ? { reasonCode: failureReasonCode } : undefined);
       if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") {
         await this.dependencies.store.requireClarification(inputId, error.code, "当前有效需求超出了可用上下文容量。请选择更大上下文的模型，或明确精简有效需求后继续。");
       }
