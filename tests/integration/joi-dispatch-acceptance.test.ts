@@ -9,8 +9,8 @@ import { createJoiReasoningTools } from "../../src/main/infrastructure/pi/joi-re
 import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
-describe("dispatch acceptance recovery through the Pi SDK", () => {
-  it.each([["corrected", "missing"], ["repeated", "missing"], ["corrected", "empty"], ["repeated", "empty"]] as const)("converges a %s %s-check dispatch without replaying the goal", async (scenario, checks) => {
+describe("dispatch parameter recovery through the Pi SDK", () => {
+  it.each([["corrected", "missing"], ["repeated", "missing"], ["corrected", "empty"], ["repeated", "empty"], ["corrected", "partner-id"], ["repeated", "partner-id"]] as const)("converges a %s %s dispatch without replaying the goal", async (scenario, checks) => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "Evidence", personaSummary: "Careful", projectLabel: "Test", scopeSummary: "Test" });
@@ -25,14 +25,19 @@ describe("dispatch acceptance recovery through the Pi SDK", () => {
       const request = { accessMode: "READ", key: "read", partnerId: partner.partnerId, title: "Read references", instructions: "Return evidence from references.",
         ...(checks === "empty" ? { acceptanceChecks: [] } : {}) };
       const valid = { ...request, acceptanceChecks: [{ kind: "BODY_PRESENT" }] };
+      const invalid = checks === "partner-id" ? { ...valid, partnerId: `${partner.partnerId}d` } : request;
+      const plan = (candidate: typeof request | typeof valid) => checks === "partner-id"
+        ? [{ ...valid, key: "known" }, candidate] : [candidate];
+      const expectedWorkCount = checks === "partner-id" ? 2 : 1;
       const call = (name: string, args: Parameters<typeof fauxToolCall>[1]) => fauxAssistantMessage([fauxToolCall(name, args)], { stopReason: "toolUse" });
       const faux = fauxProvider({ provider: `dispatch-acceptance-${scenario}` });
       let requests = 0;
       faux.setResponses([
         call("harness_name_destination", { destination: "Return reference evidence" }),
         call("harness_note_fog", { note: "Read references before selecting a date range." }),
-        call("work_dispatch", { work: [request] }),
-        call("work_dispatch", { work: [scenario === "corrected" ? valid : request] }),
+        call("work_dispatch", { work: plan(invalid) }),
+        ...(checks === "partner-id" ? [call("partner_list_available", {})] : []),
+        call("work_dispatch", { work: plan(scenario === "corrected" ? valid : invalid) }),
         fauxAssistantMessage([fauxText("Queued.")]),
       ].map(response => () => { requests++; return response; }));
       const models = createModels(); models.setProvider(faux.provider);
@@ -72,7 +77,16 @@ describe("dispatch acceptance recovery through the Pi SDK", () => {
 
       if (scenario === "corrected") {
         await coordinator.handle("goal-acceptance");
-        expect(counts()).toEqual({ work: 1, dispatch: 1, fog: 1 });
+        expect(counts()).toEqual({ work: expectedWorkCount, dispatch: expectedWorkCount, fog: 1 });
+        expect((await inbox.list()).find(row => row.inputId === "goal-acceptance")?.failureReasonCode).toBeUndefined();
+      } else if (checks === "partner-id") {
+        await expect(coordinator.handle("goal-acceptance")).resolves.toBeUndefined();
+        expect(requests).toBe(5);
+        expect(counts()).toEqual({ work: 0, dispatch: 0, fog: 1 });
+        expect((await inbox.list()).find(row => row.inputId === "goal-acceptance"))
+          .toMatchObject({ status: "CLARIFICATION_REQUIRED", clarificationReasonCode: "partner_selection_required" });
+        expect((await fixture.joiHomeFeed.load()).goals.find(goal => goal.goalId === "goal-acceptance"))
+          .toMatchObject({ status: "NEEDS_ATTENTION" });
         expect((await inbox.list()).find(row => row.inputId === "goal-acceptance")?.failureReasonCode).toBeUndefined();
       } else {
         await expect(coordinator.handle("goal-acceptance")).rejects.toMatchObject({ code: "work_acceptance_checks_required" });

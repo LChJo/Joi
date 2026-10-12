@@ -256,7 +256,7 @@ export function createJoiReasoningTools(input: {
       instanceId: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String({ description: "Required self-contained task brief. Include only applicable effective requirements, corrections, facts, boundaries and deliverable. The cumulative user request is not attached automatically.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
       key: Type.String(),
-      partnerId: Type.String(),
+      partnerId: Type.String({ description: "Exact partnerId returned by partner_list_available. Copy it verbatim; never reconstruct it or substitute a display name, revision id or instance id." }),
       sessionPolicy: Type.Optional(Type.Union([Type.Literal("ephemeral"), Type.Literal("resident")])),
       title: Type.String(),
     }), { minItems: 1, maxItems: 16 }),
@@ -323,12 +323,18 @@ export function createJoiReasoningTools(input: {
             reasonCode, status: "RETRY_REQUIRED",
           });
         }
-        const correctable = reasonCode === "partner_not_available"
+        const correctable = reasonCode === "partner_not_found"
+          || reasonCode === "partner_not_available"
           || reasonCode === "work_dependency_unknown"
           || reasonCode.startsWith("partner_instance_");
         if (correctable && !dispatchCorrectionOffered) {
           dispatchCorrectionOffered = true;
-          return result({ reasonCode, status: "RETRY_REQUIRED" });
+          return result({
+            ...(reasonCode === "partner_not_found" ? {
+              hint: "Call partner_list_available again and copy an exact partnerId from the returned list into each Work. Never reconstruct or guess an ID. Retry the complete plan once; no Work was committed by this rejection.",
+            } : {}),
+            reasonCode, status: "RETRY_REQUIRED",
+          });
         }
         if (correctable) {
           await input.clarifications.requireClarification(

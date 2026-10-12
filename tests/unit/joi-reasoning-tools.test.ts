@@ -605,13 +605,14 @@ describe("joi reasoning tools", () => {
     expect((harness.planCalls[0] as { work?: unknown }).work).toEqual([expect.objectContaining({ acceptanceChecks: [{ kind: "BODY_PRESENT" }] })]);
   });
 
-  it("keeps an internal deterministic dispatch error out of user clarification", async () => {
+  it("keeps a missing partner's first correction inside the Turn", async () => {
     const harness = makeTools({ planError: new DomainError("partner_not_found", "private detail") });
     const result = await harness.call("work_dispatch", {
       dependencies: [],
       work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }],
     });
-    expect(result).toEqual({ reasonCode: "partner_not_found", status: "FAILED" });
+    expect(result).toMatchObject({ reasonCode: "partner_not_found", status: "RETRY_REQUIRED" });
+    expect(result).toHaveProperty("hint", expect.stringContaining("partner_list_available"));
     expect(harness.clarificationCalls).toEqual([]);
   });
 
@@ -658,7 +659,7 @@ describe("joi reasoning tools", () => {
       .rejects.toMatchObject({ code: "goal_synthesis_outcome_not_allowed" });
   });
 
-  it.each(["partner_not_available", "partner_instance_unavailable", "partner_instance_partner_mismatch"])(
+  it.each(["partner_not_found", "partner_not_available", "partner_instance_unavailable", "partner_instance_partner_mismatch"])(
     "returns %s as a bounded retry request without creating a clarification",
     async (reasonCode) => {
       const harness = makeTools({ planError: new DomainError(reasonCode, "private detail") });
@@ -666,15 +667,15 @@ describe("joi reasoning tools", () => {
         dependencies: [],
         work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }],
       });
-      expect(response).toEqual({ reasonCode, status: "RETRY_REQUIRED" });
+      expect(response).toMatchObject({ reasonCode, status: "RETRY_REQUIRED" });
       expect(harness.clarificationCalls).toEqual([]);
     },
   );
 
-  it("offers at most one automatic dispatch correction in a Turn", async () => {
-    const harness = makeTools({ planError: new DomainError("partner_not_available", "private detail") });
+  it.each(["partner_not_found", "partner_not_available"])("offers at most one automatic dispatch correction for %s in a Turn", async (reasonCode) => {
+    const harness = makeTools({ planError: new DomainError(reasonCode, "private detail") });
     const input = { dependencies: [], work: [{ accessMode: "READ", key: "w1", partnerId: "partner_1", title: "读取工程" }] };
-    await expect(harness.call("work_dispatch", input)).resolves.toEqual({ reasonCode: "partner_not_available", status: "RETRY_REQUIRED" });
+    await expect(harness.call("work_dispatch", input)).resolves.toMatchObject({ reasonCode, status: "RETRY_REQUIRED" });
     await expect(harness.call("work_dispatch", input)).resolves.toEqual({ reasonCode: "partner_selection_required", status: "CLARIFICATION_REQUIRED" });
     expect(harness.clarificationCalls).toEqual([expect.objectContaining({
       reasonCode: "partner_selection_required",
