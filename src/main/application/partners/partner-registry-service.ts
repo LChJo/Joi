@@ -1,3 +1,4 @@
+import { localExecutionCapabilities } from "../../domain/work/work-execution-needs.js";
 import type { ModelSourceDto, PartnerConfigurationDto, PartnerDto, PartnerPromptDto } from "../../../shared/joi.js";
 import { DomainError } from "../../domain/errors.js";
 import {
@@ -298,7 +299,9 @@ export class PartnerRegistryService {
       throw new DomainError(configuration.reasonCodes[0] ?? "partner_configuration_invalid", "Partner configuration requires correction before dispatch.");
     }
     const minimumAccessMode = minimumLocalWorkAccess(revision);
+    const localExecution = localExecutionCapabilities(revision);
     return { partnerId, partnerRevisionId: revision.partnerRevisionId, registryRevision: revision.registryRevision,
+      ...(localExecution === undefined ? {} : { localExecution }),
       ...(minimumAccessMode === "NONE" ? {} : { minimumAccessMode }),
     };
   }

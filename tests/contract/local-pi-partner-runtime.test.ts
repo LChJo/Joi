@@ -3,7 +3,7 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, Type } from "@earendil-works/pi-ai";
+import { getCurrentTools, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, Type } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
 
 import type { ToolTraceDraft } from "../../src/main/application/partners/tool-trace-presentation.js";
@@ -22,6 +22,7 @@ import {
 import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-coding-tool-factory.js";
+import { WorkspaceWorkVerifier } from "../../src/main/infrastructure/workspace/workspace-work-verifier.js";
 
 const contexts = { loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: "workspace_ref_1" }) };
 const wait = async (milliseconds: number): Promise<void> => await new Promise((resolve) => setTimeout(resolve, milliseconds));
@@ -41,11 +42,56 @@ function requestSystemPrompt(context: { messages?: readonly unknown[] }): string
 }
 
 describe("local Pi coding partner runtime", () => {
+  it("AC-WR-07 terminates a hidden write attempt before probing again or asking the user", async () => {
+    const faux = fauxProvider({ provider: "read-ceiling-denial" });
+    const models = createModels(); models.setProvider(faux.provider);
+    const executed = vi.fn(async () => ({ content: [{ type: "text" as const, text: "unexpected" }], details: {} }));
+    const diagnostics = { emit: vi.fn() };
+    const runtime = new PiPartnerEngineRuntime({ contexts,prompts: { read: async () => null },diagnostics,
+      resolver: { resolve: async () => ({ model: faux.getModel(),models,thinkingLevel: "off" as const }) },
+      sources: { selectInitial: async turnId => ({ turnId,modelId: "faux",modelRevisionId: "mr",sourceId: "s",sourceRevisionId: "sr" }) },
+      tools: { names: ["bash"],create: () => [{ name: "bash",label: "bash",description: "bash",parameters: Type.Object({}),execute: executed }] } });
+    faux.setResponses([fauxAssistantMessage([fauxToolCall("bash",{})], { stopReason: "toolUse" }),fauxAssistantMessage([fauxToolCall("ask_user",{ question: "permission?" })], { stopReason: "toolUse" })]);
+    const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-10-13T00:00:00Z",displayName: "Verifier",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: [] });
+    await expect(runtime.runResidentTurn({ instanceId: "denied",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: null,
+      request: { actionId: "a",workbenchId: "wb",workId: "w",contextSnapshotId: "snapshot",taskProjection: "verify",workspaceExecution: { accessCeiling: "READ",generation: 1,phase: "READ_RUNNING" } } })).rejects.toMatchObject({ code: "workspace_write_forbidden",partnerRunFailure: { phase: "CONFIGURATION",sideEffectState: "NONE",retryable: false } });
+    expect(executed).not.toHaveBeenCalled();
+    expect(diagnostics.emit).toHaveBeenCalledWith("joi.partner.tool_permission_denied",expect.objectContaining({ reasonCode: "workspace_write_forbidden" }));
+    runtime.evictFromMemory("denied");
+  });
+  it("AC-WR-07 projects the Work ceiling and refreshes a warm instance's tools", async () => {
+    const faux = fauxProvider({ provider: "work-ceiling" });
+    const models = createModels(); models.setProvider(faux.provider);
+    const executed = vi.fn(async () => ({ content: [{ type: "text" as const, text: "read" }], details: {} }));
+    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: { names: ["read", "write", "edit", "bash"], create: (_cwd, names) => names.map(name => ({ name, label: name, description: name, parameters: Type.Object({}), execute: executed })) } });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-13T00:00:00Z", displayName: "Reviewer", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: [] });
+    const input = { instanceId: "ceiling", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
+      request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "review" } };
+    faux.setResponses([context => {
+      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["read", "ask_user"]);
+      expect(requestSystemPrompt(context)).toContain("Work access ceiling: READ");
+      return fauxAssistantMessage([fauxText("review complete")]);
+    }]);
+    await runtime.runResidentTurn({ ...input, request: { ...input.request, workspaceExecution: { accessCeiling: "READ", generation: 1, phase: "READ_RUNNING" } } });
+    faux.setResponses([context => {
+      expect(getCurrentTools(context.messages).map(tool => tool.name)).toContain("write");
+      expect(requestSystemPrompt(context)).toContain("Work access ceiling: WRITE");
+      return fauxAssistantMessage([fauxToolCall("write", {})], { stopReason: "toolUse" });
+    }]);
+    const paused = await runtime.runResidentTurn({ ...input, request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+    expect(paused.status).toBe("SUSPENDED");
+    expect(executed).not.toHaveBeenCalled();
+    runtime.evictFromMemory(input.instanceId);
+  });
   it.each(["write", "bash"])("AC-WR-03 enforces the SDK hook before a real %s and resumes from a durable checkpoint", async tool => {
     const workspace = mkdtempSync(join(tmpdir(), "joi-pi-gate-"));
     const marker = join(workspace, "marker.txt");
     const inputFile = join(workspace, "input.txt");
     writeFileSync(inputFile, "initial");
+    writeFileSync(join(workspace,"fake-cli.cjs"), 'require("node:fs").writeFileSync("marker.txt","fresh");');
     const faux = fauxProvider({ provider: `real-gate-${tool}` });
     const models = createModels(); models.setProvider(faux.provider);
     const runtime = new PiPartnerEngineRuntime({
@@ -70,7 +116,7 @@ describe("local Pi coding partner runtime", () => {
         fauxAssistantMessage([fauxToolCall("read", { path: inputFile })], { stopReason: "toolUse" }),
         context => {
           expect(JSON.stringify(context.messages)).toContain("fresh evidence");
-          return fauxAssistantMessage([fauxToolCall(tool, tool === "write" ? { path: marker, content: "fresh" } : { command: "echo fresh > marker.txt" })], { stopReason: "toolUse" });
+          return fauxAssistantMessage([fauxToolCall(tool, tool === "write" ? { path: marker, content: "fresh" } : { command: "node fake-cli.cjs" })], { stopReason: "toolUse" });
         },
         fauxAssistantMessage([fauxText("complete")]),
       ]);
@@ -79,6 +125,11 @@ describe("local Pi coding partner runtime", () => {
       expect(resumed.status).toBe("COMPLETED");
       expect(readFileSync(marker, "utf8").trim()).toBe("fresh");
       expect(resumed.output.artifacts.map(artifact => artifact.name)).toEqual(["marker.txt"]);
+      await expect(new WorkspaceWorkVerifier({ contexts: { loadForExecution: async () => ({ promptSection: "",sanitized: {},workspacePath: workspace }) } }).verify({
+        contextSnapshotId: "snapshot",body: resumed.output.body,artifacts: resumed.output.artifacts,
+        acceptanceChecks: [{ kind: "BODY_PRESENT" },{ kind: "FILE_EXISTS",relativePath: "marker.txt" },{ kind: "FILE_CONTAINS_EXACT",relativePath: "marker.txt",expectedText: "fresh" }],
+      })).resolves.toEqual({ status: "PASSED" });
+      expect(resumed.output.pendingQuestion).toBeUndefined();
     } finally { runtime.evictFromMemory(input.instanceId); rmSync(workspace, { recursive: true, force: true }); }
   });
   it("AC-WR-03 checkpoints before a write and blocks every remaining batch tool", async () => {

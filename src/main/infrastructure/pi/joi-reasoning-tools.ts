@@ -138,6 +138,13 @@ export function createJoiReasoningTools(input: {
 }): AgentTool[] {
   let dispatchCorrectionOffered = false;
   let acceptanceCorrectionOffered = false;
+  const accessCorrections = new Set<string>();
+  const accessFailure = (name: string, error: unknown): ReturnType<typeof result> | undefined => {
+    if (!(error instanceof DomainError) || !["work_execution_access_conflict", "work_execution_needs_invalid"].includes(error.code)) return undefined;
+    if (accessCorrections.has(name)) return result({ reasonCode: error.code, status: "FAILED" }, true);
+    accessCorrections.add(name);
+    return result({ reasonCode: error.code, status: "RETRY_REQUIRED", hint: "No Work was committed. Declare executionNeeds: SHELL for CLI/commands and FILE_WRITE for file creation/edits. Use WRITE for required local writes or Pi/Claude shell commands; it still starts with a READ lease. Respect explicit user read-only constraints and partner capabilities; do not ask the user to repair an internal dispatch error. Retry once." });
+  };
   const instructionCorrections = new Set<string>();
   const instructionFailure = (name: string, error: unknown): ReturnType<typeof result> | undefined => {
     if (!(error instanceof DomainError) || error.code !== "work_instructions_invalid") return undefined;
@@ -151,7 +158,7 @@ export function createJoiReasoningTools(input: {
   const executeWithInstructions = async (name: string, execute: () => Promise<unknown>, terminate = false): Promise<ReturnType<typeof result>> => {
     try { return result(await execute(), terminate); }
     catch (error) {
-      const correction = instructionFailure(name, error);
+      const correction = accessFailure(name, error) ?? instructionFailure(name, error);
       if (correction !== undefined) return correction;
       throw error;
     }
@@ -252,7 +259,8 @@ export function createJoiReasoningTools(input: {
       ]), { maxItems: 8, minItems: 1 }),
       requirementIds: Type.Optional(Type.Array(Type.String())),
       allRequirements: Type.Optional(Type.Boolean()),
-      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
+      executionNeeds: Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2, description: "Local execution needs: SHELL for CLI/commands; FILE_WRITE for creating or editing files including temporary scripts. [] for built-in reads or a text answer. Pi/Claude SHELL and every FILE_WRITE require WRITE accessMode. WRITE is a ceiling; initial workspace lease remains READ. Respect explicit user read-only restrictions." }),
+      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")], { description: "Permission ceiling, not initial lease: READ forbids writes and unrestricted shell; WRITE permits demand-driven lease upgrade." }),
       instanceId: Type.Optional(Type.String()),
       instructions: Type.Optional(Type.String({ description: "Required self-contained task brief. Include only applicable effective requirements, corrections, facts, boundaries and deliverable. The cumulative user request is not attached automatically.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
       key: Type.String(),
@@ -280,6 +288,7 @@ export function createJoiReasoningTools(input: {
           work: arguments_.work.map((item) => ({
             acceptanceChecks: item.acceptanceChecks,
             accessMode: item.accessMode,
+            executionNeeds: item.executionNeeds,
             ...(item.instanceId === undefined || item.sessionPolicy === "ephemeral" ? {} : { instanceId: item.instanceId }),
             key: item.key,
             ...(item.instructions === undefined ? {} : { instructions: item.instructions }),
@@ -291,7 +300,7 @@ export function createJoiReasoningTools(input: {
           })),
         }));
       } catch (error) {
-        const correction = instructionFailure("work_dispatch", error);
+        const correction = accessFailure("work_dispatch", error) ?? instructionFailure("work_dispatch", error);
         if (correction !== undefined) return correction;
         const reasonCode = runtimeDiagnosticErrorCode(error);
         emitRuntimeDiagnostic(input.diagnostics, "joi.work.dispatch_rejected", {
@@ -361,7 +370,8 @@ export function createJoiReasoningTools(input: {
       Type.Object({ expectedText: Type.String({ maxLength: 8_000 }), kind: Type.Literal("FILE_CONTAINS_EXACT"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
       Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
     ]), { maxItems: 8 })),
-    accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")]),
+    executionNeeds: Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2, description: "Local execution needs: SHELL for CLI/commands; FILE_WRITE for creating or editing files including temporary scripts. [] for built-in reads or a text answer. Pi/Claude SHELL and every FILE_WRITE require WRITE accessMode. WRITE is a ceiling; initial workspace lease remains READ. Respect explicit user read-only restrictions." }),
+      accessMode: Type.Union([Type.Literal("NONE"), Type.Literal("READ"), Type.Literal("WRITE")], { description: "Permission ceiling, not initial lease: READ forbids writes and unrestricted shell; WRITE permits demand-driven lease upgrade." }),
     instructions: Type.Optional(Type.String({ description: "Required self-contained instructions for this supplemental Work, including relevant established facts and current requirements.", maxLength: WORK_INSTRUCTIONS_MAX_CHARS })),
     partnerId: Type.String(),
     sourceWorkId: Type.String(),
@@ -375,6 +385,7 @@ export function createJoiReasoningTools(input: {
       requirementIds: arguments_.requirementIds ?? [], allRequirements: arguments_.allRequirements ?? false,
       ...(arguments_.acceptanceChecks === undefined ? {} : { acceptanceChecks: arguments_.acceptanceChecks }),
       accessMode: arguments_.accessMode,
+      executionNeeds: arguments_.executionNeeds,
       ...(arguments_.instructions === undefined ? {} : { instructions: arguments_.instructions }),
       partnerId: arguments_.partnerId,
       sourceWorkId: arguments_.sourceWorkId,
@@ -404,6 +415,7 @@ export function createJoiReasoningTools(input: {
     parameters: workReassignParameters,
   };
   const workResumeParameters = Type.Object({
+    executionNeeds: Type.Optional(Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2 })),
     requirementsRevision: Type.Optional(Type.Integer()),
     requirementIds: Type.Optional(Type.Array(Type.String())), allRequirements: Type.Optional(Type.Boolean()),
     actionId: Type.Optional(Type.String()),
@@ -413,6 +425,7 @@ export function createJoiReasoningTools(input: {
   const workResumeTool: AgentTool<typeof workResumeParameters> = {
     description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Provide complete replacement instructions containing the relevant answer, effective requirements, established facts, boundaries and deliverable; the goal request history is not attached. Pass the exact resolvedActionId from the recovery input as actionId when present so retries preserve identity. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
     execute: async (_toolCallId, arguments_) => executeWithInstructions("work_resume", () => input.work.resume({
+      ...(arguments_.executionNeeds === undefined ? {} : { executionNeeds: arguments_.executionNeeds }),
       ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
       requirementIds: arguments_.requirementIds ?? [], allRequirements: arguments_.allRequirements ?? false,
       ...(arguments_.actionId === undefined ? {} : { actionId: arguments_.actionId }),

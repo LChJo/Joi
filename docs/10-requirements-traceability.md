@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+AC-WR-07 权限与执行需求一致性：领域声明和引擎能力对应 `work-execution-needs.test.ts`；无部分派发、只读核查及恢复冲突对应 `work-orchestration-service.test.ts`，同轮一次纠正对应 `joi-reasoning-tools.test.ts`；实际 Pi 工具裁剪、常驻实例权限刷新、拒绝终止及假 CLI 产物验证对应 `local-pi-partner-runtime.test.ts`，Claude/Codex 边界对应 `native-agent-sdk-contract.test.ts`；补充 Work 的并发、已有活跃恢复复用、后续恢复/改派回合复用原始计划回执、数据库关闭重开和原 READ 不变对应 `sqlite-work-plan-outbox.test.ts`。
+
 AC-PERF-01 周期卡顿与窗口线程隔离：[ADR 0029](adr/0029-desktop-runtime-workers.md)。历史调度键、待派发/常驻/恢复保留对应 `workbench-agent-scan.test.ts`；内存执行结果收尾对应 `workbench-agent-component.test.ts`。实际迁移及历史规模查询计划对应 `sqlite-home-feed-query-scale.test.ts`，语义兼容对应 `sqlite-workbench-agent-feed.test.ts`。WAL 未提交写入与读取快照、线程繁忙时调用方响应、崩溃拒绝及安全错误对应 `runtime-workers.test.ts`；窗口与运行时组合边界对应 `runtime-worker-isolation.test.ts`、`composition-root.test.ts`、`actor-runtime-authority.test.ts`。隔离桌面启动、退出、备份及原生渲染使用既有 Electron E2E 门禁，跨线程 PDF 导出及 outbox 确认对应 `runtime-worker-export.spec.ts`；测试下载目录必须位于隔离 userData 内。
 
 AC-WR-01..06 按需写入：[ADR 0028](adr/0028-demand-driven-workspace-writing.md)，关联 AC-14/33/46/53/54/62/67。领域准入、Shell 和未知工具分类对应 `workspace-write-scheduling.test.ts`；同目录读并发、FIFO 升级、不持读等写及过期代次对应 `sqlite-demand-driven-write.test.ts`、`sqlite-workspace-lease.test.ts`。暂停/容量释放、原实例恢复、重复 continuation、取消、真实数据库重开和检查点缺失对应 `agent-dispatch-component.test.ts`、`partner-instance-manager.test.ts`、`sqlite-partner-dispatch-instances.test.ts`、`native-checkpoint-store.test.ts`。三引擎 SDK 契约对应 `local-pi-partner-runtime.test.ts`、`native-agent-sdk-contract.test.ts`、`codex-workspace-capabilities.test.ts`；附件与产物边界对应 `partner-dispatch-attachment-staging.test.ts`、`work-run-directories.test.ts`；阶段与等待投影对应 `sqlite-workbench-agent-feed.test.ts`、`joi-home-single-entry.test.tsx`。原生 CLI 的隔离验证使用 `tests/native/local-workspace-write.test.ts`，实际原生写工具测试与协议恢复测试分别记录证据，不能互相替代。
@@ -226,6 +228,10 @@ AC-63 blocked recovery regression (2026-09-17): before a new occurrence is due, 
 Routine supports daily/weekly/monthly cycles, fractional-hour intervals with a five-minute minimum, one-time execution and validated iCalendar RRULEs. Date bounds are inclusive and interpreted in the current system IANA timezone. Due occurrences are atomically merged into ordinary Joi `PENDING` inbox inputs with stable idempotency keys; offline/model-unavailable backlog is represented by one pending run and a merge count. APIs and UI expose only safe lifecycle and recent-run facts, with explicit prompt reveal.
 
 AC-63 continuation increment (2026-09-13): every non-dismissed home goal card can seed a `GOAL_CONTINUATION` Routine from the card or Automation page. The Routine stores one fixed supplemental instruction and reuses the same goal/input/card. A due occurrence waits while the goal is active, coalesces missed occurrences, resumes only after completed or failed terminal state, and never automatically resumes a canceled goal. Removing the card atomically soft-deletes every linked continuation Routine. Target/type changes are rejected while a run is pending, running, or blocked. Integration coverage verifies same-card reuse, stale prior completion isolation, wait/coalescing, canceled behavior, and cascade soft-delete; renderer coverage verifies both creation entry points and derived Workbench behavior.
+
+## 2026-10-13 总结停滞恢复
+
+- AC-43 / AC-48 / AC-14 / AC-46 / AC-53 / AC-67：需求前置整理与参数纠正分别有界；空语义更新保留合同 revision；最终拒绝生成安全失败回执，只有取消历史且无在途工作/证据的旧目标只读显示 FAILED，由用户继续。证据：`tests/integration/joi-finalizing-recovery.test.ts`（真实 Pi 工具链、一次 Work/outbox、重复错误、继续后额度重置、幂等回执、活动 Turn/run/派生输入/完成证据/问题/取消保护）、`tests/renderer/joi-home-single-entry.test.tsx`（失败卡及显式继续）、`tests/integration/sqlite-home-feed-query-scale.test.ts`（目标范围查询与历史规模）。
 
 ## 2026-09-19 并发与阻塞恢复增量
 

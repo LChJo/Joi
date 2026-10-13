@@ -7,6 +7,52 @@ import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
+  it("AC-WR-07 rejects conflicting READ resumes and reassignments without changing the Work", async () => {
+    const reassign = vi.fn(async () => undefined);
+    const item: WorkItem = { accessMode: "READ",workbenchId: "wb",workId: "w",status: "WAITING",title: "Verify",createdAt: "2026-10-13T00:00:00Z",updatedAt: "2026-10-13T00:00:00Z" };
+    const service = new WorkOrchestrationService({ clock: new TestClock(),ids: new TestIds(),
+      partners: { pinForDispatch: async partnerId => ({ partnerId,partnerRevisionId: "new",registryRevision: 2,minimumAccessMode: "WRITE" as const }) },
+      policy: { evaluate: async () => ({ allowed: true }) },repository: { commit: async () => undefined },
+      reassignment: { cancel: async () => ({ canceled: false,cascadedWorkIds: [] }),reassign,
+        loadForReassignment: async () => ({ item,executionNeeds: ["SHELL" as const],lastPartnerId: "p",lastPartnerRevisionId: "old" }) } });
+    await expect(service.resume({ workbenchId: "wb",workId: "w",turnId: "t",instructions: "Save a report.",executionNeeds: ["FILE_WRITE"] })).rejects.toMatchObject({ code: "work_execution_access_conflict" });
+    await expect(service.reassign({ workbenchId: "wb",workId: "w",turnId: "t",partnerId: "p",instructions: "Run the verifier." })).rejects.toMatchObject({ code: "work_execution_access_conflict" });
+    expect(item.accessMode).toBe("READ");
+    expect(reassign).not.toHaveBeenCalled();
+  });
+  it.each(["SHELL", "FILE_WRITE"] as const)("AC-WR-07 rejects READ needing %s without committing any Work", async need => {
+    const commit = vi.fn(async (_plan: CommittedWorkPlan) => undefined);
+    const service = new WorkOrchestrationService({ clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async partnerId => ({ partnerId, partnerRevisionId: "r", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit } });
+    await expect(service.plan({ workbenchId: "wb", inputId: "input", turnId: "turn", dependencies: [], work: [
+      { key: "valid", title: "Read", partnerId: "p", accessMode: "READ", executionNeeds: [], instructions: "Read an existing file.", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
+      { key: "conflict", title: "Verify", partnerId: "p", accessMode: "READ", executionNeeds: [need], instructions: "Run the CLI and save a report.", acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "report.md" }] },
+    ] })).rejects.toMatchObject({ code: "work_execution_access_conflict" });
+    expect(commit).not.toHaveBeenCalled();
+  });
+
+  it("AC-WR-07 persists declared needs without requiring writes for existing-file checks", async () => {
+    const commit = vi.fn(async (_plan: CommittedWorkPlan) => undefined);
+    const service = new WorkOrchestrationService({ clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async partnerId => ({ partnerId, partnerRevisionId: "r", registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) }, repository: { commit } });
+    await service.plan({ workbenchId: "wb", inputId: "input", turnId: "turn", dependencies: [], work: [
+      { key: "read", title: "Read", partnerId: "p", accessMode: "READ", executionNeeds: [], instructions: "Check the existing file.", acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "report.md" }] },
+    ] });
+    expect(commit.mock.calls[0]?.[0].briefs[0]).toMatchObject({ executionNeeds: [] });
+  });
+
+  it("AC-WR-07 requires declared file writes for a local artifact deliverable", async () => {
+    const commit = vi.fn(async (_plan: CommittedWorkPlan) => undefined);
+    const service = new WorkOrchestrationService({ clock: new TestClock(),ids: new TestIds(),
+      partners: { pinForDispatch: async partnerId => ({ partnerId,partnerRevisionId: "r",registryRevision: 1,localExecution: { engine: "pi-core" as const,shell: true,fileWrites: true } }) },
+      policy: { evaluate: async () => ({ allowed: true }) },repository: { commit } });
+    await expect(service.plan({ workbenchId: "wb",inputId: "input",turnId: "turn",dependencies: [],work: [{
+      key: "artifact",title: "Report",partnerId: "p",accessMode: "READ",executionNeeds: [],instructions: "Create a report.",acceptanceChecks: [{ kind: "ARTIFACT_PRESENT",name: "report.md" }],
+    }] })).rejects.toMatchObject({ code: "work_execution_access_conflict" });
+    expect(commit).not.toHaveBeenCalled();
+  });
   it.each([undefined, "", " \n\t", "x".repeat(12_001)])("rejects invalid independent instructions before any plan side effect", async (instructions) => {
     const commit = vi.fn(async () => undefined);
     const pinForDispatch = vi.fn(async (partnerId: string) => ({ partnerId, partnerRevisionId: "revision", registryRevision: 1 }));

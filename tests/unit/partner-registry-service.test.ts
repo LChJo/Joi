@@ -112,8 +112,8 @@ describe("partner-registry-revision-before-dispatch", () => {
     const second = await service.update(first.partnerId, { capabilities: ["research", "write"], displayName: "本机搭档", skills: ["web"], tools: ["read", "edit"] });
     const secondPin = await service.pinForDispatch(first.partnerId);
     expect(repository.history.map((item) => item.registryRevision)).toEqual([1, 2]);
-    expect(firstPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: first.partnerRevisionId, registryRevision: 1, minimumAccessMode: "READ" });
-    expect(secondPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: second.partnerRevisionId, registryRevision: 2, minimumAccessMode: "WRITE" });
+    expect(firstPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: first.partnerRevisionId, registryRevision: 1, minimumAccessMode: "READ",localExecution: { engine: "pi-core",shell: false,fileWrites: false } });
+    expect(secondPin).toEqual({ partnerId: first.partnerId, partnerRevisionId: second.partnerRevisionId, registryRevision: 2, minimumAccessMode: "WRITE",localExecution: { engine: "pi-core",shell: false,fileWrites: true } });
     expect(second.partnerRevisionId).not.toBe(first.partnerRevisionId);
   });
 

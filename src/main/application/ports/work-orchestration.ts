@@ -1,7 +1,9 @@
 import type { WorkAccessMode, WorkDependency, WorkItem } from "../../domain/work/work.js";
 import type { WorkItemDto } from "../../../shared/joi.js";
+import type { LocalExecutionCapabilities, WorkExecutionNeed } from "../../domain/work/work-execution-needs.js";
 
 export interface PartnerDispatchPin {
+  localExecution?: LocalExecutionCapabilities;
   /** Required by the pinned Skill/tool policy; applied before policy and lease checks. */
   minimumAccessMode?: WorkAccessMode;
   partnerId: string;
@@ -34,6 +36,7 @@ export type WorkAcceptanceCheck =
   | { kind: "FILE_EXISTS"; relativePath: string };
 
 export interface WorkBrief {
+  executionNeeds?: WorkExecutionNeed[];
   acceptanceChecks: WorkAcceptanceCheck[];
   briefVersion?: 2 | 3;
   requirementsRevision?: number;
@@ -66,13 +69,15 @@ export interface CommittedWorkPlan {
 }
 
 export interface WorkPlanRepository {
-  commit(plan: CommittedWorkPlan): Promise<void>;
-  refreshBrief?(input: { goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds: string[]; allRequirements: boolean }): Promise<void>;
+  // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- Ordinary commits have no result; duplicate supplements return their persisted reference.
+  commit(plan: CommittedWorkPlan): Promise<void | SupplementReference>;
+  refreshBrief?(input: { executionNeeds?: WorkExecutionNeed[]; goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds: string[]; allRequirements: boolean }): Promise<void>;
   listForGoal?(goalInputId: string, workbenchId: string): Promise<{ workId: string; title: string; status: string; requirementsRevision?: number }[]>;
-  readBrief?(goalInputId: string, workbenchId: string, workId: string): Promise<{ workId: string; title: string; instructions: string; requirementsRevision?: number } | null>;
+  readBrief?(goalInputId: string, workbenchId: string, workId: string): Promise<{ workId: string; title: string; instructions: string; accessMode?: WorkAccessMode; executionNeeds?: WorkExecutionNeed[] | null; requirementsRevision?: number } | null>;
 }
 
 export interface WorkReassignmentContext {
+  executionNeeds?: WorkExecutionNeed[];
   inputId?: string;
   item: WorkItem;
   /** Instance that ran the latest attempt, when it was instance-linked; may be disposed by now. */
@@ -82,6 +87,7 @@ export interface WorkReassignmentContext {
 }
 
 export interface WorkSupplementContext {
+  executionNeeds?: WorkExecutionNeed[];
   attemptCount: number;
   evidenceResultIds: string[];
   inputId: string;
@@ -90,6 +96,7 @@ export interface WorkSupplementContext {
 }
 
 export interface ReassignedWorkPlan {
+  executionNeeds?: WorkExecutionNeed[];
   requirementsRevision?: number;
   requirementIds?: string[];
   allRequirements?: boolean;
@@ -113,9 +120,12 @@ export interface WorkReassignmentRepository {
 }
 
 export interface WorkRecoveryRepository {
+  findSupplement?(sourceWorkId: string, turnId: string): Promise<SupplementReference | null>;
   countRecoveryAttempts(workId: string): Promise<number>;
   loadForSupplement(workId: string): Promise<WorkSupplementContext | null>;
 }
+
+export interface SupplementReference { attemptNo: number; dispatchPlanId: string; evidenceResultIds: string[]; waves: string[][] }
 
 export interface WorkQuery {
   listActive(): Promise<WorkItemDto[]>;

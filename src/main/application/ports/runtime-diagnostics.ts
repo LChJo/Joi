@@ -1,6 +1,7 @@
 import type { RemoteDiagnosticCode } from "../../../shared/remote.js";
 
 export interface RuntimeDiagnosticEventMap {
+  "joi.partner.tool_permission_denied": { workId: string; actionId: string; toolName: string; reasonCode: string };
   "joi.remote.connection": {
     code: RemoteDiagnosticCode;
     sequence: number;

@@ -10,11 +10,11 @@ import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasonin
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("dispatch parameter recovery through the Pi SDK", () => {
-  it.each([["corrected", "missing"], ["repeated", "missing"], ["corrected", "empty"], ["repeated", "empty"], ["corrected", "partner-id"], ["repeated", "partner-id"]] as const)("converges a %s %s dispatch without replaying the goal", async (scenario, checks) => {
+  it.each([["corrected", "missing"], ["repeated", "missing"], ["corrected", "empty"], ["repeated", "empty"], ["corrected", "partner-id"], ["repeated", "partner-id"], ["corrected", "access"], ["repeated", "access"]] as const)("converges a %s %s dispatch without replaying the goal", async (scenario, checks) => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "Evidence", personaSummary: "Careful", projectLabel: "Test", scopeSummary: "Test" });
-      const partner = await fixture.partners.add({ capabilities: ["read"], displayName: "Reader", kind: "local-pi", skills: [], tools: ["read"] });
+      const partner = await fixture.partners.add({ capabilities: ["read"], displayName: "Reader", kind: "local-pi", skills: [], tools: checks === "access" ? ["read","bash"] : ["read"] });
       const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
       const harness = new SqliteJoiHarnessRepository(fixture.database);
       const now = fixture.clock.now().toISOString();
@@ -22,9 +22,10 @@ describe("dispatch parameter recovery through the Pi SDK", () => {
         workbenchId: workbench.workbenchId, status: "PENDING", createdAt: now, updatedAt: now });
       const work = new WorkOrchestrationService({ clock: fixture.clock, ids: fixture.ids, partners: fixture.partners,
         repository: new SqliteWorkPlanRepository(fixture.database), policy: { evaluate: () => Promise.resolve({ allowed: true }) } });
-      const request = { accessMode: "READ", key: "read", partnerId: partner.partnerId, title: "Read references", instructions: "Return evidence from references.",
-        ...(checks === "empty" ? { acceptanceChecks: [] } : {}) };
-      const valid = { ...request, acceptanceChecks: [{ kind: "BODY_PRESENT" }] };
+      const request = { executionNeeds: checks === "access" ? ["SHELL"] : [], accessMode: "READ", key: "read", partnerId: partner.partnerId, title: "Read references", instructions: "Return evidence from references.",
+        ...(checks === "access" ? { acceptanceChecks: [{ kind: "BODY_PRESENT" }] } : checks === "empty" ? { acceptanceChecks: [] } : {}) };
+      const valid = { ...request, ...(checks === "access" ? { accessMode: "WRITE" } : {}), acceptanceChecks: [{ kind: "BODY_PRESENT" }] };
+      const failureCode = checks === "access" ? "work_execution_access_conflict" : "work_acceptance_checks_required";
       const invalid = checks === "partner-id" ? { ...valid, partnerId: `${partner.partnerId}d` } : request;
       const plan = (candidate: typeof request | typeof valid) => checks === "partner-id"
         ? [{ ...valid, key: "known" }, candidate] : [candidate];
@@ -89,12 +90,12 @@ describe("dispatch parameter recovery through the Pi SDK", () => {
           .toMatchObject({ status: "NEEDS_ATTENTION" });
         expect((await inbox.list()).find(row => row.inputId === "goal-acceptance")?.failureReasonCode).toBeUndefined();
       } else {
-        await expect(coordinator.handle("goal-acceptance")).rejects.toMatchObject({ code: "work_acceptance_checks_required" });
+        await expect(coordinator.handle("goal-acceptance")).rejects.toMatchObject({ code: failureCode });
         expect(requests).toBe(4);
         expect(counts()).toEqual({ work: 0, dispatch: 0, fog: 1 });
         expect(await inbox.loadInput("goal-acceptance")).toMatchObject({ status: "CONSUMED" });
         expect((await fixture.joiHomeFeed.load()).goals.find(goal => goal.goalId === "goal-acceptance"))
-          .toMatchObject({ status: "FAILED", failure: { attempts: 1, executionStarted: false, reasonCode: "work_acceptance_checks_required" } });
+          .toMatchObject({ status: "FAILED", failure: { attempts: 1, executionStarted: false, reasonCode: failureCode } });
 
         expect(await inbox.retry("goal-acceptance", {})).toMatchObject({ status: "PENDING" });
         faux.setResponses([call("work_dispatch", { work: [request] }), call("work_dispatch", { work: [valid] }), fauxAssistantMessage([fauxText("Queued.")])]);

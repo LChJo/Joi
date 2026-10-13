@@ -38,6 +38,7 @@ import type { WorkAcceptanceCheck } from "../../application/ports/work-orchestra
 import type { WorkVerifier } from "../../application/ports/work-verification.js";
 import { DomainError } from "../../domain/errors.js";
 import { validWorkInstructions } from "../../application/work/work-instructions.js";
+import { assertExecutionAccess, localExecutionCapabilities, readExecutionNeeds } from "../../domain/work/work-execution-needs.js";
 import { createWorkResult } from "../../domain/work/work-result.js";
 import type { WorkAccessMode } from "../../domain/work/work.js";
 import type { SqliteWorkspaceLeaseManager } from "../persistence/sqlite-workspace-lease-manager.js";
@@ -516,7 +517,9 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       const runId = row.run_id ?? `partner_run:${row.action_id}`;
       const progressStartedAt = this.dependencies.clock.now().toISOString();
       let result;
-      try { result = await this.dependencies.instances.dispatch({
+      try {
+        assertExecutionAccess(row.access_mode,readExecutionNeeds((JSON.parse(row.intent_json) as { executionNeeds?: unknown }).executionNeeds),localExecutionCapabilities(revision));
+        result = await this.dependencies.instances.dispatch({
         dispatchAttemptId: row.dispatch_attempt_id,
         ...(revision.engine === "pi-core" && options?.onProgress !== undefined ? { onProgress: options.onProgress } : {}),
         ...(prepared.instanceId === undefined ? {} : { instanceId: prepared.instanceId }),

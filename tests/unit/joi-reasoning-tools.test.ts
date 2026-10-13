@@ -525,12 +525,31 @@ describe("joi reasoning tools", () => {
     expect(planned[0]).not.toHaveProperty("sessionPolicy");
   });
 
+  it("AC-WR-07 offers one access correction without a user clarification", async () => {
+    const harness = makeTools({ planError: new DomainError("work_execution_access_conflict", "fixture") });
+    const args = { work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], executionNeeds: ["SHELL"], accessMode: "READ", key: "w", partnerId: "p", title: "verify" }] };
+    await expect(harness.call("work_dispatch",args)).resolves.toMatchObject({ status: "RETRY_REQUIRED",reasonCode: "work_execution_access_conflict" });
+    await expect(harness.call("work_dispatch",args)).resolves.toMatchObject({ status: "FAILED",reasonCode: "work_execution_access_conflict" });
+    expect(harness.clarificationCalls).toEqual([]);
+  });
+
+  it("AC-WR-07 accepts a corrected WRITE dispatch with explicit execution needs", async () => {
+    const options: { planError?: Error } = { planError: new DomainError("work_execution_access_conflict","fixture") };
+    const harness = makeTools(options);
+    const item = { acceptanceChecks: [{ kind: "BODY_PRESENT" }],executionNeeds: ["SHELL","FILE_WRITE"],accessMode: "READ",key: "w",partnerId: "p",title: "report" };
+    await expect(harness.call("work_dispatch",{ work: [item] })).resolves.toMatchObject({ status: "RETRY_REQUIRED" });
+    delete options.planError;
+    await expect(harness.call("work_dispatch",{ work: [{ ...item,accessMode: "WRITE" }] })).resolves.toMatchObject({ dispatchPlanId: "plan_1" });
+    expect((harness.planCalls[1] as { work: unknown[] }).work[0]).toMatchObject({ accessMode: "WRITE",executionNeeds: ["SHELL","FILE_WRITE"] });
+    expect(harness.clarificationCalls).toEqual([]);
+  });
+
   it("tolerates omitted dependencies when a model dispatches an edge-free DAG", async () => {
     // glm-style models drop empty required arrays; a failed argument validation
     // aborts the whole Turn (pi-ai validateToolArguments throws), so both the
     // schema and the execution path must accept the missing field.
     const harness = makeTools();
-    const args = { work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], accessMode: "WRITE", key: "w1", partnerId: "partner_1", title: "落实修复" }] };
+    const args = { work: [{ acceptanceChecks: [{ kind: "BODY_PRESENT" }], executionNeeds: ["FILE_WRITE"], accessMode: "WRITE", key: "w1", partnerId: "partner_1", title: "落实修复" }] };
     // Schema accepts the omission; the execute path coerces it to [].
     await expect(harness.validate("work_dispatch", args)).resolves.toEqual(args);
     await harness.call("work_dispatch", args);

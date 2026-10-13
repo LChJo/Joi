@@ -3,6 +3,7 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import type { GoalRequirementsRepository } from "../../application/ports/goal-requirements.js";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
+import type { WorkExecutionNeed } from "../../domain/work/work-execution-needs.js";
 import { DomainError } from "../../domain/errors.js";
 
 function projectContract(contract: GoalRequirements | null) {
@@ -42,7 +43,7 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
   const extra: AgentTool[] = [
     { name: "goal_read_inputs", label: "Read trusted user inputs", description: "Read all pages of a trusted user source, including the middle of long inputs. Read offsets sequentially and use nextOffset. Source revisions and processedSourceRevision are in the current requirements context.", parameters: readParameters,
       execute: async (_id, raw) => { const args = raw as { sourceRevision: number; offset?: number }; return result(await store.readSource({ ...args, offset: args.offset ?? 0, goalInputId: input.goalInputId, workbenchId: input.workbenchId })); } },
-    { name: "goal_update_requirements", label: "Merge effective requirements", description: "Merge effective user requirements after reading every new input page. Keep unmentioned requirements. Replacement/retirement requires a new explicit user correction cited by sourceRevision and an exact quote (preferred) or UTF-16 start/end offsets. Mark explicitUserCorrection=true only for a clear user correction; checkpoint requirements from long sources page by page. Record objective, delivery requirements, all mandatory constraints and preferences. Return empty changes for an unrelated supplement. Use expectedRevision and acknowledge the latest source revision.", parameters: updateParameters,
+    { name: "goal_update_requirements", label: "Merge effective requirements", description: "Merge effective user requirements after reading every new input page. Keep unmentioned requirements. Replacement/retirement requires a new explicit user correction cited by sourceRevision and an exact quote (preferred) or UTF-16 start/end offsets. Mark explicitUserCorrection=true only for a clear user correction; checkpoint requirements from long sources page by page. Record objective, delivery requirements, all mandatory constraints and preferences. Return empty changes for an unrelated supplement. Use expectedRevision and acknowledge the latest source revision. Copy the returned revision into requirementsRevision for execution/completion; sourceRevision and processedSourceRevision are not contract versions. Empty semantic changes may leave revision unchanged; never infer an increment.", parameters: updateParameters,
       execute: async (_id, raw) => {
         const args = raw as Omit<RequirementsUpdate, "goalInputId" | "workbenchId">;
         const resolve = async <T extends { source: RequirementsUpdate["upserts"][number]["source"] }>(change: T): Promise<T> => {
@@ -58,12 +59,14 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
       execute: async (_id, raw) => { const args = raw as { workId: string }; const brief = await input.work.readBrief(input.goalInputId, input.workbenchId, args.workId);
         if (brief === null) throw new DomainError("goal_requirements_scope_invalid", "The Work is unavailable in this goal."); return result(brief); } },
     { name: "work_update_brief", label: "Refresh unstarted Work", description: "Replace instructions and applicable requirement selections for a PLANNED/READY Work whose latest attempt has not started, preserving its outbox, dependencies, checks and permissions. Call goal_resume first in a recovery turn. Existing run snapshots are immutable.",
-      parameters: Type.Object({ requirementsRevision: Type.Optional(Type.Integer()), workId: Type.String(), instructions: Type.String({ minLength: 1, maxLength: 12000 }),
+      parameters: Type.Object({ executionNeeds: Type.Optional(Type.Array(Type.Union([Type.Literal("SHELL"),Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2 })), requirementsRevision: Type.Optional(Type.Integer()), workId: Type.String(), instructions: Type.String({ minLength: 1, maxLength: 12000 }),
         requirementIds: Type.Optional(Type.Array(Type.String())), allRequirements: Type.Optional(Type.Boolean()) }),
-      execute: async (id, raw) => { const args = raw as { requirementsRevision: number; workId: string; instructions: string; requirementIds?: string[]; allRequirements?: boolean }; await input.work.refreshBrief({ ...args, goalInputId: input.goalInputId,
+      execute: async (id, raw) => { const args = raw as { executionNeeds?: WorkExecutionNeed[]; requirementsRevision: number; workId: string; instructions: string; requirementIds?: string[]; allRequirements?: boolean }; await input.work.refreshBrief({ ...args, goalInputId: input.goalInputId,
         workbenchId: input.workbenchId, turnId: input.turnId, actionId: `${input.turnId}:${id}` }); return result({ status: "UPDATED", workId: args.workId }); } },
   ];
   const offered = new Set<string>();
+  // Prerequisite processing and parameter correction have separate per-tool, per-Turn budgets.
+  const prerequisiteOffered = new Set<string>();
   return [...tools, ...extra].map(tool => {
     const versioned = versionedTools.has(tool.name);
     const guarded = versioned || tool.name === "work_cancel" || tool.name === "goal_update_requirements" || tool.name === "goal_read_inputs";
@@ -91,10 +94,11 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
           return output;
         } catch (error) {
           if (!(error instanceof DomainError) || (!error.code.startsWith("goal_requirements_") && error.code !== "work_instructions_invalid")) throw error;
-          if (offered.has(tool.name)) return result({ status: "FAILED", reasonCode: error.code }, true);
-          offered.add(tool.name);
+          const budget = error.code === "goal_requirements_pending" ? prerequisiteOffered : offered;
+          if (budget.has(tool.name)) return result({ status: "FAILED", reasonCode: error.code }, true);
+          budget.add(tool.name);
           return result({ status: "RETRY_REQUIRED", reasonCode: error.code, contract: projectContract(await store.load(input.goalInputId, input.workbenchId)),
-            hint: "Read remaining trusted source pages, incrementally merge requirements, refresh outdated queued Work using work_list_goal/work_read_brief/work_update_brief, then retry once with the current requirementsRevision. Do not ask the user to supply internal fields." });
+            hint: "Read remaining trusted source pages, incrementally merge requirements, refresh outdated queued Work using work_list_goal/work_read_brief/work_update_brief, then retry with requirementsRevision copied exactly from contract.revision or goal_update_requirements' returned revision. Do not use sourceRevision or processedSourceRevision and do not infer an increment. Do not ask the user to supply internal fields." });
         }
       },
     };

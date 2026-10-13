@@ -1201,18 +1201,32 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages
         SET status = ?, updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(nextStatus, now, inputId);
-      // An empty consumed goal needs a durable failure receipt and an explicit user retry.
+      // A consumed goal with only canceled history needs a durable receipt and explicit user retry.
       // Live Work, synthetic inputs, cancellations and committed answers retain their own lifecycle.
       if (failure !== undefined && nextStatus === "CONSUMED") {
         connection.prepare(`UPDATE joi_inbox_messages AS i
           SET failed_at = COALESCE(failed_at, ?), failure_reason_code = ?, failure_count = 1
           WHERE i.input_id = ? AND i.status = 'CONSUMED' AND i.goal_input_id IS NULL
             AND i.canceled_at IS NULL AND i.dismissed_at IS NULL
+            AND i.clarification_reason_code IS NULL
             AND i.input_id NOT LIKE 'joi_result_input:%' AND i.input_id NOT LIKE 'joi_harness_review:%'
             AND i.input_id NOT LIKE 'joi_signal_input:%' AND i.input_id NOT LIKE 'joi_goal_resume:%'
-            AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id)
-            AND NOT EXISTS (SELECT 1 FROM joi_turn_completions c WHERE c.input_id = i.input_id AND c.turn_id = ?)`)
-          .run(now, normalizeJoiFailureReasonCode(failure.reasonCode), inputId, turnId);
+            AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status <> 'CANCELED')
+            AND NOT EXISTS (SELECT 1 FROM partner_runs r JOIN work_items w ON w.work_id = r.work_id
+              WHERE w.input_id = i.input_id AND r.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH'))
+            AND NOT EXISTS (SELECT 1 FROM joi_turns t JOIN joi_inbox_messages source ON source.input_id = t.input_id
+              WHERE (source.input_id = i.input_id OR source.goal_input_id = i.input_id)
+                AND t.status IN ('PENDING','RUNNING','WAITING'))
+            AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages child WHERE child.goal_input_id = i.input_id
+              AND child.status IN ('PENDING','ROUTED','CLARIFICATION_REQUIRED'))
+            AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates g WHERE g.goal_input_id = i.input_id
+              AND g.status IN ('WAITING_INPUT','REVIEWING'))
+            AND NOT EXISTS (SELECT 1 FROM joi_goal_result_sets rs WHERE rs.original_input_id = i.input_id AND rs.revision > 0)
+            AND NOT EXISTS (SELECT 1 FROM joi_turn_completions c WHERE c.input_id = i.input_id
+              AND c.completed_at >= COALESCE(i.reopened_at, i.created_at))
+            AND NOT EXISTS (SELECT 1 FROM joi_current_goal_outcomes o WHERE o.input_id = i.input_id
+              AND o.completed_at >= COALESCE(i.reopened_at, i.created_at))`)
+          .run(now, normalizeJoiFailureReasonCode(failure.reasonCode), inputId);
       }
       recoverInterruptedGoalReviews(connection, now);
     });

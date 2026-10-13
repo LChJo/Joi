@@ -4,6 +4,7 @@ import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime
 import type { PartnerInstanceRepository } from "../ports/partner-instances.js";
 import { DISPATCH_POLICY_REASONS } from "./dispatch-policy.js";
 import { requireWorkInstructions } from "./work-instructions.js";
+import { assertExecutionAccess, readExecutionNeeds, type WorkExecutionNeed } from "../../domain/work/work-execution-needs.js";
 import type { GoalRequirementsRepository } from "../ports/goal-requirements.js";
 import { renderGoalRequirements } from "../../domain/work/goal-requirements.js";
 import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime-store.js";
@@ -19,6 +20,7 @@ import type {
 } from "../ports/work-orchestration.js";
 
 interface WorkRequest {
+  executionNeeds?: WorkExecutionNeed[];
   requirementIds?: string[];
   allRequirements?: boolean;
   acceptanceChecks?: WorkAcceptanceCheck[];
@@ -116,12 +118,19 @@ export class WorkOrchestrationService {
         throw new DomainError("work_acceptance_checks_required", "Every Work needs at least one mechanically checkable acceptance check.");
       }
       requireWorkInstructions(request.instructions);
+      readExecutionNeeds(request.executionNeeds);
       byKey.set(request.key, request);
     }
     for (const request of input.work) await this.#validateInstanceSelection(input.workbenchId, request);
     // Pin once, then normalize before waves, policy checks and durable access records.
     const pins: PartnerDispatchPin[] = [];
     for (const request of input.work) pins.push(await this.dependencies.partners.pinForDispatch(request.partnerId));
+    for (const [index, request] of input.work.entries()) {
+      assertExecutionAccess(request.accessMode, request.executionNeeds, pins[index]?.localExecution);
+      if (request.executionNeeds !== undefined && pins[index]?.localExecution !== undefined && request.acceptanceChecks?.some(check => check.kind === "ARTIFACT_PRESENT") && !request.executionNeeds.includes("FILE_WRITE")) {
+        throw new DomainError("work_execution_access_conflict", "A local file artifact requires declared FILE_WRITE execution.");
+      }
+    }
     const createdAt = this.dependencies.clock.now().toISOString();
     const workIds = new Map<string, string>();
     const items = input.work.map((request, index) => {
@@ -146,6 +155,7 @@ export class WorkOrchestrationService {
       if (request === undefined) throw new Error("work_request_missing");
       return {
         acceptanceChecks: (request.acceptanceChecks ?? []).map((check) => ({ ...check })),
+        ...(request.executionNeeds === undefined ? {} : { executionNeeds: readExecutionNeeds(request.executionNeeds) ?? [] }),
         briefVersion: contract == null ? 2 as const : 3 as const,
         ...(contract == null ? {} : {
           requirementsRevision: contract.revision, requirementIds: request.requirementIds ?? [], allRequirements: request.allRequirements ?? false,
@@ -202,7 +212,7 @@ export class WorkOrchestrationService {
       throw new DomainError(DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady, "Select a workbench workspace before dispatching file work.");
     }
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
-    await this.dependencies.repository.commit({
+    const reused = await this.dependencies.repository.commit({
       attempts, briefs, createdAt, dependencies, dispatchPlanId, inputId: input.inputId, items, policyResults,
       ...(input.recovery === undefined ? {} : { recovery: {
         attemptNo: input.recovery.attemptNo,
@@ -212,6 +222,7 @@ export class WorkOrchestrationService {
       } }),
       turnId: input.turnId, waves,
     });
+    if (reused !== undefined) return { denied: [], queued: [], dispatchPlanId: reused.dispatchPlanId, waves: reused.waves };
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.plan.committed", {
       attemptCount: attempts.length,
       workbenchId: input.workbenchId,
@@ -261,6 +272,7 @@ export class WorkOrchestrationService {
 
   /** Creates a new, independent Work for an essential gap; historical Work is evidence, never a DAG key. */
   async supplement(input: {
+    executionNeeds?: WorkExecutionNeed[];
     requirementsRevision?: number;
     requirementIds?: string[];
     allRequirements?: boolean;
@@ -281,6 +293,9 @@ export class WorkOrchestrationService {
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
     if (context.item.status !== "FAILED") throw new DomainError("work_recovery_status_invalid", "Only failed Work can be supplemented.");
+    await this.dependencies.requirements?.assertReady(context.inputId,input.requirementsRevision);
+    const existing = await repository.findSupplement?.(input.sourceWorkId, input.turnId);
+    if (existing != null) return existing;
     if (context.attemptCount >= 2) throw new DomainError("work_recovery_exhausted", "Work recovery is limited to two rounds.");
     const acceptanceChecks = mergeAcceptanceChecks(context.sourceAcceptanceChecks, input.acceptanceChecks);
     validateAcceptanceChecks(acceptanceChecks);
@@ -301,6 +316,7 @@ export class WorkOrchestrationService {
       work: [{
         acceptanceChecks,
         accessMode: strongerAccessMode(context.item.accessMode, input.accessMode),
+        ...((input.executionNeeds ?? context.executionNeeds) === undefined ? {} : { executionNeeds: readExecutionNeeds(input.executionNeeds ?? context.executionNeeds) ?? [] }),
         ...(input.instructions === undefined ? {} : { instructions: input.instructions }),
         key: recoveryId,
         partnerId: input.partnerId,
@@ -309,7 +325,8 @@ export class WorkOrchestrationService {
       }],
       workbenchId: input.workbenchId,
     });
-    return { attemptNo, dispatchPlanId: planned.dispatchPlanId, evidenceResultIds: context.evidenceResultIds, waves: planned.waves };
+    return await repository.findSupplement?.(input.sourceWorkId,input.turnId)
+      ?? { attemptNo, dispatchPlanId: planned.dispatchPlanId, evidenceResultIds: context.evidenceResultIds, waves: planned.waves };
   }
 
   async listForGoal(goalInputId: string, workbenchId: string) {
@@ -320,10 +337,11 @@ export class WorkOrchestrationService {
     return await this.dependencies.repository.readBrief?.(goalInputId, workbenchId, workId) ?? null;
   }
 
-  async refreshBrief(input: { goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds?: string[]; allRequirements?: boolean }): Promise<void> {
+  async refreshBrief(input: { executionNeeds?: WorkExecutionNeed[]; goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds?: string[]; allRequirements?: boolean }): Promise<void> {
     const contract = await this.dependencies.requirements?.assertReady(input.goalInputId, input.requirementsRevision);
     if (contract == null || this.dependencies.repository.refreshBrief === undefined) throw new DomainError("goal_requirements_unavailable", "Versioned task refresh is unavailable.");
     requireWorkInstructions(input.instructions);
+    readExecutionNeeds(input.executionNeeds);
     renderGoalRequirements(contract, input.requirementIds ?? [], input.allRequirements ?? false);
     await this.dependencies.repository.refreshBrief({ ...input, requirementIds: input.requirementIds ?? [], allRequirements: input.allRequirements ?? false });
   }
@@ -370,6 +388,7 @@ export class WorkOrchestrationService {
       throw new DomainError("work_reassign_same_revision", "Reassignment requires a different partner revision.");
     }
     const accessMode = context.item.accessMode === "READ" ? "READ" : strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
+    assertExecutionAccess(accessMode, context.executionNeeds, pin.localExecution);
     const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
     if (!policy.allowed) throw new DomainError("work_reassign_policy_denied", policy.reason ?? "Work reassignment was denied.");
     const createdAt = this.dependencies.clock.now().toISOString();
@@ -425,7 +444,7 @@ export class WorkOrchestrationService {
    * current partner revision: the point is to feed the answer back into the same work, and
    * the dispatch continues in the original resident instance when it is still alive.
    */
-  async resume(input: { requirementsRevision?: number; requirementIds?: string[]; allRequirements?: boolean; actionId?: string; instructions?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+  async resume(input: { executionNeeds?: WorkExecutionNeed[]; requirementsRevision?: number; requirementIds?: string[]; allRequirements?: boolean; actionId?: string; instructions?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
     await this.dependencies.goalGate?.assertWorkOpen(input.workId);
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
@@ -444,6 +463,8 @@ export class WorkOrchestrationService {
     if (contract != null) renderGoalRequirements(contract, input.requirementIds ?? [], input.allRequirements ?? false);
     const pin = await this.dependencies.partners.pinForDispatch(context.lastPartnerId);
     const accessMode = context.item.accessMode === "READ" ? "READ" : strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
+    const executionNeeds = readExecutionNeeds(input.executionNeeds ?? context.executionNeeds);
+    assertExecutionAccess(accessMode, executionNeeds, pin.localExecution);
     const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
     if (!policy.allowed) throw new DomainError("work_resume_policy_denied", policy.reason ?? "Work resume was denied.");
     // Continue in the instance that paused so the resident conversation keeps the question
@@ -476,6 +497,7 @@ export class WorkOrchestrationService {
     };
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await repository.reassign({ attempt, createdAt, dispatchPlanId, instructions, turnId: input.turnId, workId: input.workId,
+      ...(executionNeeds === undefined ? {} : { executionNeeds }),
       ...(contract == null ? {} : { requirementsRevision: contract.revision, requirementIds: input.requirementIds ?? [], allRequirements: input.allRequirements ?? false }),
       ...(accessMode === context.item.accessMode ? {} : { accessMode }),
     });

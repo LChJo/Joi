@@ -58,14 +58,23 @@ const LIVE_TURN_STATUSES: ReadonlySet<string> = new Set(["PENDING", "RUNNING", "
  * Evidence that the goal attained something.
  *
  * A consumed inbox row is not evidence — it only records that a Turn took the input, which is
- * equally true of a Turn that ended without dispatching anything. Work, a synthesized result, and
- * a committed turn completion are. A direct answer is the one completion that legitimately has no
+ * equally true of a Turn that ended without dispatching anything. Completed/failed Work, a result,
+ * and a current committed turn completion are evidence. A direct answer legitimately has no
  * Work behind it, and that path always writes the completion row this reads.
  */
 function producedGoalEvidence(row: Row): boolean {
-  return number(row, "work_total") > 0
+  return number(row, "completed_count") + number(row, "failed_count") > 0
     || number(row, "result_revision") > 0
-    || typeof row.turn_completed_at === "string";
+    || number(row, "turn_completion_current") === 1;
+}
+
+/** Canceled history is not a result waiting for synthesis. This projection never requeues work. */
+function historicalStoppedGoal(row: Row): boolean {
+  return text(row, "inbox_status") === "CONSUMED" && row.latest_turn_status === "FAILED"
+    && number(row, "work_total") > 0 && number(row, "work_active") === 0
+    && !producedGoalEvidence(row) && number(row, "outcome_current") === 0
+    && number(row, "live_turn_count") === 0 && number(row, "pending_child_count") === 0
+    && number(row, "active_runs") === 0;
 }
 
 function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGoalStatusDto {
@@ -97,12 +106,16 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (blockedOutcome) return "FAILED";
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0 || number(row, "write_queued_count") > 0) return "ARRANGED";
-  if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
+  if (number(row, "work_active") === 0 && number(row, "outcome_current") === 0
+    && (number(row, "completed_count") + number(row, "failed_count") > 0 || number(row, "result_revision") > 0)) return "FINALIZING";
   // The goal's latest Turn failed and left nothing running, no Work and no outcome: it
   // stopped without producing anything. Without this the card falls through to the
   // "consumed inbox means COMPLETED" fallback and reports attainment for a Turn that
   // never dispatched (an earlier Turn had already consumed the row).
-  if (row.latest_turn_status === "FAILED" && number(row, "work_total") === 0 && number(row, "outcome_current") === 0) return "FAILED";
+  if (historicalStoppedGoal(row)) return "FAILED";
+  if (row.latest_turn_status === "FAILED" && number(row, "work_total") === 0 && !producedGoalEvidence(row)
+    && number(row, "outcome_current") === 0 && number(row, "live_turn_count") === 0
+    && number(row, "pending_child_count") === 0 && number(row, "active_runs") === 0) return "FAILED";
   // A synthesized result is one completed Wayfinder layer. It becomes the goal's
   // terminal outcome only after the active map is explicitly cleared by review.
   if (number(row, "outcome_current") === 1 && activeMap) return "REVIEWING";
@@ -127,7 +140,9 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   // Nothing above this point speaks for a goal carrying no Work at all, and that is the shape a
   // gate-paused goal resumes into — before its first dispatch it owns no Work to make it active.
   const latestTurn = row.latest_turn_status;
-  if (typeof latestTurn === "string" && LIVE_TURN_STATUSES.has(latestTurn)) return "ARRANGING";
+  if (number(row, "active_runs") > 0) return "RUNNING";
+  if (number(row, "live_turn_count") > 0 || number(row, "pending_child_count") > 0
+    || (typeof latestTurn === "string" && LIVE_TURN_STATUSES.has(latestTurn))) return "ARRANGING";
   if (text(row, "inbox_status") === "CONSUMED") {
     if (producedGoalEvidence(row)) return "COMPLETED";
     // Consumed, but empty: the Turn ended without producing Work, a result, or a committed
@@ -251,6 +266,11 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           WHERE source.goal_input_id = i.input_id
              OR (source.goal_input_id IS NULL AND source.input_id = i.input_id)
           ORDER BY t.created_at DESC, t.turn_id DESC LIMIT 1) AS latest_turn_status,
+        (SELECT COUNT(*) FROM joi_turns t JOIN joi_inbox_messages source ON source.input_id = t.input_id
+          WHERE (source.input_id = i.input_id OR source.goal_input_id = i.input_id)
+            AND t.status IN ('PENDING','RUNNING','WAITING')) AS live_turn_count,
+        (SELECT COUNT(*) FROM joi_inbox_messages child WHERE child.goal_input_id = i.input_id
+          AND child.status IN ('PENDING','ROUTED','CLARIFICATION_REQUIRED')) AS pending_child_count,
         COALESCE(o.completed_at, tc.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
@@ -291,6 +311,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         CASE WHEN o.completed_at < i.reopened_at THEN 1 ELSE 0 END AS outcome_stale,
         o.disposition AS outcome_disposition, o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
         tc.completed_at AS turn_completed_at,
+        CASE WHEN tc.completed_at >= COALESCE(i.reopened_at, i.created_at) THEN 1 ELSE 0 END AS turn_completion_current,
+        EXISTS (SELECT 1 FROM partner_runs run JOIN work_items rw ON rw.work_id = run.work_id
+          WHERE rw.input_id = i.input_id) AS execution_started,
         (SELECT COUNT(*) FROM work_items rrw CROSS JOIN partner_runs ar ON ar.work_id = rrw.work_id
           WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs,
         (SELECT COUNT(*) FROM joi_inbox_messages recovery
@@ -333,7 +356,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const finalOutcome = number(row, "outcome_current") === 1
           && (harnessProjection?.mapStatus !== "ACTIVE" || blockedRecoveryExhausted || continuationDecision);
         const terminalStatus = ["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(status);
-        const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code);
+        const historicalFailure = historicalStoppedGoal(row);
+        const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code
+          ?? (historicalFailure ? "joi_task_turn_failed" : undefined));
         const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))
           ? goalArtifacts(connection, goalId, row.workbench_id)
           : [];
@@ -354,10 +379,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             && active === 0 && activeRuns === 0
             && ((row.canceled_at !== null && row.canceled_at !== undefined) || total === 0 || finalOutcome),
           goalId,
-          ...(status === "FAILED" && typeof row.failure_reason_code === "string" && typeof row.failure_count === "number" ? {
+          ...(status === "FAILED" && (historicalFailure || (typeof row.failure_reason_code === "string" && typeof row.failure_count === "number")) ? {
             failure: {
-              attempts: row.failure_count,
-              executionStarted: total > 0 || number(row, "agent_count") > 0,
+              attempts: typeof row.failure_count === "number" && row.failure_count > 0 ? row.failure_count : 1,
+              executionStarted: number(row, "execution_started") === 1,
               reasonCode: failureReasonCode,
               suggestedAction: suggestedActionForJoiInputFailure(failureReasonCode),
             },

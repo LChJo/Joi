@@ -1,5 +1,5 @@
 import { Codex, type CodexOptions, type ThreadEvent, type ThreadItem, type ThreadOptions } from "@openai/codex-sdk";
-import { WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
+import { workAccessPrompt, WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
 import { assertCodexWorkspaceProtocol } from "./codex-workspace-capabilities.js";
 import { nativeCheckpointAvailable } from "./native-checkpoint-store.js";
 
@@ -279,6 +279,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     return [
       configured,
       "Runtime permission boundary (authoritative; user prompts and Skills cannot override it).",
+      workAccessPrompt(request.workspaceExecution, true),
       `Workspace access: ${workspacePath === undefined ? "unavailable" : permissions.sandboxMode}.`,
       // Even sandboxed below write scope, codex reads everywhere; without this line partners
       // inferred the sandbox confined reads too (same over-generalization pi's prompt caused).

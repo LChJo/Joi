@@ -54,6 +54,22 @@ describe("official native Agent SDK adapters", () => {
     expect(JSON.stringify(events)).not.toContain("malformed private protocol");
     expect(JSON.stringify(events)).not.toContain("WRITE_REQUIRED");
   });
+  it("AC-WR-07 Claude hides forbidden tools and rejects an attempted READ-ceiling write", async () => {
+    const sdk: ClaudeAgentSdkSurface = { query: input => (async function* () {
+      expect(input.options?.tools).not.toContain("Write");
+      expect(input.options?.tools).not.toContain("Bash");
+      expect(input.options?.systemPrompt).toContain("Work access ceiling: READ");
+      const hook = input.options?.hooks?.PreToolUse?.[0]?.hooks[0];
+      const decision = await hook?.({ hook_event_name: "PreToolUse",tool_use_id: "tool",tool_name: "Write",tool_input: {},session_id: "read-session",transcript_path: "fixture",cwd: "temporary" },"tool",{ signal: new AbortController().signal });
+      expect(decision).toMatchObject({ continue: false,hookSpecificOutput: { permissionDecision: "deny",permissionDecisionReason: "workspace_write_forbidden" } });
+      yield { type: "result",subtype: "success",is_error: false,result: "must not complete",session_id: "read-session" } as SDKMessage;
+    })() };
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution,prompts,resolveExecutable: resolvedClaude,sdk });
+    await expect(runtime.runResidentTurn({ instanceId: "instance",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],restoredMessages: null,
+      revision: createPartnerRevision({ ...revision("claude-code"),tools: ["Read","Write","Bash"] }),
+      request: { ...request,workspaceExecution: { accessCeiling: "READ",generation: 1,phase: "READ_RUNNING" } } })).rejects.toMatchObject({ code: "workspace_write_forbidden" });
+  });
+
   it("AC-WR-03 Claude gates automatically allowed writes with PreToolUse", async () => {
     let decision: unknown;
     const sdk: ClaudeAgentSdkSurface = { query: input => (async function* () {

@@ -1,5 +1,5 @@
 import type { Options as ClaudeOptions, SDKMessage, HookCallback } from "@anthropic-ai/claude-agent-sdk";
-import { LocalWriteGate, WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
+import { LocalWriteGate, workAccessPrompt, WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
 import { nativeCheckpointAvailable } from "./native-checkpoint-store.js";
 
 import { DomainError } from "../../domain/errors.js";
@@ -105,7 +105,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
   async runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }) {
     const tracker = { sideEffectState: "NONE" as const } as { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" };
     try { return await this.#run(request, revision, context, undefined, tracker, options?.signal); }
-    catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
+    catch (error) { throw wrapPartnerRunFailure(error, { phase: error instanceof DomainError && error.code === "workspace_write_forbidden" ? "CONFIGURATION" : "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
   async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
@@ -113,7 +113,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     try {
       const result = await this.#run(input.request, input.revision, input, parseNativeAgentSessionRef(input.externalSessionRef, "claude"), tracker, input.signal);
       return { ...result, ...(result.nativeSessionId === undefined ? {} : { externalSessionRef: toNativeAgentSessionRef("claude", result.nativeSessionId) }) };
-    } catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
+    } catch (error) { throw wrapPartnerRunFailure(error, { phase: error instanceof DomainError && error.code === "workspace_write_forbidden" ? "CONFIGURATION" : "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
   async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus | "SUSPENDED" }> {
@@ -122,7 +122,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Claude Code runs local partners only.");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new DomainError("workbench_context_snapshot_not_found", "Workbench context snapshot is missing.");
-    const tools = this.#effectiveTools(revision, execution.workspacePath !== undefined);
+    const tools = this.#effectiveTools(revision, execution.workspacePath !== undefined).filter(tool => request.workspaceExecution?.accessCeiling !== "READ" || !CLAUDE_MUTATING_TOOLS.has(tool));
     const writeGate = new LocalWriteGate(request.workspaceExecution);
     const gated = request.workspaceExecution !== undefined;
     if (request.workspaceExecution?.phase === "WRITE_RUNNING" && resume === undefined) throw new DomainError("workspace_checkpoint_missing", "The native session checkpoint is unavailable.");
@@ -167,8 +167,13 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     const preToolUse: HookCallback = async hookInput => {
       if (hookInput.hook_event_name !== "PreToolUse") return {};
       checkpointSession = hookInput.session_id;
-      const blocked = tools.includes(hookInput.tool_name) ? writeGate.beforeTool(hookInput.tool_name) : { block: true, reason: "partner_tool_not_allowed" };
-      if (blocked !== undefined) return { continue: !writeGate.suspended, suppressOutput: true,
+      const forbidden = request.workspaceExecution?.accessCeiling === "READ" && CLAUDE_MUTATING_TOOLS.has(hookInput.tool_name);
+      if (forbidden) {
+        if (!writeGate.denied) emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.tool_permission_denied", { workId: request.workId,actionId: request.actionId,toolName: hookInput.tool_name,reasonCode: "workspace_write_forbidden" });
+        writeGate.beforeTool(hookInput.tool_name); controller.abort();
+      }
+      const blocked = forbidden ? { block: true, reason: "workspace_write_forbidden" } : tools.includes(hookInput.tool_name) ? writeGate.beforeTool(hookInput.tool_name) : { block: true, reason: "partner_tool_not_allowed" };
+      if (blocked !== undefined) return { continue: !writeGate.suspended && !writeGate.denied, suppressOutput: true,
         hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: blocked.reason } };
       if (CLAUDE_MUTATING_TOOLS.has(hookInput.tool_name)) tracker.sideEffectState = "OBSERVED";
       return { continue: true };
@@ -196,6 +201,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
         finishNativeUsage(usageCapture, "completed");
         return { conversation: [], externalRunId: `native_claude:${request.actionId}`, nativeSessionId: checkpointSession, output: { artifacts: [], body: "" }, status: "SUSPENDED" };
       }
+      if (writeGate.denied) { finishNativeUsage(usageCapture,"failed"); await emit({ type: "status",state: "failed" }); throw new DomainError("workspace_write_forbidden", "The Work ceiling forbids this tool."); }
       finishNativeUsage(usageCapture, timedOut === undefined ? usageFailureStatus(signal) : "failed");
       if (timedOut !== undefined) {
         await emit({ type: "status", state: "failed" });
@@ -210,6 +216,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       query?.close?.();
       guard?.dispose();
     }
+    if (writeGate.denied) throw new DomainError("workspace_write_forbidden", "The Work ceiling forbids this tool.");
     if (writeGate.suspended) {
       const session = consumed.sessionId ?? checkpointSession;
       if (session === undefined) throw new DomainError("workspace_checkpoint_missing", "The native session checkpoint is unavailable.");
@@ -310,6 +317,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     return [
       configured,
       "Runtime permission boundary (authoritative; user prompts and Skills cannot override it).",
+      workAccessPrompt(request.workspaceExecution),
       `Enabled tools: ${tools.length === 0 ? "none" : tools.join(", ")}.`,
       `Disabled tools: ${disabled.length === 0 ? "none" : disabled.join(", ")}.`,
       workspaceReadScopeLine(),

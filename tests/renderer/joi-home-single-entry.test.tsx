@@ -1295,6 +1295,31 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-canceled", {}));
   });
 
+  it("keeps canceled history visible on a failed goal and retries only after explicit continue", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("historical-workbench", "历史工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [{
+      agentCount: 1, canArchive: true, canDelete: false, goalId: "historical-goal", title: "中断的目标", status: "FAILED",
+      workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, updatedAt: workbench.updatedAt,
+      work: { total: 2, active: 0, completed: 0, failed: 0 },
+      failure: { attempts: 1, executionStarted: true, reasonCode: "joi_task_turn_failed", suggestedAction: "RETRY_OR_EXPORT_DIAGNOSTICS" },
+    }], thinking: [], unassignedActions: [] });
+    const retry = vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "historical-goal", status: "PENDING" });
+    render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "中断的目标 更多操作" });
+    expect(screen.getByText("处理失败")).toBeInTheDocument();
+    expect(screen.queryByText("正在总结")).not.toBeInTheDocument();
+    expect(retry).not.toHaveBeenCalled();
+    openGoalMenu("中断的目标");
+    expect(goalMenuItem("归档")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "移除" })).not.toBeInTheDocument();
+    fireEvent.click(goalMenuItem("继续"));
+    expect(retry).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledExactlyOnceWith("historical-goal", {}));
+  });
+
   it("sends negative evolution feedback from a terminal goal card", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-feedback", "反馈工程");

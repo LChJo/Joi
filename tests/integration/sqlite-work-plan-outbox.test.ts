@@ -18,6 +18,63 @@ import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistenc
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("SQLite work plan outbox", () => {
+  it("AC-WR-07 supplements a legacy READ failure once across concurrent requests and replay", async () => {
+    const fixture = await createRuntimeFixture();
+    let database = fixture.database;
+    try {
+      const wb = await fixture.workbenchRegistry.create({ name: "Recovery", personaSummary: "fixture", projectLabel: "Report", scopeSummary: "Save a report" });
+      const now = fixture.clock.now().toISOString();
+      database.transaction(db => {
+        db.prepare("INSERT INTO joi_inbox_messages (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at) VALUES ('recovery-goal','recovery-key','fixture','CONSUMED',?,?,?)").run(wb.workbenchId,now,now);
+        db.prepare("INSERT INTO joi_turns (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at) VALUES ('recovery-turn','recovery-goal',?,'fixture-session','RUNNING',?,?)").run(wb.workbenchId,now,now);
+        db.prepare("INSERT INTO work_items (work_id,workbench_id,input_id,title,intent_json,access_mode,status,created_at,updated_at) VALUES ('legacy-read',?,'recovery-goal','Report',?,'READ','FAILED',?,?)").run(wb.workbenchId,JSON.stringify({ instructions: "Save a report", acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "report.md" }] }),now,now);
+        db.prepare("INSERT INTO work_access_policies VALUES ('legacy-read','READ')").run();
+      });
+      const partners = new PartnerRegistryService({ clock: fixture.clock, ids: fixture.ids, repository: new SqlitePartnerRegistryRepository(database) });
+      const partner = await partners.add({ capabilities: [], displayName: "Writer", kind: "local-pi", skills: [], tools: [] });
+      const makeService = () => {
+        const repository = new SqliteWorkPlanRepository(database);
+        return new WorkOrchestrationService({ clock: fixture.clock, ids: fixture.ids, partners: new PartnerRegistryService({ clock: fixture.clock, ids: fixture.ids, repository: new SqlitePartnerRegistryRepository(database) }), recovery: repository, repository, policy: { evaluate: () => Promise.resolve({ allowed: true }) } });
+      };
+      const request = { sourceWorkId: "legacy-read", turnId: "recovery-turn", workbenchId: wb.workbenchId, partnerId: partner.partnerId, title: "Missing report", accessMode: "WRITE" as const, executionNeeds: ["FILE_WRITE" as const], instructions: "Create only the missing report; do not repeat external actions." };
+      const results = await Promise.all([makeService().supplement(request),makeService().supplement(request)]);
+      expect(results[0]).toEqual(results[1]);
+      await expect(makeService().supplement({ ...request, turnId: "another-turn" })).resolves.toEqual(results[0]);
+      expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_recovery_attempts WHERE source_work_id='legacy-read'").get()?.n)).toBe(1);
+      expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_items WHERE input_id='recovery-goal'").get()?.n)).toBe(2);
+      const replacement = results[0].waves[0]?.[0];
+      const brief = await new SqliteWorkPlanRepository(database).readBrief("recovery-goal",wb.workbenchId,replacement ?? "");
+      expect(brief).toMatchObject({ accessMode: "WRITE", executionNeeds: ["FILE_WRITE"] });
+      const originalAttempt = database.transaction(db => db.prepare("SELECT * FROM dispatch_attempts WHERE work_id=?").get(replacement ?? ""));
+      database.transaction(db => {
+        db.prepare("INSERT INTO joi_turns (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at) VALUES ('resumed-turn','recovery-goal',?,'fixture-session','RUNNING',?,?)")
+          .run(wb.workbenchId, now, now);
+        db.prepare("INSERT INTO dispatch_plans(dispatch_plan_id,turn_id,candidate_json,policy_result_json,created_at) VALUES ('resumed-plan','resumed-turn',?, '[]',?)")
+          .run(JSON.stringify({ reassignWorkId: replacement }), now);
+        db.prepare(`INSERT INTO dispatch_attempts
+          (dispatch_attempt_id,dispatch_plan_id,work_id,partner_revision_id,registry_revision,action_id,status,created_at,updated_at)
+          VALUES ('resumed-attempt','resumed-plan',?,?,1,'resumed-action','PENDING',?,?)`)
+          .run(replacement ?? "", partner.partnerRevisionId, now, now);
+      });
+      expect(originalAttempt?.dispatch_plan_id).toBe(results[0].dispatchPlanId);
+      await expect(makeService().supplement({ ...request, turnId: "resumed-turn" })).resolves.toEqual(results[0]);
+      database.transaction(db => db.prepare("UPDATE work_items SET status='COMPLETED' WHERE work_id=?").run(replacement ?? ""));
+      database.close();
+      database = await openRuntimeDatabase({ databasePath: path.join(fixture.root,"runtime.sqlite"),migrationsDirectory: path.resolve("resources/migrations") });
+      await expect(makeService().supplement(request)).resolves.toEqual(results[0]);
+      await expect(makeService().supplement({ ...request, turnId: "resumed-turn" })).resolves.toEqual(results[0]);
+      expect(database.transaction(db => db.prepare("SELECT access_mode FROM work_access_policies WHERE work_id='legacy-read'").get()?.access_mode)).toBe("READ");
+      database.transaction(db => {
+        db.prepare("UPDATE work_items SET status='FAILED' WHERE work_id=?").run(replacement ?? "");
+        db.prepare("INSERT INTO joi_turns (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at) VALUES ('second-recovery','recovery-goal',?,'fixture-session','RUNNING',?,?)").run(wb.workbenchId,now,now);
+      });
+      const second = await makeService().supplement({ ...request,turnId: "second-recovery" });
+      expect(second.attemptNo).toBe(2);
+      database.transaction(db => db.prepare("UPDATE work_items SET status='FAILED' WHERE work_id=?").run(second.waves[0]?.[0] ?? ""));
+      await expect(makeService().supplement({ ...request,turnId: "third-recovery" })).rejects.toMatchObject({ code: "work_recovery_exhausted" });
+      expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_recovery_attempts WHERE source_work_id='legacy-read'").get()?.n)).toBe(2);
+    } finally { database.close(); await rm(fixture.root,{ recursive: true,force: true }); }
+  });
   it("loads the failed source Work contract for supplemental recovery and fails closed on malformed legacy briefs", async () => {
     const fixture = await createRuntimeFixture();
     try {

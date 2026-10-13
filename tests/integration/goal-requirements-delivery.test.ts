@@ -172,7 +172,9 @@ describe("requirements dispatch and start gates", () => {
         upserts: [{ id: "day", kind: "CONSTRAINT", scope: "GLOBAL", mandatory: true, text, explicitUserCorrection: true, source: { sourceRevision: 2, start: 0, end: text.length } }] });
       await expect(handler.handle(ctx.claim)).rejects.toMatchObject({ code: "goal_requirements_stale" });
       const update = { goalInputId: "goal", workbenchId: ctx.wb.workbenchId, workId: ctx.workId, turnId: "turn", actionId: "refresh", instructions: "Perform the bounded reply.", requirementsRevision: 2 };
-      await ctx.work.refreshBrief(update);
+      await expect(ctx.work.refreshBrief({ ...update,actionId: "access-conflict",executionNeeds: ["FILE_WRITE"] })).rejects.toMatchObject({ code: "work_execution_access_conflict" });
+      await ctx.work.refreshBrief({ ...update,executionNeeds: [] });
+      expect(await ctx.work.readBrief("goal",ctx.wb.workbenchId,ctx.workId)).toMatchObject({ accessMode: "READ",executionNeeds: [] });
       await ctx.work.refreshBrief({ ...update, instructions: "Duplicate must not overwrite" });
       expect((await ctx.work.listForGoal("goal", ctx.wb.workbenchId))[0]).toMatchObject({ requirementsRevision: 2 });
       expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE kind = 'partner.dispatch'").get())?.n).toBe(1);

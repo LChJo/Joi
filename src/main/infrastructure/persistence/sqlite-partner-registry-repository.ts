@@ -94,6 +94,11 @@ function mapRow(row: Row): PartnerRevision {
   };
 }
 
+export function readStoredPartnerRevision(connection: DatabaseSync, revisionId: string): PartnerRevision | null {
+  const row = connection.prepare(`${SELECT_REVISIONS} WHERE r.partner_revision_id = ?`).get(revisionId);
+  return row === undefined ? null : mapRow(row);
+}
+
 export class SqlitePartnerRegistryRepository implements PartnerRegistryRepository {
   constructor(private readonly database: TransactionalDatabase) {}
 
