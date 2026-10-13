@@ -4,6 +4,7 @@ import type { AgentConversationDraft } from "../partners/agent-conversation-pres
 export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
 export interface PartnerRunRequest {
+  workspaceExecution?: { accessCeiling: "READ" | "WRITE"; generation: number; phase: "READ_RUNNING" | "WRITE_RUNNING" };
   actionId: string;
   workbenchId: string;
   contextSnapshotId: string;
@@ -21,6 +22,7 @@ export interface PartnerRunOutput {
 }
 
 export interface PartnerRunResult {
+  checkpointRef?: string;
   actionId: string;
   artifacts: PartnerRunOutput["artifacts"];
   body: string;
@@ -28,7 +30,7 @@ export interface PartnerRunResult {
   externalRunId: string;
   instanceId?: string;
   pendingQuestion?: string;
-  status: PartnerRunStatus;
+  status: PartnerRunStatus | "SUSPENDED";
   workId: string;
 }
 

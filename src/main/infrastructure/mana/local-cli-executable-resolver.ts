@@ -105,7 +105,14 @@ export function resolveLocalCliExecutable(protocol: LocalCliProtocol): ResolvedL
       protocol,
     };
   }
-  const executablePath = resolvePathExecutable(["claude"]);
+  const located = resolvePathExecutable(["claude"]);
+  const nativeCandidates = located === undefined ? [] : [
+    join(dirname(located), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"),
+    join(dirname(located), "..", "@anthropic-ai", "claude-code", "bin", "claude.exe"),
+    join(dirname(located), "node_modules", "@anthropic-ai", `claude-code-win32-${process.arch}`, "claude.exe"),
+  ];
+  const executablePath = process.platform === "win32" && located !== undefined && /\.(?:cmd|bat|ps1)$/iu.test(located)
+    ? nativeCandidates.find(candidate => existsSync(candidate)) ?? located : located;
   return {
     commandName: process.platform === "win32" ? "claude.exe" : "claude",
     ...(executablePath === undefined ? {} : { executablePath }),

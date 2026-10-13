@@ -128,7 +128,7 @@ export class WorkOrchestrationService {
       const workId = this.dependencies.ids.next("work");
       workIds.set(request.key, workId);
       return createWorkItem({
-        accessMode: strongerAccessMode(request.accessMode, pins[index]?.minimumAccessMode ?? "NONE"),
+        accessMode: request.accessMode === "READ" ? "READ" : strongerAccessMode(request.accessMode, pins[index]?.minimumAccessMode ?? "NONE"),
         workbenchId: input.workbenchId,
         createdAt,
         title: request.title,
@@ -369,7 +369,7 @@ export class WorkOrchestrationService {
     if (pin.partnerRevisionId === context.lastPartnerRevisionId) {
       throw new DomainError("work_reassign_same_revision", "Reassignment requires a different partner revision.");
     }
-    const accessMode = strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
+    const accessMode = context.item.accessMode === "READ" ? "READ" : strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
     const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
     if (!policy.allowed) throw new DomainError("work_reassign_policy_denied", policy.reason ?? "Work reassignment was denied.");
     const createdAt = this.dependencies.clock.now().toISOString();
@@ -443,7 +443,7 @@ export class WorkOrchestrationService {
     const contract = context.inputId === undefined ? null : await this.dependencies.requirements?.assertReady(context.inputId, input.requirementsRevision);
     if (contract != null) renderGoalRequirements(contract, input.requirementIds ?? [], input.allRequirements ?? false);
     const pin = await this.dependencies.partners.pinForDispatch(context.lastPartnerId);
-    const accessMode = strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
+    const accessMode = context.item.accessMode === "READ" ? "READ" : strongerAccessMode(context.item.accessMode, pin.minimumAccessMode ?? "NONE");
     const policy = await this.dependencies.policy.evaluate({ ...context.item, accessMode }, pin);
     if (!policy.allowed) throw new DomainError("work_resume_policy_denied", policy.reason ?? "Work resume was denied.");
     // Continue in the instance that paused so the resident conversation keeps the question
@@ -498,7 +498,7 @@ export class WorkOrchestrationService {
     return attempt;
   }
 
-  /** Cancels work that is not mid-flight; a RUNNING attempt finishes on its own and arrives late. */
+  /** The repository permits cancellation only when no tool operation is in flight. */
   async cancel(input: { workbenchId: string; workId: string }): Promise<{ workId: string }> {
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work cancellation is unavailable.");

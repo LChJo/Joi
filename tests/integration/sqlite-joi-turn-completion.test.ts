@@ -42,7 +42,7 @@ describe("persisted joi Turn completions", () => {
         completionSummary: "## 身份\n\n我是 Joi。 token=[redacted] C:\\…\\nested\\deep\\answer.md",
         goalId: "input-direct",
         status: "COMPLETED",
-        work: { active: 0, completed: 0, failed: 0, failedResolved: 0, total: 0 },
+        work: { active: 0, completed: 0, failed: 0, failedResolved: 0, total: 0, executing: 0, resourceWaiting: 0 },
       })]);
 
       await inbox.retry("input-direct", {});

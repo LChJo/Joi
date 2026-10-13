@@ -32,6 +32,58 @@ function revision(engine: "claude-code" | "codex") {
 }
 
 describe("official native Agent SDK adapters", () => {
+  it.each(["corrected", "invalid", "read-ceiling"])("AC-WR-04 bounds protocol correction and honors %s", async scenario => {
+    let calls = 0;
+    const thread: CodexThreadSurface = { id: "protocol-thread", runStreamed: async () => ({ events: (async function* () {
+      calls += 1;
+      const text = scenario === "read-ceiling" ? JSON.stringify({ disposition: "WRITE_REQUIRED", body: "" })
+        : scenario === "corrected" && calls === 2 ? JSON.stringify({ disposition: "COMPLETED", body: "analysis" }) : "malformed private protocol";
+      yield { type: "item.completed", item: { id: "answer", type: "agent_message", text } } as ThreadEvent;
+      yield { type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } } as ThreadEvent;
+    })() }) };
+    const runtime = new CodexAgentSdkPartnerEngineRuntime({ contexts: execution, prompts, resolveExecutable: resolvedCodex,
+      sdk: { create: () => ({ startThread: () => thread, resumeThread: () => { throw new Error("unexpected_resume"); } }) } });
+    const events: unknown[] = [];
+    const turn = runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], restoredMessages: null,
+      onEvent: async event => { events.push(event); },
+      revision: createPartnerRevision({ ...revision("codex"), codexPermissions: { approvalPolicy: "never", sandboxMode: "workspace-write", networkAccessEnabled: false, webSearchMode: "disabled" } }),
+      request: { ...request, workspaceExecution: { accessCeiling: scenario === "read-ceiling" ? "READ" : "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+    if (scenario === "corrected") await expect(turn).resolves.toMatchObject({ status: "COMPLETED", output: { body: "analysis", artifacts: [] } });
+    else await expect(turn).rejects.toMatchObject({ code: scenario === "invalid" ? "workspace_write_protocol_invalid" : "workspace_write_forbidden" });
+    expect(calls).toBe(scenario === "read-ceiling" ? 1 : 2);
+    expect(JSON.stringify(events)).not.toContain("malformed private protocol");
+    expect(JSON.stringify(events)).not.toContain("WRITE_REQUIRED");
+  });
+  it("AC-WR-03 Claude gates automatically allowed writes with PreToolUse", async () => {
+    let decision: unknown;
+    const sdk: ClaudeAgentSdkSurface = { query: input => (async function* () {
+      yield { type: "system", subtype: "init", session_id: "write-session" } as SDKMessage;
+      const hook = input.options?.hooks?.PreToolUse?.[0]?.hooks[0];
+      decision = await hook?.({ hook_event_name: "PreToolUse", tool_use_id: "tool", tool_name: "Write", tool_input: {}, session_id: "write-session", transcript_path: "private", cwd: "temporary" }, "tool", { signal: new AbortController().signal });
+      yield { type: "result", subtype: "success", is_error: false, result: "blocked", session_id: "write-session" } as SDKMessage;
+    })() };
+    const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, prompts, resolveExecutable: resolvedClaude, sdk });
+    const result = await runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], restoredMessages: null,
+      revision: createPartnerRevision({ ...revision("claude-code"), tools: ["Read", "Write"] }),
+      request: { ...request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+    expect(decision).toMatchObject({ continue: false, hookSpecificOutput: { permissionDecision: "deny" } });
+    expect(result).toMatchObject({ status: "SUSPENDED", output: { body: "", artifacts: [] }, externalSessionRef: "native-agent:v1:claude:write-session" });
+  });
+  it("AC-WR-04 Codex uses read-only and retains a structured write request privately", async () => {
+    let options: ThreadOptions | undefined;
+    const thread: CodexThreadSurface = { id: "write-thread", runStreamed: async () => ({ events: (async function* () {
+      yield { type: "thread.started", thread_id: "write-thread" } as ThreadEvent;
+      yield { type: "item.completed", item: { id: "answer", type: "agent_message", text: JSON.stringify({ disposition: "WRITE_REQUIRED", body: "" }) } } as ThreadEvent;
+      yield { type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } } as ThreadEvent;
+    })() }) };
+    const runtime = new CodexAgentSdkPartnerEngineRuntime({ contexts: execution, prompts, resolveExecutable: resolvedCodex,
+      sdk: { create: () => ({ startThread: input => { options = input; return thread; }, resumeThread: () => thread }) } });
+    const result = await runtime.runResidentTurn({ instanceId: "instance", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], restoredMessages: null,
+      revision: createPartnerRevision({ ...revision("codex"), codexPermissions: { approvalPolicy: "never", sandboxMode: "workspace-write", networkAccessEnabled: false, webSearchMode: "disabled" } }),
+      request: { ...request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+    expect(options?.sandboxMode).toBe("read-only");
+    expect(result).toMatchObject({ status: "SUSPENDED", output: { body: "", artifacts: [] }, externalSessionRef: "native-agent:v1:codex:write-thread" });
+  });
   it("treats an interrupted tool-capable native run as side-effect unknown", async () => {
     const runtime = new CodexAgentSdkPartnerEngineRuntime({
       contexts: execution,

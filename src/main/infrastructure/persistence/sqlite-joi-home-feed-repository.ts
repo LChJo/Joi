@@ -96,7 +96,7 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (activeMap && harness.reviewedRevision > 0 && number(row, "work_active") > 0) return "EXTENDING";
   if (blockedOutcome) return "FAILED";
   if (number(row, "running_count") > 0) return "RUNNING";
-  if (number(row, "arranged_count") > 0) return "ARRANGED";
+  if (number(row, "arranged_count") > 0 || number(row, "write_queued_count") > 0) return "ARRANGED";
   if (number(row, "work_total") > 0 && number(row, "work_active") === 0 && number(row, "outcome_current") === 0) return "FINALIZING";
   // The goal's latest Turn failed and left nothing running, no Work and no outcome: it
   // stopped without producing anything. Without this the card falls through to the
@@ -246,37 +246,52 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
         -- Latest orchestration Turn of this goal, resolve rows included: a goal-resume row
         -- carries the goal id in goal_input_id, so its failed recovery Turn must count too.
-        (SELECT t.status FROM joi_turns t
-          JOIN joi_inbox_messages source ON source.input_id = t.input_id
-          WHERE COALESCE(source.goal_input_id, source.input_id) = i.input_id
+        (SELECT t.status FROM joi_inbox_messages source
+          CROSS JOIN joi_turns t ON t.input_id = source.input_id
+          WHERE source.goal_input_id = i.input_id
+             OR (source.goal_input_id IS NULL AND source.input_id = i.input_id)
           ORDER BY t.created_at DESC, t.turn_id DESC LIMIT 1) AS latest_turn_status,
         COALESCE(o.completed_at, tc.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
         COALESCE(SUM(CASE WHEN w.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count,
         COALESCE(SUM(CASE WHEN w.status = 'FAILED' THEN 1 ELSE 0 END), 0) AS failed_count,
-        COALESCE(SUM(CASE WHEN w.status = 'RUNNING' OR (w.status IN ('PLANNED','READY') AND EXISTS (
+        COALESCE(SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM local_work_execution e JOIN dispatch_attempts ea
+          ON ea.dispatch_attempt_id = e.dispatch_attempt_id WHERE ea.work_id = w.work_id AND e.phase = 'WRITE_QUEUED')
+          AND (w.status = 'RUNNING' OR (w.status IN ('PLANNED','READY') AND EXISTS (
           SELECT 1 FROM partner_runs running
           JOIN dispatch_attempts current_attempt ON current_attempt.dispatch_attempt_id = running.dispatch_attempt_id
           WHERE running.work_id = w.work_id AND running.status = 'RUNNING'
             AND current_attempt.status IN ('PENDING','DISPATCHED','ACCEPTED','RUNNING')
             AND current_attempt.dispatch_attempt_id = (SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest
               WHERE latest.work_id = w.work_id ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1)
-        )) THEN 1 ELSE 0 END), 0) AS running_count,
+        ))) THEN 1 ELSE 0 END), 0) AS running_count,
+        COALESCE(SUM(CASE WHEN w.status = 'RUNNING' AND EXISTS (SELECT 1 FROM local_work_execution e JOIN dispatch_attempts ea
+          ON ea.dispatch_attempt_id = e.dispatch_attempt_id WHERE ea.work_id = w.work_id AND e.phase = 'WRITE_QUEUED') THEN 1 ELSE 0 END), 0) AS write_queued_count,
         COALESCE(SUM(CASE WHEN w.status = 'WAITING' THEN 1 ELSE 0 END), 0) AS waiting_count,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY') THEN 1 ELSE 0 END), 0) AS arranged_count,
-        (SELECT COUNT(DISTINCT s.agent_id) FROM workbench_agent_sessions s
-          LEFT JOIN dispatch_attempts da ON s.backing_kind = 'LOCAL_INSTANCE' AND da.instance_id = s.backing_id
-          LEFT JOIN partner_runs pr ON s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id
-          LEFT JOIN work_items aw ON aw.work_id = COALESCE(da.work_id, pr.work_id)
-          WHERE s.dismissed_at IS NULL AND aw.input_id = i.input_id) AS agent_count,
+        (SELECT json_group_array(DISTINCT e.wait_reason) FROM local_work_execution e
+          JOIN dispatch_attempts ea ON ea.dispatch_attempt_id = e.dispatch_attempt_id JOIN work_items ew ON ew.work_id = ea.work_id
+          WHERE ew.input_id = i.input_id AND ew.status IN ('PLANNED','READY','RUNNING')
+            AND e.phase IN ('READ_QUEUED','WRITE_QUEUED') AND e.wait_reason IS NOT NULL) AS resource_wait_reasons,
+        (SELECT COUNT(DISTINCT matched.agent_id) FROM (
+          SELECT s.agent_id FROM work_items aw
+          CROSS JOIN dispatch_attempts da ON da.work_id = aw.work_id
+          CROSS JOIN workbench_agent_sessions s ON s.backing_kind = 'LOCAL_INSTANCE' AND s.backing_id = da.instance_id
+          WHERE aw.input_id = i.input_id AND s.dismissed_at IS NULL
+          UNION ALL
+          SELECT s.agent_id FROM work_items aw
+          CROSS JOIN partner_runs pr ON pr.work_id = aw.work_id
+          CROSS JOIN workbench_agent_sessions s ON s.backing_kind = 'A2A_RUN' AND s.backing_id = pr.run_id
+          WHERE aw.input_id = i.input_id AND s.dismissed_at IS NULL
+        ) matched) AS agent_count,
         COALESCE(rs.revision, 0) AS result_revision,
         CASE WHEN o.result_revision = rs.revision AND rs.revision > 0
           AND o.completed_at >= COALESCE(i.reopened_at, i.created_at) THEN 1 ELSE 0 END AS outcome_current,
         CASE WHEN o.completed_at < i.reopened_at THEN 1 ELSE 0 END AS outcome_stale,
         o.disposition AS outcome_disposition, o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
         tc.completed_at AS turn_completed_at,
-        (SELECT COUNT(*) FROM partner_runs ar JOIN work_items rrw ON rrw.work_id = ar.work_id
+        (SELECT COUNT(*) FROM work_items rrw CROSS JOIN partner_runs ar ON ar.work_id = rrw.work_id
           WHERE rrw.input_id = i.input_id AND ar.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH')) AS active_runs,
         (SELECT COUNT(*) FROM joi_inbox_messages recovery
           WHERE recovery.goal_input_id = i.input_id AND recovery.input_id LIKE 'joi_recovery:goal:%'
@@ -361,6 +376,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           title: title === "" ? "未命名目标" : title,
           updatedAt: text(row, "projection_updated_at"),
           work: {
+            executing: number(row, "running_count"),
+            resourceWaiting: number(row, "arranged_count") + number(row, "write_queued_count"),
+            ...(typeof row.resource_wait_reasons === "string" && row.resource_wait_reasons !== "[]"
+              ? { waitingReasons: JSON.parse(row.resource_wait_reasons) as NonNullable<JoiGoalCardDto["work"]["waitingReasons"]> } : {}),
             active,
             completed: number(row, "completed_count"),
             failed: number(row, "failed_count"),

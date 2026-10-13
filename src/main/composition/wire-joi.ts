@@ -16,7 +16,7 @@ import { ConfiguredPiReasoningRuntime } from "../infrastructure/pi/configured-pi
 import { PiWorkbenchRoutingRuntime } from "../infrastructure/pi/pi-workbench-routing-runtime.js";
 import { PiReasoningFailureClassifier } from "../infrastructure/pi/pi-reasoning-failure-classifier.js";
 import { JoiAttachmentService } from "../infrastructure/artifacts/joi-attachment-service.js";
-import { transcodeBitmapToPng } from "../infrastructure/artifacts/bitmap-transcoder.js";
+import type { BitmapTranscodeInput, BitmapTranscodeResult } from "../infrastructure/artifacts/bitmap-transcoder.js";
 import {
   createJoiReasoningTools,
   goalFromInputIdPrefix,
@@ -32,6 +32,7 @@ export function wireJoi(input: {
   clock: Clock;
   database: RuntimeDatabase;
   directoryPicker: () => Promise<string | null>;
+  transcodeBitmap: (input: BitmapTranscodeInput) => Promise<BitmapTranscodeResult | undefined>;
   diagnostics: RuntimeDiagnostics;
   ids: IdGenerator;
   modelSourceStack: ModelSourceBundle;
@@ -72,7 +73,7 @@ export function wireJoi(input: {
     database,
     ids,
     rootDirectory: path.join(userDataDirectory, "artifacts"),
-    transcodeBitmap: transcodeBitmapToPng,
+    transcodeBitmap: input.transcodeBitmap,
   });
   const joiReasoning = new ConfiguredPiReasoningRuntime({
     diagnostics,

@@ -52,6 +52,18 @@ export class PartnerInstanceManager {
     this.#limits = { ...DEFAULT_LIMITS, ...(dependencies.limits ?? {}) };
   }
 
+  async validateCheckpoint(instanceId: string, reference: string): Promise<boolean> {
+    const record = await this.dependencies.repository.get(instanceId);
+    if (record?.status !== "SUSPENDED") return false;
+    try {
+      if (record.engine === "pi-core") {
+        const messages = await this.dependencies.messages.load(instanceId, true);
+        return reference === `partner_instance_messages:${instanceId}` && messages !== null && messages.length > 0;
+      }
+      return record.externalSessionRef === reference && await this.#engine(record.engine).checkpointAvailable?.(reference) === true;
+    } catch { return false; }
+  }
+
   /** Creates a fresh instance for the partner's active revision; resident creation enforces hard caps. */
   async ensure(input: { workbenchId: string; partnerId: string; sessionPolicy?: SessionPolicy }): Promise<PartnerInstanceRecord> {
     const policy: SessionPolicy = input.sessionPolicy ?? "RESIDENT";
@@ -76,7 +88,7 @@ export class PartnerInstanceManager {
   }
 
   /**
-   * Runs one turn. A given instanceId must be IDLE and belong to the revision's partner.
+   * A turn owns an IDLE instance, or resumes its own SUSPENDED instance with WRITE.
    * Without an instanceId, ephemeral is the default policy; resident requires ensure() first
    * (joi sees live instances through partner_list_instances and passes the id explicitly).
    */
@@ -120,7 +132,7 @@ export class PartnerInstanceManager {
           // Compatibility for delayed outbox rows persisted before plan-time validation existed.
           record = await createEphemeral();
         } else {
-          if (existing.status !== "IDLE") throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
+          if (existing.status !== "IDLE" && !(existing.status === "SUSPENDED" && input.request.workspaceExecution?.phase === "WRITE_RUNNING")) throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
           record = existing;
         }
       } else if (input.sessionPolicy === "RESIDENT") {
@@ -192,7 +204,7 @@ export class PartnerInstanceManager {
       knowledgeSection = input.revision.kind === "local-pi"
         ? await this.dependencies.knowledge.readForInjection(record.partnerId)
         : "";
-      if (!await this.dependencies.repository.setStatusBusy(record.instanceId, this.dependencies.clock.now().toISOString())) {
+      if (!await this.dependencies.repository.setStatusBusy(record.instanceId, this.dependencies.clock.now().toISOString(), input.request.workspaceExecution?.phase === "WRITE_RUNNING")) {
         throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
       }
       turnClaimed = true;
@@ -236,7 +248,7 @@ export class PartnerInstanceManager {
           workId: input.request.workId,
         });
       }
-      if (record.sessionPolicy === "EPHEMERAL") {
+      if (record.sessionPolicy === "EPHEMERAL" && input.request.workspaceExecution === undefined) {
         const result = await engine.runEphemeral(input.request, input.revision, {
           knowledgeSection,
           ...(onEvent === undefined ? {} : { onEvent }),
@@ -245,6 +257,7 @@ export class PartnerInstanceManager {
           skillEnvironmentKeys,
           skillSection,
         }, input.signal === undefined ? undefined : { signal: input.signal });
+        if (result.status === "SUSPENDED") throw new DomainError("workspace_checkpoint_missing", "Legacy execution cannot suspend for writing.");
         await this.#disposeRecord(record, "ephemeral_completed");
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.instance.completed", {
           actionId: input.request.actionId,
@@ -268,7 +281,11 @@ export class PartnerInstanceManager {
           workId: input.request.workId,
         };
       }
-      const restored = await this.dependencies.messages.load(record.instanceId);
+      const restored = await this.dependencies.messages.load(record.instanceId, input.request.workspaceExecution?.phase === "WRITE_RUNNING");
+      if (input.request.workspaceExecution?.phase === "WRITE_RUNNING"
+        && (record.engine === "pi-core" ? restored === null || restored.length === 0 : record.externalSessionRef === undefined)) {
+        throw new DomainError("workspace_checkpoint_missing", "The suspended execution checkpoint is unavailable.");
+      }
       const turn = await engine.runResidentTurn({
         ...(record.externalSessionRef === undefined ? {} : { externalSessionRef: record.externalSessionRef }),
         instanceId: record.instanceId,
@@ -285,7 +302,16 @@ export class PartnerInstanceManager {
         ...(preflightPin === undefined ? {} : { sourcePin: preflightPin }),
       });
       if (turn.messages !== undefined) await this.dependencies.messages.save(record.instanceId, turn.messages);
-      await this.dependencies.repository.markTurnComplete(
+      const checkpointRef = record.engine === "pi-core" ? `partner_instance_messages:${record.instanceId}` : turn.externalSessionRef;
+      if (turn.status === "SUSPENDED") {
+        if (checkpointRef === undefined || (record.engine === "pi-core" && (turn.messages?.length ?? 0) === 0)
+          || this.dependencies.repository.markSuspended === undefined) throw new DomainError("workspace_checkpoint_missing", "The execution checkpoint could not be saved.");
+        await this.dependencies.repository.markSuspended(record.instanceId, this.dependencies.clock.now().toISOString(), turn.externalSessionRef);
+        return { actionId: input.request.actionId, artifacts: [], body: "", checkpointRef, externalRunId: turn.externalRunId,
+          instanceId: record.instanceId, status: "SUSPENDED", workId: input.request.workId };
+      }
+      if (record.sessionPolicy === "EPHEMERAL") await this.#disposeRecord(record, "ephemeral_completed");
+      else await this.dependencies.repository.markTurnComplete(
         record.instanceId,
         this.dependencies.clock.now().toISOString(),
         turn.externalSessionRef,
@@ -337,7 +363,7 @@ export class PartnerInstanceManager {
     if (record === null) return;
     if (record.workbenchId !== input.workbenchId) throw new DomainError("partner_instance_workbench_mismatch", "Partner instance belongs to another Workbench.");
     if (record.status === "DISPOSED") return;
-    if (record.status === "BUSY") throw new DomainError("partner_instance_busy", "Partner instance is busy and cannot be disposed.");
+    if (record.status === "BUSY" || record.status === "SUSPENDED") throw new DomainError("partner_instance_busy", "Partner instance belongs to an active turn and cannot be disposed.");
     await this.#disposeRecord(record, input.reason);
   }
 

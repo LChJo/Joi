@@ -1380,7 +1380,7 @@ describe("joi home single entry", () => {
         title: "十一个工作",
         updatedAt: workbench.updatedAt,
         workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
-        work: { active: 1, completed: 6, failed: 4, failedResolved: 3, total: 11 },
+        work: { active: 1, completed: 6, failed: 4, failedResolved: 3, total: 11, executing: 0, resourceWaiting: 1 },
       }],
       thinking: [],
       unassignedActions: [],
@@ -1389,7 +1389,7 @@ describe("joi home single entry", () => {
     render(<JoiHome api={api} />);
     // The five Works that are not completions have to be readable, and a failure a replacement
     // answered is not the same fact as one that is still open.
-    const label = await screen.findByText("7 Agent · 6 工作完成 · 4 失败(3 已解决) · 1 进行中");
+    const label = await screen.findByText("7 Agent · 6 工作完成 · 4 失败(3 已解决) · 1 等待中");
     // A settled Work is settled whatever it produced, so ten of the eleven fill the bar.
     expect(label.closest(".joi-goal-progress")?.querySelector(".joi-goal-progress-track i"))
       .toHaveStyle({ width: "91%" });
@@ -2310,6 +2310,26 @@ describe("tool trace reveal", () => {
   const runCall = { createdAt: "2026-09-26T10:00:00.000Z", entryId: "call-1", kind: "TOOL_CALL" as const, role: "TOOL" as const, sequence: 0, text: "npm test", toolCallId: "toolu_1", toolName: "bash" };
   const runResult = { createdAt: "2026-09-26T10:00:01.000Z", entryId: "result-1", kind: "TOOL_RESULT" as const, role: "TOOL" as const, sequence: 1, text: "执行完成", toolCallId: "toolu_1", toolName: "bash" };
   const liveCall = { createdAt: "2026-09-26T10:00:02.000Z", entryId: "call-2", kind: "TOOL_CALL" as const, role: "TOOL" as const, sequence: 2, text: "npm run lint", toolCallId: "toolu_2", toolName: "bash" };
+
+  it.each([
+    ["READ_RUNNING", undefined, "分析中"],
+    ["READ_QUEUED", "WORKSPACE_READ", "等待工作区可读"],
+    ["WRITE_QUEUED", "WORKSPACE_WRITE", "等待写入"],
+    ["WRITE_RUNNING", undefined, "写入执行中"],
+    ["READ_QUEUED", "CAPACITY", "等待执行容量"],
+  ] as const)("AC-WR-06 shows %s from the API projection", async (executionPhase, waitReason, label) => {
+    const api = new DigitalLifeApi("", true);
+    const projected = { ...agent, executionPhase, ...(waitReason === undefined ? {} : { waitReason }) };
+    const workbench = workbenchDto("workbench-1", "资源等待");
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [projected] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue({ activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+      personaRevisionId: "persona", projectLabel: "test", recentOutcomes: [], recentResults: [], responsibility: "test", updatedAt: workbench.updatedAt,
+      workspace: { displayName: "workspace", kind: "BOUND", status: "READY" } });
+    render(<WorkbenchManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开工作台 资源等待" }));
+    expect(await screen.findByText(label)).toBeInTheDocument();
+  });
 
   it("names the running call, shows its summary folded, and reveals the body only on demand", async () => {
     const api = new DigitalLifeApi("", true);

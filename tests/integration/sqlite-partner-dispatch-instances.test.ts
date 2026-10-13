@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -22,6 +22,7 @@ import { TestClock, TestIds } from "../support/runtime-fixture.js";
 import { wrapPartnerRunFailure } from "../../src/main/application/partners/partner-run-failure.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
+import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
 
 function seedDispatchFixture(database: RuntimeDatabase, partnerRevisionId: string): void {
   database.transaction((connection) => {
@@ -58,11 +59,12 @@ async function openWithPartner() {
 
 function makeHandler(
   database: RuntimeDatabase,
-  instances: Pick<PartnerInstanceManager, "dispatch">,
+  instances: Pick<PartnerInstanceManager, "dispatch"> & Partial<Pick<PartnerInstanceManager, "validateCheckpoint">>,
   diagnostics: { event: string; fields: Record<string, unknown> }[] = [],
   verifier?: { verify(input: unknown): Promise<{ reasonCode?: string; status: "FAILED" | "NOT_REQUIRED" | "PASSED" }> },
   publish: (event: unknown) => Promise<unknown> = async () => undefined,
   clock: TestClock = new TestClock(),
+  leases: Pick<SqliteWorkspaceLeaseManager, "acquire" | "release" | "requestWrite" | "cancelWait"> = { acquire: async () => null, release: async () => undefined, requestWrite: async () => null, cancelWait: async () => undefined },
 ) {
   const contexts = new SqliteWorkbenchContextRepository(database);
   return new SqlitePartnerDispatchDelivery({
@@ -74,7 +76,7 @@ function makeHandler(
     diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
     gateway: { recover: async () => { throw new Error("gateway must not be used for LOCAL_PI"); }, startWithResult: async () => { throw new Error("gateway must not be used for LOCAL_PI"); } },
     instances,
-    leases: { acquire: async () => null, release: async () => undefined },
+    leases,
     partners: new SqlitePartnerRegistryRepository(database),
     publish,
     results: new SqliteWorkResultRepository(database),
@@ -93,6 +95,163 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it("AC-WR-01 starts two same-directory analysis runs before either completes", async () => {
+    const { database, root, partner } = await openWithPartner();
+    const clock = new TestClock();
+    const shared = path.join(root, "shared");
+    await mkdir(shared);
+    try {
+      database.transaction(db => {
+        db.prepare("UPDATE workbench_workspace_bindings SET kind = 'BOUND', status = 'READY' WHERE workbench_id = 'workbench_1'").run();
+        db.prepare("INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at) SELECT workspace_ref, ?, ?, ? FROM workbench_workspace_bindings WHERE workbench_id = 'workbench_1'").run(shared, clock.now().toISOString(), clock.now().toISOString());
+        db.prepare("UPDATE work_access_policies SET access_mode = 'READ' WHERE work_id = 'work_1'").run();
+        db.prepare("INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at) VALUES ('work_2', 'workbench_1', 'input_1', 'analysis', '{}', 'READ', 'READY', ?, ?)").run(clock.now().toISOString(), clock.now().toISOString());
+        db.prepare("INSERT INTO work_access_policies VALUES ('work_2', 'READ')").run();
+        db.prepare("INSERT INTO dispatch_attempts (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision, action_id, status, created_at, updated_at) VALUES ('attempt_2', 'plan_1', 'work_2', ?, 1, 'action_2', 'PENDING', ?, ?)").run(partner.partnerRevisionId, clock.now().toISOString(), clock.now().toISOString());
+      });
+      const started: string[] = [];
+      const release: (() => void)[] = [];
+      const handler = makeHandler(database, { dispatch: async input => {
+        expect(input.request.workspaceExecution).toMatchObject({ phase: "READ_RUNNING", accessCeiling: "READ" });
+        started.push(input.request.workId);
+        await new Promise<void>(resolve => release.push(resolve));
+        return { actionId: input.request.actionId, artifacts: [], body: "findings", externalRunId: input.request.actionId, status: "COMPLETED", workId: input.request.workId };
+      } }, [], undefined, async () => undefined, clock, new SqliteWorkspaceLeaseManager({ database, clock }));
+      const prepared = await Promise.all(["1", "2"].map(id => handler.prepare({ attemptCount: 0, dispatchAttemptId: `attempt_${id}`, outboxId: `outbox_${id}`, payloadJson: "{}" })));
+      const running = prepared.map(item => {
+        if (item === "skipped_terminal") throw new Error("unexpected_skip");
+        return handler.run(item);
+      });
+      await vi.waitFor(() => expect(started).toHaveLength(2));
+      expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_leases WHERE access_mode = 'READ'").get())).toEqual({ n: 2 });
+      release.forEach(resolve => resolve());
+      expect(await Promise.all(running)).toEqual([expect.objectContaining({ kind: "terminal", body: "findings" }), expect.objectContaining({ kind: "terminal", body: "findings" })]);
+    } finally { database.close(); await rm(root, { recursive: true, force: true }); }
+  });
+  it.each(["direct", "gate-during-upgrade", "resume", "concurrent-resume", "cancel", "cancel-before-run", "cancel-during-run", "missing-checkpoint", "restart"])("AC-WR-05 handles suspended execution through %s", async scenario => {
+    const opened = await openWithPartner();
+    let database = opened.database;
+    const root = opened.root;
+    const clock = new TestClock();
+    try {
+      database.transaction(db => {
+        db.prepare("UPDATE work_access_policies SET access_mode = 'WRITE' WHERE work_id = 'work_1'").run();
+        db.prepare("UPDATE workbench_workspace_bindings SET kind = 'BOUND', status = 'READY' WHERE workbench_id = 'workbench_1'").run();
+        db.prepare(`INSERT INTO workbench_workspace_roots (workspace_ref, root_path, created_at, updated_at)
+          SELECT workspace_ref, 'test-shared-directory', ?, ? FROM workbench_workspace_bindings WHERE workbench_id = 'workbench_1'`).run(clock.now().toISOString(), clock.now().toISOString());
+      });
+      const requests: unknown[] = [];
+      const leases = new SqliteWorkspaceLeaseManager({ database, clock });
+      if (scenario !== "direct" && scenario !== "gate-during-upgrade") {
+        database.transaction(db => {
+          db.prepare(`INSERT INTO work_items (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
+            VALUES ('reader', 'workbench_1', 'input_1', 'reader', '{}', 'READ', 'RUNNING', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString());
+        });
+        const ref = database.transaction(db => db.prepare("SELECT workspace_ref FROM workbench_workspace_bindings WHERE workbench_id = 'workbench_1'").get()?.workspace_ref);
+        await leases.acquire({ accessMode: "READ", workId: "reader", workspaceRef: String(ref) });
+      }
+      let handler = makeHandler(database, { validateCheckpoint: async () => {
+        if (scenario === "gate-during-upgrade") database.transaction(db => db.prepare(`INSERT INTO joi_goal_execution_gates
+          (goal_input_id, question_id, question_version, status, reason_code, created_at, updated_at)
+          VALUES ('input_1', 'review', 1, 'REVIEWING', 'review_required', ?, ?)`).run(clock.now().toISOString(), clock.now().toISOString()));
+        if (scenario === "direct") {
+          if (prepared === "skipped_terminal") throw new Error("unexpected_skip");
+          const generation = database.transaction(db => db.prepare("SELECT generation FROM workspace_leases WHERE work_id = 'work_1'").get()?.generation);
+          expect(prepared.workspaceLease?.generation).toBe(generation);
+        }
+        return true;
+      }, dispatch: async input => {
+        requests.push(input);
+        if (input.request.workspaceExecution?.phase === "WRITE_RUNNING") return { actionId: "action_1", artifacts: [], body: "complete", externalRunId: "same-run", instanceId: "instance_9", status: "COMPLETED", workId: "work_1" };
+        if (scenario === "cancel-during-run") await new SqliteJoiInboxRepository(database).cancel("input_1");
+        database.transaction(db => {
+          db.prepare("UPDATE dispatch_attempts SET instance_id = 'instance_9' WHERE dispatch_attempt_id = 'attempt_1'").run();
+          db.prepare("UPDATE partner_instances SET status = 'SUSPENDED' WHERE instance_id = 'instance_9'").run();
+          db.prepare(`INSERT OR IGNORE INTO partner_instance_messages (message_id, instance_id, sequence, message_json, created_at)
+            VALUES ('checkpoint', 'instance_9', 0, '{"role":"user","content":"private"}', ?)`).run(clock.now().toISOString());
+        });
+        return { actionId: "action_1", artifacts: [], body: "", checkpointRef: "partner_instance_messages:instance_9", externalRunId: "same-run", instanceId: "instance_9", status: "SUSPENDED", workId: "work_1" };
+      } }, [], undefined, async () => undefined, clock, leases);
+      const prepared = await handler.prepare({ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "initial", payloadJson: "{}" });
+      if (prepared === "skipped_terminal") throw new Error("unexpected skip");
+      expect(database.transaction(db => db.prepare("SELECT access_mode FROM workspace_leases WHERE work_id = 'work_1'").get())).toEqual({ access_mode: "READ" });
+      if (scenario === "cancel-before-run") {
+        await new SqliteJoiInboxRepository(database).cancel("input_1");
+        expect(await handler.run(prepared)).toEqual({ kind: "suspended" });
+        expect(requests).toHaveLength(0);
+        expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_leases WHERE work_id = 'work_1'").get())).toEqual({ n: 0 });
+        return;
+      }
+      if (scenario === "direct") {
+        expect(await handler.run(prepared)).toMatchObject({ kind: "terminal", body: "complete", status: "COMPLETED" });
+        expect(requests).toHaveLength(2);
+        expect(prepared).toMatchObject({ executionGeneration: 2, instanceId: "instance_9" });
+        expect(database.transaction(db => db.prepare("SELECT access_mode FROM workspace_leases WHERE work_id = 'work_1'").get())).toEqual({ access_mode: "WRITE" });
+        expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE kind = 'partner.continue' AND status <> 'DONE'").get())).toEqual({ n: 0 });
+        return;
+      }
+      expect(await handler.run(prepared)).toEqual({ kind: "suspended" });
+      if (scenario === "gate-during-upgrade") {
+        expect(database.transaction(db => db.prepare("SELECT phase FROM local_work_execution").get())).toEqual({ phase: "WRITE_QUEUED" });
+        expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_leases").get())).toEqual({ n: 0 });
+        expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_results").get())).toEqual({ n: 0 });
+        return;
+      }
+      await leases.release("reader");
+      database.transaction(db => db.prepare("UPDATE work_items SET status = 'COMPLETED' WHERE work_id = 'reader'").run());
+      if (scenario === "cancel-during-run") {
+        expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_leases").get())).toEqual({ n: 0 });
+        expect(database.transaction(db => db.prepare("SELECT status FROM partner_instances WHERE instance_id = 'instance_9'").get())).toEqual({ status: "DISPOSED" });
+        return;
+      }
+      expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_results").get())).toEqual({ n: 0 });
+      const feed = await new SqliteJoiHomeFeedRepository(database).load(clock.now());
+      expect(feed.goals[0]).toMatchObject({ status: "ARRANGED", work: { executing: 0, resourceWaiting: 1, waitingReasons: ["WORKSPACE_WRITE"] } });
+      expect((await new SqliteWorkbenchManagementRepository(database).getDetail("workbench_1"))?.activeWork[0]).toMatchObject({ executionPhase: "WRITE_QUEUED", waitReason: "WORKSPACE_WRITE" });
+      const agents = await new SqliteWorkbenchAgentRepository(database).listAgents({ workbenchId: "workbench_1", goalId: "input_1", limit: 10 });
+      expect(agents.items[0]).toMatchObject({ status: "WAITING", executionPhase: "WRITE_QUEUED", waitReason: "WORKSPACE_WRITE", canDelete: false });
+      expect(JSON.stringify({ agents, feed })).not.toContain("checkpoint_ref");
+      expect(JSON.stringify({ agents, feed })).not.toContain("partner_instance_messages:");
+      if (scenario === "cancel") {
+        expect(await new SqliteWorkPlanRepository(database).cancel("work_1", clock.now().toISOString())).toMatchObject({ canceled: true });
+        expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_write_waiters").get())).toEqual({ n: 0 });
+        expect(database.transaction(db => db.prepare("SELECT status FROM partner_instances WHERE instance_id = 'instance_9'").get())).toEqual({ status: "DISPOSED" });
+        return;
+      }
+      if (scenario === "restart") {
+        database.close();
+        database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+        handler = makeHandler(database, { dispatch: async () => { throw new Error("unexpected_replay"); } }, [], undefined, async () => undefined,
+          clock, new SqliteWorkspaceLeaseManager({ database, clock }));
+        await new SqlitePartnerInstanceRepository(database).recoverCrashed(clock.now().toISOString());
+        expect(database.transaction(db => db.prepare("SELECT status FROM partner_instances WHERE instance_id = 'instance_9'").get())).toEqual({ status: "SUSPENDED" });
+      }
+      const continuations = await new SqlitePartnerDispatchClaims(database).listClaimable({ workbenchId: "workbench_1", partnerId: (requests[0] as { revision: { partnerId: string } }).revision.partnerId, now: clock.now().toISOString() });
+      expect(continuations).toHaveLength(1);
+      const continuation = continuations[0];
+      if (continuation === undefined) throw new Error("missing_continuation");
+      if (scenario === "concurrent-resume") {
+        const resumed = await Promise.all([handler.prepare(continuation), handler.prepare(continuation)]);
+        expect(resumed.filter(item => item === "skipped_terminal")).toHaveLength(1);
+        expect(database.transaction(db => db.prepare("SELECT access_mode FROM workspace_leases WHERE work_id = 'work_1'").get())).toEqual({ access_mode: "WRITE" });
+        return;
+      }
+      if (scenario === "missing-checkpoint") {
+        database.transaction(db => db.prepare("DELETE FROM partner_instance_messages WHERE instance_id = 'instance_9'").run());
+        expect(await handler.prepare(continuation)).toBe("skipped_terminal");
+        expect(database.transaction(db => db.prepare("SELECT status FROM work_items WHERE work_id = 'work_1'").get())).toEqual({ status: "FAILED" });
+        expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_leases").get())).toEqual({ n: 0 });
+        return;
+      }
+      const continued = await handler.prepare(continuation);
+      expect(continued).toMatchObject({ actionId: prepared.actionId, dispatchAttemptId: prepared.dispatchAttemptId, instanceId: "instance_9", executionGeneration: 2 });
+      expect(requests[0]).toMatchObject({ request: { workspaceExecution: { phase: "READ_RUNNING" } } });
+      await handler.complete({ prepared, output: { kind: "terminal", artifacts: [], body: "obsolete", status: "COMPLETED" } });
+      expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_results").get())).toEqual({ n: 0 });
+      expect(database.transaction(db => db.prepare("SELECT access_mode FROM workspace_leases").get())).toEqual({ access_mode: "WRITE" });
+      expect(await handler.prepare(continuation)).toBe("skipped_terminal");
+    } finally { database.close(); await rm(root, { recursive: true, force: true }); }
+  });
   it.each([undefined, 2])("delivers only independent instructions for a scoped Work with brief version %s", async (briefVersion) => {
     const { database, root } = await openWithPartner();
     try {

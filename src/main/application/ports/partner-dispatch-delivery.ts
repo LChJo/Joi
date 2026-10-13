@@ -4,6 +4,7 @@ import type { PartnerRunOutput, PartnerRunStatus } from "./partner-execution.js"
 import type { PartnerRunFailure } from "../partners/partner-run-failure.js";
 
 export interface PartnerDispatchClaimRow {
+  continuationGeneration?: number;
   attemptCount: number;
   dispatchAttemptId: string;
   kind?: "A2A" | "LOCAL_PI";
@@ -25,14 +26,17 @@ export interface PartnerDispatchClaims {
 }
 
 export interface StagedAttachment {
+  /** Private input path for task-isolated staging; never projected to DTOs. */
+  readPath?: string;
   filename: string;
   mimeType: string;
-  /** Path relative to the Workbench workspace root, e.g. joi-attachments/<id>/<name>. */
+  /** Path relative to the staging root, e.g. joi-attachments/<id>/<name>. */
   relativePath: string;
   size: number;
 }
 
 export interface PreparedDispatch {
+  executionGeneration?: number;
   actionId: string;
   attemptCount: number;
   dispatchAttemptId: string;
@@ -40,26 +44,27 @@ export interface PreparedDispatch {
   kind: "A2A" | "LOCAL_PI";
   outboxId: string;
   sessionPolicy?: "EPHEMERAL" | "RESIDENT";
-  /** Attachments staged into the workspace for file-capable local work. */
+  /** Private staged input references for file-capable local work. */
   stagedAttachments?: readonly StagedAttachment[];
   /** The Work this run executes; the dispatch actor checks its goal for cancellation. */
   workId: string;
   /** Workspace lease held by this run; the dispatch actor heartbeats it while in flight. */
-  workspaceLease?: { expiresAt: string; workId: string; workspaceRef: string };
+  workspaceLease?: { expiresAt: string; generation?: number; workId: string; workspaceRef: string };
 }
 
 /** Renews the workspace lease held by an in-flight run; null means the lease was lost. */
 export interface WorkspaceLeaseRenewal {
-  renew(input: { workId: string; workspaceRef: string }): Promise<{ expiresAt: string } | null>;
+  renew(input: { workId: string; workspaceRef: string; generation?: number }): Promise<{ expiresAt: string } | null>;
 }
 
 export type DispatchRunOutput =
+  | { kind: "suspended" }
   | { artifacts: PartnerRunOutput["artifacts"]; body: string; conversation?: AgentConversationDraft[]; failure?: PartnerRunFailure; kind: "terminal"; pendingQuestion?: string; status: PartnerRunStatus }
   | { kind: "waiting_remote" };
 
-/** Stages the attachments bound to a dispatch's source input into the Workbench workspace. */
+/** Stages the attachments bound to a dispatch's source input into its independent input directory. */
 export interface WorkAttachmentStagerPort {
-  stage(input: { inputId: string; workspacePath: string }): Promise<StagedAttachment[]>;
+  stage(input: { inputId: string; workspacePath: string; workId?: string }): Promise<StagedAttachment[]>;
 }
 
 /**
@@ -67,6 +72,7 @@ export interface WorkAttachmentStagerPort {
  * engine run and converge the terminal result on later ticks.
  */
 export interface PartnerDispatchDelivery {
+  queued?(claim: PartnerDispatchClaimRow, reason: "CAPACITY" | "WORKSPACE_READ" | "WORKSPACE_WRITE"): Promise<void>;
   /**
    * Ends a dispatch whose preparation kept failing after the bounded retry window:
    * persists a terminal FAILED result so the Work reaches a visible end state instead

@@ -6,8 +6,11 @@ import type {
   WorkbenchUnsynthesizedResult,
 } from "../../src/main/application/ports/workbench-agent-scan";
 import type {
+  DispatchRunOutput,
+  PartnerDispatchClaimRow,
   PartnerDispatchClaims,
   PartnerDispatchDelivery,
+  PreparedDispatch,
 } from "../../src/main/application/ports/partner-dispatch-delivery";
 import type { RuntimeStore } from "../../src/main/application/ports/runtime-store";
 import type { RuntimeDiagnostics } from "../../src/main/application/ports/runtime-diagnostics";
@@ -34,25 +37,31 @@ function makeHarness(state: HarnessState, options?: {
   memoryReject?: boolean;
   sweepEveryMillis?: number;
   withDispatch?: boolean;
+  claims?: PartnerDispatchClaimRow[];
+  prepared?: PreparedDispatch;
+  run?: Promise<DispatchRunOutput>;
 }) {
   const enqueued: { eventId: string; resultId: string }[] = [];
   const recorded: { partnerId: string; workId?: string | undefined }[] = [];
   const sweeps: number[] = [];
   const attentionRepairs: string[] = [];
+  const completed: string[] = [];
   const dispatch = {
     claims: {
-      listClaimable: async () => [],
+      listClaimable: async () => options?.claims ?? [],
       listOrphanRuns: async () => [],
     } satisfies PartnerDispatchClaims,
     delivery: {
-      complete: async () => ({ isAuthoritative: true, resultId: "result_unused" }),
+      complete: async (input) => { completed.push(input.prepared.dispatchAttemptId); return { isAuthoritative: true, resultId: "result_unused" }; },
       finalizeOrphan: async () => "completed" as const,
       handle: async () => undefined,
-      prepare: async () => "skipped_terminal" as const,
-      run: async () => ({ artifacts: [], body: "", kind: "terminal" as const, status: "COMPLETED" as const }),
+      prepare: async () => options?.prepared ?? "skipped_terminal" as const,
+      run: async () => options?.run ?? { artifacts: [], body: "", kind: "terminal" as const, status: "COMPLETED" as const },
     } satisfies PartnerDispatchDelivery,
     outbox: {
-      claimOutboxById: async () => null,
+      claimOutboxById: async (input) => options?.claims?.some((claim) => claim.outboxId === input.outboxId)
+        ? { attemptCount: 0, availableAt: BASE, createdAt: BASE, kind: "partner.dispatch", outboxId: input.outboxId, payload: {}, status: "CLAIMED" }
+        : null,
       completeOutbox: async () => undefined,
       releaseOutbox: async () => undefined,
     } satisfies Pick<RuntimeStore, "claimOutboxById" | "completeOutbox" | "releaseOutbox">,
@@ -79,7 +88,7 @@ function makeHarness(state: HarnessState, options?: {
     },
     ...(options?.sweepEveryMillis === undefined ? {} : { sweepEveryMillis: options.sweepEveryMillis }),
   });
-  return { attentionRepairs, component, enqueued, recorded, sweeps };
+  return { attentionRepairs, completed, component, enqueued, recorded, sweeps };
 }
 
 const RESULT: WorkbenchUnsynthesizedResult = {
@@ -95,6 +104,29 @@ const RESULT: WorkbenchUnsynthesizedResult = {
 };
 
 describe("WorkbenchAgentComponent", () => {
+  it("retains an in-flight actor until its terminal result has been acknowledged", async () => {
+    const state: HarnessState = { keys: [{ partnerId: "partner_1" }], unsynthesized: [] };
+    let finish!: (output: DispatchRunOutput) => void;
+    const run = new Promise<DispatchRunOutput>((resolve) => { finish = resolve; });
+    const claims: PartnerDispatchClaimRow[] = [{ attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" }];
+    const harness = makeHarness(state, { withDispatch: true, claims, run, prepared: {
+      actionId: "action_1", attemptCount: 0, dispatchAttemptId: "attempt_1", kind: "LOCAL_PI", outboxId: "outbox_1", workId: "work_1",
+    } });
+    await harness.component.update(ctxAt(0));
+    const actor = harness.component.agentActors[0];
+    if (actor === undefined) throw new Error("agent_missing");
+    await actor.update(ctxAt(0));
+    state.keys = [];
+    claims.length = 0;
+    await harness.component.update(ctxAt(1_000));
+    expect(harness.component.agentActors).toEqual([actor]);
+    finish({ artifacts: [], body: "done", kind: "terminal", status: "COMPLETED" });
+    await run;
+    await actor.update(ctxAt(2_000));
+    await harness.component.update(ctxAt(3_000));
+    expect(harness.completed).toEqual(["attempt_1"]);
+    expect(harness.component.agentActors).toEqual([]);
+  });
   it("folds unsynthesized results into synthesis and memory exactly once", async () => {
     const state: HarnessState = { keys: [], unsynthesized: [RESULT] };
     const harness = makeHarness(state);

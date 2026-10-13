@@ -9,7 +9,7 @@ import { TestClock } from "../support/runtime-fixture.js";
 
 describe("actor tree single root tick authority", () => {
   it("composes the actor tree as the only traversal driver and retires notify callbacks and SSE", async () => {
-    const composition = await readFile("src/main/index.ts", "utf8");
+    const composition = await readFile("src/main/composition/runtime-host.ts", "utf8");
     const wiring = await readFile("src/main/composition/wire-runtime.ts", "utf8");
     expect(wiring).toContain("new ActorTree(");
     expect(composition).toContain("actorTree.tick(");

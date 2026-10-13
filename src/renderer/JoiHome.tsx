@@ -839,9 +839,9 @@ export function WorkbenchManager({ api, initialWorkbenchId }: { api: DigitalLife
         <div className="row-actions"><button className="button ghost" onClick={() => void workspaceAction("bind")} type="button">绑定已有目录</button><button className="button ghost" onClick={() => void workspaceAction("rebuild")} type="button">使用默认运行目录</button></div>
       </article>
       <div className="workbench-detail-tabs" role="tablist"><button aria-selected={tab === "agents"} onClick={() => setTab("agents")} role="tab" type="button">Agent <span>{agents.length}</span></button><button aria-selected={tab === "context"} onClick={() => setTab("context")} role="tab" type="button">上下文设置</button><button aria-selected={tab === "evolution"} onClick={() => setTab("evolution")} role="tab" type="button">自主进化</button></div>
-      {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : tab === "context" ? <div className="workbench-context-center">
+      {tab === "agents" ? <div className="workbench-agent-list">{agents.length === 0 ? <div className="plain-empty"><h2>还没有 Agent</h2><p>当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。</p></div> : agents.map((agent) => <article className="workbench-agent-card" key={agent.agentId}><button aria-label={`查看 ${agent.partnerName} 详情`} className="workbench-agent-open" onClick={() => setSelectedAgent(agent)} type="button"><span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span><span><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine} · {agent.sessionPolicy}</small></span><i className={`agent-status ${agent.status.toLowerCase()}`}>{agentExecutionLabel(agent)}</i><time>{new Date(agent.lastActivityAt).toLocaleString()}</time></button>{agent.canDelete ? <button aria-label={`删除 ${agent.partnerName}`} className="button danger-text agent-delete" onClick={() => void removeAgent(agent)} type="button">删除</button> : null}</article>)}</div> : tab === "context" ? <div className="workbench-context-center">
         <form className="partner-form" onSubmit={(event) => void saveDetail(event)}><label>名称<input defaultValue={detail.name} name="name" required /></label><label>工程名称<input defaultValue={detail.projectLabel} name="projectLabel" required /></label><label>职责范围<textarea defaultValue={detail.responsibility} name="responsibility" required rows={4} /></label><label>提交新人格 revision（留空保持当前）<textarea name="persona" rows={4} /></label><button className="button primary" type="submit">保存上下文</button></form>
-        <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {work.status}</li>)}</ul>}</article>
+        <article className="context-card"><h3>活跃工作</h3>{detail.activeWork.length === 0 ? <p>当前没有非终态工作。</p> : <ul>{detail.activeWork.map((work) => <li key={work.workId}>{work.title} · {agentExecutionLabel(work)}</li>)}</ul>}</article>
         <article className="context-card"><h3>最近结果总结</h3>{detail.recentOutcomes.length === 0 ? <p>还没有目标级结果总结。</p> : <ul>{detail.recentOutcomes.map((item) => <li key={`${item.goalId}:${String(item.resultRevision)}`}><strong>{item.title}</strong><span>{item.summary}</span><small>{recentOutcomeLabel(item.status)} · {new Date(item.completedAt).toLocaleString()}</small></li>)}</ul>}</article>
       </div> : <div className="workbench-context-center"><WorkbenchEvolutionPanel api={api} key={detail.workbenchId} workbenchId={detail.workbenchId} /></div>}
     </>}
@@ -1105,6 +1105,15 @@ function goalStatusLabel(status: JoiGoalCardDto["status"]): string {
   return "已取消";
 }
 
+function agentExecutionLabel(agent: Pick<WorkbenchAgentCardDto, "executionPhase" | "waitReason"> & { status: string }): string {
+  if (agent.waitReason === "CAPACITY") return "等待执行容量";
+  if (agent.executionPhase === "READ_QUEUED") return "等待工作区可读";
+  if (agent.executionPhase === "WRITE_QUEUED") return "等待写入";
+  if (agent.executionPhase === "READ_RUNNING") return "分析中";
+  if (agent.executionPhase === "WRITE_RUNNING") return "写入执行中";
+  return agent.status;
+}
+
 function recentOutcomeLabel(status: WorkbenchDetailDto["recentOutcomes"][number]["status"]): string {
   if (status === "COMPLETED_WITH_GAPS") return "已完成（有缺口）";
   if (status === "FAILED") return "处理失败";
@@ -1136,7 +1145,13 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
       ? `${String(goal.work.failed)} 失败(${String(resolvedFailures)} 已解决)`
       : `${String(goal.work.failed)} 失败`);
   }
-  if (goal.work.active > 0) parts.push(`${String(goal.work.active)} 进行中`);
+  if (goal.work.executing !== undefined || goal.work.resourceWaiting !== undefined) {
+    if ((goal.work.executing ?? 0) > 0) parts.push(`${String(goal.work.executing)} 执行中`);
+    if ((goal.work.resourceWaiting ?? 0) > 0) parts.push(`${String(goal.work.resourceWaiting)} 等待中`);
+    for (const reason of goal.work.waitingReasons ?? []) {
+      parts.push(reason === "CAPACITY" ? "等待执行容量" : reason === "WORKSPACE_READ" ? "等待工作区可读" : "等待写入");
+    }
+  } else if (goal.work.active > 0) parts.push(`${String(goal.work.active)} 进行中`);
   return <span className="joi-goal-progress">
     <span aria-hidden="true" className="joi-goal-progress-track"><i style={{ width: `${String(percent)}%` }} /></span>
     <i>{parts.join(" · ")}</i>
@@ -1476,7 +1491,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
             {agents.length === 0 ? <p className="plain-empty">joi 还没有为这条目标启动 Agent。</p> : agents.map((agent) => <button aria-pressed={agent.agentId === selectedAgentId} className={`joi-goal-agent ${agent.agentId === selectedAgentId ? "selected" : ""}`} key={agent.agentId} onClick={() => setSelectedAgentId(agent.agentId)} type="button">
               <span className="agent-workbench">{agent.partnerName.slice(0, 1)}</span>
               <span className="joi-goal-agent-copy"><strong>{agent.partnerName}</strong><small>{agent.transport} · {agent.engine}</small></span>
-              <i className={`agent-status ${agent.status.toLowerCase()}`}>{agent.status}</i>
+              <i className={`agent-status ${agent.status.toLowerCase()}`}>{agentExecutionLabel(agent)}</i>
             </button>)}
           </aside>
           <div className="joi-goal-stream">

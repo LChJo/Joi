@@ -2,15 +2,18 @@ import { BrowserWindow, session, shell } from "electron";
 import { mkdir, readFile, writeFile, lstat, realpath, unlink, link } from "node:fs/promises";
 import path from "node:path";
 import { exportSlices } from "../../../shared/result-export.js";
-import type { SqliteResultExports } from "../persistence/sqlite-result-exports.js";
+import type { ExportRecord } from "../persistence/sqlite-result-exports.js";
 import { resultExportHtml } from "./result-export-html.js";
 
 /** Stage by durable ID, publish using exclusive hard links, and recover only
  * links to those same staged files. User files are never overwritten. */
 export class ElectronResultExporter {
-  constructor(private readonly deps: { jobs: SqliteResultExports; downloads: string; fontPath: string }) {}
+  constructor(private readonly deps: { jobs: {
+    record(id: string): ExportRecord | null | Promise<ExportRecord | null>;
+    update(id: string, status: ExportRecord['status'], filenames?: string[], error?: string): void | Promise<void>;
+  }; downloads: string; fontPath: string }) {}
   async handle(id: string): Promise<void> {
-    const job = this.deps.jobs.record(id);
+    const job = await this.deps.jobs.record(id);
     if (!job || job.status === 'completed' || job.status === 'failed') return;
     if (!/^[a-zA-Z0-9-]+$/.test(job.exportId) || path.basename(job.basename) !== job.basename) throw new Error('export_invalid');
     const root = path.join(this.deps.downloads, 'Joi');
@@ -48,9 +51,9 @@ export class ElectronResultExporter {
       if (manifest !== null) {
         const names = JSON.parse(manifest) as string[];
         await publish(names);
-        this.deps.jobs.update(id, 'completed', names); return;
+        await this.deps.jobs.update(id, 'completed', names); return;
       }
-      this.deps.jobs.update(id, 'rendering');
+      await this.deps.jobs.update(id, 'rendering');
       const isolated = session.fromPartition(`result-export-${id}`);
       isolated.webRequest.onBeforeRequest((details, callback) => callback({ cancel: details.url !== 'joi-export://document/index' && !details.url.startsWith('data:font/') }));
       isolated.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
@@ -84,7 +87,7 @@ export class ElectronResultExporter {
       }
       await writeFile(path.join(staging, 'manifest.json'), JSON.stringify(names));
       await publish(names);
-      this.deps.jobs.update(id, 'completed', names);
+      await this.deps.jobs.update(id, 'completed', names);
     } catch {
       for (const file of created) {
         const target = path.join(root, path.basename(file));
@@ -95,11 +98,11 @@ export class ElectronResultExporter {
         await unlink(file).catch(() => undefined);
       }
       await unlink(path.join(staging, 'manifest.json')).catch(() => undefined);
-      this.deps.jobs.update(id, 'failed', [], 'export_save_failed');
+      await this.deps.jobs.update(id, 'failed', [], 'export_save_failed');
     } finally { win?.destroy(); }
   }
   async open(id: string, reveal: boolean) {
-    const job = this.deps.jobs.record(id);
+    const job = await this.deps.jobs.record(id);
     if (job?.status !== 'completed' || !job.filenames[0]) throw new Error('export_not_ready');
     const root = await realpath(path.join(this.deps.downloads, 'Joi'));
     const target = await realpath(path.join(root, job.filenames[0]));

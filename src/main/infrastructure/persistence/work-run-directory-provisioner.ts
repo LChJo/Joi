@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, stat } from "node:fs/promises";
+import { mkdir, stat, realpath } from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 import type { Clock } from "../../application/ports/runtime-store.js";
@@ -40,8 +40,9 @@ export class WorkRunDirectoryProvisioner {
     } catch {
       throw new DomainError("work_run_directory_unavailable", "The working directory could not be prepared. Check directory access and retry.");
     }
+    const actualRoot = await realpath(record.root_path);
     this.dependencies.database.transaction((db) => {
-      db.prepare("UPDATE work_run_directories SET status = 'READY' WHERE work_id = ? AND workbench_id = ?").run(input.workId, input.workbenchId);
+      db.prepare("UPDATE work_run_directories SET status = 'READY', root_path = ? WHERE work_id = ? AND workbench_id = ?").run(actualRoot, input.workId, input.workbenchId);
     });
   }
 }

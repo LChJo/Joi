@@ -10,14 +10,14 @@ import { PiModelSourceCatalog } from "../infrastructure/pi/pi-model-source-catal
 import { PiModelSourceValidator } from "../infrastructure/pi/pi-model-source-validator.js";
 import { SafeStoragePiCredentialStore } from "../infrastructure/pi/pi-credential-store-adapter.js";
 import { RepositoryPiConfiguredModelResolver } from "../infrastructure/pi/pi-configured-model-resolver.js";
-import type { ElectronCredentialVault } from "../infrastructure/security/electron-credential-vault.js";
+import type { CredentialVault } from "../application/ports/a2a-ports.js";
 import type { PersistenceBundle } from "./wire-persistence.js";
 
 export function wireModelSources(input: {
   clock: Clock;
   ids: IdGenerator;
   persistence: PersistenceBundle;
-  vault: ElectronCredentialVault;
+  vault: CredentialVault;
 }) {
   const { clock, ids, persistence, vault } = input;
   const statistics = new StatisticsService({ store: persistence.usageStore, now: () => clock.now().toISOString(), id: () => ids.next("usage") });

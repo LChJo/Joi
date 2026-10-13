@@ -1,4 +1,7 @@
 import { Codex, type CodexOptions, type ThreadEvent, type ThreadItem, type ThreadOptions } from "@openai/codex-sdk";
+import { WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
+import { assertCodexWorkspaceProtocol } from "./codex-workspace-capabilities.js";
+import { nativeCheckpointAvailable } from "./native-checkpoint-store.js";
 
 import { DomainError } from "../../domain/errors.js";
 import { DEFAULT_CODEX_PERMISSIONS, type PartnerRevision } from "../../domain/partners/partner.js";
@@ -24,7 +27,7 @@ import { boundBackgroundSections, DEFAULT_BACKGROUND_BUDGET_CHARS } from "../pi/
 
 export interface CodexThreadSurface {
   readonly id: string | null;
-  runStreamed(input: string, options?: { signal?: AbortSignal }): Promise<{ events: AsyncIterable<ThreadEvent> }>;
+  runStreamed(input: string, options?: { signal?: AbortSignal; outputSchema?: unknown }): Promise<{ events: AsyncIterable<ThreadEvent> }>;
 }
 export interface CodexClientSurface {
   resumeThread(id: string, options?: ThreadOptions): CodexThreadSurface;
@@ -32,6 +35,10 @@ export interface CodexClientSurface {
 }
 export interface CodexAgentSdkSurface { create(options: CodexOptions): CodexClientSurface; }
 const CODEX_MUTATING_TOOLS = new Set(["apply_patch", "shell"]);
+const WRITE_PROTOCOL_SCHEMA = { type: "object", additionalProperties: false, required: ["disposition", "body"], properties: {
+  disposition: { type: "string", enum: ["COMPLETED", "WRITE_REQUIRED"] }, body: { type: "string" },
+} };
+const WRITE_PROTOCOL_PROMPT = "Execute the analysis in read-only sandbox. If completion requires any write, return {\"disposition\":\"WRITE_REQUIRED\",\"body\":\"\"}. Otherwise return {\"disposition\":\"COMPLETED\",\"body\":\"your final answer\"}. Do not include proposed edits or writing instructions in the final answer.";
 
 export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
   constructor(private readonly dependencies: {
@@ -48,6 +55,9 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
   }) {}
 
   engineOf(): "codex" { return "codex"; }
+  checkpointAvailable(reference: string): Promise<boolean> {
+    return nativeCheckpointAvailable("codex", reference, this.dependencies.environment ?? nestedCodexEnvironment(process.env) ?? process.env);
+  }
   toolOptions(): readonly string[] { return []; }
   evictFromMemory(instanceId: string): void { void instanceId; }
 
@@ -102,16 +112,24 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     } catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
-  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus | "SUSPENDED" }> {
     const resolved = this.#resolve();
     if (resolved.executablePath === undefined) throw new DomainError("engine_unavailable", "Codex is unavailable.");
+    if (request.workspaceExecution !== undefined && this.dependencies.sdk === undefined) await assertCodexWorkspaceProtocol(resolved.executablePath);
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Codex runs local partners only.");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new DomainError("workbench_context_snapshot_not_found", "Workbench context snapshot is missing.");
-    const permissions = revision.codexPermissions ?? DEFAULT_CODEX_PERMISSIONS;
+    const ceiling = revision.codexPermissions ?? DEFAULT_CODEX_PERMISSIONS;
+    const gated = request.workspaceExecution !== undefined;
+    if (request.workspaceExecution?.phase === "WRITE_RUNNING" && resume === undefined) throw new DomainError("workspace_checkpoint_missing", "The native thread checkpoint is unavailable.");
+    const analysis = gated && request.workspaceExecution?.phase === "READ_RUNNING";
+    if (request.workspaceExecution?.phase === "WRITE_RUNNING" && (ceiling.sandboxMode !== "workspace-write" || request.workspaceExecution.accessCeiling !== "WRITE")) {
+      throw new DomainError("workspace_write_forbidden", "Writing exceeds this task's permission ceiling.");
+    }
+    const permissions = analysis ? { ...ceiling, sandboxMode: "read-only" as const } : ceiling;
     tracker.sideEffectState = permissions.sandboxMode === "workspace-write" ? "UNKNOWN" : "NONE";
     const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context, permissions, execution.workspacePath);
-    const client = this.#client(resolved, systemPrompt);
+    const client = this.#client(resolved, systemPrompt, gated);
     const threadOptions: ThreadOptions = {
       approvalPolicy: "never",
       ...(revision.engineModelId === undefined ? {} : { model: revision.engineModelId }),
@@ -125,12 +143,12 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     const thread = resume === undefined ? client.startThread(threadOptions) : client.resumeThread(resume, threadOptions);
     const projector = new NativeAgentEventProjector();
     const emit = async (event: NativeAgentEvent): Promise<void> => {
-      if (event.type === "tool_activity" && event.state === "started" && CODEX_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
+      if (!analysis && event.type === "tool_activity" && event.state === "started" && CODEX_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
       projector.apply(event); try { await context.onEvent?.(event); } catch { /* display projection is non-authoritative */ }
     };
     await emit({ type: "message", role: "user", parts: [{ type: "text", text: request.taskProjection }] });
     await emit({ type: "status", state: "working" });
-    const before = await captureWorkspaceSnapshot(execution.workspacePath);
+    const before = await captureWorkspaceSnapshot(analysis ? undefined : execution.workspacePath);
     const controller = new AbortController();
     if (signal?.aborted === true) controller.abort();
     else signal?.addEventListener("abort", () => controller.abort(), { once: true });
@@ -155,7 +173,26 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       ...(revision.engineModelId === undefined ? {} : { modelId: revision.engineModelId }),
     });
     try {
-      consumed = await this.#consume(thread, request.taskProjection, controller.signal, emit, () => guard?.onProgress(), usageCapture);
+      const prompt = analysis ? `${request.taskProjection}\n\n${WRITE_PROTOCOL_PROMPT}`
+        : request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : request.taskProjection;
+      consumed = await this.#consume(thread, prompt, controller.signal, emit, () => guard?.onProgress(), usageCapture, analysis ? WRITE_PROTOCOL_SCHEMA : undefined, request.workspaceExecution !== undefined);
+      if (analysis) {
+        let protocol = parseWriteProtocol(consumed.body);
+        if (protocol === null) {
+          consumed = await this.#consume(thread, `Correct the previous result once. ${WRITE_PROTOCOL_PROMPT}`, controller.signal, emit, () => guard?.onProgress(), usageCapture, WRITE_PROTOCOL_SCHEMA, true);
+          protocol = parseWriteProtocol(consumed.body);
+        }
+        if (protocol === null) throw new DomainError("workspace_write_protocol_invalid", "The native read-only result did not match the execution protocol.");
+        if (protocol.disposition === "WRITE_REQUIRED") {
+          if (request.workspaceExecution?.accessCeiling !== "WRITE" || ceiling.sandboxMode !== "workspace-write") throw new DomainError("workspace_write_forbidden", "Writing exceeds this task's permission ceiling.");
+          const session = consumed.threadId ?? thread.id ?? resume;
+          if (session === undefined) throw new DomainError("workspace_checkpoint_missing", "The native thread checkpoint is unavailable.");
+          finishNativeUsage(usageCapture, "completed");
+          return { conversation: [], externalRunId: `native_codex:${request.actionId}`, nativeSessionId: session, output: { artifacts: [], body: "" }, status: "SUSPENDED" };
+        }
+        consumed.body = protocol.body;
+        await emit({ type: "message", role: "agent", parts: [{ type: "text", text: protocol.body }] });
+      }
       finishNativeUsage(usageCapture, "completed");
     } catch (error) {
       finishNativeUsage(usageCapture, timedOut === undefined ? usageFailureStatus(signal) : "failed");
@@ -171,15 +208,15 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     } finally {
       guard?.dispose();
     }
-    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
+    const artifacts = analysis ? [] : await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     for (const artifact of artifacts) await emit({ type: "artifact", artifact: { ...artifact, mimeType: artifact.mimeType ?? "application/octet-stream" } });
     await emit({ type: "status", state: "completed" });
     const sessionId = consumed.threadId ?? thread.id ?? resume;
     return { conversation: projector.snapshot(), externalRunId: `native_codex:${request.actionId}`, ...(sessionId === undefined ? {} : { nativeSessionId: sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
   }
 
-  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture): Promise<{ body: string; threadId?: string }> {
-    const streamed = await thread.runStreamed(prompt, signal === undefined ? undefined : { signal });
+  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, outputSchema?: unknown, endOnCompletion = false): Promise<{ body: string; threadId?: string }> {
+    const streamed = await thread.runStreamed(prompt, { ...(signal === undefined ? {} : { signal }), ...(outputSchema === undefined ? {} : { outputSchema }) });
     let completed = false;
     let threadId: string | undefined;
     const texts: string[] = [];
@@ -199,11 +236,13 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
           });
           usage.observed = true;
         }
+        // A completed turn has settled its tools; returning closes the SDK iterator and its CLI process.
+        if (endOnCompletion) break;
       }
       else if (event.type === "turn.failed" || event.type === "error") throw new Error("codex_turn_failed", { cause: event });
       else if (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed") {
         const item = event.item;
-        if (item.type === "agent_message" && event.type === "item.completed") { texts.push(item.text); await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: item.text }] }); continue; }
+        if (item.type === "agent_message" && event.type === "item.completed") { texts.push(item.text); if (outputSchema === undefined) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: item.text }] }); continue; }
         const toolName = codexToolName(item);
         if (toolName === undefined) continue;
         // A readable verb for the row. ADR 0014 keeps this call's arguments — a command, a patch —
@@ -220,11 +259,14 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     return { body: texts.join("\n").trim(), ...(threadId === undefined ? {} : { threadId }) };
   }
 
-  #client(resolved: ResolvedLocalCliExecutable, systemPrompt: string): CodexClientSurface {
-    const environment = nestedCodexEnvironment(this.dependencies.environment ?? process.env);
+  #client(resolved: ResolvedLocalCliExecutable, systemPrompt: string, gated = false): CodexClientSurface {
+    const environment = this.dependencies.environment === undefined ? nestedCodexEnvironment(process.env)
+      : Object.fromEntries(Object.entries(this.dependencies.environment).filter((entry): entry is [string, string] => entry[1] !== undefined));
     const options: CodexOptions = {
       ...(resolved.executablePath === undefined ? {} : { codexPathOverride: resolved.executablePath }),
-      config: { developer_instructions: systemPrompt },
+      config: { developer_instructions: systemPrompt, ...(gated ? { mcp_servers: {}, hooks: {}, features: { multi_agent: false },
+        ...(process.platform === "win32" ? { windows: { sandbox: "unelevated" } } : {}),
+      } : {}) },
       ...(environment === undefined ? {} : { env: environment }),
     };
     return this.dependencies.sdk?.create(options) ?? new Codex(options);
@@ -262,6 +304,16 @@ interface NativeUsageCapture {
   context: UsageContext;
   observed: boolean;
   session: SafeUsageSession;
+}
+
+function parseWriteProtocol(body: string): { disposition: "COMPLETED" | "WRITE_REQUIRED"; body: string } | null {
+  let value: unknown;
+  try { value = JSON.parse(body); } catch { return null; }
+  if (value === null || Array.isArray(value) || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (Object.keys(row).length !== 2 || typeof row.body !== "string" || !["COMPLETED", "WRITE_REQUIRED"].includes(String(row.disposition))) return null;
+  if (row.disposition === "WRITE_REQUIRED" && row.body !== "") return null;
+  return { body: row.body, disposition: row.disposition as "COMPLETED" | "WRITE_REQUIRED" };
 }
 
 function createNativeUsageCapture(recorder: UsageRecorder | undefined, context: UsageContext): NativeUsageCapture {

@@ -52,3 +52,7 @@ Migration 070 增加可空 `continuation_prompt`，将本次用户继续要求�
 Migration 071 增加每目标可信输入来源日志、不可变有效需求快照和当前版本指针。Work brief 固定需求版本；运行保存不可变需求投影；综合、评审、用户动作和当前 outcome 投影关联需求版本。旧目标只在下次自然 Joi 编排初始化，既有运行不改写或重放。
 
 Migration 072 在 `model_source_health` 增加可空 `anthropic_auth_mode`；NULL 保持 API Key 行为，`bearer` 仅表示自定义 Anthropic 无工具探测成功后学到的鉴权方式。该事实随健康状态原子比对当前 source/model/credential revision 与状态保存，不修改不可变配置版本或凭据内容。替换凭据或端点重置，普通编辑保留。
+
+Migration 073 为本地任务增加四阶段执行记录、FIFO 写入等待及单调租约代次，并扩展实例状态约束以保留 SUSPENDED。已有 run 的 attempt 固定旧策略；未启动 attempt 默认新策略。检查点引用和独立附件路径仅存私有执行记录，continuation outbox 仅含稳定标识与执行代次，不修改历史结果或引擎权限配置。
+
+Migration 074 为首页按目标关联输入、最新回合、Work 对应实例/run 及可见 Agent 会话增加覆盖索引。查询从目标关联集合开始，保留派生输入最新回合和稳定 Agent 去重语义；不删除历史会话，不修改执行事实。见 ADR 0029 与 AC-PERF-01。

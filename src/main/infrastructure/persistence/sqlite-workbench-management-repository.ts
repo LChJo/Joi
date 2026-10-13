@@ -43,10 +43,15 @@ export class SqliteWorkbenchManagementRepository implements WorkbenchManagementR
         FROM workbenches a JOIN workbench_workspace_bindings b ON b.workbench_id = a.workbench_id
         WHERE a.workbench_id = ? AND a.status = 'ACTIVE'`).get(workbenchId) as Row | undefined;
       if (row === undefined) return null;
-      const activeWork = connection.prepare(`SELECT work_id, workbench_id, title, status FROM work_items
-        WHERE workbench_id = ? AND status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY created_at, work_id`).all(workbenchId).map((value) => {
+      const activeWork = connection.prepare(`SELECT w.work_id, w.workbench_id, w.title, w.status, e.phase, e.wait_reason FROM work_items w
+        LEFT JOIN dispatch_attempts a ON a.dispatch_attempt_id = (SELECT x.dispatch_attempt_id FROM dispatch_attempts x WHERE x.work_id = w.work_id ORDER BY x.created_at DESC, x.dispatch_attempt_id DESC LIMIT 1)
+        LEFT JOIN local_work_execution e ON e.dispatch_attempt_id = a.dispatch_attempt_id
+        WHERE w.workbench_id = ? AND w.status IN ('PLANNED', 'READY', 'RUNNING', 'WAITING') ORDER BY w.created_at, w.work_id`).all(workbenchId).map((value) => {
         const item = value as Row;
-        return { workbenchId: required(item, "workbench_id"), status: required(item, "status") as WorkbenchDetailDto["activeWork"][number]["status"], title: required(item, "title"), workId: required(item, "work_id") };
+        return { workbenchId: required(item, "workbench_id"), status: required(item, "status") as WorkbenchDetailDto["activeWork"][number]["status"], title: required(item, "title"), workId: required(item, "work_id"),
+          ...(typeof item.phase === "string" ? { executionPhase: item.phase as NonNullable<WorkbenchDetailDto["activeWork"][number]["executionPhase"]> } : {}),
+          ...(typeof item.wait_reason === "string" ? { waitReason: item.wait_reason as NonNullable<WorkbenchDetailDto["activeWork"][number]["waitReason"]> } : {}),
+        };
       });
       const recentResults = connection.prepare(`SELECT result_id, work_id, partner_revision_id, status, summary, is_late, created_at
         FROM work_results WHERE workbench_id = ? AND is_authoritative = 1

@@ -258,6 +258,8 @@ export interface ModelSourceDto {
 }
 
 export interface WorkItemDto {
+  executionPhase?: LocalExecutionPhaseDto;
+  waitReason?: ExecutionWaitReasonDto;
   workbenchId: string;
   status: "PLANNED" | "READY" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED";
   title: string;
@@ -332,6 +334,9 @@ export interface JoiGoalHarnessDto {
 }
 
 export interface JoiGoalWorkDto {
+  executing?: number;
+  resourceWaiting?: number;
+  waitingReasons?: ExecutionWaitReasonDto[];
   active: number;
   completed: number;
   failed: number;
@@ -405,8 +410,12 @@ export interface JoiHomeFeedDto {
 }
 
 export type WorkbenchAgentStatusDto = "IDLE" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED" | "UNKNOWN";
+export type LocalExecutionPhaseDto = "READ_QUEUED" | "READ_RUNNING" | "WRITE_QUEUED" | "WRITE_RUNNING";
+export type ExecutionWaitReasonDto = "CAPACITY" | "WORKSPACE_READ" | "WORKSPACE_WRITE";
 
 export interface WorkbenchAgentCardDto {
+  executionPhase?: LocalExecutionPhaseDto;
+  waitReason?: ExecutionWaitReasonDto;
   agentId: string;
   workbenchId: string;
   canDelete: boolean;

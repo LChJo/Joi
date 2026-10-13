@@ -47,6 +47,13 @@ function managedCodexBinary(packageRoot: string): string | undefined {
 }
 
 describe("local CLI executable resolver", () => {
+  it.skipIf(process.platform !== "win32")("resolves the installed Claude native binary behind an npm shim", () => {
+    const root = mkdtempSync(join(tmpdir(), "joi-claude-shim-"));
+    const native = join(root, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
+    mkdirSync(dirname(native), { recursive: true });
+    writeFileSync(native, ""); writeFileSync(join(root, "claude.cmd"), "");
+    withPath(root, () => expect(resolveLocalCliExecutable("claude").executablePath).toBe(native));
+  });
   it("detects claude and codex on PATH", () => {
     const dir = mkdtempSync(join(tmpdir(), "joi-cli-"));
     writeFileSync(join(dir, exe("claude")), "");

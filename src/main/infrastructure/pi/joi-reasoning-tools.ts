@@ -506,7 +506,7 @@ export function createJoiReasoningTools(input: {
     }),
   });
   const partnerSetToolsTool: AgentTool<typeof partnerSetToolsParameters> = {
-    description: "Create a new immutable revision of a local Pi partner with a bounded built-in tool grant. Pass [] to grant every built-in coding and public-web tool. This never grants credentials, cookies, private-network access or paths outside the Workbench.",
+    description: "Create a new immutable revision of a local Pi partner with a bounded built-in tool grant. Pass [] to grant every built-in coding and public-web tool. Partners with read tools may read task inputs inside or outside the Workbench workspace without changing its binding; file writes and file acceptance checks stay inside the assigned workspace. This never grants credentials, cookies, private-network access or broader workspace write access.",
     execute: async (_toolCallId, arguments_) => result(await input.partners.setTools(
       arguments_.partnerId,
       normalizePartnerTools(arguments_.tools),

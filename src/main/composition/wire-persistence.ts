@@ -31,6 +31,7 @@ import { SqliteWorkspaceLeaseManager } from "../infrastructure/persistence/sqlit
 import { WorkbenchWorkspaceProvisioner } from "../infrastructure/persistence/workbench-workspace-provisioner.js";
 import { SqlitePartnerDispatchClaims } from "../infrastructure/a2a/partner-dispatch-delivery-adapter.js";
 import type { RuntimeDatabase } from "../infrastructure/persistence/runtime-database.js";
+import type { JoiHomeFeedRepository } from "../application/ports/joi-home-feed.js";
 
 /**
  * Constructs every SQLite-backed repository and store. The composition root
@@ -42,6 +43,7 @@ export function wirePersistence(input: {
   pid: string;
   userDataDirectory: string;
   runDirectory?: string;
+  homeFeedRepository?: JoiHomeFeedRepository;
 }) {
   const { clock, database, pid, userDataDirectory } = input;
   return {
@@ -50,7 +52,7 @@ export function wirePersistence(input: {
     automationStore: new SqliteAutomationStore(database),
     dispatchClaims: new SqlitePartnerDispatchClaims(database),
     joiHarnessRepository: new SqliteJoiHarnessRepository(database),
-    joiHomeFeedRepository: new SqliteJoiHomeFeedRepository(database),
+    joiHomeFeedRepository: input.homeFeedRepository ?? new SqliteJoiHomeFeedRepository(database),
     joiInboxRepository: new SqliteJoiInboxRepository(database, clock),
     goalRequirements: new SqliteGoalRequirementsRepository(database),
     modelSourceRepository: new SqliteModelSourceRepository(database),

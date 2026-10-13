@@ -43,6 +43,16 @@ npm run check:boundaries
 
 ## 原生远程与 Android
 
+本地按需写入的原生引擎测试使用临时工作区、独立原生 CLI 配置目录和本机回环模型替身，不需要真实供应商凭据：
+
+```powershell
+$env:JOI_NATIVE_WRITE_TESTS = "1"
+npx vitest run tests/native/local-workspace-write.test.ts
+Remove-Item Env:JOI_NATIVE_WRITE_TESTS
+```
+
+Codex 原生写工具的额外冒烟测试需在 Windows 沙箱工具能够启动的环境显式开启 `JOI_NATIVE_TOOL_SMOKE=1`。该项验证实际文件写入及产物归属；核心原生测试验证只读隔离、结构化请求和原线程恢复，不等同于该项写入证据。普通测试默认跳过原生 CLI 测试；验收时应单独记录开启后的结果和环境限制。
+
 ```powershell
 cargo test --manifest-path native/joi-remote/Cargo.toml
 Set-Location apps/joi_mobile

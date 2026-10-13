@@ -1,6 +1,7 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
+import { isWriteResumeWait } from "../../application/partners/local-write-gate.js";
 import { assertGoalRequirementsReady, loadGoalRequirements } from "../persistence/sqlite-goal-requirements-repository.js";
 import { renderGoalRequirements, type GoalRequirement } from "../../domain/work/goal-requirements.js";
 
@@ -54,6 +55,7 @@ interface TransactionalDatabase {
 const LIVE_CONVERSATION_SNAPSHOT_INTERVAL_MS = 500;
 
 interface DispatchRow {
+  scheduling_version: number;
   required_context?: string;
   access_mode: WorkAccessMode;
   action_id: string;
@@ -126,13 +128,13 @@ function taskProjection(row: DispatchRow, stagedAttachments?: readonly StagedAtt
     if (check.kind === "FILE_EXISTS") return `FILE_EXISTS ${check.relativePath}`;
     return `FILE_CONTAINS_EXACT ${check.relativePath} = ${check.expectedText}`;
   });
-  const stagedLines = (stagedAttachments ?? []).map((staged) => `- ${staged.relativePath} (${staged.mimeType}, ${String(staged.size)} bytes)`);
+  const stagedLines = (stagedAttachments ?? []).map((staged) => `- ${staged.readPath ?? staged.relativePath} (${staged.mimeType}, ${String(staged.size)} bytes)`);
   return [
     `Work title: ${row.title}`,
     ...(row.required_context === undefined ? [] : [row.required_context]),
     brief.instructions !== undefined ? `Task instructions:\n${brief.instructions}`
       : brief.legacy ? `Original user request (authoritative):\n${row.source_request}` : "Task instructions unavailable.",
-    ...(stagedLines.length === 0 ? [] : [`Attachments from the user's original input are staged in this workspace (read them via these relative paths; treat them as read-only inputs):\n${stagedLines.join("\n")}`]),
+    ...(stagedLines.length === 0 ? [] : [`Attachments from the user's original input are staged in ${(stagedAttachments ?? []).some(item => item.readPath !== undefined) ? "this task's independent input directory" : "this workspace"} (read them via these paths; treat them as read-only inputs):\n${stagedLines.join("\n")}`]),
     ...(checks.length === 0 ? [] : [`Acceptance checks:\n${checks.join("\n")}`]),
   ].join("\n\n");
 }
@@ -172,7 +174,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
   constructor(private readonly database: TransactionalDatabase) {}
 
   async listClaimable(input: { workbenchId: string; now: string; partnerId: string }): Promise<PartnerDispatchClaimRow[]> {
-    return (this.database.transaction((connection) => connection.prepare(`
+    const initial = (this.database.transaction((connection) => connection.prepare(`
       SELECT o.outbox_id, o.payload_json, o.attempt_count, a.dispatch_attempt_id, p.kind
         FROM outbox o
         JOIN dispatch_attempts a ON a.outbox_id = o.outbox_id
@@ -206,6 +208,16 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
         outboxId: String(row.outbox_id),
         payloadJson: String(row.payload_json),
       }));
+    const continued = this.database.transaction(connection => connection.prepare(`SELECT o.outbox_id, o.payload_json, o.attempt_count,
+        a.dispatch_attempt_id, json_extract(o.payload_json, '$.generation') AS continuation_generation
+      FROM outbox o JOIN dispatch_attempts a ON a.dispatch_attempt_id = json_extract(o.payload_json, '$.dispatchAttemptId')
+      JOIN work_items w ON w.work_id = a.work_id JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
+      JOIN local_work_execution e ON e.dispatch_attempt_id = a.dispatch_attempt_id
+      WHERE o.kind = 'partner.continue' AND w.workbench_id = ? AND rev.partner_id = ?
+        AND o.available_at <= ? AND (o.status = 'PENDING' OR (o.status = 'CLAIMED' AND o.claim_until <= ?))
+      ORDER BY o.created_at, o.outbox_id LIMIT 10`).all(input.workbenchId, input.partnerId, input.now, input.now));
+    return [...continued.map(row => ({ attemptCount: Number(row.attempt_count), continuationGeneration: Number(row.continuation_generation),
+      dispatchAttemptId: String(row.dispatch_attempt_id), kind: "LOCAL_PI" as const, outboxId: String(row.outbox_id), payloadJson: String(row.payload_json) })), ...initial];
   }
 
   async listOrphanRuns(input: { workbenchId: string; partnerId: string }): Promise<PartnerDispatchOrphanRow[]> {
@@ -218,6 +230,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
         JOIN partner_revisions rev ON rev.partner_revision_id = pr.partner_revision_id
         LEFT JOIN partner_instances i ON i.instance_id = a.instance_id
        WHERE pr.status = 'RUNNING' AND w.workbench_id = ? AND rev.partner_id = ?
+         AND NOT EXISTS (SELECT 1 FROM local_work_execution e WHERE e.dispatch_attempt_id = a.dispatch_attempt_id AND e.phase = 'WRITE_QUEUED')
        ORDER BY pr.updated_at, pr.run_id LIMIT 20`)
       .all(input.workbenchId, input.partnerId)) as Record<string, unknown>[])
       .map((row) => ({
@@ -232,7 +245,7 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
 export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   constructor(private readonly dependencies: {
     agentConversations?: Pick<WorkbenchAgentRepository, "append" | "appendToolTrace" | "replaceRun">;
-    /** Stages source-input attachments into the workspace for file-capable local work. */
+    /** Stages source attachments into private task input storage. */
     attachmentStager?: Pick<WorkAttachmentStagerPort, "stage">;
     clock: Clock;
     /** Raises a user question card when a local partner pauses with WAITING_INPUT. */
@@ -242,8 +255,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     database: TransactionalDatabase;
     diagnostics?: RuntimeDiagnostics;
     gateway: Pick<A2aGatewayService, "recover" | "startWithResult">;
-    instances: Pick<PartnerInstanceManager, "dispatch">;
-    leases: Pick<SqliteWorkspaceLeaseManager, "acquire" | "release">;
+    instances: Pick<PartnerInstanceManager, "dispatch"> & Partial<Pick<PartnerInstanceManager, "validateCheckpoint">>;
+    leases: Pick<SqliteWorkspaceLeaseManager, "acquire" | "release"> & Partial<Pick<SqliteWorkspaceLeaseManager, "requestWrite" | "cancelWait">>;
     partners: Pick<PartnerRegistryRepository, "getRevision">;
     publish?: (event: SseEvent) => Promise<unknown>;
     results: WorkResultRepository;
@@ -251,9 +264,19 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     verifier?: WorkVerifier;
   }) {}
 
+  async queued(claim: PartnerDispatchClaimRow, reason: "CAPACITY" | "WORKSPACE_READ" | "WORKSPACE_WRITE"): Promise<void> {
+    const row = this.#load(claim.dispatchAttemptId);
+    if (row?.kind !== "LOCAL_PI" || row.scheduling_version !== 2 || attemptTerminal(row.status)) return;
+    this.dependencies.database.transaction(db => db.prepare(`INSERT INTO local_work_execution
+      (dispatch_attempt_id, phase, generation, wait_reason, updated_at) VALUES (?, 'READ_QUEUED', 1, ?, ?)
+      ON CONFLICT(dispatch_attempt_id) DO UPDATE SET wait_reason = excluded.wait_reason WHERE phase IN ('READ_QUEUED','WRITE_QUEUED')`)
+      .run(claim.dispatchAttemptId, reason, this.dependencies.clock.now().toISOString()));
+  }
+
   async prepare(claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal"> {
     let row = this.#load(claim.dispatchAttemptId);
     if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
+    if (claim.continuationGeneration !== undefined) return this.#prepareContinuation(row, claim);
     if (attemptTerminal(row.status) || ["COMPLETED", "FAILED", "CANCELED"].includes(row.work_status)) return "skipped_terminal";
     // A persisted start is owned by its live slot or the orphan recovery path.
     // Redelivery must never start it again or finalize a still-live preparation.
@@ -306,15 +329,24 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
 
     let leaseExpiresAt: string | undefined;
     let leaseWorkId: string | undefined;
+    let leaseGeneration: number | undefined;
+    const scheduled = row.kind === "LOCAL_PI" && row.scheduling_version === 2 && row.access_mode !== "NONE";
+    if (scheduled) this.dependencies.database.transaction(db => db.prepare(`INSERT OR IGNORE INTO local_work_execution
+      (dispatch_attempt_id, phase, generation, wait_reason, updated_at) VALUES (?, 'READ_QUEUED', 1, 'WORKSPACE_READ', ?)`)
+      .run(claim.dispatchAttemptId, this.dependencies.clock.now().toISOString()));
     if (row.access_mode !== "NONE") {
       if (row.workspace_ref === null) throw new Error("dispatch_policy_workspace_ref_missing");
       const lease = await this.dependencies.leases.acquire({
-        accessMode: row.access_mode,
+        accessMode: scheduled ? "READ" : row.access_mode,
         workId: row.work_id,
         workspaceRef: row.workspace_ref,
       });
-      if (lease === null) throw new DomainError(denialReason(deliveryPolicy(row, true)), "The workspace lease could not be acquired.");
+      if (lease === null) {
+        if (scheduled) await this.queued(claim, "WORKSPACE_READ");
+        throw new DomainError(denialReason(deliveryPolicy(row, true)), "The workspace lease could not be acquired.");
+      }
       leaseExpiresAt = lease.expiresAt;
+      leaseGeneration = lease.generation;
       leaseWorkId = row.work_id;
     }
 
@@ -322,8 +354,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     // blocks the workspace until its TTL expires. The #complete branches below release
     // on their own, so only thrown errors need the catch.
     try {
-      // Stage the source input's attachments while holding the workspace lease so
-      // file-capable local partners can read the originals from deterministic paths.
+      // Private input staging keeps preparation from modifying the shared directory.
       let stagedAttachments: readonly StagedAttachment[] | undefined;
       if (row.access_mode !== "NONE" && row.kind === "LOCAL_PI" && row.workspace_ref !== null && this.dependencies.attachmentStager !== undefined) {
         const workspaceRef = row.workspace_ref;
@@ -334,7 +365,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
            UNION ALL SELECT root_path FROM workbench_workspace_roots WHERE workspace_ref = ? LIMIT 1`,
         ).get(workId, workspaceRef)) as { root_path?: unknown } | undefined;
         if (typeof roots?.root_path === "string") {
-          const staged = await this.dependencies.attachmentStager.stage({ inputId, workspacePath: roots.root_path });
+          const staged = await this.dependencies.attachmentStager.stage({ inputId, workspacePath: roots.root_path, ...(scheduled ? { workId } : {}) });
           if (staged.length > 0) stagedAttachments = staged;
         }
       }
@@ -343,6 +374,9 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         if (leaseWorkId !== undefined) await this.dependencies.leases.release(leaseWorkId);
         return "skipped_terminal";
       }
+      if (scheduled) this.dependencies.database.transaction(db => db.prepare(`UPDATE local_work_execution
+        SET phase = 'READ_RUNNING', wait_reason = NULL, staged_attachments_json = ?, updated_at = ? WHERE dispatch_attempt_id = ?`)
+        .run(JSON.stringify(stagedAttachments ?? []), this.dependencies.clock.now().toISOString(), claim.dispatchAttemptId));
       row = this.#load(claim.dispatchAttemptId);
       if (row?.run_id === undefined || row.run_id === null) throw new Error("partner_run_create_failed");
       const revision = await this.dependencies.partners.getRevision(row.partner_revision_id);
@@ -365,6 +399,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         actionId: row.action_id,
         attemptCount: claim.attemptCount,
         dispatchAttemptId: row.dispatch_attempt_id,
+        ...(scheduled ? { executionGeneration: 1 } : {}),
         ...(instanceId === undefined ? {} : { instanceId }),
         kind: row.kind,
         outboxId: claim.outboxId,
@@ -372,7 +407,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         ...(stagedAttachments === undefined ? {} : { stagedAttachments }),
         workId: row.work_id,
         ...(leaseExpiresAt === undefined || row.workspace_ref === null ? {} : {
-          workspaceLease: { expiresAt: leaseExpiresAt, workId: row.work_id, workspaceRef: row.workspace_ref },
+          workspaceLease: { expiresAt: leaseExpiresAt, ...(leaseGeneration === undefined ? {} : { generation: leaseGeneration }), workId: row.work_id, workspaceRef: row.workspace_ref },
         }),
       };
     } catch (error) {
@@ -394,6 +429,74 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     });
   }
 
+  #executionState(dispatchAttemptId: string): { checkpoint_ref: string | null; generation: number; phase: string; staged_attachments_json: string | null } | undefined {
+    return this.dependencies.database.transaction(db => db.prepare(`SELECT checkpoint_ref, generation, phase, staged_attachments_json
+      FROM local_work_execution WHERE dispatch_attempt_id = ?`).get(dispatchAttemptId)) as { checkpoint_ref: string | null; generation: number; phase: string; staged_attachments_json: string | null } | undefined;
+  }
+
+  async #prepareContinuation(row: DispatchRow, claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal"> {
+    const state = this.#executionState(row.dispatch_attempt_id);
+    if (state === undefined) return "skipped_terminal";
+    if (attemptTerminal(row.status) || ["CANCELED", "FAILED", "COMPLETED"].includes(row.work_status)) {
+      await this.dependencies.leases.cancelWait?.(row.work_id);
+      await this.dependencies.leases.release(row.work_id);
+      this.dependencies.database.transaction(db => {
+        db.prepare("DELETE FROM local_work_execution WHERE dispatch_attempt_id = ?").run(row.dispatch_attempt_id);
+        db.prepare(`UPDATE partner_instances SET status = 'DISPOSED', disposal_reason = 'work_canceled', disposed_at = ?, last_used_at = ?
+          WHERE instance_id = ? AND status = 'SUSPENDED'`).run(this.dependencies.clock.now().toISOString(), this.dependencies.clock.now().toISOString(), row.instance_id);
+      });
+      return "skipped_terminal";
+    }
+    const continuationGeneration = claim.continuationGeneration;
+    if (state.phase !== "WRITE_QUEUED" || continuationGeneration === undefined || continuationGeneration !== state.generation + 1) return "skipped_terminal";
+    if (!this.#goalExecutionOpen(row.work_id)) throw new DomainError("goal_execution_paused", "The goal is awaiting review.");
+    this.dependencies.database.transaction(db => this.#assertRequirements(db, row));
+    const valid = this.dependencies.database.transaction(db => {
+      const instance = db.prepare("SELECT status, engine, external_session_ref FROM partner_instances WHERE instance_id = ?").get(row.instance_id);
+      if (state.checkpoint_ref === null || instance?.status !== "SUSPENDED") return false;
+      if (instance.engine === "PI_CORE") return state.checkpoint_ref === `partner_instance_messages:${row.instance_id ?? ""}`
+        && db.prepare("SELECT 1 FROM partner_instance_messages WHERE instance_id = ? LIMIT 1").get(row.instance_id) !== undefined;
+      return instance.external_session_ref === state.checkpoint_ref && state.checkpoint_ref.startsWith("native-agent:v1:");
+    });
+    const durable = valid && (this.dependencies.instances.validateCheckpoint === undefined || (row.instance_id !== null && state.checkpoint_ref !== null
+      && await this.dependencies.instances.validateCheckpoint(row.instance_id, state.checkpoint_ref)));
+    if (!durable || row.workspace_ref === null) {
+      await this.#complete(row, "FAILED", { artifacts: [], body: "The suspended execution checkpoint is missing or invalid.",
+        failure: { phase: "RECOVERY", reasonCode: "workspace_checkpoint_missing", retryable: false, sideEffectState: "NONE" } });
+      return "skipped_terminal";
+    }
+    const lease = await this.dependencies.leases.acquire({ accessMode: "WRITE", workId: row.work_id, workspaceRef: row.workspace_ref, preserveQueue: true,
+      admit: db => {
+        const current = db.prepare(`SELECT e.phase, e.generation, w.status, a.status AS attempt_status FROM local_work_execution e
+          JOIN dispatch_attempts a ON a.dispatch_attempt_id = e.dispatch_attempt_id JOIN work_items w ON w.work_id = a.work_id
+          WHERE e.dispatch_attempt_id = ?`).get(row.dispatch_attempt_id);
+        if (current?.phase !== "WRITE_QUEUED" || current.generation !== state.generation || current.status !== "RUNNING" || current.attempt_status !== "RUNNING") return null;
+        const gate = db.prepare(`SELECT 1 FROM joi_goal_execution_gates gate JOIN joi_inbox_messages i
+          ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id) WHERE i.input_id = ? AND gate.status <> 'OPEN'`).get(row.input_id);
+        if (gate !== undefined) throw new DomainError("goal_execution_paused", "The goal is awaiting review.");
+        this.#assertRequirements(db, row);
+        return () => {
+          db.prepare(`UPDATE local_work_execution SET phase = 'WRITE_RUNNING', generation = ?, wait_reason = NULL, updated_at = ?
+            WHERE dispatch_attempt_id = ?`).run(continuationGeneration, this.dependencies.clock.now().toISOString(), row.dispatch_attempt_id);
+          db.prepare("DELETE FROM workspace_write_waiters WHERE work_id = ?").run(row.work_id);
+        };
+      },
+    });
+    if (lease === null) {
+      const current = this.#executionState(row.dispatch_attempt_id);
+      if (current?.phase !== "WRITE_QUEUED" || current.generation !== state.generation) return "skipped_terminal";
+      await this.queued(claim, "WORKSPACE_WRITE");
+      throw new DomainError(DISPATCH_POLICY_REASONS.workspaceLeaseConflict, "The workspace is awaiting its write lease.");
+    }
+    try {
+      return { actionId: row.action_id, attemptCount: claim.attemptCount, dispatchAttemptId: row.dispatch_attempt_id,
+        executionGeneration: continuationGeneration, ...(row.instance_id === null ? {} : { instanceId: row.instance_id }),
+        kind: "LOCAL_PI", outboxId: claim.outboxId, workId: row.work_id,
+        ...(state.staged_attachments_json === null ? {} : { stagedAttachments: JSON.parse(state.staged_attachments_json) as StagedAttachment[] }),
+        workspaceLease: { expiresAt: lease.expiresAt, generation: lease.generation, workId: row.work_id, workspaceRef: row.workspace_ref } };
+    } catch (error) { await this.dependencies.leases.release(row.work_id, lease.generation); throw error; }
+  }
+
   async run(prepared: PreparedDispatch, options?: { onProgress?: () => void; signal?: AbortSignal }): Promise<DispatchRunOutput> {
     const row = this.#load(prepared.dispatchAttemptId);
     if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
@@ -401,9 +504,19 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     if (revision === null) throw new Error("partner_revision_unavailable");
 
     if (row.kind === "LOCAL_PI") {
+      const executionState = prepared.executionGeneration === undefined ? undefined : this.#executionState(row.dispatch_attempt_id);
+      if (prepared.executionGeneration !== undefined && executionState?.generation !== prepared.executionGeneration) return { kind: "suspended" };
+      if (row.work_status === "CANCELED" || attemptTerminal(row.status)) {
+        await this.dependencies.leases.release(prepared.workId, prepared.workspaceLease?.generation);
+        this.dependencies.database.transaction(db => db.prepare("DELETE FROM local_work_execution WHERE dispatch_attempt_id = ? AND generation = ?")
+          .run(prepared.dispatchAttemptId, prepared.executionGeneration ?? 0));
+        return { kind: "suspended" };
+      }
+      if (executionState !== undefined && executionState.phase !== "READ_RUNNING" && executionState.phase !== "WRITE_RUNNING") return { kind: "suspended" };
       const runId = row.run_id ?? `partner_run:${row.action_id}`;
       const progressStartedAt = this.dependencies.clock.now().toISOString();
-      const result = await this.dependencies.instances.dispatch({
+      let result;
+      try { result = await this.dependencies.instances.dispatch({
         dispatchAttemptId: row.dispatch_attempt_id,
         ...(revision.engine === "pi-core" && options?.onProgress !== undefined ? { onProgress: options.onProgress } : {}),
         ...(prepared.instanceId === undefined ? {} : { instanceId: prepared.instanceId }),
@@ -433,11 +546,67 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         request: {
           actionId: row.action_id, workbenchId: row.workbench_id, contextSnapshotId: row.context_snapshot_id ?? "",
           taskProjection: taskProjection(row, prepared.stagedAttachments), workId: row.work_id,
+          ...(executionState === undefined ? {} : { workspaceExecution: {
+            accessCeiling: row.access_mode === "WRITE" ? "WRITE" as const : "READ" as const,
+            generation: executionState.generation, phase: executionState.phase === "WRITE_RUNNING" ? "WRITE_RUNNING" as const : "READ_RUNNING" as const,
+          } }),
           ...(row.required_context === undefined ? {} : { requiredContext: row.required_context }),
         },
         revision,
         ...(prepared.sessionPolicy === undefined ? {} : { sessionPolicy: prepared.sessionPolicy }),
       });
+      } finally {
+        const ended = this.#load(prepared.dispatchAttemptId);
+        if (ended?.work_status === "CANCELED" && (prepared.executionGeneration === undefined || this.#executionState(prepared.dispatchAttemptId)?.generation === prepared.executionGeneration)) {
+          await this.dependencies.leases.release(prepared.workId, prepared.workspaceLease?.generation);
+          this.dependencies.database.transaction(db => {
+            db.prepare("DELETE FROM local_work_execution WHERE dispatch_attempt_id = ?").run(prepared.dispatchAttemptId);
+            db.prepare(`UPDATE partner_instances SET status = 'DISPOSED', disposed_at = ?, last_used_at = ?, disposal_reason = 'work_canceled'
+              WHERE status = 'SUSPENDED' AND instance_id IN (SELECT instance_id FROM dispatch_attempts WHERE dispatch_attempt_id = ?)`)
+              .run(this.dependencies.clock.now().toISOString(), this.dependencies.clock.now().toISOString(), prepared.dispatchAttemptId);
+          });
+        }
+      }
+      if (this.#load(prepared.dispatchAttemptId)?.work_status === "CANCELED") return { kind: "suspended" };
+      if (result.status === "SUSPENDED") {
+        const checkpointRef = result.checkpointRef;
+        if (prepared.executionGeneration === undefined || row.workspace_ref === null || result.instanceId === undefined
+          || checkpointRef === undefined || this.dependencies.leases.requestWrite === undefined) throw new DomainError("workspace_checkpoint_missing", "The suspended execution has no durable checkpoint.");
+        const generation = prepared.executionGeneration;
+        const now = this.dependencies.clock.now().toISOString();
+        const upgraded = await this.dependencies.leases.requestWrite({ workId: row.work_id, workspaceRef: row.workspace_ref, generation }, db => {
+          const current = db.prepare(`SELECT e.generation, a.status, w.status AS work_status FROM local_work_execution e
+            JOIN dispatch_attempts a ON a.dispatch_attempt_id = e.dispatch_attempt_id JOIN work_items w ON w.work_id = a.work_id WHERE e.dispatch_attempt_id = ?`).get(row.dispatch_attempt_id);
+          if (current?.generation !== generation || current.status !== "RUNNING" || current.work_status !== "RUNNING") throw new DomainError("workspace_execution_superseded", "The execution is no longer current.");
+          db.prepare(`UPDATE local_work_execution SET phase = 'WRITE_QUEUED', checkpoint_ref = ?, wait_reason = 'WORKSPACE_WRITE', updated_at = ?
+            WHERE dispatch_attempt_id = ? AND generation = ?`).run(checkpointRef, now, row.dispatch_attempt_id, generation);
+          const nextGeneration = generation + 1;
+          db.prepare(`INSERT OR IGNORE INTO outbox (outbox_id, kind, payload_json, status, attempt_count, available_at, created_at)
+            VALUES (?, 'partner.continue', ?, 'PENDING', 0, ?, ?)`).run(`partner_continue:${runId}:${String(nextGeneration)}`,
+            JSON.stringify({ actionId: row.action_id, dispatchAttemptId: row.dispatch_attempt_id, generation: nextGeneration, runId, workId: row.work_id }), now, now);
+        });
+        if (upgraded !== null) {
+          // The current execution already owns capacity, so a sole reader continues directly.
+          // Heartbeats must follow the upgraded lease while checkpoint validation awaits I/O.
+          prepared.workspaceLease = { expiresAt: upgraded.expiresAt, generation: upgraded.generation, workId: row.work_id, workspaceRef: row.workspace_ref };
+          const continuationId = `partner_continue:${runId}:${String(generation + 1)}`;
+          try {
+            const current = this.#load(row.dispatch_attempt_id);
+            if (current === undefined) throw new Error("partner_dispatch_attempt_invalid");
+            const continued = await this.#prepareContinuation(current, { attemptCount: 0, dispatchAttemptId: row.dispatch_attempt_id,
+              outboxId: continuationId, payloadJson: "{}", continuationGeneration: generation + 1 });
+            this.dependencies.database.transaction(db => db.prepare("UPDATE outbox SET status = 'DONE' WHERE outbox_id = ?").run(continuationId));
+            if (continued === "skipped_terminal") return { kind: "suspended" };
+            Object.assign(prepared, continued);
+            return await this.run(prepared, options);
+          } catch (error) {
+            await this.dependencies.leases.release(row.work_id, upgraded.generation);
+            if (isWriteResumeWait(error)) return { kind: "suspended" };
+            throw error;
+          }
+        }
+        return { kind: "suspended" };
+      }
       return {
         artifacts: result.artifacts,
         body: result.body,
@@ -489,6 +658,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
   async complete(input: { output: DispatchRunOutput & { kind: "terminal" }; prepared: PreparedDispatch }): Promise<{ isAuthoritative: boolean; resultId: string }> {
     const row = this.#load(input.prepared.dispatchAttemptId);
     if (row === undefined) throw new Error("partner_dispatch_attempt_invalid");
+    if (input.prepared.executionGeneration !== undefined && this.#executionState(row.dispatch_attempt_id)?.generation !== input.prepared.executionGeneration) return { isAuthoritative: false, resultId: "" };
     return this.#complete(row, input.output.status, {
       artifacts: input.output.artifacts,
       body: input.output.body,
@@ -519,12 +689,18 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       workId: row.work_id,
     };
     if (row.kind === "LOCAL_PI") {
+      if (row.scheduling_version === 2 && this.#executionState(row.dispatch_attempt_id) !== undefined) {
+        const failure: PartnerRunFailure = { phase: "RECOVERY", reasonCode: "workspace_execution_interrupted", retryable: false,
+          sideEffectState: this.#executionState(row.dispatch_attempt_id)?.phase === "READ_RUNNING" ? "NONE" : "UNKNOWN" };
+        await this.#complete(row, failure.sideEffectState === "NONE" ? "FAILED" : "UNKNOWN", { artifacts: [], body: safePartnerRunFailureBody(failure), failure });
+        return "completed";
+      }
       const fresh = orphan.instanceStatus;
       if (fresh === "BUSY") return "waiting";
       if (fresh === "IDLE") {
         try {
           const output = await this.run(prepared);
-          if (output.kind === "waiting_remote") return "waiting";
+          if (output.kind !== "terminal") return "waiting";
           await this.complete({ output, prepared });
           return "completed";
         } catch (error) {
@@ -538,7 +714,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       return "completed";
     }
     const output = await this.run(prepared);
-    if (output.kind === "waiting_remote") return "waiting";
+    if (output.kind !== "terminal") return "waiting";
     await this.complete({ output, prepared });
     return "completed";
   }
@@ -585,13 +761,14 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       }
       return;
     }
+    if (output.kind === "suspended") return;
     if (output.kind === "waiting_remote") throw new Error("partner_dispatch_not_terminal");
     await this.complete({ output, prepared });
   }
 
   #load(dispatchAttemptId: string): DispatchRow | undefined {
     const row = this.dependencies.database.transaction((connection) => connection.prepare(`
-      SELECT a.dispatch_attempt_id, a.action_id, a.status, a.partner_revision_id, a.instance_id,
+      SELECT a.dispatch_attempt_id, a.action_id, a.status, a.partner_revision_id, a.instance_id, a.scheduling_version,
              w.work_id, w.workbench_id, w.input_id, w.title, w.intent_json, i.body AS source_request,
              w.status AS work_status,
              COALESCE(ap.access_mode, w.access_mode) AS access_mode,
@@ -689,7 +866,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         const instance = connection.prepare(`SELECT status FROM partner_instances WHERE instance_id = ?`).get(instanceId) as { status: string } | undefined;
         const started = connection.prepare(`SELECT 1 FROM dispatch_attempts a JOIN partner_runs r
           ON r.dispatch_attempt_id = a.dispatch_attempt_id WHERE a.instance_id = ? AND r.status = 'RUNNING'`).get(instanceId);
-        if (instance?.status === "BUSY" || started !== undefined) {
+        if (instance?.status === "BUSY" || instance?.status === "SUSPENDED" || started !== undefined) {
           throw new DomainError("partner_instance_busy", "Partner instance is busy with another turn.");
         }
         if (instance?.status === "IDLE") connection.prepare("UPDATE dispatch_attempts SET instance_id = ? WHERE dispatch_attempt_id = ?")
@@ -869,7 +1046,13 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         ));
       }
     }
+    await this.dependencies.leases.cancelWait?.(row.work_id);
     await this.dependencies.leases.release(row.work_id);
+    this.dependencies.database.transaction(db => {
+      db.prepare("DELETE FROM local_work_execution WHERE dispatch_attempt_id = ?").run(row.dispatch_attempt_id);
+      db.prepare(`UPDATE partner_instances SET status = 'DISPOSED', disposal_reason = 'suspended_execution_terminal', disposed_at = ?, last_used_at = ?
+        WHERE instance_id = ? AND status = 'SUSPENDED'`).run(now, now, row.instance_id);
+    });
     if (recorded.isAuthoritative) {
       await this.dependencies.publish?.(recorded.event);
     }

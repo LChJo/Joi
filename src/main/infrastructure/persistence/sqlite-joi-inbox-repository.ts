@@ -68,6 +68,16 @@ function cancelQueuedWork(connection: DatabaseSync, inputId: string, now: string
   connection.prepare(`UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ?
     WHERE status IN ('WAITING_INPUT', 'WAITING_AUTH') AND work_id IN (
       SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(now, inputId);
+  connection.prepare(`DELETE FROM workspace_write_waiters WHERE work_id IN (SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(inputId);
+  connection.prepare(`DELETE FROM workspace_leases WHERE work_id IN (
+    SELECT a.work_id FROM local_work_execution e JOIN dispatch_attempts a ON a.dispatch_attempt_id = e.dispatch_attempt_id
+    JOIN work_items w ON w.work_id = a.work_id WHERE w.input_id = ? AND e.phase = 'WRITE_QUEUED')`).run(inputId);
+  connection.prepare(`UPDATE partner_instances SET status = 'DISPOSED', disposal_reason = 'work_canceled', disposed_at = ?, last_used_at = ?
+    WHERE status = 'SUSPENDED' AND instance_id IN (SELECT a.instance_id FROM dispatch_attempts a JOIN work_items w ON w.work_id = a.work_id WHERE w.input_id = ?)`).run(now, now, inputId);
+  connection.prepare(`UPDATE outbox SET status = 'DONE', claim_owner = NULL, claim_until = NULL WHERE kind = 'partner.continue'
+    AND json_extract(payload_json, '$.workId') IN (SELECT work_id FROM work_items WHERE input_id = ? AND status = 'CANCELED')`).run(inputId);
+  connection.prepare(`DELETE FROM local_work_execution WHERE phase IN ('READ_QUEUED','WRITE_QUEUED')
+    AND dispatch_attempt_id IN (SELECT a.dispatch_attempt_id FROM dispatch_attempts a JOIN work_items w ON w.work_id = a.work_id WHERE w.input_id = ?)`).run(inputId);
   // Pending child inputs (resume/review turns) are the scheduler's fuel: leaving them
   // PENDING would let the task actor pick them up after the cancel and keep invoking
   // partners for a goal the user already revoked.

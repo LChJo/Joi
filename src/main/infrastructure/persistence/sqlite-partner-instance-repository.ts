@@ -115,6 +115,12 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
     });
   }
 
+  async markSuspended(instanceId: string, at: string, externalSessionRef?: string): Promise<void> {
+    this.database.transaction(connection => connection.prepare(`UPDATE partner_instances SET status = 'SUSPENDED',
+      last_used_at = ?, external_session_ref = COALESCE(?, external_session_ref) WHERE instance_id = ? AND status = 'BUSY'`)
+      .run(at, externalSessionRef ?? null, instanceId));
+  }
+
   async recoverCrashed(at: string): Promise<{ ephemeralDisposed: number; residentRecovered: number }> {
     return this.database.transaction((connection) => {
       const recovered = connection.prepare(
@@ -127,9 +133,9 @@ export class SqlitePartnerInstanceRepository implements PartnerInstanceRepositor
     });
   }
 
-  async setStatusBusy(instanceId: string, at: string): Promise<boolean> {
+  async setStatusBusy(instanceId: string, at: string, resume = false): Promise<boolean> {
     return this.database.transaction((connection) => connection.prepare(
-      "UPDATE partner_instances SET status = 'BUSY', last_used_at = ? WHERE instance_id = ? AND status = 'IDLE'",
-    ).run(at, instanceId).changes === 1);
+      "UPDATE partner_instances SET status = 'BUSY', last_used_at = ? WHERE instance_id = ? AND (status = 'IDLE' OR (? = 1 AND status = 'SUSPENDED'))",
+    ).run(at, instanceId, resume ? 1 : 0).changes === 1);
   }
 }

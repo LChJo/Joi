@@ -287,13 +287,19 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
 
   async listActive(): Promise<WorkItemDto[]> {
     return this.database.transaction((connection) => connection.prepare(`
-      SELECT work_id, workbench_id, title, status FROM work_items
-       WHERE status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')
-       ORDER BY created_at, work_id`).all()).map((value) => {
+      SELECT w.work_id, w.workbench_id, w.title, w.status, e.phase, e.wait_reason FROM work_items w
+       LEFT JOIN dispatch_attempts a ON a.dispatch_attempt_id = (SELECT latest.dispatch_attempt_id FROM dispatch_attempts latest
+         WHERE latest.work_id = w.work_id ORDER BY latest.created_at DESC, latest.dispatch_attempt_id DESC LIMIT 1)
+       LEFT JOIN local_work_execution e ON e.dispatch_attempt_id = a.dispatch_attempt_id
+       WHERE w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')
+       ORDER BY w.created_at, w.work_id`).all()).map((value) => {
       const row = value as Record<string, unknown>;
       if (typeof row.work_id !== "string" || typeof row.workbench_id !== "string"
         || typeof row.title !== "string" || typeof row.status !== "string") throw new Error("work_item_record_invalid");
-      return { workbenchId: row.workbench_id, status: row.status as WorkItemDto["status"], title: row.title, workId: row.work_id };
+      return { workbenchId: row.workbench_id, status: row.status as WorkItemDto["status"], title: row.title, workId: row.work_id,
+        ...(typeof row.phase === "string" ? { executionPhase: row.phase as NonNullable<WorkItemDto["executionPhase"]> } : {}),
+        ...(typeof row.wait_reason === "string" ? { waitReason: row.wait_reason as NonNullable<WorkItemDto["waitReason"]> } : {}),
+      };
     });
   }
 
@@ -377,15 +383,29 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
     });
   }
 
-  /** Cancels work that is not mid-flight; running attempts finish on their own and arrive late. */
+  /** Suspended execution can be canceled because no tool is in flight. */
   async cancel(workId: string, at: string): Promise<{ canceled: boolean; cascadedWorkIds: string[] }> {
     return this.database.transaction((connection) => {
       const canceled = connection.prepare(`
         UPDATE work_items SET status = 'CANCELED', updated_at = ?
-         WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED')
+         WHERE work_id = ? AND status IN ('PLANNED', 'READY', 'WAITING', 'FAILED', 'RUNNING')
+           AND (status <> 'RUNNING' OR EXISTS (SELECT 1 FROM dispatch_attempts a
+             JOIN local_work_execution e ON e.dispatch_attempt_id = a.dispatch_attempt_id
+             WHERE a.work_id = work_items.work_id AND a.status = 'RUNNING' AND e.phase = 'WRITE_QUEUED'))
            AND NOT EXISTS (SELECT 1 FROM partner_runs r
-             WHERE r.work_id = work_items.work_id AND r.status = 'RUNNING')`).run(at, workId).changes > 0;
+             LEFT JOIN local_work_execution e ON e.dispatch_attempt_id = r.dispatch_attempt_id
+             WHERE r.work_id = work_items.work_id AND r.status = 'RUNNING'
+               AND COALESCE(e.phase, '') <> 'WRITE_QUEUED')`).run(at, workId).changes > 0;
       if (!canceled) return { canceled: false, cascadedWorkIds: [] };
+      connection.prepare("DELETE FROM workspace_write_waiters WHERE work_id = ?").run(workId);
+      connection.prepare("DELETE FROM workspace_leases WHERE work_id = ?").run(workId);
+      connection.prepare(`UPDATE partner_instances SET status = 'DISPOSED', disposed_at = ?, last_used_at = ?, disposal_reason = 'work_canceled'
+        WHERE status = 'SUSPENDED' AND instance_id IN (SELECT instance_id FROM dispatch_attempts WHERE work_id = ?)`).run(at, at, workId);
+      connection.prepare(`UPDATE outbox SET status = 'DONE', claim_owner = NULL, claim_until = NULL
+        WHERE kind = 'partner.continue' AND json_extract(payload_json, '$.workId') = ?`).run(workId);
+      connection.prepare("UPDATE partner_runs SET status = 'FAILED', updated_at = ? WHERE work_id = ? AND status = 'RUNNING'").run(at, workId);
+      connection.prepare("UPDATE dispatch_attempts SET status = 'FAILED', updated_at = ? WHERE work_id = ? AND status = 'RUNNING'").run(at, workId);
+      connection.prepare("DELETE FROM local_work_execution WHERE dispatch_attempt_id IN (SELECT dispatch_attempt_id FROM dispatch_attempts WHERE work_id = ?)").run(workId);
       const cascadedWorkIds = cascadeDependencyCancellation(connection, {
         cancelReason: "dependency_canceled",
         now: at,

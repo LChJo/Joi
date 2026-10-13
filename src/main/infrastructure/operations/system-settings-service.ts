@@ -12,11 +12,11 @@ export class SystemSettingsService implements SystemSettingsPort {
   private updateChain: Promise<void> = Promise.resolve();
 
   constructor(private readonly dependencies: {
-    getLaunchAtLogin: () => boolean;
+    getLaunchAtLogin: () => boolean | Promise<boolean>;
     getLanRuntimeState?: () => LanRuntimeState | undefined;
     listLanAddresses?: (() => Promise<LanAddressOption[]> | LanAddressOption[]) | LanAddressOption[];
     reconfigureLan?: (target: { address: string; port: number } | undefined) => Promise<LanRuntimeState>;
-    setLaunchAtLogin: (enabled: boolean) => void;
+    setLaunchAtLogin: (enabled: boolean) => void | Promise<void>;
     settingsPath: string;
     validateJoiSkills?: (refs: readonly string[]) => void;
   }) {}
@@ -63,7 +63,7 @@ export class SystemSettingsService implements SystemSettingsPort {
       this.dependencies.validateJoiSkills?.(joiSkills);
     }
     await this.persist(lan, joiSkills);
-    if (input.launchAtLogin !== undefined) this.dependencies.setLaunchAtLogin(input.launchAtLogin);
+    if (input.launchAtLogin !== undefined) await this.dependencies.setLaunchAtLogin(input.launchAtLogin);
 
     let effective = this.dependencies.getLanRuntimeState?.();
     if (applyLan && this.dependencies.reconfigureLan !== undefined) {
@@ -74,7 +74,7 @@ export class SystemSettingsService implements SystemSettingsPort {
       }
     }
     return {
-      ...this.snapshot({ lan, joiSkills, launchAtLogin: this.dependencies.getLaunchAtLogin() }, availableAddresses, effective),
+      ...this.snapshot({ lan, joiSkills, launchAtLogin: await this.dependencies.getLaunchAtLogin() }, availableAddresses, effective),
       restartRequired: false,
     };
   }
@@ -104,7 +104,7 @@ export class SystemSettingsService implements SystemSettingsPort {
       const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
       if (code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
     }
-    return { lan, joiSkills, launchAtLogin: this.dependencies.getLaunchAtLogin() };
+    return { lan, joiSkills, launchAtLogin: await this.dependencies.getLaunchAtLogin() };
   }
 
   private async availableAddresses(): Promise<LanAddressOption[]> {

@@ -124,6 +124,31 @@ describe("SqliteWorkbenchAgentScan traversal sources", () => {
     ]);
   });
 
+  it("keeps completed conversation history without retaining its scheduling actor", async () => {
+    const database = makeDatabase();
+    seed(database);
+    database.exec("UPDATE dispatch_attempts SET status = 'COMPLETED'; UPDATE partner_instances SET status = 'DISPOSED'");
+    const scan = new SqliteWorkbenchAgentScan({ transaction: (op) => op(database) });
+
+    await expect(scan.listPartnerKeys("workbench_1")).resolves.toEqual([]);
+    expect(database.prepare("SELECT COUNT(*) AS n FROM workbench_agent_sessions WHERE dismissed_at IS NULL").get())
+      .toEqual({ n: 1 });
+    database.close();
+  });
+
+  it("retains pending dispatch, resident idle and running recovery independently of history", async () => {
+    const database = makeDatabase();
+    seed(database);
+    database.exec("UPDATE partner_instances SET status = 'DISPOSED'; DELETE FROM workbench_agent_sessions");
+    const scan = new SqliteWorkbenchAgentScan({ transaction: (op) => op(database) });
+    await expect(scan.listPartnerKeys("workbench_1")).resolves.toEqual([{ partnerId: "partner_2" }]);
+    database.exec("UPDATE dispatch_attempts SET status = 'COMPLETED'; UPDATE partner_runs SET status = 'RUNNING'");
+    await expect(scan.listPartnerKeys("workbench_1")).resolves.toEqual([{ partnerId: "partner_1" }]);
+    database.exec("UPDATE partner_runs SET status = 'COMPLETED'; UPDATE partner_instances SET status = 'IDLE'");
+    await expect(scan.listPartnerKeys("workbench_1")).resolves.toEqual([{ partnerId: "partner_1" }]);
+    database.close();
+  });
+
   it("repairs a waiting run that has no durable user action", async () => {
     const database = makeDatabase();
     seed(database);

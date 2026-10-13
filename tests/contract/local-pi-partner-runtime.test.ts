@@ -1,6 +1,6 @@
 /* Faux Pi provider callbacks resolve deterministically in contract tests. */
 /* eslint-disable @typescript-eslint/require-await */
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, Type } from "@earendil-works/pi-ai";
@@ -41,6 +41,123 @@ function requestSystemPrompt(context: { messages?: readonly unknown[] }): string
 }
 
 describe("local Pi coding partner runtime", () => {
+  it.each(["write", "bash"])("AC-WR-03 enforces the SDK hook before a real %s and resumes from a durable checkpoint", async tool => {
+    const workspace = mkdtempSync(join(tmpdir(), "joi-pi-gate-"));
+    const marker = join(workspace, "marker.txt");
+    const inputFile = join(workspace, "input.txt");
+    writeFileSync(inputFile, "initial");
+    const faux = fauxProvider({ provider: `real-gate-${tool}` });
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({
+      contexts: { loadForExecution: async () => ({ promptSection: "", sanitized: {}, workspacePath: workspace }) },
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: new BuiltinPiCodingToolFactory(),
+    });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-13T00:00:00Z", displayName: "Writer", kind: "local-pi",
+      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read", tool], toolPolicyMode: "CUSTOM" });
+    const input = { instanceId: "real-gate", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
+      request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "produce marker" } };
+    try {
+      faux.setResponses([fauxAssistantMessage([fauxToolCall(tool, tool === "write" ? { path: marker, content: "blocked" } : { command: "echo blocked > marker.txt" })], { stopReason: "toolUse" })]);
+      const paused = await runtime.runResidentTurn({ ...input, request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+      expect(paused.status).toBe("SUSPENDED");
+      expect(existsSync(marker)).toBe(false);
+      runtime.evictFromMemory(input.instanceId);
+      writeFileSync(inputFile, "fresh evidence");
+      faux.setResponses([
+        fauxAssistantMessage([fauxToolCall("read", { path: inputFile })], { stopReason: "toolUse" }),
+        context => {
+          expect(JSON.stringify(context.messages)).toContain("fresh evidence");
+          return fauxAssistantMessage([fauxToolCall(tool, tool === "write" ? { path: marker, content: "fresh" } : { command: "echo fresh > marker.txt" })], { stopReason: "toolUse" });
+        },
+        fauxAssistantMessage([fauxText("complete")]),
+      ]);
+      const resumed = await runtime.runResidentTurn({ ...input, restoredMessages: paused.messages ?? null,
+        request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
+      expect(resumed.status).toBe("COMPLETED");
+      expect(readFileSync(marker, "utf8").trim()).toBe("fresh");
+      expect(resumed.output.artifacts.map(artifact => artifact.name)).toEqual(["marker.txt"]);
+    } finally { runtime.evictFromMemory(input.instanceId); rmSync(workspace, { recursive: true, force: true }); }
+  });
+  it("AC-WR-03 checkpoints before a write and blocks every remaining batch tool", async () => {
+    const executed = vi.fn(async () => ({ content: [{ type: "text" as const, text: "unexpected" }], details: {} }));
+    const faux = fauxProvider({ provider: "write-suspension" });
+    faux.setResponses([fauxAssistantMessage([fauxToolCall("write", {}), fauxToolCall("read", {})], { stopReason: "toolUse" }), fauxAssistantMessage([fauxText("must not be final")])]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
+      sources: { selectInitial: async (turnId: string) => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: { names: ["write", "read"], create: () => ["write", "read"].map(name => ({ name, label: name, description: name, parameters: Type.Object({}), execute: executed })) },
+    });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-13T00:00:00Z", displayName: "Writer", kind: "local-pi",
+      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read", "write"], toolPolicyMode: "CUSTOM" });
+    const result = await runtime.runResidentTurn({ instanceId: "suspended-instance", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
+      request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "write",
+        workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+    expect(executed).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ status: "SUSPENDED", output: { body: "", artifacts: [] } });
+    expect(result.messages?.length).toBeGreaterThan(0);
+    runtime.evictFromMemory("suspended-instance");
+  });
+  it.each([
+    ["ephemeral", false], ["resident", false], ["legacy", false],
+    ["ephemeral", true], ["resident", true], ["legacy", true],
+  ] as const)("permits external input reads in %s runs with write tools %s", async (mode, writable) => {
+    const root = mkdtempSync(join(tmpdir(), "joi-external-input-"));
+    const workspace = join(root, "workspace");
+    mkdirSync(workspace);
+    const external = join(root, "input.txt");
+    writeFileSync(external, "EXTERNAL_INPUT_EVIDENCE");
+    const prompts: string[] = [];
+    let observedInput = "";
+    const faux = fauxProvider({ provider: `external-read-${mode}-${String(writable)}` });
+    faux.setResponses([
+      context => {
+        prompts.push(requestSystemPrompt(context));
+        return fauxAssistantMessage([fauxToolCall("read", { path: external })], { stopReason: "toolUse" });
+      },
+      context => {
+        observedInput = JSON.stringify(context.messages);
+        return fauxAssistantMessage([fauxText("Analysis complete")]);
+      },
+    ]);
+    const models = createModels();
+    models.setProvider(faux.provider);
+    const dependencies = {
+      contexts: { loadForExecution: async () => ({ promptSection: "Workbench context", sanitized: {}, workspacePath: workspace }) },
+      prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
+      sources: { selectInitial: async (turnId: string) => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: new BuiltinPiCodingToolFactory(),
+    };
+    const revision = createPartnerRevision({
+      capabilities: [], createdAt: "2026-10-13T00:00:00Z", displayName: "Analyst", kind: "local-pi",
+      partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [],
+      tools: writable ? ["read", "write"] : ["read"], toolPolicyMode: "CUSTOM",
+    });
+    const request = { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "Analyze the external input; return the findings." };
+    const execution = { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], workspacePath: workspace };
+    const runtime = new PiPartnerEngineRuntime(dependencies);
+    try {
+      const result = mode === "legacy"
+        ? await new PiCodingPartnerRunner(dependencies).run(request, revision)
+        : mode === "resident"
+          ? await runtime.runResidentTurn({ ...execution, instanceId: "instance", request, revision, restoredMessages: null })
+          : await runtime.runEphemeral(request, revision, execution);
+      expect(result).toMatchObject({ status: "COMPLETED", output: { body: "Analysis complete" } });
+      expect(observedInput).toContain("EXTERNAL_INPUT_EVIDENCE");
+      expect(prompts[0]).toContain("inside or outside the workspace");
+      expect(prompts[0]).toContain("reading requires no permission");
+      expect(prompts[0]).toContain("Only file writes are governed");
+      if (!writable && mode !== "legacy") expect(prompts[0]).toContain("File and shell writes are not available");
+    } finally {
+      runtime.evictFromMemory("instance");
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it.each([
     ["ephemeral", "summary"],
     ["resident", "summary"],

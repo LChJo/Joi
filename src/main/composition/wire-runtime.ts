@@ -1,9 +1,7 @@
 import path from "node:path";
 import { EvolutionComponent } from "../application/actors/components/evolution-component.js";
-import { app } from "electron";
 import { createHash } from "node:crypto";
 import { SqliteResultExports } from "../infrastructure/persistence/sqlite-result-exports.js";
-import { ElectronResultExporter } from "../infrastructure/artifacts/electron-result-export.js";
 import { ResultExportService } from "../application/operations/result-export-service.js";
 import { lookup } from "node:dns/promises";
 
@@ -44,7 +42,7 @@ import { SqlitePartnerDispatchDelivery } from "../infrastructure/a2a/partner-dis
 import { InMemoryEventSignal } from "../infrastructure/runtime/in-memory-event-signal.js";
 import { WorkspaceWorkVerifier } from "../infrastructure/workspace/workspace-work-verifier.js";
 import { WorkAttachmentStager } from "../infrastructure/workspace/workspace-attachment-stager.js";
-import type { ElectronCredentialVault } from "../infrastructure/security/electron-credential-vault.js";
+import type { CredentialVault } from "../application/ports/a2a-ports.js";
 import type { RuntimeDatabase } from "../infrastructure/persistence/runtime-database.js";
 import type { JoiBundle } from "./wire-joi.js";
 import type { ModelSourceBundle } from "./wire-model-sources.js";
@@ -63,7 +61,8 @@ export function wireRuntime(input: {
   persistence: PersistenceBundle;
   publisher: SsePublisher;
   userDataDirectory: string;
-  vault: ElectronCredentialVault;
+  vault: CredentialVault;
+  exporterFactory: (jobs: SqliteResultExports) => { handle(id: string): Promise<void>; open(id: string, reveal: boolean): Promise<void> };
   workbenchStack: WorkbenchBundle;
 }) {
   const { clock, database, diagnostics, ids, joiStack, modelSourceStack, partnerStack, persistence, publisher, userDataDirectory, vault, workbenchStack } = input;
@@ -132,7 +131,7 @@ export function wireRuntime(input: {
   const partnerDispatchDelivery = new SqlitePartnerDispatchDelivery({
     runDirectories: persistence.runDirectories,
     agentConversations: persistence.workbenchAgentRepository,
-    attachmentStager: new WorkAttachmentStager({ attachments: joiStack.joiAttachmentStorage, database }),
+    attachmentStager: new WorkAttachmentStager({ attachments: joiStack.joiAttachmentStorage, database, taskDirectory: path.join(userDataDirectory, "task-inputs") }),
     clarifications: persistence.joiInboxRepository,
     clock,
     contextAssembler: workbenchStack.workbenchContextAssembler,
@@ -212,7 +211,7 @@ export function wireRuntime(input: {
     })],
   });
   const exportJobs = new SqliteResultExports(database);
-  const exporter = new ElectronResultExporter({ jobs: exportJobs, downloads: app.getPath('downloads'), fontPath: path.join(app.isPackaged ? process.resourcesPath : app.getAppPath(), 'resources', 'fonts', 'NotoSansSC.ttf') });
+  const exporter = input.exporterFactory(exportJobs);
   const resultExports = new ResultExportService({
     find: input => exportJobs.find(input),
     read: async goalId => {
@@ -227,7 +226,7 @@ export function wireRuntime(input: {
     diagnostics,
     // evolution.model rows are audit-only outbox records written by the evolution store; the
     // bounded model call itself runs inside EvolutionService, so the dispatcher must never claim them.
-    excludeKinds: ["partner.dispatch", "evolution.model"],
+    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model"],
     handlers: {
       "result.export": record => exporter.handle(String(record.payload.exportId)),
       "a2a.send": async (record) => {
@@ -268,6 +267,7 @@ export function wireRuntime(input: {
     store: database.store,
   });
   return {
+    exportJobs,
     a2aGateway,
     actorTree,
     agentOnboarding,

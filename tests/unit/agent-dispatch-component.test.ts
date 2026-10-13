@@ -124,6 +124,19 @@ function ctxWithDiagnostics(offsetMillis: number, events: { event: string; field
 }
 
 describe("AgentDispatchComponent", () => {
+  it("AC-WR-02/05 releases execution capacity on suspension without completing or timing out", async () => {
+    const capacity = new LocalDispatchCapacityController();
+    const harness = makeHarness({ capacity, claims: [{ ...CLAIM, kind: "LOCAL_PI" }], runOutputs: [{ kind: "suspended" }] });
+    await harness.component.update(ctxAt(0));
+    expect(capacity.snapshot().global).toBe(1);
+    await Promise.resolve(); await Promise.resolve();
+    await harness.component.update(ctxAt(2000));
+    expect(capacity.snapshot().global).toBe(0);
+    expect(harness.completed).toEqual([]);
+    await harness.component.update(ctxAt(60 * 60_000));
+    expect(harness.completed).toEqual([]);
+    expect(harness.runSignals[0]?.aborted).toBe(false);
+  });
   it("starts independent dispatch slots for the same partner without waiting for the first run", async () => {
     const claims = [
       { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" },

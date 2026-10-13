@@ -1,4 +1,6 @@
-import type { Options as ClaudeOptions, SDKMessage } from "@anthropic-ai/claude-agent-sdk";
+import type { Options as ClaudeOptions, SDKMessage, HookCallback } from "@anthropic-ai/claude-agent-sdk";
+import { LocalWriteGate, WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
+import { nativeCheckpointAvailable } from "./native-checkpoint-store.js";
 
 import { DomainError } from "../../domain/errors.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
@@ -27,7 +29,7 @@ const CLAUDE_WORKSPACE_TOOLS = new Set(["Bash", "Read", "Edit", "Write", "Glob",
 const CLAUDE_MUTATING_TOOLS = new Set(["Bash", "Edit", "Write", "NotebookEdit"]);
 
 export interface ClaudeAgentSdkSurface {
-  query(input: { options?: ClaudeOptions; prompt: string }): AsyncIterable<SDKMessage>;
+  query(input: { options?: ClaudeOptions; prompt: string }): AsyncIterable<SDKMessage> & { close?(): void };
 }
 
 /**
@@ -58,6 +60,9 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
   }) {}
 
   engineOf(): "claude-code" { return "claude-code"; }
+  checkpointAvailable(reference: string): Promise<boolean> {
+    return nativeCheckpointAvailable("claude", reference, this.dependencies.environment ?? process.env);
+  }
   toolOptions(): readonly string[] { return CLAUDE_CODE_TOOL_OPTIONS; }
   evictFromMemory(instanceId: string): void { void instanceId; }
 
@@ -111,23 +116,27 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     } catch (error) { throw wrapPartnerRunFailure(error, { phase: "ENGINE", sideEffectState: tracker.sideEffectState }); }
   }
 
-  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
+  async #run(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, resume: string | undefined, tracker: { sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN" }, signal?: AbortSignal): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; nativeSessionId?: string; output: PartnerRunOutput; status: PartnerRunStatus | "SUSPENDED" }> {
     const resolved = this.#resolve();
     if (resolved.executablePath === undefined) throw new DomainError("engine_unavailable", "Claude Code is unavailable.");
     if (revision.kind !== "local-pi") throw new DomainError("local_partner_kind_required", "Claude Code runs local partners only.");
     const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
     if (execution === null) throw new DomainError("workbench_context_snapshot_not_found", "Workbench context snapshot is missing.");
     const tools = this.#effectiveTools(revision, execution.workspacePath !== undefined);
-    tracker.sideEffectState = tools.some((tool) => CLAUDE_MUTATING_TOOLS.has(tool)) ? "UNKNOWN" : "NONE";
+    const writeGate = new LocalWriteGate(request.workspaceExecution);
+    const gated = request.workspaceExecution !== undefined;
+    if (request.workspaceExecution?.phase === "WRITE_RUNNING" && resume === undefined) throw new DomainError("workspace_checkpoint_missing", "The native session checkpoint is unavailable.");
+    tracker.sideEffectState = !gated && tools.some((tool) => CLAUDE_MUTATING_TOOLS.has(tool)) ? "UNKNOWN" : "NONE";
     const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context, tools, execution.workspacePath);
     const projector = new NativeAgentEventProjector();
     const emit = async (event: NativeAgentEvent): Promise<void> => {
-      if (event.type === "tool_activity" && event.state === "started" && CLAUDE_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
+      if (!gated && event.type === "tool_activity" && event.state === "started" && CLAUDE_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
       projector.apply(event); try { await context.onEvent?.(event); } catch { /* display projection is non-authoritative */ }
     };
     await emit({ type: "message", role: "user", parts: [{ type: "text", text: request.taskProjection }] });
     await emit({ type: "status", state: "working" });
-    const before = await captureWorkspaceSnapshot(execution.workspacePath);
+    const collectArtifacts = !gated || request.workspaceExecution?.phase === "WRITE_RUNNING";
+    const before = await captureWorkspaceSnapshot(collectArtifacts ? execution.workspacePath : undefined);
     const controller = new AbortController();
     if (signal?.aborted === true) controller.abort();
     else signal?.addEventListener("abort", () => controller.abort(), { once: true });
@@ -151,10 +160,24 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       sourceName: "Claude Code",
       ...(revision.engineModelId === undefined ? {} : { modelId: revision.engineModelId }),
     });
+    let checkpointSession: string | undefined;
+    let query: (AsyncIterable<SDKMessage> & { close?(): void }) | undefined;
+    // SDK hook callbacks retain their Promise contract even when the local gate is synchronous.
+    // eslint-disable-next-line @typescript-eslint/require-await
+    const preToolUse: HookCallback = async hookInput => {
+      if (hookInput.hook_event_name !== "PreToolUse") return {};
+      checkpointSession = hookInput.session_id;
+      const blocked = tools.includes(hookInput.tool_name) ? writeGate.beforeTool(hookInput.tool_name) : { block: true, reason: "partner_tool_not_allowed" };
+      if (blocked !== undefined) return { continue: !writeGate.suspended, suppressOutput: true,
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason: blocked.reason } };
+      if (CLAUDE_MUTATING_TOOLS.has(hookInput.tool_name)) tracker.sideEffectState = "OBSERVED";
+      return { continue: true };
+    };
     try {
-      consumed = await this.#consume((await this.#sdk()).query({
-        prompt: request.taskProjection,
+      query = (await this.#sdk()).query({
+        prompt: request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : request.taskProjection,
         options: this.#options({
+          ...(gated ? { preToolUse } : {}),
           controller,
           allowedTools: tools,
           ...(execution.workspacePath === undefined ? {} : { cwd: execution.workspacePath }),
@@ -165,9 +188,14 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           systemPrompt,
           tools,
         }),
-      }), emit, () => guard?.onProgress(), usageCapture);
+      });
+      consumed = await this.#consume(query, emit, () => guard?.onProgress(), usageCapture);
       finishNativeUsage(usageCapture, "completed");
     } catch (error) {
+      if (writeGate.suspended && checkpointSession !== undefined) {
+        finishNativeUsage(usageCapture, "completed");
+        return { conversation: [], externalRunId: `native_claude:${request.actionId}`, nativeSessionId: checkpointSession, output: { artifacts: [], body: "" }, status: "SUSPENDED" };
+      }
       finishNativeUsage(usageCapture, timedOut === undefined ? usageFailureStatus(signal) : "failed");
       if (timedOut !== undefined) {
         await emit({ type: "status", state: "failed" });
@@ -179,9 +207,15 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       await emit({ type: "status", state: classifyNativeCliFailure(error) === "partner_cli_auth_required" ? "auth-required" : "failed" });
       throw error;
     } finally {
+      query?.close?.();
       guard?.dispose();
     }
-    const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
+    if (writeGate.suspended) {
+      const session = consumed.sessionId ?? checkpointSession;
+      if (session === undefined) throw new DomainError("workspace_checkpoint_missing", "The native session checkpoint is unavailable.");
+      return { conversation: [], externalRunId: `native_claude:${request.actionId}`, nativeSessionId: session, output: { artifacts: [], body: "" }, status: "SUSPENDED" };
+    }
+    const artifacts = collectArtifacts ? await collectChangedWorkspaceArtifacts(execution.workspacePath, before) : [];
     for (const artifact of artifacts) await emit({ type: "artifact", artifact: { ...artifact, mimeType: artifact.mimeType ?? "application/octet-stream" } });
     await emit({ type: "status", state: "completed" });
     return { conversation: projector.snapshot(), externalRunId: `native_claude:${request.actionId}`, ...(consumed.sessionId === undefined ? {} : { nativeSessionId: consumed.sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
@@ -248,11 +282,12 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     return { body, ...(sessionId === undefined ? {} : { sessionId }) };
   }
 
-  #options(input: { allowedTools?: readonly string[]; controller: AbortController; cwd?: string; modelId?: string; permissionMode: "acceptEdits" | "plan"; resolved: ResolvedLocalCliExecutable; resume?: string; systemPrompt?: string; tools?: readonly string[] }): ClaudeOptions {
+  #options(input: { allowedTools?: readonly string[]; controller: AbortController; cwd?: string; modelId?: string; permissionMode: "acceptEdits" | "plan"; preToolUse?: HookCallback; resolved: ResolvedLocalCliExecutable; resume?: string; systemPrompt?: string; tools?: readonly string[] }): ClaudeOptions {
     const environment: Record<string, string> = {};
     for (const [key, value] of Object.entries(this.dependencies.environment ?? process.env)) if (value !== undefined) environment[key] = value;
     return {
       abortController: input.controller,
+      ...(input.preToolUse === undefined ? {} : { hooks: { PreToolUse: [{ hooks: [input.preToolUse] }] }, mcpServers: {}, plugins: [], settingSources: [] }),
       ...(input.allowedTools === undefined ? {} : { allowedTools: [...input.allowedTools] }),
       ...(input.cwd === undefined ? {} : { cwd: input.cwd }),
       env: environment,

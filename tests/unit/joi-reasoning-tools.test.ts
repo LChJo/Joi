@@ -12,6 +12,15 @@ const partnerDto: PartnerDto = {
   partnerRevisionId: "partner_revision_1", registryRevision: 1, skills: [], status: "ACTIVE", tools: ["read"],
 };
 
+describe("partner tool access guidance", () => {
+  it("allows external reads while limiting workspace writes", () => {
+    const tool = makeTools().tools.find(candidate => candidate.name === "partner_set_tools");
+    expect(tool?.description).toContain("read task inputs inside or outside the Workbench workspace");
+    expect(tool?.description).toContain("workspace write access");
+    expect(tool?.description).not.toContain("or paths outside the Workbench");
+  });
+});
+
 const readySource: ModelSourceDto = {
   accessMode: "api", activeModel: { capability: "release-tested", id: "kimi-k2.5", revisionId: "model_r" },
   activeSourceRevisionId: "source_revision_r", credential: { configured: true, version: 1 }, displayName: "Kimi",

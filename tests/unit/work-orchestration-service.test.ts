@@ -34,7 +34,7 @@ describe("work orchestration outbox", () => {
       { key: "skill-a", title: "Analyze tasks", partnerId: "partner", accessMode: "NONE", acceptanceChecks: [{ kind: "BODY_PRESENT" }], instructions: "Use the selected skill", sessionPolicy: "EPHEMERAL" },
       { instructions: "Complete this scoped deliverable.", key: "skill-b", title: "Analyze more", partnerId: "partner", accessMode: "READ", acceptanceChecks: [{ kind: "BODY_PRESENT" }] },
     ] });
-    expect(committed[0]?.items.map((item) => item.accessMode)).toEqual(["WRITE", "WRITE"]);
+    expect(committed[0]?.items.map((item) => item.accessMode)).toEqual(["WRITE", "READ"]);
     expect(committed[0]?.waves).toHaveLength(1);
     expect(evaluate.mock.calls[0]?.[0]).toMatchObject({ accessMode: "WRITE" });
     expect(committed[0]?.attempts[0]?.outbox.payload).toMatchObject({ sessionPolicy: "EPHEMERAL" });

@@ -41,10 +41,7 @@ export class SqliteWorkbenchAgentScan implements WorkbenchAgentScan {
           FROM partner_runs pr
           JOIN partner_revisions rev2 ON rev2.partner_revision_id = pr.partner_revision_id
          WHERE pr.workbench_id = ? AND pr.status NOT IN ${TERMINAL_RUN_STATUSES}
-        UNION
-        SELECT s.partner_id FROM workbench_agent_sessions s
-         WHERE s.workbench_id = ? AND s.dismissed_at IS NULL
-      ) ORDER BY partner_id`).all(workbenchId, workbenchId, workbenchId, workbenchId)) as Row[])
+      ) ORDER BY partner_id`).all(workbenchId, workbenchId, workbenchId)) as Row[])
       .map((row) => ({ partnerId: textValue(row, "partner_id") }));
   }
 

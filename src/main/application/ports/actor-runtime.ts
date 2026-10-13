@@ -12,6 +12,7 @@ export interface ActorTickContext {
 /** A traversable state unit inside an actor; periodic behavior = throttled timestamps in update. */
 export interface ActorComponent {
   readonly componentName: string;
+  readonly hasPendingWork?: boolean;
   update(ctx: ActorTickContext): Promise<void>;
 }
 

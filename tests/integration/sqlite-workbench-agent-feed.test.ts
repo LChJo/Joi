@@ -457,7 +457,7 @@ describe("Workbench Agent and joi home projections", () => {
         goalId: "goal-running",
         phase: "progressing",
         stage: "RUNNING",
-        work: { active: 1, completed: 0, failed: 0, failedResolved: 0, total: 1 },
+        work: { active: 1, completed: 0, failed: 0, failedResolved: 0, total: 1, executing: 1, resourceWaiting: 0 },
       })]);
       fixture.database.transaction((connection) => connection.prepare(
         "UPDATE joi_turns SET status = 'COMPLETED', updated_at = '2026-08-03T12:00:10.000Z' WHERE turn_id = 'turn-running'",
@@ -524,7 +524,7 @@ describe("Workbench Agent and joi home projections", () => {
       const repository = new SqliteJoiHomeFeedRepository(fixture.database);
       expect((await repository.load(new Date("2026-08-03T12:00:05.000Z"))).thinking).toEqual([expect.objectContaining({
         stage: "DISPATCHING",
-        work: { active: 1, completed: 0, failed: 0, failedResolved: 0, total: 1 },
+        work: { active: 1, completed: 0, failed: 0, failedResolved: 0, total: 1, executing: 0, resourceWaiting: 1 },
       })]);
 
       fixture.database.transaction((connection) => connection.prepare(
@@ -537,7 +537,7 @@ describe("Workbench Agent and joi home projections", () => {
       ).run("2026-08-03T12:00:08.000Z"));
       expect((await repository.load(new Date("2026-08-03T12:00:09.000Z"))).thinking).toEqual([expect.objectContaining({
         stage: "FINALIZING",
-        work: { active: 0, completed: 1, failed: 0, failedResolved: 0, total: 1 },
+        work: { active: 0, completed: 1, failed: 0, failedResolved: 0, total: 1, executing: 0, resourceWaiting: 0 },
       })]);
     } finally {
       await fixture.close();
@@ -564,7 +564,7 @@ describe("Workbench Agent and joi home projections", () => {
         phase: "queued",
         stage: "ROUTING",
         turnId: "pending:derived-queued",
-        work: { active: 0, completed: 0, failed: 0, failedResolved: 0, total: 0 },
+        work: { active: 0, completed: 0, failed: 0, failedResolved: 0, total: 0, executing: 0, resourceWaiting: 0 },
       })]);
     } finally {
       await fixture.close();

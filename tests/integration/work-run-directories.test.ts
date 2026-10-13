@@ -54,6 +54,7 @@ describe("per-run working directories", () => {
       faux.setResponses([
         fauxAssistantMessage([fauxToolCall("read", { path: skillFile })], { stopReason: "toolUse" }),
         fauxAssistantMessage([fauxToolCall("bash", { command: "printf cli-fixture-ok | tee report.txt" })], { stopReason: "toolUse" }),
+        fauxAssistantMessage([fauxToolCall("bash", { command: "printf cli-fixture-ok | tee report.txt" })], { stopReason: "toolUse" }),
         fauxAssistantMessage([fauxText("CLI analysis completed.")]),
       ]);
       const models = createModels(); models.setProvider(faux.provider);

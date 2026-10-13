@@ -134,7 +134,9 @@ export class WorkbenchAgentComponent implements ActorComponent {
       }
     }
     for (const partnerId of [...this.#agentActors.keys()]) {
-      if (!live.has(partnerId)) this.#agentActors.delete(partnerId);
+      if (!live.has(partnerId) && !this.#agentActors.get(partnerId)?.hasPendingWork) {
+        this.#agentActors.delete(partnerId);
+      }
     }
   }
 }

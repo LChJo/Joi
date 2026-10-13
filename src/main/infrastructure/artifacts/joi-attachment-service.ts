@@ -30,14 +30,14 @@ export class JoiAttachmentService {
     ids: IdGenerator;
     rootDirectory: string;
     /** Normalizes clipboard bitmaps before storage; absent in unit tests without Electron. */
-    transcodeBitmap?: (input: BitmapTranscodeInput) => BitmapTranscodeResult | undefined;
+    transcodeBitmap?: (input: BitmapTranscodeInput) => BitmapTranscodeResult | undefined | Promise<BitmapTranscodeResult | undefined>;
   }) {}
 
   async upload(input: { bytes: Uint8Array; filename: string; mimeType: string }): Promise<JoiAttachmentDto> {
     this.#assertFilename(input.filename);
     // Transcode before the size check: a 10+ MiB uncompressed BMP typically
     // collapses well under the limit once re-encoded as PNG.
-    const transcoded = this.dependencies.transcodeBitmap?.({
+    const transcoded = await this.dependencies.transcodeBitmap?.({
       bytes: input.bytes, filename: input.filename, mimeType: this.#mimeType(input.mimeType),
     });
     const bytes = transcoded?.bytes ?? input.bytes;

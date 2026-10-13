@@ -86,6 +86,10 @@ export class AgentDispatchComponent implements ActorComponent {
     watchdogMillis?: number;
   }) {}
 
+  get hasPendingWork(): boolean {
+    return this.#inFlight.size > 0 || this.#orphanInFlight.size > 0;
+  }
+
   get inFlightAttemptId(): string | undefined {
     return this.#inFlight.keys().next().value;
   }
@@ -134,7 +138,7 @@ export class AgentDispatchComponent implements ActorComponent {
     const lease = run.prepared.workspaceLease;
     if (lease === undefined || this.dependencies.leases === undefined) return;
     if (Date.parse(lease.expiresAt) - ctx.now.getTime() > LEASE_RENEW_MARGIN_MILLIS) return;
-    const renewed = await this.dependencies.leases.renew({ workId: lease.workId, workspaceRef: lease.workspaceRef });
+    const renewed = await this.dependencies.leases.renew({ workId: lease.workId, workspaceRef: lease.workspaceRef, ...(lease.generation === undefined ? {} : { generation: lease.generation }) });
     if (renewed === null) {
       emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.lease_lost", {
         workbenchId: this.dependencies.workbenchId,
@@ -212,6 +216,10 @@ export class AgentDispatchComponent implements ActorComponent {
       }
     }
     const output = run.settled;
+    if (output.kind === "suspended") {
+      this.#releaseSlot(run);
+      return;
+    }
     if (output.kind === "waiting_remote") {
       if (ctx.now.getTime() < run.nextWaitingRetryAt) return;
       run.nextWaitingRetryAt = ctx.now.getTime() + (this.dependencies.waitingRetryEveryMillis ?? DEFAULT_WAITING_RETRY_EVERY_MILLIS);
@@ -309,6 +317,7 @@ export class AgentDispatchComponent implements ActorComponent {
           partnerId: this.dependencies.partnerId,
         });
         if (!reservation.acquired) {
+          await this.dependencies.delivery.queued?.(claim, "CAPACITY");
           emitRuntimeDiagnostic(ctx.diagnostics, "joi.agent.capacity_queued", {
             workbenchId: this.dependencies.workbenchId,
             dispatchAttemptId: claim.dispatchAttemptId,
@@ -345,7 +354,7 @@ export class AgentDispatchComponent implements ActorComponent {
             availableAt,
             outboxId: claim.outboxId,
             owner: this.dependencies.owner,
-            ...(requirementsWaiting ? { preserveAttemptCount: true as const } : {}),
+            preserveAttemptCount: true,
           });
           emitRuntimeDiagnostic(ctx.diagnostics, errorCode === DISPATCH_POLICY_REASONS.workspaceLeaseConflict
             ? "joi.agent.workspace_contended" : "joi.agent.resource_queued", {
@@ -429,10 +438,10 @@ export class AgentDispatchComponent implements ActorComponent {
         },
       }).then((output) => {
         const active = this.#inFlight.get(attemptId);
-        if (active !== undefined) active.settled = output;
+        if (active === run && !abortController.signal.aborted && active.settled === undefined) active.settled = output;
       }).catch((error: unknown) => {
         const active = this.#inFlight.get(attemptId);
-        if (active !== undefined) active.settled = failedOutput(error);
+        if (active === run && !abortController.signal.aborted && active.settled === undefined) active.settled = failedOutput(error);
       });
     }
   }

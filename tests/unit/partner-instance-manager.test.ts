@@ -10,6 +10,7 @@ import type {
   PartnerInstanceRepository,
   PartnerInstanceMessageStore,
   ResidentTurnInput,
+  ResidentTurnResult,
 } from "../../src/main/application/ports/partner-instances.js";
 import type { ModelSourceTurnPin } from "../../src/main/domain/model-sources/model-source.js";
 import { createPartnerRevision, type PartnerRevision } from "../../src/main/domain/partners/partner.js";
@@ -58,6 +59,11 @@ class MemoryInstanceRepository implements PartnerInstanceRepository {
     record.lastUsedAt = at;
     record.status = "IDLE";
   }
+  async markSuspended(instanceId: string, at: string, externalSessionRef?: string) {
+    await this.markTurnComplete(instanceId, at, externalSessionRef);
+    const record = await this.get(instanceId);
+    if (record !== null) record.status = "SUSPENDED";
+  }
   async recoverCrashed() {
     let ephemeralDisposed = 0;
     let residentRecovered = 0;
@@ -68,9 +74,9 @@ class MemoryInstanceRepository implements PartnerInstanceRepository {
     }
     return { ephemeralDisposed, residentRecovered };
   }
-  async setStatusBusy(instanceId: string, at: string) {
+  async setStatusBusy(instanceId: string, at: string, resume = false) {
     const record = this.records.find((item) => item.instanceId === instanceId);
-    if (record?.status !== "IDLE") return false;
+    if (record === undefined || (record.status !== "IDLE" && !(resume && record.status === "SUSPENDED"))) return false;
     record.lastUsedAt = at;
     record.status = "BUSY";
     return true;
@@ -129,7 +135,7 @@ class FakeEngine implements PartnerEngineRuntime {
       status,
     };
   }
-  async runResidentTurn(input: ResidentTurnInput) {
+  async runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult> {
     input.onProgress?.();
     for (const event of this.events) await input.onEvent?.(event);
     await input.onToolTrace?.(traceDraft("bash"));
@@ -182,6 +188,49 @@ function makeManager(
 }
 
 describe("partner-instance-manager", () => {
+  it("AC-WR-05 requires the owning native engine to validate a suspended session", async () => {
+    const { engine, manager } = makeManager();
+    const reference = "native-agent:v1:claude:fixture-session";
+    vi.spyOn(engine, "runResidentTurn").mockResolvedValueOnce({ externalRunId: "same", externalSessionRef: reference,
+      output: { artifacts: [], body: "" }, status: "SUSPENDED" });
+    const paused = await manager.dispatch({ revision: createPartnerRevision({ ...revision, engine: "claude-code" }), sessionPolicy: "EPHEMERAL",
+      request: { ...request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+    if (paused.instanceId === undefined) throw new Error("missing_instance");
+    expect(await manager.validateCheckpoint(paused.instanceId, reference)).toBe(false);
+    const validate = vi.fn(async () => true);
+    Object.assign(engine, { checkpointAvailable: validate });
+    expect(await manager.validateCheckpoint(paused.instanceId, reference)).toBe(true);
+    expect(await manager.validateCheckpoint(paused.instanceId, "another-reference")).toBe(false);
+    expect(validate).toHaveBeenCalledOnce();
+  });
+  it.each(["EPHEMERAL", "RESIDENT"] as const)("AC-WR-02/05 keeps a suspended %s instance exclusive and resumes without another Agent", async sessionPolicy => {
+    const { engine, manager, messages, repository, diagnostics, clock } = makeManager({ maxResidentPerPartner: 1 });
+    vi.spyOn(engine, "runResidentTurn").mockResolvedValueOnce({ externalRunId: "same", messages: [{ role: "user", content: "checkpoint" }],
+      output: { artifacts: [], body: "" }, status: "SUSPENDED" });
+    const paused = await manager.dispatch({ request: { ...request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } }, revision, sessionPolicy });
+    expect(paused).toMatchObject({ status: "SUSPENDED", body: "" });
+    expect(repository.records).toHaveLength(1);
+    expect(repository.records[0]?.status).toBe("SUSPENDED");
+    if (paused.instanceId === undefined || paused.checkpointRef === undefined) throw new Error("missing_checkpoint");
+    expect(await manager.validateCheckpoint(paused.instanceId, paused.checkpointRef)).toBe(true);
+    expect(await manager.validateCheckpoint("missing-instance", paused.checkpointRef)).toBe(false);
+    expect(await manager.validateCheckpoint(paused.instanceId, "invalid-checkpoint")).toBe(false);
+    vi.spyOn(messages, "load").mockRejectedValueOnce(new Error("corrupt_checkpoint"));
+    expect(await manager.validateCheckpoint(paused.instanceId, paused.checkpointRef)).toBe(false);
+    expect(diagnostics.some(event => event.event === "joi.partner.instance.completed")).toBe(false);
+    clock.advance(60 * 60_000);
+    expect(await manager.sweepIdleFor(request.workbenchId, clock.now())).toEqual({ disposed: 0, evicted: 0 });
+    await manager.recoverOnBoot();
+    expect(repository.records[0]?.status).toBe("SUSPENDED");
+    await expect(manager.dispatch({ request, revision, instanceId: paused.instanceId })).rejects.toMatchObject({ code: "partner_instance_busy" });
+    const resumed = await manager.dispatch({ instanceId: paused.instanceId, revision,
+      request: { ...request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
+    expect(resumed.instanceId).toBe(paused.instanceId);
+    expect(repository.records).toHaveLength(1);
+    expect(engine.residentTurns[0]?.restoredMessages).toEqual([{ role: "user", content: "checkpoint" }]);
+    expect(repository.records[0]?.status).toBe(sessionPolicy === "EPHEMERAL" ? "DISPOSED" : "IDLE");
+    expect(messages.cleared).toEqual(sessionPolicy === "EPHEMERAL" ? [paused.instanceId] : []);
+  });
   it.each(["EPHEMERAL", "RESIDENT"] as const)("preserves the timestamped live timeline on %s completion", async (sessionPolicy) => {
     const { manager, engine, clock } = makeManager();
     const first = clock.now().toISOString();

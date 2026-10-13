@@ -6,7 +6,7 @@ import type { ToolTraceDraft } from "../partners/tool-trace-presentation.js";
 import type { NativeAgentEvent } from "./native-agent-events.js";
 
 export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
-export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE";
+export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE" | "SUSPENDED";
 
 /**
  * One completed tool call's private body, on its way to the local store. This is a
@@ -43,13 +43,14 @@ export interface PartnerInstanceRepository {
   listActive(filter?: { workbenchId?: string; partnerId?: string }): Promise<PartnerInstanceRecord[]>;
   markDisposed(instanceId: string, reason: string, at: string): Promise<void>;
   markTurnComplete(instanceId: string, at: string, externalSessionRef?: string): Promise<void>;
+  markSuspended?(instanceId: string, at: string, externalSessionRef?: string): Promise<void>;
   recoverCrashed(at: string): Promise<{ ephemeralDisposed: number; residentRecovered: number }>;
-  setStatusBusy(instanceId: string, at: string): Promise<boolean>;
+  setStatusBusy(instanceId: string, at: string, resume?: boolean): Promise<boolean>;
 }
 
 export interface PartnerInstanceMessageStore {
   clear(instanceId: string): Promise<void>;
-  load(instanceId: string): Promise<unknown[] | null>;
+  load(instanceId: string, strict?: boolean): Promise<unknown[] | null>;
   save(instanceId: string, messages: unknown[]): Promise<void>;
 }
 
@@ -97,7 +98,7 @@ export interface ResidentTurnResult {
   externalSessionRef?: string;
   messages?: unknown[];
   output: PartnerRunOutput;
-  status: PartnerRunStatus;
+  status: PartnerRunStatus | "SUSPENDED";
 }
 
 /** Implemented per engine under infrastructure/; joi reasoning never touches it. */
@@ -105,11 +106,12 @@ export interface PartnerEngineRuntime {
   engineOf(): PartnerEngine;
   evictFromMemory(instanceId: string): void;
   health(): Promise<{ available: boolean; reason?: string }>;
+  checkpointAvailable?(reference: string): Promise<boolean>;
   /** Side-effect-free readiness gate executed before an Agent instance or tools are created. */
   preflight?(input: { revision: PartnerRevision; turnId: string }): Promise<ModelSourceTurnPin | undefined>;
   /** User-triggered end-to-end availability check. Implementations must return only stable safe reason codes. */
   probe?(input?: { modelId?: string }): Promise<{ available: boolean; reasonCode?: string }>;
-  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }>;
+  runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, options?: { signal?: AbortSignal }): Promise<{ conversation?: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus | "SUSPENDED" }>;
   runResidentTurn(input: ResidentTurnInput): Promise<ResidentTurnResult>;
   /** Selectable native tool names for this engine's whitelist picker. */
   toolOptions(): readonly string[];

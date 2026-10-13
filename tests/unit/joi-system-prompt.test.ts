@@ -9,6 +9,22 @@ const base = {
 };
 
 describe("joi system prompt", () => {
+  it("dispatches external read-only inputs without changing a bound workspace", () => {
+    const prompt = buildJoiSystemPrompt({
+      ...base,
+      workspace: { displayName: "reports", kind: "BOUND", status: "READY" },
+    });
+    expect(prompt).toContain("Local partners with read tools may read task inputs inside or outside the Workbench workspace");
+    expect(prompt).toContain("Do not ask the user to copy an external input into the workspace");
+    expect(prompt).toContain("Keep the existing workspace binding");
+    expect(prompt).toContain("workspace write access");
+    expect(prompt).not.toContain("or paths outside the Workbench");
+    expect(prompt).not.toContain("broader workspace access");
+    expect(prompt).toContain("never rebind it");
+    expect(prompt).toContain("never an absolute or external path");
+    expect(prompt).toContain("hold no shell or filesystem tools");
+  });
+
   it("requires actionable context for a continuation decision", () => {
     const prompt = buildJoiSystemPrompt(base);
     expect(prompt).toContain("For RESULT_CONTINUE, make the visible answer explain what is already established, what specifically remains unverified or missing, why it matters to the original goal, and what the next bounded evidence layer will try");

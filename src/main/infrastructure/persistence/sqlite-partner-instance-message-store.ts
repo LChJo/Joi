@@ -18,7 +18,7 @@ export class SqlitePartnerInstanceMessageStore implements PartnerInstanceMessage
     ).run(instanceId));
   }
 
-  async load(instanceId: string): Promise<unknown[] | null> {
+  async load(instanceId: string, strict = false): Promise<unknown[] | null> {
     const rows = this.database.transaction((connection) => connection.prepare(
       "SELECT message_json FROM partner_instance_messages WHERE instance_id = ? ORDER BY sequence",
     ).all(instanceId)) as { message_json?: unknown }[];
@@ -29,6 +29,7 @@ export class SqlitePartnerInstanceMessageStore implements PartnerInstanceMessage
       try {
         messages.push(JSON.parse(row.message_json));
       } catch {
+        if (strict) throw new Error("workspace_checkpoint_invalid");
         // A corrupt row must not poison the whole conversation; skip it and keep the tail.
       }
     }

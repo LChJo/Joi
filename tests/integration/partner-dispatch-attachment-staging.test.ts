@@ -73,7 +73,7 @@ function makeDelivery(
   const contexts = new SqliteWorkbenchContextRepository(fixture.database);
   return new SqlitePartnerDispatchDelivery({
     agentConversations: new SqliteWorkbenchAgentRepository(fixture.database),
-    attachmentStager: overrides?.attachmentStager ?? new WorkAttachmentStager({ attachments: fixture.attachments, database: fixture.database }),
+    attachmentStager: overrides?.attachmentStager ?? new WorkAttachmentStager({ attachments: fixture.attachments, database: fixture.database, taskDirectory: path.join(fixture.root, "inputs") }),
     clock: fixture.clock,
     contextAssembler: new WorkbenchContextAssembler({
       workbenches: new LegacyLifeStoreAdapter(fixture.database), clock: fixture.clock, ids: fixture.ids, projections: contexts, snapshots: contexts,
@@ -101,18 +101,19 @@ function outboxRecord(outboxId: string, dispatchAttemptId: string, workId: strin
 }
 
 describe("partner dispatch attachment staging", () => {
-  it("stages input attachments into the workspace and lists them in the partner task", async () => {
+  it("AC-WR-06 stages input attachments outside the shared workspace", async () => {
     const fixture = await openFixture();
     try {
       const spy = { calls: [] as unknown[] };
       const delivery = makeDelivery(fixture, spy);
       await delivery.handle(outboxRecord("outbox_1", "attempt_1", "work_1"));
 
-      const stagedPath = path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "screen.png");
+      const stagedPath = path.join(fixture.root, "inputs", "work_1", "joi-attachments", fixture.uploaded.attachmentId, "screen.png");
       expect(new Uint8Array(await readFile(stagedPath))).toEqual(new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]));
+      await expect(readFile(path.join(fixture.workspaceDir, "joi-attachments", fixture.uploaded.attachmentId, "screen.png"))).rejects.toMatchObject({ code: "ENOENT" });
       const request = spy.calls[0] as { request: { taskProjection: string } };
-      expect(request.request.taskProjection).toContain("Attachments from the user's original input are staged in this workspace");
-      expect(request.request.taskProjection).toContain(`joi-attachments/${fixture.uploaded.attachmentId}/screen.png (image/png, 8 bytes)`);
+      expect(request.request.taskProjection).toContain("task's independent input directory");
+      expect(request.request.taskProjection).toContain(stagedPath);
     } finally {
       fixture.database.close();
       await rm(fixture.root, { force: true, recursive: true });

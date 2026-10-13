@@ -62,6 +62,7 @@ function required(row: Row, key: string): string {
 }
 
 function mapStatus(row: Row): WorkbenchAgentStatusDto {
+  if (row.execution_phase === "WRITE_QUEUED") return "WAITING";
   if (row.goal_execution_status === "RUNNING") return "RUNNING";
   if (row.goal_execution_status === "WAITING_INPUT" || row.goal_execution_status === "WAITING_AUTH") return "WAITING";
   if (row.goal_execution_status === "COMPLETED") return "COMPLETED";
@@ -92,6 +93,8 @@ function mapCard(row: Row): WorkbenchAgentCardDto {
   const status = mapStatus(row);
   const engine = row.backing_kind === "A2A_RUN" ? "pi-core" : mapStoredEngine(row.engine, row.cli_protocol);
   return {
+    ...(typeof row.execution_phase === "string" ? { executionPhase: row.execution_phase as WorkbenchAgentCardDto["executionPhase"] & string } : {}),
+    ...(typeof row.wait_reason === "string" ? { waitReason: row.wait_reason as WorkbenchAgentCardDto["waitReason"] & string } : {}),
     agentId: required(row, "agent_id"),
     workbenchId: required(row, "workbench_id"),
     canDelete: row.session_policy === "EPHEMERAL" && terminal(status),
@@ -131,6 +134,10 @@ function cardSelect(goalScoped: boolean): string {
   s.session_policy, s.created_at, r.display_name AS partner_name,
   i.status AS runtime_status, i.engine, i.cli_protocol, i.last_used_at, i.disposal_reason,
   pr.updated_at AS run_updated_at,
+  (SELECT e.phase FROM local_work_execution e JOIN dispatch_attempts ea ON ea.dispatch_attempt_id = e.dispatch_attempt_id
+    WHERE ea.instance_id = s.backing_id AND s.backing_kind = 'LOCAL_INSTANCE' ORDER BY ea.created_at DESC LIMIT 1) AS execution_phase,
+  (SELECT e.wait_reason FROM local_work_execution e JOIN dispatch_attempts ea ON ea.dispatch_attempt_id = e.dispatch_attempt_id
+    WHERE ea.instance_id = s.backing_id AND s.backing_kind = 'LOCAL_INSTANCE' ORDER BY ea.created_at DESC LIMIT 1) AS wait_reason,
   CASE
     WHEN s.backing_kind = 'LOCAL_INSTANCE' AND EXISTS (
       SELECT 1 FROM partner_runs lr JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
