@@ -1,4 +1,5 @@
 import type { RemoteDiagnosticCode } from "../../../shared/remote.js";
+import type { EvolutionModelFailure } from "../../../shared/evolution.js";
 
 export interface RuntimeDiagnosticEventMap {
   "joi.partner.tool_permission_denied": { workId: string; actionId: string; toolName: string; reasonCode: string };
@@ -719,6 +720,11 @@ export interface RuntimeDiagnosticEventMap {
     workbenchId: string;
     /** Bounded identifier for the failure class; the raw message never enters diagnostics. */
     errorKind: string;
+    failure?: EvolutionModelFailure;
+    sourceId?: string;
+    sourceRevisionId?: string;
+    modelId?: string;
+    modelRevisionId?: string;
     /** Structured engine detail when the provider supplied one; absent otherwise. */
     errorDetail?: string;
   };
@@ -727,6 +733,11 @@ export interface RuntimeDiagnosticEventMap {
     callId: string;
     consecutive: number;
     workbenchId: string;
+    failure?: EvolutionModelFailure;
+    sourceId?: string;
+    sourceRevisionId?: string;
+    modelId?: string;
+    modelRevisionId?: string;
   };
   /** Every workbench is paused after too many consecutive invalid responses; recovery is manual. */
   "joi.evolution.breaker_tripped": {

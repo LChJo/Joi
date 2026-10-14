@@ -649,6 +649,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
         Text(_goal.workbenchName),
         Text(_goal.title, style: Theme.of(context).textTheme.headlineSmall),
         Text(statusLabel(_goal.status)),
+        Text(goalProgressLabel(_goal)),
         if (_error != null) Text(_error!),
         if (_text == null && _error == null)
           const LinearProgressIndicator()
@@ -723,7 +724,11 @@ class _GoalDetailPageState extends State<GoalDetailPage>
           ListTile(
             title: Text(agent['partnerName'] as String? ?? '搭档'),
             subtitle: Text(
-              statusLabel(agent['status'] as String? ?? 'UNKNOWN'),
+              executionStatusLabel(
+                status: agent['status'] as String? ?? 'UNKNOWN',
+                executionPhase: agent['executionPhase'] as String?,
+                waitReason: agent['waitReason'] as String?,
+              ),
             ),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => Navigator.push(
@@ -767,6 +772,8 @@ class _AgentRecordPageState extends State<AgentRecordPage>
   String? _cursor;
   String? _error;
   late String _status;
+  String? _executionPhase;
+  String? _waitReason;
   bool _loading = false;
   bool _foreground = true;
   int _generation = 0;
@@ -776,6 +783,8 @@ class _AgentRecordPageState extends State<AgentRecordPage>
   void initState() {
     super.initState();
     _status = widget.agent['status'] as String? ?? 'UNKNOWN';
+    _executionPhase = widget.agent['executionPhase'] as String?;
+    _waitReason = widget.agent['waitReason'] as String?;
     WidgetsBinding.instance.addObserver(this);
     unawaited(_load());
     _timer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -813,6 +822,8 @@ class _AgentRecordPageState extends State<AgentRecordPage>
       final items = <Map<String, dynamic>>[];
       var pages = 0;
       var status = _status;
+      var executionPhase = _executionPhase;
+      var waitReason = _waitReason;
       do {
         final page = await widget.controller.read(
           'agent.conversation',
@@ -825,9 +836,12 @@ class _AgentRecordPageState extends State<AgentRecordPage>
           (page['items'] as List? ?? []).whereType<Map<String, dynamic>>(),
         );
         cursor = page['nextCursor'] as String?;
-        status =
-            (page['agent'] as Map<String, dynamic>?)?['status'] as String? ??
-            status;
+        final agent = page['agent'] as Map<String, dynamic>?;
+        if (agent != null) {
+          status = agent['status'] as String? ?? status;
+          executionPhase = agent['executionPhase'] as String?;
+          waitReason = agent['waitReason'] as String?;
+        }
         pages++;
       } while (!more && cursor != null && pages < _loadedPages);
       setState(() {
@@ -837,6 +851,8 @@ class _AgentRecordPageState extends State<AgentRecordPage>
         }.values.toList();
         _cursor = cursor;
         _status = status;
+        _executionPhase = executionPhase;
+        _waitReason = waitReason;
         _error = null;
         _loadedPages = more ? _loadedPages + 1 : pages;
       });
@@ -865,7 +881,13 @@ class _AgentRecordPageState extends State<AgentRecordPage>
     body: ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        Text(statusLabel(_status)),
+        Text(
+          executionStatusLabel(
+            status: _status,
+            executionPhase: _executionPhase,
+            waitReason: _waitReason,
+          ),
+        ),
         if (_error != null) Text(_error!),
         if (_items.isEmpty)
           const Padding(padding: EdgeInsets.all(20), child: Text('暂无可展示的记录。')),

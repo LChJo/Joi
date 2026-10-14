@@ -28,7 +28,7 @@ it("authenticates evolution settings, validates limits and exposes only safe sta
     const saved = await fetch(url, { method: "PATCH", headers, body: JSON.stringify({ dailyCallLimit: 3 }) });
     expect(saved.status).toBe(200);
     const state: unknown = await saved.json();
-    expect(state).toMatchObject({ dailyCallLimit: 3, callsUsedToday: 0, versions: [] });
+    expect(state).toMatchObject({ paused: false, dailyCallLimit: 3, callsUsedToday: 0, versions: [] });
     expect(JSON.stringify(state)).not.toContain("private");
   } finally { await listeners.close(); await fixture.close(); }
 });

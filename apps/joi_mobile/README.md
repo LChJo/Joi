@@ -19,3 +19,5 @@ release APK 输出到 `release-joi-mobile/joi-android-0.1.0-arm64.apk`。当前 
 构建入口会先同步桌面图标和移动品牌素材。生成器 `scripts/render-mobile-brand.cjs` 从桌面主图、侧栏头像与 SVG 字标派生 Android / Flutter 资产，兼容图标采用无嵌入色彩配置的位图编码，保持安卓资源压缩后的显示颜色。
 
 预览与 APK 校验见 [品牌交付记录](../../docs/design/joi-android-c-package-verification.md)。
+
+任务卡与详情区分正在执行与资源排队，显示“等待执行容量”“等待工作区可读”“等待写入”；搭档记录显示分析与写入阶段，前台刷新后及时反映阶段变化。旧主机未提供这些字段时保留普通进度显示；这些等待不要求用户回答，也不代表任务完成。

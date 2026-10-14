@@ -58,6 +58,11 @@ export interface EvolutionVersionDto {
 }
 /** The four stages a batch moves through, in order. Shared so the panel and the ports cannot drift. */
 export type EvolutionPhase = "DEVELOP" | "PROPOSE" | "VALIDATE" | "EVALUATE";
+export interface EvolutionModelFailure {
+  kind: "provider_error" | "timeout" | "aborted" | "response_truncated" | "no_tool_call" | "multiple_tool_calls" | "unsupported_tool";
+  stopReason?: "pending" | "stop" | "length" | "toolUse" | "error" | "aborted" | "deferred";
+  toolCallCount: number;
+}
 export type EvolutionDryRunOutcome = "promoted" | "rejected" | "truncated" | "not_started";
 export interface EvolutionDryRunPhaseDto {
   phase: EvolutionPhase;
@@ -112,6 +117,7 @@ export interface EvolutionBatchRecordDto {
   calls: number;
   tokens: number | null;
   revisionId: string | null;
+  failure?: EvolutionModelFailure;
 }
 export interface EvolutionOverviewDto {
   workbenches: number;
@@ -126,6 +132,9 @@ export interface EvolutionOverviewDto {
 }
 export interface EvolutionStatusDto {
   workbenchId: string;
+  /** Missing only on older HTTP peers; absence does not establish a paused state. */
+  paused?: boolean;
+  failure?: EvolutionModelFailure;
   dailyCallLimit: number;
   callsUsedToday: number;
   evidenceCount: number;

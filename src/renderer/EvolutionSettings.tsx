@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import type { DigitalLifeApi } from "./api";
-import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
+import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionModelFailure, EvolutionOverviewDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
 import { EVOLUTION_BUDGET_PRESETS, EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../shared/evolution";
 
 const labels: Record<EvolutionReason, string> = {
@@ -10,8 +10,18 @@ const labels: Record<EvolutionReason, string> = {
   insufficient_samples: "评测样本不足，保留当前策略", insufficient_gain: "改善幅度不足，保留当前策略", quality_regression: "候选质量下降，已拒绝",
   cost_regression: "候选调用成本超限，已拒绝", hard_violation: "候选违反完成约束，已拒绝", invalid_evaluation: "评测无效，保留当前策略",
   invalid_candidate: "候选缺少充分证据，保留当前策略", call_failed: "后台调用未完成，保留当前策略",
-  model_response_invalid: "模型响应不符合评测要求，已暂停自动进化；请检查模型源后重新启用",
+  model_response_invalid: "模型响应不符合评测要求，本轮已终止",
 };
+const failureLabels: Record<EvolutionModelFailure["kind"], string> = {
+  provider_error: "模型源调用失败", timeout: "模型源调用超时", aborted: "评测调用已取消",
+  response_truncated: "模型输出被截断", no_tool_call: "未返回工具调用",
+  multiple_tool_calls: "返回了多个工具调用", unsupported_tool: "返回了不支持的工具调用",
+};
+function statusLabel(status: EvolutionStatusDto): string {
+  if (status.reason !== "model_response_invalid") return labels[status.reason];
+  return status.paused === true ? "模型响应不符合评测要求，已暂停自动进化；请检查模型源后重新启用"
+    : "模型响应不符合评测要求，本轮已终止；检查模型源后可立即重新评测";
+}
 const presetLabels: Record<EvolutionBudgetPresetKey, string> = { off: "关", low: "低", medium: "中", high: "高" };
 const presetHints: Record<EvolutionBudgetPresetKey, string> = {
   off: "只记录经验，不发起任何模型评测。",
@@ -80,11 +90,12 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
       <p>已启用 {overview.enabled} / {overview.workbenches} · 评测中 {overview.evaluating} · 灰度中 {overview.canary} · 生效策略 {overview.active}</p>
       <p className="field-hint">策略相关证据池：可评价 {overview.poolEvaluable} 个，其中失败 {overview.poolVerificationFailed} 个。{overview.revalidationRequired > 0 ? `有 ${String(overview.revalidationRequired)} 个工作台需要重新验证。` : ""}</p>
       {overview.batches.length === 0 ? <p className="field-hint">尚无真实评测批次。</p> : <ul>{overview.batches.slice(0, 5).map((batch) => <li key={`${batch.workbenchId}:${batch.batchId}:${batch.finishedAt ?? "running"}`}>
-        {batch.scope === "GLOBAL" ? "全局基线" : "工作台覆盖"} · {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)} 次调用{batch.tokens === null ? "" : ` / ${String(batch.tokens)} tokens`}
+        {batch.scope === "GLOBAL" ? "全局基线" : "工作台覆盖"} · {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)} 次调用 / {batch.tokens === null ? "Token 用量未知" : `${String(batch.tokens)} tokens`}{batch.failure === undefined ? "" : ` · ${failureLabels[batch.failure.kind]}`}
       </li>)}</ul>}
     </div>}
     {status === null ? <p>正在读取进化状态…</p> : <>
-      <p>{labels[status.reason]}</p>
+      <p>{statusLabel(status)}</p>
+      {status.failure === undefined ? null : <p className="field-hint">{failureLabels[status.failure.kind]}</p>}
       <fieldset className="evolution-budget-presets" disabled={saving}>
         <legend>每日模型调用上限</legend>
         <div className="evolution-budget-options">
@@ -101,11 +112,11 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
       {status.canaryRevisionId == null ? null : <p className="field-hint" role="status">候选正在生产灰度：稳定分配一小部分新目标，至少收集 5 个候选与 5 个对照结果后才会正式生效。</p>}
       {status.revalidationRequired !== true ? null : <p className="field-hint" role="status">当前模型固定版本与策略评测版本不一致，策略已退回基线，重新评测前不会静默沿用。</p>}
       <p className="field-hint">每轮评测每天最多启动一个候选；被拒绝后需要重新积累触发证据，或用下面的按钮立即再试。</p>
-      <button className="button ghost" type="button" disabled={saving} onClick={() => void runNow()}>立即评测一次</button>
+      <button className="button ghost" type="button" disabled={saving || status.paused === true} onClick={() => void runNow()}>立即评测一次</button>
       {status.runRequestedAt === null ? null : <p className="field-hint" role="status">已排入队列（{status.runRequestedAt.slice(0, 16).replace("T", " ")} 请求）：等待工作台空闲。</p>}
       {status.lastVerdict === null ? null : <p className="field-hint">上一轮裁决：{labels[status.lastVerdict.reason]} · 原策略通过 {status.lastVerdict.baselineSuccesses} 次 / 候选通过 {status.lastVerdict.candidateSuccesses} 次（共 {status.lastVerdict.evaluatedRuns} 次评测）</p>}
       {(status.batchHistory ?? []).length === 0 ? null : <><h3>真实批次历史</h3><ul>{(status.batchHistory ?? []).slice(0, 10).map((batch) => <li key={`${batch.batchId}:${batch.finishedAt ?? "running"}`}>
-        {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)} 次调用{batch.tokens === null ? "" : ` / ${String(batch.tokens)} tokens`}
+        {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)} 次调用 / {batch.tokens === null ? "Token 用量未知" : `${String(batch.tokens)} tokens`}{batch.failure === undefined ? "" : ` · ${failureLabels[batch.failure.kind]}`}
       </li>)}</ul></>}
       <h3>手工干跑</h3>
       <p className="field-hint">用确定性替身把整条评测链路走一遍，不消耗任何真实模型调用，也不会改动上面的状态和策略。用来在证据攒够之前确认链路本身是通的。</p>

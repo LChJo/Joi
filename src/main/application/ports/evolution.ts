@@ -1,4 +1,15 @@
-import type { EvolutionBatchRecordDto, EvolutionFailureCause, EvolutionLastVerdict, EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionScope, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
+import type { EvolutionBatchRecordDto, EvolutionFailureCause, EvolutionLastVerdict, EvolutionModelFailure, EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionScope, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
+import { DomainError } from "../../domain/errors.js";
+
+/** Failure facts cross the model port without provider messages or response bodies. */
+export class EvolutionModelCallError extends DomainError {
+  readonly tokens: number | null;
+  constructor(readonly failure: EvolutionModelFailure, tokens: number | null) {
+    super(failure.kind === "aborted" ? "evolution_model_call_aborted"
+      : failure.kind === "provider_error" || failure.kind === "timeout" ? "evolution_model_call_failed" : "evolution_response_invalid", "Evolution model call failed.");
+    this.tokens = tokens !== null && Number.isSafeInteger(tokens) && tokens >= 0 ? tokens : null;
+  }
+}
 
 export interface EvolutionEvidence {
   goalId: string;
@@ -46,6 +57,7 @@ export interface EvolutionBatch {
   calls?: number;
   tokens?: number;
   tokensComplete?: boolean;
+  failure?: EvolutionModelFailure;
   parentRevisionId: string | null;
   strategy: EvolutionStrategy;
   pin: EvolutionSourcePin;
@@ -71,6 +83,7 @@ export interface EvolutionState {
   batch: EvolutionBatch | null;
   call: EvolutionCall | null;
   paused: boolean;
+  failure?: EvolutionModelFailure;
   /** Consecutive infrastructure failures against the current batch; capped before the batch is abandoned. Optional: absent in state persisted before this field existed. */
   callFailures?: number;
   /** UTC day parked after a failure; the batch (if any) resumes on a later day. */

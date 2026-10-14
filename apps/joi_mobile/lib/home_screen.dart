@@ -29,6 +29,51 @@ String statusLabel(String value) =>
     }[value] ??
     '状态更新中';
 
+const _waitLabels = {
+  'CAPACITY': '等待执行容量',
+  'WORKSPACE_READ': '等待工作区可读',
+  'WORKSPACE_WRITE': '等待写入',
+};
+
+String executionStatusLabel({
+  required String status,
+  String? executionPhase,
+  String? waitReason,
+}) {
+  if (waitReason == 'CAPACITY') return _waitLabels['CAPACITY']!;
+  return switch (executionPhase) {
+    'READ_QUEUED' => _waitLabels['WORKSPACE_READ']!,
+    'READ_RUNNING' => '分析中',
+    'WRITE_QUEUED' => _waitLabels['WORKSPACE_WRITE']!,
+    'WRITE_RUNNING' => '写入执行中',
+    _ => statusLabel(status),
+  };
+}
+
+String goalProgressLabel(RemoteGoalCard goal) {
+  final parts = [
+    '${goal.agentCount} 位搭档',
+    '${goal.completedWork}/${goal.totalWork} 已完成',
+  ];
+  if (goal.failedWork > 0) parts.add('${goal.failedWork} 失败');
+  if (goal.executingWork != null || goal.resourceWaitingWork != null) {
+    if ((goal.executingWork ?? 0) > 0) {
+      parts.add('${goal.executingWork} 执行中');
+    }
+    if ((goal.resourceWaitingWork ?? 0) > 0) {
+      parts.add('${goal.resourceWaitingWork} 等待中');
+    }
+    for (final reason in goal.waitingReasons) {
+      final label = _waitLabels[reason];
+      if (label != null) parts.add(label);
+    }
+  } else if (goal.activeWork > 0) {
+    parts.add('${goal.activeWork} 进行中');
+  }
+  if (goal.stage != null) parts.add(statusLabel(goal.stage!));
+  return parts.join(' · ');
+}
+
 /// The tappable part of a goal card.
 ///
 /// Shared with the archive page, which asks for the [compact] shape: a filed-away goal is not
@@ -102,9 +147,7 @@ class GoalCardBody extends StatelessWidget {
             : (goal.completedWork / goal.totalWork).clamp(0, 1),
       ),
       const SizedBox(height: 8),
-      Text(
-        '${goal.agentCount} 位搭档 · ${goal.completedWork}/${goal.totalWork} 已完成${goal.stage == null ? '' : ' · ${statusLabel(goal.stage!)}'}',
-      ),
+      Text(goalProgressLabel(goal)),
       if (goal.summary != null &&
           (!supportsHome || !goal.needsContinuationDecision))
         Padding(
@@ -119,10 +162,7 @@ class GoalCardBody extends StatelessWidget {
           ),
         ),
       if (supportsHome)
-        const Padding(
-          padding: EdgeInsets.only(top: 8),
-          child: Text('查看详情 ›'),
-        ),
+        const Padding(padding: EdgeInsets.only(top: 8), child: Text('查看详情 ›')),
     ],
   );
 }
@@ -141,7 +181,10 @@ class _WorkbenchOrb extends StatelessWidget {
       width: 28,
       height: 28,
       alignment: Alignment.center,
-      decoration: BoxDecoration(shape: BoxShape.circle, color: scheme.primaryContainer),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: scheme.primaryContainer,
+      ),
       child: Text(
         name.isEmpty ? '·' : name.substring(0, 1),
         style: TextStyle(
@@ -310,7 +353,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
             onPressed: () => Navigator.push(
               context,
               MaterialPageRoute(
-                builder: (_) => ArchivedGoalsPage(controller: widget.controller),
+                builder: (_) =>
+                    ArchivedGoalsPage(controller: widget.controller),
               ),
             ),
           ),

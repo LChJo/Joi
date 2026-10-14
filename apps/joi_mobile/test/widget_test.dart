@@ -14,6 +14,8 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
   final List<Map<String, String>> createdWorkbenches = [];
   bool failSend = false;
   Map<String, dynamic>? goalDetail;
+  Map<String, dynamic>? goalAgents;
+  Map<String, dynamic>? agentConversation;
   final RemoteViewState _state;
 
   @override
@@ -111,22 +113,30 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
               'workbench': {'workbenchId': 'b', 'name': '研究'},
             },
           },
-    'goal.agents' => {
-      'items': [
-        {'agentId': 'agent', 'partnerName': '研究搭档', 'status': 'COMPLETED'},
-      ],
-    },
-    'agent.conversation' => {
-      'agent': {'status': 'COMPLETED'},
-      'items': [
-        {
-          'entryId': 'entry',
-          'kind': 'MARKDOWN',
-          'role': 'AGENT',
-          'text': '完整搭档工作记录',
-        },
-      ],
-    },
+    'goal.agents' =>
+      goalAgents ??
+          {
+            'items': [
+              {
+                'agentId': 'agent',
+                'partnerName': '研究搭档',
+                'status': 'COMPLETED',
+              },
+            ],
+          },
+    'agent.conversation' =>
+      agentConversation ??
+          {
+            'agent': {'status': 'COMPLETED'},
+            'items': [
+              {
+                'entryId': 'entry',
+                'kind': 'MARKDOWN',
+                'role': 'AGENT',
+                'text': '完整搭档工作记录',
+              },
+            ],
+          },
     _ => {},
   };
 }
@@ -141,6 +151,235 @@ Future<void> tapGoalAction(WidgetTester tester, String label) async {
 }
 
 void main() {
+  testWidgets(
+    'shows current execution counts and resource waits on a narrow home card after restore',
+    (tester) async {
+      tester.view.physicalSize = const Size(360, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final goal = RemoteGoalCard.fromJson({
+        'goalId': 'g',
+        'title': '任务',
+        'status': 'RUNNING',
+        'agentCount': 5,
+        'workbench': {'name': '工程'},
+        'work': {
+          'active': 5,
+          'completed': 1,
+          'total': 6,
+          'executing': 2,
+          'resourceWaiting': 3,
+          'waitingReasons': [
+            'CAPACITY',
+            'WORKSPACE_READ',
+            'WORKSPACE_WRITE',
+            'CAPACITY',
+            'FUTURE_REASON',
+          ],
+        },
+      }).withArchivedAt(null);
+      final controller = FakeRemoteController(
+        RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+          goals: [goal],
+        ),
+      );
+      await tester.pumpWidget(JoiMobileApp(controller: controller));
+      await tester.pumpAndSettle();
+      for (final label in ['2 执行中', '3 等待中', '等待执行容量', '等待工作区可读', '等待写入']) {
+        expect(find.textContaining(label), findsOneWidget);
+      }
+      expect(find.textContaining('FUTURE_REASON'), findsNothing);
+      expect(find.textContaining('5 进行中'), findsNothing);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets(
+    'uses aggregate active counts when an older host omits execution fields',
+    (tester) async {
+      final controller = FakeRemoteController(
+        RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+          goals: [
+            RemoteGoalCard.fromJson({
+              'goalId': 'g',
+              'title': '任务',
+              'status': 'RUNNING',
+              'work': {'active': 2, 'completed': 0, 'total': 2},
+            }),
+          ],
+        ),
+      );
+      await tester.pumpWidget(JoiMobileApp(controller: controller));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2 进行中'), findsOneWidget);
+      expect(find.textContaining('等待写入'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets('treats explicit zero execution counts as current host data', (
+    tester,
+  ) async {
+    final controller = FakeRemoteController(
+      RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+        goals: [
+          RemoteGoalCard.fromJson({
+            'goalId': 'g',
+            'title': '任务',
+            'status': 'REVIEWING',
+            'work': {
+              'active': 2,
+              'completed': 0,
+              'total': 2,
+              'executing': 0,
+              'resourceWaiting': 0,
+            },
+          }),
+        ],
+      ),
+    );
+    await tester.pumpWidget(JoiMobileApp(controller: controller));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('2 进行中'), findsNothing);
+    expect(find.textContaining('0 执行中'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+  for (final sample in [
+    ['READ_QUEUED', 'WORKSPACE_READ', '等待工作区可读'],
+    ['READ_RUNNING', '', '分析中'],
+    ['WRITE_QUEUED', 'WORKSPACE_WRITE', '等待写入'],
+    ['WRITE_RUNNING', '', '写入执行中'],
+    ['WRITE_QUEUED', 'CAPACITY', '等待执行容量'],
+    ['FUTURE_PHASE', 'FUTURE_REASON', '执行中'],
+  ]) {
+    testWidgets(
+      'agent record displays ${sample[2]} from the host execution projection',
+      (tester) async {
+        final agent = {
+          'agentId': 'a',
+          'partnerName': '搭档',
+          'status': 'RUNNING',
+          'executionPhase': sample[0],
+          'waitReason': sample[1],
+        };
+        final controller =
+            FakeRemoteController(
+                const RemoteViewState(
+                  connection: RemoteConnectionState.connected,
+                  supportsHome: true,
+                ),
+              )
+              ..agentConversation = {
+                'agent': agent,
+                'items': <Map<String, dynamic>>[],
+              };
+        await tester.pumpWidget(
+          MaterialApp(
+            home: AgentRecordPage(
+              controller: controller,
+              goalId: 'g',
+              agent: agent,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text(sample[2]), findsOneWidget);
+        expect(find.textContaining('FUTURE_PHASE'), findsNothing);
+        expect(find.textContaining('FUTURE_REASON'), findsNothing);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+  testWidgets(
+    'shows waits in goal detail and refreshes the agent phase through completion',
+    (tester) async {
+      final goal = RemoteGoalCard.fromJson({
+        'goalId': 'g',
+        'title': '任务',
+        'status': 'ARRANGED',
+        'work': {
+          'active': 2,
+          'completed': 0,
+          'total': 2,
+          'executing': 0,
+          'resourceWaiting': 2,
+          'waitingReasons': ['WORKSPACE_WRITE'],
+        },
+      });
+      final agent = {
+        'agentId': 'a',
+        'partnerName': '同步搭档',
+        'status': 'WAITING',
+        'executionPhase': 'WRITE_QUEUED',
+        'waitReason': 'WORKSPACE_WRITE',
+      };
+      final controller =
+          FakeRemoteController(
+              const RemoteViewState(
+                connection: RemoteConnectionState.connected,
+                supportsHome: true,
+              ),
+            )
+            ..goalDetail = {
+              'text': '合成任务正文',
+              'goal': {
+                'goalId': 'g',
+                'title': '任务',
+                'status': 'ARRANGED',
+                'work': {
+                  'active': 2,
+                  'completed': 0,
+                  'total': 2,
+                  'executing': 0,
+                  'resourceWaiting': 2,
+                  'waitingReasons': ['WORKSPACE_WRITE'],
+                },
+              },
+            }
+            ..goalAgents = {
+              'items': [agent],
+            }
+            ..agentConversation = {
+              'agent': agent,
+              'items': <Map<String, dynamic>>[],
+            };
+      await tester.pumpWidget(
+        MaterialApp(
+          home: GoalDetailPage(controller: controller, initial: goal),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.textContaining('2 等待中'), findsOneWidget);
+      expect(find.text('等待写入'), findsOneWidget);
+      await tester.ensureVisible(find.text('同步搭档'));
+      await tester.tap(find.text('同步搭档'));
+      await tester.pumpAndSettle();
+      expect(find.text('等待写入'), findsOneWidget);
+      controller.agentConversation = {
+        'agent': {'status': 'RUNNING', 'executionPhase': 'WRITE_RUNNING'},
+        'items': <Map<String, dynamic>>[],
+      };
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('写入执行中'), findsOneWidget);
+      expect(find.text('等待写入'), findsNothing);
+      controller.agentConversation = {
+        'agent': {'status': 'COMPLETED'},
+        'items': <Map<String, dynamic>>[],
+      };
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(find.text('已完成'), findsOneWidget);
+      expect(find.text('写入执行中'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
   testWidgets(
     'reconnecting offers diagnostics instead of a misleading empty feed',
     (tester) async {
@@ -334,7 +573,9 @@ void main() {
     expect(controller.actions.last, containsPair('inputId', 'g'));
   });
 
-  testWidgets('offers only cancellation on a running goal card', (tester) async {
+  testWidgets('offers only cancellation on a running goal card', (
+    tester,
+  ) async {
     final controller = FakeRemoteController(
       const RemoteViewState(
         connection: RemoteConnectionState.connected,
@@ -397,9 +638,7 @@ void main() {
     // a list of things put away harder to scan, and the 归档 time takes their place.
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(
-      find.text(
-        '${DateTime.parse('2026-10-09T09:00:00.000Z').toLocal()} 归档',
-      ),
+      find.text('${DateTime.parse('2026-10-09T09:00:00.000Z').toLocal()} 归档'),
       findsOneWidget,
     );
     await tester.tap(find.byTooltip('更多操作'));

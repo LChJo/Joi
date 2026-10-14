@@ -1,11 +1,18 @@
-import { Type } from "@earendil-works/pi-ai";
-import { DomainError } from "../../domain/errors.js";
-import type { EvolutionModel, EvolutionSourcePin } from "../../application/ports/evolution.js";
+import { Type, type AssistantMessage } from "@earendil-works/pi-ai";
+import { EvolutionModelCallError, type EvolutionModel, type EvolutionSourcePin } from "../../application/ports/evolution.js";
+import type { EvolutionModelFailure } from "../../../shared/evolution.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels } from "./pi-usage.js";
 import { normalizePiUsage } from "../usage/sdk-usage.js";
+
+function safeStopReason(value: unknown): EvolutionModelFailure["stopReason"] {
+  switch (value) {
+    case "pending": case "stop": case "length": case "toolUse": case "error": case "aborted": case "deferred": return value;
+    default: return undefined;
+  }
+}
 
 export class PiEvolutionModel implements EvolutionModel {
   constructor(private readonly dependencies: { resolver: PiConfiguredModelResolver; sources: Pick<ReasoningSourceSelector, "selectInitial">; usage?: UsageRecorder }) {}
@@ -23,16 +30,38 @@ export class PiEvolutionModel implements EvolutionModel {
       parameters: Type.Object({ strategy: Type.Object({ context: Type.Union([Type.Literal("baseline"), Type.Literal("requirements_first"), Type.Literal("open_questions_first")]), completion: Type.Union([Type.Literal("baseline"), Type.Literal("evidence_matrix"), Type.Literal("contradiction_check")]) }), fixes: Type.Array(Type.String(), { maxItems: 10 }), risks: Type.Array(Type.String(), { maxItems: 10 }) }),
     }] : [{ name: "read_evidence", description: "Read one synthetic evidence record by ID.", parameters: Type.Object({ evidenceId: Type.String() }) },
       { name: "finish", description: "Submit the completion decision and evidence IDs read.", parameters: Type.Object({ decision: Type.Union([Type.Literal("complete"), Type.Literal("continue"), Type.Literal("wait")]), evidenceIds: Type.Array(Type.String(), { maxItems: 10 }) }) }];
-    const response = await trackPiModels(models, this.dependencies.usage, () => ({ engine: "pi", purpose: "evolution", sourceId: input.pin.sourceId, modelId: input.pin.modelId, ...(input.workbenchId === undefined ? {} : { workbenchId: input.workbenchId }) })).completeSimple(model, { systemPrompt: input.systemPrompt,
+    const instruction = "Return exactly one tool call per response. Do not answer in plain text. After read_evidence, stop and wait for its observation before requesting another record or calling finish.";
+    let response: AssistantMessage;
+    try {
+      response = await trackPiModels(models, this.dependencies.usage, () => ({ engine: "pi", purpose: "evolution", sourceId: input.pin.sourceId, modelId: input.pin.modelId, ...(input.workbenchId === undefined ? {} : { workbenchId: input.workbenchId }) })).completeSimple(model, { systemPrompt: `${input.systemPrompt}\n${instruction}`,
       messages: [{ role: "user", content: input.prompt, timestamp: Date.now() }], tools,
-    }, { maxTokens: 2048, signal, headers: { "Idempotency-Key": input.idempotencyId }, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }) });
+      }, { maxTokens: 2048, signal, headers: { "Idempotency-Key": input.idempotencyId }, ...(thinkingLevel === "off" ? {} : { reasoning: thinkingLevel }),
+        onPayload: (payload: unknown) => {
+          if (payload === null || typeof payload !== "object" || Array.isArray(payload)) return;
+          // Auto selection preserves thinking compatibility; the prompt requires one call and
+          // the wire constraint prevents the provider from batching independent evidence reads.
+          if (model.api === "anthropic-messages") return { ...payload, tool_choice: { type: "auto", disable_parallel_tool_use: true } };
+          if (model.api === "openai-responses" || model.api === "openai-completions") return { ...payload, parallel_tool_calls: false };
+          return;
+        },
+      });
+    } catch {
+      throw new EvolutionModelCallError({ kind: input.signal?.aborted === true ? "aborted" : signal.aborted ? "timeout" : "provider_error", toolCallCount: 0 }, null);
+    }
+    const usage = normalizePiUsage(response.usage);
+    const tokens = usage === null ? null : usage.input + usage.output;
     const calls = response.content.filter((block) => block.type === "toolCall");
     const call = calls[0];
-    // A typed code, not a bare Error: the service's failure classification routes this to a
-    // model-quality retry path instead of the infrastructure park-and-retry one.
-    if (calls.length !== 1 || call === undefined || !tools.some((tool) => tool.name === call.name)) throw new DomainError("evolution_response_invalid", "The model did not answer with exactly one supported tool call.");
-    const usage = normalizePiUsage(response.usage);
+    const kind: EvolutionModelFailure["kind"] | null = input.signal?.aborted === true ? "aborted"
+      : signal.aborted ? "timeout" : response.stopReason === "error" || response.stopReason === "deferred" || response.stopReason === "pending" ? "provider_error"
+        : response.stopReason === "aborted" ? "aborted" : response.stopReason === "length" ? "response_truncated"
+          : calls.length === 0 ? "no_tool_call" : calls.length > 1 ? "multiple_tool_calls"
+            : call === undefined || !tools.some((tool) => tool.name === call.name) ? "unsupported_tool" : null;
+    const stopReason = safeStopReason(response.stopReason);
+    if (kind !== null) throw new EvolutionModelCallError({ kind, toolCallCount: calls.length,
+      ...(stopReason === undefined ? {} : { stopReason }) }, tokens);
+    if (call === undefined) throw new EvolutionModelCallError({ kind: "no_tool_call", toolCallCount: 0 }, tokens);
     return { value: input.mode === "proposal" ? call.arguments : { ...call.arguments, action: call.name },
-      tokens: usage === null ? null : usage.input + usage.output };
+      tokens };
   }
 }

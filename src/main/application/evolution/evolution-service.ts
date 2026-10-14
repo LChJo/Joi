@@ -2,7 +2,7 @@ import { DomainError } from "../../domain/errors.js";
 import { baselineStrategy, composeStrategyInstructions, parseStrategy, promotionDecision } from "../../domain/evolution/strategy.js";
 import { EVOLUTION_EVALUATOR_VERSION, evolutionScenarios, scenarioPrompt, simulateAction } from "../../domain/evolution/scenarios.js";
 import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD, EVOLUTION_HANDLE_TIME_BUDGET_MS, EVOLUTION_MAX_STEPS_PER_HANDLE, EVOLUTION_MONITOR_REVERT_THRESHOLD, EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT, EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT, EVOLUTION_RUN_NOW_TTL_MILLIS, type EvolutionBatchRecordDto, type EvolutionOverviewDto, type EvolutionReason, type EvolutionScope, type EvolutionStatusDto } from "../../../shared/evolution.js";
-import type { EvolutionBatch, EvolutionEvidence, EvolutionModel, EvolutionRevision, EvolutionRollout, EvolutionSourcePin, EvolutionState, EvolutionStore } from "../ports/evolution.js";
+import { EvolutionModelCallError, type EvolutionBatch, type EvolutionEvidence, type EvolutionModel, type EvolutionRevision, type EvolutionRollout, type EvolutionSourcePin, type EvolutionState, type EvolutionStore } from "../ports/evolution.js";
 import { emitRuntimeDiagnostic, runtimeDiagnosticErrorCode, runtimeDiagnosticErrorDetail, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
 import { buildJoiSystemPrompt } from "../joi/joi-system-prompt.js";
 
@@ -21,7 +21,24 @@ const dayOf = (now: string) => now.slice(0, 10); // Persisted UTC accounting day
 function batchRecord(batch: EvolutionBatch, reason: EvolutionReason, finishedAt: string | null): EvolutionBatchRecordDto {
   return { batchId: batch.id, workbenchId: batch.workbenchId ?? "", scope: batch.scope ?? "WORKBENCH", phase: batch.phase,
     startedAt: batch.startedAt ?? finishedAt ?? "", finishedAt, reason, calls: batch.calls ?? 0,
-    tokens: batch.tokensComplete === true ? batch.tokens ?? 0 : null, revisionId: batch.revisionId ?? null };
+    tokens: batch.tokensComplete === true ? batch.tokens ?? 0 : null, revisionId: batch.revisionId ?? null,
+    ...(batch.failure === undefined ? {} : { failure: batch.failure }) };
+}
+function projectBatchRecord(record: EvolutionBatchRecordDto): EvolutionBatchRecordDto {
+  // A failed legacy batch without failure facts cannot establish zero provider consumption.
+  return record.failure === undefined && record.calls > 0 && record.tokens === 0
+    && (record.reason === "model_response_invalid" || record.reason === "call_failed") ? { ...record, tokens: null } : record;
+}
+function chargeCallTokens(state: EvolutionState, batchId: string, tokens: number | null): void {
+  if (state.batch?.id === batchId) {
+    if (tokens === null) state.batch.tokensComplete = false;
+    else state.batch.tokens = (state.batch.tokens ?? 0) + tokens;
+    return;
+  }
+  // A user can finish a batch while its provider request is still returning. Its ledger must
+  // retain that consumption without changing the user's verdict or starting another batch.
+  const record = state.batchHistory?.find((entry) => entry.batchId === batchId);
+  if (record !== undefined) record.tokens = record.tokens === null || tokens === null ? null : record.tokens + tokens;
 }
 function finishBatch(state: EvolutionState, reason: EvolutionReason, now: string): void {
   const batch = state.batch;
@@ -124,7 +141,7 @@ export class EvolutionService {
     const revisions = states.flatMap((state) => state.revisions);
     const pool = this.dependencies.store.evidenceTotals(this.#globalEvidenceSince());
     const current = states.flatMap((state) => state.batch === null ? [] : [batchRecord(state.batch, state.reason, null)]);
-    const history = states.flatMap((state) => state.batchHistory ?? []);
+    const history = states.flatMap((state) => (state.batchHistory ?? []).map(projectBatchRecord));
     return { workbenches: ids.length, enabled: states.filter((state) => !state.paused && state.dailyCallLimit > 0).length,
       evaluating: current.length, canary: revisions.filter((revision) => revision.status === "CANARY").length,
       active: revisions.filter((revision) => revision.status === "ACTIVE").length,
@@ -148,7 +165,7 @@ export class EvolutionService {
     const canary = this.#applicableCanary(workbenchId);
     const effective = this.#effectiveActive(workbenchId);
     const capReached = state.batch === null && state.revisions.length >= 30;
-    return { workbenchId, dailyCallLimit: state.dailyCallLimit, callsUsedToday: used, evidenceCount: evidence.length,
+    return { workbenchId, paused: state.paused, ...(state.failure === undefined ? {} : { failure: state.failure }), dailyCallLimit: state.dailyCallLimit, callsUsedToday: used, evidenceCount: evidence.length,
       evaluableCount: evidence.filter(evaluable).length, activeRevisionId: state.activeRevisionId,
       globalRevisionId: global?.revision.revisionId ?? null, canaryRevisionId: canary?.revision.revisionId ?? null,
       activeEffective: effective !== undefined && state.revalidationRequired !== true, revalidationRequired: state.revalidationRequired === true,
@@ -157,14 +174,14 @@ export class EvolutionService {
       runRequestedAt: state.runRequestedAt ?? null,
       lastVerdict: state.lastVerdict ?? null,
       currentBatch: state.batch === null ? null : batchRecord(state.batch, state.reason, null),
-      batchHistory: (state.batchHistory ?? []).slice(0, 50),
+      batchHistory: (state.batchHistory ?? []).slice(0, 50).map(projectBatchRecord),
       versions: state.revisions.slice(-30).reverse().map(({ revisionId, parentRevisionId, module, status, scope, createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns }) =>
         ({ revisionId, parentRevisionId, module, status, ...(scope === undefined ? {} : { scope }), createdAt, reason, baselineSuccesses, candidateSuccesses, evaluatedRuns })),
     };
   }
   configure(workbenchId: string, dailyCallLimit: number): EvolutionStatusDto {
     if (!Number.isInteger(dailyCallLimit) || dailyCallLimit < 0 || dailyCallLimit > 10_000) throw new DomainError("evolution_budget_invalid", "Daily call limit must be an integer between 0 and 10000.");
-    this.dependencies.store.update(workbenchId, (state) => { state.dailyCallLimit = dailyCallLimit; state.paused = false; if (state.reason === "disabled" || state.reason === "rolled_back" || state.reason === "model_response_invalid") state.reason = "collecting"; });
+    this.dependencies.store.update(workbenchId, (state) => { state.dailyCallLimit = dailyCallLimit; state.paused = false; delete state.failure; if (state.reason === "disabled" || state.reason === "rolled_back" || state.reason === "model_response_invalid") state.reason = "collecting"; });
     return this.status(workbenchId);
   }
   /**
@@ -309,6 +326,7 @@ export class EvolutionService {
         if (state.call !== null && state.call.state !== "DONE" && !this.#running.has(id)) this.dependencies.store.update(id, (s) => {
           // Unknown provider consumption remains charged. A restart never reuses a claimed call.
           required(s.call).state = "DONE";
+          if (s.batch !== null) s.batch.tokensComplete = false;
           // Restart just the interrupted simulation attempt; completed trials remain reusable.
           // The abandoned request remains charged in the daily ledger and the outbox.
           if (s.batch?.phase !== "PROPOSE" && s.batch?.rollouts.at(-1)?.success === undefined) s.batch?.rollouts.pop();
@@ -515,13 +533,15 @@ export class EvolutionService {
     return state.batch !== null;
   }
   /** Read back after the transaction commits, so the log reflects persisted state. */
-  #emitCallFailure(id: string, callId: string | null, error: unknown): void {
+  #emitCallFailure(id: string, callId: string | null, error: unknown, pin?: EvolutionSourcePin): void {
     const state = this.dependencies.store.read(id);
     const detail = runtimeDiagnosticErrorDetail(error);
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.call_failed", {
       workbenchId: id, callId: callId ?? "unknown", consecutiveFailures: state.callFailures ?? 0,
       parkedDay: state.parkedDay ?? dayOf(this.dependencies.now()),
       errorKind: runtimeDiagnosticErrorCode(error),
+      ...(pin ?? {}),
+      ...(error instanceof EvolutionModelCallError ? { failure: error.failure } : {}),
       ...(detail === undefined ? {} : { errorDetail: detail }),
     });
   }
@@ -580,6 +600,7 @@ export class EvolutionService {
         // the previous batch and says nothing about the new one.
         state.runRequestedAt = null;
         state.responseInvalidStreak = 0;
+        delete state.failure;
       }
       if (JSON.stringify(state.batch.pin) !== JSON.stringify(pin) || state.batch.evaluatorVersion !== EVOLUTION_EVALUATOR_VERSION) { finishBatch(state, "model_changed", now); return null; }
       const batch = state.batch;
@@ -600,20 +621,23 @@ export class EvolutionService {
     this.dependencies.store.update(id, (state) => { required(state.call).state = "RUNNING"; });
     emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.batch_step_started",
       { workbenchId: id, batchId: call.batch.id, callId: call.id, phase: call.batch.phase });
+    let returnedTokens: number | null = null;
     try {
       const prompt = call.batch.phase === "PROPOSE" ? this.#proposalPrompt(call.batch, call.history) : this.#simulationPrompt(call.batch);
       const raw = await this.dependencies.model.call({ pin, ...prompt, workbenchId: id, idempotencyId: call.id, ...(signal === undefined ? {} : { signal }) });
       const result = modelResult(raw);
+      returnedTokens = result.tokens;
       const stillPinned = JSON.stringify(await this.dependencies.model.pin()) === JSON.stringify(pin);
       this.dependencies.store.update(id, (state) => {
-        if (state.call?.id !== call.id) return;
+        if (state.call?.id !== call.id || state.call.state === "DONE") return;
         state.call.state = "DONE";
+        chargeCallTokens(state, call.batch.id, result.tokens);
         state.callFailures = 0;
         state.responseInvalidStreak = 0;
+        delete state.failure;
         if (state.batch?.id !== call.batch.id || state.paused || state.dailyCallLimit === 0) return;
+        delete state.batch.failure;
         if (!stillPinned) { finishBatch(state, "model_changed", now); return; }
-        if (result.tokens === null) state.batch.tokensComplete = false;
-        else state.batch.tokens = (state.batch.tokens ?? 0) + result.tokens;
         if (call.batch.phase === "PROPOSE") this.#acceptProposal(state, result.value, now);
         else this.#acceptSimulation(state, result.value, now, result.tokens);
       });
@@ -621,40 +645,56 @@ export class EvolutionService {
     } catch (error) {
       const kind = EvolutionService.#classifyStepFailure(error, signal);
       let consecutive = 0;
-      this.dependencies.store.update(id, (state) => {
-        if (state.call?.id !== call.id) return;
+      const handled = this.dependencies.store.update(id, (state) => {
+        if (state.call?.id !== call.id || state.call.state === "DONE") return false;
         state.call.state = "DONE";
+        const tokens = error instanceof EvolutionModelCallError ? error.tokens : returnedTokens;
+        chargeCallTokens(state, call.batch.id, tokens);
+        if (state.batch?.id !== call.batch.id) return false;
+        if (error instanceof EvolutionModelCallError) { state.failure = error.failure; state.batch.failure = error.failure; }
+        else { delete state.failure; delete state.batch.failure; }
         if (kind === "response_invalid") {
           // The provider answered, so the call was consumed — but this is a model-quality signal,
           // not an infrastructure fault: retry the same rollout tomorrow-grade rather than parking
           // the day, and only abandon the batch after the retry limit.
           state.responseInvalidStreak = (state.responseInvalidStreak ?? 0) + 1;
           consecutive = state.responseInvalidStreak;
+          const run = state.batch.rollouts.at(-1);
+          if (run !== undefined) {
+            if (tokens === null) run.tokensComplete = false;
+            else run.tokens = (run.tokens ?? 0) + tokens;
+          }
           if (state.responseInvalidStreak >= EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT) finishBatch(state, "model_response_invalid", now);
         } else if (kind === "aborted") {
+          state.responseInvalidStreak = 0;
           // Crash-recovery semantics: keep the batch and every completed trial, drop only the
           // interrupted attempt, and leave parkedDay and callFailures alone — a user cancelling
           // must not cost the workbench its daily candidate.
-          if (state.batch?.phase !== "PROPOSE" && state.batch?.rollouts.at(-1)?.success === undefined) state.batch?.rollouts.pop();
+          if (state.batch.phase !== "PROPOSE" && state.batch.rollouts.at(-1)?.success === undefined) state.batch.rollouts.pop();
           state.reason = "call_failed";
         } else {
+          state.responseInvalidStreak = 0;
           this.#failStep(state, day);
         }
+        return true;
       });
+      if (!handled) return true;
       if (kind === "response_invalid") {
         this.#responseInvalidStreak += 1;
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.response_invalid",
-          { workbenchId: id, callId: call.id, consecutive });
+          { workbenchId: id, callId: call.id, consecutive, ...pin,
+            ...(error instanceof EvolutionModelCallError ? { failure: error.failure } : {}) });
         if (this.#responseInvalidStreak >= EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT) this.#tripBreaker();
       } else {
         this.#responseInvalidStreak = 0;
-        this.#emitCallFailure(id, call.id, error);
+        this.#emitCallFailure(id, call.id, error, pin);
       }
     }
     return true;
   }
   static #classifyStepFailure(error: unknown, signal: AbortSignal | undefined): "response_invalid" | "aborted" | "infra" {
     if (signal?.aborted === true) return "aborted";
+    if (error instanceof EvolutionModelCallError && error.failure.kind === "aborted") return "aborted";
     if (error instanceof DomainError && error.code === "evolution_response_invalid") return "response_invalid";
     if (error instanceof Error && error.name === "AbortError") return "aborted";
     return "infra";

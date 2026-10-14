@@ -69,6 +69,9 @@ class RemoteGoalCard {
     this.agentCount = 0,
     this.failedWork = 0,
     this.stage,
+    this.executingWork,
+    this.resourceWaitingWork,
+    this.waitingReasons = const [],
   });
 
   final int activeWork;
@@ -76,6 +79,9 @@ class RemoteGoalCard {
   final String status;
   final String title;
   final int totalWork;
+  final int? executingWork;
+  final int? resourceWaitingWork;
+  final List<String> waitingReasons;
   final String goalId;
   final String workbenchId;
   final String workbenchName;
@@ -113,6 +119,9 @@ class RemoteGoalCard {
     agentCount: agentCount,
     failedWork: failedWork,
     stage: stage,
+    executingWork: executingWork,
+    resourceWaitingWork: resourceWaitingWork,
+    waitingReasons: waitingReasons,
   );
   final String? summary;
   final String? prompt;
@@ -157,6 +166,13 @@ class RemoteGoalCard {
       completedWork: work['completed'] as int? ?? 0,
       totalWork: work['total'] as int? ?? 0,
       failedWork: work['failed'] as int? ?? 0,
+      executingWork: work['executing'] as int?,
+      resourceWaitingWork: work['resourceWaiting'] as int?,
+      waitingReasons: List<String>.unmodifiable(
+        (work['waitingReasons'] as List? ?? const [])
+            .whereType<String>()
+            .toSet(),
+      ),
       agentCount: json['agentCount'] as int? ?? 0,
       canArchive: json['canArchive'] == true,
       canDelete: json['canDelete'] == true,

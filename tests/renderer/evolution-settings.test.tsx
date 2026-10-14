@@ -104,9 +104,25 @@ it("queues an immediate run and shows the queued state plus the last verdict", a
 
 it("names the paused state after invalid model responses", async () => {
   const api = new DigitalLifeApi("");
-  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, reason: "model_response_invalid" });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, reason: "model_response_invalid", paused: true });
   render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
   expect(await screen.findByText(/模型响应不符合评测要求，已暂停自动进化/u)).toBeInTheDocument();
+});
+
+it("distinguishes a terminated batch from a paused workbench and names unknown consumption", async () => {
+  const api = new DigitalLifeApi("");
+  const batch = { batchId: "b1", workbenchId: "a", scope: "GLOBAL" as const, phase: "DEVELOP" as const,
+    startedAt: "2026-10-12T15:49:46Z", finishedAt: "2026-10-12T15:50:06Z", reason: "model_response_invalid" as const,
+    calls: 2, tokens: null, revisionId: null, failure: { kind: "multiple_tool_calls" as const, stopReason: "toolUse" as const, toolCallCount: 2 } };
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ ...status, dailyCallLimit: 150, paused: false, reason: "model_response_invalid", batchHistory: [batch] });
+  vi.spyOn(api, "evolutionOverview").mockResolvedValue({ workbenches: 1, enabled: 1, evaluating: 0, canary: 0, active: 0,
+    revalidationRequired: 0, poolEvaluable: 3, poolVerificationFailed: 1, batches: [batch] });
+  render(<WorkbenchEvolutionPanel api={api} workbenchId="a" />);
+  expect(await screen.findByText("模型响应不符合评测要求，本轮已终止；检查模型源后可立即重新评测")).toBeInTheDocument();
+  expect(screen.queryByText(/已暂停自动进化/u)).toBeNull();
+  expect(screen.getAllByText(/返回了多个工具调用/u)).toHaveLength(2);
+  expect(screen.getAllByText(/Token 用量未知/u)).toHaveLength(2);
+  expect(screen.getByRole("button", { name: "立即评测一次" })).toBeEnabled();
 });
 
 it("shows aggregate batches, canary progress and explicit revalidation", async () => {

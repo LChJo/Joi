@@ -1,12 +1,13 @@
 import { EvolutionService } from "../../src/main/application/evolution/evolution-service";
 import { DomainError } from "../../src/main/domain/errors";
-import type { RuntimeDiagnosticEventMap } from "../../src/main/application/ports/runtime-diagnostics";
+import type { RuntimeDiagnosticEventMap, RuntimeDiagnostics } from "../../src/main/application/ports/runtime-diagnostics";
 import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../../src/shared/evolution";
 import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/sqlite-evolution-store";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
 import { evolutionScenarios, EVOLUTION_EVALUATOR_VERSION } from "../../src/main/domain/evolution/scenarios";
 import { baselineStrategy } from "../../src/main/domain/evolution/strategy";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution";
+import { PiEvolutionModel } from "../../src/main/infrastructure/pi/pi-evolution-model";
 import type { EvolutionBatch, EvolutionModel, EvolutionRevision } from "../../src/main/application/ports/evolution";
 
 const pin = { modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" };
@@ -73,6 +74,104 @@ describe("evolution execution and budget", () => {
   function batch(): EvolutionBatch {
     return { id: "b", evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentStrategy: baselineStrategy, parentRevisionId: null, strategy: baselineStrategy, pin, phase: "DEVELOP", evidenceIds: ["g0","g1","g2"], rollouts: [] };
   }
+  function responseService(response: unknown, diagnostics?: RuntimeDiagnostics) {
+    const completeSimple = vi.fn().mockResolvedValue(response);
+    const model = new PiEvolutionModel({ resolver: { resolve: vi.fn().mockResolvedValue({ model: { api: "anthropic-messages" }, models: { completeSimple }, thinkingLevel: "off" }) },
+      sources: { selectInitial: vi.fn().mockResolvedValue(pin) } });
+    return { runner: new EvolutionService({ store, model, now: () => day, id: () => "batch-1", stepsPerHandle: 1,
+      ...(diagnostics === undefined ? {} : { diagnostics }) }), completeSimple };
+  }
+  it("charges invalid responses to the failed batch and exposes only numeric failure metadata", async () => {
+    service.configure("a", 10);
+    const emit = vi.fn();
+    const { runner } = responseService({ content: [], stopReason: "stop", usage: { input: 80, output: 20, cacheRead: 0, cacheWrite: 0 } }, { emit });
+    await runner.handle("evolution:a");
+    await runner.handle("evolution:a");
+    expect(runner.status("a")).toMatchObject({ paused: false, reason: "model_response_invalid",
+      failure: { kind: "no_tool_call", stopReason: "stop", toolCallCount: 0 },
+      batchHistory: [{ tokens: 200, calls: 2, failure: { kind: "no_tool_call" } }] });
+    expect(runner.overview().batches[0]).toMatchObject({ tokens: 200 });
+    expect(emit).toHaveBeenCalledWith("joi.evolution.response_invalid", expect.objectContaining({ ...pin,
+      failure: { kind: "no_tool_call", stopReason: "stop", toolCallCount: 0 } }));
+  });
+  it("keeps unknown failure consumption unknown even when the following call returns tokens", async () => {
+    service.configure("a", 10);
+    const { runner, completeSimple } = responseService({ content: [], stopReason: "stop" });
+    await runner.handle("evolution:a");
+    completeSimple.mockResolvedValue({ content: [], stopReason: "stop", usage: { input: 80, output: 20, cacheRead: 0, cacheWrite: 0 } });
+    await runner.handle("evolution:a");
+    expect(runner.status("a").batchHistory?.[0]?.tokens).toBeNull();
+  });
+  it("reads evidence sequentially, clears recovered failures and includes retry tokens in the rollout", async () => {
+    service.configure("a", 10);
+    const usage = { input: 80, output: 20, cacheRead: 0, cacheWrite: 0 };
+    const { runner, completeSimple } = responseService({ content: [], stopReason: "stop", usage });
+    await runner.handle("evolution:a");
+    for (const evidenceId of ["record-11", "record-13"]) {
+      completeSimple.mockResolvedValue({ content: [{ type: "toolCall", name: "read_evidence", arguments: { evidenceId } }], stopReason: "toolUse", usage });
+      await runner.handle("evolution:a");
+    }
+    completeSimple.mockResolvedValue({ content: [{ type: "toolCall", name: "finish", arguments: { decision: "complete", evidenceIds: ["record-11", "record-13"] } }], stopReason: "toolUse", usage });
+    await runner.handle("evolution:a");
+    expect(store.read("a").batch?.rollouts[0]).toMatchObject({ success: true, tokens: 400, tokensComplete: true });
+    expect(runner.status("a").failure).toBeUndefined();
+    expect(runner.status("a").currentBatch).toMatchObject({ tokens: 400, calls: 4 });
+    expect(runner.status("a").currentBatch?.failure).toBeUndefined();
+  });
+  it("keeps a returned call charged when source pin verification fails", async () => {
+    service.configure("a", 10);
+    let selections = 0;
+    const runner = new EvolutionService({ store, model: {
+      pin: () => ++selections === 1 ? Promise.resolve(pin) : Promise.reject(new Error("private pin failure")),
+      call: () => Promise.resolve({ value: { action: "read_evidence", evidenceId: "record-11" }, tokens: 100 }),
+    }, now: () => day, id: () => "batch-1", stepsPerHandle: 1 });
+    await runner.handle("evolution:a");
+    expect(runner.status("a").currentBatch).toMatchObject({ reason: "call_failed", tokens: 100, calls: 1 });
+  });
+  it("records late provider consumption against a finished batch without changing its verdict", async () => {
+    service.configure("a", 10);
+    let settle: ((value: unknown) => void) | undefined;
+    call.mockImplementation(() => new Promise((resolve) => { settle = resolve; }));
+    const handling = service.handle("evolution:a");
+    await vi.waitFor(() => expect(settle).toBeDefined());
+    store.update("a", (state) => {
+      assert(state.batch);
+      state.batchHistory = [{ batchId: state.batch.id, workbenchId: "a", scope: "GLOBAL", phase: "DEVELOP",
+        startedAt: day, finishedAt: day, reason: "rolled_back", calls: 1, tokens: 0, revisionId: null }];
+      state.batch = null; state.paused = true; state.reason = "rolled_back";
+    });
+    assert(settle);
+    settle({ value: { action: "read_evidence", evidenceId: "record-11" }, tokens: 100 });
+    await handling;
+    expect(service.status("a")).toMatchObject({ paused: true, reason: "rolled_back", batchHistory: [{ tokens: 100, reason: "rolled_back" }] });
+    expect(store.read("a").batch).toBeNull();
+  });
+  it.each(["error", "aborted"])("routes SDK %s away from format retries while retaining usage", async (stopReason) => {
+    service.configure("a", 10);
+    const { runner } = responseService({ content: [], stopReason, errorMessage: "private provider body", usage: { input: 80, output: 20, cacheRead: 0, cacheWrite: 0 } });
+    await runner.handle("evolution:a");
+    const state = store.read("a");
+    expect(state.batch).not.toBeNull();
+    expect(state.batch?.tokens).toBe(100);
+    expect(state.responseInvalidStreak).toBe(0);
+    expect(state.reason).toBe("call_failed");
+    expect(state.callFailures ?? 0).toBe(stopReason === "error" ? 1 : 0);
+    expect(state.parkedDay ?? null).toBe(stopReason === "error" ? day.slice(0, 10) : null);
+    expect(JSON.stringify(runner.status("a"))).not.toContain("private");
+  });
+  it("projects legacy failed zero consumption as unknown without rewriting history", () => {
+    const record = { batchId: "legacy", workbenchId: "a", scope: "GLOBAL" as const, phase: "DEVELOP" as const,
+      startedAt: day, finishedAt: day, reason: "model_response_invalid" as const, calls: 2, tokens: 0, revisionId: null };
+    store.update("a", (state) => { state.batchHistory = [record]; });
+    expect(service.status("a").batchHistory?.[0]?.tokens).toBeNull();
+    expect(service.overview().batches[0]?.tokens).toBeNull();
+    expect(store.read("a").batchHistory?.[0]?.tokens).toBe(0);
+  });
+  it("requires revalidation of strategies scored under the single-call evaluator's predecessor", () => {
+    store.update("a", (state) => { state.revisions = [{ ...revision(), evaluatorVersion: "joi-orchestration-v1" }]; state.activeRevisionId = "r1"; });
+    expect(service.strategyForGoal("a", "g0", pin).strategyRevisionId).toBeNull();
+    expect(service.status("a")).toMatchObject({ revalidationRequired: true, activeEffective: false });
+  });
   it("runs contrastive development, sealed paired trials, promotion, goal pinning and rollback end to end", async () => {
     service.configure("a", 1000);
     const development = evolutionScenarios("development");
