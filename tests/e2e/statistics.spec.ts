@@ -13,10 +13,13 @@ function fixture(query: StatisticsQuery): StatisticsDto {
     daily.push({ ...totals(8_000 + index * 1_130, 1_300 + (index % 7) * 600), date: new Date(cursor).toISOString().slice(0, 10) });
   }
   const aggregate = totals(daily.reduce((sum, day) => sum + day.input, 0), daily.reduce((sum, day) => sum + day.output, 0));
+  const singleDay = query.from === query.to;
+  const weekday = (new Date(`${query.from}T00:00:00Z`).getUTCDay() + 6) % 7;
+  const empty: UsageTotals = { input: 0, output: 0, total: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, cacheKnownRecords: 0, reasoningKnownRecords: 0, records: 0, knownRecords: 0, unknownRecords: 0, failedRecords: 0 };
   return {
     query, collectedSince: `${query.from}T00:00:00Z`, updatedAt: `${query.to}T09:00:00Z`, collectionDegraded: false,
     overview: { ...aggregate, completedGoals: 12 }, daily,
-    hourly: Array.from({ length: 168 }, (_, index) => ({ ...totals((index % 11) * 900, (index % 7) * 400), weekday: Math.floor(index / 24), hour: index % 24 })),
+    hourly: Array.from({ length: 168 }, (_, index) => ({ ...(singleDay ? Math.floor(index / 24) === weekday && index % 24 === 9 ? aggregate : empty : totals((index % 11) * 900, (index % 7) * 400)), weekday: Math.floor(index / 24), hour: index % 24 })),
     models: [
       { ...totals(aggregate.input * .7, aggregate.output * .7), engine: "pi", modelId: "research-model", modelKey: "model-a", sourceName: "研究模型" },
       { ...totals(aggregate.input * .3, aggregate.output * .3), engine: "codex", modelId: "coding-model", modelKey: "model-b", sourceName: "开发模型" },
@@ -53,6 +56,21 @@ test("statistics navigation, filters, hover tooltips, goal routing and desktop t
     await page.getByRole("button", { name: "统计", exact: true }).click();
     await expect(page.getByRole("heading", { name: "用量统计" })).toBeVisible();
     await expect(page.locator(".statistics-bar-input")).toHaveCount(30);
+    await page.getByRole("button", { name: "今天", exact: true }).click();
+    const hourlyChart = page.getByRole("img", { name: "当日每小时 Token 趋势图" });
+    const activeHour = hourlyChart.locator("g[aria-label^='09:00']");
+    await expect(activeHour).toHaveAttribute("aria-label", /输入 8,000，输出 1,300，总 Token 9,300/u);
+    for (const selector of [".statistics-bar-input", ".statistics-bar-output"]) {
+      const bar = activeHour.locator(selector);
+      const bounds = await bar.boundingBox();
+      expect(bounds?.width).toBeGreaterThan(0);
+      expect(bounds?.height).toBeGreaterThan(0);
+    }
+    await activeHour.hover();
+    await expect(page.locator(".app-tooltip")).toContainText("总 Token 9,300");
+    await page.getByRole("heading", { name: "每日趋势", exact: true }).click();
+    await activeHour.focus();
+    await expect(page.locator(".app-tooltip")).toContainText("总 Token 9,300");
     await page.getByRole("button", { name: "最近 7 天", exact: true }).click();
     await expect(page.locator(".statistics-bar-input")).toHaveCount(7);
     await page.getByRole("combobox", { name: "工作台", exact: true }).selectOption("statistics-workbench");

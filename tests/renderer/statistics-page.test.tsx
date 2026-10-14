@@ -96,6 +96,28 @@ describe("statistics page", () => {
     expect(screen.getByText("查看每小时数据表")).toBeInTheDocument();
   });
 
+  it.each([0, 1, 2, 3, 4, 5, 6])("preserves single-day usage from weekday %i in the full hourly grid", async (weekday) => {
+    const empty = totals({ input: 0, output: 0, total: 0, cacheRead: 0, cacheWrite: 0, reasoning: 0, cacheKnownRecords: 0, reasoningKnownRecords: 0, records: 0, knownRecords: 0, unknownRecords: 0, failedRecords: 0 });
+    const hourly = Array.from({ length: 168 }, (_, index) => ({ ...empty, weekday: Math.floor(index / 24), hour: index % 24 }));
+    hourly[weekday * 24 + 9] = { ...totals(), weekday, hour: 9 };
+    hourly[weekday * 24 + 10] = { ...empty, records: 1, unknownRecords: 1, weekday, hour: 10 };
+    setup(statistics({ hourly }));
+    await screen.findByRole("heading", { name: "用量统计" });
+    fireEvent.click(screen.getByRole("button", { name: "今天" }));
+
+    const chart = await screen.findByRole("img", { name: "当日每小时 Token 趋势图" });
+    const known = within(chart).getByLabelText(/^09:00，/u);
+    expect(known).toHaveAttribute("aria-label", expect.stringContaining("输入 1,200，输出 430，总 Token 1,630"));
+    expect(Number(known.querySelector(".statistics-bar-input")?.getAttribute("height"))).toBeGreaterThan(0);
+    expect(Number(known.querySelector(".statistics-bar-output")?.getAttribute("height"))).toBeGreaterThan(0);
+    expect(within(chart).getByLabelText(/^10:00，/u).querySelector(".statistics-bar-unknown")).not.toBeNull();
+    expect(within(chart).getByLabelText(/^11:00，/u).querySelector(".statistics-bar-unknown")).toBeNull();
+    fireEvent.click(screen.getByText("查看每小时数据表"));
+    const rows = within(screen.getByRole("table", { name: "每小时 Token 明细" })).getAllByRole("row");
+    expect(rows[10]).toHaveTextContent("09:001,2004301,630");
+    expect(rows[11]).toHaveTextContent("10:00未知未知未知");
+  });
+
   it("shows calendar day usage as a hover tooltip instead of a click drilldown", async () => {
     setup();
     await screen.findByRole("heading", { name: "用量统计" });

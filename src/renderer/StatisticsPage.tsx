@@ -78,8 +78,13 @@ interface TrendPoint { key: string; label: string; totals: UsageTotals }
 function DailyTrend({ byHour, daily, hourly }: { byHour: boolean; daily: StatisticsDto["daily"]; hourly: StatisticsDto["hourly"] }) {
   const series = useMemo<TrendPoint[]>(() => {
     if (!byHour) return daily.map((item) => ({ key: item.date, label: item.date, totals: item }));
-    const byHourOfDay = new Map<number, StatisticsDto["hourly"][number]>();
-    for (const item of hourly) byHourOfDay.set(item.hour, item);
+    const byHourOfDay = new Map<number, UsageTotals>();
+    // A single-day query still returns all 168 weekday/hour buckets.
+    for (const item of hourly) {
+      const totals = byHourOfDay.get(item.hour) ?? { ...ZERO_TOTALS };
+      for (const field of Object.keys(ZERO_TOTALS) as (keyof UsageTotals)[]) totals[field] += item[field];
+      byHourOfDay.set(item.hour, totals);
+    }
     return Array.from({ length: 24 }, (_, hour) => ({
       key: `hour-${String(hour)}`,
       label: `${String(hour).padStart(2, "0")}:00`,
