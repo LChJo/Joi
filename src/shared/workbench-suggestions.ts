@@ -1,13 +1,6 @@
 /**
- * Shared workbench matching and hand-pick candidates.
- *
- * Two surfaces need the same answer to "which workbench is this input about?": the runtime
- * picks one automatically, and the desktop/phone offer a short list when the automatic pick is
- * genuinely unclear. Keeping the scoring in one place is what stops the two from disagreeing.
- *
- * The list a user picks from must never restate the input. A candidate named after the request
- * itself ("民宿周边有皖南川藏线… 工作台") reads as a workbench but behaves as a one-off folder:
- * it cannot be reused, and the next similar request creates another one next to it.
+ * Shared advisory ranking for workbench candidates. Keyword overlap orders options for a user;
+ * it never authorizes automatic routing or creation. Proposals describe durable work scopes.
  */
 
 /** A workbench as the matcher sees it. Kept structural so main and renderer can both pass their own DTOs. */
@@ -42,14 +35,7 @@ export const WORKBENCH_SUGGESTION_LIMIT = 3;
 /** Below this many shared terms an overlap is a coincidence, not a subject. */
 const MIN_SHARED_TERMS = 2;
 
-/**
- * At or above this score a workbench is taken as the input's home without asking.
- *
- * Calibrated against real workbenches and real inputs: a same-project request scores 0.23 against
- * its own workbench and 0.00 against everything else, and even a reworded follow-up
- * ("西双版纳适合带小孩去吗" against a scope that never says 带小孩) scores 0.20. Unrelated pairs
- * measure 0.00, so the bar sits in a wide empty gap rather than on top of the real cases.
- */
+/** Advisory overlap label for candidate comparison; automatic routing requires a semantic scope decision. */
 export const WORKBENCH_MATCH_CONFIDENT_SCORE = 0.1;
 /** Softer bar for merely *offering* an existing workbench in the hand-pick list. */
 export const WORKBENCH_MATCH_CANDIDATE_SCORE = 0.08;
@@ -144,7 +130,7 @@ export function rankWorkbenchMatches(input: string, workbenches: readonly Workbe
 export type WorkbenchMatchVerdict =
   | { kind: "none" }
   | { kind: "confident"; match: WorkbenchMatch }
-  /** Two scopes both plausibly hold this input. This is the only case worth interrupting the user for. */
+  /** Two scopes both plausibly hold this input. This advisory result never authorizes automatic assignment. */
   | { kind: "ambiguous"; matches: [WorkbenchMatch, WorkbenchMatch] };
 
 export function judgeWorkbenchMatch(input: string, workbenches: readonly WorkbenchMatchSource[]): WorkbenchMatchVerdict {

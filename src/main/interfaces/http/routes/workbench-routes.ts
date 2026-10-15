@@ -194,6 +194,11 @@ export const WORKBENCH_ROUTES: RouteDefinition[] = [
         personaSummary: stringField(body, "personaSummary"),
         projectLabel: stringField(body, "projectLabel"),
         scopeSummary: stringField(body, "scopeSummary"),
+        ...(body.bindInputId === undefined ? {} : {
+          bindInputId: stringField(body, "bindInputId"), questionId: stringField(body, "questionId"),
+          questionVersion: typeof body.questionVersion === "number" ? body.questionVersion : 0,
+          idempotencyKey: stringField(body, "idempotencyKey"),
+        }),
       });
       sendJson(ctx.response, 201, {
         workbenchId: workbench.workbenchId,

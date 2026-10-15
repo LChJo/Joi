@@ -28,8 +28,11 @@ export function proposedWorkbenchRejection(input: string, draft: ProposedWorkben
   const stem = draft.name.trim().replace(CLUSTER_LABEL_SUFFIX_PATTERN, "").trim();
   if (stem.length === 0) return "workbench_name_empty";
   if (Array.from(stem).length > WORKBENCH_NAME_MAX_LENGTH) return "workbench_name_too_long";
-  if (echoedWorkbenchSpan(draft.name, input) !== null) return "workbench_name_echoes_input";
-  if (echoedWorkbenchSpan(draft.projectLabel, input) !== null) return "workbench_project_label_echoes_input";
+  const projectName = draft.projectLabel.trim();
+  const hasProjectName = /^[\p{L}\p{N}._-]{1,60}$/u.test(projectName) && draft.name.includes(projectName);
+  const nameToCheck = hasProjectName ? draft.name.replaceAll(projectName, "") : draft.name;
+  if (echoedWorkbenchSpan(nameToCheck, input) !== null) return "workbench_name_echoes_input";
+  if (!hasProjectName && echoedWorkbenchSpan(draft.projectLabel, input) !== null) return "workbench_project_label_echoes_input";
   if (echoedWorkbenchSpan(draft.scopeSummary, input) !== null) return "workbench_scope_summary_echoes_input";
   return null;
 }

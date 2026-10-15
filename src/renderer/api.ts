@@ -100,7 +100,7 @@ export class DigitalLifeApi {
   updateAutomation(routineId: string, body: UpdateAutomationInput) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { body: body as unknown as Record<string, unknown>, idempotencyKey: randomUuid(), method: "PATCH" }); }
   runAutomationNow(routineId: string) { return this.request<AutomationDto>(`/api/v1/automations/${encodeURIComponent(routineId)}/run-now`, { idempotencyKey: randomUuid(), method: "POST" }); }
   deleteAutomation(routineId: string) { return this.request<undefined>(`/api/v1/automations/${encodeURIComponent(routineId)}`, { idempotencyKey: randomUuid(), method: "DELETE" }); }
-  createWorkbench(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string }) {
+  createWorkbench(body: { name: string; personaSummary: string; projectLabel: string; scopeSummary: string; bindInputId?: string; questionId?: string; questionVersion?: number; idempotencyKey?: string }) {
     return this.request<WorkbenchDto>("/api/v1/workbenches", { body, method: "POST" });
   }
   archiveWorkbench(workbenchId: string) {

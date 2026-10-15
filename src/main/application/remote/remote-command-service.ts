@@ -57,13 +57,15 @@ export class RemoteCommandService {
         // being on screen: the phone creates and binds in one request, and a card that moved on
         // in between must not turn into an error the user cannot act on. Binding is what can
         // legitimately fail, and `bound` reports that instead of failing the creation.
+        const atomic = c.bindInputId !== undefined && (c.questionId !== undefined || c.questionVersion !== undefined || c.idempotencyKey !== undefined);
         const workbench = await this.dependencies.workbenchRegistry.create({
           name: c.name, personaSummary: c.personaSummary, projectLabel: c.projectLabel, scopeSummary: c.scopeSummary,
+          ...(atomic ? { bindInputId: c.bindInputId ?? "", questionId: c.questionId ?? "", questionVersion: c.questionVersion ?? 0, idempotencyKey: c.idempotencyKey ?? "" } : {}),
         });
-        const attached = c.bindInputId === undefined
+        const attached = c.bindInputId === undefined || atomic
           ? undefined
           : await this.dependencies.inbox.attachWorkbench?.({ inputId: c.bindInputId, workbenchId: workbench.workbenchId });
-        const bound = attached !== undefined && attached !== null;
+        const bound = atomic || (attached !== undefined && attached !== null);
         return { ...base, result: {
           bound, name: workbench.profile.name, scopeSummary: workbench.profile.scopeSummary,
           updatedAt: workbench.updatedAt, workbenchId: workbench.workbenchId,

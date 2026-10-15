@@ -480,6 +480,9 @@ class NativeRemoteController extends ChangeNotifier
     required String personaSummary,
     required String projectLabel,
     required String scopeSummary,
+    String? questionId,
+    int? questionVersion,
+    String? idempotencyKey,
   }) async {
     if (!_state.supportsWorkbenchCreation) {
       throw StateError('remote_upgrade_required');
@@ -496,6 +499,13 @@ class NativeRemoteController extends ChangeNotifier
       // The host creates and binds in one request; a second clarify on top of it was the step
       // that failed while the workbench already existed, stranding the task.
       'bindInputId': inputId,
+      if (_state.supportsWorkbenchChoice) ...{
+        'questionId': questionId ?? 'legacy_question:$inputId',
+        'questionVersion': questionVersion ?? 1,
+        'idempotencyKey':
+            idempotencyKey ??
+            'workbench-choice:$inputId:v${questionVersion ?? 1}',
+      },
     });
     final result = response['result'];
     if (generation != _generation || result is! Map<String, dynamic>) {
@@ -672,7 +682,8 @@ class NativeRemoteController extends ChangeNotifier
             goals: _state.goals.where((g) => g.goalId != inputId).toList(),
             archivedGoals: [
               ...moved.map(
-                (g) => g.withArchivedAt(DateTime.now().toUtc().toIso8601String()),
+                (g) =>
+                    g.withArchivedAt(DateTime.now().toUtc().toIso8601String()),
               ),
               ..._state.archivedGoals,
             ],
@@ -898,6 +909,9 @@ class NativeRemoteController extends ChangeNotifier
           supportsHome:
               value['capabilities'] is List &&
               (value['capabilities'] as List).contains('home.v2'),
+          supportsWorkbenchChoice:
+              value['capabilities'] is List &&
+              (value['capabilities'] as List).contains('workbench.choice.v1'),
           supportsWorkbenchCreation:
               value['capabilities'] is List &&
               (value['capabilities'] as List).contains('workbench.create'),

@@ -6,6 +6,7 @@ import 'remote_controller.dart';
 import 'goal_detail.dart';
 import 'connection_diagnostics_view.dart';
 import 'joi_brand.dart';
+import 'workbench_choice.dart';
 
 String statusLabel(String value) =>
     const {
@@ -285,10 +286,48 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   String? _workbenchId;
   String? _notice;
   bool _sending = false;
+  bool _workbenchChoiceOpen = false;
+  final _shownWorkbenchQuestions = <String>{};
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _offerWorkbenchChoice();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _offerWorkbenchChoice();
+  }
+
+  void _offerWorkbenchChoice() {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted ||
+          _workbenchChoiceOpen ||
+          !(ModalRoute.of(context)?.isCurrent ?? true) ||
+          widget.state.connection != RemoteConnectionState.connected) {
+        return;
+      }
+      String key(RemoteGoalCard goal) =>
+          '${goal.goalId}:${goal.questionId ?? "legacy"}:${goal.questionVersion ?? 1}';
+      final next = widget.state.goals
+          .where(
+            (goal) =>
+                goal.needsWorkbenchChoice &&
+                !_shownWorkbenchQuestions.contains(key(goal)),
+          )
+          .firstOrNull;
+      if (next == null) return;
+      _shownWorkbenchQuestions.add(key(next));
+      _workbenchChoiceOpen = true;
+      try {
+        await showWorkbenchChoice(context, widget.controller, next);
+      } finally {
+        _workbenchChoiceOpen = false;
+        if (mounted) _offerWorkbenchChoice();
+      }
+    });
   }
 
   @override
@@ -313,6 +352,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
           ? _workbenchId
           : null;
       await widget.controller.sendMessage(text, workbenchId: selected);
+      if (mounted) setState(() => _workbenchId = null);
       if (mounted && _composer.text.trim() == text) _composer.clear();
     } catch (_) {
       if (mounted) setState(() => _notice = '未确认发送成功，已保留输入。连接恢复后可重试。');

@@ -5,7 +5,8 @@ import type { DatabaseSync } from "node:sqlite";
 import type { JoiInboxRecord, JoiInboxRepository, JoiInboxStatus } from "../../application/ports/joi-inbox.js";
 import type { JoiCoordinatorStore, JoiPendingInput } from "../../application/ports/joi-coordinator.js";
 import type { Clock } from "../../application/ports/runtime-store.js";
-import type { JoiActivityDto } from "../../../shared/joi.js";
+import type { JoiActivityDto, WorkbenchProposalDto } from "../../../shared/joi.js";
+import { needsWorkbenchChoice, parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 import { DomainError } from "../../domain/errors.js";
 import { normalizeCompletionSummary, sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
 import type { JoiInputCompletion } from "../../application/ports/joi-coordinator.js";
@@ -185,8 +186,11 @@ function mapRow(row: Row): JoiInboxRecord {
     || (questionVersion !== null && questionVersion !== undefined && (typeof questionVersion !== "number" || !Number.isInteger(questionVersion) || questionVersion < 1))) {
     throw new Error("joi_inbox_record_invalid");
   }
+  const workbenchProposal = needsWorkbenchChoice(typeof clarificationReasonCode === "string" ? clarificationReasonCode : undefined) && row.status === "CLARIFICATION_REQUIRED"
+    ? parseWorkbenchProposal(row.workbench_proposal_json) : undefined;
   return {
     ...(typeof workbenchId === "string" ? { workbenchId } : {}),
+    ...(workbenchProposal === undefined ? {} : { workbenchProposal }),
     ...(typeof automationRoutineId === "string" ? { automationRoutineId } : {}),
     ...(typeof archivedAt === "string" ? { archivedAt } : {}),
     body,
@@ -247,170 +251,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   }
 
   async clarify(inputId: string, patch: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; expectedQuestionId?: string; expectedQuestionVersion?: number; expectedReasonCode?: string; workbenchId?: string; text?: string }): Promise<JoiInboxRecord | null> {
-    return this.database.transaction((connection) => {
-      const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
-      if (row === undefined) return null;
-      const current = mapRow(row);
-      if (current.status !== "CLARIFICATION_REQUIRED") return null;
-      if (patch.expectedReasonCode !== undefined && current.clarificationReasonCode !== patch.expectedReasonCode) return null;
-      const goalInputId = typeof row.goal_input_id === "string" ? row.goal_input_id : inputId;
-      const gate = connection.prepare(`SELECT question_id, question_version, status FROM joi_goal_execution_gates
-        WHERE goal_input_id = ?`).get(goalInputId) as { question_id?: unknown; question_version?: unknown; status?: unknown } | undefined;
-      if (gate !== undefined) {
-        if (gate.status !== "WAITING_INPUT" || typeof gate.question_id !== "string" || typeof gate.question_version !== "number") return null;
-        // Choosing a Workbench answers "where does this input belong", not the question's content,
-        // so it is not tied to a question version. Matching it anyway made a card the user is
-        // looking at unusable the moment the same input was re-raised under a newer question —
-        // the user sees buttons, presses one, and is told the card is stale. Answers stay strict.
-        const choosingWorkbench = patch.workbenchId !== undefined;
-        if (!choosingWorkbench && (patch.expectedQuestionId !== gate.question_id || patch.expectedQuestionVersion !== gate.question_version)) return null;
-      }
-      const action = connection.prepare(`SELECT action.action_id, action.kind, action.result_revision, action.requirements_revision
-        FROM joi_user_action_requests action
-        JOIN joi_inbox_messages action_input ON action_input.input_id = action.input_id
-        WHERE (action.input_id = ? OR action_input.goal_input_id = ?) AND action.status = 'OPEN'
-        ORDER BY action.created_at, action.action_id LIMIT 1`).get(inputId, goalInputId) as {
-          action_id?: unknown;
-          kind?: unknown;
-          result_revision?: unknown;
-          requirements_revision?: unknown;
-        } | undefined;
-      if (action !== undefined) {
-        if (typeof action.action_id !== "string" || typeof action.kind !== "string") throw new Error("joi_user_action_invalid");
-        if (action.kind === "PARTNER_QUESTION" && patch.text === undefined) return null;
-        if (action.kind === "RECOVERY_DECISION" && patch.actionChoice !== "RESUME") return null;
-        if (action.kind === "GOAL_CONTINUATION") {
-          if (patch.actionChoice !== "CONTINUE" && patch.actionChoice !== "ACCEPT_CURRENT") return null;
-          if (typeof action.result_revision !== "number") throw new Error("joi_user_action_invalid");
-          const currentOutcome = connection.prepare(`SELECT o.disposition
-            FROM joi_goal_result_sets rs
-            JOIN joi_current_goal_outcomes o ON o.input_id = rs.original_input_id AND o.result_revision = rs.revision
-            JOIN joi_harness_maps m ON m.goal_input_id = rs.original_input_id
-            WHERE rs.original_input_id = ? AND rs.revision = ? AND rs.synthesized_revision = rs.revision
-              AND o.disposition = 'CONTINUE' AND m.status = 'ACTIVE'
-              AND COALESCE(o.requirements_revision, -1) = ?
-              AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = rs.original_input_id
-                                AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(inputId, action.result_revision, typeof action.requirements_revision === "number" ? action.requirements_revision : -1);
-          if (currentOutcome === undefined) return null;
-          const now = this.#clock.now().toISOString();
-          if (patch.actionChoice === "CONTINUE") {
-            // Grant relative to the deepest layer actually on the map. Work recovery appends
-            // replacement layers without spending allowance, so a blind +2 can land exactly on
-            // the MAX(layer)-1 exhaustion threshold and leave the goal unable to auto-continue.
-            const authorized = connection.prepare(`UPDATE joi_harness_maps
-              SET continuation_allowance = MAX(continuation_allowance,
-                    (SELECT MAX(0, COALESCE(MAX(p.layer), 1) - 1) FROM joi_harness_paths p
-                      WHERE p.goal_input_id = joi_harness_maps.goal_input_id)) + 2,
-                  revision = revision + 1, updated_at = ?
-              WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, inputId);
-            if (authorized.changes !== 1) throw new Error("joi_goal_continuation_conflict");
-          } else {
-            const accepted = connection.prepare(`UPDATE joi_goal_outcomes
-              SET disposition = 'ACCEPTED_WITH_GAPS', completed_at = ?, updated_at = ?
-              WHERE input_id = ? AND result_revision = ? AND disposition = 'CONTINUE'`).run(now, now, inputId, action.result_revision);
-            if (accepted.changes !== 1) throw new Error("joi_goal_continuation_conflict");
-            const cleared = connection.prepare(`UPDATE joi_harness_maps
-              SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
-              WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, now, inputId);
-            if (cleared.changes !== 1) throw new Error("joi_goal_continuation_conflict");
-          }
-          const applied = connection.prepare(`UPDATE joi_user_action_requests
-            SET status = 'APPLIED', decision = ?, resolved_at = ?, applied_at = ?, updated_at = ?
-            WHERE action_id = ? AND status = 'OPEN'`).run(patch.actionChoice, now, now, now, action.action_id);
-          if (applied.changes !== 1) throw new Error("joi_goal_continuation_conflict");
-          // Continuing or accepting a closed-out result is a user decision on this goal,
-          // so it reopens the goal's position in the home feed the same way an answer does.
-          const consumed = connection.prepare(`UPDATE joi_inbox_messages
-            SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
-            WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(now, now, inputId);
-          if (consumed.changes !== 1) throw new Error("joi_goal_continuation_conflict");
-          connection.prepare(`UPDATE joi_goal_execution_gates SET status = 'OPEN', resume_input_id = NULL,
-            answered_at = COALESCE(answered_at, ?), updated_at = ? WHERE goal_input_id = ?`).run(now, now, goalInputId);
-          const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
-          return updated === undefined ? null : mapRow(updated);
-        }
-      } else if (patch.actionChoice !== undefined) {
-        return null;
-      }
-      const now = this.#clock.now().toISOString();
-      const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
-      if (patch.text !== undefined && connection.prepare("SELECT 1 FROM joi_goal_requirement_sources WHERE goal_input_id = ? LIMIT 1").get(goalInputId) === undefined) {
-        appendGoalRequirementSource(connection, goalInputId, current.body, "LEGACY");
-      }
-      const nextWorkbench = patch.workbenchId ?? current.workbenchId;
-      const questionId = typeof gate?.question_id === "string" ? gate.question_id : `goal_question:${goalInputId}:v1`;
-      const questionVersion = typeof gate?.question_version === "number" ? gate.question_version : 1;
-      const resumeInputId = `joi_goal_resume:goal:${goalInputId}:v${String(questionVersion)}`;
-      // Answering a clarification is a user opening, exactly like a retry: the goal the
-      // user just replied to belongs at the top of the home feed. Without this the card
-      // stays wherever its original creation time put it, so the goal being worked on
-      // sinks under finished ones that were retried more recently.
-      const result = connection.prepare(`UPDATE joi_inbox_messages
-        SET body = ?, workbench_id = ?, status = 'ROUTED', clarification_reason_code = NULL,
-          clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
-        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, now, goalInputId);
-      if (result.changes === 0) return null;
-      if (patch.text !== undefined) appendGoalRequirementSource(connection, goalInputId, patch.text);
-      if (action !== undefined) {
-        const resolved = connection.prepare(`UPDATE joi_user_action_requests
-          SET status = 'RESOLVED', decision = 'RESUME', resolved_at = ?, updated_at = ?
-          WHERE action_id = ? AND status = 'OPEN'`).run(now, now, action.action_id as string);
-        if (resolved.changes !== 1) throw new Error("joi_user_action_resolution_conflict");
-      }
-      // Every Work that is not terminal, RUNNING ones included. Listing only the queued ones
-      // left the resumed Turn blind to Work already executing: this prompt is its only view of
-      // what exists, and a Work it cannot see is one it will happily dispatch a second time.
-      const liveWork = connection.prepare(`SELECT w.work_id, w.title, w.status,
-          (SELECT action_id FROM joi_user_action_requests action
-            WHERE action.work_id = w.work_id AND action.status = 'RESOLVED'
-            ORDER BY action.updated_at DESC, action.action_id DESC LIMIT 1) AS resolved_action_id
-        FROM work_items w
-        WHERE w.input_id = ? AND w.status NOT IN ('COMPLETED','FAILED','CANCELED')
-        ORDER BY w.created_at, w.work_id LIMIT 24`).all(goalInputId) as Row[];
-      const answer = patch.text ?? (patch.workbenchId === undefined ? "已提交结构化选择。" : "已确认工作台选择。");
-      const resumeBody = [
-        "A blocking question for this goal has been answered. Review the saved Work before resuming execution.",
-        `goalInputId=${goalInputId}`,
-        `questionId=${questionId}`,
-        `questionVersion=${String(questionVersion)}`,
-        `answer=${answer}`,
-        // Always embed the goal body: a resumed Turn may run in a session with
-        // no persisted reasoning history (e.g. the goal only got as far as a
-        // workbench-selection clarification), so the body is its only record
-        // of what the goal actually asks. Cap it: every interrupt/retry cycle
-        // appends a supplement, and an unbounded copy would inflate each
-        // recovery prompt.
-        [`savedGoalAndAnswers=${current.body.length > 4000 ? `${current.body.slice(0, 4000)}…` : current.body}`],
-        ...liveWork.map((item) => `existingWorkId=${String(item.work_id)} status=${String(item.status)}${typeof item.resolved_action_id === "string" ? ` resolvedActionId=${item.resolved_action_id}` : ""} title=${String(item.title).slice(0, 240)}`),
-        "A Work with status RUNNING is executing right now. Leave it alone: its result arrives as its own input when it finishes, and dispatching it again duplicates the work instead of replacing it.",
-        "If the original plan still applies, call goal_resume, then leave any RUNNING Work alone and resume or leave the queued Work as appropriate.",
-        "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements. Cancel a RUNNING Work only when its result is no longer wanted at all.",
-        "If information is still missing, call user_ask; do not call goal_resume.",
-      ].join("\n");
-      connection.prepare(`INSERT INTO joi_inbox_messages
-        (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
-        VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)
-        ON CONFLICT(input_id) DO UPDATE SET body = excluded.body, status = 'PENDING', updated_at = excluded.updated_at
-        WHERE joi_inbox_messages.status <> 'CONSUMED'`).run(
-        resumeInputId, `goal_resume:${goalInputId}:v${String(questionVersion)}`, resumeBody,
-        nextWorkbench ?? null, goalInputId, now, now,
-      );
-      connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
-        WHERE goal_input_id = ? AND input_id LIKE 'joi_goal_resume:goal:%' AND input_id <> ?
-          AND status <> 'CONSUMED'`).run(now, goalInputId, resumeInputId);
-      connection.prepare(`INSERT INTO joi_goal_execution_gates
-        (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
-        VALUES (?, ?, ?, 'REVIEWING', ?, ?, ?, ?, ?)
-        ON CONFLICT(goal_input_id) DO UPDATE SET status = 'REVIEWING', resume_input_id = excluded.resume_input_id,
-          answered_at = excluded.answered_at, updated_at = excluded.updated_at`).run(
-        goalInputId, questionId, questionVersion, current.clarificationReasonCode ?? "question_required",
-        resumeInputId, now, now, now,
-      );
-      const updated = connection.prepare(`SELECT i.*, gate.question_id, gate.question_version
-        FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
-        WHERE i.input_id = ?`).get(goalInputId) as Row | undefined;
-      return updated === undefined ? null : mapRow(updated);
-    });
+    return this.database.transaction((connection) => clarifyJoiInputInTransaction(connection, inputId, patch, this.#clock.now().toISOString()));
   }
 
   async cancel(inputId: string): Promise<JoiInboxRecord | null> {
@@ -827,7 +668,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     kind: "PARTNER_QUESTION";
     runId: string;
     workId: string;
-  }): Promise<void> {
+  }, proposal?: WorkbenchProposalDto): Promise<void> {
     this.database.transaction((connection) => {
       const source = connection.prepare(`SELECT COALESCE(source.goal_input_id, source.input_id) AS goal_input_id,
           goal.clarification_prompt AS existing_prompt
@@ -853,9 +694,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // CONSUMED goal input: a partner question revives the goal so the user can answer
       // and the flow continues. Dismissed, canceled and parked rows stay untouched.
       const raised = connection.prepare(`UPDATE joi_inbox_messages
-        SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = ?, clarification_prompt = ?, updated_at = ?
+        SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = ?, clarification_prompt = ?, workbench_proposal_json = ?, updated_at = ?
         WHERE input_id = ? AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(
-        reasonCode, prompt ?? null, now, goalInputId,
+        reasonCode, prompt ?? null, proposal === undefined ? null : JSON.stringify(proposal), now, goalInputId,
       );
       if (raised.changes === 1) connection.prepare(`INSERT INTO joi_goal_execution_gates
         (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
@@ -1329,4 +1170,168 @@ function finishAutomationRun(
     result, result, completedAt, reasonCode ?? null, inputId,
   );
   connection.prepare("UPDATE joi_inbox_messages SET automation_routine_id = NULL WHERE input_id = ?").run(inputId);
+}
+
+/** Resolves a persisted question inside the caller's transaction, including its continuation and gate. */
+export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: string, patch: Parameters<JoiInboxRepository["clarify"]>[1], now: string): JoiInboxRecord | null {
+  const row = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+  if (row === undefined) return null;
+  const current = mapRow(row);
+  if (current.status !== "CLARIFICATION_REQUIRED") return null;
+  if (current.canceledAt !== undefined || current.dismissedAt !== undefined || current.failedAt !== undefined) return null;
+  if (patch.workbenchId !== undefined && connection.prepare("SELECT 1 FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'").get(patch.workbenchId) === undefined) return null;
+  if (patch.expectedReasonCode !== undefined && current.clarificationReasonCode !== patch.expectedReasonCode) return null;
+  const goalInputId = typeof row.goal_input_id === "string" ? row.goal_input_id : inputId;
+  const gate = connection.prepare(`SELECT question_id, question_version, status FROM joi_goal_execution_gates
+    WHERE goal_input_id = ?`).get(goalInputId) as { question_id?: unknown; question_version?: unknown; status?: unknown } | undefined;
+  if (gate !== undefined) {
+    if (gate.status !== "WAITING_INPUT" || typeof gate.question_id !== "string" || typeof gate.question_version !== "number") return null;
+    // Versioned clients resolve exactly the advertised question; legacy workbench choices may omit the version.
+    const choosingWorkbench = patch.workbenchId !== undefined;
+    if ((!choosingWorkbench || patch.expectedQuestionId !== undefined || patch.expectedQuestionVersion !== undefined)
+        && (patch.expectedQuestionId !== gate.question_id || patch.expectedQuestionVersion !== gate.question_version)) return null;
+  }
+  const action = connection.prepare(`SELECT action.action_id, action.kind, action.result_revision, action.requirements_revision
+    FROM joi_user_action_requests action
+    JOIN joi_inbox_messages action_input ON action_input.input_id = action.input_id
+    WHERE (action.input_id = ? OR action_input.goal_input_id = ?) AND action.status = 'OPEN'
+    ORDER BY action.created_at, action.action_id LIMIT 1`).get(inputId, goalInputId) as {
+      action_id?: unknown;
+      kind?: unknown;
+      result_revision?: unknown;
+      requirements_revision?: unknown;
+    } | undefined;
+  if (action !== undefined) {
+    if (typeof action.action_id !== "string" || typeof action.kind !== "string") throw new Error("joi_user_action_invalid");
+    if (action.kind === "PARTNER_QUESTION" && patch.text === undefined) return null;
+    if (action.kind === "RECOVERY_DECISION" && patch.actionChoice !== "RESUME") return null;
+    if (action.kind === "GOAL_CONTINUATION") {
+      if (patch.actionChoice !== "CONTINUE" && patch.actionChoice !== "ACCEPT_CURRENT") return null;
+      if (typeof action.result_revision !== "number") throw new Error("joi_user_action_invalid");
+      const currentOutcome = connection.prepare(`SELECT o.disposition
+        FROM joi_goal_result_sets rs
+        JOIN joi_current_goal_outcomes o ON o.input_id = rs.original_input_id AND o.result_revision = rs.revision
+        JOIN joi_harness_maps m ON m.goal_input_id = rs.original_input_id
+        WHERE rs.original_input_id = ? AND rs.revision = ? AND rs.synthesized_revision = rs.revision
+          AND o.disposition = 'CONTINUE' AND m.status = 'ACTIVE'
+          AND COALESCE(o.requirements_revision, -1) = ?
+          AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = rs.original_input_id
+                            AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))`).get(inputId, action.result_revision, typeof action.requirements_revision === "number" ? action.requirements_revision : -1);
+      if (currentOutcome === undefined) return null;
+          if (patch.actionChoice === "CONTINUE") {
+        // Grant relative to the deepest layer actually on the map. Work recovery appends
+        // replacement layers without spending allowance, so a blind +2 can land exactly on
+        // the MAX(layer)-1 exhaustion threshold and leave the goal unable to auto-continue.
+        const authorized = connection.prepare(`UPDATE joi_harness_maps
+          SET continuation_allowance = MAX(continuation_allowance,
+                (SELECT MAX(0, COALESCE(MAX(p.layer), 1) - 1) FROM joi_harness_paths p
+                  WHERE p.goal_input_id = joi_harness_maps.goal_input_id)) + 2,
+              revision = revision + 1, updated_at = ?
+          WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, inputId);
+        if (authorized.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+      } else {
+        const accepted = connection.prepare(`UPDATE joi_goal_outcomes
+          SET disposition = 'ACCEPTED_WITH_GAPS', completed_at = ?, updated_at = ?
+          WHERE input_id = ? AND result_revision = ? AND disposition = 'CONTINUE'`).run(now, now, inputId, action.result_revision);
+        if (accepted.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+        const cleared = connection.prepare(`UPDATE joi_harness_maps
+          SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
+          WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, now, inputId);
+        if (cleared.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+      }
+      const applied = connection.prepare(`UPDATE joi_user_action_requests
+        SET status = 'APPLIED', decision = ?, resolved_at = ?, applied_at = ?, updated_at = ?
+        WHERE action_id = ? AND status = 'OPEN'`).run(patch.actionChoice, now, now, now, action.action_id);
+      if (applied.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+      // Continuing or accepting a closed-out result is a user decision on this goal,
+      // so it reopens the goal's position in the home feed the same way an answer does.
+      const consumed = connection.prepare(`UPDATE joi_inbox_messages
+        SET status = 'CONSUMED', clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
+        WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(now, now, inputId);
+      if (consumed.changes !== 1) throw new Error("joi_goal_continuation_conflict");
+      connection.prepare(`UPDATE joi_goal_execution_gates SET status = 'OPEN', resume_input_id = NULL,
+        answered_at = COALESCE(answered_at, ?), updated_at = ? WHERE goal_input_id = ?`).run(now, now, goalInputId);
+      const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
+      return updated === undefined ? null : mapRow(updated);
+    }
+  } else if (patch.actionChoice !== undefined) {
+    return null;
+  }
+  const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
+  if (patch.text !== undefined && connection.prepare("SELECT 1 FROM joi_goal_requirement_sources WHERE goal_input_id = ? LIMIT 1").get(goalInputId) === undefined) {
+    appendGoalRequirementSource(connection, goalInputId, current.body, "LEGACY");
+  }
+  const nextWorkbench = patch.workbenchId ?? current.workbenchId;
+  const questionId = typeof gate?.question_id === "string" ? gate.question_id : `goal_question:${goalInputId}:v1`;
+  const questionVersion = typeof gate?.question_version === "number" ? gate.question_version : 1;
+  const resumeInputId = `joi_goal_resume:goal:${goalInputId}:v${String(questionVersion)}`;
+  // Answering a clarification is a user opening, exactly like a retry: the goal the
+  // user just replied to belongs at the top of the home feed. Without this the card
+  // stays wherever its original creation time put it, so the goal being worked on
+  // sinks under finished ones that were retried more recently.
+  const result = connection.prepare(`UPDATE joi_inbox_messages
+    SET body = ?, workbench_id = ?, status = 'ROUTED', clarification_reason_code = NULL,
+      clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
+    WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, now, goalInputId);
+  if (result.changes === 0) return null;
+  if (patch.text !== undefined) appendGoalRequirementSource(connection, goalInputId, patch.text);
+  if (action !== undefined) {
+    const resolved = connection.prepare(`UPDATE joi_user_action_requests
+      SET status = 'RESOLVED', decision = 'RESUME', resolved_at = ?, updated_at = ?
+      WHERE action_id = ? AND status = 'OPEN'`).run(now, now, action.action_id as string);
+    if (resolved.changes !== 1) throw new Error("joi_user_action_resolution_conflict");
+  }
+  // Every Work that is not terminal, RUNNING ones included. Listing only the queued ones
+  // left the resumed Turn blind to Work already executing: this prompt is its only view of
+  // what exists, and a Work it cannot see is one it will happily dispatch a second time.
+  const liveWork = connection.prepare(`SELECT w.work_id, w.title, w.status,
+      (SELECT action_id FROM joi_user_action_requests action
+        WHERE action.work_id = w.work_id AND action.status = 'RESOLVED'
+        ORDER BY action.updated_at DESC, action.action_id DESC LIMIT 1) AS resolved_action_id
+    FROM work_items w
+    WHERE w.input_id = ? AND w.status NOT IN ('COMPLETED','FAILED','CANCELED')
+    ORDER BY w.created_at, w.work_id LIMIT 24`).all(goalInputId) as Row[];
+  const answer = patch.text ?? (patch.workbenchId === undefined ? "已提交结构化选择。" : "已确认工作台选择。");
+  const resumeBody = [
+    "A blocking question for this goal has been answered. Review the saved Work before resuming execution.",
+    `goalInputId=${goalInputId}`,
+    `questionId=${questionId}`,
+    `questionVersion=${String(questionVersion)}`,
+    `answer=${answer}`,
+    // Always embed the goal body: a resumed Turn may run in a session with
+    // no persisted reasoning history (e.g. the goal only got as far as a
+    // workbench-selection clarification), so the body is its only record
+    // of what the goal actually asks. Cap it: every interrupt/retry cycle
+    // appends a supplement, and an unbounded copy would inflate each
+    // recovery prompt.
+    [`savedGoalAndAnswers=${current.body.length > 4000 ? `${current.body.slice(0, 4000)}…` : current.body}`],
+    ...liveWork.map((item) => `existingWorkId=${String(item.work_id)} status=${String(item.status)}${typeof item.resolved_action_id === "string" ? ` resolvedActionId=${item.resolved_action_id}` : ""} title=${String(item.title).slice(0, 240)}`),
+    "A Work with status RUNNING is executing right now. Leave it alone: its result arrives as its own input when it finishes, and dispatching it again duplicates the work instead of replacing it.",
+    "If the original plan still applies, call goal_resume, then leave any RUNNING Work alone and resume or leave the queued Work as appropriate.",
+    "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements. Cancel a RUNNING Work only when its result is no longer wanted at all.",
+    "If information is still missing, call user_ask; do not call goal_resume.",
+  ].join("\n");
+  connection.prepare(`INSERT INTO joi_inbox_messages
+    (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+    VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)
+    ON CONFLICT(input_id) DO UPDATE SET body = excluded.body, status = 'PENDING', updated_at = excluded.updated_at
+    WHERE joi_inbox_messages.status <> 'CONSUMED'`).run(
+    resumeInputId, `goal_resume:${goalInputId}:v${String(questionVersion)}`, resumeBody,
+    nextWorkbench ?? null, goalInputId, now, now,
+  );
+  connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
+    WHERE goal_input_id = ? AND input_id LIKE 'joi_goal_resume:goal:%' AND input_id <> ?
+      AND status <> 'CONSUMED'`).run(now, goalInputId, resumeInputId);
+  connection.prepare(`INSERT INTO joi_goal_execution_gates
+    (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
+    VALUES (?, ?, ?, 'REVIEWING', ?, ?, ?, ?, ?)
+    ON CONFLICT(goal_input_id) DO UPDATE SET status = 'REVIEWING', resume_input_id = excluded.resume_input_id,
+      answered_at = excluded.answered_at, updated_at = excluded.updated_at`).run(
+    goalInputId, questionId, questionVersion, current.clarificationReasonCode ?? "question_required",
+    resumeInputId, now, now, now,
+  );
+  const updated = connection.prepare(`SELECT i.*, gate.question_id, gate.question_version
+    FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
+    WHERE i.input_id = ?`).get(goalInputId) as Row | undefined;
+  return updated === undefined ? null : mapRow(updated);
 }

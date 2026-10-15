@@ -1,4 +1,5 @@
 import type { WorkbenchSummary } from "./workbench-context.js";
+import type { WorkbenchProposalDto } from "../../../shared/joi.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 
 /** Private persisted evidence for one goal; never a display or diagnostics projection. */
@@ -66,7 +67,7 @@ export interface JoiCoordinatorStore {
     kind: "PARTNER_QUESTION";
     runId: string;
     workId: string;
-  }): Promise<void>;
+  }, proposal?: WorkbenchProposalDto): Promise<void>;
   resumeGoal?(input: { inputId: string; turnId: string; requirementsRevision?: number }): Promise<{ status: "OPEN" }>;
   updateTurnSource?(turnId: string, sourceRevisionId: string, modelRevisionId: string): Promise<void>;
 }
@@ -77,8 +78,8 @@ export interface ReasoningFailureClassifier {
 
 export interface WorkbenchRoutingRuntime {
   /**
-   * `route` picks among the listed workbenches and may create one; `abstract` is asked only after
-   * routing failed, and must name a durable cluster rather than pick or restate the request.
+   * `route` selects a clear unique scope match, asks for selection, or proposes a draft.
+   * `abstract` only proposes a durable context; creating it requires user confirmation.
    */
   decide(input: {
     workbenches: WorkbenchSummary[];

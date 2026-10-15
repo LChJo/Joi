@@ -278,7 +278,21 @@ export interface JoiSnapshotDto {
   work: WorkItemDto[];
 }
 
+export interface WorkbenchProposalDto {
+  name: string;
+  projectLabel: string;
+  scopeSummary: string;
+}
+
+export interface WorkbenchBindingDto {
+  bindInputId: string;
+  questionId: string;
+  questionVersion: number;
+  idempotencyKey: string;
+}
+
 export interface JoiAcceptedMessageDto {
+  workbenchProposal?: WorkbenchProposalDto;
   acceptedAt: string;
   workbenchId?: string;
   canceled?: boolean;

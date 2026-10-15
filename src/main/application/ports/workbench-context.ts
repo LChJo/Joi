@@ -1,6 +1,6 @@
 import type { Workbench } from "../../domain/workbench/workbench.js";
 import type { WorkAccessMode } from "../../domain/work/work.js";
-import type { WorkbenchDetailDto } from "../../../shared/joi.js";
+import type { WorkbenchBindingDto, WorkbenchDetailDto } from "../../../shared/joi.js";
 
 export interface WorkbenchSummary {
   workbenchId: string;
@@ -16,6 +16,7 @@ export interface WorkbenchCatalog {
 
 export interface WorkbenchRepository extends WorkbenchCatalog {
   createWorkbench(workbench: Workbench): Promise<void>;
+  createAndBindWorkbench?(workbench: Workbench, binding: WorkbenchBindingDto): Promise<Workbench>;
 }
 
 export type WorkbenchWorkspaceKind = "BOUND" | "MANAGED";

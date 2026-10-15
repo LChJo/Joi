@@ -126,7 +126,12 @@ class Peer implements NativeTransport {
             'version': 1,
             'hostNonce': nonce,
             'proof': base64Url.encode(proof.bytes).replaceAll('=', ''),
-            if (modern) 'capabilities': ['home.v2', 'workbench.create'],
+            if (modern)
+              'capabilities': [
+                'home.v2',
+                'workbench.create',
+                'workbench.choice.v1',
+              ],
           },
         ),
       );
@@ -435,12 +440,23 @@ void main() {
         await settleUntil(() => controller.state.supportsWorkbenchCreation);
         final created = await controller.createWorkbench(
           inputId: 'goal',
+          questionId: 'q1',
+          questionVersion: 2,
+          idempotencyKey: 'stable-creation',
           name: '移动端工作台',
           personaSummary: '保持移动端创建的上下文连续。',
           projectLabel: '移动端',
           scopeSummary: '移动端发起的工作。',
         );
         expect(created.id, 'workbench-new');
+        expect(controller.state.supportsWorkbenchChoice, isTrue);
+        final command = peer.commands.lastWhere(
+          (command) => command['kind'] == 'workbench.create',
+        );
+        expect(command, containsPair('questionId', 'q1'));
+        expect(command, containsPair('questionVersion', 2));
+        expect(command, containsPair('idempotencyKey', 'stable-creation'));
+        expect(command, containsPair('bindInputId', 'goal'));
         expect(
           controller.state.workbenches.map((item) => item.id),
           contains('workbench-new'),

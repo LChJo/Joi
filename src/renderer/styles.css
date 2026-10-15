@@ -317,6 +317,15 @@
 .joi-continuation-body { max-height: 240px; overflow: auto; overflow-wrap: anywhere; }
 .joi-continuation-body > :first-child { margin-top: 0; }
 .joi-continuation-body > :last-child { margin-bottom: 0; }
+.joi-workbench-choice-overlay { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 20px; background: rgb(10 18 14 / 30%); }
+.joi-workbench-choice-dialog { width: min(600px, 100%); max-height: calc(100dvh - 40px); overflow-y: auto; padding: 24px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); box-shadow: 0 18px 60px rgb(10 18 14 / 20%); }
+.joi-workbench-choice-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.joi-workbench-choice-dialog h2 { margin: 0; font-size: 1.2rem; }
+.joi-workbench-choice { display: grid; gap: 16px; }
+.joi-workbench-choice-form { display: grid; gap: 16px; }
+.joi-workbench-choice-form label { display: grid; gap: 8px; }
+.joi-workbench-choice-form .row-actions { justify-content: flex-end; }
+.joi-workbench-choice .joi-clarify-workbench-list { max-height: 40dvh; overflow-y: auto; }
 .joi-workbench-confirmations { display: grid; gap: 10px; }
 .joi-workbench-confirmations h2 { margin: 0; font-size: 1rem; }
 

@@ -48,6 +48,39 @@ RemoteActionFailure remoteFailureOf(Map<String, dynamic> response) {
   return const RemoteActionFailure('remote_command_failed');
 }
 
+class RemoteWorkbenchProposal {
+  const RemoteWorkbenchProposal({
+    required this.name,
+    required this.projectLabel,
+    required this.scopeSummary,
+  });
+  final String name;
+  final String projectLabel;
+  final String scopeSummary;
+  static RemoteWorkbenchProposal? fromJson(dynamic value) {
+    if (value is! Map) return null;
+    final name = value['name'];
+    final project = value['projectLabel'];
+    final scope = value['scopeSummary'];
+    if (name is! String ||
+        name.trim().isEmpty ||
+        name.length > 80 ||
+        project is! String ||
+        project.trim().isEmpty ||
+        project.length > 120 ||
+        scope is! String ||
+        scope.trim().isEmpty ||
+        scope.length > 1000) {
+      return null;
+    }
+    return RemoteWorkbenchProposal(
+      name: name,
+      projectLabel: project,
+      scopeSummary: scope,
+    );
+  }
+}
+
 class RemoteGoalCard {
   const RemoteGoalCard({
     required this.activeWork,
@@ -66,6 +99,7 @@ class RemoteGoalCard {
     this.reasonCode,
     this.questionId,
     this.questionVersion,
+    this.workbenchProposal,
     this.agentCount = 0,
     this.failedWork = 0,
     this.stage,
@@ -116,6 +150,7 @@ class RemoteGoalCard {
     reasonCode: reasonCode,
     questionId: questionId,
     questionVersion: questionVersion,
+    workbenchProposal: workbenchProposal,
     agentCount: agentCount,
     failedWork: failedWork,
     stage: stage,
@@ -131,6 +166,14 @@ class RemoteGoalCard {
   /// question does not match, so the answer has to travel back with it.
   final String? questionId;
   final int? questionVersion;
+  final RemoteWorkbenchProposal? workbenchProposal;
+  bool get needsWorkbenchChoice =>
+      status == 'NEEDS_ATTENTION' &&
+      const [
+        'workbench_selection_invalid',
+        'workbench_creation_unavailable',
+        'workbench_not_found',
+      ].contains(reasonCode);
   final String? stage;
   final int agentCount;
   final int failedWork;
@@ -193,6 +236,9 @@ class RemoteGoalCard {
           question['questionVersion'] as int? ??
           json['questionVersion'] as int?,
       stage: stage,
+      workbenchProposal: RemoteWorkbenchProposal.fromJson(
+        json['workbenchProposal'],
+      ),
     );
   }
 }
@@ -225,6 +271,7 @@ class RemoteViewState {
     this.sending = false,
     this.supportsHome = false,
     this.supportsWorkbenchCreation = false,
+    this.supportsWorkbenchChoice = false,
     this.workbenches = const [],
     this.partners = const [],
     this.busyGoals = const {},
@@ -242,6 +289,7 @@ class RemoteViewState {
   final bool sending;
   final bool supportsHome;
   final bool supportsWorkbenchCreation;
+  final bool supportsWorkbenchChoice;
   final List<RemoteChoice> workbenches;
   final List<RemoteChoice> partners;
   final Set<String> busyGoals;
@@ -255,6 +303,7 @@ class RemoteViewState {
     bool? sending,
     bool? supportsHome,
     bool? supportsWorkbenchCreation,
+    bool? supportsWorkbenchChoice,
     List<RemoteChoice>? workbenches,
     List<RemoteChoice>? partners,
     Set<String>? busyGoals,
@@ -270,6 +319,8 @@ class RemoteViewState {
     supportsHome: supportsHome ?? this.supportsHome,
     supportsWorkbenchCreation:
         supportsWorkbenchCreation ?? this.supportsWorkbenchCreation,
+    supportsWorkbenchChoice:
+        supportsWorkbenchChoice ?? this.supportsWorkbenchChoice,
     workbenches: workbenches ?? this.workbenches,
     partners: partners ?? this.partners,
     busyGoals: busyGoals ?? this.busyGoals,
@@ -297,6 +348,9 @@ abstract interface class RemoteController implements Listenable {
     required String personaSummary,
     required String projectLabel,
     required String scopeSummary,
+    String? questionId,
+    int? questionVersion,
+    String? idempotencyKey,
   });
   Future<Map<String, dynamic>> read(
     String kind, {
@@ -345,6 +399,9 @@ class PlaceholderRemoteController extends ChangeNotifier
     required String personaSummary,
     required String projectLabel,
     required String scopeSummary,
+    String? questionId,
+    int? questionVersion,
+    String? idempotencyKey,
   }) async => RemoteWorkbenchCreation('', name, bound: false);
   @override
   Future<Map<String, dynamic>> read(

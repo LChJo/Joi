@@ -5,6 +5,21 @@ import { describe, expect, it, vi } from "vitest";
 import { RemoteCommandService } from "../../src/main/application/remote/remote-command-service.js";
 
 describe("RemoteCommandService", () => {
+  it("forwards a versioned creation to the atomic registry without attaching in a second transaction", async () => {
+    const create = vi.fn().mockResolvedValue({ profile: { name: "工程工坊", scopeSummary: "工程维护。" }, updatedAt: "2026-10-15", workbenchId: "created" });
+    const attachWorkbench = vi.fn();
+    const service = new RemoteCommandService({
+      homeFeed: { load: vi.fn() }, inbox: { accept: vi.fn(), attachWorkbench }, workbenchRegistry: { create },
+    });
+    const draft = {
+      inputId: "input", bindInputId: "input", questionId: "q1", questionVersion: 1, idempotencyKey: "stable",
+      name: "工程工坊", projectLabel: "joi", scopeSummary: "工程维护。", personaSummary: "private draft",
+    };
+    expect(await service.handle({ ...draft, kind: "workbench.create", requestId: "create" })).toMatchObject({ result: { bound: true, workbenchId: "created" } });
+    expect(create).toHaveBeenCalledWith({ bindInputId: draft.bindInputId, questionId: draft.questionId, questionVersion: draft.questionVersion, idempotencyKey: draft.idempotencyKey,
+      name: draft.name, projectLabel: draft.projectLabel, scopeSummary: draft.scopeSummary, personaSummary: draft.personaSummary });
+    expect(attachWorkbench).not.toHaveBeenCalled();
+  });
   it("abbreviates private paths in action receipts and legacy feed projections", async () => {
     const unsafe = { textPreview: "C:\\private\\a\\b\\report.md", token: "token=private-value" };
     const service = new RemoteCommandService({ homeFeed: { load: vi.fn().mockResolvedValue(unsafe) }, inbox: { accept: vi.fn().mockResolvedValue(unsafe) } });

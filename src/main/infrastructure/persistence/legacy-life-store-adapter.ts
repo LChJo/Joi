@@ -1,6 +1,11 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
+import { createHash } from "node:crypto";
+import type { WorkbenchBindingDto } from "../../../shared/joi.js";
+import { needsWorkbenchChoice } from "../../../shared/workbench-choice.js";
+import { DomainError } from "../../domain/errors.js";
+import { clarifyJoiInputInTransaction } from "./sqlite-joi-inbox-repository.js";
 
 import type { WorkbenchRepository, WorkbenchSummary, LegacyWorkbenchPolicyReader } from "../../application/ports/workbench-context.js";
 import { createWorkbench, type Workbench } from "../../domain/workbench/workbench.js";
@@ -22,24 +27,7 @@ export class LegacyLifeStoreAdapter implements WorkbenchRepository, LegacyWorkbe
   constructor(private readonly database: TransactionalDatabase) {}
 
   async getWorkbench(workbenchId: string): Promise<Workbench | null> {
-    const row = this.database.transaction((connection) => connection.prepare(`
-      SELECT workbench_id, name, created_at, updated_at, persona_revision_id, persona_summary,
-             scope_summary, project_label, memory_namespace_id, task_summary
-        FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'`).get(workbenchId)) as Row | undefined;
-    if (row === undefined) return null;
-    const id = requiredText(row, "workbench_id");
-    const name = requiredText(row, "name");
-    return createWorkbench({
-      workbenchId: id,
-      createdAt: requiredText(row, "created_at"),
-      memoryNamespaceId: requiredText(row, "memory_namespace_id"),
-      name,
-      personaRevisionId: requiredText(row, "persona_revision_id"),
-      personaSummary: requiredText(row, "persona_summary"),
-      project: { label: requiredText(row, "project_label") },
-      scopeSummary: requiredText(row, "scope_summary"),
-      taskContext: { activeWorkIds: [], summary: requiredText(row, "task_summary") },
-    });
+    return this.database.transaction((connection) => readWorkbench(connection, workbenchId));
   }
 
   async listSummaries(): Promise<WorkbenchSummary[]> {
@@ -57,24 +45,46 @@ export class LegacyLifeStoreAdapter implements WorkbenchRepository, LegacyWorkbe
   }
 
   async createWorkbench(workbench: Workbench): Promise<void> {
-    this.database.transaction((connection) => {
-      connection.prepare(`INSERT INTO workbenches
-        (workbench_id, legacy_life_id, name, persona_revision_id, persona_summary, scope_summary,
-         project_label, workspace_ref, memory_namespace_id, task_summary, status, created_at, updated_at)
-        VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, 'ACTIVE', ?, ?)`
-      ).run(
-        workbench.workbenchId, workbench.profile.name, workbench.profile.personaRevisionId, workbench.profile.personaSummary,
-        workbench.profile.scopeSummary, workbench.project.label, workbench.memory.namespaceId,
-        workbench.taskContext.summary, workbench.createdAt, workbench.updatedAt,
+    this.database.transaction((connection) => insertWorkbench(connection, workbench));
+  }
+
+  async createAndBindWorkbench(workbench: Workbench, binding: WorkbenchBindingDto): Promise<Workbench> {
+    return this.database.transaction((connection) => {
+      const conflict = () => new DomainError("workbench_choice_conflict", "This workbench choice has changed. Refresh and try again.");
+      const hash = createHash("sha256").update(JSON.stringify({
+        name: workbench.profile.name, personaSummary: workbench.profile.personaSummary,
+        projectLabel: workbench.project.label, scopeSummary: workbench.profile.scopeSummary,
+      })).digest("hex");
+      const previous = connection.prepare(`SELECT * FROM workbench_choice_creations WHERE idempotency_key = ?
+        OR (input_id = ? AND question_id = ? AND question_version = ?)`).get(
+        binding.idempotencyKey, binding.bindInputId, binding.questionId, binding.questionVersion,
+      ) as Row | undefined;
+      if (previous !== undefined) {
+        if (previous.input_id !== binding.bindInputId || previous.question_id !== binding.questionId
+          || previous.question_version !== binding.questionVersion || previous.request_hash !== hash) throw conflict();
+        const existing = readWorkbench(connection, requiredText(previous, "workbench_id"));
+        if (existing === null) throw conflict();
+        return existing;
+      }
+      const input = connection.prepare(`SELECT i.*, gate.question_id, gate.question_version, gate.status AS gate_status
+        FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
+        WHERE i.input_id = ?`).get(binding.bindInputId) as Row | undefined;
+      const legacyQuestion = input?.gate_status === null && binding.questionId === `legacy_question:${binding.bindInputId}` && binding.questionVersion === 1;
+      if (input?.status !== "CLARIFICATION_REQUIRED" || (input.workbench_id !== null && input.clarification_reason_code !== "workbench_not_found")
+        || input.canceled_at !== null || input.dismissed_at !== null || input.failed_at !== null
+        || !needsWorkbenchChoice(typeof input.clarification_reason_code === "string" ? input.clarification_reason_code : undefined)
+        || (!legacyQuestion && (input.gate_status !== "WAITING_INPUT" || input.question_id !== binding.questionId || input.question_version !== binding.questionVersion))) throw conflict();
+      insertWorkbench(connection, workbench);
+      const attached = clarifyJoiInputInTransaction(connection, binding.bindInputId, {
+        workbenchId: workbench.workbenchId, expectedQuestionId: binding.questionId, expectedQuestionVersion: binding.questionVersion,
+      }, workbench.createdAt);
+      if (attached === null) throw conflict();
+      connection.prepare(`INSERT INTO workbench_choice_creations
+        (input_id, question_id, question_version, idempotency_key, workbench_id, request_hash, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        binding.bindInputId, binding.questionId, binding.questionVersion, binding.idempotencyKey, workbench.workbenchId, hash, workbench.createdAt,
       );
-      connection.prepare(`UPDATE workbench_workspace_bindings SET display_name = ?, updated_at = ?
-        WHERE workbench_id = ? AND kind = 'MANAGED'`).run(
-        workbenchWorkspaceDisplayName({
-          name: workbench.profile.name,
-          projectLabel: workbench.project.label,
-          scopeSummary: workbench.profile.scopeSummary,
-        }), workbench.updatedAt, workbench.workbenchId,
-      );
+      return workbench;
     });
   }
 
@@ -88,4 +98,45 @@ export class LegacyLifeStoreAdapter implements WorkbenchRepository, LegacyWorkbe
     ).get(workbenchId)) as Row | undefined;
     return typeof legacy?.main_agent_connection_id === "string" ? `partner_${legacy.main_agent_connection_id}` : null;
   }
+}
+
+function readWorkbench(connection: DatabaseSync, workbenchId: string): Workbench | null {
+  const row = connection.prepare(`
+    SELECT workbench_id, name, created_at, updated_at, persona_revision_id, persona_summary,
+           scope_summary, project_label, memory_namespace_id, task_summary
+      FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'`).get(workbenchId) as Row | undefined;
+  if (row === undefined) return null;
+  const id = requiredText(row, "workbench_id");
+  const name = requiredText(row, "name");
+  return createWorkbench({
+    workbenchId: id,
+    createdAt: requiredText(row, "created_at"),
+    memoryNamespaceId: requiredText(row, "memory_namespace_id"),
+    name,
+    personaRevisionId: requiredText(row, "persona_revision_id"),
+    personaSummary: requiredText(row, "persona_summary"),
+    project: { label: requiredText(row, "project_label") },
+    scopeSummary: requiredText(row, "scope_summary"),
+    taskContext: { activeWorkIds: [], summary: requiredText(row, "task_summary") },
+  });
+}
+
+function insertWorkbench(connection: DatabaseSync, workbench: Workbench): void {
+    connection.prepare(`INSERT INTO workbenches
+      (workbench_id, legacy_life_id, name, persona_revision_id, persona_summary, scope_summary,
+       project_label, workspace_ref, memory_namespace_id, task_summary, status, created_at, updated_at)
+      VALUES (?, NULL, ?, ?, ?, ?, ?, NULL, ?, ?, 'ACTIVE', ?, ?)`
+    ).run(
+      workbench.workbenchId, workbench.profile.name, workbench.profile.personaRevisionId, workbench.profile.personaSummary,
+      workbench.profile.scopeSummary, workbench.project.label, workbench.memory.namespaceId,
+      workbench.taskContext.summary, workbench.createdAt, workbench.updatedAt,
+    );
+    connection.prepare(`UPDATE workbench_workspace_bindings SET display_name = ?, updated_at = ?
+      WHERE workbench_id = ? AND kind = 'MANAGED'`).run(
+      workbenchWorkspaceDisplayName({
+        name: workbench.profile.name,
+        projectLabel: workbench.project.label,
+        scopeSummary: workbench.profile.scopeSummary,
+      }), workbench.updatedAt, workbench.workbenchId,
+    );
 }

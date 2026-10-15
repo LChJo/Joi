@@ -1,13 +1,14 @@
+import { WorkbenchChoiceDialog, WorkbenchChoiceForm } from "./WorkbenchChoiceDialog.js";
+import { needsWorkbenchChoice } from "../shared/workbench-choice.js";
 import { ResultExportMenu } from './ResultExportMenu';
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ClockIcon, DotsThreeIcon, PlusIcon, XIcon } from "@phosphor-icons/react";
+import { ClockIcon, DotsThreeIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
 import { MODEL_SOURCE_CHOICES, THINKING_EFFORTS, THINKING_EFFORT_LABELS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
-import { workbenchSuggestions, type WorkbenchSuggestion } from "../shared/workbench-suggestions";
 import { ApiError, type DigitalLifeApi } from "./api";
 
 const SAFE_MARKDOWN_COMPONENTS: Components = {
@@ -870,7 +871,7 @@ function ClarifyTextarea({ "aria-label": ariaLabel, disabled, onChange, onKeyDow
   return <textarea aria-label={ariaLabel} disabled={disabled} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder} ref={ref} rows={1} value={value} />;
 }
 
-function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, suggestionSeed, continuationSummary, onShowContinuationResult }: {
+function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, continuationSummary, onShowContinuationResult }: {
   api: DigitalLifeApi;
   partners: PartnerDto[];
   workbenchId: string | undefined;
@@ -888,9 +889,6 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
-  const [creatingWorkbench, setCreatingWorkbench] = useState(false);
-  const [createdWorkbench, setCreatedWorkbench] = useState<WorkbenchDto | null>(null);
-  const [workbenchQuery, setWorkbenchQuery] = useState("");
   const isQuestion = reasonCode === "question_required";
   const needsPartnerChoice = reasonCode === "partner_selection_required";
   const needsWaitingRecovery = reasonCode === "partner_waiting_recovery_required" || reasonCode === "partner_auth_required";
@@ -900,16 +898,6 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const needsWorkbenchChoice = reasonCode === "workbench_selection_invalid" || reasonCode === "workbench_creation_unavailable" || reasonCode === "workbench_not_found";
   const needsHistoricalReview = reasonCode === "harness_review_unrecoverable";
   const assignedWorkbench = workbenches.find((workbench) => workbench.workbenchId === workbenchId);
-  // Reuse first, abstract clusters second — never a workbench named after this one request.
-  const proposals = workbenchSuggestions({ seed: suggestionSeed ?? "", workbenches });
-  const selectableWorkbenches = createdWorkbench === null || workbenches.some((workbench) => workbench.workbenchId === createdWorkbench.workbenchId)
-    ? workbenches
-    : [...workbenches, createdWorkbench];
-  const showWorkbenchSearch = selectableWorkbenches.length > 6;
-  const normalizedWorkbenchQuery = workbenchQuery.trim().toLowerCase();
-  const visibleWorkbenches = !showWorkbenchSearch || normalizedWorkbenchQuery === ""
-    ? selectableWorkbenches
-    : selectableWorkbenches.filter((workbench) => `${workbench.name} ${workbench.scopeSummary}`.toLowerCase().includes(normalizedWorkbenchQuery));
   const selectablePartners = partners.filter((partner) => partner.status === "ACTIVE" && partner.configuration === undefined);
   const resolve = async (resolution: { actionChoice?: "RESUME" | "CONTINUE" | "ACCEPT_CURRENT"; partnerId?: string; workbenchId?: string; text?: string }) => {
     setBusy(true); setNotice(null);
@@ -925,43 +913,6 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     }
   };
   const submitDraft = () => { void resolve({ text: draft.trim() }); };
-  const createWorkbenchAndResolve = async (proposal: WorkbenchSuggestion) => {
-    // Reusing an existing workbench is a single step, so it cannot half-succeed.
-    if (proposal.workbenchId !== undefined) {
-      await resolve({ workbenchId: proposal.workbenchId });
-      return;
-    }
-    // A workbench this card already created must not be created a second time.
-    let existing = createdWorkbench;
-    if (existing?.name === proposal.name) {
-      await resolve({ workbenchId: existing.workbenchId });
-      return;
-    }
-    setBusy(true); setNotice(null);
-    try {
-      const created = await api.createWorkbench({
-        name: proposal.name,
-        personaSummary: proposal.personaSummary,
-        projectLabel: proposal.projectLabel,
-        scopeSummary: proposal.scopeSummary,
-      });
-      existing = created;
-      setCreatedWorkbench(created);
-      setCreatingWorkbench(false);
-      await api.clarifyJoiMessage(inputId, { workbenchId: created.workbenchId, ...(questionId === undefined || questionVersion === undefined ? {} : { questionId, questionVersion }) });
-      setNotice("工作台已创建，正在重新安排…");
-      setDraft("");
-      onResolved();
-    } catch (error) {
-      // The creation and the continuation are separate requests here, so a failure after the
-      // creation is not "it was not created" — saying so made the user retry into a duplicate.
-      setNotice(existing === null
-        ? error instanceof ApiError ? error.message : "工作台没有创建成功，请重试。"
-        : `「${existing.name}」已经建好了，直接选它即可。`);
-    } finally {
-      setBusy(false);
-    }
-  };
   const chooseWorkspace = async () => {
     if (workbenchId === undefined) {
       setNotice("这条任务还没有关联工作台，暂时不能选择工作目录。");
@@ -997,29 +948,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
           <span>{partner.description ?? (partner.kind === "local-pi" ? "本地搭档" : "远程搭档")}</span>
         </button>)}
       </div>}
-    </> : needsWorkbenchChoice ? <>
-      {selectableWorkbenches.length === 0 ? <p className="joi-clarify-hint">还没有可选的工作台；可以直接新增一个，或补充更明确的项目/角色。</p> : null}
-      <div className="joi-clarify-workbench-picker" aria-label="点选这条输入归属的工作台">
-        {showWorkbenchSearch ? <label className="joi-clarify-workbench-search">搜索工作台<input aria-label="搜索工作台" onChange={(event) => setWorkbenchQuery(event.target.value)} placeholder="按名称或范围搜索…" type="search" value={workbenchQuery} /></label> : null}
-        <div className="joi-clarify-workbench-list" role="group" aria-label="选择一个工作台继续">
-          {visibleWorkbenches.length === 0 ? <p className="joi-clarify-hint">没有匹配的工作台，请换个关键词。</p> : visibleWorkbenches.map((workbench) => <button aria-label={workbench.name} className="joi-clarify-workbench-option" disabled={busy} key={workbench.workbenchId} onClick={() => void resolve({ workbenchId: workbench.workbenchId })} type="button">
-            <strong>{workbench.name}</strong><span>{workbench.scopeSummary}</span>
-          </button>)}
-        </div>
-        <button className="button primary joi-clarify-new-workbench" disabled={busy} onClick={() => { setCreatingWorkbench(true); setNotice(null); }} type="button"><PlusIcon aria-hidden size={16} />新增工作台</button>
-      </div>
-      {creatingWorkbench ? <section aria-label="joi 建议的工作台方案" className="joi-clarify-proposals">
-        <div><strong>这条输入归到哪里？</strong><span>优先复用已有工作台；都不合适时新建一个工作范围，而不是照着这句话起名字。</span></div>
-        <div className="joi-clarify-proposal-list">
-          {proposals.map((proposal) => <button className="joi-clarify-proposal" disabled={busy} key={`${proposal.kind}:${proposal.name}`} onClick={() => void createWorkbenchAndResolve(proposal)} type="button">
-            <strong>{proposal.kind === "existing" ? `复用 ${proposal.name}` : proposal.name}</strong><span>{proposal.description}</span>
-          </button>)}
-        </div>
-        <div className="row-actions">
-          <button className="button quiet" disabled={busy} onClick={() => { setCreatingWorkbench(false); setNotice(null); }} type="button">取消</button>
-        </div>
-      </section> : null}
-    </> : null}
+    </> : needsWorkbenchChoice ? <WorkbenchChoiceForm api={api} message={{ inputId, ...(questionId === undefined ? {} : { questionId }), ...(questionVersion === undefined ? {} : { questionVersion }) }} onResolved={onResolved} workbenches={workbenches} /> : null}
     {needsHistoricalReview || needsPartnerChoice ? null : needsReviewRetry ? <div className="joi-clarify-workspace">
       <div><strong>重新核对已有工作</strong><span>已有回答和工作结果已保留，joi 会核对后继续。</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ text: "沿用已保存的回答，重试评审。" })} type="button">{busy ? "提交中…" : "重试评审"}</button>
@@ -1035,7 +964,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     </div> : needsWorkspace ? <div className="joi-clarify-workspace">
       <div><strong>{assignedWorkbench?.name ?? "当前工作台"}</strong><span>选择后只保存安全的工作区标识，不会在页面或接口中暴露绝对路径。</span></div>
       <button className="button primary" disabled={busy || workbenchId === undefined} onClick={() => void chooseWorkspace()} type="button">{busy ? "选择中…" : "选择工作目录"}</button>
-    </div> : creatingWorkbench ? null : <div className="joi-clarify-add">
+    </div> : needsWorkbenchChoice ? null : <div className="joi-clarify-add">
       <ClarifyTextarea aria-label={isQuestion ? "你的回答" : "补充信息"} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && draft.trim() !== "") { event.preventDefault(); submitDraft(); } }} placeholder={isQuestion ? "输入回答，joi 会接着原任务继续…（Shift+Enter 换行）" : "补充细节，让 joi 接着这条输入往下做…（Shift+Enter 换行）"} value={draft} />
       <button className="button quiet" disabled={busy || draft.trim() === ""} onClick={submitDraft} type="button">{isQuestion ? "回答并继续" : "补充并继续"}</button>
     </div>}
@@ -1575,6 +1504,8 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   const [feedError, setFeedError] = useState(false);
   const [feedLoaded, setFeedLoaded] = useState(false);
   const [openGoalId, setOpenGoalId] = useState<string | null>(focusGoalId ?? null);
+  const [workbenchChoiceId, setWorkbenchChoiceId] = useState<string | null>(null);
+  const shownWorkbenchQuestions = useRef(new Set<string>());
   const [openGoalAgentStatus, setOpenGoalAgentStatus] = useState<WorkbenchAgentStatusDto | undefined>(undefined);
   const [resultGoal, setResultGoal] = useState<JoiGoalCardDto | null>(null);
   const [retryGoalId, setRetryGoalId] = useState<string | null>(null);
@@ -1699,6 +1630,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
         ...(attachmentIds.length === 0 ? {} : { attachmentIds }),
         ...(targetWorkbench === undefined ? {} : { workbenchId: targetWorkbench.workbenchId }),
       });
+      setTargetWorkbenchId(null);
       setFiles([]);
       setImported([]);
       setFeed((current) => ({ ...current, thinking: [{
@@ -1721,6 +1653,27 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   // screen. Lookups still search every goal, so focusing an archived one opens its detail.
   const visibleGoals = useMemo(() => feed.goals.filter((goal) => goal.archivedAt === undefined), [feed.goals]);
   const openGoal = feed.goals.find((goal) => goal.goalId === openGoalId);
+  const pendingWorkbenchChoices = useMemo<JoiAcceptedMessageDto[]>(() => [
+    ...feed.unassignedActions.filter((message) => needsWorkbenchChoice(message.clarificationReasonCode)),
+    ...feed.goals.flatMap((goal): JoiAcceptedMessageDto[] => goal.status === "NEEDS_ATTENTION" && needsWorkbenchChoice(goal.clarification.reasonCode) ? [{
+      inputId: goal.goalId, acceptedAt: goal.updatedAt, status: "CLARIFICATION_REQUIRED",
+      clarificationReasonCode: goal.clarification.reasonCode,
+      ...(goal.clarification.questionId === undefined ? {} : { questionId: goal.clarification.questionId }),
+      ...(goal.clarification.questionVersion === undefined ? {} : { questionVersion: goal.clarification.questionVersion }),
+    }] : []),
+  ], [feed.unassignedActions, feed.goals]);
+  const workbenchChoice = pendingWorkbenchChoices.find((message) => message.inputId === workbenchChoiceId);
+  useEffect(() => {
+    if (workbenchChoice !== undefined || openGoalId !== null || resultGoal !== null || !feedLoaded || feedError) return;
+    const next = pendingWorkbenchChoices.find((message) =>
+      !shownWorkbenchQuestions.current.has(`${message.inputId}:${message.questionId ?? "legacy"}:${String(message.questionVersion ?? 1)}`));
+    if (next === undefined) return;
+    const timer = setTimeout(() => {
+      shownWorkbenchQuestions.current.add(`${next.inputId}:${next.questionId ?? "legacy"}:${String(next.questionVersion ?? 1)}`);
+      setWorkbenchChoiceId(next.inputId);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [pendingWorkbenchChoices, feedLoaded, feedError, openGoalId, resultGoal, workbenchChoice]);
   const dismissGoal = (goalId: string) => setFeed((current) => ({ ...current, goals: current.goals.filter((goal) => goal.goalId !== goalId) }));
   const dismissAction = (inputId: string) => setFeed((current) => ({ ...current, unassignedActions: current.unassignedActions.filter((item) => item.inputId !== inputId) }));
   const markRetryStarted = (goal: JoiGoalCardDto) => {
@@ -1731,6 +1684,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   return <section className="joi-home" aria-labelledby="joi-home-title">
     <header><h1 id="joi-home-title">现在想让 joi 做什么？</h1><p>你只管说目标。工作台归属、是否并发、找哪位搭档，都由 joi 判断和安排。</p></header>
     {focusGoalId !== undefined && openGoalId === focusGoalId && feedLoaded && !feedError && openGoal === undefined ? <p className="inline-notice" role="status">目标已移除或不可用，历史用量仍保留。</p> : null}
+    {workbenchChoice === undefined ? null : <WorkbenchChoiceDialog api={api} key={`${workbenchChoice.inputId}:${workbenchChoice.questionId ?? "legacy"}:${String(workbenchChoice.questionVersion ?? 1)}`} message={workbenchChoice} onClose={() => setWorkbenchChoiceId(null)} onResolved={() => { dismissAction(workbenchChoice.inputId); setWorkbenchChoiceId(null); void refresh().catch(() => undefined); }} workbenches={snapshot.workbenches} />}
     {feedError ? <div className="inline-notice danger" role="alert"><p>任务状态暂时无法刷新，已保留上次成功获取的数据。</p><button className="button quiet" onClick={() => void loadFeed()} type="button">重新加载任务状态</button></div> : null}
     {workbenchChanges.length === 0 ? null : <section className="joi-workbench-confirmations" aria-label="工作台变更确认"><h2>需要你确认</h2>{workbenchChanges.map((change) => <article key={change.requestId}>
       <div><strong>{change.kind === "MERGE" ? "joi 建议合并工作台" : "joi 建议归档工作台"}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceWorkbenchId} → ${change.targetWorkbenchId ?? ""}` : change.sourceWorkbenchId}</small></div>
@@ -1740,7 +1694,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     {resultGoal?.completionSummary === undefined ? null : <GoalResultView api={api} goal={resultGoal} onBack={() => setResultGoal(null)} onOpenDetail={(preferredStatus) => { setResultGoal(null); setOpenGoalAgentStatus(preferredStatus); setOpenGoalId(resultGoal.goalId); }} onRetried={(retriedGoal) => { setResultGoal(null); markRetryStarted(retriedGoal); }} />}
     <div aria-label="joi 信息流" className="joi-feed joi-feed-single">
       {visibleThinking.map((item) => <ThinkingRow item={item} key={item.turnId} />)}
-      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}<ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} /></article>)}
+      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">需要你确认</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString()}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}{needsWorkbenchChoice(message.clarificationReasonCode) ? <><p className="joi-clarify-reason">{clarificationText(message.clarificationReasonCode, message.clarificationPrompt)}</p><button className="button primary" onClick={() => setWorkbenchChoiceId(message.inputId)} type="button">选择工作台</button></> : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} />}</article>)}
       {visibleGoals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
           <GoalCardHead goal={goal} onOpen={() => { setResultGoal(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} />

@@ -1,6 +1,7 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
+import { parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 
 import type { JoiGoalCardBaseDto, JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto, WorkbenchArtifactDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
@@ -472,19 +473,22 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         };
       }).filter((item) => item.phase === "queued" || item.phase === "progressing" || Date.parse(item.expiresAt ?? "") > now.getTime()));
       const unassignedActions = (connection.prepare(`SELECT i.input_id, i.workbench_id, i.status, i.clarification_reason_code,
-        i.clarification_prompt, i.body, i.created_at, i.canceled_at, gate.question_id, gate.question_version
+        i.clarification_prompt, i.workbench_proposal_json, i.body, i.created_at, i.canceled_at, gate.question_id, gate.question_version
         FROM joi_inbox_messages i LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
         WHERE i.dismissed_at IS NULL AND i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED'
-        ORDER BY i.created_at DESC, i.input_id DESC`).all() as Row[]).map((row) => ({
+        ORDER BY i.created_at DESC, i.input_id DESC`).all() as Row[]).map((row) => {
+        const proposal = parseWorkbenchProposal(row.workbench_proposal_json);
+        return {
         acceptedAt: text(row, "created_at"),
         ...(typeof row.clarification_prompt === "string" ? { clarificationPrompt: row.clarification_prompt } : {}),
         ...(typeof row.clarification_reason_code === "string" ? { clarificationReasonCode: row.clarification_reason_code } : {}),
+        ...(proposal === undefined ? {} : { workbenchProposal: proposal }),
         inputId: text(row, "input_id"),
         questionId: typeof row.question_id === "string" ? row.question_id : `legacy_question:${text(row, "input_id")}`,
         questionVersion: typeof row.question_version === "number" ? row.question_version : 1,
         status: "CLARIFICATION_REQUIRED" as const,
         textPreview: maskSecretText(text(row, "body")).replace(/\s+/gu, " ").trim().slice(0, 81),
-      }));
+      }; });
       return { goals, thinking, unassignedActions };
     });
   }

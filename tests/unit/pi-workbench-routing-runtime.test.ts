@@ -28,17 +28,19 @@ async function capturedRequest(
 }
 
 describe("Pi Workbench routing runtime", () => {
-  it("tells the router to place the input in an existing Workbench before creating one", async () => {
+  it("requires a unique semantic match and offers user selection", async () => {
     const request = await capturedRequest(
       async (runtime) => runtime.decide({
         workbenches: [{ workbenchId: "w1", name: "研究", scopeSummary: "技术研究", updatedAt: "2026-07-28T10:00:00.000Z" }],
         input: "继续研究这个方向",
         repair: false,
       }),
-      fauxAssistantMessage([fauxToolCall("workbench_select", { action: "select", workbenchId: "w1" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxToolCall("workbench_select", { action: "select", matchKind: "SAME_SCOPE", workbenchId: "w1" })], { stopReason: "toolUse" }),
     );
-    expect(request).toContain("Select an existing one whenever its scope can hold the input; create one only when none can.");
-    expect(request).toContain("Never copy the user's wording, or any run of it, into name, projectLabel or scopeSummary.");
+    expect(request).toContain("Select only a clear unique project/scope match.");
+    expect(request).toContain("workbench_clarify");
+    expect(request).toContain("engineering maintenance, not AI news");
+    expect(request).toContain("Preserve a real project name when useful");
     expect(request).not.toContain("Prefer creating a new Workbench for a distinct new goal");
   });
 
@@ -62,7 +64,7 @@ describe("Pi Workbench routing runtime", () => {
   it("uses a constrained workbench_select tool and returns only its structured arguments", async () => {
     const faux = fauxProvider({ provider: "routing-provider" });
     faux.setResponses([fauxAssistantMessage([
-      fauxToolCall("workbench_select", { action: "select", workbenchId: "workbench_research" }),
+      fauxToolCall("workbench_select", { action: "select", matchKind: "SAME_SCOPE", workbenchId: "workbench_research" }),
     ], { stopReason: "toolUse" })]);
     const models = createModels();
     models.setProvider(faux.provider);
@@ -83,7 +85,7 @@ describe("Pi Workbench routing runtime", () => {
       workbenches: [{ workbenchId: "workbench_research", name: "Research", scopeSummary: "Research only", updatedAt: "2026-07-28T10:00:00.000Z" }],
       input: "continue research",
       repair: false,
-    })).resolves.toEqual({ action: "select", workbenchId: "workbench_research" });
+    })).resolves.toEqual({ action: "select", matchKind: "SAME_SCOPE", workbenchId: "workbench_research" });
   });
 
   it("can create the first Workbench and returns null for free text", async () => {

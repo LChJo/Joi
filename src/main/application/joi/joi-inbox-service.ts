@@ -209,6 +209,7 @@ function toDto(record: JoiInboxRecord): JoiAcceptedMessageDto {
     ...(record.canceledAt === undefined ? {} : { canceled: true }),
     ...(record.clarificationPrompt === undefined ? {} : { clarificationPrompt: record.clarificationPrompt }),
     ...(record.clarificationReasonCode === undefined ? {} : { clarificationReasonCode: record.clarificationReasonCode }),
+    ...(record.workbenchProposal === undefined ? {} : { workbenchProposal: record.workbenchProposal }),
     ...(record.failedAt === undefined || record.failureCount === undefined || record.failureReasonCode === undefined ? {} : {
       failure: {
         attempts: record.failureCount,

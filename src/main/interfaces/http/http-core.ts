@@ -154,7 +154,7 @@ export function errorDetails(error: unknown, requestId: string): { body: ApiErro
     return { body: { code: error.code, message: error.message, requestId }, status: error.status };
   }
   if (error instanceof Error && "code" in error && typeof error.code === "string") {
-    const conflictCodes = ["workbench_change_active_work", "workbench_workspace_busy", "workbench_agent_resident_delete_forbidden", "workbench_agent_not_terminal"];
+    const conflictCodes = ["workbench_choice_conflict", "workbench_change_active_work", "workbench_workspace_busy", "workbench_agent_resident_delete_forbidden", "workbench_agent_not_terminal"];
     const status = error.code.endsWith("_not_found") ? 404 : conflictCodes.includes(error.code) ? 409 : 400;
     return { body: { code: error.code, message: error.message, requestId }, status };
   }

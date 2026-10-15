@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'remote_controller.dart';
-import 'workbench_suggestions.dart';
+import 'workbench_choice.dart';
 import 'home_screen.dart';
 
 class MessageBody extends StatelessWidget {
@@ -77,61 +77,11 @@ String actFailureNotice(Object error) {
   return '操作未完成，请刷新查看最新状态后重试。输入已保留。';
 }
 
-List<WorkbenchMatchSource> _matchSources(List<RemoteChoice> workbenches) => [
-  for (final workbench in workbenches)
-    WorkbenchMatchSource(
-      name: workbench.name,
-      scopeSummary: workbench.description,
-      workbenchId: workbench.id,
-    ),
-];
-
-Future<WorkbenchSuggestion?> chooseWorkbenchSuggestion(
-  BuildContext context,
-  List<WorkbenchSuggestion> suggestions,
-) => showModalBottomSheet<WorkbenchSuggestion>(
-  context: context,
-  isScrollControlled: true,
-  useSafeArea: true,
-  builder: (context) => Padding(
-    padding: const EdgeInsets.fromLTRB(20, 20, 20, 24),
-    child: Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text('归到哪里', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 4),
-        const Text('优先复用已有工作台；都不合适时再新建一个工作范围。'),
-        const SizedBox(height: 12),
-        for (final suggestion in suggestions)
-          Card(
-            clipBehavior: Clip.antiAlias,
-            child: ListTile(
-              title: Text(suggestion.name),
-              subtitle: Text(suggestion.description),
-              trailing: Icon(
-                suggestion.reusesExisting
-                    ? Icons.subdirectory_arrow_right_rounded
-                    : Icons.add_rounded,
-              ),
-              onTap: () => Navigator.pop(context, suggestion),
-            ),
-          ),
-      ],
-    ),
-  ),
-);
-
 class _GoalActionsState extends State<GoalActions> {
   final _draft = TextEditingController();
   bool _showContinue = false;
   bool _busy = false;
   String? _notice;
-
-  /// A workbench this card already created. Remembered so a retry binds it instead of minting a
-  /// duplicate — the host returns `bound: false` when the input had already moved on, and that is
-  /// recoverable by selecting the workbench, not by creating a second one.
-  RemoteWorkbenchCreation? _createdWorkbench;
 
   @override
   void dispose() {
@@ -241,56 +191,6 @@ class _GoalActionsState extends State<GoalActions> {
       return;
     }
     await _act(choice);
-  }
-
-  /// Apply a picked candidate: reuse an existing workbench, or create the suggested cluster.
-  Future<void> _applySuggestion(WorkbenchSuggestion suggestion) async {
-    if (_busy) return;
-    final existing = suggestion.workbenchId;
-    if (existing != null) {
-      // Reuse never needs a creation step, so it cannot half-succeed.
-      await _act('clarify', workbenchId: existing);
-      return;
-    }
-    if (_createdWorkbench?.name == suggestion.name) {
-      await _act('clarify', workbenchId: _createdWorkbench!.id);
-      return;
-    }
-    setState(() {
-      _busy = true;
-      _notice = null;
-    });
-    try {
-      final created = await widget.controller.createWorkbench(
-        inputId: widget.goal.goalId,
-        name: suggestion.name,
-        personaSummary: suggestion.personaSummary,
-        projectLabel: suggestion.projectLabel,
-        scopeSummary: suggestion.scopeSummary,
-      );
-      if (!mounted) return;
-      if (created.bound) {
-        _createdWorkbench = null;
-        widget.onChanged?.call();
-        return;
-      }
-      // The workbench exists; the input had already moved past awaiting one. Selecting it is the
-      // way forward, so say that instead of reporting a failure the user cannot act on.
-      setState(() {
-        _createdWorkbench = created;
-        _notice = '「${created.name}」已创建，但这条卡片已经不等待归属了。请在「选择工作台继续」里选它。';
-      });
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _notice = _createdWorkbench == null
-              ? actFailureNotice(error)
-              : '「${_createdWorkbench!.name}」已经建好了，请在「选择工作台继续」里选它。';
-        });
-      }
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
   }
 
   @override
@@ -407,50 +307,35 @@ class _GoalActionsState extends State<GoalActions> {
             ),
           if (directory) const Text('请回到桌面为工作台选择工作目录，然后继续。'),
           if (historical) const Text('请确认历史工作已结束，再安全收尾。'),
-          if (workbench || partner)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                OutlinedButton(
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          final choice = await chooseRemote(
-                            context,
-                            workbench ? '选择工作台' : '选择搭档',
-                            workbench ? state.workbenches : state.partners,
-                          );
-                          if (choice != null && mounted) {
-                            await _act(
-                              'clarify',
-                              workbenchId: workbench ? choice.id : null,
-                              partnerId: partner ? choice.id : null,
-                            );
-                          }
-                        },
-                  child: Text(workbench ? '选择工作台继续' : '选择搭档继续'),
-                ),
-                if (workbench && state.supportsWorkbenchCreation)
-                  FilledButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () async {
-                            final suggestion = await chooseWorkbenchSuggestion(
-                              context,
-                              workbenchSuggestions(
-                                seed: goal.title,
-                                workbenches: _matchSources(state.workbenches),
-                              ),
-                            );
-                            if (suggestion != null && mounted) {
-                              await _applySuggestion(suggestion);
-                            }
-                          },
-                    icon: const Icon(Icons.add_rounded),
-                    label: const Text('归到哪里'),
-                  ),
-              ],
+          if (workbench)
+            FilledButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final resolved = await showWorkbenchChoice(
+                        context,
+                        widget.controller,
+                        widget.goal,
+                      );
+                      if (resolved == true) widget.onChanged?.call();
+                    },
+              child: const Text('选择工作台继续'),
+            ),
+          if (partner)
+            OutlinedButton(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final choice = await chooseRemote(
+                        context,
+                        '选择搭档',
+                        state.partners,
+                      );
+                      if (choice != null && mounted) {
+                        await _act('clarify', partnerId: choice.id);
+                      }
+                    },
+              child: const Text('选择搭档继续'),
             ),
           if (resume)
             FilledButton(

@@ -1,6 +1,9 @@
+import type { WorkbenchProposalDto } from "../../../shared/joi.js";
+
 export type JoiInboxStatus = "CLARIFICATION_REQUIRED" | "CONSUMED" | "PENDING" | "ROUTED";
 
 export interface JoiInboxRecord {
+  workbenchProposal?: WorkbenchProposalDto;
   attachmentIds?: string[];
   archivedAt?: string;
   automationRoutineId?: string;

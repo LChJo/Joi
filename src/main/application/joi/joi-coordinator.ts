@@ -198,7 +198,6 @@ export class JoiCoordinator {
       status: input.status,
     });
     const workbenches = await this.dependencies.workbenches.listSummaries();
-    let createdWorkbench;
     let workbenchId = input.workbenchId;
     let workbenchResolution: "bound" | "bootstrap" | "created" | "selected" = "bound";
     if (workbenchId === undefined) {
@@ -209,7 +208,7 @@ export class JoiCoordinator {
         workbenches,
       });
       if (assignment.action === "clarify") {
-        await this.dependencies.store.requireClarification(inputId, assignment.reasonCode);
+        await this.dependencies.store.requireClarification(inputId, assignment.reasonCode, undefined, undefined, assignment.proposal);
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {
           inputId,
           reasonCode: assignment.reasonCode,
@@ -217,21 +216,10 @@ export class JoiCoordinator {
         await this.dependencies.events?.emit("joi.message.clarification_required", inputId, { inputId });
         return;
       }
-      createdWorkbench = assignment.action === "create"
-        ? await this.dependencies.workbenchRegistry?.create(assignment.draft)
-        : undefined;
-      workbenchId = assignment.action === "create" ? createdWorkbench?.workbenchId : assignment.workbenchId;
+      workbenchId = assignment.workbenchId;
       workbenchResolution = assignment.resolution;
     }
-    if (workbenchId === undefined) {
-      await this.dependencies.store.requireClarification(inputId, "workbench_creation_unavailable");
-      emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {
-        inputId,
-        reasonCode: "workbench_creation_unavailable",
-      });
-      return;
-    }
-    const workbench = createdWorkbench ?? await this.dependencies.workbenches.getWorkbench(workbenchId);
+    const workbench = await this.dependencies.workbenches.getWorkbench(workbenchId);
     if (workbench === null) {
       await this.dependencies.store.requireClarification(inputId, "workbench_not_found");
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.input.waiting_clarification", {

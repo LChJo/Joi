@@ -188,7 +188,7 @@ describe("sqlite joi inbox clarify", () => {
     }
   });
 
-  it("binds a workbench for a card whose question was re-raised under a newer version", async () => {
+  it("rejects stale workbench choices and accepts the current question version", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-workbench-stale-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
@@ -209,7 +209,8 @@ describe("sqlite joi inbox clarify", () => {
         "UPDATE joi_goal_execution_gates SET question_version = question_version + 1, question_id = ? WHERE goal_input_id = ?",
       ).run(`goal_question:${accepted.inputId}:v2`, accepted.inputId));
 
-      expect(await repository.clarify(accepted.inputId, { ...onScreen, workbenchId: "workbench-1" }))
+      expect(await repository.clarify(accepted.inputId, { ...onScreen, workbenchId: "workbench-1" })).toBeNull();
+      expect(await repository.clarify(accepted.inputId, { ...await questionVersion(repository, accepted.inputId), workbenchId: "workbench-1" }))
         .toMatchObject({ status: "ROUTED", workbenchId: "workbench-1" });
     } finally {
       database.close();

@@ -87,7 +87,10 @@ export function isRemoteCommand(value: unknown): value is RemoteCommand {
   if (item.kind === "feed.get") return item.paged === undefined || typeof item.paged === "boolean";
   if (item.kind === "catalog.get") return true;
   if (item.kind === "workbench.create") return string("inputId") && string("name", 80) && string("personaSummary", 4_000)
-    && string("projectLabel", 160) && string("scopeSummary", 1_000);
+    && string("projectLabel", 160) && string("scopeSummary", 1_000) && string("bindInputId", 160, true)
+    && string("questionId", 240, true) && string("idempotencyKey", 240, true)
+    && (item.bindInputId === undefined || item.bindInputId === item.inputId)
+    && (item.questionVersion === undefined || typeof item.questionVersion === "number" && Number.isInteger(item.questionVersion) && item.questionVersion >= 1);
   if (item.kind === "read.next") return string("cursor", 240);
   if (item.kind === "goal.get" || item.kind === "goal.agents" || item.kind === "agent.conversation") {
     return string("goalId") && string("cursor", 240, true) && (item.kind !== "agent.conversation" || string("agentId"));
@@ -391,7 +394,7 @@ export class RemoteAccessHost implements RemoteAccessControl {
       await this.#touchDevice(value.deviceId);
     }
     await this.#send(session.connectionId, {
-      capabilities: ["home.v2", "workbench.create"],
+      capabilities: ["home.v2", "workbench.create", "workbench.choice.v1"],
       hostNonce,
       kind: "handshake.ready",
       proof: remoteReadyProof(secret, context, hostNonce),

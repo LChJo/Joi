@@ -397,7 +397,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     const coordinator = new JoiCoordinator({
       workbenches: { getWorkbench: async () => research, listSummaries: async () => [] },
       clock: new TestClock(), ids: new TestIds(),
-      router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
+      router: { decide: async () => ({ action: "select", matchKind: "SAME_SCOPE", workbenchId: "research" }) },
       runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store: { completeInput: async () => undefined, createTurn: async () => undefined, loadInput: async () => { throw new Error("must not load"); }, requireClarification: async () => undefined },
@@ -484,7 +484,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
         listSummaries: async () => [research, finance].map((workbench) => ({ workbenchId: workbench.workbenchId, name: workbench.profile.name, scopeSummary: workbench.profile.scopeSummary, updatedAt: workbench.updatedAt })),
       },
       clock: new TestClock(), ids: new TestIds(), runtime,
-      router: { decide: async (input) => { observedRouting.push(input); return { action: "select", workbenchId: "research" }; } },
+      router: { decide: async (input) => { observedRouting.push(input); return { action: "select", matchKind: "SAME_SCOPE", workbenchId: "research" }; } },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store,
     });
@@ -503,7 +503,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     const coordinator = new JoiCoordinator({
       workbenches: { getWorkbench: async () => research, listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
       clock: new TestClock(), ids: new TestIds(),
-      router: { decide: async () => { calls += 1; return { action: "select", workbenchId: "missing" }; } },
+      router: { decide: async () => { calls += 1; return { action: "select", matchKind: "SAME_SCOPE", workbenchId: "missing" }; } },
       runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
       store: { completeInput: async () => undefined, createTurn: async () => undefined, loadInput: async () => ({ body: "ambiguous", inputId: "input-1", status: "PENDING" }), requireClarification: async () => { statuses.push("clarify"); } },
@@ -513,7 +513,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(statuses).toEqual(["clarify"]);
   });
 
-  it("matches an existing Workbench locally instead of raising a clarification card", async () => {
+  it("waits for selection when only keyword matching is available", async () => {
     const summary = { workbenchId: "research", name: "技术研究与资料整理环境", scopeSummary: "技术方向的资料收集与整理", updatedAt: research.updatedAt };
     const clarifications: string[] = [];
     const turns: StartReasoningTurnInput[] = [];
@@ -532,16 +532,15 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       },
     });
     await coordinator.handle("input-local");
-    expect(clarifications).toEqual([]);
-    expect(turns).toHaveLength(1);
-    expect(turns[0]?.workbenchId).toBe("research");
+    expect(clarifications).toEqual(["workbench_selection_invalid"]);
+    expect(turns).toHaveLength(0);
   });
 
   it("handles missing, consumed and concurrently removed inputs safely", async () => {
     const base = {
       workbenches: { getWorkbench: async () => null, listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
       clock: new TestClock(), ids: new TestIds(),
-      router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
+      router: { decide: async () => ({ action: "select", matchKind: "SAME_SCOPE", workbenchId: "research" }) },
       runtime: { abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false, startTurn: async () => undefined, steer: () => undefined, waitForIdle: async () => undefined },
       sources: { selectInitial: async (turnId: string) => ({ modelId: "model", modelRevisionId: "model-r", sourceId: "source", sourceRevisionId: "source-r", turnId }) },
     };
@@ -557,7 +556,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     expect(reasons).toEqual(["workbench_not_found"]);
   });
 
-  it("creates the first Workbench through the registry and restores the input when reasoning fails", async () => {
+  it("does not create or start reasoning before confirming a proposed first Workbench", async () => {
     const created: unknown[] = [];
     const failed: string[] = [];
     const coordinator = new JoiCoordinator({
@@ -593,12 +592,12 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       },
     });
 
-    await expect(coordinator.handle("input-new")).rejects.toThrow("provider offline");
-    expect(created).toEqual([expect.objectContaining({ name: "研究", scopeSummary: "技术研究" })]);
-    expect(failed).toEqual([expect.stringMatching(/^input-new:turn_/u)]);
+    await coordinator.handle("input-new");
+    expect(created).toEqual([]);
+    expect(failed).toEqual([]);
   });
 
-  it("bootstraps a deterministic workbench Workbench when no Workbench exists and routing cannot decide", async () => {
+  it("waits without bootstrapping when no Workbench exists and routing cannot decide", async () => {
     const created: unknown[] = [];
     const turns: StartReasoningTurnInput[] = [];
     const clarifications: string[] = [];
@@ -607,7 +606,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       workbenches: { getWorkbench: async () => null, listSummaries: async () => [] },
       clock: new TestClock(),
       ids: new TestIds(),
-      router: { decide: async () => ({ action: "select", workbenchId: "ghost" }) },
+      router: { decide: async () => ({ action: "select", matchKind: "SAME_SCOPE", workbenchId: "ghost" }) },
       runtime: {
         abort: () => undefined,
         followUp: () => undefined,
@@ -626,11 +625,9 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       },
     });
     await coordinator.handle("input-boot");
-    expect(clarifications).toEqual([]);
-    expect(created).toEqual([expect.objectContaining({ name: "joi 工作台" })]);
-    expect(turns).toHaveLength(1);
-    expect(turns[0]?.workbenchId).toBe("research");
-    expect(turns[0]?.systemPrompt).toContain("RESEARCH_SECRET_SENTINEL");
+    expect(clarifications).toEqual(["workbench_selection_invalid"]);
+    expect(created).toEqual([]);
+    expect(turns).toHaveLength(0);
   });
 
   it("does not create a workbench when no registry is available", async () => {
@@ -668,7 +665,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
       clock: new TestClock(),
       failureClassifier: { classify: () => "timeout" },
       ids: new TestIds(),
-      router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
+      router: { decide: async () => ({ action: "select", matchKind: "SAME_SCOPE", workbenchId: "research" }) },
       runtime,
       sources: {
         selectFallback: async () => ({ modelId: "fallback-model", modelRevisionId: "fallback-mr", sourceId: "fallback", sourceRevisionId: "fallback-sr", turnId: "turn" }),
@@ -695,7 +692,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     const coordinator = new JoiCoordinator({
       workbenches: { getWorkbench: async () => ({ ...research, taskContext: { activeWorkIds: ["previous-work"], summary: "OLD_TASK_ALREADY_RUNNING" } }), listSummaries: async () => [{ workbenchId: "research", name: "研究", scopeSummary: "技术研究", updatedAt: research.updatedAt }] },
       clock: new TestClock(), ids: new TestIds(),
-      router: { decide: async () => ({ action: "select", workbenchId: "research" }) },
+      router: { decide: async () => ({ action: "select", matchKind: "SAME_SCOPE", workbenchId: "research" }) },
       runtime: {
         abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false, rollbackTurn: async () => false,
         startTurn: async (turn) => { sessions.push(turn.sessionId); prompts.push(turn.systemPrompt); }, steer: () => undefined, waitForIdle: async () => undefined,

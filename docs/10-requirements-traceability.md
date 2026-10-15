@@ -244,3 +244,11 @@ AC-63 continuation increment (2026-09-13): every non-dismissed home goal card ca
 2026-10-14 AC-EVO-01/03/05 单调用修复：Pi adapter 的单调用提示词与协议请求约束、失败分型和用量保留由 `pi-evolution-model.test.ts` 覆盖；成功/失败/取消/重试及迟到响应记账、历史零值只读投影、旧评测器策略复验由 `evolution-service.test.ts` 覆盖；`evolution-http.test.ts` 校验真实 paused 的 HTTP 投影，`evolution-settings.test.tsx` 校验暂停与终止文案、失败分型及未知 Token。评测器版本 joi-orchestration-v2；不发真实模型调用，不自动开启或恢复进化预算。
 
 2026-10-14 AC-WR-06 / AC-57 Android 展示同步：手机首页和任务详情消费主机已有 `work.executing/resourceWaiting/waitingReasons`，区分执行与资源排队，显示容量、读租约、写租约等待；搭档列表与实时记录消费 `executionPhase/waitReason`，显示四种执行阶段，完成后清除等待展示。缺字段旧主机继续使用 aggregate active 状态，未知枚举不显示原值，归档/恢复保留进度。Flutter `widget_test.dart` 覆盖窄屏、旧主机、显式零计数、四种阶段/等待、未知值与实时完成转换；配对、命令权限与任务状态机不变。
+
+## 2026-10-15 工作台明确归属与双端选择（AC-14/33/46/47）
+
+- 未绑定的新输入仅在路由明确判定唯一同项目或同职责范围时自动复用。关键词相似只用于候选排序，有效 ID 本身不足以授权自动归属。
+- 无匹配、歧义、无效结构修复失败及新建建议进入持久的工作台选择；无工作台时同样等待确认，不自动创建通用工作台。生成草案仅包含名称、工程标签和范围，允许保留项目名，不截断原任务充当名称。
+- 桌面与 Android 自动打开选择框；关闭保留待选状态并提供重开入口，同一问题不因轮询重复弹出。新建建议可编辑，确认前不派发 Work。首页手动选台只对本次发送生效，失败保留、成功清除；同目标继续与内部恢复保持原归属。
+- 创建并绑定在同一数据库事务中验证问题版本和稳定幂等键；失败回滚，无重复工作台或孤立绑定。两端并发确认、重试和服务重建须保持相同结果，旧问题不得改变当前归属。新增可选草案字段及 workbench.choice.v1 能力，旧端继续使用兼容入口。
+- 验证入口：workbench-assignment.test.ts、workbench-choice.test.ts、workbench-choice-dialog.test.tsx、joi-home-single-entry.test.tsx，以及 Android workbench_choice_test.dart、remote_session_test.dart。

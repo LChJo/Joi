@@ -45,6 +45,9 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
     required String personaSummary,
     required String projectLabel,
     required String scopeSummary,
+    String? questionId,
+    int? questionVersion,
+    String? idempotencyKey,
   }) async {
     createdWorkbenches.add({
       'inputId': inputId,
@@ -766,36 +769,7 @@ void main() {
     ),
   );
 
-  testWidgets(
-    'offers abstract clusters instead of a workbench named after the input',
-    (tester) async {
-      final controller = FakeRemoteController(
-        const RemoteViewState(
-          connection: RemoteConnectionState.connected,
-          supportsHome: true,
-          supportsWorkbenchCreation: true,
-          workbenches: [RemoteChoice('existing', '已有工作台', '已有范围')],
-        ),
-      );
-      await pumpWorkbenchCard(tester, controller);
-
-      await tester.tap(find.text('归到哪里'));
-      await tester.pumpAndSettle();
-      expect(find.text('调试 AI 应用 工作台'), findsNothing);
-      expect(find.text('调研与分析工坊'), findsOneWidget);
-      expect(find.text('工程开发与调试工坊'), findsOneWidget);
-      expect(find.text('行程与出行规划工坊'), findsOneWidget);
-
-      await tester.tap(find.text('调研与分析工坊'));
-      await tester.pumpAndSettle();
-      expect(controller.createdWorkbenches.single['projectLabel'], '调研与分析');
-      // Creation and binding are one request now; a second clarify is what used to strand the card.
-      expect(controller.actions, isEmpty);
-      expect(find.textContaining('已创建，但'), findsNothing);
-    },
-  );
-
-  testWidgets('reuses an existing workbench instead of creating one', (
+  testWidgets('opens an editable form without copying the task as a name', (
     tester,
   ) async {
     final controller = FakeRemoteController(
@@ -803,49 +777,48 @@ void main() {
         connection: RemoteConnectionState.connected,
         supportsHome: true,
         supportsWorkbenchCreation: true,
-        workbenches: [
-          RemoteChoice('existing', '皖南川藏线片区景点调研环境', '皖南川藏线的景点资料整理与出行信息比较。'),
-        ],
+        workbenches: [RemoteChoice('existing', '已有工作台', '已有范围')],
       ),
     );
-    await pumpWorkbenchCard(
-      tester,
-      controller,
-      title: '皖南川藏线民宿周边哪些景点值得去，要不要门票',
+    await pumpWorkbenchCard(tester, controller);
+    await tester.tap(find.text('选择工作台继续'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建工作台'));
+    await tester.pumpAndSettle();
+    expect(find.text('调试 AI 应用 工作台'), findsNothing);
+    final fields = find.byType(TextField);
+    await tester.enterText(fields.at(0), '工程维护工坊');
+    await tester.enterText(fields.at(1), 'joi');
+    await tester.enterText(fields.at(2), '源码与文档维护。');
+    await tester.ensureVisible(find.text('创建并继续'));
+    await tester.tap(find.text('创建并继续'));
+    await tester.pumpAndSettle();
+    expect(controller.createdWorkbenches.single['projectLabel'], 'joi');
+    expect(controller.actions, isEmpty);
+  });
+
+  testWidgets('reuses an existing workbench without creating one', (
+    tester,
+  ) async {
+    final controller = FakeRemoteController(
+      const RemoteViewState(
+        connection: RemoteConnectionState.connected,
+        supportsHome: true,
+        supportsWorkbenchCreation: true,
+        workbenches: [RemoteChoice('existing', '已有工程工坊', '工程维护。')],
+      ),
     );
-
-    await tester.tap(find.text('归到哪里'));
+    await pumpWorkbenchCard(tester, controller);
+    await tester.tap(find.text('选择工作台继续'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('皖南川藏线片区景点调研环境'));
+    await tester.tap(find.text('已有工程工坊'));
     await tester.pumpAndSettle();
-
     expect(controller.createdWorkbenches, isEmpty);
     expect(controller.actions.single, containsPair('workbenchId', 'existing'));
   });
 
-  testWidgets('reports an unbound workbench instead of a dead end', (
-    tester,
-  ) async {
-    final controller = FakeRemoteController(
-      const RemoteViewState(
-        connection: RemoteConnectionState.connected,
-        supportsHome: true,
-        supportsWorkbenchCreation: true,
-      ),
-    )..createBinds = false;
-    await pumpWorkbenchCard(tester, controller, title: '移动端任务');
-
-    await tester.tap(find.text('归到哪里'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('调研与分析工坊'));
-    await tester.pumpAndSettle();
-
-    expect(find.textContaining('调研与分析工坊'), findsWidgets);
-    expect(find.textContaining('选择工作台继续'), findsWidgets);
-  });
-
   testWidgets(
-    'reuses the workbench it already created instead of minting a duplicate',
+    'offers an existing created workbench after a legacy unbound response',
     (tester) async {
       final controller = FakeRemoteController(
         const RemoteViewState(
@@ -854,17 +827,22 @@ void main() {
           supportsWorkbenchCreation: true,
         ),
       )..createBinds = false;
-      await pumpWorkbenchCard(tester, controller, title: '移动端任务');
-
-      await tester.tap(find.text('归到哪里'));
+      await pumpWorkbenchCard(tester, controller);
+      await tester.tap(find.text('选择工作台继续'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('调研与分析工坊'));
+      await tester.tap(find.text('新建工作台'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('归到哪里'));
+      final fields = find.byType(TextField);
+      await tester.enterText(fields.at(0), '工程维护工坊');
+      await tester.enterText(fields.at(1), 'joi');
+      await tester.enterText(fields.at(2), '源码与文档维护。');
+      await tester.ensureVisible(find.text('创建并继续'));
+      await tester.tap(find.text('创建并继续'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('调研与分析工坊'));
+      expect(find.textContaining('工作台已创建'), findsOneWidget);
+      await tester.ensureVisible(find.text('选择已创建的工作台继续'));
+      await tester.tap(find.text('选择已创建的工作台继续'));
       await tester.pumpAndSettle();
-
       expect(controller.createdWorkbenches, hasLength(1));
       expect(
         controller.actions.single,
