@@ -20,6 +20,9 @@
 *.yaml text eol=lf
 *.yml text eol=lf
 
+apps/joi_mobile/l10n/*.arb text eol=lf
+apps/joi_mobile/lib/i18n_messages.dart text eol=lf
+
 *.icns binary
 *.ico binary
 *.png binary

@@ -240,7 +240,7 @@ describe("settings panel", () => {
     const api = new DigitalLifeApi("");
     mockOperations(api);
     const update = vi.spyOn(api, "updateSettings")
-      .mockResolvedValueOnce({ ...runtimeSettings, lan: { ...runtimeSettings.lan, enabled: true, riskAccepted: true, effective: { status: "blocked", reasonCode: "lan_bind_failed", message: "端口被占用。" } }, restartRequired: false })
+      .mockResolvedValueOnce({ ...runtimeSettings, lan: { ...runtimeSettings.lan, enabled: true, riskAccepted: true, effective: { status: "blocked", reasonCode: "lan_bind_failed", message: "unapproved private bind detail" } }, restartRequired: false })
       .mockResolvedValueOnce({ ...runtimeSettings, lan: { ...runtimeSettings.lan, enabled: true, riskAccepted: true, effective: { address: "192.168.1.20", port: 43130, status: "listening", url: "http://192.168.1.20:43130", pending: { address: "10.0.0.7", port: 43131, reasonCode: "lan_bind_failed" } } }, restartRequired: false })
       .mockResolvedValueOnce({ ...runtimeSettings, restartRequired: false });
     render(<SettingsPanel api={api} diagnostics={diagnostics} />);
@@ -250,7 +250,8 @@ describe("settings panel", () => {
     fireEvent.click(screen.getByLabelText("我明白同一网络中的其他人可能看到未加密的连接内容"));
     fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
     expect(await screen.findByText("设置已保存，但当前地址或端口暂时无法监听；本机访问仍可用。", {}, { timeout: 4_000 })).toBeInTheDocument();
-    expect(screen.getByText("端口被占用。", { exact: true })).toBeInTheDocument();
+    expect(screen.getByText("LAN 监听器暂时无法绑定所选地址和端口。", { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("unapproved private bind detail")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "保存访问设置" }));
     expect(await screen.findByText("设置已保存，但新地址暂未应用，当前仍保留原监听。", {}, { timeout: 4_000 })).toBeInTheDocument();

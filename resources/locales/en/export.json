@@ -1,0 +1,70 @@
+{
+  "processing": {
+    "message": "Processing…",
+    "description": "export: Processing…",
+    "sourceText": "正在处理…"
+  },
+  "fullTextCopied": {
+    "message": "Full text copied",
+    "description": "export: Full text copied",
+    "sourceText": "已复制全文"
+  },
+  "valueFilesSaved": {
+    "message": "{p0} files saved",
+    "description": "export: {p0} files saved",
+    "sourceText": "已保存 {p0} 个文件",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "downloadsJoi": {
+    "message": "Downloads / Joi",
+    "description": "export: Downloads / Joi",
+    "sourceText": "下载 / Joi"
+  },
+  "theContentChangedCloseAndReopenTheFullText": {
+    "message": "The content changed. Close and reopen the full text before exporting.",
+    "description": "export: The content changed. Close and reopen the full text before exporting.",
+    "sourceText": "正文已更新，请关闭并重新打开全文后导出。"
+  },
+  "theOperationDidNotCompleteTryAgain": {
+    "message": "The operation did not complete. Try again.",
+    "description": "export: The operation did not complete. Try again.",
+    "sourceText": "操作未完成，请重试。"
+  },
+  "filesSavedButCouldNotBeOpenedFindThem": {
+    "message": "Files saved but could not be opened. Find them in Downloads/Joi.",
+    "description": "export: Files saved but could not be opened. Find them in Downloads/Joi.",
+    "sourceText": "文件已保存，但无法打开。请在下载/Joi 中查看。"
+  },
+  "exportStatus": {
+    "message": "Export status",
+    "description": "export: Export status",
+    "sourceText": "导出反馈"
+  },
+  "openFolder": {
+    "message": "Open folder",
+    "description": "export: Open folder",
+    "sourceText": "打开目录"
+  },
+  "copyFullText": {
+    "message": "Copy full text",
+    "description": "export: Copy full text",
+    "sourceText": "复制全文"
+  },
+  "exportPdf": {
+    "message": "Export PDF",
+    "description": "export: Export PDF",
+    "sourceText": "导出 PDF"
+  },
+  "exportPng": {
+    "message": "Export PNG",
+    "description": "export: Export PNG",
+    "sourceText": "导出 PNG"
+  },
+  "exportFullText": {
+    "message": "Export full text",
+    "description": "export: Export full text",
+    "sourceText": "导出全文"
+  }
+}

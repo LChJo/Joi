@@ -10,7 +10,9 @@ import { ElectronCredentialVault } from "./infrastructure/security/electron-cred
 import { ElectronResultExporter } from "./infrastructure/artifacts/electron-result-export.js";
 import { transcodeBitmapToPng } from "./infrastructure/artifacts/bitmap-transcoder.js";
 import { DomainError } from "./domain/errors.js";
+import { trayMenuTemplate } from "./infrastructure/operations/tray-menu.js";
 import { PRODUCT_NAME, type DesktopBootstrapNonce, type DesktopRuntimeInfo } from "../shared/product.js";
+import { resolveLocale, translate, type UiLocalePreference } from "../shared/i18n/index.js";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const isTest = process.env.JOI_TEST === "1";
@@ -34,6 +36,8 @@ if (!hasSingleInstanceLock) {
 let mainWindow: BrowserWindow | null = null;
 let runtime: Awaited<ReturnType<typeof startDesktopRuntime>> | null = null;
 let tray: Tray | null = null;
+let uiLocale: UiLocalePreference = "system";
+const nativeText = (key: "common.trayOpen" | "common.trayStop" | "common.trayLogin" | "common.trayQuit" | "common.directoryPicker") => translate(resolveLocale(uiLocale, app.getPreferredSystemLanguages()), key);
 let isQuitting = false;
 let restartRequested = false;
 let shutdownComplete = false;
@@ -42,6 +46,7 @@ async function startRuntime(): Promise<void> {
   const vault = new ElectronCredentialVault();
   const userDataDirectory = app.getPath("userData");
   runtime = await startDesktopRuntime({
+    systemLanguages: app.getPreferredSystemLanguages(),
     userDataDirectory,
     migrationsDirectory: app.isPackaged ? path.join(process.resourcesPath, "resources", "migrations") : path.resolve("resources/migrations"),
     rendererDirectory: path.resolve(currentDirectory, "../../renderer"),
@@ -55,10 +60,11 @@ async function startRuntime(): Promise<void> {
   }, {
     vault,
     getLaunchAtLogin: () => app.getLoginItemSettings().openAtLogin,
+    setUiLocale: (preference) => { uiLocale = preference; rebuildTrayMenu(); },
     setLaunchAtLogin: (enabled) => { app.setLoginItemSettings({ openAtLogin: enabled }); rebuildTrayMenu(); },
     directoryPicker: async () => {
       try {
-        const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: "绑定 Workbench 工作目录" });
+        const result = await dialog.showOpenDialog({ properties: ["openDirectory"], title: nativeText("common.directoryPicker") });
         return result.canceled ? null : result.filePaths[0] ?? null;
       } catch { return null; }
     },
@@ -137,19 +143,12 @@ function requestApplicationQuit() {
 function rebuildTrayMenu() {
   if (tray === null) return;
   const launchAtLogin = app.getLoginItemSettings().openAtLogin;
-  tray.setContextMenu(Menu.buildFromTemplate([
-    { click: showMainWindow, label: "打开 joi" },
-    { type: "separator" },
-    { click: () => void runtime?.emergencyStop(), label: "紧急停止全部智能体" },
-    {
-      checked: launchAtLogin,
-      click: (item) => { app.setLoginItemSettings({ openAtLogin: item.checked }); rebuildTrayMenu(); },
-      label: "开机时启动",
-      type: "checkbox",
-    },
-    { type: "separator" },
-    { click: requestApplicationQuit, label: "退出 joi" },
-  ]));
+  tray.setContextMenu(Menu.buildFromTemplate(trayMenuTemplate(uiLocale, app.getPreferredSystemLanguages(), launchAtLogin, {
+    open: showMainWindow,
+    stop: () => { void runtime?.emergencyStop(); },
+    quit: requestApplicationQuit,
+    setLaunchAtLogin: (enabled) => { app.setLoginItemSettings({ openAtLogin: enabled }); rebuildTrayMenu(); },
+  })));
 }
 
 function createRuntimeTray() {
@@ -172,6 +171,8 @@ ipcMain.handle("desktop:runtime-info", (): DesktopRuntimeInfo => {
   if (runtime === null) throw new Error("Runtime is not ready.");
   return {
     apiOrigin: runtime.apiOrigin,
+    uiLocale,
+    systemLanguages: app.getPreferredSystemLanguages(),
     platform: process.platform,
     productName: PRODUCT_NAME,
     version: app.getVersion(),

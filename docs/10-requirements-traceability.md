@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+国际化增量（AC-I18N-01 至 AC-I18N-06）：语言源与 CLI、客户端偏好、实时切换、错误兼容及验证证据统一追踪于[国际化验收](20-internationalization.md)，架构约束见 [ADR 0030](adr/0030-interface-internationalization.md)。
+
 AC-WR-07 权限与执行需求一致性：领域声明和引擎能力对应 `work-execution-needs.test.ts`；无部分派发、只读核查及恢复冲突对应 `work-orchestration-service.test.ts`，同轮一次纠正对应 `joi-reasoning-tools.test.ts`；实际 Pi 工具裁剪、常驻实例权限刷新、拒绝终止及假 CLI 产物验证对应 `local-pi-partner-runtime.test.ts`，Claude/Codex 边界对应 `native-agent-sdk-contract.test.ts`；补充 Work 的并发、已有活跃恢复复用、后续恢复/改派回合复用原始计划回执、数据库关闭重开和原 READ 不变对应 `sqlite-work-plan-outbox.test.ts`。
 
 AC-PERF-01 周期卡顿与窗口线程隔离：[ADR 0029](adr/0029-desktop-runtime-workers.md)。历史调度键、待派发/常驻/恢复保留对应 `workbench-agent-scan.test.ts`；内存执行结果收尾对应 `workbench-agent-component.test.ts`。实际迁移及历史规模查询计划对应 `sqlite-home-feed-query-scale.test.ts`，语义兼容对应 `sqlite-workbench-agent-feed.test.ts`。WAL 未提交写入与读取快照、线程繁忙时调用方响应、崩溃拒绝及安全错误对应 `runtime-workers.test.ts`；窗口与运行时组合边界对应 `runtime-worker-isolation.test.ts`、`composition-root.test.ts`、`actor-runtime-authority.test.ts`。隔离桌面启动、退出、备份及原生渲染使用既有 Electron E2E 门禁，跨线程 PDF 导出及 outbox 确认对应 `runtime-worker-export.spec.ts`；测试下载目录必须位于隔离 userData 内。

@@ -1,6 +1,8 @@
+import { currentLocale } from "./i18n";
+
 export function formatDate(value: string, timezone?: string) {
   try {
-    return new Intl.DateTimeFormat("zh-CN", {
+    return new Intl.DateTimeFormat(currentLocale(), {
       day: "2-digit", hour: "2-digit", minute: "2-digit", month: "2-digit", ...(timezone === undefined ? {} : { timeZone: timezone }),
     }).format(new Date(value));
   } catch { return value; }

@@ -1,0 +1,815 @@
+{
+  "enableTheReadToolWhenAttachingASkillTo": {
+    "message": "Enable the read tool when attaching a skill to Pi core.",
+    "description": "partners: Enable the read tool when attaching a skill to Pi core.",
+    "sourceText": "Pi core 挂载 Skill 时必须启用 read 工具。"
+  },
+  "someSkillReferencesAreInvalidSelectInstalledLocalSkills": {
+    "message": "Some skill references are invalid. Select installed local skills again.",
+    "description": "partners: Some skill references are invalid. Select installed local skills again.",
+    "sourceText": "有技能引用已失效，请重新选择本机已安装的技能。"
+  },
+  "selectedSkillNamesConflictKeepOnlyOneSourceFor": {
+    "message": "Selected skill names conflict. Keep only one source for each name.",
+    "description": "partners: Selected skill names conflict. Keep only one source for each name.",
+    "sourceText": "选中的技能名称发生冲突，请只保留一个来源。"
+  },
+  "theSkillEnvironmentDeclarationIsInvalidChooseAValid": {
+    "message": "The skill environment declaration is invalid. Choose a valid version.",
+    "description": "partners: The skill environment declaration is invalid. Choose a valid version.",
+    "sourceText": "技能的环境声明无效，请重新选择有效版本。"
+  },
+  "fixThePartnerConfigurationBeforeDispatchingWork": {
+    "message": "Fix the partner configuration before dispatching work.",
+    "description": "partners: Fix the partner configuration before dispatching work.",
+    "sourceText": "搭档配置需要修复后才能派发。"
+  },
+  "modelReady": {
+    "message": "Model ready",
+    "description": "partners: Model ready",
+    "sourceText": "模型可用"
+  },
+  "partnerReady": {
+    "message": "Partner ready",
+    "description": "partners: Partner ready",
+    "sourceText": "搭档可用"
+  },
+  "theModelNameDoesNotMatchTheProviderS": {
+    "message": "The model name does not match the provider''s current model",
+    "description": "partners: The model name does not match the provider's current model",
+    "sourceText": "模型名与供应商当前模型不一致"
+  },
+  "providerNotReady": {
+    "message": "Provider not ready",
+    "description": "partners: Provider not ready",
+    "sourceText": "供应商尚未就绪"
+  },
+  "partnerCallTimedOut": {
+    "message": "Partner call timed out",
+    "description": "partners: Partner call timed out",
+    "sourceText": "搭档调用超时"
+  },
+  "claudeCodeAuthenticationFailedCheckTheLocalClaudeLogin": {
+    "message": "Claude Code authentication failed. Check the local Claude login or credentials",
+    "description": "partners: Claude Code authentication failed. Check the local Claude login or credentials",
+    "sourceText": "Claude Code 认证失败，请检查本机 Claude 的登录或凭据配置"
+  },
+  "valueIsNotSignedInSignInFirst": {
+    "message": "{p0} is not signed in. Sign in first",
+    "description": "partners: {p0} is not signed in. Sign in first",
+    "sourceText": "{p0} 尚未登录，请先完成登录",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "theLocalCliOrAccountDoesNotSupportThis": {
+    "message": "The local CLI or account does not support this model. Update the CLI or check model access",
+    "description": "partners: The local CLI or account does not support this model. Update the CLI or check model access",
+    "sourceText": "当前本地 CLI 或账户不支持这个模型，请更新 CLI 或检查模型权限"
+  },
+  "tooManyRequestsTryAgainLater": {
+    "message": "Too many requests. Try again later",
+    "description": "partners: Too many requests. Try again later",
+    "sourceText": "调用过于频繁，请稍后重试"
+  },
+  "theModelServiceIsTemporarilyUnavailableTryAgainLater": {
+    "message": "The model service is temporarily unavailable. Try again later",
+    "description": "partners: The model service is temporarily unavailable. Try again later",
+    "sourceText": "模型服务暂时不可用，请稍后重试"
+  },
+  "theLocalPartnerProcessCouldNotStart": {
+    "message": "The local partner process could not start",
+    "description": "partners: The local partner process could not start",
+    "sourceText": "本地搭档进程启动失败"
+  },
+  "theLocalSessionCouldNotBeRecorded": {
+    "message": "The local session could not be recorded",
+    "description": "partners: The local session could not be recorded",
+    "sourceText": "本地会话记录失败"
+  },
+  "localEngineNotReady": {
+    "message": "Local engine not ready",
+    "description": "partners: Local engine not ready",
+    "sourceText": "本地引擎未就绪"
+  },
+  "modelConnectionFailed": {
+    "message": "Model connection failed",
+    "description": "partners: Model connection failed",
+    "sourceText": "模型连接失败"
+  },
+  "partnerCallFailed": {
+    "message": "Partner call failed",
+    "description": "partners: Partner call failed",
+    "sourceText": "搭档调用失败"
+  },
+  "testingTheModel": {
+    "message": "Testing the model…",
+    "description": "partners: Testing the model…",
+    "sourceText": "正在测试模型…"
+  },
+  "callingThePartner": {
+    "message": "Calling the partner…",
+    "description": "partners: Calling the partner…",
+    "sourceText": "正在真实调用搭档…"
+  },
+  "modelNotTestedYet": {
+    "message": "Model not tested yet",
+    "description": "partners: Model not tested yet",
+    "sourceText": "模型状态尚未测试"
+  },
+  "partnerAvailabilityNotTestedYet": {
+    "message": "Partner availability not tested yet",
+    "description": "partners: Partner availability not tested yet",
+    "sourceText": "搭档可用性尚未测试"
+  },
+  "couldNotLoadTheKnowledgeBase": {
+    "message": "Could not load the knowledge base.",
+    "description": "partners: Could not load the knowledge base.",
+    "sourceText": "没能读取知识库。"
+  },
+  "importingValue": {
+    "message": "Importing {p0}…",
+    "description": "partners: Importing {p0}…",
+    "sourceText": "正在导入 {p0}…",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "couldNotImportTheKnowledgeDocument": {
+    "message": "Could not import the knowledge document.",
+    "description": "partners: Could not import the knowledge document.",
+    "sourceText": "知识库文档没导入成功。"
+  },
+  "couldNotRemoveTheKnowledgeDocument": {
+    "message": "Could not remove the knowledge document.",
+    "description": "partners: Could not remove the knowledge document.",
+    "sourceText": "知识库文档没移除。"
+  },
+  "attachMarkdownDocumentsUpTo8EachUpTo": {
+    "message": "Attach Markdown documents (up to 8, each up to 256 KiB)",
+    "description": "partners: Attach Markdown documents (up to 8, each up to 256 KiB)",
+    "sourceText": "附加 md 文档（≤8 篇，每篇 ≤256 KiB）"
+  },
+  "attachKnowledgeDocument": {
+    "message": "Attach knowledge document",
+    "description": "partners: Attach knowledge document",
+    "sourceText": "附加知识库文档"
+  },
+  "partnerRegisteredAddKnowledgeDocumentsBeforeHandingItTo": {
+    "message": "Partner registered. Add knowledge documents before handing it to joi.",
+    "description": "partners: Partner registered. Add knowledge documents before handing it to joi.",
+    "sourceText": "搭档已登记。可以继续补充知识库，再交给 joi。"
+  },
+  "changesSavedAsANewPartnerRevision": {
+    "message": "Changes saved as a new partner revision.",
+    "description": "partners: Changes saved as a new partner revision.",
+    "sourceText": "修改已保存为新的搭档 revision。"
+  },
+  "partnerCouldNotBeSaved": {
+    "message": "Partner could not be saved.",
+    "description": "partners: Partner could not be saved.",
+    "sourceText": "搭档没保存成功。"
+  },
+  "remotePartnerRegisteredYouCanAddADescriptionAnd": {
+    "message": "Remote partner registered. You can add a description and knowledge documents.",
+    "description": "partners: Remote partner registered. You can add a description and knowledge documents.",
+    "sourceText": "远端搭档已登记，可以继续补充描述和知识库。"
+  },
+  "remotePartnerCouldNotBeRegistered": {
+    "message": "Remote partner could not be registered.",
+    "description": "partners: Remote partner could not be registered.",
+    "sourceText": "远端搭档没登记成功。"
+  },
+  "loadingInstalledSkillsForTheCurrentEngine": {
+    "message": "Loading installed skills for the current engine…",
+    "description": "partners: Loading installed skills for the current engine…",
+    "sourceText": "正在读取当前引擎的已安装技能……"
+  },
+  "noSelectableSkillsForThisEngineYet": {
+    "message": "No selectable skills for this engine yet.",
+    "description": "partners: No selectable skills for this engine yet.",
+    "sourceText": "当前引擎还没有可点选的技能。"
+  },
+  "thisLocalEngineWasNotDetected": {
+    "message": "This local engine was not detected.",
+    "description": "partners: This local engine was not detected.",
+    "sourceText": "未检测到该本地引擎。"
+  },
+  "addPartner": {
+    "message": "Add partner",
+    "description": "partners: Add partner",
+    "sourceText": "添加搭档"
+  },
+  "whereWillThisPartnerRun": {
+    "message": "Where will this partner run?",
+    "description": "partners: Where will this partner run?",
+    "sourceText": "这位搭档从哪里来？"
+  },
+  "localPartnersWorkAlongsideJoiRemotePartnersCollaborateOver": {
+    "message": "Local partners work alongside joi. Remote partners collaborate over A2A.",
+    "description": "partners: Local partners work alongside joi. Remote partners collaborate over A2A.",
+    "sourceText": "本机搭档在 joi 身边干活，远端搭档通过 A2A 协议协作。"
+  },
+  "returnedToThePartnerList": {
+    "message": "Returned to the partner list.",
+    "description": "partners: Returned to the partner list.",
+    "sourceText": "已返回搭档列表。"
+  },
+  "editPartner": {
+    "message": "Edit partner",
+    "description": "partners: Edit partner",
+    "sourceText": "编辑搭档"
+  },
+  "changesCreateANewRevisionWorkAlreadyInProgress": {
+    "message": "Changes create a new revision. Work already in progress uses the previous revision.",
+    "description": "partners: Changes create a new revision. Work already in progress uses the previous revision.",
+    "sourceText": "修改会登记为新的 revision；正在路上的工作仍按旧 revision 完成。"
+  },
+  "aPartnerRunningOnThisComputerJoiDispatchesWork": {
+    "message": "A partner running on this computer. joi dispatches work to it directly.",
+    "description": "partners: A partner running on this computer. joi dispatches work to it directly.",
+    "sourceText": "在本机运行的搭档，joi 直接派发工作给它。"
+  },
+  "remoteA2a": {
+    "message": "Remote A2A",
+    "description": "partners: Remote A2A",
+    "sourceText": "远端 A2A"
+  },
+  "aRemoteAgentConnectedThroughAnAgentCardFor": {
+    "message": "A remote agent connected through an Agent Card, for collaboration across devices.",
+    "description": "partners: A remote agent connected through an Agent Card, for collaboration across devices.",
+    "sourceText": "通过 Agent Card 接入的远端智能体，适合跨设备协作。"
+  },
+  "remoteCapabilitiesComeFromTheAgentCardTheseDetails": {
+    "message": "Remote capabilities come from the Agent Card. These details are local reference material for joi.",
+    "description": "partners: Remote capabilities come from the Agent Card. These details are local reference material for joi.",
+    "sourceText": "远端搭档的能力来自 Agent Card；这里只补充 joi 的本地参考。"
+  },
+  "remoteAgentCardUrl": {
+    "message": "Remote Agent Card URL",
+    "description": "partners: Remote Agent Card URL",
+    "sourceText": "远端 Agent Card URL"
+  },
+  "remoteBearerToken": {
+    "message": "Remote bearer token",
+    "description": "partners: Remote bearer token",
+    "sourceText": "远端 Bearer Token"
+  },
+  "registerRemotePartner": {
+    "message": "Register remote partner",
+    "description": "partners: Register remote partner",
+    "sourceText": "登记远端搭档"
+  },
+  "basic": {
+    "message": "Basic",
+    "description": "partners: Basic",
+    "sourceText": "基础"
+  },
+  "advanced": {
+    "message": "Advanced",
+    "description": "partners: Advanced",
+    "sourceText": "高级"
+  },
+  "capabilityNameEGCodingPartner": {
+    "message": "Capability name, e.g. coding partner",
+    "description": "partners: Capability name, e.g. coding partner",
+    "sourceText": "能力聚类名称，如：编码搭档"
+  },
+  "descriptionForJoi": {
+    "message": "Description (for joi)",
+    "description": "partners: Description (for joi)",
+    "sourceText": "描述（给 joi 做参考）"
+  },
+  "describeItsStrengthsInOneSentenceWithoutRepeatingWorkspace": {
+    "message": "Describe its strengths in one sentence, without repeating workspace details",
+    "description": "partners: Describe its strengths in one sentence, without repeating workspace details",
+    "sourceText": "能力范围：一句话说清它擅长什么；不要重复工作区环境"
+  },
+  "partnerPrompt": {
+    "message": "Partner prompt",
+    "description": "partners: Partner prompt",
+    "sourceText": "搭档提示词"
+  },
+  "instructionsSentWithItsWorkStoredLocallyOnly": {
+    "message": "Instructions sent with its work, stored locally only",
+    "description": "partners: Instructions sent with its work, stored locally only",
+    "sourceText": "交给它工作时附带的工作提示，仅本机保存"
+  },
+  "configuredAndHiddenByDefaultRevealToReplaceOr": {
+    "message": "Configured and hidden by default. Reveal to replace or append.",
+    "description": "partners: Configured and hidden by default. Reveal to replace or append.",
+    "sourceText": "已配置，正文默认隐藏；查看后可替换或追加。"
+  },
+  "noPromptConfiguredRevealToAddOne": {
+    "message": "No prompt configured. Reveal to add one.",
+    "description": "partners: No prompt configured. Reveal to add one.",
+    "sourceText": "尚未配置提示词；查看后可新增。"
+  },
+  "couldNotLoadThePromptTryAgain": {
+    "message": "Could not load the prompt. Try again.",
+    "description": "partners: Could not load the prompt. Try again.",
+    "sourceText": "提示词没能读取，请重试。"
+  },
+  "promptEditMode": {
+    "message": "Prompt edit mode",
+    "description": "partners: Prompt edit mode",
+    "sourceText": "提示词修改方式"
+  },
+  "replace": {
+    "message": "Replace",
+    "description": "partners: Replace",
+    "sourceText": "替换"
+  },
+  "append": {
+    "message": "Append",
+    "description": "partners: Append",
+    "sourceText": "追加"
+  },
+  "currentPrompt": {
+    "message": "Current prompt",
+    "description": "partners: Current prompt",
+    "sourceText": "当前提示词"
+  },
+  "contentToAppend": {
+    "message": "Content to append",
+    "description": "partners: Content to append",
+    "sourceText": "追加内容"
+  },
+  "replacementContent": {
+    "message": "Replacement content",
+    "description": "partners: Replacement content",
+    "sourceText": "替换内容"
+  },
+  "enterContentToAppendToTheCurrentPrompt": {
+    "message": "Enter content to append to the current prompt",
+    "description": "partners: Enter content to append to the current prompt",
+    "sourceText": "输入要追加到当前提示词末尾的内容"
+  },
+  "enterTheCompleteNewPrompt": {
+    "message": "Enter the complete new prompt",
+    "description": "partners: Enter the complete new prompt",
+    "sourceText": "输入完整的新提示词"
+  },
+  "theAppendedContentIsSeparatedFromTheCurrentPrompt": {
+    "message": "The appended content is separated from the current prompt by a blank line.",
+    "description": "partners: The appended content is separated from the current prompt by a blank line.",
+    "sourceText": "保存后会用一个空行连接当前提示词与追加内容。"
+  },
+  "savingReplacesTheCurrentPromptWithThisContentNo": {
+    "message": "Saving replaces the current prompt with this content. No changes keep the original.",
+    "description": "partners: Saving replaces the current prompt with this content. No changes keep the original.",
+    "sourceText": "保存后会以这里的完整内容替换当前提示词。未改动则保持原内容。"
+  },
+  "knowledgeBase": {
+    "message": "Knowledge base",
+    "description": "partners: Knowledge base",
+    "sourceText": "知识库"
+  },
+  "saveThePartnerBeforeAttachingMarkdownDocuments": {
+    "message": "Save the partner before attaching Markdown documents.",
+    "description": "partners: Save the partner before attaching Markdown documents.",
+    "sourceText": "保存搭档后即可附加 md 文档。"
+  },
+  "skillsOptionalInstalledSkillsAreScannedByEngine": {
+    "message": "Skills (optional; installed skills are scanned by engine)",
+    "description": "partners: Skills (optional; installed skills are scanned by engine)",
+    "sourceText": "技能（可选；按引擎扫描本机已安装技能）"
+  },
+  "uncheckedSkillsAreNotAttachedToThePartner": {
+    "message": "Unchecked skills are not attached to the partner.",
+    "description": "partners: Unchecked skills are not attached to the partner.",
+    "sourceText": "不勾选表示不向搭档挂载 skill。"
+  },
+  "removeInvalidReferencesFirst": {
+    "message": "Remove invalid references first:",
+    "description": "partners: Remove invalid references first:",
+    "sourceText": "先移除失效引用："
+  },
+  "savePartner": {
+    "message": "Save partner",
+    "description": "partners: Save partner",
+    "sourceText": "保存搭档"
+  },
+  "partnerEngine": {
+    "message": "Partner engine",
+    "description": "partners: Partner engine",
+    "sourceText": "搭档引擎"
+  },
+  "detected": {
+    "message": "(detected)",
+    "description": "partners: (detected)",
+    "sourceText": "（已检测到）"
+  },
+  "notDetected": {
+    "message": "(not detected)",
+    "description": "partners: (not detected)",
+    "sourceText": "（未检测到）"
+  },
+  "completeLocalSetupAsInstructedOrSwitchBackTo": {
+    "message": "Complete local setup as instructed, or switch back to Pi core.",
+    "description": "partners: Complete local setup as instructed, or switch back to Pi core.",
+    "sourceText": "按提示完成本机配置后即可使用，或改回 Pi core。"
+  },
+  "modelName": {
+    "message": "Model name",
+    "description": "partners: Model name",
+    "sourceText": "模型名"
+  },
+  "leaveBlankForTheGlobalPreferredModel": {
+    "message": "Leave blank for the global preferred model",
+    "description": "partners: Leave blank for the global preferred model",
+    "sourceText": "留空使用全局首选模型"
+  },
+  "provider": {
+    "message": "Provider",
+    "description": "partners: Provider",
+    "sourceText": "供应商"
+  },
+  "useTheGlobalPreferredModelConnection": {
+    "message": "Use the global preferred model connection",
+    "description": "partners: Use the global preferred model connection",
+    "sourceText": "跟随全局首选大模型网络"
+  },
+  "notReady": {
+    "message": "· Not ready",
+    "description": "partners: · Not ready",
+    "sourceText": " · 未就绪"
+  },
+  "manageModelConnections": {
+    "message": "Manage model connections",
+    "description": "partners: Manage model connections",
+    "sourceText": "管理大模型网络"
+  },
+  "modelNameOptionalOverride": {
+    "message": "Model name (optional override)",
+    "description": "partners: Model name (optional override)",
+    "sourceText": "模型名（可选覆盖）"
+  },
+  "leaveBlankForTheLocalClaudeCodexConfiguration": {
+    "message": "Leave blank for the local Claude/Codex configuration",
+    "description": "partners: Leave blank for the local Claude/Codex configuration",
+    "sourceText": "留空使用本机 Claude/Codex 自己的配置"
+  },
+  "claudeCodeUsesLocalClaudeConfigurationAndAuthenticationInvoking": {
+    "message": "Claude Code uses local Claude configuration and authentication, invoking your installed executable. Test availability after saving.",
+    "description": "partners: Claude Code uses local Claude configuration and authentication, invoking your installed executable. Test availability after saving.",
+    "sourceText": "Claude Code 使用本机 Claude 的配置与认证，并调用你安装的 Claude 可执行文件。保存后可测试可用性。"
+  },
+  "codexUsesYourLocalCodexCliLoginAndConfiguration": {
+    "message": "Codex uses your local Codex CLI login and configuration. The model name is passed through unchanged.",
+    "description": "partners: Codex uses your local Codex CLI login and configuration. The model name is passed through unchanged.",
+    "sourceText": "Codex 使用你本机 Codex CLI 的登录与配置；模型名会原样传递。"
+  },
+  "codexPermissions": {
+    "message": "Codex permissions",
+    "description": "partners: Codex permissions",
+    "sourceText": "Codex 权限"
+  },
+  "workspacePermissions": {
+    "message": "Workspace permissions",
+    "description": "partners: Workspace permissions",
+    "sourceText": "工作区权限"
+  },
+  "codexWorkspacePermissions": {
+    "message": "Codex workspace permissions",
+    "description": "partners: Codex workspace permissions",
+    "sourceText": "Codex 工作区权限"
+  },
+  "writableWorkspace": {
+    "message": "Writable workspace",
+    "description": "partners: Writable workspace",
+    "sourceText": "可写工作区"
+  },
+  "readOnly": {
+    "message": "Read only",
+    "description": "partners: Read only",
+    "sourceText": "只读"
+  },
+  "webSearch": {
+    "message": "Web search",
+    "description": "partners: Web search",
+    "sourceText": "网页搜索"
+  },
+  "codexWebSearch": {
+    "message": "Codex web search",
+    "description": "partners: Codex web search",
+    "sourceText": "Codex 网页搜索"
+  },
+  "cachedResults": {
+    "message": "Cached results",
+    "description": "partners: Cached results",
+    "sourceText": "缓存结果"
+  },
+  "liveSearch": {
+    "message": "Live search",
+    "description": "partners: Live search",
+    "sourceText": "实时搜索"
+  },
+  "allowNetworkAccess": {
+    "message": "Allow network access",
+    "description": "partners: Allow network access",
+    "sourceText": "允许网络访问"
+  },
+  "approvalPolicyIsFixedToNeverUnrestrictedAccessIs": {
+    "message": "Approval policy is fixed to never. Unrestricted access is not available.",
+    "description": "partners: Approval policy is fixed to never. Unrestricted access is not available.",
+    "sourceText": "审批策略固定为 never；不提供 danger-full-access。"
+  },
+  "toolPermissions": {
+    "message": "Tool permissions",
+    "description": "partners: Tool permissions",
+    "sourceText": "工具权限"
+  },
+  "enableAll": {
+    "message": "Enable all",
+    "description": "partners: Enable all",
+    "sourceText": "全部开启"
+  },
+  "disableAll": {
+    "message": "Disable all",
+    "description": "partners: Disable all",
+    "sourceText": "全部关闭"
+  },
+  "noSelectableToolsForThisEngine": {
+    "message": "No selectable tools for this engine.",
+    "description": "partners: No selectable tools for this engine.",
+    "sourceText": "该引擎暂无可选工具。"
+  },
+  "allowedTools": {
+    "message": "Allowed tools",
+    "description": "partners: Allowed tools",
+    "sourceText": "工具白名单"
+  },
+  "allToolsAreEnabledDisablingAnyToolSwitchesTo": {
+    "message": "All tools are enabled. Disabling any tool switches to custom permissions.",
+    "description": "partners: All tools are enabled. Disabling any tool switches to custom permissions.",
+    "sourceText": "全部工具已开启。关闭任意工具会切换为自定义权限。"
+  },
+  "customPermissionsValueEnabled": {
+    "message": "Custom permissions: {p0} enabled.",
+    "description": "partners: Custom permissions: {p0} enabled.",
+    "sourceText": "自定义权限：已开启 {p0} 项。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "skillsAreSelectedWithRestrictedToolsEnableReadBefore": {
+    "message": "Skills are selected with restricted tools. Enable read before saving.",
+    "description": "partners: Skills are selected with restricted tools. Enable read before saving.",
+    "sourceText": "已选择 Skill 且收窄了工具白名单，请启用 read 后再保存。"
+  },
+  "presetPackProcessedValueCreatedValueReusedValue": {
+    "message": "Preset pack processed: {p0} created, {p1} reused{p2}.",
+    "description": "partners: Preset pack processed: {p0} created, {p1} reused{p2}.",
+    "sourceText": "预设包已处理：新建 {p0} 位，复用 {p1} 位{p2}。",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "valueNeedAttention": {
+    "message": ", {p0} need attention",
+    "description": "partners: , {p0} need attention",
+    "sourceText": "，{p0} 位需要处理",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "couldNotInstallThePresetPackTryAgainLater": {
+    "message": "Could not install the preset pack. Try again later.",
+    "description": "partners: Could not install the preset pack. Try again later.",
+    "sourceText": "预设包没安装成功，请稍后重试。"
+  },
+  "loadingScenarioPacks": {
+    "message": "Loading scenario packs",
+    "description": "partners: Loading scenario packs",
+    "sourceText": "正在读取场景套件"
+  },
+  "couldNotLoadScenarioPacksTryAgainLater": {
+    "message": "Could not load scenario packs. Try again later.",
+    "description": "partners: Could not load scenario packs. Try again later.",
+    "sourceText": "场景套件没能读取，请稍后重试。"
+  },
+  "noScenarioPacksYet": {
+    "message": "No scenario packs yet",
+    "description": "partners: No scenario packs yet",
+    "sourceText": "还没有场景套件"
+  },
+  "youCanStillAddPartnersManuallyPacksAppearHere": {
+    "message": "You can still add partners manually. Packs appear here when the catalog is available.",
+    "description": "partners: You can still add partners manually. Packs appear here when the catalog is available.",
+    "sourceText": "你仍可手动添加搭档；套件目录恢复后会显示在这里。"
+  },
+  "scenarioPacks": {
+    "message": "Scenario packs",
+    "description": "partners: Scenario packs",
+    "sourceText": "场景套件"
+  },
+  "nothingAvailable": {
+    "message": "Nothing available",
+    "description": "partners: Nothing available",
+    "sourceText": "暂无可用项"
+  },
+  "valueValuePartners": {
+    "message": "{p0}/{p1} partners",
+    "description": "partners: {p0}/{p1} partners",
+    "sourceText": "{p0}/{p1} 位",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "source": {
+    "message": "Source",
+    "description": "partners: Source",
+    "sourceText": "来源"
+  },
+  "noInstallableSkillsYet": {
+    "message": "No installable skills yet",
+    "description": "partners: No installable skills yet",
+    "sourceText": "还没有可安装的 Skill"
+  },
+  "installSkillsLocallyAndReopenThisPageRecentlyUsed": {
+    "message": "Install skills locally and reopen this page. Recently used capabilities appear here automatically.",
+    "description": "partners: Install skills locally and reopen this page. Recently used capabilities appear here automatically.",
+    "sourceText": "在本机安装 Skill 后重新打开此页，最近使用的能力会自动出现在这里。"
+  },
+  "valuePartner": {
+    "message": "{p0} partner",
+    "description": "partners: {p0} partner",
+    "sourceText": "{p0} 搭档",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "installing": {
+    "message": "Installing…",
+    "description": "partners: Installing…",
+    "sourceText": "安装中…"
+  },
+  "installValue": {
+    "message": "Install {p0}",
+    "description": "partners: Install {p0}",
+    "sourceText": "安装{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "nothingToInstall": {
+    "message": "Nothing to install",
+    "description": "partners: Nothing to install",
+    "sourceText": "暂无可安装项"
+  },
+  "installFullPack": {
+    "message": "Install full pack",
+    "description": "partners: Install full pack",
+    "sourceText": "安装完整套件"
+  },
+  "notInstalled": {
+    "message": "Not installed",
+    "description": "partners: Not installed",
+    "sourceText": "未安装"
+  },
+  "updateAvailable": {
+    "message": "Update available",
+    "description": "partners: Update available",
+    "sourceText": "有更新"
+  },
+  "couldNotLoadThePartnerCatalog": {
+    "message": "Could not load the partner catalog.",
+    "description": "partners: Could not load the partner catalog.",
+    "sourceText": "没能读取统一搭档目录。"
+  },
+  "joiPartnerCatalog": {
+    "message": "joi partner catalog",
+    "description": "partners: joi partner catalog",
+    "sourceText": "joi 的统一搭档目录"
+  },
+  "buildAReusableTeamFromPacksOrRegisterPartner": {
+    "message": "Build a reusable team from packs, or register partner descriptions, prompts, and knowledge documents manually.",
+    "description": "partners: Build a reusable team from packs, or register partner descriptions, prompts, and knowledge documents manually.",
+    "sourceText": "按套件组建一支可复用的协作团队，或手动登记搭档的描述、提示词与知识库。"
+  },
+  "scenarioPresets": {
+    "message": "Scenario presets",
+    "description": "partners: Scenario presets",
+    "sourceText": "场景预设"
+  },
+  "partnerCatalog": {
+    "message": "Partner catalog",
+    "description": "partners: Partner catalog",
+    "sourceText": "搭档目录"
+  },
+  "expandAPackToInstallASubteamOrThe": {
+    "message": "Expand a pack to install a subteam or the full pack. Reinstalling reuses partners without overwriting your changes.",
+    "description": "partners: Expand a pack to install a subteam or the full pack. Reinstalling reuses partners without overwriting your changes.",
+    "sourceText": "展开套件后可安装一个子团队，也可一次安装完整套件。重复安装会复用现有搭档，不覆盖你的修改。"
+  },
+  "noPartnersYet": {
+    "message": "No partners yet",
+    "description": "partners: No partners yet",
+    "sourceText": "还没有搭档"
+  },
+  "create23LocalOrRemoteA2aPartnersSo": {
+    "message": "Create 2–3 local or remote A2A partners so joi can delegate your ideas, or build a team from Scenario presets above.",
+    "description": "partners: Create 2–3 local or remote A2A partners so joi can delegate your ideas, or build a team from Scenario presets above.",
+    "sourceText": "先建立 2-3 个工作搭档（本机或远端 A2A），joi 才能把你的想法派出去；也可以切到上方「场景预设」一键组建团队。"
+  },
+  "addYourFirstPartner": {
+    "message": "Add your first partner",
+    "description": "partners: Add your first partner",
+    "sourceText": "添加第一个搭档"
+  },
+  "startWith23PartnersSoJoiHasAlternatives": {
+    "message": "Start with 2–3 partners so joi has alternatives, or build a team from Scenario presets.",
+    "description": "partners: Start with 2–3 partners so joi has alternatives, or build a team from Scenario presets.",
+    "sourceText": "建议先建立 2-3 个工作搭档，joi 才有得挑、有得换；也可切到「场景预设」一键组建。"
+  },
+  "createdByJoi": {
+    "message": "Created by joi",
+    "description": "partners: Created by joi",
+    "sourceText": "joi 创建"
+  },
+  "local": {
+    "message": "Local",
+    "description": "partners: Local",
+    "sourceText": "本机"
+  },
+  "noDescriptionYetAddASentenceSoJoiKnows": {
+    "message": "No description yet. Add a sentence so joi knows when to use this partner.",
+    "description": "partners: No description yet. Add a sentence so joi knows when to use this partner.",
+    "sourceText": "还没有描述。补一句，joi 才知道什么时候该找它。"
+  },
+  "noCapabilitiesDeclared": {
+    "message": "No capabilities declared",
+    "description": "partners: No capabilities declared",
+    "sourceText": "尚未声明能力"
+  },
+  "valueKnowledgeDocuments": {
+    "message": "· {p0} knowledge documents",
+    "description": "partners: · {p0} knowledge documents",
+    "sourceText": " · {p0} 篇知识库",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "draining": {
+    "message": "Draining",
+    "description": "partners: Draining",
+    "sourceText": "正在排空"
+  },
+  "workItemsInProgress": {
+    "message": "work items in progress",
+    "description": "partners: work items in progress",
+    "sourceText": "项在途工作"
+  },
+  "enableOrDisableValue": {
+    "message": "Enable or disable {p0}",
+    "description": "partners: Enable or disable {p0}",
+    "sourceText": "启用或停用 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "partnerStatusCouldNotBeChanged": {
+    "message": "Partner status could not be changed.",
+    "description": "partners: Partner status could not be changed.",
+    "sourceText": "搭档状态没切成。"
+  },
+  "aNewPartnerHasBeenCopiedFromThisOne": {
+    "message": "A new partner has been copied from this one.",
+    "description": "partners: A new partner has been copied from this one.",
+    "sourceText": "已基于这个搭档复制出新搭档。"
+  },
+  "couldNotCopyThePartner": {
+    "message": "Could not copy the partner.",
+    "description": "partners: Could not copy the partner.",
+    "sourceText": "搭档没能复制。"
+  },
+  "copy": {
+    "message": "Copy",
+    "description": "partners: Copy",
+    "sourceText": "复制"
+  },
+  "testModel": {
+    "message": "Test model",
+    "description": "partners: Test model",
+    "sourceText": "测试模型"
+  },
+  "testAvailability": {
+    "message": "Test availability",
+    "description": "partners: Test availability",
+    "sourceText": "测试可用性"
+  },
+  "thisPartnerCannotBeDeletedYet": {
+    "message": "This partner cannot be deleted yet.",
+    "description": "partners: This partner cannot be deleted yet.",
+    "sourceText": "搭档还不能删除。"
+  },
+  "deletePartner": {
+    "message": "Delete partner",
+    "description": "partners: Delete partner",
+    "sourceText": "删除搭档"
+  }
+}

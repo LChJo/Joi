@@ -1,3 +1,4 @@
+import { noticeMessage, t, useI18n, useNotice } from "./i18n";
 import {
   ArrowLeftIcon,
   ArrowRightIcon,
@@ -10,14 +11,17 @@ import { type SyntheticEvent, useState } from "react";
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
 import { ModelSourceSetup } from "./JoiHome";
 import { ApiError, type DigitalLifeApi } from "./api";
+import { LanguageSelector } from "./LanguageSelector";
 
 function FieldError({ message }: { message: string | null }) {
+  useI18n();
   return message === null ? null : <p className="form-error" role="alert">{message}</p>;
 }
 
 export function AccessScreen({ api, onAuthenticated }: { api: DigitalLifeApi; onAuthenticated: () => void }) {
+  useI18n();
   const [password, setPassword] = useState("");
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useNotice();
   const [busy, setBusy] = useState(false);
   const submit = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -28,48 +32,50 @@ export function AccessScreen({ api, onAuthenticated }: { api: DigitalLifeApi; on
       api.setCsrfToken(grant.csrfToken);
       onAuthenticated();
     } catch (reason) {
-      setError(reason instanceof ApiError ? reason.message : "没验证成功，再试一次。");
+      setError(reason instanceof ApiError ? reason.displayMessage : noticeMessage("onboarding.verificationFailedTryAgain"));
     } finally {
       setBusy(false);
     }
   };
   return (
     <main className="access-layout">
-      <section className="access-story" aria-label="joi 介绍">
+      <section className="access-story" aria-label={t("onboarding.aboutJoi")}>
         <div className="wordmark"><span className="wordmark-symbol">JOI</span><strong>joi</strong></div>
         <div>
-          <p className="eyebrow">joi 在这里</p>
-          <h1>欢迎回来，joi 一直在。</h1>
-          <p>输入密码，接着之前的事继续。</p>
+          <p className="eyebrow">{t("onboarding.joiIsHere")}</p>
+          <h1>{t("onboarding.welcomeBackJoiIsHere")}</h1>
+          <p>{t("onboarding.enterYourPasswordToPickUpWhereYouLeft")}</p>
         </div>
-        <p className="security-note"><LockKeyIcon aria-hidden size={17} /> 密码只存在运行 joi 的电脑上，不会交给浏览器。</p>
+        <p className="security-note"><LockKeyIcon aria-hidden size={17} />  {t("onboarding.yourPasswordStaysOnTheComputerRunningJoiAnd")}</p>
       </section>
       <form className="access-form" onSubmit={(event) => void submit(event)}>
-        <p className="eyebrow">回到 joi</p>
-        <h2>确认是你</h2>
-        <p>请输入首次设置时保存的管理密码。</p>
-        <label>管理密码<input autoFocus autoComplete="current-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} onChange={(event) => setPassword(event.target.value)} required type="password" value={password} /></label>
+        <LanguageSelector />
+        <p className="eyebrow">{t("onboarding.backToJoi")}</p>
+        <h2>{t("onboarding.confirmItIsYou")}</h2>
+        <p>{t("onboarding.enterTheAdminPasswordSavedDuringSetup")}</p>
+        <label>{t("onboarding.adminPassword")}<input autoFocus autoComplete="current-password" minLength={ADMIN_PASSWORD_MIN_LENGTH} onChange={(event) => setPassword(event.target.value)} required type="password" value={password} /></label>
         <FieldError message={error} />
-        <button className="button primary wide" disabled={busy} type="submit">{busy ? "joi 确认中…" : "回到 joi"}</button>
+        <button className="button primary wide" disabled={busy} type="submit">{busy ? t("onboarding.joiIsChecking") : t("onboarding.backToJoi")}</button>
       </form>
     </main>
   );
 }
 
 export function SetupJourney({ api, onComplete }: { api: DigitalLifeApi; onComplete: () => void }) {
+  useI18n();
   const [step, setStep] = useState(1);
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [connected, setConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useNotice();
   const [busy, setBusy] = useState(false);
 
   const savePassword = async (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (password !== confirmation) { setError("两次密码不一致。"); return; }
+    if (password !== confirmation) { setError(noticeMessage("onboarding.thePasswordsDoNotMatch")); return; }
     setBusy(true); setError(null);
     try { await api.setup(password); setStep(2); }
-    catch (reason) { setError(reason instanceof ApiError ? reason.message : "密码没存上，再试一次。"); }
+    catch (reason) { setError(reason instanceof ApiError ? reason.displayMessage : noticeMessage("onboarding.couldNotSaveThePasswordTryAgain")); }
     finally { setBusy(false); }
   };
   // The model network form reports back after every save attempt, including drafts that failed
@@ -83,37 +89,38 @@ export function SetupJourney({ api, onComplete }: { api: DigitalLifeApi; onCompl
   return (
     <main className="setup-layout">
       <header className="setup-header">
+        <LanguageSelector />
         <div className="wordmark"><span className="wordmark-symbol">JOI</span><strong>joi</strong></div>
-        <ol className="setup-progress" aria-label="首次设置进度">
-          {["设密码", "选择访问范围", "连接模型网络"].map((label, index) => <li aria-current={step === index + 1 ? "step" : undefined} className={step > index + 1 ? "done" : ""} key={label}><span>{step > index + 1 ? <CheckCircleIcon aria-hidden /> : index + 1}</span>{label}</li>)}
+        <ol className="setup-progress" aria-label={t("onboarding.setupProgress")}>
+          {[t("onboarding.setPassword"), t("onboarding.chooseAccess"), t("onboarding.connectAModel")].map((label, index) => <li aria-current={step === index + 1 ? "step" : undefined} className={step > index + 1 ? "done" : ""} key={label}><span>{step > index + 1 ? <CheckCircleIcon aria-hidden /> : index + 1}</span>{label}</li>)}
         </ol>
       </header>
       <section className="setup-stage">
         {step === 1 ? <form className="setup-copy form-stack" onSubmit={(event) => void savePassword(event)}>
           <LockKeyIcon className="stage-icon" aria-hidden size={30} />
-          <p className="eyebrow">先保护 joi</p>
-          <h1>先帮 joi 设个密码。</h1>
-          <p>有了密码，同一网络里的设备就能找到 joi。密码只存本机，忘了只能重置。</p>
+          <p className="eyebrow">{t("onboarding.protectJoiFirst")}</p>
+          <h1>{t("onboarding.setAPasswordForJoiFirst")}</h1>
+          <p>{t("onboarding.aPasswordLetsDevicesOnTheSameNetworkAccess")}</p>
           <div className="two-fields">
-            <label>管理密码<input autoFocus minLength={ADMIN_PASSWORD_MIN_LENGTH} onChange={(event) => setPassword(event.target.value)} required type="password" value={password} /></label>
-            <label>确认密码<input minLength={ADMIN_PASSWORD_MIN_LENGTH} onChange={(event) => setConfirmation(event.target.value)} required type="password" value={confirmation} /></label>
+            <label>{t("onboarding.adminPassword")}<input autoFocus minLength={ADMIN_PASSWORD_MIN_LENGTH} onChange={(event) => setPassword(event.target.value)} required type="password" value={password} /></label>
+            <label>{t("onboarding.confirmPassword")}<input minLength={ADMIN_PASSWORD_MIN_LENGTH} onChange={(event) => setConfirmation(event.target.value)} required type="password" value={confirmation} /></label>
           </div>
           <FieldError message={error} />
-          <button className="button primary" disabled={busy} type="submit">{busy ? "保存中…" : "保存并继续"}<ArrowRightIcon aria-hidden /></button>
+          <button className="button primary" disabled={busy} type="submit">{busy ? t("settings.saving") : t("onboarding.saveAndContinue")}<ArrowRightIcon aria-hidden /></button>
         </form> : null}
         {step === 2 ? <div className="setup-copy">
           <NetworkIcon className="stage-icon" aria-hidden size={30} />
-          <p className="eyebrow">选择谁能找到 joi</p>
-          <h1>其他设备也要来找 joi 吗？</h1>
-          <p>现在关着最安全。之后需要时，可以在设置里选一个局域网地址开放。joi 不会自动改防火墙。</p>
-          <div className="notice-row"><strong>当前</strong><span className="status-dot muted">仅限本机</span><small>随时可在设置中更改</small></div>
-          <div className="button-row"><button className="button ghost" onClick={() => setStep(1)} type="button"><ArrowLeftIcon aria-hidden />返回</button><button className="button primary" onClick={() => setStep(3)} type="button">先只用本机<ArrowRightIcon aria-hidden /></button></div>
+          <p className="eyebrow">{t("onboarding.chooseWhoCanAccessJoi")}</p>
+          <h1>{t("onboarding.shouldOtherDevicesBeAbleToReachJoi")}</h1>
+          <p>{t("onboarding.keepingItOffIsSafestYouCanEnableA")}</p>
+          <div className="notice-row"><strong>{t("onboarding.current")}</strong><span className="status-dot muted">{t("settings.localAccessOnly")}</span><small>{t("onboarding.changeThisAnytimeInSettings")}</small></div>
+          <div className="button-row"><button className="button ghost" onClick={() => setStep(1)} type="button"><ArrowLeftIcon aria-hidden />{t("common.back")}</button><button className="button primary" onClick={() => setStep(3)} type="button">{t("onboarding.useThisComputerOnly")}<ArrowRightIcon aria-hidden /></button></div>
         </div> : null}
         {step === 3 ? <div className="setup-copy setup-model-network">
           <ModelSourceSetup api={api} changed={refreshConnection} />
           <div className="button-row">
-            <button className="button ghost" onClick={() => setStep(2)} type="button"><ArrowLeftIcon aria-hidden />返回</button>
-            <button className={connected ? "button primary" : "button quiet"} onClick={onComplete} type="button">{connected ? "进入 joi" : "暂时跳过"}</button>
+            <button className="button ghost" onClick={() => setStep(2)} type="button"><ArrowLeftIcon aria-hidden />{t("common.back")}</button>
+            <button className={connected ? "button primary" : "button quiet"} onClick={onComplete} type="button">{connected ? t("onboarding.enterJoi") : t("onboarding.skipForNow")}</button>
           </div>
         </div> : null}
       </section>

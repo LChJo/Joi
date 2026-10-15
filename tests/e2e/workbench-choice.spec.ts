@@ -1,3 +1,4 @@
+import { setDesktopTestLocale } from "./locale";
 import { _electron as electron, expect, test } from "@playwright/test";
 
 test("workbench choice waits, reopens, and creates an edited project context", async () => {
@@ -5,6 +6,7 @@ test("workbench choice waits, reopens, and creates an edited project context", a
   try {
     expect(await application.evaluate(({ app }) => app.getPath("userData"))).toContain("joi-e2e");
     const page = await application.firstWindow();
+    await setDesktopTestLocale(page, "zh-CN");
     let pending = true;
     const requests: Record<string, unknown>[] = [];
     await page.route("**/api/v1/**", async (route) => {

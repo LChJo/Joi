@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import type { JoiAcceptedMessageDto, JoiHomeFeedDto } from "../shared/joi.js";
 import { REMOTE_PROTOCOL_VERSION, type RemoteCommandResponse, type RemoteEncryptedFrame, type RemoteHandshakeReady } from "../shared/remote.js";
 import { randomUuid } from "./random-uuid.js";
@@ -193,7 +194,7 @@ export class BrowserRemoteJoiConnection implements RemoteJoiConnection {
       hostId: credential.hostId, mode, pairingId: this.#ticket?.pairingId ?? "",
     };
     this.#lastHello = context;
-    this.#socket.send(JSON.stringify({ ...context, deviceName: navigator.userAgent.includes("Mobile") ? "手机浏览器" : "浏览器", kind: "handshake.hello", proof: await browserRemoteHandshakeProof(credential.secret, context), version: REMOTE_PROTOCOL_VERSION }));
+    this.#socket.send(JSON.stringify({ ...context, deviceName: navigator.userAgent.includes("Mobile") ? t("common.mobileBrowser") : t("common.browser"), kind: "handshake.hello", proof: await browserRemoteHandshakeProof(credential.secret, context), version: REMOTE_PROTOCOL_VERSION }));
   }
 
   async #finishHandshake(ready: RemoteHandshakeReady): Promise<void> {

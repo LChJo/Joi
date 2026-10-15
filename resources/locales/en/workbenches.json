@@ -1,0 +1,57 @@
+{
+  "workbenchSelectionDidNotCompleteRefreshTaskStatusAnd": {
+    "message": "Workbench selection did not complete. Refresh task status and try again. Your entries are preserved.",
+    "description": "workbenches: Workbench selection did not complete. Refresh task status and try again. Your entries are preserved.",
+    "sourceText": "工作台选择未完成，请刷新任务状态后重试。已保留填写内容。"
+  },
+  "chooseAnExistingWorkbenchOrCreateASeparateScope": {
+    "message": "Choose an existing workbench or create a separate scope. joi starts planning after confirmation.",
+    "description": "workbenches: Choose an existing workbench or create a separate scope. joi starts planning after confirmation.",
+    "sourceText": "选一个已有工作台，或新建独立工作范围。确认后 joi 开始安排。"
+  },
+  "workbenchName": {
+    "message": "Workbench name",
+    "description": "workbenches: Workbench name",
+    "sourceText": "工作台名称"
+  },
+  "workScope": {
+    "message": "Work scope",
+    "description": "workbenches: Work scope",
+    "sourceText": "工作范围"
+  },
+  "creating": {
+    "message": "Creating…",
+    "description": "workbenches: Creating…",
+    "sourceText": "正在创建…"
+  },
+  "createAndContinue": {
+    "message": "Create and continue",
+    "description": "workbenches: Create and continue",
+    "sourceText": "创建并继续"
+  },
+  "backToSelection": {
+    "message": "Back to selection",
+    "description": "workbenches: Back to selection",
+    "sourceText": "返回选择"
+  },
+  "chooseAWorkbenchToContinue": {
+    "message": "Choose a workbench to continue",
+    "description": "workbenches: Choose a workbench to continue",
+    "sourceText": "选择一个工作台继续"
+  },
+  "noMatchingWorkbenchesYouCanCreateOne": {
+    "message": "No matching workbenches. You can create one.",
+    "description": "workbenches: No matching workbenches. You can create one.",
+    "sourceText": "没有匹配的工作台，可以新建。"
+  },
+  "newWorkbench": {
+    "message": "New workbench",
+    "description": "workbenches: New workbench",
+    "sourceText": "新建工作台"
+  },
+  "chooseLater": {
+    "message": "Choose later",
+    "description": "workbenches: Choose later",
+    "sourceText": "稍后选择"
+  }
+}

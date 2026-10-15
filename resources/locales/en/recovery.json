@@ -1,0 +1,66 @@
+{
+  "title": {
+    "message": "joi · Safe recovery",
+    "description": "Recovery page title"
+  },
+  "eyebrow": {
+    "message": "joi safe recovery",
+    "description": "Recovery introduction"
+  },
+  "heading": {
+    "message": "joi needs to repair local data first",
+    "description": "Recovery heading"
+  },
+  "description": {
+    "message": "joi has paused all agents and data writes to prevent further damage. Save a snapshot of the current data or restore a backup. Sensitive content and file locations are never shown here.",
+    "description": "Recovery safety explanation"
+  },
+  "snapshot": {
+    "message": "Save current data snapshot",
+    "description": "Create recovery snapshot"
+  },
+  "backups": {
+    "message": "Available backups",
+    "description": "Recovery backup list heading"
+  },
+  "loading": {
+    "message": "joi is loading backups…",
+    "description": "Loading backup list"
+  },
+  "empty": {
+    "message": "No backups available.",
+    "description": "Empty backup list"
+  },
+  "loadFailed": {
+    "message": "joi could not load backups.",
+    "description": "Backup list failure"
+  },
+  "format": {
+    "message": "Data format v",
+    "description": "Backup format version prefix"
+  },
+  "restore": {
+    "message": "Restore and restart",
+    "description": "Restore backup action"
+  },
+  "confirm": {
+    "message": "joi will isolate the current data first. Restore this backup?",
+    "description": "Restore confirmation"
+  },
+  "restored": {
+    "message": "Restore scheduled. The app will restart shortly.",
+    "description": "Restore accepted"
+  },
+  "saving": {
+    "message": "joi is saving a data snapshot…",
+    "description": "Snapshot progress"
+  },
+  "saved": {
+    "message": "Data snapshot saved.",
+    "description": "Snapshot success"
+  },
+  "saveFailed": {
+    "message": "Data snapshot could not be saved.",
+    "description": "Snapshot failure"
+  }
+}

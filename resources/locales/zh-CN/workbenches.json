@@ -1,0 +1,13 @@
+{
+  "workbenchSelectionDidNotCompleteRefreshTaskStatusAnd": "工作台选择未完成，请刷新任务状态后重试。已保留填写内容。",
+  "chooseAnExistingWorkbenchOrCreateASeparateScope": "选一个已有工作台，或新建独立工作范围。确认后 joi 开始安排。",
+  "workbenchName": "工作台名称",
+  "workScope": "工作范围",
+  "creating": "正在创建…",
+  "createAndContinue": "创建并继续",
+  "backToSelection": "返回选择",
+  "chooseAWorkbenchToContinue": "选择一个工作台继续",
+  "noMatchingWorkbenchesYouCanCreateOne": "没有匹配的工作台，可以新建。",
+  "newWorkbench": "新建工作台",
+  "chooseLater": "稍后选择"
+}

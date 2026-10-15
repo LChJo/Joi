@@ -5,9 +5,17 @@ import {
   LIFE_STATE_LABEL,
   listenerStatusLabel,
   statusLabel,
+  thinkingEffortLabel,
 } from "../../src/renderer/copy";
+import { configureLocale } from "../../src/renderer/i18n";
 
 describe("friendly renderer copy", () => {
+  it("AC-I18N-05 distinguishes thinking off from a close action", () => {
+    configureLocale({ preference: "en" });
+    expect(thinkingEffortLabel("off")).toBe("Off");
+    expect(thinkingEffortLabel("high")).toBe("High");
+    expect(thinkingEffortLabel("xhigh")).toBe("Very high");
+  });
   it("names every life and partner state without exposing raw values", () => {
     expect(Object.values(LIFE_STATE_LABEL)).toEqual([
       "今天的次数用完了", "需要看看", "已暂停", "准备行动", "正在行动", "安静中", "已停止", "等你决定",

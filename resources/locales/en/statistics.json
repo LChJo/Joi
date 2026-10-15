@@ -1,0 +1,562 @@
+{
+  "evolution": {
+    "message": "Evolution",
+    "description": "statistics: Evolution",
+    "sourceText": "进化"
+  },
+  "orchestration": {
+    "message": "Orchestration",
+    "description": "statistics: Orchestration",
+    "sourceText": "编排"
+  },
+  "probe": {
+    "message": "Probe",
+    "description": "statistics: Probe",
+    "sourceText": "探测"
+  },
+  "routing": {
+    "message": "Routing",
+    "description": "statistics: Routing",
+    "sourceText": "路由"
+  },
+  "summary": {
+    "message": "Summary",
+    "description": "statistics: Summary",
+    "sourceText": "总结"
+  },
+  "unknown": {
+    "message": "Unknown",
+    "description": "statistics: Unknown",
+    "sourceText": "未知"
+  },
+  "usageUnknownForValueRecords": {
+    "message": "Usage unknown for {p0} records",
+    "description": "statistics: Usage unknown for {p0} records",
+    "sourceText": "{p0} 条记录的用量未知",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "usageCollectionComplete": {
+    "message": "Usage collection complete",
+    "description": "statistics: Usage collection complete",
+    "sourceText": "用量已完整采集"
+  },
+  "valueValueTotalTokensInputValueOutputValue": {
+    "message": "{p0} · {p1} total tokens (input {p2} / output {p3})",
+    "description": "statistics: {p0} · {p1} total tokens (input {p2} / output {p3})",
+    "sourceText": "{p0} · 总 {p1} Token（输入 {p2} / 输出 {p3}）",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string",
+      "p3": "string"
+    }
+  },
+  "valueRecords": {
+    "message": "{p0} records",
+    "description": "statistics: {p0} records",
+    "sourceText": "{p0} 条记录",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueUnknownUsage": {
+    "message": "{p0} unknown usage",
+    "description": "statistics: {p0} unknown usage",
+    "sourceText": "{p0} 条用量未知",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueFailed": {
+    "message": "{p0} failed",
+    "description": "statistics: {p0} failed",
+    "sourceText": "{p0} 条失败",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "hourlyTokenTrendForTheDay": {
+    "message": "Hourly token trend for the day",
+    "description": "statistics: Hourly token trend for the day",
+    "sourceText": "当日每小时 Token 趋势图"
+  },
+  "dailyTokenTrend": {
+    "message": "Daily token trend",
+    "description": "statistics: Daily token trend",
+    "sourceText": "每日 Token 趋势图"
+  },
+  "valueInputValueOutputValueTotalTokensValueValue": {
+    "message": "{p0}, input {p1}, output {p2}, total tokens {p3}, {p4}",
+    "description": "statistics: {p0}, input {p1}, output {p2}, total tokens {p3}, {p4}",
+    "sourceText": "{p0}，输入 {p1}，输出 {p2}，总 Token {p3}，{p4}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string",
+      "p3": "string",
+      "p4": "string"
+    }
+  },
+  "viewHourlyDataTable": {
+    "message": "View hourly data table",
+    "description": "statistics: View hourly data table",
+    "sourceText": "查看每小时数据表"
+  },
+  "viewDailyDataTable": {
+    "message": "View daily data table",
+    "description": "statistics: View daily data table",
+    "sourceText": "查看每日数据表"
+  },
+  "hourlyTokenDetails": {
+    "message": "Hourly token details",
+    "description": "statistics: Hourly token details",
+    "sourceText": "每小时 Token 明细"
+  },
+  "dailyTokenDetails": {
+    "message": "Daily token details",
+    "description": "statistics: Daily token details",
+    "sourceText": "每日 Token 明细"
+  },
+  "timePeriod": {
+    "message": "Time period",
+    "description": "statistics: Time period",
+    "sourceText": "时段"
+  },
+  "date": {
+    "message": "Date",
+    "description": "statistics: Date",
+    "sourceText": "日期"
+  },
+  "input": {
+    "message": "Input",
+    "description": "statistics: Input",
+    "sourceText": "输入"
+  },
+  "dailyUsageHeatmap": {
+    "message": "Daily usage heatmap",
+    "description": "statistics: Daily usage heatmap",
+    "sourceText": "日期用量热图"
+  },
+  "statisticsCouldNotBeRefreshedTheLastSuccessfulData": {
+    "message": "Statistics could not be refreshed. The last successful data is preserved.",
+    "description": "statistics: Statistics could not be refreshed. The last successful data is preserved.",
+    "sourceText": "统计暂时无法刷新，已保留上次成功获取的数据。"
+  },
+  "chooseBothAStartDateAndAnEndDate": {
+    "message": "Choose both a start date and an end date.",
+    "description": "statistics: Choose both a start date and an end date.",
+    "sourceText": "请选择完整的开始和结束日期。"
+  },
+  "theEndDateCannotBeEarlierThanTheStart": {
+    "message": "The end date cannot be earlier than the start date.",
+    "description": "statistics: The end date cannot be earlier than the start date.",
+    "sourceText": "结束日期不能早于开始日期。"
+  },
+  "theDateRangeCannotExceed366Days": {
+    "message": "The date range cannot exceed 366 days.",
+    "description": "statistics: The date range cannot exceed 366 days.",
+    "sourceText": "日期范围最多 366 天。"
+  },
+  "loadingStatistics": {
+    "message": "Loading statistics",
+    "description": "statistics: Loading statistics",
+    "sourceText": "统计加载中"
+  },
+  "reloadStatistics": {
+    "message": "Reload statistics",
+    "description": "statistics: Reload statistics",
+    "sourceText": "重新加载统计"
+  },
+  "localRecords": {
+    "message": "Local records",
+    "description": "statistics: Local records",
+    "sourceText": "本机记录"
+  },
+  "usageStatistics": {
+    "message": "Usage statistics",
+    "description": "statistics: Usage statistics",
+    "sourceText": "用量统计"
+  },
+  "viewRecordedTokenUsageAndTaskCompletionForJoi": {
+    "message": "View recorded token usage and task completion for joi model calls.",
+    "description": "statistics: View recorded token usage and task completion for joi model calls.",
+    "sourceText": "查看 joi 调用模型时的 Token 用量与任务完成情况，只呈现实际记录。"
+  },
+  "refreshStatistics": {
+    "message": "Refresh statistics",
+    "description": "statistics: Refresh statistics",
+    "sourceText": "刷新统计"
+  },
+  "statisticsFilters": {
+    "message": "Statistics filters",
+    "description": "statistics: Statistics filters",
+    "sourceText": "统计筛选"
+  },
+  "dateRange": {
+    "message": "Date range",
+    "description": "statistics: Date range",
+    "sourceText": "日期范围"
+  },
+  "today": {
+    "message": "Today",
+    "description": "statistics: Today",
+    "sourceText": "今天"
+  },
+  "last7Days": {
+    "message": "Last 7 days",
+    "description": "statistics: Last 7 days",
+    "sourceText": "最近 7 天"
+  },
+  "last30Days": {
+    "message": "Last 30 days",
+    "description": "statistics: Last 30 days",
+    "sourceText": "最近 30 天"
+  },
+  "last90Days": {
+    "message": "Last 90 days",
+    "description": "statistics: Last 90 days",
+    "sourceText": "最近 90 天"
+  },
+  "pastYear": {
+    "message": "Past year",
+    "description": "statistics: Past year",
+    "sourceText": "过去一年"
+  },
+  "custom": {
+    "message": "Custom",
+    "description": "statistics: Custom",
+    "sourceText": "自定义"
+  },
+  "globalUnassigned": {
+    "message": "Global / unassigned",
+    "description": "statistics: Global / unassigned",
+    "sourceText": "全局未归属"
+  },
+  "archived": {
+    "message": "(archived)",
+    "description": "statistics: (archived)",
+    "sourceText": "（已归档）"
+  },
+  "model": {
+    "message": "Model",
+    "description": "statistics: Model",
+    "sourceText": "模型"
+  },
+  "allModels": {
+    "message": "All models",
+    "description": "statistics: All models",
+    "sourceText": "全部模型"
+  },
+  "purpose": {
+    "message": "Purpose",
+    "description": "statistics: Purpose",
+    "sourceText": "用途"
+  },
+  "allPurposes": {
+    "message": "All purposes",
+    "description": "statistics: All purposes",
+    "sourceText": "全部用途"
+  },
+  "by": {
+    "message": "By",
+    "description": "statistics: By",
+    "sourceText": "按"
+  },
+  "updatesEvery15Seconds": {
+    "message": "· Updates every 15 seconds",
+    "description": "statistics: · Updates every 15 seconds",
+    "sourceText": "统计 · 每 15 秒更新"
+  },
+  "clearFilters": {
+    "message": "Clear filters",
+    "description": "statistics: Clear filters",
+    "sourceText": "清除筛选"
+  },
+  "collectionHasFailedBeforeSoTotalsMayBeLow": {
+    "message": "Collection has failed before, so totals may be low. Coverage includes recorded calls only. Unknown usage does not mean zero.",
+    "description": "statistics: Collection has failed before, so totals may be low. Coverage includes recorded calls only. Unknown usage does not mean zero.",
+    "sourceText": "曾发生采集失败，总量可能偏低；覆盖率仅针对已记录调用。未知用量不等于零。"
+  },
+  "statisticsOverview": {
+    "message": "Statistics overview",
+    "description": "statistics: Statistics overview",
+    "sourceText": "统计概览"
+  },
+  "totalTokens": {
+    "message": "Total tokens",
+    "description": "statistics: Total tokens",
+    "sourceText": "总 Token"
+  },
+  "completedGoals": {
+    "message": "Completed goals",
+    "description": "statistics: Completed goals",
+    "sourceText": "完成目标"
+  },
+  "noRecordsInThisRange": {
+    "message": "No records in this range",
+    "description": "statistics: No records in this range",
+    "sourceText": "这个范围还没有记录"
+  },
+  "tryADifferentDateOrFilterNewModelCalls": {
+    "message": "Try a different date or filter. New model calls appear here automatically after completion.",
+    "description": "statistics: Try a different date or filter. New model calls appear here automatically after completion.",
+    "sourceText": "换一个日期或筛选条件。新的模型调用完成后会自动出现在这里。"
+  },
+  "dailyTrend": {
+    "message": "Daily trend",
+    "description": "statistics: Daily trend",
+    "sourceText": "每日趋势"
+  },
+  "hourlyBreakdownForTheDay": {
+    "message": "Hourly breakdown for the day ·",
+    "description": "statistics: Hourly breakdown for the day ·",
+    "sourceText": "当日按小时统计 · "
+  },
+  "unknownUsageCacheIsIncludedInInputAndReasoning": {
+    "message": "Unknown usage · Cache is included in input and reasoning in output, without double counting.",
+    "description": "statistics: Unknown usage · Cache is included in input and reasoning in output, without double counting.",
+    "sourceText": "用量未知 · 缓存包含在输入中，推理包含在输出中，不重复计数。"
+  },
+  "switchBetweenCalendarAndTimePeriods": {
+    "message": "Switch between calendar and time periods",
+    "description": "statistics: Switch between calendar and time periods",
+    "sourceText": "切换日历与时段"
+  },
+  "colorShowsKnownTokenUsageIntensityHoverForDetails": {
+    "message": "Color shows known token usage intensity. Hover for details.",
+    "description": "statistics: Color shows known token usage intensity. Hover for details.",
+    "sourceText": "颜色表示已知 Token 用量强度，鼠标悬停查看明细。"
+  },
+  "heatmapType": {
+    "message": "Heatmap type",
+    "description": "statistics: Heatmap type",
+    "sourceText": "热图类型"
+  },
+  "calendarHeatmap": {
+    "message": "Calendar heatmap",
+    "description": "statistics: Calendar heatmap",
+    "sourceText": "日历热图"
+  },
+  "timePeriodHeatmap": {
+    "message": "Time period heatmap",
+    "description": "statistics: Time period heatmap",
+    "sourceText": "时段热图"
+  },
+  "lowHighKnownTokenUsageStripesUnknown": {
+    "message": "Low → High: known token usage · Stripes: unknown",
+    "description": "statistics: Low → High: known token usage · Stripes: unknown",
+    "sourceText": "少 → 多：已知 Token 用量 · 斜纹：未知"
+  },
+  "weekdayAndHourTokenHeatmap": {
+    "message": "Weekday and hour token heatmap",
+    "description": "statistics: Weekday and hour token heatmap",
+    "sourceText": "星期小时 Token 热图"
+  },
+  "hour": {
+    "message": "Hour",
+    "description": "statistics: Hour",
+    "sourceText": "小时"
+  },
+  "valueNoRecords": {
+    "message": "{p0} · No records",
+    "description": "statistics: {p0} · No records",
+    "sourceText": "{p0} · 无记录",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "viewTimePeriodDataTable": {
+    "message": "View time period data table",
+    "description": "statistics: View time period data table",
+    "sourceText": "查看时段数据表"
+  },
+  "weekdayAndHourTokenDetails": {
+    "message": "Weekday and hour token details",
+    "description": "statistics: Weekday and hour token details",
+    "sourceText": "星期小时 Token 明细"
+  },
+  "weekday": {
+    "message": "Weekday",
+    "description": "statistics: Weekday",
+    "sourceText": "星期"
+  },
+  "modelRanking": {
+    "message": "Model ranking",
+    "description": "statistics: Model ranking",
+    "sourceText": "模型排行"
+  },
+  "hoverToViewUsageDetailsForAModel": {
+    "message": "Hover to view usage details for a model.",
+    "description": "statistics: Hover to view usage details for a model.",
+    "sourceText": "鼠标悬停查看该模型的用量明细。"
+  },
+  "valueValueValueValueTotalTokensInputValueOutput": {
+    "message": "{p0} / {p1} · {p2} · {p3} total tokens (input {p4} / output {p5}) · {p6} records · {p7}% share{p8}",
+    "description": "statistics: {p0} / {p1} · {p2} · {p3} total tokens (input {p4} / output {p5}) · {p6} records · {p7}% share{p8}",
+    "sourceText": "{p0} / {p1} · {p2} · 总 {p3} Token（输入 {p4} / 输出 {p5}）· {p6} 条记录 · 占比 {p7}%{p8}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string",
+      "p3": "string",
+      "p4": "string",
+      "p5": "string",
+      "p6": "string",
+      "p7": "string",
+      "p8": "string"
+    }
+  },
+  "valueUnknownUsagebc8a20": {
+    "message": "· {p0} unknown usage",
+    "description": "statistics: · {p0} unknown usage",
+    "sourceText": " · {p0} 条用量未知",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "usageByPurpose": {
+    "message": "Usage by purpose",
+    "description": "statistics: Usage by purpose",
+    "sourceText": "用途构成"
+  },
+  "shareOfKnownTokensByPurposeWithinTheCurrent": {
+    "message": "Share of known tokens by purpose within the current filters. Hover for details.",
+    "description": "statistics: Share of known tokens by purpose within the current filters. Hover for details.",
+    "sourceText": "每个用途的已知 Token 占当前筛选范围的比例，鼠标悬停查看明细。"
+  },
+  "valueValueTotalTokensInputValueOutputValueValue": {
+    "message": "{p0} · {p1} total tokens (input {p2} / output {p3}) · {p4} records · {p5}% share{p6}",
+    "description": "statistics: {p0} · {p1} total tokens (input {p2} / output {p3}) · {p4} records · {p5}% share{p6}",
+    "sourceText": "{p0} · 总 {p1} Token（输入 {p2} / 输出 {p3}）· {p4} 条记录 · 占比 {p5}%{p6}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string",
+      "p3": "string",
+      "p4": "string",
+      "p5": "string",
+      "p6": "string"
+    }
+  },
+  "records": {
+    "message": "records",
+    "description": "statistics: records",
+    "sourceText": "条记录"
+  },
+  "eachGoalIsCountedOnceHoverForUsageDetails": {
+    "message": "Each goal is counted once. Hover for usage details.",
+    "description": "statistics: Each goal is counted once. Hover for usage details.",
+    "sourceText": "同一目标只计一次，鼠标悬停查看用量明细。"
+  },
+  "completed": {
+    "message": "Completed",
+    "description": "statistics: Completed",
+    "sourceText": "完成"
+  },
+  "failed": {
+    "message": "Failed",
+    "description": "statistics: Failed",
+    "sourceText": "失败"
+  },
+  "waiting": {
+    "message": "Waiting",
+    "description": "statistics: Waiting",
+    "sourceText": "等待"
+  },
+  "valueValueValueTotalTokensInputValueOutputValue": {
+    "message": "{p0}{p1} · {p2} total tokens (input {p3} / output {p4}) · Goals: {p5} completed / {p6} failed / {p7} waiting{p8}",
+    "description": "statistics: {p0}{p1} · {p2} total tokens (input {p3} / output {p4}) · Goals: {p5} completed / {p6} failed / {p7} waiting{p8}",
+    "sourceText": "{p0}{p1} · 总 {p2} Token（输入 {p3} / 输出 {p4}）· 完成 {p5} / 失败 {p6} / 等待 {p7} 个目标{p8}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string",
+      "p3": "string",
+      "p4": "string",
+      "p5": "string",
+      "p6": "string",
+      "p7": "string",
+      "p8": "string"
+    }
+  },
+  "top10Goals": {
+    "message": "Top 10 goals",
+    "description": "statistics: Top 10 goals",
+    "sourceText": "目标 Top 10"
+  },
+  "valueValueValueValueTotalTokensInputValueOutputb38516": {
+    "message": "{p0} · {p1} · {p2} · {p3} total tokens (input {p4} / output {p5}) · {p6} records{p7}",
+    "description": "statistics: {p0} · {p1} · {p2} · {p3} total tokens (input {p4} / output {p5}) · {p6} records{p7}",
+    "sourceText": "{p0} · {p1} · {p2} · 总 {p3} Token（输入 {p4} / 输出 {p5}）· {p6} 条记录{p7}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string",
+      "p3": "string",
+      "p4": "string",
+      "p5": "string",
+      "p6": "string",
+      "p7": "string"
+    }
+  },
+  "openGoalValue": {
+    "message": "Open goal {p0}",
+    "description": "statistics: Open goal {p0}",
+    "sourceText": "打开目标 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "dataCompleteness": {
+    "message": "Data completeness",
+    "description": "statistics: Data completeness",
+    "sourceText": "数据完整性"
+  },
+  "unknownMeansTheProviderDidNotReturnUsableUsage": {
+    "message": "Unknown means the provider did not return usable usage data. It is not counted as zero.",
+    "description": "statistics: Unknown means the provider did not return usable usage data. It is not counted as zero.",
+    "sourceText": "未知代表供应商没有返回可用量，不会按 0 计算。"
+  },
+  "knownUsageCoverage": {
+    "message": "Known usage coverage",
+    "description": "statistics: Known usage coverage",
+    "sourceText": "已知覆盖率"
+  },
+  "knownRecords": {
+    "message": "Known records",
+    "description": "statistics: Known records",
+    "sourceText": "已知记录"
+  },
+  "unknownRecords": {
+    "message": "Unknown records",
+    "description": "statistics: Unknown records",
+    "sourceText": "未知记录"
+  },
+  "failedRecords": {
+    "message": "Failed records",
+    "description": "statistics: Failed records",
+    "sourceText": "失败记录"
+  },
+  "knownCacheBreakdown": {
+    "message": "Known cache breakdown",
+    "description": "statistics: Known cache breakdown",
+    "sourceText": "缓存细分已知"
+  },
+  "knownReasoningBreakdown": {
+    "message": "Known reasoning breakdown",
+    "description": "statistics: Known reasoning breakdown",
+    "sourceText": "推理细分已知"
+  },
+  "collectionStarted": {
+    "message": "Collection started",
+    "description": "statistics: Collection started",
+    "sourceText": "采集始于"
+  },
+  "updated": {
+    "message": "· Updated",
+    "description": "statistics: · Updated",
+    "sourceText": "· 更新于"
+  }
+}

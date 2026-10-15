@@ -4,6 +4,7 @@ import 'package:joi_mobile/app.dart';
 import 'package:joi_mobile/archived_goals.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/goal_detail.dart';
+import 'package:joi_mobile/i18n.dart';
 
 class FakeRemoteController extends ChangeNotifier implements RemoteController {
   FakeRemoteController(this._state);
@@ -641,7 +642,9 @@ void main() {
     // a list of things put away harder to scan, and the 归档 time takes their place.
     expect(find.byType(LinearProgressIndicator), findsNothing);
     expect(
-      find.text('${DateTime.parse('2026-10-09T09:00:00.000Z').toLocal()} 归档'),
+      find.text(
+        '${formatUiDate(DateTime.parse('2026-10-09T09:00:00.000Z'))} 归档',
+      ),
       findsOneWidget,
     );
     await tester.tap(find.byTooltip('更多操作'));

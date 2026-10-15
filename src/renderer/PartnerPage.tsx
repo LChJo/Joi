@@ -1,3 +1,4 @@
+import { localizeProductText, noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
 import type { CodexPermissionsDto, ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto, ToolPolicyModeDto } from "../shared/joi";
@@ -19,7 +20,7 @@ function fieldName(value: FormDataEntryValue | null): string {
 }
 
 function failureMessage(error: unknown, fallback: string): string {
-  return error instanceof ApiError ? error.message : fallback;
+  return error instanceof ApiError ? error.displayMessage : fallback;
 }
 
 function toggle(list: string[], value: string): string[] {
@@ -27,34 +28,35 @@ function toggle(list: string[], value: string): string[] {
 }
 
 function configurationMessage(reasonCodes: readonly string[]): string {
-  if (reasonCodes.includes("partner_skill_requires_read")) return "Pi core 挂载 Skill 时必须启用 read 工具。";
+  if (reasonCodes.includes("partner_skill_requires_read")) return t("partners.enableTheReadToolWhenAttachingASkillTo");
   if (reasonCodes.includes("partner_skill_ref_invalid") || reasonCodes.includes("partner_skill_not_available") || reasonCodes.includes("partner_skill_not_found")) {
-    return "有技能引用已失效，请重新选择本机已安装的技能。";
+    return t("partners.someSkillReferencesAreInvalidSelectInstalledLocalSkills");
   }
-  if (reasonCodes.includes("partner_skill_collision")) return "选中的技能名称发生冲突，请只保留一个来源。";
-  if (reasonCodes.includes("partner_skill_environment_invalid")) return "技能的环境声明无效，请重新选择有效版本。";
-  return "搭档配置需要修复后才能派发。";
+  if (reasonCodes.includes("partner_skill_collision")) return t("partners.selectedSkillNamesConflictKeepOnlyOneSourceFor");
+  if (reasonCodes.includes("partner_skill_environment_invalid")) return t("partners.theSkillEnvironmentDeclarationIsInvalidChooseAValid");
+  return t("partners.fixThePartnerConfigurationBeforeDispatchingWork");
 }
 
 function modelTestMessage(result: PartnerModelTestDto, engine: PartnerEngineDto): string {
-  if (result.status === "READY") return engine === "pi-core" ? "模型可用" : "搭档可用";
-  if (result.reasonCode === "partner_model_override_not_ready") return "模型名与供应商当前模型不一致";
-  if (result.reasonCode === "partner_model_source_not_ready") return "供应商尚未就绪";
-  if (result.reasonCode === "partner_cli_probe_timed_out") return "搭档调用超时";
-  if (result.reasonCode === "partner_cli_auth_required") return engine === "claude-code" ? "Claude Code 认证失败，请检查本机 Claude 的登录或凭据配置" : `${ENGINE_LABELS[engine]} 尚未登录，请先完成登录`;
-  if (result.reasonCode === "partner_cli_model_unsupported") return "当前本地 CLI 或账户不支持这个模型，请更新 CLI 或检查模型权限";
-  if (result.reasonCode === "partner_cli_rate_limited") return "调用过于频繁，请稍后重试";
-  if (result.reasonCode === "partner_cli_provider_unavailable") return "模型服务暂时不可用，请稍后重试";
-  if (result.reasonCode === "partner_cli_process_failed") return "本地搭档进程启动失败";
-  if (result.reasonCode === "partner_cli_store_failed") return "本地会话记录失败";
-  if (result.reasonCode === "engine_unavailable") return "本地引擎未就绪";
-  return engine === "pi-core" ? "模型连接失败" : "搭档调用失败";
+  if (result.status === "READY") return engine === "pi-core" ? t("partners.modelReady") : t("partners.partnerReady");
+  if (result.reasonCode === "partner_model_override_not_ready") return t("partners.theModelNameDoesNotMatchTheProviderS");
+  if (result.reasonCode === "partner_model_source_not_ready") return t("partners.providerNotReady");
+  if (result.reasonCode === "partner_cli_probe_timed_out") return t("partners.partnerCallTimedOut");
+  if (result.reasonCode === "partner_cli_auth_required") return engine === "claude-code" ? t("partners.claudeCodeAuthenticationFailedCheckTheLocalClaudeLogin") : t("partners.valueIsNotSignedInSignInFirst", { p0: ENGINE_LABELS[engine] });
+  if (result.reasonCode === "partner_cli_model_unsupported") return t("partners.theLocalCliOrAccountDoesNotSupportThis");
+  if (result.reasonCode === "partner_cli_rate_limited") return t("partners.tooManyRequestsTryAgainLater");
+  if (result.reasonCode === "partner_cli_provider_unavailable") return t("partners.theModelServiceIsTemporarilyUnavailableTryAgainLater");
+  if (result.reasonCode === "partner_cli_process_failed") return t("partners.theLocalPartnerProcessCouldNotStart");
+  if (result.reasonCode === "partner_cli_store_failed") return t("partners.theLocalSessionCouldNotBeRecorded");
+  if (result.reasonCode === "engine_unavailable") return t("partners.localEngineNotReady");
+  return engine === "pi-core" ? t("partners.modelConnectionFailed") : t("partners.partnerCallFailed");
 }
 
 function PartnerModelStatus({ engine, result }: { engine: PartnerEngineDto; result: PartnerModelTestDto | "TESTING" | undefined }) {
+  useI18n();
   const modelManaged = engine === "pi-core";
-  if (result === "TESTING") return <div className="partner-model-status" role="status"><span>{modelManaged ? "正在测试模型…" : "正在真实调用搭档…"}</span></div>;
-  if (result === undefined) return <div className="partner-model-status" role="status"><span>{modelManaged ? "模型状态尚未测试" : "搭档可用性尚未测试"}</span></div>;
+  if (result === "TESTING") return <div className="partner-model-status" role="status"><span>{modelManaged ? t("partners.testingTheModel") : t("partners.callingThePartner")}</span></div>;
+  if (result === undefined) return <div className="partner-model-status" role="status"><span>{modelManaged ? t("partners.modelNotTestedYet") : t("partners.partnerAvailabilityNotTestedYet")}</span></div>;
   const tested = result.testedAt === undefined ? "" : new Date(result.testedAt).toLocaleString("zh-CN");
   const detail = [result.sourceDisplayName, result.modelId, tested].filter(Boolean).join(" · ");
   return <div className="partner-model-status" role="status">
@@ -97,25 +99,26 @@ function persistedModelTest(partner: PartnerDto, sources: ModelSourceDto[]): Par
 }
 
 function KnowledgeDocList({ api, onChanged, partnerId }: { api: DigitalLifeApi; onChanged: () => void; partnerId: string }) {
+  useI18n();
   const [docs, setDocs] = useState<PartnerKnowledgeDocDto[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const load = useCallback(async () => setDocs((await api.listKnowledgeDocs(partnerId)).items), [api, partnerId]);
-  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setBusy("没能读取知识库。")), 0); return () => clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setBusy(t("partners.couldNotLoadTheKnowledgeBase"))), 0); return () => clearTimeout(timer); }, [load]);
   const upload = async (event: ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(event.target.files ?? []);
     event.target.value = "";
     for (const file of files) {
-      setBusy(`正在导入 ${file.name}…`);
+      setBusy(t("partners.importingValue", { p0: file.name }));
       try { await api.uploadKnowledgeDoc(partnerId, file); }
-      catch (error) { setBusy(failureMessage(error, "知识库文档没导入成功。")); await load().catch(() => undefined); return; }
+      catch (error) { setBusy(failureMessage(error, t("partners.couldNotImportTheKnowledgeDocument"))); await load().catch(() => undefined); return; }
     }
     setBusy(null);
     await load().catch(() => undefined);
     onChanged();
   };
   return <div className="kb-doc-list">
-    {docs.map((doc) => <div className="kb-doc-row" key={doc.docId}><span>{doc.filename} · {(doc.bytes / 1024).toFixed(1)} KiB</span><button className="button ghost" onClick={() => void api.deleteKnowledgeDoc(partnerId, doc.docId).then(load).then(onChanged).catch(() => setBusy("知识库文档没移除。"))} type="button">移除</button></div>)}
-    <label className="kb-upload">附加 md 文档（≤8 篇，每篇 ≤256 KiB）<input accept=".md,.txt" aria-label="附加知识库文档" multiple onChange={(event) => void upload(event)} type="file" /></label>
+    {docs.map((doc) => <div className="kb-doc-row" key={doc.docId}><span>{doc.filename} · {(doc.bytes / 1024).toFixed(1)} KiB</span><button className="button ghost" onClick={() => void api.deleteKnowledgeDoc(partnerId, doc.docId).then(load).then(onChanged).catch(() => setBusy(t("partners.couldNotRemoveTheKnowledgeDocument")))} type="button">{t("home.remove2f752c")}</button></div>)}
+    <label className="kb-upload">{t("partners.attachMarkdownDocumentsUpTo8EachUpTo")}<input accept=".md,.txt" aria-label={t("partners.attachKnowledgeDocument")} multiple onChange={(event) => void upload(event)} type="file" /></label>
     {busy === null ? null : <small className="kb-busy">{busy}</small>}
   </div>;
 }
@@ -128,6 +131,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   partner: PartnerDto | null;
   sources: ModelSourceDto[];
 }) {
+  useI18n();
   const [kind, setKind] = useState<"local-pi" | "a2a">(partner?.kind ?? "local-pi");
   const [tab, setTab] = useState<"advanced" | "basic">("basic");
   const [engine, setEngine] = useState<PartnerEngineDto>(partner?.engine ?? "pi-core");
@@ -145,7 +149,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   });
   const [modelIdOverride, setModelIdOverride] = useState(partner?.modelIdOverride ?? "");
   const [modelSourceId, setModelSourceId] = useState(partner?.modelSourceId ?? "");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useNotice();
   const [promptDraft, setPromptDraft] = useState("");
   const [promptMode, setPromptMode] = useState<"APPEND" | "REPLACE">("REPLACE");
   const [promptTouched, setPromptTouched] = useState(false);
@@ -223,7 +227,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
             : engineModelId === undefined ? {} : { engineModelId }),
           kind: "local-pi",
         });
-        onDone("搭档已登记。可以继续补充知识库，再交给 joi。", created.partnerId);
+        onDone(t("partners.partnerRegisteredAddKnowledgeDocumentsBeforeHandingItTo"), created.partnerId);
       } else {
         await api.updatePartner(partner.partnerId, {
           ...fields,
@@ -235,9 +239,9 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
             }
             : { engineModelId: engineModelId ?? null }),
         });
-        onDone("修改已保存为新的搭档 revision。", partner.partnerId);
+        onDone(t("partners.changesSavedAsANewPartnerRevision"), partner.partnerId);
       }
-    } catch (error) { setNotice(failureMessage(error, "搭档没保存成功。")); }
+    } catch (error) { setNotice(failureMessage(error, t("partners.partnerCouldNotBeSaved"))); }
   };
 
   const submitA2a = async (event: SyntheticEvent<HTMLFormElement>) => {
@@ -245,8 +249,8 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     const form = new FormData(event.currentTarget);
     try {
       const agent = await api.addAgent(fieldName(form.get("cardUrl")), fieldName(form.get("token")));
-      onDone("远端搭档已登记，可以继续补充描述和知识库。", `partner_${agent.agentConnectionId}`);
-    } catch (error) { setNotice(failureMessage(error, "远端搭档没登记成功。")); }
+      onDone(t("partners.remotePartnerRegisteredYouCanAddADescriptionAnd"), `partner_${agent.agentConnectionId}`);
+    } catch (error) { setNotice(failureMessage(error, t("partners.remotePartnerCouldNotBeRegistered"))); }
   };
 
   const engineStatus = engineStatuses[engine];
@@ -261,122 +265,123 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     && persistedConfigurationNeedsSkillChange && !skillSelectionChanged && !missingReadForSkills;
   const cannotSave = (skillsLoading && selectedSkills.length > 0) || invalidSelectedSkills.length > 0 || missingReadForSkills || unchangedPersistedConfiguration;
   const skillContent = skillsLoading
-    ? <small className="field-hint">正在读取当前引擎的已安装技能……</small>
+    ? <small className="field-hint">{t("partners.loadingInstalledSkillsForTheCurrentEngine")}</small>
     : skills.length === 0
-      ? <small className="field-hint">当前引擎还没有可点选的技能。</small>
+      ? <small className="field-hint">{t("partners.noSelectableSkillsForThisEngineYet")}</small>
       : <div className="chip-group">{skills.map((skill) => <label className="chip" key={skill.id}><input checked={selectedSkills.includes(skill.id)} onChange={() => setSelectedSkills((current) => toggle(current, skill.id))} type="checkbox" />{skill.displayName}</label>)}</div>;
-  const localEngineReason = engine !== "pi-core" && engineStatus !== undefined && !engineStatus.available ? (engineStatus.reason ?? "未检测到该本地引擎。") : null;
+  const localEngineReason = engine !== "pi-core" && engineStatus !== undefined && !engineStatus.available ? (engineStatus.reason ?? t("partners.thisLocalEngineWasNotDetected")) : null;
   const header = partner === null
-    ? <header className="page-title-row"><div><p className="eyebrow">添加搭档</p><h1>这位搭档从哪里来？</h1><p>本机搭档在 joi 身边干活，远端搭档通过 A2A 协议协作。</p></div><button className="button ghost" onClick={() => onDone("已返回搭档列表。")} type="button">返回</button></header>
-    : <header className="page-title-row"><div><p className="eyebrow">编辑搭档</p><h1>{partner.displayName}</h1><p>修改会登记为新的 revision；正在路上的工作仍按旧 revision 完成。</p></div><button className="button ghost" onClick={() => onDone("已返回搭档列表。")} type="button">返回</button></header>;
+    ? <header className="page-title-row"><div><p className="eyebrow">{t("partners.addPartner")}</p><h1>{t("partners.whereWillThisPartnerRun")}</h1><p>{t("partners.localPartnersWorkAlongsideJoiRemotePartnersCollaborateOver")}</p></div><button className="button ghost" onClick={() => onDone(t("partners.returnedToThePartnerList"))} type="button">{t("common.back")}</button></header>
+    : <header className="page-title-row"><div><p className="eyebrow">{t("partners.editPartner")}</p><h1>{partner.displayName}</h1><p>{t("partners.changesCreateANewRevisionWorkAlreadyInProgress")}</p></div><button className="button ghost" onClick={() => onDone(t("partners.returnedToThePartnerList"))} type="button">{t("common.back")}</button></header>;
 
   return <div className="partner-editor">
     {header}
     {notice === null ? null : <p className="inline-notice danger" role="alert">{notice}</p>}
     {partner?.configuration?.status === "ACTION_REQUIRED" ? <p className="inline-notice warning" role="alert">{configurationMessage(partner.configuration.reasonCodes)}</p> : null}
     {partner === null ? <div className="mode-cards">
-      <button aria-pressed={kind === "local-pi"} className={`mode-card ${kind === "local-pi" ? "selected" : ""}`} onClick={() => setKind("local-pi")} type="button"><strong>本地搭档</strong><span>在本机运行的搭档，joi 直接派发工作给它。</span></button>
-      <button aria-pressed={kind === "a2a"} className={`mode-card ${kind === "a2a" ? "selected" : ""}`} onClick={() => setKind("a2a")} type="button"><strong>远端 A2A</strong><span>通过 Agent Card 接入的远端智能体，适合跨设备协作。</span></button>
+      <button aria-pressed={kind === "local-pi"} className={`mode-card ${kind === "local-pi" ? "selected" : ""}`} onClick={() => setKind("local-pi")} type="button"><strong>{t("home.localPartner")}</strong><span>{t("partners.aPartnerRunningOnThisComputerJoiDispatchesWork")}</span></button>
+      <button aria-pressed={kind === "a2a"} className={`mode-card ${kind === "a2a" ? "selected" : ""}`} onClick={() => setKind("a2a")} type="button"><strong>{t("partners.remoteA2a")}</strong><span>{t("partners.aRemoteAgentConnectedThroughAnAgentCardFor")}</span></button>
     </div> : null}
-    {partner !== null && partner.kind === "a2a" ? <p className="inline-notice info">远端搭档的能力来自 Agent Card；这里只补充 joi 的本地参考。</p> : null}
+    {partner !== null && partner.kind === "a2a" ? <p className="inline-notice info">{t("partners.remoteCapabilitiesComeFromTheAgentCardTheseDetails")}</p> : null}
     {partner === null && kind === "a2a" ? <form className="partner-form" onSubmit={(event) => void submitA2a(event)}>
-      <label>远端 Agent Card URL<input name="cardUrl" required type="url" /></label>
-      <label>远端 Bearer Token<input autoComplete="off" name="token" type="password" /></label>
-      <button className="button primary" type="submit">登记远端搭档</button>
+      <label>{t("partners.remoteAgentCardUrl")}<input name="cardUrl" required type="url" /></label>
+      <label>{t("partners.remoteBearerToken")}<input autoComplete="off" name="token" type="password" /></label>
+      <button className="button primary" type="submit">{t("partners.registerRemotePartner")}</button>
     </form> : <form className="partner-form partner-editor-form" onSubmit={(event) => void submitLocal(event)}>
       <div className="tab-row" role="tablist">
-        <button aria-selected={tab === "basic"} className={tab === "basic" ? "selected" : ""} onClick={() => setTab("basic")} role="tab" type="button">基础</button>
-        <button aria-selected={tab === "advanced"} className={tab === "advanced" ? "selected" : ""} onClick={() => setTab("advanced")} role="tab" type="button">高级</button>
+        <button aria-selected={tab === "basic"} className={tab === "basic" ? "selected" : ""} onClick={() => setTab("basic")} role="tab" type="button">{t("partners.basic")}</button>
+        <button aria-selected={tab === "advanced"} className={tab === "advanced" ? "selected" : ""} onClick={() => setTab("advanced")} role="tab" type="button">{t("partners.advanced")}</button>
       </div>
       <div className="tab-panel" style={tab === "basic" ? undefined : { display: "none" }}>
         <div className="partner-basic-grid">
-          <label>名称<input defaultValue={partner?.displayName} name="displayName" placeholder="能力聚类名称，如：编码搭档" required /></label>
-          <label>描述（给 joi 做参考）<textarea defaultValue={partner?.description} name="description" placeholder="能力范围：一句话说清它擅长什么；不要重复工作区环境" rows={3} /></label>
-          {partner === null ? <label>搭档提示词<textarea name="prompt" placeholder="交给它工作时附带的工作提示，仅本机保存" rows={5} /></label> : <div className="prompt-editor-field">
+          <label>{t("automation.name")}<input defaultValue={partner?.displayName} name="displayName" placeholder={t("partners.capabilityNameEGCodingPartner")} required /></label>
+          <label>{t("partners.descriptionForJoi")}<textarea defaultValue={partner?.description} name="description" placeholder={t("partners.describeItsStrengthsInOneSentenceWithoutRepeatingWorkspace")} rows={3} /></label>
+          {partner === null ? <label>{t("partners.partnerPrompt")}<textarea name="prompt" placeholder={t("partners.instructionsSentWithItsWorkStoredLocallyOnly")} rows={5} /></label> : <div className="prompt-editor-field">
             <div className="prompt-editor-heading">
-              <span>搭档提示词</span>
-              <button className="button ghost" disabled={promptRevealState === "loading"} onClick={() => void revealPrompt()} type="button">{promptRevealState === "loading" ? "读取中…" : promptRevealState === "visible" ? "重新读取" : "查看提示词"}</button>
+              <span>{t("partners.partnerPrompt")}</span>
+              <button className="button ghost" disabled={promptRevealState === "loading"} onClick={() => void revealPrompt()} type="button">{promptRevealState === "loading" ? t("home.loading") : promptRevealState === "visible" ? t("home.reload") : t("automation.viewPrompt")}</button>
             </div>
-            <small className="field-hint">{partner.promptConfigured ? "已配置，正文默认隐藏；查看后可替换或追加。" : "尚未配置提示词；查看后可新增。"}</small>
-            {promptRevealState === "failed" ? <p className="inline-notice warning" role="alert">提示词没能读取，请重试。</p> : null}
+            <small className="field-hint">{partner.promptConfigured ? t("partners.configuredAndHiddenByDefaultRevealToReplaceOr") : t("partners.noPromptConfiguredRevealToAddOne")}</small>
+            {promptRevealState === "failed" ? <p className="inline-notice warning" role="alert">{t("partners.couldNotLoadThePromptTryAgain")}</p> : null}
             {promptRevealState === "visible" ? <>
-              <div aria-label="提示词修改方式" className="prompt-mode-row" role="radiogroup">
-                <label><input checked={promptMode === "REPLACE"} name="promptMode" onChange={() => selectPromptMode("REPLACE")} type="radio" />替换</label>
-                <label><input checked={promptMode === "APPEND"} name="promptMode" onChange={() => selectPromptMode("APPEND")} type="radio" />追加</label>
+              <div aria-label={t("partners.promptEditMode")} className="prompt-mode-row" role="radiogroup">
+                <label><input checked={promptMode === "REPLACE"} name="promptMode" onChange={() => selectPromptMode("REPLACE")} type="radio" />{t("partners.replace")}</label>
+                <label><input checked={promptMode === "APPEND"} name="promptMode" onChange={() => selectPromptMode("APPEND")} type="radio" />{t("partners.append")}</label>
               </div>
-              {promptMode === "APPEND" && revealedPrompt !== null ? <label>当前提示词<textarea aria-label="当前提示词" readOnly rows={5} value={revealedPrompt} /></label> : null}
-              <label>{promptMode === "APPEND" ? "追加内容" : "替换内容"}<textarea
-                aria-label={promptMode === "APPEND" ? "追加内容" : "替换内容"}
+              {promptMode === "APPEND" && revealedPrompt !== null ? <label>{t("partners.currentPrompt")}<textarea aria-label={t("partners.currentPrompt")} readOnly rows={5} value={revealedPrompt} /></label> : null}
+              <label>{promptMode === "APPEND" ? t("partners.contentToAppend") : t("partners.replacementContent")}<textarea
+                aria-label={promptMode === "APPEND" ? t("partners.contentToAppend") : t("partners.replacementContent")}
                 onChange={(event) => { setPromptDraft(event.target.value); setPromptTouched(true); }}
-                placeholder={promptMode === "APPEND" ? "输入要追加到当前提示词末尾的内容" : "输入完整的新提示词"}
+                placeholder={promptMode === "APPEND" ? t("partners.enterContentToAppendToTheCurrentPrompt") : t("partners.enterTheCompleteNewPrompt")}
                 rows={6}
                 value={promptDraft}
               /></label>
-              <small className="field-hint">{promptMode === "APPEND" ? "保存后会用一个空行连接当前提示词与追加内容。" : "保存后会以这里的完整内容替换当前提示词。未改动则保持原内容。"}</small>
+              <small className="field-hint">{promptMode === "APPEND" ? t("partners.theAppendedContentIsSeparatedFromTheCurrentPrompt") : t("partners.savingReplacesTheCurrentPromptWithThisContentNo")}</small>
             </> : null}
           </div>}
         </div>
-        <div className="kb-field"><span className="kb-field-label">知识库</span>{partner !== null && partner.kind === "local-pi" ? <KnowledgeDocList api={api} onChanged={() => undefined} partnerId={partner.partnerId} /> : <small>保存搭档后即可附加 md 文档。</small>}</div>
-        <div className="skill-field"><span className="kb-field-label">技能（可选；按引擎扫描本机已安装技能）</span>
-          <small className="field-hint">不勾选表示不向搭档挂载 skill。</small>
+        <div className="kb-field"><span className="kb-field-label">{t("partners.knowledgeBase")}</span>{partner !== null && partner.kind === "local-pi" ? <KnowledgeDocList api={api} onChanged={() => undefined} partnerId={partner.partnerId} /> : <small>{t("partners.saveThePartnerBeforeAttachingMarkdownDocuments")}</small>}</div>
+        <div className="skill-field"><span className="kb-field-label">{t("partners.skillsOptionalInstalledSkillsAreScannedByEngine")}</span>
+          <small className="field-hint">{t("partners.uncheckedSkillsAreNotAttachedToThePartner")}</small>
           {invalidSelectedSkills.length > 0 ? <div className="inline-notice warning" role="alert">
-            <span>{configurationMessage(["partner_skill_ref_invalid"])} 先移除失效引用：</span>
+            <span>{configurationMessage(["partner_skill_ref_invalid"])}  {t("partners.removeInvalidReferencesFirst")}</span>
             <div className="chip-group">{invalidSelectedSkills.map((skill) => <button className="chip" key={skill} onClick={() => setSelectedSkills((current) => current.filter((item) => item !== skill))} type="button">{skill} ×</button>)}</div>
           </div> : null}
           {skillContent}
         </div>
-        <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
+        <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? t("partners.savePartner") : t("home.saveChanges")}</button>
       </div>
       <div className="tab-panel" style={tab === "advanced" ? undefined : { display: "none" }}>
-        <label>搭档引擎<select name="engine" onChange={(event) => handleEngineChange(event.target.value as PartnerEngineDto)} value={engine}>
-          {ENGINE_ORDER.map((id) => { const status = engineStatuses[id]; const suffix = id === "pi-core" ? "" : status === undefined ? "" : status.available ? "（已检测到）" : "（未检测到）"; return <option key={id} value={id}>{ENGINE_LABELS[id]}{suffix}</option>; })}
+        <label>{t("partners.partnerEngine")}<select name="engine" onChange={(event) => handleEngineChange(event.target.value as PartnerEngineDto)} value={engine}>
+          {ENGINE_ORDER.map((id) => { const status = engineStatuses[id]; const suffix = id === "pi-core" ? "" : status === undefined ? "" : status.available ? t("partners.detected") : t("partners.notDetected"); return <option key={id} value={id}>{ENGINE_LABELS[id]}{suffix}</option>; })}
         </select></label>
-        {localEngineReason === null ? null : <p className="inline-notice warning" role="status">{localEngineReason} 按提示完成本机配置后即可使用，或改回 Pi core。</p>}
+        {localEngineReason === null ? null : <p className="inline-notice warning" role="status">{localEngineReason}  {t("partners.completeLocalSetupAsInstructedOrSwitchBackTo")}</p>}
         {engine === "pi-core" ? <>
-          <label>模型名<input name="modelIdOverride" onChange={(event) => setModelIdOverride(event.target.value)} placeholder="留空使用全局首选模型" value={modelIdOverride} /></label>
-          <label>供应商<span className="picker-field"><select name="modelSourceId" onChange={(event) => {
+          <label>{t("partners.modelName")}<input name="modelIdOverride" onChange={(event) => setModelIdOverride(event.target.value)} placeholder={t("partners.leaveBlankForTheGlobalPreferredModel")} value={modelIdOverride} /></label>
+          <label>{t("partners.provider")}<span className="picker-field"><select name="modelSourceId" onChange={(event) => {
             const nextSourceId = event.target.value;
             setModelSourceId(nextSourceId);
             const selected = sources.find((source) => source.sourceId === nextSourceId);
             setModelIdOverride(selected?.activeModel.id ?? "");
-          }} value={modelSourceId}><option value="">跟随全局首选大模型网络</option>{sources.map((source) => <option disabled={source.status !== "READY"} key={source.sourceId} value={source.sourceId}>{source.displayName}（{source.kind}）{source.status === "READY" ? "" : " · 未就绪"}</option>)}</select><button className="button ghost" onClick={() => onManageProviders?.()} type="button">管理大模型网络</button></span></label>
+          }} value={modelSourceId}><option value="">{t("partners.useTheGlobalPreferredModelConnection")}</option>{sources.map((source) => <option disabled={source.status !== "READY"} key={source.sourceId} value={source.sourceId}>{source.displayName}（{source.kind}）{source.status === "READY" ? "" : t("partners.notReady")}</option>)}</select><button className="button ghost" onClick={() => onManageProviders?.()} type="button">{t("partners.manageModelConnections")}</button></span></label>
         </> : <>
-          <label>模型名（可选覆盖）<input defaultValue={partner?.engineModelId} name="engineModelId" placeholder="留空使用本机 Claude/Codex 自己的配置" /></label>
+          <label>{t("partners.modelNameOptionalOverride")}<input defaultValue={partner?.engineModelId} name="engineModelId" placeholder={t("partners.leaveBlankForTheLocalClaudeCodexConfiguration")} /></label>
           <p className="field-hint">{engine === "claude-code"
-            ? "Claude Code 使用本机 Claude 的配置与认证，并调用你安装的 Claude 可执行文件。保存后可测试可用性。"
-            : "Codex 使用你本机 Codex CLI 的登录与配置；模型名会原样传递。"}</p>
+            ? t("partners.claudeCodeUsesLocalClaudeConfigurationAndAuthenticationInvoking")
+            : t("partners.codexUsesYourLocalCodexCliLoginAndConfiguration")}</p>
         </>}
-        {engine === "codex" ? <div className="tool-field"><span className="kb-field-label">Codex 权限</span>
-          <label>工作区权限<select aria-label="Codex 工作区权限" onChange={(event) => setCodexPermissions((current) => ({ ...current, sandboxMode: event.target.value as CodexPermissionsDto["sandboxMode"] }))} value={codexPermissions.sandboxMode}>
-            <option value="workspace-write">可写工作区</option><option value="read-only">只读</option>
+        {engine === "codex" ? <div className="tool-field"><span className="kb-field-label">{t("partners.codexPermissions")}</span>
+          <label>{t("partners.workspacePermissions")}<select aria-label={t("partners.codexWorkspacePermissions")} onChange={(event) => setCodexPermissions((current) => ({ ...current, sandboxMode: event.target.value as CodexPermissionsDto["sandboxMode"] }))} value={codexPermissions.sandboxMode}>
+            <option value="workspace-write">{t("partners.writableWorkspace")}</option><option value="read-only">{t("partners.readOnly")}</option>
           </select></label>
-          <label>网页搜索<select aria-label="Codex 网页搜索" onChange={(event) => setCodexPermissions((current) => ({ ...current, webSearchMode: event.target.value as CodexPermissionsDto["webSearchMode"] }))} value={codexPermissions.webSearchMode}>
-            <option value="disabled">关闭</option><option value="cached">缓存结果</option><option value="live">实时搜索</option>
+          <label>{t("partners.webSearch")}<select aria-label={t("partners.codexWebSearch")} onChange={(event) => setCodexPermissions((current) => ({ ...current, webSearchMode: event.target.value as CodexPermissionsDto["webSearchMode"] }))} value={codexPermissions.webSearchMode}>
+            <option value="disabled">{t("common.close")}</option><option value="cached">{t("partners.cachedResults")}</option><option value="live">{t("partners.liveSearch")}</option>
           </select></label>
-          <label className="tool-choice"><input checked={codexPermissions.networkAccessEnabled} onChange={(event) => setCodexPermissions((current) => ({ ...current, networkAccessEnabled: event.target.checked }))} type="checkbox" /><span>允许网络访问</span></label>
-          <small className="field-hint">审批策略固定为 never；不提供 danger-full-access。</small>
-        </div> : <div className="tool-field"><span className="kb-field-label">工具权限</span>
-          <div className="button-row"><button className="button ghost" onClick={() => { setToolPolicyMode("ALL"); setSelectedTools([]); }} type="button">全部开启</button><button className="button ghost" onClick={() => { setToolPolicyMode("CUSTOM"); setSelectedTools([]); }} type="button">全部关闭</button></div>
-          {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">该引擎暂无可选工具。</small> : <div aria-label="工具白名单" className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={toolPolicyMode === "ALL" || selectedTools.includes(tool)} onChange={() => {
+          <label className="tool-choice"><input checked={codexPermissions.networkAccessEnabled} onChange={(event) => setCodexPermissions((current) => ({ ...current, networkAccessEnabled: event.target.checked }))} type="checkbox" /><span>{t("partners.allowNetworkAccess")}</span></label>
+          <small className="field-hint">{t("partners.approvalPolicyIsFixedToNeverUnrestrictedAccessIs")}</small>
+        </div> : <div className="tool-field"><span className="kb-field-label">{t("partners.toolPermissions")}</span>
+          <div className="button-row"><button className="button ghost" onClick={() => { setToolPolicyMode("ALL"); setSelectedTools([]); }} type="button">{t("partners.enableAll")}</button><button className="button ghost" onClick={() => { setToolPolicyMode("CUSTOM"); setSelectedTools([]); }} type="button">{t("partners.disableAll")}</button></div>
+          {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">{t("partners.noSelectableToolsForThisEngine")}</small> : <div aria-label={t("partners.allowedTools")} className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={toolPolicyMode === "ALL" || selectedTools.includes(tool)} onChange={() => {
             if (toolPolicyMode === "ALL") {
               setToolPolicyMode("CUSTOM");
               setSelectedTools((engineStatus?.tools ?? []).filter((candidate) => candidate !== tool));
             } else setSelectedTools((current) => toggle(current, tool));
           }} type="checkbox" /><span>{tool}</span></label>)}</div>}
-          <small className="field-hint">{toolPolicyMode === "ALL" ? "全部工具已开启。关闭任意工具会切换为自定义权限。" : `自定义权限：已开启 ${String(selectedTools.length)} 项。`}</small>
+          <small className="field-hint">{toolPolicyMode === "ALL" ? t("partners.allToolsAreEnabledDisablingAnyToolSwitchesTo") : t("partners.customPermissionsValueEnabled", { p0: String(selectedTools.length) })}</small>
         </div>}
-        {missingReadForSkills ? <p className="inline-notice warning" role="alert">已选择 Skill 且收窄了工具白名单，请启用 read 后再保存。</p> : null}
-        <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? "保存搭档" : "保存修改"}</button>
+        {missingReadForSkills ? <p className="inline-notice warning" role="alert">{t("partners.skillsAreSelectedWithRestrictedToolsEnableReadBefore")}</p> : null}
+        <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? t("partners.savePartner") : t("home.saveChanges")}</button>
       </div>
     </form>}
   </div>;
 }
 
 function ScenarioGrid({ api }: { api: DigitalLifeApi }) {
+  useI18n();
   const [packs, setPacks] = useState<ScenarioPackDto[]>([]);
   const [expandedPackId, setExpandedPackId] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
-  const [packNotice, setPackNotice] = useState<string | null>(null);
+  const [packNotice, setPackNotice] = useNotice();
   const [catalogState, setCatalogState] = useState<"loading" | "ready" | "failed">("loading");
   const loadPacks = useCallback(async () => {
     try {
@@ -399,36 +404,37 @@ function ScenarioGrid({ api }: { api: DigitalLifeApi }) {
       const created = result.outcomes.filter((item) => item.outcome === "CREATED").length;
       const reused = result.outcomes.filter((item) => item.outcome === "REUSED").length;
       const actionRequired = result.outcomes.filter((item) => item.outcome === "ACTION_REQUIRED").length;
-      setPackNotice(`预设包已处理：新建 ${String(created)} 位，复用 ${String(reused)} 位${actionRequired === 0 ? "" : `，${String(actionRequired)} 位需要处理`}。`);
+      setPackNotice(noticeMessage("partners.presetPackProcessedValueCreatedValueReusedValue", { p0: String(created), p1: String(reused), p2: (actionRequired === 0 ? "" : t("partners.valueNeedAttention", { p0: String(actionRequired) })) }));
       await loadPacks();
-    }).catch((error: unknown) => setPackNotice(failureMessage(error, "预设包没安装成功，请稍后重试。")))
+    }).catch((error: unknown) => setPackNotice(failureMessage(error, t("partners.couldNotInstallThePresetPackTryAgainLater"))))
       .finally(() => setInstalling(null));
   };
-  if (catalogState === "loading") return <div aria-label="正在读取场景套件" className="scenario-pack-loading"><span /><span /><span /></div>;
-  if (catalogState === "failed") return <p className="inline-notice warning" role="alert">场景套件没能读取，请稍后重试。</p>;
-  if (packs.length === 0) return <div className="plain-empty"><h2>还没有场景套件</h2><p>你仍可手动添加搭档；套件目录恢复后会显示在这里。</p></div>;
+  if (catalogState === "loading") return <div aria-label={t("partners.loadingScenarioPacks")} className="scenario-pack-loading"><span /><span /><span /></div>;
+  if (catalogState === "failed") return <p className="inline-notice warning" role="alert">{t("partners.couldNotLoadScenarioPacksTryAgainLater")}</p>;
+  if (packs.length === 0) return <div className="plain-empty"><h2>{t("partners.noScenarioPacksYet")}</h2><p>{t("partners.youCanStillAddPartnersManuallyPacksAppearHere")}</p></div>;
   return <div className="scenario-catalog">
-    <section aria-label="场景套件" className="scenario-pack-group">
+    <section aria-label={t("partners.scenarioPacks")} className="scenario-pack-group">
       {packNotice === null ? null : <p className="inline-notice info" role="status">{packNotice}</p>}
       {packs.map((pack) => {
         const expanded = expandedPackId === pack.id;
         const fullKey = `${pack.id}:full`;
+        const builtinText = (value: string) => ["programming", "research-analysis", "ai-berkshire-value-research"].includes(pack.id) ? localizeProductText(value) : value;
         return <article className="scenario-pack" key={pack.id}>
           <button aria-expanded={expanded} className="scenario-pack-summary" onClick={() => setExpandedPackId(expanded ? null : pack.id)} type="button">
-            <span><strong>{pack.title}</strong><small>{pack.blurb}</small></span>
-            <span className={`scenario-pack-state ${pack.status.toLowerCase()}`}>{pack.totalRoleCount === 0 ? "暂无可用项" : `${String(pack.installedRoleCount)}/${String(pack.totalRoleCount)} 位`} · {packStatusLabel(pack.status)}</span>
+            <span><strong>{pack.id === "builtin-skills" ? localizeProductText(pack.title) : builtinText(pack.title)}</strong><small>{pack.id === "builtin-skills" ? localizeProductText(pack.blurb) : builtinText(pack.blurb)}</small></span>
+            <span className={`scenario-pack-state ${pack.status.toLowerCase()}`}>{pack.totalRoleCount === 0 ? t("partners.nothingAvailable") : t("partners.valueValuePartners", { p0: String(pack.installedRoleCount), p1: String(pack.totalRoleCount) })} · {packStatusLabel(pack.status)}</span>
           </button>
           {expanded ? <div className="scenario-pack-body">
-            <div className="scenario-pack-meta"><span>来源 {pack.source.repository}@{pack.source.revision}</span><span>{pack.source.license}</span></div>
-            {pack.teams.length === 0 ? <div className="scenario-pack-empty"><strong>还没有可安装的 Skill</strong><p>在本机安装 Skill 后重新打开此页，最近使用的能力会自动出现在这里。</p></div> : <div className="scenario-team-grid">{pack.teams.map((team) => {
+            <div className="scenario-pack-meta"><span>{t("partners.source")} {pack.source.repository}@{pack.source.revision}</span><span>{(pack.source.repository === "joi/builtin" || pack.id === "builtin-skills") ? localizeProductText(pack.source.license) : pack.source.license}</span></div>
+            {pack.teams.length === 0 ? <div className="scenario-pack-empty"><strong>{t("partners.noInstallableSkillsYet")}</strong><p>{t("partners.installSkillsLocallyAndReopenThisPageRecentlyUsed")}</p></div> : <div className="scenario-team-grid">{pack.teams.map((team) => {
               const teamKey = `${pack.id}:${team.id}`;
               return <article className="scenario-team" key={team.id}>
-                <div><strong>{team.title}</strong><p>{team.blurb}</p></div>
-                <div aria-label={`${team.title} 搭档`} className="scenario-role-list">{team.roles.map((role) => <span className="scenario-role" key={role.id} title={role.reasonCode}><span>{role.title}</span><small className={`role-state ${role.status.toLowerCase()}`}>{roleStateLabel(role.status)}</small></span>)}</div>
-                <button className="button ghost" disabled={installing !== null} onClick={() => install(pack.id, [team.id])} type="button">{installing === teamKey ? "安装中…" : `安装${team.title}`}</button>
+                <div><strong>{builtinText(team.title)}</strong><p>{builtinText(team.blurb)}</p></div>
+                <div aria-label={t("partners.valuePartner", { p0: builtinText(team.title) })} className="scenario-role-list">{team.roles.map((role) => <span className="scenario-role" key={role.id} title={role.reasonCode}><span>{builtinText(role.title)}</span><small className={`role-state ${role.status.toLowerCase()}`}>{roleStateLabel(role.status)}</small></span>)}</div>
+                <button className="button ghost" disabled={installing !== null} onClick={() => install(pack.id, [team.id])} type="button">{installing === teamKey ? t("partners.installing") : t("partners.installValue", { p0: builtinText(team.title) })}</button>
               </article>;
             })}</div>}
-            <button className="button primary" disabled={installing !== null || pack.totalRoleCount === 0} onClick={() => install(pack.id)} type="button">{installing === fullKey ? "安装中…" : pack.totalRoleCount === 0 ? "暂无可安装项" : "安装完整套件"}</button>
+            <button className="button primary" disabled={installing !== null || pack.totalRoleCount === 0} onClick={() => install(pack.id)} type="button">{installing === fullKey ? t("partners.installing") : pack.totalRoleCount === 0 ? t("partners.nothingToInstall") : t("partners.installFullPack")}</button>
           </div> : null}
         </article>;
       })}
@@ -437,26 +443,27 @@ function ScenarioGrid({ api }: { api: DigitalLifeApi }) {
 }
 
 function packStatusLabel(status: ScenarioPackDto["status"]): string {
-  if (status === "NOT_INSTALLED") return "未安装";
-  if (status === "ACTIVE") return "已启用";
-  if (status === "OUTDATED") return "有更新";
-  return "需要处理";
+  if (status === "NOT_INSTALLED") return t("partners.notInstalled");
+  if (status === "ACTIVE") return t("evolution.enabled");
+  if (status === "OUTDATED") return t("partners.updateAvailable");
+  return t("status.actionNeeded");
 }
 
 function roleStateLabel(status: ScenarioPackRoleStateDto): string {
-  if (status === "NOT_INSTALLED") return "未安装";
-  if (status === "ACTIVE") return "已启用";
-  if (status === "DISABLED") return "已停用";
-  if (status === "OUTDATED") return "有更新";
-  return "需要处理";
+  if (status === "NOT_INSTALLED") return t("partners.notInstalled");
+  if (status === "ACTIVE") return t("evolution.enabled");
+  if (status === "DISABLED") return t("status.disabled");
+  if (status === "OUTDATED") return t("partners.updateAvailable");
+  return t("status.actionNeeded");
 }
 
 export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api: DigitalLifeApi; onManageProviders?: () => void; tab?: "partners" | "scenarios"; onTabChange?: (tab: "partners" | "scenarios") => void }) {
+  useI18n();
   const [partners, setPartners] = useState<PartnerDto[]>([]);
   const [sources, setSources] = useState<ModelSourceDto[]>([]);
   const [engineStatuses, setEngineStatuses] = useState<Record<string, EngineStatus>>({});
   const [view, setView] = useState<PartnerView>({ mode: "grid" });
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useNotice();
   const [modelTests, setModelTests] = useState<Record<string, PartnerModelTestDto | "TESTING">>({});
   const load = useCallback(async () => {
     const [partnerPage, sourcePage, enginePage] = await Promise.all([
@@ -471,7 +478,7 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
     setEngineStatuses(statuses);
     return partnerPage.items;
   }, [api]);
-  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice("没能读取统一搭档目录。")), 0); return () => clearTimeout(timer); }, [load]);
+  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice(noticeMessage("partners.couldNotLoadThePartnerCatalog"))), 0); return () => clearTimeout(timer); }, [load, setNotice]);
   const finishEdit = (message: string, partnerId?: string) => {
     setNotice(message);
     if (partnerId === undefined) { setView({ mode: "grid" }); return; }
@@ -496,31 +503,31 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
     </section>;
   }
   return <section className="partner-manager page-section">
-    <header className="page-title-row"><div><p className="eyebrow">joi 的统一搭档目录</p><h1>搭档</h1><p>按套件组建一支可复用的协作团队，或手动登记搭档的描述、提示词与知识库。</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">添加搭档</button></header>
+    <header className="page-title-row"><div><p className="eyebrow">{t("partners.joiPartnerCatalog")}</p><h1>{t("common.partners")}</h1><p>{t("partners.buildAReusableTeamFromPacksOrRegisterPartner")}</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">{t("partners.addPartner")}</button></header>
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
     <div className="tab-row" role="tablist">
-      <button aria-selected={currentTab === "scenarios"} className={currentTab === "scenarios" ? "selected" : ""} onClick={() => onTabChange?.("scenarios")} role="tab" type="button">场景预设</button>
-      <button aria-selected={currentTab === "partners"} className={currentTab === "partners" ? "selected" : ""} onClick={() => onTabChange?.("partners")} role="tab" type="button">搭档目录</button>
+      <button aria-selected={currentTab === "scenarios"} className={currentTab === "scenarios" ? "selected" : ""} onClick={() => onTabChange?.("scenarios")} role="tab" type="button">{t("partners.scenarioPresets")}</button>
+      <button aria-selected={currentTab === "partners"} className={currentTab === "partners" ? "selected" : ""} onClick={() => onTabChange?.("partners")} role="tab" type="button">{t("partners.partnerCatalog")}</button>
     </div>
     {currentTab === "scenarios" ? <>
-      <p className="field-hint">展开套件后可安装一个子团队，也可一次安装完整套件。重复安装会复用现有搭档，不覆盖你的修改。</p>
+      <p className="field-hint">{t("partners.expandAPackToInstallASubteamOrThe")}</p>
       <ScenarioGrid api={api} />
     </> : <>
-      {partners.length === 0 ? <div className="plain-empty"><h2>还没有搭档</h2><p>先建立 2-3 个工作搭档（本机或远端 A2A），joi 才能把你的想法派出去；也可以切到上方「场景预设」一键组建团队。</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">添加第一个搭档</button></div> : null}
-      {partners.length > 0 && partners.length < 2 ? <p className="inline-notice warning">建议先建立 2-3 个工作搭档，joi 才有得挑、有得换；也可切到「场景预设」一键组建。</p> : null}
+      {partners.length === 0 ? <div className="plain-empty"><h2>{t("partners.noPartnersYet")}</h2><p>{t("partners.create23LocalOrRemoteA2aPartnersSo")}</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">{t("partners.addYourFirstPartner")}</button></div> : null}
+      {partners.length > 0 && partners.length < 2 ? <p className="inline-notice warning">{t("partners.startWith23PartnersSoJoiHasAlternatives")}</p> : null}
       <div className="partner-grid">{partners.map((partner) => <article className="partner-card" key={partner.partnerId}>
-        <div className="partner-card-head"><strong>{partner.displayName}</strong>{partner.createdBy === "joi" ? <span className="badge-joi">joi 创建</span> : null}<span className="engine-badge">{partner.kind === "local-pi" ? "本机" : "远端 A2A"} · {ENGINE_LABELS[partner.engine]}</span></div>
-        {partner.description === undefined ? <p className="partner-card-desc muted">还没有描述。补一句，joi 才知道什么时候该找它。</p> : <p className="partner-card-desc">{partner.description}</p>}
+        <div className="partner-card-head"><strong>{partner.displayName}</strong>{partner.createdBy === "joi" ? <span className="badge-joi">{t("partners.createdByJoi")}</span> : null}<span className="engine-badge">{partner.kind === "local-pi" ? t("partners.local") : t("partners.remoteA2a")} · {ENGINE_LABELS[partner.engine]}</span></div>
+        {partner.description === undefined ? <p className="partner-card-desc muted">{t("partners.noDescriptionYetAddASentenceSoJoiKnows")}</p> : <p className="partner-card-desc">{partner.description}</p>}
         {partner.configuration?.status === "ACTION_REQUIRED" ? <p className="inline-notice warning" role="alert">{configurationMessage(partner.configuration.reasonCodes)}</p> : null}
-        <small>{[...partner.skills, ...partner.capabilities].join(" · ") || "尚未声明能力"}{partner.knowledgeDocCount > 0 ? ` · ${String(partner.knowledgeDocCount)} 篇知识库` : ""}</small>
-        {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>正在排空 {String(partner.inFlightCount)} 项在途工作</small> : null}
+        <small>{[...partner.skills, ...partner.capabilities].join(" · ") || t("partners.noCapabilitiesDeclared")}{partner.knowledgeDocCount > 0 ? t("partners.valueKnowledgeDocuments", { p0: String(partner.knowledgeDocCount) }) : ""}</small>
+        {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>{t("partners.draining")} {String(partner.inFlightCount)}  {t("partners.workItemsInProgress")}</small> : null}
         {partner.kind === "local-pi" ? <PartnerModelStatus engine={partner.engine} result={modelTests[partner.partnerId] ?? (partner.engine === "pi-core" ? persistedModelTest(partner, sources) : undefined)} /> : null}
         <div className="partner-card-actions">
-          <label className="switch"><input aria-label={`启用或停用 ${partner.displayName}`} checked={partner.status === "ACTIVE"} onChange={() => void api.setPartnerEnabled(partner.partnerId, partner.status !== "ACTIVE").then(() => load()).catch(() => setNotice("搭档状态没切成。"))} type="checkbox" /><span>{partner.status === "ACTIVE" ? "已启用" : "已停用"}</span></label>
-          <button className="button ghost" onClick={() => void api.duplicatePartner(partner.partnerId).then(() => load()).then(() => setNotice("已基于这个搭档复制出新搭档。")).catch(() => setNotice("搭档没能复制。"))} type="button">复制</button>
-          {partner.kind === "local-pi" ? <button className="button ghost" disabled={modelTests[partner.partnerId] === "TESTING"} onClick={() => testPartnerModel(partner.partnerId)} type="button">{partner.engine === "pi-core" ? "测试模型" : "测试可用性"}</button> : null}
-          <button className="button ghost" onClick={() => { setNotice(null); setView({ mode: "editor", partner }); }} type="button">编辑</button>
-          {partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(() => load()).catch(() => setNotice("搭档还不能删除。"))} type="button">删除搭档</button> : null}
+          <label className="switch"><input aria-label={t("partners.enableOrDisableValue", { p0: partner.displayName })} checked={partner.status === "ACTIVE"} onChange={() => void api.setPartnerEnabled(partner.partnerId, partner.status !== "ACTIVE").then(() => load()).catch(() => setNotice(noticeMessage("partners.partnerStatusCouldNotBeChanged")))} type="checkbox" /><span>{partner.status === "ACTIVE" ? t("evolution.enabled") : t("status.disabled")}</span></label>
+          <button className="button ghost" onClick={() => void api.duplicatePartner(partner.partnerId).then(() => load()).then(() => setNotice(noticeMessage("partners.aNewPartnerHasBeenCopiedFromThisOne"))).catch(() => setNotice(noticeMessage("partners.couldNotCopyThePartner")))} type="button">{t("partners.copy")}</button>
+          {partner.kind === "local-pi" ? <button className="button ghost" disabled={modelTests[partner.partnerId] === "TESTING"} onClick={() => testPartnerModel(partner.partnerId)} type="button">{partner.engine === "pi-core" ? t("partners.testModel") : t("partners.testAvailability")}</button> : null}
+          <button className="button ghost" onClick={() => { setNotice(null); setView({ mode: "editor", partner }); }} type="button">{t("common.edit")}</button>
+          {partner.status === "DISABLED" ? <button className="button danger-text" disabled={partner.inFlightCount > 0} onClick={() => void api.deletePartner(partner.partnerId).then(() => load()).catch(() => setNotice(noticeMessage("partners.thisPartnerCannotBeDeletedYet")))} type="button">{t("partners.deletePartner")}</button> : null}
         </div>
       </article>)}</div>
     </>}

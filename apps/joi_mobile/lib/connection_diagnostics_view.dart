@@ -1,3 +1,4 @@
+import 'i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'connection_diagnostics.dart';
@@ -11,11 +12,11 @@ Color connectionColor(RemoteConnectionState state) => switch (state) {
   RemoteConnectionState.unpaired => Colors.grey,
 };
 String connectionLabel(RemoteConnectionState state) => switch (state) {
-  RemoteConnectionState.connected => '已连接',
-  RemoteConnectionState.connecting => '连接中',
-  RemoteConnectionState.reconnecting => '重连中',
-  RemoteConnectionState.offline => '离线',
-  RemoteConnectionState.unpaired => '未配对',
+  RemoteConnectionState.connected => tr(Msg.mobileConnected),
+  RemoteConnectionState.connecting => tr(Msg.mobileConnecting),
+  RemoteConnectionState.reconnecting => tr(Msg.mobileReconnecting),
+  RemoteConnectionState.offline => tr(Msg.mobileOffline),
+  RemoteConnectionState.unpaired => tr(Msg.mobileNotPaired),
 };
 
 class ConnectionDiagnosticsButton extends StatelessWidget {
@@ -23,51 +24,63 @@ class ConnectionDiagnosticsButton extends StatelessWidget {
   final RemoteController controller;
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: controller,
-    builder: (context, _) => IconButton(
-      tooltip: '连接诊断 · ${connectionLabel(controller.state.connection)}',
-      icon: Text(
-        'i',
-        style: TextStyle(
-          fontSize: 22,
-          fontWeight: FontWeight.w600,
-          color: connectionColor(controller.state.connection),
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) => IconButton(
+        tooltip: tr(Msg.mobileConnectionDiagnosticsValue, {
+          'p0': (connectionLabel(controller.state.connection)).toString(),
+        }),
+        icon: Text(
+          'i',
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w600,
+            color: connectionColor(controller.state.connection),
+          ),
         ),
-      ),
-      onPressed: () => showDialog<void>(
-        context: context,
-        builder: (context) => AnimatedBuilder(
-          animation: controller,
-          builder: (context, _) {
-            final state = controller.state;
-            final summary =
-                '${state.diagnostics.summary}\n状态：${state.connection.name}\n线路：${state.path.name}';
-            return AlertDialog(
-              title: const Text('连接诊断'),
-              content: SizedBox(
-                width: 420,
-                child: SingleChildScrollView(child: SelectableText(summary)),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: summary));
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(
-                        context,
-                      ).showSnackBar(const SnackBar(content: Text('已复制脱敏诊断')));
-                    }
-                  },
-                  child: const Text('复制诊断'),
+        onPressed: () => showDialog<void>(
+          context: context,
+          builder: (context) => AnimatedBuilder(
+            animation: controller,
+            builder: (context, _) {
+              dependOnUiLocale(context);
+              final state = controller.state;
+              final summary = tr(Msg.mobileValueStatusValuePathValue, {
+                'p0': (state.diagnostics.summary).toString(),
+                'p1': (state.connection.name).toString(),
+                'p2': (state.path.name).toString(),
+              });
+              return AlertDialog(
+                title: Text(tr(Msg.mobileConnectionDiagnostics)),
+                content: SizedBox(
+                  width: 420,
+                  child: SingleChildScrollView(child: SelectableText(summary)),
                 ),
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('关闭'),
-                ),
-              ],
-            );
-          },
+                actions: [
+                  TextButton(
+                    onPressed: () async {
+                      await Clipboard.setData(ClipboardData(text: summary));
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              tr(Msg.mobileSanitizedDiagnosticsCopied),
+                            ),
+                          ),
+                        );
+                      }
+                    },
+                    child: Text(tr(Msg.mobileCopyDiagnostics)),
+                  ),
+                  TextButton(
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(tr(Msg.commonClose)),
+                  ),
+                ],
+              );
+            },
+          ),
         ),
       ),
     ),
@@ -78,14 +91,19 @@ class ConnectionProgress extends StatelessWidget {
   const ConnectionProgress({super.key, required this.controller});
   final RemoteController controller;
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 16),
-    child: Column(
-      children: [
-        Text(
-          '${stageLabel(controller.state.diagnostics.stage)} · 第 ${controller.state.diagnostics.attempt} 次尝试',
-        ),
-      ],
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      child: Column(
+        children: [
+          Text(
+            tr(Msg.mobileValueAttemptValue, {
+              'p0': (stageLabel(controller.state.diagnostics.stage)).toString(),
+              'p1': (controller.state.diagnostics.attempt).toString(),
+            }),
+          ),
+        ],
+      ),
     ),
   );
 }

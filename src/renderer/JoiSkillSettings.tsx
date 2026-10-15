@@ -1,3 +1,4 @@
+import { noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { useCallback, useEffect, useState } from "react";
 import { PuzzlePieceIcon } from "@phosphor-icons/react";
 import { ApiError, type DigitalLifeApi } from "./api";
@@ -5,13 +6,14 @@ import { ApiError, type DigitalLifeApi } from "./api";
 interface SkillOption { id: string; displayName: string; }
 
 export function JoiSkillSettings({ api }: { api: DigitalLifeApi }) {
+  useI18n();
   const [items, setItems] = useState<SkillOption[]>([]);
   const [selected, setSelected] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [loaded, setLoaded] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useNotice();
   const load = useCallback(async (cancelled: () => boolean, refreshOnly = false) => {
     setLoading(true);
     try {
@@ -20,11 +22,11 @@ export function JoiSkillSettings({ api }: { api: DigitalLifeApi }) {
       setItems(catalog.items);
       if (settings !== null) setSelected(settings.joiSkills ?? []);
       setLoaded(true);
-      setNotice(refreshOnly ? "技能目录已刷新，未保存的选择已保留。" : null);
+      setNotice(refreshOnly ? noticeMessage("skills.skillCatalogRefreshedUnsavedSelectionsArePreserved") : null);
     } catch {
-      if (!cancelled()) setNotice("没能读取技能目录，请重试。");
+      if (!cancelled()) setNotice(noticeMessage("skills.couldNotLoadTheSkillCatalogTryAgain"));
     } finally { if (!cancelled()) setLoading(false); }
-  }, [api]);
+  }, [api, setNotice]);
   useEffect(() => {
     let cancelled = false;
     const timer = setTimeout(() => void load(() => cancelled), 0);
@@ -38,27 +40,27 @@ export function JoiSkillSettings({ api }: { api: DigitalLifeApi }) {
     try {
       const settings = await api.updateSettings({ joiSkills: selected });
       setSelected(settings.joiSkills ?? []);
-      setNotice("技能选择已保存，下次思考时生效。");
+      setNotice(noticeMessage("skills.skillSelectionSavedItTakesEffectOnTheNext"));
     } catch (error) {
-      setNotice(error instanceof ApiError ? error.message : "没能保存技能选择，请重试。");
+      setNotice(error instanceof ApiError ? error.displayMessage : noticeMessage("skills.couldNotSaveTheSkillSelectionTryAgain"));
     } finally { setSaving(false); }
   };
 
   return <section className="joi-skill-settings"><PuzzlePieceIcon aria-hidden /><div>
-    <h2>主 joi 的技能</h2>
-    <p>选择 joi 思考和安排工作时可以参考的技能。需要运行命令或操作外部服务时，由搭档执行。</p>
-    <p className="field-hint">自动发现本机 .agents/skills、.claude/skills 和 .codex/skills 中的 SKILL.md。不勾选表示不加载；搭档的技能仍在搭档设置中单独选择。</p>
+    <h2>{t("skills.skillsForJoi")}</h2>
+    <p>{t("skills.chooseSkillsJoiCanConsultWhenThinkingAndPlanning")}</p>
+    <p className="field-hint">{t("skills.discoversSkillMdFilesInAgentsSkillsClaudeSkills")}</p>
     {notice === null ? null : <p role="status">{notice}</p>}
-    <div className="row-actions"><button className="button ghost" disabled={loading || saving} onClick={() => void load(() => false, loaded)} type="button">刷新技能目录</button><span>已选择 {selected.length} 个</span></div>
-    {loading ? <p role="status">正在读取技能目录…</p> : null}
+    <div className="row-actions"><button className="button ghost" disabled={loading || saving} onClick={() => void load(() => false, loaded)} type="button">{t("skills.refreshSkillCatalog")}</button><span>{t("skills.selected")} {selected.length}  {t("skills.items")}</span></div>
+    {loading ? <p role="status">{t("skills.loadingTheSkillCatalog")}</p> : null}
     {loaded ? <>
-      <label className="skill-search">搜索技能<input onChange={(event) => setQuery(event.target.value)} placeholder="名称或来源" type="search" value={query} /></label>
-      {invalid.length > 0 ? <div className="inline-notice warning" role="alert"><p>部分已选技能不可用，请重新安装或移除后保存。</p>{invalid.map((ref) => <button className="chip" disabled={saving} key={ref} onClick={() => setSelected((current) => current.filter((id) => id !== ref))} type="button">移除 {ref}</button>)}</div> : null}
-      {items.length === 0 ? <p>还没有发现可用技能。安装 Skill 后刷新目录。</p> : visible.length === 0 ? <p>没有匹配的技能。</p> : <div className="joi-skill-list">{visible.map((item) => <label className="joi-skill-option" key={item.id}>
+      <label className="skill-search">{t("skills.searchSkills")}<input onChange={(event) => setQuery(event.target.value)} placeholder={t("skills.nameOrSource")} type="search" value={query} /></label>
+      {invalid.length > 0 ? <div className="inline-notice warning" role="alert"><p>{t("skills.someSelectedSkillsAreUnavailableReinstallOrRemoveThem")}</p>{invalid.map((ref) => <button className="chip" disabled={saving} key={ref} onClick={() => setSelected((current) => current.filter((id) => id !== ref))} type="button">{t("home.remove2f752c")} {ref}</button>)}</div> : null}
+      {items.length === 0 ? <p>{t("skills.noAvailableSkillsFoundInstallASkillAndRefresh")}</p> : visible.length === 0 ? <p>{t("skills.noMatchingSkills")}</p> : <div className="joi-skill-list">{visible.map((item) => <label className="joi-skill-option" key={item.id}>
         <input checked={selected.includes(item.id)} disabled={saving || loading} onChange={(event) => setSelected((current) => event.target.checked ? [...current, item.id] : current.filter((id) => id !== item.id))} type="checkbox" />
         <span><strong>{item.displayName}</strong><small>{item.id}</small></span>
       </label>)}</div>}
-      <button className="button quiet" disabled={saving || loading || invalid.length > 0} onClick={() => void save()} type="button">{saving ? "保存中…" : "保存技能选择"}</button>
+      <button className="button quiet" disabled={saving || loading || invalid.length > 0} onClick={() => void save()} type="button">{saving ? t("settings.saving") : t("skills.saveSkillSelection")}</button>
     </> : null}
   </div></section>;
 }

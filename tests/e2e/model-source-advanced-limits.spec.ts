@@ -1,3 +1,4 @@
+import { setDesktopTestLocale } from "./locale";
 import { _electron as electron, expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -48,6 +49,7 @@ test("the advanced limits are picked from tiers and a size outside them is kept"
 
   try {
     const window = await application.firstWindow();
+    await setDesktopTestLocale(window, "zh-CN");
     await window.getByLabel("管理密码").fill("correct horse battery staple");
     await window.getByLabel("确认密码").fill("correct horse battery staple");
     await window.getByRole("button", { name: /保存并继续/ }).click();

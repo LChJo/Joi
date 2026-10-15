@@ -1,7 +1,9 @@
+import { noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { ArrowUpIcon, CheckCircleIcon, CircleNotchIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import { type SyntheticEvent, useCallback, useEffect, useState } from "react";
 
 import type { JoiAcceptedMessageDto, JoiHomeFeedDto } from "../shared/joi.js";
+import { LanguageSelector } from "./LanguageSelector";
 import { randomUuid } from "./random-uuid.js";
 
 export interface RemoteJoiConnection {
@@ -13,38 +15,39 @@ export interface RemoteJoiConnection {
 const EMPTY_FEED: JoiHomeFeedDto = { goals: [], thinking: [], unassignedActions: [] };
 
 function statusLabel(status: RemoteJoiConnection["status"] extends () => infer T ? T : never): string {
-  if (status === "connected") return "已安全连接";
-  if (status === "connecting") return "正在连接 joi";
-  return "连接已断开";
+  if (status === "connected") return t("remote.securelyConnected");
+  if (status === "connecting") return t("remote.connectingToJoi");
+  return t("remote.disconnected");
 }
 
 function goalStatus(status: JoiHomeFeedDto["goals"][number]["status"]): string {
-  if (status === "RUNNING") return "执行中";
-  if (status === "ARRANGING") return "正在安排";
-  if (status === "ARRANGED") return "排队中";
-  if (status === "REVIEWING") return "正在评审";
-  if (status === "EXTENDING") return "补充执行";
-  if (status === "FINALIZING") return "正在总结";
-  if (status === "COMPLETED") return "已完成";
-  if (status === "COMPLETED_WITH_GAPS") return "已完成（有缺口）";
-  if (status === "NEEDS_ATTENTION") return "需要你";
-  if (status === "FAILED") return "处理失败";
-  return "已取消";
+  if (status === "RUNNING") return t("home.executing");
+  if (status === "ARRANGING") return t("home.planning");
+  if (status === "ARRANGED") return t("home.queued");
+  if (status === "REVIEWING") return t("home.reviewing");
+  if (status === "EXTENDING") return t("remote.extending");
+  if (status === "FINALIZING") return t("home.summarizing");
+  if (status === "COMPLETED") return t("status.completed");
+  if (status === "COMPLETED_WITH_GAPS") return t("home.completedWithGaps");
+  if (status === "NEEDS_ATTENTION") return t("home.needsYou");
+  if (status === "FAILED") return t("home.failed763284");
+  return t("status.canceled");
 }
 
 function workSummary(work: JoiHomeFeedDto["goals"][number]["work"]): string {
   const parts: string[] = [];
-  if (work.active > 0) parts.push(`${String(work.active)} 项执行中`);
-  if (work.completed > 0) parts.push(`${String(work.completed)} 项已完成`);
-  if (work.failed > 0) parts.push(`${String(work.failed)} 项异常`);
-  return parts.length === 0 ? "joi 正在梳理" : parts.join(" · ");
+  if (work.active > 0) parts.push(t("remote.valueExecuting", { p0: String(work.active) }));
+  if (work.completed > 0) parts.push(t("remote.valueCompleted", { p0: String(work.completed) }));
+  if (work.failed > 0) parts.push(t("remote.valueIssues", { p0: String(work.failed) }));
+  return parts.length === 0 ? t("remote.joiIsOrganizingTheWork") : parts.join(" · ");
 }
 
 export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }) {
+  useI18n();
   const [feed, setFeed] = useState(EMPTY_FEED);
   const [connectionStatus, setConnectionStatus] = useState(connection.status());
   const [draft, setDraft] = useState("");
-  const [notice, setNotice] = useState<string | null>(null);
+  const [notice, setNotice] = useNotice();
   const [sending, setSending] = useState(false);
 
   const refresh = useCallback(async () => {
@@ -67,14 +70,14 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
     const text = draft.trim();
     if (text === "" || sending) return;
     setSending(true);
-    setNotice("正在交给 joi…");
+    setNotice(noticeMessage("home.sendingToJoi"));
     try {
       await connection.sendMessage(text, `remote:${randomUuid()}`);
       setDraft("");
-      setNotice("joi 已收到，正在安排。");
+      setNotice(noticeMessage("remote.joiReceivedItAndIsPlanning"));
       await refresh();
     } catch {
-      setNotice("消息没能送达，请等连接恢复后重试。");
+      setNotice(noticeMessage("remote.theMessageCouldNotBeDeliveredRetryWhenThe"));
     } finally {
       setSending(false);
     }
@@ -82,25 +85,26 @@ export function RemoteJoiApp({ connection }: { connection: RemoteJoiConnection }
 
   return <main className="remote-joi-shell">
     <header className="remote-joi-header">
-      <div><span className="remote-joi-mark">joi</span><p>你的工作正在这里继续</p></div>
+      <LanguageSelector />
+      <div><span className="remote-joi-mark">joi</span><p>{t("remote.yourWorkContinuesHere")}</p></div>
       <span className={`remote-connection ${connectionStatus}`}><i aria-hidden="true" />{statusLabel(connectionStatus)}</span>
     </header>
-    <section aria-label="joi 任务" className="remote-goal-list">
-      {feed.goals.length === 0 ? <div className="remote-empty"><CircleNotchIcon aria-hidden /><h1>还没有正在展示的任务</h1><p>在下面告诉 joi 你想做什么。</p></div> : feed.goals.map((goal) => <article className={`remote-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
+    <section aria-label={t("remote.joiTasks")} className="remote-goal-list">
+      {feed.goals.length === 0 ? <div className="remote-empty"><CircleNotchIcon aria-hidden /><h1>{t("remote.noTasksToShowYet")}</h1><p>{t("remote.tellJoiWhatYouWantToDoBelow")}</p></div> : feed.goals.map((goal) => <article className={`remote-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="remote-goal-top"><span>{goal.workbench.name}</span><strong>{goalStatus(goal.status)}</strong></div>
         <h1>{goal.title}</h1>
         <p>{workSummary(goal.work)}</p>
         {goal.completionSummary === undefined ? null : <div className="remote-goal-result"><CheckCircleIcon aria-hidden /><span>{goal.completionSummary}</span></div>}
-        {goal.status !== "NEEDS_ATTENTION" ? null : <div className="remote-goal-attention"><WarningCircleIcon aria-hidden /><span>{goal.clarification.prompt ?? "这个任务需要你回到桌面确认。"}</span></div>}
+        {goal.status !== "NEEDS_ATTENTION" ? null : <div className="remote-goal-attention"><WarningCircleIcon aria-hidden /><span>{goal.clarification.prompt ?? t("remote.returnToTheDesktopToConfirmThisTask")}</span></div>}
       </article>)}
     </section>
     <footer className="remote-composer-wrap">
       {notice === null ? null : <div className="remote-composer-notice" role="status">{notice}</div>}
       <form className="remote-composer" onSubmit={(event) => void submit(event)}>
-        <textarea aria-label="给 joi 发消息" maxLength={32_000} onChange={(event) => setDraft(event.currentTarget.value)} placeholder="告诉 joi 接下来要做什么…" rows={2} value={draft} />
-        <button aria-label="发送" disabled={sending || draft.trim() === "" || connectionStatus !== "connected"} type="submit"><ArrowUpIcon aria-hidden weight="bold" /></button>
+        <textarea aria-label={t("remote.messageJoi")} maxLength={32_000} onChange={(event) => setDraft(event.currentTarget.value)} placeholder={t("remote.tellJoiWhatToDoNext")} rows={2} value={draft} />
+        <button aria-label={t("remote.send")} disabled={sending || draft.trim() === "" || connectionStatus !== "connected"} type="submit"><ArrowUpIcon aria-hidden weight="bold" /></button>
       </form>
-      <p>远程页面仅支持对话与任务查看</p>
+      <p>{t("remote.remoteAccessSupportsConversationsAndTaskViewingOnly")}</p>
     </footer>
   </main>;
 }

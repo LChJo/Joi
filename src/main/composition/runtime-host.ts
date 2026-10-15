@@ -78,10 +78,12 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
         return runtimeListeners.reconfigureLan(target);
       },
       setLaunchAtLogin: (enabled) => desktop.setLaunchAtLogin(enabled),
+      setUiLocale: (preference) => desktop.setUiLocale?.(preference),
       settingsPath: path.join(userDataDirectory, "settings.json"),
       validateJoiSkills: (refs) => new LocalSkillScanner().validateRefs("pi-core", refs),
     });
     const runtimeSettings = await settings.get();
+    await desktop.setUiLocale?.(runtimeSettings.uiLocale ?? "system");
     const databasePath = path.join(userDataDirectory, "runtime.sqlite");
     const database = await openRuntimeDatabase({
       databasePath,
@@ -99,7 +101,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
         userDataDirectory,
       });
       runtimeListeners = await startRuntimeListeners({
-        handler: createRecoveryModeHandler({ backups: recoveryBackups, requestRestart: () => desktop.requestRestart() }),
+        handler: createRecoveryModeHandler({ backups: recoveryBackups, requestRestart: () => desktop.requestRestart(), uiLocale: runtimeSettings.uiLocale ?? "system", systemLanguages: configuration.systemLanguages ?? [], setUiLocale: async (uiLocale) => { await settings.update({ uiLocale }); } }),
         loopbackPort: isTest ? 0 : 43_130,
       });
       runtimeDatabase = database;

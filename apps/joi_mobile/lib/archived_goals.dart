@@ -1,3 +1,4 @@
+import 'i18n.dart';
 import 'package:flutter/material.dart';
 
 import 'connection_diagnostics_view.dart';
@@ -18,73 +19,78 @@ class ArchivedGoalsPage extends StatelessWidget {
   final RemoteController controller;
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('已归档'),
-      actions: [ConnectionDiagnosticsButton(controller: controller)],
-    ),
-    body: AnimatedBuilder(
-      animation: controller,
-      builder: (context, _) {
-        final goals = controller.state.archivedGoals;
-        if (goals.isEmpty) {
-          return const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text('还没有归档的目标。在首页卡片的「更多操作」里选「归档」，它就会收到这里。'),
-            ),
-          );
-        }
-        return ListView.builder(
-          padding: const EdgeInsets.all(16),
-          itemCount: goals.length,
-          itemBuilder: (context, index) {
-            final goal = goals[index];
-            return Card(
-              key: ValueKey('archived-${goal.goalId}'),
-              margin: const EdgeInsets.only(bottom: 12),
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => Scaffold(
+      appBar: AppBar(
+        title: Text(tr(Msg.commonArchived)),
+        actions: [ConnectionDiagnosticsButton(controller: controller)],
+      ),
+      body: AnimatedBuilder(
+        animation: controller,
+        builder: (context, _) {
+          dependOnUiLocale(context);
+          final goals = controller.state.archivedGoals;
+          if (goals.isEmpty) {
+            return Center(
               child: Padding(
-                padding: const EdgeInsets.all(16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    GoalCardBody(
-                      goal: goal,
-                      // The compact shape, and it carries the 归档 timestamp itself — this page is a
-                      // list of things put away, not a second feed.
-                      compact: true,
-                      supportsHome: true,
-                      onOpen: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => GoalDetailPage(
-                            controller: controller,
-                            initial: goal,
-                          ),
-                        ),
-                      ),
-                      onOpenResult: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => ResultReaderPage(
-                            controller: controller,
-                            goal: goal,
-                          ),
-                        ),
-                      ),
-                    ),
-                    GoalActions(
-                      key: ValueKey('archived-actions-${goal.goalId}'),
-                      controller: controller,
-                      goal: goal,
-                    ),
-                  ],
+                padding: EdgeInsets.all(24),
+                child: Text(
+                  tr(Msg.mobileNoArchivedGoalsYetChooseArchiveUnderMoreActions),
                 ),
               ),
             );
-          },
-        );
-      },
+          }
+          return ListView.builder(
+            padding: const EdgeInsets.all(16),
+            itemCount: goals.length,
+            itemBuilder: (context, index) {
+              final goal = goals[index];
+              return Card(
+                key: ValueKey('archived-${goal.goalId}'),
+                margin: const EdgeInsets.only(bottom: 12),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GoalCardBody(
+                        goal: goal,
+                        // The compact shape, and it carries the 归档 timestamp itself — this page is a
+                        // list of things put away, not a second feed.
+                        compact: true,
+                        supportsHome: true,
+                        onOpen: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => GoalDetailPage(
+                              controller: controller,
+                              initial: goal,
+                            ),
+                          ),
+                        ),
+                        onOpenResult: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ResultReaderPage(
+                              controller: controller,
+                              goal: goal,
+                            ),
+                          ),
+                        ),
+                      ),
+                      GoalActions(
+                        key: ValueKey('archived-actions-${goal.goalId}'),
+                        controller: controller,
+                        goal: goal,
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        },
+      ),
     ),
   );
 }

@@ -1,0 +1,15 @@
+{
+  "processing": "正在处理…",
+  "fullTextCopied": "已复制全文",
+  "valueFilesSaved": "已保存 {p0} 个文件",
+  "downloadsJoi": "下载 / Joi",
+  "theContentChangedCloseAndReopenTheFullText": "正文已更新，请关闭并重新打开全文后导出。",
+  "theOperationDidNotCompleteTryAgain": "操作未完成，请重试。",
+  "filesSavedButCouldNotBeOpenedFindThem": "文件已保存，但无法打开。请在下载/Joi 中查看。",
+  "exportStatus": "导出反馈",
+  "openFolder": "打开目录",
+  "copyFullText": "复制全文",
+  "exportPdf": "导出 PDF",
+  "exportPng": "导出 PNG",
+  "exportFullText": "导出全文"
+}

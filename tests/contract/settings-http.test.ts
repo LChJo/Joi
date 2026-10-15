@@ -60,6 +60,21 @@ describe("LAN settings HTTP contract", () => {
       expect((await settings.get()).joiSkills).toEqual(["agents/lark-project"]);
       const cleared = await postSkills([]);
       expect(await cleared.json()).toMatchObject({ joiSkills: [] });
+      const postLocale = (uiLocale: unknown, headers = { "content-type": "application/json", cookie, origin: listeners.loopback.url, "x-csrf-token": csrfToken }) => fetch(`${listeners.loopback.url}/api/v1/settings`, { body: JSON.stringify({ uiLocale }), headers, method: "POST" });
+      const language = await postLocale("en");
+      expect(language.status).toBe(200);
+      expect(await language.json()).toMatchObject({ uiLocale: "en", restartRequired: false });
+      const unsupported = await postLocale("unknown");
+      expect(unsupported.status).toBe(400);
+      expect(await unsupported.json()).toMatchObject({ code: "ui_locale_invalid" });
+      await fetch(`${listeners.loopback.url}/api/v1/auth/setup`, { body: JSON.stringify({ password: "disposable-ui-password" }), headers: { "content-type": "application/json", cookie, origin: listeners.loopback.url, "x-csrf-token": csrfToken }, method: "POST" });
+      const login = await fetch(`${listeners.loopback.url}/api/v1/auth/login`, { body: JSON.stringify({ password: "disposable-ui-password" }), headers: { "content-type": "application/json", origin: listeners.loopback.url }, method: "POST" });
+      const browserCookie = cookieFrom(login);
+      const browserGrant = await login.json() as { csrfToken: string };
+      const browserWrite = await postLocale("zh-CN", { "content-type": "application/json", cookie: browserCookie, origin: listeners.loopback.url, "x-csrf-token": browserGrant.csrfToken });
+      expect(browserWrite.status).toBe(403);
+      expect(await browserWrite.json()).toMatchObject({ code: "desktop_required" });
+      expect((await settings.get()).uiLocale).toBe("en");
     } finally {
       await listeners.close();
       await fixture.close();

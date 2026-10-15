@@ -7,6 +7,7 @@ import {
   stringField,
 } from "../http-core.js";
 import { interactionService, onboardingService } from "../api-dependencies.js";
+import { isLocalePreference } from "../../../../shared/i18n/index.js";
 import { exact, pattern, type RouteDefinition } from "../route-types.js";
 
 export const AGENT_ROUTES: RouteDefinition[] = [
@@ -157,6 +158,11 @@ export const SYSTEM_ROUTES: RouteDefinition[] = [
     handle: async (ctx) => {
       if (ctx.dependencies.settings === undefined) throw new HttpError("settings_unavailable", "Runtime settings are unavailable.", 503);
       const body = await readJson(ctx.request);
+      if (body.uiLocale !== undefined) {
+        const session = await ctx.dependencies.auth.authenticate(sessionToken(ctx.request));
+        if (session.kind !== "desktop") throw new HttpError("desktop_required", "Desktop language is local to this computer.", 403);
+        if (!isLocalePreference(body.uiLocale)) throw new HttpError("ui_locale_invalid", "Unsupported interface language.", 400);
+      }
       if (body.joiSkills !== undefined && (!Array.isArray(body.joiSkills) || body.joiSkills.some((ref: unknown) => typeof ref !== "string"))) {
         throw new HttpError("joi_skills_invalid", "技能选择必须是引用列表。", 400);
       }
@@ -165,6 +171,7 @@ export const SYSTEM_ROUTES: RouteDefinition[] = [
         ? lanBody as Record<string, unknown>
         : undefined;
       sendJson(ctx.response, 200, await ctx.dependencies.settings.update({
+        ...(isLocalePreference(body.uiLocale) ? { uiLocale: body.uiLocale } : {}),
         ...(body.joiSkills === undefined ? {} : { joiSkills: body.joiSkills as string[] }),
         ...(typeof body.launchAtLogin === "boolean" ? { launchAtLogin: body.launchAtLogin } : {}),
         ...(lan === undefined ? {} : { lan: {

@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/result_reader.dart';
 import 'package:joi_mobile/result_export.dart';
+import 'package:joi_mobile/i18n.dart' show UiNotice;
 import 'widget_test.dart' show FakeRemoteController;
 
 class ReaderController extends FakeRemoteController {
@@ -161,8 +162,9 @@ class ReaderExportService extends ResultExportService {
     String title,
     String body,
     String format,
-    void Function(String) progress,
-  ) async {
+    void Function(String) progress, {
+    void Function(UiNotice)? localizedProgress,
+  }) async {
     calls++;
     throw ResultExportException(failure);
   }

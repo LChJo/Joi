@@ -1,8 +1,12 @@
+import type { UiLocalePreference } from "./i18n/index.js";
+
 export const ADMIN_PASSWORD_MIN_LENGTH = 6;
 export const PRODUCT_NAME = "joi";
 export const RUNTIME_EXTENSION_URI = "urn:aimana:digital-life-runtime:v1";
 
 export interface DesktopRuntimeInfo {
+  uiLocale?: UiLocalePreference;
+  systemLanguages?: string[];
   apiOrigin: string;
   platform: string;
   productName: typeof PRODUCT_NAME;

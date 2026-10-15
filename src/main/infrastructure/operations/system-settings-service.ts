@@ -5,6 +5,7 @@ import path from "node:path";
 import { DomainError } from "../../domain/errors.js";
 import { isRfc1918Address, type LanSettings, type SystemSettings, type SystemSettingsPort, type SystemSettingsSnapshot } from "../../application/ports/system-settings.js";
 import type { LanAddressOption, LanRuntimeState } from "../../../shared/system-settings.js";
+import { isLocalePreference, type UiLocalePreference } from "../../../shared/i18n/index.js";
 
 const DEFAULT_LAN: LanSettings = { address: "", enabled: false, port: 43_130, riskAccepted: false };
 
@@ -18,6 +19,7 @@ export class SystemSettingsService implements SystemSettingsPort {
     reconfigureLan?: (target: { address: string; port: number } | undefined) => Promise<LanRuntimeState>;
     setLaunchAtLogin: (enabled: boolean) => void | Promise<void>;
     settingsPath: string;
+    setUiLocale?: (preference: UiLocalePreference) => void | Promise<void>;
     validateJoiSkills?: (refs: readonly string[]) => void;
   }) {}
 
@@ -27,16 +29,19 @@ export class SystemSettingsService implements SystemSettingsPort {
     return this.snapshot(persisted, availableAddresses);
   }
 
-  async update(input: { lan?: Partial<LanSettings>; joiSkills?: string[]; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
+  async update(input: { lan?: Partial<LanSettings>; joiSkills?: string[]; launchAtLogin?: boolean; uiLocale?: UiLocalePreference }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
     const operation = this.updateChain.then(() => this.performUpdate(input));
     this.updateChain = operation.then(() => undefined, () => undefined);
     return operation;
   }
 
-  private async performUpdate(input: { lan?: Partial<LanSettings>; joiSkills?: string[]; launchAtLogin?: boolean }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
+  private async performUpdate(input: { lan?: Partial<LanSettings>; joiSkills?: string[]; launchAtLogin?: boolean; uiLocale?: UiLocalePreference }): Promise<SystemSettingsSnapshot & { restartRequired: boolean }> {
     const current = await this.readPersisted();
+    if (input.uiLocale !== undefined && !isLocalePreference(input.uiLocale)) throw new DomainError("ui_locale_invalid", "Unsupported interface language.");
     const lan = { ...current.lan, ...(input.lan ?? {}) };
-    const applyLan = input.lan !== undefined || input.joiSkills === undefined;
+    const uiLocale = input.uiLocale ?? current.uiLocale ?? "system";
+    if (!isLocalePreference(uiLocale)) throw new DomainError("ui_locale_invalid", "Unsupported interface language.");
+    const applyLan = input.lan !== undefined || (input.joiSkills === undefined && input.uiLocale === undefined);
     if (applyLan && (!Number.isInteger(lan.port) || lan.port < 1024 || lan.port > 65_535)) {
       throw new DomainError("lan_port_invalid", "LAN 端口必须在 1024 到 65535 之间。");
     }
@@ -62,7 +67,8 @@ export class SystemSettingsService implements SystemSettingsPort {
       }
       this.dependencies.validateJoiSkills?.(joiSkills);
     }
-    await this.persist(lan, joiSkills);
+    await this.persist(lan, joiSkills, uiLocale);
+    if (input.uiLocale !== undefined) await this.dependencies.setUiLocale?.(uiLocale);
     if (input.launchAtLogin !== undefined) await this.dependencies.setLaunchAtLogin(input.launchAtLogin);
 
     let effective = this.dependencies.getLanRuntimeState?.();
@@ -74,7 +80,7 @@ export class SystemSettingsService implements SystemSettingsPort {
       }
     }
     return {
-      ...this.snapshot({ lan, joiSkills, launchAtLogin: await this.dependencies.getLaunchAtLogin() }, availableAddresses, effective),
+      ...this.snapshot({ lan, joiSkills, uiLocale, launchAtLogin: await this.dependencies.getLaunchAtLogin() }, availableAddresses, effective),
       restartRequired: false,
     };
   }
@@ -82,8 +88,10 @@ export class SystemSettingsService implements SystemSettingsPort {
   private async readPersisted(): Promise<SystemSettings> {
     let lan = DEFAULT_LAN;
     let joiSkills: string[] = [];
+    let uiLocale: UiLocalePreference = "system";
     try {
       const parsed: unknown = JSON.parse(await readFile(this.dependencies.settingsPath, "utf8"));
+      if (parsed !== null && typeof parsed === "object" && "uiLocale" in parsed && isLocalePreference(parsed.uiLocale)) uiLocale = parsed.uiLocale;
       if (parsed !== null && typeof parsed === "object" && "joiSkills" in parsed && Array.isArray(parsed.joiSkills)) {
         joiSkills = parsed.joiSkills.filter((ref): ref is string => typeof ref === "string");
       }
@@ -104,7 +112,7 @@ export class SystemSettingsService implements SystemSettingsPort {
       const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
       if (code !== "ENOENT" && !(error instanceof SyntaxError)) throw error;
     }
-    return { lan, joiSkills, launchAtLogin: await this.dependencies.getLaunchAtLogin() };
+    return { lan, joiSkills, uiLocale, launchAtLogin: await this.dependencies.getLaunchAtLogin() };
   }
 
   private async availableAddresses(): Promise<LanAddressOption[]> {
@@ -124,17 +132,18 @@ export class SystemSettingsService implements SystemSettingsPort {
       ? { status: "blocked" as const, reasonCode: "lan_not_applied", message: "LAN 配置尚未应用到当前进程。" }
       : { status: "disabled" as const });
     return {
+      uiLocale: persisted.uiLocale ?? "system",
       joiSkills: persisted.joiSkills ?? [],
       launchAtLogin: persisted.launchAtLogin,
       lan: { ...persisted.lan, availableAddresses, effective: runtime },
     };
   }
 
-  private async persist(lan: LanSettings, joiSkills: string[]): Promise<void> {
+  private async persist(lan: LanSettings, joiSkills: string[], uiLocale: UiLocalePreference): Promise<void> {
     await mkdir(path.dirname(this.dependencies.settingsPath), { recursive: true });
     const temporary = `${this.dependencies.settingsPath}.${String(process.pid)}.tmp`;
     await rm(temporary, { force: true });
-    await writeFile(temporary, `${JSON.stringify({ lan, joiSkills }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    await writeFile(temporary, `${JSON.stringify({ lan, joiSkills, uiLocale }, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
     await rename(temporary, this.dependencies.settingsPath);
   }
 }

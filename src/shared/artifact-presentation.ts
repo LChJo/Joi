@@ -26,8 +26,8 @@ export function isIndividuallyRenderedArtifact(artifact: Pick<WorkbenchArtifactD
   return DOC_EXTENSIONS.has(extension) || IMAGE_EXTENSIONS.has(extension);
 }
 
-export function artifactGroupLabel(directory: string | undefined): string {
-  return directory === undefined || directory === "" ? ARTIFACT_ROOT_LABEL : directory;
+export function artifactGroupLabel(directory: string | undefined, rootLabel = ARTIFACT_ROOT_LABEL): string {
+  return directory === undefined || directory === "" ? rootLabel : directory;
 }
 
 export type ArtifactRenderGroup<T> =

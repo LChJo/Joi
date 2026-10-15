@@ -30,6 +30,12 @@
 
 Electron actor 根循环、HTTP 轮询控制面、outbox、工作台/Partner/Work、旧 Life 只读兼容、恢复与打包链已有自动化覆盖。当前仍不是“完整 MVP”：真实 AI Mana、第二台 LAN 设备、macOS 打包/签名/公证、Windows 签名、24 小时长稳和人工键盘/对比度视觉验收未在当前环境执行，不会标为通过。证据与 concerns 见[发布验收报告](docs/09-release-validation-report.md)，完整标准见[路线图与验收](docs/07-roadmap-and-acceptance.md)。AI Mana 配套扩展属于独立仓库。
 
+## 界面语言
+
+桌面、局域网网页、远程网页和 Android 内置简体中文与英文，可即时切换，各端独立保存偏好。默认跟随系统，中文系统使用简体中文，其余使用英文。切换保留草稿、连接和运行中的任务，不翻译用户内容、模型回复或已有名称。
+
+翻译统一维护于 `resources/locales/`，使用 `npm run i18n -- stats` 查看覆盖率，`npm run i18n -- help` 查看语言和文案维护命令。架构、维护步骤及验收见[国际化说明](docs/20-internationalization.md)。
+
 ## 本地开发
 
 环境要求：Node.js `>=22.19`、npm `>=11`。

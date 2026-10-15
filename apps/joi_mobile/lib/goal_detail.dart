@@ -1,3 +1,4 @@
+import 'i18n.dart';
 import 'result_reader.dart';
 import 'connection_diagnostics_view.dart';
 import 'dart:async';
@@ -12,23 +13,30 @@ class MessageBody extends StatelessWidget {
   const MessageBody(this.text, {super.key});
   final String text;
   @override
-  Widget build(BuildContext context) => MarkdownBody(
-    data: text,
-    selectable: true,
-    imageBuilder: (_, _, _) => const Text('[图片]'),
-    onTapLink: (_, href, _) async {
-      final uri = Uri.tryParse(href ?? '');
-      if (uri == null || !['https', 'http'].contains(uri.scheme)) return;
-      try {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } catch (_) {
-        if (context.mounted) {
-          ScaffoldMessenger.of(
-            context,
-          ).showSnackBar(const SnackBar(content: Text('无法打开链接，可复制后在浏览器查看。')));
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => MarkdownBody(
+      data: text,
+      selectable: true,
+      imageBuilder: (_, _, _) => Text(tr(Msg.mobileImage)),
+      onTapLink: (_, href, _) async {
+        final uri = Uri.tryParse(href ?? '');
+        if (uri == null || !['https', 'http'].contains(uri.scheme)) return;
+        try {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (_) {
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: LocalizedView(
+                  builder: (context) =>
+                      Text(tr(Msg.mobileCouldNotOpenTheLinkCopyItToYour)),
+                ),
+              ),
+            );
+          }
         }
-      }
-    },
+      },
+    ),
   );
 }
 
@@ -46,42 +54,56 @@ class GoalActions extends StatefulWidget {
   State<GoalActions> createState() => _GoalActionsState();
 }
 
-/// What to tell the user when an action did not go through.
-///
-/// One sentence for every cause is what made this look like a button that does nothing: a phone
-/// that has not been paired, a host that is too old, a dropped session, a host that never
-/// answered, and a host that answered "no" all read identically, and none of them said which. Each
-/// now says what it is — and a refusal keeps the host's own reason code, which is the one part of
-/// this a bug report actually needs.
-String actFailureNotice(Object error) {
+/// A refusal retains its message key so an open notice follows the selected language.
+UiNotice actFailureMessage(Object error) {
   if (error is RemoteActionFailure) {
     return switch (error.code) {
-      'joi_clarification_unavailable' => '这张卡片已经不需要回答了，下拉刷新看看最新状态。',
-      'joi_retry_unavailable' => '这个任务现在不能继续，下拉刷新看看最新状态。',
-      'joi_workbench_invalid' ||
-      'joi_partner_selection_invalid' => '你选的工作台或搭档已经不可用了，请重新选择。',
-      'remote_operation_forbidden' => '这版 joi 还不支持这个操作，请在电脑端完成。',
-      'remote_read_busy' || 'remote_cursor_expired' => 'joi 正在忙，稍后重试。',
-      _ => 'joi 没有接受这个操作（${error.code}）。下拉刷新看看最新状态。',
+      'joi_clarification_unavailable' => UiNotice(
+        Msg.mobileThisCardNoLongerNeedsAnAnswerPullDown,
+      ),
+      'joi_retry_unavailable' => UiNotice(
+        Msg.mobileThisTaskCannotContinueRightNowPullDownTo,
+      ),
+      'joi_workbench_invalid' || 'joi_partner_selection_invalid' => UiNotice(
+        Msg.mobileTheSelectedWorkbenchOrPartnerIsUnavailableChooseAnother,
+      ),
+      'remote_operation_forbidden' => UiNotice(
+        Msg.mobileThisVersionOfJoiDoesNotSupportTheAction,
+      ),
+      'remote_read_busy' ||
+      'remote_cursor_expired' => UiNotice(Msg.mobileJoiIsBusyTryAgainLater),
+      _ => UiNotice(Msg.mobileJoiDeclinedThisActionValuePullDownToRefresh, {
+        'p0': (error.code).toString(),
+      }),
     };
   }
-  if (error is TimeoutException) return 'joi 超过 20 秒没有响应，请稍后重试。输入已保留。';
+  if (error is TimeoutException) {
+    return UiNotice(Msg.mobileJoiDidNotRespondWithin20SecondsTryAgain);
+  }
   if (error is StateError) {
     return switch (error.message) {
-      'remote_upgrade_required' => '手机端和 joi 的版本不匹配，请在电脑端更新 joi 后重新配对。',
-      'joi_remote_not_ready' => '还没和 joi 建立会话，请稍等或重新扫码。',
-      'joi_remote_disconnected' => '和 joi 的连接断了，正在重连，稍后重试。输入已保留。',
-      _ => '操作未完成，请刷新查看最新状态后重试。输入已保留。',
+      'remote_upgrade_required' => UiNotice(
+        Msg.mobileThePhoneAndDesktopVersionsDoNotMatchUpdate,
+      ),
+      'joi_remote_not_ready' => UiNotice(
+        Msg.mobileNoSessionWithJoiYetWaitAMomentOr,
+      ),
+      'joi_remote_disconnected' => UiNotice(
+        Msg.mobileDisconnectedFromJoiAndReconnectingTryAgainLaterYour,
+      ),
+      _ => UiNotice(Msg.mobileTheActionDidNotCompleteRefreshTheLatestStatus),
     };
   }
-  return '操作未完成，请刷新查看最新状态后重试。输入已保留。';
+  return UiNotice(Msg.mobileTheActionDidNotCompleteRefreshTheLatestStatus);
 }
+
+String actFailureNotice(Object error) => noticeText(actFailureMessage(error));
 
 class _GoalActionsState extends State<GoalActions> {
   final _draft = TextEditingController();
   bool _showContinue = false;
   bool _busy = false;
-  String? _notice;
+  Object? _notice;
 
   @override
   void dispose() {
@@ -124,7 +146,7 @@ class _GoalActionsState extends State<GoalActions> {
         widget.onChanged?.call();
       }
     } catch (error) {
-      if (mounted) setState(() => _notice = actFailureNotice(error));
+      if (mounted) setState(() => _notice = actFailureMessage(error));
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -148,25 +170,29 @@ class _GoalActionsState extends State<GoalActions> {
             if (goal.terminal)
               ListTile(
                 leading: const Icon(Icons.play_arrow_rounded),
-                title: Text(_showContinue ? '收起补充输入框' : '继续对话'),
+                title: Text(
+                  _showContinue
+                      ? tr(Msg.mobileCollapseAdditionalInput)
+                      : tr(Msg.mobileContinueConversation),
+                ),
                 onTap: () => Navigator.pop(context, 'continue'),
               ),
             if (!goal.terminal)
               ListTile(
                 leading: const Icon(Icons.stop_circle_outlined),
-                title: const Text('取消任务'),
+                title: Text(tr(Msg.homeCancelTask)),
                 onTap: () => Navigator.pop(context, 'cancel'),
               ),
             if (goal.archived)
               ListTile(
                 leading: const Icon(Icons.unarchive_outlined),
-                title: const Text('取消归档'),
+                title: Text(tr(Msg.commonUnarchive)),
                 onTap: () => Navigator.pop(context, 'unarchive'),
               )
             else if (goal.canArchive)
               ListTile(
                 leading: const Icon(Icons.archive_outlined),
-                title: const Text('归档'),
+                title: Text(tr(Msg.commonArchive)),
                 onTap: () => Navigator.pop(context, 'archive'),
               ),
             if (goal.canDelete)
@@ -176,7 +202,7 @@ class _GoalActionsState extends State<GoalActions> {
                   color: Theme.of(context).colorScheme.error,
                 ),
                 title: Text(
-                  '移除卡片',
+                  tr(Msg.mobileRemoveCard),
                   style: TextStyle(color: Theme.of(context).colorScheme.error),
                 ),
                 onTap: () => Navigator.pop(context, 'dismiss'),
@@ -194,218 +220,242 @@ class _GoalActionsState extends State<GoalActions> {
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: widget.controller,
-    builder: (context, _) {
-      final state = widget.controller.state;
-      final goal = widget.goal;
-      final busy =
-          _busy ||
-          state.busyGoals.contains(goal.goalId) ||
-          state.connection != RemoteConnectionState.connected;
-      final reason = goal.reasonCode;
-      final question = goal.status == 'NEEDS_ATTENTION';
-      final workbench = const [
-        'workbench_selection_invalid',
-        'workbench_creation_unavailable',
-        'workbench_not_found',
-      ].contains(reason);
-      final partner = reason == 'partner_selection_required';
-      final resume = const [
-        'partner_waiting_recovery_required',
-        'partner_auth_required',
-      ].contains(reason);
-      final continuation = goal.needsContinuationDecision;
-      final continuationSummary = goal.summary?.trim();
-      final directory = reason == 'workbench_workspace_not_ready';
-      final historical = reason == 'harness_review_unrecoverable';
-      final answer =
-          question &&
-          !workbench &&
-          !partner &&
-          !resume &&
-          !continuation &&
-          !directory &&
-          !historical;
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          if (question) ...[
-            const SizedBox(height: 12),
-            if (continuation) ...[
-              Text('是否继续完善结果？', style: Theme.of(context).textTheme.titleSmall),
-              const SizedBox(height: 8),
-            ],
-            Text(
-              continuation
-                  ? '当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。'
-                  : goal.prompt ?? 'joi 需要你确认',
-              style: Theme.of(context).textTheme.bodyMedium,
-            ),
-          ],
-          if (continuation) ...[
-            const SizedBox(height: 12),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        dependOnUiLocale(context);
+        final state = widget.controller.state;
+        final goal = widget.goal;
+        final busy =
+            _busy ||
+            state.busyGoals.contains(goal.goalId) ||
+            state.connection != RemoteConnectionState.connected;
+        final reason = goal.reasonCode;
+        final question = goal.status == 'NEEDS_ATTENTION';
+        final workbench = const [
+          'workbench_selection_invalid',
+          'workbench_creation_unavailable',
+          'workbench_not_found',
+        ].contains(reason);
+        final partner = reason == 'partner_selection_required';
+        final resume = const [
+          'partner_waiting_recovery_required',
+          'partner_auth_required',
+        ].contains(reason);
+        final continuation = goal.needsContinuationDecision;
+        final continuationSummary = goal.summary?.trim();
+        final directory = reason == 'workbench_workspace_not_ready';
+        final historical = reason == 'harness_review_unrecoverable';
+        final answer =
+            question &&
+            !workbench &&
+            !partner &&
+            !resume &&
+            !continuation &&
+            !directory &&
+            !historical;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (question) ...[
+              const SizedBox(height: 12),
+              if (continuation) ...[
+                Text(
+                  tr(Msg.homeContinueImprovingTheResult),
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
-                borderRadius: BorderRadius.circular(12),
+                const SizedBox(height: 8),
+              ],
+              Text(
+                continuation
+                    ? tr(
+                        Msg.homeTheResultStillNeedsAdditionsOrVerificationThisRound,
+                      )
+                    : goal.prompt ?? tr(Msg.homeJoiNeedsYourConfirmation),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    '当前结果与待补充内容',
-                    style: Theme.of(context).textTheme.titleSmall,
+            ],
+            if (continuation) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                    color: Theme.of(context).colorScheme.outlineVariant,
                   ),
-                  const SizedBox(height: 8),
-                  if (continuationSummary != null &&
-                      continuationSummary.isNotEmpty) ...[
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
                     Text(
-                      continuationSummary,
-                      maxLines: 6,
-                      overflow: TextOverflow.ellipsis,
+                      tr(Msg.homeCurrentResultAndRemainingWork),
+                      style: Theme.of(context).textTheme.titleSmall,
                     ),
-                    TextButton(
-                      onPressed: busy
-                          ? null
-                          : () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ResultReaderPage(
-                                  controller: widget.controller,
-                                  goal: goal,
+                    const SizedBox(height: 8),
+                    if (continuationSummary != null &&
+                        continuationSummary.isNotEmpty) ...[
+                      Text(
+                        continuationSummary,
+                        maxLines: 6,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      TextButton(
+                        onPressed: busy
+                            ? null
+                            : () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => ResultReaderPage(
+                                    controller: widget.controller,
+                                    goal: goal,
+                                  ),
                                 ),
                               ),
-                            ),
-                      child: const Text('查看当前结果全文'),
-                    ),
-                  ] else
-                    const Text('暂时没有可展示的结果说明，无法列出具体待补充内容。'),
+                        child: Text(tr(Msg.homeViewTheFullCurrentResult)),
+                      ),
+                    ] else
+                      Text(
+                        tr(
+                          Msg.homeNoResultNotesAreAvailableYetToIdentifySpecific,
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                tr(Msg.homeContinueImprovingTryUpToTwoMoreRoundsYou),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 4),
+              Text(
+                tr(Msg.homeKeepCurrentResultEndThisTaskPreserveConclusionsAnd),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              const SizedBox(height: 8),
+            ],
+            if (_busy)
+              Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(tr(Msg.mobileSubmittingPleaseWait)),
+              ),
+            if (directory)
+              Text(tr(Msg.mobileChooseAWorkingDirectoryForThisWorkbenchOnThe)),
+            if (historical)
+              Text(
+                tr(
+                  Msg.mobileConfirmThatHistoricalWorkHasFinishedBeforeClosingIt,
+                ),
+              ),
+            if (workbench)
+              FilledButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final resolved = await showWorkbenchChoice(
+                          context,
+                          widget.controller,
+                          widget.goal,
+                        );
+                        if (resolved == true) widget.onChanged?.call();
+                      },
+                child: Text(tr(Msg.mobileChooseAWorkbenchToContinue)),
+              ),
+            if (partner)
+              OutlinedButton(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final choice = await chooseRemote(
+                          context,
+                          tr(Msg.mobileChoosePartner),
+                          state.partners,
+                        );
+                        if (choice != null && mounted) {
+                          await _act('clarify', partnerId: choice.id);
+                        }
+                      },
+                child: Text(tr(Msg.mobileChooseAPartnerToContinue)),
+              ),
+            if (resume)
+              FilledButton(
+                onPressed: busy
+                    ? null
+                    : () => _act('clarify', actionChoice: 'RESUME'),
+                child: Text(tr(Msg.homeResumeOriginalWorkfa2119)),
+              ),
+            if (continuation)
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton(
+                    onPressed: busy
+                        ? null
+                        : () => _act('clarify', actionChoice: 'CONTINUE'),
+                    child: Text(tr(Msg.homeContinueImproving)),
+                  ),
+                  TextButton(
+                    onPressed: busy
+                        ? null
+                        : () => _act('clarify', actionChoice: 'ACCEPT_CURRENT'),
+                    child: Text(tr(Msg.homeKeepCurrentResult)),
+                  ),
                 ],
               ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              '继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 4),
-            Text(
-              '保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-            const SizedBox(height: 8),
-          ],
-          if (_busy)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('正在提交，请稍候…'),
-            ),
-          if (directory) const Text('请回到桌面为工作台选择工作目录，然后继续。'),
-          if (historical) const Text('请确认历史工作已结束，再安全收尾。'),
-          if (workbench)
-            FilledButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final resolved = await showWorkbenchChoice(
-                        context,
-                        widget.controller,
-                        widget.goal,
-                      );
-                      if (resolved == true) widget.onChanged?.call();
-                    },
-              child: const Text('选择工作台继续'),
-            ),
-          if (partner)
-            OutlinedButton(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final choice = await chooseRemote(
-                        context,
-                        '选择搭档',
-                        state.partners,
-                      );
-                      if (choice != null && mounted) {
-                        await _act('clarify', partnerId: choice.id);
-                      }
-                    },
-              child: const Text('选择搭档继续'),
-            ),
-          if (resume)
-            FilledButton(
-              onPressed: busy
-                  ? null
-                  : () => _act('clarify', actionChoice: 'RESUME'),
-              child: const Text('继续原工作'),
-            ),
-          if (continuation)
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                FilledButton(
-                  onPressed: busy
-                      ? null
-                      : () => _act('clarify', actionChoice: 'CONTINUE'),
-                  child: const Text('继续完善'),
+            if (historical)
+              TextButton(
+                onPressed: busy ? null : () => _act('closeHistoricalReview'),
+                child: Text(tr(Msg.mobileFinishHistoricalReconciliation)),
+              ),
+            if (answer || _showContinue) ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _draft,
+                enabled: !busy,
+                minLines: 1,
+                maxLines: 5,
+                maxLength: 8000,
+                onChanged: (_) => setState(() {}),
+                decoration: InputDecoration(
+                  labelText: answer
+                      ? tr(Msg.mobileEnterYourAnswer)
+                      : tr(Msg.mobileAdditionalRequirementsOptional),
+                  counterText: '',
                 ),
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => _act('clarify', actionChoice: 'ACCEPT_CURRENT'),
-                  child: const Text('保留当前结果'),
+              ),
+              FilledButton(
+                onPressed: busy || answer && _draft.text.trim().isEmpty
+                    ? null
+                    : () => _act(answer ? 'clarify' : 'retry'),
+                child: Text(
+                  answer
+                      ? tr(Msg.homeAnswerAndContinue)
+                      : tr(Msg.mobileSubmitContinuation),
                 ),
-              ],
-            ),
-          if (historical)
-            TextButton(
-              onPressed: busy ? null : () => _act('closeHistoricalReview'),
-              child: const Text('结束历史整理'),
-            ),
-          if (answer || _showContinue) ...[
-            const SizedBox(height: 8),
-            TextField(
-              controller: _draft,
-              enabled: !busy,
-              minLines: 1,
-              maxLines: 5,
-              maxLength: 8000,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                labelText: answer ? '输入回答' : '补充要求（可留空）',
-                counterText: '',
+              ),
+            ],
+            // One icon button instead of a row of links that grew with every action the card learned.
+            Align(
+              alignment: Alignment.centerRight,
+              child: IconButton(
+                tooltip: tr(Msg.mobileMoreActions),
+                icon: const Icon(Icons.more_horiz_rounded),
+                onPressed: busy ? null : () => _openActions(),
               ),
             ),
-            FilledButton(
-              onPressed: busy || answer && _draft.text.trim().isEmpty
-                  ? null
-                  : () => _act(answer ? 'clarify' : 'retry'),
-              child: Text(answer ? '回答并继续' : '提交继续'),
-            ),
+            if (_notice != null)
+              Text(
+                noticeText(_notice!),
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
           ],
-          // One icon button instead of a row of links that grew with every action the card learned.
-          Align(
-            alignment: Alignment.centerRight,
-            child: IconButton(
-              tooltip: '更多操作',
-              icon: const Icon(Icons.more_horiz_rounded),
-              onPressed: busy ? null : () => _openActions(),
-            ),
-          ),
-          if (_notice != null)
-            Text(
-              _notice!,
-              style: TextStyle(color: Theme.of(context).colorScheme.error),
-            ),
-        ],
-      );
-    },
+        );
+      },
+    ),
   );
 }
 
@@ -425,7 +475,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
     with WidgetsBindingObserver {
   late RemoteGoalCard _goal;
   String? _text;
-  String? _error;
+  Object? _error;
   List<Map<String, dynamic>> _agents = [];
   Map<String, dynamic> _facts = {};
   String? _cursor;
@@ -508,7 +558,11 @@ class _GoalDetailPageState extends State<GoalDetailPage>
       });
     } catch (_) {
       if (mounted && generation == _generation) {
-        setState(() => _error = '未能读取最新详情，任务可能已变化或连接中断。');
+        setState(
+          () => _error = UiNotice(
+            Msg.mobileCouldNotLoadTheLatestDetailsTheTaskMay,
+          ),
+        );
       }
     } finally {
       _loading = false;
@@ -516,123 +570,155 @@ class _GoalDetailPageState extends State<GoalDetailPage>
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('任务详情'),
-      actions: [
-        IconButton(
-          tooltip: '刷新',
-          onPressed: () => _load(),
-          icon: const Icon(Icons.refresh),
-        ),
-        ConnectionDiagnosticsButton(controller: widget.controller),
-      ],
-    ),
-    body: ListView(
-      padding: const EdgeInsets.all(20),
-      children: [
-        Text(_goal.workbenchName),
-        Text(_goal.title, style: Theme.of(context).textTheme.headlineSmall),
-        Text(statusLabel(_goal.status)),
-        Text(goalProgressLabel(_goal)),
-        if (_error != null) Text(_error!),
-        if (_text == null && _error == null)
-          const LinearProgressIndicator()
-        else if (_text != null) ...[
-          const SizedBox(height: 20),
-          const Text('任务正文'),
-          const SizedBox(height: 8),
-          MessageBody(_text!),
-        ],
-        if (_goal.summary != null && !_goal.needsContinuationDecision) ...[
-          const Divider(height: 32),
-          TextButton(
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => ResultReaderPage(
-                  controller: widget.controller,
-                  goal: _goal,
-                ),
-              ),
-            ),
-            child: const Text('最终结果 · 查看全文'),
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => Scaffold(
+      appBar: AppBar(
+        title: Text(tr(Msg.mobileTaskDetails)),
+        actions: [
+          IconButton(
+            tooltip: tr(Msg.mobileRefresh),
+            onPressed: () => _load(),
+            icon: const Icon(Icons.refresh),
           ),
-          MessageBody(_goal.summary!),
+          ConnectionDiagnosticsButton(controller: widget.controller),
         ],
-        if (_facts['failure'] case final Map<String, dynamic> failure) ...[
-          const Divider(height: 32),
-          Text(failure['executionStarted'] == true ? '任务执行未完成' : '任务尚未开始执行'),
-          Text(switch (failure['suggestedAction']) {
-            'CHECK_MODEL_SOURCE' => '请在电脑端检查模型来源与连接配置。',
-            'RESTART_OR_UPDATE' => '请在电脑端重启或更新 joi 后重试。',
-            _ => '可以继续对话重试，或在电脑端查看诊断。',
-          }),
-        ],
-        if (_facts['harness'] case final Map<String, dynamic> harness) ...[
-          const Divider(height: 32),
-          const Text('任务进展'),
-          if (harness['destination'] case final String destination)
-            MessageBody(destination),
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(20),
+        children: [
+          Text(goalWorkbenchName(_goal)),
           Text(
-            '已决策 ${harness['decisionCount'] ?? 0} · 待确认 ${harness['fogCount'] ?? 0} · 待探索 ${harness['openPathCount'] ?? 0}',
+            goalTitle(_goal),
+            style: Theme.of(context).textTheme.headlineSmall,
           ),
-          if (harness['topFogNote'] case final String note) MessageBody(note),
-        ],
-        if ((_facts['artifacts'] as List? ?? []).isNotEmpty) ...[
+          Text(statusLabel(_goal.status)),
+          Text(goalProgressLabel(_goal)),
+          if (_error != null) Text(noticeText(_error!)),
+          if (_text == null && _error == null)
+            const LinearProgressIndicator()
+          else if (_text != null) ...[
+            const SizedBox(height: 20),
+            Text(tr(Msg.mobileTaskContent)),
+            const SizedBox(height: 8),
+            MessageBody(_text!),
+          ],
+          if (_goal.summary != null && !_goal.needsContinuationDecision) ...[
+            const Divider(height: 32),
+            TextButton(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ResultReaderPage(
+                    controller: widget.controller,
+                    goal: _goal,
+                  ),
+                ),
+              ),
+              child: Text(tr(Msg.mobileFinalResultViewFullText)),
+            ),
+            MessageBody(_goal.summary!),
+          ],
+          if (_facts['failure'] case final Map<String, dynamic> failure) ...[
+            const Divider(height: 32),
+            Text(
+              failure['executionStarted'] == true
+                  ? tr(Msg.mobileTaskExecutionDidNotFinish)
+                  : tr(Msg.mobileTaskExecutionHasNotStarted),
+            ),
+            Text(switch (failure['suggestedAction']) {
+              'CHECK_MODEL_SOURCE' => tr(
+                Msg.mobileCheckTheModelSourceAndConnectionSettingsOnThe,
+              ),
+              'RESTART_OR_UPDATE' => tr(
+                Msg.mobileRestartOrUpdateJoiOnTheDesktopThenTry,
+              ),
+              _ => tr(
+                Msg.mobileContinueTheConversationToRetryOrCheckDiagnosticsOn,
+              ),
+            }),
+          ],
+          if (_facts['harness'] case final Map<String, dynamic> harness) ...[
+            const Divider(height: 32),
+            Text(tr(Msg.mobileTaskProgress)),
+            if (harness['destination'] case final String destination)
+              MessageBody(destination),
+            Text(
+              tr(Msg.mobileDecidedValueUnconfirmedValueUnexploredValue, {
+                'p0': (harness['decisionCount'] ?? 0).toString(),
+                'p1': (harness['fogCount'] ?? 0).toString(),
+                'p2': (harness['openPathCount'] ?? 0).toString(),
+              }),
+            ),
+            if (harness['topFogNote'] case final String note) MessageBody(note),
+          ],
+          if ((_facts['artifacts'] as List? ?? []).isNotEmpty) ...[
+            const Divider(height: 32),
+            Text(tr(Msg.mobileArtifactInformationOpenOnTheDesktop)),
+            for (final artifact
+                in (_facts['artifacts'] as List)
+                    .whereType<Map<String, dynamic>>())
+              ListTile(
+                leading: const Icon(Icons.insert_drive_file_outlined),
+                title: Text(
+                  artifact['name'] as String? ?? tr(Msg.homeArtifacts),
+                ),
+                subtitle: Text(
+                  tr(Msg.mobileValueValueBytes, {
+                    'p0': (artifact['mimeType'] ?? '').toString(),
+                    'p1': (artifact['size'] ?? 0).toString(),
+                  }),
+                ),
+              ),
+          ],
+          GoalActions(
+            key: ValueKey(_goal.goalId),
+            controller: widget.controller,
+            goal: _goal,
+            onChanged: () {
+              unawaited(_load());
+            },
+          ),
           const Divider(height: 32),
-          const Text('产物信息（请在电脑端打开）'),
-          for (final artifact
-              in (_facts['artifacts'] as List)
-                  .whereType<Map<String, dynamic>>())
+          Text(
+            tr(Msg.mobilePartnerWorkHistory),
+            style: Theme.of(context).textTheme.titleLarge,
+          ),
+          if (_agents.isEmpty)
+            Padding(
+              padding: EdgeInsets.all(12),
+              child: Text(tr(Msg.mobileNoPartnerWorkHistoryYet)),
+            ),
+          for (final agent in _agents)
             ListTile(
-              leading: const Icon(Icons.insert_drive_file_outlined),
-              title: Text(artifact['name'] as String? ?? '产物'),
+              title: Text(
+                agent['partnerName'] as String? ?? tr(Msg.commonPartners),
+              ),
               subtitle: Text(
-                '${artifact['mimeType'] ?? ''} · ${artifact['size'] ?? 0} 字节',
+                executionStatusLabel(
+                  status: agent['status'] as String? ?? 'UNKNOWN',
+                  executionPhase: agent['executionPhase'] as String?,
+                  waitReason: agent['waitReason'] as String?,
+                ),
               ),
-            ),
-        ],
-        GoalActions(
-          key: ValueKey(_goal.goalId),
-          controller: widget.controller,
-          goal: _goal,
-          onChanged: () {
-            unawaited(_load());
-          },
-        ),
-        const Divider(height: 32),
-        Text('搭档工作记录', style: Theme.of(context).textTheme.titleLarge),
-        if (_agents.isEmpty)
-          const Padding(padding: EdgeInsets.all(12), child: Text('还没有搭档工作记录。')),
-        for (final agent in _agents)
-          ListTile(
-            title: Text(agent['partnerName'] as String? ?? '搭档'),
-            subtitle: Text(
-              executionStatusLabel(
-                status: agent['status'] as String? ?? 'UNKNOWN',
-                executionPhase: agent['executionPhase'] as String?,
-                waitReason: agent['waitReason'] as String?,
-              ),
-            ),
-            trailing: const Icon(Icons.chevron_right),
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => AgentRecordPage(
-                  controller: widget.controller,
-                  goalId: _goal.goalId,
-                  agent: agent,
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => AgentRecordPage(
+                    controller: widget.controller,
+                    goalId: _goal.goalId,
+                    agent: agent,
+                  ),
                 ),
               ),
             ),
-          ),
-        if (_cursor != null)
-          TextButton(
-            onPressed: () => _load(more: true),
-            child: const Text('更多搭档'),
-          ),
-      ],
+          if (_cursor != null)
+            TextButton(
+              onPressed: () => _load(more: true),
+              child: Text(tr(Msg.mobileMorePartners)),
+            ),
+        ],
+      ),
     ),
   );
 }
@@ -655,7 +741,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
     with WidgetsBindingObserver {
   List<Map<String, dynamic>> _items = [];
   String? _cursor;
-  String? _error;
+  Object? _error;
   late String _status;
   String? _executionPhase;
   String? _waitReason;
@@ -743,7 +829,11 @@ class _AgentRecordPageState extends State<AgentRecordPage>
       });
     } catch (_) {
       if (mounted && generation == _generation) {
-        setState(() => _error = '记录读取失败，请刷新重试。');
+        setState(
+          () => _error = UiNotice(
+            Msg.mobileCouldNotLoadRecordsRefreshAndTryAgain,
+          ),
+        );
       }
     } finally {
       _loading = false;
@@ -751,81 +841,94 @@ class _AgentRecordPageState extends State<AgentRecordPage>
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: Text(widget.agent['partnerName'] as String? ?? '搭档记录'),
-      actions: [
-        IconButton(
-          tooltip: '刷新',
-          onPressed: () => _load(),
-          icon: const Icon(Icons.refresh),
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => Scaffold(
+      appBar: AppBar(
+        title: Text(
+          widget.agent['partnerName'] as String? ??
+              tr(Msg.mobilePartnerHistory),
         ),
-        ConnectionDiagnosticsButton(controller: widget.controller),
-      ],
-    ),
-    body: ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(
-          executionStatusLabel(
-            status: _status,
-            executionPhase: _executionPhase,
-            waitReason: _waitReason,
+        actions: [
+          IconButton(
+            tooltip: tr(Msg.mobileRefresh),
+            onPressed: () => _load(),
+            icon: const Icon(Icons.refresh),
           ),
-        ),
-        if (_error != null) Text(_error!),
-        if (_items.isEmpty)
-          const Padding(padding: EdgeInsets.all(20), child: Text('暂无可展示的记录。')),
-        for (final item in _items)
-          Card(
-            key: ValueKey(item['entryId']),
-            child: Padding(
-              padding: const EdgeInsets.all(14),
-              child:
-                  item['kind'] == 'TOOL_CALL' || item['kind'] == 'TOOL_RESULT'
-                  ? ExpansionTile(
-                      title: Text(
-                        item['toolName'] as String? ??
-                            (item['kind'] == 'TOOL_CALL' ? '工具调用' : '工具结果'),
-                      ),
-                      children: [
-                        MessageBody(item['text'] as String? ?? '没有额外可展示的内容。'),
-                      ],
-                    )
-                  : item['kind'] == 'ARTIFACT'
-                  ? ListTile(
-                      leading: const Icon(Icons.insert_drive_file_outlined),
-                      title: Text(
-                        (item['artifact'] as Map<String, dynamic>?)?['name']
-                                as String? ??
-                            '产物',
-                      ),
-                    )
-                  : Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          const {
-                                'USER': '用户',
-                                'AGENT': '搭档',
-                                'SYSTEM': '系统',
-                                'TOOL': '工具',
-                              }[item['role']] ??
-                              '消息',
-                          style: Theme.of(context).textTheme.labelSmall,
-                        ),
-                        const SizedBox(height: 8),
-                        MessageBody(item['text'] as String? ?? ''),
-                      ],
-                    ),
+          ConnectionDiagnosticsButton(controller: widget.controller),
+        ],
+      ),
+      body: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          Text(
+            executionStatusLabel(
+              status: _status,
+              executionPhase: _executionPhase,
+              waitReason: _waitReason,
             ),
           ),
-        if (_cursor != null)
-          TextButton(
-            onPressed: () => _load(more: true),
-            child: const Text('加载更多记录'),
-          ),
-      ],
+          if (_error != null) Text(noticeText(_error!)),
+          if (_items.isEmpty)
+            Padding(
+              padding: EdgeInsets.all(20),
+              child: Text(tr(Msg.mobileNoRecordsToShowYet)),
+            ),
+          for (final item in _items)
+            Card(
+              key: ValueKey(item['entryId']),
+              child: Padding(
+                padding: const EdgeInsets.all(14),
+                child:
+                    item['kind'] == 'TOOL_CALL' || item['kind'] == 'TOOL_RESULT'
+                    ? ExpansionTile(
+                        title: Text(
+                          item['toolName'] as String? ??
+                              (item['kind'] == 'TOOL_CALL'
+                                  ? tr(Msg.mobileToolCall)
+                                  : tr(Msg.homeToolResult)),
+                        ),
+                        children: [
+                          MessageBody(
+                            item['text'] as String? ??
+                                tr(Msg.mobileNoAdditionalContentToShow),
+                          ),
+                        ],
+                      )
+                    : item['kind'] == 'ARTIFACT'
+                    ? ListTile(
+                        leading: const Icon(Icons.insert_drive_file_outlined),
+                        title: Text(
+                          (item['artifact'] as Map<String, dynamic>?)?['name']
+                                  as String? ??
+                              tr(Msg.homeArtifacts),
+                        ),
+                      )
+                    : Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            {
+                                  'USER': tr(Msg.mobileUser),
+                                  'AGENT': tr(Msg.commonPartners),
+                                  'SYSTEM': tr(Msg.homeSystem),
+                                  'TOOL': tr(Msg.homeTool),
+                                }[item['role']] ??
+                                tr(Msg.mobileMessage),
+                            style: Theme.of(context).textTheme.labelSmall,
+                          ),
+                          const SizedBox(height: 8),
+                          MessageBody(item['text'] as String? ?? ''),
+                        ],
+                      ),
+              ),
+            ),
+          if (_cursor != null)
+            TextButton(
+              onPressed: () => _load(more: true),
+              child: Text(tr(Msg.mobileLoadMoreRecords)),
+            ),
+        ],
+      ),
     ),
   );
 }

@@ -1,9 +1,11 @@
 import type { DesktopBootstrapNonce } from "../../shared/product.js";
+import type { UiLocalePreference } from "../../shared/i18n/index.js";
 import type { CredentialVault } from "../application/ports/a2a-ports.js";
 import type { BitmapTranscodeInput, BitmapTranscodeResult } from "../infrastructure/artifacts/bitmap-transcoder.js";
 import type { ExportRecord } from "../infrastructure/persistence/sqlite-result-exports.js";
 
 export interface DesktopRuntimeConfiguration {
+  systemLanguages?: string[];
   userDataDirectory: string;
   migrationsDirectory: string;
   rendererDirectory: string;
@@ -16,6 +18,7 @@ export interface DesktopRuntimeConfiguration {
 }
 
 export interface RuntimeDesktopCapabilities {
+  setUiLocale?(preference: UiLocalePreference): void | Promise<void>;
   vault: CredentialVault;
   getLaunchAtLogin(): boolean | Promise<boolean>;
   setLaunchAtLogin(enabled: boolean): void | Promise<void>;

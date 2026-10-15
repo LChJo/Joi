@@ -1,3 +1,5 @@
+import type { UiLocalePreference } from "./i18n/index.js";
+
 export interface LanAddressOption {
   address: string;
   available: boolean;
@@ -16,6 +18,7 @@ export type LanRuntimeState =
     };
 
 export interface SystemSettingsDto {
+  uiLocale?: UiLocalePreference;
   lan: {
     address: string;
     availableAddresses?: LanAddressOption[];
@@ -30,6 +33,7 @@ export interface SystemSettingsDto {
 }
 
 export interface UpdateSystemSettingsInput {
+  uiLocale?: UiLocalePreference;
   lan?: {
     address?: string;
     enabled?: boolean;

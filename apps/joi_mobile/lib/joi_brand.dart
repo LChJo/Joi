@@ -1,3 +1,4 @@
+import 'i18n.dart';
 import 'package:flutter/material.dart';
 
 class JoiBrand extends StatelessWidget {
@@ -7,6 +8,7 @@ class JoiBrand extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    dependOnUiLocale(context);
     final portrait = ClipOval(
       child: Image.asset(
         'assets/joi-portrait.png',

@@ -9,6 +9,7 @@ import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'iroh_ffi_transport.dart';
 import 'remote_controller.dart';
 import 'connection_diagnostics.dart';
+import 'i18n.dart';
 
 const _credentialKey = 'joi.remote.native.credential.v1';
 
@@ -1022,6 +1023,12 @@ class NativeRemoteController extends ChangeNotifier
         diagnostics: diagnostics,
         notice: failure
             ? '连接诊断：${stageLabel(diagnostics.stage)} · ${safeConnectionCode(code)}'
+            : null,
+        localizedNotice: failure
+            ? UiNotice(Msg.mobileConnectionDiagnosticsValueValue, {
+                'p0': productNotice(stageLabel(diagnostics.stage)),
+                'p1': safeConnectionCode(code),
+              })
             : null,
       ),
     );

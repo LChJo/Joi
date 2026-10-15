@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'i18n.dart';
+import 'l10n/app_localizations.dart';
 
 import 'remote_controller.dart';
 import 'pairing_scanner.dart';
@@ -13,28 +15,36 @@ class JoiMobileApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      debugShowCheckedModeBanner: false,
-      title: 'joi',
-      theme: ThemeData(
-        brightness: Brightness.dark,
-        colorScheme: ColorScheme.fromSeed(
+    dependOnUiLocale(context);
+    return ListenableBuilder(
+      listenable: uiLocale,
+      builder: (context, _) => MaterialApp(
+        locale: uiLocale.locale,
+        supportedLocales: AppLocalizations.supportedLocales,
+        localizationsDelegates: AppLocalizations.localizationsDelegates,
+        debugShowCheckedModeBanner: false,
+        title: 'joi',
+        theme: ThemeData(
           brightness: Brightness.dark,
-          seedColor: const Color(0xff79c99e),
-          surface: const Color(0xff111a15),
+          colorScheme: ColorScheme.fromSeed(
+            brightness: Brightness.dark,
+            seedColor: const Color(0xff79c99e),
+            surface: const Color(0xff111a15),
+          ),
+          scaffoldBackgroundColor: const Color(0xff0d1511),
+          useMaterial3: true,
         ),
-        scaffoldBackgroundColor: const Color(0xff0d1511),
-        useMaterial3: true,
-      ),
-      home: AnimatedBuilder(
-        animation: controller,
-        builder: (context, _) {
-          final state = controller.state;
-          if (state.connection == RemoteConnectionState.unpaired) {
-            return _PairingScreen(controller: controller);
-          }
-          return HomeScreen(controller: controller, state: state);
-        },
+        home: AnimatedBuilder(
+          animation: controller,
+          builder: (context, _) {
+            dependOnUiLocale(context);
+            final state = controller.state;
+            if (state.connection == RemoteConnectionState.unpaired) {
+              return _PairingScreen(controller: controller);
+            }
+            return HomeScreen(controller: controller, state: state);
+          },
+        ),
       ),
     );
   }
@@ -47,9 +57,13 @@ class _PairingScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    dependOnUiLocale(context);
     return Scaffold(
       appBar: AppBar(
-        actions: [ConnectionDiagnosticsButton(controller: controller)],
+        actions: [
+          const UiLanguageButton(),
+          ConnectionDiagnosticsButton(controller: controller),
+        ],
       ),
       body: SafeArea(
         child: Padding(
@@ -61,22 +75,23 @@ class _PairingScreen extends StatelessWidget {
               const Center(child: JoiBrand(large: true)),
               const SizedBox(height: 12),
               Text(
-                '把正在电脑上运行的 Joi 带到手机上',
+                tr(Msg.mobileBringTheJoiRunningOnYourComputerToYour),
                 textAlign: TextAlign.center,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                   color: const Color(0xff94a79b),
                 ),
               ),
               const SizedBox(height: 34),
-              if (controller.state.notice case final String notice)
+              if (controller.state.localizedNotice ?? controller.state.notice
+                  case final Object notice)
                 Padding(
                   padding: const EdgeInsets.only(bottom: 16),
-                  child: Text(notice, textAlign: TextAlign.center),
+                  child: Text(noticeText(notice), textAlign: TextAlign.center),
                 ),
               FilledButton.icon(
                 onPressed: () => _scan(context),
                 icon: const Icon(Icons.qr_code_scanner_rounded),
-                label: const Text('扫描二维码绑定 Joi'),
+                label: Text(tr(Msg.mobileScanAQrCodeToPairWithJoi)),
                 style: FilledButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 17),
                 ),
@@ -87,11 +102,11 @@ class _PairingScreen extends StatelessWidget {
                 style: OutlinedButton.styleFrom(
                   padding: const EdgeInsets.symmetric(vertical: 15),
                 ),
-                child: const Text('输入连接码'),
+                child: Text(tr(Msg.mobileEnterConnectionCode)),
               ),
               const Spacer(),
-              const Text(
-                '同一台 Joi 可以安全绑定多台手机',
+              Text(
+                tr(Msg.mobilePairMultiplePhonesSecurelyWithTheSameJoi),
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Color(0xff728278), fontSize: 12),
               ),
@@ -107,20 +122,22 @@ class _PairingScreen extends StatelessWidget {
     final value = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
-        title: const Text('输入连接码'),
+        title: Text(tr(Msg.mobileEnterConnectionCode)),
         content: TextField(
           controller: input,
           autofocus: true,
-          decoration: const InputDecoration(hintText: '粘贴 joi://pair 链接'),
+          decoration: InputDecoration(
+            hintText: tr(Msg.mobilePasteAJoiPairLink),
+          ),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
+            child: Text(tr(Msg.commonCancel)),
           ),
           FilledButton(
             onPressed: () => Navigator.pop(context, input.text),
-            child: const Text('连接'),
+            child: Text(tr(Msg.homeConnect)),
           ),
         ],
       ),
@@ -142,9 +159,9 @@ class _PairingScreen extends StatelessWidget {
       await controller.connectFromQr(value);
     } catch (_) {
       if (context.mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('二维码无效或已经过期。')));
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(tr(Msg.mobileTheQrCodeIsInvalidOrExpired))),
+        );
       }
     }
   }

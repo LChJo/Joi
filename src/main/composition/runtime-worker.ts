@@ -20,6 +20,7 @@ const peer = new WorkerRpc(input.port, {
         decrypt: (ciphertext) => peer.call("decrypt", ciphertext),
       },
       getLaunchAtLogin: () => peer.call("getLaunchAtLogin"),
+      setUiLocale: (preference) => peer.call("setUiLocale", preference),
       setLaunchAtLogin: (enabled) => peer.call("setLaunchAtLogin", enabled),
       directoryPicker: () => peer.call("directoryPicker"),
       artifactOpen: (artifact) => peer.call("artifactOpen", artifact),

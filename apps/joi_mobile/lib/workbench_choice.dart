@@ -1,3 +1,4 @@
+import 'i18n.dart';
 import 'package:flutter/material.dart';
 import 'remote_controller.dart';
 
@@ -35,7 +36,7 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
   String _query = '';
   bool _creating = false;
   bool _busy = false;
-  String? _error;
+  Object? _error;
   RemoteWorkbenchCreation? _created;
   bool _closing = false;
 
@@ -78,7 +79,11 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
     workbenchId ??= _created?.id;
     if (workbenchId == null &&
         [_name, _project, _scope].any((field) => field.text.trim().isEmpty)) {
-      setState(() => _error = '请填写工作台名称、工程名称和工作范围。');
+      setState(
+        () => _error = UiNotice(
+          Msg.mobileEnterAWorkbenchNameProjectNameAndWorkScope,
+        ),
+      );
       return;
     }
     setState(() {
@@ -111,7 +116,9 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
           if (mounted) {
             setState(() {
               _created = created;
-              _error = '工作台已创建，请刷新任务状态后选择它继续。';
+              _error = UiNotice(
+                Msg.mobileWorkbenchCreatedRefreshTaskStatusAndChooseItTo,
+              );
             });
           }
           return;
@@ -122,141 +129,165 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
         Navigator.pop(context, true);
       }
     } catch (_) {
-      if (mounted) setState(() => _error = '工作台选择未完成，请刷新任务状态后重试。已保留填写内容。');
+      if (mounted) {
+        setState(
+          () => _error = UiNotice(
+            Msg.workbenchesWorkbenchSelectionDidNotCompleteRefreshTaskStatusAnd,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
   }
 
   @override
-  Widget build(BuildContext context) => AnimatedBuilder(
-    animation: widget.controller,
-    builder: (context, _) {
-      final state = widget.controller.state;
-      final busy = _busy || state.connection != RemoteConnectionState.connected;
-      final visible = state.workbenches.where(
-        (workbench) => '${workbench.name} ${workbench.description}'
-            .toLowerCase()
-            .contains(_query.trim().toLowerCase()),
-      );
-      return PopScope(
-        canPop: !_busy,
-        child: Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(context).bottom,
-          ),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.sizeOf(context).height * .85,
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => AnimatedBuilder(
+      animation: widget.controller,
+      builder: (context, _) {
+        dependOnUiLocale(context);
+        final state = widget.controller.state;
+        final busy =
+            _busy || state.connection != RemoteConnectionState.connected;
+        final visible = state.workbenches.where(
+          (workbench) => '${workbench.name} ${workbench.description}'
+              .toLowerCase()
+              .contains(_query.trim().toLowerCase()),
+        );
+        return PopScope(
+          canPop: !_busy,
+          child: Padding(
+            padding: EdgeInsets.only(
+              bottom: MediaQuery.viewInsetsOf(context).bottom,
             ),
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.all(20),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.sizeOf(context).height * .85,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text(
+                            tr(Msg.homeChooseWorkbench),
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                        ),
+                        TextButton(
+                          onPressed: _busy
+                              ? null
+                              : () => Navigator.pop(context, false),
+                          child: Text(tr(Msg.workbenchesChooseLater)),
+                        ),
+                      ],
+                    ),
+                    Text(tr(Msg.mobileChooseAWorkbenchForThisTaskOrCreateA)),
+                    const SizedBox(height: 16),
+                    if (_creating) ...[
+                      TextField(
+                        controller: _name,
+                        enabled: !busy,
+                        maxLength: 80,
+                        decoration: InputDecoration(
+                          labelText: tr(Msg.workbenchesWorkbenchName),
+                        ),
+                      ),
+                      TextField(
+                        controller: _project,
+                        enabled: !busy,
+                        maxLength: 120,
+                        decoration: InputDecoration(
+                          labelText: tr(Msg.homeProjectName),
+                        ),
+                      ),
+                      TextField(
+                        controller: _scope,
+                        enabled: !busy,
+                        maxLength: 1000,
+                        minLines: 3,
+                        maxLines: 6,
+                        decoration: InputDecoration(
+                          labelText: tr(Msg.workbenchesWorkScope),
+                        ),
+                      ),
+                      FilledButton(
+                        onPressed: busy ? null : () => _submit(),
                         child: Text(
-                          '选择工作台',
-                          style: Theme.of(context).textTheme.titleLarge,
+                          _busy
+                              ? tr(Msg.mobileSubmitting)
+                              : _created == null
+                              ? tr(Msg.workbenchesCreateAndContinue)
+                              : tr(
+                                  Msg.mobileChooseTheCreatedWorkbenchToContinue,
+                                ),
                         ),
                       ),
                       TextButton(
-                        onPressed: _busy
-                            ? null
-                            : () => Navigator.pop(context, false),
-                        child: const Text('稍后选择'),
-                      ),
-                    ],
-                  ),
-                  const Text('请选择这条任务的工作台，或创建一个独立的工作范围。确认后 Joi 再开始安排。'),
-                  const SizedBox(height: 16),
-                  if (_creating) ...[
-                    TextField(
-                      controller: _name,
-                      enabled: !busy,
-                      maxLength: 80,
-                      decoration: const InputDecoration(labelText: '工作台名称'),
-                    ),
-                    TextField(
-                      controller: _project,
-                      enabled: !busy,
-                      maxLength: 120,
-                      decoration: const InputDecoration(labelText: '工程名称'),
-                    ),
-                    TextField(
-                      controller: _scope,
-                      enabled: !busy,
-                      maxLength: 1000,
-                      minLines: 3,
-                      maxLines: 6,
-                      decoration: const InputDecoration(labelText: '工作范围'),
-                    ),
-                    FilledButton(
-                      onPressed: busy ? null : () => _submit(),
-                      child: Text(
-                        _busy
-                            ? '正在提交…'
-                            : _created == null
-                            ? '创建并继续'
-                            : '选择已创建的工作台继续',
-                      ),
-                    ),
-                    TextButton(
-                      onPressed: busy
-                          ? null
-                          : () => setState(() {
-                              _creating = false;
-                              _error = null;
-                            }),
-                      child: const Text('返回选择'),
-                    ),
-                  ] else ...[
-                    if (state.workbenches.length > 6)
-                      TextField(
-                        enabled: !busy,
-                        onChanged: (value) => setState(() => _query = value),
-                        decoration: const InputDecoration(labelText: '搜索工作台'),
-                      ),
-                    for (final workbench in visible)
-                      ListTile(
-                        title: Text(workbench.name),
-                        subtitle: Text(workbench.description),
-                        enabled: !busy,
-                        onTap: busy ? null : () => _submit(workbench.id),
-                      ),
-                    if (visible.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('没有匹配的工作台，可以新建。'),
-                      ),
-                    if (state.supportsWorkbenchCreation)
-                      FilledButton.icon(
                         onPressed: busy
                             ? null
-                            : () => setState(() => _creating = true),
-                        icon: const Icon(Icons.add_rounded),
-                        label: const Text('新建工作台'),
+                            : () => setState(() {
+                                _creating = false;
+                                _error = null;
+                              }),
+                        child: Text(tr(Msg.workbenchesBackToSelection)),
                       ),
-                  ],
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 12),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.error,
+                    ] else ...[
+                      if (state.workbenches.length > 6)
+                        TextField(
+                          enabled: !busy,
+                          onChanged: (value) => setState(() => _query = value),
+                          decoration: InputDecoration(
+                            labelText: tr(Msg.homeSearchWorkbenches),
+                          ),
+                        ),
+                      for (final workbench in visible)
+                        ListTile(
+                          title: Text(workbench.name),
+                          subtitle: Text(workbench.description),
+                          enabled: !busy,
+                          onTap: busy ? null : () => _submit(workbench.id),
+                        ),
+                      if (visible.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            tr(
+                              Msg.workbenchesNoMatchingWorkbenchesYouCanCreateOne,
+                            ),
+                          ),
+                        ),
+                      if (state.supportsWorkbenchCreation)
+                        FilledButton.icon(
+                          onPressed: busy
+                              ? null
+                              : () => setState(() => _creating = true),
+                          icon: const Icon(Icons.add_rounded),
+                          label: Text(tr(Msg.workbenchesNewWorkbench)),
+                        ),
+                    ],
+                    if (_error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 12),
+                        child: Text(
+                          noticeText(_error!),
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
             ),
           ),
-        ),
-      );
-    },
+        );
+      },
+    ),
   );
 }

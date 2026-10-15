@@ -39,6 +39,10 @@ describe("isIndividuallyRenderedArtifact", () => {
 });
 
 describe("artifactGroupLabel", () => {
+  it("AC-I18N-05 localizes only the missing-directory label, preserving real directory names", () => {
+    expect(artifactGroupLabel(undefined, "workspace root")).toBe("workspace root");
+    expect(artifactGroupLabel("（工作区根目录）", "workspace root")).toBe("（工作区根目录）");
+  });
   it("labels unknown and root directories with the root label", () => {
     expect(artifactGroupLabel(undefined)).toBe(ARTIFACT_ROOT_LABEL);
     expect(artifactGroupLabel("")).toBe(ARTIFACT_ROOT_LABEL);

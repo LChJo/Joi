@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'i18n.dart' show UiNotice;
 import 'connection_diagnostics.dart';
 
 enum RemoteConnectionState {
@@ -90,7 +91,7 @@ class RemoteGoalCard {
     required this.totalWork,
     this.goalId = '',
     this.workbenchId = '',
-    this.workbenchName = '等待归属',
+    this.workbenchName = '',
     this.canArchive = false,
     this.canDelete = false,
     this.archivedAt,
@@ -193,10 +194,7 @@ class RemoteGoalCard {
     final question = json['clarification'] as Map<String, dynamic>? ?? {};
     return RemoteGoalCard(
       goalId: json['goalId'] as String? ?? json['inputId'] as String? ?? '',
-      title:
-          json['title'] as String? ??
-          json['textPreview'] as String? ??
-          '待确认的输入',
+      title: json['title'] as String? ?? json['textPreview'] as String? ?? '',
       status: json['status'] == 'CLARIFICATION_REQUIRED'
           ? 'NEEDS_ATTENTION'
           : json['status'] as String? ?? 'ARRANGING',
@@ -204,7 +202,7 @@ class RemoteGoalCard {
           bench['workbenchId'] as String? ??
           json['workbenchId'] as String? ??
           '',
-      workbenchName: bench['name'] as String? ?? '等待归属',
+      workbenchName: bench['name'] as String? ?? '',
       activeWork: work['active'] as int? ?? 0,
       completedWork: work['completed'] as int? ?? 0,
       totalWork: work['total'] as int? ?? 0,
@@ -276,6 +274,7 @@ class RemoteViewState {
     this.partners = const [],
     this.busyGoals = const {},
     this.notice,
+    this.localizedNotice,
     this.diagnostics = const ConnectionDiagnostics(),
   });
 
@@ -294,6 +293,7 @@ class RemoteViewState {
   final List<RemoteChoice> partners;
   final Set<String> busyGoals;
   final String? notice;
+  final UiNotice? localizedNotice;
   final ConnectionDiagnostics diagnostics;
   RemoteViewState copyWith({
     RemoteConnectionState? connection,
@@ -308,6 +308,7 @@ class RemoteViewState {
     List<RemoteChoice>? partners,
     Set<String>? busyGoals,
     String? notice,
+    UiNotice? localizedNotice,
     bool clearNotice = false,
     ConnectionDiagnostics? diagnostics,
   }) => RemoteViewState(
@@ -325,6 +326,9 @@ class RemoteViewState {
     partners: partners ?? this.partners,
     busyGoals: busyGoals ?? this.busyGoals,
     notice: clearNotice ? null : notice ?? this.notice,
+    localizedNotice: clearNotice
+        ? null
+        : localizedNotice ?? (notice != null ? null : this.localizedNotice),
     diagnostics: diagnostics ?? this.diagnostics,
   );
 }

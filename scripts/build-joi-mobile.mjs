@@ -19,6 +19,7 @@ function run(command, args, cwd) {
   });
 }
 
+await run(process.execPath, [path.join(projectRoot, "scripts/i18n.mjs"), "check"], projectRoot);
 await run(process.execPath, [path.join(projectRoot, "node_modules/electron/cli.js"), path.join(projectRoot, "scripts/render-app-icon.cjs")], projectRoot);
 await run(process.execPath, [path.join(projectRoot, "node_modules/electron/cli.js"), path.join(projectRoot, "scripts/render-mobile-brand.cjs")], projectRoot);
 await run(process.execPath, [path.join(projectRoot, "scripts", "build-native-remote.mjs"), "--android"], projectRoot);

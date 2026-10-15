@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'i18n.dart';
 import 'dart:isolate';
 import 'dart:math';
 
@@ -92,8 +93,9 @@ class ResultExportService {
     String title,
     String body,
     String format,
-    void Function(String) progress,
-  ) async {
+    void Function(String) progress, {
+    void Function(UiNotice)? localizedProgress,
+  }) async {
     if (_busy) throw StateError('export_busy');
     _busy = true;
     Directory? temporary;
@@ -118,6 +120,7 @@ class ResultExportService {
         '${(await getTemporaryDirectory()).path}/joi-export-$id',
       ).create();
       progress('正在排版…');
+      localizedProgress?.call(const UiNotice(Msg.exportStateLayout));
       final fonts = await Future.wait(
         ['NotoSansSC.ttf', 'NotoSansSymbols2.ttf', 'NotoEmoji.ttf'].map(
           (name) async => Uint8List.sublistView(
@@ -141,6 +144,12 @@ class ResultExportService {
         stage = ResultExportStage.raster;
         for (var i = 0; i < pageCount; i++) {
           progress('正在生成图片 ${i + 1}/$pageCount…');
+          localizedProgress?.call(
+            UiNotice(Msg.exportStateRaster, {
+              'page': formatUiNumber(i + 1),
+              'total': formatUiNumber(pageCount),
+            }),
+          );
           var received = 0;
           // A single requested page bounds the plugin queue as well as the canvas.
           await for (final page in rasterizer.raster(pdf, i)) {
@@ -159,6 +168,7 @@ class ResultExportService {
       }
       stage = ResultExportStage.save;
       progress('正在保存…');
+      localizedProgress?.call(const UiNotice(Msg.exportStateSave));
       if (format == 'png' && files.length == 1) {
         files[0] = await files[0].rename('${temporary.path}/$name.png');
       }

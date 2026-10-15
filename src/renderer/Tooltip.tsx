@@ -1,3 +1,4 @@
+import { useI18n } from "./i18n";
 import { cloneElement, useCallback, useLayoutEffect, useRef, useState, type ReactElement, type ReactNode, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 
@@ -14,6 +15,7 @@ const FLIP_MARGIN = 130;
  * visual duplicate of the trigger's accessible name, hence aria-hidden.
  */
 export function Tooltip({ children, content }: { children: ReactElement; content: ReactNode }) {
+  useI18n();
   const popupRef = useRef<HTMLDivElement | null>(null);
   const [anchor, setAnchor] = useState<Anchor | null>(null);
   const [position, setPosition] = useState<Position | null>(null);

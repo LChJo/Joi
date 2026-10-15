@@ -1,0 +1,581 @@
+{
+  "collectingEvaluableExperience": {
+    "message": "Collecting evaluable experience",
+    "description": "evolution: Collecting evaluable experience",
+    "sourceText": "正在积累可评价的经验"
+  },
+  "automaticEvolutionIsNotEnabled": {
+    "message": "Automatic evolution is not enabled",
+    "description": "evolution: Automatic evolution is not enabled",
+    "sourceText": "尚未启用自动进化"
+  },
+  "todaySBudgetIsUsedUpContinuingNextBilling": {
+    "message": "Today''s budget is used up. Continuing next billing day",
+    "description": "evolution: Today's budget is used up. Continuing next billing day",
+    "sourceText": "今日预算已用完，下个计费日继续"
+  },
+  "evaluatingACandidatePolicy": {
+    "message": "Evaluating a candidate policy",
+    "description": "evolution: Evaluating a candidate policy",
+    "sourceText": "正在评估候选策略"
+  },
+  "theCandidatePassedSyntheticEvaluationAndIsBeingTested": {
+    "message": "The candidate passed synthetic evaluation and is being tested on a small share of real work",
+    "description": "evolution: The candidate passed synthetic evaluation and is being tested on a small share of real work",
+    "sourceText": "候选已通过合成评测，正在小流量生产验证"
+  },
+  "theModelOrEvaluatorChangedThePolicyIsSuspended": {
+    "message": "The model or evaluator changed. The policy is suspended pending revalidation",
+    "description": "evolution: The model or evaluator changed. The policy is suspended pending revalidation",
+    "sourceText": "模型或评测器已变化，当前策略暂停生效并等待重新验证"
+  },
+  "policyHistoryIsFullAuditItBeforeContinuing": {
+    "message": "Policy history is full. Audit it before continuing",
+    "description": "evolution: Policy history is full. Audit it before continuing",
+    "sourceText": "策略历史已达上限，请先审计后再继续"
+  },
+  "anEvaluatedPolicyIsActive": {
+    "message": "An evaluated policy is active",
+    "description": "evolution: An evaluated policy is active",
+    "sourceText": "已启用通过评测的策略"
+  },
+  "automaticEvolutionPausedNewGoalsUseTheRolledBack": {
+    "message": "Automatic evolution paused. New goals use the rolled-back policy",
+    "description": "evolution: Automatic evolution paused. New goals use the rolled-back policy",
+    "sourceText": "已暂停自动进化；回退后的策略用于新目标"
+  },
+  "theModelOrEvaluationEnvironmentChangedAwaitingReevaluation": {
+    "message": "The model or evaluation environment changed. Awaiting reevaluation",
+    "description": "evolution: The model or evaluation environment changed. Awaiting reevaluation",
+    "sourceText": "模型或评测环境已变化，等待重新评估"
+  },
+  "notEnoughEvaluationSamplesKeepingTheCurrentPolicy": {
+    "message": "Not enough evaluation samples. Keeping the current policy",
+    "description": "evolution: Not enough evaluation samples. Keeping the current policy",
+    "sourceText": "评测样本不足，保留当前策略"
+  },
+  "insufficientImprovementKeepingTheCurrentPolicy": {
+    "message": "Insufficient improvement. Keeping the current policy",
+    "description": "evolution: Insufficient improvement. Keeping the current policy",
+    "sourceText": "改善幅度不足，保留当前策略"
+  },
+  "candidateRejectedDueToReducedQuality": {
+    "message": "Candidate rejected due to reduced quality",
+    "description": "evolution: Candidate rejected due to reduced quality",
+    "sourceText": "候选质量下降，已拒绝"
+  },
+  "candidateRejectedForExceedingTheCallCostLimit": {
+    "message": "Candidate rejected for exceeding the call cost limit",
+    "description": "evolution: Candidate rejected for exceeding the call cost limit",
+    "sourceText": "候选调用成本超限，已拒绝"
+  },
+  "candidateRejectedForViolatingCompletionRequirements": {
+    "message": "Candidate rejected for violating completion requirements",
+    "description": "evolution: Candidate rejected for violating completion requirements",
+    "sourceText": "候选违反完成约束，已拒绝"
+  },
+  "invalidEvaluationKeepingTheCurrentPolicy": {
+    "message": "Invalid evaluation. Keeping the current policy",
+    "description": "evolution: Invalid evaluation. Keeping the current policy",
+    "sourceText": "评测无效，保留当前策略"
+  },
+  "insufficientCandidateEvidenceKeepingTheCurrentPolicy": {
+    "message": "Insufficient candidate evidence. Keeping the current policy",
+    "description": "evolution: Insufficient candidate evidence. Keeping the current policy",
+    "sourceText": "候选缺少充分证据，保留当前策略"
+  },
+  "backgroundCallDidNotCompleteKeepingTheCurrentPolicy": {
+    "message": "Background call did not complete. Keeping the current policy",
+    "description": "evolution: Background call did not complete. Keeping the current policy",
+    "sourceText": "后台调用未完成，保留当前策略"
+  },
+  "theModelResponseDidNotMeetEvaluationRequirementsThis": {
+    "message": "The model response did not meet evaluation requirements. This round has ended",
+    "description": "evolution: The model response did not meet evaluation requirements. This round has ended",
+    "sourceText": "模型响应不符合评测要求，本轮已终止"
+  },
+  "modelConnectionCallFailed": {
+    "message": "Model connection call failed",
+    "description": "evolution: Model connection call failed",
+    "sourceText": "模型源调用失败"
+  },
+  "modelConnectionCallTimedOut": {
+    "message": "Model connection call timed out",
+    "description": "evolution: Model connection call timed out",
+    "sourceText": "模型源调用超时"
+  },
+  "evaluationCallCanceled": {
+    "message": "Evaluation call canceled",
+    "description": "evolution: Evaluation call canceled",
+    "sourceText": "评测调用已取消"
+  },
+  "modelOutputWasTruncated": {
+    "message": "Model output was truncated",
+    "description": "evolution: Model output was truncated",
+    "sourceText": "模型输出被截断"
+  },
+  "noToolCallReturned": {
+    "message": "No tool call returned",
+    "description": "evolution: No tool call returned",
+    "sourceText": "未返回工具调用"
+  },
+  "multipleToolCallsReturned": {
+    "message": "Multiple tool calls returned",
+    "description": "evolution: Multiple tool calls returned",
+    "sourceText": "返回了多个工具调用"
+  },
+  "unsupportedToolCallReturned": {
+    "message": "Unsupported tool call returned",
+    "description": "evolution: Unsupported tool call returned",
+    "sourceText": "返回了不支持的工具调用"
+  },
+  "theModelResponseDidNotMeetEvaluationRequirementsAutomatic": {
+    "message": "The model response did not meet evaluation requirements. Automatic evolution paused. Check the model connection before enabling it again",
+    "description": "evolution: The model response did not meet evaluation requirements. Automatic evolution paused. Check the model connection before enabling it again",
+    "sourceText": "模型响应不符合评测要求，已暂停自动进化；请检查模型源后重新启用"
+  },
+  "theResponseDidNotMeetEvaluationRequirementsThisRound": {
+    "message": "The response did not meet evaluation requirements. This round has ended. Check the model connection to evaluate again",
+    "description": "evolution: The response did not meet evaluation requirements. This round has ended. Check the model connection to evaluate again",
+    "sourceText": "模型响应不符合评测要求，本轮已终止；检查模型源后可立即重新评测"
+  },
+  "off": {
+    "message": "Off",
+    "description": "evolution: Off",
+    "sourceText": "关"
+  },
+  "low": {
+    "message": "Low",
+    "description": "evolution: Low",
+    "sourceText": "低"
+  },
+  "medium": {
+    "message": "Medium",
+    "description": "evolution: Medium",
+    "sourceText": "中"
+  },
+  "high": {
+    "message": "High",
+    "description": "evolution: High",
+    "sourceText": "高"
+  },
+  "recordExperienceWithoutMakingModelEvaluationCalls": {
+    "message": "Record experience without making model evaluation calls.",
+    "description": "evolution: Record experience without making model evaluation calls.",
+    "sourceText": "只记录经验，不发起任何模型评测。"
+  },
+  "aFullEvaluationTakesAboutTwoWeeksUsesThe": {
+    "message": "A full evaluation takes about two weeks. Uses the fewest calls and suits gradual background validation.",
+    "description": "evolution: A full evaluation takes about two weeks. Uses the fewest calls and suits gradual background validation.",
+    "sourceText": "约两周跑完一轮完整评测，最省调用；适合长期后台慢慢验证。"
+  },
+  "aFullEvaluationTakesAboutFiveDaysBalancingSpeed": {
+    "message": "A full evaluation takes about five days, balancing speed and cost.",
+    "description": "evolution: A full evaluation takes about five days, balancing speed and cost.",
+    "sourceText": "约五天跑完一轮完整评测，速度与花费均衡。"
+  },
+  "aFullEvaluationTakesAboutTwoDaysFastestResults": {
+    "message": "A full evaluation takes about two days. Fastest results, with the highest daily cost.",
+    "description": "evolution: A full evaluation takes about two days. Fastest results, with the highest daily cost.",
+    "sourceText": "约两天跑完一轮完整评测，最快看到结果，单日花费也最高。"
+  },
+  "offRecordExperienceOnly": {
+    "message": "Off (record experience only)",
+    "description": "evolution: Off (record experience only)",
+    "sourceText": "关（只记录经验）"
+  },
+  "valueValuePerDay": {
+    "message": "{p0} ({p1} per day)",
+    "description": "evolution: {p0} ({p1} per day)",
+    "sourceText": "{p0}（每日 {p1} 次）",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "development": {
+    "message": "Development",
+    "description": "evolution: Development",
+    "sourceText": "开发"
+  },
+  "proposal": {
+    "message": "Proposal",
+    "description": "evolution: Proposal",
+    "sourceText": "提案"
+  },
+  "candidateRetest": {
+    "message": "Candidate retest",
+    "description": "evolution: Candidate retest",
+    "sourceText": "候选复测"
+  },
+  "heldOutEvaluation": {
+    "message": "Held-out evaluation",
+    "description": "evolution: Held-out evaluation",
+    "sourceText": "封存评测"
+  },
+  "pipelineVerifiedTheBatchReachedThePromotionDecision": {
+    "message": "Pipeline verified: the batch reached the promotion decision.",
+    "description": "evolution: Pipeline verified: the batch reached the promotion decision.",
+    "sourceText": "链路跑通：批次一路走到晋升裁决。"
+  },
+  "pipelineVerifiedButTheCandidateWasRejectedByA": {
+    "message": "Pipeline verified, but the candidate was rejected by a gate.",
+    "description": "evolution: Pipeline verified, but the candidate was rejected by a gate.",
+    "sourceText": "链路跑通，但候选被门禁拒绝。"
+  },
+  "pipelineIncompleteAStepOrTimeLimitWasReached": {
+    "message": "Pipeline incomplete: a step or time limit was reached.",
+    "description": "evolution: Pipeline incomplete: a step or time limit was reached.",
+    "sourceText": "链路未跑完：达到了步数或时间上限。"
+  },
+  "theBatchCouldNotStartBecauseSyntheticEvidenceDid": {
+    "message": "The batch could not start because synthetic evidence did not meet requirements.",
+    "description": "evolution: The batch could not start because synthetic evidence did not meet requirements.",
+    "sourceText": "批次没能启动，合成证据未达标。"
+  },
+  "couldNotLoadEvolutionStatusTryAgainLater": {
+    "message": "Could not load evolution status. Try again later.",
+    "description": "evolution: Could not load evolution status. Try again later.",
+    "sourceText": "没能读取进化状态，请稍后重试。"
+  },
+  "evaluationBudgetDisabledExperienceWillStillBeRecorded": {
+    "message": "Evaluation budget disabled. Experience will still be recorded.",
+    "description": "evolution: Evaluation budget disabled. Experience will still be recorded.",
+    "sourceText": "已关闭评测预算，只记录经验。"
+  },
+  "budgetSetToValueValuePerDayRunsAutomatically": {
+    "message": "Budget set to {p0} ({p1} per day). Runs automatically while idle.",
+    "description": "evolution: Budget set to {p0} ({p1} per day). Runs automatically while idle.",
+    "sourceText": "预算已设为「{p0}」（每日 {p1} 次），空闲时自动运行。",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "couldNotSaveTheBudgetTryAgain": {
+    "message": "Could not save the budget. Try again.",
+    "description": "evolution: Could not save the budget. Try again.",
+    "sourceText": "没能保存预算，请重试。"
+  },
+  "rolledBackAndPausedAutomaticEvolutionRunningGoalsKeep": {
+    "message": "Rolled back and paused automatic evolution. Running goals keep their original policy.",
+    "description": "evolution: Rolled back and paused automatic evolution. Running goals keep their original policy.",
+    "sourceText": "已回退并暂停自动进化，运行中的目标保留原策略。"
+  },
+  "couldNotRollBackThePolicyRefreshStatusAnd": {
+    "message": "Could not roll back the policy. Refresh status and try again.",
+    "description": "evolution: Could not roll back the policy. Refresh status and try again.",
+    "sourceText": "没能回退策略，请刷新状态后重试。"
+  },
+  "theDryRunDidNotCompleteTryAgainLater": {
+    "message": "The dry run did not complete. Try again later.",
+    "description": "evolution: The dry run did not complete. Try again later.",
+    "sourceText": "干跑没能完成，请稍后重试。"
+  },
+  "evaluationRequestedItStartsWhenTheWorkbenchIsIdle": {
+    "message": "Evaluation requested. It starts when the workbench is idle and budget is available, without waiting for more evidence.",
+    "description": "evolution: Evaluation requested. It starts when the workbench is idle and budget is available, without waiting for more evidence.",
+    "sourceText": "已请求立即评测：等工作台空闲且预算可用后自动开始，无需等证据攒满。"
+  },
+  "couldNotStartEvaluationMakeSureAutomaticEvolutionIs": {
+    "message": "Could not start evaluation. Make sure automatic evolution is enabled and not paused.",
+    "description": "evolution: Could not start evaluation. Make sure automatic evolution is enabled and not paused.",
+    "sourceText": "没能发起评测：请确认自动进化未处于暂停或关闭状态。"
+  },
+  "improveContextOrganizationAndCompletionChecksUsingExecutionExperience": {
+    "message": "Improve context organization and completion checks using execution experience. Candidates must pass independent evaluation and a production trial before becoming a global baseline or workbench override.",
+    "description": "evolution: Improve context organization and completion checks using execution experience. Candidates must pass independent evaluation and a production trial before becoming a global baseline or workbench override.",
+    "sourceText": "从执行经验中改进上下文整理和完成检查。候选必须先通过独立评测和生产灰度，才会成为全局基线或本工作台覆盖层。"
+  },
+  "allWorkbenches": {
+    "message": "All workbenches",
+    "description": "evolution: All workbenches",
+    "sourceText": "全部工作台"
+  },
+  "enabled": {
+    "message": "Enabled",
+    "description": "evolution: Enabled",
+    "sourceText": "已启用"
+  },
+  "evaluating": {
+    "message": "· Evaluating",
+    "description": "evolution: · Evaluating",
+    "sourceText": "· 评测中"
+  },
+  "inTrial": {
+    "message": "· In trial",
+    "description": "evolution: · In trial",
+    "sourceText": "· 灰度中"
+  },
+  "activePolicy": {
+    "message": "· Active policy",
+    "description": "evolution: · Active policy",
+    "sourceText": "· 生效策略"
+  },
+  "policyEvidencePoolEvaluable": {
+    "message": "Policy evidence pool: evaluable",
+    "description": "evolution: Policy evidence pool: evaluable",
+    "sourceText": "策略相关证据池：可评价"
+  },
+  "itemsFailed": {
+    "message": "items, failed",
+    "description": "evolution: items, failed",
+    "sourceText": "个，其中失败"
+  },
+  "items": {
+    "message": "items.",
+    "description": "evolution: items.",
+    "sourceText": "个。"
+  },
+  "valueWorkbenchesNeedRevalidation": {
+    "message": "{p0} workbenches need revalidation.",
+    "description": "evolution: {p0} workbenches need revalidation.",
+    "sourceText": "有 {p0} 个工作台需要重新验证。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "noRealEvaluationBatchesYet": {
+    "message": "No real evaluation batches yet.",
+    "description": "evolution: No real evaluation batches yet.",
+    "sourceText": "尚无真实评测批次。"
+  },
+  "globalBaseline": {
+    "message": "Global baseline",
+    "description": "evolution: Global baseline",
+    "sourceText": "全局基线"
+  },
+  "workbenchOverride": {
+    "message": "Workbench override",
+    "description": "evolution: Workbench override",
+    "sourceText": "工作台覆盖"
+  },
+  "calls": {
+    "message": "calls /",
+    "description": "evolution: calls /",
+    "sourceText": "次调用 /"
+  },
+  "tokenUsageUnknown": {
+    "message": "Token usage unknown",
+    "description": "evolution: Token usage unknown",
+    "sourceText": "Token 用量未知"
+  },
+  "loadingEvolutionStatus": {
+    "message": "Loading evolution status…",
+    "description": "evolution: Loading evolution status…",
+    "sourceText": "正在读取进化状态…"
+  },
+  "dailyModelCallLimit": {
+    "message": "Daily model call limit",
+    "description": "evolution: Daily model call limit",
+    "sourceText": "每日模型调用上限"
+  },
+  "customLimitValuePerDayChooseAPresetTo": {
+    "message": "Custom limit: {p0} per day. Choose a preset to replace it.",
+    "description": "evolution: Custom limit: {p0} per day. Choose a preset to replace it.",
+    "sourceText": "当前为自定义额度：每日 {p0} 次；选择预设可覆盖。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "theLimitResetsDailyAtUtcMidnightAndIs": {
+    "message": "The limit resets daily at UTC midnight and is used only while the workbench is idle. Regular tasks always take priority. A full evaluation takes roughly 700–1450 calls across multiple days, with a separate budget.",
+    "description": "evolution: The limit resets daily at UTC midnight and is used only while the workbench is idle. Regular tasks always take priority. A full evaluation takes roughly 700–1450 calls across multiple days, with a separate budget.",
+    "sourceText": "额度按 UTC 日重置，只在工作台空闲时使用，日常任务永远优先；一轮完整评测约需 700–1450 次调用，可跨多天完成，不影响日常任务预算。"
+  },
+  "callsToday": {
+    "message": "Calls today",
+    "description": "evolution: Calls today",
+    "sourceText": "今日调用"
+  },
+  "thisWorkbenchHasRecorded": {
+    "message": "· This workbench has recorded",
+    "description": "evolution: · This workbench has recorded",
+    "sourceText": "· 本工作台已记录"
+  },
+  "goalsIncluding": {
+    "message": "goals, including",
+    "description": "evolution: goals, including",
+    "sourceText": "个目标，其中"
+  },
+  "objectivelyEvaluable": {
+    "message": "objectively evaluable",
+    "description": "evolution: objectively evaluable",
+    "sourceText": "个可客观评价"
+  },
+  "startingAnEvaluationRequiresATotalAcrossAllWorkbenches": {
+    "message": "Starting an evaluation requires a total across all workbenches of",
+    "description": "evolution: Starting an evaluation requires a total across all workbenches of",
+    "sourceText": "启动一轮评测需要全部工作台合计"
+  },
+  "objectivelyEvaluableGoalsIncluding": {
+    "message": "objectively evaluable goals, including",
+    "description": "evolution: objectively evaluable goals, including",
+    "sourceText": "个可客观评价目标、其中"
+  },
+  "acceptanceFailuresAttributableToContextOrCompletionJudgmentCurrently": {
+    "message": "acceptance failures attributable to context or completion judgment; currently",
+    "description": "evolution: acceptance failures attributable to context or completion judgment; currently",
+    "sourceText": "个可归因于上下文或完成判断的验收失败；当前为"
+  },
+  "and": {
+    "message": "and",
+    "description": "evolution: and",
+    "sourceText": "个与"
+  },
+  "itemsSharedEvidenceImprovesTheGlobalBaselineFirstA": {
+    "message": "items. Shared evidence improves the global baseline first. A workbench override is created only when its own attributable evidence meets the threshold.",
+    "description": "evolution: items. Shared evidence improves the global baseline first. A workbench override is created only when its own attributable evidence meets the threshold.",
+    "sourceText": "个。共享证据先改进全局基线；只有本工作台自己的归因证据达到门槛时才生成覆盖层。"
+  },
+  "theCandidateIsInAProductionTrialWithA": {
+    "message": "The candidate is in a production trial with a stable share of new goals. At least 5 candidate and 5 control results are required before activation.",
+    "description": "evolution: The candidate is in a production trial with a stable share of new goals. At least 5 candidate and 5 control results are required before activation.",
+    "sourceText": "候选正在生产灰度：稳定分配一小部分新目标，至少收集 5 个候选与 5 个对照结果后才会正式生效。"
+  },
+  "thePinnedModelVersionDiffersFromTheEvaluatedVersion": {
+    "message": "The pinned model version differs from the evaluated version. The policy has reverted to baseline until reevaluation.",
+    "description": "evolution: The pinned model version differs from the evaluated version. The policy has reverted to baseline until reevaluation.",
+    "sourceText": "当前模型固定版本与策略评测版本不一致，策略已退回基线，重新评测前不会静默沿用。"
+  },
+  "eachEvaluationRoundStartsAtMostOneCandidatePer": {
+    "message": "Each evaluation round starts at most one candidate per day. After rejection, collect new evidence or use the button below to try again.",
+    "description": "evolution: Each evaluation round starts at most one candidate per day. After rejection, collect new evidence or use the button below to try again.",
+    "sourceText": "每轮评测每天最多启动一个候选；被拒绝后需要重新积累触发证据，或用下面的按钮立即再试。"
+  },
+  "evaluateNow": {
+    "message": "Evaluate now",
+    "description": "evolution: Evaluate now",
+    "sourceText": "立即评测一次"
+  },
+  "queued": {
+    "message": "Queued (",
+    "description": "evolution: Queued (",
+    "sourceText": "已排入队列（"
+  },
+  "requestWaitingForTheWorkbenchToBecomeIdle": {
+    "message": "request): waiting for the workbench to become idle.",
+    "description": "evolution: request): waiting for the workbench to become idle.",
+    "sourceText": "请求）：等待工作台空闲。"
+  },
+  "previousDecision": {
+    "message": "Previous decision:",
+    "description": "evolution: Previous decision:",
+    "sourceText": "上一轮裁决："
+  },
+  "originalPolicyPassed": {
+    "message": "· Original policy passed",
+    "description": "evolution: · Original policy passed",
+    "sourceText": "· 原策略通过"
+  },
+  "candidatePassed": {
+    "message": "/ Candidate passed",
+    "description": "evolution: / Candidate passed",
+    "sourceText": "次 / 候选通过"
+  },
+  "outOf": {
+    "message": "out of",
+    "description": "evolution: out of",
+    "sourceText": "次（共"
+  },
+  "evaluations": {
+    "message": "evaluations)",
+    "description": "evolution: evaluations)",
+    "sourceText": "次评测）"
+  },
+  "realBatchHistory": {
+    "message": "Real batch history",
+    "description": "evolution: Real batch history",
+    "sourceText": "真实批次历史"
+  },
+  "manualDryRun": {
+    "message": "Manual dry run",
+    "description": "evolution: Manual dry run",
+    "sourceText": "手工干跑"
+  },
+  "runTheFullEvaluationPipelineWithDeterministicFakesWithout": {
+    "message": "Run the full evaluation pipeline with deterministic fakes, without real model calls or changes to the status and policies above. Verify the pipeline before enough evidence is available.",
+    "description": "evolution: Run the full evaluation pipeline with deterministic fakes, without real model calls or changes to the status and policies above. Verify the pipeline before enough evidence is available.",
+    "sourceText": "用确定性替身把整条评测链路走一遍，不消耗任何真实模型调用，也不会改动上面的状态和策略。用来在证据攒够之前确认链路本身是通的。"
+  },
+  "runningDryRun": {
+    "message": "Running dry run…",
+    "description": "evolution: Running dry run…",
+    "sourceText": "正在干跑…"
+  },
+  "runADryRun": {
+    "message": "Run a dry run",
+    "description": "evolution: Run a dry run",
+    "sourceText": "干跑一次"
+  },
+  "valueValueRoundsValueCalls": {
+    "message": "{p0} {p1} rounds / {p2} calls",
+    "description": "evolution: {p0} {p1} rounds / {p2} calls",
+    "sourceText": "{p0} {p1} 轮 / {p2} 次调用",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "total": {
+    "message": "Total",
+    "description": "evolution: Total",
+    "sourceText": "合计"
+  },
+  "syntheticCallsElapsed": {
+    "message": "synthetic calls, elapsed",
+    "description": "evolution: synthetic calls, elapsed",
+    "sourceText": "次合成调用，耗时"
+  },
+  "msNoRealModelCallsWereMade": {
+    "message": "ms; no real model calls were made.",
+    "description": "evolution: ms; no real model calls were made.",
+    "sourceText": "毫秒；没有发出任何真实模型调用。"
+  },
+  "selfCheckFailedTheFakeMayNoLongerMatch": {
+    "message": "Self-check failed. The fake may no longer match the scenarios. Check their definitions.",
+    "description": "evolution: Self-check failed. The fake may no longer match the scenarios. Check their definitions.",
+    "sourceText": "自检未通过：替身可能已与当前场景不匹配，请检查场景定义。"
+  },
+  "policyHistory": {
+    "message": "Policy history",
+    "description": "evolution: Policy history",
+    "sourceText": "策略历史"
+  },
+  "noCandidatePoliciesYetEvaluationStartsAutomaticallyWhenEnough": {
+    "message": "No candidate policies yet. Evaluation starts automatically when enough evidence is available.",
+    "description": "evolution: No candidate policies yet. Evaluation starts automatically when enough evidence is available.",
+    "sourceText": "尚无候选策略，积累足够证据后自动评估。"
+  },
+  "contextOrganization": {
+    "message": "Context organization",
+    "description": "evolution: Context organization",
+    "sourceText": "上下文整理"
+  },
+  "completionChecks": {
+    "message": "Completion checks",
+    "description": "evolution: Completion checks",
+    "sourceText": "完成检查"
+  },
+  "evaluated": {
+    "message": "· Evaluated",
+    "description": "evolution: · Evaluated",
+    "sourceText": "· 已评测"
+  },
+  "timesOriginalPolicyPassed": {
+    "message": "times · Original policy passed",
+    "description": "evolution: times · Original policy passed",
+    "sourceText": "次 · 原策略通过"
+  },
+  "times": {
+    "message": "times",
+    "description": "evolution: times",
+    "sourceText": "次"
+  },
+  "rollBackCurrentPolicyAndPause": {
+    "message": "Roll back current policy and pause",
+    "description": "evolution: Roll back current policy and pause",
+    "sourceText": "回退当前策略并暂停"
+  }
+}

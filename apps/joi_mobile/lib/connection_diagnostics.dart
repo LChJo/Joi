@@ -1,3 +1,5 @@
+import 'i18n.dart';
+
 enum ConnectionStage {
   idle,
   nativeConnect,
@@ -14,20 +16,20 @@ enum ConnectionStage {
   ready,
 }
 
-String stageLabel(ConnectionStage stage) => const {
-  ConnectionStage.idle: '等待连接',
-  ConnectionStage.nativeConnect: '启动原生连接',
-  ConnectionStage.endpointBind: '创建网络端点',
-  ConnectionStage.endpointDial: '连接电脑（直连/中继）',
-  ConnectionStage.endpointRetry: '复用网络端点重拨',
-  ConnectionStage.endpointRelayWait: '等待中继就绪',
-  ConnectionStage.streamOpen: '打开控制通道',
-  ConnectionStage.transportHello: '发送传输握手',
-  ConnectionStage.handshake: '验证配对/恢复握手',
-  ConnectionStage.credentialSave: '保存设备凭据',
-  ConnectionStage.sessionReady: '安全会话已建立',
-  ConnectionStage.feedLoad: '读取首页',
-  ConnectionStage.ready: '首页已同步',
+String stageLabel(ConnectionStage stage) => {
+  ConnectionStage.idle: tr(Msg.mobileWaitingToConnect),
+  ConnectionStage.nativeConnect: tr(Msg.mobileStartingNativeConnection),
+  ConnectionStage.endpointBind: tr(Msg.mobileCreatingNetworkEndpoint),
+  ConnectionStage.endpointDial: tr(Msg.mobileConnectingToComputerDirectRelay),
+  ConnectionStage.endpointRetry: tr(Msg.mobileRedialingWithTheExistingEndpoint),
+  ConnectionStage.endpointRelayWait: tr(Msg.mobileWaitingForRelayReadiness),
+  ConnectionStage.streamOpen: tr(Msg.mobileOpeningControlChannel),
+  ConnectionStage.transportHello: tr(Msg.mobileSendingTransportHandshake),
+  ConnectionStage.handshake: tr(Msg.mobileVerifyingPairingResumeHandshake),
+  ConnectionStage.credentialSave: tr(Msg.mobileSavingDeviceCredentials),
+  ConnectionStage.sessionReady: tr(Msg.mobileSecureSessionEstablished),
+  ConnectionStage.feedLoad: tr(Msg.mobileLoadingHomePage),
+  ConnectionStage.ready: tr(Msg.mobileHomePageSynced),
 }[stage]!;
 
 // Never render arbitrary native errors, exception messages, or remote payloads.
@@ -116,7 +118,12 @@ class ConnectionDiagnostics {
   }
 
   String get summary =>
-      'joi remote-diag-3\n阶段：${stageLabel(stage)}\n'
-      '握手：${pairing ? '首次配对 pair' : '恢复连接 resume'}\n'
-      '尝试：$attempt\n最近失败：${lastFailure ?? '无'}\n${history.join('\n')}';
+      tr(Msg.mobileJoiRemoteDiag3StageValueHandshakeValueAttempts, {
+        'p0': (stageLabel(stage)).toString(),
+        'p1': (pairing ? tr(Msg.exportStatePair) : tr(Msg.exportStateResume))
+            .toString(),
+        'p2': (attempt).toString(),
+        'p3': (lastFailure ?? tr(Msg.exportStateNone)).toString(),
+        'p4': (history.join('\n')).toString(),
+      });
 }

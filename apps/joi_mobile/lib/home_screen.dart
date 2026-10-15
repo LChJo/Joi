@@ -1,3 +1,4 @@
+import 'i18n.dart';
 import 'result_reader.dart';
 import 'package:flutter/material.dart';
 
@@ -8,32 +9,38 @@ import 'connection_diagnostics_view.dart';
 import 'joi_brand.dart';
 import 'workbench_choice.dart';
 
-String statusLabel(String value) =>
-    const {
-      'ARRANGING': '正在安排',
-      'ARRANGED': '已安排',
-      'RUNNING': '执行中',
-      'REVIEWING': '复盘中',
-      'EXTENDING': '补充执行',
-      'NEEDS_ATTENTION': '需要你',
-      'FINALIZING': '整理结果',
-      'COMPLETED': '已完成',
-      'COMPLETED_WITH_GAPS': '有缺口完成',
-      'FAILED': '未完成',
-      'CANCELED': '已取消',
-      'WAITING': '等待回答',
-      'IDLE': '空闲',
-      'UNKNOWN': '状态待确认',
-      'ROUTING': '选择工作台',
-      'PLANNING': '规划中',
-      'DISPATCHING': '安排搭档',
-    }[value] ??
-    '状态更新中';
+String goalWorkbenchName(RemoteGoalCard goal) => goal.workbenchName.isEmpty
+    ? tr(Msg.commonAwaitingAssignment)
+    : goal.workbenchName;
+String goalTitle(RemoteGoalCard goal) =>
+    goal.title.isEmpty ? tr(Msg.commonInputAwaitingConfirmation) : goal.title;
 
-const _waitLabels = {
-  'CAPACITY': '等待执行容量',
-  'WORKSPACE_READ': '等待工作区可读',
-  'WORKSPACE_WRITE': '等待写入',
+String statusLabel(String value) =>
+    {
+      'ARRANGING': tr(Msg.homePlanning),
+      'ARRANGED': tr(Msg.statusScheduled),
+      'RUNNING': tr(Msg.homeExecuting),
+      'REVIEWING': tr(Msg.mobileReviewing),
+      'EXTENDING': tr(Msg.remoteExtending),
+      'NEEDS_ATTENTION': tr(Msg.homeNeedsYou),
+      'FINALIZING': tr(Msg.mobilePreparingResults),
+      'COMPLETED': tr(Msg.statusCompleted),
+      'COMPLETED_WITH_GAPS': tr(Msg.mobileCompletedWithGaps),
+      'FAILED': tr(Msg.mobileNotCompleted),
+      'CANCELED': tr(Msg.statusCanceled),
+      'WAITING': tr(Msg.mobileAwaitingAnAnswer),
+      'IDLE': tr(Msg.mobileIdle),
+      'UNKNOWN': tr(Msg.mobileStatusUnconfirmed),
+      'ROUTING': tr(Msg.homeChooseWorkbench),
+      'PLANNING': tr(Msg.mobilePlanning),
+      'DISPATCHING': tr(Msg.mobileAssigningPartners),
+    }[value] ??
+    tr(Msg.mobileUpdatingStatus);
+
+Map<String, String> get _waitLabels => {
+  'CAPACITY': tr(Msg.homeWaitingForExecutionCapacity),
+  'WORKSPACE_READ': tr(Msg.homeWaitingForWorkspaceReadAccess),
+  'WORKSPACE_WRITE': tr(Msg.homeWaitingToWrite),
 };
 
 String executionStatusLabel({
@@ -44,32 +51,45 @@ String executionStatusLabel({
   if (waitReason == 'CAPACITY') return _waitLabels['CAPACITY']!;
   return switch (executionPhase) {
     'READ_QUEUED' => _waitLabels['WORKSPACE_READ']!,
-    'READ_RUNNING' => '分析中',
+    'READ_RUNNING' => tr(Msg.homeAnalyzing),
     'WRITE_QUEUED' => _waitLabels['WORKSPACE_WRITE']!,
-    'WRITE_RUNNING' => '写入执行中',
+    'WRITE_RUNNING' => tr(Msg.homeWriting),
     _ => statusLabel(status),
   };
 }
 
 String goalProgressLabel(RemoteGoalCard goal) {
   final parts = [
-    '${goal.agentCount} 位搭档',
-    '${goal.completedWork}/${goal.totalWork} 已完成',
+    tr(Msg.mobileValuePartners, {'p0': formatUiNumber(goal.agentCount)}),
+    tr(Msg.mobileValueValueCompleted, {
+      'p0': formatUiNumber(goal.completedWork),
+      'p1': formatUiNumber(goal.totalWork),
+    }),
   ];
-  if (goal.failedWork > 0) parts.add('${goal.failedWork} 失败');
+  if (goal.failedWork > 0) {
+    parts.add(tr(Msg.homeValueFailed, {'p0': formatUiNumber(goal.failedWork)}));
+  }
   if (goal.executingWork != null || goal.resourceWaitingWork != null) {
     if ((goal.executingWork ?? 0) > 0) {
-      parts.add('${goal.executingWork} 执行中');
+      parts.add(
+        tr(Msg.homeValueExecuting, {'p0': formatUiNumber(goal.executingWork!)}),
+      );
     }
     if ((goal.resourceWaitingWork ?? 0) > 0) {
-      parts.add('${goal.resourceWaitingWork} 等待中');
+      parts.add(
+        tr(Msg.homeValueWaiting, {
+          'p0': formatUiNumber(goal.resourceWaitingWork!),
+        }),
+      );
     }
     for (final reason in goal.waitingReasons) {
       final label = _waitLabels[reason];
       if (label != null) parts.add(label);
     }
   } else if (goal.activeWork > 0) {
-    parts.add('${goal.activeWork} 进行中');
+    parts.add(
+      tr(Msg.homeValueInProgress, {'p0': formatUiNumber(goal.activeWork)}),
+    );
   }
   if (goal.stage != null) parts.add(statusLabel(goal.stage!));
   return parts.join(' · ');
@@ -98,9 +118,11 @@ class GoalCardBody extends StatelessWidget {
   final bool compact;
 
   @override
-  Widget build(BuildContext context) => InkWell(
-    onTap: !supportsHome || goal.goalId.isEmpty ? null : onOpen,
-    child: compact ? _compact(context) : _full(context),
+  Widget build(BuildContext context) => LocalizedView(
+    builder: (context) => InkWell(
+      onTap: !supportsHome || goal.goalId.isEmpty ? null : onOpen,
+      child: compact ? _compact(context) : _full(context),
+    ),
   );
 
   Widget _compact(BuildContext context) {
@@ -110,19 +132,25 @@ class GoalCardBody extends StatelessWidget {
       children: [
         Row(
           children: [
-            _WorkbenchOrb(name: goal.workbenchName),
+            _WorkbenchOrb(name: goalWorkbenchName(goal)),
             const SizedBox(width: 10),
-            Expanded(child: Text(goal.workbenchName)),
+            Expanded(child: Text(goalWorkbenchName(goal))),
             Text(statusLabel(goal.status)),
           ],
         ),
         const SizedBox(height: 6),
-        Text(goal.title, style: Theme.of(context).textTheme.titleMedium),
+        Text(goalTitle(goal), style: Theme.of(context).textTheme.titleMedium),
         if (archivedAt != null)
           Padding(
             padding: const EdgeInsets.only(top: 4),
             child: Text(
-              '${DateTime.tryParse(archivedAt)?.toLocal().toString() ?? archivedAt} 归档',
+              tr(Msg.homeValueArchived, {
+                'p0':
+                    (DateTime.tryParse(archivedAt) == null
+                            ? archivedAt
+                            : formatUiDate(DateTime.parse(archivedAt)))
+                        .toString(),
+              }),
               style: Theme.of(context).textTheme.bodySmall,
             ),
           ),
@@ -135,12 +163,12 @@ class GoalCardBody extends StatelessWidget {
     children: [
       Row(
         children: [
-          Expanded(child: Text(goal.workbenchName)),
+          Expanded(child: Text(goalWorkbenchName(goal))),
           Text(statusLabel(goal.status)),
         ],
       ),
       const SizedBox(height: 8),
-      Text(goal.title, style: Theme.of(context).textTheme.titleMedium),
+      Text(goalTitle(goal), style: Theme.of(context).textTheme.titleMedium),
       const SizedBox(height: 12),
       LinearProgressIndicator(
         value: goal.totalWork == 0
@@ -163,7 +191,10 @@ class GoalCardBody extends StatelessWidget {
           ),
         ),
       if (supportsHome)
-        const Padding(padding: EdgeInsets.only(top: 8), child: Text('查看详情 ›')),
+        Padding(
+          padding: EdgeInsets.only(top: 8),
+          child: Text(tr(Msg.mobileViewDetails)),
+        ),
     ],
   );
 }
@@ -177,6 +208,7 @@ class _WorkbenchOrb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    dependOnUiLocale(context);
     final scheme = Theme.of(context).colorScheme;
     return Container(
       width: 28,
@@ -227,16 +259,18 @@ Future<RemoteChoice?> chooseRemote(
               Text(title, style: Theme.of(context).textTheme.titleLarge),
               TextField(
                 autofocus: false,
-                decoration: const InputDecoration(labelText: '搜索名称或范围'),
+                decoration: InputDecoration(
+                  labelText: tr(Msg.mobileSearchNameOrScope),
+                ),
                 onChanged: (text) =>
                     setState(() => query = text.trim().toLowerCase()),
               ),
               if (automatic)
                 ListTile(
-                  title: const Text('由 joi 判断'),
+                  title: Text(tr(Msg.mobileLetJoiDecide)),
                   onTap: () => Navigator.pop(
                     context,
-                    const RemoteChoice('', '由 joi 判断'),
+                    RemoteChoice('', tr(Msg.mobileLetJoiDecide)),
                   ),
                 ),
               Expanded(
@@ -261,7 +295,13 @@ Future<RemoteChoice?> chooseRemote(
                               .contains(query),
                         )
                         .isEmpty)
-                      const ListTile(title: Text('没有匹配项，请在桌面配置后刷新。')),
+                      ListTile(
+                        title: Text(
+                          tr(
+                            Msg.mobileNoMatchesConfigureOnTheDesktopThenRefresh,
+                          ),
+                        ),
+                      ),
                   ],
                 ),
               ),
@@ -284,7 +324,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _composer = TextEditingController();
   String? _workbenchId;
-  String? _notice;
+  Object? _notice;
   bool _sending = false;
   bool _workbenchChoiceOpen = false;
   final _shownWorkbenchQuestions = <String>{};
@@ -355,7 +395,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
       if (mounted) setState(() => _workbenchId = null);
       if (mounted && _composer.text.trim() == text) _composer.clear();
     } catch (_) {
-      if (mounted) setState(() => _notice = '未确认发送成功，已保留输入。连接恢复后可重试。');
+      if (mounted) {
+        setState(
+          () => _notice = UiNotice(
+            Msg.mobileDeliveryWasNotConfirmedYourInputIsPreservedRetry,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _sending = false);
     }
@@ -363,32 +409,38 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    dependOnUiLocale(context);
     final state = widget.state;
     final ready = state.connection == RemoteConnectionState.connected;
     final selected = state.workbenches
         .where((b) => b.id == _workbenchId)
         .firstOrNull;
     final link = !ready
-        ? (state.connection == RemoteConnectionState.offline ? '离线' : '重连中')
+        ? (state.connection == RemoteConnectionState.offline
+              ? tr(Msg.mobileOffline)
+              : tr(Msg.mobileReconnecting))
         : switch (state.path) {
-            RemoteConnectionPath.direct => '直连',
-            RemoteConnectionPath.relay => '中继',
-            _ => '已连接',
+            RemoteConnectionPath.direct => tr(Msg.mobileDirect),
+            RemoteConnectionPath.relay => tr(Msg.mobileRelay),
+            _ => tr(Msg.mobileConnected),
           };
     final groups = <String, List<RemoteGoalCard>>{
-      '需要你': state.goals.where((g) => g.status == 'NEEDS_ATTENTION').toList(),
-      '进行中': state.goals
+      tr(Msg.homeNeedsYou): state.goals
+          .where((g) => g.status == 'NEEDS_ATTENTION')
+          .toList(),
+      tr(Msg.statusInProgress): state.goals
           .where((g) => !g.terminal && g.status != 'NEEDS_ATTENTION')
           .toList(),
-      '已结束': state.goals.where((g) => g.terminal).toList(),
+      tr(Msg.mobileFinished): state.goals.where((g) => g.terminal).toList(),
     };
     return Scaffold(
       appBar: AppBar(
         title: const JoiBrand(),
         actions: [
+          const UiLanguageButton(),
           Padding(padding: const EdgeInsets.all(16), child: Text(link)),
           IconButton(
-            tooltip: '已归档',
+            tooltip: tr(Msg.commonArchived),
             icon: const Icon(Icons.inventory_2_outlined),
             onPressed: () => Navigator.push(
               context,
@@ -405,14 +457,20 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
         child: Column(
           children: [
             if (ready && !state.supportsHome)
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(12),
-                child: Text('桌面版本较旧，升级后可阅读详情和操作卡片。'),
+                child: Text(
+                  tr(Msg.mobileTheDesktopVersionIsOlderUpdateItToRead),
+                ),
               ),
-            if (_notice ?? state.notice case final String notice)
+            if (_notice ?? state.localizedNotice ?? state.notice
+                case final Object notice)
               Padding(
                 padding: const EdgeInsets.all(12),
-                child: Text(notice, semanticsLabel: notice),
+                child: Text(
+                  noticeText(notice),
+                  semanticsLabel: noticeText(notice),
+                ),
               ),
             if (!ready) ConnectionProgress(controller: widget.controller),
             Expanded(
@@ -422,7 +480,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                     await widget.controller.refresh();
                     widget.controller.setForeground(true);
                   } catch (_) {
-                    if (mounted) setState(() => _notice = '刷新失败，已保留上次内容。');
+                    if (mounted) {
+                      setState(
+                        () => _notice = UiNotice(
+                          Msg.mobileRefreshFailedPreviousContentIsPreserved,
+                        ),
+                      );
+                    }
                   }
                 },
                 child: ListView(
@@ -437,10 +501,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           // An empty feed with a full archive is a state the user caused, so it
                           // says where the cards went instead of reading as data loss.
                           !ready
-                              ? '尚未同步首页，连接成功后会显示电脑上的任务。'
+                              ? tr(
+                                  Msg.mobileTheHomePageHasNotSyncedYetDesktopTasks,
+                                )
                               : state.archivedGoals.isEmpty
-                              ? '暂时没有任务，和 joi 说点什么吧。'
-                              : '首页没有任务了，归档的卡片在右上角「已归档」里。',
+                              ? tr(Msg.mobileNoTasksYetTellJoiWhatYouHaveIn)
+                              : tr(
+                                  Msg.mobileNoTasksOnTheHomePageArchivedCardsAre,
+                                ),
                         ),
                       ),
                     for (final group in groups.entries)
@@ -505,13 +573,13 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                 children: [
                   TextButton.icon(
                     icon: const Icon(Icons.workspaces_outline, size: 18),
-                    label: Text(selected?.name ?? '由 joi 判断'),
+                    label: Text(selected?.name ?? tr(Msg.mobileLetJoiDecide)),
                     onPressed: !ready || !state.supportsHome || _sending
                         ? null
                         : () async {
                             final choice = await chooseRemote(
                               context,
-                              '选择工作台',
+                              tr(Msg.homeChooseWorkbench),
                               state.workbenches,
                               automatic: true,
                             );
@@ -535,8 +603,8 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                           maxLines: 5,
                           maxLength: 32000,
                           onChanged: (_) => setState(() {}),
-                          decoration: const InputDecoration(
-                            hintText: '和 joi 说点什么…',
+                          decoration: InputDecoration(
+                            hintText: tr(Msg.mobileSaySomethingToJoi),
                             counterText: '',
                             border: OutlineInputBorder(),
                           ),
@@ -544,7 +612,7 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                       ),
                       const SizedBox(width: 8),
                       IconButton.filled(
-                        tooltip: '发送',
+                        tooltip: tr(Msg.remoteSend),
                         onPressed:
                             !ready ||
                                 _sending ||

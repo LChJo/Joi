@@ -1,3 +1,6 @@
+/** Fixed task input remains independent of the interface locale. */
+export const REVIEW_RETRY_TEXT = "沿用已保存的回答，重试评审。";
+
 export const MODEL_SOURCE_KINDS = [
   "kimi",
   "glm",

@@ -1,3 +1,4 @@
+import 'i18n.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -22,8 +23,9 @@ class _PairingScannerPageState extends State<PairingScannerPage> {
 
   @override
   Widget build(BuildContext context) {
+    dependOnUiLocale(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('扫描 Joi 二维码')),
+      appBar: AppBar(title: Text(tr(Msg.mobileScanAJoiQrCode))),
       body: Stack(
         fit: StackFit.expand,
         children: [
@@ -38,12 +40,14 @@ class _PairingScannerPageState extends State<PairingScannerPage> {
               ),
             ),
           ),
-          const Align(
+          Align(
             alignment: Alignment.bottomCenter,
             child: SafeArea(
               child: Padding(
                 padding: EdgeInsets.all(24),
-                child: Text('二维码只在桌面 Joi 中生成，10 分钟内有效。'),
+                child: Text(
+                  tr(Msg.mobileQrCodesAreGeneratedOnTheJoiDesktopAnd),
+                ),
               ),
             ),
           ),

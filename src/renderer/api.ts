@@ -19,10 +19,13 @@ import type { RemoteAccessStatusDto } from "../shared/remote";
 import type { AutomationDto, CreateAutomationInput, UpdateAutomationInput } from "../shared/automation";
 import type { UpdateSystemSettingsInput } from "../shared/system-settings";
 import { randomUuid } from "./random-uuid";
+import { connectDesktopLocale, localeVersion, t, errorNotice, translateNotice } from "./i18n";
 import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 
 export class ApiError extends Error {
+  get userMessage() { return errorNotice(this.code, this.message); }
+  get displayMessage() { return translateNotice(this.userMessage); }
   constructor(public readonly code: string, message: string, public readonly status: number) {
     super(message);
     this.name = "ApiError";
@@ -57,10 +60,10 @@ export class DigitalLifeApi {
       method,
     });
     if (!response.ok) {
-      const failure = await response.json().catch(() => ({ code: "request_failed", message: "请求没成功。" })) as {
+      const failure = await response.json().catch(() => ({ code: "request_failed", message: t("common.theRequestFailed") })) as {
         code?: string; message?: string;
       };
-      throw new ApiError(failure.code ?? "request_failed", failure.message ?? "请求没成功。", response.status);
+      throw new ApiError(failure.code ?? "request_failed", failure.message ?? t("common.theRequestFailed"), response.status);
     }
     if (response.status === 204) return undefined as T;
     return response.json() as Promise<T>;
@@ -475,6 +478,7 @@ export class DigitalLifeApi {
 }
 
 export async function createApi(): Promise<{ api: DigitalLifeApi; configured: boolean; desktop: boolean }> {
+  const startupLocaleVersion = localeVersion();
   const bridge = window.digitalLifeDesktop;
   const runtimeInfo = bridge === undefined ? undefined : await bridge.getRuntimeInfo();
   const origin = import.meta.env.DEV ? window.location.origin : runtimeInfo?.apiOrigin ?? window.location.origin;
@@ -484,6 +488,7 @@ export async function createApi(): Promise<{ api: DigitalLifeApi; configured: bo
     const nonce = await bridge.createBootstrapNonce();
     const grant = await api.bootstrap(nonce.nonce);
     api.setCsrfToken(grant.csrfToken);
+    connectDesktopLocale({ preference: runtimeInfo?.uiLocale, systemLanguages: runtimeInfo?.systemLanguages ?? navigator.languages, save: async (uiLocale) => { await api.updateSettings({ uiLocale }); } }, startupLocaleVersion);
   }
   return { api, configured, desktop: bridge !== undefined };
 }

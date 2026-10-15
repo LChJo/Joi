@@ -1,3 +1,4 @@
+import { setDesktopTestLocale } from "./locale";
 import { _electron as electron, expect, test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
@@ -37,6 +38,7 @@ test("statistics navigation, filters, hover tooltips, goal routing and desktop t
   try {
     expect(await application.evaluate(({ app }) => app.getPath("userData"))).toContain("joi-e2e");
     const page = await application.firstWindow();
+    await setDesktopTestLocale(page, "zh-CN");
     const queries: StatisticsQuery[] = [];
     await page.route("**/api/v1/**", async (route) => {
       const url = new URL(route.request().url());

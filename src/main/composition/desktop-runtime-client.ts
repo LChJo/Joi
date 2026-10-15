@@ -1,5 +1,6 @@
 import { MessageChannel, Worker } from "node:worker_threads";
 import type { DesktopBootstrapNonce } from "../../shared/product.js";
+import type { UiLocalePreference } from "../../shared/i18n/index.js";
 import { WorkerRpc } from "../infrastructure/runtime/worker-rpc.js";
 import type { ExportRecord } from "../infrastructure/persistence/sqlite-result-exports.js";
 import type { BitmapTranscodeInput } from "../infrastructure/artifacts/bitmap-transcoder.js";
@@ -18,6 +19,7 @@ export async function startDesktopRuntime(configuration: DesktopRuntimeConfigura
   let ready = false;
   let closePromise: Promise<void> | undefined;
   const rpc = new WorkerRpc(port1, {
+    setUiLocale: (preference) => desktop.setUiLocale?.(preference as UiLocalePreference),
     encrypt: (token) => desktop.vault.encrypt(token as string),
     decrypt: (ciphertext) => desktop.vault.decrypt(ciphertext as Uint8Array),
     getLaunchAtLogin: () => desktop.getLaunchAtLogin(),

@@ -1,0 +1,759 @@
+{
+  "modelConnections": {
+    "message": "Model connections",
+    "description": "settings: Model connections",
+    "sourceText": "模型网络"
+  },
+  "skills": {
+    "message": "Skills",
+    "description": "settings: Skills",
+    "sourceText": "技能"
+  },
+  "deviceConnections": {
+    "message": "Device connections",
+    "description": "settings: Device connections",
+    "sourceText": "设备连接"
+  },
+  "security": {
+    "message": "Security",
+    "description": "settings: Security",
+    "sourceText": "安全"
+  },
+  "data": {
+    "message": "Data",
+    "description": "settings: Data",
+    "sourceText": "数据"
+  },
+  "diagnostics": {
+    "message": "Diagnostics",
+    "description": "settings: Diagnostics",
+    "sourceText": "诊断"
+  },
+  "joiIsPreparingThePage": {
+    "message": "joi is preparing the page",
+    "description": "settings: joi is preparing the page",
+    "sourceText": "joi 正在整理页面"
+  },
+  "mobileConnectionReady": {
+    "message": "Mobile connection ready",
+    "description": "settings: Mobile connection ready",
+    "sourceText": "手机链路已就绪"
+  },
+  "establishingASecureConnection": {
+    "message": "Establishing a secure connection",
+    "description": "settings: Establishing a secure connection",
+    "sourceText": "正在建立安全链路"
+  },
+  "notEnabled": {
+    "message": "Not enabled",
+    "description": "settings: Not enabled",
+    "sourceText": "尚未开启"
+  },
+  "theNativeConnectionIsTemporarilyUnavailable": {
+    "message": "The native connection is temporarily unavailable",
+    "description": "settings: The native connection is temporarily unavailable",
+    "sourceText": "原生链路暂时不可用"
+  },
+  "couldNotLoadRemoteConnectionStatus": {
+    "message": "Could not load remote connection status.",
+    "description": "settings: Could not load remote connection status.",
+    "sourceText": "没能读取远程连接状态。"
+  },
+  "theJoiMobileConnectionIsReady": {
+    "message": "The joi mobile connection is ready.",
+    "description": "settings: The joi mobile connection is ready.",
+    "sourceText": "Joi 手机链路已就绪。"
+  },
+  "savingRemoteSettings": {
+    "message": "Saving remote settings…",
+    "description": "settings: Saving remote settings…",
+    "sourceText": "正在保存远程设置…"
+  },
+  "settingsSavedJoiIsEstablishingASecureConnection": {
+    "message": "Settings saved. joi is establishing a secure connection.",
+    "description": "settings: Settings saved. joi is establishing a secure connection.",
+    "sourceText": "设置已保存，Joi 正在建立安全链路。"
+  },
+  "remoteSettingsCouldNotBeSaved": {
+    "message": "Remote settings could not be saved.",
+    "description": "settings: Remote settings could not be saved.",
+    "sourceText": "远程设置未保存。"
+  },
+  "generatingASingleUsePairingQrCode": {
+    "message": "Generating a single-use pairing QR code…",
+    "description": "settings: Generating a single-use pairing QR code…",
+    "sourceText": "正在生成一次性绑定二维码…"
+  },
+  "theQrCodeExpiresIn10MinutesOrImmediately": {
+    "message": "The QR code expires in 10 minutes or immediately after pairing.",
+    "description": "settings: The QR code expires in 10 minutes or immediately after pairing.",
+    "sourceText": "二维码将在 10 分钟后失效，绑定成功后也会立即失效。"
+  },
+  "couldNotGenerateThePairingQrCode": {
+    "message": "Could not generate the pairing QR code.",
+    "description": "settings: Could not generate the pairing QR code.",
+    "sourceText": "没能生成绑定二维码。"
+  },
+  "thisPhoneHasBeenRemoved": {
+    "message": "This phone has been removed.",
+    "description": "settings: This phone has been removed.",
+    "sourceText": "这台手机已移除。"
+  },
+  "couldNotRemoveThisPhone": {
+    "message": "Could not remove this phone.",
+    "description": "settings: Could not remove this phone.",
+    "sourceText": "没能移除这台手机。"
+  },
+  "joiMobile": {
+    "message": "joi mobile",
+    "description": "settings: joi mobile",
+    "sourceText": "Joi 手机"
+  },
+  "theAndroidAppConnectsDirectlyOverLanWhenPossible": {
+    "message": "The Android app connects directly over LAN when possible and uses an iroh relay elsewhere. Access is limited to task cards and text input, with no settings, files, or dangerous operations.",
+    "description": "settings: The Android app connects directly over LAN when possible and uses an iroh relay elsewhere. Access is limited to task cards and text input, with no settings, files, or dangerous operations.",
+    "sourceText": "Android App 会优先局域网直连，离开局域网后自动通过 iroh 中继继续连接。只开放任务卡片与文字输入，不开放设置、文件或危险操作。"
+  },
+  "loading": {
+    "message": "Loading",
+    "description": "settings: Loading",
+    "sourceText": "正在读取"
+  },
+  "allowPairedJoiAndroidAppsToConnect": {
+    "message": "Allow paired joi Android apps to connect",
+    "description": "settings: Allow paired joi Android apps to connect",
+    "sourceText": "允许已绑定的 Joi Android App 连接"
+  },
+  "irohRelayUrl": {
+    "message": "iroh relay URL",
+    "description": "settings: iroh relay URL",
+    "sourceText": "iroh 中继地址"
+  },
+  "saveRemoteSettings": {
+    "message": "Save remote settings",
+    "description": "settings: Save remote settings",
+    "sourceText": "保存远程设置"
+  },
+  "generatePairingQrCode": {
+    "message": "Generate pairing QR code",
+    "description": "settings: Generate pairing QR code",
+    "sourceText": "生成绑定二维码"
+  },
+  "joiAndroidAppPairingQrCode": {
+    "message": "joi Android app pairing QR code",
+    "description": "settings: joi Android app pairing QR code",
+    "sourceText": "Joi Android App 绑定二维码"
+  },
+  "scanWithTheJoiApp": {
+    "message": "Scan with the joi app",
+    "description": "settings: Scan with the joi app",
+    "sourceText": "在 Joi App 中扫码"
+  },
+  "expirySingleUseOnly": {
+    "message": "expiry · Single use only",
+    "description": "settings: expiry · Single use only",
+    "sourceText": "前有效 · 仅可绑定一次"
+  },
+  "pairingKeysExistOnlyInTheQrCodeAnd": {
+    "message": "Pairing keys exist only in the QR code and secure storage on both devices. The relay cannot read session content.",
+    "description": "settings: Pairing keys exist only in the QR code and secure storage on both devices. The relay cannot read session content.",
+    "sourceText": "配对密钥只存在于二维码与两端安全存储中，中继无法读取会话内容。"
+  },
+  "noPhonesPairedYet": {
+    "message": "No phones paired yet.",
+    "description": "settings: No phones paired yet.",
+    "sourceText": "还没有绑定手机。"
+  },
+  "lastConnected": {
+    "message": "Last connected",
+    "description": "settings: Last connected",
+    "sourceText": "最近连接"
+  },
+  "removeValue": {
+    "message": "Remove {p0}",
+    "description": "settings: Remove {p0}",
+    "sourceText": "移除 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "connectionDiagnosticsLatest50": {
+    "message": "Connection diagnostics (latest 50)",
+    "description": "settings: Connection diagnostics (latest 50)",
+    "sourceText": "连接诊断（最近 50 条）"
+  },
+  "onlyStagesAndErrorCodesAreRecordedWithoutQr": {
+    "message": "Only stages and error codes are recorded, without QR codes or messages. Host readiness does not mean a phone is connected.",
+    "description": "settings: Only stages and error codes are recorded, without QR codes or messages. Host readiness does not mean a phone is connected.",
+    "sourceText": "仅记录阶段和错误码，不含二维码或消息。主机就绪不代表手机已连接。"
+  },
+  "noConnectionEventsInThisSession": {
+    "message": "No connection events in this session.",
+    "description": "settings: No connection events in this session.",
+    "sourceText": "本次运行尚无连接记录。"
+  },
+  "privateExecutionContext": {
+    "message": "Private execution context",
+    "description": "settings: Private execution context",
+    "sourceText": "私有执行上下文"
+  },
+  "partnerInstancesWorkingMemoryAndResultsAreIsolatedBy": {
+    "message": "Partner instances, working memory, and results are isolated by workbench. This page shows safe metadata only. Open the workbench context center for details.",
+    "description": "settings: Partner instances, working memory, and results are isolated by workbench. This page shows safe metadata only. Open the workbench context center for details.",
+    "sourceText": "搭档实例、工作记忆和结果正文现在按工作台隔离；管理页只显示安全元数据，请到工作台上下文中心查看状态。"
+  },
+  "checkingLocalDataInTheBackground": {
+    "message": "Checking local data in the background…",
+    "description": "settings: Checking local data in the background…",
+    "sourceText": "正在后台检查本机数据…"
+  },
+  "localDataCheckCompleted": {
+    "message": "Local data check completed.",
+    "description": "settings: Local data check completed.",
+    "sourceText": "本机数据检查已完成。"
+  },
+  "theLocalDataCheckCouldNotBeCompleted": {
+    "message": "The local data check could not be completed.",
+    "description": "settings: The local data check could not be completed.",
+    "sourceText": "本机数据检查暂时无法完成。"
+  },
+  "checking": {
+    "message": "Checking",
+    "description": "settings: Checking",
+    "sourceText": "检查中"
+  },
+  "healthy": {
+    "message": "Healthy",
+    "description": "settings: Healthy",
+    "sourceText": "正常"
+  },
+  "notChecked": {
+    "message": "Not checked",
+    "description": "settings: Not checked",
+    "sourceText": "尚未检查"
+  },
+  "checkNeeded": {
+    "message": "Check needed",
+    "description": "settings: Check needed",
+    "sourceText": "需要检查"
+  },
+  "joiIsKeepingAnEyeOnThings": {
+    "message": "joi is keeping an eye on things",
+    "description": "settings: joi is keeping an eye on things",
+    "sourceText": "joi 一直在留意"
+  },
+  "joiRuntimeStatus": {
+    "message": "joi runtime status",
+    "description": "settings: joi runtime status",
+    "sourceText": "joi 的运行状态"
+  },
+  "aBriefStatusOverviewWithoutMessageContentCredentialsOr": {
+    "message": "A brief status overview, without message content, credentials, or file locations.",
+    "description": "settings: A brief status overview, without message content, credentials, or file locations.",
+    "sourceText": "joi 的简要状态，不会显示消息正文、密钥或文件位置。"
+  },
+  "exportDiagnostics": {
+    "message": "Export diagnostics",
+    "description": "settings: Export diagnostics",
+    "sourceText": "导出诊断"
+  },
+  "checkLocalDataAgain": {
+    "message": "Check local data again",
+    "description": "settings: Check local data again",
+    "sourceText": "重新检查本机数据"
+  },
+  "allWorkHasBeenStoppedUnconfirmedPartnerActivityIs": {
+    "message": "All work has been stopped. Unconfirmed partner activity is preserved.",
+    "description": "settings: All work has been stopped. Unconfirmed partner activity is preserved.",
+    "sourceText": "所有工作已紧急暂停，未确认的搭档过程仍会保留。"
+  },
+  "emergencyStopAllWork": {
+    "message": "Emergency stop all work",
+    "description": "settings: Emergency stop all work",
+    "sourceText": "紧急暂停全部工作"
+  },
+  "unavailable": {
+    "message": "Unavailable",
+    "description": "settings: Unavailable",
+    "sourceText": "无法"
+  },
+  "dataVersion": {
+    "message": "Data version",
+    "description": "settings: Data version",
+    "sourceText": "数据版本"
+  },
+  "workPartners": {
+    "message": "Work partners",
+    "description": "settings: Work partners",
+    "sourceText": "工作搭档"
+  },
+  "collaborating": {
+    "message": "Collaborating",
+    "description": "settings: Collaborating",
+    "sourceText": "正在协作"
+  },
+  "takingAction": {
+    "message": "Taking action",
+    "description": "settings: Taking action",
+    "sourceText": "正在行动"
+  },
+  "waitingToProcess": {
+    "message": "Waiting to process",
+    "description": "settings: Waiting to process",
+    "sourceText": "等待处理"
+  },
+  "statusUpdates": {
+    "message": "Status updates",
+    "description": "settings: Status updates",
+    "sourceText": "状态更新"
+  },
+  "localData": {
+    "message": "Local data",
+    "description": "settings: Local data",
+    "sourceText": "本机数据"
+  },
+  "dataHealthy": {
+    "message": "Data healthy",
+    "description": "settings: Data healthy",
+    "sourceText": "数据正常"
+  },
+  "dataNeedsAttention": {
+    "message": "Data needs attention",
+    "description": "settings: Data needs attention",
+    "sourceText": "数据有问题"
+  },
+  "dailySchedule": {
+    "message": "Daily schedule",
+    "description": "settings: Daily schedule",
+    "sourceText": "日常安排"
+  },
+  "routines": {
+    "message": "routines ·",
+    "description": "settings: routines ·",
+    "sourceText": "个作息 ·"
+  },
+  "alarms": {
+    "message": "alarms",
+    "description": "settings: alarms",
+    "sourceText": "个闹钟"
+  },
+  "valueActionsNeedConfirmation": {
+    "message": "{p0} actions need confirmation",
+    "description": "settings: {p0} actions need confirmation",
+    "sourceText": "{p0} 次行动需要确认",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "accessFromOtherDevices": {
+    "message": "Access from other devices",
+    "description": "settings: Access from other devices",
+    "sourceText": "其他设备访问"
+  },
+  "thisComputerOnly": {
+    "message": "This computer only",
+    "description": "settings: This computer only",
+    "sourceText": "仅本机"
+  },
+  "configured": {
+    "message": "Configured",
+    "description": "settings: Configured",
+    "sourceText": "已配置"
+  },
+  "signedInDevices": {
+    "message": "Signed-in devices",
+    "description": "settings: Signed-in devices",
+    "sourceText": "已登录设备"
+  },
+  "activeDevices": {
+    "message": "active devices",
+    "description": "settings: active devices",
+    "sourceText": "个活跃设备"
+  },
+  "protected": {
+    "message": "Protected",
+    "description": "settings: Protected",
+    "sourceText": "受保护"
+  },
+  "waitingForYourDecision": {
+    "message": "Waiting for your decision",
+    "description": "settings: Waiting for your decision",
+    "sourceText": "等你决定"
+  },
+  "pendingItems": {
+    "message": "pending items",
+    "description": "settings: pending items",
+    "sourceText": "项待处理"
+  },
+  "needsAttention": {
+    "message": "Needs attention",
+    "description": "settings: Needs attention",
+    "sourceText": "需要关注"
+  },
+  "couldNotLoadTheseSettings": {
+    "message": "Could not load these settings.",
+    "description": "settings: Could not load these settings.",
+    "sourceText": "没能读取这些设置。"
+  },
+  "couldNotLoadRuntimeStatus": {
+    "message": "Could not load runtime status.",
+    "description": "settings: Could not load runtime status.",
+    "sourceText": "没能读取运行状态。"
+  },
+  "couldNotRefreshRuntimeStatus": {
+    "message": "Could not refresh runtime status.",
+    "description": "settings: Could not refresh runtime status.",
+    "sourceText": "没能刷新运行状态。"
+  },
+  "savingABackup": {
+    "message": "Saving a backup…",
+    "description": "settings: Saving a backup…",
+    "sourceText": "正在保存备份…"
+  },
+  "backupCompletedAndVerifiedByJoi": {
+    "message": "Backup completed and verified by joi.",
+    "description": "settings: Backup completed and verified by joi.",
+    "sourceText": "备份已完成，joi 检查过了。"
+  },
+  "backupFailed": {
+    "message": "Backup failed.",
+    "description": "settings: Backup failed.",
+    "sourceText": "备份没成功。"
+  },
+  "joiWillIsolateCurrentDataAndSignOutOther": {
+    "message": "joi will isolate current data and sign out other devices before restoring. You will need to enter partner credentials again, and the app will restart. Continue?",
+    "description": "settings: joi will isolate current data and sign out other devices before restoring. You will need to enter partner credentials again, and the app will restart. Continue?",
+    "sourceText": "恢复前 joi 会隔离当前数据并退出其他设备。恢复后需要重新输入搭档密钥，应用也会重启。继续吗？"
+  },
+  "checkingTheBackupAndPreparingToRestart": {
+    "message": "Checking the backup and preparing to restart…",
+    "description": "settings: Checking the backup and preparing to restart…",
+    "sourceText": "正在检查备份并准备重启…"
+  },
+  "restoreQueuedTheAppWillRestartShortly": {
+    "message": "Restore queued. The app will restart shortly.",
+    "description": "settings: Restore queued. The app will restart shortly.",
+    "sourceText": "恢复已排队，应用即将重启。"
+  },
+  "restoreCouldNotBeStarted": {
+    "message": "Restore could not be started.",
+    "description": "settings: Restore could not be started.",
+    "sourceText": "恢复没开始。"
+  },
+  "theAccessPortMustBeBetween1024And65535": {
+    "message": "The access port must be between 1024 and 65535.",
+    "description": "settings: The access port must be between 1024 and 65535.",
+    "sourceText": "访问端口必须在 1024 到 65535 之间。"
+  },
+  "chooseThisComputerSLanAddressFirst": {
+    "message": "Choose this computer''s LAN address first.",
+    "description": "settings: Choose this computer's LAN address first.",
+    "sourceText": "请先选择这台电脑的局域网地址。"
+  },
+  "acknowledgeTheRisksOfUnencryptedLanAccessFirst": {
+    "message": "Acknowledge the risks of unencrypted LAN access first.",
+    "description": "settings: Acknowledge the risks of unencrypted LAN access first.",
+    "sourceText": "请先确认局域网明文连接风险。"
+  },
+  "savingLocalSettings": {
+    "message": "Saving local settings…",
+    "description": "settings: Saving local settings…",
+    "sourceText": "正在保存本机设置…"
+  },
+  "theLanConfigurationHasNotBeenAppliedToThe": {
+    "message": "The LAN configuration has not been applied to the current process.",
+    "description": "settings: The LAN configuration has not been applied to the current process.",
+    "sourceText": "LAN 配置尚未应用到当前进程。"
+  },
+  "settingsSavedLanAccessIsNowActive": {
+    "message": "Settings saved. LAN access is now active.",
+    "description": "settings: Settings saved. LAN access is now active.",
+    "sourceText": "设置已保存，局域网访问已立即生效。"
+  },
+  "settingsSavedButTheNewAddressIsNotActive": {
+    "message": "Settings saved, but the new address is not active yet. The previous listener remains available.",
+    "description": "settings: Settings saved, but the new address is not active yet. The previous listener remains available.",
+    "sourceText": "设置已保存，但新地址暂未应用，当前仍保留原监听。"
+  },
+  "settingsSavedButTheAddressOrPortCannotBe": {
+    "message": "Settings saved, but the address or port cannot be bound. Local access is still available.",
+    "description": "settings: Settings saved, but the address or port cannot be bound. Local access is still available.",
+    "sourceText": "设置已保存，但当前地址或端口暂时无法监听；本机访问仍可用。"
+  },
+  "settingsSavedLanAccessIsNowDisabled": {
+    "message": "Settings saved. LAN access is now disabled.",
+    "description": "settings: Settings saved. LAN access is now disabled.",
+    "sourceText": "设置已保存，局域网访问已关闭。"
+  },
+  "settingsCouldNotBeSaved": {
+    "message": "Settings could not be saved.",
+    "description": "settings: Settings could not be saved.",
+    "sourceText": "设置未保存。"
+  },
+  "adminPasswordUpdatedOtherDevicesMustSignInAgain": {
+    "message": "Admin password updated. Other devices must sign in again.",
+    "description": "settings: Admin password updated. Other devices must sign in again.",
+    "sourceText": "管理密码已更新，其他设备需要重新登录。"
+  },
+  "passwordCouldNotBeUpdated": {
+    "message": "Password could not be updated.",
+    "description": "settings: Password could not be updated.",
+    "sourceText": "密码没更新。"
+  },
+  "lanAddressListRefreshed": {
+    "message": "LAN address list refreshed.",
+    "description": "settings: LAN address list refreshed.",
+    "sourceText": "局域网地址列表已刷新。"
+  },
+  "couldNotRefreshLanAddresses": {
+    "message": "Could not refresh LAN addresses.",
+    "description": "settings: Could not refresh LAN addresses.",
+    "sourceText": "没能刷新局域网地址。"
+  },
+  "localAccessOnly": {
+    "message": "Local access only",
+    "description": "settings: Local access only",
+    "sourceText": "仅限本机"
+  },
+  "sharingIsTemporarilyUnavailable": {
+    "message": "Sharing is temporarily unavailable",
+    "description": "settings: Sharing is temporarily unavailable",
+    "sourceText": "暂时无法开放"
+  },
+  "availableToTrustedDevices": {
+    "message": "Available to trusted devices",
+    "description": "settings: Available to trusted devices",
+    "sourceText": "已对可信设备开放"
+  },
+  "newConfigurationNotApplied": {
+    "message": "New configuration not applied",
+    "description": "settings: New configuration not applied",
+    "sourceText": "新配置未应用"
+  },
+  "makeJoiWorkYourWay": {
+    "message": "Make joi work your way",
+    "description": "settings: Make joi work your way",
+    "sourceText": "按你的方式使用 joi"
+  },
+  "joiSettings": {
+    "message": "joi settings",
+    "description": "settings: joi settings",
+    "sourceText": "joi 的设置"
+  },
+  "manageModelConnectionsDevicesSecurityAndData": {
+    "message": "Manage model connections, devices, security, and data.",
+    "description": "settings: Manage model connections, devices, security, and data.",
+    "sourceText": "管理模型网络、设备连接、安全和数据。"
+  },
+  "settingsCategories": {
+    "message": "Settings categories",
+    "description": "settings: Settings categories",
+    "sourceText": "设置分类"
+  },
+  "devicesOnTheSameTrustedNetworkCanAccessJoi": {
+    "message": "Devices on the same trusted network can access joi. joi will not change network settings automatically.",
+    "description": "settings: Devices on the same trusted network can access joi. joi will not change network settings automatically.",
+    "sourceText": "同一可信网络里的设备可以找到 joi。joi 不会自动改网络设置。"
+  },
+  "currentAddressValueValue": {
+    "message": "Current address {p0}:{p1}",
+    "description": "settings: Current address {p0}:{p1}",
+    "sourceText": "当前地址 {p0}:{p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "stillListeningOnValueValueTheNewConfigurationIs": {
+    "message": "Still listening on {p0}:{p1}; the new configuration is pending",
+    "description": "settings: Still listening on {p0}:{p1}; the new configuration is pending",
+    "sourceText": "当前仍在 {p0}:{p1} 监听，新配置等待应用",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "allowLanDeviceAccess": {
+    "message": "Allow LAN device access",
+    "description": "settings: Allow LAN device access",
+    "sourceText": "允许局域网设备访问"
+  },
+  "thisComputerSLanAddress": {
+    "message": "This computer''s LAN address",
+    "description": "settings: This computer's LAN address",
+    "sourceText": "这台电脑的局域网地址"
+  },
+  "chooseAnAddress": {
+    "message": "Choose an address",
+    "description": "settings: Choose an address",
+    "sourceText": "请选择地址"
+  },
+  "currentlyUnavailable": {
+    "message": "(currently unavailable)",
+    "description": "settings: (currently unavailable)",
+    "sourceText": "（当前不可用）"
+  },
+  "accessPort": {
+    "message": "Access port",
+    "description": "settings: Access port",
+    "sourceText": "访问端口"
+  },
+  "iUnderstandThatOthersOnThisNetworkMaySee": {
+    "message": "I understand that others on this network may see unencrypted connection content",
+    "description": "settings: I understand that others on this network may see unencrypted connection content",
+    "sourceText": "我明白同一网络中的其他人可能看到未加密的连接内容"
+  },
+  "launchJoiAtLogin": {
+    "message": "Launch joi at login",
+    "description": "settings: Launch joi at login",
+    "sourceText": "开机时启动 joi"
+  },
+  "saving": {
+    "message": "Saving…",
+    "description": "settings: Saving…",
+    "sourceText": "保存中…"
+  },
+  "saveAccessSettings": {
+    "message": "Save access settings",
+    "description": "settings: Save access settings",
+    "sourceText": "保存访问设置"
+  },
+  "refreshAddresses": {
+    "message": "Refresh addresses",
+    "description": "settings: Refresh addresses",
+    "sourceText": "刷新地址"
+  },
+  "passwordAndDevices": {
+    "message": "Password and devices",
+    "description": "settings: Password and devices",
+    "sourceText": "管理密码与设备"
+  },
+  "joiShowsOnlyDeviceTypesAndRecentActivityChanging": {
+    "message": "joi shows only device types and recent activity. Changing the password signs out other devices, while this computer stays signed in.",
+    "description": "settings: joi shows only device types and recent activity. Changing the password signs out other devices, while this computer stays signed in.",
+    "sourceText": "joi 只显示设备类型和最近活动时间。改了密码后其他设备需要重新登录，本机不受影响。"
+  },
+  "currentDevice": {
+    "message": "Current device",
+    "description": "settings: Current device",
+    "sourceText": "当前设备"
+  },
+  "anotherDesktopWindow": {
+    "message": "Another desktop window",
+    "description": "settings: Another desktop window",
+    "sourceText": "另一台本机窗口"
+  },
+  "lanDeviceValue": {
+    "message": "LAN device {p0}",
+    "description": "settings: LAN device {p0}",
+    "sourceText": "局域网设备 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "currentPassword": {
+    "message": "Current password",
+    "description": "settings: Current password",
+    "sourceText": "当前密码"
+  },
+  "newPassword": {
+    "message": "New password",
+    "description": "settings: New password",
+    "sourceText": "新密码"
+  },
+  "changePassword": {
+    "message": "Change password",
+    "description": "settings: Change password",
+    "sourceText": "修改密码"
+  },
+  "allLanDevicesHaveBeenSignedOut": {
+    "message": "All LAN devices have been signed out.",
+    "description": "settings: All LAN devices have been signed out.",
+    "sourceText": "所有局域网设备已退出。"
+  },
+  "signOutAllLanDevices": {
+    "message": "Sign out all LAN devices",
+    "description": "settings: Sign out all LAN devices",
+    "sourceText": "退出所有局域网设备"
+  },
+  "lowDiskSpace": {
+    "message": "Low disk space",
+    "description": "settings: Low disk space",
+    "sourceText": "磁盘空间不足"
+  },
+  "credentialsStoredSeparately": {
+    "message": "Credentials stored separately",
+    "description": "settings: Credentials stored separately",
+    "sourceText": "密钥已隔离保存"
+  },
+  "backupAndRestore": {
+    "message": "Backup and restore",
+    "description": "settings: Backup and restore",
+    "sourceText": "备份与恢复"
+  },
+  "backupsExcludePartnerCredentialsAfterRestoringOtherDevicesMust": {
+    "message": "Backups exclude partner credentials. After restoring, other devices must sign in again, and unfinished collaboration awaits your confirmation.",
+    "description": "settings: Backups exclude partner credentials. After restoring, other devices must sign in again, and unfinished collaboration awaits your confirmation.",
+    "sourceText": "备份不含搭档密钥。恢复后其他设备需要重新登录，未完成的协作会等你确认。"
+  },
+  "dataFormatV": {
+    "message": "Data format v",
+    "description": "settings: Data format v",
+    "sourceText": "数据格式 v"
+  },
+  "availableBackups": {
+    "message": "available backups",
+    "description": "settings: available backups",
+    "sourceText": "份可用备份"
+  },
+  "createBackup": {
+    "message": "Create backup",
+    "description": "settings: Create backup",
+    "sourceText": "创建备份"
+  },
+  "couldNotLoadTheLatestStatus": {
+    "message": "Could not load the latest status.",
+    "description": "settings: Could not load the latest status.",
+    "sourceText": "没能整理出最新状态。"
+  },
+  "statusRefreshesAutomatically": {
+    "message": "Status refreshes automatically",
+    "description": "settings: Status refreshes automatically",
+    "sourceText": "状态自动刷新"
+  },
+  "connectingToStatusUpdates": {
+    "message": "Connecting to status updates",
+    "description": "settings: Connecting to status updates",
+    "sourceText": "正在连接状态"
+  },
+  "statusUpdatesDisconnected": {
+    "message": "Status updates disconnected",
+    "description": "settings: Status updates disconnected",
+    "sourceText": "状态刷新暂时断开"
+  },
+  "youCanStillUseThisPageAndRefreshStatus": {
+    "message": "You can still use this page and refresh status manually.",
+    "description": "settings: You can still use this page and refresh status manually.",
+    "sourceText": "页面仍可使用，可以手动刷新状态。"
+  },
+  "joiRefreshesStatusAtRegularIntervals": {
+    "message": "joi refreshes status at regular intervals.",
+    "description": "settings: joi refreshes status at regular intervals.",
+    "sourceText": "joi 会按固定节奏刷新最新状态。"
+  },
+  "mainNavigation": {
+    "message": "Main navigation",
+    "description": "settings: Main navigation",
+    "sourceText": "主导航"
+  },
+  "reconnectStatusUpdates": {
+    "message": "Reconnect status updates",
+    "description": "settings: Reconnect status updates",
+    "sourceText": "重新连接状态更新"
+  },
+  "signOut": {
+    "message": "Sign out",
+    "description": "settings: Sign out",
+    "sourceText": "退出登录"
+  }
+}

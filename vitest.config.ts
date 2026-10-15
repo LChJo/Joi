@@ -18,7 +18,7 @@ export default defineConfig({
         "src/shared/**/*.ts",
         "src/renderer/**/*.{ts,tsx}"
       ],
-      exclude: ["src/renderer/main.tsx", "src/renderer/remote-connection.ts", "src/renderer/vite-env.d.ts"],
+      exclude: ["src/renderer/main.tsx", "src/renderer/remote-connection.ts", "src/renderer/vite-env.d.ts", "src/shared/i18n/generated.ts"],
       thresholds: {
         statements: 90,
         branches: 90,

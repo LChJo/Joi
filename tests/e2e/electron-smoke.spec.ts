@@ -1,3 +1,4 @@
+import { setDesktopTestLocale } from "./locale";
 import { _electron as electron, expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
@@ -131,6 +132,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
 
   try {
     const window = await application.firstWindow();
+    await setDesktopTestLocale(window, "zh-CN");
     await expect(window).toHaveTitle("joi");
     expect(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMenuBarVisible())).toBe(false);
     await expect(window.getByRole("heading", { name: "先帮 joi 设个密码。" })).toBeVisible();

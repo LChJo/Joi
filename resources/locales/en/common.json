@@ -1,0 +1,208 @@
+{
+  "language": {
+    "message": "Language",
+    "description": "Language preference heading"
+  },
+  "system": {
+    "message": "Follow system",
+    "description": "Automatic interface language"
+  },
+  "languageSaveFailed": {
+    "message": "Language changed for this session, but could not be saved. Try again.",
+    "description": "Preference persistence failure"
+  },
+  "itemCount": {
+    "message": "{count, plural, one {{count} item} other {{count} items}}",
+    "description": "Item count",
+    "placeholders": {
+      "count": "number"
+    }
+  },
+  "requestFailed": {
+    "message": "The request could not be completed. Please try again.",
+    "description": "Safe fallback for an unknown error"
+  },
+  "trayOpen": {
+    "message": "Open joi",
+    "description": "Tray open action"
+  },
+  "trayStop": {
+    "message": "Emergency stop all agents",
+    "description": "Tray emergency stop"
+  },
+  "trayLogin": {
+    "message": "Launch at login",
+    "description": "Tray login toggle"
+  },
+  "trayQuit": {
+    "message": "Quit joi",
+    "description": "Tray quit action"
+  },
+  "directoryPicker": {
+    "message": "Bind workbench working directory",
+    "description": "Native directory picker"
+  },
+  "theRequestFailed": {
+    "message": "The request failed.",
+    "description": "common: The request failed.",
+    "sourceText": "请求没成功。"
+  },
+  "mobileBrowser": {
+    "message": "Mobile browser",
+    "description": "common: Mobile browser",
+    "sourceText": "手机浏览器"
+  },
+  "browser": {
+    "message": "Browser",
+    "description": "common: Browser",
+    "sourceText": "浏览器"
+  },
+  "save": {
+    "message": "Save",
+    "description": "automation: Save",
+    "sourceText": "保存"
+  },
+  "cancel": {
+    "message": "Cancel",
+    "description": "automation: Cancel",
+    "sourceText": "取消"
+  },
+  "edit": {
+    "message": "Edit",
+    "description": "automation: Edit",
+    "sourceText": "编辑"
+  },
+  "pause": {
+    "message": "Pause",
+    "description": "automation: Pause",
+    "sourceText": "暂停"
+  },
+  "resume": {
+    "message": "Resume",
+    "description": "automation: Resume",
+    "sourceText": "恢复"
+  },
+  "runNow": {
+    "message": "Run now",
+    "description": "automation: Run now",
+    "sourceText": "立即执行"
+  },
+  "delete": {
+    "message": "Delete",
+    "description": "automation: Delete",
+    "sourceText": "删除"
+  },
+  "weekdayMonday": {
+    "message": "Mon",
+    "description": "automation: Mon",
+    "sourceText": "周一"
+  },
+  "weekdayTuesday": {
+    "message": "Tue",
+    "description": "automation: Tue",
+    "sourceText": "周二"
+  },
+  "weekdayWednesday": {
+    "message": "Wed",
+    "description": "automation: Wed",
+    "sourceText": "周三"
+  },
+  "weekdayThursday": {
+    "message": "Thu",
+    "description": "automation: Thu",
+    "sourceText": "周四"
+  },
+  "weekdayFriday": {
+    "message": "Fri",
+    "description": "automation: Fri",
+    "sourceText": "周五"
+  },
+  "weekdaySaturday": {
+    "message": "Sat",
+    "description": "automation: Sat",
+    "sourceText": "周六"
+  },
+  "weekdaySunday": {
+    "message": "Sun",
+    "description": "automation: Sun",
+    "sourceText": "周日"
+  },
+  "open": {
+    "message": "Open",
+    "description": "home: Open",
+    "sourceText": "打开"
+  },
+  "close": {
+    "message": "Close",
+    "description": "home: Close",
+    "sourceText": "关闭"
+  },
+  "retry": {
+    "message": "Retry",
+    "description": "home: Retry",
+    "sourceText": "重试"
+  },
+  "remove": {
+    "message": "Remove “",
+    "description": "home: Remove “",
+    "sourceText": "移除“"
+  },
+  "continue": {
+    "message": "Continue",
+    "description": "home: Continue",
+    "sourceText": "继续"
+  },
+  "archive": {
+    "message": "Archive",
+    "description": "home: Archive",
+    "sourceText": "归档"
+  },
+  "unarchive": {
+    "message": "Unarchive",
+    "description": "home: Unarchive",
+    "sourceText": "取消归档"
+  },
+  "back": {
+    "message": "Back",
+    "description": "onboarding: Back",
+    "sourceText": "返回"
+  },
+  "settings": {
+    "message": "Settings",
+    "description": "settings: Settings",
+    "sourceText": "设置"
+  },
+  "statistics": {
+    "message": "Statistics",
+    "description": "settings: Statistics",
+    "sourceText": "统计"
+  },
+  "partners": {
+    "message": "Partners",
+    "description": "settings: Partners",
+    "sourceText": "搭档"
+  },
+  "workbenches": {
+    "message": "Workbenches",
+    "description": "settings: Workbenches",
+    "sourceText": "工作台"
+  },
+  "archived": {
+    "message": "Archived",
+    "description": "settings: Archived",
+    "sourceText": "已归档"
+  },
+  "scheduledTasks": {
+    "message": "Scheduled tasks",
+    "description": "automation: Scheduled tasks",
+    "sourceText": "定时任务"
+  },
+  "awaitingAssignment": {
+    "message": "Awaiting assignment",
+    "description": "common.awaitingAssignment"
+  },
+  "inputAwaitingConfirmation": {
+    "message": "Input awaiting confirmation",
+    "description": "common.inputAwaitingConfirmation"
+  }
+}
