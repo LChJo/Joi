@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/result_reader.dart';
+import 'package:joi_mobile/result_export.dart';
 import 'widget_test.dart' show FakeRemoteController;
 
 class ReaderController extends FakeRemoteController {
@@ -41,6 +42,36 @@ const goal = RemoteGoalCard(
 );
 
 void main() {
+  for (final stage in ResultExportStage.values) {
+    testWidgets('shows safe ${stage.name} export failure and allows retry', (
+      tester,
+    ) async {
+      final controller = ReaderController();
+      final service = ReaderExportService(stage);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ResultReaderPage(
+            controller: controller,
+            goal: goal,
+            service: service,
+          ),
+        ),
+      );
+      controller.result.complete({
+        'goal': {'completionSummary': '# 正文'},
+      });
+      await tester.pumpAndSettle();
+      for (var attempt = 0; attempt < 2; attempt++) {
+        await tester.tap(find.byTooltip('导出全文'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('导出 PNG'));
+        await tester.pumpAndSettle();
+        expect(find.text(ResultExportException(stage).message), findsOneWidget);
+        expect(find.text('打开'), findsNothing);
+      }
+      expect(service.calls, 2);
+    });
+  }
   testWidgets(
     'loads complete snapshot, copies offline exactly, and back closes menu first',
     (tester) async {
@@ -119,4 +150,20 @@ void main() {
     expect(find.text('截断预览'), findsNothing);
     expect(find.textContaining('未能读取完整结果'), findsOneWidget);
   });
+}
+
+class ReaderExportService extends ResultExportService {
+  ReaderExportService(this.failure);
+  final ResultExportStage failure;
+  int calls = 0;
+  @override
+  Future<SavedResult> export(
+    String title,
+    String body,
+    String format,
+    void Function(String) progress,
+  ) async {
+    calls++;
+    throw ResultExportException(failure);
+  }
 }

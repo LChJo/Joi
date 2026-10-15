@@ -35,6 +35,7 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   cryptography: ^2.9.0
+  characters: 1.4.1
   ffi: ^2.2.0
   flutter_secure_storage: ^10.0.0
   mobile_scanner: ^7.4.0
@@ -71,6 +72,10 @@ flutter:
     - assets/joi-portrait.png
     - assets/joi-wordmark.png
     - assets/fonts/NotoSansSC.ttf
+    - assets/fonts/NotoSansSymbols2.ttf
+    - assets/fonts/NotoSansSymbols2-OFL.txt
+    - assets/fonts/NotoEmoji.ttf
+    - assets/fonts/NotoEmoji-OFL.txt
     - assets/fonts/OFL.txt
 
   # To add assets to your application, add an assets section, like this:

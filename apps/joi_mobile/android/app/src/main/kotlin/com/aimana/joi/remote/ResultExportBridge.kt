@@ -59,7 +59,7 @@ class ResultExportBridge(private val activity: Activity) : MethodChannel.MethodC
     }
     private fun validTree(): Boolean {
         val saved = prefs.getString("tree", null) ?: return false
-        if (!activity.contentResolver.persistedUriPermissions.any { it.uri.toString() == saved && it.isWritePermission }) return false
+        if (!activity.contentResolver.persistedUriPermissions.any { it.uri.toString() == saved && it.isReadPermission && it.isWritePermission }) return false
         return try {
             val tree = Uri.parse(saved)
             val doc = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
@@ -133,7 +133,9 @@ class ResultExportBridge(private val activity: Activity) : MethodChannel.MethodC
                     require(uri != null)
                     uris.put(uri.toString())
                     check(prefs.edit().putString("pending:$id", uris.toString()).commit())
-                    resolver.openOutputStream(uri, "w")!!.use { output -> file.inputStream().use { it.copyTo(output) } }
+                    ResultExportIntegrity.copyAndVerify(file,
+                        { checkNotNull(resolver.openOutputStream(uri, "w")) },
+                        { checkNotNull(resolver.openInputStream(uri)) })
                 }
                 if (Build.VERSION.SDK_INT >= 29) for (i in 0 until uris.length()) {
                     check(resolver.update(Uri.parse(uris.getString(i)), ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null) == 1)

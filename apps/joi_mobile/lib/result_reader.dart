@@ -52,6 +52,7 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
     setState(() {
       _busy = true;
       _menu = false;
+      _saved = null;
       _notice = '正在处理…';
     });
     try {
@@ -71,6 +72,8 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
           });
         }
       }
+    } on ResultExportException catch (error) {
+      if (mounted) setState(() => _notice = error.message);
     } catch (_) {
       if (mounted) setState(() => _notice = '导出未完成或已取消，请重试。');
     } finally {
