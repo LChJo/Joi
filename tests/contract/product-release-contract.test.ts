@@ -9,11 +9,12 @@ const readProjectFile = (filePath: string) => readFile(path.resolve(filePath), "
 
 describe("joi product and release contract", () => {
   it("uses joi as the package, application, document, and visible shell title", async () => {
-    const [packageSource, productSource, html, readme, onboarding, consoleSource] = await Promise.all([
+    const [packageSource, productSource, html, readme, chineseReadme, onboarding, consoleSource] = await Promise.all([
       readProjectFile("package.json"),
       readProjectFile("src/shared/product.ts"),
       readProjectFile("index.html"),
       readProjectFile("README.md"),
+      readProjectFile("README.zh-CN.md"),
       readProjectFile("src/renderer/Onboarding.tsx"),
       readProjectFile("src/renderer/Console.tsx"),
     ]);
@@ -28,7 +29,8 @@ describe("joi product and release contract", () => {
     expect(packageJson.build.directories.output).toBe("release-joi");
     expect(productSource).toContain('PRODUCT_NAME = "joi"');
     expect(html).toContain("<title>joi</title>");
-    expect(readme.startsWith("# joi")).toBe(true);
+    expect(readme).toMatch(/^# joi\r?$/m);
+    expect(chineseReadme).toMatch(/^# joi\r?$/m);
     expect(onboarding).toContain("<strong>joi</strong>");
     expect(consoleSource).toContain("<JoiBrand />");
     const brandMarkup = renderToStaticMarkup(createElement(JoiBrand));

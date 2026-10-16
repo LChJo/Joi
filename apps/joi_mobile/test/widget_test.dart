@@ -38,6 +38,7 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
   /// Whether the host also bound the input to the workbench it just created. Real hosts say no
   /// when the card moved on, which the screen has to survive.
   bool createBinds = true;
+  Object? createError;
 
   @override
   Future<RemoteWorkbenchCreation> createWorkbench({
@@ -56,7 +57,11 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
       'personaSummary': personaSummary,
       'projectLabel': projectLabel,
       'scopeSummary': scopeSummary,
+      'questionId': questionId ?? '',
+      'questionVersion': '$questionVersion',
+      'idempotencyKey': idempotencyKey ?? '',
     });
+    if (createError != null) throw createError!;
     return RemoteWorkbenchCreation('workbench-new', name, bound: createBinds);
   }
 
@@ -752,7 +757,7 @@ void main() {
   Future<void> pumpWorkbenchCard(
     WidgetTester tester,
     FakeRemoteController controller, {
-    String title = '调试 AI 应用',
+    String title = '工程开发与调试 AI 应用',
   }) => tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
@@ -772,33 +777,29 @@ void main() {
     ),
   );
 
-  testWidgets('opens an editable form without copying the task as a name', (
-    tester,
-  ) async {
-    final controller = FakeRemoteController(
-      const RemoteViewState(
-        connection: RemoteConnectionState.connected,
-        supportsHome: true,
-        supportsWorkbenchCreation: true,
-        workbenches: [RemoteChoice('existing', '已有工作台', '已有范围')],
-      ),
-    );
-    await pumpWorkbenchCard(tester, controller);
-    await tester.tap(find.text('选择工作台继续'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('新建工作台'));
-    await tester.pumpAndSettle();
-    expect(find.text('调试 AI 应用 工作台'), findsNothing);
-    final fields = find.byType(TextField);
-    await tester.enterText(fields.at(0), '工程维护工坊');
-    await tester.enterText(fields.at(1), 'joi');
-    await tester.enterText(fields.at(2), '源码与文档维护。');
-    await tester.ensureVisible(find.text('创建并继续'));
-    await tester.tap(find.text('创建并继续'));
-    await tester.pumpAndSettle();
-    expect(controller.createdWorkbenches.single['projectLabel'], 'joi');
-    expect(controller.actions, isEmpty);
-  });
+  testWidgets(
+    'creates a prepared scope in one tap without copying the task as a name',
+    (tester) async {
+      final controller = FakeRemoteController(
+        const RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+          supportsWorkbenchCreation: true,
+          workbenches: [RemoteChoice('existing', '已有工作台', '已有范围')],
+        ),
+      );
+      await pumpWorkbenchCard(tester, controller);
+      await tester.tap(find.text('选择工作台继续'));
+      await tester.pumpAndSettle();
+      expect(find.text('调试 AI 应用 工作台'), findsNothing);
+      expect(find.text('创建并继续'), findsOneWidget);
+      await tester.ensureVisible(find.text('工程开发与调试工坊'));
+      await tester.tap(find.text('工程开发与调试工坊'));
+      await tester.pumpAndSettle();
+      expect(controller.createdWorkbenches.single['projectLabel'], '工程开发与调试');
+      expect(controller.actions, isEmpty);
+    },
+  );
 
   testWidgets('reuses an existing workbench without creating one', (
     tester,
@@ -833,14 +834,8 @@ void main() {
       await pumpWorkbenchCard(tester, controller);
       await tester.tap(find.text('选择工作台继续'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('新建工作台'));
-      await tester.pumpAndSettle();
-      final fields = find.byType(TextField);
-      await tester.enterText(fields.at(0), '工程维护工坊');
-      await tester.enterText(fields.at(1), 'joi');
-      await tester.enterText(fields.at(2), '源码与文档维护。');
-      await tester.ensureVisible(find.text('创建并继续'));
-      await tester.tap(find.text('创建并继续'));
+      await tester.ensureVisible(find.text('工程开发与调试工坊'));
+      await tester.tap(find.text('工程开发与调试工坊'));
       await tester.pumpAndSettle();
       expect(find.textContaining('工作台已创建'), findsOneWidget);
       await tester.ensureVisible(find.text('选择已创建的工作台继续'));

@@ -25,7 +25,16 @@ test("AC-I18N desktop and browser switch independently without resetting drafts"
         for (const width of [1280, 960, 768]) {
           await page.setViewportSize({ width, height: 800 });
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
+          const header = await page.locator(".settings-page-header").boundingBox();
+          const heading = await page.locator(".settings-page-heading").boundingBox();
+          const language = await page.locator(".settings-page-header .language-selector").boundingBox();
+          const tabs = await page.getByRole("tablist").boundingBox();
+          if (header === null || heading === null || language === null || tabs === null) throw new Error("Settings header controls must be visible");
+          expect(language.x + language.width).toBeLessThanOrEqual(header.x + header.width + 1);
+          expect(language.y + language.height).toBeLessThanOrEqual(tabs.y);
+          if (width >= 768) expect(language.x).toBeGreaterThanOrEqual(heading.x + heading.width);
           if (width === 1280) await page.screenshot({ path: path.resolve(`test-results/i18n-desktop-${locale}-${colorScheme}.png`) });
+          if (width === 768) await page.screenshot({ path: path.resolve(`test-results/i18n-settings-narrow-${locale}-${colorScheme}.png`) });
         }
       }
       if (locale === "en") expect((await page.locator("body").innerText()).replaceAll("简体中文", "")).not.toMatch(/[\p{Script=Han}]/u);

@@ -29,6 +29,39 @@ const _lark = WorkbenchMatchSource(
 );
 
 void main() {
+  test(
+    'prepares one automatic suggestion from the persisted proposal or best reusable scope',
+    () {
+      final options = workbenchCreationSuggestions(
+        seed: '维护工程文档',
+        proposalName: 'joi 工程工坊',
+        proposalProjectLabel: 'joi',
+        proposalScopeSummary: '工程开发与源码调试。',
+      );
+      expect(options.map((option) => option.name), ['joi 工程工坊']);
+      expect(
+        options.every(
+          (option) =>
+              !option.reusesExisting && option.personaSummary.isNotEmpty,
+        ),
+        isTrue,
+      );
+      expect(
+        workbenchCreationSuggestions(
+          seed: '',
+          proposalName: '工程开发与调试工坊',
+          proposalProjectLabel: 'joi',
+          proposalScopeSummary: '工程开发与源码调试。',
+        ).map((option) => option.name),
+        ['工程开发与调试工坊'],
+      );
+      expect(
+        workbenchCreationSuggestions(seed: '行程与出行规划，路线与时间安排').first.name,
+        '行程与出行规划工坊',
+      );
+      expect(workbenchCreationSuggestions(seed: ''), hasLength(1));
+    },
+  );
   group('workbench text comparison', () {
     test('folds punctuation and case so the same phrase compares equal', () {
       expect(
@@ -111,10 +144,7 @@ void main() {
     });
 
     test('accepts a name that abstracts the same work into a cluster', () {
-      expect(
-        echoedWorkbenchSpan('皖南川藏线民宿周边景点调研工坊', _travelInput),
-        isNull,
-      );
+      expect(echoedWorkbenchSpan('皖南川藏线民宿周边景点调研工坊', _travelInput), isNull);
       expect(echoedWorkbenchSpan('旅行行程规划工坊', _travelInput), isNull);
       expect(echoedWorkbenchSpan('周边民宿与景点分析工作台', _travelInput), isNull);
     });
@@ -136,7 +166,10 @@ void main() {
       expect(suggestions.every((item) => item.kind == 'template'), isTrue);
       for (final suggestion in suggestions) {
         expect(echoedWorkbenchSpan(suggestion.name, _travelInput), isNull);
-        expect(echoedWorkbenchSpan(suggestion.scopeSummary, _travelInput), isNull);
+        expect(
+          echoedWorkbenchSpan(suggestion.scopeSummary, _travelInput),
+          isNull,
+        );
         expect(suggestion.name, isNot(contains('…')));
       }
     });
@@ -152,19 +185,22 @@ void main() {
       expect(suggestions, hasLength(workbenchSuggestionLimit));
     });
 
-    test('never offers an existing workbench whose name restates the input', () {
-      final suggestions = workbenchSuggestions(
-        seed: _travelInput,
-        workbenches: const [
-          WorkbenchMatchSource(
-            workbenchId: 'e1',
-            name: '民宿周边有皖南川藏线，落羽红杉林，青… 工作台',
-            scopeSummary: '围绕这条输入的目标、资料与执行过程。',
-          ),
-        ],
-      );
-      expect(suggestions.any((item) => item.workbenchId == 'e1'), isFalse);
-    });
+    test(
+      'never offers an existing workbench whose name restates the input',
+      () {
+        final suggestions = workbenchSuggestions(
+          seed: _travelInput,
+          workbenches: const [
+            WorkbenchMatchSource(
+              workbenchId: 'e1',
+              name: '民宿周边有皖南川藏线，落羽红杉林，青… 工作台',
+              scopeSummary: '围绕这条输入的目标、资料与执行过程。',
+            ),
+          ],
+        );
+        expect(suggestions.any((item) => item.workbenchId == 'e1'), isFalse);
+      },
+    );
 
     test('honours a smaller limit', () {
       expect(

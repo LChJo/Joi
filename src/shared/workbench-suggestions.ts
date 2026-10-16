@@ -202,6 +202,19 @@ function templateSuggestion(template: Omit<WorkbenchSuggestion, "description" | 
   };
 }
 
+/** Prepares one automatic creation suggestion; creation still requires an explicit user choice. */
+export function workbenchCreationSuggestions(input: {
+  seed: string;
+  proposal?: Pick<WorkbenchSuggestion, "name" | "projectLabel" | "scopeSummary">;
+}): WorkbenchSuggestion[] {
+  if (input.proposal !== undefined) return [templateSuggestion({
+    ...input.proposal, personaSummary: "围绕已确认的工程目标和工作范围推进，以可验证的证据记录结论。",
+  })];
+  const score = (template: Omit<WorkbenchSuggestion, "description" | "kind">) => workbenchMatchScore(input.seed, { ...template, workbenchId: "template" });
+  const best = WORKBENCH_TEMPLATES.reduce((best, candidate) => score(candidate) > score(best) ? candidate : best);
+  return [templateSuggestion(best)];
+}
+
 /**
  * Candidates for the hand-pick list: existing workbenches that already carry this kind of work
  * first — reuse is almost always what the user wants — then abstract clusters to fill the list.

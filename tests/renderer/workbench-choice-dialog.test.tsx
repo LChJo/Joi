@@ -32,21 +32,22 @@ it("automatically opens a pending choice once, closes without resolving, and reo
   expect(screen.getByRole("dialog", { name: "选择工作台" })).toBeInTheDocument();
 });
 
-it("edits the persistent draft and creates and binds in one retryable request", async () => {
+it("offers two prepared choices and creates and binds the selected draft in one retryable request", async () => {
   const { api, workbench } = setup();
   const create = vi.spyOn(api, "createWorkbench").mockRejectedValueOnce(new Error("network")).mockResolvedValue({ ...workbench, workbenchId: "code", name: "我的工程工坊" });
   const clarify = vi.spyOn(api, "clarifyJoiMessage");
   render(<JoiHome api={api} />);
-  await screen.findByRole("dialog", { name: "选择工作台" });
-  fireEvent.click(screen.getByRole("button", { name: "新建工作台" }));
-  expect(screen.getByLabelText("工作台名称")).toHaveValue("joi 工程维护工坊");
-  fireEvent.change(screen.getByLabelText("工作台名称"), { target: { value: "我的工程工坊" } });
-  fireEvent.click(screen.getByRole("button", { name: "创建并继续" }));
+  const dialog = await screen.findByRole("dialog", { name: "选择工作台" });
+  const prepared = within(dialog).getByRole("group", { name: "选择新工作台方案" });
+  expect(within(prepared).getAllByRole("button")).toHaveLength(2);
+  expect(within(prepared).getByRole("button", { name: "手动新建" })).toBeInTheDocument();
+  expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
+  expect(create).not.toHaveBeenCalled();
+  fireEvent.click(within(prepared).getByRole("button", { name: "创建 joi 工程维护工坊 并继续" }));
   await screen.findByRole("alert");
-  expect(screen.getByLabelText("工作台名称")).toHaveValue("我的工程工坊");
-  fireEvent.click(screen.getByRole("button", { name: "创建并继续" }));
+  fireEvent.click(within(prepared).getByRole("button", { name: "创建 joi 工程维护工坊 并继续" }));
   await waitFor(() => expect(screen.queryByRole("dialog", { name: "选择工作台" })).not.toBeInTheDocument());
-  expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "我的工程工坊", bindInputId: "input-choice", questionId: "q1", questionVersion: 1 }));
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "joi 工程维护工坊", projectLabel: "joi", scopeSummary: "joi 源码及文档维护。", bindInputId: "input-choice", questionId: "q1", questionVersion: 1 }));
   expect(create.mock.calls[0]?.[0].idempotencyKey).toBe(create.mock.calls[1]?.[0].idempotencyKey);
   expect(clarify).not.toHaveBeenCalled();
 });
@@ -72,10 +73,59 @@ it("does not reopen a dismissed question on polling but does offer its next vers
     fireEvent.keyDown(dialog, { key: "Tab" });
     expect(within(dialog).getByRole("button", { name: "稍后选择" })).toHaveFocus();
     fireEvent.keyDown(dialog, { key: "Tab", shiftKey: true });
-    expect(within(dialog).getByRole("button", { name: "新建工作台" })).toHaveFocus();
+    expect(within(dialog).getByRole("button", { name: "手动新建" })).toHaveFocus();
     fireEvent.keyDown(dialog, { key: "Escape" });
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   } finally { vi.useRealTimers(); }
+});
+
+it("keeps the automatic and manual options visible while searching and submits the automatic choice once", async () => {
+  const { api, workbench } = setup();
+  vi.spyOn(api, "joiSnapshot").mockResolvedValue({
+    workbenches: Array.from({ length: 8 }, (_, index) => ({ ...workbench, workbenchId: `w${String(index)}` })),
+    workbenchChanges: [], partners: [], modelSources: [], runtime: { configured: true, status: "READY" }, work: [],
+  });
+  let finish: ((value: typeof workbench) => void) | undefined;
+  const create = vi.spyOn(api, "createWorkbench").mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+  render(<JoiHome api={api} />);
+  await screen.findByRole("dialog");
+  fireEvent.change(screen.getByLabelText("搜索工作台"), { target: { value: "no matches" } });
+  const prepared = screen.getByRole("group", { name: "选择新工作台方案" });
+  expect(within(prepared).getAllByRole("button")).toHaveLength(2);
+  const choice = within(prepared).getByRole("button", { name: "创建 joi 工程维护工坊 并继续" });
+  fireEvent.click(choice);
+  fireEvent.click(choice);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "joi 工程维护工坊", projectLabel: "joi", idempotencyKey: "workbench-choice:input-choice:v1:option:0" }));
+  expect(within(prepared).getAllByRole("button").every((button) => button.hasAttribute("disabled"))).toBe(true);
+  fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+  expect(screen.getByRole("dialog")).toBeInTheDocument();
+  await act(() => { finish?.(workbench); return Promise.resolve(); });
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+});
+
+it("opens a blank manual draft without creating, preserves edits across back and retries, and binds once", async () => {
+  const { api, workbench } = setup();
+  const create = vi.spyOn(api, "createWorkbench").mockRejectedValueOnce(new Error("PRIVATE")).mockResolvedValue(workbench);
+  render(<JoiHome api={api} />);
+  fireEvent.click(await screen.findByRole("button", { name: "手动新建" }));
+  expect(create).not.toHaveBeenCalled();
+  expect(screen.getByLabelText("工作台名称")).toHaveValue("");
+  fireEvent.change(screen.getByLabelText("工作台名称"), { target: { value: "我的项目" } });
+  fireEvent.change(screen.getByLabelText("工程名称"), { target: { value: "project" } });
+  fireEvent.change(screen.getByLabelText("工作范围"), { target: { value: "代码与测试。" } });
+  fireEvent.click(screen.getByRole("button", { name: "返回选择" }));
+  expect(create).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "手动新建" }));
+  expect(screen.getByLabelText("工作台名称")).toHaveValue("我的项目");
+  fireEvent.click(screen.getByRole("button", { name: "创建并继续" }));
+  await screen.findByRole("alert");
+  expect(screen.getByLabelText("工作台名称")).toHaveValue("我的项目");
+  fireEvent.click(screen.getByRole("button", { name: "创建并继续" }));
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(create.mock.calls[0]?.[0]).toEqual(create.mock.calls[1]?.[0]);
+  expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "我的项目", projectLabel: "project", scopeSummary: "代码与测试。", bindInputId: "input-choice", questionId: "q1", questionVersion: 1, idempotencyKey: "workbench-choice:input-choice:v1:manual" }));
 });
 
 it("clears an explicitly selected composer workbench only after a successful send", async () => {

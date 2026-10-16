@@ -1946,7 +1946,7 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(reason).not.toBeInTheDocument());
   });
 
-  it("creates a manually edited workbench and binds it without a second clarification request", async () => {
+  it("creates a prepared workbench and binds it without a second clarification request", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [] });
     mockHomeMessages(api).mockResolvedValue({ items: [
@@ -1955,13 +1955,9 @@ describe("joi home single entry", () => {
     const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(workbenchDto("created", "工程维护工坊"));
     const clarify = vi.spyOn(api, "clarifyJoiMessage");
     render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "新建工作台" }));
-    expect(screen.getByLabelText("工作台名称")).toHaveValue("");
-    fireEvent.change(screen.getByLabelText("工作台名称"), { target: { value: "工程维护工坊" } });
-    fireEvent.change(screen.getByLabelText("工程名称"), { target: { value: "joi" } });
-    fireEvent.change(screen.getByLabelText("工作范围"), { target: { value: "源码与文档维护。" } });
-    fireEvent.click(screen.getByRole("button", { name: "创建并继续" }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "工程维护工坊", bindInputId: "manual-create", questionId: "q1", questionVersion: 1 })));
+    fireEvent.click(await screen.findByRole("button", { name: "创建 调研与分析工坊 并继续" }));
+    expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "调研与分析工坊", bindInputId: "manual-create", questionId: "q1", questionVersion: 1 })));
     expect(clarify).not.toHaveBeenCalled();
   });
 
@@ -1978,21 +1974,6 @@ describe("joi home single entry", () => {
     fireEvent.click(await screen.findByRole("button", { name: existing.name }));
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("reuse", { workbenchId: "existing", questionId: "legacy_question:reuse", questionVersion: 1 }));
     expect(create).not.toHaveBeenCalled();
-  });
-
-  it("keeps edited workbench fields when switching back to the choice list", async () => {
-    const api = new DigitalLifeApi("");
-    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
-    mockHomeMessages(api).mockResolvedValue({ items: [
-      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "edit", status: "CLARIFICATION_REQUIRED" },
-    ] });
-    render(<JoiHome api={api} />);
-    fireEvent.click(await screen.findByRole("button", { name: "新建工作台" }));
-    fireEvent.change(screen.getByLabelText("工作台名称"), { target: { value: "我的工程工坊" } });
-    fireEvent.click(screen.getByRole("button", { name: "返回选择" }));
-    expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "新建工作台" }));
-    expect(screen.getByLabelText("工作台名称")).toHaveValue("我的工程工坊");
   });
 
   it("shows a safe error when a workbench choice fails", async () => {

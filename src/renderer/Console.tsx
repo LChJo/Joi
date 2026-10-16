@@ -294,7 +294,7 @@ export function SettingsPanel({ api, diagnostics, interactions = [] }: { api: Di
     : effective.status === "blocked" ? t("settings.sharingIsTemporarilyUnavailable") : effective.pending === undefined ? t("settings.availableToTrustedDevices") : t("settings.newConfigurationNotApplied");
   const selectedTab = SETTINGS_TABS.find((tab) => tab.key === activeTab) ?? SETTINGS_TABS[0];
   return <section className="page-section settings-page">
-    <header className="page-title-row"><div><p className="eyebrow">{t("settings.makeJoiWorkYourWay")}</p><h1>{t("settings.joiSettings")}</h1><p>{t("settings.manageModelConnectionsDevicesSecurityAndData")}</p></div></header>
+    <header className="page-title-row settings-page-header"><div className="settings-page-heading"><p className="eyebrow">{t("settings.makeJoiWorkYourWay")}</p><h1>{t("settings.joiSettings")}</h1><p>{t("settings.manageModelConnectionsDevicesSecurityAndData")}</p></div><LanguageSelector /></header>
     {notice === null ? null : <Notice>{notice}</Notice>}
     <div aria-label={t("settings.settingsCategories")} className="settings-tabs" role="tablist">
       {SETTINGS_TABS.map((tab, index) => <button
@@ -316,7 +316,6 @@ export function SettingsPanel({ api, diagnostics, interactions = [] }: { api: Di
       role="tabpanel"
       tabIndex={0}
     >
-      <LanguageSelector />
       {activeTab === "models" ? <ModelSourceManager api={api} /> : null}
       {activeTab === "skills" ? <JoiSkillSettings api={api} /> : null}
       {activeTab === "connections" ? <>

@@ -201,6 +201,50 @@ const List<_WorkbenchTemplate> _templates = [
   ),
 ];
 
+/// Prepares one automatic suggestion; creation still requires an explicit user choice.
+List<WorkbenchSuggestion> workbenchCreationSuggestions({
+  required String seed,
+  String? proposalName,
+  String? proposalProjectLabel,
+  String? proposalScopeSummary,
+}) {
+  if (proposalName != null &&
+      proposalProjectLabel != null &&
+      proposalScopeSummary != null) {
+    return [
+      WorkbenchSuggestion(
+        description: '',
+        kind: 'template',
+        name: proposalName,
+        projectLabel: proposalProjectLabel,
+        scopeSummary: proposalScopeSummary,
+        personaSummary: '围绕已确认的工程目标和工作范围推进，以可验证的证据记录结论。',
+      ),
+    ];
+  }
+  double score(_WorkbenchTemplate template) => workbenchMatchScore(
+    seed,
+    WorkbenchMatchSource(
+      name: template.name,
+      scopeSummary: template.scopeSummary,
+      workbenchId: 'template',
+    ),
+  );
+  final best = _templates.reduce(
+    (best, candidate) => score(candidate) > score(best) ? candidate : best,
+  );
+  return [
+    WorkbenchSuggestion(
+      description: '',
+      kind: 'template',
+      name: best.name,
+      personaSummary: best.personaSummary,
+      projectLabel: best.projectLabel,
+      scopeSummary: best.scopeSummary,
+    ),
+  ];
+}
+
 /// Candidates for the hand-pick list: existing workbenches that already carry this kind of work
 /// first — reuse is almost always what the user wants — then abstract clusters to fill the list.
 List<WorkbenchSuggestion> workbenchSuggestions({

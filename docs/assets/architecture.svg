@@ -1,0 +1,151 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 900" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#57606a"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1160" height="900" fill="#ffffff"/>
+
+  <text x="30" y="34" font-size="20" font-weight="bold" fill="#24292f">joi 系统架构总览</text>
+  <text x="30" y="54" font-size="11.5" fill="#57606a">节点与连线对应仓库真实模块与调用关系，括号内为相对仓库根的源码路径 · 详细设计见 docs/03-system-architecture.md</text>
+
+  <!-- 左侧：Electron 桌面应用容器 -->
+  <rect x="30" y="70" width="700" height="790" rx="10" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="46" y="96" font-size="14" font-weight="bold" fill="#24292f">个人电脑 · Electron 桌面应用（package.json → name: joi）</text>
+
+  <!-- 渲染进程 -->
+  <rect x="50" y="112" width="660" height="58" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="64" y="134" font-size="13" font-weight="bold" fill="#24292f">渲染进程 — src/renderer（React 19 UI）</text>
+  <text x="64" y="154" font-size="11" fill="#24292f">Console.tsx · JoiHome.tsx · StatisticsPage.tsx · RemoteJoiApp.tsx（浏览器远程复用）</text>
+
+  <!-- preload -->
+  <rect x="50" y="196" width="660" height="44" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="380" y="223" font-size="12.5" text-anchor="middle" fill="#24292f">preload 窄桥 — src/preload/index.cts（contextBridge · sandbox + contextIsolation）</text>
+
+  <!-- 主进程 -->
+  <rect x="50" y="266" width="660" height="58" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="64" y="288" font-size="13" font-weight="bold" fill="#24292f">Electron 主进程 — src/main/index.ts</text>
+  <text x="64" y="308" font-size="11" fill="#24292f">requestSingleInstanceLock · startDesktopRuntime() → BrowserWindow · Tray</text>
+
+  <!-- Runtime Worker 线程 -->
+  <rect x="50" y="350" width="660" height="58" rx="8" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="64" y="372" font-size="13" font-weight="bold" fill="#24292f">Runtime Worker 线程 — src/main/composition/runtime-worker.ts</text>
+  <text x="64" y="392" font-size="11" fill="#24292f">desktop-runtime-client.ts 经 node:worker_threads new Worker 启动 · WorkerRpc 双向通信</text>
+
+  <!-- 组合根容器 -->
+  <rect x="50" y="434" width="660" height="406" rx="10" fill="#ffffff" stroke="#1a7f37"/>
+  <text x="66" y="458" font-size="13" font-weight="bold" fill="#1a7f37">createRuntimeHost() — src/main/composition/runtime-host.ts</text>
+  <text x="66" y="474" font-size="10.5" fill="#57606a">组合根：wire-persistence / model-sources / partners / workbenches / joi / runtime / operations</text>
+
+  <!-- interfaces 层 -->
+  <rect x="70" y="496" width="620" height="80" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="86" y="518" font-size="13" font-weight="bold" fill="#24292f">interfaces — HTTP 接口层</text>
+  <text x="86" y="538" font-size="11" fill="#24292f">routes/ 13 个路由族：auth · joi · partner · workbench · model-source · statistics · system · remote …</text>
+  <text x="86" y="553" font-size="11" fill="#24292f">统一前缀 /api/v1 + SSE · 回环 127.0.0.1:43130 常开 · 可选局域网 RFC1918 绑定</text>
+  <text x="86" y="568" font-size="11" fill="#57606a">渲染进程同源调用：窗口加载 apiOrigin（生产）或 Vite 43715（开发）</text>
+
+  <!-- application 层 -->
+  <rect x="70" y="596" width="620" height="60" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="86" y="618" font-size="13" font-weight="bold" fill="#24292f">application — Actor 运行时（领域模型在 domain 层）</text>
+  <text x="86" y="640" font-size="11" fill="#24292f">ActorTree 单根 tick（防重入）：JoiActor 根 → WorkbenchActor 子树 · 收件箱 → 规划 → 派发 → 结果回写</text>
+
+  <!-- infrastructure 层 -->
+  <rect x="70" y="676" width="620" height="150" rx="8" fill="#f6f8fa" stroke="#d0d7de"/>
+  <text x="86" y="698" font-size="12.5" font-weight="bold" fill="#24292f">infrastructure — 基础设施（12 个子模块，图示为与外部交互相关项）</text>
+  <rect x="86" y="708" width="186" height="48" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="96" y="726" font-size="11.5" font-weight="bold" fill="#24292f">persistence</text>
+  <text x="96" y="741" font-size="10" fill="#57606a">node:sqlite（DatabaseSync）</text>
+  <text x="96" y="752" font-size="10" fill="#57606a">迁移 ×75（075 最新）</text>
+  <rect x="285" y="708" width="186" height="48" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="295" y="726" font-size="11.5" font-weight="bold" fill="#24292f">pi</text>
+  <text x="295" y="741" font-size="10" fill="#57606a">Pi SDK 0.87.1 · 本机搭档</text>
+  <text x="295" y="752" font-size="10" fill="#57606a">模型来源目录 · 预设</text>
+  <rect x="484" y="708" width="186" height="48" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="494" y="726" font-size="11.5" font-weight="bold" fill="#24292f">remote</text>
+  <text x="494" y="741" font-size="10" fill="#57606a">RemoteAccessHost</text>
+  <text x="494" y="752" font-size="10" fill="#57606a">IrohSidecarTransport</text>
+  <rect x="86" y="764" width="186" height="48" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="96" y="782" font-size="11.5" font-weight="bold" fill="#24292f">mana</text>
+  <text x="96" y="797" font-size="10" fill="#57606a">Claude Agent SDK 运行时</text>
+  <text x="96" y="808" font-size="10" fill="#57606a">Codex SDK 运行时</text>
+  <rect x="285" y="764" width="186" height="48" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="295" y="782" font-size="11.5" font-weight="bold" fill="#24292f">a2a</text>
+  <text x="295" y="797" font-size="10" fill="#57606a">@a2a-js/sdk 0.3.14</text>
+  <text x="295" y="808" font-size="10" fill="#57606a">熔断 · 容量门控</text>
+  <rect x="484" y="764" width="186" height="48" rx="6" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="494" y="782" font-size="11.5" font-weight="bold" fill="#24292f">security</text>
+  <text x="494" y="797" font-size="10" fill="#57606a">Electron safeStorage</text>
+  <text x="494" y="808" font-size="10" fill="#57606a">凭据加密存储</text>
+
+  <!-- 右侧：外部参与者与外部依赖 -->
+  <text x="846" y="98" font-size="13" font-weight="bold" fill="#24292f">外部参与者与外部依赖</text>
+
+  <rect x="846" y="110" width="284" height="58" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="858" y="131" font-size="12.5" font-weight="bold" fill="#24292f">局域网浏览器（可选开启）</text>
+  <text x="858" y="149" font-size="10.5" fill="#24292f">HTTP /api/v1 + SSE · RFC1918 :43130</text>
+  <text x="858" y="162" font-size="10.5" fill="#57606a">远程 Web UI 复用渲染进程构建</text>
+
+  <rect x="846" y="192" width="284" height="58" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="858" y="213" font-size="12.5" font-weight="bold" fill="#24292f">旧版浏览器中继（回退）</text>
+  <text x="858" y="231" font-size="10.5" fill="#24292f">src/relay 独立 Node 进程 · ws :8787</text>
+  <text x="858" y="244" font-size="10.5" fill="#57606a">已被 ADR 0013 iroh 方案取代</text>
+
+  <rect x="846" y="274" width="284" height="76" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="858" y="295" font-size="12.5" font-weight="bold" fill="#24292f">Android 搭档应用</text>
+  <text x="858" y="313" font-size="10.5" fill="#24292f">apps/joi_mobile（Flutter）</text>
+  <text x="858" y="328" font-size="10.5" fill="#24292f">sidecar：native/joi-remote（Rust）</text>
+  <text x="858" y="343" font-size="10.5" fill="#57606a">经 infrastructure/remote iroh 点对点通道</text>
+
+  <rect x="846" y="374" width="284" height="58" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="858" y="395" font-size="12.5" font-weight="bold" fill="#24292f">A2A 搭档运行时（局域网）</text>
+  <text x="858" y="413" font-size="10.5" fill="#24292f">application/a2a 网关 · @a2a-js/sdk 0.3.14</text>
+  <text x="858" y="426" font-size="10.5" fill="#57606a">infrastructure/a2a：连接熔断 · 容量门控</text>
+
+  <rect x="846" y="456" width="284" height="76" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="858" y="477" font-size="12.5" font-weight="bold" fill="#24292f">本机搭档执行环境（同一台电脑）</text>
+  <text x="858" y="495" font-size="10.5" fill="#24292f">Pi 子进程（infrastructure/pi）</text>
+  <text x="858" y="510" font-size="10.5" fill="#24292f">Claude / Codex CLI（infrastructure/mana）</text>
+  <text x="858" y="525" font-size="10.5" fill="#57606a">由 infrastructure/pi 与 mana 的 SDK 运行时驱动</text>
+
+  <rect x="846" y="556" width="284" height="58" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="858" y="577" font-size="12.5" font-weight="bold" fill="#24292f">模型服务商 API</text>
+  <text x="858" y="595" font-size="10.5" fill="#24292f">Kimi · GLM · Qwen · Doubao · MiniMax · DeepSeek</text>
+  <text x="858" y="608" font-size="10.5" fill="#57606a">OpenAI 兼容 · 经 infrastructure/pi 接入</text>
+
+  <rect x="846" y="638" width="284" height="58" rx="8" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="858" y="659" font-size="12.5" font-weight="bold" fill="#24292f">SQLite 数据库文件（userData）</text>
+  <text x="858" y="677" font-size="10.5" fill="#24292f">openRuntimeDatabase · node:sqlite</text>
+  <text x="858" y="690" font-size="10.5" fill="#57606a">resources/migrations/ ×75（075 最新）</text>
+
+  <!-- 内部调用链箭头 -->
+  <line x1="380" y1="170" x2="380" y2="196" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="380" y1="240" x2="380" y2="266" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="380" y1="324" x2="380" y2="350" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="390" y="341" font-size="10.5" fill="#57606a">new Worker</text>
+  <line x1="380" y1="408" x2="380" y2="434" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="390" y="425" font-size="10.5" fill="#57606a">createRuntimeHost()</text>
+  <line x1="380" y1="576" x2="380" y2="596" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="380" y1="656" x2="380" y2="676" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+
+  <!-- 到外部参与者的连线 -->
+  <path d="M690,530 L770,530 L770,139 L846,139" fill="none" stroke="#57606a" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <path d="M690,554 L784,554 L784,221 L846,221" fill="none" stroke="#57606a" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <path d="M690,732 L800,732 L800,312 L846,312" fill="none" stroke="#57606a" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <path d="M690,772 L810,772 L810,403 L846,403" fill="none" stroke="#57606a" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <path d="M690,792 L820,792 L820,494 L846,494" fill="none" stroke="#57606a" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+  <path d="M690,806 L828,806 L828,585 L846,585" fill="none" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <path d="M690,816 L838,816 L838,667 L846,667" fill="none" stroke="#57606a" stroke-width="1.5" marker-start="url(#arr)" marker-end="url(#arr)"/>
+
+  <!-- 图例 -->
+  <rect x="30" y="876" width="12" height="12" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="48" y="886" font-size="11" fill="#57606a">Electron 进程（渲染 / 主）</text>
+  <rect x="250" y="876" width="12" height="12" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="268" y="886" font-size="11" fill="#57606a">Runtime 线程与组合根</text>
+  <rect x="470" y="876" width="12" height="12" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="488" y="886" font-size="11" fill="#57606a">外部参与者 / 进程</text>
+  <rect x="690" y="876" width="12" height="12" fill="#ffffff" stroke="#d0d7de"/>
+  <text x="708" y="886" font-size="11" fill="#57606a">桥接 / 数据文件</text>
+  <line x1="880" y1="882" x2="908" y2="882" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="916" y="886" font-size="11" fill="#57606a">调用 / 数据流（双向箭头为双向交互）</text>
+</svg>

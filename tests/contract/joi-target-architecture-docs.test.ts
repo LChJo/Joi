@@ -5,19 +5,23 @@ const read = (filePath: string) => readFile(path.resolve(filePath), "utf8");
 
 describe("JOI-01 target architecture documentation", () => {
   it("defines one global joi with Pi reasoning and Workbench-scoped context", async () => {
-    const [readme, glossary, prd, architecture, domain] = await Promise.all([
+    const [readme, chineseReadme, glossary, prd, architecture, domain] = await Promise.all([
       read("README.md"),
+      read("README.zh-CN.md"),
       read("docs/00-sources-and-glossary.md"),
       read("docs/01-product-requirements.md"),
       read("docs/03-system-architecture.md"),
       read("docs/04-domain-and-runtime.md"),
     ]);
 
-    for (const source of [readme, glossary, prd, architecture, domain]) {
-      expect(source).toContain("唯一全局 joi");
+    for (const source of [chineseReadme, glossary, prd, architecture, domain]) {
+      expect(source).toMatch(/唯一全局 (?:\*\*)?joi/);
       expect(source).toContain("工作台");
     }
+    expect(readme).toMatch(/single global (?:\*\*)?joi/i);
+    expect(readme).toContain("Workbench");
     expect(readme).toContain("Pi");
+    expect(chineseReadme).toContain("Pi");
     expect(glossary).toContain("Workbench/workbenchId/workbench.*");
     expect(domain).toContain("工作台不是 Agent");
     expect(architecture).toContain("唯一调度权威");

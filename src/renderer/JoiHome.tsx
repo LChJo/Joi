@@ -883,7 +883,7 @@ function ClarifyTextarea({ "aria-label": ariaLabel, disabled, onChange, onKeyDow
   return <textarea aria-label={ariaLabel} disabled={disabled} onChange={onChange} onKeyDown={onKeyDown} placeholder={placeholder} ref={ref} rows={1} value={value} />;
 }
 
-function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, continuationSummary, onShowContinuationResult }: {
+function ClarificationActions({ api, partners, workbenchId, workbenches, inputId, onResolved, prompt, questionId, questionVersion, reasonCode, suggestionSeed, continuationSummary, onShowContinuationResult }: {
   api: DigitalLifeApi;
   partners: PartnerDto[];
   workbenchId: string | undefined;
@@ -961,7 +961,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
           <span>{partner.description ?? (partner.kind === "local-pi" ? t("home.localPartner") : t("home.remotePartner"))}</span>
         </button>)}
       </div>}
-    </> : needsWorkbenchChoice ? <WorkbenchChoiceForm api={api} message={{ inputId, ...(questionId === undefined ? {} : { questionId }), ...(questionVersion === undefined ? {} : { questionVersion }) }} onResolved={onResolved} workbenches={workbenches} /> : null}
+    </> : needsWorkbenchChoice ? <WorkbenchChoiceForm api={api} message={{ inputId, ...(suggestionSeed === undefined ? {} : { textPreview: suggestionSeed }), ...(questionId === undefined ? {} : { questionId }), ...(questionVersion === undefined ? {} : { questionVersion }) }} onResolved={onResolved} workbenches={workbenches} /> : null}
     {needsHistoricalReview || needsPartnerChoice ? null : needsReviewRetry ? <div className="joi-clarify-workspace">
       <div><strong>{t("home.recheckExistingWork")}</strong><span>{t("home.existingAnswersAndResultsArePreservedJoiWillReview")}</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ text: REVIEW_RETRY_TEXT })} type="button">{busy ? t("home.submitting") : t("home.retryReview")}</button>
@@ -1683,7 +1683,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   const pendingWorkbenchChoices = useMemo<JoiAcceptedMessageDto[]>(() => [
     ...feed.unassignedActions.filter((message) => needsWorkbenchChoice(message.clarificationReasonCode)),
     ...feed.goals.flatMap((goal): JoiAcceptedMessageDto[] => goal.status === "NEEDS_ATTENTION" && needsWorkbenchChoice(goal.clarification.reasonCode) ? [{
-      inputId: goal.goalId, acceptedAt: goal.updatedAt, status: "CLARIFICATION_REQUIRED",
+      inputId: goal.goalId, acceptedAt: goal.updatedAt, status: "CLARIFICATION_REQUIRED", textPreview: goal.title,
       clarificationReasonCode: goal.clarification.reasonCode,
       ...(goal.clarification.questionId === undefined ? {} : { questionId: goal.clarification.questionId }),
       ...(goal.clarification.questionVersion === undefined ? {} : { questionVersion: goal.clarification.questionVersion }),

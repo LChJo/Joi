@@ -10,7 +10,19 @@ import {
   workbenchMatchScore,
   workbenchMatchTerms,
   workbenchSuggestions,
+  workbenchCreationSuggestions,
 } from "../../src/shared/workbench-suggestions";
+
+it("prepares one automatic suggestion from the persisted proposal or best reusable scope", () => {
+  const proposal = { name: "joi 工程工坊", projectLabel: "joi", scopeSummary: "工程开发与源码调试。" };
+  const options = workbenchCreationSuggestions({ seed: "维护工程文档", proposal });
+  expect(options).toHaveLength(1);
+  expect(options[0]).toMatchObject({ ...proposal, kind: "template" });
+  expect(options.every((option) => !option.workbenchId && option.personaSummary.length > 0)).toBe(true);
+  expect(workbenchCreationSuggestions({ seed: "", proposal: { ...proposal, name: "工程开发与调试工坊" } }).map((option) => option.name)).toEqual(["工程开发与调试工坊"]);
+  expect(workbenchCreationSuggestions({ seed: "行程与出行规划，路线与时间安排" })[0]?.name).toBe("行程与出行规划工坊");
+  expect(workbenchCreationSuggestions({ seed: "" })).toHaveLength(1);
+});
 
 /** The real workbenches and inputs that motivated the scoring; kept verbatim so the thresholds stay honest. */
 const TRAVEL_INPUT = "民宿周边有皖南川藏线，落羽红杉林，青龙湾度假区，山门洞，储家滩，西津野渡，双河漂流，皖南飞瀑漂流，储家滩全地形越野车，惠云禅寺，青龙湾水上乐园，卡丁船。河沥溪古镇。根据以上信息，只分析最近一周（2026 中秋国庆假期信息）小红书和点评携程等信息，分析哪些是最值得去的景点，备注是否需要购票";

@@ -1,20 +1,22 @@
 ﻿import { noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { useEffect, useRef, useState, type SyntheticEvent } from "react";
 import type { JoiAcceptedMessageDto, WorkbenchDto } from "../shared/joi.js";
+import { workbenchCreationSuggestions, type WorkbenchSuggestion } from "../shared/workbench-suggestions.js";
 import type { DigitalLifeApi } from "./api.js";
 
 export function WorkbenchChoiceForm({ api, message, workbenches, onResolved }: {
   api: DigitalLifeApi;
-  message: Pick<JoiAcceptedMessageDto, "inputId" | "questionId" | "questionVersion" | "workbenchProposal">;
+  message: Pick<JoiAcceptedMessageDto, "inputId" | "questionId" | "questionVersion" | "workbenchProposal" | "textPreview">;
   workbenches: WorkbenchDto[];
   onResolved: () => void;
 }) {
   useI18n();
-  const [creating, setCreating] = useState(false);
   const [query, setQuery] = useState("");
-  const [name, setName] = useState(message.workbenchProposal?.name ?? "");
-  const [projectLabel, setProjectLabel] = useState(message.workbenchProposal?.projectLabel ?? "");
-  const [scopeSummary, setScopeSummary] = useState(message.workbenchProposal?.scopeSummary ?? "");
+  const [manual, setManual] = useState(false);
+  const [name, setName] = useState("");
+  const [projectLabel, setProjectLabel] = useState("");
+  const [scopeSummary, setScopeSummary] = useState("");
+  const [choices] = useState(() => workbenchCreationSuggestions({ seed: message.textPreview ?? "", ...(message.workbenchProposal === undefined ? {} : { proposal: message.workbenchProposal }) }));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useNotice();
   const inFlight = useRef(false);
@@ -29,27 +31,35 @@ export function WorkbenchChoiceForm({ api, message, workbenches, onResolved }: {
     catch { setError(noticeMessage("workbenches.workbenchSelectionDidNotCompleteRefreshTaskStatusAnd")); }
     finally { inFlight.current = false; setBusy(false); }
   };
-  const create = (event: SyntheticEvent<HTMLFormElement>) => {
+  const create = (choice: WorkbenchSuggestion, index: number) => {
+    void run(() => api.createWorkbench({
+      name: choice.name, projectLabel: choice.projectLabel, scopeSummary: choice.scopeSummary,
+      personaSummary: choice.personaSummary,
+      bindInputId: message.inputId, ...question,
+      idempotencyKey: `workbench-choice:${message.inputId}:v${String(question.questionVersion)}:option:${String(index)}`,
+    }));
+  };
+  const createManual = (event: SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!name.trim() || !projectLabel.trim() || !scopeSummary.trim()) return;
     void run(() => api.createWorkbench({
       name: name.trim(), projectLabel: projectLabel.trim(), scopeSummary: scopeSummary.trim(),
       personaSummary: "围绕已确认的工程目标和工作范围推进，以可验证的证据记录结论。",
       bindInputId: message.inputId, ...question,
-      idempotencyKey: `workbench-choice:${message.inputId}:v${String(question.questionVersion)}`,
+      idempotencyKey: `workbench-choice:${message.inputId}:v${String(question.questionVersion)}:manual`,
     }));
   };
   const normalized = query.trim().toLocaleLowerCase();
   const visible = workbenches.filter((workbench) => `${workbench.name} ${workbench.scopeSummary}`.toLocaleLowerCase().includes(normalized));
   return <div className="joi-workbench-choice" aria-busy={busy}>
     <p>{t("workbenches.chooseAnExistingWorkbenchOrCreateASeparateScope")}</p>
-    {creating ? <form className="joi-workbench-choice-form" onSubmit={create}>
+    {manual ? <form className="joi-workbench-choice-form" onSubmit={createManual}>
       <label>{t("workbenches.workbenchName")}<input autoFocus disabled={busy} maxLength={80} onChange={(event) => setName(event.target.value)} required value={name} /></label>
       <label>{t("home.projectName")}<input disabled={busy} maxLength={120} onChange={(event) => setProjectLabel(event.target.value)} required value={projectLabel} /></label>
-      <label>{t("workbenches.workScope")}<textarea disabled={busy} maxLength={1000} onChange={(event) => setScopeSummary(event.target.value)} required rows={4} value={scopeSummary} /></label>
+      <label>{t("workbenches.workScope")}<textarea disabled={busy} maxLength={1000} onChange={(event) => setScopeSummary(event.target.value)} required rows={3} value={scopeSummary} /></label>
       <div className="row-actions">
         <button className="button primary" disabled={busy} type="submit">{busy ? t("workbenches.creating") : t("workbenches.createAndContinue")}</button>
-        <button className="button quiet" disabled={busy} onClick={() => { setCreating(false); setError(null); }} type="button">{t("workbenches.backToSelection")}</button>
+        <button className="button quiet" disabled={busy} onClick={() => { setManual(false); setError(null); }} type="button">{t("workbenches.backToSelection")}</button>
       </div>
     </form> : <>
       {workbenches.length > 6 ? <label className="joi-clarify-workbench-search">{t("home.searchWorkbenches")}<input disabled={busy} onChange={(event) => setQuery(event.target.value)} type="search" value={query} /></label> : null}
@@ -59,7 +69,17 @@ export function WorkbenchChoiceForm({ api, message, workbenches, onResolved }: {
         </button>)}
         {visible.length === 0 ? <p>{t("workbenches.noMatchingWorkbenchesYouCanCreateOne")}</p> : null}
       </div>
-      <button className="button primary" disabled={busy} onClick={() => setCreating(true)} type="button">{t("workbenches.newWorkbench")}</button>
+    <div className="joi-workbench-prepared" role="group" aria-label={t("workbenches.preparedChoices")}>
+      <h3>{t("workbenches.preparedChoices")}</h3>
+      <div className="joi-workbench-prepared-options">
+        {choices.map((choice, index) => <button aria-label={t("workbenches.createSuggestion", { name: choice.name })} className="joi-clarify-workbench-option" disabled={busy} key={choice.name} onClick={() => create(choice, index)} type="button">
+          <strong>{choice.name}</strong><span>{choice.scopeSummary}</span><small>{t("workbenches.autoGenerated")} · {t("workbenches.createAndContinue")}</small>
+        </button>)}
+        <button aria-label={t("workbenches.manualCreate")} className="joi-clarify-workbench-option" disabled={busy} onClick={() => { setManual(true); setError(null); }} type="button">
+          <strong>{t("workbenches.manualCreate")}</strong><span>{t("workbenches.manualCreateDescription")}</span>
+        </button>
+      </div>
+    </div>
     </>}
     {error === null ? null : <p className="inline-notice danger" role="alert">{error}</p>}
   </div>;

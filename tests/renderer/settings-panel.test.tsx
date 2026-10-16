@@ -49,6 +49,20 @@ function mockOperations(api: DigitalLifeApi) {
 }
 
 describe("settings panel", () => {
+  it("keeps the language selector beside the page title across settings tabs", async () => {
+    const api = new DigitalLifeApi("");
+    mockOperations(api);
+    render(<SettingsPanel api={api} diagnostics={diagnostics} />);
+    await screen.findByRole("button", { name: "添加网络" });
+    const language = screen.getByRole("combobox", { name: "语言" });
+    const header = screen.getByRole("heading", { name: "joi 的设置" }).closest("header");
+    expect(header).toContainElement(language);
+    expect(screen.getByRole("tabpanel")).not.toContainElement(language);
+    fireEvent.click(screen.getByRole("tab", { name: "安全" }));
+    expect(screen.getByRole("combobox", { name: "语言" })).toBe(language);
+    expect(header).toContainElement(language);
+  });
+
   it("explains missing Skills, supports search and preserves draft selection during refresh", async () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "settings").mockResolvedValue({ ...runtimeSettings, joiSkills: ["agents/missing"] });

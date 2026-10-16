@@ -1,6 +1,7 @@
 import 'i18n.dart';
 import 'package:flutter/material.dart';
 import 'remote_controller.dart';
+import 'workbench_suggestions.dart';
 
 Future<bool?> showWorkbenchChoice(
   BuildContext context,
@@ -24,17 +25,17 @@ class _WorkbenchChoice extends StatefulWidget {
 }
 
 class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
-  late final _name = TextEditingController(
-    text: widget.goal.workbenchProposal?.name,
+  late final _choices = workbenchCreationSuggestions(
+    seed: widget.goal.title,
+    proposalName: widget.goal.workbenchProposal?.name,
+    proposalProjectLabel: widget.goal.workbenchProposal?.projectLabel,
+    proposalScopeSummary: widget.goal.workbenchProposal?.scopeSummary,
   );
-  late final _project = TextEditingController(
-    text: widget.goal.workbenchProposal?.projectLabel,
-  );
-  late final _scope = TextEditingController(
-    text: widget.goal.workbenchProposal?.scopeSummary,
-  );
+  final _name = TextEditingController();
+  final _project = TextEditingController();
+  final _scope = TextEditingController();
+  bool _manual = false;
   String _query = '';
-  bool _creating = false;
   bool _busy = false;
   Object? _error;
   RemoteWorkbenchCreation? _created;
@@ -74,17 +75,30 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
     super.dispose();
   }
 
-  Future<void> _submit([String? workbenchId]) async {
+  Future<void> _submit({
+    String? workbenchId,
+    WorkbenchSuggestion? choice,
+    int? index,
+  }) async {
     if (_busy) return;
-    workbenchId ??= _created?.id;
-    if (workbenchId == null &&
-        [_name, _project, _scope].any((field) => field.text.trim().isEmpty)) {
-      setState(
-        () => _error = UiNotice(
-          Msg.mobileEnterAWorkbenchNameProjectNameAndWorkScope,
-        ),
+    if (workbenchId == null && choice == null) {
+      if (!_manual) return;
+      if ([_name, _project, _scope].any((field) => field.text.trim().isEmpty)) {
+        setState(
+          () => _error = UiNotice(
+            Msg.mobileEnterAWorkbenchNameProjectNameAndWorkScope,
+          ),
+        );
+        return;
+      }
+      choice = WorkbenchSuggestion(
+        description: '',
+        kind: 'template',
+        name: _name.text.trim(),
+        projectLabel: _project.text.trim(),
+        scopeSummary: _scope.text.trim(),
+        personaSummary: '围绕已确认的工程目标和工作范围推进，以可验证的证据记录结论。',
       );
-      return;
     }
     setState(() {
       _busy = true;
@@ -103,14 +117,14 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
       } else {
         final created = await widget.controller.createWorkbench(
           inputId: goal.goalId,
-          name: _name.text.trim(),
-          projectLabel: _project.text.trim(),
-          scopeSummary: _scope.text.trim(),
-          personaSummary: '围绕已确认的工程目标和工作范围推进，以可验证的证据记录结论。',
+          name: choice!.name,
+          projectLabel: choice.projectLabel,
+          scopeSummary: choice.scopeSummary,
+          personaSummary: choice.personaSummary,
           questionId: goal.questionId ?? 'legacy_question:${goal.goalId}',
           questionVersion: goal.questionVersion ?? 1,
           idempotencyKey:
-              'workbench-choice:${goal.goalId}:v${goal.questionVersion ?? 1}',
+              'workbench-choice:${goal.goalId}:v${goal.questionVersion ?? 1}:${index == null ? 'manual' : 'option:$index'}',
         );
         if (!created.bound) {
           if (mounted) {
@@ -187,12 +201,17 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
                         ),
                       ],
                     ),
-                    Text(tr(Msg.mobileChooseAWorkbenchForThisTaskOrCreateA)),
+                    Text(
+                      tr(
+                        Msg.workbenchesChooseAnExistingWorkbenchOrCreateASeparateScope,
+                      ),
+                    ),
                     const SizedBox(height: 16),
-                    if (_creating) ...[
+                    if (_manual) ...[
                       TextField(
                         controller: _name,
-                        enabled: !busy,
+                        enabled: !busy && _created == null,
+                        autofocus: true,
                         maxLength: 80,
                         decoration: InputDecoration(
                           labelText: tr(Msg.workbenchesWorkbenchName),
@@ -200,7 +219,7 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
                       ),
                       TextField(
                         controller: _project,
-                        enabled: !busy,
+                        enabled: !busy && _created == null,
                         maxLength: 120,
                         decoration: InputDecoration(
                           labelText: tr(Msg.homeProjectName),
@@ -208,7 +227,7 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
                       ),
                       TextField(
                         controller: _scope,
-                        enabled: !busy,
+                        enabled: !busy && _created == null,
                         maxLength: 1000,
                         minLines: 3,
                         maxLines: 6,
@@ -217,11 +236,11 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
                         ),
                       ),
                       FilledButton(
-                        onPressed: busy ? null : () => _submit(),
+                        onPressed: busy
+                            ? null
+                            : () => _submit(workbenchId: _created?.id),
                         child: Text(
-                          _busy
-                              ? tr(Msg.mobileSubmitting)
-                              : _created == null
+                          _created == null
                               ? tr(Msg.workbenchesCreateAndContinue)
                               : tr(
                                   Msg.mobileChooseTheCreatedWorkbenchToContinue,
@@ -229,10 +248,10 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
                         ),
                       ),
                       TextButton(
-                        onPressed: busy
+                        onPressed: busy || _created != null
                             ? null
                             : () => setState(() {
-                                _creating = false;
+                                _manual = false;
                                 _error = null;
                               }),
                         child: Text(tr(Msg.workbenchesBackToSelection)),
@@ -246,30 +265,103 @@ class _WorkbenchChoiceState extends State<_WorkbenchChoice> {
                             labelText: tr(Msg.homeSearchWorkbenches),
                           ),
                         ),
-                      for (final workbench in visible)
-                        ListTile(
-                          title: Text(workbench.name),
-                          subtitle: Text(workbench.description),
-                          enabled: !busy,
-                          onTap: busy ? null : () => _submit(workbench.id),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: MediaQuery.sizeOf(context).height * .25,
                         ),
-                      if (visible.isEmpty)
-                        Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Text(
-                            tr(
-                              Msg.workbenchesNoMatchingWorkbenchesYouCanCreateOne,
+                        child: ListView(
+                          shrinkWrap: true,
+                          children: [
+                            for (final workbench in visible)
+                              ListTile(
+                                title: Text(workbench.name),
+                                subtitle: Text(workbench.description),
+                                enabled: !busy,
+                                onTap: busy
+                                    ? null
+                                    : () => _submit(workbenchId: workbench.id),
+                              ),
+                            if (visible.isEmpty)
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                                child: Text(
+                                  tr(
+                                    Msg.workbenchesNoMatchingWorkbenchesYouCanCreateOne,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (state.supportsWorkbenchCreation) ...[
+                        const Divider(height: 24),
+                        Text(
+                          tr(Msg.workbenchesPreparedChoices),
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 8),
+                        if (_created != null)
+                          FilledButton(
+                            onPressed: busy
+                                ? null
+                                : () => _submit(workbenchId: _created!.id),
+                            child: Text(
+                              tr(Msg.mobileChooseTheCreatedWorkbenchToContinue),
                             ),
                           ),
+                        for (var index = 0; index < _choices.length; index++)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: Card(
+                              margin: EdgeInsets.zero,
+                              child: ListTile(
+                                title: Text(_choices[index].name),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(tr(Msg.workbenchesAutoGenerated)),
+                                    Text(_choices[index].scopeSummary),
+                                    const SizedBox(height: 6),
+                                    Text(
+                                      tr(Msg.workbenchesCreateAndContinue),
+                                      style: TextStyle(
+                                        color: Theme.of(
+                                          context,
+                                        ).colorScheme.primary,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                enabled: !busy && _created == null,
+                                onTap: busy || _created != null
+                                    ? null
+                                    : () => _submit(
+                                        choice: _choices[index],
+                                        index: index,
+                                      ),
+                              ),
+                            ),
+                          ),
+                        Card(
+                          margin: EdgeInsets.zero,
+                          child: ListTile(
+                            leading: const Icon(Icons.add_rounded),
+                            title: Text(tr(Msg.workbenchesManualCreate)),
+                            subtitle: Text(
+                              tr(Msg.workbenchesManualCreateDescription),
+                            ),
+                            enabled: !busy && _created == null,
+                            onTap: busy || _created != null
+                                ? null
+                                : () => setState(() {
+                                    _manual = true;
+                                    _error = null;
+                                  }),
+                          ),
                         ),
-                      if (state.supportsWorkbenchCreation)
-                        FilledButton.icon(
-                          onPressed: busy
-                              ? null
-                              : () => setState(() => _creating = true),
-                          icon: const Icon(Icons.add_rounded),
-                          label: Text(tr(Msg.workbenchesNewWorkbench)),
-                        ),
+                      ],
                     ],
                     if (_error != null)
                       Padding(
