@@ -14,7 +14,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6)](package.json)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-joi 不是一个新的聊天页，而是在你自己的电脑上长期运行的 Runtime。唯一全局 **joi** 编排者使用 **Pi** 推理基座进行规划，把身份、人格、事件、记忆、作息、事务与预算保存在本地 SQLite 中，并在彼此隔离的**工作台（Workbench）**上下文里，把执行派给本机 Pi 搭档或局域网 A2A 搭档。
+joi 运行在你自己的电脑上，是一个长期在线的 Runtime：常驻中枢，身份、记忆与工作台都活得比任何一次会话更久。唯一全局 **joi** 编排者使用 **Pi** 推理基座进行规划，把身份、人格、事件、记忆、作息、事务与预算保存在本地 SQLite 中，并在彼此隔离的**工作台（Workbench）**上下文里，把执行派给本机 Pi 搭档或局域网 A2A 搭档。
 
 - 包名、版本与官方描述：`package.json`（`name`、`version`、`description`）。
 - 产品术语（joi、Pi、Workbench、Partner、Work、WorkResult、harness）：`docs/00-sources-and-glossary.md` §0。
@@ -48,11 +48,11 @@ joi 不是一个新的聊天页，而是在你自己的电脑上长期运行的 
 
 joi 的工程目标继承自 [`docs/00-sources-and-glossary.md`](docs/00-sources-and-glossary.md) §2.1 记录的产品立论：
 
-- 超长期任务的核心障碍是回合制交互与缺乏中断/恢复机制，而不只是上下文窗口。
-- 主体是**整个运行时**；LLM 是推理与语言器官，不是全部主体。
+- 超长期任务的核心障碍是回合制交互与缺少中断、恢复路径，上下文窗口只是次要约束。
+- 主体是**整个运行时**，LLM 是其中的推理与语言器官。
 - 人类消息、作息、闹钟、精力与待办都作为**平等事件**进入仲裁系统。
-- 连续性来自持久记忆、意识残留、待办和自我唤醒，而不是一段永不结束的模型上下文。
-- 多 Agent 协作应以稳定角色、持续记忆和产出物交接为基础，而不是一次性 SubAgent 调用。
+- 连续性来自持久记忆、意识残留、待办与自我唤醒，不需要任何单一模型上下文独自承担。
+- 多 Agent 协作以稳定角色、持续记忆和产出物交接为基础，一次性 SubAgent 调用给不了这些。
 
 本项目追求上述工程目标，但不对“意识”或“生命”的哲学命题作技术证明。这里的“生命”是指具有持久身份、事件驱动唤醒和跨会话连续性的数字运行实例。
 
@@ -60,41 +60,29 @@ joi 的工程目标继承自 [`docs/00-sources-and-glossary.md`](docs/00-sources
 
 ## 双重进化：搭档越用越强，工作台越用越懂你
 
-joi 想兑现的承诺是「越用越会配合你」，而不只是「越答越好」。运行时里同时跑着两条进化回路 —— 一条把每个**搭档**磨得更锋利，一条让与你共享的**工作台**更懂你 —— 两条回路最终落在同一张结果表上。所以「搭档越配合越强」与「工作台越用越懂你」不是两句口号，而是同一份事实的两个投影。
+joi 想兑现的承诺是越用越会配合你。运行时里同时跑着两条进化回路：一条把每个**搭档**磨得更锋利，另一条让与你共享的**工作台**更懂你，两条回路最终落在同一张结果表上。「搭档越配合越强」与「工作台越用越懂你」说的是同一套机制的两面。
 
-![joi 双重进化示意图：左环是搭档进化回路，右环是工作台进化回路，两环在共享的结果事实表上交汇](docs/assets/dual-evolution.svg)
+![joi 双重进化：左环是搭档进化回路，右环是工作台进化回路，两环在共享的结果事实表上交汇](docs/assets/dual-evolution.svg)
 
-*示意图，非运行截图。本版图内标注为中文；每个节点都对应真实的表、服务或常量，并标注了文件与行号。图源：[`docs/assets/dual-evolution.svg`](docs/assets/dual-evolution.svg)。*
+*两条回路，一张结果表。图源：[`docs/assets/dual-evolution.svg`](docs/assets/dual-evolution.svg)。*
 
 ### 回路 A · 搭档：派发、自动生成、越配越强
 
-**1. 配合是派发，不是聊天。** 一个请求会被拆成 Work 工作项，每项都有独立的访问等级、执行需求与依赖边。`resources/migrations/052_work_dependency_gate.sql` 在派发时强制依赖 DAG：上游未完成，下游不可领取；依赖失败则确定性地级联取消（`src/main/domain/work/work.ts`）。独立的 AFK 工作并行铺开，且 joi 绝不会把两个搭档放在同一个工作单元上（`src/main/application/joi/joi-system-prompt.ts`）。没有至少一条可机械校验的验收检查，Work 就不允许派发 —— 编排服务会以 `work_acceptance_checks_required` 拒绝（`src/main/application/work/work-orchestration-service.ts`），每条结果随后按这些检查逐条核验（`resources/migrations/035_work_brief_verification.sql`）。搭档是模板，实例才是运行中的会话：`partner_instances` 同时支持用完即弃的 `EPHEMERAL` 与常驻复用的 `RESIDENT`，上限为全局 12 个、单个搭档 4 个（`src/main/application/partners/partner-instance-manager.ts`）。
+1. 配合就是派发。一个请求会被拆成 Work 工作项，每项都有独立的访问等级、执行需求与依赖边。`resources/migrations/052_work_dependency_gate.sql` 在派发时强制依赖 DAG：上游未完成，下游不可领取；依赖失败则确定性地级联取消（`src/main/domain/work/work.ts`）。独立的 AFK 工作并行铺开，且 joi 绝不会把两个搭档放在同一个工作单元上（`src/main/application/joi/joi-system-prompt.ts`）。没有至少一条可机械校验的验收检查，Work 就不允许派发，编排服务会以 `work_acceptance_checks_required` 拒绝（`src/main/application/work/work-orchestration-service.ts`），每条结果随后按这些检查逐条核验（`resources/migrations/035_work_brief_verification.sql`）。搭档是模板，实例才是运行中的会话：`partner_instances` 同时支持用完即弃的 `EPHEMERAL` 与常驻复用的 `RESIDENT`，上限为全局 12 个、单个搭档 4 个（`src/main/application/partners/partner-instance-manager.ts`）。
 
-**2. 没有合适的搭档，joi 就造一个能力簇 —— 而不是一次性任务名。** joi 先调 `partner_list_available` 尽量复用现成搭档，只有当真的没有合适者时才 `partner_create`（`src/main/application/joi/joi-system-prompt.ts`）。新搭档按可持续复用的能力簇命名，绝不按一次性任务、模型或版本命名 —— 是「模型调研搭档」，不是「Grok4.6 模型调研搭档」；`partnerClusterName` / `partnerClusterKey`（`src/main/domain/workbench/workbench-naming.ts`）会归一化名称、剥掉一次性模型 token，同名簇直接返回已有搭档而不是复制一份。省略 `modelSourceId` 与 `modelIdOverride`，新搭档就跟随全局首选模型源（`src/main/infrastructure/pi/joi-reasoning-tools.ts`）。joi 创建的每个搭档都会打上 `created_by = 'JOI'`（`resources/migrations/023_partner_config_extensions.sql`），它组起来的团队因此始终可见、可审计。
+2. 没有合适的搭档时，joi 就造一个能力簇。joi 先调 `partner_list_available` 尽量复用现成搭档，只有当真的没有合适者时才 `partner_create`（`src/main/application/joi/joi-system-prompt.ts`）。新搭档按可持续复用的能力簇命名，绝不按一次性任务、模型或版本命名：「模型调研搭档」可以，「Grok4.6 模型调研搭档」不行。`partnerClusterName` / `partnerClusterKey`（`src/main/domain/workbench/workbench-naming.ts`）会归一化名称、剥掉一次性模型 token，同名簇直接返回已有搭档而不是复制一份。省略 `modelSourceId` 与 `modelIdOverride`，新搭档就跟随全局首选模型源（`src/main/infrastructure/pi/joi-reasoning-tools.ts`）。joi 创建的每个搭档都会打上 `created_by = 'JOI'`（`resources/migrations/023_partner_config_extensions.sql`），它组起来的团队因此始终可见、可审计。
 
-**3. 每次运行都留记录，记录决定下一次选谁。** 运行结束时 `recordResult()` 追加真实结果、把记录裁剪到 32 条、每 8 条刷新一次滚动摘要；`digest()` 返回最近三条结果与一个由真实记录算出的 `successRate`（`src/main/application/partners/partner-work-memory-service.ts`）。这份摘要随每次 `partner_list_available` 一起返回 —— 工具描述的原话就是「用摘要来挑」—— 所以 joi 是凭证据选搭档，而不是凭名字（`src/main/infrastructure/pi/joi-reasoning-tools.ts`）。记忆按「工作台 × 搭档」隔离（`resources/migrations/027_avatar_private_partner_results.sql`）：在 A 工作台表现出色的搭档，借不到那份声誉到 B 工作台。知识在旁边累积 —— 每个搭档最多 8 篇文档、单篇 6,000 字符、每次注入预算 16,000 字符（`src/main/application/partners/partner-knowledge-service.ts`）。能力、工具、技能与模型绑定全部版本化：任何改动都会新建一个不可变 revision 并把 `active_revision_id` 指过去，历史结果永远对得上当时的行为体（`src/main/application/partners/partner-registry-service.ts`）。成长是真的，而且可追溯。
+3. 每次运行都留记录，记录决定下一次选谁。运行结束时 `recordResult()` 追加真实结果、把记录裁剪到 32 条、每 8 条刷新一次滚动摘要；`digest()` 返回最近三条结果与一个由真实记录算出的 `successRate`（`src/main/application/partners/partner-work-memory-service.ts`）。这份摘要随每次 `partner_list_available` 一起返回，工具描述的原话就是「用摘要来挑」（`src/main/infrastructure/pi/joi-reasoning-tools.ts`），所以证据决定选谁。记忆按「工作台 × 搭档」隔离（`resources/migrations/027_avatar_private_partner_results.sql`）：在 A 工作台表现出色的搭档，借不到那份声誉到 B 工作台。知识在旁边累积，每个搭档最多 8 篇文档、单篇 6,000 字符、每次注入预算 16,000 字符（`src/main/application/partners/partner-knowledge-service.ts`）。能力、工具、技能与模型绑定全部版本化：任何改动都会新建一个不可变 revision 并把 `active_revision_id` 指过去，历史结果永远对得上当时的行为体（`src/main/application/partners/partner-registry-service.ts`）。成长是真的，而且可追溯。
 
 ### 回路 B · 工作台：上下文活得比会话更久
 
-**4. 上下文会持久化，被限制的只是单次请求。** 会话、轮次、收件消息、Work 工作项与结果全部落在本地 SQLite 数据库里，结果正文只存引用（`work_results.body_ref` → `work_result_bodies`），不塞进对话记录（`resources/migrations/017_joi_orchestration.sql`、`resources/migrations/027_avatar_private_partner_results.sql`）。生效需求会被固化成版本化契约（`joi_goal_requirements`，`GOAL_REQUIREMENTS_MAX_CHARS = 16_000`），契约未就绪时编排器拒绝派发（`src/main/application/work/work-orchestration-service.ts`）。每次派发前，`WorkbenchContextAssembler.assemble()` 都会写下「这次派发所见的世界」快照 —— 人设版本、工作区引用、记忆摘要引用 —— 并钉在该次运行上（`src/main/application/joi/workbench-context-assembler.ts`）。这些都不会因为一次会话结束而消失。真正被限制的是**单次请求**：每轮都按当前模型窗口重新装配上下文，上限 1,000,000 字符与 32 条消息，且永远不丢开头的 system 消息与最新的用户回合（`src/main/infrastructure/pi/pi-model-budget.ts`）。所以请精确理解这句话：**上下文不会因为会话结束而消失 —— 它每轮重新装配 —— 而单次模型请求是有限的，这是设计使然。** 放不下的历史会被显式说明，任何被丢掉的结果都能用 `work_read_result` 按 id 取回。这就是「工作台不会从零开始」在这里的确切含义。
+4. 上下文会持久化，单次请求则有边界。会话、轮次、收件消息、Work 工作项与结果全部落在本地 SQLite 数据库里，结果正文只存引用（`work_results.body_ref` → `work_result_bodies`），不塞进对话记录（`resources/migrations/017_joi_orchestration.sql`、`resources/migrations/027_avatar_private_partner_results.sql`）。生效需求会被固化成版本化契约（`joi_goal_requirements`，`GOAL_REQUIREMENTS_MAX_CHARS = 16_000`），契约未就绪时编排器拒绝派发（`src/main/application/work/work-orchestration-service.ts`）。每次派发前，`WorkbenchContextAssembler.assemble()` 都会写下这次派发所见的世界快照（人设版本、工作区引用、记忆摘要引用），并钉在该次运行上（`src/main/application/joi/workbench-context-assembler.ts`）。这些都不会因为一次会话结束而消失：每轮都按当前模型窗口重新装配上下文，上限 1,000,000 字符与 32 条消息，且永远不丢开头的 system 消息与最新的用户回合（`src/main/infrastructure/pi/pi-model-budget.ts`）。放不下的历史会被显式说明，任何被丢掉的结果都能用 `work_read_result` 按 id 取回。
 
-**5. 工作台自身也在进化：人设、记忆、工作区、结构。** 工作台持有版本化的人设正文（`workbench_persona_revisions`）、自己的记忆命名空间（`workbenches.memory_namespace_id`，实体在 `memory_fragments` 并由 FTS5 提供全文检索，见 `resources/migrations/004_continuity.sql`），以及一个工作区 —— 由 joi 托管，或绑定到你已有的目录（`workbench_workspace_bindings`，`kind IN ('MANAGED','BOUND')`）。它的形态跟着你的使用走：活跃工作与近期结果持续投影到 `workbench_task_projections`。当一个工作台完成使命，joi 会**建议**合并或归档（`WorkbenchChangeService.suggestMerge` / `suggestArchive`）—— 是建议，必须你确认才生效（`resources/migrations/019_avatar_change_confirmation.sql`）。学习永远不会改写你是谁：人设与范围始终由用户管理，任何学到的策略都不得扩大你的范围（`src/main/application/joi/joi-system-prompt.ts`）。
+5. 工作台自身也在进化，人设、记忆、工作区与结构都会随使用变化。工作台持有版本化的人设正文（`workbench_persona_revisions`）、自己的记忆命名空间（`workbenches.memory_namespace_id`，实体在 `memory_fragments` 并由 FTS5 提供全文检索，见 `resources/migrations/004_continuity.sql`），以及一个由 joi 托管或绑定到你已有目录的工作区（`workbench_workspace_bindings`，`kind IN ('MANAGED','BOUND')`）。它的形态跟着你的使用走：活跃工作与近期结果持续投影到 `workbench_task_projections`。当一个工作台完成使命，joi 会**建议**合并或归档（`WorkbenchChangeService.suggestMerge` / `suggestArchive`），你确认之前什么都不会发生（`resources/migrations/019_avatar_change_confirmation.sql`）。学习永远不会改写你是谁：人设与范围始终由用户管理，任何学到的策略都不得扩大你的范围（`src/main/application/joi/joi-system-prompt.ts`）。
 
-**6. 两条回路的交汇：结果变成证据，证据变成下一次简报。** `SqliteEvolutionStore.evidenceSeeds()` 只从权威且不迟到的结果取证（`is_authoritative = 1 AND is_late = 0`，权威标记见 `resources/migrations/034_work_goal_binding_and_result_authority.sql`），且只取被钉为可评估的目标（`src/main/infrastructure/persistence/sqlite-evolution-store.ts`）。证据池攒够 10 个可客观评估的目标才允许推进，失败与回滚阈值分别是 3 和 2（`src/shared/evolution.ts`）；一次策略修订只改一个策略模块（`src/main/domain/evolution/strategy.ts`），并经 `strategyForGoal()` 以金丝雀取样方式进入下一次派发（`src/main/application/evolution/evolution-service.ts`）。运行时提示词把层级写得毫不含糊：`Runtime strategy (subordinate to user requirements and fixed gates)`。于是闭环成立：工作台的策略改变 joi 拆解与撰写简报的方式 → 简报改变搭档收到的指令与它持有的工具技能 → 搭档的结果改变它的成功率与记忆 → 成功率改变 joi 下一次选谁 → 而新的结果又成为新的证据。**多合作一次，下一次就选得更准；多做完一个目标，下一次就交代得更准。**
+6. 两条回路在结果表上交汇：结果变成证据，证据变成下一次简报。`SqliteEvolutionStore.evidenceSeeds()` 只从权威且不迟到的结果取证（`is_authoritative = 1 AND is_late = 0`，权威标记见 `resources/migrations/034_work_goal_binding_and_result_authority.sql`），且只取被钉为可评估的目标（`src/main/infrastructure/persistence/sqlite-evolution-store.ts`）。证据池攒够 10 个可客观评估的目标才允许推进，失败与回滚阈值分别是 3 和 2（`src/shared/evolution.ts`）；一次策略修订只改一个策略模块（`src/main/domain/evolution/strategy.ts`），并经 `strategyForGoal()` 以金丝雀取样方式进入下一次派发（`src/main/application/evolution/evolution-service.ts`）。运行时提示词把层级写得毫不含糊：`Runtime strategy (subordinate to user requirements and fixed gates)`。于是闭环成立：工作台的策略改变 joi 拆解与撰写简报的方式 → 简报改变搭档收到的指令与它持有的工具技能 → 搭档的结果改变它的成功率与记忆 → 成功率改变 joi 下一次选谁 → 而新的结果又成为新的证据。**多合作一次，下一次就选得更准；多做完一个目标，下一次就交代得更准。**
 
-### 两条回路的真实运行画面
-
-以下两张都来自真实运行的 Electron 应用（`npm run test:e2e`；截取时界面语言为中文）。
-
-![创建工作台：复用已有工作台、按模板自动生成，或手动新建](docs/assets/screenshot-4.png)
-
-**创建工作台** —— 复用已有工作台、让 joi 按模板自动生成（「自动生成 · 创建并继续」），或自己填写名称、工程与工作范围。截取自 `tests/e2e/workbench-choice.spec.ts`。
-
-![创建搭档：本地 Pi 搭档或远端 A2A、引擎、模型来源与工具权限](docs/assets/screenshot-5.png)
-
-**创建搭档** —— 本地 Pi 搭档或通过 Agent Card 接入的远端 A2A，引擎 `Pi core`，模型名留空即跟随全局首选模型，以及实际授予的工具权限（bash、edit、find、grep、ls、read、write、web_search、fetch_content、get_search_content、financial_calculate、research_audit）。截取自 `tests/e2e/electron-smoke.spec.ts`。
-
-本章刻意**不**声称的内容：没有固定成功率数字（成功率由你自己的运行历史在运行时算出）、没有「无限上下文窗口」（单次请求被限制在 1,000,000 字符与 32 条消息）、也没有无限自改代码 —— 进化只推动策略与配置，且有证据阈值、灰度与回滚，始终从属于你的需求。
+成功率由你自己的运行历史在运行时算出，没有任何预先固定的数字。单次请求被限制在 1,000,000 字符与 32 条消息，持久化则来自磁盘上的数据库。进化只推动策略与配置，前面有证据阈值、金丝雀取样与回滚，且始终从属于你的需求。
 
 ---
 
@@ -119,18 +107,18 @@ joi 想兑现的承诺是「越用越会配合你」，而不只是「越答越�
 
 ### 核心原则
 
-1. **生命主体属于 Runtime，而不是某个模型会话。** A2A context 可以过期或重建，身份与记忆不能随之丢失。
+1. **生命主体属于 Runtime。** A2A context 可以过期或重建，身份与记忆不能随之丢失。
 2. **所有刺激都是事件。** 用户消息没有绕过事件系统直接驱动模型的特权。
 3. **先持久化，再行动。** 事件、动作和调用状态必须能够在崩溃后恢复。
 4. **一个主 Agent，多名协作者。** 主 Agent 维持连续视角，协作者按能力异步承接具体工作。
 5. **自治必须有节奏。** 自主唤醒、空闲探索和调用量受预算、安静时段和紧急停止控制。
-6. **A2A 是执行协议，不是生命数据库。** Hub 通过标准 A2A 调用 Agent，但不把长期状态寄托在远端任务历史里。
+6. **A2A 是执行协议。** Hub 通过标准 A2A 调用 Agent，长期状态留在运行时里。
 
 ---
 
 ## 截图
 
-桌面应用的真实运行截图，由 Playwright 驱动真实 Electron 应用产生（`npm run test:e2e`，见 [`tests/e2e/electron-smoke.spec.ts`](tests/e2e/electron-smoke.spec.ts) 与 [`tests/e2e/statistics.spec.ts`](tests/e2e/statistics.spec.ts)）。
+joi 桌面应用的五个主要界面。
 
 **1. joi 主页** —— composer「现在想让 joi 做什么？」签名界面。
 
@@ -144,13 +132,19 @@ joi 想兑现的承诺是「越用越会配合你」，而不只是「越答越�
 
 ![设置模型网络页，含首次接入引导与已配置的模型源卡片](docs/assets/screenshot-3.png)
 
-Android 原生远程控制端，由真实 Flutter 组件渲染（390 × 844，使用合成控制器；未读取真实连接或任务数据）。出处：[`docs/design/joi-android-c-package-verification.md`](docs/design/joi-android-c-package-verification.md)。
+**4. 选择工作台** —— 已有工作台列表，以及自动生成与手动新建两种新建方式。
+
+![选择工作台对话框，列出已有工作台，并提供自动生成与手动新建两种新建方式](docs/assets/screenshot-4.png)
+
+**5. 添加搭档** —— 本地搭档或远端 A2A、引擎 `Pi core`，模型名留空即跟随全局首选，工具权限按项勾选。
+
+![添加搭档页，含本地与远端 A2A 两种来源、Pi core 引擎、留空的模型名与工具权限勾选列表](docs/assets/screenshot-5.png)
+
+Android 原生远程控制端，390 × 844。设计说明见 [`docs/design/joi-android-c-package-verification.md`](docs/design/joi-android-c-package-verification.md)。
 
 | 配对页 | 首页 |
 | --- | --- |
 | ![Android 配对页](docs/design/joi-android-pairing.png) | ![Android 首页](docs/design/joi-android-home.png) |
-
-架构图与流程图位于下方对应章节，它们是示意图，不是运行截图。
 
 ---
 
@@ -160,7 +154,7 @@ Android 原生远程控制端，由真实 Flutter 组件渲染（390 × 844，�
 
 joi 是 Electron 桌面应用，内嵌同构 Web UI。主进程承载常驻 Runtime；渲染进程是普通 React，只通过 `/api/v1` 与运行时通信。
 
-**运行时分层的职责**（由 [`scripts/architecture-boundaries.mjs`](scripts/architecture-boundaries.mjs) 与 [`AGENTS.md`](AGENTS.md) 强制）：
+运行时按层拆分，边界由 [`scripts/architecture-boundaries.mjs`](scripts/architecture-boundaries.mjs) 与 [`AGENTS.md`](AGENTS.md) 强制：
 
 | 层 | 职责 | 示例 |
 | --- | --- | --- |
@@ -171,15 +165,15 @@ joi 是 Electron 桌面应用，内嵌同构 Web UI。主进程承载常驻 Runt
 | `src/main/composition/` | 组合根与桌面 runtime worker。 | `composition/runtime-host.ts`、`runtime-worker.ts` |
 | `src/renderer/` | 仅使用共享 DTO 与 `/api/v1` 的 React UI。 | `Console.tsx`、`JoiHome.tsx`、`StatisticsPage.tsx` |
 
-**关键运行时事实**：
+持久化、传输与副作用都落在具体模块上：
 
-- 持久化使用 Node 内置的 **`node:sqlite`** `DatabaseSync`（不是 `better-sqlite3`）：`src/main/infrastructure/persistence/runtime-database.ts`。
+- 持久化使用 Node 内置的 **`node:sqlite`** `DatabaseSync`：`src/main/infrastructure/persistence/runtime-database.ts`。
 - Schema 通过单调版本的 SQL migration 演进，位于 `resources/migrations/`（共 75 个文件，当前最大为 `075_workbench_choice.sql`）。
 - Hub 暴露 HTTP `/api/v1` API，默认只监听 loopback：`src/main/interfaces/http/runtime-listeners.ts`。renderer 按固定节奏轮询收敛状态；SSE 传输已于 [ADR 0009](docs/adr/0009-actor-tree-single-root-tick.md) 退役。
 - actor 通过单一 root tick 收敛状态：`src/main/application/actors/actor-tree.ts`、[ADR 0009](docs/adr/0009-actor-tree-single-root-tick.md)。
 - 外部副作用先进入 outbox，并使用稳定幂等标识（见 [`AGENTS.md`](AGENTS.md) 的 “Development discipline”）。
 
-**默认运行策略**（可按数字生命单独修改）：
+默认策略如下，可按数字生命单独修改：
 
 | 项目 | 默认值 |
 | --- | ---: |
@@ -282,7 +276,7 @@ joi 没有 `.env` 文件；配置要么是环境变量，要么是保存在 SQLi
 
 ### 应用内设置
 
-保存在 SQLite 中，而非环境变量（`src/shared/system-settings.ts`）：
+设置保存在 SQLite 中（`src/shared/system-settings.ts`）：
 
 - `uiLocale` —— `system` / `en` / `zh-CN`。
 - LAN 监听 —— 开关、所选 RFC1918 地址、端口与风险确认。
@@ -364,7 +358,7 @@ digital-life/
 
 ### 脚本
 
-以下命令均由 `package.json#scripts` 定义。
+所有命令都由 `package.json#scripts` 定义。
 
 | 命令 | 说明 |
 | --- | --- |
