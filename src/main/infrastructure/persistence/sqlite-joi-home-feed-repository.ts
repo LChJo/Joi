@@ -461,12 +461,18 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
        const turns = connection.prepare(`SELECT t.turn_id, t.input_id AS activity_input_id, COALESCE(i.goal_input_id, t.input_id) AS goal_id,
           t.status, t.created_at, t.updated_at
         FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id = t.input_id
+        JOIN joi_inbox_messages goal ON goal.input_id = COALESCE(i.goal_input_id, i.input_id)
         WHERE (i.goal_input_id IS NOT NULL OR t.input_id NOT LIKE 'joi_result_input:%')
+          AND i.canceled_at IS NULL AND goal.canceled_at IS NULL
+          AND (t.status <> 'PENDING' OR (i.dismissed_at IS NULL AND goal.dismissed_at IS NULL))
           AND (t.status IN ('PENDING','RUNNING','WAITING') OR t.updated_at >= ?)
         UNION ALL
          SELECT 'pending:' || i.input_id, i.input_id, COALESCE(i.goal_input_id, i.input_id), 'PENDING', i.updated_at, i.updated_at
           FROM joi_inbox_messages i
+          JOIN joi_inbox_messages goal ON goal.input_id = COALESCE(i.goal_input_id, i.input_id)
          WHERE i.status = 'PENDING'
+           AND i.canceled_at IS NULL AND goal.canceled_at IS NULL
+           AND i.dismissed_at IS NULL AND goal.dismissed_at IS NULL
            AND (i.goal_input_id IS NOT NULL OR (
              i.input_id NOT LIKE 'joi_result_input:%'
              AND i.input_id NOT LIKE 'joi_harness_review:%'

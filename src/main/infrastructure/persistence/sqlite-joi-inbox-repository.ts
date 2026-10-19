@@ -1071,14 +1071,20 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // was nothing left to converge through, leaving the goal parked with no retry and no card.
       // Judge the turn that actually failed instead; a goal's own input row keeps the historical
       // check, where an earlier side effect still means a replay could duplicate work.
-      const opened = connection.prepare("SELECT reopened_at FROM joi_inbox_messages WHERE input_id = ?")
-        .get(inputId) as { reopened_at?: unknown } | undefined;
+      const opened = connection.prepare(`SELECT i.reopened_at,
+        CASE WHEN i.canceled_at IS NOT NULL OR i.dismissed_at IS NOT NULL OR EXISTS (
+          SELECT 1 FROM joi_inbox_messages goal WHERE goal.input_id = i.goal_input_id
+            AND (goal.canceled_at IS NOT NULL OR goal.dismissed_at IS NOT NULL)
+        ) THEN 1 ELSE 0 END AS revoked
+        FROM joi_inbox_messages i WHERE i.input_id = ?`)
+        .get(inputId) as { reopened_at?: unknown; revoked?: unknown } | undefined;
       const openedAt = typeof opened?.reopened_at === "string" ? opened.reopened_at : null;
       const sideEffects = inputId.startsWith("joi_result_input:")
         ? connection.prepare("SELECT 1 FROM joi_turns WHERE turn_id = ? AND side_effect_started = 1 LIMIT 1").get(turnId)
         : connection.prepare(`SELECT 1 FROM joi_turns WHERE input_id = ? AND side_effect_started = 1
           AND (? IS NULL OR created_at >= ?) LIMIT 1`).get(inputId, openedAt, openedAt);
-      const nextStatus = liveWork !== undefined || sideEffects !== undefined ? "CONSUMED" : "PENDING";
+      // Revocation of the goal also governs late failure cleanup of its derived inputs.
+      const nextStatus = opened?.revoked === 1 || liveWork !== undefined || sideEffects !== undefined ? "CONSUMED" : "PENDING";
       // Never kick a row that is waiting on the user back into the scheduler: an orphan
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages

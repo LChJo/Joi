@@ -24,6 +24,35 @@ function seedFailingSynthesis(database: RuntimeDatabase, inputId: string, failin
 }
 
 describe("sqlite joi inbox turn failure", () => {
+  it.each([false, true])("does not requeue a canceled goal's in-flight recovery after dismissal=%s", async (dismissed) => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const now = fixture.clock.now().toISOString();
+      const workbench = await fixture.workbenchRegistry.create({ name: "Cancellation", personaSummary: "Careful", projectLabel: "Test", scopeSummary: "Test" });
+      fixture.database.transaction((connection) => {
+        const insert = connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES (?, ?, 'Recovery', 'ROUTED', ?, ?, ?, ?)`);
+        insert.run("canceled-root", "canceled-root", workbench.workbenchId, null, now, now);
+        insert.run("joi_goal_resume:goal:canceled-root:q1", "recovery", workbench.workbenchId, "canceled-root", now, now);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('recovery-turn', 'joi_goal_resume:goal:canceled-root:q1', ?, 'recovery-session', 'RUNNING', ?, ?)`)
+          .run(workbench.workbenchId, now, now);
+      });
+      expect(await repository.cancel("canceled-root")).not.toBeNull();
+      if (dismissed) expect(await repository.dismiss("canceled-root")).not.toBeNull();
+      fixture.clock.advance(432);
+      await repository.failTurn("joi_goal_resume:goal:canceled-root:q1", "recovery-turn");
+      expect((await repository.loadInput("joi_goal_resume:goal:canceled-root:q1"))?.status).toBe("CONSUMED");
+      expect(fixture.database.transaction((connection) => connection.prepare("SELECT status FROM joi_turns WHERE turn_id = 'recovery-turn'").get()))
+        .toEqual({ status: "FAILED" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it.each(["live-work", "canceled", "clarification", "answer", "no-side-effects"] as const)("keeps %s lifecycle authoritative when recording a dispatch failure", async (state) => {
     const fixture = await createRuntimeFixture();
     try {

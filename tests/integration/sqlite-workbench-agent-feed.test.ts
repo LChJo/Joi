@@ -4,6 +4,35 @@ import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persiste
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("Workbench Agent and joi home projections", () => {
+  it("hides an old queued recovery whose canceled goal has already been dismissed", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "Cancellation", personaSummary: "Careful", projectLabel: "Test", scopeSummary: "Test" });
+      const now = "2026-10-19T09:19:45.119Z";
+      fixture.database.transaction((connection) => {
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, canceled_at, dismissed_at, created_at, updated_at)
+          VALUES ('dismissed-root', 'dismissed-root', 'Canceled goal', 'CONSUMED', ?, ?, ?, ?, ?)`)
+          .run(workbench.workbenchId, "2026-10-19T09:19:48.370Z", "2026-10-19T09:20:00.053Z", now, now);
+        connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES ('joi_goal_resume:goal:dismissed-root:q1', 'old-recovery', 'Recovery', 'PENDING', ?, 'dismissed-root', ?, ?)`)
+          .run(workbench.workbenchId, now, "2026-10-19T09:19:48.802Z");
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
+          VALUES ('failed-recovery', 'joi_goal_resume:goal:dismissed-root:q1', ?, 'old-session', 'FAILED', ?, ?)`)
+          .run(workbench.workbenchId, now, "2026-10-19T09:19:48.802Z");
+      });
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date("2026-10-19T12:11:00.000Z"));
+      expect(feed.goals).toEqual([]);
+      expect(feed.thinking).toEqual([]);
+      expect(fixture.database.transaction((connection) => connection.prepare("SELECT status FROM joi_inbox_messages WHERE idempotency_key = 'old-recovery'").get()))
+        .toEqual({ status: "PENDING" });
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("excludes pending remnants of terminal goals while retaining genuine queued inputs", async () => {
     const fixture = await createRuntimeFixture();
     try {
