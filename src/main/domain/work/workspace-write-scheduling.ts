@@ -8,6 +8,6 @@ export function decideWorkspaceAdmission(input: { access: "READ" | "WRITE"; othe
 
 export function classifyLocalToolEffect(name: string): LocalToolEffect {
   if (["bash", "shell", "edit", "write", "apply_patch", "multiedit", "notebookedit"].includes(name.toLowerCase())) return "WRITE";
-  if (["context_read_history", "work_read_evidence", "work_read_result", "read", "find", "grep", "glob", "ls", "webfetch", "websearch", "web_search", "fetch_content", "get_search_content", "ask_user", "financial_calculate", "research_audit"].includes(name.toLowerCase())) return "READ";
+  if (["context_read_history", "work_read_evidence", "work_read_result", "read", "find", "grep", "glob", "ls", "webfetch", "websearch", "web_search", "fetch_content", "get_search_content", "ask_user", "partner_complete", "financial_calculate", "research_audit"].includes(name.toLowerCase())) return "READ";
   return "DENY";
 }

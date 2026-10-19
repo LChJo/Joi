@@ -85,6 +85,7 @@ export function wirePartners(input: {
     partnerKnowledge,
     partnerModelProbe: new PartnerModelProbeService({ clock, engines: engineCatalog, partners, sources: modelSourceStack.modelSources }),
     partnerMemory: new PartnerWorkMemoryService({
+      diagnostics,
       clock,
       ids,
       store: persistence.partnerWorkMemoryStore,

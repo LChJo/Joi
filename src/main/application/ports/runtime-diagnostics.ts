@@ -617,6 +617,9 @@ export interface RuntimeDiagnosticEventMap {
     durationMs?: number;
     runtime?: "joi" | "pi";
   };
+  "joi.context.checkpoint_reused": { runtime: "joi"; coveredCount: number; count: number };
+  "joi.work.handoff": { workbenchId: string; workId: string; resultId: string; handoffStatus: string; handoffChars: number; isAuthoritative: boolean };
+  "joi.partner.memory_refreshed": { workbenchId: string; partnerId: string; coveredSequence: number; entryCount: number; durationMs: number; status: "generated" | "fallback" };
   "joi.context.request": {
     runtime: "joi" | "pi";
     contextChars: number;

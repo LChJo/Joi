@@ -42,7 +42,7 @@ function makeHarness(state: HarnessState, options?: {
   run?: Promise<DispatchRunOutput>;
 }) {
   const enqueued: { eventId: string; resultId: string }[] = [];
-  const recorded: { partnerId: string; workId?: string | undefined }[] = [];
+  const recorded: { partnerId: string; resultId?: string | undefined; workId?: string | undefined }[] = [];
   const sweeps: number[] = [];
   const attentionRepairs: string[] = [];
   const completed: string[] = [];
@@ -72,8 +72,8 @@ function makeHarness(state: HarnessState, options?: {
     workbenchId: "workbench_1",
     ...(options?.withDispatch === true ? { dispatch } : {}),
     instances: { sweepIdleFor: async (workbenchId: string, now: Date) => { sweeps.push(now.getTime()); return { disposed: 0, evicted: 0 }; } },
-    memory: { recordResult: async (input: { partnerId: string; workId?: string }) => {
-      recorded.push({ partnerId: input.partnerId, workId: input.workId });
+    memory: { recordResult: async (input: { partnerId: string; resultId?: string; workId?: string }) => {
+      recorded.push({ partnerId: input.partnerId, resultId: input.resultId, workId: input.workId });
       if (options?.memoryReject === true) throw new Error("memory_unavailable");
     } },
     scan: {
@@ -132,7 +132,7 @@ describe("WorkbenchAgentComponent", () => {
     const harness = makeHarness(state);
     await harness.component.update(ctxAt(0));
     expect(harness.enqueued).toEqual([{ eventId: RESULT.eventId, resultId: RESULT.resultId }]);
-    expect(harness.recorded).toEqual([{ partnerId: "partner_1", workId: "work_1" }]);
+    expect(harness.recorded).toEqual([{ partnerId: "partner_1", resultId: RESULT.resultId, workId: "work_1" }]);
 
     // The member row written by enqueue removes the result from the next traversal.
     state.unsynthesized = [];
@@ -179,19 +179,20 @@ describe("WorkbenchAgentComponent", () => {
     expect(harness.sweeps).toHaveLength(2);
   });
 
-  it("supports dispatch-enabled agents, custom sweep intervals, and best-effort memory", async () => {
+  it("retains discoverable results when durable memory recording fails", async () => {
     const state: HarnessState = {
       keys: [{ partnerId: "partner_1" }],
       unsynthesized: [RESULT],
     };
     const harness = makeHarness(state, { memoryReject: true, sweepEveryMillis: 1, withDispatch: true });
 
-    await expect(harness.component.update(ctxAt(0))).resolves.toBeUndefined();
+    await expect(harness.component.update(ctxAt(0))).rejects.toThrow("memory_unavailable");
+    expect(harness.enqueued).toHaveLength(0);
     state.unsynthesized = [];
     await harness.component.update(ctxAt(2));
 
     expect(harness.component.agentActors.map((actor) => actor.partnerId)).toEqual(["partner_1"]);
     expect(harness.recorded).toHaveLength(1);
-    expect(harness.sweeps).toHaveLength(2);
+    expect(harness.sweeps).toHaveLength(1);
   });
 });

@@ -1,5 +1,6 @@
 import type { EvolutionBatchRecordDto, EvolutionFailureCause, EvolutionLastVerdict, EvolutionModelFailure, EvolutionModule, EvolutionPhase, EvolutionReason, EvolutionScope, EvolutionStrategy, EvolutionVersionDto } from "../../../shared/evolution.js";
 import { DomainError } from "../../domain/errors.js";
+import type { EvolutionExperience } from "../../domain/evolution/experience.js";
 
 /** Failure facts cross the model port without provider messages or response bodies. */
 export class EvolutionModelCallError extends DomainError {
@@ -30,6 +31,8 @@ export interface EvolutionRollout {
   variant: "baseline" | "candidate";
   attempt: number;
   calls: number;
+  /** Every issued model call, including invalid responses and interrupted attempts. */
+  modelCalls?: number;
   tokens?: number;
   tokensComplete?: boolean;
   observations: string[];
@@ -64,6 +67,8 @@ export interface EvolutionBatch {
   phase: EvolutionPhase;
   evidenceIds: string[];
   rollouts: EvolutionRollout[];
+  /** Cost carried to a retried synthetic scenario; no production action is replayed. */
+  interruptedCosts?: Pick<EvolutionRollout, "scenarioId" | "variant" | "modelCalls" | "tokens" | "tokensComplete">[];
   revisionId?: string;
 }
 export interface EvolutionCall {
@@ -74,6 +79,8 @@ export interface EvolutionCall {
 export interface EvolutionState {
   callSequence: number;
   developmentHistory: EvolutionRollout[];
+  /** Bounded, private development comparisons, selected by applicability rather than recency. */
+  experiences?: EvolutionExperience[];
   dailyCallLimit: number;
   usage: Record<string, number>;
   activeRevisionId: string | null;

@@ -1,3 +1,5 @@
+import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
+
 export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED" | "MAP_CLEARED";
 
 export type PrimaryReasoningEvent =
@@ -5,7 +7,7 @@ export type PrimaryReasoningEvent =
   | { type: "text_delta"; delta: string; turnId: string }
   | { type: "thinking_delta"; delta: string; turnId: string }
   | { type: "tool_started"; toolCallId: string; toolName: string; turnId: string }
-  | { type: "tool_finished"; isError: boolean; outcome?: JoiReasoningOutcome; reasonCode?: string; toolCallId: string; toolName: string; turnId: string }
+  | { type: "tool_finished"; isError: boolean; outcome?: JoiReasoningOutcome; synthesisState?: GoalSynthesisDraft; reasonCode?: string; toolCallId: string; toolName: string; turnId: string }
   | { type: "turn_finished"; turnId: string };
 
 export interface StartReasoningTurnInput {
@@ -37,13 +39,20 @@ export interface StartReasoningTurnInput {
 
 export interface JoiReasoningSessionSnapshot {
   workbenchId: string;
-  /** Private source messages replaced by checkpoints, available only to this session's history tool. */
+  /** Immutable private source messages replaced by checkpoints, available only to this session's history tool. */
   archivedMessages?: unknown[];
   compaction?: {
     compactedMessages: number;
     count: number;
     lastCompactedAt: string;
     summary: string;
+    /** Private archive interval covered by this checkpoint; never a business completion marker. */
+    coverage?: {
+      checkpointId: string;
+      coveredFrom: number;
+      coveredTo: number;
+      transcriptId: string;
+    };
   } | undefined;
   messages: unknown[];
   modelRevisionId: string;

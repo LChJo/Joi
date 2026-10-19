@@ -5,6 +5,8 @@ import { assertGoalEvidenceReferences } from "./sqlite-goal-evidence-repository.
 
 import type {
   CommittedWorkPlan,
+  GoalWorkListQuery,
+  GoalWorkListPage,
   PlannedDispatchAttempt,
   ReassignedWorkPlan,
   WorkAcceptanceCheck,
@@ -294,6 +296,50 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         const brief = JSON.parse(row.intent_json) as { requirementsRevision?: number };
         return { workId: row.work_id, title: row.title, status: row.status, ...(brief.requirementsRevision === undefined ? {} : { requirementsRevision: brief.requirementsRevision }) };
       }));
+  }
+
+  async listGoalPage(input: GoalWorkListQuery): Promise<GoalWorkListPage> {
+    const limit = input.limit ?? 20;
+    const statuses = [...new Set(input.statuses ?? [])].sort();
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50
+      || statuses.some(status => !["PLANNED","READY","RUNNING","WAITING","COMPLETED","FAILED","CANCELED"].includes(status))
+      || [input.requirementsRevision,input.requirementsRevisionNot].some(revision => revision !== undefined && revision !== null && (!Number.isSafeInteger(revision) || revision < 0))) {
+      throw new DomainError("work_list_query_invalid", "Work list filters are invalid.");
+    }
+    const binding = JSON.stringify([input.goalInputId,input.workbenchId,statuses,input.requirementsRevision ?? null,
+      input.requirementsRevisionNot === undefined ? "unset" : input.requirementsRevisionNot,input.workId ?? null,input.excludeWorkId ?? null]);
+    return this.database.transaction(db => {
+      let snapshot: number;
+      let after: [string,string] | undefined;
+      if (input.cursor === undefined) {
+        snapshot = db.prepare("SELECT COALESCE(MAX(rowid),0) AS n FROM work_items WHERE input_id=? AND workbench_id=?").get(input.goalInputId,input.workbenchId)?.n as number;
+      } else {
+        let cursor: unknown;
+        try { cursor = JSON.parse(Buffer.from(input.cursor.replace(/^w1:/u,""),"base64url").toString("utf8")) as unknown; } catch { /* Invalid cursors share one public error. */ }
+        if (!input.cursor.startsWith("w1:") || cursor === null || typeof cursor !== "object") throw new DomainError("work_list_cursor_invalid", "Work list cursor is invalid.");
+        const value = cursor as { binding?: unknown; snapshot?: unknown; after?: unknown };
+        if (value.binding !== binding || typeof value.snapshot !== "number" || !Number.isSafeInteger(value.snapshot) || value.snapshot < 0
+          || !Array.isArray(value.after) || value.after.length !== 2 || value.after.some(part => typeof part !== "string")) throw new DomainError("work_list_cursor_invalid", "Work list cursor is invalid.");
+        snapshot = value.snapshot; after = value.after as [string,string];
+      }
+      const revision = "json_extract(intent_json,'$.requirementsRevision')";
+      const clauses = ["input_id=?","workbench_id=?","rowid<=?"];
+      const parameters: (string | number)[] = [input.goalInputId,input.workbenchId,snapshot];
+      if (statuses.length > 0) { clauses.push(`status IN (${statuses.map(() => "?").join(",")})`); parameters.push(...statuses); }
+      if (input.requirementsRevision !== undefined) { clauses.push(`${revision}=?`); parameters.push(input.requirementsRevision); }
+      if (input.requirementsRevisionNot === null) clauses.push(`${revision} IS NOT NULL`);
+      else if (input.requirementsRevisionNot !== undefined) { clauses.push(`(${revision} IS NULL OR ${revision}<>?)`); parameters.push(input.requirementsRevisionNot); }
+      if (input.workId !== undefined) { clauses.push("work_id=?"); parameters.push(input.workId); }
+      if (input.excludeWorkId !== undefined) { clauses.push("work_id<>?"); parameters.push(input.excludeWorkId); }
+      if (after !== undefined) { clauses.push("(created_at,work_id)>(?,?)"); parameters.push(...after); }
+      const rows = db.prepare(`SELECT work_id,title,status,created_at,${revision} AS requirements_revision FROM work_items
+        WHERE ${clauses.join(" AND ")} ORDER BY created_at,work_id LIMIT ?`).all(...parameters,limit + 1) as { work_id: string; title: string; status: string; created_at: string; requirements_revision: number | null }[];
+      const selected = rows.slice(0,limit);
+      const last = selected.at(-1);
+      return { items: selected.map(row => ({ workId: row.work_id,title: row.title,status: row.status,
+        ...(row.requirements_revision === null ? {} : { requirementsRevision: row.requirements_revision }) })),
+        ...(rows.length > limit && last !== undefined ? { nextCursor: `w1:${Buffer.from(JSON.stringify({ binding,snapshot,after: [last.created_at,last.work_id] })).toString("base64url")}` } : {}) };
+    });
   }
 
   async refreshBrief(input: { executionNeeds?: WorkExecutionNeed[]; goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds: string[]; allRequirements: boolean }): Promise<void> {

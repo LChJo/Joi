@@ -72,6 +72,17 @@ export class WorkbenchAgentComponent implements ActorComponent {
   async #synthesize(ctx: ActorTickContext): Promise<void> {
     const results = await this.dependencies.scan.listUnsynthesizedResults(this.dependencies.workbenchId);
     for (const result of results) {
+      // Persist the retryable side work before synthesis consumes the discoverable result.
+      await this.dependencies.memory.recordResult({
+        at: ctx.now.toISOString(),
+        workbenchId: result.workbenchId,
+        outcome: result.status as PartnerRunStatus,
+        partnerId: result.partnerId,
+        resultId: result.resultId,
+        sessionDataSource: result.sessionDataSource,
+        title: result.title,
+        workId: result.workId,
+      });
       const enqueuedInputId = await this.dependencies.synthesis.enqueuePartnerResult({
         workbenchId: result.workbenchId,
         eventId: result.eventId,
@@ -90,16 +101,6 @@ export class WorkbenchAgentComponent implements ActorComponent {
           workId: result.workId,
         });
       }
-      // Best-effort side memory, exactly once per discovered result (member row dedupes future ticks).
-      await this.dependencies.memory.recordResult({
-        at: ctx.now.toISOString(),
-        workbenchId: result.workbenchId,
-        outcome: result.status as PartnerRunStatus,
-        partnerId: result.partnerId,
-        sessionDataSource: result.sessionDataSource,
-        title: result.title,
-        workId: result.workId,
-      }).catch(() => undefined);
     }
   }
 

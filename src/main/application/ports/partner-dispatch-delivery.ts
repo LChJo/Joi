@@ -59,7 +59,7 @@ export interface WorkspaceLeaseRenewal {
 
 export type DispatchRunOutput =
   | { kind: "suspended" }
-  | { artifacts: PartnerRunOutput["artifacts"]; body: string; conversation?: AgentConversationDraft[]; failure?: PartnerRunFailure; kind: "terminal"; pendingQuestion?: string; status: PartnerRunStatus }
+  | (PartnerRunOutput & { conversation?: AgentConversationDraft[]; failure?: PartnerRunFailure; kind: "terminal"; status: PartnerRunStatus })
   | { kind: "waiting_remote" };
 
 /** Stages the attachments bound to a dispatch's source input into its independent input directory. */

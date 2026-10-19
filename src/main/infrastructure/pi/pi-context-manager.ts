@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
-import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, omissionNotice, summarizeSegment } from "./pi-compaction.js";
+import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, summarizeSegment, taskAnchorIndices, transcriptFingerprint } from "./pi-compaction.js";
 import { compactionReserveTokens, leadingSystemMessage } from "./pi-model-budget.js";
 
 /**
@@ -46,6 +46,10 @@ export interface PiContextCheckpoint {
   lastCompactedAt: string;
   messagesBefore: number;
   tokensBefore: number;
+  /** Identity of the exact source prefix. System prompts are refreshed outside this transcript. */
+  sourceFingerprint: string;
+  /** Source messages retained verbatim rather than covered by this summary. */
+  preservedIndices: number[];
 }
 
 export interface PiContextManagerOptions {
@@ -97,11 +101,7 @@ function cutAt(messages: readonly AgentMessage[], target: number, floor: number)
 
 /** How many messages a compaction must keep whatever else it drops: the prompt and the task. */
 function anchorEnd(messages: readonly AgentMessage[]): number {
-  if (leadingSystemMessage(messages) !== undefined) {
-    const task = messages.findIndex(message => message.role === "user");
-    return task >= 0 ? task + 1 : 1;
-  }
-  return messages[0]?.role === "user" ? 1 : 0;
+  return leadingSystemMessage(messages) === undefined ? 0 : 1;
 }
 
 export function createPiContextManager(options: PiContextManagerOptions): PiContextManager {
@@ -110,6 +110,7 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     reserveTokens: compactionReserveTokens(options.model, options.reserveTokens ?? DEFAULT_COMPACTION_SETTINGS.reserveTokens),
   };
   let checkpoint = options.restored;
+  let validatedCheckpoint: PiContextCheckpoint | undefined;
   // Prefix sums of per-message cost, addressed by message index and extended as the transcript
   // grows. Without them every request would re-price the run's entire history, which over thousands
   // of requests is quadratic in the number of tool calls a run makes.
@@ -177,8 +178,13 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
   const summaryChars = (): number => summaryMessages()
     .reduce((total, message) => total + JSON.stringify(message).length, 0);
 
+  const anchorsBefore = (messages: readonly AgentMessage[], cut: number): AgentMessage[] => [...new Set([
+    ...taskAnchorIndices(messages), ...(checkpoint?.preservedIndices ?? []),
+  ])].sort((left, right) => left - right)
+    .filter(index => index < cut).map(index => messages[index]).filter((message): message is AgentMessage => message !== undefined);
   const assemble = (messages: readonly AgentMessage[], cut: number): AgentMessage[] => [
     ...messages.slice(0, anchorEnd(messages)),
+    ...anchorsBefore(messages, cut),
     ...summaryMessages(),
     ...messages.slice(cut),
   ];
@@ -190,10 +196,14 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
    * that covers the gap, and it is the same budget the request was assembled against.
    */
   const overBudget = (messages: readonly AgentMessage[], cut: number, floor: number, standing: number): boolean => {
-    const chars = charsIn(0, floor) + standing + charsIn(cut, messages.length);
-    if (chars >= Math.min(options.messagesMaxChars, HISTORY_SOFT_TRIGGER_CHARS)) return true;
+    const anchorChars = anchorsBefore(messages, cut).reduce((sum, message) => sum + JSON.stringify(message).length, 0);
+    const chars = charsIn(0, floor) + standing + anchorChars + charsIn(cut, messages.length);
+    const fixedChars = leadingSystemMessage(messages) === undefined ? 0 : charsIn(0, 1);
+    // Summaries only reduce history; fixed policy, requirements and tools still count toward capacity.
+    if (chars >= options.messagesMaxChars || chars - fixedChars >= HISTORY_SOFT_TRIGGER_CHARS) return true;
     if (options.model.contextWindow <= 0) return false;
-    return shouldCompact(tokensIn(0, floor) + tokensIn(cut, messages.length), options.model.contextWindow, settings);
+    const standingTokens = [...anchorsBefore(messages, cut), ...summaryMessages()].reduce((sum, message) => sum + estimateTokens(message), 0);
+    return shouldCompact(tokensIn(0, floor) + standingTokens + tokensIn(cut, messages.length), options.model.contextWindow, settings);
   };
 
   /**
@@ -212,11 +222,14 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     if (nextUser !== undefined) start = nextUser;
     while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
     if (start <= floor) return assemble(messages, floor);
-    const head = [...messages.slice(0, floor), ...summaryMessages()];
+    const head = [...messages.slice(0, floor), ...anchorsBefore(messages, start), ...summaryMessages()];
     const covered = checkpoint === undefined ? floor : Math.min(start, Math.max(floor, checkpoint.cut));
     if (start <= covered) return [...head, ...messages.slice(start)];
-    const omitted = start - covered;
-    const omittedChars = charsIn(covered, start);
+    const preserved = new Set(anchorsBefore(messages, start));
+    const omittedSource = messages.slice(covered, start).filter(message => !preserved.has(message) && !isCheckpointMessage(message));
+    const omitted = omittedSource.length;
+    const omittedChars = omittedSource.reduce((sum, message) => sum + JSON.stringify(message).length, 0);
+    if (omitted === 0) return [...head, ...messages.slice(start)];
     options.onDiagnostic?.({ omittedChars, omittedMessages: omitted, type: "joi.partner.context_truncated" });
     return [...head, omissionNotice(omitted, omittedChars), ...messages.slice(start)];
   };
@@ -227,7 +240,11 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     const cut = cutAt(messages, target, floor + 1);
     // Nothing safe to cut, or nothing new since the last compaction.
     if (cut === undefined || cut <= from) return false;
-    const segment = messages.slice(from, cut);
+    const anchors = taskAnchorIndices(messages);
+    const released = (checkpoint?.preservedIndices ?? []).filter(index => index < from && !anchors.includes(index))
+      .map(index => messages[index]).filter((message): message is AgentMessage => message !== undefined);
+    const segment = [...released, ...messages.slice(from, cut).filter((message, index) => !isCheckpointMessage(message) && !anchors.includes(from + index))];
+    if (segment.length === 0) return false;
     const startedAt = Date.now();
     const generated = await summarizeSegment({
       model: options.model,
@@ -238,6 +255,7 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
       signal,
       thinkingLevel: options.thinkingLevel,
     });
+    if (signal?.aborted === true) return false;
     if (!generated.ok || generated.summary.length > HISTORY_SOFT_TARGET_CHARS / 2) {
       options.onDiagnostic?.({ reasonCode: generated.ok ? "summary_exceeds_capacity" : generated.reasonCode, type: "joi.partner.context_summary_failed" });
       return false;
@@ -251,7 +269,10 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
       messagesBefore: messages.length,
       summary: generated.summary,
       tokensBefore: tokensIn(0, messages.length),
+      sourceFingerprint: transcriptFingerprint(messages, cut),
+      preservedIndices: anchors.filter(index => index < cut),
     };
+    validatedCheckpoint = checkpoint;
     options.onDiagnostic?.({
       compactedMessages: checkpoint.compactedMessages,
       count: checkpoint.count,
@@ -279,6 +300,11 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
       };
       try {
         price(messages);
+        // Complete source messages are immutable while a loop appends its tail. Restored coverage
+        // is checked once; branching or rollback callers replace the manager with their transcript.
+        if (checkpoint !== undefined && (checkpoint.cut > messages.length || (validatedCheckpoint !== checkpoint
+          && checkpoint.sourceFingerprint !== transcriptFingerprint(messages, checkpoint.cut)))) checkpoint = undefined;
+        validatedCheckpoint = checkpoint;
         const floor = anchorEnd(messages);
         // No checkpoint means nothing has been summarized yet, so the whole transcript after the
         // anchors is the tail and the request is the transcript unchanged.

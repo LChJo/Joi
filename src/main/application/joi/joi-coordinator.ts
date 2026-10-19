@@ -378,6 +378,7 @@ export class JoiCoordinator {
     const toolStartedAt = new Map<string, number>();
     const committedOutcomeTools = new Set<string>();
     let committedTurnOutcome: JoiReasoningOutcome | undefined;
+    let committedSynthesisState: GoalSynthesisDraft | undefined;
     const attemptedSources = new Set<string>();
     let completionRepairAttempted = false;
     let toolLeakRepairAttempted = false;
@@ -476,6 +477,7 @@ export class JoiCoordinator {
                 committedOutcomeTools.add(event.toolName);
                 pass.committedOutcome = true;
                 if (event.outcome !== undefined) committedTurnOutcome = event.outcome;
+                if (event.toolName === "turn_complete") committedSynthesisState = event.synthesisState;
               }
               if (formalOutputStarted || sideEffectStarted) {
                 void this.dependencies.store.recordTurnProgress?.(turnId, { formalOutputStarted, sideEffectStarted });
@@ -643,6 +645,7 @@ export class JoiCoordinator {
             : undefined
         : undefined;
       const completion = await this.dependencies.store.completeInput(inputId, turnId, isGoalSynthesis ? {
+        ...(committedSynthesisState === undefined ? {} : { synthesisState: committedSynthesisState }),
         completionSummary,
         outcome: synthesisOutcome ?? "RESULT_BLOCKED",
       } : directOutcome === undefined ? undefined : {
@@ -746,3 +749,4 @@ export class JoiCoordinator {
     }
   }
 }
+import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";

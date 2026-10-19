@@ -1,5 +1,6 @@
 import { abbreviateAbsolutePaths } from "../text/path-abbreviation.js";
 import { truncateAtSentenceBoundary } from "../text/sentence-truncation.js";
+import { parseWorkHandoff, type WorkHandoff, type WorkHandoffStatus } from "./work-handoff.js";
 
 export type WorkResultStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
@@ -18,6 +19,8 @@ export interface WorkResult {
   runId: string;
   status: WorkResultStatus;
   summary: string;
+  handoff?: WorkHandoff;
+  handoffStatus?: WorkHandoffStatus;
   verification: { reasonCode?: string; status: "FAILED" | "NOT_REQUIRED" | "PASSED" };
   workId: string;
 }
@@ -43,8 +46,12 @@ export function createWorkResult(input: Omit<WorkResult, "summary" | "verificati
   summary?: string;
   verification?: WorkResult["verification"];
 }): WorkResult {
+  const { handoff, handoffStatus, ...fields } = input;
+  const parsed = parseWorkHandoff(handoff);
   return {
-    ...input,
+    ...fields,
+    ...(parsed.status === "PROVIDED" ? { handoff: parsed.handoff } : {}),
+    handoffStatus: parsed.status === "MISSING" && handoffStatus === "INVALID" ? "INVALID" : parsed.status,
     artifacts: input.artifacts.map((artifact) => ({ ...artifact })),
     summary: truncateAtSentenceBoundary(
       input.summary === undefined ? summarizeWorkResult(input.body, input.status) : sanitizeSummary(input.summary),

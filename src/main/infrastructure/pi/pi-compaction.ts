@@ -7,6 +7,7 @@ import {
   type AgentMessage,
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import { createHash } from "node:crypto";
 
 /**
  * The pieces both pi runtimes need to compact a conversation.
@@ -25,6 +26,23 @@ export const SUMMARY_INSTRUCTIONS = "Preserve the current task, effective mandat
 
 export const HISTORY_SOFT_TRIGGER_CHARS = 128_000;
 export const HISTORY_SOFT_TARGET_CHARS = 64_000;
+
+/** Request prompts are refreshed independently; coverage identifies only the private transcript. */
+export function transcriptFingerprint(messages: readonly AgentMessage[], cut: number): string {
+  const digest = createHash("sha256");
+  for (let index = 0; index < cut; index += 1) {
+    const message = messages[index];
+    if (message?.role !== "system") digest.update(JSON.stringify(message)).update("\n");
+  }
+  return digest.digest("hex");
+}
+
+/** The initial goal and the current user instruction survive independently of summary quality. */
+export function taskAnchorIndices(messages: readonly AgentMessage[]): number[] {
+  const first = messages.findIndex(message => message.role === "user" && !isCheckpointMessage(message));
+  const last = messages.findLastIndex(message => message.role === "user" && !isCheckpointMessage(message));
+  return [...new Set([first, last])].filter(index => index >= 0);
+}
 
 /** The text of a checkpoint message, in the shape both runtimes write and both can read back. */
 export function checkpointText(summary: string): string {
@@ -101,9 +119,9 @@ export async function summarizeSegment(input: {
       // signal moved out of the argument list into the context, so cancellation is derived here.
       input.signal === undefined ? BACKGROUND_CONTEXT : withAbortSignal(input.signal, BACKGROUND_CONTEXT),
     );
-    return generated.ok
-      ? { ok: true, summary: generated.value }
-      : { ok: false, reasonCode: generated.error.code };
+    if (!generated.ok) return { ok: false, reasonCode: generated.error.code };
+    if (generated.value.trim() === "") return { ok: false, reasonCode: "summary_empty" };
+    return { ok: true, summary: generated.value };
   } catch (error) {
     return {
       ok: false,

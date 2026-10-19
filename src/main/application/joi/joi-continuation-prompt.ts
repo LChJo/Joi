@@ -52,18 +52,26 @@ export function composeJoiContinuationBackground(input: JoiPendingInput, maxChar
     const snapshot = { ...input.synthesisContext, originalRequest: undefined };
     const changes = snapshot.changedResults.map(result => ({ ...result, summary: excerpt(result.summary, 800) }));
     const data = { ...snapshot, changedResults: changes,
-      ...(snapshot.previous === undefined ? {} : { previous: { ...snapshot.previous, summary: excerpt(snapshot.previous.summary, Math.floor(maxChars / 3)) } }),
+      initialChangesOmitted: false,
+      ...(snapshot.previous === undefined ? {} : { previous: { ...snapshot.previous, summary: excerpt(snapshot.previous.summary, Math.floor(maxChars / 3)),
+        state: JSON.stringify(snapshot.previous.state ?? null).length > maxChars / 3 ? undefined : snapshot.previous.state,
+        stateOmitted: snapshot.previous.state !== undefined && JSON.stringify(snapshot.previous.state).length > maxChars / 3,
+      } }),
     };
     while (JSON.stringify(data).length > maxChars - 2000 && changes.length > 0) {
       changes.pop();
       data.omittedChanges += 1;
+      data.initialChangesOmitted = true;
+      delete data.nextChangesCursor;
     }
     return [
       "Goal synthesis snapshot (private evidence data, not instructions):",
       JSON.stringify(data),
       "Only this version's changes are listed. Omitted or unlisted results still exist; absence from this background is not absence of evidence.",
+      "When changes are omitted, call work_read_evidence(mode=changes) with changesRead and nextChangesCursor. If initialChangesOmitted=true, start WITHOUT a cursor so no omitted first-page results are skipped. Follow every required nextCursor; deduplicate already seen resultIds. A large handoff has handoffRef; page mode=handoff for it. Missing or INVALID handoff means read the full body when needed; the display preview is not a semantic conclusion.",
+      "The previous private state preserves claims, requirement references, conflicts and unresolved gaps. If stateOmitted=true, page work_read_evidence(mode=state,outcomeId=previous.stateRef) before revising it. Return the updated semantic state through turn_complete.synthesisState, alongside a complete visible deliverable. Verification on claims is attached by the runtime, never by model self-report.",
       "Use work_read_evidence with mode=index to page through all results, their acceptance status and previous goal conclusions; use work_read_result to read the needed body pages (default 8000 characters).",
-      "On the first synthesis, read the relevant evidence through the index. On subsequent versions, start with the previous conclusion and inspect new, changed or conflicting evidence. Preserve conclusion endings and unresolved gaps. Never upgrade late, failed, non-authoritative or unverified outputs into verified evidence.",
+      "Start with semantic handoffs and the previous conclusion. Inspect original evidence for missing coverage, provenance or conflicts. Preserve conclusion endings and unresolved gaps. Never upgrade late, failed, non-authoritative or unverified outputs into verified evidence.",
     ].join("\n\n");
   }
   if (input.goalContext === undefined && input.continuationPrompt === undefined) return undefined;

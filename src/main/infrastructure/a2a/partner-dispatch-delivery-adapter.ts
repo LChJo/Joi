@@ -17,7 +17,8 @@ import {
 import type { WorkbenchAgentRepository } from "../../application/ports/workbench-agents.js";
 import type { InvocationStatus } from "../../application/ports/a2a-ports.js";
 import type { JoiCoordinatorStore } from "../../application/ports/joi-coordinator.js";
-import type { PartnerRunStatus } from "../../application/ports/partner-execution.js";
+import type { PartnerRunOutput, PartnerRunStatus } from "../../application/ports/partner-execution.js";
+import { parseWorkHandoff, WORK_HANDOFF_INSTRUCTION } from "../../domain/work/work-handoff.js";
 import type {
   DispatchRunOutput,
   PartnerDispatchClaimRow,
@@ -638,6 +639,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       return {
         artifacts: result.artifacts,
         body: result.body,
+        ...(result.handoff === undefined ? {} : { handoff: result.handoff }),
+        ...(result.handoffStatus === undefined ? {} : { handoffStatus: result.handoffStatus }),
         ...(result.conversation === undefined ? {} : { conversation: result.conversation }),
         kind: "terminal",
         ...(result.pendingQuestion === undefined ? {} : { pendingQuestion: result.pendingQuestion }),
@@ -665,7 +668,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         capacity: { lane: "collaborator", lifeId: row.workbench_id },
         messageId: row.action_id,
         parts: [
-          { kind: "text", text: `${taskProjection(row)}\n\n${remoteContext}` },
+          { kind: "text", text: `${taskProjection(row)}\n\n${remoteContext}\n\n${WORK_HANDOFF_INSTRUCTION} If supported, include a data part with joiWorkHandoff containing that version-1 handoff. Plain-text results remain supported.` },
           { data: { actionId: row.action_id, workbenchId: row.workbench_id, context: execution.sanitized, sourceBoundary: "joi-work", workId: row.work_id }, kind: "data" },
         ],
       })
@@ -686,7 +689,13 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       name: artifact.name,
       size: Buffer.byteLength(artifact.text, "utf8"),
     }));
-    return { artifacts, body, kind: "terminal", status: terminal };
+    const remoteHandoff = started.output.parts.findLast(part => {
+      const value = part as { data?: unknown; kind?: unknown };
+      return value.kind === "data" && value.data !== null && typeof value.data === "object" && "joiWorkHandoff" in value.data;
+    }) as { data: { joiWorkHandoff: unknown } } | undefined;
+    const parsed = parseWorkHandoff(remoteHandoff?.data.joiWorkHandoff);
+    return { artifacts, body, kind: "terminal", status: terminal, handoffStatus: parsed.status,
+      ...(parsed.status === "PROVIDED" ? { handoff: parsed.handoff } : {}) };
   }
 
   async complete(input: { output: DispatchRunOutput & { kind: "terminal" }; prepared: PreparedDispatch }): Promise<{ isAuthoritative: boolean; resultId: string }> {
@@ -696,6 +705,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     return this.#complete(row, input.output.status, {
       artifacts: input.output.artifacts,
       body: input.output.body,
+      ...(input.output.handoff === undefined ? {} : { handoff: input.output.handoff }),
+      ...(input.output.handoffStatus === undefined ? {} : { handoffStatus: input.output.handoffStatus }),
       ...(input.output.conversation === undefined ? {} : { conversation: input.output.conversation }),
       ...(input.output.failure === undefined ? {} : { failure: input.output.failure }),
       ...(input.output.pendingQuestion === undefined ? {} : { pendingQuestion: input.output.pendingQuestion }),
@@ -885,10 +896,18 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       this.#assertRequirements(connection, row);
       if (current.intent_json !== row.intent_json) throw new DomainError("goal_requirements_stale", "The task brief changed during preparation.");
       let pinnedRevision: number | null = null;
+      let pinnedRequirementIds: string[] | null = null;
       try {
         const brief = JSON.parse(row.intent_json) as { requirementsRevision?: number };
         pinnedRevision = brief.requirementsRevision ?? null;
       } catch { /* Invalid legacy briefs are persisted as terminal configuration failures. */ }
+      if (pinnedRevision !== null) {
+        const contract = loadGoalRequirements(connection, row.input_id, row.workbench_id);
+        if (contract?.revision !== pinnedRevision) throw new DomainError("goal_requirements_stale", "The run requires its exact requirements snapshot.");
+        const brief = JSON.parse(row.intent_json) as { requirementIds?: string[]; allRequirements?: boolean };
+        pinnedRequirementIds = contract.requirements.filter(requirement => brief.allRequirements === true
+          || requirement.scope === "GLOBAL" && requirement.mandatory || brief.requirementIds?.includes(requirement.id)).map(requirement => requirement.id);
+      }
       // Reserve an explicitly selected instance by linking this persisted start in the
       // same transaction. BUSY and already-started turns both keep later Work queued.
       let instanceId: string | undefined;
@@ -908,12 +927,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       }
       connection.prepare(`INSERT INTO partner_runs
         (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
-         external_run_id, status, created_at, updated_at, context_snapshot_id, requirements_revision, requirements_context)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?)`
+         external_run_id, status, created_at, updated_at, context_snapshot_id, requirements_revision, requirements_context, requirement_ids_json)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?, ?, ?, ?, ?, ?)`
       ).run(
         runId, row.dispatch_attempt_id, row.action_id, row.workbench_id, row.work_id, row.partner_revision_id,
         row.kind, externalRunId, now, now, snapshot.contextSnapshotId,
-        pinnedRevision, row.required_context ?? null,
+        pinnedRevision, row.required_context ?? null, pinnedRequirementIds === null ? null : JSON.stringify(pinnedRequirementIds),
       );
       connection.prepare("UPDATE dispatch_attempts SET status = 'RUNNING', updated_at = ? WHERE dispatch_attempt_id = ?")
         .run(now, row.dispatch_attempt_id);
@@ -945,9 +964,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       WHERE w.work_id = ? AND gate.status <> 'OPEN' LIMIT 1`).get(workId)) === undefined;
   }
 
-  async #complete(row: DispatchRow, status: PartnerRunStatus, output: {
-    artifacts: { artifactRef?: string; mimeType?: string; name: string; size: number }[];
-    body: string;
+  async #complete(row: DispatchRow, status: PartnerRunStatus, output: PartnerRunOutput & {
     conversation?: AgentConversationDraft[];
     failure?: PartnerRunFailure;
     pendingQuestion?: string;
@@ -992,6 +1009,8 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       artifacts: output.artifacts,
       workbenchId: row.workbench_id,
       body: output.body,
+      ...(output.handoff === undefined ? {} : { handoff: output.handoff }),
+      ...(output.handoffStatus === undefined ? {} : { handoffStatus: output.handoffStatus }),
       createdAt: now,
       ...(row.instance_id === null ? {} : { instanceId: row.instance_id }),
       isLate: false,
@@ -1003,6 +1022,9 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       verification,
       workId: row.work_id,
     }));
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.work.handoff", { workbenchId: row.workbench_id, workId: row.work_id,
+      resultId: recorded.result.resultId, handoffStatus: recorded.result.handoffStatus ?? "MISSING",
+      handoffChars: recorded.result.handoff === undefined ? 0 : JSON.stringify(recorded.result.handoff).length, isAuthoritative: recorded.isAuthoritative });
     if (recorded.isAuthoritative && (committedStatus === "COMPLETED" || committedStatus === "FAILED")) {
       this.dependencies.database.transaction((connection) => connection.prepare(`UPDATE work_recovery_attempts
         SET status = ?, updated_at = ?

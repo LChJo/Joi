@@ -81,6 +81,15 @@ function historicalStoppedGoal(row: Row): boolean {
     && number(row, "active_runs") === 0;
 }
 
+/** Pending requirements need an owner; historical results cannot advance a failed, inactive Turn. */
+function stoppedRequirements(row: Row): boolean {
+  return number(row, "requirements_pending") === 1 && row.latest_turn_status === "FAILED"
+    && text(row, "inbox_status") === "CONSUMED" && number(row, "outcome_current") === 0
+    && number(row, "turn_completion_current") === 0 && number(row, "work_active") === 0
+    && number(row, "active_runs") === 0 && number(row, "live_turn_count") === 0
+    && number(row, "pending_child_count") === 0;
+}
+
 /** Only the current, inactive synthesis may surface its durable failure on the goal. */
 function stoppedSynthesis(row: Row): boolean {
   return row.synthesis_status === "CONSUMED" && typeof row.synthesis_failed_at === "string"
@@ -121,6 +130,7 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0 || number(row, "write_queued_count") > 0) return "ARRANGED";
   if (stoppedSynthesis(row)) return "FAILED";
+  if (stoppedRequirements(row)) return "FAILED";
   if (number(row, "work_active") === 0 && number(row, "outcome_current") === 0
     && (number(row, "completed_count") + number(row, "failed_count") > 0 || number(row, "result_revision") > 0)) return "FINALIZING";
   // The goal's latest Turn failed and left nothing running, no Work and no outcome: it
@@ -284,6 +294,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         CASE WHEN NOT EXISTS (SELECT 1 FROM joi_goal_requirements requirements WHERE requirements.goal_input_id = i.input_id
           AND requirements.revision <> COALESCE(synth.requirements_revision, -1)) THEN 1 ELSE 0 END AS synthesis_requirements_current,
         synth.failure_reason_code AS synthesis_failure_reason_code, synth.failure_count AS synthesis_failure_count,
+        EXISTS (SELECT 1 FROM joi_goal_requirements requirements WHERE requirements.goal_input_id = i.input_id
+          AND EXISTS (SELECT 1 FROM joi_goal_requirement_sources source WHERE source.goal_input_id = i.input_id
+            AND source.kind <> 'LEGACY' AND source.source_revision > requirements.processed_source_revision)) AS requirements_pending,
         -- Latest orchestration Turn of this goal, resolve rows included: a goal-resume row
         -- carries the goal id in goal_input_id, so its failed recovery Turn must count too.
         (SELECT t.status FROM joi_inbox_messages source
@@ -382,7 +395,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const finalOutcome = number(row, "outcome_current") === 1
           && (harnessProjection?.mapStatus !== "ACTIVE" || blockedRecoveryExhausted || continuationDecision);
         const terminalStatus = ["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(status);
-        const historicalFailure = historicalStoppedGoal(row);
+        const historicalFailure = historicalStoppedGoal(row) || stoppedRequirements(row);
         const synthesisFailure = stoppedSynthesis(row);
         const failureCode = synthesisFailure ? row.synthesis_failure_reason_code : row.failure_reason_code;
         const failureCount = synthesisFailure ? row.synthesis_failure_count : row.failure_count;

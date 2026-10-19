@@ -2440,16 +2440,19 @@ class SqliteRuntimeStore implements RuntimeStore {
     return row === undefined ? 0 : numberValue(row, "count");
   }
 
-  async claimOutbox(input: { claimUntil: string; excludeKinds?: string[]; limit: number; now: string; owner: string }): Promise<OutboxRecord[]> {
+  async claimOutbox(input: { claimUntil: string; excludeKinds?: string[]; includeKinds?: string[]; limit: number; now: string; owner: string }): Promise<OutboxRecord[]> {
+    if (input.includeKinds?.length === 0) return [];
     const excluded = input.excludeKinds ?? [];
-    const kindFilter = excluded.length > 0 ? ` AND kind NOT IN (${excluded.map(() => "?").join(", ")})` : "";
+    const included = input.includeKinds;
+    const kindFilter = (excluded.length > 0 ? ` AND kind NOT IN (${excluded.map(() => "?").join(", ")})` : "")
+      + (included === undefined ? "" : ` AND kind IN (${included.map(() => "?").join(", ")})`);
     return this.inTransaction(() => {
       const candidates = asRows(this.database.prepare(`
         SELECT outbox_id FROM outbox
          WHERE available_at <= ?
            AND (status = 'PENDING' OR (status = 'CLAIMED' AND claim_until <= ?))${kindFilter}
          ORDER BY created_at ASC, outbox_id ASC LIMIT ?`)
-        .all(input.now, input.now, ...excluded, Math.max(1, Math.min(input.limit, 100))));
+        .all(input.now, input.now, ...excluded, ...(included ?? []), Math.max(1, Math.min(input.limit, 100))));
       const output: OutboxRecord[] = [];
       for (const candidate of candidates) {
         const outboxId = textValue(candidate, "outbox_id");
@@ -2491,6 +2494,11 @@ class SqliteRuntimeStore implements RuntimeStore {
        WHERE outbox_id = ? AND status = 'CLAIMED' AND claim_owner = ?`)
       .run(input.availableAt, input.preserveAttemptCount === true ? 1 : 0, input.outboxId, input.owner);
     if (result.changes === 0) throw new DomainError("outbox_claim_lost", "Outbox claim is no longer owned by this dispatcher.");
+  }
+
+  async renewOutboxClaim(input: { claimUntil: string; outboxId: string; owner: string }): Promise<boolean> {
+    return this.database.prepare(`UPDATE outbox SET claim_until=MAX(claim_until,?)
+      WHERE outbox_id=? AND status='CLAIMED' AND claim_owner=?`).run(input.claimUntil,input.outboxId,input.owner).changes > 0;
   }
 
   async acquireLease(input: Omit<RuntimeLease, "generation"> & { now: string }): Promise<RuntimeLease | null> {

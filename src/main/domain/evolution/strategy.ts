@@ -36,13 +36,16 @@ export interface EvaluationComparison {
   candidateTokens?: number;
   violations: number;
 }
+export function validEvaluationComparisons(rows: readonly EvaluationComparison[]): boolean {
+  return new Set(rows.map(row => row.scenarioId)).size === rows.length && rows.every(row =>
+    row.baseline.length === 3 && row.candidate.length === 3 && [...row.baseline, ...row.candidate].every(value => typeof value === "boolean")
+    && Number.isSafeInteger(row.baselineCalls) && row.baselineCalls >= 1 && Number.isSafeInteger(row.candidateCalls) && row.candidateCalls >= 1
+    && (row.baselineTokens === undefined || (Number.isSafeInteger(row.baselineTokens) && row.baselineTokens >= 1))
+    && (row.candidateTokens === undefined || (Number.isSafeInteger(row.candidateTokens) && row.candidateTokens >= 1))
+    && Number.isInteger(row.violations) && row.violations >= 0);
+}
 export function promotionDecision(rows: readonly EvaluationComparison[]): "promote" | EvolutionReason {
-  if (new Set(rows.map((row) => row.scenarioId)).size !== rows.length || rows.some((row) =>
-    row.baseline.length !== 3 || row.candidate.length !== 3 || [...row.baseline, ...row.candidate].some((v) => typeof v !== "boolean")
-    || !Number.isFinite(row.baselineCalls) || row.baselineCalls < 1 || !Number.isFinite(row.candidateCalls) || row.candidateCalls < 1
-    || (row.baselineTokens !== undefined && (!Number.isSafeInteger(row.baselineTokens) || row.baselineTokens < 1))
-    || (row.candidateTokens !== undefined && (!Number.isSafeInteger(row.candidateTokens) || row.candidateTokens < 1))
-    || !Number.isInteger(row.violations) || row.violations < 0)) return "invalid_evaluation";
+  if (!validEvaluationComparisons(rows)) return "invalid_evaluation";
   if (rows.length < 30) return "insufficient_samples";
   if (rows.some((row) => row.violations > 0)) return "hard_violation";
   if (rows.some((row) => row.candidate.filter(Boolean).length < row.baseline.filter(Boolean).length)) return "quality_regression";
@@ -50,8 +53,10 @@ export function promotionDecision(rows: readonly EvaluationComparison[]): "promo
   const candidate = rows.reduce((sum, row) => sum + row.candidate.filter(Boolean).length, 0);
   if ((candidate - baseline) / (rows.length * 3) < 0.05) return "insufficient_gain";
   const measuredTokens = rows.every((row) => row.baselineTokens !== undefined && row.candidateTokens !== undefined);
-  const baselineCost = measuredTokens ? rows.reduce((sum, row) => sum + (row.baselineTokens ?? 0), 0) : rows.reduce((sum, row) => sum + row.baselineCalls, 0);
-  const candidateCost = measuredTokens ? rows.reduce((sum, row) => sum + (row.candidateTokens ?? 0), 0) : rows.reduce((sum, row) => sum + row.candidateCalls, 0);
-  if (candidateCost > baselineCost * 1.1) return "cost_regression";
+  const baselineCalls = rows.reduce((sum, row) => sum + row.baselineCalls, 0);
+  const candidateCalls = rows.reduce((sum, row) => sum + row.candidateCalls, 0);
+  if (candidateCalls > baselineCalls * 1.1) return "cost_regression";
+  if (measuredTokens && rows.reduce((sum, row) => sum + (row.candidateTokens ?? 0), 0)
+    > rows.reduce((sum, row) => sum + (row.baselineTokens ?? 0), 0) * 1.1) return "cost_regression";
   return "promote";
 }

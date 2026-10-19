@@ -1,6 +1,8 @@
 import type { Workbench } from "../../domain/workbench/workbench.js";
 import type { WorkAccessMode } from "../../domain/work/work.js";
 import type { WorkbenchBindingDto, WorkbenchDetailDto } from "../../../shared/joi.js";
+import type { GoalEvidencePage } from "./goal-evidence.js";
+import type { WorkVerificationProjection } from "./work-results.js";
 
 export interface WorkbenchSummary {
   workbenchId: string;
@@ -85,8 +87,13 @@ export interface WorkbenchManagementRepository {
 
 /** Infrastructure-only seam. Absolute paths never cross this port into DTOs. */
 export interface WorkbenchExecutionContextReader {
-  loadForExecution(contextSnapshotId: string): Promise<{
-    evidence?: { index: string; files: { name: string; body: string }[]; inline: string; selfContainedInline?: string; statistics?: { evidenceCount: number; evidenceCharacters: number; omittedEvidenceCount: number; budgetFallbackCount: number } };
+  loadForExecution(contextSnapshotId: string,options?: { evidenceMode: "BUNDLE" | "LAZY" | "NONE" }): Promise<{
+    evidence?: { index: string; files: { name: string; body: string }[]; inline: string; selfContainedInline?: string; reader?: {
+      index(input: { cursor?: string }): Promise<GoalEvidencePage>;
+      readConclusion(input: { outcomeId: string; cursor?: string }): Promise<GoalEvidencePage>;
+      readResult(input: { resultId: string; cursor?: string }): Promise<{ content: string; nextCursor?: string; resultId: string;
+        identity?: { status: string; isLate: boolean; isAuthoritative: boolean }; verification?: WorkVerificationProjection }>;
+    }; statistics?: { evidenceCount: number; evidenceCharacters: number; omittedEvidenceCount: number; budgetFallbackCount: number } };
     promptSection: string;
     sanitized: Record<string, unknown>;
     workspacePath?: string;

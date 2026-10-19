@@ -2,6 +2,8 @@ import { Codex, type CodexOptions, type ThreadEvent, type ThreadItem, type Threa
 import { workAccessPrompt, WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
 import { assertCodexWorkspaceProtocol } from "./codex-workspace-capabilities.js";
 import { nativeCheckpointAvailable } from "./native-checkpoint-store.js";
+import { NATIVE_COMPLETION_INSTRUCTION, NATIVE_COMPLETION_SCHEMA, parseNativeCompletion, type NativeCompletion } from "./native-completion-handoff.js";
+import { WORK_HANDOFF_SCHEMA } from "../../domain/work/work-handoff.js";
 
 import { DomainError } from "../../domain/errors.js";
 import { DEFAULT_CODEX_PERMISSIONS, type PartnerRevision } from "../../domain/partners/partner.js";
@@ -36,10 +38,11 @@ export interface CodexClientSurface {
 }
 export interface CodexAgentSdkSurface { create(options: CodexOptions): CodexClientSurface; }
 const CODEX_MUTATING_TOOLS = new Set(["apply_patch", "shell"]);
-const WRITE_PROTOCOL_SCHEMA = { type: "object", additionalProperties: false, required: ["disposition", "body"], properties: {
+const WRITE_PROTOCOL_SCHEMA = { type: "object", additionalProperties: false, required: ["disposition", "body", "handoff"], properties: {
   disposition: { type: "string", enum: ["COMPLETED", "WRITE_REQUIRED"] }, body: { type: "string" },
+  handoff: { anyOf: [WORK_HANDOFF_SCHEMA, { type: "null" }] },
 } };
-const WRITE_PROTOCOL_PROMPT = "Execute the analysis in read-only sandbox. If completion requires any write, return {\"disposition\":\"WRITE_REQUIRED\",\"body\":\"\"}. Otherwise return {\"disposition\":\"COMPLETED\",\"body\":\"your final answer\"}. Do not include proposed edits or writing instructions in the final answer.";
+const WRITE_PROTOCOL_PROMPT = "Execute the analysis in read-only sandbox. If completion requires any write, return {\"disposition\":\"WRITE_REQUIRED\",\"body\":\"\",\"handoff\":null}. Otherwise return {\"disposition\":\"COMPLETED\",\"body\":\"your complete final answer\",\"handoff\":<private semantic handoff>}. Do not include proposed edits or writing instructions in the final answer.";
 
 export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
   constructor(private readonly dependencies: {
@@ -170,7 +173,8 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       onTimeout: (kind) => { timedOut = kind; controller.abort(); },
       totalMillis: deadlines.totalMillis,
     });
-    let consumed: { body: string; threadId?: string };
+    let consumed: { body: string; completionText?: string; threadId?: string };
+    let completion: NativeCompletion;
     const usageCapture = createNativeUsageCapture(this.dependencies.usage, {
       engine: "codex",
       purpose: "partner",
@@ -183,12 +187,12 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     try {
       const prompt = analysis ? `${request.taskProjection}\n\n${WRITE_PROTOCOL_PROMPT}`
         : request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : request.taskProjection;
-      consumed = await this.#consume(thread, prompt, controller.signal, emit, () => guard?.onProgress(), usageCapture, analysis ? WRITE_PROTOCOL_SCHEMA : undefined, request.workspaceExecution !== undefined);
+      consumed = await this.#consume(thread, prompt, controller.signal, emit, () => guard?.onProgress(), usageCapture, analysis ? WRITE_PROTOCOL_SCHEMA : NATIVE_COMPLETION_SCHEMA, request.workspaceExecution !== undefined);
       if (analysis) {
-        let protocol = parseWriteProtocol(consumed.body);
+        let protocol = parseWriteProtocol(consumed.completionText ?? consumed.body);
         if (protocol === null) {
           consumed = await this.#consume(thread, `Correct the previous result once. ${WRITE_PROTOCOL_PROMPT}`, controller.signal, emit, () => guard?.onProgress(), usageCapture, WRITE_PROTOCOL_SCHEMA, true);
-          protocol = parseWriteProtocol(consumed.body);
+          protocol = parseWriteProtocol(consumed.completionText ?? consumed.body);
         }
         if (protocol === null) throw new DomainError("workspace_write_protocol_invalid", "The native read-only result did not match the execution protocol.");
         if (protocol.disposition === "WRITE_REQUIRED") {
@@ -198,9 +202,9 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
           finishNativeUsage(usageCapture, "completed");
           return { conversation: [], externalRunId: `native_codex:${request.actionId}`, nativeSessionId: session, output: { artifacts: [], body: "" }, status: "SUSPENDED" };
         }
-        consumed.body = protocol.body;
-        await emit({ type: "message", role: "agent", parts: [{ type: "text", text: protocol.body }] });
-      }
+        completion = parseNativeCompletion({ body: protocol.body, handoff: protocol.handoff }, protocol.body);
+      } else completion = parseNativeCompletion(consumed.completionText ?? consumed.body, consumed.body);
+      if (completion.body !== "") await emit({ type: "message", role: "agent", parts: [{ type: "text", text: completion.body }] });
       finishNativeUsage(usageCapture, "completed");
     } catch (error) {
       finishNativeUsage(usageCapture, timedOut === undefined ? usageFailureStatus(signal) : "failed");
@@ -220,10 +224,10 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     for (const artifact of artifacts) await emit({ type: "artifact", artifact: { ...artifact, mimeType: artifact.mimeType ?? "application/octet-stream" } });
     await emit({ type: "status", state: "completed" });
     const sessionId = consumed.threadId ?? thread.id ?? resume;
-    return { conversation: projector.snapshot(), externalRunId: `native_codex:${request.actionId}`, ...(sessionId === undefined ? {} : { nativeSessionId: sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
+    return { conversation: projector.snapshot(), externalRunId: `native_codex:${request.actionId}`, ...(sessionId === undefined ? {} : { nativeSessionId: sessionId }), output: { artifacts, ...completion }, status: "COMPLETED" };
   }
 
-  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, outputSchema?: unknown, endOnCompletion = false): Promise<{ body: string; threadId?: string }> {
+  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, outputSchema?: unknown, endOnCompletion = false): Promise<{ body: string; completionText?: string; threadId?: string }> {
     const streamed = await thread.runStreamed(prompt, { ...(signal === undefined ? {} : { signal }), ...(outputSchema === undefined ? {} : { outputSchema }) });
     let completed = false;
     let threadId: string | undefined;
@@ -264,7 +268,8 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       }
     }
     if (!completed) throw new DomainError("local_cli_run_incomplete", "Codex ended without a successful turn.");
-    return { body: texts.join("\n").trim(), ...(threadId === undefined ? {} : { threadId }) };
+    const completionText = texts.at(-1);
+    return { body: texts.join("\n").trim(), ...(completionText === undefined ? {} : { completionText }), ...(threadId === undefined ? {} : { threadId }) };
   }
 
   #client(resolved: ResolvedLocalCliExecutable, systemPrompt: string, gated = false): CodexClientSurface {
@@ -299,6 +304,8 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       `Disabled or unavailable capabilities: ${[...(!writeAvailable ? ["shell", "apply_patch"] : []), ...(!permissions.networkAccessEnabled ? ["network"] : []), ...(permissions.webSearchMode === "disabled" ? ["web_search"] : [])].join(", ") || "none"}.`,
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable capability.",
       partnerCommentDisciplineLine,
+      NATIVE_COMPLETION_INSTRUCTION,
+      ...(request.workspaceExecution?.phase === "READ_RUNNING" ? ["The read-phase output schema also requires disposition. If writing is required, return WRITE_REQUIRED with empty body and null handoff; otherwise include the complete answer and handoff with COMPLETED."] : []),
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
       workbenchSection,
       boundBackgroundSections([context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
@@ -314,14 +321,14 @@ interface NativeUsageCapture {
   session: SafeUsageSession;
 }
 
-function parseWriteProtocol(body: string): { disposition: "COMPLETED" | "WRITE_REQUIRED"; body: string } | null {
+function parseWriteProtocol(body: string): { disposition: "COMPLETED" | "WRITE_REQUIRED"; body: string; handoff?: unknown } | null {
   let value: unknown;
   try { value = JSON.parse(body); } catch { return null; }
   if (value === null || Array.isArray(value) || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
-  if (Object.keys(row).length !== 2 || typeof row.body !== "string" || !["COMPLETED", "WRITE_REQUIRED"].includes(String(row.disposition))) return null;
+  if (Object.keys(row).some((key) => !["body", "disposition", "handoff"].includes(key)) || typeof row.body !== "string" || !["COMPLETED", "WRITE_REQUIRED"].includes(String(row.disposition))) return null;
   if (row.disposition === "WRITE_REQUIRED" && row.body !== "") return null;
-  return { body: row.body, disposition: row.disposition as "COMPLETED" | "WRITE_REQUIRED" };
+  return { body: row.body, disposition: row.disposition as "COMPLETED" | "WRITE_REQUIRED", ...(row.handoff === undefined ? {} : { handoff: row.handoff }) };
 }
 
 function createNativeUsageCapture(recorder: UsageRecorder | undefined, context: UsageContext): NativeUsageCapture {

@@ -5,7 +5,8 @@ import { DomainError } from "../../domain/errors.js";
 import { normalizeContext, type Api, type Context, type ImageContent, type Message, type Model, type ModelThinkingLevel, type Models } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
-import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, summarizeSegment } from "./pi-compaction.js";
+import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, summarizeSegment, taskAnchorIndices, transcriptFingerprint } from "./pi-compaction.js";
+import { parseGoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
 import { createPiContextManager, type PiContextManager } from "./pi-context-manager.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
@@ -95,6 +96,7 @@ interface PiReasoningRuntimeOptions {
 }
 
 interface SessionRuntime {
+  cancelled: boolean;
   dispatchArgumentFailures: number;
   dispatchAcceptanceCalls: Set<string>;
   requirementsError: DomainError | undefined;
@@ -121,6 +123,7 @@ interface SessionRuntime {
    * every write, and a boundary that can go missing needs a fallback path this does not.
    */
   rollbackPoint: {
+    archivedMessages: unknown[];
     compaction: Omit<JoiReasoningSessionSnapshot, "messages" | "updatedAt">["compaction"];
     messages: AgentMessage[];
     turnId: string;
@@ -297,6 +300,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     if (session.metadata.workbenchId !== input.workbenchId) throw new Error("reasoning_session_workbench_mismatch");
 
     session.current = input;
+    session.cancelled = false;
     session.delivered = { tool: false };
     session.terminatedByTool = false;
     session.dispatchArgumentFailures = 0;
@@ -389,7 +393,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
   }
 
   abort(sessionId: string): void {
-    this.#sessions.get(sessionId)?.agent.abort();
+    const session = this.#sessions.get(sessionId);
+    if (session !== undefined) {
+      session.cancelled = true;
+      session.agent.abort();
+    }
   }
 
   /**
@@ -424,6 +432,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // marker is what makes a rollback drop all of them instead of only the last one.
     if (session.rollbackPoint?.turnId === turnId) return;
     session.rollbackPoint = {
+      archivedMessages: [...(session.metadata.archivedMessages ?? [])],
       compaction: session.metadata.compaction,
       messages: [...session.agent.state.messages],
       turnId,
@@ -437,7 +446,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     session.agent.state.messages = [...point.messages];
     // The compaction metadata describes what the history holds. Restoring the messages without it
     // would leave the next compaction summarising a transcript that is no longer there.
-    session.metadata = { ...session.metadata, compaction: point.compaction };
+    session.metadata = { ...session.metadata, archivedMessages: point.archivedMessages, compaction: point.compaction };
+    session.context = undefined;
     return true;
   }
 
@@ -497,9 +507,16 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       transformContext: async (messages, signal) => {
         // The loop owns its transcript while streaming; checkpoints only reshape outgoing requests.
         if (runtime.context?.checkpoint() !== undefined || JSON.stringify(messages).length >= HISTORY_SOFT_TRIGGER_CHARS) {
+          const existing = runtime.metadata.compaction;
+          const existingIndex = messages.findIndex(isCheckpointMessage);
           runtime.context ??= createPiContextManager({
             model: this.#model, models: trackPiModels(this.#models, this.#usage, () => this.#usageContext(runtime, "summary"), this.#diagnostics),
             messagesMaxChars: this.#maxRequestChars(), thinkingLevel: this.#thinkingLevel,
+            ...(existing === undefined || existingIndex < 0 ? {} : { restored: {
+              ...existing, cut: existingIndex + 1, messagesBefore: messages.length,
+              tokensBefore: 0, sourceFingerprint: transcriptFingerprint(messages, existingIndex + 1),
+              preservedIndices: taskAnchorIndices(messages).filter(index => index <= existingIndex),
+            } }),
             onDiagnostic: event => {
               if (event.type === "joi.context.request") return;
               else if (event.type === "joi.partner.context_compacted") emitRuntimeDiagnostic(this.#diagnostics, event.type, { ...event, runtime: "joi" });
@@ -511,7 +528,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         return this.#boundRequest(messages, runtime.current, runtime.agent.state.tools);
       },
     });
-    const runtime: SessionRuntime = { agent, context: undefined, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false, requirementsError: undefined,
+    const runtime: SessionRuntime = { agent, cancelled: false, context: undefined, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false, requirementsError: undefined,
       dispatchArgumentFailures: 0, dispatchAcceptanceCalls: new Set() };
     agent.subscribe(async (event) => {
       this.#emit(runtime, event);
@@ -710,12 +727,42 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
 
   async #compactAndSave(runtime: SessionRuntime): Promise<void> {
     this.#reportDanglingToolCalls(runtime);
-    await this.#compactIfNeeded(runtime);
+    this.#adoptRequestCheckpoint(runtime);
+    if (!runtime.cancelled) await this.#compactIfNeeded(runtime);
     await this.#sessionStore.save({
       ...runtime.metadata,
       messages: runtime.agent.state.messages,
       updatedAt: new Date().toISOString(),
     });
+  }
+
+  /** A request checkpoint and its durable form describe the same exact immutable source prefix. */
+  #adoptRequestCheckpoint(runtime: SessionRuntime): void {
+    const checkpoint = runtime.context?.checkpoint();
+    if (checkpoint === undefined) return;
+    const messages = runtime.agent.state.messages;
+    if (checkpoint.cut > messages.length || checkpoint.sourceFingerprint !== transcriptFingerprint(messages, checkpoint.cut)) {
+      runtime.context = undefined;
+      return;
+    }
+    const anchors = checkpoint.preservedIndices;
+    const source = messages.slice(0, checkpoint.cut).filter((message, index) => message.role !== "system"
+      && !isCheckpointMessage(message) && !anchors.includes(index));
+    if (source.length === 0) return;
+    const archived = [...(runtime.metadata.archivedMessages ?? []), ...source];
+    runtime.metadata.archivedMessages = archived;
+    runtime.metadata.compaction = {
+      compactedMessages: checkpoint.compactedMessages,
+      count: checkpoint.count,
+      lastCompactedAt: checkpoint.lastCompactedAt,
+      summary: checkpoint.summary,
+      coverage: { checkpointId: checkpoint.sourceFingerprint, coveredFrom: 0, coveredTo: archived.length, transcriptId: runtime.metadata.sessionId },
+    };
+    emitRuntimeDiagnostic(this.#diagnostics, "joi.context.checkpoint_reused", { runtime: "joi", coveredCount: source.length, count: checkpoint.count });
+    const system = leadingSystemMessage(messages) === undefined ? [] : messages.slice(0, 1);
+    runtime.agent.state.messages = [...system, checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt)),
+      ...anchors.map(index => messages[index]).filter((message): message is AgentMessage => message !== undefined), ...messages.slice(checkpoint.cut)];
+    runtime.context = undefined;
   }
 
   /**
@@ -740,14 +787,14 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const conversationLength = currentMessages.length - floor;
     const overflow = !this.#headroomSatisfied(currentMessages, request);
     const charsBefore = JSON.stringify(currentMessages).length;
-    const softOverflow = charsBefore >= HISTORY_SOFT_TRIGGER_CHARS;
+    const softOverflow = JSON.stringify(currentMessages.slice(floor)).length >= HISTORY_SOFT_TRIGGER_CHARS;
     if (!overflow && !softOverflow && conversationLength <= this.#compaction.maxMessages) return;
     // An overflowing session must also shrink its kept tail: the fixed recent-message window
     // can itself exceed the model window, which is exactly what clamped max_tokens to 1.
     let keep = overflow ? this.#fittingTailKeep(currentMessages, request) : this.#compaction.keepRecentMessages;
     if (softOverflow) {
       let tailStart = currentMessages.length;
-      let chars = JSON.stringify(prompt).length + this.#compaction.maxSummaryCharacters + 256;
+      let chars = this.#compaction.maxSummaryCharacters + 256;
       while (tailStart > floor && chars + JSON.stringify(currentMessages[tailStart - 1]).length + 1 <= HISTORY_SOFT_TARGET_CHARS) {
         tailStart -= 1;
         chars += JSON.stringify(currentMessages[tailStart]).length + 1;
@@ -808,6 +855,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
           count: (previous?.count ?? 0) + 1,
           lastCompactedAt,
           summary,
+          coverage: {
+            checkpointId: transcriptFingerprint(currentMessages, firstKeptIndex), coveredFrom: 0,
+            coveredTo: runtime.metadata.archivedMessages.length, transcriptId: runtime.metadata.sessionId,
+          },
         };
         runtime.agent.state.messages = [
           ...prompt,
@@ -923,10 +974,13 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         ?? (event.isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
       runtime.dispatchAcceptanceCalls.delete(event.toolCallId);
       const outcome = safeTurnOutcome(event.toolName, event.result);
+      const synthesisState = event.toolName === "turn_complete" && !event.isError
+        ? parseGoalSynthesisDraft((event.result as { details?: { synthesisState?: unknown } } | undefined)?.details?.synthesisState) : undefined;
       mapped = {
         type: "tool_finished",
         isError: event.isError,
         ...(outcome === undefined ? {} : { outcome }),
+        ...(synthesisState === undefined ? {} : { synthesisState }),
         ...(reasonCode === undefined && event.isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
         toolCallId: event.toolCallId,
         toolName: event.toolName,

@@ -33,7 +33,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
 
   async run(request: PartnerRunRequest, revision: PartnerRevision): Promise<{ externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
-    const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
+    const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId,{ evidenceMode: "LAZY" });
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     let configuredPrompt = "You are a local Pi coding partner. The assigned workspace is your home base; complete the requested work.";
     if (revision.promptRef !== undefined) {

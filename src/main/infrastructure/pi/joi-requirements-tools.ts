@@ -4,6 +4,7 @@ import { Type } from "@earendil-works/pi-ai";
 import type { GoalRequirementsRepository } from "../../application/ports/goal-requirements.js";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
 import type { WorkExecutionNeed } from "../../domain/work/work-execution-needs.js";
+import type { GoalWorkListQuery } from "../../application/ports/work-orchestration.js";
 import { DomainError } from "../../domain/errors.js";
 
 function projectContract(contract: GoalRequirements | null) {
@@ -25,10 +26,17 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
   goalInputId: string;
   workbenchId: string;
   turnId: string;
-  work: Pick<WorkOrchestrationService, "listForGoal" | "readBrief" | "refreshBrief">;
+  work: Pick<WorkOrchestrationService, "listForGoal" | "readBrief" | "refreshBrief"> & Partial<Pick<WorkOrchestrationService,"listGoalPage">>;
 }): AgentTool[] {
   const store = input.requirements;
   if (store === undefined) return tools;
+  const hasWork = async (query: Omit<GoalWorkListQuery,"goalInputId" | "workbenchId" | "cursor" | "limit">) => {
+    if (input.work.listGoalPage !== undefined) return (await input.work.listGoalPage({ ...query,goalInputId: input.goalInputId,workbenchId: input.workbenchId,limit: 1 })).items.length > 0;
+    const rows = await input.work.listForGoal(input.goalInputId,input.workbenchId);
+    return rows.some(work => (query.workId === undefined || query.workId === work.workId) && work.workId !== query.excludeWorkId
+      && (query.statuses === undefined || query.statuses.includes(work.status))
+      && (query.requirementsRevisionNot === undefined || work.requirementsRevision !== (query.requirementsRevisionNot ?? undefined)));
+  };
   const source = Type.Object({ sourceRevision: Type.Integer({ minimum: 1 }), quote: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
     start: Type.Optional(Type.Integer({ minimum: 0 })), end: Type.Optional(Type.Integer({ minimum: 1 })) });
   const readParameters = Type.Object({ sourceRevision: Type.Integer({ minimum: 1 }), offset: Type.Optional(Type.Integer({ minimum: 0 })) });
@@ -53,8 +61,12 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
         };
         return result(projectContract(await store.update({ ...args, upserts: await Promise.all(args.upserts.map(resolve)), retirements: await Promise.all(args.retirements.map(resolve)), goalInputId: input.goalInputId, workbenchId: input.workbenchId })));
       } },
-    { name: "work_list_goal", label: "List goal work", description: "List this goal's Work identifiers, status and pinned requirements revision. Refresh queued outdated Work before executing or finishing.", parameters: Type.Object({}),
-      execute: async () => result(await input.work.listForGoal(input.goalInputId, input.workbenchId)) },
+    { name: "work_list_goal", label: "List goal work", description: "Page this goal's Work identifiers, status and pinned requirements revision. Follow nextCursor. Filter statuses and requirementsRevision/requirementsRevisionNot to find queued outdated Work without rereading completed history. Refresh queued outdated Work before executing or finishing.",
+      parameters: Type.Object({ statuses: Type.Optional(Type.Array(Type.Union(["PLANNED","READY","RUNNING","WAITING","COMPLETED","FAILED","CANCELED"].map(value => Type.Literal(value))),{ uniqueItems: true })),
+        requirementsRevision: Type.Optional(Type.Integer({ minimum: 0 })),requirementsRevisionNot: Type.Optional(Type.Integer({ minimum: 0 })),
+        limit: Type.Optional(Type.Integer({ minimum: 1,maximum: 50 })),cursor: Type.Optional(Type.String()) }),
+      execute: async (_id,raw) => result(input.work.listGoalPage === undefined ? { items: await input.work.listForGoal(input.goalInputId,input.workbenchId) }
+        : await input.work.listGoalPage({ ...raw as Omit<GoalWorkListQuery,"goalInputId" | "workbenchId">,goalInputId: input.goalInputId,workbenchId: input.workbenchId })) },
     { name: "work_read_brief", label: "Read goal Work instructions", description: "Read this goal's bounded private Work instructions before rewriting a queued or paused task. Returns only that task's existing instructions, without broadcasting cumulative user history.", parameters: Type.Object({ workId: Type.String() }),
       execute: async (_id, raw) => { const args = raw as { workId: string }; const brief = await input.work.readBrief(input.goalInputId, input.workbenchId, args.workId);
         if (brief === null) throw new DomainError("goal_requirements_scope_invalid", "The Work is unavailable in this goal."); return result(brief); } },
@@ -79,12 +91,11 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
           const argsRecord = args as { workId?: string; sourceWorkId?: string };
           const targetId = argsRecord.workId ?? argsRecord.sourceWorkId;
           if (targetId !== undefined && tool.name.startsWith("work_")) {
-            const works = await input.work.listForGoal(input.goalInputId, input.workbenchId);
-            if (!works.some(work => work.workId === targetId)) throw new DomainError("goal_requirements_scope_invalid", "This Work belongs to another goal.");
+            if (!await hasWork({ workId: targetId })) throw new DomainError("goal_requirements_scope_invalid", "This Work belongs to another goal.");
           }
           if (versioned && tool.name !== "goal_resume" && tool.name !== "work_update_brief") {
-            const works = await input.work.listForGoal(input.goalInputId, input.workbenchId);
-            if (works.some(work => ["PLANNED", "READY"].includes(work.status) && work.requirementsRevision !== revision && !(tool.name === "work_reassign" && work.workId === targetId))) {
+            if (await hasWork({ statuses: ["PLANNED","READY"],requirementsRevisionNot: revision ?? null,
+              ...(tool.name === "work_reassign" && targetId !== undefined ? { excludeWorkId: targetId } : {}) })) {
               throw new DomainError("goal_requirements_work_stale", "Refresh or cancel outdated queued Work before execution or completion.");
             }
           }

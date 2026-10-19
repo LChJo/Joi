@@ -1,4 +1,4 @@
-import type { GoalEvidenceRepository, GoalEvidenceScope } from "../ports/goal-evidence.js";
+import type { GoalEvidenceChangesQuery,GoalEvidenceRepository,GoalEvidenceScope } from "../ports/goal-evidence.js";
 import { DomainError } from "../../domain/errors.js";
 import type { WorkResultRepository, WorkVerificationProjection } from "../ports/work-results.js";
 
@@ -15,6 +15,21 @@ export class WorkResultService {
   async readConclusion(input: GoalEvidenceScope & { outcomeId: string; cursor?: string }) {
     if (this.evidence === undefined) throw new DomainError("work_evidence_unavailable", "Evidence indexing is unavailable.");
     return this.evidence.readConclusion(input);
+  }
+
+  async readChanges(input: GoalEvidenceChangesQuery) {
+    if (this.evidence?.readChanges === undefined) throw new DomainError("work_evidence_unavailable", "Semantic evidence changes are unavailable.");
+    return this.evidence.readChanges(input);
+  }
+
+  async readHandoff(input: GoalEvidenceScope & { resultId: string; cursor?: string }) {
+    if (this.evidence?.readHandoff === undefined) throw new DomainError("work_evidence_unavailable", "Semantic result handoff is unavailable.");
+    return this.evidence.readHandoff(input);
+  }
+
+  async readState(input: GoalEvidenceScope & { outcomeId: string; cursor?: string }) {
+    if (this.evidence?.readState === undefined) throw new DomainError("work_evidence_unavailable", "Private synthesis state is unavailable.");
+    return this.evidence.readState(input);
   }
 
   async read(input: { goalInputId?: string; workbenchId: string; cursor?: string; resultId: string }): Promise<{

@@ -44,13 +44,12 @@ describe("AC-43/48/53 goal evidence persistence", () => {
     try {
       const evidence = new SqliteGoalEvidenceRepository(database);
       let cursor: string | undefined;
-      let content = "";
+      const index = { results: [] as { resultId: string; status: string; isLate: boolean; verificationStatus: string }[] };
       do {
         const page = await evidence.index({ goalInputId: "goal",workbenchId: "bench",...(cursor === undefined ? {} : { cursor }) });
         expect(page.content.length).toBeLessThanOrEqual(8000);
-        content += page.content; cursor = page.nextCursor;
+        index.results.push(...(JSON.parse(page.content) as typeof index).results); cursor = page.nextCursor;
       } while (cursor !== undefined);
-      const index = JSON.parse(content) as { results: { resultId: string; status: string; isLate: boolean; verificationStatus: string }[] };
       expect(index.results).toHaveLength(163);
       expect(index.results.find(r => r.resultId === "r81")).toMatchObject({ status: "FAILED",isLate: true,verificationStatus: "FAILED" });
       const service = new WorkResultService(new SqliteWorkResultRepository(database),evidence);

@@ -6,6 +6,7 @@ import { SqliteEvolutionStore } from "../../src/main/infrastructure/persistence/
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
 import { evolutionScenarios, EVOLUTION_EVALUATOR_VERSION } from "../../src/main/domain/evolution/scenarios";
 import { baselineStrategy } from "../../src/main/domain/evolution/strategy";
+import { deriveEvolutionExperience } from "../../src/main/domain/evolution/experience";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution";
 import { PiEvolutionModel } from "../../src/main/infrastructure/pi/pi-evolution-model";
 import type { EvolutionBatch, EvolutionModel, EvolutionRevision } from "../../src/main/application/ports/evolution";
@@ -113,7 +114,7 @@ describe("evolution execution and budget", () => {
     }
     completeSimple.mockResolvedValue({ content: [{ type: "toolCall", name: "finish", arguments: { decision: "complete", evidenceIds: ["record-11", "record-13"] } }], stopReason: "toolUse", usage });
     await runner.handle("evolution:a");
-    expect(store.read("a").batch?.rollouts[0]).toMatchObject({ success: true, tokens: 400, tokensComplete: true });
+    expect(store.read("a").batch?.rollouts[0]).toMatchObject({ success: true, tokens: 400, tokensComplete: true, modelCalls: 4 });
     expect(runner.status("a").failure).toBeUndefined();
     expect(runner.status("a").currentBatch).toMatchObject({ tokens: 400, calls: 4 });
     expect(runner.status("a").currentBatch?.failure).toBeUndefined();
@@ -167,10 +168,36 @@ describe("evolution execution and budget", () => {
     expect(service.overview().batches[0]?.tokens).toBeNull();
     expect(store.read("a").batchHistory?.[0]?.tokens).toBe(0);
   });
-  it("requires revalidation of strategies scored under the single-call evaluator's predecessor", () => {
-    store.update("a", (state) => { state.revisions = [{ ...revision(), evaluatorVersion: "joi-orchestration-v1" }]; state.activeRevisionId = "r1"; });
+  it.each(["joi-orchestration-v1", "joi-orchestration-v2"])("requires revalidation of strategies scored under %s", evaluatorVersion => {
+    store.update("a", (state) => { state.revisions = [{ ...revision(), evaluatorVersion }]; state.activeRevisionId = "r1"; });
     expect(service.strategyForGoal("a", "g0", pin).strategyRevisionId).toBeNull();
     expect(service.status("a")).toMatchObject({ revalidationRequired: true, activeEffective: false });
+  });
+  it("proposes from relevant pinned comparison lessons and excludes raw successful history", async () => {
+    service.configure("a", 10);
+    const scenarioIds = evolutionScenarios("development").slice(0, 3).map(scenario => scenario.id);
+    const experience = deriveEvolutionExperience({ id: "relevant", batchId: "prior", revisionId: "prior-revision", createdAt: day,
+      sourcePin: JSON.stringify(pin), evaluatorVersion: EVOLUTION_EVALUATOR_VERSION, parentStrategy: baselineStrategy,
+      strategy: { ...baselineStrategy, completion: "evidence_matrix" }, comparisons: scenarioIds.map(scenarioId => ({ scenarioId,
+        baseline: [false, true, true], candidate: [true, true, true], baselineCalls: 9, candidateCalls: 9, violations: 0 })) });
+    assert(experience);
+    store.update("a", state => {
+      state.batch = { ...batch(), phase: "PROPOSE", rollouts: scenarioIds.map(scenarioId => ({ scenarioId, variant: "baseline", attempt: 0, calls: 3,
+        success: false, observations: [], actions: [] })) };
+      state.developmentHistory = [{ scenarioId: scenarioIds[0] ?? "", variant: "baseline", attempt: 0, calls: 3, success: true, actions: [], observations: ["OLD_SUCCESS_SHOULD_NOT_BE_USED"] }];
+      state.experiences = [experience, { ...experience, id: "foreign-pin", conditions: { ...experience.conditions, sourcePin: "different" } },
+        { ...experience, id: "unrelated", conditions: { ...experience.conditions, scenarioIds: ["development:unrelated"] } }];
+    });
+    call.mockImplementation((input: Parameters<EvolutionModel["call"]>[0]) => {
+      const prompt = JSON.parse(input.prompt) as { experiences: { id: string }[]; historicalSuccesses?: unknown };
+      expect(prompt.experiences.map(entry => entry.id)).toEqual(["relevant"]);
+      expect(prompt.historicalSuccesses).toBeUndefined();
+      expect(input.prompt).not.toContain("OLD_SUCCESS_SHOULD_NOT_BE_USED");
+      expect(input.prompt).not.toContain("sealed:");
+      return Promise.resolve({ strategy: { ...baselineStrategy, completion: "evidence_matrix" }, fixes: scenarioIds, risks: [] });
+    });
+    await service.handle("evolution:a");
+    expect(store.read("a").batch?.phase).toBe("VALIDATE");
   });
   it("runs contrastive development, sealed paired trials, promotion, goal pinning and rollback end to end", async () => {
     service.configure("a", 1000);
@@ -202,6 +229,10 @@ describe("evolution execution and budget", () => {
     expect(canary.versions[0]).toMatchObject({ status: "CANARY", scope: "GLOBAL", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
     expect(canary.lastVerdict).toMatchObject({ reason: "canary", baselineSuccesses: 85, candidateSuccesses: 90, evaluatedRuns: 180 });
     expect(store.read("a").revisions[0]?.evaluation).toHaveLength(30);
+    const experience = new SqliteEvolutionStore(fixture.database).read("a").experiences?.[0];
+    expect(experience).toMatchObject({ evidenceScope: "development", outcome: "benefit", change: { module: "completion", from: "baseline", to: "evidence_matrix" }, benefit: { additionalSuccesses: 9, modelCallDelta: 0, tokenDelta: 0 } });
+    expect(experience?.comparisons).toHaveLength(10);
+    expect(JSON.stringify(experience)).not.toContain("sealed:");
     expect(Object.values(store.read("a").sealedBaselineCache ?? {})[0]).toHaveLength(90);
     expect(canary.batchHistory?.[0]).toMatchObject({ tokens: 72_100 });
     expect(service.strategyForGoal("a", "g0", pin)).toEqual(original);
@@ -238,6 +269,7 @@ describe("evolution execution and budget", () => {
     await restored.handle("evolution:a");
     expect(store.read("a").call?.id).not.toBe(previous);
     expect(restored.status("a").callsUsedToday).toBe(2);
+    expect(store.read("a").batch?.rollouts[0]).toMatchObject({ modelCalls: 2, calls: 1, tokensComplete: false });
   });
   it("keeps completed trials after a transient failure and abandons the batch only after repeated failures", async () => {
     service.configure("a", 10);

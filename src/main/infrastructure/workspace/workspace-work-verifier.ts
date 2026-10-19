@@ -22,7 +22,7 @@ export class WorkspaceWorkVerifier implements WorkVerifier {
 
   async verify(input: WorkVerificationInput): Promise<WorkVerificationResult> {
     if (input.acceptanceChecks.length === 0) return { status: "NOT_REQUIRED" };
-    const context = await this.dependencies.contexts.loadForExecution(input.contextSnapshotId);
+    const context = await this.dependencies.contexts.loadForExecution(input.contextSnapshotId,{ evidenceMode: "NONE" });
     if (context === null) return failed("verification_context_missing");
     let canonicalRoot: string | undefined;
     for (const check of input.acceptanceChecks) {

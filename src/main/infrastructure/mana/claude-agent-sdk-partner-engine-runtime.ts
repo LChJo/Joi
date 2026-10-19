@@ -1,6 +1,7 @@
 import type { Options as ClaudeOptions, SDKMessage, HookCallback } from "@anthropic-ai/claude-agent-sdk";
 import { LocalWriteGate, workAccessPrompt, WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
 import { nativeCheckpointAvailable } from "./native-checkpoint-store.js";
+import { NATIVE_COMPLETION_INSTRUCTION, NATIVE_COMPLETION_SCHEMA, NATIVE_COMPLETION_TOOL_NAME, parseNativeCompletion } from "./native-completion-handoff.js";
 
 import { DomainError } from "../../domain/errors.js";
 import type { PartnerRevision } from "../../domain/partners/partner.js";
@@ -158,7 +159,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       onTimeout: (kind) => { timedOut = kind; controller.abort(); },
       totalMillis: deadlines.totalMillis,
     });
-    let consumed: { body: string; sessionId?: string };
+    let consumed: { body: string; sessionId?: string; structuredOutput?: unknown };
     const usageCapture = createNativeUsageCapture(this.dependencies.usage, {
       engine: "claude-code",
       purpose: "partner",
@@ -175,6 +176,9 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     const preToolUse: HookCallback = async hookInput => {
       if (hookInput.hook_event_name !== "PreToolUse") return {};
       checkpointSession = hookInput.session_id;
+      // The intrinsic completion tool emits private metadata and performs no workspace operation.
+      if (hookInput.tool_name === NATIVE_COMPLETION_TOOL_NAME) return { continue: true,
+        hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } };
       const forbidden = request.workspaceExecution?.accessCeiling === "READ" && CLAUDE_MUTATING_TOOLS.has(hookInput.tool_name);
       if (forbidden) {
         if (!writeGate.denied) emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.tool_permission_denied", { workId: request.workId,actionId: request.actionId,toolName: hookInput.tool_name,reasonCode: "workspace_write_forbidden" });
@@ -199,10 +203,11 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           resolved,
           ...(resume === undefined ? {} : { resume }),
           systemPrompt,
+          structuredCompletion: true,
           tools,
         }),
       });
-      consumed = await this.#consume(query, emit, () => guard?.onProgress(), usageCapture);
+      consumed = await this.#consume(query, emit, () => guard?.onProgress(), usageCapture, true);
       finishNativeUsage(usageCapture, "completed");
     } catch (error) {
       if (writeGate.suspended && checkpointSession !== undefined) {
@@ -231,16 +236,19 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       return { conversation: [], externalRunId: `native_claude:${request.actionId}`, nativeSessionId: session, output: { artifacts: [], body: "" }, status: "SUSPENDED" };
     }
     const artifacts = collectArtifacts ? await collectChangedWorkspaceArtifacts(execution.workspacePath, before) : [];
+    const completion = parseNativeCompletion(consumed.structuredOutput === undefined ? consumed.body : consumed.structuredOutput, consumed.body);
+    if (completion.body !== "") await emit({ type: "message", role: "agent", parts: [{ type: "text", text: completion.body }] });
     for (const artifact of artifacts) await emit({ type: "artifact", artifact: { ...artifact, mimeType: artifact.mimeType ?? "application/octet-stream" } });
     await emit({ type: "status", state: "completed" });
-    return { conversation: projector.snapshot(), externalRunId: `native_claude:${request.actionId}`, ...(consumed.sessionId === undefined ? {} : { nativeSessionId: consumed.sessionId }), output: { artifacts, body: consumed.body }, status: "COMPLETED" };
+    return { conversation: projector.snapshot(), externalRunId: `native_claude:${request.actionId}`, ...(consumed.sessionId === undefined ? {} : { nativeSessionId: consumed.sessionId }), output: { artifacts, ...completion }, status: "COMPLETED" };
   }
 
-  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture): Promise<{ body: string; sessionId?: string }> {
+  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, structuredCompletion = false): Promise<{ body: string; sessionId?: string; structuredOutput?: unknown }> {
     let body = "";
     let completed = false;
     let sessionId: string | undefined;
     let streamedText = false;
+    let structuredOutput: unknown;
     const toolNames = new Map<string, string>();
     const started = new Set<string>();
     const ended = new Set<string>();
@@ -252,10 +260,10 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
         const event = row.event as Record<string, unknown>;
         if (event.type === "content_block_delta" && event.delta !== null && typeof event.delta === "object") {
           const delta = event.delta as Record<string, unknown>;
-          if (delta.type === "text_delta" && typeof delta.text === "string") { streamedText = true; body += delta.text; await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: delta.text }] }); }
+          if (delta.type === "text_delta" && typeof delta.text === "string") { streamedText = true; body += delta.text; if (!structuredCompletion) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: delta.text }] }); }
         } else if (event.type === "content_block_start" && event.content_block !== null && typeof event.content_block === "object") {
           const block = event.content_block as Record<string, unknown>;
-          if (block.type === "tool_use" && typeof block.name === "string" && typeof block.id === "string") {
+          if (block.type === "tool_use" && typeof block.name === "string" && block.name !== NATIVE_COMPLETION_TOOL_NAME && typeof block.id === "string") {
             toolNames.set(block.id, block.name);
             started.add(block.id);
             await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started", ...describedCall(block.name) });
@@ -268,7 +276,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           for (const candidate of content) {
             if (candidate === null || typeof candidate !== "object") continue;
             const block = candidate as Record<string, unknown>;
-            if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && !started.has(block.id)) {
+            if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && block.name !== NATIVE_COMPLETION_TOOL_NAME && !started.has(block.id)) {
               toolNames.set(block.id, block.name);
               started.add(block.id);
               // The whole block is present here, so this path always has arguments to describe.
@@ -287,17 +295,18 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
         recordClaudeUsage(usage, row.modelUsage);
         if (row.subtype !== "success" || row.is_error === true) throw new NativeCliRunError(classifyNativeCliFailure(row));
         completed = true;
+        structuredOutput = row.structured_output;
         if (typeof row.result === "string") {
-          if (!streamedText && row.result !== "") await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: row.result }] });
+          if (!structuredCompletion && !streamedText && row.result !== "") await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: row.result }] });
           body = row.result;
         }
       }
     }
     if (!completed) throw new DomainError("local_cli_run_incomplete", "Claude Code ended without a successful result.");
-    return { body, ...(sessionId === undefined ? {} : { sessionId }) };
+    return { body, ...(sessionId === undefined ? {} : { sessionId }), ...(structuredOutput === undefined ? {} : { structuredOutput }) };
   }
 
-  #options(input: { allowedTools?: readonly string[]; controller: AbortController; cwd?: string; modelId?: string; permissionMode: "acceptEdits" | "plan"; preToolUse?: HookCallback; resolved: ResolvedLocalCliExecutable; resume?: string; systemPrompt?: string; tools?: readonly string[] }): ClaudeOptions {
+  #options(input: { allowedTools?: readonly string[]; controller: AbortController; cwd?: string; modelId?: string; permissionMode: "acceptEdits" | "plan"; preToolUse?: HookCallback; resolved: ResolvedLocalCliExecutable; resume?: string; structuredCompletion?: boolean; systemPrompt?: string; tools?: readonly string[] }): ClaudeOptions {
     const environment: Record<string, string> = {};
     for (const [key, value] of Object.entries(this.dependencies.environment ?? process.env)) if (value !== undefined) environment[key] = value;
     return {
@@ -310,6 +319,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       includePartialMessages: true,
       ...(input.permissionMode === "plan" ? { maxTurns: 1 } : {}),
       ...(input.modelId === undefined ? {} : { model: input.modelId }),
+      ...(input.structuredCompletion === true ? { outputFormat: { type: "json_schema" as const, schema: NATIVE_COMPLETION_SCHEMA } } : {}),
       ...(input.resolved.executablePath === undefined ? {} : { pathToClaudeCodeExecutable: input.resolved.executablePath }),
       permissionMode: input.permissionMode,
       ...(input.resume === undefined ? {} : { resume: input.resume }),
@@ -332,6 +342,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       workspaceRootBoundaryLine(workspacePath),
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
       partnerCommentDisciplineLine,
+      NATIVE_COMPLETION_INSTRUCTION,
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
       workbenchSection,
       boundBackgroundSections([context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),

@@ -68,11 +68,26 @@ export interface CommittedWorkPlan {
   waves: string[][];
 }
 
+export interface GoalWorkListItem { workId: string; title: string; status: string; requirementsRevision?: number }
+export interface GoalWorkListQuery {
+  goalInputId: string;
+  workbenchId: string;
+  statuses?: string[];
+  requirementsRevision?: number;
+  requirementsRevisionNot?: number | null;
+  workId?: string;
+  excludeWorkId?: string;
+  limit?: number;
+  cursor?: string;
+}
+export interface GoalWorkListPage { items: GoalWorkListItem[]; nextCursor?: string }
+
 export interface WorkPlanRepository {
   // eslint-disable-next-line @typescript-eslint/no-invalid-void-type -- Ordinary commits have no result; duplicate supplements return their persisted reference.
   commit(plan: CommittedWorkPlan): Promise<void | SupplementReference>;
   refreshBrief?(input: { executionNeeds?: WorkExecutionNeed[]; goalInputId: string; workbenchId: string; workId: string; turnId: string; actionId: string; instructions: string; requirementsRevision: number; requirementIds: string[]; allRequirements: boolean }): Promise<void>;
   listForGoal?(goalInputId: string, workbenchId: string): Promise<{ workId: string; title: string; status: string; requirementsRevision?: number }[]>;
+  listGoalPage?(input: GoalWorkListQuery): Promise<GoalWorkListPage>;
   readBrief?(goalInputId: string, workbenchId: string, workId: string): Promise<{ workId: string; title: string; instructions: string; accessMode?: WorkAccessMode; executionNeeds?: WorkExecutionNeed[] | null; requirementsRevision?: number } | null>;
 }
 

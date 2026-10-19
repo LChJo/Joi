@@ -1,4 +1,4 @@
-export const EVOLUTION_EVALUATOR_VERSION = "joi-orchestration-v2";
+export const EVOLUTION_EVALUATOR_VERSION = "joi-orchestration-v3";
 export type CompletionDecision = "complete" | "continue" | "wait";
 export interface EvolutionScenario {
   id: string;

@@ -144,7 +144,8 @@ export class A2aGatewayService {
     const output: A2aInvocationOutput = { artifacts: [], parts: [] };
     try {
       const invocation = await this.requireInvocation(invocationId);
-      if (TERMINAL.has(invocation.status)) return { invocation, output };
+      const recoverCompletedOutput = invocation.status === "COMPLETED" && invocation.taskId !== undefined;
+      if (TERMINAL.has(invocation.status) && !recoverCompletedOutput) return { invocation, output };
       if (invocation.taskId !== undefined) {
         const access = await this.access(invocation.agentConnectionId);
         const breakerKey = this.breaker.keyFor({
@@ -154,14 +155,15 @@ export class A2aGatewayService {
         });
         try {
           await this.breaker.assertAvailable(breakerKey);
-        } catch {
-          // The endpoint is cooling down after retryable responses; skip the remote call
-          // and let the outbox retry after the cooldown instead of piercing the rate-limit
-          // window (recovery previously bypassed the breaker entirely).
+        } catch (error) {
+          if (recoverCompletedOutput) throw error;
+          // Cooling endpoints postpone reads until the outbox retries after the cooldown.
           return { invocation, output };
         }
         const remote = await this.dependencies.transport.getTask({ config: access.config, taskId: invocation.taskId });
         if (remote.output !== undefined) this.collectOutput(output, remote.output);
+        // Reading completed output cannot revise settled invocation facts or restart remote work.
+        if (recoverCompletedOutput) return { invocation, output };
         let current = await this.applyEvent(invocation, remote);
         if (!TERMINAL.has(current.status)) {
           for await (const event of this.dependencies.transport.resubscribe({ config: access.config, taskId: invocation.taskId })) {

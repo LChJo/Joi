@@ -1,5 +1,3 @@
-/* Pi tool callbacks use the asynchronous AgentTool contract. */
-/* eslint-disable @typescript-eslint/require-await */
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "@earendil-works/pi-ai";
 import { DomainError } from "../../domain/errors.js";
@@ -7,7 +5,7 @@ import type { WorkbenchExecutionContextReader } from "../../application/ports/wo
 
 type Evidence = NonNullable<Awaited<ReturnType<WorkbenchExecutionContextReader["loadForExecution"]>>>["evidence"];
 
-/** All identifiers resolve exclusively against this execution snapshot's immutable evidence. */
+/** Private readers bind every identifier to this task's goal and Workbench. */
 export function createPartnerEvidenceTools(evidence: Evidence): AgentTool[] {
   if (evidence === undefined) return [];
   const index = JSON.parse(evidence.index) as {
@@ -33,6 +31,12 @@ export function createPartnerEvidenceTools(evidence: Evidence): AgentTool[] {
     parameters: Type.Object({ mode: Type.Optional(Type.Union([Type.Literal("index"), Type.Literal("conclusion")])), outcomeId: Type.Optional(Type.String()), cursor: Type.Optional(Type.String()) }),
     execute: async (_id, raw) => {
       const args = raw as { mode?: string; outcomeId?: string; cursor?: string };
+      if (evidence.reader !== undefined) {
+        const pageArgs = args.cursor === undefined ? {} : { cursor: args.cursor };
+        if (args.mode !== "conclusion") return result(await evidence.reader.index(pageArgs));
+        if (args.outcomeId === undefined) throw new DomainError("goal_evidence_not_found","Provide a conclusion identity from this goal's evidence index.");
+        return result(await evidence.reader.readConclusion({ ...pageArgs,outcomeId: args.outcomeId }));
+      }
       return result(page(args.mode === "conclusion" ? body(index.conclusions?.find(item => item.outcomeId === args.outcomeId)?.file) : evidence.index, args.cursor));
     },
   }, {
@@ -41,6 +45,7 @@ export function createPartnerEvidenceTools(evidence: Evidence): AgentTool[] {
     parameters: Type.Object({ resultId: Type.String(), cursor: Type.Optional(Type.String()) }),
     execute: async (_id, raw) => {
       const args = raw as { resultId: string; cursor?: string };
+      if (evidence.reader !== undefined) return result(await evidence.reader.readResult(args));
       return result(page(body(index.results?.find(item => item.resultId === args.resultId)?.file), args.cursor));
     },
   }];

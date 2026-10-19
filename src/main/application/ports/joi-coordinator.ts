@@ -1,6 +1,8 @@
 import type { WorkbenchSummary } from "./workbench-context.js";
 import type { WorkbenchProposalDto } from "../../../shared/joi.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
+import type { GoalSynthesisDraft, GoalSynthesisState } from "../../domain/work/goal-synthesis-state.js";
+import type { GoalEvidenceChange, GoalEvidenceChangesQuery } from "./goal-evidence.js";
 
 /** Private persisted evidence for one goal; never a display or diagnostics projection. */
 export interface JoiGoalContext {
@@ -26,8 +28,12 @@ export interface JoiPendingInput {
     originalRequest: string;
     resultRevision: number;
     requirementsRevision: number;
-    previous?: { resultRevision: number; disposition: string; summary: string };
-    changedResults: { resultId: string; workId: string; status: string; verification: string; summary: string; isLate: boolean; isAuthoritative: boolean }[];
+    previous?: { resultRevision: number; requirementsRevision?: number; disposition: string; summary: string; state?: GoalSynthesisState; stateOmitted?: boolean; stateRef?: string };
+    changedResults: ({ resultId: string; workId: string; status: string; verification: string; summary: string; isLate: boolean; isAuthoritative: boolean }
+      & Partial<Pick<GoalEvidenceChange, "revision" | "handoff" | "handoffStatus" | "handoffCharacters" | "handoffOmitted" | "handoffRef" | "handoffReadHint">>)[];
+    changesRead?: Omit<GoalEvidenceChangesQuery, "goalInputId" | "workbenchId" | "cursor">;
+    nextChangesCursor?: string;
+    totalChanges?: number;
     totalResults: number;
     gapCount: number;
     omittedChanges: number;
@@ -51,6 +57,7 @@ export interface JoiPendingInput {
 export type JoiCompletionOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED";
 
 export interface JoiInputCompletion {
+  synthesisState?: GoalSynthesisDraft;
   completionSummary: string;
   outcome: JoiCompletionOutcome;
   /** The model explicitly committed this outcome with turn_complete. */

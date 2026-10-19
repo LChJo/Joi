@@ -16,6 +16,7 @@ const enabled = process.env.JOI_NATIVE_WRITE_TESTS === "1";
 const nativeToolSmoke = process.env.JOI_NATIVE_TOOL_SMOKE === "1";
 const request = { actionId: "native-action", workbenchId: "native-wb", contextSnapshotId: "snapshot", taskProjection: "Analyze input.txt, then produce marker.txt.", workId: "native-work" };
 const context = { instanceId: "native-instance", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], restoredMessages: null };
+const completionHandoff = { version: 1, conclusion: "PRIVATE_NATIVE_HANDOFF", requirementIds: [], evidenceResultIds: [], artifactRefs: [], unresolved: [], conflicts: [] };
 
 function nativeEnvironment(root: string): NodeJS.ProcessEnv {
   const environment: NodeJS.ProcessEnv = { HOME: root, USERPROFILE: root, CODEX_HOME: path.join(root, "codex"), CLAUDE_CONFIG_DIR: path.join(root, "claude"),
@@ -74,14 +75,7 @@ function claudeTool(response: ServerResponse, name: string, input: Record<string
 }
 
 function claudeText(response: ServerResponse) {
-  sendSse(response, [
-    { type: "message_start", message: { id: "fixture-final", type: "message", role: "assistant", model: "claude-sonnet-4-6", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
-    { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } },
-    { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: "Native continuation complete" } },
-    { type: "content_block_stop", index: 0 },
-    { type: "message_delta", delta: { stop_reason: "end_turn", stop_sequence: null }, usage: { output_tokens: 1 } },
-    { type: "message_stop" },
-  ]);
+  claudeTool(response, "StructuredOutput", { body: "Native continuation complete", handoff: completionHandoff }, "fixture-completion");
 }
 
 function codexResponse(response: ServerResponse, item: Record<string, unknown>) {
@@ -101,6 +95,47 @@ function codexResponse(response: ServerResponse, item: Record<string, unknown>) 
 }
 
 describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
+  it.each(["claude-code", "codex"] as const)("%s CLI delivers a private handoff in the original model turn", async (engine) => {
+    let calls = 0;
+    let schemaDelivered = false;
+    const local = await fixture((body, response) => {
+      calls += 1;
+      if (engine === "claude-code") {
+        const tools = Array.isArray(body.tools) ? body.tools as { name?: string; input_schema?: { required?: string[] } }[] : [];
+        const completion = tools.find((tool) => tool.name === "StructuredOutput");
+        schemaDelivered ||= completion?.input_schema?.required?.includes("handoff") === true;
+        claudeText(response);
+      } else {
+        const text = body.text as { format?: { schema?: { required?: string[] } } } | undefined;
+        schemaDelivered ||= text?.format?.schema?.required?.includes("handoff") === true;
+        codexResponse(response, { id: "native-handoff-answer", type: "message", role: "assistant", status: "completed",
+          content: [{ type: "output_text", text: JSON.stringify({ body: "Native continuation complete", handoff: completionHandoff }), annotations: [] }] });
+      }
+    });
+    const environment = { ...nativeEnvironment(local.root), APPDATA: local.root, LOCALAPPDATA: local.root };
+    const dependencies = { contexts: { loadForExecution: async () => ({ promptSection: "", sanitized: {}, workspacePath: local.workspace }) },
+      prompts: { read: async () => null }, deadlines: { totalMillis: 30_000 } };
+    const runtime = engine === "claude-code" ? new ClaudeAgentSdkPartnerEngineRuntime({ ...dependencies, environment: { ...environment, ANTHROPIC_BASE_URL: local.url } })
+      : new CodexAgentSdkPartnerEngineRuntime({ ...dependencies, environment, sdk: { create: options => {
+        const client = new Codex({ ...options, env: environment, config: { ...options.config, model_provider: "fixture", model_providers: {
+          fixture: { name: "Fixture", base_url: `${local.url}/v1`, wire_api: "responses", env_key: "JOI_FIXTURE_KEY", supports_websockets: false },
+        } } });
+        return { startThread: input => client.startThread(input), resumeThread: (id, input) => client.resumeThread(id, input) };
+      } } });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-19T00:00:00Z", displayName: "Native handoff", engine,
+      engineModelId: engine === "claude-code" ? "claude-sonnet-4-6" : "gpt-5.4", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1,
+      skills: [], tools: [], toolPolicyMode: "CUSTOM", codexPermissions: { approvalPolicy: "never", sandboxMode: "read-only", networkAccessEnabled: false, webSearchMode: "disabled" } });
+    const events: unknown[] = [];
+    try {
+      const result = await runtime.runResidentTurn({ ...context, request, revision, onEvent: async event => { events.push(event); } });
+      expect(result.output).toMatchObject({ body: "Native continuation complete", handoffStatus: "PROVIDED", handoff: completionHandoff });
+      expect(schemaDelivered).toBe(true);
+      expect(calls).toBe(1);
+      expect(JSON.stringify(events)).not.toContain("PRIVATE_NATIVE_HANDOFF");
+      expect(JSON.stringify(result.conversation)).not.toContain("StructuredOutput");
+    } finally { await local.close(); }
+  }, 60_000);
+
   it.for(["claude-code", "codex"] as const)("AC-53 %s reads immutable evidence outside the execution workspace", { timeout: 60_000 }, async (engine, test) => {
     if (engine === "codex" && !nativeToolSmoke) test.skip();
     let calls = 0;
@@ -137,7 +172,7 @@ describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
         return;
       }
       if (complete || calls > 8 || readIssues.size > 0) {
-        codexResponse(response, { id: `answer-${String(calls)}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "Native evidence read", annotations: [] }] });
+        codexResponse(response, { id: `answer-${String(calls)}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: JSON.stringify({ body: "Native evidence read", handoff: completionHandoff }), annotations: [] }] });
         return;
       }
       const input = body.input as { type: string; output?: unknown }[];
@@ -219,7 +254,7 @@ describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
       await writeFile(path.join(local.workspace, "input.txt"), "changed while waiting");
       const resumed = await runtime.runResidentTurn({ ...context, revision, externalSessionRef: result.externalSessionRef,
         request: { ...request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
-      expect(resumed).toMatchObject({ status: "COMPLETED", externalSessionRef: result.externalSessionRef });
+      expect(resumed).toMatchObject({ status: "COMPLETED", externalSessionRef: result.externalSessionRef, output: { handoffStatus: "PROVIDED" } });
       expect((await readFile(path.join(local.workspace, "marker.txt"), "utf8")).trim()).toBe("fresh");
       expect(resumed.output.artifacts.map(artifact => artifact.name)).toEqual(["marker.txt"]);
     } finally { await local.close(); }
@@ -252,7 +287,7 @@ describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
           return;
         }
       }
-      const text = writing ? "Native continuation complete" : JSON.stringify({ disposition: "WRITE_REQUIRED", body: "" });
+      const text = writing ? JSON.stringify({ body: "Native continuation complete", handoff: completionHandoff }) : JSON.stringify({ disposition: "WRITE_REQUIRED", body: "", handoff: null });
       codexResponse(response, { id: `message-${String(calls)}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text, annotations: [] }] });
     });
     const environment = { ...nativeEnvironment(local.root), APPDATA: local.root, LOCALAPPDATA: local.root };
@@ -280,7 +315,7 @@ describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
       await writeFile(path.join(local.workspace, "input.txt"), "changed while waiting");
       const next = await runtime.runResidentTurn({ ...context, externalSessionRef: first.externalSessionRef, revision,
         request: { ...request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
-      expect(next).toMatchObject({ status: "COMPLETED", externalSessionRef: first.externalSessionRef, output: { body: "Native continuation complete" } });
+      expect(next).toMatchObject({ status: "COMPLETED", externalSessionRef: first.externalSessionRef, output: { body: "Native continuation complete", handoffStatus: "PROVIDED" } });
       if (writeTools) {
         expect(await readFile(path.join(local.workspace, "marker.txt"), "utf8")).toContain("fresh");
         expect(next.output.artifacts.map(artifact => artifact.name)).toEqual(["marker.txt"]);

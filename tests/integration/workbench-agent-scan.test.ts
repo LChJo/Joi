@@ -23,10 +23,12 @@ function makeDatabase(): DatabaseSync {
     CREATE TABLE partner_instances (instance_id TEXT PRIMARY KEY, workbench_id TEXT, partner_id TEXT, status TEXT);
     CREATE TABLE workbench_agent_sessions (agent_id TEXT PRIMARY KEY, workbench_id TEXT, partner_id TEXT, dismissed_at TEXT);
     CREATE TABLE joi_inbox_messages (input_id TEXT PRIMARY KEY, idempotency_key TEXT, body TEXT, status TEXT,
-      workbench_id TEXT, created_at TEXT, updated_at TEXT, canceled_at TEXT, dismissed_at TEXT,
+      workbench_id TEXT, created_at TEXT, updated_at TEXT, canceled_at TEXT, dismissed_at TEXT, reopened_at TEXT,
       failed_at TEXT, clarification_prompt TEXT, clarification_reason_code TEXT, goal_input_id TEXT, result_revision INTEGER, requirements_revision INTEGER);
     CREATE TABLE joi_goal_result_sets (original_input_id TEXT PRIMARY KEY, revision INTEGER,
       synthesized_revision INTEGER, synthetic_input_id TEXT, updated_at TEXT, synthesized_requirements_revision INTEGER);
+    CREATE TABLE joi_goal_outcomes (input_id TEXT PRIMARY KEY, result_revision INTEGER, requirements_revision INTEGER,
+      disposition TEXT, completed_at TEXT, completion_summary TEXT, updated_at TEXT);
     CREATE TABLE joi_goal_requirements(goal_input_id TEXT PRIMARY KEY, workbench_id TEXT, revision INTEGER, processed_source_revision INTEGER);
     CREATE TABLE joi_goal_requirement_snapshots(goal_input_id TEXT, revision INTEGER, requirements_json TEXT);
     CREATE TABLE joi_goal_requirement_sources(goal_input_id TEXT, source_revision INTEGER, kind TEXT, body TEXT, read_offset INTEGER, body_chars INTEGER);

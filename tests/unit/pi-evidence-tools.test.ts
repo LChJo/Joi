@@ -8,10 +8,11 @@ describe("AC-48/53 Pi task-scoped evidence pages", () => {
   it("keeps mandatory requirements and pageable evidence available in the legacy Pi adapter", async () => {
     const faux = fauxProvider({ provider: "legacy-evidence" });
     const models = createModels(); models.setProvider(faux.provider);
+    const contextRequests: unknown[] = [];
     const runner = new PiCodingPartnerRunner({
-      contexts: { loadForExecution: () => Promise.resolve({ promptSection: "", sanitized: {}, evidence: {
+      contexts: { loadForExecution: (id,options) => { contextRequests.push([id,options]); return Promise.resolve({ promptSection: "", sanitized: {}, evidence: {
         index: JSON.stringify({ results: [{ resultId: "r", file: "result-0.txt" }], conclusions: [] }), files: [{ name: "result-0.txt", body: "FULL_EVIDENCE_TAIL" }], inline: "",
-      } }) },
+      } }); } },
       prompts: { read: () => Promise.resolve(null) },
       resolver: { resolve: () => Promise.resolve({ model: faux.getModel(), models, thinkingLevel: "high" as const }) },
       sources: { selectInitial: turnId => Promise.resolve({ turnId, modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" }) },
@@ -24,13 +25,15 @@ describe("AC-48/53 Pi task-scoped evidence pages", () => {
     const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-19T00:00:00Z", displayName: "Reader", kind: "local-pi", partnerId: "p", partnerRevisionId: "pr", registryRevision: 1, skills: [], tools: [] });
     const result = await runner.run({ actionId: "a", workId: "w", workbenchId: "wb", contextSnapshotId: "snapshot", taskProjection: "Read evidence", requiredContext: "MANDATORY_REQUIREMENTS" }, revision);
     expect(result.status).toBe("COMPLETED");
+    expect(contextRequests).toEqual([["snapshot",{ evidenceMode: "LAZY" }]]);
   });
   it("refreshes evidence readers at each warm Work boundary and rejects identifiers from another goal", async () => {
     const faux = fauxProvider({ provider: "warm-evidence" });
     const models = createModels(); models.setProvider(faux.provider);
+    const contextRequests: unknown[] = [];
     const evidence = (id: string) => ({ index: JSON.stringify({ results: [{ resultId: id, file: "result-0.txt" }], conclusions: [] }), files: [{ name: "result-0.txt", body: `BODY_${id}` }], inline: "" });
     const runtime = new PiPartnerEngineRuntime({
-      contexts: { loadForExecution: id => Promise.resolve({ promptSection: "", sanitized: {}, evidence: evidence(id) }) },
+      contexts: { loadForExecution: (id,options) => { contextRequests.push([id,options]); return Promise.resolve({ promptSection: "", sanitized: {}, evidence: evidence(id) }); } },
       prompts: { read: () => Promise.resolve(null) },
       resolver: { resolve: () => Promise.resolve({ model: faux.getModel(), models, thinkingLevel: "off" as const }) },
       sources: { selectInitial: turnId => Promise.resolve({ turnId, modelId: "m", modelRevisionId: "mr", sourceId: "s", sourceRevisionId: "sr" }) },
@@ -50,6 +53,7 @@ describe("AC-48/53 Pi task-scoped evidence pages", () => {
       context => { expect(JSON.stringify(context.messages.at(-1))).toContain("BODY_goal2"); expect(JSON.stringify(context.messages.at(-1))).not.toContain("BODY_goal1"); return fauxAssistantMessage([fauxText("second done")]); },
     ]);
     await turn("goal2");
+    expect(contextRequests).toEqual([["goal1",{ evidenceMode: "LAZY" }],["goal2",{ evidenceMode: "LAZY" }]]);
     runtime.evictFromMemory("instance");
   });
   it("reads all index, result and conclusion pages without accepting caller-selected scopes", async () => {

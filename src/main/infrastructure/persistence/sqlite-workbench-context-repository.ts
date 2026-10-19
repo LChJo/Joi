@@ -1,8 +1,10 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
-import { selectGoalEvidence } from "../../domain/work/goal-evidence.js";
-import { goalEvidenceIndex, loadGoalEvidenceCatalog } from "./sqlite-goal-evidence-repository.js";
+import { selectGoalEvidence,type GoalEvidenceResult } from "../../domain/work/goal-evidence.js";
+import { goalEvidenceIndex, loadGoalEvidenceCatalog,SqliteGoalEvidenceRepository } from "./sqlite-goal-evidence-repository.js";
+import { SqliteWorkResultRepository } from "./sqlite-work-result-repository.js";
+import { WorkResultService } from "../../application/work/work-result-service.js";
 
 import type {
   WorkbenchContextProjectionReader,
@@ -171,7 +173,62 @@ export class SqliteWorkbenchContextRepository implements WorkbenchContextProject
     };
   }
 
-  async loadForExecution(contextSnapshotId: string) {
+  #lazyEvidence(connection: DatabaseSync,scope: { goalInputId: string; workbenchId: string },workId: string,briefJson: string) {
+    const brief = JSON.parse(briefJson) as { evidenceResultIds?: string[] };
+    const explicitResultIds = brief.evidenceResultIds ?? [];
+    const dependencies = connection.prepare(`WITH RECURSIVE chain(work_id) AS (
+      SELECT depends_on_work_id FROM work_dependencies WHERE work_id=? UNION
+      SELECT d.depends_on_work_id FROM work_dependencies d JOIN chain c ON d.work_id=c.work_id)
+      SELECT work_id FROM chain ORDER BY work_id`).all(workId).map(row => row.work_id as string);
+    const select = (bodyCodepoints: number) => `SELECT r.result_id AS resultId,r.work_id AS workId,w.title,
+      CASE WHEN length(b.body)>${String(bodyCodepoints)} THEN substr(b.body,1,${String(bodyCodepoints / 2)})||char(10)||'[omitted body; use work_read_result with resultId and cursor]'||char(10)||substr(b.body,-${String(bodyCodepoints / 2)}) ELSE b.body END AS body,
+      r.status,COALESCE(v.status,'UNVERIFIED') AS verificationStatus,r.is_late AS isLate,r.is_authoritative AS isAuthoritative,r.artifacts_json AS artifactsJson,
+      (w.status='COMPLETED' AND r.action_id=(SELECT a.action_id FROM dispatch_attempts a WHERE a.work_id=w.work_id ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1)) AS eligible
+      FROM work_results r JOIN work_items w ON w.work_id=r.work_id JOIN work_result_bodies b ON b.body_ref=r.body_ref
+      LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
+      WHERE w.input_id=? AND w.workbench_id=? AND r.workbench_id=?`;
+    const parameters = [scope.goalInputId,scope.workbenchId,scope.workbenchId];
+    const required = connection.prepare(`${select(60000)} AND (r.result_id IN (SELECT value FROM json_each(?)) OR w.work_id IN (SELECT value FROM json_each(?)))
+      ORDER BY r.created_at DESC,r.rowid DESC`).all(...parameters,JSON.stringify(explicitResultIds),JSON.stringify(dependencies));
+    const optional = connection.prepare(`WITH selected AS MATERIALIZED (SELECT r.result_id FROM work_results r JOIN work_items w ON w.work_id=r.work_id
+      LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
+      WHERE w.input_id=? AND w.workbench_id=? AND r.workbench_id=? AND w.status='COMPLETED' AND r.status='COMPLETED'
+        AND r.is_authoritative=1 AND r.is_late=0 AND v.status IN ('PASSED','NOT_REQUIRED')
+        AND r.action_id=(SELECT a.action_id FROM dispatch_attempts a WHERE a.work_id=w.work_id ORDER BY a.created_at DESC,a.rowid DESC LIMIT 1)
+        AND r.result_id NOT IN (SELECT value FROM json_each(?)) AND EXISTS (SELECT 1 FROM work_result_bodies b WHERE b.body_ref=r.body_ref)
+      ORDER BY r.created_at DESC,r.rowid DESC LIMIT 8)
+      ${select(12000)} AND r.result_id IN (SELECT result_id FROM selected) ORDER BY r.created_at DESC,r.rowid DESC`)
+      .all(...parameters,JSON.stringify(required.map(row => row.resultId)),...parameters);
+    const results: GoalEvidenceResult[] = [...required,...optional].map(({ artifactsJson,...row }) => {
+      const artifacts = JSON.parse(artifactsJson as string) as unknown[];
+      return { ...row,isLate: Boolean(row.isLate),isAuthoritative: Boolean(row.isAuthoritative),eligible: Boolean(row.eligible),artifactCount: artifacts.length,artifacts: artifacts.slice(0,25) } as unknown as GoalEvidenceResult;
+    });
+    const totalResults = connection.prepare(`SELECT COUNT(*) AS n FROM work_results r JOIN work_items w ON w.work_id=r.work_id
+      JOIN work_result_bodies b ON b.body_ref=r.body_ref WHERE w.input_id=? AND w.workbench_id=? AND r.workbench_id=?`).get(...parameters)?.n as number;
+    const hasHistory = connection.prepare("SELECT 1 FROM sqlite_master WHERE name='joi_goal_outcome_history' AND type='table'").get() !== undefined;
+    const body = "CASE WHEN length(completion_summary)>4000 THEN substr(completion_summary,1,2000)||'[omitted; work_read_evidence(mode=conclusion)]'||substr(completion_summary,-2000) ELSE completion_summary END AS body";
+    const conclusion = connection.prepare(`SELECT o.result_revision,o.requirements_revision,o.disposition,${body},
+      ${hasHistory ? `EXISTS (SELECT 1 FROM joi_goal_outcome_history h WHERE h.goal_input_id=o.input_id AND h.result_revision=o.result_revision
+        AND h.requirements_revision=COALESCE(o.requirements_revision,0) AND (h.completion_summary IS NOT o.completion_summary OR h.disposition IS NOT o.disposition))` : "0"} AS isCurrent
+      FROM joi_goal_outcomes o JOIN joi_inbox_messages i ON i.input_id=o.input_id WHERE o.input_id=? AND (i.workbench_id=? OR i.workbench_id IS NULL)`)
+      .get(scope.goalInputId,scope.workbenchId)
+      ?? (hasHistory ? connection.prepare(`SELECT h.result_revision,h.requirements_revision,h.disposition,${body},0 AS isCurrent FROM joi_goal_outcome_history h
+        JOIN joi_inbox_messages i ON i.input_id=h.goal_input_id WHERE h.goal_input_id=? AND (i.workbench_id=? OR i.workbench_id IS NULL)
+        ORDER BY h.result_revision DESC,h.requirements_revision DESC LIMIT 1`).get(scope.goalInputId,scope.workbenchId) : undefined);
+    const latestConclusion = conclusion === undefined ? undefined : { outcomeId: `r${String(conclusion.result_revision)}:q${String(conclusion.requirements_revision ?? 0)}${conclusion.isCurrent === 1 ? ":current" : ""}`,
+      disposition: conclusion.disposition,resultRevision: conclusion.result_revision,requirementsRevision: conclusion.requirements_revision ?? 0,body: conclusion.body };
+    const selected = selectGoalEvidence({ results,totalResults,explicitResultIds,dependencyWorkIds: dependencies,
+      ...(latestConclusion === undefined ? {} : { latestConclusion: JSON.stringify(latestConclusion) }) });
+    const reader = new WorkResultService(new SqliteWorkResultRepository(this.database),new SqliteGoalEvidenceRepository(this.database));
+    return { index: JSON.stringify({ results: selected.results.map(({ body: _body,...row }) => row),conclusions: latestConclusion === undefined ? [] : [latestConclusion],totalResults }),
+      files: [],inline: selected.inline,reader: {
+        index: (args: { cursor?: string }) => reader.index({ ...args,...scope }),
+        readConclusion: (args: { outcomeId: string; cursor?: string }) => reader.readConclusion({ ...args,...scope }),
+        readResult: (args: { resultId: string; cursor?: string }) => reader.read({ ...args,...scope }),
+      },statistics: { evidenceCount: selected.results.length,evidenceCharacters: selected.inline.length,omittedEvidenceCount: totalResults - selected.results.length,budgetFallbackCount: selected.budgetFallbackCount } };
+  }
+
+  async loadForExecution(contextSnapshotId: string,options?: { evidenceMode: "BUNDLE" | "LAZY" | "NONE" }): ReturnType<WorkbenchExecutionContextReader["loadForExecution"]> {
     const snapshot = await this.load(contextSnapshotId);
     if (snapshot === null) return null;
     const workspaceRef = snapshot.workspaceRef;
@@ -194,9 +251,11 @@ export class SqliteWorkbenchContextRepository implements WorkbenchContextProject
     // snapshot. The recent-results projection is only a 320-character preview
     // and may predate completion of the Work's prerequisites.
     const evidence = this.database.transaction((connection) => {
+      if (options?.evidenceMode === "NONE") return undefined;
       const target = connection.prepare("SELECT input_id,intent_json FROM work_items WHERE work_id = ? AND workbench_id = ?")
         .get(snapshot.workId, snapshot.workbenchId);
       if (typeof target?.input_id !== "string") return undefined;
+      if (options?.evidenceMode === "LAZY") return this.#lazyEvidence(connection,{ goalInputId: target.input_id,workbenchId: snapshot.workbenchId },snapshot.workId,target.intent_json as string);
       const catalog = loadGoalEvidenceCatalog(connection, { goalInputId: target.input_id, workbenchId: snapshot.workbenchId });
       const brief = JSON.parse(target.intent_json as string) as { evidenceResultIds?: string[] };
       const dependencies = connection.prepare(`WITH RECURSIVE chain(work_id) AS (

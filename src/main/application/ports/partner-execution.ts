@@ -1,5 +1,6 @@
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
+import type { WorkHandoff, WorkHandoffStatus } from "../../domain/work/work-handoff.js";
 
 export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
@@ -15,6 +16,8 @@ export interface PartnerRunRequest {
 }
 
 export interface PartnerRunOutput {
+  handoff?: WorkHandoff;
+  handoffStatus?: WorkHandoffStatus;
   artifacts: { artifactRef?: string; mimeType?: string; name: string; size: number }[];
   body: string;
   /** Blocking question the partner asked the user; present together with status WAITING_INPUT. */
@@ -22,6 +25,8 @@ export interface PartnerRunOutput {
 }
 
 export interface PartnerRunResult {
+  handoff?: WorkHandoff;
+  handoffStatus?: WorkHandoffStatus;
   checkpointRef?: string;
   actionId: string;
   artifacts: PartnerRunOutput["artifacts"];

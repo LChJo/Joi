@@ -61,7 +61,7 @@ function outputFromArtifact(artifact: Artifact): A2aInvocationOutput {
   const text = artifact.parts.filter((part) => part.kind === "text").map((part) => part.text).join("");
   return {
     artifacts: text === "" ? [] : [{ name: artifact.name ?? artifact.artifactId, text }],
-    parts: [],
+    parts: artifact.parts.filter((part) => part.kind === "data").map((part) => ({ data: part.data, kind: "data" })),
   };
 }
 

@@ -38,6 +38,7 @@ import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEf
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { LocalWriteGate, workAccessPrompt, WORKSPACE_WRITE_CONTINUATION } from "../../application/partners/local-write-gate.js";
 import { classifyLocalToolEffect } from "../../domain/work/workspace-write-scheduling.js";
+import { parseWorkHandoff, WORK_HANDOFF_INSTRUCTION, WORK_HANDOFF_SCHEMA, type WorkHandoff } from "../../domain/work/work-handoff.js";
 import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { workspaceReadScopeLine } from "../workspace/workspace-prompt-boundary.js";
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
@@ -92,6 +93,7 @@ interface RunProgressControl {
 
 /** Per-run mutable facts: observed side effects and a pending question for the user. */
 interface RunTracker {
+  completion?: { body: string; handoff: WorkHandoff };
   state: PartnerRunSideEffectState;
   question?: string;
 }
@@ -150,6 +152,10 @@ class LiveConversationPublisher {
     await this.#safePublish({ type: "status", state: "working" });
   }
 
+  async complete(body: string): Promise<void> {
+    await this.#safePublish({ type: "message", role: "agent", parts: [{ type: "text", text: body }] });
+  }
+
   async handle(event: AgentEvent): Promise<void> {
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       await this.#safePublish({ type: "message", role: "agent", parts: [{ type: "text", text: event.assistantMessageEvent.delta }] });
@@ -158,7 +164,7 @@ class LiveConversationPublisher {
       this.#rememberArgs(event.toolCallId, event.args);
       await this.#safePublish({
         type: "tool_activity", toolCallId: event.toolCallId, toolName: event.toolName,
-        state: "started", summary: toolCallSummary(event.toolName, event.args),
+        state: "started", summary: event.toolName === "partner_complete" ? "Deliver Work result" : toolCallSummary(event.toolName, event.args),
       });
     } else if (event.type === "tool_execution_end" && !this.#toolIds.has(`end:${event.toolCallId}`)) {
       this.#toolIds.add(`end:${event.toolCallId}`);
@@ -213,6 +219,21 @@ class LiveConversationPublisher {
  * the call so the question reaches dispatch as WAITING_INPUT instead of more work.
  */
 const askUserParameters = Type.Object({ question: Type.String({ maxLength: 1_000, minLength: 1 }) });
+
+const partnerCompleteParameters = Type.Object({ body: Type.String({ minLength: 1 }), handoff: Type.Unsafe<WorkHandoff>(WORK_HANDOFF_SCHEMA) });
+function createPartnerCompleteTool(tracker: { current: RunTracker }): AgentTool<typeof partnerCompleteParameters> {
+  return {
+    name: "partner_complete", label: "Deliver this Work",
+    description: `${WORK_HANDOFF_INSTRUCTION} Call this once with the full user deliverable in body. This ends the run without another model call.`,
+    parameters: partnerCompleteParameters,
+    execute: async (_id, parameters) => {
+      const parsed = parseWorkHandoff(parameters.handoff);
+      if (parameters.body.trim() === "" || parsed.status !== "PROVIDED") throw new DomainError("partner_handoff_invalid", "The completion handoff is invalid.");
+      tracker.current.completion = { body: parameters.body, handoff: parsed.handoff };
+      return { content: [{ type: "text", text: "Work deliverable recorded." }], details: {}, terminate: true };
+    },
+  };
+}
 
 /**
  * The workspace paragraph partners with write tools receive. Reads lead (see
@@ -440,7 +461,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
 
   async #runEphemeral(request: PartnerRunRequest, revision: PartnerRevision, context: PartnerExecutionContext, tracker: RunTracker): Promise<{ conversation: AgentConversationDraft[]; externalRunId: string; output: PartnerRunOutput; status: PartnerRunStatus }> {
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
-    const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId);
+    const execution = await this.dependencies.contexts.loadForExecution(request.contextSnapshotId,{ evidenceMode: "LAZY" });
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     assertSkillWorkspace(revision, execution.workspacePath);
     const externalRunId = `local_pi:${request.actionId}`;
@@ -452,6 +473,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const tools = this.#toolsWithTimeout([
       ...this.#toolsForRun(execution.workspacePath, this.#effectiveToolNames(revision), context.skillEnvironmentKeys),
       createAskUserTool(trackerRef),
+      createPartnerCompleteTool(trackerRef),
       createContextHistoryTool(() => agent.state.messages),
       ...createPartnerEvidenceTools(execution.evidence),
     ]);
@@ -508,12 +530,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       if (failure !== null) throw failure;
       await this.#continueForMissingBody(agent, tracker, 0, live, context.onProgress, progress);
       if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
-      const body = assistantText(agent.state.messages);
+      const body = tracker.completion?.body ?? assistantText(agent.state.messages);
+      if (tracker.completion !== undefined) await live?.complete(body);
       const artifacts = await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
       return {
         conversation: draftAgentConversation(request.taskProjection, body, agent.state.messages),
         externalRunId,
-        output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
+        output: { artifacts, body, ...(tracker.completion === undefined ? { handoffStatus: "MISSING" as const } : { handoff: tracker.completion.handoff, handoffStatus: "PROVIDED" as const }), ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
@@ -540,7 +563,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   async #runResidentTurn(input: ResidentTurnInput, tracker: RunTracker): Promise<ResidentTurnResult> {
     const { revision } = input;
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
-    const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId);
+    const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId,{ evidenceMode: "LAZY" });
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     assertSkillWorkspace(revision, execution.workspacePath);
     const pin = input.sourcePin ?? await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
@@ -567,6 +590,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       const tools = this.#toolsWithTimeout([
         ...this.#toolsForRun(execution.workspacePath, effectiveToolNames, input.skillEnvironmentKeys),
         createAskUserTool(sideEffectTracker),
+        createPartnerCompleteTool(sideEffectTracker),
         createContextHistoryTool(() => agent.state.messages),
         ...createPartnerEvidenceTools(execution.evidence),
       ]);
@@ -625,7 +649,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     }
     const historyStart = warm.historyStart;
     warm.agent.state.tools = this.#toolsWithTimeout([
-      ...this.#toolsForRun(execution.workspacePath, effectiveToolNames, input.skillEnvironmentKeys), createAskUserTool(warm.sideEffectTracker),
+      ...this.#toolsForRun(execution.workspacePath, effectiveToolNames, input.skillEnvironmentKeys), createAskUserTool(warm.sideEffectTracker), createPartnerCompleteTool(warm.sideEffectTracker),
       createContextHistoryTool(() => activeAgent.state.messages.slice(historyStart)),
       ...createPartnerEvidenceTools(execution.evidence),
     ]);
@@ -704,14 +728,15 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       await this.#continueForMissingBody(warm.agent, tracker, previousMessageCount, live, input.onProgress, progress);
       if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
       const turnMessages = warm.agent.state.messages.slice(previousMessageCount);
-      const body = assistantText(turnMessages);
+      const body = tracker.completion?.body ?? assistantText(turnMessages);
+      if (tracker.completion !== undefined) await live?.complete(body);
       const artifacts = collectArtifacts ? await collectChangedWorkspaceArtifacts(execution.workspacePath, before) : [];
       return {
         conversation: draftAgentConversation(input.request.taskProjection, body, turnMessages),
         externalRunId: `local_pi:${input.request.actionId}`,
         externalSessionRef: `partner_instance_messages:${input.instanceId}`,
         messages: [...warm.agent.state.messages],
-        output: { artifacts, body, ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
+        output: { artifacts, body, ...(tracker.completion === undefined ? { handoffStatus: "MISSING" as const } : { handoff: tracker.completion.handoff, handoffStatus: "PROVIDED" as const }), ...(tracker.question === undefined ? {} : { pendingQuestion: tracker.question }) },
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
@@ -775,7 +800,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
    * failing at the acceptance gate instead of looping here.
    */
   async #continueForMissingBody(agent: Agent, tracker: RunTracker, messageStart: number, live?: LiveConversationPublisher, onProgress?: () => void, progress?: RunProgressControl): Promise<void> {
-    if (tracker.question !== undefined) return;
+    if (tracker.question !== undefined || tracker.completion !== undefined) return;
     if (trailingAssistantText(agent.state.messages.slice(messageStart)) !== "") return;
     await this.#promptWithIdleTimeout(agent, MISSING_BODY_CONTINUATION_PROMPT, live, onProgress, progress);
     const failure = assistantFailureSignal(agent.state.messages.slice(messageStart));
@@ -957,6 +982,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       `Workspace: ${workspaceAvailable ? "available" : "unavailable; file and shell tools are disabled"}.`,
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
       partnerCommentDisciplineLine,
+      `${WORK_HANDOFF_INSTRUCTION} Finish with partner_complete(body,handoff); this records the complete deliverable and ends the run.`,
       ...(webEnabled ? ["For public web research, use web_search first, then fetch_content for the relevant URL and get_search_content to page a long response. Web tools are read-only, bounded, and never receive cookies, authorization headers or credentials; cite the URL in your answer and label uncertainty."] : []),
       "If you are blocked because only the user can supply missing information or make a decision, call ask_user once with one concrete question and stop; otherwise complete the work without asking.",
       `Workbench scope: ${request.workbenchId}`,

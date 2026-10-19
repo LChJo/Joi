@@ -71,7 +71,7 @@ describe("local Pi coding partner runtime", () => {
     const input = { instanceId: "ceiling", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
       request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "review" } };
     faux.setResponses([context => {
-      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["read", "ask_user", "context_read_history"]);
+      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["read", "ask_user", "partner_complete", "context_read_history"]);
       expect(requestSystemPrompt(context)).toContain("Work access ceiling: READ");
       return fauxAssistantMessage([fauxText("review complete")]);
     }]);

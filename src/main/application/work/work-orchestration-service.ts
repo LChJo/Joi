@@ -12,6 +12,7 @@ import type { Clock, DurableUiEventEmitter, IdGenerator } from "../ports/runtime
 import type {
   CommittedWorkPlan,
   DispatchPolicyGate,
+  GoalWorkListQuery,
   PartnerDispatchPin,
   PlannedDispatchAttempt,
   WorkAcceptanceCheck,
@@ -338,6 +339,11 @@ export class WorkOrchestrationService {
 
   async listForGoal(goalInputId: string, workbenchId: string) {
     return await this.dependencies.repository.listForGoal?.(goalInputId, workbenchId) ?? [];
+  }
+
+  async listGoalPage(input: GoalWorkListQuery) {
+    if (this.dependencies.repository.listGoalPage === undefined) throw new DomainError("work_list_unavailable", "Paged Work lookup is unavailable.");
+    return this.dependencies.repository.listGoalPage(input);
   }
 
   async readBrief(goalInputId: string, workbenchId: string, workId: string) {

@@ -47,11 +47,11 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
         .run(result.runId);
       connection.prepare(`INSERT INTO work_results
         (result_id, run_id, action_id, workbench_id, work_id, partner_revision_id, instance_id, status,
-         summary, body_ref, artifacts_json, is_late, is_authoritative, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         summary, body_ref, artifacts_json, is_late, is_authoritative, created_at, handoff_json, handoff_status) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       ).run(
         result.resultId, result.runId, result.actionId, result.workbenchId, result.workId, result.partnerRevisionId,
         result.instanceId ?? null, result.status, result.summary, bodyRef, JSON.stringify(artifacts), isLate ? 1 : 0,
-        isAuthoritative ? 1 : 0, result.createdAt,
+        isAuthoritative ? 1 : 0, result.createdAt, result.handoff === undefined ? null : JSON.stringify(result.handoff), result.handoffStatus ?? (result.handoff === undefined ? "MISSING" : "PROVIDED"),
       );
       connection.prepare(`INSERT INTO work_result_verifications
         (result_id, status, reason_code, created_at) VALUES (?, ?, ?, ?)`)

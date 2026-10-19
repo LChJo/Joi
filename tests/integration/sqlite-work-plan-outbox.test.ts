@@ -251,7 +251,7 @@ describe("SQLite work plan outbox", () => {
       expect(resultInput).toMatchObject({ workbenchId: "workbench-1", status: "PENDING" });
       expect(resultInput?.body).not.toContain("resultId=work_result:");
       expect(resultInput?.body).toContain("work_read_evidence");
-      expect(resultInput?.synthesisContext).toMatchObject({ totalResults: 1, changedResults: [] });
+      expect(resultInput?.synthesisContext).toMatchObject({ totalResults: 1, changedResults: [{ status: "COMPLETED",handoffStatus: "MISSING" }] });
       expect(resultInput?.body).not.toContain("PRIVATE_RESULT_DETAIL");
       const projection = database.transaction((connection) => connection.prepare(
         "SELECT active_work_json, recent_results_json FROM workbench_task_projections WHERE workbench_id = 'workbench-1'",

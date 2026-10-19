@@ -5,6 +5,8 @@ import { JOI_REASONING_TOOL_NAMES } from "../../src/main/infrastructure/pi/pi-re
 import { DomainError } from "../../src/main/domain/errors.js";
 import type { CreateAutomationInput, UpdateAutomationInput } from "../../src/shared/automation.js";
 import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import type { GoalRequirementsRepository } from "../../src/main/application/ports/goal-requirements.js";
+import type { GoalWorkListPage,GoalWorkListQuery } from "../../src/main/application/ports/work-orchestration.js";
 
 const partnerDto: PartnerDto = {
   capabilities: ["code"], createdBy: "user", displayName: "Coder", engine: "pi-core", inFlightCount: 0,
@@ -39,6 +41,8 @@ interface HarnessRecorder {
 }
 
 function makeTools(options: {
+  requirements?: GoalRequirementsRepository;
+  workPage?: (query: GoalWorkListQuery) => Promise<GoalWorkListPage>;
   automationCalls?: { input: Record<string, unknown>; key?: string; method: string }[];
   attachmentIds?: string[];
   attachments?: { read(attachmentId: string): Promise<{ bytes: Uint8Array; filename: string; mimeType: string }> };
@@ -70,6 +74,7 @@ function makeTools(options: {
   const harnessCalls = options.harness?.calls ?? [];
   const push = (method: string, args: Record<string, unknown>): void => { harnessCalls.push({ args, method }); };
   const tools = createJoiReasoningTools({
+    ...(options.requirements === undefined ? {} : { requirements: options.requirements }),
     ...(options.automationCalls === undefined ? {} : { automation: {
       create: async (automationInput: CreateAutomationInput, key?: string) => { options.automationCalls?.push({ input: automationInput as unknown as Record<string, unknown>, ...(key === undefined ? {} : { key }), method: "create" }); return {} as never; },
       delete: async () => undefined,
@@ -140,9 +145,13 @@ function makeTools(options: {
       read: async ({ resultId }) => ({ content: "result", resultId }),
       index: async args => { evidenceCalls.push(args); return { content: "index",totalCharacters: 5 }; },
       readConclusion: async args => { evidenceCalls.push(args); return { content: "conclusion",totalCharacters: 10 }; },
+      readHandoff: async args => { evidenceCalls.push(args); return { content: "handoff",totalCharacters: 7,resultId: args.resultId,handoffStatus: "PROVIDED" as const }; },
+      readState: async args => { evidenceCalls.push(args); return { content: "state",totalCharacters: 5,outcomeId: args.outcomeId,stateStatus: "PROVIDED" as const }; },
+      readChanges: async args => { evidenceCalls.push(args); return { changedResults: [],totalChanges: 0 }; },
     },
     turnId: "turn_1",
     work: {
+      ...(options.workPage === undefined ? {} : { listGoalPage: options.workPage,listForGoal: () => Promise.reject(new Error("Full Work list lookup is unavailable in this fixture.")) }),
       plan: async (input) => {
         planCalls.push(input);
         if (options.workspaceBlocked === true) throw new DomainError("workbench_workspace_not_ready", "workspace required");
@@ -216,6 +225,21 @@ function makeTools(options: {
 }
 
 describe("joi reasoning tools", () => {
+  it("wires paged goal Work lookups through the production tool factory and guarded cancellation",async () => {
+    const requirements: GoalRequirementsRepository = {
+      ensure: () => Promise.reject(new Error("unused")),load: () => Promise.resolve(null),readSource: () => Promise.reject(new Error("unused")),
+      resolveSource: () => Promise.reject(new Error("unused")),update: () => Promise.reject(new Error("unused")),
+      assertReady: () => Promise.resolve(null),checkpointTurn: () => Promise.resolve(),
+    };
+    const queries: GoalWorkListQuery[] = [];
+    const harness = makeTools({ requirements,workPage: query => { queries.push(query); return Promise.resolve({ items: [{ workId: "selected",title: "Selected",status: "READY",requirementsRevision: 2 }],nextCursor: "next" }); } });
+    await expect(harness.call("work_list_goal",{ statuses: ["READY"],requirementsRevisionNot: 2,limit: 3,cursor: "cursor" })).resolves.toMatchObject({ items: [{ workId: "selected" }],nextCursor: "next" });
+    await expect(harness.call("work_cancel",{ workId: "selected" })).resolves.toMatchObject({ workId: "selected" });
+    expect(queries).toEqual([
+      { goalInputId: "input_1",workbenchId: "workbench_1",statuses: ["READY"],requirementsRevisionNot: 2,limit: 3,cursor: "cursor" },
+      { goalInputId: "input_1",workbenchId: "workbench_1",workId: "selected",limit: 1 },
+    ]);
+  });
   it.each([undefined, []])("requires nonempty dispatch acceptance checks in the advertised schema: %j", async (acceptanceChecks) => {
     const harness = makeTools();
     await expect(harness.validate("work_dispatch", { work: [{
@@ -744,6 +768,9 @@ describe("joi reasoning tools", () => {
 
   it("parses the goal input id out of synthetic input prefixes", () => {
     expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1")).toBe("goal-1");
+    expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1:r7:q2")).toBe("goal-1");
+    expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1:resume:1792370000000")).toBe("goal-1");
+    expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1:r7:q2:resume:1792370000000")).toBe("goal-1");
     expect(goalFromInputIdPrefix("joi_harness_review:goal:goal-1:r3")).toBe("goal-1");
     expect(goalFromInputIdPrefix("plain-input")).toBeUndefined();
     expect(goalFromInputIdPrefix("joi_signal_input:sig-1")).toBeUndefined();
@@ -876,6 +903,31 @@ describe("joi reasoning tools", () => {
 
 
 describe("AC-43/48 evidence tools", () => {
+  it("passes semantic evidence modes, scope, versions and opaque cursors through the production factory",async () => {
+    const harness = makeTools({ inputId: "joi_result_input:goal:original:r7:q2",goalInputId: "original" });
+    await harness.call("work_read_evidence",{ mode: "handoff",resultId: "result",cursor: "c1:handoff" });
+    await harness.call("work_read_evidence",{ mode: "state",outcomeId: "r6:q2",cursor: "c1:state" });
+    await harness.call("work_read_evidence",{ mode: "changes",resultRevision: 7,requirementsRevision: 2,afterResultRevision: 6,afterUpdatedAt: "2026-10-19",cursor: "d1:changes" });
+    expect(harness.evidenceCalls).toEqual([
+      { goalInputId: "original",workbenchId: "workbench_1",resultId: "result",cursor: "c1:handoff" },
+      { goalInputId: "original",workbenchId: "workbench_1",outcomeId: "r6:q2",cursor: "c1:state" },
+      { goalInputId: "original",workbenchId: "workbench_1",resultRevision: 7,requirementsRevision: 2,afterResultRevision: 6,afterUpdatedAt: "2026-10-19",cursor: "d1:changes" },
+    ]);
+    await expect(harness.call("work_read_evidence",{ mode: "changes",resultRevision: 7,requirementsRevision: 2 })).rejects.toMatchObject({ code: "goal_evidence_revision_invalid" });
+  });
+
+  it("keeps synthesis state private in tool details and rejects it on ordinary inputs",async () => {
+    const state = { version: 1,claims: [{ statement: "PRIVATE_SYNTHESIS_STATE",requirementIds: ["requirement"],resultIds: ["result"] }],unresolved: [],conflicts: [] };
+    const synthesis = makeTools({ inputId: "joi_result_input:goal:original:r7:q2",goalInputId: "original" });
+    const tool = synthesis.tools.find(value => value.name === "turn_complete");
+    if (tool === undefined) throw new Error("Missing completion tool.");
+    const output = await tool.execute("complete",{ outcome: "RESULT_CONTINUE",synthesisState: state });
+    expect(output.details).toEqual({ synthesisState: state });
+    expect(JSON.stringify(output.content)).not.toContain("PRIVATE_SYNTHESIS_STATE");
+    expect(JSON.stringify(output.content)).toContain("COMMITTED");
+    await expect(makeTools().call("turn_complete",{ outcome: "DIRECT_ANSWER",synthesisState: state })).rejects.toMatchObject({ code: "goal_synthesis_state_invalid" });
+  });
+
   it("scopes historical index and conclusion pages to the original goal", async () => {
     const harness = makeTools({ inputId: "joi_result_input:goal:original:r7:q2",goalInputId: "original" });
     await harness.call("work_read_evidence", { cursor: "8000" });

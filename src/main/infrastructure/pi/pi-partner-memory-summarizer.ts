@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT, generateSummary, type AgentMessage } from "@earendil-works/pi-agent-core";
+import { BACKGROUND_CONTEXT, generateSummary, withAbortSignal, type AgentMessage } from "@earendil-works/pi-agent-core";
 
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PartnerMemorySummarizer, PartnerWorkMemoryEntry } from "../../application/ports/partner-memory.js";
@@ -18,7 +18,7 @@ export class PiPartnerMemorySummarizer implements PartnerMemorySummarizer {
     sources: Pick<ReasoningSourceSelector, "selectInitial">;
   }) {}
 
-  async summarize(input: { workbenchId: string; entries: PartnerWorkMemoryEntry[]; partnerId: string; previousSummary?: string }): Promise<string | null> {
+  async summarize(input: { workbenchId: string; entries: PartnerWorkMemoryEntry[]; partnerId: string; previousSummary?: string; signal?: AbortSignal }): Promise<string | null> {
     try {
       const pin = await this.dependencies.sources.selectInitial(`partner_memory:${input.workbenchId}:${input.partnerId}`);
       const resolved = await this.dependencies.resolver.resolve(pin);
@@ -36,8 +36,7 @@ export class PiPartnerMemorySummarizer implements PartnerMemorySummarizer {
         undefined,
         undefined,
         undefined,
-        // A memory refresh runs outside any user turn and has no cancellation of its own.
-        BACKGROUND_CONTEXT,
+        input.signal === undefined ? BACKGROUND_CONTEXT : withAbortSignal(input.signal, BACKGROUND_CONTEXT),
       );
       return generated.ok ? generated.value : null;
     } catch {

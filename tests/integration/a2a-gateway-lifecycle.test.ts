@@ -48,6 +48,78 @@ async function seedConnection(fixture: Awaited<ReturnType<typeof createRuntimeFi
 }
 
 describe("A2A invocation lifecycle", () => {
+  it("recovers completed Task output after the terminal invocation was persisted before WorkResult", async () => {
+    const fixture = await createRuntimeFixture();
+    await seedConnection(fixture);
+    const handoff = { version: 1, conclusion: "PRIVATE_RECOVERED_HANDOFF", requirementIds: [], evidenceResultIds: [], artifactRefs: [], unresolved: [], conflicts: [] };
+    const output = { artifacts: [{ name: "completed.md", text: "Complete persisted artifact" }],
+      parts: [{ kind: "text", data: "Complete recovered answer" }, { kind: "data", data: { joiWorkHandoff: handoff } }] };
+    const transport: A2aInvocationTransport = { cancelTask: vi.fn(),
+      getTask: vi.fn(async () => ({ contextId: "completed_context", kind: "task", state: "completed", taskId: "completed_task", output } as const)),
+      resubscribe: vi.fn(async function* () {}), sendStream: vi.fn(async function* () { throw new Error("completed_task_must_not_resend"); }),
+    };
+    const service = new A2aGatewayService({ clock: fixture.clock, ids: fixture.ids, store: fixture.database.store, transport, vault: new PlainTestVault() });
+    try {
+      await fixture.database.store.createInvocation({ agentConnectionId: "agent_gateway", createdAt: fixture.clock.now().toISOString(), invocationId: "completed_recovery",
+        messageId: "completed_stable_message", outboxId: "completed_outbox", request: { parts: [] } });
+      const original = await fixture.database.store.updateInvocation("completed_recovery", { contextId: "completed_context", taskId: "completed_task", status: "COMPLETED", sendAttempts: 1, updatedAt: fixture.clock.now().toISOString() });
+      const recovered = await service.recover("completed_recovery");
+      expect(recovered).toEqual({ invocation: original, output });
+      expect(await fixture.database.store.getInvocation("completed_recovery")).toEqual(original);
+      expect(transport.getTask).toHaveBeenCalledOnce();
+      expect(transport.sendStream).not.toHaveBeenCalled();
+      expect(transport.resubscribe).not.toHaveBeenCalled();
+      expect(transport.cancelTask).not.toHaveBeenCalled();
+    } finally { await fixture.close(); }
+  });
+
+  it("keeps other terminal states and completed messages without Tasks settled without remote execution", async () => {
+    const fixture = await createRuntimeFixture();
+    await seedConnection(fixture);
+    const transport: A2aInvocationTransport = { cancelTask: vi.fn(), getTask: vi.fn(async () => ({ kind: "task", state: "completed", contextId: "unexpected", taskId: "unexpected" } as const)),
+      resubscribe: vi.fn(async function* () {}), sendStream: vi.fn(async function* () {}) };
+    const service = new A2aGatewayService({ clock: fixture.clock, ids: fixture.ids, store: fixture.database.store, transport, vault: new PlainTestVault() });
+    try {
+      for (const status of ["CANCELED", "FAILED", "UNKNOWN_REQUIRES_REVIEW", "COMPLETED"] as const) {
+        const invocationId = `terminal_${status}`;
+        await fixture.database.store.createInvocation({ agentConnectionId: "agent_gateway", createdAt: fixture.clock.now().toISOString(), invocationId,
+          messageId: `message_${status}`, outboxId: `outbox_${status}`, request: { parts: [] } });
+        const original = await fixture.database.store.updateInvocation(invocationId, { status, updatedAt: fixture.clock.now().toISOString(),
+          ...(status === "COMPLETED" ? {} : { taskId: "do_not_read_terminal_task" }) });
+        expect(await service.recover(invocationId)).toEqual({ invocation: original, output: { artifacts: [], parts: [] } });
+        expect(await fixture.database.store.getInvocation(invocationId)).toEqual(original);
+      }
+      expect(transport.getTask).not.toHaveBeenCalled();
+      expect(transport.sendStream).not.toHaveBeenCalled();
+      expect(transport.resubscribe).not.toHaveBeenCalled();
+      expect(transport.cancelTask).not.toHaveBeenCalled();
+    } finally { await fixture.close(); }
+  });
+
+  it("retains completed facts when output retrieval fails and permits another read without resending", async () => {
+    const fixture = await createRuntimeFixture();
+    await seedConnection(fixture);
+    let failRead = true;
+    const output = { artifacts: [{ name: "recovered.md", text: "Recovered complete artifact" }], parts: [] };
+    const transport: A2aInvocationTransport = { cancelTask: vi.fn(), getTask: vi.fn(async () => {
+      if (failRead) throw new Error("remote_read_unavailable");
+      return { kind: "task", state: "completed", contextId: "read_context", taskId: "read_task", output } as const;
+    }), resubscribe: vi.fn(async function* () {}), sendStream: vi.fn(async function* () {}) };
+    const service = new A2aGatewayService({ clock: fixture.clock, ids: fixture.ids, store: fixture.database.store, transport, vault: new PlainTestVault() });
+    try {
+      await fixture.database.store.createInvocation({ agentConnectionId: "agent_gateway", createdAt: fixture.clock.now().toISOString(), invocationId: "read_retry",
+        messageId: "read_retry_message", outboxId: "read_retry_outbox", request: { parts: [] } });
+      const original = await fixture.database.store.updateInvocation("read_retry", { status: "COMPLETED", taskId: "read_task", sendAttempts: 1, updatedAt: fixture.clock.now().toISOString() });
+      await expect(service.recover("read_retry")).rejects.toThrow("remote_read_unavailable");
+      expect(await fixture.database.store.getInvocation("read_retry")).toEqual(original);
+      failRead = false;
+      expect(await service.recover("read_retry")).toEqual({ invocation: original, output });
+      expect(transport.getTask).toHaveBeenCalledTimes(2);
+      expect(transport.sendStream).not.toHaveBeenCalled();
+      expect(transport.resubscribe).not.toHaveBeenCalled();
+    } finally { await fixture.close(); }
+  });
+
   it("persists a stable message before streaming and records terminal remote facts", async () => {
     const fixture = await createRuntimeFixture();
     await seedConnection(fixture);
@@ -180,9 +252,11 @@ describe("A2A invocation lifecycle", () => {
     fixture.database.transaction((database) => database.prepare(
       "INSERT INTO affairs (affair_id, life_id, title, status, created_at, updated_at) VALUES (?, ?, ?, 'RUNNING', ?, ?)",
     ).run("affair_artifact", life.lifeId, "Artifact Affair", fixture.clock.now().toISOString(), fixture.clock.now().toISOString()));
+    const privateHandoff = { version: 1, conclusion: "PRIVATE_GATEWAY_HANDOFF", requirementIds: [], evidenceResultIds: [], artifactRefs: [], unresolved: [], conflicts: [] };
+    const diagnostics: unknown[] = [];
     const duplicateOutput = {
       artifacts: [{ name: "summary.md", text: "same" }, { name: "summary.md", text: "same" }],
-      parts: [{ data: { value: "same" }, kind: "data" }, { data: { value: "same" }, kind: "data" }],
+      parts: [{ data: { joiWorkHandoff: privateHandoff }, kind: "data" }, { data: { joiWorkHandoff: privateHandoff }, kind: "data" }],
     };
     const transport: A2aInvocationTransport = {
       cancelTask: vi.fn(), getTask: vi.fn(), async *resubscribe() {},
@@ -198,6 +272,7 @@ describe("A2A invocation lifecycle", () => {
     const download = vi.fn(() => Promise.resolve({ relativePath: "life/file.bin", sha256: "c".repeat(64), size: 7 }));
     const service = new A2aGatewayService({
       artifactDownloader: { download },
+      diagnostics: { emit: (event, fields) => { diagnostics.push({ event, fields }); } },
       clock: fixture.clock, ids: fixture.ids, store: fixture.database.store, transport, vault: new PlainTestVault(),
     });
     try {
@@ -206,7 +281,7 @@ describe("A2A invocation lifecycle", () => {
       });
       expect(result.output).toEqual({
         artifacts: [{ name: "summary.md", text: "same" }, { name: "final.md", text: "new" }],
-        parts: [{ data: { value: "same" }, kind: "data" }],
+        parts: [{ data: { joiWorkHandoff: privateHandoff }, kind: "data" }],
       });
       expect(download).toHaveBeenCalledWith(expect.objectContaining({
         filename: "remote_fallback", mimeType: "application/octet-stream", size: 0,
@@ -220,6 +295,8 @@ describe("A2A invocation lifecycle", () => {
       expect(await fixture.database.store.listInvocationInteractions(result.invocation.invocationId)).toEqual([
         expect.objectContaining({ kind: "input-required", prompt: "Agent requires user input." }),
       ]);
+      expect(JSON.stringify({ diagnostics, invocation: result.invocation, artifacts: await fixture.database.store.listInvocationArtifacts(result.invocation.invocationId) }))
+        .not.toContain("PRIVATE_GATEWAY_HANDOFF");
     } finally {
       await fixture.close();
     }

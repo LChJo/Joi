@@ -95,6 +95,23 @@ const baseRecord = (payload: Record<string, unknown>) => ({
 });
 
 describe("partner dispatch instance routing", () => {
+  it("persists a semantic handoff through delivery without exposing it in result events", async () => {
+    const { database, root } = await openWithPartner();
+    const handoff = { version: 1 as const, conclusion: "PRIVATE_HANDOFF", requirementIds: [], evidenceResultIds: [], artifactRefs: [], unresolved: ["PRIVATE_GAP"], conflicts: [] };
+    const diagnostics: { event: string; fields: Record<string, unknown> }[] = [];
+    const published: unknown[] = [];
+    try {
+      const handler = makeHandler(database, { dispatch: async () => ({ actionId: "action_1", artifacts: [], body: "Complete user deliverable",
+        handoff, handoffStatus: "PROVIDED", externalRunId: "external", status: "COMPLETED", workId: "work_1" }) }, diagnostics,
+      undefined, async event => { published.push(event); });
+      await handler.handle(baseRecord({ actionId: "action_1", dispatchAttemptId: "attempt_1", workId: "work_1" }));
+      const saved = database.transaction(db => db.prepare("SELECT handoff_json,handoff_status FROM work_results").get());
+      expect(saved?.handoff_status).toBe("PROVIDED");
+      expect(JSON.parse(String(saved?.handoff_json))).toEqual(handoff);
+      expect(diagnostics.find(event => event.event === "joi.work.handoff")?.fields).toMatchObject({ handoffStatus: "PROVIDED", workId: "work_1" });
+      expect(JSON.stringify({ diagnostics, published })).not.toMatch(/PRIVATE_HANDOFF|PRIVATE_GAP/u);
+    } finally { database.close(); await rm(root, { recursive: true, force: true }); }
+  });
   it("AC-WR-01 starts two same-directory analysis runs before either completes", async () => {
     const { database, root, partner } = await openWithPartner();
     const clock = new TestClock();
@@ -1111,7 +1128,8 @@ describe("partner dispatch instance routing", () => {
     }
   });
 
-  it("creates an ephemeral A2A Agent card and archives text without raw data payloads", async () => {
+  it.each(["legacy", "semantic", "invalid"])("creates an ephemeral A2A Agent card and archives %s text without raw data payloads", async mode => {
+    const handoff = { version: 1, conclusion: "PRIVATE_A2A_HANDOFF", requirementIds: [], evidenceResultIds: [], artifactRefs: [], unresolved: [], conflicts: [] };
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-dispatch-a2a-agent-"));
     const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
     try {
@@ -1161,7 +1179,11 @@ describe("partner dispatch instance routing", () => {
                 lastActivityAt: "2026-07-29T10:00:00.000Z", messageId: "action_1", request: { parts: [] }, sendAttempts: 1,
                 status: "COMPLETED" as const, updatedAt: "2026-07-29T10:00:00.000Z",
               },
-              output: { artifacts: [], parts: [{ data: "远程工作完成", kind: "text" }, { data: "PRIVATE_A2A_PAYLOAD", kind: "data" }] },
+              output: { artifacts: [], parts: [{ data: "远程工作完成", kind: "text" }, { data: "PRIVATE_A2A_PAYLOAD", kind: "data" },
+                ...(mode === "legacy" ? [] : [
+                  { kind: "data", data: { joiWorkHandoff: { ...handoff, conclusion: "SUPERSEDED_PRIVATE_HANDOFF" } } },
+                  { kind: "data", data: { joiWorkHandoff: mode === "semantic" ? handoff : { ...handoff, verification: "PASSED" } } },
+                ])] },
             };
           },
         },
@@ -1181,6 +1203,10 @@ describe("partner dispatch instance routing", () => {
       expect(displayText.map((row) => row.text).join("\n")).not.toContain("[用户补充]");
       expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_A2A_PAYLOAD");
       expect(displayText.map((row) => row.text).join("\n")).not.toContain("PRIVATE_GOAL_EVIDENCE");
+      expect(displayText.map((row) => row.text).join("\n")).not.toMatch(/PRIVATE_A2A_HANDOFF|SUPERSEDED_PRIVATE_HANDOFF/u);
+      const saved = database.transaction(db => db.prepare("SELECT handoff_status,handoff_json FROM work_results").get());
+      expect(saved?.handoff_status).toBe(mode === "legacy" ? "MISSING" : mode === "semantic" ? "PROVIDED" : "INVALID");
+      if (mode === "semantic") expect(JSON.parse(String(saved?.handoff_json))).toEqual(handoff);
     } finally {
       database.close();
       await rm(root, { force: true, recursive: true });

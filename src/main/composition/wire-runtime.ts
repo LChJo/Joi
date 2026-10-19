@@ -27,6 +27,8 @@ import { ContinuityService } from "../application/continuity/continuity-service.
 import { EventService } from "../application/events/event-service.js";
 import { LifeRuntimeService } from "../application/lives/life-runtime-service.js";
 import { OutboxDispatcher } from "../application/operations/outbox-dispatcher.js";
+import { createPartnerMemoryRefreshDispatcher } from "../application/partners/partner-memory-refresh-handler.js";
+import { PARTNER_MEMORY_REFRESH_KIND } from "../application/ports/partner-memory.js";
 import { AlarmScheduler } from "../application/rhythm/alarm-scheduler.js";
 import { ScheduleScheduler } from "../application/rhythm/schedule-scheduler.js";
 import { BudgetService } from "../application/rhythm/budget-service.js";
@@ -227,7 +229,7 @@ export function wireRuntime(input: {
     diagnostics,
     // evolution.model rows are audit-only outbox records written by the evolution store; the
     // bounded model call itself runs inside EvolutionService, so the dispatcher must never claim them.
-    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model"],
+    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model", PARTNER_MEMORY_REFRESH_KIND],
     handlers: {
       "result.export": record => exporter.handle(String(record.payload.exportId)),
       "a2a.send": async (record) => {
@@ -267,6 +269,17 @@ export function wireRuntime(input: {
     owner: `outbox_${String(process.pid)}`,
     store: database.store,
   });
+  const memoryRefreshDispatcher = createPartnerMemoryRefreshDispatcher({ clock, store: database.store, diagnostics,
+    memory: partnerStack.partnerMemory, owner: `memory_outbox_${String(process.pid)}`,
+    canStart: () => database.transaction(connection => connection.prepare(`SELECT 1 AS busy WHERE
+      EXISTS (SELECT 1 FROM joi_turns WHERE status='RUNNING') OR EXISTS (
+        SELECT 1 FROM joi_inbox_messages i WHERE i.status='PENDING' AND i.dismissed_at IS NULL
+          AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages goal WHERE goal.input_id=COALESCE(i.goal_input_id,i.input_id) AND goal.canceled_at IS NOT NULL)
+          AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates gate WHERE gate.goal_input_id=COALESCE(i.goal_input_id,i.input_id)
+            AND (gate.status='WAITING_INPUT' OR (gate.status='REVIEWING' AND gate.resume_input_id<>i.input_id)))
+      )`).get()) === undefined,
+    onBackgroundError: () => process.stderr.write("A background memory refresh will be retried.\n"),
+  });
   return {
     exportJobs,
     a2aGateway,
@@ -277,6 +290,8 @@ export function wireRuntime(input: {
     continuity: new ContinuityService({ clock, publisher, store: database.store }),
     delegations,
     drain: async () => {
+      try { await memoryRefreshDispatcher.close(); }
+      catch { process.stderr.write("A background memory refresh remains queued for retry.\n"); }
       for (let batch = 0; batch < 10; batch += 1) {
         if (await outboxDispatcher.dispatchOnce(100) === 0) break;
       }
@@ -287,6 +302,7 @@ export function wireRuntime(input: {
     legacyRunControl,
     lifeRuntime,
     outboxDispatcher,
+    memoryRefreshDispatcher,
     resultExports,
   };
 }

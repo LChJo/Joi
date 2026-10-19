@@ -245,13 +245,14 @@ export interface RuntimeStats {
 export interface RuntimeStore extends LifeStore, AgentStore, AuthStore, AgentIntegrationStore, ConnectionBreakerStore, InvocationStore, PrimaryAgentContextStore, A2aResultStore, RuntimeCoreStore, ContinuityStore, UserAttachmentStore {
   acquireLease(input: Omit<RuntimeLease, "generation"> & { now: string }): Promise<RuntimeLease | null>;
   appendSseEvent(input: Omit<SseEvent, "createdAt" | "sequence">): Promise<SseEvent>;
-  claimOutbox(input: { claimUntil: string; excludeKinds?: string[]; limit: number; now: string; owner: string }): Promise<OutboxRecord[]>;
+  claimOutbox(input: { claimUntil: string; excludeKinds?: string[]; includeKinds?: string[]; limit: number; now: string; owner: string }): Promise<OutboxRecord[]>;
   claimOutboxById(input: { claimUntil: string; now: string; outboxId: string; owner: string }): Promise<OutboxRecord | null>;
   completeOutbox(outboxId: string, owner: string): Promise<void>;
   countOutbox(): Promise<number>;
   createManifestHash(payload: Record<string, unknown>): string;
   enqueueOutbox(input: OutboxInput): Promise<void>;
   releaseOutbox(input: { availableAt: string; outboxId: string; owner: string; preserveAttemptCount?: true }): Promise<void>;
+  renewOutboxClaim?(input: { claimUntil: string; outboxId: string; owner: string }): Promise<boolean>;
   getRuntimeStats(): Promise<RuntimeStats>;
   getSseSequenceWindow(): Promise<SseSequenceWindow>;
   listSseEvents(afterSequence: number, limit: number): Promise<SseEvent[]>;

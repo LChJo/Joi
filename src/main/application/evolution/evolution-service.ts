@@ -1,5 +1,6 @@
 import { DomainError } from "../../domain/errors.js";
-import { baselineStrategy, composeStrategyInstructions, parseStrategy, promotionDecision } from "../../domain/evolution/strategy.js";
+import { baselineStrategy, composeStrategyInstructions, parseStrategy, promotionDecision, type EvaluationComparison } from "../../domain/evolution/strategy.js";
+import { deriveEvolutionExperience, selectEvolutionExperiences, type EvolutionExperience } from "../../domain/evolution/experience.js";
 import { EVOLUTION_EVALUATOR_VERSION, evolutionScenarios, scenarioPrompt, simulateAction } from "../../domain/evolution/scenarios.js";
 import { EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD, EVOLUTION_HANDLE_TIME_BUDGET_MS, EVOLUTION_MAX_STEPS_PER_HANDLE, EVOLUTION_MONITOR_REVERT_THRESHOLD, EVOLUTION_RESPONSE_INVALID_BREAKER_LIMIT, EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT, EVOLUTION_RUN_NOW_TTL_MILLIS, type EvolutionBatchRecordDto, type EvolutionOverviewDto, type EvolutionReason, type EvolutionScope, type EvolutionStatusDto } from "../../../shared/evolution.js";
 import { EvolutionModelCallError, type EvolutionBatch, type EvolutionEvidence, type EvolutionModel, type EvolutionRevision, type EvolutionRollout, type EvolutionSourcePin, type EvolutionState, type EvolutionStore } from "../ports/evolution.js";
@@ -67,6 +68,30 @@ const compatible = (revision: EvolutionRevision, pin?: EvolutionSourcePin) => re
 const canaryBucket = (goalId: string) => Array.from(goalId).reduce((total, character) => (total * 31 + character.charCodeAt(0)) >>> 0, 0) % 5 === 0;
 const baselineCacheKeyFor = (evaluatorVersion: string, pin: EvolutionSourcePin, strategy: EvolutionBatch["parentStrategy"]) => `${evaluatorVersion}|${JSON.stringify(pin)}|${JSON.stringify(strategy)}`;
 const baselineCacheKey = (batch: EvolutionBatch) => baselineCacheKeyFor(batch.evaluatorVersion, batch.pin, batch.parentStrategy);
+function discardInterruptedRollout(batch: EvolutionBatch | null, unknownConsumption = false): void {
+  const run = batch?.rollouts.at(-1);
+  if (batch === null || batch.phase === "PROPOSE" || run === undefined || run.success !== undefined) return;
+  batch.rollouts.pop();
+  batch.interruptedCosts = [...(batch.interruptedCosts ?? []), { scenarioId: run.scenarioId, variant: run.variant,
+    modelCalls: run.modelCalls ?? run.calls, tokens: run.tokens ?? 0, tokensComplete: !unknownConsumption && run.tokensComplete === true }];
+}
+function newRollout(batch: EvolutionBatch, scenarioId: string, variant: EvolutionRollout["variant"], attempt: number): EvolutionRollout {
+  const costs = (batch.interruptedCosts ?? []).filter(row => row.scenarioId === scenarioId && row.variant === variant);
+  batch.interruptedCosts = (batch.interruptedCosts ?? []).filter(row => row.scenarioId !== scenarioId || row.variant !== variant);
+  return { scenarioId, variant, attempt, calls: 0, modelCalls: costs.reduce((sum, row) => sum + (row.modelCalls ?? 0), 0),
+    tokens: costs.reduce((sum, row) => sum + (row.tokens ?? 0), 0), tokensComplete: costs.every(row => row.tokensComplete === true), observations: [], actions: [] };
+}
+function rolloutComparisons(batch: EvolutionBatch, split: "development" | "sealed"): EvaluationComparison[] {
+  return evolutionScenarios(split).map(scenario => {
+    const base = batch.rollouts.filter(row => row.scenarioId === scenario.id && row.variant === "baseline");
+    const candidate = batch.rollouts.filter(row => row.scenarioId === scenario.id && row.variant === "candidate");
+    const baselineTokens = base.every(row => row.tokensComplete === true) ? base.reduce((total, row) => total + (row.tokens ?? 0), 0) : undefined;
+    const candidateTokens = candidate.every(row => row.tokensComplete === true) ? candidate.reduce((total, row) => total + (row.tokens ?? 0), 0) : undefined;
+    return { scenarioId: scenario.id, baseline: base.map(row => row.success === true), candidate: candidate.map(row => row.success === true),
+      baselineCalls: base.reduce((total, row) => total + (row.modelCalls ?? row.calls), 0), candidateCalls: candidate.reduce((total, row) => total + (row.modelCalls ?? row.calls), 0),
+      ...(baselineTokens === undefined ? {} : { baselineTokens }), ...(candidateTokens === undefined ? {} : { candidateTokens }), violations: candidate.filter(row => row.violation === true).length };
+  });
+}
 function revert(state: EvolutionState, now: string): void {
   const current = state.revisions.find((r) => r.revisionId === state.activeRevisionId);
   if (current !== undefined) { current.status = "ROLLED_BACK"; current.reason = "rolled_back"; }
@@ -329,7 +354,7 @@ export class EvolutionService {
           if (s.batch !== null) s.batch.tokensComplete = false;
           // Restart just the interrupted simulation attempt; completed trials remain reusable.
           // The abandoned request remains charged in the daily ledger and the outbox.
-          if (s.batch?.phase !== "PROPOSE" && s.batch?.rollouts.at(-1)?.success === undefined) s.batch?.rollouts.pop();
+          discardInterruptedRollout(s.batch, true);
           s.reason = "call_failed";
         });
       }
@@ -556,7 +581,7 @@ export class EvolutionService {
     state.reason = "call_failed";
     state.callFailures = (state.callFailures ?? 0) + 1;
     if (state.batch === null) { state.lastCandidateDay = day; return; }
-    if (state.batch.phase !== "PROPOSE" && state.batch.rollouts.at(-1)?.success === undefined) state.batch.rollouts.pop();
+    discardInterruptedRollout(state.batch);
     if ((state.callFailures ?? 0) >= MAX_CONSECUTIVE_CALL_FAILURES) finishBatch(state, "call_failed", this.dependencies.now());
   }
   /** Claims one bounded call, runs it and accepts the result. True when a call was actually issued. */
@@ -607,6 +632,8 @@ export class EvolutionService {
       // A batch resumed across midnight consumes the proposal day's candidate slot too.
       if (batch.phase === "PROPOSE") state.lastCandidateDay = day;
       if (batch.phase !== "PROPOSE") this.#ensureRollout(batch);
+      const run = batch.phase === "PROPOSE" ? undefined : batch.rollouts.at(-1);
+      if (run !== undefined) run.modelCalls = (run.modelCalls ?? run.calls) + 1;
       state.callSequence += 1;
       batch.calls = (batch.calls ?? 0) + 1;
       const callId = `${batch.id}:call:${String(state.callSequence)}`;
@@ -615,7 +642,7 @@ export class EvolutionService {
       state.usage = Object.fromEntries(Object.entries(state.usage).filter(([key]) => key >= cutoff));
       state.call = { id: callId, state: "PENDING", createdAt: now };
       state.reason = "evaluating";
-      return { batch: structuredClone(batch), history: state.developmentHistory, id: callId };
+      return { batch: structuredClone(batch), experiences: state.experiences ?? [], id: callId };
     });
     if (call === null) return false;
     this.dependencies.store.update(id, (state) => { required(state.call).state = "RUNNING"; });
@@ -623,7 +650,7 @@ export class EvolutionService {
       { workbenchId: id, batchId: call.batch.id, callId: call.id, phase: call.batch.phase });
     let returnedTokens: number | null = null;
     try {
-      const prompt = call.batch.phase === "PROPOSE" ? this.#proposalPrompt(call.batch, call.history) : this.#simulationPrompt(call.batch);
+      const prompt = call.batch.phase === "PROPOSE" ? this.#proposalPrompt(call.batch, call.experiences) : this.#simulationPrompt(call.batch);
       const raw = await this.dependencies.model.call({ pin, ...prompt, workbenchId: id, idempotencyId: call.id, ...(signal === undefined ? {} : { signal }) });
       const result = modelResult(raw);
       returnedTokens = result.tokens;
@@ -653,24 +680,24 @@ export class EvolutionService {
         if (state.batch?.id !== call.batch.id) return false;
         if (error instanceof EvolutionModelCallError) { state.failure = error.failure; state.batch.failure = error.failure; }
         else { delete state.failure; delete state.batch.failure; }
+        const interrupted = state.batch.phase === "PROPOSE" ? undefined : state.batch.rollouts.at(-1);
+        if (interrupted !== undefined) {
+          if (tokens === null) interrupted.tokensComplete = false;
+          else interrupted.tokens = (interrupted.tokens ?? 0) + tokens;
+        }
         if (kind === "response_invalid") {
           // The provider answered, so the call was consumed — but this is a model-quality signal,
           // not an infrastructure fault: retry the same rollout tomorrow-grade rather than parking
           // the day, and only abandon the batch after the retry limit.
           state.responseInvalidStreak = (state.responseInvalidStreak ?? 0) + 1;
           consecutive = state.responseInvalidStreak;
-          const run = state.batch.rollouts.at(-1);
-          if (run !== undefined) {
-            if (tokens === null) run.tokensComplete = false;
-            else run.tokens = (run.tokens ?? 0) + tokens;
-          }
           if (state.responseInvalidStreak >= EVOLUTION_RESPONSE_INVALID_RETRY_LIMIT) finishBatch(state, "model_response_invalid", now);
         } else if (kind === "aborted") {
           state.responseInvalidStreak = 0;
           // Crash-recovery semantics: keep the batch and every completed trial, drop only the
           // interrupted attempt, and leave parkedDay and callFailures alone — a user cancelling
           // must not cost the workbench its daily candidate.
-          if (state.batch.phase !== "PROPOSE" && state.batch.rollouts.at(-1)?.success === undefined) state.batch.rollouts.pop();
+          discardInterruptedRollout(state.batch);
           state.reason = "call_failed";
         } else {
           state.responseInvalidStreak = 0;
@@ -733,22 +760,24 @@ export class EvolutionService {
         const rows = batch.rollouts.filter((row) => row.scenarioId === scenario.id);
         const baseline = rows.filter((row) => row.variant === "baseline");
         const candidate = rows.filter((row) => row.variant === "candidate");
-        if (baseline.length < 3) { batch.rollouts.push({ scenarioId: scenario.id, variant: "baseline", attempt: baseline.length, calls: 0, tokens: 0, tokensComplete: true, observations: [], actions: [] }); return; }
-        if (candidate.length < 3) { batch.rollouts.push({ scenarioId: scenario.id, variant: "candidate", attempt: candidate.length, calls: 0, tokens: 0, tokensComplete: true, observations: [], actions: [] }); return; }
+        if (baseline.length < 3) { batch.rollouts.push(newRollout(batch, scenario.id, "baseline", baseline.length)); return; }
+        if (candidate.length < 3) { batch.rollouts.push(newRollout(batch, scenario.id, "candidate", candidate.length)); return; }
       }
       throw new DomainError("evolution_evaluation_invalid", "Evaluation cursor is invalid.");
     }
     const completed = batch.phase === "DEVELOP" ? batch.rollouts.length : batch.rollouts.filter((r) => r.scenarioId.startsWith("development:") && r.variant === "candidate").length;
     const scenario = scenarios[Math.floor(completed / 3)];
     if (scenario === undefined) throw new DomainError("evolution_evaluation_invalid", "Evaluation cursor is invalid.");
-    batch.rollouts.push({ scenarioId: scenario.id, variant: batch.phase === "VALIDATE" ? "candidate" : "baseline", attempt: completed % 3, calls: 0, tokens: 0, tokensComplete: true, observations: [], actions: [] });
+    batch.rollouts.push(newRollout(batch, scenario.id, batch.phase === "VALIDATE" ? "candidate" : "baseline", completed % 3));
   }
-  #proposalPrompt(batch: EvolutionBatch, history: EvolutionRollout[]): { mode: "proposal"; prompt: string; systemPrompt: string } {
+  #proposalPrompt(batch: EvolutionBatch, experiences: EvolutionExperience[]): { mode: "proposal"; prompt: string; systemPrompt: string } {
+    const relevant = selectEvolutionExperiences(experiences, { sourcePin: JSON.stringify(batch.pin), evaluatorVersion: batch.evaluatorVersion,
+      parentStrategy: batch.parentStrategy, failedScenarioIds: batch.rollouts.filter(row => row.scenarioId.startsWith("development:") && row.success === false).map(row => row.scenarioId) });
     // Only development traces go to the proposer. Sealed verdicts and bodies never do.
-    return { mode: "proposal", systemPrompt: "Propose one bounded joi strategy change. Compare successes and failures for the SAME development scenario, then aggregate recurring deficiencies across scenarios. No code, free-form instructions, task answers or new permissions. Change exactly one module. Report fixes and risks as development scenario IDs only.",
+    return { mode: "proposal", systemPrompt: "Propose one bounded joi strategy change. Compare successes and failures for the SAME development scenario, then aggregate recurring deficiencies across scenarios. Experiences are conditional synthetic development comparisons, including counterexamples; they establish neither sealed nor production correctness. No code, free-form instructions, task answers or new permissions. Change exactly one module. Report fixes and risks as development scenario IDs only.",
       prompt: JSON.stringify({ parent: batch.strategy, modes: { context: ["baseline", "requirements_first", "open_questions_first"], completion: ["baseline", "evidence_matrix", "contradiction_check"] }, evidenceCount: batch.evidenceIds.length,
-        historicalSuccesses: history.filter((r) => r.scenarioId.startsWith("development:") && r.success === true).slice(-10),
-        development: batch.rollouts.filter((r) => r.scenarioId.startsWith("development:")).map((r) => ({ scenarioId: r.scenarioId, success: r.success, calls: r.calls, actions: r.actions, observations: r.observations })) }) };
+        experiences: relevant,
+        development: batch.rollouts.filter((r) => r.scenarioId.startsWith("development:")).map((r) => ({ scenarioId: r.scenarioId, success: r.success, calls: r.modelCalls ?? r.calls, tokens: r.tokensComplete === true ? r.tokens ?? 0 : null, actions: r.actions, observations: r.observations })) }) };
   }
   #simulationPrompt(batch: EvolutionBatch): { mode: "simulation"; prompt: string; systemPrompt: string } {
     const run = required(batch.rollouts.at(-1));
@@ -805,6 +834,10 @@ export class EvolutionService {
       const trials = batch.rollouts.filter((r) => r.scenarioId.startsWith("development:") && r.variant === "candidate");
       if (trials.length !== evolutionScenarios("development").length * 3) return;
       const revision = required(state.revisions.find((r) => r.revisionId === batch.revisionId));
+      const experience = deriveEvolutionExperience({ id: `${revision.revisionId}:development`, revisionId: revision.revisionId, batchId: batch.id,
+        createdAt: now, sourcePin: JSON.stringify(batch.pin), evaluatorVersion: batch.evaluatorVersion, parentStrategy: batch.parentStrategy,
+        strategy: batch.strategy, comparisons: rolloutComparisons(batch, "development") });
+      if (experience !== undefined) state.experiences = [...(state.experiences ?? []).filter(row => row.id !== experience.id), experience].slice(-60);
       if (trials.some((r) => r.violation === true)) { finishBatch(state, "hard_violation", now); return; }
       const improvements = evolutionScenarios("development").map((s) => ({ id: s.id,
         delta: trials.filter((r) => r.scenarioId === s.id && r.success === true).length - batch.rollouts.filter((r) => r.scenarioId === s.id && r.variant === "baseline" && r.success === true).length }));
@@ -835,15 +868,7 @@ export class EvolutionService {
       if (bestPossibleGain < 5) { finishBatch(state, "insufficient_gain", now); return; }
     }
     if (sealed.length !== evolutionScenarios("sealed").length * 6) return;
-    const comparisons = evolutionScenarios("sealed").map((scenario) => {
-      const rows = sealed.filter((r) => r.scenarioId === scenario.id);
-      const base = rows.filter((r) => r.variant === "baseline");
-      const candidate = rows.filter((r) => r.variant === "candidate");
-      const baselineTokens = base.every((row) => row.tokensComplete === true) ? base.reduce((total, row) => total + (row.tokens ?? 0), 0) : undefined;
-      const candidateTokens = candidate.every((row) => row.tokensComplete === true) ? candidate.reduce((total, row) => total + (row.tokens ?? 0), 0) : undefined;
-      return { scenarioId: scenario.id, baseline: base.map((r) => r.success === true), candidate: candidate.map((r) => r.success === true), baselineCalls: base.reduce((n, r) => n + r.calls, 0), candidateCalls: candidate.reduce((n, r) => n + r.calls, 0),
-        ...(baselineTokens === undefined ? {} : { baselineTokens }), ...(candidateTokens === undefined ? {} : { candidateTokens }), violations: candidate.filter((r) => r.violation === true).length };
-    });
+    const comparisons = rolloutComparisons(batch, "sealed");
     state.sealedBaselineCache = { ...(state.sealedBaselineCache ?? {}), [baselineCacheKey(batch)]: structuredClone(sealed.filter((row) => row.variant === "baseline")) };
     const result = promotionDecision(comparisons);
     revision.evaluation = comparisons;

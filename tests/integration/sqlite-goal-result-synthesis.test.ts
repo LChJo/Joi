@@ -181,16 +181,14 @@ describe("goal-level result synthesis", () => {
         "SELECT completion_summary FROM joi_goal_outcome_history WHERE goal_input_id = 'goal-stock' AND result_revision = 2",
       ).get())).toEqual({ completion_summary: "横评维度已建立，但近七天来源仍需补齐。" });
 
-      fixture.database.transaction((connection) => {
-        connection.prepare(`INSERT INTO joi_turns
-          (turn_id, input_id, workbench_id, session_id, status, created_at, updated_at)
-          VALUES ('turn-synthesis-final', ?, ?, ?, 'RUNNING', ?, ?)`).run(
-          synthesisInputId, workbench.workbenchId, `joi_synthesis_session:${workbench.workbenchId}`,
-          "2026-08-05T09:01:03.000Z", "2026-08-05T09:01:03.000Z",
-        );
-        connection.prepare("UPDATE joi_inbox_messages SET status = 'ROUTED' WHERE input_id = ?").run(synthesisInputId);
-      });
-      await inbox.completeInput(synthesisInputId ?? "missing", "turn-synthesis-final", {
+      expect(await inbox.retry("goal-stock", {})).toMatchObject({ status: "CONSUMED" });
+      const resumedInputId = String(fixture.database.transaction(connection => connection.prepare(
+        "SELECT synthetic_input_id FROM joi_goal_result_sets WHERE original_input_id='goal-stock'",
+      ).get())?.synthetic_input_id);
+      expect(resumedInputId).not.toBe(synthesisInputId);
+      await inbox.createTurn({ inputId: resumedInputId, workbenchId: workbench.workbenchId, turnId: "turn-synthesis-final",
+        sessionId: `joi_synthesis_session:${workbench.workbenchId}`, createdAt: new Date().toISOString() });
+      await inbox.completeInput(resumedInputId, "turn-synthesis-final", {
         completionSummary: "两项分析均已完成，结论已汇总。",
         outcome: "RESULT_SYNTHESIZED",
       });
