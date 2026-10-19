@@ -60,11 +60,11 @@ This project pursues those engineering goals. It makes no technical claim about 
 
 ## Dual evolution: partners that compound, a workbench that learns you
 
-joi makes one promise most assistants cannot keep: it should get better at working *with you*. Two evolution loops run continuously inside the runtime. One sharpens every **partner**, the other sharpens the **workbench** you share with joi, and both land on the same result table. "Partners get stronger the more they cooperate" and "the workbench understands you better the more you use it" therefore describe one mechanism from two sides.
+joi gets better at working *with you* the longer you use it. Two evolution loops run continuously inside the runtime. One sharpens every **partner**, the other sharpens the **workbench** you share with joi, and both land on the same result table. "Partners get stronger the more they cooperate" and "the workbench understands you better the more you use it" therefore describe one mechanism from two sides.
 
 ![The two evolution loops: partner evolution on the left, workbench evolution on the right, meeting on the shared result table](docs/assets/dual-evolution.svg)
 
-*Two loops, one result table. Source: [`docs/assets/dual-evolution.svg`](docs/assets/dual-evolution.svg).*
+*Two loops, one result table.*
 
 ### Loop A · Partners: dispatch, auto-create, compound
 
@@ -118,9 +118,9 @@ Success rates are computed at runtime from your own run history, so no figure is
 
 ## Screenshots
 
-Five screens from the joi desktop app.
+The main screens of the joi desktop app.
 
-**1. joi home** — the composer prompt “现在想让 joi 做什么？”.
+**1. joi home** — the composer prompt “现在想让 joi 做什么？”
 
 ![joi home with the composer asking what you want joi to do](docs/assets/screenshot-1.png)
 

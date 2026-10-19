@@ -60,11 +60,11 @@ joi 的工程目标继承自 [`docs/00-sources-and-glossary.md`](docs/00-sources
 
 ## 双重进化：搭档越用越强，工作台越用越懂你
 
-joi 想兑现的承诺是越用越会配合你。运行时里同时跑着两条进化回路：一条把每个**搭档**磨得更锋利，另一条让与你共享的**工作台**更懂你，两条回路最终落在同一张结果表上。「搭档越配合越强」与「工作台越用越懂你」说的是同一套机制的两面。
+joi 用得越久，配合得越顺。运行时里同时跑着两条进化回路：一条把每个**搭档**磨得更锋利，另一条让与你共享的**工作台**更懂你，两条回路最终落在同一张结果表上。「搭档越配合越强」与「工作台越用越懂你」说的是同一套机制的两面。
 
 ![joi 双重进化：左环是搭档进化回路，右环是工作台进化回路，两环在共享的结果事实表上交汇](docs/assets/dual-evolution.svg)
 
-*两条回路，一张结果表。图源：[`docs/assets/dual-evolution.svg`](docs/assets/dual-evolution.svg)。*
+*两条回路，一张结果表。*
 
 ### 回路 A · 搭档：派发、自动生成、越配越强
 
@@ -118,9 +118,9 @@ joi 想兑现的承诺是越用越会配合你。运行时里同时跑着两条�
 
 ## 截图
 
-joi 桌面应用的五个主要界面。
+joi 桌面应用的主要界面。
 
-**1. joi 主页** —— composer「现在想让 joi 做什么？」签名界面。
+**1. joi 主页** —— composer 的提示语「现在想让 joi 做什么？」
 
 ![joi 主页，composer 询问想让 joi 做什么](docs/assets/screenshot-1.png)
 
@@ -199,7 +199,7 @@ joi 是 Electron 桌面应用，内嵌同构 Web UI。主进程承载常驻 Runt
 
 - **Node.js** `>=22.19.0` 与 **npm** `>=11.0.0` —— 由 `package.json#engines` 声明，并由 [`.npmrc`](.npmrc) 的 `engine-strict=true` 强制校验。
 - 运行 Electron 窗口需要图形桌面会话。
-- 以下仅在对应构建时需要：Rust 工具链（`npm run build:native:desktop`），以及 Flutter SDK 与 Android NDK（`npm run build:mobile:android`）。
+- 可选，仅在对应构建时需要：Rust 工具链（`npm run build:native:desktop`），以及 Flutter SDK 与 Android NDK（`npm run build:mobile:android`）。
 
 ### 安装与运行
 
