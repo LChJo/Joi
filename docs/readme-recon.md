@@ -484,3 +484,175 @@ npm run package:verify
 - 优先使用 `npm run test:e2e` 产出的真实 Electron 截图，并复制到被 git 跟踪的目录（如 `docs/images/`）。
 - 架构/流程图可用 Mermaid 或从 `docs/03-system-architecture.md` 派生，但**必须与截图区分标注**。
 - 不得使用设计稿、头像候选图或手工示意图冒充运行截图。
+
+---
+
+## 9) 核心特色深度勘察：双重进化
+
+本节只回答一个问题：**「双重进化、越来越懂你」这个卖点，在本仓库源码里到底由哪些表、字段、服务与常量支撑，以及哪些话不能写。** 每条结论均给出可追溯的文件与符号。
+
+### 9.1 结论速览
+
+「双重进化」不是营销修辞，而是两条**真实存在、数据不同、服务不同**的回路，并在此处交汇：
+
+| 回路 | 进化对象 | 数据载体（表） | 服务（文件） | 产出 |
+| --- | --- | --- | --- | --- |
+| A · 搭档进化 | 搭档卡片与其不可变版本 | `partners` / `partner_revisions` / `partner_knowledge_docs` / `workbench_partner_work_memories` / `workbench_partner_work_memory_summaries` / `partner_instances` | `partner-registry-service.ts`、`partner-work-memory-service.ts`、`partner-knowledge-service.ts`、`partner-instance-manager.ts` | 工作记忆摘要（含成功率）+ 沉淀知识文档 + 新 revision + 常驻会话 |
+| B · 工作台进化 | 工作台自身的工作方式 | `workbenches` / `workbench_persona_revisions` / `workbench_task_projections` / `workbench_context_snapshots` / `evolution_states` / `evolution_evidence` / `evolution_goal_pins` | `workbench-registry-service.ts`、`workbench-context-assembler.ts`、`evolution-service.ts` | 稳定人设与范围 + 活跃工作/近期结果投影 + 目标级策略修订（基线或本工作台覆盖层） |
+
+交汇点：**A 的产出是 B 的证据，B 的产出改变 A 下一次被派发的方式**（详见 9.7）。
+
+### 9.2 搭档模型：卡片是模板，实例是运行会话
+
+源码里的原话就是这条分层：`src/main/application/joi/joi-system-prompt.ts:31` ——「Partners are templates; instances are running conversations.」
+
+| 层 | 表 | 关键字段 | 机制 |
+| --- | --- | --- | --- |
+| 注册表版本号 | `partner_registry_state`（`resources/migrations/017_joi_orchestration.sql:1`） | `registry_revision` | 全局单调递增，任何搭档配置变更都推高一格 |
+| 搭档卡片 | `partners`（同上 `:9`） | `kind IN ('LOCAL_PI','A2A')`、`status IN ('ACTIVE','DISABLED','DELETED')`、`active_revision_id`、`created_by IN ('USER','JOI')`（`023_partner_config_extensions.sql:9`） | 卡片身份；`created_by='JOI'` 即 UI 上「由 joi 创建」的来源标记 |
+| 不可变版本 | `partner_revisions`（同上 `:19`） | `registry_revision`（UNIQUE）、`display_name`、`capabilities_json`、`skills_json`、`tools_json`、`prompt_ref`、`prompt_hash`、`execution_policy_json`、`provenance_json`；`023` 追加 `description`、`engine IN ('PI_CORE','MANA_SDK')`、`model_source_id`、`model_id_override`、`engine_model_id` | 每次改能力/工具/技能/模型都**新建**一条 revision，旧版本永不覆写 |
+| 运行会话 | `partner_instances`（`024_partner_instances.sql:1`） | `partner_revision_id`、`session_policy IN ('EPHEMERAL','RESIDENT')`、`status IN ('IDLE','BUSY','DISPOSED')`、`external_session_ref` | 一次派发跑在一个实例上；实例绑死某个 revision |
+| 会话消息 | `partner_instance_messages`（同上 `:16`） | `instance_id`、`sequence`、`message_json`，`UNIQUE(instance_id, sequence)` | 常驻搭档的对话在此续接（pi-core 的 checkpoint 引用形如 `partner_instance_messages:${instanceId}`，见 `partner-instance-manager.ts`） |
+
+能力/技能/工具三者的**配置载体**：
+
+- **capabilities**：`partner_revisions.capabilities_json`，与 `skills`、`tools` 同为 revision 的一部分（域模型见 `src/main/domain/partners/partner.ts` 的 `PartnerRevision`）。
+- **skills**：域内 `PartnerSkillCatalog`；joi 侧工具 `partner_list_skills` / `partner_set_skills`，后者仅 `local-pi` 支持，否则抛 `partner_skills_not_supported`（`partner-registry-service.ts` 的 `setSkills`）。
+- **tools**：`PI_PARTNER_TOOL_NAMES`（`src/main/infrastructure/pi/pi-coding-tool-factory.ts:52`）= `PI_CODING_TOOL_NAMES`（`bash/edit/find/grep/ls/read/write`）+ `PI_WEB_ACCESS_TOOL_NAMES`（`web_search/fetch_content/get_search_content`）+ `PI_FINANCIAL_RESEARCH_TOOL_NAMES`。授权语义写在 `partner_set_tools` 描述里（`joi-reasoning-tools.ts:521`）：传 `[]` 表示授予全部内置编码与公开 Web 工具；越界项抛 `partner_tool_not_allowed`、超量抛 `partner_tools_invalid`（`normalizePartnerTools`，同文件 `:70-80`）；**永不授予**凭据、Cookie、私有网络与更宽的写权限。
+
+### 9.3 搭档自动生成：触发条件、命名约束、模型源
+
+**触发条件（唯一的「创建」判据）**：`joi-system-prompt.ts:27` —— 先调 `partner_list_available` 复用；**只有当没有合适搭档时才** `partner_create`。这是「找不到合适搭档」在源码里的准确表述，不是"joi 随意造人"。
+
+创建入口与去重（`src/main/infrastructure/pi/joi-reasoning-tools.ts:565`，`partnerCreateTool`）：
+
+1. `displayName = partnerClusterName(arguments.displayName)`（`src/main/domain/workbench/workbench-naming.ts:71`）：把遗留的「…工坊」后缀归一为「…搭档」；若命中角色名模式（`ROLE_NAME_PATTERN`）则兜底为 `编码搭档`。
+2. `nameKey = partnerClusterKey(displayName)`（同文件 `:81`）：剥掉引号/括号备注与模型版本号等一次性 token，再去掉 `工坊|搭档` 后缀并小写化——**同名簇直接复用**。
+3. 去重查询条件同时要求 `engine === "pi-core" && kind === "local-pi" && status === "ACTIVE" && configuration === undefined` 且 `partnerClusterKey` 相等；命中则返回 `{ partnerId, partnerRevisionId, reused: true }`，不新建。
+4. 未命中才 `partners.add({ createdBy: "joi", ... })`；`description` / `prompt` 为空时由 `synthesizePartnerProfile`（同文件 `:93`）补一份同风格档案：`description = \`${displayName}：覆盖${focus}。\``，`prompt` 采用 DO / 验收标准 / 范围外三段式。
+
+**命名约束（工具描述原文要点，`joi-reasoning-tools.ts:566` 起）**：按**可复用的能力簇**命名，不按一次性任务、模型或版本命名（反例 `Grok4.6 模型调研搭档`，正例 `模型调研搭档`）；搭档永远叫「…搭档」，**不得**使用「…工坊」（工坊式标签属于工作台）。
+
+**模型源选择**：`partnerCreateParameters` 可选 `modelSourceId` + `modelIdOverride`；**两者都省略即跟随全局首选模型源**（原文：「omit both to follow the global preferred source」）。回退路径写在同一份系统提示 `joi-system-prompt.ts:39` —— 派发失败且 `retryable=true`、`sideEffectState=NONE` 时，先换可用搭档，没有再 `model_list_sources` + `partner_set_model`（要求目标是 READY 源，否则 `partner_model_source_not_ready`）+ `work_reassign`。源选择与失效判定在 `src/main/application/model-sources/reasoning-source-selector.ts`（`selectInitial`、`CAPACITY_AVOIDANCE_MILLIS = 30 * 60_000`、`pinModelSourceForTurn`）与 `partner-run-failure.ts`（`classifyPartnerRunFailure`）。
+
+### 9.4 搭档「越用越好」的四条落地机制
+
+**① 工作记忆与成功率（真实数据，不是文案）** —— `src/main/application/partners/partner-work-memory-service.ts`
+
+- `PARTNER_MEMORY_LIMITS = { entryLimit: 32, summaryCadence: 8, summaryMaxCharacters: 1_200 }`（`:9`）。
+- `recordResult()`（`:36`）：**每次运行结束**追加一条真实结果（`outcome` ∈ `COMPLETED|FAILED|WAITING_INPUT|WAITING_AUTH|UNKNOWN`）→ 裁剪到 32 条 → 每到第 8 条刷新滚动摘要。
+- `deterministicPartnerSummary()`（`:15`）：无 LLM 也能产出的确定性摘要，形如 `7 of 9 recent runs completed; last: FAILED on "…".`
+- `digest()`（`:53`）：返回 `{ last3, successRate, summary }`，其中 `successRate = completed / total`（无记录时取 1，`:61`）。
+- 注入路径：`partner_list_available`（`joi-reasoning-tools.ts:965`）对每个搭档附带 `memoryDigest`、`instances`、`toolCount`，工具描述明写用途「Use the digest to pick and the instance list to reuse」——**joi 是靠成功率选搭档的**。
+- 作用域：记忆是 **(工作台, 搭档)** 二维的（`workbench_partner_work_memories`，`027_avatar_private_partner_results.sql:65`；`PRIMARY KEY (workbench_id, partner_id)` 的摘要表在 `:78`）。同一搭档在 A 工作台的成功率不会污染 B 工作台。
+
+**② 知识文档累积** —— `src/main/application/partners/partner-knowledge-service.ts` + `partner_knowledge_docs`（`023:12`）
+
+- `PARTNER_KB_LIMITS = { injectionDocChars: 6_000, injectionTotalChars: 16_000, maxDocBytes: 256*1024, maxDocsPerPartner: 8, maxTotalBytes: 1024*1024 }`（`:5`）；表内有 `sha256`、`bytes`、`UNIQUE(partner_id, filename)`。
+- `readForInjection()`（`:57`）把知识库渲染成 system prompt 段落，按确定性 FIFO 预算截断，**只有本地引擎注入，A2A 没有该通道**。
+- 拒绝码：`partner_kb_filename_invalid` / `partner_kb_doc_empty` / `partner_kb_doc_too_large` / `partner_kb_too_many` / `partner_kb_filename_taken` / `partner_kb_total_too_large`。
+
+**③ 工具/技能/模型的版本化授予** —— `src/main/application/partners/partner-registry-service.ts`
+
+- `create` → `registryRevision = 1`；`update` / `setSkills` / `setTools` / `setModel` 每次都**新建一条 revision** 并把 `partners.active_revision_id` 指过去。旧 revision 保持可追溯，历史 `work_results.partner_revision_id` 不会指向一个被改写的行为体。
+
+**④ 常驻会话 + 失败改派** —— `partner-instance-manager.ts`、`work-orchestration-service.ts`
+
+- 实例上限：`DEFAULT_LIMITS = { ephemeralIdleMillis: 5*60_000, maxResidentGlobal: 12, maxResidentPerPartner: 4, warmIdleMillis: 30*60_000 }`（`:29`）；超限抛 `partner_instance_cap_exceeded`。
+- 改派 `reassign`（`work-orchestration-service.ts:372`）要求换到**不同 revision**（`work_reassign_same_revision`：`"Reassignment requires a different partner revision."`），仅 `FAILED|WAITING|READY` 可改派（`work_reassign_status_invalid`），且受策略与恢复轮次上限（`work_reassign_policy_denied`、复用 `work_recovery_attempts` 的两轮上限）约束——**改派是「换一个进化过的版本重试」，不是「原样重放」**。
+
+### 9.5 工作台：身份、记忆、工作区、合并归档
+
+| 维度 | 载体 | 说明 |
+| --- | --- | --- |
+| 身份与人设 | `workbenches.persona_revision_id` + `persona_summary`；正文在 `workbench_persona_revisions.body`（`027:14`，`038` 改名） | 人设是**版本化正文**，摘要字段供提示词使用 |
+| 范围与标签 | `workbenches.name` / `scope_summary` / `project_label` | 仓库里**没有**自由标签表；「工作台标签」的真实载体就是 `project_label`、`name`，以及工作区绑定上的 `display_name`，另加创建时的模板 `WORKBENCH_TEMPLATES`（`src/shared/workbench-suggestions.ts:170`，四个抽象簇，如「工程开发与调试工坊」「调研与分析工坊」） |
+| 记忆 | `workbenches.memory_namespace_id`（UNIQUE）；实体在 `memory_fragments`（`004_continuity.sql:98`，`kind IN ('EPISODIC','SEMANTIC','CARD')`、`confidence`、`revision`、`status IN ('ACTIVE','SUPERSEDED','FORGOTTEN')`）+ `memory_fragments_fts`（FTS5）+ `memory_revisions`（`:130`） | 记忆按命名空间归属工作台；全文检索由 FTS5 提供；每次改写留 revision |
+| 工作区绑定 | `workbench_workspace_bindings`（`027:3`）：`kind IN ('MANAGED','BOUND')`、`status IN ('PROVISIONING','READY','FAILED')`、`display_name`、`failure_reason_code`；真实路径在 `workbench_workspace_roots.root_path`（`:25`，注释明确 `root_path` 永不进入 DTO/诊断/事件） | **MANAGED** = 工作台自己托管的默认运行目录；**BOUND** = 绑定用户已有目录。`WorkbenchWorkspaceService`（`bindExisting` / `rebuildManaged` / `current`）负责切换，错误码 `workbench_workspace_not_found`、`workbench_workspace_path_required` |
+| 合并与归档建议 | `workbench_change_requests`（`019:1`）：`kind IN ('ARCHIVE','MERGE')`、`source_workbench_id`、`target_workbench_id`、`reason`、`turn_id`、`status IN ('PENDING','CONFIRMED','REJECTED')`；落库表 `workbench_merges` | `WorkbenchChangeService.suggestArchive/suggestMerge`（`src/main/application/joi/workbench-change-service.ts`）只**建议**，用户确认才生效；requestId 形如 `workbench_remove:${sourceWorkbenchId}`；错误码 `workbench_change_source_not_active`、`workbench_change_target_required`、`workbench_change_same_target` |
+| 工作台级搭档策略 | `workbench_partner_policies`（`017:132`）：`preferred_partner_id`、`allowlist_json`、`policy_json` | 「首选搭档 + 白名单」是工作台维度的事实 |
+
+### 9.6 工作台上下文持久化，与「无限上下文」的真实边界
+
+**真实机制（四层，全部可查）**
+
+1. **落库**：会话 `joi_session_messages`、轮次 `joi_turns`、输入 `joi_inbox_messages`（`017:226/211/199`）；工作 `work_items`（`017:236`，`status IN ('PLANNED','READY','RUNNING','WAITING','COMPLETED','FAILED','CANCELED')`）；结果 `work_results`（`027:93`，含 `summary`、`body_ref`、`artifacts_json`、`is_late`、`UNIQUE(run_id,status)`）+ 结果正文 `work_result_bodies`。**结果正文不塞进会话，只存引用。**
+2. **投影**：`workbench_task_projections.active_work_json` / `recent_results_json`（`027:32`）给工作台一个即时的「在做什么 + 刚做完什么」。
+3. **每次派发快照**：`WorkbenchContextAssembler.assemble()`（`src/main/application/joi/workbench-context-assembler.ts:23`）生成 `workbench_context_snapshots`（`027:39`：`persona_revision_id`、`workspace_ref`、`safe_context_json`、`memory_summary_refs_json`），并把 `memorySummaryRefs` 记为 `workbench_memory:${namespaceId}` 加上事实里的摘要引用（`:39`）。`partner_runs.context_snapshot_id` 与 `partner_runs.requirements_context` 把「这次派发看见的世界」钉在运行记录上。路径一律经 `abbreviateAbsolutePaths` 缩写后才进快照；无工作区或未就绪时抛 `workbench_workspace_not_ready`。
+4. **每轮按窗口重装 + 边界压缩**：
+   - `modelContextMaxChars()`（`src/main/infrastructure/pi/pi-model-budget.ts:106`）= `min(1_000_000, window - 16_000)`，未知窗口退 `CONTEXT_UNKNOWN_WINDOW_MAX_CHARS = 120_000`，地板 `CONTEXT_MIN_CHARS = 8_000`。
+   - `boundModelContext()`（`:28`）：最多 `CONTEXT_MAX_MESSAGES = 32` 条，且永不丢首个 system 与最新 user（`anchorBefore`）。
+   - `modelRequestBudget()`（`:144`）：窗口再按 `SYSTEM_BACKGROUND_SHARE = 1/3` 切成「系统背景」与「消息」两份，避免两边各吃满一个窗口。
+   - 压缩：`DEFAULT_COMPACTION = { compactAtPercent: 85, keepRecentMessages: 80, maxMessages: 200, maxSummaryCharacters: 12_000 }`（`pi-reasoning-runtime.ts:146`），阈值可被设置页按模型改，但被 `COMPACTION_PERCENT_FLOOR = 50` / `CEILING = 95` 夹住；只在 **Turn 边界**压缩，且 `COMPACTION_MIN_OUTPUT_HEADROOM = 4_096` 保证还能写出摘要。设置页原文即「压缩阈值只影响 joi 主会话，对搭档与编码线路不生效」。
+   - 必需上下文：`requiredContext`（目标需求契约渲染结果）在已知窗口下上限 60 000 字符、未知窗口 24 000 字符（`pi-reasoning-runtime.ts:541`）。
+   - 省略是**显式**的：`HISTORY_OMISSION_RESERVE_CHARS = 1_024` 专门留给「这段历史因预算未送达」的说明；续接目标时还会给 24k/40k/60k 三档 `backgroundContextVariants` 让运行时按剩余空间挑最合适的一档（`joi-continuation-prompt.ts:50`、`joi-coordinator.ts:190`）。
+   - 需求契约：`GOAL_REQUIREMENTS_MAX_CHARS = 16_000`（`src/main/application/ports/goal-requirements.ts`，注释即「a contract that can be written is a contract that can run」）；表 `joi_goal_requirements` / `joi_goal_requirement_snapshots` / `joi_goal_requirement_sources`（`071_goal_requirements.sql:1/13/20`），并把 `requirements_revision` 记到 `joi_turns`、`partner_runs`、`joi_goal_outcomes` 等（`071:24-31`）。
+
+**可辩护的表述边界**
+
+| 说法 | 判定 | 依据 |
+| --- | --- | --- |
+| 「上下文不会被一次会话窗口截断：历史存在本地库里，每次按窗口预算重新装配」 | 成立 | 落库 + `boundModelContext` 每轮重装 + 显式省略说明 |
+| 「被截断的结果保留 resultId，需要时用 `work_read_result` 取回缺失段落」 | 成立 | `work_results.body_ref` + `joi-continuation-prompt.ts:57` 原文规定 |
+| 「需求契约跨轮次、跨会话稳定，带 revision 校验」 | 成立 | `requirements_revision` 贯穿 `07x` 系列迁移 |
+| 「工作台记忆按命名空间隔离、可全文检索」 | 成立 | `memory_namespace_id` + FTS5 |
+| 「模型上下文无限」/「单次请求能吃下任意长历史」 | 不成立 | `modelContextMaxChars` 上限 1 000 000、`CONTEXT_MAX_MESSAGES = 32`、60k/24k 必需上下文上限、16k 需求上限 |
+| 「压缩后不丢任何信息」 | 不成立 | 压缩产 12 000 字符摘要，`keepRecentMessages = 80`，其余按锚点裁剪 |
+
+一句话写法建议：**「上下文不会因为一次会话结束而消失」可以写；「模型窗口无限大」不能写。**
+
+### 9.7 双重进化如何互相作用
+
+1. **搭档结果 → 工作台证据**：`SqliteEvolutionStore.evidenceSeeds()`（`src/main/infrastructure/persistence/sqlite-evolution-store.ts:162`）从不迟到（`is_late = 0`）的**权威** `work_results` 与 `work_result_verifications` 里取证，只取 `evolution_goal_pins.eligible = 1`、工作台 `ACTIVE` 的目标；`EvolutionService.scan()`（`evolution-service.ts:292`）把每条目标判成 `VERIFIED | VERIFICATION_FAILED | ACCEPTED_WITH_GAPS | CANCELED | ENVIRONMENT_FAILED | UNEVALUABLE`，并给出 `cause`（`none|context|completion|execution|environment`，`069_evolution_productization.sql`），落 `evolution_evidence`（`059_strategy_evolution.sql:15`）。
+2. **证据 → 策略修订**：达到 `EVOLUTION_EVIDENCE_THRESHOLD = 10`（`src/shared/evolution.ts:26`）才允许推进；失败侧阈值为 `EVOLUTION_FAILURE_THRESHOLD = 3`、监控回滚为 `EVOLUTION_MONITOR_REVERT_THRESHOLD = 2`。策略只有少数可动模块（`src/main/domain/evolution/strategy.ts` 的 `baselineStrategy`、`parseStrategy` 要求「Change exactly one strategy module.」），模式为 `baseline|requirements_first|open_questions_first` × `baseline|evidence_matrix|contradiction_check`。
+3. **策略 → 下一轮派发**：`strategyForGoal(workbenchId, goalId, pin)`（`evolution-service.ts:279`）按 `canaryBucket(goalId)` 在灰度与生效策略之间取样，用 `store.bindGoal` 把该目标钉在某个 revision 上；不适配时标 `revalidationRequired / reason = "revalidation_required"`。返回的 `instructions` 由 `composeStrategyInstructions` 组装，经 `joi-coordinator.ts:471` 注入 `buildJoiSystemPrompt` 的 `strategyInstructions`，最终成为 `joi-system-prompt.ts:52` 的 `Runtime strategy (subordinate to user requirements and fixed gates): …`。**策略永远从属于用户需求与固定门禁**——这句话就是「不会为了进化而跑偏」的源码依据。
+4. **作用域**：`evolution_states` 以 `workbench_id` 为主键（`059:1`），即每个工作台各有一份进化状态；UI 文案也印证是「全局基线或本工作台覆盖层」，预算档位 `关/低/中/高`，且「只在工作台空闲时使用，日常任务永远优先」。
+5. **闭环**：工作台策略改变 joi 的需求分解与派发方式 → 派发方式改变搭档收到的指令与工具/技能授予 → 搭档结果改变 `workbench_partner_work_memories` 的成功率与摘要 → 成功率改变 joi 下一次 `partner_list_available` 的选择 → 选择结果又产生新的 `work_results` 作为证据。**两条回路共用同一张结果表，因此「搭档越用越强」和「工作台越用越懂你」是同一份事实的两个投影。**
+
+### 9.8 截图候选（`test-results/`，真实 E2E 产出，未重跑）
+
+选择标准：能展示 (a) 工作台、(b) 搭档、(c) 创建/模型源、(d) 目标与工作。以下尺寸为实测像素，全部为 `npm run test:e2e` 用 `_electron.launch()` 驱动真实 Electron 窗口所得。
+
+| 用途 | 文件 | 尺寸 | 画面内容 | 敏感信息 | 建议 |
+| --- | --- | --- | --- | --- | --- |
+| (a) 工作台创建/选择 | `workbench-choice.png` | 768×640 | 工作台选择卡：模板式「工坊」选项 + 已存在工作台列表 | 无凭据；列表含 E2E 种子数据（`资讯调研` 系列），非真实用户数据 | 首选（(a) 主图）。种子文案较假，必要时裁切或换 (a2) |
+| (a) 手工创建工作台 | `workbench-manual.png` | 768×640 | 名称/范围/人设输入表单 | 无 | 备选 |
+| (a) 工作台详情 + 工作区绑定 | `e2e-workbench-removal-768.png` | 768×900 | 详情页：`工作区` 卡显示「默认运行目录 · MANAGED · READY」，按钮「绑定已有目录 / 使用默认运行目录」，搭档状态 `RUNNING`，底部移除确认 | 无 | 说明 MANAGED vs BOUND 的唯一现成图；缺点是有确认弹窗遮罩 |
+| (b) 搭档详情 | `e2e-agent-stream-latest.png` | 768×900 | 搭档详情：`返回 Agent 列表`、`只读执行记录`，徽章 `LOCAL · EPHEMERAL · RUNNING` | 无 | 可用，但**不含成功率** |
+| (b) 搭档派发中的执行记录 | `e2e-goal-stream-latest.png` | 768×900 | 左卡「滚动搭档 LOCAL · pi-core · RUNNING」，右侧逐条执行记录（含时间戳） | 无 | 补充图；不含指标 |
+| (c) 创建搭档 + 工具授权 + 模型跟随 | `e2e-tool-choices-960.png` | 960×760 | 「添加搭档 / 这位搭档从哪里来?」本地 vs 远端 A2A；引擎 `Pi core`；模型名占位「留空使用全局首选模型」；供应商「跟随全局首选大模型网络」；12 个工具权限方格与「全部工具已开启…」 | 无 | **(c) 首选**，一图同时覆盖创建入口、模型源默认值与 tools 载体 |
+| (c) 模型源首次接入 | `e2e-model-source-setup-960.png` | 960×760 | 首次接入引导（Kimi/GLM/Qwen/Doubao/MiniMax/DeepSeek/通用平台）+ 已配置源卡片（编辑/验证/停用/删除） | 无密钥明文 | 模型源章节主图 |
+| (c) 模型源高级参数 | `e2e-model-source-limits.png` | 919×358 | 上下文窗口 999424、最大输出 119040、压缩阈值「留空使用推荐值」、思考强度；说明「压缩阈值只影响 joi 主会话」 | 无 | 9.6 机制的直观佐证（小图，适合放在上下文一节） |
+| (d) 目标路线图 | `e2e-goal-route-map.png` | 768×900 | 「长任务执行记录 / 目标路线图」：目的地、`7 条路径 · 1 项决策 · 2 项雾区`、分层节点与「任务完成」 | 无；目的地文本是本项目自身的 E2E 目标描述 | **(d) 首选** |
+| (d) 目标动作菜单 | `e2e-goal-action-menu.png` | 1283×903 | 目标卡「2 Agent · 1 工作完成」+ `已完成` 徽章 + 菜单「继续/归档/移除」 | 无 | 归档语义说明图 |
+| (d) 已归档目标 | `e2e-goal-archived-card.png` | 1283×903 | 归档态目标卡 | 无 | 信息量低，可用可不用 |
+| (extra) 自主进化 | `e2e-evolution-960.png` | 960×760 | 「自主进化」面板：「候选必须先通过独立评测和生产灰度，才会成为全局基线或本工作台覆盖层」、`已启用 0/1 · 评测中 0 · 灰度中 0 · 生效策略 0`、每日调用上限 关/低/中/高 | 无 | 9.7 的唯一现成 UI 证据；注意该面板显示全 0，观感偏空 |
+
+**明确不存在（README 不得承诺）**
+
+1. 没有任何截图展示**搭档列表 + 成功率/记忆摘要**。成功率只存在于 `partner_list_available` 的返回数据里，UI 未截到。（若要，需要新跑一次 E2E 或补一张自绘示意图并明确标注为示意图。）
+2. 没有截图展示 **requirements 契约正文或 `requirements_revision`**；需求契约是提示词内部结构，不在 UI 呈现。
+3. `statistics-*`（1425×2574 / 945×2625 / 753×3014 / 1425×2754）是整页长图，不适合内嵌，最多裁切或作为外链。
+4. 若采用 `e2e-tool-choices-960.png`，注意它同时是 (c) 的创建入口与工具载体，**不要**再单独为「工具授权」找图。
+
+**合规提醒**：以上全部是真实运行截图，可直接注明「真实运行截图」；架构/流程类图片必须另标「示意图，非运行截图」。E2E 种子文案（`资讯调研`、「滚动搭档」、`执行记录 120…`）属于测试夹具，可发布但不是真实使用痕迹，图注宜写成「E2E 验证运行画面」以免误导。
+
+### 9.9 给 README 的表述红线（据此写文案）
+
+**可以放心写的（均有源码依据）**
+
+- 搭档是模板，实例是运行会话；`resident` 常驻、`ephemeral` 用完即走。
+- 没有合适搭档时 joi 才创建，并按**能力簇**命名、同名簇自动复用。
+- 每个搭档都有按工作台隔离的工作记忆：最近结果、成功率、滚动摘要；joi 用这份摘要选搭档。
+- 每次改工具/技能/模型都产生新的不可变版本，历史结果永远指向当时的行为体。
+- 知识文档随搭档累积并在运行中注入（单文档 6 000 字符、合计 16 000 字符注入预算）。
+- 工作台有版本化人设、独立记忆命名空间、托管或绑定目录、可建议合并/归档。
+- 上下文存在本地 SQLite，按每个模型的窗口预算逐轮重装，放不下的部分保留引用、需要时再取回。
+- 进化有阈值、有灰度、有回滚，且**从属于用户需求与固定门禁**。
+
+**不能写的**
+
+- 「无限上下文」「上下文窗口无限」「永不遗忘」（有 1M 字符与 32 条消息上限、压缩会产摘要）。
+- 「成功率 99%」之类数字（`successRate` 是运行时算的，仓库里没有基准值）。
+- 「搭档自己会写代码进化」——进化的是**策略与配置**，由 `EvolutionService` 在阈值/灰度/预算门禁下推进，不是模型自改源码。
+- 「越用越懂你」若要说，须同时给出上面的数据载体，否则属无据夸饰。

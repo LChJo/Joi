@@ -12,7 +12,7 @@
 [![Electron](https://img.shields.io/badge/Electron-43.1.1-47848F)](package.json)
 [![React](https://img.shields.io/badge/React-19.2.7-61DAFB)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6)](package.json)
-[![License](https://img.shields.io/badge/license-private%20%2F%20unlicensed-lightgrey)](package.json)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 joi 不是一个新的聊天页，而是在你自己的电脑上长期运行的 Runtime。唯一全局 **joi** 编排者使用 **Pi** 推理基座进行规划，把身份、人格、事件、记忆、作息、事务与预算保存在本地 SQLite 中，并在彼此隔离的**工作台（Workbench）**上下文里，把执行派给本机 Pi 搭档或局域网 A2A 搭档。
 
@@ -25,6 +25,7 @@ joi 不是一个新的聊天页，而是在你自己的电脑上长期运行的 
 ## 目录
 
 - [为什么做 joi](#为什么做-joi)
+- [双重进化：搭档越用越强，工作台越用越懂你](#双重进化搭档越用越强工作台越用越懂你)
 - [核心特性](#核心特性)
 - [截图](#截图)
 - [架构](#架构)
@@ -54,6 +55,46 @@ joi 的工程目标继承自 [`docs/00-sources-and-glossary.md`](docs/00-sources
 - 多 Agent 协作应以稳定角色、持续记忆和产出物交接为基础，而不是一次性 SubAgent 调用。
 
 本项目追求上述工程目标，但不对“意识”或“生命”的哲学命题作技术证明。这里的“生命”是指具有持久身份、事件驱动唤醒和跨会话连续性的数字运行实例。
+
+---
+
+## 双重进化：搭档越用越强，工作台越用越懂你
+
+joi 想兑现的承诺是「越用越会配合你」，而不只是「越答越好」。运行时里同时跑着两条进化回路 —— 一条把每个**搭档**磨得更锋利，一条让与你共享的**工作台**更懂你 —— 两条回路最终落在同一张结果表上。所以「搭档越配合越强」与「工作台越用越懂你」不是两句口号，而是同一份事实的两个投影。
+
+![joi 双重进化示意图：左环是搭档进化回路，右环是工作台进化回路，两环在共享的结果事实表上交汇](docs/assets/dual-evolution.svg)
+
+*示意图，非运行截图。本版图内标注为中文；每个节点都对应真实的表、服务或常量，并标注了文件与行号。图源：[`docs/assets/dual-evolution.svg`](docs/assets/dual-evolution.svg)。*
+
+### 回路 A · 搭档：派发、自动生成、越配越强
+
+**1. 配合是派发，不是聊天。** 一个请求会被拆成 Work 工作项，每项都有独立的访问等级、执行需求与依赖边。`resources/migrations/052_work_dependency_gate.sql` 在派发时强制依赖 DAG：上游未完成，下游不可领取；依赖失败则确定性地级联取消（`src/main/domain/work/work.ts`）。独立的 AFK 工作并行铺开，且 joi 绝不会把两个搭档放在同一个工作单元上（`src/main/application/joi/joi-system-prompt.ts`）。没有至少一条可机械校验的验收检查，Work 就不允许派发 —— 编排服务会以 `work_acceptance_checks_required` 拒绝（`src/main/application/work/work-orchestration-service.ts`），每条结果随后按这些检查逐条核验（`resources/migrations/035_work_brief_verification.sql`）。搭档是模板，实例才是运行中的会话：`partner_instances` 同时支持用完即弃的 `EPHEMERAL` 与常驻复用的 `RESIDENT`，上限为全局 12 个、单个搭档 4 个（`src/main/application/partners/partner-instance-manager.ts`）。
+
+**2. 没有合适的搭档，joi 就造一个能力簇 —— 而不是一次性任务名。** joi 先调 `partner_list_available` 尽量复用现成搭档，只有当真的没有合适者时才 `partner_create`（`src/main/application/joi/joi-system-prompt.ts`）。新搭档按可持续复用的能力簇命名，绝不按一次性任务、模型或版本命名 —— 是「模型调研搭档」，不是「Grok4.6 模型调研搭档」；`partnerClusterName` / `partnerClusterKey`（`src/main/domain/workbench/workbench-naming.ts`）会归一化名称、剥掉一次性模型 token，同名簇直接返回已有搭档而不是复制一份。省略 `modelSourceId` 与 `modelIdOverride`，新搭档就跟随全局首选模型源（`src/main/infrastructure/pi/joi-reasoning-tools.ts`）。joi 创建的每个搭档都会打上 `created_by = 'JOI'`（`resources/migrations/023_partner_config_extensions.sql`），它组起来的团队因此始终可见、可审计。
+
+**3. 每次运行都留记录，记录决定下一次选谁。** 运行结束时 `recordResult()` 追加真实结果、把记录裁剪到 32 条、每 8 条刷新一次滚动摘要；`digest()` 返回最近三条结果与一个由真实记录算出的 `successRate`（`src/main/application/partners/partner-work-memory-service.ts`）。这份摘要随每次 `partner_list_available` 一起返回 —— 工具描述的原话就是「用摘要来挑」—— 所以 joi 是凭证据选搭档，而不是凭名字（`src/main/infrastructure/pi/joi-reasoning-tools.ts`）。记忆按「工作台 × 搭档」隔离（`resources/migrations/027_avatar_private_partner_results.sql`）：在 A 工作台表现出色的搭档，借不到那份声誉到 B 工作台。知识在旁边累积 —— 每个搭档最多 8 篇文档、单篇 6,000 字符、每次注入预算 16,000 字符（`src/main/application/partners/partner-knowledge-service.ts`）。能力、工具、技能与模型绑定全部版本化：任何改动都会新建一个不可变 revision 并把 `active_revision_id` 指过去，历史结果永远对得上当时的行为体（`src/main/application/partners/partner-registry-service.ts`）。成长是真的，而且可追溯。
+
+### 回路 B · 工作台：上下文活得比会话更久
+
+**4. 上下文会持久化，被限制的只是单次请求。** 会话、轮次、收件消息、Work 工作项与结果全部落在本地 SQLite 数据库里，结果正文只存引用（`work_results.body_ref` → `work_result_bodies`），不塞进对话记录（`resources/migrations/017_joi_orchestration.sql`、`resources/migrations/027_avatar_private_partner_results.sql`）。生效需求会被固化成版本化契约（`joi_goal_requirements`，`GOAL_REQUIREMENTS_MAX_CHARS = 16_000`），契约未就绪时编排器拒绝派发（`src/main/application/work/work-orchestration-service.ts`）。每次派发前，`WorkbenchContextAssembler.assemble()` 都会写下「这次派发所见的世界」快照 —— 人设版本、工作区引用、记忆摘要引用 —— 并钉在该次运行上（`src/main/application/joi/workbench-context-assembler.ts`）。这些都不会因为一次会话结束而消失。真正被限制的是**单次请求**：每轮都按当前模型窗口重新装配上下文，上限 1,000,000 字符与 32 条消息，且永远不丢开头的 system 消息与最新的用户回合（`src/main/infrastructure/pi/pi-model-budget.ts`）。所以请精确理解这句话：**上下文不会因为会话结束而消失 —— 它每轮重新装配 —— 而单次模型请求是有限的，这是设计使然。** 放不下的历史会被显式说明，任何被丢掉的结果都能用 `work_read_result` 按 id 取回。这就是「工作台不会从零开始」在这里的确切含义。
+
+**5. 工作台自身也在进化：人设、记忆、工作区、结构。** 工作台持有版本化的人设正文（`workbench_persona_revisions`）、自己的记忆命名空间（`workbenches.memory_namespace_id`，实体在 `memory_fragments` 并由 FTS5 提供全文检索，见 `resources/migrations/004_continuity.sql`），以及一个工作区 —— 由 joi 托管，或绑定到你已有的目录（`workbench_workspace_bindings`，`kind IN ('MANAGED','BOUND')`）。它的形态跟着你的使用走：活跃工作与近期结果持续投影到 `workbench_task_projections`。当一个工作台完成使命，joi 会**建议**合并或归档（`WorkbenchChangeService.suggestMerge` / `suggestArchive`）—— 是建议，必须你确认才生效（`resources/migrations/019_avatar_change_confirmation.sql`）。学习永远不会改写你是谁：人设与范围始终由用户管理，任何学到的策略都不得扩大你的范围（`src/main/application/joi/joi-system-prompt.ts`）。
+
+**6. 两条回路的交汇：结果变成证据，证据变成下一次简报。** `SqliteEvolutionStore.evidenceSeeds()` 只从权威且不迟到的结果取证（`is_authoritative = 1 AND is_late = 0`，权威标记见 `resources/migrations/034_work_goal_binding_and_result_authority.sql`），且只取被钉为可评估的目标（`src/main/infrastructure/persistence/sqlite-evolution-store.ts`）。证据池攒够 10 个可客观评估的目标才允许推进，失败与回滚阈值分别是 3 和 2（`src/shared/evolution.ts`）；一次策略修订只改一个策略模块（`src/main/domain/evolution/strategy.ts`），并经 `strategyForGoal()` 以金丝雀取样方式进入下一次派发（`src/main/application/evolution/evolution-service.ts`）。运行时提示词把层级写得毫不含糊：`Runtime strategy (subordinate to user requirements and fixed gates)`。于是闭环成立：工作台的策略改变 joi 拆解与撰写简报的方式 → 简报改变搭档收到的指令与它持有的工具技能 → 搭档的结果改变它的成功率与记忆 → 成功率改变 joi 下一次选谁 → 而新的结果又成为新的证据。**多合作一次，下一次就选得更准；多做完一个目标，下一次就交代得更准。**
+
+### 两条回路的真实运行画面
+
+以下两张都来自真实运行的 Electron 应用（`npm run test:e2e`；截取时界面语言为中文）。
+
+![创建工作台：复用已有工作台、按模板自动生成，或手动新建](docs/assets/screenshot-4.png)
+
+**创建工作台** —— 复用已有工作台、让 joi 按模板自动生成（「自动生成 · 创建并继续」），或自己填写名称、工程与工作范围。截取自 `tests/e2e/workbench-choice.spec.ts`。
+
+![创建搭档：本地 Pi 搭档或远端 A2A、引擎、模型来源与工具权限](docs/assets/screenshot-5.png)
+
+**创建搭档** —— 本地 Pi 搭档或通过 Agent Card 接入的远端 A2A，引擎 `Pi core`，模型名留空即跟随全局首选模型，以及实际授予的工具权限（bash、edit、find、grep、ls、read、write、web_search、fetch_content、get_search_content、financial_calculate、research_audit）。截取自 `tests/e2e/electron-smoke.spec.ts`。
+
+本章刻意**不**声称的内容：没有固定成功率数字（成功率由你自己的运行历史在运行时算出）、没有「无限上下文窗口」（单次请求被限制在 1,000,000 字符与 32 条消息）、也没有无限自改代码 —— 进化只推动策略与配置，且有证据阈值、灰度与回滚，始终从属于你的需求。
 
 ---
 
@@ -452,11 +493,11 @@ joi 只读取少量环境变量，其余设置保存在 SQLite 中。仓库里�
 
 ## 许可证
 
-**本仓库为私有仓库，且未提供根许可证。** `package.json` 设置了 `"private": true`，未声明 `license` 字段；仓库根目录没有 `LICENSE` 文件。原生 crate `native/joi-remote/Cargo.toml` 声明 `license = "UNLICENSED"`。
+**joi 以 Apache License 2.0 发布** —— 完整许可证文本见 [`LICENSE`](LICENSE)，标准原文见 <https://www.apache.org/licenses/LICENSE-2.0>。Copyright 2026 aimana。
 
-随项目打包的第三方许可证文本位于 `resources/licenses/`（例如 MIT 许可的 AI Berkshire 场景包）；离线字体 `resources/fonts/NotoSansSC.ttf` 使用 SIL Open Font License 1.1（`resources/fonts/OFL.txt`）。
+随项目打包的第三方许可证文本位于 `resources/licenses/`（例如 MIT 许可的 AI Berkshire 场景包）；离线字体 `resources/fonts/NotoSansSC.ttf` 使用 SIL Open Font License 1.1（`resources/fonts/OFL.txt`）。这些随包组件各自保留其原有许可证。
 
-请勿假定本仓库采用 MIT、Apache-2.0 或任何其他开源许可证。
+你可以依据 Apache-2.0 使用、修改与再分发本项目，包括其明示的专利授权（第 3 节）；第 7、8 节分别免除担保与责任。
 
 ---
 

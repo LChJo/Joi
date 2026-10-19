@@ -12,7 +12,7 @@
 [![Electron](https://img.shields.io/badge/Electron-43.1.1-47848F)](package.json)
 [![React](https://img.shields.io/badge/React-19.2.7-61DAFB)](package.json)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6)](package.json)
-[![License](https://img.shields.io/badge/license-private%20%2F%20unlicensed-lightgrey)](package.json)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 joi runs on your own computer as a long-lived runtime rather than a chat page. A single global **joi** orchestrator plans with the **Pi** reasoning base, keeps identity, persona, events, memory, routines, work and budgets in a local SQLite database, and dispatches execution to on-device Pi partners or LAN A2A partners inside isolated **workbench** contexts.
 
@@ -25,6 +25,7 @@ joi runs on your own computer as a long-lived runtime rather than a chat page. A
 ## Table of contents
 
 - [Why joi](#why-joi)
+- [Dual evolution: partners that compound, a workbench that learns you](#dual-evolution-partners-that-compound-a-workbench-that-learns-you)
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Architecture](#architecture)
@@ -54,6 +55,46 @@ joi inherits its engineering goals from an original product rationale captured i
 - Multi-agent collaboration should rest on stable roles, persistent memory and artifact handoff, not one-shot sub-agent calls.
 
 This project pursues those engineering goals. It makes no technical claim about "consciousness" or the philosophical definition of life; "life" here means a digital runtime instance with a persistent identity, event-driven wakeups and cross-session continuity.
+
+---
+
+## Dual evolution: partners that compound, a workbench that learns you
+
+joi makes one promise most assistants cannot keep: it should get better at working *with you*, not just better at answering. Two evolution loops run continuously inside the runtime — one sharpens every **partner**, the other sharpens the **workbench** you share with joi — and both land on the same result table. That is why "partners get stronger the more they cooperate" and "the workbench understands you better the more you use it" are two projections of a single fact.
+
+![The two evolution loops: partner evolution on the left, workbench evolution on the right, meeting on the shared result table](docs/assets/dual-evolution.svg)
+
+*Diagram, not a screenshot. Labels are in Chinese in this revision; every node names a real table, service or constant with its file and line. Source: [`docs/assets/dual-evolution.svg`](docs/assets/dual-evolution.svg).*
+
+### Loop A · Partners: dispatch, auto-create, compound
+
+**1. Cooperation is dispatch, not chat.** A request becomes Work items, each with its own access level, execution needs and dependency edges. `resources/migrations/052_work_dependency_gate.sql` enforces the dependency DAG at dispatch time, so downstream Work is not claimable before its prerequisites finish and a failed dependency cancels its downstream closure deterministically (`src/main/domain/work/work.ts`). Independent AFK work fans out in parallel, and joi never puts two partners on the same unit of work (`src/main/application/joi/joi-system-prompt.ts`). No Work is dispatched without at least one mechanically checkable acceptance check: the orchestration service rejects it with `work_acceptance_checks_required` (`src/main/application/work/work-orchestration-service.ts`), and every result is verified against those checks (`resources/migrations/035_work_brief_verification.sql`). Partners are templates; instances are running conversations — `partner_instances` holds `EPHEMERAL` runs (disposed after use) and `RESIDENT` runs (kept warm and reused), capped at 12 globally and 4 per partner (`src/main/application/partners/partner-instance-manager.ts`).
+
+**2. No suitable partner? joi creates a capability cluster, not a one-off job title.** joi calls `partner_list_available` first and reuses an existing partner whenever one fits; only when nothing fits does it call `partner_create` (`src/main/application/joi/joi-system-prompt.ts`). New partners are named after the durable capability cluster, never after a one-off task, model or version — "模型调研搭档", not "Grok4.6 模型调研搭档" — and `partnerClusterName` / `partnerClusterKey` (`src/main/domain/workbench/workbench-naming.ts`) normalise the name, strip one-off model tokens and return a same-cluster partner instead of a duplicate. Omit `modelSourceId` and `modelIdOverride` and the new partner follows the global preferred model source (`src/main/infrastructure/pi/joi-reasoning-tools.ts`). Every partner joi creates is stamped `created_by = 'JOI'` (`resources/migrations/023_partner_config_extensions.sql`), so the team it assembles stays visible and auditable.
+
+**3. Every run leaves a record, and the record decides who is picked next.** When a run ends, `recordResult()` appends the real outcome, trims the log to 32 entries and refreshes a rolling summary every 8 entries; `digest()` returns the last three outcomes plus a `successRate` computed from those records (`src/main/application/partners/partner-work-memory-service.ts`). That digest travels with every `partner_list_available` call — the tool's own description says "use the digest to pick" — so joi chooses partners from evidence rather than from names (`src/main/infrastructure/pi/joi-reasoning-tools.ts`). Memory is scoped per `(workbench, partner)` (`resources/migrations/027_avatar_private_partner_results.sql`): a partner that shines in one workbench does not borrow that reputation in another. Knowledge accumulates beside it — up to 8 documents per partner, 6,000 characters per document and 16,000 characters of injection budget per run (`src/main/application/partners/partner-knowledge-service.ts`). Capabilities, tools, skills and model bindings are versioned: every change writes a new immutable revision and repoints `active_revision_id`, so a historical result always names the behaviour that produced it (`src/main/application/partners/partner-registry-service.ts`). The growth is real, and it is traceable.
+
+### Loop B · The workbench: context that outlives the session
+
+**4. Context persists; only the request is bounded.** Sessions, turns, inbox messages, Work items and results all live in the local SQLite database, and a result body is stored as a reference (`work_results.body_ref` → `work_result_bodies`) instead of being pushed into the transcript (`resources/migrations/017_joi_orchestration.sql`, `resources/migrations/027_avatar_private_partner_results.sql`). Effective requirements become a versioned contract (`joi_goal_requirements`, `GOAL_REQUIREMENTS_MAX_CHARS = 16_000`), and the orchestrator refuses to dispatch against a contract that is not ready (`src/main/application/work/work-orchestration-service.ts`). Before each dispatch, `WorkbenchContextAssembler.assemble()` writes a snapshot of the world that dispatch saw — persona revision, workspace reference, memory summary references — and pins it to the run (`src/main/application/joi/workbench-context-assembler.ts`). None of that disappears when a session ends. What *is* bounded is the request: every turn re-assembles context to fit the current model window, at most 1,000,000 characters and 32 messages, never dropping the leading system message or the newest user turn (`src/main/infrastructure/pi/pi-model-budget.ts`). Read the claim precisely: **the context does not vanish when a session ends — it is re-assembled turn by turn — while a single model request stays finite by design.** Oversized history is omitted explicitly, and any dropped result can be fetched back by id with `work_read_result`. That is what "your workbench never starts from zero" means here.
+
+**5. The workbench itself evolves: persona, memory, workspace, structure.** A workbench carries a versioned persona body (`workbench_persona_revisions`), its own memory namespace (`workbenches.memory_namespace_id`) backed by `memory_fragments` with FTS5 full-text search (`resources/migrations/004_continuity.sql`), and a workspace that is either managed by joi or bound to a directory you already use (`workbench_workspace_bindings`, `kind IN ('MANAGED','BOUND')`). Its shape follows your usage: active Work and recent results are projected continuously into `workbench_task_projections`. When a workbench has outlived its purpose, joi *suggests* a merge or an archive (`WorkbenchChangeService.suggestMerge` / `suggestArchive`) — a suggestion you confirm before anything happens (`resources/migrations/019_avatar_change_confirmation.sql`). Learning never rewrites your identity: persona and scope stay user-managed, and no learned strategy may widen your scope (`src/main/application/joi/joi-system-prompt.ts`).
+
+**6. Where the two loops meet: results become evidence, evidence becomes the next brief.** `SqliteEvolutionStore.evidenceSeeds()` draws evidence only from authoritative, non-late results (`is_authoritative = 1 AND is_late = 0`, authority recorded by `resources/migrations/034_work_goal_binding_and_result_authority.sql`) of goals pinned as eligible (`src/main/infrastructure/persistence/sqlite-evolution-store.ts`). A batch advances only once the evidence pool holds 10 objectively evaluable goals, with failure and rollback thresholds of 3 and 2 (`src/shared/evolution.ts`); a strategy revision changes exactly one strategy module (`src/main/domain/evolution/strategy.ts`) and reaches the next dispatch through `strategyForGoal()` with canary sampling (`src/main/application/evolution/evolution-service.ts`). The runtime prompt states the hierarchy without ambiguity: `Runtime strategy (subordinate to user requirements and fixed gates)`. So the loop closes: the workbench's strategy changes how joi decomposes and briefs a goal → the brief changes what a partner is told and which tools and skills it holds → the partner's result changes its success rate and memory → that success rate changes which partner joi picks next → and the next result becomes the next piece of evidence. **One more cooperation, one more accurate pick. One more goal, one more accurate brief.**
+
+### Two real captures from the loops
+
+Both are real captures from the running Electron app (`npm run test:e2e`; the interface language was Chinese when they were taken).
+
+![Workbench creation: reuse an existing workbench, auto-generate from a template, or create one manually](docs/assets/screenshot-4.png)
+
+**Workbench creation** — reuse an existing workbench, let joi auto-generate one from a template ("自动生成 · 创建并继续"), or fill in name, scope and persona yourself. Capture from `tests/e2e/workbench-choice.spec.ts`.
+
+![Partner creation: local Pi partner or remote A2A, engine, model source and tool permissions](docs/assets/screenshot-5.png)
+
+**Partner creation** — local Pi partner or remote A2A over an Agent Card, engine `Pi core`, model name left empty to follow the global preferred model, and the tool permissions actually granted (bash, edit, find, grep, ls, read, write, web_search, fetch_content, get_search_content, financial_calculate, research_audit). Capture from `tests/e2e/electron-smoke.spec.ts`.
+
+What this chapter deliberately does **not** claim: no fixed success-rate figure (a rate is computed at runtime from your own run history), no infinite context window (a request is bounded at 1,000,000 characters and 32 messages), and no unbounded self-modification — evolution moves strategy and configuration behind evidence thresholds, a gray release and a rollback, always subordinate to your requirements.
 
 ---
 
@@ -452,11 +493,11 @@ See [`AGENTS.md`](AGENTS.md) for the full repository guide and [`.agent/commands
 
 ## License
 
-**This repository is private and ships no root license.** `package.json` sets `"private": true` and declares no `license` field; there is no `LICENSE` file at the repository root. The native crate `native/joi-remote/Cargo.toml` declares `license = "UNLICENSED"`.
+**joi is released under the Apache License, Version 2.0** — the full text ships in [`LICENSE`](LICENSE), and the canonical copy is published at <https://www.apache.org/licenses/LICENSE-2.0>. Copyright 2026 aimana.
 
-Third-party license texts that are bundled with the project live under `resources/licenses/` (for example the MIT-licensed AI Berkshire scene pack), and the offline font `resources/fonts/NotoSansSC.ttf` is licensed under the SIL Open Font License 1.1 (`resources/fonts/OFL.txt`).
+Third-party license texts that are bundled with the project live under `resources/licenses/` (for example the MIT-licensed AI Berkshire scene pack), and the offline font `resources/fonts/NotoSansSC.ttf` is licensed under the SIL Open Font License 1.1 (`resources/fonts/OFL.txt`). Those bundled components keep their own licenses.
 
-Do not assume MIT, Apache-2.0 or any other open-source license for this repository.
+You may use, modify and redistribute the project under Apache-2.0, including its express patent grant (Section 3); Sections 7 and 8 disclaim warranty and liability.
 
 ---
 

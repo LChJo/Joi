@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1160 570" font-family="'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#57606a"/>
+    </marker>
+    <marker id="arrp" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#8250df"/>
+    </marker>
+  </defs>
+
+  <rect x="0" y="0" width="1160" height="570" fill="#ffffff"/>
+
+  <text x="30" y="34" font-size="20" font-weight="bold" fill="#24292f">joi 双重进化 · 越来越懂你（双循环示意图）</text>
+  <text x="30" y="56" font-size="11.5" fill="#57606a">左环＝搭档进化回路 · 右环＝工作台进化回路 · 两条回路共用同一张结果表 · 节点均为仓库真实表/服务/常量（附文件与行号）· 本图为示意图，非运行截图</text>
+
+  <!-- 回路 A 容器：搭档进化 -->
+  <rect x="30" y="78" width="505" height="384" rx="10" fill="#f6f8fa" stroke="#1a7f37"/>
+  <text x="46" y="102" font-size="13.5" font-weight="bold" fill="#1a7f37">回路 A · 搭档进化 —— 每次派发都让搭档池更准</text>
+
+  <!-- 回路 B 容器：工作台进化 -->
+  <rect x="625" y="78" width="505" height="384" rx="10" fill="#f6f8fa" stroke="#0969da"/>
+  <text x="641" y="102" font-size="13.5" font-weight="bold" fill="#0969da">回路 B · 工作台进化 —— 每次协作都让工作台更懂你</text>
+
+  <!-- ===== 回路 A 节点（顺时针 ①→⑥）===== -->
+  <rect x="50" y="118" width="225" height="82" rx="8" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="62" y="138" font-size="12" font-weight="bold" fill="#24292f">① 先复用，无合适才创建</text>
+  <text x="62" y="156" font-size="9.6" fill="#24292f">先 partner_list_available 复用</text>
+  <text x="62" y="170" font-size="9.6" fill="#24292f">仅当无合适搭档才 partner_create</text>
+  <text x="62" y="188" font-size="8.8" fill="#57606a">joi-system-prompt.ts:27</text>
+
+  <rect x="290" y="118" width="225" height="82" rx="8" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="302" y="138" font-size="12" font-weight="bold" fill="#24292f">② 按能力簇自动创建</text>
+  <text x="302" y="155" font-size="9.6" fill="#24292f">partnerClusterName·Key 同名簇复用</text>
+  <text x="302" y="167" font-size="8.2" fill="#57606a">workbench-naming.ts:71/81</text>
+  <text x="302" y="182" font-size="9.6" fill="#24292f">省略 modelSourceId → 跟随全局首选源</text>
+  <text x="302" y="194" font-size="8.2" fill="#57606a">joi-reasoning-tools.ts:565</text>
+
+  <rect x="290" y="234" width="225" height="82" rx="8" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="302" y="254" font-size="12" font-weight="bold" fill="#24292f">③ 派发到运行实例</text>
+  <text x="302" y="272" font-size="9.6" fill="#24292f">partner_instances 运行会话 · 常驻上限 12/4</text>
+  <text x="302" y="286" font-size="9.6" fill="#24292f">EPHEMERAL 用完即走 / RESIDENT 常驻复用</text>
+  <text x="302" y="304" font-size="8.8" fill="#57606a">partner-instance-manager.ts:29</text>
+
+  <rect x="290" y="350" width="225" height="82" rx="8" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="302" y="370" font-size="12" font-weight="bold" fill="#24292f">④ 结果回写工作记忆</text>
+  <text x="302" y="388" font-size="9.6" fill="#24292f">recordResult()：32条 · 每8条刷摘要</text>
+  <text x="302" y="402" font-size="9.6" fill="#24292f">digest() = last3 + successRate</text>
+  <text x="302" y="420" font-size="8.8" fill="#57606a">partner-work-memory-service.ts:9/36/53</text>
+
+  <rect x="50" y="350" width="225" height="82" rx="8" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="62" y="370" font-size="12" font-weight="bold" fill="#24292f">⑤ 知识与版本沉淀</text>
+  <text x="62" y="388" font-size="9.6" fill="#24292f">partner_knowledge_docs ≤8篇 · 16k/次注入</text>
+  <text x="62" y="402" font-size="9.6" fill="#24292f">setTools/Skills/Model → 新建不可变版本</text>
+  <text x="62" y="420" font-size="8.8" fill="#57606a">partner-knowledge-service.ts:5 · 017:19</text>
+
+  <rect x="50" y="234" width="225" height="82" rx="8" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="62" y="254" font-size="12" font-weight="bold" fill="#24292f">⑥ 下次选得更准</text>
+  <text x="62" y="272" font-size="9.6" fill="#24292f">digest 随 partner_list_available 返回</text>
+  <text x="62" y="286" font-size="9.6" fill="#24292f">joi 按 successRate 挑搭档 → 回到①</text>
+  <text x="62" y="304" font-size="8.8" fill="#57606a">joi-reasoning-tools.ts:958</text>
+
+  <!-- ===== 回路 B 节点（顺时针 ①→⑥）===== -->
+  <rect x="645" y="118" width="225" height="82" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="657" y="138" font-size="12" font-weight="bold" fill="#24292f">① 版本化人设与记忆</text>
+  <text x="657" y="156" font-size="9.6" fill="#24292f">workbench_persona_revisions 版本化正文</text>
+  <text x="657" y="170" font-size="9.6" fill="#24292f">memory_fragments 记忆 · FTS5 检索</text>
+  <text x="657" y="188" font-size="8.8" fill="#57606a">027:14（038 改名）· 004:98</text>
+
+  <rect x="885" y="118" width="225" height="82" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="897" y="138" font-size="12" font-weight="bold" fill="#24292f">② 目标与需求契约</text>
+  <text x="897" y="156" font-size="9.6" fill="#24292f">joi_goal_requirements ≤16_000 字符</text>
+  <text x="897" y="170" font-size="9.6" fill="#24292f">requirements_revision 贯穿 turns/runs</text>
+  <text x="897" y="188" font-size="8.8" fill="#57606a">goal-requirements.ts:11 · 071</text>
+
+  <rect x="885" y="234" width="225" height="82" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="897" y="254" font-size="12" font-weight="bold" fill="#24292f">③ 每次派发先装快照</text>
+  <text x="897" y="272" font-size="9.6" fill="#24292f">WorkbenchContextAssembler.assemble()</text>
+  <text x="897" y="286" font-size="9.6" fill="#24292f">partner_runs.context_snapshot_id 钉现场</text>
+  <text x="897" y="304" font-size="8.8" fill="#57606a">workbench-context-assembler.ts:26 · 027:51</text>
+
+  <rect x="885" y="350" width="225" height="82" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="897" y="370" font-size="12" font-weight="bold" fill="#24292f">④ 工作与结果持续投影</text>
+  <text x="897" y="388" font-size="9.6" fill="#24292f">active_work_json / recent_results_json</text>
+  <text x="897" y="402" font-size="9.6" fill="#24292f">work_results 只存 summary + body_ref</text>
+  <text x="897" y="420" font-size="8.8" fill="#57606a">027:32 · 027:93</text>
+
+  <rect x="645" y="350" width="225" height="82" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="657" y="370" font-size="12" font-weight="bold" fill="#24292f">⑤ 结果作为进化证据</text>
+  <text x="657" y="388" font-size="9.6" fill="#24292f">evidenceSeeds() 只取权威、不迟到结果</text>
+  <text x="657" y="402" font-size="9.6" fill="#24292f">is_authoritative=1 · is_late=0 → 归因</text>
+  <text x="657" y="420" font-size="8.8" fill="#57606a">sqlite-evolution-store.ts:162 · scan()</text>
+
+  <rect x="645" y="234" width="225" height="82" rx="8" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="657" y="254" font-size="12" font-weight="bold" fill="#24292f">⑥ 策略修订与注入</text>
+  <text x="657" y="272" font-size="9.6" fill="#24292f">证据阈值10 · 失败3 · 回滚2 · 灰度取样</text>
+  <text x="657" y="286" font-size="9.6" fill="#24292f">只改一个策略模块 · 从属于用户需求与门禁</text>
+  <text x="657" y="304" font-size="8.8" fill="#57606a">evolution.ts:26 · evolution-service.ts:279</text>
+
+  <!-- ===== 回路 A 内部箭头（顺时针闭环）===== -->
+  <line x1="275" y1="159" x2="287" y2="159" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="402" y1="200" x2="402" y2="231" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="402" y1="316" x2="402" y2="347" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="290" y1="391" x2="278" y2="391" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="162" y1="350" x2="162" y2="319" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="162" y1="234" x2="162" y2="203" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="170" y="223" font-size="9" fill="#1a7f37">闭环 · 越配合越强</text>
+
+  <!-- ===== 回路 B 内部箭头（顺时针闭环）===== -->
+  <line x1="870" y1="159" x2="882" y2="159" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="997" y1="200" x2="997" y2="231" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="997" y1="316" x2="997" y2="347" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="885" y1="391" x2="873" y2="391" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="757" y1="350" x2="757" y2="319" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="757" y1="234" x2="757" y2="203" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="765" y="223" font-size="9" fill="#0969da">闭环 · 越用越懂你</text>
+
+  <!-- ===== 跨回路反馈（紫色）：B⑥ 策略指令 → A③ 派发 ===== -->
+  <line x1="645" y1="275" x2="518" y2="275" stroke="#8250df" stroke-width="1.8" marker-end="url(#arrp)"/>
+  <text x="580" y="263" font-size="9.5" font-weight="bold" fill="#8250df" text-anchor="middle">策略注入派发简报</text>
+
+  <!-- ===== 共享交汇点：work_results 结果事实表 ===== -->
+  <rect x="540" y="353" width="80" height="76" rx="8" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="580" y="373" font-size="10.5" font-weight="bold" fill="#24292f" text-anchor="middle">work_results</text>
+  <text x="580" y="389" font-size="9.6" fill="#24292f" text-anchor="middle">结果事实表</text>
+  <text x="580" y="403" font-size="9.6" fill="#24292f" text-anchor="middle">两条回路共用</text>
+  <text x="580" y="419" font-size="8.8" fill="#57606a" text-anchor="middle">027:93</text>
+
+  <line x1="515" y1="391" x2="537" y2="391" stroke="#8250df" stroke-width="1.8" marker-end="url(#arrp)"/>
+  <text x="526" y="381" font-size="9" font-weight="bold" fill="#8250df" text-anchor="middle">落库</text>
+  <line x1="620" y1="391" x2="642" y2="391" stroke="#8250df" stroke-width="1.8" marker-end="url(#arrp)"/>
+  <text x="632" y="381" font-size="9" font-weight="bold" fill="#8250df" text-anchor="middle">取证</text>
+
+  <!-- ===== 底部说明 ===== -->
+  <text x="30" y="490" font-size="10.5" fill="#24292f">交汇：A 的产出 work_results 是 B 的证据（evidenceSeeds 取证）；B 的产出（策略指令）改变 A 下一次派发方式 —— 「搭档越用越强」与「工作台越用越懂你」是同一份事实的两个投影。</text>
+  <text x="30" y="510" font-size="10.5" fill="#57606a">边界：successRate 由真实运行记录实时计算（无固定基准值）；上下文按模型窗口逐轮重装（上限 1_000_000 字符 · 32 条消息，压缩产出 ≤12k 摘要）；进化有阈值（10/3/2）、灰度与回滚，永远从属于用户需求与固定门禁。</text>
+
+  <!-- ===== 图例 ===== -->
+  <rect x="30" y="537" width="12" height="12" fill="#dafbe1" stroke="#1a7f37"/>
+  <text x="48" y="547" font-size="11" fill="#57606a">搭档进化回路</text>
+  <rect x="150" y="537" width="12" height="12" fill="#ddf4ff" stroke="#0969da"/>
+  <text x="168" y="547" font-size="11" fill="#57606a">工作台进化回路</text>
+  <rect x="290" y="537" width="12" height="12" fill="#fff8c5" stroke="#9a6700"/>
+  <text x="308" y="547" font-size="11" fill="#57606a">共享结果事实表</text>
+  <line x1="430" y1="543" x2="458" y2="543" stroke="#57606a" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="466" y="547" font-size="11" fill="#57606a">回路内步骤</text>
+  <line x1="560" y1="543" x2="588" y2="543" stroke="#8250df" stroke-width="1.8" marker-end="url(#arrp)"/>
+  <text x="596" y="547" font-size="11" fill="#57606a">跨回路反馈</text>
+</svg>

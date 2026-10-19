@@ -29,8 +29,10 @@ function vocabularySurface(): string[] {
   return roots.flatMap((entry) => entry.endsWith(".md") ? [entry] : productionFiles(entry));
 }
 
-function removeUnrelatedProfileImageVocabulary(source: string): string {
+function removeNonProductVocabulary(source: string): string {
   return source
+    // Historical migration filenames remain stable for source references and database upgrades.
+    .replace(/\b(?:019_avatar_change_confirmation|027_avatar_private_partner_results)\.sql\b/gu, "legacy-migration.sql")
     .replaceAll("joi-brand-avatar", "joi-brand-profile-image")
     .replaceAll("joi-avatar", "joi-profile-image")
     .replaceAll("avatarUrl", "profileImageUrl")
@@ -43,7 +45,7 @@ describe("Workbench terminology boundary", () => {
   it("uses Workbench as the only active product name for the persistent context entity", () => {
     const violations = vocabularySurface().flatMap((relativePath) => {
       const fileName = path.basename(relativePath);
-      const source = removeUnrelatedProfileImageVocabulary(readFileSync(path.join(repositoryRoot, relativePath), "utf8"));
+      const source = removeNonProductVocabulary(readFileSync(path.join(repositoryRoot, relativePath), "utf8"));
       return formerProductTerm.test(fileName) || formerProductTerm.test(source) ? [relativePath.replaceAll("\\", "/")] : [];
     });
 
