@@ -4,6 +4,37 @@ import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persiste
 import { createRuntimeFixture } from "../support/runtime-fixture.js";
 
 describe("Workbench Agent and joi home projections", () => {
+  it("excludes pending remnants of terminal goals while retaining genuine queued inputs", async () => {
+    const fixture = await createRuntimeFixture();
+    try {
+      const workbench = await fixture.workbenchRegistry.create({ name: "队列", personaSummary: "persona", projectLabel: "joi", scopeSummary: "队列" });
+      const now = "2026-10-19T10:00:00.000Z";
+      fixture.database.transaction((connection) => {
+        const insert = connection.prepare(`INSERT INTO joi_inbox_messages
+          (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
+          VALUES (?, ?, '队列测试', ?, ?, ?, ?, ?)`);
+        for (const goal of ["canceled", "failed", "completed"]) {
+          insert.run(goal, goal, "CONSUMED", workbench.workbenchId, null, now, now);
+          insert.run(`child-${goal}`, `child-${goal}`, "PENDING", workbench.workbenchId, goal, now, now);
+        }
+        connection.prepare("UPDATE joi_inbox_messages SET canceled_at = ? WHERE input_id = 'canceled'").run(now);
+        connection.prepare("UPDATE joi_inbox_messages SET failed_at = ? WHERE input_id = 'failed'").run(now);
+        connection.prepare(`INSERT INTO joi_goal_result_sets (original_input_id, revision, synthesized_revision, updated_at)
+          VALUES ('completed', 1, 1, ?)`).run(now);
+        connection.prepare(`INSERT INTO joi_goal_outcomes (input_id, result_revision, completion_summary, completed_at, updated_at)
+          VALUES ('completed', 1, '完成', ?, ?)`).run(now, now);
+        insert.run("new-input", "new-input", "PENDING", null, null, now, now);
+      });
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(now));
+      expect(feed.goals.map((goal) => goal.status)).toEqual(expect.arrayContaining(["CANCELED", "FAILED", "COMPLETED"]));
+      expect(feed.thinking).toEqual([expect.objectContaining({ goalId: "new-input", phase: "queued" })]);
+      const rows = fixture.database.transaction((connection) => connection.prepare("SELECT input_id FROM joi_inbox_messages WHERE status = 'PENDING'").all());
+      expect(rows).toHaveLength(4);
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("orders goals by opening time and keeps that order through progress and completion updates", async () => {
     const fixture = await createRuntimeFixture();
     try {

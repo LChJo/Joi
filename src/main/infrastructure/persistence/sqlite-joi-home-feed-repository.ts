@@ -476,7 +476,6 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
              AND t.status IN ('PENDING','RUNNING','WAITING'))
         ORDER BY 4 DESC, 1 DESC`).all(cutoff) as Row[];
       const thinking = collapseThinkingByGoal(turns.filter((row) => {
-        if (text(row, "status") === "PENDING") return true;
         const goal = goalsById.get(text(row, "goal_id"));
         return goal === undefined || !["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(goal.status);
       }).map((row) => {

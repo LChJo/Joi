@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 import { ApiError, DigitalLifeApi } from "../../src/renderer/api";
 import { ConsoleApp, SettingsPanel } from "../../src/renderer/Console";
@@ -157,6 +157,7 @@ describe("joi renderer console", () => {
     render(<ConsoleApp api={fixture.api} />);
 
     expect(await screen.findByText("状态暂不可用")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "重新连接状态更新" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
     await waitFor(() => expect(fixture.interactionsRequest).toHaveBeenCalledTimes(2));
     const navigation = screen.getByRole("navigation", { name: "主导航" });
@@ -173,10 +174,11 @@ describe("joi renderer console", () => {
     try {
       const fixture = mockApi();
       const view = render(<ConsoleApp api={fixture.api} />);
-      await vi.advanceTimersByTimeAsync(0);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
       await vi.waitFor(() => expect(fixture.interactionsRequest).toHaveBeenCalledOnce());
       expect(fixture.diagnosticsRequest).not.toHaveBeenCalled();
-      await vi.waitFor(() => expect(screen.getByText("状态自动刷新")).toBeInTheDocument());
+      expect(screen.queryByText("状态自动刷新")).not.toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "退出登录" })).toBeInTheDocument();
 
       await vi.advanceTimersByTimeAsync(2_500);
       await vi.waitFor(() => expect(fixture.interactionsRequest).toHaveBeenCalledTimes(2));

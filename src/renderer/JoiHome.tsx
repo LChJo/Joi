@@ -1352,13 +1352,12 @@ function ThinkingRow({ item }: { item: JoiThinkingItemDto }) {
   const workSummary = thinkingWorkSummary(renderItem);
   const accessibleSummary = isProgressing
     ? `${stageLabel}${workSummary === "" ? "" : `，${workSummary}`}`
-    : "queued";
+    : t("home.queued");
   return <div aria-label={accessibleSummary} className={`joi-thinking ${item.phase}`} role="status">
     <span aria-hidden="true" className="joi-thinking-dot" />
     <div className="joi-thinking-copy">
-      <strong>{item.phase === "queued" ? "queued" : "progressing"}</strong>
+      <strong className={isProgressing ? "joi-thinking-stage" : undefined}>{isProgressing ? stageLabel : t("home.queued")}</strong>
       {isProgressing ? <span className="joi-thinking-summary">
-        <span className="joi-thinking-stage">{stageLabel}</span>
         {workSummary === "" ? null : <span className="joi-thinking-meta">{workSummary}</span>}
         <span aria-hidden="true" className="joi-thinking-elapsed">  {t("home.used")} {thinkingElapsed(item.startedAt, now)}</span>
       </span> : null}

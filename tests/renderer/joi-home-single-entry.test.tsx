@@ -410,7 +410,7 @@ describe("joi home single entry", () => {
     fireEvent.change(composer, { target: { value: "同时整理风险" } });
     fireEvent.submit(parentForm(composer));
     await waitFor(() => expect(send).toHaveBeenCalledWith("同时整理风险", {}));
-    expect(await screen.findAllByText("queued")).toHaveLength(2);
+    expect(await screen.findAllByText("排队中")).toHaveLength(2);
   });
 
   it("routes the composer input to the Workbench chosen in the toolbar", async () => {
@@ -805,7 +805,7 @@ describe("joi home single entry", () => {
     expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
     expect(await screen.findByText("研究一下登录改造")).toBeInTheDocument();
     expect(screen.getByText("这条到底归谁")).toBeInTheDocument();
-    expect(screen.getByText("progressing")).toBeInTheDocument();
+    expect(screen.queryByText("progressing")).not.toBeInTheDocument();
     expect(screen.getByText("搭档执行中", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
     expect(screen.getByText(/已用/u, { selector: ".joi-thinking-elapsed" })).toBeInTheDocument();
     expect(screen.getByText(/2 Agent · 1\/2 工作完成/u, { selector: ".joi-thinking-meta" })).toBeInTheDocument();
@@ -1175,7 +1175,7 @@ describe("joi home single entry", () => {
       expect(await screen.findByText(label)).toBeInTheDocument();
     }
     expect(screen.getByText("有一项执行未完成")).toBeInTheDocument();
-    expect(screen.getAllByText("progressing")).toHaveLength(1);
+    expect(screen.queryByText("progressing")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /定时/u })).not.toBeInTheDocument();
     vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
     fireEvent.click(screen.getByText("目标 RUNNING"));
@@ -1421,7 +1421,7 @@ describe("joi home single entry", () => {
     fireEvent.change(within(drawer).getByLabelText("补充说明"), { target: { value: "补充后续要求" } });
     fireEvent.click(within(drawer).getByRole("button", { name: "继续" }));
     expect(await screen.findByText("正在安排")).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "queued" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "排队中" })).toBeInTheDocument();
     releaseRefresh?.();
   });
 
@@ -1482,7 +1482,7 @@ describe("joi home single entry", () => {
     openGoalMenuItem("马上继续的目标", "继续");
     fireEvent.click(await screen.findByRole("button", { name: "继续" }));
     expect(await screen.findByText("正在安排")).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "queued" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "排队中" })).toBeInTheDocument();
     releaseRefresh?.();
   });
 
