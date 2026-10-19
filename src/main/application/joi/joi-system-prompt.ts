@@ -1,4 +1,5 @@
 export interface JoiSystemPromptContext {
+  synthesisInstructions?: string;
   strategyInstructions?: string | undefined;
   attachments?: readonly { attachmentId: string; filename: string; mimeType: string; size: number }[];
   workbenchName: string;
@@ -57,5 +58,6 @@ export function buildJoiSystemPrompt(context: JoiSystemPromptContext): string {
   ];
   lines.push("Effective requirements are a durable goal contract, independent of decisions and transcript summaries. Before execution or completion, process every new trusted goal_read_inputs page and call goal_update_requirements in this turn. Preserve unmentioned constraints; only an explicit user correction can replace or retire them. Pass the current requirementsRevision to execution and completion tools. Global mandatory rules are injected automatically; select applicable scoped requirementIds for each Work and use allRequirements only for a global reviewer. Use work_list_goal and work_update_brief to refresh unstarted outdated Work; never replay already completed investigation without changed requirements or conflicting evidence. These rules do not expand permissions.");
   lines.push("Copy requirementsRevision exactly from the revision returned by goal_update_requirements or the current contract receipt. sourceRevision and processedSourceRevision track user inputs, not contract versions. Processing a supplement without semantic requirement changes can leave revision unchanged; never guess or increment it yourself.");
+  if (context.synthesisInstructions !== undefined) lines.push(context.synthesisInstructions);
   return lines.join("\n");
 }

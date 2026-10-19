@@ -712,6 +712,7 @@
 .agent-status { padding: 3px 8px; border-radius: 999px; background: var(--wash); color: var(--muted); font-size: .68rem; font-style: normal; }
 .agent-status.running { background: color-mix(in srgb, var(--forest) 14%, var(--wash)); color: var(--forest); }
 .agent-status.failed { background: color-mix(in srgb, var(--red) 12%, var(--wash)); color: var(--red); }
+.agent-status.insufficient { background: var(--wash); color: var(--muted); }
 .agent-delete { align-self: center; margin-right: 10px; }
 .agent-conversation { width: min(860px, 100%); margin: 0 auto; display: grid; gap: 16px; }
 .agent-detail-header { display: flex; gap: 16px; align-items: flex-start; }

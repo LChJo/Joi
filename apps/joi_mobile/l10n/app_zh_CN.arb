@@ -785,6 +785,7 @@
   "homeRouteLoaded": "已加载 {loaded} / 共 {total} 项",
   "homeRouteRelatedNotLoaded": "关联内容尚未加载，请加载更多后查看。",
   "homeRouteLoading": "正在加载路线详情…",
+  "homeInsufficient": "不充分",
   "mobileBringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
   "mobileScanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
   "mobileEnterConnectionCode": "输入连接码",

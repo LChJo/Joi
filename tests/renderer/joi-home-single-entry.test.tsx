@@ -301,6 +301,26 @@ describe("Workbench context center", () => {
     await waitFor(() => expect(remove).toHaveBeenCalledWith(workbench.workbenchId, ephemeral.agentId));
   });
 
+  it("labels retained unverified Agent output as insufficient while keeping its deliverable readable", async () => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("workbench-partial", "研究");
+    const agent = { agentId: "partial", workbenchId: workbench.workbenchId, canDelete: true, createdAt: workbench.updatedAt,
+      engine: "pi-core" as const, lastActivityAt: workbench.updatedAt, partnerId: "partner", partnerName: "证据搭档",
+      sessionPolicy: "EPHEMERAL" as const, status: "FAILED" as const, transport: "LOCAL" as const, resultAssessment: "INSUFFICIENT" as const };
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue({ activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+      personaRevisionId: "persona", projectLabel: "Test", recentOutcomes: [], recentResults: [], responsibility: "Test", updatedAt: workbench.updatedAt,
+      workspace: { displayName: "workspace", kind: "BOUND", status: "READY" } });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent] });
+    vi.spyOn(api, "agentConversation").mockResolvedValue({ agent, items: [{ entryId: "output", sequence: 0, createdAt: workbench.updatedAt,
+      kind: "MARKDOWN", role: "AGENT", text: "已有证据，尚缺一项核验。" }] });
+    render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+    expect(await screen.findByText("不充分")).toHaveClass("insufficient");
+    fireEvent.click(screen.getByRole("button", { name: "查看 证据搭档 详情" }));
+    expect(await screen.findByText("已有证据，尚缺一项核验。")).toBeInTheDocument();
+    expect(screen.getByText(/不充分/u)).toBeInTheDocument();
+  });
+
   it("keeps the Agent area usable when its list is invalid and reports a read failure without exposing a composer", async () => {
     const api = new DigitalLifeApi("", true);
     const workbench = workbenchDto("workbench-fallback", "容错 Workbench");

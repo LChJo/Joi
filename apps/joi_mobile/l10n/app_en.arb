@@ -4200,6 +4200,11 @@
     "description": "Goal details: Loading route map details…",
     "placeholders": {}
   },
+  "homeInsufficient": "Insufficient",
+  "@homeInsufficient": {
+    "description": "home.insufficient",
+    "placeholders": {}
+  },
   "mobileBringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
   "@mobileBringTheJoiRunningOnYourComputerToYour": {
     "description": "Bring the joi running on your computer to your phone",

@@ -79,6 +79,24 @@ const OUTCOME_REPAIR_PROMPT = [
   "Only when no execution is requested and the response is already complete may you call turn_complete with the matching outcome.",
 ].join(" ");
 
+const SYNTHESIS_OUTCOME_REPAIR_PROMPT = [
+  "[joi completion repair] This goal-result synthesis did not commit an outcome.",
+  "Use the existing evidence; do not repeat completed work or merely describe future work.",
+  "Call turn_complete through the real tool-call mechanism with RESULT_SYNTHESIZED when the evidence answers the goal, RESULT_CONTINUE for a concrete safe evidence gap, or RESULT_BLOCKED for a gap requiring user intervention.",
+  "Then provide the complete visible deliverable and explain any material coverage gap.",
+  "If structured tools are unavailable, start the response with exactly [joi synthesis outcome=RESULT_SYNTHESIZED], [joi synthesis outcome=RESULT_CONTINUE], or [joi synthesis outcome=RESULT_BLOCKED], followed by a newline and the complete deliverable. This is a synthesis decision, not a tool call.",
+].join(" ");
+
+const SYNTHESIS_TEXT_DECISION_INSTRUCTIONS = "For this goal-result synthesis, use the existing evidence and finish without repeating completed work when it already answers the goal. You may submit a text-only decision instead of calling a tool: start with exactly [joi synthesis outcome=RESULT_SYNTHESIZED], [joi synthesis outcome=RESULT_CONTINUE], or [joi synthesis outcome=RESULT_BLOCKED], then a newline and the complete deliverable with any material gaps. Use RESULT_SYNTHESIZED only when evidence answers the goal, RESULT_CONTINUE only for a concrete safe next evidence layer, and RESULT_BLOCKED when user intervention is essential. Do not emit tool-call markup.";
+
+function synthesisTextDecision(text: string): { outcome: "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED"; body: string } | undefined {
+  const match = /^\[joi synthesis outcome=(RESULT_SYNTHESIZED|RESULT_CONTINUE|RESULT_BLOCKED)\]\r?\n([\s\S]+)$/u.exec(text.trim());
+  if (match === null || containsLeakedToolCallMarkup(text)) return undefined;
+  const body = match[2]?.trim() ?? "";
+  if (body === "") return undefined;
+  return { outcome: match[1] as "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED", body };
+}
+
 const EMPTY_COMPLETION_REPAIR_PROMPT = [
   "[joi completion repair] Your preceding direct response did not contain a visible final answer.",
   "Continue the same persisted request without repeating side effects or lookup calls.",
@@ -362,6 +380,7 @@ export class JoiCoordinator {
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
+    if (isGoalSynthesis) prompt += `\n\n${SYNTHESIS_TEXT_DECISION_INSTRUCTIONS}`;
     if (input.resolvedAction !== undefined && contract !== undefined) {
       prompt += `\nPersisted user action: actionId=${input.resolvedAction.actionId} workId=${input.resolvedAction.workId}. Review current requirements and work_read_brief, then apply work_resume with this stable actionId and complete updated instructions; do not replay a resolved action.`;
     }
@@ -461,6 +480,7 @@ export class JoiCoordinator {
             sourceId: pin.sourceId,
             sourceRevisionId: pin.sourceRevisionId,
             systemPrompt: buildJoiSystemPrompt({
+              ...(isGoalSynthesis ? { synthesisInstructions: SYNTHESIS_TEXT_DECISION_INSTRUCTIONS } : {}),
               ...(input.attachments === undefined ? {} : { attachments: input.attachments }),
               workbenchName: workbench.profile.name,
               ...(pin.modelCapability === undefined || pin.toolCapabilityProven === true ? {} : { modelCapability: pin.modelCapability }),
@@ -496,7 +516,13 @@ export class JoiCoordinator {
           // AC-26 gates the FIRST Turn of an unproven custom model only: once any Turn of the
           // pinned revision pair demonstrated structured tool calling, a later direct answer
           // (zero tool calls) is a valid outcome instead of a capability failure.
-          if (pin.modelCapability === "custom-unverified-tools" && pin.toolCapabilityProven !== true && observedToolCalls.size === 0) {
+          const textDecision = isGoalSynthesis && shouldRollbackTurn(sideEffectStarted, signal) && !pass.committedOutcome
+            ? synthesisTextDecision(attemptCompletionText) : undefined;
+          if (textDecision !== undefined) {
+            committedTurnOutcome = textDecision.outcome;
+            completionText = textDecision.body;
+          }
+          if (!isGoalSynthesis && pin.modelCapability === "custom-unverified-tools" && pin.toolCapabilityProven !== true && observedToolCalls.size === 0) {
             throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
           }
           // A pass that rendered tool-call markup as plain text ran nothing: let the model
@@ -529,7 +555,7 @@ export class JoiCoordinator {
               observedToolCount: observedToolCalls.size,
               turnId,
             });
-            prompt = OUTCOME_REPAIR_PROMPT;
+            prompt = isGoalSynthesis ? SYNTHESIS_OUTCOME_REPAIR_PROMPT : OUTCOME_REPAIR_PROMPT;
             // The repair continues the same session: the first user message already
             // carries the attachment content, so never resend the image parts.
             turnImages = undefined;

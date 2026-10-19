@@ -798,6 +798,7 @@ export interface MessageParameters {
   "home.routeLoaded": { "loaded": string; "total": string };
   "home.routeRelatedNotLoaded": undefined;
   "home.routeLoading": undefined;
+  "home.insufficient": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
   "mobile.enterConnectionCode": undefined;
@@ -2258,6 +2259,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.routeLoaded": "Loaded {loaded} / {total}",
     "home.routeRelatedNotLoaded": "Related content is not loaded yet. Load more to view it.",
     "home.routeLoading": "Loading route map details…",
+    "home.insufficient": "Insufficient",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
     "mobile.enterConnectionCode": "Enter connection code",
@@ -3716,6 +3718,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.routeLoaded": "已加载 {loaded} / 共 {total} 项",
     "home.routeRelatedNotLoaded": "关联内容尚未加载，请加载更多后查看。",
     "home.routeLoading": "正在加载路线详情…",
+    "home.insufficient": "不充分",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
     "mobile.enterConnectionCode": "输入连接码",
@@ -5844,6 +5847,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "关联内容尚未加载，请加载更多后查看。": "home.routeRelatedNotLoaded",
   "Loading route map details…": "home.routeLoading",
   "正在加载路线详情…": "home.routeLoading",
+  "Insufficient": "home.insufficient",
+  "不充分": "home.insufficient",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "把正在电脑上运行的 Joi 带到手机上": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "Scan a QR code to pair with joi": "mobile.scanAQrCodeToPairWithJoi",

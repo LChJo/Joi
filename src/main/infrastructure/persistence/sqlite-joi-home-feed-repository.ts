@@ -81,6 +81,16 @@ function historicalStoppedGoal(row: Row): boolean {
     && number(row, "active_runs") === 0;
 }
 
+/** Only the current, inactive synthesis may surface its durable failure on the goal. */
+function stoppedSynthesis(row: Row): boolean {
+  return row.synthesis_status === "CONSUMED" && typeof row.synthesis_failed_at === "string"
+    && row.synthesis_result_revision === row.result_revision
+    && number(row, "synthesis_requirements_current") === 1
+    && text(row, "inbox_status") === "CONSUMED" && number(row, "outcome_current") === 0
+    && number(row, "work_active") === 0 && number(row, "active_runs") === 0
+    && number(row, "live_turn_count") === 0 && number(row, "pending_child_count") === 0;
+}
+
 function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGoalStatusDto {
   if (row.failed_at !== null && row.failed_at !== undefined) return "FAILED";
   if (row.canceled_at !== null && row.canceled_at !== undefined) return "CANCELED";
@@ -110,6 +120,7 @@ function goalStatus(row: Row, harness: HarnessGoalProjection | undefined): JoiGo
   if (blockedOutcome) return "FAILED";
   if (number(row, "running_count") > 0) return "RUNNING";
   if (number(row, "arranged_count") > 0 || number(row, "write_queued_count") > 0) return "ARRANGED";
+  if (stoppedSynthesis(row)) return "FAILED";
   if (number(row, "work_active") === 0 && number(row, "outcome_current") === 0
     && (number(row, "completed_count") + number(row, "failed_count") > 0 || number(row, "result_revision") > 0)) return "FINALIZING";
   // The goal's latest Turn failed and left nothing running, no Work and no outcome: it
@@ -268,6 +279,11 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.archived_at, i.clarification_reason_code, i.clarification_prompt,
         gate.status AS gate_status, gate.question_id, gate.question_version,
         i.canceled_at, i.failed_at, i.failure_reason_code, i.failure_count,
+        synth.status AS synthesis_status, synth.failed_at AS synthesis_failed_at,
+        synth.result_revision AS synthesis_result_revision,
+        CASE WHEN NOT EXISTS (SELECT 1 FROM joi_goal_requirements requirements WHERE requirements.goal_input_id = i.input_id
+          AND requirements.revision <> COALESCE(synth.requirements_revision, -1)) THEN 1 ELSE 0 END AS synthesis_requirements_current,
+        synth.failure_reason_code AS synthesis_failure_reason_code, synth.failure_count AS synthesis_failure_count,
         -- Latest orchestration Turn of this goal, resolve rows included: a goal-resume row
         -- carries the goal id in goal_input_id, so its failed recovery Turn must count too.
         (SELECT t.status FROM joi_inbox_messages source
@@ -340,6 +356,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         FROM joi_inbox_messages i LEFT JOIN workbenches a ON a.workbench_id = i.workbench_id
         LEFT JOIN work_items w ON w.input_id = i.input_id
         LEFT JOIN joi_goal_result_sets rs ON rs.original_input_id = i.input_id
+        LEFT JOIN joi_inbox_messages synth ON synth.input_id = rs.synthetic_input_id
         LEFT JOIN joi_current_goal_outcomes o ON o.input_id = i.input_id
         LEFT JOIN joi_turn_completions tc ON tc.input_id = i.input_id
         LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.input_id
@@ -366,7 +383,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           && (harnessProjection?.mapStatus !== "ACTIVE" || blockedRecoveryExhausted || continuationDecision);
         const terminalStatus = ["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"].includes(status);
         const historicalFailure = historicalStoppedGoal(row);
-        const failureReasonCode = normalizeJoiFailureReasonCode(row.failure_reason_code
+        const synthesisFailure = stoppedSynthesis(row);
+        const failureCode = synthesisFailure ? row.synthesis_failure_reason_code : row.failure_reason_code;
+        const failureCount = synthesisFailure ? row.synthesis_failure_count : row.failure_count;
+        const failureReasonCode = normalizeJoiFailureReasonCode(failureCode
           ?? (historicalFailure ? "joi_task_turn_failed" : undefined));
         const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))
           ? goalArtifacts(connection, goalId, row.workbench_id)
@@ -388,9 +408,9 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             && active === 0 && activeRuns === 0
             && ((row.canceled_at !== null && row.canceled_at !== undefined) || total === 0 || finalOutcome),
           goalId,
-          ...(status === "FAILED" && (historicalFailure || (typeof row.failure_reason_code === "string" && typeof row.failure_count === "number")) ? {
+          ...(status === "FAILED" && (historicalFailure || (typeof failureCode === "string" && typeof failureCount === "number")) ? {
             failure: {
-              attempts: typeof row.failure_count === "number" && row.failure_count > 0 ? row.failure_count : 1,
+              attempts: typeof failureCount === "number" && failureCount > 0 ? failureCount : 1,
               executionStarted: number(row, "execution_started") === 1,
               reasonCode: failureReasonCode,
               suggestedAction: suggestedActionForJoiInputFailure(failureReasonCode),

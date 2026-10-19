@@ -45,9 +45,13 @@ Map<String, String> get _waitLabels => {
 
 String executionStatusLabel({
   required String status,
+  String? resultAssessment,
   String? executionPhase,
   String? waitReason,
 }) {
+  if (status == 'FAILED' && resultAssessment == 'INSUFFICIENT') {
+    return tr(Msg.homeInsufficient);
+  }
   if (waitReason == 'CAPACITY') return _waitLabels['CAPACITY']!;
   return switch (executionPhase) {
     'READ_QUEUED' => _waitLabels['WORKSPACE_READ']!,

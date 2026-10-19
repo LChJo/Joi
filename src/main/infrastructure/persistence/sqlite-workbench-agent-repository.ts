@@ -93,6 +93,7 @@ function mapCard(row: Row): WorkbenchAgentCardDto {
   const status = mapStatus(row);
   const engine = row.backing_kind === "A2A_RUN" ? "pi-core" : mapStoredEngine(row.engine, row.cli_protocol);
   return {
+    ...(status === "FAILED" && row.incomplete_result === 1 ? { resultAssessment: "INSUFFICIENT" as const } : {}),
     ...(typeof row.execution_phase === "string" ? { executionPhase: row.execution_phase as WorkbenchAgentCardDto["executionPhase"] & string } : {}),
     ...(typeof row.wait_reason === "string" ? { waitReason: row.wait_reason as WorkbenchAgentCardDto["waitReason"] & string } : {}),
     agentId: required(row, "agent_id"),
@@ -160,7 +161,21 @@ function cardSelect(goalScoped: boolean): string {
       OR (s.backing_kind = 'A2A_RUN' AND gr.run_id = s.backing_id)
     )
     ORDER BY CASE WHEN gr.status IN ('RUNNING', 'WAITING_INPUT', 'WAITING_AUTH') THEN 0 ELSE 1 END,
-      gr.created_at DESC, gr.run_id DESC LIMIT 1)` : "NULL"} AS goal_execution_status
+      gr.created_at DESC, gr.run_id DESC LIMIT 1)` : "NULL"} AS goal_execution_status,
+  (SELECT CASE WHEN qr.status = 'FAILED' AND result.is_authoritative = 1 AND result.is_late = 0
+      AND verification.status = 'FAILED'
+      AND (length(trim(body.body, char(9) || char(10) || char(13) || ' ')) > 0 OR json_array_length(result.artifacts_json) > 0)
+      THEN 1 ELSE 0 END
+    FROM partner_runs qr JOIN dispatch_attempts qa ON qa.dispatch_attempt_id = qr.dispatch_attempt_id
+    JOIN work_items qw ON qw.work_id = qr.work_id
+    LEFT JOIN work_results result ON result.run_id = qr.run_id AND result.is_authoritative = 1
+    LEFT JOIN work_result_bodies body ON body.body_ref = result.body_ref
+    LEFT JOIN work_result_verifications verification ON verification.result_id = result.result_id
+    WHERE ${goalScoped ? "qw.input_id = ? AND" : ""} (
+      (s.backing_kind = 'LOCAL_INSTANCE' AND qa.instance_id = s.backing_id)
+      OR (s.backing_kind = 'A2A_RUN' AND qr.run_id = s.backing_id))
+    ORDER BY CASE WHEN qr.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH') THEN 0 ELSE 1 END,
+      qr.created_at DESC, qr.run_id DESC LIMIT 1) AS incomplete_result
   FROM workbench_agent_sessions s
   JOIN partner_revisions r ON r.partner_revision_id = s.partner_revision_id
   LEFT JOIN partner_instances i ON s.backing_kind = 'LOCAL_INSTANCE' AND i.instance_id = s.backing_id
@@ -175,7 +190,7 @@ function cardRows(connection: DatabaseSync, workbenchId: string, limit: number, 
     SELECT 1 FROM partner_runs pr JOIN work_items pw ON pw.work_id = pr.work_id
       WHERE s.backing_kind = 'A2A_RUN' AND pr.run_id = s.backing_id AND pw.input_id = ?)`}`;
   const values: (number | string)[] = [];
-  if (goalId !== undefined) values.push(goalId);
+  if (goalId !== undefined) values.push(goalId, goalId);
   values.push(workbenchId);
   if (agentId !== undefined) values.push(agentId);
   if (goalId !== undefined) values.push(goalId, goalId);

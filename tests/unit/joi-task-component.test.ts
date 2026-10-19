@@ -25,7 +25,7 @@ interface Harness {
   state: { canceled: string[]; pending: JoiTaskPendingInput[]; stale: JoiTaskStaleTurn[] };
 }
 
-function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harness {
+function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean; failureCode?: string }): Harness {
   const calls: string[] = [];
   const failTurns: string[] = [];
   const recoverReviews = vi.fn(async () => undefined);
@@ -74,13 +74,25 @@ function makeHarness(options?: { ignoreAbort?: boolean; ready?: boolean }): Harn
       const entry = resolvers.get(inputId);
       if (entry === undefined) throw new Error(`no in-flight handle for ${inputId}`);
       if (outcome === "ok") entry.resolve();
-      else entry.reject(Object.assign(new Error("safe summary"), { code: "turn_boom" }));
+      else entry.reject(Object.assign(new Error("safe summary"), { code: options?.failureCode ?? "turn_boom" }));
     },
     state,
   };
 }
 
 describe("JoiTaskComponent traversal scheduling", () => {
+  it.each(["joi_turn_outcome_uncommitted", "joi_model_toolcall_leak", "custom_model_tool_capability_unverified"])("stops a synthesis after bounded model repair fails with %s", async failureCode => {
+    const harness = makeHarness({ failureCode });
+    const inputId = "joi_result_input:goal:goal:r1:q0";
+    harness.state.pending = [{ createdAt: BASE, inputId }];
+    await harness.component.update(ctxAt(0));
+    harness.settle(inputId, "fail");
+    await flush();
+    await harness.component.update(ctxAt(1_000));
+    await harness.component.update(ctxAt(3_600_000));
+    expect(harness.parks).toEqual([{ failureCount: 1, inputId, reasonCode: failureCode }]);
+    expect(harness.calls).toEqual([inputId]);
+  });
   it("keeps a single serial slot until the in-flight turn settles", async () => {
     const harness = makeHarness();
     harness.state.pending = [

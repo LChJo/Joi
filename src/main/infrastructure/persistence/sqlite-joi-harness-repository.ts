@@ -779,6 +779,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          AND goal.canceled_at IS NULL AND goal.dismissed_at IS NULL AND goal.failed_at IS NULL
          AND goal.clarification_reason_code IS NULL
          AND synth.status = 'CONSUMED'
+         AND synth.failed_at IS NULL
          AND synth.updated_at <= ?
          AND NOT EXISTS (SELECT 1 FROM work_items w
                           WHERE w.input_id = rs.original_input_id
@@ -801,9 +802,20 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     return this.database.transaction((connection) => {
       const updated = connection.prepare(`UPDATE joi_inbox_messages
         SET status = 'PENDING', result_revision = ?, updated_at = ?
-        WHERE input_id = (SELECT synthetic_input_id FROM joi_goal_result_sets WHERE original_input_id = ?)
-          AND status = 'CONSUMED'`).run(
-        input.seed.resultRevision, input.now, input.seed.goalInputId,
+        WHERE input_id = (
+          SELECT rs.synthetic_input_id FROM joi_goal_result_sets rs
+          JOIN joi_inbox_messages goal ON goal.input_id = rs.original_input_id
+          WHERE rs.original_input_id = ? AND rs.revision = ? AND rs.synthesized_revision < rs.revision
+            AND goal.canceled_at IS NULL AND goal.dismissed_at IS NULL AND goal.failed_at IS NULL
+            AND goal.clarification_reason_code IS NULL
+            AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = rs.original_input_id
+              AND w.status NOT IN ('COMPLETED','FAILED','CANCELED'))
+            AND NOT EXISTS (SELECT 1 FROM joi_turns t JOIN joi_inbox_messages source ON source.input_id = t.input_id
+              WHERE COALESCE(source.goal_input_id, source.input_id) = rs.original_input_id AND t.status IN ('PENDING','RUNNING','WAITING'))
+            AND NOT EXISTS (SELECT 1 FROM joi_user_action_requests action
+              WHERE action.input_id = rs.original_input_id AND action.status = 'OPEN')
+        ) AND status = 'CONSUMED' AND failed_at IS NULL`).run(
+        input.seed.resultRevision, input.now, input.seed.goalInputId, input.seed.resultRevision,
       );
       return updated.changes === 1;
     });

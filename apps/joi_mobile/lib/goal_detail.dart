@@ -696,6 +696,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
               subtitle: Text(
                 executionStatusLabel(
                   status: agent['status'] as String? ?? 'UNKNOWN',
+                  resultAssessment: agent['resultAssessment'] as String?,
                   executionPhase: agent['executionPhase'] as String?,
                   waitReason: agent['waitReason'] as String?,
                 ),
@@ -743,6 +744,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
   String? _cursor;
   Object? _error;
   late String _status;
+  String? _resultAssessment;
   String? _executionPhase;
   String? _waitReason;
   bool _loading = false;
@@ -754,6 +756,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
   void initState() {
     super.initState();
     _status = widget.agent['status'] as String? ?? 'UNKNOWN';
+    _resultAssessment = widget.agent['resultAssessment'] as String?;
     _executionPhase = widget.agent['executionPhase'] as String?;
     _waitReason = widget.agent['waitReason'] as String?;
     WidgetsBinding.instance.addObserver(this);
@@ -793,6 +796,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
       final items = <Map<String, dynamic>>[];
       var pages = 0;
       var status = _status;
+      var resultAssessment = _resultAssessment;
       var executionPhase = _executionPhase;
       var waitReason = _waitReason;
       do {
@@ -810,6 +814,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
         final agent = page['agent'] as Map<String, dynamic>?;
         if (agent != null) {
           status = agent['status'] as String? ?? status;
+          resultAssessment = agent['resultAssessment'] as String?;
           executionPhase = agent['executionPhase'] as String?;
           waitReason = agent['waitReason'] as String?;
         }
@@ -822,6 +827,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
         }.values.toList();
         _cursor = cursor;
         _status = status;
+        _resultAssessment = resultAssessment;
         _executionPhase = executionPhase;
         _waitReason = waitReason;
         _error = null;
@@ -863,6 +869,7 @@ class _AgentRecordPageState extends State<AgentRecordPage>
           Text(
             executionStatusLabel(
               status: _status,
+              resultAssessment: _resultAssessment,
               executionPhase: _executionPhase,
               waitReason: _waitReason,
             ),

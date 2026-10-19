@@ -357,10 +357,16 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     }
     return this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
-      const result = connection.prepare(`UPDATE joi_inbox_messages
+      const result = connection.prepare(`UPDATE joi_inbox_messages AS i
         SET status = 'CONSUMED', canceled_at = NULL, failed_at = ?, failure_reason_code = ?,
           failure_count = ?, clarification_reason_code = NULL, clarification_prompt = NULL, updated_at = ?
-        WHERE input_id = ? AND status = 'PENDING'`).run(
+        WHERE input_id = ? AND canceled_at IS NULL AND dismissed_at IS NULL
+          AND (status = 'PENDING' OR (status = 'CONSUMED' AND failed_at IS NULL
+            AND input_id LIKE 'joi_result_input:%'
+            AND EXISTS (SELECT 1 FROM joi_goal_result_sets rs WHERE rs.synthetic_input_id = i.input_id
+              AND rs.revision = i.result_revision AND rs.synthesized_revision < rs.revision)
+            AND EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id AND t.status = 'FAILED')
+            AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = i.input_id AND t.status IN ('PENDING','RUNNING','WAITING'))))`).run(
         now, failure.reasonCode, failure.failureCount, now, inputId,
       );
       if (result.changes === 0) return null;
@@ -394,6 +400,29 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       if (activeExecution !== undefined) return null;
       const now = this.#clock.now().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
+      // An explicit continuation of a parked synthesis reuses the evidence instead of dispatching it again.
+      if (patch.text === undefined && current.canceledAt === undefined && current.failedAt === undefined
+        && current.clarificationReasonCode === undefined) {
+        const retried = connection.prepare(`UPDATE joi_inbox_messages AS synth SET status = 'PENDING',
+          failed_at = NULL, failure_reason_code = NULL, failure_count = NULL, updated_at = ?
+          WHERE input_id = (SELECT rs.synthetic_input_id FROM joi_goal_result_sets rs
+            WHERE rs.original_input_id = ? AND rs.revision > rs.synthesized_revision)
+            AND status = 'CONSUMED' AND failed_at IS NOT NULL
+            AND result_revision = (SELECT revision FROM joi_goal_result_sets WHERE original_input_id = ?)
+            AND ${goalRequirementsCurrentSql("synth.goal_input_id", "synth.requirements_revision")}
+            AND NOT EXISTS (SELECT 1 FROM joi_turns t JOIN joi_inbox_messages source ON source.input_id = t.input_id
+              WHERE COALESCE(source.goal_input_id,source.input_id) = ? AND t.status IN ('PENDING','RUNNING','WAITING'))
+            AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages child WHERE child.goal_input_id = ?
+              AND child.status IN ('PENDING','ROUTED','CLARIFICATION_REQUIRED'))
+            AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates gate WHERE gate.goal_input_id = ? AND gate.status <> 'OPEN')`)
+          .run(now, inputId, inputId, inputId, inputId, inputId);
+        if (retried.changes === 1) {
+          connection.prepare(`UPDATE joi_inbox_messages SET archived_at = NULL, updated_at = ?, last_opened_at = ?, reopened_at = ?
+            WHERE input_id = ?`).run(now, now, now, inputId);
+          const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row;
+          return mapRow(updated);
+        }
+      }
       if (patch.text !== undefined && connection.prepare("SELECT 1 FROM joi_goal_requirement_sources WHERE goal_input_id = ? LIMIT 1").get(inputId) === undefined) {
         appendGoalRequirementSource(connection, inputId, current.body, "LEGACY");
       }

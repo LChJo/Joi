@@ -18,6 +18,12 @@ const DEFAULT_MAX_CONSECUTIVE_FAILURES = 8;
 const DEFAULT_RETRY_BACKOFF_BASE_MILLIS = 30_000;
 const DEFAULT_RETRY_BACKOFF_MAX_MILLIS = 10 * 60_000;
 
+/** Repeating a synthesis cannot repair the protocol after its bounded in-turn correction. */
+const SYNTHESIS_PROTOCOL_FAILURES: ReadonlySet<string> = new Set([
+  "joi_turn_outcome_uncommitted", "joi_goal_synthesis_outcome_uncommitted", "joi_turn_completion_empty",
+  "joi_model_toolcall_leak", "custom_model_tool_capability_unverified",
+]);
+
 interface InFlightTurn {
   abortController: AbortController;
   cancelRequested: boolean;
@@ -116,7 +122,8 @@ export class JoiTaskComponent implements ActorComponent {
       // re-PEND and retry every tick forever. After N consecutive failures the input is
       // parked as an explicit system failure; user cancellation remains a separate fact.
       const failures = (this.#failures.get(turn.inputId) ?? 0) + 1;
-      if (failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
+      const synthesisProtocolFailed = turn.inputId.startsWith("joi_result_input:") && SYNTHESIS_PROTOCOL_FAILURES.has(errorCode ?? "");
+      if (synthesisProtocolFailed || failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
         this.#failures.delete(turn.inputId);
         this.#backoffUntil.delete(turn.inputId);
         await this.dependencies.inbox.park(turn.inputId, {

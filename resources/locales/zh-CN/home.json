@@ -401,5 +401,6 @@
   "routeDetails": "路线图详情",
   "routeLoaded": "已加载 {loaded} / 共 {total} 项",
   "routeRelatedNotLoaded": "关联内容尚未加载，请加载更多后查看。",
-  "routeLoading": "正在加载路线详情…"
+  "routeLoading": "正在加载路线详情…",
+  "insufficient": "不充分"
 }

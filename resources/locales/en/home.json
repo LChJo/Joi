@@ -2160,5 +2160,9 @@
     "message": "Loading route map details…",
     "description": "Goal details: Loading route map details…",
     "sourceText": "正在加载路线详情…"
+  },
+  "insufficient": {
+    "message": "Insufficient",
+    "description": "home.insufficient"
   }
 }
