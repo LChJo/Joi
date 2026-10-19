@@ -22,6 +22,7 @@ import { randomUuid } from "./random-uuid";
 import { connectDesktopLocale, localeVersion, t, errorNotice, translateNotice } from "./i18n";
 import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
+import type { JoiGoalDetailDto, JoiGoalDetailPage } from "../shared/joi";
 
 export class ApiError extends Error {
   get userMessage() { return errorNotice(this.code, this.message); }
@@ -117,6 +118,10 @@ export class DigitalLifeApi {
     return this.request<WorkbenchWorkspaceDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/workspace/bind`, { method: "POST" });
   }
   joiHomeFeed() { return this.request<JoiHomeFeedDto>("/api/v1/joi/home-feed"); }
+  joiGoalDetail(goalId: string, page: JoiGoalDetailPage = {}) {
+    const query = new URLSearchParams({ offset: String(page.offset ?? 0), limit: String(page.limit ?? 50) });
+    return this.request<JoiGoalDetailDto>(`/api/v1/joi/goals/${encodeURIComponent(goalId)}/detail?${query.toString()}`);
+  }
   listWorkbenchAgents(workbenchId: string, options: { cursor?: string; goalId?: string; limit?: number } = {}) {
     const query = [
       ...(options.cursor === undefined ? [] : [`cursor=${encodeURIComponent(options.cursor)}`]),

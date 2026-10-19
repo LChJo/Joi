@@ -2,6 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import { parentPort, type MessagePort, workerData } from "node:worker_threads";
 import { WorkerRpc } from "../runtime/worker-rpc.js";
 import { SqliteJoiHomeFeedRepository } from "./sqlite-joi-home-feed-repository.js";
+import type { JoiGoalDetailPage } from "../../../shared/joi.js";
 
 const input = workerData as { databasePath: string; port: MessagePort };
 const connection = new DatabaseSync(input.databasePath, { readOnly: true });
@@ -17,6 +18,10 @@ const repository = new SqliteJoiHomeFeedRepository({
 let closed = false;
 const peer = new WorkerRpc(input.port, {
   load: (now) => repository.load(now as Date),
+  loadGoalDetail: (argument) => {
+    const request = argument as { goalId: string; page: JoiGoalDetailPage };
+    return repository.loadGoalDetail(request.goalId, request.page);
+  },
   close: () => {
     if (!closed) { closed = true; connection.close(); }
     setImmediate(() => { peer.close(); parentPort?.close(); });

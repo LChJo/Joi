@@ -1,5 +1,7 @@
 # 路线图与验收
 
+2026-10-19 目标详情增量映射 AC-37/AC-44/AC-48：标题悬停、键盘聚焦及点击展示首条目标的完整安全文本，右键或键盘菜单复制同一内容并反馈失败；超过 120 字符的末尾要求必须可读可复制。详情提供完整分层 Wayfinder 路线图，按稳定 ID 保留同名路径，分别展示路径状态与 Work 状态，能够查看决策与雾区晋升关系；超过五条路径及多层历史必须分页可达。首页只保留轻量摘要，按目标详情在只读 Worker 中以 WAL 快照读取，所有关联查询限定同一目标。轮询保留当前选中、展开及最后成功数据，异步迟到响应不得覆盖另一目标。覆盖 `joi-goal-detail.test.ts`、`joi-goal-detail-http.test.ts`、`goal-detail-presentation.test.tsx`、`goal-detail-loading.test.tsx`、`runtime-workers.test.ts` 和 Electron 真实窗口验证。
+
 2026-10-15 全客户端国际化映射 AC-I18N-01 至 AC-I18N-06，见 [ADR 0030](adr/0030-interface-internationalization.md) 与[国际化验收](20-internationalization.md)：中英语言资源统一维护并生成 React/Electron 与 Flutter 适配，默认跟随系统、中文匹配简体中文、其他语言回退英文；各端独立持久化并即时切换。切换不刷新页面、不丢失草稿或连接、不改变任务内容或触发 LAN/任务副作用。语言维护工具须检查覆盖率、ICU 参数、代码引用及生成资源一致性；发布前执行固定质量门禁、Flutter 检查和双语视觉复核。
 
 2026-10-13 周期卡顿修复映射 AC-PERF-01（[ADR 0029](adr/0029-desktop-runtime-workers.md)）：完成/销毁的历史 Agent 会话仍可查看，但不保留空调度 Actor；存活实例、待派发/恢复及内存执行收尾继续调度。33 个目标、820 条输入、4,363 个回合和 812 个会话规模下，首页最新回合与 Agent 计数按目标索引查找，不能逐卡扫描全部回合/会话。SQLite 写入与唯一根循环在运行时 Worker；首页投影在独立只读 Worker 的 WAL 快照中读取。窗口主线程保持响应，Work/outbox 和版本/幂等检查维持原子性；线程崩溃拒绝等待者，正常退出等待在途遍历并关闭数据库。所有测试使用隔离存储与凭据替身。

@@ -1,6 +1,6 @@
 import { MessageChannel, Worker } from "node:worker_threads";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
-import type { JoiHomeFeedDto } from "../../../shared/joi.js";
+import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiHomeFeedDto } from "../../../shared/joi.js";
 import { WorkerRpc } from "../runtime/worker-rpc.js";
 
 export class WorkerHomeFeedRepository implements JoiHomeFeedRepository {
@@ -17,6 +17,10 @@ export class WorkerHomeFeedRepository implements JoiHomeFeedRepository {
   }
 
   load(now: Date): Promise<JoiHomeFeedDto> { return this.#rpc.call("load", now); }
+
+  loadGoalDetail(goalId: string, page: JoiGoalDetailPage): Promise<JoiGoalDetailDto | null> {
+    return this.#rpc.call("loadGoalDetail", { goalId, page });
+  }
 
   close(): Promise<void> {
     this.#closePromise ??= (async () => {

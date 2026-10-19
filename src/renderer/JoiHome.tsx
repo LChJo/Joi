@@ -2,6 +2,8 @@ import { localizeProductText, currentLocale, noticeMessage, t, useI18n, useNotic
 import { WorkbenchChoiceDialog, WorkbenchChoiceForm } from "./WorkbenchChoiceDialog.js";
 import { needsWorkbenchChoice } from "../shared/workbench-choice.js";
 import { ResultExportMenu } from './ResultExportMenu';
+import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
+import { useGoalDetail } from "./useGoalDetail.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ClockIcon, DotsThreeIcon, XIcon } from "@phosphor-icons/react";
@@ -1390,6 +1392,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   onRetried: (goal: JoiGoalCardDto) => void;
 }) {
   useI18n();
+  const detailState = useGoalDetail(api, goal.goalId);
   const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [notice, setNotice] = useNotice();
@@ -1424,7 +1427,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
       <header className="joi-goal-detail-header">
         <div className="joi-goal-detail-title">
           <p className="eyebrow">{goal.workbench.name}</p>
-          <h1>{goal.title}</h1>
+          <GoalTitle title={goal.title} {...(detailState.detail === undefined ? {} : { fullTitle: detailState.detail.fullTitle })} />
           <span className="joi-goal-detail-meta"><GoalStatusBadge status={goal.status} /><GoalProgress goal={goal} /></span>
         </div>
         <div className="joi-goal-detail-actions">
@@ -1433,7 +1436,9 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         </div>
       </header>
       <div className="joi-goal-drawer-body">
-        {goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
+        {detailState.detail?.harness !== undefined ? <GoalMap harness={detailState.detail.harness} /> : goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
+        {detailState.failed ? <p className="joi-detail-load-notice" role="alert">{t("home.goalDetailLoadFailed")} <button className="button ghost" disabled={detailState.busy} onClick={detailState.retry} type="button">{t("common.retry")}</button></p> : null}
+        {detailState.detail?.nextOffset === undefined ? null : <button className="button ghost joi-route-load-more" disabled={detailState.busy} onClick={detailState.loadMore} type="button">{t("home.routeLoadMore")}</button>}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
@@ -1717,7 +1722,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
       <div><strong>{change.kind === "MERGE" ? t("home.joiSuggestsMergingWorkbenches") : t("home.joiSuggestsArchivingAWorkbench")}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceWorkbenchId} → ${change.targetWorkbenchId ?? ""}` : change.sourceWorkbenchId}</small></div>
       <div className="row-actions"><button className="button ghost" onClick={() => void api.decideWorkbenchChange(change.requestId, "REJECT").then(refresh)} type="button">{t("home.keepAsIs")}</button><button className="button danger-text" onClick={() => void api.decideWorkbenchChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? t("home.confirmMerge") : t("home.confirmArchive")}</button></div>
     </article>)}</section>}
-    {openGoal === undefined ? null : <GoalDetail api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} {...(openGoalAgentStatus === undefined ? {} : { initialAgentStatus: openGoalAgentStatus })} onBack={() => { setOpenGoalId(null); setOpenGoalAgentStatus(undefined); }} onResolved={() => void refresh().catch(() => undefined)} onRetried={markRetryStarted} />}
+    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} {...(openGoalAgentStatus === undefined ? {} : { initialAgentStatus: openGoalAgentStatus })} onBack={() => { setOpenGoalId(null); setOpenGoalAgentStatus(undefined); }} onResolved={() => void refresh().catch(() => undefined)} onRetried={markRetryStarted} />}
     {resultGoal?.completionSummary === undefined ? null : <GoalResultView api={api} goal={resultGoal} onBack={() => setResultGoal(null)} onOpenDetail={(preferredStatus) => { setResultGoal(null); setOpenGoalAgentStatus(preferredStatus); setOpenGoalId(resultGoal.goalId); }} onRetried={(retriedGoal) => { setResultGoal(null); markRetryStarted(retriedGoal); }} />}
     <div aria-label={t("home.joiActivityFeed")} className="joi-feed joi-feed-single">
       {visibleThinking.map((item) => <ThinkingRow item={item} key={item.turnId} />)}
@@ -1835,7 +1840,7 @@ export function ArchivedGoals({ api, onContinued }: { api: DigitalLifeApi; onCon
   const openGoal = archived.find((goal) => goal.goalId === openGoalId);
   return <section className="joi-home" aria-labelledby="joi-archived-title">
     <header><h1 id="joi-archived-title">{t("common.archived")}</h1><p>{t("home.archivingHidesACardFromTheHomePageUnarchive")}</p></header>
-    {openGoal === undefined ? null : <GoalDetail api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} onBack={() => setOpenGoalId(null)} onResolved={refresh} onRetried={(goal) => onContinued?.(goal.goalId)} />}
+    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} onBack={() => setOpenGoalId(null)} onResolved={refresh} onRetried={(goal) => onContinued?.(goal.goalId)} />}
     <div aria-label={t("home.archivedGoals")} className="joi-feed joi-feed-single">
       {archived.length === 0 ? <p className="joi-feed-empty">{t("home.noArchivedGoalsYetChooseArchiveFromACard")}</p> : archived.map((goal) => <article className={`joi-goal-card archived ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">

@@ -67,6 +67,21 @@ export const JOI_READ_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "read",
+    id: "GET /api/v1/joi/goals/:goalId/detail",
+    match: pattern("GET", /^\/api\/v1\/joi\/goals\/([^/]+)\/detail$/),
+    handle: async (ctx, match) => {
+      const service = joiHomeFeedService(ctx.dependencies);
+      if (service.loadGoalDetail === undefined) throw new HttpError("joi_home_feed_unavailable", "Goal detail is unavailable.", 503);
+      const result = await service.loadGoalDetail(decodeURIComponent((match as RegExpExecArray)[1] ?? ""), {
+        offset: Number(ctx.url.searchParams.get("offset") ?? "0"),
+        limit: Number(ctx.url.searchParams.get("limit") ?? "50"),
+      });
+      if (result === null) throw new HttpError("goal_not_found", "Goal was not found.", 404);
+      sendJson(ctx.response, 200, result);
+    },
+  },
+  {
+    auth: "read",
     id: "GET /api/v1/work",
     match: exact("GET", "/api/v1/work"),
     handle: async (ctx) => {

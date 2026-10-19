@@ -350,6 +350,53 @@ export interface JoiGoalHarnessDto {
   topPaths: { pathId: string; status: "CLOSED" | "OPEN" | "OUT_OF_SCOPE"; title: string }[];
 }
 
+export interface JoiGoalMapPathDto {
+  pathId: string;
+  layer: number;
+  title: string;
+  status: "CLOSED" | "OPEN" | "OUT_OF_SCOPE";
+  workId?: string;
+  workStatus?: "PLANNED" | "READY" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "CANCELED";
+  resolvedDecisionId?: string;
+}
+
+export interface JoiGoalMapDetailDto {
+  destination?: string;
+  mapStatus: "ACTIVE" | "CLEARED";
+  revision: number;
+  currentLayer: number;
+  pathCount: number;
+  decisionCount: number;
+  fogCount: number;
+  paths: JoiGoalMapPathDto[];
+  decisions: {
+    decisionId: string;
+    kind: "APPROACH" | "SCOPE" | "OUT_OF_SCOPE" | "WORKBENCH_REFINE";
+    summary: string;
+    detail: string;
+    createdAt: string;
+  }[];
+  fog: {
+    fogId: string;
+    note: string;
+    status: "ACTIVE" | "GRADUATED";
+    graduatedPathId?: string;
+  }[];
+}
+
+/** Each map collection is paged with the same offset and limit, independently of the feed. */
+export interface JoiGoalDetailDto {
+  goalId: string;
+  fullTitle: string;
+  harness?: JoiGoalMapDetailDto;
+  nextOffset?: number;
+}
+
+export interface JoiGoalDetailPage {
+  offset?: number;
+  limit?: number;
+}
+
 export interface JoiGoalWorkDto {
   executing?: number;
   resourceWaiting?: number;

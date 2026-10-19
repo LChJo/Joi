@@ -308,6 +308,58 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     const goalStream = window.getByRole("log", { name: "Agent 执行记录" });
     await expect(goalStream.getByText("执行记录 126", { exact: true })).toBeInViewport();
     await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-stream-latest.png") });
+    const fullGoalTitle = `${"完整目标阅读与复制。".repeat(160)}最后一条要求`;
+    await window.route("**/api/v1/joi/goals/stream-goal/detail?*", route => route.fulfill({ json: {
+      goalId: "stream-goal", fullTitle: fullGoalTitle,
+      harness: {
+        destination: "交付中英文 README，确保事实可追溯、图片引用有效。", mapStatus: "ACTIVE", revision: 3, currentLayer: 3,
+        pathCount: 7, decisionCount: 1, fogCount: 2,
+        paths: Array.from({ length: 7 }, (_, index) => ({ pathId: `map-path-${String(index)}`, layer: index < 3 ? 1 : index < 6 ? 2 : 3,
+          title: ["源码核实", "配图资产", "整理术语", "中文文档", "英文文档", "图片验收", "独立复核"][index],
+          status: "CLOSED", workStatus: index === 6 ? "FAILED" : "COMPLETED", ...(index === 6 ? { resolvedDecisionId: "decision" } : {}) })),
+        decisions: [{ decisionId: "decision", kind: "APPROACH", summary: "以源码证据为准", detail: "复核异常需要单独展示，不能把路径关闭当作任务成功。", createdAt: agent.createdAt }],
+        fog: [{ fogId: "active", note: "真实运行截图是否可行", status: "ACTIVE" }, { fogId: "promoted", note: "补齐配图资产", status: "GRADUATED", graduatedPathId: "map-path-1" }],
+      },
+    } }));
+    const map = window.getByRole("region", { name: "目标路线图" });
+    await expect(map).toBeVisible();
+    await window.locator(".joi-goal-drawer-body").evaluate(element => { element.scrollTop = 0; });
+    const title = window.getByRole("button", { name: "长任务执行记录", exact: true });
+    await title.hover();
+    const tooltip = window.getByRole("tooltip");
+    await expect(tooltip).toContainText("最后一条要求");
+    expect(await tooltip.evaluate(element => element.scrollHeight > element.clientHeight)).toBe(true);
+    await tooltip.hover();
+    await expect(tooltip).toBeVisible();
+    await title.click({ button: "right" });
+    await window.getByRole("menuitem", { name: "复制全文" }).press("Escape");
+    await expect(window.getByRole("dialog")).toBeVisible();
+    await window.evaluate(() => {
+      Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (text: string) => { Reflect.set(window, "testCopiedGoalTitle", text); return Promise.resolve(); } } });
+    });
+    await title.click({ button: "right" });
+    await window.getByRole("menuitem", { name: "复制全文" }).click();
+    await expect(window.getByText("已复制全文", { exact: true })).toBeVisible();
+    expect(await window.evaluate(() => Reflect.get(window, "testCopiedGoalTitle") as string)).toBe(fullGoalTitle);
+    const failedPath = map.getByRole("button", { name: /独立复核/u });
+    await failedPath.click();
+    await expect(failedPath).toContainText("已关闭");
+    await expect(failedPath).toContainText("任务失败");
+    await expect(map.getByRole("region", { name: "路径详情" })).toContainText("复核异常需要单独展示");
+    await map.getByRole("button", { name: /雾区/u }).click();
+    await map.getByRole("button", { name: "查看晋升路径" }).click();
+    await expect(map.getByRole("button", { name: /配图资产/u })).toHaveAttribute("aria-pressed", "true");
+    await expectNoHorizontalOverflow(window);
+    await window.locator(".joi-goal-drawer-body").evaluate(element => { element.scrollTop = 0; });
+    await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-route-map.png") });
+    await window.setViewportSize({ height: 900, width: 480 });
+    const historicalNodes = map.locator(".joi-route-layer").first().locator(".joi-route-nodes");
+    expect(await historicalNodes.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
+    const narrowMap = await map.evaluate(element => ({ right: element.getBoundingClientRect().right, client: element.clientWidth, scroll: element.scrollWidth }));
+    expect(narrowMap.right).toBeLessThanOrEqual(480);
+    expect(narrowMap.scroll).toBeLessThanOrEqual(narrowMap.client);
+    await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-route-map-480.png") });
+    await window.setViewportSize({ height: 900, width: 768 });
     await window.getByRole("button", { name: "关闭", exact: true }).click();
     await window.getByRole("button", { exact: true, name: "工作台" }).click();
     await window.getByRole("button", { name: "打开工作台 栖光" }).click();

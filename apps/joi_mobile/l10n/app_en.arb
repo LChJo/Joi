@@ -3966,6 +3966,189 @@
     "description": "home: No archived goals yet. Choose Archive from a card menu on the home page to move it here.",
     "placeholders": {}
   },
+  "homeGoalTitleActions": "Goal title actions",
+  "@homeGoalTitleActions": {
+    "description": "Goal detail: Goal title actions",
+    "placeholders": {}
+  },
+  "homeFullTitleNotLoaded": "The full title has not loaded yet.",
+  "@homeFullTitleNotLoaded": {
+    "description": "Goal detail: The full title has not loaded yet.",
+    "placeholders": {}
+  },
+  "homeTitleCopyFailed": "Copy failed. Select the full text to copy manually.",
+  "@homeTitleCopyFailed": {
+    "description": "Goal detail: Copy failed. Select the full text to copy manually.",
+    "placeholders": {}
+  },
+  "homeGoalRouteMap": "Goal route map",
+  "@homeGoalRouteMap": {
+    "description": "Goal detail: Goal route map",
+    "placeholders": {}
+  },
+  "homeRouteMapCleared": "Map cleared",
+  "@homeRouteMapCleared": {
+    "description": "Goal detail: Map cleared",
+    "placeholders": {}
+  },
+  "homeRouteMapActive": "In progress",
+  "@homeRouteMapActive": {
+    "description": "Goal detail: In progress",
+    "placeholders": {}
+  },
+  "homeRouteDestination": "Destination",
+  "@homeRouteDestination": {
+    "description": "Goal detail: Destination",
+    "placeholders": {}
+  },
+  "homeRouteMapCounts": "{paths} paths · {decisions} decisions · {fog} unknowns",
+  "@homeRouteMapCounts": {
+    "description": "Goal detail: paths, decisions and unknowns",
+    "placeholders": {
+      "paths": {
+        "type": "String"
+      },
+      "decisions": {
+        "type": "String"
+      },
+      "fog": {
+        "type": "String"
+      }
+    }
+  },
+  "homeRouteMapEmpty": "No paths have been charted yet.",
+  "@homeRouteMapEmpty": {
+    "description": "Goal detail: No paths have been charted yet.",
+    "placeholders": {}
+  },
+  "homeRouteLayer": "Layer {layer}",
+  "@homeRouteLayer": {
+    "description": "Goal detail: Layer {layer}",
+    "placeholders": {
+      "layer": {
+        "type": "String"
+      }
+    }
+  },
+  "homeRouteLatestLayer": "Latest layer",
+  "@homeRouteLatestLayer": {
+    "description": "Goal detail: Latest layer",
+    "placeholders": {}
+  },
+  "homeMapPathOpen": "Open",
+  "@homeMapPathOpen": {
+    "description": "Goal detail: Open",
+    "placeholders": {}
+  },
+  "homeMapPathClosed": "Closed",
+  "@homeMapPathClosed": {
+    "description": "Goal detail: Closed",
+    "placeholders": {}
+  },
+  "homeMapPathOutOfScope": "Out of scope",
+  "@homeMapPathOutOfScope": {
+    "description": "Goal detail: Out of scope",
+    "placeholders": {}
+  },
+  "homeMapWorkPlanned": "Task planned",
+  "@homeMapWorkPlanned": {
+    "description": "Goal detail: Task planned",
+    "placeholders": {}
+  },
+  "homeMapWorkReady": "Task queued",
+  "@homeMapWorkReady": {
+    "description": "Goal detail: Task queued",
+    "placeholders": {}
+  },
+  "homeMapWorkRunning": "Task running",
+  "@homeMapWorkRunning": {
+    "description": "Goal detail: Task running",
+    "placeholders": {}
+  },
+  "homeMapWorkWaiting": "Task waiting",
+  "@homeMapWorkWaiting": {
+    "description": "Goal detail: Task waiting",
+    "placeholders": {}
+  },
+  "homeMapWorkCompleted": "Task completed",
+  "@homeMapWorkCompleted": {
+    "description": "Goal detail: Task completed",
+    "placeholders": {}
+  },
+  "homeMapWorkFailed": "Task failed",
+  "@homeMapWorkFailed": {
+    "description": "Goal detail: Task failed",
+    "placeholders": {}
+  },
+  "homeMapWorkCanceled": "Task canceled",
+  "@homeMapWorkCanceled": {
+    "description": "Goal detail: Task canceled",
+    "placeholders": {}
+  },
+  "homeRoutePathDetails": "Path details",
+  "@homeRoutePathDetails": {
+    "description": "Goal detail: Path details",
+    "placeholders": {}
+  },
+  "homeRoutePromotedFromFog": "Exploring an earlier unknown: {note}",
+  "@homeRoutePromotedFromFog": {
+    "description": "Goal detail: Exploring an earlier unknown: {note}",
+    "placeholders": {
+      "note": {
+        "type": "String"
+      }
+    }
+  },
+  "homeRouteNotes": "Decisions and unknowns",
+  "@homeRouteNotes": {
+    "description": "Goal detail: Decisions and unknowns",
+    "placeholders": {}
+  },
+  "homeRouteDecisions": "Decisions",
+  "@homeRouteDecisions": {
+    "description": "Goal detail: Decisions",
+    "placeholders": {}
+  },
+  "homeRouteFog": "Unknowns",
+  "@homeRouteFog": {
+    "description": "Goal detail: Unknowns",
+    "placeholders": {}
+  },
+  "homeRouteNoDecisions": "No decisions recorded yet.",
+  "@homeRouteNoDecisions": {
+    "description": "Goal detail: No decisions recorded yet.",
+    "placeholders": {}
+  },
+  "homeRouteNoFog": "No unknowns recorded.",
+  "@homeRouteNoFog": {
+    "description": "Goal detail: No unknowns recorded.",
+    "placeholders": {}
+  },
+  "homeRouteFogActive": "Unresolved",
+  "@homeRouteFogActive": {
+    "description": "Goal detail: Unresolved",
+    "placeholders": {}
+  },
+  "homeRouteFogGraduated": "Promoted to a path",
+  "@homeRouteFogGraduated": {
+    "description": "Goal detail: Promoted to a path",
+    "placeholders": {}
+  },
+  "homeRouteViewPromotedPath": "View promoted path",
+  "@homeRouteViewPromotedPath": {
+    "description": "Goal detail: View promoted path",
+    "placeholders": {}
+  },
+  "homeGoalDetailLoadFailed": "Could not refresh goal details. Previously loaded content is retained.",
+  "@homeGoalDetailLoadFailed": {
+    "description": "Goal detail: Could not refresh goal details. Previously loaded content is retained.",
+    "placeholders": {}
+  },
+  "homeRouteLoadMore": "Load more paths, decisions and unknowns",
+  "@homeRouteLoadMore": {
+    "description": "Goal detail: Load more paths, decisions and unknowns",
+    "placeholders": {}
+  },
   "mobileBringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
   "@mobileBringTheJoiRunningOnYourComputerToYour": {
     "description": "Bring the joi running on your computer to your phone",

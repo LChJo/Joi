@@ -209,6 +209,74 @@
 .joi-goal-detail-actions button:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; }
 .joi-goal-detail-actions svg { flex-shrink: 0; }
 .joi-goal-detail-meta { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.joi-full-title { position: relative; min-width: 0; }
+.joi-full-title-trigger { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; width: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit; text-align: left; cursor: context-menu; overflow-wrap: anywhere; }
+.joi-full-title-trigger:focus-visible { outline: 2px solid var(--forest); outline-offset: 4px; border-radius: 4px; }
+.joi-full-title-preview, .joi-title-menu { position: absolute; top: calc(100% + 8px); left: 0; z-index: 60; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--paper); box-shadow: var(--shadow-card); }
+.joi-full-title-preview { width: min(760px, 78vw); max-height: min(420px, 55dvh); overflow: auto; padding: 16px; color: var(--ink); font-size: .88rem; font-weight: 400; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.joi-title-menu { display: grid; gap: 6px; min-width: 180px; max-width: 75vw; padding: 6px; }
+.joi-title-menu button { display: flex; align-items: center; gap: 8px; min-height: 38px; border: 0; border-radius: 7px; padding: 7px 10px; background: transparent; color: var(--ink); font: inherit; font-size: .86rem; text-align: left; cursor: pointer; }
+.joi-title-menu button:hover, .joi-title-menu button:focus-visible { background: var(--wash); outline: 2px solid var(--forest); outline-offset: -2px; }
+.joi-title-menu button:disabled { color: var(--muted); cursor: default; }
+.joi-title-menu small { max-width: 240px; padding: 0 10px 6px; color: var(--muted); font-size: .75rem; }
+.joi-title-notice { margin: 5px 0 0; font-size: .75rem; color: var(--forest); }
+.joi-title-notice.failed { color: var(--red); }
+.joi-route-map { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 16px; background: var(--paper); }
+.joi-route-map-heading { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px; }
+.joi-route-map-heading h2 { display: flex; align-items: center; gap: 9px; margin: 0; font-size: .92rem; font-weight: 600; }
+.joi-route-map-status { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: .75rem; }
+.joi-route-map-status.cleared { color: var(--forest); }
+.joi-route-map svg { flex-shrink: 0; width: 16px; height: 16px; }
+.joi-route-destination { margin-top: 18px; padding-left: 14px; border-left: 3px solid var(--forest); }
+.joi-route-destination small { color: var(--muted); font-size: .73rem; }
+.joi-route-destination p { margin: 5px 0 0; color: var(--ink); font-size: .92rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.joi-route-counts { margin: 12px 0 18px; color: var(--muted); font-size: .75rem; }
+.joi-route-layers { position: relative; display: grid; gap: 20px; }
+.joi-route-layers::before { content: ""; position: absolute; top: 16px; bottom: 16px; left: 15px; width: 2px; background: color-mix(in srgb, var(--forest) 28%, var(--line)); }
+.joi-route-layer { position: relative; min-width: 0; }
+.joi-route-layer > summary { position: relative; display: flex; align-items: center; gap: 10px; min-height: 32px; list-style: none; cursor: pointer; border-radius: 6px; }
+.joi-route-layer > summary::-webkit-details-marker { display: none; }
+.joi-route-layer > summary::after { content: "+"; margin-left: auto; color: var(--muted); }
+.joi-route-layer[open] > summary::after { content: "−"; }
+.joi-route-layer > summary strong { font-size: .8rem; font-weight: 600; }
+.joi-route-layer > summary small { color: var(--forest); font-size: .7rem; }
+.joi-route-layer-number { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid color-mix(in srgb, var(--forest) 40%, var(--line)); border-radius: 50%; background: var(--paper); color: var(--forest); font-size: .78rem; font-variant-numeric: tabular-nums; }
+.joi-route-nodes { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr)); gap: 10px; margin: 16px 0 2px 42px; }
+.joi-route-nodes::before { content: ""; position: absolute; left: -26px; top: 22px; width: 26px; height: 1px; background: color-mix(in srgb, var(--forest) 28%, var(--line)); }
+.joi-route-node { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 9px; padding: 13px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.joi-route-node.open { border-color: color-mix(in srgb, var(--forest) 52%, var(--line)); background: color-mix(in srgb, var(--forest) 4%, var(--paper)); }
+.joi-route-node:hover { background: var(--wash); }
+.joi-route-node[aria-pressed="true"] { outline: 2px solid var(--forest); outline-offset: 1px; }
+.joi-route-node:focus-visible, .joi-route-layer > summary:focus-visible, .joi-route-tabs button:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; }
+.joi-route-node strong { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; font-size: .82rem; font-weight: 500; line-height: 1.5; overflow-wrap: anywhere; }
+.joi-route-node.out_of_scope strong { color: var(--muted); text-decoration: line-through; }
+.joi-route-node-state, .joi-route-work-status { display: inline-flex; align-items: center; gap: 5px; color: var(--muted); font-size: .71rem; }
+.joi-route-node.open .joi-route-node-state, .joi-route-work-status.running, .joi-route-work-status.completed { color: var(--forest); }
+.joi-route-work-status.failed { color: var(--red); }
+.joi-route-path-detail { margin: 18px 0 0 42px; padding: 14px 16px; border-left: 2px solid var(--forest); background: var(--wash); border-radius: 0 8px 8px 0; font-size: .83rem; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.joi-route-path-detail h3 { margin: 0 0 6px; font-size: .87rem; font-weight: 600; }
+.joi-route-path-detail p { margin: 6px 0; }
+.joi-route-notes { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--line); }
+.joi-route-tabs { display: flex; gap: 16px; }
+.joi-route-tabs button { display: inline-flex; align-items: center; gap: 7px; padding: 6px 0 9px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-size: .8rem; cursor: pointer; }
+.joi-route-tabs button[aria-pressed="true"] { border-bottom-color: var(--forest); color: var(--forest); }
+.joi-route-tabs button span { font-size: .72rem; font-variant-numeric: tabular-nums; }
+.joi-route-note-list { margin-top: 10px; display: grid; gap: 10px; font-size: .81rem; color: var(--muted); }
+.joi-route-note-list p { margin: 4px 0; white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.6; }
+.joi-route-note-list summary { cursor: pointer; color: var(--ink); overflow-wrap: anywhere; }
+.joi-route-fog { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.joi-route-fog p { flex: 1 0 100%; }
+.joi-route-fog small { font-size: .72rem; }
+.joi-route-fog .button { font-size: .73rem; min-height: 30px; padding: 3px 8px; gap: 4px; }
+.joi-detail-load-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; color: var(--muted); font-size: .8rem; }
+.joi-route-load-more { justify-self: center; }
+@media (max-width: 640px) {
+  .joi-route-map { padding: 14px; }
+  .joi-route-nodes { grid-template-columns: minmax(0, 1fr); margin-left: 34px; }
+  .joi-route-nodes::before { left: -18px; width: 18px; }
+  .joi-route-path-detail { margin-left: 0; }
+  .joi-full-title-preview { width: 77vw; }
+}
 .joi-goal-result { padding: 14px 16px; border: 1px solid color-mix(in srgb, var(--forest) 30%, var(--line)); border-radius: 16px; background: color-mix(in srgb, var(--forest) 6%, var(--paper)); }
 .joi-goal-result h2 { margin: 0 0 6px; font-size: .9rem; }
 .joi-goal-result .joi-md { color: var(--ink); }

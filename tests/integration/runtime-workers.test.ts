@@ -32,8 +32,10 @@ describe("runtime Workers (AC-PERF-01)", () => {
       writer.prepare("INSERT INTO joi_inbox_messages(input_id,idempotency_key,body,status,created_at,updated_at) VALUES ('goal','goal','synthetic','PENDING',?,?)")
         .run("2026-10-13T00:00:00.000Z", "2026-10-13T00:00:00.000Z");
       expect((await reader.load(new Date())).goals).toHaveLength(0);
+      expect(await reader.loadGoalDetail("goal", {})).toBeNull();
       writer.exec("COMMIT");
       expect((await reader.load(new Date())).goals).toHaveLength(1);
+      expect(await reader.loadGoalDetail("goal", {})).toEqual({ goalId: "goal", fullTitle: "synthetic" });
       const pending = reader.load(new Date());
       await reader.close();
       await expect(pending).resolves.toMatchObject({ goals: [expect.objectContaining({ goalId: "goal" })] });

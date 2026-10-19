@@ -1937,5 +1937,181 @@
     "message": "No archived goals yet. Choose Archive from a card menu on the home page to move it here.",
     "description": "home: No archived goals yet. Choose Archive from a card menu on the home page to move it here.",
     "sourceText": "还没有归档的目标。在首页的卡片菜单里选「归档」，它就会收到这里。"
+  },
+  "goalTitleActions": {
+    "message": "Goal title actions",
+    "description": "Goal detail: Goal title actions",
+    "sourceText": "目标标题操作"
+  },
+  "fullTitleNotLoaded": {
+    "message": "The full title has not loaded yet.",
+    "description": "Goal detail: The full title has not loaded yet.",
+    "sourceText": "全文尚未加载，请稍后重试。"
+  },
+  "titleCopyFailed": {
+    "message": "Copy failed. Select the full text to copy manually.",
+    "description": "Goal detail: Copy failed. Select the full text to copy manually.",
+    "sourceText": "复制失败，请选中全文手动复制。"
+  },
+  "goalRouteMap": {
+    "message": "Goal route map",
+    "description": "Goal detail: Goal route map",
+    "sourceText": "目标路线图"
+  },
+  "routeMapCleared": {
+    "message": "Map cleared",
+    "description": "Goal detail: Map cleared",
+    "sourceText": "地图已收官"
+  },
+  "routeMapActive": {
+    "message": "In progress",
+    "description": "Goal detail: In progress",
+    "sourceText": "推进中"
+  },
+  "routeDestination": {
+    "message": "Destination",
+    "description": "Goal detail: Destination",
+    "sourceText": "目的地"
+  },
+  "routeMapCounts": {
+    "message": "{paths} paths · {decisions} decisions · {fog} unknowns",
+    "description": "Goal detail: paths, decisions and unknowns",
+    "sourceText": "{paths} 条路径 · {decisions} 项决策 · {fog} 项雾区",
+    "placeholders": {
+      "paths": "string",
+      "decisions": "string",
+      "fog": "string"
+    }
+  },
+  "routeMapEmpty": {
+    "message": "No paths have been charted yet.",
+    "description": "Goal detail: No paths have been charted yet.",
+    "sourceText": "尚未建立路径。"
+  },
+  "routeLayer": {
+    "message": "Layer {layer}",
+    "description": "Goal detail: Layer {layer}",
+    "sourceText": "第 {layer} 层",
+    "placeholders": {
+      "layer": "string"
+    }
+  },
+  "routeLatestLayer": {
+    "message": "Latest layer",
+    "description": "Goal detail: Latest layer",
+    "sourceText": "最新层"
+  },
+  "mapPathOpen": {
+    "message": "Open",
+    "description": "Goal detail: Open",
+    "sourceText": "开放中"
+  },
+  "mapPathClosed": {
+    "message": "Closed",
+    "description": "Goal detail: Closed",
+    "sourceText": "已关闭"
+  },
+  "mapPathOutOfScope": {
+    "message": "Out of scope",
+    "description": "Goal detail: Out of scope",
+    "sourceText": "范围外"
+  },
+  "mapWorkPlanned": {
+    "message": "Task planned",
+    "description": "Goal detail: Task planned",
+    "sourceText": "任务待安排"
+  },
+  "mapWorkReady": {
+    "message": "Task queued",
+    "description": "Goal detail: Task queued",
+    "sourceText": "任务排队中"
+  },
+  "mapWorkRunning": {
+    "message": "Task running",
+    "description": "Goal detail: Task running",
+    "sourceText": "任务执行中"
+  },
+  "mapWorkWaiting": {
+    "message": "Task waiting",
+    "description": "Goal detail: Task waiting",
+    "sourceText": "任务等待中"
+  },
+  "mapWorkCompleted": {
+    "message": "Task completed",
+    "description": "Goal detail: Task completed",
+    "sourceText": "任务完成"
+  },
+  "mapWorkFailed": {
+    "message": "Task failed",
+    "description": "Goal detail: Task failed",
+    "sourceText": "任务失败"
+  },
+  "mapWorkCanceled": {
+    "message": "Task canceled",
+    "description": "Goal detail: Task canceled",
+    "sourceText": "任务已取消"
+  },
+  "routePathDetails": {
+    "message": "Path details",
+    "description": "Goal detail: Path details",
+    "sourceText": "路径详情"
+  },
+  "routePromotedFromFog": {
+    "message": "Exploring an earlier unknown: {note}",
+    "description": "Goal detail: Exploring an earlier unknown: {note}",
+    "sourceText": "来自雾区：{note}",
+    "placeholders": {
+      "note": "string"
+    }
+  },
+  "routeNotes": {
+    "message": "Decisions and unknowns",
+    "description": "Goal detail: Decisions and unknowns",
+    "sourceText": "决策与雾区"
+  },
+  "routeDecisions": {
+    "message": "Decisions",
+    "description": "Goal detail: Decisions",
+    "sourceText": "决策"
+  },
+  "routeFog": {
+    "message": "Unknowns",
+    "description": "Goal detail: Unknowns",
+    "sourceText": "雾区"
+  },
+  "routeNoDecisions": {
+    "message": "No decisions recorded yet.",
+    "description": "Goal detail: No decisions recorded yet.",
+    "sourceText": "尚未记录决策。"
+  },
+  "routeNoFog": {
+    "message": "No unknowns recorded.",
+    "description": "Goal detail: No unknowns recorded.",
+    "sourceText": "尚未记录雾区。"
+  },
+  "routeFogActive": {
+    "message": "Unresolved",
+    "description": "Goal detail: Unresolved",
+    "sourceText": "待探索"
+  },
+  "routeFogGraduated": {
+    "message": "Promoted to a path",
+    "description": "Goal detail: Promoted to a path",
+    "sourceText": "已晋升为路径"
+  },
+  "routeViewPromotedPath": {
+    "message": "View promoted path",
+    "description": "Goal detail: View promoted path",
+    "sourceText": "查看晋升路径"
+  },
+  "goalDetailLoadFailed": {
+    "message": "Could not refresh goal details. Previously loaded content is retained.",
+    "description": "Goal detail: Could not refresh goal details. Previously loaded content is retained.",
+    "sourceText": "目标详情暂时无法刷新，已加载的内容仍然保留。"
+  },
+  "routeLoadMore": {
+    "message": "Load more paths, decisions and unknowns",
+    "description": "Goal detail: Load more paths, decisions and unknowns",
+    "sourceText": "加载更多路径、决策与雾区"
   }
 }

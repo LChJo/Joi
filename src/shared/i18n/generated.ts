@@ -757,6 +757,39 @@ export interface MessageParameters {
   "home.archivingHidesACardFromTheHomePageUnarchive": undefined;
   "home.archivedGoals": undefined;
   "home.noArchivedGoalsYetChooseArchiveFromACard": undefined;
+  "home.goalTitleActions": undefined;
+  "home.fullTitleNotLoaded": undefined;
+  "home.titleCopyFailed": undefined;
+  "home.goalRouteMap": undefined;
+  "home.routeMapCleared": undefined;
+  "home.routeMapActive": undefined;
+  "home.routeDestination": undefined;
+  "home.routeMapCounts": { "paths": string; "decisions": string; "fog": string };
+  "home.routeMapEmpty": undefined;
+  "home.routeLayer": { "layer": string };
+  "home.routeLatestLayer": undefined;
+  "home.mapPathOpen": undefined;
+  "home.mapPathClosed": undefined;
+  "home.mapPathOutOfScope": undefined;
+  "home.mapWorkPlanned": undefined;
+  "home.mapWorkReady": undefined;
+  "home.mapWorkRunning": undefined;
+  "home.mapWorkWaiting": undefined;
+  "home.mapWorkCompleted": undefined;
+  "home.mapWorkFailed": undefined;
+  "home.mapWorkCanceled": undefined;
+  "home.routePathDetails": undefined;
+  "home.routePromotedFromFog": { "note": string };
+  "home.routeNotes": undefined;
+  "home.routeDecisions": undefined;
+  "home.routeFog": undefined;
+  "home.routeNoDecisions": undefined;
+  "home.routeNoFog": undefined;
+  "home.routeFogActive": undefined;
+  "home.routeFogGraduated": undefined;
+  "home.routeViewPromotedPath": undefined;
+  "home.goalDetailLoadFailed": undefined;
+  "home.routeLoadMore": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
   "mobile.enterConnectionCode": undefined;
@@ -2176,6 +2209,39 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.archivingHidesACardFromTheHomePageUnarchive": "Archiving hides a card from the home page. Unarchive to bring it back, or continue to resume the work.",
     "home.archivedGoals": "Archived goals",
     "home.noArchivedGoalsYetChooseArchiveFromACard": "No archived goals yet. Choose Archive from a card menu on the home page to move it here.",
+    "home.goalTitleActions": "Goal title actions",
+    "home.fullTitleNotLoaded": "The full title has not loaded yet.",
+    "home.titleCopyFailed": "Copy failed. Select the full text to copy manually.",
+    "home.goalRouteMap": "Goal route map",
+    "home.routeMapCleared": "Map cleared",
+    "home.routeMapActive": "In progress",
+    "home.routeDestination": "Destination",
+    "home.routeMapCounts": "{paths} paths · {decisions} decisions · {fog} unknowns",
+    "home.routeMapEmpty": "No paths have been charted yet.",
+    "home.routeLayer": "Layer {layer}",
+    "home.routeLatestLayer": "Latest layer",
+    "home.mapPathOpen": "Open",
+    "home.mapPathClosed": "Closed",
+    "home.mapPathOutOfScope": "Out of scope",
+    "home.mapWorkPlanned": "Task planned",
+    "home.mapWorkReady": "Task queued",
+    "home.mapWorkRunning": "Task running",
+    "home.mapWorkWaiting": "Task waiting",
+    "home.mapWorkCompleted": "Task completed",
+    "home.mapWorkFailed": "Task failed",
+    "home.mapWorkCanceled": "Task canceled",
+    "home.routePathDetails": "Path details",
+    "home.routePromotedFromFog": "Exploring an earlier unknown: {note}",
+    "home.routeNotes": "Decisions and unknowns",
+    "home.routeDecisions": "Decisions",
+    "home.routeFog": "Unknowns",
+    "home.routeNoDecisions": "No decisions recorded yet.",
+    "home.routeNoFog": "No unknowns recorded.",
+    "home.routeFogActive": "Unresolved",
+    "home.routeFogGraduated": "Promoted to a path",
+    "home.routeViewPromotedPath": "View promoted path",
+    "home.goalDetailLoadFailed": "Could not refresh goal details. Previously loaded content is retained.",
+    "home.routeLoadMore": "Load more paths, decisions and unknowns",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
     "mobile.enterConnectionCode": "Enter connection code",
@@ -3593,6 +3659,39 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.archivingHidesACardFromTheHomePageUnarchive": "归档只是把卡片从首页收起来。取消归档可以放回首页，继续会重新把它跑起来。",
     "home.archivedGoals": "已归档的目标",
     "home.noArchivedGoalsYetChooseArchiveFromACard": "还没有归档的目标。在首页的卡片菜单里选「归档」，它就会收到这里。",
+    "home.goalTitleActions": "目标标题操作",
+    "home.fullTitleNotLoaded": "全文尚未加载，请稍后重试。",
+    "home.titleCopyFailed": "复制失败，请选中全文手动复制。",
+    "home.goalRouteMap": "目标路线图",
+    "home.routeMapCleared": "地图已收官",
+    "home.routeMapActive": "推进中",
+    "home.routeDestination": "目的地",
+    "home.routeMapCounts": "{paths} 条路径 · {decisions} 项决策 · {fog} 项雾区",
+    "home.routeMapEmpty": "尚未建立路径。",
+    "home.routeLayer": "第 {layer} 层",
+    "home.routeLatestLayer": "最新层",
+    "home.mapPathOpen": "开放中",
+    "home.mapPathClosed": "已关闭",
+    "home.mapPathOutOfScope": "范围外",
+    "home.mapWorkPlanned": "任务待安排",
+    "home.mapWorkReady": "任务排队中",
+    "home.mapWorkRunning": "任务执行中",
+    "home.mapWorkWaiting": "任务等待中",
+    "home.mapWorkCompleted": "任务完成",
+    "home.mapWorkFailed": "任务失败",
+    "home.mapWorkCanceled": "任务已取消",
+    "home.routePathDetails": "路径详情",
+    "home.routePromotedFromFog": "来自雾区：{note}",
+    "home.routeNotes": "决策与雾区",
+    "home.routeDecisions": "决策",
+    "home.routeFog": "雾区",
+    "home.routeNoDecisions": "尚未记录决策。",
+    "home.routeNoFog": "尚未记录雾区。",
+    "home.routeFogActive": "待探索",
+    "home.routeFogGraduated": "已晋升为路径",
+    "home.routeViewPromotedPath": "查看晋升路径",
+    "home.goalDetailLoadFailed": "目标详情暂时无法刷新，已加载的内容仍然保留。",
+    "home.routeLoadMore": "加载更多路径、决策与雾区",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
     "mobile.enterConnectionCode": "输入连接码",
@@ -4657,7 +4756,7 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "周六": "common.weekdaySaturday",
   "Sun": "common.weekdaySunday",
   "周日": "common.weekdaySunday",
-  "Open": "common.open",
+  "Open": "home.mapPathOpen",
   "打开": "common.open",
   "Close": "common.close",
   "关闭": "common.close",
@@ -5539,7 +5638,7 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "目的地未命名（joi 将在复盘中命名）": "home.unnamedDestinationJoiWillNameItDuringReview",
   "· Map completed": "home.mapCompleted",
   " · 地图已收官": "home.mapCompleted",
-  "Decisions": "home.decisions",
+  "Decisions": "home.routeDecisions",
   "已决策": "home.decisions",
   "· Unknowns": "home.unknowns",
   "· 雾区": "home.unknowns",
@@ -5651,6 +5750,64 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "已归档的目标": "home.archivedGoals",
   "No archived goals yet. Choose Archive from a card menu on the home page to move it here.": "home.noArchivedGoalsYetChooseArchiveFromACard",
   "还没有归档的目标。在首页的卡片菜单里选「归档」，它就会收到这里。": "home.noArchivedGoalsYetChooseArchiveFromACard",
+  "Goal title actions": "home.goalTitleActions",
+  "目标标题操作": "home.goalTitleActions",
+  "The full title has not loaded yet.": "home.fullTitleNotLoaded",
+  "全文尚未加载，请稍后重试。": "home.fullTitleNotLoaded",
+  "Copy failed. Select the full text to copy manually.": "home.titleCopyFailed",
+  "复制失败，请选中全文手动复制。": "home.titleCopyFailed",
+  "Goal route map": "home.goalRouteMap",
+  "目标路线图": "home.goalRouteMap",
+  "Map cleared": "home.routeMapCleared",
+  "地图已收官": "home.routeMapCleared",
+  "In progress": "status.inProgress",
+  "推进中": "home.routeMapActive",
+  "Destination": "home.routeDestination",
+  "目的地": "home.routeDestination",
+  "No paths have been charted yet.": "home.routeMapEmpty",
+  "尚未建立路径。": "home.routeMapEmpty",
+  "Latest layer": "home.routeLatestLayer",
+  "最新层": "home.routeLatestLayer",
+  "开放中": "home.mapPathOpen",
+  "Closed": "home.mapPathClosed",
+  "已关闭": "home.mapPathClosed",
+  "Out of scope": "home.mapPathOutOfScope",
+  "范围外": "home.mapPathOutOfScope",
+  "Task planned": "home.mapWorkPlanned",
+  "任务待安排": "home.mapWorkPlanned",
+  "Task queued": "home.mapWorkReady",
+  "任务排队中": "home.mapWorkReady",
+  "Task running": "home.mapWorkRunning",
+  "任务执行中": "home.mapWorkRunning",
+  "Task waiting": "home.mapWorkWaiting",
+  "任务等待中": "home.mapWorkWaiting",
+  "Task completed": "home.mapWorkCompleted",
+  "任务完成": "home.mapWorkCompleted",
+  "Task failed": "home.mapWorkFailed",
+  "任务失败": "home.mapWorkFailed",
+  "Task canceled": "home.mapWorkCanceled",
+  "任务已取消": "home.mapWorkCanceled",
+  "Path details": "home.routePathDetails",
+  "路径详情": "home.routePathDetails",
+  "Decisions and unknowns": "home.routeNotes",
+  "决策与雾区": "home.routeNotes",
+  "决策": "home.routeDecisions",
+  "Unknowns": "home.routeFog",
+  "雾区": "home.routeFog",
+  "No decisions recorded yet.": "home.routeNoDecisions",
+  "尚未记录决策。": "home.routeNoDecisions",
+  "No unknowns recorded.": "home.routeNoFog",
+  "尚未记录雾区。": "home.routeNoFog",
+  "Unresolved": "home.routeFogActive",
+  "待探索": "home.routeFogActive",
+  "Promoted to a path": "home.routeFogGraduated",
+  "已晋升为路径": "home.routeFogGraduated",
+  "View promoted path": "home.routeViewPromotedPath",
+  "查看晋升路径": "home.routeViewPromotedPath",
+  "Could not refresh goal details. Previously loaded content is retained.": "home.goalDetailLoadFailed",
+  "目标详情暂时无法刷新，已加载的内容仍然保留。": "home.goalDetailLoadFailed",
+  "Load more paths, decisions and unknowns": "home.routeLoadMore",
+  "加载更多路径、决策与雾区": "home.routeLoadMore",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "把正在电脑上运行的 Joi 带到手机上": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "Scan a QR code to pair with joi": "mobile.scanAQrCodeToPairWithJoi",
@@ -6833,7 +6990,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "Not started": "status.notStarted",
   "待开始": "status.notStarted",
   "等待中": "status.waiting",
-  "In progress": "status.inProgress",
   "进行中": "status.inProgress",
   "Scheduled": "status.scheduled",
   "已安排": "status.scheduled",

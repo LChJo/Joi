@@ -10,6 +10,9 @@ import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from
 import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { workResultArtifactId, workspaceArtifactDirectory, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
+import type { JoiGoalDetailDto, JoiGoalDetailPage } from "../../../shared/joi.js";
+import { goalDetailPage } from "../../application/joi/goal-detail-page.js";
+import { queryJoiGoalDetail } from "./sqlite-joi-goal-detail.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
@@ -254,6 +257,11 @@ function resolvedFailureCounts(connection: DatabaseSync): Map<string, number> {
 
 export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
   constructor(private readonly database: TransactionalDatabase) {}
+
+  async loadGoalDetail(goalId: string, page: JoiGoalDetailPage): Promise<JoiGoalDetailDto | null> {
+    const normalized = goalDetailPage(page);
+    return this.database.transaction((connection) => queryJoiGoalDetail(connection, goalId, normalized));
+  }
 
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
