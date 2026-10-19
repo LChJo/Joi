@@ -7,6 +7,21 @@ import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
+  it("AC-43 validates explicit goal evidence before dispatch and preserves reference order", async () => {
+    const assertReferences = vi.fn(async (): Promise<void> => { throw new Error("invalid reference"); });
+    const commit = vi.fn(async (_plan: CommittedWorkPlan) => undefined);
+    const service = new WorkOrchestrationService({ clock: new TestClock(), ids: new TestIds(),
+      evidence: { assertReferences }, repository: { commit },
+      partners: { pinForDispatch: async partnerId => ({ partnerId,partnerRevisionId: "r",registryRevision: 1 }) },
+      policy: { evaluate: async () => ({ allowed: true }) } });
+    const request = { workbenchId: "wb", inputId: "goal", turnId: "turn", dependencies: [], work: [{ evidenceResultIds: ["middle"], key: "read", title: "Read", partnerId: "p", accessMode: "NONE" as const, instructions: "Read the cited evidence.", acceptanceChecks: [{ kind: "BODY_PRESENT" as const }] }] };
+    await expect(service.plan(request)).rejects.toThrow("invalid reference");
+    expect(commit).not.toHaveBeenCalled();
+    expect(assertReferences).toHaveBeenCalledWith({ goalInputId: "goal",workbenchId: "wb",resultIds: ["middle"] });
+    assertReferences.mockResolvedValue(undefined);
+    await service.plan(request);
+    expect(commit.mock.calls[0]?.[0].briefs[0]).toMatchObject({ evidenceResultIds: ["middle"] });
+  });
   it("AC-WR-07 rejects conflicting READ resumes and reassignments without changing the Work", async () => {
     const reassign = vi.fn(async () => undefined);
     const item: WorkItem = { accessMode: "READ",workbenchId: "wb",workId: "w",status: "WAITING",title: "Verify",createdAt: "2026-10-13T00:00:00Z",updatedAt: "2026-10-13T00:00:00Z" };

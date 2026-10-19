@@ -56,3 +56,5 @@ Migration 072 在 `model_source_health` 增加可空 `anthropic_auth_mode`；NUL
 Migration 073 为本地任务增加四阶段执行记录、FIFO 写入等待及单调租约代次，并扩展实例状态约束以保留 SUSPENDED。已有 run 的 attempt 固定旧策略；未启动 attempt 默认新策略。检查点引用和独立附件路径仅存私有执行记录，continuation outbox 仅含稳定标识与执行代次，不修改历史结果或引擎权限配置。
 
 Migration 074 为首页按目标关联输入、最新回合、Work 对应实例/run 及可见 Agent 会话增加覆盖索引。查询从目标关联集合开始，保留派生输入最新回合和稳定 Agent 去重语义；不删除历史会话，不修改执行事实。见 ADR 0029 与 AC-PERF-01。
+
+Migration 076 为目标结论建立私有版本历史，按目标、结果版本、需求版本幂等保存，回填当前已有结论；分页取证保留当前与历史结论。结论仅在已有双版本和活动 Work 门禁通过后与发布事务一起保存，不修改正在运行的任务。见 ADR 0031。

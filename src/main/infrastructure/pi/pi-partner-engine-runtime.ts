@@ -43,8 +43,10 @@ import { workspaceReadScopeLine } from "../workspace/workspace-prompt-boundary.j
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
-import { trackPiStream } from "./pi-usage.js";
+import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import { createPiContextManager, type PiContextDiagnostic, type PiContextManager } from "./pi-context-manager.js";
+import { createContextHistoryTool } from "./pi-history-tools.js";
+import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
 import { createRunProgressWatch, stallNudgeMessage, type RunProgressDiagnostic, type RunProgressSignal, type RunProgressThresholds, type RunProgressWatch } from "./pi-run-progress.js";
 
@@ -96,6 +98,8 @@ interface RunTracker {
 
 interface WarmAgent {
   usageContext: { current: UsageContext };
+  historyWorkId: string;
+  historyStart: number;
   agent: Agent;
   /**
    * Carried with the agent so a later turn of the same instance inherits the summary instead of
@@ -386,8 +390,9 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const where = { workbenchId: input.request.workbenchId, workId: input.request.workId };
     return createPiContextManager({
       messagesMaxChars: input.messagesMaxChars,
+      requiredChars: input.request.requiredContext?.length ?? 0,
       model: input.model,
-      models: input.models,
+      models: trackPiModels(input.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: input.request.workbenchId, workId: input.request.workId }), this.dependencies.diagnostics),
       onDiagnostic: (event: PiContextDiagnostic) => {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, event.type, { ...event, ...where });
       },
@@ -447,6 +452,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const tools = this.#toolsWithTimeout([
       ...this.#toolsForRun(execution.workspacePath, this.#effectiveToolNames(revision), context.skillEnvironmentKeys),
       createAskUserTool(trackerRef),
+      createContextHistoryTool(() => agent.state.messages),
+      ...createPartnerEvidenceTools(execution.evidence),
     ]);
     const allowed = new Set(tools.map((tool) => tool.name));
     const progress = this.#progressControl({
@@ -475,7 +482,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         tools,
       },
       sessionId: externalRunId,
-      streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
+      streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId }), this.dependencies.diagnostics),
       toolExecution: "sequential",
       transformContext: (messages, signal) => window.transformContext(messages, signal),
     });
@@ -560,6 +567,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       const tools = this.#toolsWithTimeout([
         ...this.#toolsForRun(execution.workspacePath, effectiveToolNames, input.skillEnvironmentKeys),
         createAskUserTool(sideEffectTracker),
+        createContextHistoryTool(() => agent.state.messages),
+        ...createPartnerEvidenceTools(execution.evidence),
       ]);
       const systemPrompt = this.#systemPrompt(
         await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
@@ -587,12 +596,15 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
           tools,
         },
         sessionId: `local_pi_instance:${input.instanceId}`,
-        streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => usageContext.current),
+        streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => usageContext.current, this.dependencies.diagnostics),
         toolExecution: "sequential",
         transformContext: (messages, signal) => window.transformContext(messages, signal),
       });
       warm = {
         usageContext,
+        historyWorkId: input.request.workId,
+        // Legacy transcripts have no Work tags; only the latest user task is safe to page on cold restore.
+        historyStart: Math.max(0, (input.restoredMessages ?? []).findLastIndex(message => (message as { role?: string }).role === "user")),
         agent,
         context: window,
         requestBudget: budget,
@@ -607,8 +619,15 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       this.#trackWarm(input.instanceId, warm);
     }
     warm.usageContext.current = currentUsage;
+    if (warm.historyWorkId !== input.request.workId) {
+      warm.historyWorkId = input.request.workId;
+      warm.historyStart = warm.agent.state.messages.length;
+    }
+    const historyStart = warm.historyStart;
     warm.agent.state.tools = this.#toolsWithTimeout([
       ...this.#toolsForRun(execution.workspacePath, effectiveToolNames, input.skillEnvironmentKeys), createAskUserTool(warm.sideEffectTracker),
+      createContextHistoryTool(() => activeAgent.state.messages.slice(historyStart)),
+      ...createPartnerEvidenceTools(execution.evidence),
     ]);
     const writeGate = new LocalWriteGate(input.request.workspaceExecution);
     const activeAgent = warm.agent;
@@ -863,7 +882,14 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
 
   #toolsWithTimeout(tools: AgentTool[]): AgentTool[] {
     const timeoutMillis = this.dependencies.toolTimeoutMillis ?? DEFAULT_TOOL_TIMEOUT_MILLIS;
-    return tools.map((tool) => withToolTimeout(tool, timeoutMillis));
+    return tools.map((tool) => {
+      const bounded = withToolTimeout(tool, timeoutMillis);
+      return { ...bounded, execute: async (id, args, signal, onUpdate) => {
+        const startedAt = Date.now();
+        try { return await bounded.execute(id, args, signal, onUpdate); }
+        finally { emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.context.tool_finished", { engine: "pi", toolName: tool.name, durationMs: Math.max(0, Date.now() - startedAt) }); }
+      } };
+    });
   }
 
   #installRequirementsPrompt(agent: Agent, request: PartnerRunRequest, configured: string, workbench: string, knowledge: string, skill: string,

@@ -17,6 +17,7 @@ import { ClaudeAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/claud
 import { CodexAgentSdkPartnerEngineRuntime } from "../infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
 import type { ModelSourceBundle } from "./wire-model-sources.js";
 import type { PersistenceBundle } from "./wire-persistence.js";
+import path from "node:path";
 
 export function wirePartners(input: {
   clock: Clock;
@@ -24,6 +25,7 @@ export function wirePartners(input: {
   ids: IdGenerator;
   modelSourceStack: ModelSourceBundle;
   persistence: PersistenceBundle;
+  userDataDirectory: string;
 }) {
   const { clock, diagnostics, ids, modelSourceStack, persistence } = input;
   const partnerSkillCatalog = new LocalSkillScanner();
@@ -48,6 +50,7 @@ export function wirePartners(input: {
       tools: new BuiltinPiCodingToolFactory(),
     })],
     ["claude-code", new ClaudeAgentSdkPartnerEngineRuntime({
+      evidenceDirectory: path.join(input.userDataDirectory, "task-inputs"),
       usage: modelSourceStack.statistics,
       contexts: persistence.workbenchContextRepository,
       deadlines: { ...NATIVE_RUN_DEADLINES },
@@ -55,6 +58,7 @@ export function wirePartners(input: {
       prompts: persistence.partnerPromptStore,
     })],
     ["codex", new CodexAgentSdkPartnerEngineRuntime({
+      evidenceDirectory: path.join(input.userDataDirectory, "task-inputs"),
       usage: modelSourceStack.statistics,
       contexts: persistence.workbenchContextRepository,
       deadlines: { ...NATIVE_RUN_DEADLINES },

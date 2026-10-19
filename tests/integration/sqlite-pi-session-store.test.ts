@@ -19,6 +19,7 @@ describe("Pi SQLite session restore", () => {
       ));
       const snapshot: JoiReasoningSessionSnapshot = {
         workbenchId: "workbench-1",
+        archivedMessages: [{ role: "user", content: "retained source evidence", timestamp: 0 }],
         compaction: {
           compactedMessages: 18,
           count: 2,

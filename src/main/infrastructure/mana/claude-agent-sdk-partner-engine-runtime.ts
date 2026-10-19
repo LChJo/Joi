@@ -18,6 +18,7 @@ import { wrapPartnerRunFailure } from "../../application/partners/partner-run-fa
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { workspaceReadScopeLine, workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
+import { prepareNativeEvidenceContext } from "../workspace/work-evidence-stager.js";
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, NativeCliRunError, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
@@ -52,6 +53,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     deadlines?: { graceActiveWindowMillis?: number; graceMillis?: number; idleMillis?: number; totalMillis: number };
     diagnostics?: RuntimeDiagnostics;
     environment?: NodeJS.ProcessEnv;
+    evidenceDirectory?: string;
     probeTimeoutMillis?: number;
     prompts: Pick<PartnerPromptStore, "read">;
     resolveExecutable?: () => ResolvedLocalCliExecutable;
@@ -127,7 +129,13 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     const gated = request.workspaceExecution !== undefined;
     if (request.workspaceExecution?.phase === "WRITE_RUNNING" && resume === undefined) throw new DomainError("workspace_checkpoint_missing", "The native session checkpoint is unavailable.");
     tracker.sideEffectState = !gated && tools.some((tool) => CLAUDE_MUTATING_TOOLS.has(tool)) ? "UNKNOWN" : "NONE";
-    const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context, tools, execution.workspacePath);
+    const workbenchSection = await prepareNativeEvidenceContext({
+      canRead: execution.workspacePath !== undefined && tools.includes("Read"),
+      ...(this.dependencies.diagnostics === undefined ? {} : { diagnostics: this.dependencies.diagnostics }),
+      engine: "claude-code", execution, request,
+      ...(this.dependencies.evidenceDirectory === undefined ? {} : { taskDirectory: this.dependencies.evidenceDirectory }),
+    });
+    const systemPrompt = await this.#systemPrompt(revision, request, workbenchSection, context, tools, execution.workspacePath);
     const projector = new NativeAgentEventProjector();
     const emit = async (event: NativeAgentEvent): Promise<void> => {
       if (!gated && event.type === "tool_activity" && event.state === "started" && CLAUDE_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
@@ -325,9 +333,8 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
       partnerCommentDisciplineLine,
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
-      // The CLI owns its own message history, so this background is the one payload joi controls
-      // here; left unbounded it is the whole request.
-      boundBackgroundSections([workbenchSection, context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
+      workbenchSection,
+      boundBackgroundSections([context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
     ].filter((part) => part !== "").join("\n");
   }
 

@@ -9,6 +9,7 @@ interface TransactionalDatabase {
 }
 
 interface StoredMetadata {
+  archivedMessages?: unknown[];
   compaction?: JoiReasoningSessionSnapshot["compaction"];
   modelRevisionId: string;
   sourceRevisionId: string;
@@ -39,6 +40,7 @@ function metadata(value: unknown): StoredMetadata {
     };
   }
   return {
+    ...(Array.isArray(record.archivedMessages) ? { archivedMessages: record.archivedMessages } : {}),
     compaction,
     modelRevisionId: record.modelRevisionId,
     sourceRevisionId: record.sourceRevisionId,
@@ -62,6 +64,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
       const stored = metadata(JSON.parse(first.message_json) as unknown);
       return {
         workbenchId: first.workbench_id,
+        ...(stored.archivedMessages === undefined ? {} : { archivedMessages: stored.archivedMessages }),
         compaction: stored.compaction,
         messages: rows.slice(1).map((row) => {
           if (typeof row.message_json !== "string") throw new Error("pi_session_record_invalid");
@@ -84,6 +87,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
       insert.run(
         `${snapshot.sessionId}:metadata`, snapshot.sessionId, snapshot.workbenchId, 0,
         JSON.stringify({
+          archivedMessages: snapshot.archivedMessages,
           compaction: snapshot.compaction,
           modelRevisionId: snapshot.modelRevisionId,
           sourceRevisionId: snapshot.sourceRevisionId,

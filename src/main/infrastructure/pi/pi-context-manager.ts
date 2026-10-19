@@ -6,7 +6,7 @@ import {
 } from "@earendil-works/pi-agent-core";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
-import { checkpointMessage, omissionNotice, summarizeSegment } from "./pi-compaction.js";
+import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, omissionNotice, summarizeSegment } from "./pi-compaction.js";
 import { compactionReserveTokens, leadingSystemMessage } from "./pi-model-budget.js";
 
 /**
@@ -31,8 +31,9 @@ const KEEP_RECENT_TOKENS = DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
 const TAIL_SHARE = 0.5;
 
 export type PiContextDiagnostic =
-  | { compactedMessages: number; count: number; tokensBefore: number; type: "joi.partner.context_compacted" }
+  | { compactedMessages: number; count: number; tokensBefore: number; charsBefore?: number; charsAfter?: number; durationMs?: number; runtime?: "pi"; type: "joi.partner.context_compacted" }
   | { reasonCode: string; type: "joi.partner.context_summary_failed" }
+  | { runtime: "pi"; contextChars: number; historyChars: number; requiredChars: number; backgroundChars: number; budgetFallbacks: number; type: "joi.context.request" }
   | { omittedChars: number; omittedMessages: number; type: "joi.partner.context_truncated" };
 
 /** The compacted prefix of a run's transcript, and the summary that stands in for it. */
@@ -55,6 +56,8 @@ export interface PiContextManagerOptions {
   messagesMaxChars: number;
   thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   onDiagnostic?: (event: PiContextDiagnostic) => void;
+  requiredChars?: number;
+  backgroundChars?: number;
   /** Reserved for the summary call and its output. */
   reserveTokens?: number;
   /**
@@ -95,8 +98,8 @@ function cutAt(messages: readonly AgentMessage[], target: number, floor: number)
 /** How many messages a compaction must keep whatever else it drops: the prompt and the task. */
 function anchorEnd(messages: readonly AgentMessage[]): number {
   if (leadingSystemMessage(messages) !== undefined) {
-    // The task follows the transcript's leading system message in every shape pi has produced.
-    return messages[1]?.role === "user" ? 2 : 1;
+    const task = messages.findIndex(message => message.role === "user");
+    return task >= 0 ? task + 1 : 1;
   }
   return messages[0]?.role === "user" ? 1 : 0;
 }
@@ -112,12 +115,19 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
   // of requests is quadratic in the number of tool calls a run makes.
   let tokenPrefix: number[] = [0];
   let charPrefix: number[] = [0];
+  let firstChars = 0;
 
   const price = (messages: readonly AgentMessage[]): void => {
     if (tokenPrefix.length - 1 > messages.length) {
       tokenPrefix = [0];
       charPrefix = [0];
     }
+    const currentFirstChars = messages[0] === undefined ? 0 : JSON.stringify(messages[0]).length;
+    if (charPrefix.length > 1 && firstChars !== currentFirstChars) {
+      const delta = currentFirstChars - firstChars;
+      for (let index = 1; index < charPrefix.length; index += 1) charPrefix[index] = (charPrefix[index] ?? 0) + delta;
+    }
+    firstChars = currentFirstChars;
     while (tokenPrefix.length - 1 < messages.length) {
       const index = tokenPrefix.length - 1;
       const message = messages[index];
@@ -137,11 +147,18 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
    * and then have to drop the very messages it had just summarized.
    */
   const targetCut = (messages: readonly AgentMessage[], floor: number): number => {
-    const charBudget = Math.floor(options.messagesMaxChars * TAIL_SHARE);
+    const charBudget = Math.floor(Math.min(options.messagesMaxChars, HISTORY_SOFT_TARGET_CHARS) * TAIL_SHARE);
     let index = messages.length;
     while (index > floor
       && tokensIn(index - 1, messages.length) < KEEP_RECENT_TOKENS
       && charsIn(index - 1, messages.length) < charBudget) index -= 1;
+    // The latest tool exchange is indivisible even when it exceeds the soft target.
+    const lastResult = messages.findLastIndex(message => message.role === "toolResult");
+    if (lastResult >= floor) {
+      let exchange = lastResult;
+      while (exchange > floor && messages[exchange]?.role === "toolResult") exchange -= 1;
+      index = Math.min(index, exchange);
+    }
     return index;
   };
 
@@ -174,7 +191,7 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
    */
   const overBudget = (messages: readonly AgentMessage[], cut: number, floor: number, standing: number): boolean => {
     const chars = charsIn(0, floor) + standing + charsIn(cut, messages.length);
-    if (chars > options.messagesMaxChars) return true;
+    if (chars >= Math.min(options.messagesMaxChars, HISTORY_SOFT_TRIGGER_CHARS)) return true;
     if (options.model.contextWindow <= 0) return false;
     return shouldCompact(tokensIn(0, floor) + tokensIn(cut, messages.length), options.model.contextWindow, settings);
   };
@@ -211,17 +228,18 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     // Nothing safe to cut, or nothing new since the last compaction.
     if (cut === undefined || cut <= from) return false;
     const segment = messages.slice(from, cut);
+    const startedAt = Date.now();
     const generated = await summarizeSegment({
       model: options.model,
       models: options.models,
       previousSummary: checkpoint?.summary,
-      reserveTokens: settings.reserveTokens,
+      reserveTokens: Math.min(settings.reserveTokens, Math.floor(HISTORY_SOFT_TARGET_CHARS / 8)),
       segment,
       signal,
       thinkingLevel: options.thinkingLevel,
     });
-    if (!generated.ok) {
-      options.onDiagnostic?.({ reasonCode: generated.reasonCode, type: "joi.partner.context_summary_failed" });
+    if (!generated.ok || generated.summary.length > HISTORY_SOFT_TARGET_CHARS / 2) {
+      options.onDiagnostic?.({ reasonCode: generated.ok ? "summary_exceeds_capacity" : generated.reasonCode, type: "joi.partner.context_summary_failed" });
       return false;
     }
     const now = new Date().toISOString();
@@ -238,6 +256,10 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
       compactedMessages: checkpoint.compactedMessages,
       count: checkpoint.count,
       tokensBefore: checkpoint.tokensBefore,
+      charsBefore: charsIn(0, messages.length),
+      charsAfter: JSON.stringify(assemble(messages, cut)).length,
+      durationMs: Math.max(0, Date.now() - startedAt),
+      runtime: "pi",
       type: "joi.partner.context_compacted",
     });
     return true;
@@ -246,6 +268,15 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
   return {
     checkpoint: () => checkpoint,
     transformContext: async (messages, signal) => {
+      const finish = (request: AgentMessage[]): AgentMessage[] => {
+        options.onDiagnostic?.({
+          type: "joi.context.request", runtime: "pi", contextChars: JSON.stringify(request).length,
+          historyChars: request.filter(message => message.role !== "system").reduce((sum, message) => sum + JSON.stringify(message).length, 0),
+          requiredChars: options.requiredChars ?? 0, backgroundChars: options.backgroundChars ?? 0,
+          budgetFallbacks: JSON.stringify(request).length >= HISTORY_SOFT_TRIGGER_CHARS ? 1 : 0,
+        });
+        return request;
+      };
       try {
         price(messages);
         const floor = anchorEnd(messages);
@@ -253,19 +284,19 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
         // anchors is the tail and the request is the transcript unchanged.
         let cut = checkpoint === undefined ? floor : Math.max(floor, checkpoint.cut);
         const standing = summaryChars();
-        if (!overBudget(messages, cut, floor, standing)) return assemble(messages, cut);
+        if (!overBudget(messages, cut, floor, standing)) return finish(assemble(messages, cut));
         if (await compact(messages, floor, signal)) {
           cut = Math.max(floor, checkpoint?.cut ?? floor);
-          if (!overBudget(messages, cut, floor, summaryChars())) return assemble(messages, cut);
+          if (!overBudget(messages, cut, floor, summaryChars())) return finish(assemble(messages, cut));
         }
-        return trimWithNotice(messages, floor);
+        return finish(trimWithNotice(messages, floor));
       } catch {
         // pi's contract for this hook is that it must not throw or reject: throwing interrupts the
         // agent loop without a normal event sequence. A request that is merely too large is
         // recoverable; a broken loop is not, so the fallback is the bounded one.
         options.onDiagnostic?.({ reasonCode: "compaction_threw", type: "joi.partner.context_summary_failed" });
         try {
-          return trimWithNotice(messages, anchorEnd(messages));
+          return finish(trimWithNotice(messages, anchorEnd(messages)));
         } catch {
           return messages;
         }

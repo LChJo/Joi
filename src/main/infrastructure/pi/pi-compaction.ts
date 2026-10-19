@@ -21,7 +21,10 @@ import type { Api, Model, Models } from "@earendil-works/pi-ai";
 /** Marks a summary message as a checkpoint, and is how a restored transcript recognises one. */
 export const CHECKPOINT_MARKER = "[joi session checkpoint]";
 
-export const SUMMARY_INSTRUCTIONS = "Preserve user intent, decisions, work status, identifiers, constraints, and unresolved questions. Do not invent facts.";
+export const SUMMARY_INSTRUCTIONS = "Preserve the current task, effective mandatory requirements, permissions, acceptance conditions, decisions, work status, conclusion endings, evidence references, conflicting evidence, and unresolved questions. Do not invent facts. Preserve identifiers for paginated evidence and context_read_history so omitted details remain retrievable.";
+
+export const HISTORY_SOFT_TRIGGER_CHARS = 128_000;
+export const HISTORY_SOFT_TARGET_CHARS = 64_000;
 
 /** The text of a checkpoint message, in the shape both runtimes write and both can read back. */
 export function checkpointText(summary: string): string {
@@ -123,9 +126,9 @@ export function omissionNotice(omittedMessages: number, omittedChars: number): A
     content: [{
       text: `[joi context notice] ${String(omittedMessages)} earlier messages of this run were left out of this one`
         + ` request to keep it inside the model window (${String(omittedChars)} characters over budget). They were not`
-        + " lost, and no other process modified your workspace: this run removed them from this request because the"
-        + " request was too large. The summary above records what they contained, and your earlier work is on disk"
-        + " exactly as you left it. Do not conclude that something else changed your files.",
+        + " lost; no other process modified your workspace. They are NOT covered by the checkpoint above. Use context_read_history"
+        + " with offset=0 and limit=8000 to inspect the retained history and page through it. An omitted message"
+        + " is not evidence that no prior work or evidence exists.",
       type: "text",
     }],
     role: "user",

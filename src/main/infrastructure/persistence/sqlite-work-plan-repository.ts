@@ -1,6 +1,7 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
+import { assertGoalEvidenceReferences } from "./sqlite-goal-evidence-repository.js";
 
 import type {
   CommittedWorkPlan,
@@ -160,6 +161,7 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
              WHERE i.input_id = t.input_id AND i.goal_input_id = ?
           ))`).get(plan.turnId, workbenchId, plan.inputId, plan.inputId);
       if (binding === undefined) throw new Error("work_plan_goal_binding_invalid");
+      for (const brief of plan.briefs) assertGoalEvidenceReferences(connection, { goalInputId: plan.inputId, workbenchId, resultIds: brief.evidenceResultIds ?? [] });
       const insertWork = connection.prepare(`INSERT INTO work_items
         (work_id, workbench_id, input_id, title, intent_json, access_mode, workspace_ref, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
@@ -505,8 +507,9 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
   async reassign(plan: ReassignedWorkPlan): Promise<void> {
     this.database.transaction((connection) => {
       assertWorkGoalOpen(connection, plan.workId);
-      const owner = connection.prepare("SELECT w.input_id,w.intent_json,COALESCE(ap.access_mode,w.access_mode) AS access_mode FROM work_items w LEFT JOIN work_access_policies ap ON ap.work_id=w.work_id WHERE w.work_id = ?").get(plan.workId);
+      const owner = connection.prepare("SELECT w.input_id,w.workbench_id,w.intent_json,COALESCE(ap.access_mode,w.access_mode) AS access_mode FROM work_items w LEFT JOIN work_access_policies ap ON ap.work_id=w.work_id WHERE w.work_id = ?").get(plan.workId);
       if (typeof owner?.input_id !== "string" || typeof owner.intent_json !== "string") throw new Error("work_brief_missing");
+      if (plan.evidenceResultIds !== undefined) assertGoalEvidenceReferences(connection, { goalInputId: owner.input_id, workbenchId: owner.workbench_id as string, resultIds: plan.evidenceResultIds });
       const revision = readStoredPartnerRevision(connection,plan.attempt.partnerRevisionId);
       const executionNeeds = readExecutionNeeds(plan.executionNeeds ?? (JSON.parse(owner.intent_json) as { executionNeeds?: unknown }).executionNeeds);
       if (revision !== null) assertExecutionAccess(plan.accessMode ?? owner.access_mode as WorkAccessMode,executionNeeds,localExecutionCapabilities(revision));
@@ -519,13 +522,13 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
         if (plan.instructions === undefined) throw new DomainError("work_instructions_invalid", "Provide current complete instructions.");
         renderGoalRequirements(contract, plan.requirementIds ?? [], plan.allRequirements ?? false);
       }
-      if (plan.instructions !== undefined || plan.executionNeeds !== undefined) {
+      if (plan.instructions !== undefined || plan.executionNeeds !== undefined || plan.evidenceResultIds !== undefined) {
         const row = connection.prepare("SELECT intent_json FROM work_items WHERE work_id = ?").get(plan.workId);
         if (typeof row?.intent_json !== "string") throw new Error("work_brief_missing");
         const brief = JSON.parse(row.intent_json) as unknown;
         if (brief === null || typeof brief !== "object" || Array.isArray(brief)) throw new Error("work_brief_invalid");
         connection.prepare("UPDATE work_items SET intent_json = ? WHERE work_id = ?")
-          .run(JSON.stringify({ ...brief, briefVersion: contract === null ? 2 : 3, ...(plan.instructions === undefined ? {} : { instructions: plan.instructions }),
+          .run(JSON.stringify({ ...brief, ...(plan.evidenceResultIds === undefined ? {} : { evidenceResultIds: plan.evidenceResultIds }), briefVersion: contract === null ? 2 : 3, ...(plan.instructions === undefined ? {} : { instructions: plan.instructions }),
             ...(plan.executionNeeds === undefined ? {} : { executionNeeds: readExecutionNeeds(plan.executionNeeds) }),
             ...(contract === null ? {} : { requirementsRevision: contract.revision, requirementIds: plan.requirementIds ?? [], allRequirements: plan.allRequirements ?? false }),
           }), plan.workId);

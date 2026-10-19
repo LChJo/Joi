@@ -37,6 +37,8 @@ export interface StartReasoningTurnInput {
 
 export interface JoiReasoningSessionSnapshot {
   workbenchId: string;
+  /** Private source messages replaced by checkpoints, available only to this session's history tool. */
+  archivedMessages?: unknown[];
   compaction?: {
     compactedMessages: number;
     count: number;

@@ -5,7 +5,7 @@ import type { WorkResultRepository } from "../../src/main/application/ports/work
 
 describe("WorkResultService", () => {
   it("returns bounded chunks only inside the current Workbench scope", async () => {
-    const full = "a".repeat(4_000) + "tail";
+    const full = "a".repeat(8_000) + "tail";
     const repository: WorkResultRepository = {
       readBody: async (input) => input.workbenchId === "workbench-a" && input.resultId === "result-a"
         ? { body: full.slice(input.offset, input.offset + input.limit), total: full.length }
@@ -16,9 +16,9 @@ describe("WorkResultService", () => {
     const service = new WorkResultService(repository);
     // The first chunk carries the acceptance verdict; later chunks stay pure content.
     await expect(service.read({ workbenchId: "workbench-a", resultId: "result-a" })).resolves.toEqual({
-      content: "a".repeat(4_000), nextCursor: "4000", resultId: "result-a", verification: { status: "PASSED" },
+      content: "a".repeat(8_000), nextCursor: "8000", resultId: "result-a", verification: { status: "PASSED" },
     });
-    await expect(service.read({ workbenchId: "workbench-a", cursor: "4000", resultId: "result-a" })).resolves.toEqual({
+    await expect(service.read({ workbenchId: "workbench-a", cursor: "8000", resultId: "result-a" })).resolves.toEqual({
       content: "tail", resultId: "result-a",
     });
     await expect(service.read({ workbenchId: "workbench-b", resultId: "result-a" }))

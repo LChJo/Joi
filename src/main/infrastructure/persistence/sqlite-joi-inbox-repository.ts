@@ -16,6 +16,7 @@ import { closeHistoricalReviewInTransaction } from "./sqlite-joi-harness-review-
 import { consumeSupersededGoalSynthesis, enqueueGoalResultSynthesis } from "./sqlite-goal-result-synthesis.js";
 import { consumeSatisfiedRequirementsReviews, enqueueGoalRequirementsReview } from "./sqlite-goal-requirements-review.js";
 import { loadJoiGoalContext } from "./sqlite-joi-goal-context.js";
+import { goalSynthesisInstruction, loadGoalSynthesisContext } from "./sqlite-goal-result-synthesis.js";
 import { appendGoalRequirementSource, assertGoalRequirementsReady, goalRequirementsCurrentSql } from "./sqlite-goal-requirements-repository.js";
 
 interface TransactionalDatabase {
@@ -566,7 +567,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async loadInput(inputId: string): Promise<JoiPendingInput | null> {
     const row = this.database.transaction((connection) => connection.prepare(
       `SELECT i.input_id, i.body, i.status, i.workbench_id, i.goal_input_id, i.result_revision, i.automation_routine_id,
-        i.continuation_prompt, i.reopened_at,
+        i.continuation_prompt, i.reopened_at, i.requirements_revision,
         (SELECT run.run_id FROM joi_automation_runs run WHERE run.input_id = i.input_id AND run.routine_id = i.automation_routine_id
           ORDER BY run.queued_at DESC, run.run_id DESC LIMIT 1) AS automation_execution_id,
         (SELECT a.action_id FROM joi_user_action_requests a
@@ -603,7 +604,11 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       }
       return own;
     });
-    const goalContext = typeof row.workbench_id === "string"
+    const isSynthesis = typeof row.goal_input_id === "string" && typeof row.result_revision === "number";
+    const synthesisContext = isSynthesis && typeof row.workbench_id === "string"
+      ? this.database.transaction(connection => loadGoalSynthesisContext(connection, String(row.goal_input_id), String(row.workbench_id), Number(row.result_revision), Number(row.requirements_revision ?? 0)))
+      : undefined;
+    const goalContext = !isSynthesis && typeof row.workbench_id === "string"
       ? this.database.transaction((connection) => loadJoiGoalContext(connection,
         typeof row.goal_input_id === "string" ? row.goal_input_id : inputId, row.workbench_id as string))
       : undefined;
@@ -623,7 +628,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           || typeof attachment.mime_type !== "string" || typeof attachment.size !== "number") throw new Error("joi_attachment_record_invalid");
         return { attachmentId: attachment.attachment_id, filename: attachment.filename, mimeType: attachment.mime_type, size: attachment.size };
       }) }),
-      body: row.body,
+      body: isSynthesis ? goalSynthesisInstruction(String(row.goal_input_id), Number(row.result_revision), Number(row.requirements_revision ?? 0)) : row.body,
+      ...(synthesisContext === undefined ? {} : { synthesisContext }),
+      ...(typeof row.requirements_revision === "number" ? { requirementsRevision: row.requirements_revision } : {}),
       ...(goalContext === undefined ? {} : { goalContext }),
       ...(typeof row.continuation_prompt === "string" ? { continuationPrompt: row.continuation_prompt }
         : typeof row.reopened_at === "string" && row.goal_input_id === null
@@ -985,6 +992,11 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             updated_at = excluded.updated_at, requirements_revision = excluded.requirements_revision
           WHERE excluded.result_revision >= joi_goal_outcomes.result_revision`).run(
           synthesis.goal_input_id, synthesis.result_revision, disposition, summary, now, now, requirements?.revision ?? null,
+        );
+        connection.prepare(`INSERT INTO joi_goal_outcome_history
+          (goal_input_id, result_revision, requirements_revision, disposition, completion_summary, completed_at)
+          VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT DO NOTHING`).run(
+          synthesis.goal_input_id, synthesis.result_revision, requirements?.revision ?? 0, disposition, summary, now,
         );
         connection.prepare(`UPDATE joi_goal_result_sets SET synthesized_revision = ?, synthesized_requirements_revision = ?, updated_at = ?
           WHERE original_input_id = ? AND revision = ?`).run(

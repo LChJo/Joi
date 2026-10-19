@@ -123,7 +123,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       runDirectory: configuration.runDirectory, homeFeedRepository: homeFeedReader,
     });
     const modelSourceStack = wireModelSources({ clock, ids, persistence, vault });
-    const partnerStack = wirePartners({ clock, diagnostics: runtimeDiagnostics, ids, modelSourceStack, persistence });
+    const partnerStack = wirePartners({ clock, diagnostics: runtimeDiagnostics, ids, modelSourceStack, persistence, userDataDirectory });
     const workbenchStack = wireWorkbenches({
       artifactOpener: { open: (input) => desktop.artifactOpen(input) },
       clock, diagnostics: runtimeDiagnostics, ids, partnerStack, persistence,

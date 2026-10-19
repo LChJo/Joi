@@ -133,6 +133,9 @@ export class SqliteWorkResultRepository implements WorkResultRepository {
         chunk?: unknown; total?: unknown;
       } | undefined;
     if (typeof row?.chunk !== "string" || typeof row.total !== "number") return null;
-    return { body: row.chunk, total: row.total };
+    // SQL bounds reads in codepoints; the transport page also fits the UTF-16 character budget.
+    const bounded = row.chunk.slice(0, input.limit);
+    const body = /[\uD800-\uDBFF]$/u.test(bounded) ? bounded.slice(0, -1) : bounded;
+    return { body, total: row.total };
   }
 }

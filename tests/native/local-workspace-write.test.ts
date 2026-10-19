@@ -10,6 +10,7 @@ import { ClaudeAgentSdkPartnerEngineRuntime } from "../../src/main/infrastructur
 import { CodexAgentSdkPartnerEngineRuntime } from "../../src/main/infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
 import { resolveLocalCliExecutable } from "../../src/main/infrastructure/mana/local-cli-executable-resolver.js";
 import { assertCodexWorkspaceProtocol } from "../../src/main/infrastructure/mana/codex-workspace-capabilities.js";
+import { stageWorkEvidence } from "../../src/main/infrastructure/workspace/work-evidence-stager.js";
 
 const enabled = process.env.JOI_NATIVE_WRITE_TESTS === "1";
 const nativeToolSmoke = process.env.JOI_NATIVE_TOOL_SMOKE === "1";
@@ -61,10 +62,10 @@ function sendSse(response: ServerResponse, events: Record<string, unknown>[]) {
   response.end();
 }
 
-function claudeTool(response: ServerResponse, name: string, input: Record<string, unknown>) {
+function claudeTool(response: ServerResponse, name: string, input: Record<string, unknown>, id = "fixture-tool") {
   sendSse(response, [
-    { type: "message_start", message: { id: "fixture-message", type: "message", role: "assistant", model: "claude-sonnet-4-6", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
-    { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: "fixture-tool", name, input: {} } },
+    { type: "message_start", message: { id: `fixture-message-${id}`, type: "message", role: "assistant", model: "claude-sonnet-4-6", content: [], stop_reason: null, stop_sequence: null, usage: { input_tokens: 1, output_tokens: 0 } } },
+    { type: "content_block_start", index: 0, content_block: { type: "tool_use", id, name, input: {} } },
     { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(input) } },
     { type: "content_block_stop", index: 0 },
     { type: "message_delta", delta: { stop_reason: "tool_use", stop_sequence: null }, usage: { output_tokens: 1 } },
@@ -84,7 +85,7 @@ function claudeText(response: ServerResponse) {
 }
 
 function codexResponse(response: ServerResponse, item: Record<string, unknown>) {
-  const result = { id: "fixture-response", object: "response", status: "completed", output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 } } };
+  const result = { id: `fixture-response-${typeof item.id === "string" ? item.id : "response"}`, object: "response", status: "completed", output: [item], usage: { input_tokens: 1, output_tokens: 1, total_tokens: 2, input_tokens_details: { cached_tokens: 0 } } };
   const events: Record<string, unknown>[] = [
     { type: "response.created", response: { ...result, status: "in_progress", output: [] } },
     { type: "response.output_item.added", output_index: 0, item },
@@ -100,6 +101,91 @@ function codexResponse(response: ServerResponse, item: Record<string, unknown>) 
 }
 
 describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
+  it.for(["claude-code", "codex"] as const)("AC-53 %s reads immutable evidence outside the execution workspace", { timeout: 60_000 }, async (engine, test) => {
+    if (engine === "codex" && !nativeToolSmoke) test.skip();
+    let calls = 0;
+    let indexDelivered = false;
+    let observedEvidence = false;
+    let cwdReadObserved = false;
+    let cwdReadRequested = false;
+    let indexReadRequested = false;
+    const readIssues = new Set<string>();
+    const strings = (value: unknown): string[] => typeof value === "string" ? [value]
+      : Array.isArray(value) ? value.flatMap(strings)
+        : value !== null && typeof value === "object" ? Object.values(value).flatMap(strings) : [];
+    const local = await fixture((body, response) => {
+      calls += 1;
+      const text = strings(body).join("\n");
+      indexDelivered ||= text.includes(indexPath) || text.includes(indexPath.replaceAll("\\", "\\\\"));
+      const complete = text.includes("NATIVE_EXTERNAL_EVIDENCE_TAIL");
+      const rows = engine === "codex" ? body.input : body.messages;
+      const toolOutputs = Array.isArray(rows) ? (rows as unknown[]).flatMap((row: unknown): unknown[] => {
+        if (row === null || typeof row !== "object") return [];
+        const item = row as Record<string, unknown>;
+        if (item.type === "function_call_output") return [item.output];
+        return Array.isArray(item.content) ? (item.content as unknown[]).filter(part => part !== null && typeof part === "object" && "type" in part && part.type === "tool_result") : [];
+      }) : [];
+      const toolText = strings(toolOutputs).join("\n");
+      cwdReadObserved ||= toolText.includes("initial");
+      for (const marker of ["Permission denied", "permission denied", "does not exist", "No such file", "Unknown tool", "not allowed", "Access is denied", "File has not been read", "outside allowed", "sandbox_unavailable", "CreateProcessAsUserW", "failed", "Error", "sandbox", "sandbox setup", "1314", "failed to initialize"]) {
+        if (toolText.includes(marker)) readIssues.add(marker);
+      }
+      observedEvidence ||= complete;
+      if (engine === "claude-code") {
+        if (complete || calls > 8) { claudeText(response); return; }
+        claudeTool(response, "Read", { file_path: calls === 1 ? indexPath : path.join(path.dirname(indexPath), "result-0.txt") }, `fixture-tool-${String(calls)}`);
+        return;
+      }
+      if (complete || calls > 8 || readIssues.size > 0) {
+        codexResponse(response, { id: `answer-${String(calls)}`, type: "message", role: "assistant", status: "completed", content: [{ type: "output_text", text: "Native evidence read", annotations: [] }] });
+        return;
+      }
+      const input = body.input as { type: string; output?: unknown }[];
+      const output = input.filter(item => item.type === "function_call_output").at(-1)?.output;
+      const last = output === undefined ? "" : typeof output === "string" ? output : JSON.stringify(output);
+      const session = /session(?:_id| ID)[^0-9]*(\d+)/iu.exec(last)?.[1];
+      if (session !== undefined && !last.includes("Process exited")) {
+        codexResponse(response, { type: "function_call", id: `poll-${String(calls)}`, call_id: `poll-${String(calls)}`, name: "write_stdin", arguments: JSON.stringify({ session_id: Number(session), chars: "", yield_time_ms: 1000, max_output_tokens: 500 }) });
+        return;
+      }
+      const target = !cwdReadRequested ? path.join(local.workspace, "input.txt")
+        : indexReadRequested ? path.join(path.dirname(indexPath), "result-0.txt") : indexPath;
+      if (cwdReadRequested) indexReadRequested = true;
+      else cwdReadRequested = true;
+      const quoted = process.platform === "win32" ? `'${target.replaceAll("'", "''")}'` : `'${target.replaceAll("'", "'\\''")}'`;
+      codexResponse(response, { type: "function_call", id: `read-${String(calls)}`, call_id: `read-${String(calls)}`, name: "exec_command",
+        arguments: JSON.stringify({ cmd: process.platform === "win32" ? `Get-Content -LiteralPath ${quoted} -Raw` : `cat ${quoted}`, yield_time_ms: 1000, max_output_tokens: 1000 }) });
+    });
+    const evidence = { index: "result-0.txt: COMPLETED; PASSED", files: [{ name: "result-0.txt", body: "NATIVE_EXTERNAL_EVIDENCE_TAIL" }], inline: "bounded evidence" };
+    const indexPath = (await stageWorkEvidence({ contextSnapshotId: request.contextSnapshotId, evidence, taskDirectory: path.join(local.root, "task-inputs") })).indexPath;
+    const dependencies = { contexts: { loadForExecution: async () => ({ evidence, promptSection: `scope\n${evidence.inline}`, sanitized: {}, workspacePath: local.workspace }) },
+      evidenceDirectory: path.join(local.root, "task-inputs"), prompts: { read: async () => null }, deadlines: { totalMillis: 30_000 } };
+    const environment = { ...nativeEnvironment(local.root), APPDATA: local.root, LOCALAPPDATA: local.root };
+    const runtime = engine === "claude-code" ? new ClaudeAgentSdkPartnerEngineRuntime({ ...dependencies, environment: { ...environment, ANTHROPIC_BASE_URL: local.url } })
+      : new CodexAgentSdkPartnerEngineRuntime({ ...dependencies, environment, sdk: { create: options => {
+        const client = new Codex({ ...options, env: environment, config: { ...options.config, model_provider: "fixture", model_providers: {
+          fixture: { name: "Fixture", base_url: `${local.url}/v1`, wire_api: "responses", env_key: "JOI_FIXTURE_KEY", supports_websockets: false },
+        } } });
+        return { startThread: input => client.startThread(input), resumeThread: (id, input) => client.resumeThread(id, input) };
+      } } });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-19T00:00:00Z", displayName: "Native evidence", engine,
+      engineModelId: engine === "claude-code" ? "claude-sonnet-4-6" : "gpt-5.4", kind: "local-pi", partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["Read"], toolPolicyMode: "CUSTOM",
+      codexPermissions: { approvalPolicy: "never", sandboxMode: "read-only", networkAccessEnabled: false, webSearchMode: "disabled" } });
+    try {
+      const result = await runtime.runEphemeral({ ...request, taskProjection: "Read the task's evidence index and result-0.txt, then finish." }, revision, context);
+      expect([...readIssues]).toEqual([]);
+      if (engine === "codex") expect(cwdReadObserved).toBe(true);
+      expect(observedEvidence).toBe(true);
+      expect(indexDelivered).toBe(true);
+      expect(indexPath.startsWith(local.workspace)).toBe(false);
+      expect(result.output.artifacts).toEqual([]);
+      expect(calls).toBeGreaterThanOrEqual(3);
+    } catch (error) {
+      const code = error !== null && typeof error === "object" && "code" in error && typeof error.code === "string" ? error.code : "unknown";
+      throw new Error(`native_evidence_${engine}_${code}_requests_${String(calls)}_cwd_${String(cwdReadObserved)}_evidence_${String(observedEvidence)}`, { cause: error });
+    } finally { await local.close(); }
+  });
+
   it("Codex CLI advertises schema/resume and actually rejects sandbox writes", async () => {
     const executable = resolveLocalCliExecutable("codex").executablePath;
     if (executable === undefined) throw new Error("native_codex_missing");

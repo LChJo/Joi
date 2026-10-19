@@ -588,8 +588,8 @@ describe("partner dispatch instance routing", () => {
       expect(promptSection.length).toBeLessThan(140_000);
       expect(promptSection).toContain('"artifactCount":5000');
       expect(promptSection).not.toContain("scratch/file-4999.js");
-      expect(promptSection).toContain("exceeded the evidence budget");
-      expect(promptSection).not.toContain("NOISY_TAIL");
+      expect(promptSection).toContain("omitted body section");
+      expect(promptSection).toContain("NOISY_TAIL");
       // A modest sibling body is still delivered whole.
       expect(promptSection).toContain(smallBody);
     } finally {
@@ -1137,13 +1137,21 @@ describe("partner dispatch instance routing", () => {
         contextAssembler: new WorkbenchContextAssembler({ workbenches: new LegacyLifeStoreAdapter(database), clock: new TestClock(), ids: new TestIds(), projections: contexts, snapshots: contexts }),
         contexts: { loadForExecution: async (id) => {
           const execution = await contexts.loadForExecution(id);
-          return execution === null ? null : { ...execution, promptSection: `${execution.promptSection}\nPRIVATE_GOAL_EVIDENCE` };
+          return execution === null ? null : { ...execution, promptSection: `${execution.promptSection}\nPRIVATE_GOAL_EVIDENCE`, evidence: {
+            inline: "PRIVATE_GOAL_EVIDENCE", selfContainedInline: "PRIVATE_GOAL_EVIDENCE FULL_REMOTE_CONCLUSION_TAIL", index: "native-input-index", files: [{ name: "result-0.txt", body: "NATIVE_ONLY_FILE_BODY" }],
+          } };
         } },
         database,
         gateway: {
           recover: async () => { throw new Error("unexpected recovery"); },
           startWithResult: async (input) => {
             expect(JSON.stringify(input.parts)).toContain("PRIVATE_GOAL_EVIDENCE");
+            expect(JSON.stringify(input.parts)).toContain("FULL_REMOTE_CONCLUSION_TAIL");
+            expect(input.messageId).toBe("action_1");
+            expect(JSON.stringify(input.parts)).not.toContain(root);
+            expect(JSON.stringify(input.parts)).not.toContain("native-input-index");
+            expect(JSON.stringify(input.parts)).not.toContain("NATIVE_ONLY_FILE_BODY");
+            expect(JSON.stringify(input.parts)).not.toContain("Evidence index (read-only input)");
             expect(JSON.stringify(input.parts)).toContain(effectiveRequirements);
             expect(JSON.stringify(input.parts)).not.toContain("[用户补充]");
             expect(JSON.stringify(input.parts)).not.toContain("使用用户身份");

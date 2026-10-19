@@ -71,7 +71,7 @@ describe("local Pi coding partner runtime", () => {
     const input = { instanceId: "ceiling", knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [], revision, restoredMessages: null,
       request: { actionId: "action", workbenchId: "wb", workId: "work", contextSnapshotId: "snapshot", taskProjection: "review" } };
     faux.setResponses([context => {
-      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["read", "ask_user"]);
+      expect(getCurrentTools(context.messages).map(tool => tool.name)).toEqual(["read", "ask_user", "context_read_history"]);
       expect(requestSystemPrompt(context)).toContain("Work access ceiling: READ");
       return fauxAssistantMessage([fauxText("review complete")]);
     }]);
@@ -1694,7 +1694,7 @@ describe("Pi partner engine runtime", () => {
     // The authoritative policy lines survive the trim of the background data below them.
     expect(firstSystemPrompt).toContain("Runtime permission boundary (authoritative");
     expect(firstSystemPrompt).toContain("keep code comments clean and clear");
-    expect(events).toEqual([{
+    expect(events.filter(event => event.name === "joi.partner.system_prompt_bounded")).toEqual([{
       fields: { backgroundChars: 220_000, budgetChars, workId: "work_oversized", workbenchId: "workbench_1" },
       name: "joi.partner.system_prompt_bounded",
     }]);

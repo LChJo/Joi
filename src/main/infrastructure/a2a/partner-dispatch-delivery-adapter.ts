@@ -42,6 +42,7 @@ import { assertExecutionAccess, localExecutionCapabilities, readExecutionNeeds }
 import { createWorkResult } from "../../domain/work/work-result.js";
 import type { WorkAccessMode } from "../../domain/work/work.js";
 import type { SqliteWorkspaceLeaseManager } from "../persistence/sqlite-workspace-lease-manager.js";
+import { selfContainedEvidenceContext, stageWorkEvidence } from "../workspace/work-evidence-stager.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -248,6 +249,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     agentConversations?: Pick<WorkbenchAgentRepository, "append" | "appendToolTrace" | "replaceRun">;
     /** Stages source attachments into private task input storage. */
     attachmentStager?: Pick<WorkAttachmentStagerPort, "stage">;
+    evidenceDirectory?: string;
     clock: Clock;
     /** Raises a user question card when a local partner pauses with WAITING_INPUT. */
     clarifications?: Pick<JoiCoordinatorStore, "requireClarification">;
@@ -270,7 +272,9 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     if (row?.kind !== "LOCAL_PI" || row.scheduling_version !== 2 || attemptTerminal(row.status)) return;
     this.dependencies.database.transaction(db => db.prepare(`INSERT INTO local_work_execution
       (dispatch_attempt_id, phase, generation, wait_reason, updated_at) VALUES (?, 'READ_QUEUED', 1, ?, ?)
-      ON CONFLICT(dispatch_attempt_id) DO UPDATE SET wait_reason = excluded.wait_reason WHERE phase IN ('READ_QUEUED','WRITE_QUEUED')`)
+      ON CONFLICT(dispatch_attempt_id) DO UPDATE SET
+        updated_at = CASE WHEN wait_reason = excluded.wait_reason THEN updated_at ELSE excluded.updated_at END,
+        wait_reason = excluded.wait_reason WHERE phase IN ('READ_QUEUED','WRITE_QUEUED')`)
       .run(claim.dispatchAttemptId, reason, this.dependencies.clock.now().toISOString()));
   }
 
@@ -349,6 +353,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       leaseExpiresAt = lease.expiresAt;
       leaseGeneration = lease.generation;
       leaseWorkId = row.work_id;
+      if (scheduled) this.#workspaceQueueFinished(row, "READ", this.#executionState(row.dispatch_attempt_id));
     }
 
     // Every failure after the lease was granted must release it; otherwise the row
@@ -386,6 +391,16 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         return "skipped_terminal";
       }
       if (row.context_snapshot_id === null) throw new Error("workbench_context_snapshot_not_found");
+      if (row.kind === "LOCAL_PI" && ["claude-code", "codex"].includes(revision.engine)) {
+        const execution = await this.dependencies.contexts.loadForExecution(row.context_snapshot_id);
+        if (execution?.evidence !== undefined && execution.workspacePath !== undefined) {
+          try {
+            await stageWorkEvidence({ contextSnapshotId: row.context_snapshot_id, evidence: execution.evidence,
+              ...(this.dependencies.evidenceDirectory === undefined ? {} : { taskDirectory: this.dependencies.evidenceDirectory }),
+            });
+          } catch { /* The runtime retains inline evidence and records a delivery fallback if staging remains unavailable. */ }
+        }
+      }
 
       let instanceId: string | undefined;
       let sessionPolicy: "EPHEMERAL" | "RESIDENT" | undefined;
@@ -430,9 +445,18 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     });
   }
 
-  #executionState(dispatchAttemptId: string): { checkpoint_ref: string | null; generation: number; phase: string; staged_attachments_json: string | null } | undefined {
-    return this.dependencies.database.transaction(db => db.prepare(`SELECT checkpoint_ref, generation, phase, staged_attachments_json
-      FROM local_work_execution WHERE dispatch_attempt_id = ?`).get(dispatchAttemptId)) as { checkpoint_ref: string | null; generation: number; phase: string; staged_attachments_json: string | null } | undefined;
+  #executionState(dispatchAttemptId: string): { checkpoint_ref: string | null; generation: number; phase: string; staged_attachments_json: string | null; updated_at: string; wait_reason: string | null } | undefined {
+    return this.dependencies.database.transaction(db => db.prepare(`SELECT checkpoint_ref, generation, phase, staged_attachments_json, updated_at, wait_reason
+      FROM local_work_execution WHERE dispatch_attempt_id = ?`).get(dispatchAttemptId)) as { checkpoint_ref: string | null; generation: number; phase: string; staged_attachments_json: string | null; updated_at: string; wait_reason: string | null } | undefined;
+  }
+
+  #workspaceQueueFinished(row: DispatchRow, phase: "READ" | "WRITE", state: { updated_at: string; wait_reason: string | null } | undefined): void {
+    if (state?.wait_reason !== `WORKSPACE_${phase}`) return;
+    const durationMs = this.dependencies.clock.now().getTime() - Date.parse(state.updated_at);
+    if (!Number.isFinite(durationMs) || durationMs < 0) return;
+    emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.partner.workspace_queue_finished", {
+      dispatchAttemptId: row.dispatch_attempt_id, durationMs, phase, workbenchId: row.workbench_id, workId: row.work_id,
+    });
   }
 
   async #prepareContinuation(row: DispatchRow, claim: PartnerDispatchClaimRow): Promise<PreparedDispatch | "skipped_terminal"> {
@@ -489,6 +513,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
       await this.queued(claim, "WORKSPACE_WRITE");
       throw new DomainError(DISPATCH_POLICY_REASONS.workspaceLeaseConflict, "The workspace is awaiting its write lease.");
     }
+    this.#workspaceQueueFinished(row, "WRITE", state);
     try {
       return { actionId: row.action_id, attemptCount: claim.attemptCount, dispatchAttemptId: row.dispatch_attempt_id,
         executionGeneration: continuationGeneration, ...(row.instance_id === null ? {} : { instanceId: row.instance_id }),
@@ -625,6 +650,12 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
     }
     const execution = await this.dependencies.contexts.loadForExecution(row.context_snapshot_id ?? "");
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
+    const remoteContext = selfContainedEvidenceContext(execution);
+    if (execution.evidence !== undefined) emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.context.delivery", {
+      budgetFallbacks: (execution.evidence.selfContainedInline ?? execution.evidence.inline).length > 24_000 ? 1 : 0,
+      contextChars: remoteContext.length, engine: "a2a", evidenceChars: (execution.evidence.selfContainedInline ?? execution.evidence.inline).length,
+      evidenceCount: execution.evidence.files.length, reasonCode: "evidence_remote_inline",
+    });
     const started = row.invocation_id === null
       ? await this.dependencies.gateway.startWithResult({
         agentConnectionId: row.agent_connection_id,
@@ -634,7 +665,7 @@ export class SqlitePartnerDispatchDelivery implements PartnerDispatchDelivery {
         capacity: { lane: "collaborator", lifeId: row.workbench_id },
         messageId: row.action_id,
         parts: [
-          { kind: "text", text: `${taskProjection(row)}\n\n${execution.promptSection}` },
+          { kind: "text", text: `${taskProjection(row)}\n\n${remoteContext}` },
           { data: { actionId: row.action_id, workbenchId: row.workbench_id, context: execution.sanitized, sourceBoundary: "joi-work", workId: row.work_id }, kind: "data" },
         ],
       })

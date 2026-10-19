@@ -19,6 +19,7 @@ import { wrapPartnerRunFailure } from "../../application/partners/partner-run-fa
 import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../workspace/workspace-output-artifacts.js";
 import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { workspaceReadScopeLine, workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
+import { prepareNativeEvidenceContext } from "../workspace/work-evidence-stager.js";
 import { resolveLocalCliExecutable, type ResolvedLocalCliExecutable } from "./local-cli-executable-resolver.js";
 import { classifyNativeCliFailure, settleNativeProbe, type NativeCliProbePhase } from "./native-agent-runtime-support.js";
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
@@ -47,6 +48,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     deadlines?: { graceActiveWindowMillis?: number; graceMillis?: number; idleMillis?: number; totalMillis: number };
     diagnostics?: RuntimeDiagnostics;
     environment?: NodeJS.ProcessEnv;
+    evidenceDirectory?: string;
     probeTimeoutMillis?: number;
     prompts: Pick<PartnerPromptStore, "read">;
     resolveExecutable?: () => ResolvedLocalCliExecutable;
@@ -128,7 +130,13 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     }
     const permissions = analysis ? { ...ceiling, sandboxMode: "read-only" as const } : ceiling;
     tracker.sideEffectState = permissions.sandboxMode === "workspace-write" ? "UNKNOWN" : "NONE";
-    const systemPrompt = await this.#systemPrompt(revision, request, execution.promptSection, context, permissions, execution.workspacePath);
+    const workbenchSection = await prepareNativeEvidenceContext({
+      canRead: execution.workspacePath !== undefined,
+      ...(this.dependencies.diagnostics === undefined ? {} : { diagnostics: this.dependencies.diagnostics }),
+      engine: "codex", execution, request,
+      ...(this.dependencies.evidenceDirectory === undefined ? {} : { taskDirectory: this.dependencies.evidenceDirectory }),
+    });
+    const systemPrompt = await this.#systemPrompt(revision, request, workbenchSection, context, permissions, execution.workspacePath);
     const client = this.#client(resolved, systemPrompt, gated);
     const threadOptions: ThreadOptions = {
       approvalPolicy: "never",
@@ -292,9 +300,8 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable capability.",
       partnerCommentDisciplineLine,
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
-      // The CLI owns its own message history, so this background is the one payload joi controls
-      // here; left unbounded it is the whole request.
-      boundBackgroundSections([workbenchSection, context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
+      workbenchSection,
+      boundBackgroundSections([context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
     ].filter((part) => part !== "").join("\n");
   }
 

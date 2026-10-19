@@ -63,6 +63,8 @@ const REPLAY_SAFE_TOOL_NAMES = new Set([
   "partner_list_instances",
   "partner_list_skills",
   "work_read_result",
+  "work_read_evidence",
+  "context_read_history",
   "workbench_list_summaries",
   "list_automations",
   "get_automation",
@@ -278,7 +280,9 @@ export class JoiCoordinator {
         inputId,
       });
     }
-    const sessionBase = isGoalSynthesis ? `joi_synthesis_session:${workbenchId}:${goalId}` : `joi_session:${workbenchId}:${goalId}`;
+    const sessionBase = isGoalSynthesis
+      ? `joi_synthesis_snapshot_v1:${workbenchId}:${goalId}:r${String(input.resultRevision)}:q${String(input.requirementsRevision ?? contract?.revision ?? 0)}`
+      : `joi_session:${workbenchId}:${goalId}`;
     const sessionId = sessionGeneration === 0 ? sessionBase : `${sessionBase}#${String(sessionGeneration)}`;
     if (input.resolvedAction !== undefined && contract === undefined) {
       if (this.dependencies.work === undefined || this.dependencies.store.completeResolvedAction === undefined) {
@@ -410,7 +414,9 @@ export class JoiCoordinator {
         const pass = { committedOutcome: false, observedToolCalls: 0 };
         const finishedTurnIds = new Set<string>();
         await this.dependencies.runtime.startTurn({
-            ...(contract === undefined ? {} : { requiredContext: renderGoalRequirements(contract) }),
+            ...(contract === undefined
+              ? input.synthesisContext === undefined ? {} : { requiredContext: input.synthesisContext.originalRequest }
+              : { requiredContext: renderGoalRequirements(contract) }),
             ...(refreshRequiredContext === undefined ? {} : { refreshRequiredContext }),
             workbenchId,
             ...(backgroundContext === undefined ? {} : { backgroundContext }),

@@ -99,7 +99,7 @@ function synthesizePartnerProfile(displayName: string, skills: string[], capabil
 
 const SYNTHESIS_TOOL_NAMES = new Set([
   "goal_read_inputs", "goal_update_requirements", "work_list_goal", "work_read_brief", "work_update_brief",
-  "model_list_sources", "partner_list_available", "partner_set_model", "partner_set_tools", "turn_complete", "work_cancel", "work_read_result", "work_reassign", "work_resume", "work_supplement",
+  "model_list_sources", "partner_list_available", "partner_set_model", "partner_set_tools", "turn_complete", "work_cancel", "work_read_evidence", "work_read_result", "work_reassign", "work_resume", "work_supplement",
 ]);
 
 const ATTACHMENT_CHUNK_CHARS = 8_000;
@@ -131,7 +131,7 @@ export function createJoiReasoningTools(input: {
   memory: Pick<PartnerWorkMemoryService, "digest">;
   models: Pick<ModelSourceService, "list">;
   partners: Pick<PartnerRegistryService, "add" | "inspect" | "list" | "setModel" | "setSkills" | "setTools">;
-  results: Pick<WorkResultService, "read">;
+  results: Pick<WorkResultService, "read"> & Partial<Pick<WorkResultService, "index" | "readConclusion">>;
   skills: Pick<PartnerSkillCatalog, "listForEngine">;
   turnId: string;
   work: Pick<WorkOrchestrationService, "cancel" | "plan" | "reassign" | "resume" | "supplement"> & Partial<Pick<WorkOrchestrationService, "listForGoal" | "readBrief" | "refreshBrief">>;
@@ -257,6 +257,7 @@ export function createJoiReasoningTools(input: {
         }),
         Type.Object({ kind: Type.Literal("FILE_EXISTS"), relativePath: Type.String({ description: ACCEPTANCE_RELATIVE_PATH_DESCRIPTION, maxLength: 500, minLength: 1 }) }),
       ]), { maxItems: 8, minItems: 1 }),
+      evidenceResultIds: Type.Optional(Type.Array(Type.String(), { uniqueItems: true, description: "Explicit stored result ids from this goal; these precede automatically selected dependency evidence." })),
       requirementIds: Type.Optional(Type.Array(Type.String())),
       allRequirements: Type.Optional(Type.Boolean()),
       executionNeeds: Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2, description: "Local execution needs: SHELL for CLI/commands; FILE_WRITE for creating or editing files including temporary scripts. [] for built-in reads or a text answer. Pi/Claude SHELL and every FILE_WRITE require WRITE accessMode. WRITE is a ceiling; initial workspace lease remains READ. Respect explicit user read-only restrictions." }),
@@ -286,6 +287,7 @@ export function createJoiReasoningTools(input: {
           inputId: goalContext(),
           turnId: input.turnId,
           work: arguments_.work.map((item) => ({
+            ...(item.evidenceResultIds === undefined ? {} : { evidenceResultIds: item.evidenceResultIds }),
             acceptanceChecks: item.acceptanceChecks,
             accessMode: item.accessMode,
             executionNeeds: item.executionNeeds,
@@ -415,6 +417,7 @@ export function createJoiReasoningTools(input: {
     parameters: workReassignParameters,
   };
   const workResumeParameters = Type.Object({
+    evidenceResultIds: Type.Optional(Type.Array(Type.String(), { uniqueItems: true })),
     executionNeeds: Type.Optional(Type.Array(Type.Union([Type.Literal("SHELL"), Type.Literal("FILE_WRITE")]), { uniqueItems: true, maxItems: 2 })),
     requirementsRevision: Type.Optional(Type.Integer()),
     requirementIds: Type.Optional(Type.Array(Type.String())), allRequirements: Type.Optional(Type.Boolean()),
@@ -425,6 +428,7 @@ export function createJoiReasoningTools(input: {
   const workResumeTool: AgentTool<typeof workResumeParameters> = {
     description: "Resume a Work that paused with WAITING_INPUT once the user has answered its blocking question. Provide complete replacement instructions containing the relevant answer, effective requirements, established facts, boundaries and deliverable; the goal request history is not attached. Pass the exact resolvedActionId from the recovery input as actionId when present so retries preserve identity. Dispatches a fresh attempt on the same partner revision and continues the original instance when it is still alive. Use this instead of work_reassign, which exists to change the partner revision after a failure.",
     execute: async (_toolCallId, arguments_) => executeWithInstructions("work_resume", () => input.work.resume({
+      ...(arguments_.evidenceResultIds === undefined ? {} : { evidenceResultIds: arguments_.evidenceResultIds }),
       ...(arguments_.executionNeeds === undefined ? {} : { executionNeeds: arguments_.executionNeeds }),
       ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
       requirementIds: arguments_.requirementIds ?? [], allRequirements: arguments_.allRequirements ?? false,
@@ -653,6 +657,7 @@ export function createJoiReasoningTools(input: {
   const readResultTool: AgentTool<typeof readResultParameters> = {
     description: "Read one bounded chunk of a persisted work result belonging to the current Workbench. The first chunk also reports the acceptance verification verdict (PASSED, FAILED with a reason, or NOT_REQUIRED). Use nextCursor to continue.",
     execute: async (_toolCallId, arguments_) => result(await input.results.read({
+      goalInputId: goalContext(),
       workbenchId: input.workbenchId,
       ...(arguments_.cursor === undefined ? {} : { cursor: arguments_.cursor }),
       resultId: arguments_.resultId,
@@ -660,6 +665,24 @@ export function createJoiReasoningTools(input: {
     label: "Read work result",
     name: "work_read_result",
     parameters: readResultParameters,
+  };
+  const readEvidenceParameters = Type.Object({
+    mode: Type.Optional(Type.Union([Type.Literal("index"), Type.Literal("conclusion")])),
+    outcomeId: Type.Optional(Type.String()), cursor: Type.Optional(Type.String()),
+  });
+  const readEvidenceTool: AgentTool<typeof readEvidenceParameters> = {
+    name: "work_read_evidence", label: "Read goal evidence index",
+    description: "Read the current goal's complete historical evidence index or one historical goal conclusion in 8000-character pages. Includes failed, late and unverified results with explicit status; omission from an injected package never means absence. Use work_read_result for bodies and nextCursor for subsequent pages.",
+    parameters: readEvidenceParameters,
+    execute: async (_id, args) => {
+      const scope = { goalInputId: goalContext(), workbenchId: input.workbenchId, ...(args.cursor === undefined ? {} : { cursor: args.cursor }) };
+      if (args.mode === "conclusion") {
+        if (args.outcomeId === undefined || input.results.readConclusion === undefined) throw new DomainError("goal_evidence_not_found", "Provide a conclusion outcomeId from the evidence index.");
+        return result(await input.results.readConclusion({ ...scope, outcomeId: args.outcomeId }));
+      }
+      if (input.results.index === undefined) throw new DomainError("work_evidence_unavailable", "Evidence indexing is unavailable.");
+      return result(await input.results.index(scope));
+    },
   };
   const userAskParameters = Type.Object({ question: Type.String() });
   const goalResumeTool: AgentTool = {
@@ -975,7 +998,7 @@ export function createJoiReasoningTools(input: {
     workReassignTool,
     workResumeTool,
     workCancelTool,
-    readResultTool,
+    readResultTool, readEvidenceTool,
     goalResumeTool,
     userAskTool,
     turnCompleteTool,

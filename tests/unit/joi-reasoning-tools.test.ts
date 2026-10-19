@@ -64,6 +64,7 @@ function makeTools(options: {
   const ensureCalls: unknown[] = [];
   const disposeCalls: { instanceId: string; reason: string }[] = [];
   const planCalls: unknown[] = [];
+  const evidenceCalls: unknown[] = [];
   const clarificationCalls: { inputId: string; prompt?: string; reasonCode: string }[] = [];
   const changeBase = { createdAt: "2026-07-29T10:00:00.000Z", requestId: "change_1", status: "PENDING" as const };
   const harnessCalls = options.harness?.calls ?? [];
@@ -135,7 +136,11 @@ function makeTools(options: {
       setTools: async (partnerId, tools) => { setToolsCalls.push({ partnerId, tools }); return { ...partnerDto, tools }; },
     },
     skills: { listForEngine: () => [{ description: "演示", displayName: "演示技能", id: "claude-code/demo-skill", modifiedAt: 1 }] },
-    results: { read: async ({ resultId }) => ({ content: "result", resultId }) },
+    results: {
+      read: async ({ resultId }) => ({ content: "result", resultId }),
+      index: async args => { evidenceCalls.push(args); return { content: "index",totalCharacters: 5 }; },
+      readConclusion: async args => { evidenceCalls.push(args); return { content: "conclusion",totalCharacters: 10 }; },
+    },
     turnId: "turn_1",
     work: {
       plan: async (input) => {
@@ -204,6 +209,7 @@ function makeTools(options: {
     disposeCalls,
     ensureCalls,
     planCalls,
+    evidenceCalls,
     clarificationCalls,
     tools,
   };
@@ -865,5 +871,26 @@ describe("joi reasoning tools", () => {
       attachmentIds: ["att_1"],
       attachments: { read: async () => ({ bytes: new Uint8Array(), filename: "x", mimeType: "text/plain" }) },
     }).tools.map((tool) => tool.name)).toContain("attachment_read");
+  });
+});
+
+
+describe("AC-43/48 evidence tools", () => {
+  it("scopes historical index and conclusion pages to the original goal", async () => {
+    const harness = makeTools({ inputId: "joi_result_input:goal:original:r7:q2",goalInputId: "original" });
+    await harness.call("work_read_evidence", { cursor: "8000" });
+    await harness.call("work_read_evidence", { mode: "conclusion",outcomeId: "r6:q2" });
+    expect(harness.evidenceCalls).toEqual([
+      { goalInputId: "original",workbenchId: "workbench_1",cursor: "8000" },
+      { goalInputId: "original",workbenchId: "workbench_1",outcomeId: "r6:q2" },
+    ]);
+  });
+  it("persists explicit citations from dispatch and resume parameters", async () => {
+    const resume: unknown[] = [];
+    const harness = makeTools({ workResumeCalls: resume as Record<string, unknown>[] });
+    await harness.call("work_dispatch", { work: [{ key: "one",title: "Read",partnerId: "partner_1",accessMode: "NONE",executionNeeds: [],evidenceResultIds: ["r81"],instructions: "Read the cited middle result.",acceptanceChecks: [{ kind: "BODY_PRESENT" }] }] });
+    expect(harness.planCalls[0]).toMatchObject({ work: [{ evidenceResultIds: ["r81"] }] });
+    await harness.call("work_resume", { workId: "waiting",evidenceResultIds: ["r81"],instructions: "Continue with the cited evidence." });
+    expect(resume[0]).toMatchObject({ evidenceResultIds: ["r81"] });
   });
 });

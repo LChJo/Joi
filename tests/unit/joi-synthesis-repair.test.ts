@@ -9,6 +9,34 @@ const workbench = createWorkbench({ workbenchId: "workbench", createdAt: "2026-0
   personaRevisionId: "persona", personaSummary: "Careful", project: { label: "Test" }, scopeSummary: "Test", taskContext: { activeWorkIds: [], summary: "" } });
 
 describe("synthesis outcome repair", () => {
+  it("isolates seven result versions and requirement changes while restoring the same version identity after restart", async () => {
+    const turns: StartReasoningTurnInput[] = [];
+    const versions = [...Array.from({ length: 7 }, (_, index) => ({ r: index + 1, q: 1 })), { r: 7, q: 2 }, { r: 7, q: 2 }];
+    for (const { r, q } of versions) {
+      const coordinator = new JoiCoordinator({ clock: new TestClock(), ids: new TestIds(),
+        runtime: { startTurn: async turn => {
+          turns.push(turn);
+          turn.onEvent?.({ type: "text_delta", turnId: turn.turnId, delta: "[joi synthesis outcome=RESULT_SYNTHESIZED]\nComplete deliverable." });
+        }, abort: () => undefined, followUp: () => undefined, isRunning: () => false, restore: async () => false,
+        rollbackTurn: async () => false, steer: () => undefined, waitForIdle: async () => undefined },
+        workbenches: { getWorkbench: async () => workbench, listSummaries: async () => [] }, router: { decide: async () => ({}) },
+        sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake" }) },
+        store: { completeInput: async () => undefined, createTurn: async () => undefined, requireClarification: async () => undefined,
+          loadInput: async () => ({ inputId: "synthesis", goalInputId: "goal", resultRevision: r, requirementsRevision: q, workbenchId: "workbench", body: "Synthesize this version", status: "PENDING",
+            synthesisContext: { originalRequest: "MANDATORY_REQUIREMENT", resultRevision: r, requirementsRevision: q, changedResults: [], totalResults: 163, gapCount: 0, omittedChanges: 0,
+              previous: { resultRevision: r - 1, disposition: "CONTINUE", summary: "PRIVATE_PREVIOUS_CONCLUSION" } } }) },
+      });
+      await coordinator.handle("synthesis");
+    }
+    expect(new Set(turns.map(turn => turn.sessionId)).size).toBe(8);
+    expect(turns.at(-1)?.sessionId).toBe(turns.at(-2)?.sessionId);
+    for (const turn of turns) {
+      expect(turn.prompt).not.toContain("PRIVATE_PREVIOUS_CONCLUSION");
+      expect(turn.backgroundContext).toContain("PRIVATE_PREVIOUS_CONCLUSION");
+      expect(turn.requiredContext).toBe("MANDATORY_REQUIREMENT");
+      expect(turn.sessionId).toMatch(/^joi_synthesis_snapshot_v1:/u);
+    }
+  });
   it.each(["RESULT_SYNTHESIZED", "RESULT_CONTINUE", "RESULT_BLOCKED"] as const)("accepts an explicit text %s decision on the first response without another model call", async outcome => {
     const completeInput = vi.fn(async () => undefined);
     const startTurn = vi.fn(async (turn: StartReasoningTurnInput) => {

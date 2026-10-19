@@ -612,6 +612,45 @@ export interface RuntimeDiagnosticEventMap {
     compactedMessages: number;
     count: number;
     tokensBefore: number;
+    charsBefore?: number;
+    charsAfter?: number;
+    durationMs?: number;
+    runtime?: "joi" | "pi";
+  };
+  "joi.context.request": {
+    runtime: "joi" | "pi";
+    contextChars: number;
+    historyChars: number;
+    requiredChars: number;
+    backgroundChars: number;
+    budgetFallbacks: number;
+  };
+  "joi.context.delivery": {
+    engine: string;
+    contextChars: number;
+    evidenceChars: number;
+    evidenceCount: number;
+    budgetFallbacks: number;
+    reasonCode: string;
+  };
+  "joi.context.model_completed": {
+    engine: string;
+    purpose: string;
+    durationMs: number;
+    inputChars: number;
+    status: "completed" | "canceled" | "failed";
+  };
+  "joi.context.tool_finished": {
+    engine: "pi";
+    toolName: string;
+    durationMs: number;
+  };
+  "joi.partner.workspace_queue_finished": {
+    dispatchAttemptId: string;
+    workId: string;
+    workbenchId: string;
+    phase: "READ" | "WRITE";
+    durationMs: number;
   };
   /**
    * The summary call failed, so the history could not be compacted this request. The run continues

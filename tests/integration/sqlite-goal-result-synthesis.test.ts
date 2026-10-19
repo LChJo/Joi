@@ -119,8 +119,8 @@ describe("goal-level result synthesis", () => {
         goalInputId: "goal-stock", resultRevision: 2, status: "PENDING",
       });
       const synthesisBody = (await inbox.loadInput(synthesisInputId ?? "missing"))?.body ?? "";
-      expect(synthesisBody).toContain("result-1");
-      expect(synthesisBody).toContain("result-2");
+      expect(synthesisBody).not.toContain("result-1");
+      expect(synthesisBody).not.toContain("result-2");
       expect(synthesisBody).not.toContain("PRIVATE RAW RESULT");
       // The acceptance verdict is part of the evidence line, and the guidance no longer
       // treats every COMPLETED result as verified.
@@ -177,6 +177,9 @@ describe("goal-level result synthesis", () => {
         completion_summary: "横评维度已建立，但近七天来源仍需补齐。",
         disposition: "CONTINUE",
       });
+      expect(fixture.database.transaction(connection => connection.prepare(
+        "SELECT completion_summary FROM joi_goal_outcome_history WHERE goal_input_id = 'goal-stock' AND result_revision = 2",
+      ).get())).toEqual({ completion_summary: "横评维度已建立，但近七天来源仍需补齐。" });
 
       fixture.database.transaction((connection) => {
         connection.prepare(`INSERT INTO joi_turns

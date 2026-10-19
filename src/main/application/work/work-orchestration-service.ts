@@ -1,3 +1,4 @@
+import type { GoalEvidenceRepository } from "../ports/goal-evidence.js";
 import { DomainError } from "../../domain/errors.js";
 import { buildWorkExecutionWaves, createWorkItem, type WorkAccessMode, type WorkDependency } from "../../domain/work/work.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../ports/runtime-diagnostics.js";
@@ -20,6 +21,7 @@ import type {
 } from "../ports/work-orchestration.js";
 
 interface WorkRequest {
+  evidenceResultIds?: string[];
   executionNeeds?: WorkExecutionNeed[];
   requirementIds?: string[];
   allRequirements?: boolean;
@@ -78,6 +80,7 @@ function strongerAccessMode(source: WorkAccessMode, requested: WorkAccessMode): 
 export class WorkOrchestrationService {
   constructor(private readonly dependencies: {
     clock: Clock;
+    evidence?: Pick<GoalEvidenceRepository, "assertReferences">;
     diagnostics?: RuntimeDiagnostics;
     events?: DurableUiEventEmitter;
     ids: IdGenerator;
@@ -119,6 +122,10 @@ export class WorkOrchestrationService {
       }
       requireWorkInstructions(request.instructions);
       readExecutionNeeds(request.executionNeeds);
+      if (request.evidenceResultIds !== undefined) {
+        if (this.dependencies.evidence === undefined) throw new DomainError("work_evidence_unavailable", "Evidence validation is unavailable.");
+        await this.dependencies.evidence.assertReferences({ goalInputId: input.inputId, workbenchId: input.workbenchId, resultIds: request.evidenceResultIds });
+      }
       byKey.set(request.key, request);
     }
     for (const request of input.work) await this.#validateInstanceSelection(input.workbenchId, request);
@@ -160,7 +167,7 @@ export class WorkOrchestrationService {
         ...(contract == null ? {} : {
           requirementsRevision: contract.revision, requirementIds: request.requirementIds ?? [], allRequirements: request.allRequirements ?? false,
         }),
-        ...(input.recovery === undefined || input.recovery.evidenceResultIds.length === 0 ? {} : { evidenceResultIds: [...input.recovery.evidenceResultIds] }),
+        ...((request.evidenceResultIds ?? input.recovery?.evidenceResultIds) === undefined ? {} : { evidenceResultIds: [...new Set(request.evidenceResultIds ?? input.recovery?.evidenceResultIds ?? [])] }),
         ...(request.instructions === undefined ? {} : { instructions: request.instructions }),
         workId: item.workId,
       };
@@ -444,7 +451,7 @@ export class WorkOrchestrationService {
    * current partner revision: the point is to feed the answer back into the same work, and
    * the dispatch continues in the original resident instance when it is still alive.
    */
-  async resume(input: { executionNeeds?: WorkExecutionNeed[]; requirementsRevision?: number; requirementIds?: string[]; allRequirements?: boolean; actionId?: string; instructions?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
+  async resume(input: { evidenceResultIds?: string[]; executionNeeds?: WorkExecutionNeed[]; requirementsRevision?: number; requirementIds?: string[]; allRequirements?: boolean; actionId?: string; instructions?: string; workbenchId: string; turnId: string; workId: string }): Promise<PlannedDispatchAttempt> {
     await this.dependencies.goalGate?.assertWorkOpen(input.workId);
     const repository = this.dependencies.reassignment;
     if (repository === undefined) throw new DomainError("work_reassignment_unavailable", "Work reassignment is unavailable.");
@@ -458,6 +465,10 @@ export class WorkOrchestrationService {
     if (context === null) throw new DomainError("work_not_found", "Work was not found.");
     if (context.item.workbenchId !== input.workbenchId) throw new DomainError("work_workbench_mismatch", "Work belongs to another Workbench.");
     if (context.item.status !== "WAITING") throw new DomainError("work_resume_status_invalid", "Only waiting work can be resumed.");
+    if (input.evidenceResultIds !== undefined) {
+      if (this.dependencies.evidence === undefined || context.inputId === undefined) throw new DomainError("work_evidence_unavailable", "Evidence validation is unavailable.");
+      await this.dependencies.evidence.assertReferences({ goalInputId: context.inputId, workbenchId: input.workbenchId, resultIds: input.evidenceResultIds });
+    }
     const instructions = requireWorkInstructions(input.instructions);
     const contract = context.inputId === undefined ? null : await this.dependencies.requirements?.assertReady(context.inputId, input.requirementsRevision);
     if (contract != null) renderGoalRequirements(contract, input.requirementIds ?? [], input.allRequirements ?? false);
@@ -497,6 +508,7 @@ export class WorkOrchestrationService {
     };
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
     await repository.reassign({ attempt, createdAt, dispatchPlanId, instructions, turnId: input.turnId, workId: input.workId,
+      ...(input.evidenceResultIds === undefined ? {} : { evidenceResultIds: [...new Set(input.evidenceResultIds)] }),
       ...(executionNeeds === undefined ? {} : { executionNeeds }),
       ...(contract == null ? {} : { requirementsRevision: contract.revision, requirementIds: input.requirementIds ?? [], allRequirements: input.allRequirements ?? false }),
       ...(accessMode === context.item.accessMode ? {} : { accessMode }),

@@ -9,6 +9,7 @@ import {
   fauxToolCall,
 } from "@earendil-works/pi-ai";
 import type { Credential, CredentialInfo, CredentialStore } from "@earendil-works/pi-ai";
+import { vi } from "vitest";
 
 import type {
   JoiReasoningSessionSnapshot,
@@ -234,6 +235,7 @@ describe("Pi reasoning runtime contract", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const store = new MemorySessionStore();
+    if (state === "busy") vi.spyOn(models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("HISTORY_TO_KEEP retained in checkpoint")]));
     if (state === "busy") await store.save({
       workbenchId: "workbench", modelRevisionId: "fake", sourceRevisionId: "fake", sessionId: "adaptive", systemPrompt: "POLICY", updatedAt: "2026-10-10T00:00:00.000Z",
       messages: [
@@ -255,7 +257,7 @@ describe("Pi reasoning runtime contract", () => {
       systemPrompt: "POLICY" + (state === "medium" ? "x".repeat(10_000) : ""), turnId: "adaptive_turn",
     });
     const request = requests.at(-1) ?? "";
-    const expectedEvidence = state === "empty" ? "LARGE_EVIDENCE" : state === "medium" ? "MEDIUM_EVIDENCE" : "SOFT_EVIDENCE";
+    const expectedEvidence = state === "empty" || state === "busy" ? "LARGE_EVIDENCE" : state === "medium" ? "MEDIUM_EVIDENCE" : "SOFT_EVIDENCE";
     expect(request.includes(expectedEvidence)).toBe(true);
     if (state === "busy") expect(request).toContain("HISTORY_TO_KEEP");
     expect(request).toContain("REPAIR_NOW");
@@ -611,6 +613,7 @@ describe("Pi reasoning runtime contract", () => {
 
   it("never exposes arbitrary execution tools and can abort an active turn", async () => {
     expect(JOI_REASONING_TOOL_NAMES).toEqual([
+      "context_read_history",
       "goal_read_inputs", "goal_update_requirements", "work_list_goal", "work_read_brief", "work_update_brief",
       "workbench_list_summaries",
       "workbench_select",
@@ -635,6 +638,7 @@ describe("Pi reasoning runtime contract", () => {
       "work_dispatch",
       "work_supplement",
       "work_read_result",
+      "work_read_evidence",
       "attachment_read",
       "work_wait",
       "work_cancel",

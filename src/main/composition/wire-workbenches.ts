@@ -31,6 +31,7 @@ export function wireWorkbenches(input: {
       ids,
       goalGate: workRepository,
       requirements: persistence.goalRequirements,
+      evidence: persistence.goalEvidence,
       instances: persistence.partnerInstanceRepository,
       partners: partnerStack.partners,
       policy: persistence.policyGate,
@@ -56,7 +57,7 @@ export function wireWorkbenches(input: {
       workbenches: persistence.workbenches,
     }),
     workRepository,
-    workResults: new WorkResultService(persistence.workResultRepository),
+    workResults: new WorkResultService(persistence.workResultRepository, persistence.goalEvidence),
   };
 }
 

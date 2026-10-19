@@ -21,6 +21,18 @@ export interface JoiGoalContext {
 }
 
 export interface JoiPendingInput {
+  /** Per-version private background; it never becomes a persisted user message. */
+  synthesisContext?: {
+    originalRequest: string;
+    resultRevision: number;
+    requirementsRevision: number;
+    previous?: { resultRevision: number; disposition: string; summary: string };
+    changedResults: { resultId: string; workId: string; status: string; verification: string; summary: string; isLate: boolean; isAuthoritative: boolean }[];
+    totalResults: number;
+    gapCount: number;
+    omittedChanges: number;
+  };
+  requirementsRevision?: number;
   automationRoutineId?: string;
   automationExecutionId?: string;
   automationExecutionPrompt?: string;

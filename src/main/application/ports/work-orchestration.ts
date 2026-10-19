@@ -96,6 +96,7 @@ export interface WorkSupplementContext {
 }
 
 export interface ReassignedWorkPlan {
+  evidenceResultIds?: string[];
   executionNeeds?: WorkExecutionNeed[];
   requirementsRevision?: number;
   requirementIds?: string[];

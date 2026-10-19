@@ -27,6 +27,7 @@ import { SqliteWorkbenchManagementRepository } from "../infrastructure/persisten
 import { SqliteWorkbenchWorkspaceRepository } from "../infrastructure/persistence/sqlite-workbench-workspace-repository.js";
 import { SqliteWorkPlanRepository } from "../infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteWorkResultRepository } from "../infrastructure/persistence/sqlite-work-result-repository.js";
+import { SqliteGoalEvidenceRepository } from "../infrastructure/persistence/sqlite-goal-evidence-repository.js";
 import { SqliteWorkspaceLeaseManager } from "../infrastructure/persistence/sqlite-workspace-lease-manager.js";
 import { WorkbenchWorkspaceProvisioner } from "../infrastructure/persistence/workbench-workspace-provisioner.js";
 import { SqlitePartnerDispatchClaims } from "../infrastructure/a2a/partner-dispatch-delivery-adapter.js";
@@ -55,6 +56,7 @@ export function wirePersistence(input: {
     joiHomeFeedRepository: input.homeFeedRepository ?? new SqliteJoiHomeFeedRepository(database),
     joiInboxRepository: new SqliteJoiInboxRepository(database, clock),
     goalRequirements: new SqliteGoalRequirementsRepository(database),
+    goalEvidence: new SqliteGoalEvidenceRepository(database),
     modelSourceRepository: new SqliteModelSourceRepository(database),
     partnerInstanceMessageStore: new SqlitePartnerInstanceMessageStore(database),
     partnerInstanceRepository: new SqlitePartnerInstanceRepository(database),

@@ -212,7 +212,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     });
 
     await coordinator.handle("joi_result_input:goal:goal-1");
-    expect(sessions).toEqual(["joi_synthesis_session:research:goal-1"]);
+    expect(sessions).toEqual(["joi_synthesis_snapshot_v1:research:goal-1:r2:q0"]);
     expect(completions).toEqual([expect.objectContaining({
       completion: { completionSummary: "两项工作已完成。 C:\\…\\a\\b\\file。", outcome: "RESULT_SYNTHESIZED" },
       inputId: "joi_result_input:goal:goal-1",

@@ -1,4 +1,4 @@
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
 
 import type { PartnerAdapterRunner, PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
@@ -12,12 +12,17 @@ import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../w
 import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { workspaceReadScopeLine, workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
-import { boundBackgroundSections, boundModelContext, modelRequestBudget } from "./pi-model-budget.js";
-import { trackPiStream } from "./pi-usage.js";
+import { boundBackgroundSections, modelContextMaxChars, modelRequestBudget } from "./pi-model-budget.js";
+import { trackPiModels, trackPiStream } from "./pi-usage.js";
+import { createPiContextManager } from "./pi-context-manager.js";
+import { createContextHistoryTool } from "./pi-history-tools.js";
+import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
+import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 
 export class PiCodingPartnerRunner implements PartnerAdapterRunner {
   constructor(private readonly dependencies: {
     usage?: UsageRecorder;
+    diagnostics?: RuntimeDiagnostics;
     contexts: WorkbenchExecutionContextReader;
     prompts: Pick<PartnerPromptStore, "read">;
     resolver: PiConfiguredModelResolver;
@@ -49,13 +54,23 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
     const requestedTools = (revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM")) === "ALL"
       ? [...this.dependencies.tools.names]
       : revision.tools;
-    const tools = execution.workspacePath === undefined ? [] : this.dependencies.tools.create(
+    const tools: AgentTool[] = [...(execution.workspacePath === undefined ? [] : this.dependencies.tools.create(
       execution.workspacePath,
       requestedTools,
       { environmentKeys: skillDispatch.environmentKeys },
-    );
+    )), createContextHistoryTool(() => agent.state.messages), ...createPartnerEvidenceTools(execution.evidence)];
     const skillSection = skillDispatch.promptSection;
     const budget = modelRequestBudget(resolved.model);
+    const required = request.requiredContext ?? "";
+    if (required.length + request.taskProjection.length + JSON.stringify(tools).length + configuredPrompt.length + 4000 > modelContextMaxChars(resolved.model)) {
+      throw new DomainError("goal_requirements_capacity_exceeded", "The mandatory goal requirements do not fit this request's remaining context capacity.");
+    }
+    const window = createPiContextManager({
+      model: resolved.model, models: trackPiModels(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: request.workbenchId, workId: request.workId }), this.dependencies.diagnostics),
+      messagesMaxChars: budget.messagesMaxChars, thinkingLevel: resolved.thinkingLevel,
+      requiredChars: required.length,
+      onDiagnostic: event => emitRuntimeDiagnostic(this.dependencies.diagnostics, event.type, event),
+    });
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
     const allowed = new Set(tools.map((tool) => tool.name));
     const agent = new Agent({
@@ -77,17 +92,16 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
           "File writes are confined to the assigned workspace: the write and edit tools refuse outside paths. If the task needs a write elsewhere, say so in your reply. Shell writes are not guarded by that boundary; do not use a shell command to route around a refused write. Placeholders like {baseDir} inside skill instructions refer to the skill's own directory.",
           `Workbench scope: ${request.workbenchId}`,
           `Work item: ${request.workId}`,
-          boundBackgroundSections([execution.promptSection, skillSection], budget.systemMaxChars),
+          required,
+          boundBackgroundSections([execution.promptSection, skillSection], Math.max(0, budget.systemMaxChars - required.length)),
         ].join("\n"),
         thinkingLevel: resolved.thinkingLevel,
         tools,
       },
       sessionId: externalRunId,
-      streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
+      streamFn: trackPiStream(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "partner", workbenchId: request.workbenchId, workId: request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId }), this.dependencies.diagnostics),
       toolExecution: "sequential",
-      // This runner had no context management at all: no per-request bound and a raw background,
-      // so one long run could push its own history past the window and lose the output budget.
-      transformContext: (messages) => Promise.resolve(boundModelContext(messages, budget.messagesMaxChars)),
+      transformContext: (messages, signal) => window.transformContext(messages, signal),
     });
     await agent.prompt(request.taskProjection);
     const failed = agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error");

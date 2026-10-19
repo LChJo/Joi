@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -68,7 +68,7 @@ async function openFixture() {
 function makeDelivery(
   fixture: Awaited<ReturnType<typeof openFixture>>,
   dispatchSpy: { calls: unknown[] },
-  overrides?: { attachmentStager?: { stage(input: { inputId: string; workspacePath: string }): Promise<StagedAttachment[]> } },
+  overrides?: { attachmentStager?: { stage(input: { inputId: string; workspacePath: string }): Promise<StagedAttachment[]> }; contexts?: ConstructorParameters<typeof SqlitePartnerDispatchDelivery>[0]["contexts"]; diagnostics?: ConstructorParameters<typeof SqlitePartnerDispatchDelivery>[0]["diagnostics"] },
 ) {
   const contexts = new SqliteWorkbenchContextRepository(fixture.database);
   return new SqlitePartnerDispatchDelivery({
@@ -78,8 +78,10 @@ function makeDelivery(
     contextAssembler: new WorkbenchContextAssembler({
       workbenches: new LegacyLifeStoreAdapter(fixture.database), clock: fixture.clock, ids: fixture.ids, projections: contexts, snapshots: contexts,
     }),
-    contexts,
+    contexts: overrides?.contexts ?? contexts,
+    evidenceDirectory: path.join(fixture.root, "inputs"),
     database: fixture.database,
+    ...(overrides?.diagnostics === undefined ? {} : { diagnostics: overrides.diagnostics }),
     gateway: { recover: async () => { throw new Error("gateway unused"); }, startWithResult: async () => { throw new Error("gateway unused"); } },
     instances: {
       dispatch: async (input) => {
@@ -101,6 +103,55 @@ function outboxRecord(outboxId: string, dispatchAttemptId: string, workId: strin
 }
 
 describe("partner dispatch attachment staging", () => {
+  it("AC-53 measures workspace waiting independently from model execution", async () => {
+    const fixture = await openFixture();
+    try {
+      const leases = new SqliteWorkspaceLeaseManager({ clock: fixture.clock, database: fixture.database, owner: "queue-test" });
+      await leases.acquire({ accessMode: "WRITE", workId: "work_2", workspaceRef: "workbench_workspace:workbench_1" });
+      const events: { event: string; fields: unknown }[] = [];
+      const delivery = makeDelivery(fixture, { calls: [] }, { diagnostics: { emit: (event, fields) => { events.push({ event, fields }); } } });
+      const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
+      await expect(delivery.prepare(claim)).rejects.toMatchObject({ code: "workspace_lease_conflict" });
+      fixture.clock.advance(2500);
+      await leases.release("work_2");
+      expect(await delivery.prepare(claim)).not.toBe("skipped_terminal");
+      expect(events.filter(entry => entry.event === "joi.partner.workspace_queue_finished")).toEqual([{ event: "joi.partner.workspace_queue_finished", fields: {
+        dispatchAttemptId: "attempt_1", durationMs: 2500, phase: "READ", workbenchId: "workbench_1", workId: "work_1",
+      } }]);
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
+  it("AC-53 prepares native evidence outside acceptance roots and never redispatches a prepared run", async () => {
+    const fixture = await openFixture();
+    try {
+      fixture.database.transaction(db => db.prepare("UPDATE partner_revisions SET engine = 'MANA_SDK', cli_protocol = 'CLAUDE' WHERE partner_revision_id = ?").run(fixture.partner.partnerRevisionId));
+      const evidence = { index: "prior result: result-0.txt", files: [{ name: "result-0.txt", body: "original evidence tail" }], inline: "selected evidence" };
+      const spy = { calls: [] as unknown[] };
+      const delivery = makeDelivery(fixture, spy, { contexts: { loadForExecution: async () => ({ evidence, promptSection: evidence.inline, sanitized: {}, workspacePath: fixture.workspaceDir }) } });
+      const claim = { attemptCount: 0, dispatchAttemptId: "attempt_1", outboxId: "outbox_1", payloadJson: "{}" };
+      const prepared = await delivery.prepare(claim);
+      expect(prepared).not.toBe("skipped_terminal");
+      const evidenceRoot = path.join(fixture.root, "inputs", "evidence");
+      const packages = await readdir(evidenceRoot);
+      expect(packages).toHaveLength(1);
+      const inputRoot = path.join(evidenceRoot, packages[0] ?? "missing");
+      expect(await readFile(path.join(inputRoot, "result-0.txt"), "utf8")).toBe("original evidence tail");
+      const indexState = await stat(path.join(inputRoot, "index.md"));
+      expect(indexState.mode & 0o222).toBe(0);
+      expect(await delivery.prepare({ ...claim, attemptCount: 1 })).toBe("skipped_terminal");
+      expect(await readdir(evidenceRoot)).toEqual(packages);
+      expect((await stat(path.join(inputRoot, "index.md"))).mtimeMs).toBe(indexState.mtimeMs);
+      expect(await readdir(fixture.workspaceDir)).toEqual([]);
+      expect(spy.calls).toEqual([]);
+    } finally {
+      fixture.database.close();
+      await rm(fixture.root, { force: true, recursive: true });
+    }
+  });
+
   it("AC-WR-06 stages input attachments outside the shared workspace", async () => {
     const fixture = await openFixture();
     try {

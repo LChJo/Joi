@@ -3,6 +3,7 @@ import type { UsageContext, UsageObservation, UsageRecorder } from "../../src/ma
 import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
+import { vi } from "vitest";
 
 function fixture() {
   const faux = fauxProvider({ provider: "usage-test" });
@@ -29,7 +30,8 @@ describe("Pi runtime usage attribution", () => {
   });
   it("attributes compaction separately while retaining the goal and source", async () => {
     const f = fixture();
-    const runtime = new PiReasoningRuntime({ usage: f.usage, model: f.faux.getModel(), models: f.models, tools: [], thinkingLevel: "off" as const,
+    const diagnostics = { emit: vi.fn() };
+    const runtime = new PiReasoningRuntime({ diagnostics, usage: f.usage, model: f.faux.getModel(), models: f.models, tools: [], thinkingLevel: "off" as const,
       compaction: { keepRecentMessages: 2, maxMessages: 4, maxSummaryCharacters: 80 },
       sessionStore: { load: () => Promise.resolve(null), save: () => Promise.resolve() },
     });
@@ -37,5 +39,9 @@ describe("Pi runtime usage attribution", () => {
     expect(f.contexts.filter((context) => context.purpose === "orchestration")).toHaveLength(3);
     expect(f.contexts.some((context) => context.purpose === "summary")).toBe(true);
     expect(f.contexts.every((context) => context.goalId === "goal" && context.workbenchId === "wb" && context.sourceId === "source")).toBe(true);
+    expect(diagnostics.emit).toHaveBeenCalledWith("joi.context.model_completed", expect.objectContaining({ purpose: "summary" }));
+    expect(diagnostics.emit).toHaveBeenCalledWith("joi.context.model_completed", expect.objectContaining({ purpose: "orchestration" }));
+    const calls = diagnostics.emit.mock.calls as unknown as [string, { durationMs?: unknown }][];
+    expect(calls.filter(([name]) => name === "joi.context.model_completed").every(([, fields]) => typeof fields.durationMs === "number" && fields.durationMs >= 0)).toBe(true);
   });
 });

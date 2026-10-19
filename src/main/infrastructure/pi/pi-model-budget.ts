@@ -82,11 +82,12 @@ function roleOf(message: AgentMessage | undefined): string | undefined {
  */
 function anchorBefore(messages: readonly AgentMessage[], start: number): AgentMessage[] {
   const leading = messages[0];
-  const task = messages[1];
+  const taskIndex = messages.findIndex(message => roleOf(message) === "user");
+  const task = messages[taskIndex];
   const anchor: AgentMessage[] = [];
   if (leading !== undefined && roleOf(leading) === "system") {
     anchor.push(leading);
-    if (task !== undefined && roleOf(task) === "user") anchor.push(task);
+    if (task !== undefined && taskIndex < start) anchor.push(task);
   } else if (leading !== undefined && roleOf(leading) === "user") {
     anchor.push(leading);
   }
@@ -305,10 +306,13 @@ export function parseMaxOutputTokensFromError(detail: string): number | undefine
  */
 export function boundRequestByChars(messages: readonly AgentMessage[], maxChars: number): AgentMessage[] {
   if (JSON.stringify(messages).length <= maxChars) return [...messages];
+  let latestExchange = messages.findLastIndex(message => message.role === "toolResult");
+  if (latestExchange < 0) latestExchange = messages.length;
+  while (latestExchange > 0 && messages[latestExchange]?.role === "toolResult") latestExchange -= 1;
   let start = 0;
-  while (start < messages.length && JSON.stringify(messages.slice(start)).length > maxChars) start += 1;
+  while (start < latestExchange && JSON.stringify(messages.slice(start)).length > maxChars) start += 1;
   // A request must never begin on an orphaned tool result: providers reject a result whose call is gone.
-  while (start < messages.length && messages[start]?.role === "toolResult") start += 1;
+  while (start < latestExchange && messages[start]?.role === "toolResult") start += 1;
   if (start === 0) return [...messages];
   return [...anchorBefore(messages, start), ...messages.slice(start)];
 }

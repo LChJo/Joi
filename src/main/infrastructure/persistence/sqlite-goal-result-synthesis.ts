@@ -1,9 +1,60 @@
 import type { DatabaseSync } from "node:sqlite";
 import { DomainError } from "../../domain/errors.js";
-import { truncateAtSentenceBoundary } from "../../domain/text/sentence-truncation.js";
+import type { JoiPendingInput } from "../../application/ports/joi-coordinator.js";
 import { loadGoalRequirements } from "./sqlite-goal-requirements.js";
 
-type Row = Record<string, unknown>;
+/** Only the instruction and version identity belong in the persisted user message. */
+export function goalSynthesisInstruction(goalInputId: string, resultRevision: number, requirementsRevision: number): string {
+  return [
+    "All currently planned work for one original user goal is terminal and ready for synthesis.",
+    `goalInputId=${goalInputId} resultRevision=${String(resultRevision)} requirementsRevision=${String(requirementsRevision)}`,
+    "Use the current required context and the refreshed private synthesis snapshot. Read work_read_evidence for the goal-scoped paginated index and work_read_result for complete evidence pages. Unlisted evidence still exists.",
+    "Only COMPLETED results with verification=PASSED are verified evidence. A COMPLETED result with verification=NOT_REQUIRED is an unverified self-report. Missing acceptance is UNVERIFIED. FAILED/UNKNOWN, late, non-authoritative results or verification=FAILED are coverage gaps, not successful evidence.",
+    "If the evidence answers the goal, deliver the complete answer and call turn_complete with RESULT_SYNTHESIZED. Do not repeat completed Work or dump raw per-Agent output.",
+    "Your final visible message must be the complete deliverable itself, with material evidence gaps. Do the reasoning through tool calls and then write the deliverable in full.",
+    "If a concrete next evidence layer can run without a user decision, credentials or broader permission, describe the bounded gap and call turn_complete with RESULT_CONTINUE; Wayfinder will arrange that layer.",
+    "Only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Prefer another suitable available partner; switch the current partner's model only when none is available.",
+    "For an essential auth, balance, configuration, skill or safety failure, required user judgment or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; explain the gap and call turn_complete with RESULT_BLOCKED.",
+  ].join("\n");
+}
+
+export function loadGoalSynthesisContext(connection: DatabaseSync, goalInputId: string, workbenchId: string, resultRevision: number, requirementsRevision: number): JoiPendingInput["synthesisContext"] {
+  const goal = connection.prepare(`SELECT body FROM joi_inbox_messages i WHERE input_id=?
+    AND (workbench_id=? OR (workbench_id IS NULL AND EXISTS (
+      SELECT 1 FROM work_items w WHERE w.input_id=i.input_id AND w.workbench_id=?
+    )))`).get(goalInputId, workbenchId, workbenchId);
+  if (typeof goal?.body !== "string") return undefined;
+  const previous = connection.prepare(`SELECT result_revision, disposition, completion_summary, updated_at
+    FROM joi_goal_outcomes WHERE input_id=? AND result_revision<=?`).get(goalInputId, resultRevision);
+  const counts = connection.prepare(`SELECT COUNT(DISTINCT r.result_id) AS total,
+    COUNT(DISTINCT CASE WHEN r.status<>'COMPLETED' OR r.is_late=1 OR r.is_authoritative=0 OR v.status IS NULL OR v.status NOT IN ('PASSED','NOT_REQUIRED') THEN r.result_id END) AS gaps
+    FROM joi_goal_result_members m JOIN partner_result_events e ON e.event_id=m.event_id
+    JOIN work_results r ON r.run_id=e.run_id AND r.status=e.status
+    JOIN work_items w ON w.work_id=r.work_id
+    LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
+    WHERE m.original_input_id=? AND m.revision<=? AND w.workbench_id=?`).get(goalInputId, resultRevision, workbenchId);
+  // First synthesis discovers the relevant evidence through the paged index.
+  const changes = previous === undefined ? [] : connection.prepare(`SELECT DISTINCT r.result_id, r.work_id, r.status, r.summary,
+    r.is_late, r.is_authoritative, COALESCE(v.status,'UNVERIFIED') AS verification
+    FROM joi_goal_result_members m JOIN partner_result_events e ON e.event_id=m.event_id
+    JOIN work_results r ON r.run_id=e.run_id AND r.status=e.status
+    JOIN work_items w ON w.work_id=r.work_id
+    LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
+    WHERE m.original_input_id=? AND m.revision<=? AND w.workbench_id=?
+      AND (m.revision>? OR v.created_at>? OR EXISTS (
+        SELECT 1 FROM joi_goal_result_members newer JOIN partner_result_events ne ON ne.event_id=newer.event_id
+        WHERE newer.original_input_id=m.original_input_id AND ne.work_id=r.work_id
+          AND newer.revision>? AND newer.revision<=?
+      )) ORDER BY m.revision, r.result_id`)
+    .all(goalInputId, resultRevision, workbenchId, Number(previous.result_revision), String(previous.updated_at), Number(previous.result_revision), resultRevision);
+  return {
+    originalRequest: goal.body, resultRevision, requirementsRevision,
+    ...(previous === undefined ? {} : { previous: { resultRevision: Number(previous.result_revision), disposition: String(previous.disposition), summary: String(previous.completion_summary) } }),
+    totalResults: Number(counts?.total ?? 0), gapCount: Number(counts?.gaps ?? 0), omittedChanges: Math.max(0, changes.length - 100),
+    changedResults: changes.slice(0, 100).map(row => ({ resultId: String(row.result_id), workId: String(row.work_id), status: String(row.status),
+      verification: String(row.verification), summary: String(row.summary), isLate: row.is_late === 1, isAuthoritative: row.is_authoritative === 1 })),
+  };
+}
 
 /** An obsolete synthesis cannot publish or re-enter the scheduler after a newer input owns the goal. */
 export function consumeSupersededGoalSynthesis(connection: DatabaseSync, inputId: string, now: string): { goalInputId: string; resultRevision: number } | null {
@@ -35,40 +86,8 @@ export function enqueueGoalResultSynthesis(connection: DatabaseSync, goalInputId
   const active = connection.prepare(`SELECT 1 FROM work_items
     WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(goalInputId);
   if (active !== undefined) return null;
-  const results = connection.prepare(`SELECT r.result_id, r.work_id, r.status, r.summary, w.title,
-           v.status AS verification_status, v.reason_code AS verification_reason
-    FROM joi_goal_result_members m
-    JOIN partner_result_events e ON e.event_id = m.event_id
-    JOIN work_results r ON r.run_id = e.run_id AND r.status = e.status AND r.is_authoritative = 1
-    JOIN work_items w ON w.work_id = r.work_id
-    LEFT JOIN work_result_verifications v ON v.result_id = r.result_id
-    WHERE m.original_input_id = ? AND m.revision <= ?
-    ORDER BY m.revision, m.event_id`).all(goalInputId, resultSet.revision) as Row[];
   const inputId = contract === null ? `joi_result_input:goal:${goalInputId}` : `joi_result_input:goal:${goalInputId}:r${String(resultSet.revision)}:q${String(contract.revision)}`;
-  const body = [
-    "All currently planned work for one original user goal is terminal and ready for synthesis.",
-    `goalInputId=${goalInputId}`,
-    `resultRevision=${String(resultSet.revision)}`,
-    "Original user goal (authoritative):",
-    source.goal_body.slice(0, 4_000),
-    ...results.map((row) => {
-      const verificationReason = typeof row.verification_reason === "string" && row.verification_reason !== ""
-        ? row.verification_reason
-        : "verification_failed";
-      const verification = row.verification_status === "PASSED" ? "PASSED"
-        : row.verification_status === "FAILED" ? `FAILED(${verificationReason})`
-          : "NOT_REQUIRED";
-      return `resultId=${String(row.result_id)} workId=${String(row.work_id)} title=${String(row.title).slice(0, 240)} status=${String(row.status)} verification=${verification} summary=${truncateAtSentenceBoundary(String(row.summary), 320)}`;
-    }),
-    "Only COMPLETED results with verification=PASSED are verified evidence. A COMPLETED result with verification=NOT_REQUIRED is an unverified self-report: it may support the answer, but say so when the distinction matters. A FAILED/UNKNOWN result or verification=FAILED is a coverage gap; it does not invalidate other evidence and must not dominate the final answer unless that missing coverage is essential to the original goal.",
-    "If verified completed results already answer the original goal, synthesize that answer, mention non-critical failures only as a brief trailing warning, and call turn_complete with RESULT_SYNTHESIZED.",
-    "Your final visible message must be the complete deliverable itself: write the full article/answer body out in full. Do not summarize it and do not narrate your process (no \"Let me read…\", \"Then turn_complete…\" or similar) — do the reasoning through tool calls, then write the deliverable once, complete.",
-    "If the evidence is insufficient but a concrete next evidence layer can run without a user decision, credential or broader permission, summarize the bounded gap and call turn_complete with RESULT_CONTINUE. The Wayfinder review will arrange that next layer.",
-    "If an essential gap remains, inspect structured failure facts: only retryable=true with sideEffectState=NONE permits a fresh work_reassign attempt. Prefer a different suitable available partner; only switch the current partner's model when no suitable alternative exists.",
-    "For an essential auth, balance, configuration, skill or safety failure, a required user judgment, or sideEffectState OBSERVED/UNKNOWN, do not replay automatically; explain the missing coverage and call turn_complete with RESULT_BLOCKED.",
-    "Use work_read_result only if the bounded summary is insufficient.",
-    "Do not dump raw per-Agent output.",
-  ].join("\n");
+  const body = goalSynthesisInstruction(goalInputId, resultSet.revision, contract?.revision ?? 0);
   connection.prepare(`INSERT INTO joi_inbox_messages
     (input_id, idempotency_key, body, status, workbench_id, goal_input_id, result_revision, requirements_revision, created_at, updated_at)
     VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?, ?, ?)

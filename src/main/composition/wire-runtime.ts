@@ -132,6 +132,7 @@ export function wireRuntime(input: {
     runDirectories: persistence.runDirectories,
     agentConversations: persistence.workbenchAgentRepository,
     attachmentStager: new WorkAttachmentStager({ attachments: joiStack.joiAttachmentStorage, database, taskDirectory: path.join(userDataDirectory, "task-inputs") }),
+    evidenceDirectory: path.join(userDataDirectory, "task-inputs"),
     clarifications: persistence.joiInboxRepository,
     clock,
     contextAssembler: workbenchStack.workbenchContextAssembler,

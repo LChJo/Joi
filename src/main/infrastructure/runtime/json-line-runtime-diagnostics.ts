@@ -43,7 +43,7 @@ export class JsonLineRuntimeDiagnostics implements RuntimeDiagnostics {
 
   emit<Name extends RuntimeDiagnosticName>(event: Name, fields: Readonly<RuntimeDiagnosticEventMap[Name]>): void {
     try {
-      if (!safeDiagnosticValue(fields)) return;
+      if (!safeDiagnosticValue(fields, "", event)) return;
       const line = `${JSON.stringify({
         ...fields,
         at: this.#clock.now().toISOString(),
@@ -84,13 +84,21 @@ const UNSAFE_KEY = /(?:body|content|cookie|csrf|directory|memory|message|passwor
 const ABSOLUTE_PATH = /(?:[A-Za-z]:[\\/]|\\\\[^\\\s]+\\|(?:^|\s)\/(?:Users|home|var|tmp|opt|mnt)\/)/u;
 const SECRET_VALUE = /(?:\bBearer\s+[A-Za-z0-9._~+/=-]{8,}|\b(?:api[_-]?key|csrf|token|cookie|password|secret)\s*[:=])/iu;
 
-function safeDiagnosticValue(value: unknown, key = ""): boolean {
-  if (UNSAFE_KEY.test(key)) return false;
+const NUMERIC_FIELDS: Partial<Record<RuntimeDiagnosticName, readonly string[]>> = {
+  "joi.partner.context_compacted": ["compactedMessages", "tokensBefore"],
+  "joi.partner.context_truncated": ["omittedMessages"],
+  "joi.context.request": ["contextChars"],
+  "joi.context.delivery": ["contextChars"],
+};
+
+function safeDiagnosticValue(value: unknown, key = "", event?: RuntimeDiagnosticName): boolean {
+  if (UNSAFE_KEY.test(key)) return event !== undefined && NUMERIC_FIELDS[event]?.includes(key) === true
+    && typeof value === "number" && Number.isFinite(value) && value >= 0;
   if (typeof value === "string") return !ABSOLUTE_PATH.test(value) && !SECRET_VALUE.test(value);
   if (value === null || typeof value === "number" || typeof value === "boolean") return true;
   if (Array.isArray(value)) return value.every((item) => safeDiagnosticValue(item));
   if (typeof value !== "object") return false;
-  return Object.entries(value as Record<string, unknown>).every(([childKey, child]) => safeDiagnosticValue(child, childKey));
+  return Object.entries(value as Record<string, unknown>).every(([childKey, child]) => safeDiagnosticValue(child, childKey, key === "" ? event : undefined));
 }
 import { appendFileSync, existsSync, mkdirSync, renameSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
