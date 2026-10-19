@@ -393,5 +393,13 @@
   "routeFogGraduated": "已晋升为路径",
   "routeViewPromotedPath": "查看晋升路径",
   "goalDetailLoadFailed": "目标详情暂时无法刷新，已加载的内容仍然保留。",
-  "routeLoadMore": "加载更多路径、决策与雾区"
+  "routeLoadMore": "加载更多路径、决策与雾区",
+  "routeExpand": "展开路线图",
+  "routeCollapse": "收起路线图",
+  "routeCurrentLayer": "当前第 {layer} 层",
+  "routePaths": "路径",
+  "routeDetails": "路线图详情",
+  "routeLoaded": "已加载 {loaded} / 共 {total} 项",
+  "routeRelatedNotLoaded": "关联内容尚未加载，请加载更多后查看。",
+  "routeLoading": "正在加载路线详情…"
 }

@@ -54,6 +54,7 @@ it("renders real layers, separates closed paths from failed work and exposes dec
   };
   render(<GoalMap harness={harness} />);
   expect(screen.getByRole("region", { name: "目标路线图" })).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "展开路线图" }));
   expect(screen.getByText("第 1 层").closest("details")).not.toHaveAttribute("open");
   expect(screen.getByText("第 2 层").closest("details")).toHaveAttribute("open");
   const path = screen.getByRole("button", { name: /独立验收/u });
@@ -98,6 +99,8 @@ it("renders empty and completed maps and switches localized labels without disca
   const view = render(<GoalMap harness={empty} />);
   expect(screen.getByText("地图已收官")).toBeInTheDocument();
   expect(screen.getByText("尚未建立路径。")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "展开路线图" }));
+  fireEvent.click(screen.getByRole("button", { name: /决策/u }));
   expect(screen.getByText("尚未记录决策。")).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: /雾区/u }));
   expect(screen.getByText("尚未记录雾区。")).toBeInTheDocument();
@@ -107,6 +110,7 @@ it("renders empty and completed maps and switches localized labels without disca
   view.rerender(<GoalMap harness={harness} />);
   expect(screen.getByText("待探索")).toBeInTheDocument();
   expect(screen.getByRole("button", { name: "查看晋升路径" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: /^路径/u }));
   const selected = screen.getByRole("button", { name: /Path 2/u });
   fireEvent.click(selected);
   expect(selected).toHaveAttribute("aria-pressed", "true");

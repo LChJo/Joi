@@ -4149,6 +4149,57 @@
     "description": "Goal detail: Load more paths, decisions and unknowns",
     "placeholders": {}
   },
+  "homeRouteExpand": "Expand route map",
+  "@homeRouteExpand": {
+    "description": "Goal details: Expand route map",
+    "placeholders": {}
+  },
+  "homeRouteCollapse": "Collapse route map",
+  "@homeRouteCollapse": {
+    "description": "Goal details: Collapse route map",
+    "placeholders": {}
+  },
+  "homeRouteCurrentLayer": "Current layer {layer}",
+  "@homeRouteCurrentLayer": {
+    "description": "Goal details: Current layer {layer}",
+    "placeholders": {
+      "layer": {
+        "type": "String"
+      }
+    }
+  },
+  "homeRoutePaths": "Paths",
+  "@homeRoutePaths": {
+    "description": "Goal details: Paths",
+    "placeholders": {}
+  },
+  "homeRouteDetails": "Route map details",
+  "@homeRouteDetails": {
+    "description": "Goal details: Route map details",
+    "placeholders": {}
+  },
+  "homeRouteLoaded": "Loaded {loaded} / {total}",
+  "@homeRouteLoaded": {
+    "description": "Goal details: Loaded {loaded} / {total}",
+    "placeholders": {
+      "loaded": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "homeRouteRelatedNotLoaded": "Related content is not loaded yet. Load more to view it.",
+  "@homeRouteRelatedNotLoaded": {
+    "description": "Goal details: Related content is not loaded yet. Load more to view it.",
+    "placeholders": {}
+  },
+  "homeRouteLoading": "Loading route map details…",
+  "@homeRouteLoading": {
+    "description": "Goal details: Loading route map details…",
+    "placeholders": {}
+  },
   "mobileBringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
   "@mobileBringTheJoiRunningOnYourComputerToYour": {
     "description": "Bring the joi running on your computer to your phone",

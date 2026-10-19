@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+2026-10-19 AC-37/44/48 目标详情交互：设计师评审 `docs/design/goal-detail-ux-review.md`；鼠标定位全文提示、固定右键菜单、边缘避让/外部滚动关闭，以及紧凑概览、限高分区详情、分页事实与交互保留，覆盖 `goal-detail-ux.test.tsx`、`goal-detail-presentation.test.tsx`、`goal-detail-loading.test.tsx` 与 Electron 真实交互/长地图/窄屏截图。
+
 2026-10-19 AC-37/AC-44/AC-48 目标详情：完整安全目标标题的悬停/聚焦阅读与复制、分层路线图、同名路径保留、决策与雾区晋升、分页及刷新恢复，对应 `joi-goal-detail.test.ts`、`joi-goal-detail-http.test.ts`、`goal-detail-presentation.test.tsx`、`goal-detail-loading.test.tsx`；只读 Worker 透传及 WAL 快照对应 `runtime-workers.test.ts`，真实 Electron 标题提示框、菜单、节点关系与窄屏布局对应 `electron-smoke.spec.ts`。接口为 `GET /api/v1/joi/goals/:goalId/detail?offset=0&limit=50`，每个集合独立应用同一 offset/limit（默认 50，最大 100），返回完整安全标题、地图状态和层级、paths/decisions/fog、各集合总数及可选 nextOffset。缺失/已移除/派生输入返回 404，无会话 401，非法分页 400；首页 DTO 保持摘要。地图详情不返回原始消息或执行 payload。
 
 国际化增量（AC-I18N-01 至 AC-I18N-06）：语言源与 CLI、客户端偏好、实时切换、错误兼容及验证证据统一追踪于[国际化验收](20-internationalization.md)，架构约束见 [ADR 0030](adr/0030-interface-internationalization.md)。

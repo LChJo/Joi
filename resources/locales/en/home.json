@@ -2113,5 +2113,52 @@
     "message": "Load more paths, decisions and unknowns",
     "description": "Goal detail: Load more paths, decisions and unknowns",
     "sourceText": "加载更多路径、决策与雾区"
+  },
+  "routeExpand": {
+    "message": "Expand route map",
+    "description": "Goal details: Expand route map",
+    "sourceText": "展开路线图"
+  },
+  "routeCollapse": {
+    "message": "Collapse route map",
+    "description": "Goal details: Collapse route map",
+    "sourceText": "收起路线图"
+  },
+  "routeCurrentLayer": {
+    "message": "Current layer {layer}",
+    "description": "Goal details: Current layer {layer}",
+    "sourceText": "当前第 {layer} 层",
+    "placeholders": {
+      "layer": "string"
+    }
+  },
+  "routePaths": {
+    "message": "Paths",
+    "description": "Goal details: Paths",
+    "sourceText": "路径"
+  },
+  "routeDetails": {
+    "message": "Route map details",
+    "description": "Goal details: Route map details",
+    "sourceText": "路线图详情"
+  },
+  "routeLoaded": {
+    "message": "Loaded {loaded} / {total}",
+    "description": "Goal details: Loaded {loaded} / {total}",
+    "sourceText": "已加载 {loaded} / 共 {total} 项",
+    "placeholders": {
+      "loaded": "string",
+      "total": "string"
+    }
+  },
+  "routeRelatedNotLoaded": {
+    "message": "Related content is not loaded yet. Load more to view it.",
+    "description": "Goal details: Related content is not loaded yet. Load more to view it.",
+    "sourceText": "关联内容尚未加载，请加载更多后查看。"
+  },
+  "routeLoading": {
+    "message": "Loading route map details…",
+    "description": "Goal details: Loading route map details…",
+    "sourceText": "正在加载路线详情…"
   }
 }

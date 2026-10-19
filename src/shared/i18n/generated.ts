@@ -790,6 +790,14 @@ export interface MessageParameters {
   "home.routeViewPromotedPath": undefined;
   "home.goalDetailLoadFailed": undefined;
   "home.routeLoadMore": undefined;
+  "home.routeExpand": undefined;
+  "home.routeCollapse": undefined;
+  "home.routeCurrentLayer": { "layer": string };
+  "home.routePaths": undefined;
+  "home.routeDetails": undefined;
+  "home.routeLoaded": { "loaded": string; "total": string };
+  "home.routeRelatedNotLoaded": undefined;
+  "home.routeLoading": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
   "mobile.enterConnectionCode": undefined;
@@ -2242,6 +2250,14 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.routeViewPromotedPath": "View promoted path",
     "home.goalDetailLoadFailed": "Could not refresh goal details. Previously loaded content is retained.",
     "home.routeLoadMore": "Load more paths, decisions and unknowns",
+    "home.routeExpand": "Expand route map",
+    "home.routeCollapse": "Collapse route map",
+    "home.routeCurrentLayer": "Current layer {layer}",
+    "home.routePaths": "Paths",
+    "home.routeDetails": "Route map details",
+    "home.routeLoaded": "Loaded {loaded} / {total}",
+    "home.routeRelatedNotLoaded": "Related content is not loaded yet. Load more to view it.",
+    "home.routeLoading": "Loading route map details…",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
     "mobile.enterConnectionCode": "Enter connection code",
@@ -3692,6 +3708,14 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.routeViewPromotedPath": "查看晋升路径",
     "home.goalDetailLoadFailed": "目标详情暂时无法刷新，已加载的内容仍然保留。",
     "home.routeLoadMore": "加载更多路径、决策与雾区",
+    "home.routeExpand": "展开路线图",
+    "home.routeCollapse": "收起路线图",
+    "home.routeCurrentLayer": "当前第 {layer} 层",
+    "home.routePaths": "路径",
+    "home.routeDetails": "路线图详情",
+    "home.routeLoaded": "已加载 {loaded} / 共 {total} 项",
+    "home.routeRelatedNotLoaded": "关联内容尚未加载，请加载更多后查看。",
+    "home.routeLoading": "正在加载路线详情…",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
     "mobile.enterConnectionCode": "输入连接码",
@@ -5808,6 +5832,18 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "目标详情暂时无法刷新，已加载的内容仍然保留。": "home.goalDetailLoadFailed",
   "Load more paths, decisions and unknowns": "home.routeLoadMore",
   "加载更多路径、决策与雾区": "home.routeLoadMore",
+  "Expand route map": "home.routeExpand",
+  "展开路线图": "home.routeExpand",
+  "Collapse route map": "home.routeCollapse",
+  "收起路线图": "home.routeCollapse",
+  "Paths": "home.routePaths",
+  "路径": "home.routePaths",
+  "Route map details": "home.routeDetails",
+  "路线图详情": "home.routeDetails",
+  "Related content is not loaded yet. Load more to view it.": "home.routeRelatedNotLoaded",
+  "关联内容尚未加载，请加载更多后查看。": "home.routeRelatedNotLoaded",
+  "Loading route map details…": "home.routeLoading",
+  "正在加载路线详情…": "home.routeLoading",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "把正在电脑上运行的 Joi 带到手机上": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "Scan a QR code to pair with joi": "mobile.scanAQrCodeToPairWithJoi",

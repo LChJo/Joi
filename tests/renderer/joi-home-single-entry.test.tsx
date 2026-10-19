@@ -1057,7 +1057,7 @@ describe("joi home single entry", () => {
     }));
   });
 
-  it("shows the harness map panel in the goal detail only when the feed carries a projection", async () => {
+  it("shows a compact route overview and reads full paths only in expanded goal details", async () => {
     const api = new DigitalLifeApi("");
     const workbench = workbenchDto("workbench-h", "分析工程");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
@@ -1089,14 +1089,27 @@ describe("joi home single entry", () => {
     });
     vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
 
+    vi.spyOn(api, "joiGoalDetail").mockImplementation((goalId) => Promise.resolve({ goalId, fullTitle: goalId === "goal-h" ? "分析股票" : "随手一问",
+      ...(goalId === "goal-h" ? { harness: {
+        currentLayer: 2, decisionCount: 3, destination: "完成 688141 分析", fogCount: 1, mapStatus: "ACTIVE" as const, pathCount: 3, revision: 5,
+        paths: [{ pathId: "p2", layer: 2, status: "OPEN" as const, title: "深入财报" }, { pathId: "p1", layer: 1, status: "CLOSED" as const, title: "收集资料" }, { pathId: "p0", layer: 1, status: "OUT_OF_SCOPE" as const, title: "盯盘" }],
+        decisions: [], fog: [{ fogId: "fog", note: "数据源未定", status: "ACTIVE" as const }],
+      } } : {}),
+    }));
+
     const view = render(<JoiHome api={api} />);
     fireEvent.click(await screen.findByText("分析股票"));
-    expect(await screen.findByText("目的地：完成 688141 分析")).toBeInTheDocument();
+    const expand = await screen.findByRole("button", { name: "展开路线图" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("完成 688141 分析")).toBeInTheDocument();
+    expect(screen.queryByText("深入财报")).not.toBeInTheDocument();
+    expect(screen.getByText("3 条路径 · 3 项决策 · 1 项雾区")).toBeInTheDocument();
+    fireEvent.click(expand);
     expect(screen.getByText("深入财报")).toBeInTheDocument();
     expect(screen.getByText("收集资料")).toBeInTheDocument();
     expect(screen.getByText("盯盘")).toBeInTheDocument();
-    expect(screen.getByText(/已决策 3 · 雾区 1 · 第 2 层路径/u)).toBeInTheDocument();
-    expect(screen.getByText("雾区：数据源未定")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^雾区/u }));
+    expect(screen.getByText("数据源未定")).toBeInTheDocument();
 
     view.unmount();
     render(<JoiHome api={api} />);

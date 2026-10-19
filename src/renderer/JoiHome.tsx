@@ -10,7 +10,7 @@ import { ClockIcon, DotsThreeIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiGoalHarnessDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
+import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { thinkingEffortLabel } from "./copy";
@@ -1365,21 +1365,6 @@ function ThinkingRow({ item }: { item: JoiThinkingItemDto }) {
   </div>;
 }
 
-function HarnessPanel({ harness }: { harness: JoiGoalHarnessDto }) {
-  useI18n();
-  return <article className="joi-goal-harness">
-    <p className="joi-goal-harness-destination">
-      {harness.destination === undefined ? t("home.unnamedDestinationJoiWillNameItDuringReview") : t("home.destinationValue", { p0: harness.destination })}
-      {harness.mapStatus === "CLEARED" ? t("home.mapCompleted") : ""}
-    </p>
-    {harness.topPaths.length === 0 ? null : <ul className="joi-goal-harness-paths">
-      {harness.topPaths.map((pathItem) => <li className={`joi-harness-path ${pathItem.status.toLowerCase()}`} key={pathItem.pathId}>{pathItem.title}</li>)}
-    </ul>}
-    <p className="joi-goal-harness-counts">{t("home.decisions")} {String(harness.decisionCount)}  {t("home.unknowns")} {String(harness.fogCount)}  {t("home.level")} {String(harness.currentLayer)}  {t("home.paths")}</p>
-    {harness.topFogNote === undefined ? null : <p className="joi-goal-harness-fog">{t("home.unknown")}{harness.topFogNote}</p>}
-  </article>;
-}
-
 function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBack, onResolved, onRetried, onScheduleGoal }: {
   api: DigitalLifeApi;
   partners: PartnerDto[];
@@ -1436,9 +1421,12 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         </div>
       </header>
       <div className="joi-goal-drawer-body">
-        {detailState.detail?.harness !== undefined ? <GoalMap harness={detailState.detail.harness} /> : goal.harness === undefined ? null : <HarnessPanel harness={goal.harness} />}
-        {detailState.failed ? <p className="joi-detail-load-notice" role="alert">{t("home.goalDetailLoadFailed")} <button className="button ghost" disabled={detailState.busy} onClick={detailState.retry} type="button">{t("common.retry")}</button></p> : null}
-        {detailState.detail?.nextOffset === undefined ? null : <button className="button ghost joi-route-load-more" disabled={detailState.busy} onClick={detailState.loadMore} type="button">{t("home.routeLoadMore")}</button>}
+        {detailState.detail?.harness !== undefined ? <GoalMap harness={detailState.detail.harness} hasMore={detailState.detail.nextOffset !== undefined} busy={detailState.busy} failed={detailState.failed} onLoadMore={detailState.loadMore} onRetry={detailState.retry} /> : goal.harness === undefined ? null : <article className="joi-route-map" aria-busy={!detailState.failed}>
+          <div className="joi-route-map-heading"><h2>{t("home.goalRouteMap")}</h2></div>
+          <div className="joi-route-destination compact"><p>{goal.harness.destination ?? t("home.unnamedDestinationJoiWillNameItDuringReview")}</p></div>
+          <p className="joi-route-counts">{t("home.routeLoading")}</p>
+        </article>}
+        {detailState.failed && detailState.detail?.harness === undefined ? <p className="joi-detail-load-notice" role="alert">{t("home.goalDetailLoadFailed")} <button className="button ghost" disabled={detailState.busy} onClick={detailState.retry} type="button">{t("common.retry")}</button></p> : null}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
         {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
