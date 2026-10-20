@@ -1760,7 +1760,7 @@ describe("joi home single entry", () => {
     expect(screen.queryByText(/已自动补充两轮/u)).not.toBeInTheDocument();
     expect(screen.queryByLabelText(/最终结果全文/u)).not.toBeInTheDocument();
     if (hasSummary) {
-      fireEvent.click(screen.getByRole("button", { name: "查看当前结果全文" }));
+      fireEvent.click(screen.getByRole("button", { name: "查看全文" }));
       const resultDialog = screen.getByRole("dialog", { name: "研究 Workbench 的当前结果" });
       expect(within(resultDialog).getByRole("heading", { name: "当前结果" })).toBeInTheDocument();
       expect(within(resultDialog).queryByRole("heading", { name: "最终结果" })).not.toBeInTheDocument();

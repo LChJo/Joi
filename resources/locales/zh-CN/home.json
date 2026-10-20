@@ -188,7 +188,7 @@
   "currentResultAndRemainingWork": "当前结果与待补充内容",
   "currentResultNotes": "当前结果说明",
   "noResultNotesAreAvailableYetToIdentifySpecific": "暂时没有可展示的结果说明，无法列出具体待补充内容。",
-  "viewTheFullCurrentResult": "查看当前结果全文",
+  "viewTheFullCurrentResult": "查看全文",
   "sentToJoiForReconciliation": "已交给 joi 自动校正",
   "joiReconcilesStatusUsingCompletedWorkAndClosedPaths": "Joi 会依据已完成的 Work 和闭合路径收敛状态，不会重放历史评审。若事实仍不足以证明完成，请取消这条任务，并用新的输入重新描述后续要求。",
   "noPartnersAreAvailableOpenPartnersToFixOr": "当前没有可用搭档。请先到「搭档」页修复或创建搭档。",
