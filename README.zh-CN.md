@@ -60,29 +60,13 @@ joi 的工程目标继承自 [`docs/00-sources-and-glossary.md`](docs/00-sources
 
 ## 双重进化：搭档越用越强，工作台越用越懂你
 
-joi 用得越久，配合得越顺。运行时里同时跑着两条进化回路：一条把每个**搭档**磨得更锋利，另一条让与你共享的**工作台**更懂你，两条回路最终落在同一张结果表上。「搭档越配合越强」与「工作台越用越懂你」说的是同一套机制的两面。
+运行时里同时转着两条回路。一条让 joi 派活的搭档越干越准，另一条让与你共享的工作台越用越懂你要什么。两条回路最后都写进同一张结果表。
 
-![joi 双重进化：左环是搭档进化回路，右环是工作台进化回路，两环在共享的结果事实表上交汇](docs/assets/dual-evolution.svg)
+![左侧是搭档回路，右侧是工作台回路，两环在共享结果表上汇合](docs/assets/dual-evolution.svg)
 
 *两条回路，一张结果表。*
 
-### 回路 A · 搭档：派发、自动生成、越配越强
-
-1. 配合就是派发。一个请求会被拆成 Work 工作项，每项都有独立的访问等级、执行需求与依赖边。`resources/migrations/052_work_dependency_gate.sql` 在派发时强制依赖 DAG：上游未完成，下游不可领取；依赖失败则确定性地级联取消（`src/main/domain/work/work.ts`）。独立的 AFK 工作并行铺开，且 joi 绝不会把两个搭档放在同一个工作单元上（`src/main/application/joi/joi-system-prompt.ts`）。没有至少一条可机械校验的验收检查，Work 就不允许派发，编排服务会以 `work_acceptance_checks_required` 拒绝（`src/main/application/work/work-orchestration-service.ts`），每条结果随后按这些检查逐条核验（`resources/migrations/035_work_brief_verification.sql`）。搭档是模板，实例才是运行中的会话：`partner_instances` 同时支持用完即弃的 `EPHEMERAL` 与常驻复用的 `RESIDENT`，上限为全局 12 个、单个搭档 4 个（`src/main/application/partners/partner-instance-manager.ts`）。
-
-2. 没有合适的搭档时，joi 就造一个能力簇。joi 先调 `partner_list_available` 尽量复用现成搭档，只有当真的没有合适者时才 `partner_create`（`src/main/application/joi/joi-system-prompt.ts`）。新搭档按可持续复用的能力簇命名，绝不按一次性任务、模型或版本命名：「模型调研搭档」可以，「Grok4.6 模型调研搭档」不行。`partnerClusterName` / `partnerClusterKey`（`src/main/domain/workbench/workbench-naming.ts`）会归一化名称、剥掉一次性模型 token，同名簇直接返回已有搭档而不是复制一份。省略 `modelSourceId` 与 `modelIdOverride`，新搭档就跟随全局首选模型源（`src/main/infrastructure/pi/joi-reasoning-tools.ts`）。joi 创建的每个搭档都会打上 `created_by = 'JOI'`（`resources/migrations/023_partner_config_extensions.sql`），它组起来的团队因此始终可见、可审计。
-
-3. 每次运行都留记录，记录决定下一次选谁。运行结束时 `recordResult()` 追加真实结果、把记录裁剪到 32 条、每 8 条刷新一次滚动摘要；`digest()` 返回最近三条结果与一个由真实记录算出的 `successRate`（`src/main/application/partners/partner-work-memory-service.ts`）。这份摘要随每次 `partner_list_available` 一起返回，工具描述的原话就是「用摘要来挑」（`src/main/infrastructure/pi/joi-reasoning-tools.ts`），所以证据决定选谁。记忆按「工作台 × 搭档」隔离（`resources/migrations/027_avatar_private_partner_results.sql`）：在 A 工作台表现出色的搭档，借不到那份声誉到 B 工作台。知识在旁边累积，每个搭档最多 8 篇文档、单篇 6,000 字符、每次注入预算 16,000 字符（`src/main/application/partners/partner-knowledge-service.ts`）。能力、工具、技能与模型绑定全部版本化：任何改动都会新建一个不可变 revision 并把 `active_revision_id` 指过去，历史结果永远对得上当时的行为体（`src/main/application/partners/partner-registry-service.ts`）。成长是真的，而且可追溯。
-
-### 回路 B · 工作台：上下文活得比会话更久
-
-4. 上下文会持久化，单次请求则有边界。会话、轮次、收件消息、Work 工作项与结果全部落在本地 SQLite 数据库里，结果正文只存引用（`work_results.body_ref` → `work_result_bodies`），不塞进对话记录（`resources/migrations/017_joi_orchestration.sql`、`resources/migrations/027_avatar_private_partner_results.sql`）。生效需求会被固化成版本化契约（`joi_goal_requirements`，`GOAL_REQUIREMENTS_MAX_CHARS = 16_000`），契约未就绪时编排器拒绝派发（`src/main/application/work/work-orchestration-service.ts`）。每次派发前，`WorkbenchContextAssembler.assemble()` 都会写下这次派发所见的世界快照（人设版本、工作区引用、记忆摘要引用），并钉在该次运行上（`src/main/application/joi/workbench-context-assembler.ts`）。这些都不会因为一次会话结束而消失：每轮都按当前模型窗口重新装配上下文，上限 1,000,000 字符与 32 条消息，且永远不丢开头的 system 消息与最新的用户回合（`src/main/infrastructure/pi/pi-model-budget.ts`）。放不下的历史会被显式说明，任何被丢掉的结果都能用 `work_read_result` 按 id 取回。
-
-5. 工作台自身也在进化，人设、记忆、工作区与结构都会随使用变化。工作台持有版本化的人设正文（`workbench_persona_revisions`）、自己的记忆命名空间（`workbenches.memory_namespace_id`，实体在 `memory_fragments` 并由 FTS5 提供全文检索，见 `resources/migrations/004_continuity.sql`），以及一个由 joi 托管或绑定到你已有目录的工作区（`workbench_workspace_bindings`，`kind IN ('MANAGED','BOUND')`）。它的形态跟着你的使用走：活跃工作与近期结果持续投影到 `workbench_task_projections`。当一个工作台完成使命，joi 会**建议**合并或归档（`WorkbenchChangeService.suggestMerge` / `suggestArchive`），你确认之前什么都不会发生（`resources/migrations/019_avatar_change_confirmation.sql`）。学习永远不会改写你是谁：人设与范围始终由用户管理，任何学到的策略都不得扩大你的范围（`src/main/application/joi/joi-system-prompt.ts`）。
-
-6. 两条回路在结果表上交汇：结果变成证据，证据变成下一次简报。`SqliteEvolutionStore.evidenceSeeds()` 只从权威且不迟到的结果取证（`is_authoritative = 1 AND is_late = 0`，权威标记见 `resources/migrations/034_work_goal_binding_and_result_authority.sql`），且只取被钉为可评估的目标（`src/main/infrastructure/persistence/sqlite-evolution-store.ts`）。证据池攒够 10 个可客观评估的目标才允许推进，失败与回滚阈值分别是 3 和 2（`src/shared/evolution.ts`）；一次策略修订只改一个策略模块（`src/main/domain/evolution/strategy.ts`），并经 `strategyForGoal()` 以金丝雀取样方式进入下一次派发（`src/main/application/evolution/evolution-service.ts`）。运行时提示词把层级写得毫不含糊：`Runtime strategy (subordinate to user requirements and fixed gates)`。于是闭环成立：工作台的策略改变 joi 拆解与撰写简报的方式 → 简报改变搭档收到的指令与它持有的工具技能 → 搭档的结果改变它的成功率与记忆 → 成功率改变 joi 下一次选谁 → 而新的结果又成为新的证据。**多合作一次，下一次就选得更准；多做完一个目标，下一次就交代得更准。**
-
-成功率由你自己的运行历史在运行时算出，没有任何预先固定的数字。单次请求被限制在 1,000,000 字符与 32 条消息，持久化则来自磁盘上的数据库。进化只推动策略与配置，前面有证据阈值、金丝雀取样与回滚，且始终从属于你的需求。
+两条回路学到的东西都落在磁盘上，关掉应用也不会重来。
 
 ---
 
