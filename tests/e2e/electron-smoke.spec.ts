@@ -225,6 +225,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await window.getByRole("button", { exact: true, name: "joi" }).click();
     const composer = window.locator(".joi-composer");
     await expect(composer).toBeVisible();
+    await window.getByLabel("给 joi 输入", { exact: true }).focus();
     await expect(window.getByRole("button", { name: "joi 自主分发" })).toBeVisible();
     const composerBox = await composer.boundingBox();
     expect(composerBox).not.toBeNull();

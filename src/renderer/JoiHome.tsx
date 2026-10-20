@@ -6,7 +6,7 @@ import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
 import { useGoalDetail } from "./useGoalDetail.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ClockIcon, DotsThreeIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, StackIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -1116,22 +1116,16 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
  */
 function GoalCardHead({ goal, onOpen, compact = false }: { goal: JoiGoalCardDto; onOpen: () => void; compact?: boolean }) {
   useI18n();
-  return <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={onOpen} type="button"><span className="workbench-orb">{goal.workbench.name.slice(0, 1)}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong>{compact ? (goal.archivedAt === undefined ? null : <i>{t("home.valueArchived", { p0: new Date(goal.archivedAt).toLocaleString(currentLocale()) })}</i>) : <GoalProgress goal={goal} />}</span></button>;
+  return <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={onOpen} type="button"><span aria-hidden="true" className="workbench-orb"><StackIcon /></span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong>{compact ? (goal.archivedAt === undefined ? null : <i>{t("home.valueArchived", { p0: new Date(goal.archivedAt).toLocaleString(currentLocale()) })}</i>) : <GoalProgress goal={goal} />}</span></button>;
 }
 
 function GoalResultPreview({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
   useI18n();
   if (goal.completionSummary === undefined || goal.clarification?.reasonCode === "goal_continuation_required") return null;
-  return <div aria-haspopup="dialog" aria-label={t("home.openTheFullFinalResultForValue", { p0: goal.title })} data-full-text-label={t("home.viewTheFullCurrentResult")} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><Markdown>{goal.completionSummary}</Markdown></div>;
+  return <div aria-haspopup="dialog" aria-label={t("home.openTheFullFinalResultForValue", { p0: goal.title })} data-full-text-label={t("home.viewTheFullCurrentResult")} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><div className="joi-goal-result-copy"><Markdown>{goal.completionSummary}</Markdown></div><span aria-hidden="true" className="joi-goal-result-link">{t("home.viewTheFullCurrentResult")}<ArrowUpRightIcon /></span></div>;
 }
 
-/**
- * Every per-card action, behind one icon button.
- *
- * They used to be a row of text links that grew by one with each new action, which made a feed of
- * finished cards read as a wall of controls. A card that is not the user's current concern should
- * offer nothing but a way in; the actions are one click deeper instead.
- */
+/** Terminal and archived facts determine the actions behind each card's single menu. */
 function GoalActionMenu({ api, goal, archived, onRetried, onDismissed, onChanged }: {
   api: DigitalLifeApi;
   goal: JoiGoalCardDto;
@@ -1145,13 +1139,30 @@ function GoalActionMenu({ api, goal, archived, onRetried, onDismissed, onChanged
   const [busy, setBusy] = useState(false);
   const [error, setError] = useNotice();
   const wrapper = useRef<HTMLDivElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    if (!open || menu.current === null || wrapper.current?.closest(".joi-home-c2") === null) return;
+    const trigger = wrapper.current?.querySelector("button");
+    if (trigger === null || trigger === undefined) return;
+    const anchor = trigger.getBoundingClientRect();
+    const bounds = menu.current.getBoundingClientRect();
+    const top = anchor.bottom + 6 + bounds.height <= window.innerHeight - 12 ? anchor.bottom + 6 : anchor.top - 6 - bounds.height;
+    Object.assign(menu.current.style, {
+      position: "fixed", right: "auto", left: `${String(Math.max(12, Math.min(anchor.right - bounds.width, document.documentElement.clientWidth - bounds.width - 12)))}px`,
+      top: `${String(Math.max(12, top))}px`, maxHeight: "calc(100dvh - 24px)", overflowY: "auto",
+    });
+  }, [open, error]);
   useEffect(() => {
     if (!open) return;
     const close = (event: MouseEvent) => { if (wrapper.current?.contains(event.target as Node) !== true) setOpen(false); };
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") setOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") { setOpen(false); wrapper.current?.querySelector("button")?.focus(); } };
+    const closeOnScroll = (event: Event) => { if (menu.current?.contains(event.target as Node) !== true) setOpen(false); };
+    const closeOnResize = () => setOpen(false);
     document.addEventListener("mousedown", close);
     document.addEventListener("keydown", escape);
-    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); };
+    document.addEventListener("scroll", closeOnScroll, true);
+    window.addEventListener("resize", closeOnResize);
+    return () => { document.removeEventListener("mousedown", close); document.removeEventListener("keydown", escape); document.removeEventListener("scroll", closeOnScroll, true); window.removeEventListener("resize", closeOnResize); };
   }, [open]);
   const run = async (operation: Promise<unknown>, done: () => void, failure: string) => {
     setBusy(true); setError(null);
@@ -1177,7 +1188,7 @@ function GoalActionMenu({ api, goal, archived, onRetried, onDismissed, onChanged
   ].filter((entry) => entry !== null);
   return <div className="joi-goal-menu" onClick={(event) => event.stopPropagation()} ref={wrapper}>
     <button aria-expanded={open} aria-haspopup="menu" aria-label={t("home.moreActionsForValue", { p0: goal.title })} className="icon-button joi-goal-menu-trigger" disabled={busy} onClick={() => setOpen((current) => !current)} type="button"><DotsThreeIcon aria-hidden weight="bold" /></button>
-    {open ? <div aria-label={t("home.valueActions", { p0: goal.title })} className="joi-goal-menu-list" role="menu">
+    {open ? <div aria-label={t("home.valueActions", { p0: goal.title })} className="joi-goal-menu-list" ref={menu} role="menu">
       {items}
       {/* A refusal keeps the menu open so the action can be retried without reopening; the reason
           belongs next to the item that was refused rather than at the card. */}
@@ -1701,7 +1712,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     setFeed((current) => optimisticRetryFeed(current, goal));
     void refresh().catch(() => undefined);
   };
-  return <section className="joi-home" aria-labelledby="joi-home-title">
+  return <section className="joi-home joi-home-c2" aria-labelledby="joi-home-title">
     <header><h1 id="joi-home-title">{t("home.whatWouldYouLikeJoiToDo")}</h1><p>{t("home.tellJoiYourGoalItWillChooseTheWorkbench")}</p></header>
     {focusGoalId !== undefined && openGoalId === focusGoalId && feedLoaded && !feedError && openGoal === undefined ? <p className="inline-notice" role="status">{t("home.theGoalWasRemovedOrIsUnavailableHistoricalUsage")}</p> : null}
     {workbenchChoice === undefined ? null : <WorkbenchChoiceDialog api={api} key={`${workbenchChoice.inputId}:${workbenchChoice.questionId ?? "legacy"}:${String(workbenchChoice.questionVersion ?? 1)}`} message={workbenchChoice} onClose={() => setWorkbenchChoiceId(null)} onResolved={() => { dismissAction(workbenchChoice.inputId); setWorkbenchChoiceId(null); void refresh().catch(() => undefined); }} workbenches={snapshot.workbenches} />}
@@ -1730,13 +1741,18 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
     {snapshot.partners.length >= 2 ? null : <div className="inline-notice warning"><span>{snapshot.partners.length === 0 ? t("home.noWorkPartnersYet") : t("home.onlyValueWorkPartnersAreAvailable", { p0: String(snapshot.partners.length) })}{t("home.buildATeamFromAScenarioPresetOrCreate")}</span><span className="row-actions"><button className="button ghost" onClick={() => onNavigate?.("agents", "scenarios")} type="button">{t("home.viewScenarioPresets")}</button><button className="button ghost" onClick={() => onNavigate?.("agents", "partners")} type="button">{t("home.createPartners")}</button></span></div>}
     <div className="joi-composer-dock">
       <form
-        className={`joi-composer${dragOver ? " drag-over" : ""}`}
+        className={`joi-composer${text.length > 0 || files.length > 0 || imported.length > 0 || targetWorkbench !== undefined ? " has-content" : ""}${dragOver ? " drag-over" : ""}`}
         onDragLeave={(event) => { if (event.currentTarget.contains(event.relatedTarget as Node | null)) return; setDragOver(false); }}
         onDragOver={(event) => { event.preventDefault(); setDragOver(true); }}
         onDrop={(event) => { event.preventDefault(); setDragOver(false); addFiles(Array.from(event.dataTransfer.files)); }}
         onSubmit={(event) => void submit(event)}>
         <label className="joi-composer-label" htmlFor="joi-input">{t("home.messageJoi")}</label>
-        <textarea autoFocus id="joi-input" onChange={(event) => setText(event.target.value)} onPaste={(event) => {
+        <textarea id="joi-input" onChange={(event) => setText(event.target.value)} onKeyDown={(event) => {
+          if (event.key === "Enter" && (event.ctrlKey || event.metaKey) && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            event.currentTarget.form?.requestSubmit();
+          }
+        }} onPaste={(event) => {
           const pasted = Array.from(event.clipboardData.files);
           if (pasted.length > 0) {
             event.preventDefault();
@@ -1747,12 +1763,12 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
           if (imagePath === null) return;
           event.preventDefault();
           importImagePath(imagePath);
-        }} placeholder={t("home.describeAGoalAddAnIdeaOrContinueA")} rows={2} value={text} />
+        }} placeholder={t("home.describeAGoalAddAnIdeaOrContinueA")} rows={1} value={text} />
         <div className="joi-composer-toolbar">
-          <label className="joi-attachment-button">{t("home.addAttachment")}<input aria-label={t("home.addAnAttachmentForJoi")} multiple onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} type="file" /></label>
+          <label className="joi-attachment-button" title={t("home.addAttachment")}><PaperclipIcon aria-hidden="true" /><span className="joi-composer-attachment-label">{t("home.addAttachment")}</span><input aria-label={t("home.addAnAttachmentForJoi")} multiple onChange={(event) => { addFiles(Array.from(event.target.files ?? [])); event.target.value = ""; }} type="file" /></label>
           <ComposerWorkbenchPicker workbenches={snapshot.workbenches} onSelect={setTargetWorkbenchId} selected={targetWorkbench} />
           {files.length === 0 && imported.length === 0 ? null : <span className="joi-file-summary">{[...imported.map((item) => item.filename), ...files.map((file) => file.name)].join("、")}</span>}
-          <button className="button primary" disabled={text.trim() === ""} type="submit">{t("home.sendToJoi")}</button>
+          <button className="button primary" disabled={text.trim() === ""} type="submit">{t("home.sendToJoi")}<ArrowUpIcon aria-hidden="true" /></button>
         </div>
       </form>
       {error === null ? null : <p className="inline-notice danger" role="alert">{error}</p>}
