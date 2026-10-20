@@ -6,7 +6,7 @@ import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
 import { useGoalDetail } from "./useGoalDetail.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
 import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, StackIcon, XIcon } from "@phosphor-icons/react";
+import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 
@@ -1116,7 +1116,11 @@ function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
  */
 function GoalCardHead({ goal, onOpen, compact = false }: { goal: JoiGoalCardDto; onOpen: () => void; compact?: boolean }) {
   useI18n();
-  return <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={onOpen} type="button"><span aria-hidden="true" className="workbench-orb"><StackIcon /></span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong>{compact ? (goal.archivedAt === undefined ? null : <i>{t("home.valueArchived", { p0: new Date(goal.archivedAt).toLocaleString(currentLocale()) })}</i>) : <GoalProgress goal={goal} />}</span></button>;
+  const projectLabel = goal.workbench.projectLabel?.trim() ?? "";
+  const label = projectLabel.length === 0 ? goal.workbench.name : projectLabel;
+  const han = label.match(/\p{Script=Han}/gu);
+  const monogram = (han ?? label.match(/[\p{L}\p{N}]/gu))?.slice(0, han === null ? 4 : 2).join("") ?? "joi";
+  return <button className="joi-goal-open" disabled={goal.workbench.workbenchId === ""} onClick={onOpen} type="button"><span aria-hidden="true" className={`workbench-orb${han === null ? " monogram-latin" : ""}`}>{monogram}</span><span className="joi-goal-copy"><small>{goal.workbench.name}</small><strong className="joi-goal-title">{goal.title}</strong>{compact ? (goal.archivedAt === undefined ? null : <i>{t("home.valueArchived", { p0: new Date(goal.archivedAt).toLocaleString(currentLocale()) })}</i>) : <GoalProgress goal={goal} />}</span></button>;
 }
 
 function GoalResultPreview({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {

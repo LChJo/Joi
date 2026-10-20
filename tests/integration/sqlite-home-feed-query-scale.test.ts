@@ -56,6 +56,7 @@ describe("home feed historical query scale", () => {
       const repository = new SqliteJoiHomeFeedRepository({ transaction: (operation) => operation(observed) });
       const feed = await repository.load(new Date(NOW));
       expect(feed.goals).toHaveLength(33);
+      expect(feed.goals[0]?.workbench).toMatchObject({ name: "Scale", projectLabel: "project" });
       expect(feed.goals.reduce((total, goal) => total + goal.agentCount, 0)).toBe(812);
       expect(plan).not.toContain("SCAN t");
       expect(plan.some((step) => /^SCAN (?:source|s)(?: |$)/u.test(step))).toBe(false);

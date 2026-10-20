@@ -309,7 +309,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             AND t.status IN ('PENDING','RUNNING','WAITING')) AS live_turn_count,
         (SELECT COUNT(*) FROM joi_inbox_messages child WHERE child.goal_input_id = i.input_id
           AND child.status IN ('PENDING','ROUTED','CLARIFICATION_REQUIRED')) AS pending_child_count,
-        COALESCE(o.completed_at, tc.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name,
+        COALESCE(o.completed_at, tc.completed_at, i.updated_at) AS projection_updated_at, a.workbench_id, a.name AS workbench_name, a.project_label,
         COUNT(w.work_id) AS work_total,
         COALESCE(SUM(CASE WHEN w.status IN ('PLANNED','READY','RUNNING','WAITING') THEN 1 ELSE 0 END), 0) AS work_active,
         COALESCE(SUM(CASE WHEN w.status = 'COMPLETED' THEN 1 ELSE 0 END), 0) AS completed_count,
@@ -411,6 +411,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           workbench: {
             workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",
             name: typeof row.workbench_name === "string" ? row.workbench_name : "等待归属",
+            ...(typeof row.project_label === "string" ? { projectLabel: maskSecretText(row.project_label) } : {}),
           },
           // Archiving is reversible, so it is offered one step earlier than removal: a terminal goal
           // with nothing still running is fileable even when it never reached a finalized outcome,

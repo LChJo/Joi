@@ -3,6 +3,38 @@ import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
+test('long result headers reserve horizontal labels and home hover only changes the title', async () => {
+  const root = await mkdtemp(path.join(tmpdir(), 'joi-header-layout-'));
+  const entry = path.join(root, 'main.cjs');
+  await writeFile(entry, `const {app,BrowserWindow}=require('electron');
+app.setPath('userData', ${JSON.stringify(path.join(root, 'userdata'))});
+app.whenReady().then(()=>{const w=new BrowserWindow({width:1280,height:800,useContentSize:true});w.loadURL('data:text/html,fixture');});`);
+  const application = await electron.launch({ args: [entry] });
+  try {
+    const page = await application.firstWindow();
+    await page.emulateMedia({ colorScheme: 'light' });
+    const css = await readFile('src/renderer/styles.css', 'utf8');
+    await page.setContent(`<main class="joi-home joi-home-c2"><button class="joi-goal-open"><span class="workbench-orb">项目</span><span class="joi-goal-copy"><strong class="joi-goal-title">合成目标</strong></span></button></main>`);
+    await page.addStyleTag({ content: css });
+    const open = page.locator('.joi-goal-open');
+    await open.hover();
+    expect.soft(await open.evaluate(element => getComputedStyle(element).backgroundColor)).toBe('rgba(0, 0, 0, 0)');
+    expect.soft(await page.locator('.joi-goal-title').evaluate(element => getComputedStyle(element).color)).toBe('rgb(40, 95, 72)');
+    await page.setContent(`<main class="joi-home joi-home-c2"><div class="joi-drawer-backdrop"><section class="joi-goal-drawer joi-result-drawer"><header class="joi-goal-detail-header"><div class="joi-goal-detail-title"><p class="eyebrow">项目工作台</p><h1>${'合成任务包含一段需要完整阅读的长标题。'.repeat(12)}</h1><span class="joi-goal-detail-meta">已完成</span></div><div class="row-actions"><button class="button ghost">查看详情</button><button class="button quiet">关闭</button></div></header><div class="joi-goal-drawer-body">结果正文</div></section></div></main>`);
+    await page.addStyleTag({ content: css });
+    for (const width of [1280, 768, 480]) {
+      await page.setViewportSize({ width, height: 800 });
+      const heading = page.locator('.joi-goal-detail-title h1');
+      expect(await heading.evaluate(element => getComputedStyle(element).fontSize)).toBe('19px');
+      expect((await heading.boundingBox())?.height).toBeLessThanOrEqual(58);
+      for (const button of await page.locator('.row-actions button').all()) {
+        expect(await button.evaluate(element => getComputedStyle(element).whiteSpace)).toBe('nowrap');
+        expect((await button.boundingBox())?.height).toBeLessThanOrEqual(40);
+      }
+    }
+  } finally { await application.close(); }
+});
+
 test('goal drawers stay right-aligned and scroll with the mouse wheel', async ({ browserName }) => {
   expect(browserName).toBe('chromium');
   const root = await mkdtemp(path.join(tmpdir(), 'joi-drawer-layout-'));

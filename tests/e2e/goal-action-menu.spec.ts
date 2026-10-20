@@ -114,7 +114,7 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1024,height:720,useCo
         <article class="joi-goal-card ${extraClass} failed">
           <div class="joi-goal-row">
             <button class="joi-goal-open" type="button">
-              <span class="workbench-orb">归</span>
+              <span class="workbench-orb monogram-latin">WWWW</span>
               <span class="joi-goal-copy"><small>归档工程</small><strong class="joi-goal-title">一个已经归档的目标</strong><i>2026/10/9 18:42:27 归档</i></span>
             </button>
             <div class="joi-goal-side">
@@ -156,6 +156,14 @@ app.whenReady().then(()=>{const w=new BrowserWindow({width:1024,height:720,useCo
     expect(shape.archived).toEqual({ orb: '32px', side: 'row', badgeAndMenuOnOneLine: true });
     // Without the scope the same markup falls back to the roomy home card: bigger orb, stacked side.
     expect(shape.control).toEqual({ orb: '44px', side: 'column', badgeAndMenuOnOneLine: false });
+    await expect(page.locator('.archived .workbench-orb')).toHaveText('WWWW');
+    expect(await page.locator('.archived .workbench-orb').evaluate(element => getComputedStyle(element).whiteSpace)).toBe('nowrap');
+    const monogram = await page.locator('.archived .workbench-orb').evaluate(element => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      return { textWidth: range.getBoundingClientRect().width, width: element.clientWidth, fontSize: getComputedStyle(element).fontSize };
+    });
+    expect(monogram.textWidth, JSON.stringify(monogram)).toBeLessThanOrEqual(monogram.width);
     await page.screenshot({ path: path.resolve('test-results/e2e-goal-archived-card.png') });
   } finally { await application.close(); }
 });

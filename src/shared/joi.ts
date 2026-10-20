@@ -415,7 +415,7 @@ export interface JoiGoalWorkDto {
 export interface JoiGoalCardBaseDto {
   agentCount: number;
   artifacts?: WorkbenchArtifactDto[];
-  workbench: { workbenchId: string; name: string };
+  workbench: { workbenchId: string; name: string; projectLabel?: string };
   /**
    * Whether the user may file this card away. `canDelete` cannot stand in for it: removal also
    * demands a finalized outcome, and a failed card that never reached one is exactly the card a

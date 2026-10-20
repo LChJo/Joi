@@ -48,7 +48,17 @@ test("C2 home keeps compact targets, a narrow expanding composer and reachable a
         if (width === 1280) expect((await feed.boundingBox())?.width).toBeGreaterThan((compact?.width ?? 0) + 80);
         const gap = await feed.evaluate(element => parseFloat(getComputedStyle(element).rowGap));
         expect(gap).toBeLessThanOrEqual(8);
-        await expect(page.locator(".joi-goal-open .workbench-orb svg")).toHaveCount(3);
+        await expect(page.locator(".joi-goal-open .workbench-orb").first()).toHaveText("工程");
+        const open = page.locator(".joi-goal-open").first();
+        const title = open.locator(".joi-goal-title");
+        await open.hover();
+        expect(await open.evaluate(element => getComputedStyle(element).backgroundColor)).toBe("rgba(0, 0, 0, 0)");
+        expect(await title.evaluate(element => getComputedStyle(element).color)).toBe(await page.locator(".joi-goal-result-link").first().evaluate(element => getComputedStyle(element).color));
+        await page.getByRole("heading", { name: "现在想让 joi 做什么？" }).hover();
+        expect(await title.evaluate(element => getComputedStyle(element).color)).not.toBe(await page.locator(".joi-goal-result-link").first().evaluate(element => getComputedStyle(element).color));
+        await open.focus();
+        expect(await open.evaluate(element => getComputedStyle(element).outlineStyle)).toBe("solid");
+        await page.getByRole("heading", { name: "现在想让 joi 做什么？" }).click();
         expect(await page.locator(".joi-goal-card").first().evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
         expect((await page.locator(".joi-goal-result-preview").first().boundingBox())?.height).toBeLessThanOrEqual(64);
         await expect(page.locator(".joi-goal-result-copy p").first()).toBeInViewport();
@@ -89,4 +99,71 @@ test("C2 home keeps compact targets, a narrow expanding composer and reachable a
   } finally {
     await application.close();
   }
+});
+
+test("task and result headers keep long titles readable and actions horizontal", async () => {
+  const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
+  try {
+    expect(await application.evaluate(({ app }) => app.getPath("userData"))).toContain("joi-e2e");
+    const page = await application.firstWindow();
+    await setDesktopTestLocale(page, "zh-CN");
+    const goal: JoiGoalCardDto = {
+      agentCount: 0, canDelete: true, completionSummary: "## 核对结果\n\n" + "合成验证内容，完整结果可以继续阅读。\n\n".repeat(30),
+      goalId: "long-title", status: "COMPLETED", title: "在任务项目中核对附件、分析问题并回传结论，保留完整资料和必要证据。".repeat(6),
+      updatedAt: "2026-10-20T00:00:00Z", completedAt: "2026-10-20T00:00:00Z",
+      workbench: { workbenchId: "fixture", name: "工程工作台", projectLabel: "ai mana front debug" },
+      work: { active: 0, completed: 1, failed: 0, total: 1 },
+    };
+    await page.route("**/api/v1/**", async route => {
+      const pathname = new URL(route.request().url()).pathname;
+      const body = pathname === "/api/v1/auth/status" ? { configured: true }
+        : pathname === "/api/v1/auth/bootstrap" ? { csrfToken: "disposable-header-csrf" }
+        : pathname === "/api/v1/joi" ? { workbenchChanges: [], workbenches: [], modelSources: [], work: [], partners: [], runtime: { configured: true, status: "READY" } }
+        : pathname === "/api/v1/joi/home-feed" ? { goals: [goal], thinking: [], unassignedActions: [] }
+        : pathname.includes("/goals/") ? { goalId: goal.goalId, fullTitle: goal.title }
+        : { items: [] };
+      await route.fulfill({ json: body });
+    });
+    await page.reload();
+    await expect(page.locator(".workbench-orb").first()).toHaveText("aima");
+    for (const colorScheme of ["light", "dark"] as const) {
+      await page.emulateMedia({ colorScheme });
+      for (const width of [1280, 768, 480]) {
+        await page.setViewportSize({ width, height: 900 });
+        await page.locator(".joi-goal-result-preview").click();
+        const dialog = page.getByRole("dialog");
+        const checkHeader = async () => {
+          const heading = dialog.locator(".joi-goal-detail-title h1");
+          await expect(heading).toBeVisible();
+          const typography = await heading.evaluate(element => {
+            const style = getComputedStyle(element);
+            return { size: style.fontSize, lineHeight: style.lineHeight, weight: style.fontWeight, height: element.getBoundingClientRect().height };
+          });
+          expect(typography.size).toBe("19px");
+          expect(typography.lineHeight).toBe("28.5px");
+          expect(typography.weight).toBe("600");
+          expect(typography.height).toBeLessThanOrEqual(58);
+          const header = dialog.locator(".joi-goal-detail-header");
+          expect((await header.boundingBox())?.height).toBeLessThanOrEqual(185);
+          const body = dialog.locator(".joi-goal-drawer-body");
+          expect((await body.boundingBox())?.height).toBeGreaterThan(450);
+          expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+        };
+        await checkHeader();
+        expect(await dialog.locator(".joi-goal-result .joi-md").evaluate(element => getComputedStyle(element).fontSize)).toBe("14px");
+        for (const label of ["查看详情", "关闭"]) {
+          const button = dialog.getByRole("button", { name: label, exact: true });
+          await expect(button).toBeInViewport({ ratio: 1 });
+          expect((await button.boundingBox())?.height).toBeLessThanOrEqual(40);
+          expect(await button.evaluate(element => getComputedStyle(element).whiteSpace)).toBe("nowrap");
+        }
+        await page.screenshot({ path: `test-results/e2e-result-header-${String(width)}-${colorScheme}.png`, animations: "disabled" });
+        await dialog.getByRole("button", { name: "查看详情", exact: true }).click();
+        await checkHeader();
+        await page.screenshot({ path: `test-results/e2e-task-header-${String(width)}-${colorScheme}.png`, animations: "disabled" });
+        await dialog.getByRole("button", { name: "关闭", exact: true }).click();
+        await expect(dialog).not.toBeVisible();
+      }
+    }
+  } finally { await application.close(); }
 });
