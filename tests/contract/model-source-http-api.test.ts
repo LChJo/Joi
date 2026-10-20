@@ -84,6 +84,11 @@ describe("model source HTTP API", () => {
         body: JSON.stringify({ accessMode: "token-plan", apiKey: "must-never-leak", kind: "qwen", protocol: "anthropic" }), headers: writeHeaders, method: "POST",
       });
       expect(tokenPlan.status).toBe(201);
+      for (const item of items) { item.status = "DEGRADED"; item.reasonCode = "server_error"; }
+      const runtime = await fetch(`${listeners.loopback.url}/api/v1/joi/runtime`, { headers: { cookie } });
+      expect(await runtime.json()).toEqual({ configured: true, status: "DEGRADED", modelHealth: { ready: 0, recovering: 2, unavailable: 2 } });
+      const snapshot = await fetch(`${listeners.loopback.url}/api/v1/joi`, { headers: { cookie } });
+      expect(await snapshot.json()).toMatchObject({ runtime: { configured: true, status: "DEGRADED" } });
     } finally {
       await listeners.close();
       await fixture.close();

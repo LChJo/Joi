@@ -6890,6 +6890,31 @@
     "description": "settings: Sign out",
     "placeholders": {}
   },
+  "settingsModelsRecovering": "Models unavailable, reconnecting automatically",
+  "@settingsModelsRecovering": {
+    "description": "Model connection status in the lower-left sidebar",
+    "placeholders": {}
+  },
+  "settingsModelsUnavailable": "Models need attention",
+  "@settingsModelsUnavailable": {
+    "description": "Model connection status in the lower-left sidebar",
+    "placeholders": {}
+  },
+  "settingsModelsPartialRecovering": "Some models unavailable, reconnecting automatically",
+  "@settingsModelsPartialRecovering": {
+    "description": "Model connection status in the lower-left sidebar",
+    "placeholders": {}
+  },
+  "settingsModelsPartialUnavailable": "Some models need attention",
+  "@settingsModelsPartialUnavailable": {
+    "description": "Model connection status in the lower-left sidebar",
+    "placeholders": {}
+  },
+  "settingsOpenModelSettings": "Open settings to check model connections",
+  "@settingsOpenModelSettings": {
+    "description": "Model connection status in the lower-left sidebar",
+    "placeholders": {}
+  },
   "skillsSkillCatalogRefreshedUnsavedSelectionsArePreserved": "Skill catalog refreshed. Unsaved selections are preserved.",
   "@skillsSkillCatalogRefreshedUnsavedSelectionsArePreserved": {
     "description": "skills: Skill catalog refreshed. Unsaved selections are preserved.",

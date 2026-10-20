@@ -6,6 +6,7 @@ import type {
   ModelSourceProtocol,
   ModelSourceStatus,
 } from "../../domain/model-sources/model-source.js";
+import type { OutboxInput } from "./runtime-store.js";
 
 export type PiCredentialType = "api_key" | "oauth";
 
@@ -105,11 +106,15 @@ export interface ModelLimitReader {
 }
 
 export interface ModelSourceValidator {
-  validate(record: ModelSourceRecord): Promise<{
+  validate(record: ModelSourceRecord, signal?: AbortSignal): Promise<{
     anthropicAuthMode?: "bearer";
     error?: string;
     reasonCode?: string;
     status: Extract<ModelSourceStatus, "READY" | "DEGRADED" | "NEEDS_AUTH">;
     validatedAt: string;
   }>;
+}
+
+export interface ModelSourceRecoveryQueue {
+  enqueueRecovery(input: OutboxInput): Promise<void>;
 }

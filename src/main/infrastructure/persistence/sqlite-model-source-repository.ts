@@ -5,6 +5,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ModelSourceHealthRevision, ModelSourceRecord, ModelSourceRepository } from "../../application/ports/model-source-ports.js";
 import type { ModelCapability, ModelSourceAccessMode, ModelSourceKind, ModelSourceProtocol, ModelSourceStatus } from "../../domain/model-sources/model-source.js";
 import type { ThinkingEffort } from "../../../shared/joi.js";
+import type { OutboxInput } from "../../application/ports/runtime-store.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -120,6 +121,14 @@ function mapRow(row: Row): ModelSourceRecord {
 
 export class SqliteModelSourceRepository implements ModelSourceRepository {
   constructor(private readonly database: TransactionalDatabase) {}
+
+  async enqueueRecovery(input: OutboxInput): Promise<void> {
+    this.database.transaction(connection => {
+      connection.prepare(`INSERT INTO outbox (outbox_id, kind, payload_json, status, attempt_count, available_at, created_at)
+        VALUES (?, ?, ?, 'PENDING', 0, ?, ?) ON CONFLICT(outbox_id) DO NOTHING`)
+        .run(input.outboxId, input.kind, JSON.stringify(input.payload), input.availableAt, input.availableAt);
+    });
+  }
 
   async create(record: ModelSourceRecord): Promise<void> {
     this.database.transaction((connection) => {

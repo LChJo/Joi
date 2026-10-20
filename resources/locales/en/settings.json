@@ -755,5 +755,30 @@
     "message": "Sign out",
     "description": "settings: Sign out",
     "sourceText": "退出登录"
+  },
+  "modelsRecovering": {
+    "message": "Models unavailable, reconnecting automatically",
+    "description": "Model connection status in the lower-left sidebar",
+    "sourceText": "模型暂不可用，正在自动恢复"
+  },
+  "modelsUnavailable": {
+    "message": "Models need attention",
+    "description": "Model connection status in the lower-left sidebar",
+    "sourceText": "模型需要检查"
+  },
+  "modelsPartialRecovering": {
+    "message": "Some models unavailable, reconnecting automatically",
+    "description": "Model connection status in the lower-left sidebar",
+    "sourceText": "部分模型暂时异常，正在自动恢复"
+  },
+  "modelsPartialUnavailable": {
+    "message": "Some models need attention",
+    "description": "Model connection status in the lower-left sidebar",
+    "sourceText": "部分模型需要检查"
+  },
+  "openModelSettings": {
+    "message": "Open settings to check model connections",
+    "description": "Model connection status in the lower-left sidebar",
+    "sourceText": "打开设置检查模型连接"
   }
 }

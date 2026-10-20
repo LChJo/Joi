@@ -9,6 +9,7 @@ import {
 } from "../http-core.js";
 import { joiHomeFeedService, joiInboxService, modelSourceService } from "../api-dependencies.js";
 import { exact, pattern, type RouteDefinition } from "../route-types.js";
+import { modelSourceRuntime } from "../../../application/model-sources/model-source-health.js";
 
 export const JOI_READ_ROUTES: RouteDefinition[] = [
   {
@@ -16,13 +17,13 @@ export const JOI_READ_ROUTES: RouteDefinition[] = [
     id: "GET /api/v1/joi",
     match: exact("GET", "/api/v1/joi"),
     handle: async (ctx) => {
-      const configured = await modelSourceService(ctx.dependencies).hasReadySource();
+      const sources = await modelSourceService(ctx.dependencies).list();
       sendJson(ctx.response, 200, {
         workbenchChanges: ctx.dependencies.workbenchChanges === undefined ? [] : await ctx.dependencies.workbenchChanges.listPending(),
         workbenches: ctx.dependencies.workbenches === undefined ? [] : await ctx.dependencies.workbenches.listSummaries(),
-        modelSources: await modelSourceService(ctx.dependencies).list(),
+        modelSources: sources,
         partners: ctx.dependencies.partners === undefined ? [] : await ctx.dependencies.partners.list(),
-        runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" },
+        runtime: modelSourceRuntime(sources),
         work: ctx.dependencies.work === undefined ? [] : await ctx.dependencies.work.listActive(),
       });
     },
@@ -32,8 +33,7 @@ export const JOI_READ_ROUTES: RouteDefinition[] = [
     id: "GET /api/v1/joi/runtime",
     match: exact("GET", "/api/v1/joi/runtime"),
     handle: async (ctx) => {
-      const configured = await modelSourceService(ctx.dependencies).hasReadySource();
-      sendJson(ctx.response, 200, { configured, status: configured ? "READY" : "NOT_CONFIGURED" });
+      sendJson(ctx.response, 200, modelSourceRuntime(await modelSourceService(ctx.dependencies).list()));
     },
   },
   {

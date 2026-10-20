@@ -146,5 +146,20 @@
   "joiRefreshesStatusAtRegularIntervals": "joi 会按固定节奏刷新最新状态。",
   "mainNavigation": "主导航",
   "reconnectStatusUpdates": "重新连接状态更新",
-  "signOut": "退出登录"
+  "signOut": "退出登录",
+  "modelsRecovering": {
+    "message": "模型暂不可用，正在自动恢复"
+  },
+  "modelsUnavailable": {
+    "message": "模型需要检查"
+  },
+  "modelsPartialRecovering": {
+    "message": "部分模型暂时异常，正在自动恢复"
+  },
+  "modelsPartialUnavailable": {
+    "message": "部分模型需要检查"
+  },
+  "openModelSettings": {
+    "message": "打开设置检查模型连接"
+  }
 }

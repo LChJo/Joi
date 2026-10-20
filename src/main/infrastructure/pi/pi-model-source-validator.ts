@@ -81,11 +81,15 @@ export class PiModelSourceValidator implements ModelSourceValidator {
     this.#probe = input.probe ?? this.#createProbe(input.credentials, input.usage);
   }
 
-  async validate(record: ModelSourceRecord): ReturnType<ModelSourceValidator["validate"]> {
+  async validate(record: ModelSourceRecord, signal?: AbortSignal): ReturnType<ModelSourceValidator["validate"]> {
     const validatedAt = this.#clock.now().toISOString();
     const controller = new AbortController();
+    const abort = () => controller.abort();
+    signal?.addEventListener("abort", abort, { once: true });
+    if (signal?.aborted === true) controller.abort();
     let timer: ReturnType<typeof setTimeout> | undefined;
     try {
+      if (controller.signal.aborted) throw new Error("validation probe aborted");
       const model = createPiSourceProvider(piSourceProviderInput(record)).getModels()[0];
       const thinks = defaultThinkingLevel(record.source.activeModelRevision.thinkingEffort, model?.baseUrl) !== "off"
         || modelRequiresAlwaysOnThinking(model?.baseUrl);
@@ -110,6 +114,7 @@ export class PiModelSourceValidator implements ModelSourceValidator {
       return { ...failureReason(error), validatedAt };
     } finally {
       clearTimeout(timer);
+      signal?.removeEventListener("abort", abort);
     }
   }
 

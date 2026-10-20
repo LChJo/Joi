@@ -257,6 +257,8 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
     emergencyStopAll = async () => {
       joiStack.evolution.emergencyStop();
       partnerStack.partnerMemory.emergencyStop();
+      modelSourceStack.recovery.stop();
+      void runtimeStack.modelRecoveryDispatcher.close().catch(() => undefined);
       void runtimeStack.memoryRefreshDispatcher.close().catch(() => undefined);
       await joiStack.joiInbox.emergencyStopQueued();
       let after: { createdAt: string; lifeId: string } | undefined;
@@ -287,6 +289,8 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
         if (rootTickInFlight !== null) return;
         const pass = (async () => {
           await runtimeStack.actorTree.tick(clock.now());
+          await modelSourceStack.recovery.enqueueDue();
+          runtimeStack.modelRecoveryDispatcher.startOnce();
           await runtimeStack.outboxDispatcher.dispatchOnce();
           runtimeStack.memoryRefreshDispatcher.startOnce();
         })();

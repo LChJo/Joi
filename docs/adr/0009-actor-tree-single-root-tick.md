@@ -35,3 +35,7 @@ renderer 纯轮询（1.5s/2.5s），SSE 传输退役：删除 `/api/v1/stream` �
 每轮工作台 actor 先从权威 Work/Run 事实修复缺失的用户动作，再由首页和 Agent 查询投影状态。首页只有存在具体 clarification/action 时才能显示 `NEEDS_ATTENTION`；孤立 WAITING 在修复窗口内仍是后台 RUNNING。常驻实例的 IDLE 只是引擎空闲事实，若其关联 run 正在 RUNNING/WAITING，Agent 卡必须以后者为准。
 
 “长 async 不 await”同样适用于 waiting-remote retry 与 orphan finalize：组件只登记 in-flight/settled，Promise 在后续 tick 收敛；进行孤儿收尾时暂停同 Agent 新 claim，但不能阻塞根 actor 遍历其他组件。
+
+## 2026-10-20 补充：临时模型连接恢复
+
+根周期每十秒有界扫描已配置来源，临时 `DEGRADED` 距上次健康更新一分钟后登记 `model.source.recover` outbox，以来源/模型/凭据版本及健康更新身份去重。专用后台 dispatcher 单并发执行既有固定无工具验证，不受待处理目标或零 READY 门控影响，也不进入根周期的 await 链；成功后由原调度自然认领输入，失败保留安全健康事实并在一分钟后重检。健康提交沿用 revision、状态和更新时间 CAS，用户编辑、禁用或手工验证优先；紧急停止与退出取消探测并保留队列。鉴权、配置错误和禁用来源不自动探测。运行健康只公开计数和安全状态，已配置且暂时降级区别于未配置；左下角跟随轻量状态轮询展示与清除异常。

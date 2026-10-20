@@ -269,15 +269,18 @@ export interface WorkItemDto {
   workId: string;
 }
 
+export interface JoiRuntimeDto {
+  configured: boolean;
+  status: "NOT_CONFIGURED" | "READY" | "DEGRADED" | "NEEDS_ATTENTION";
+  modelHealth?: { ready: number; recovering: number; unavailable: number };
+}
+
 export interface JoiSnapshotDto {
   workbenchChanges: WorkbenchChangeRequestDto[];
   workbenches: WorkbenchDto[];
   modelSources: ModelSourceDto[];
   partners: PartnerDto[];
-  runtime: {
-    configured: boolean;
-    status: "NOT_CONFIGURED" | "READY" | "DEGRADED" | "NEEDS_ATTENTION";
-  };
+  runtime: JoiRuntimeDto;
   work: WorkItemDto[];
 }
 

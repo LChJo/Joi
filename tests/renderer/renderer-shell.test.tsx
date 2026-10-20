@@ -63,6 +63,7 @@ function first<T>(items: T[]): T {
 
 function mockApi() {
   const api = new DigitalLifeApi("");
+  const runtimeRequest = vi.spyOn(api, "joiRuntime").mockResolvedValue({ configured: true, status: "READY" });
   const listLives = vi.spyOn(api, "listLives").mockResolvedValue({ items: [life] });
   vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [{ workbenchId: "workbench_1", name: "产品工作", scopeSummary: "joi 工程", updatedAt: life.updatedAt }] });
   const createWorkbench = vi.spyOn(api, "createWorkbench").mockResolvedValue({ workbenchId: "workbench_2", name: "研究", scopeSummary: "研究范围", updatedAt: life.updatedAt });
@@ -117,10 +118,32 @@ function mockApi() {
   const deleteAgent = vi.spyOn(api, "deleteAgent").mockResolvedValue(undefined);
   vi.spyOn(api, "getAgentDeletionImpact").mockResolvedValue({ activeInvocations: 0, bindings: [] });
   const disablePartner = vi.spyOn(api, "disablePartner").mockResolvedValue({ ...partner, status: "DISABLED" });
-  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createWorkbench, createBackup, createLife, createTodo, deleteAgent, deleteLife, diagnosticsRequest, disablePartner, emergencyStopAll, extendBudget, forgetMemory, interactionsRequest, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
+  return { addAgent, agentAction, answerInteraction, api, archiveLife, bindCollaborator, cancelAlarm, changePassword, changePrimaryAgent, correctMemory, createAlarm, createWorkbench, createBackup, createLife, createTodo, deleteAgent, deleteLife, diagnosticsRequest, disablePartner, emergencyStopAll, extendBudget, forgetMemory, interactionsRequest, listLives, logoutAllLan, remindTodo, restoreBackup, resumeAuthorization, rotateAgentToken, runtime, runtimeRequest, sendMessage, unbindCollaborator, updateLife, updateRhythm, updateSchedule, updateSettings, updateTodo, uploadAttachment };
 }
 
 describe("joi renderer console", () => {
+  it("refreshes model health in the lower-left status and clears the warning after recovery", async () => {
+    const fixture = mockApi();
+    fixture.runtimeRequest.mockResolvedValue({ configured: true, status: "DEGRADED",
+      modelHealth: { ready: 0, recovering: 2, unavailable: 2 } });
+    const view = render(<ConsoleApp api={fixture.api} />);
+    const warning = await screen.findByRole("button", { name: "模型暂不可用，正在自动恢复" });
+    expect(view.container.querySelector(".sidebar footer")).toContainElement(warning);
+    expect(fixture.diagnosticsRequest).not.toHaveBeenCalled();
+    fixture.runtimeRequest.mockResolvedValue({ configured: true, status: "READY",
+      modelHealth: { ready: 2, recovering: 0, unavailable: 0 } });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "模型暂不可用，正在自动恢复" })).not.toBeInTheDocument(), { timeout: 4_000 });
+  });
+
+  it("shows partial failure and opens model settings without displaying provider error text", async () => {
+    const fixture = mockApi();
+    fixture.runtimeRequest.mockResolvedValue({ configured: true, status: "DEGRADED",
+      modelHealth: { ready: 1, recovering: 0, unavailable: 1 } });
+    render(<ConsoleApp api={fixture.api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "部分模型需要检查" }));
+    expect(await screen.findByRole("heading", { name: "joi 的设置" })).toBeInTheDocument();
+  });
+
   it("returns the content viewport to the top when primary navigation changes", async () => {
     const fixture = mockApi();
     const view = render(<ConsoleApp api={fixture.api} />);

@@ -1302,6 +1302,11 @@ export interface MessageParameters {
   "settings.mainNavigation": undefined;
   "settings.reconnectStatusUpdates": undefined;
   "settings.signOut": undefined;
+  "settings.modelsRecovering": undefined;
+  "settings.modelsUnavailable": undefined;
+  "settings.modelsPartialRecovering": undefined;
+  "settings.modelsPartialUnavailable": undefined;
+  "settings.openModelSettings": undefined;
   "skills.skillCatalogRefreshedUnsavedSelectionsArePreserved": undefined;
   "skills.couldNotLoadTheSkillCatalogTryAgain": undefined;
   "skills.skillSelectionSavedItTakesEffectOnTheNext": undefined;
@@ -2763,6 +2768,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "settings.mainNavigation": "Main navigation",
     "settings.reconnectStatusUpdates": "Reconnect status updates",
     "settings.signOut": "Sign out",
+    "settings.modelsRecovering": "Models unavailable, reconnecting automatically",
+    "settings.modelsUnavailable": "Models need attention",
+    "settings.modelsPartialRecovering": "Some models unavailable, reconnecting automatically",
+    "settings.modelsPartialUnavailable": "Some models need attention",
+    "settings.openModelSettings": "Open settings to check model connections",
     "skills.skillCatalogRefreshedUnsavedSelectionsArePreserved": "Skill catalog refreshed. Unsaved selections are preserved.",
     "skills.couldNotLoadTheSkillCatalogTryAgain": "Could not load the skill catalog. Try again.",
     "skills.skillSelectionSavedItTakesEffectOnTheNext": "Skill selection saved. It takes effect on the next turn.",
@@ -4222,6 +4232,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "settings.mainNavigation": "主导航",
     "settings.reconnectStatusUpdates": "重新连接状态更新",
     "settings.signOut": "退出登录",
+    "settings.modelsRecovering": "模型暂不可用，正在自动恢复",
+    "settings.modelsUnavailable": "模型需要检查",
+    "settings.modelsPartialRecovering": "部分模型暂时异常，正在自动恢复",
+    "settings.modelsPartialUnavailable": "部分模型需要检查",
+    "settings.openModelSettings": "打开设置检查模型连接",
     "skills.skillCatalogRefreshedUnsavedSelectionsArePreserved": "技能目录已刷新，未保存的选择已保留。",
     "skills.couldNotLoadTheSkillCatalogTryAgain": "没能读取技能目录，请重试。",
     "skills.skillSelectionSavedItTakesEffectOnTheNext": "技能选择已保存，下次思考时生效。",
@@ -6783,6 +6798,16 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "重新连接状态更新": "settings.reconnectStatusUpdates",
   "Sign out": "settings.signOut",
   "退出登录": "settings.signOut",
+  "Models unavailable, reconnecting automatically": "settings.modelsRecovering",
+  "模型暂不可用，正在自动恢复": "settings.modelsRecovering",
+  "Models need attention": "settings.modelsUnavailable",
+  "模型需要检查": "settings.modelsUnavailable",
+  "Some models unavailable, reconnecting automatically": "settings.modelsPartialRecovering",
+  "部分模型暂时异常，正在自动恢复": "settings.modelsPartialRecovering",
+  "Some models need attention": "settings.modelsPartialUnavailable",
+  "部分模型需要检查": "settings.modelsPartialUnavailable",
+  "Open settings to check model connections": "settings.openModelSettings",
+  "打开设置检查模型连接": "settings.openModelSettings",
   "Skill catalog refreshed. Unsaved selections are preserved.": "skills.skillCatalogRefreshedUnsavedSelectionsArePreserved",
   "技能目录已刷新，未保存的选择已保留。": "skills.skillCatalogRefreshedUnsavedSelectionsArePreserved",
   "Could not load the skill catalog. Try again.": "skills.couldNotLoadTheSkillCatalogTryAgain",

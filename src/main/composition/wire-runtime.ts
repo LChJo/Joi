@@ -29,6 +29,7 @@ import { LifeRuntimeService } from "../application/lives/life-runtime-service.js
 import { OutboxDispatcher } from "../application/operations/outbox-dispatcher.js";
 import { createPartnerMemoryRefreshDispatcher } from "../application/partners/partner-memory-refresh-handler.js";
 import { PARTNER_MEMORY_REFRESH_KIND } from "../application/ports/partner-memory.js";
+import { MODEL_SOURCE_RECOVERY_KIND } from "../application/model-sources/model-source-recovery.js";
 import { AlarmScheduler } from "../application/rhythm/alarm-scheduler.js";
 import { ScheduleScheduler } from "../application/rhythm/schedule-scheduler.js";
 import { BudgetService } from "../application/rhythm/budget-service.js";
@@ -229,7 +230,7 @@ export function wireRuntime(input: {
     diagnostics,
     // evolution.model rows are audit-only outbox records written by the evolution store; the
     // bounded model call itself runs inside EvolutionService, so the dispatcher must never claim them.
-    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model", PARTNER_MEMORY_REFRESH_KIND],
+    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model", PARTNER_MEMORY_REFRESH_KIND, MODEL_SOURCE_RECOVERY_KIND],
     handlers: {
       "result.export": record => exporter.handle(String(record.payload.exportId)),
       "a2a.send": async (record) => {
@@ -269,6 +270,11 @@ export function wireRuntime(input: {
     owner: `outbox_${String(process.pid)}`,
     store: database.store,
   });
+  const modelRecoveryDispatcher = new OutboxDispatcher({ clock, store: database.store, diagnostics,
+    owner: `model_recovery_${String(process.pid)}`, includeKinds: [MODEL_SOURCE_RECOVERY_KIND],
+    handlers: { [MODEL_SOURCE_RECOVERY_KIND]: record => modelSourceStack.recovery.handle(record) },
+    onBackgroundError: () => process.stderr.write("A model source recovery remains queued for retry.\n"),
+  });
   const memoryRefreshDispatcher = createPartnerMemoryRefreshDispatcher({ clock, store: database.store, diagnostics,
     memory: partnerStack.partnerMemory, owner: `memory_outbox_${String(process.pid)}`,
     canStart: () => database.transaction(connection => connection.prepare(`SELECT 1 AS busy WHERE
@@ -290,6 +296,9 @@ export function wireRuntime(input: {
     continuity: new ContinuityService({ clock, publisher, store: database.store }),
     delegations,
     drain: async () => {
+      modelSourceStack.recovery.stop();
+      try { await modelRecoveryDispatcher.close(); }
+      catch { process.stderr.write("A model source recovery remains queued for retry.\n"); }
       try { await memoryRefreshDispatcher.close(); }
       catch { process.stderr.write("A background memory refresh remains queued for retry.\n"); }
       for (let batch = 0; batch < 10; batch += 1) {
@@ -303,6 +312,7 @@ export function wireRuntime(input: {
     lifeRuntime,
     outboxDispatcher,
     memoryRefreshDispatcher,
+    modelRecoveryDispatcher,
     resultExports,
   };
 }

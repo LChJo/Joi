@@ -400,6 +400,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
       expect((overview?.x ?? 0) + (overview?.width ?? 0)).toBeLessThanOrEqual(width);
       await expect(map.getByRole("button", { name: /独立复核/u })).toHaveCount(0);
       await title.dispatchEvent("contextmenu", { button: 2, clientX: width - 2, clientY: 898 });
+      await expect(window.getByRole("menu")).toBeVisible();
       const edgeMenu = await window.getByRole("menu").boundingBox();
       if (edgeMenu === null) throw new Error("Title menu is missing");
       expect(edgeMenu.x).toBeGreaterThanOrEqual(12);

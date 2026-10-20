@@ -4,6 +4,7 @@ import { StatisticsService } from "../application/statistics/statistics-service.
 import type { Clock, IdGenerator } from "../application/ports/runtime-store.js";
 import { ModelSourceService } from "../application/model-sources/model-source-service.js";
 import { ReasoningSourceSelector } from "../application/model-sources/reasoning-source-selector.js";
+import { ModelSourceRecovery } from "../application/model-sources/model-source-recovery.js";
 import { ModelSourceNetworkPolicy } from "../infrastructure/pi/model-source-network-policy.js";
 import { PiModelLimitReader } from "../infrastructure/pi/pi-model-limit-reader.js";
 import { PiModelSourceCatalog } from "../infrastructure/pi/pi-model-source-catalog.js";
@@ -40,6 +41,7 @@ export function wireModelSources(input: {
     validator,
   });
   return {
+    recovery: new ModelSourceRecovery({ clock, repository: persistence.modelSourceRepository, queue: persistence.modelSourceRepository, validator }),
     statistics,
     configuredModelResolver: new RepositoryPiConfiguredModelResolver({
       credentials: piCredentials,

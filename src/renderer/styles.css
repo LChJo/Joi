@@ -1025,6 +1025,11 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 .sidebar footer { display: flex; min-height: 44px; align-items: center; gap: 6px; padding: 8px; color: var(--muted); font-size: 11px; }
 .sidebar footer .icon-button { width: 32px; height: 32px; margin-left: auto; border: 0; }
 .sidebar footer .stream-retry { margin-left: 0; color: var(--amber); }
+.model-health-status { display: flex; flex: 1; min-width: 0; align-items: center; gap: 7px; padding: 3px 0; border: 0; background: transparent; color: var(--amber); font: inherit; line-height: 1.5; text-align: left; cursor: pointer; }
+.model-health-status svg { flex: none; width: 15px; height: 15px; }
+.model-health-status span { min-width: 0; overflow-wrap: anywhere; }
+.model-health-status:hover { color: var(--ink); }
+.model-health-status:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; border-radius: 3px; }
 .stream-status { display: flex; min-width: 0; align-items: center; gap: 8px; }
 .stream-status > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .stream-indicator { width: 7px; height: 7px; border-radius: 50%; background: var(--forest); box-shadow: 0 0 0 4px color-mix(in srgb, var(--forest) 12%, transparent); }

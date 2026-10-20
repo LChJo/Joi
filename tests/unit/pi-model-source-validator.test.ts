@@ -25,6 +25,24 @@ function record(): ModelSourceRecord {
 }
 
 describe("PiModelSourceValidator", () => {
+  it("does not invoke a provider for an already-canceled background probe", async () => {
+    const controller = new AbortController(); controller.abort();
+    const probe = vi.fn(async () => undefined);
+    const validator = new PiModelSourceValidator({ clock: { now: () => new Date("2026-10-20T00:00:00Z") }, probe });
+    await validator.validate(record(), controller.signal);
+    expect(probe).not.toHaveBeenCalled();
+  });
+  it("cancels an in-flight background probe through the caller signal", async () => {
+    const controller = new AbortController();
+    const probe = vi.fn((_record: ModelSourceRecord, signal: AbortSignal) => new Promise<void>((_resolve, reject) => {
+      signal.addEventListener("abort", () => reject(new Error("probe aborted")), { once: true });
+    }));
+    const validator = new PiModelSourceValidator({ clock: { now: () => new Date("2026-10-20T00:00:00Z") }, probe });
+    const result = validator.validate(record(), controller.signal);
+    controller.abort();
+    expect(await result).toMatchObject({ status: "DEGRADED", reasonCode: "timeout" });
+    expect(probe).toHaveBeenCalledOnce();
+  });
   it.each([
     [new Error("401 Unauthorized"), "NEEDS_AUTH", "auth_failed"],
     [new Error("connection refused"), "DEGRADED", "connection_error"],
