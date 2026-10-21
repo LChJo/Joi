@@ -960,8 +960,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('横评维度已建立，但近七天来源不足。'), findsOneWidget);
       expect(find.text('当前结果与待补充内容'), findsOneWidget);
-      await tester.ensureVisible(find.text('查看当前结果全文'));
-      await tester.tap(find.text('查看当前结果全文'));
+      await tester.ensureVisible(find.text('查看全文'));
+      await tester.tap(find.text('查看全文'));
       await tester.pumpAndSettle();
       expect(find.text('当前结果'), findsOneWidget);
       expect(find.text('完整结论'), findsOneWidget);
