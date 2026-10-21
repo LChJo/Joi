@@ -84,4 +84,21 @@ describe("SQLite scenario pack installer", () => {
     expect(await fixture.partners.list()).toHaveLength(3);
     expect((await service().list())[0]).toMatchObject({ installedRoleCount: 3, status: "ACTIVE" });
   });
+
+  it("keeps committed roles after a full installation fails and reuses user edits on retry", async () => {
+    const original = fixture.partners.add.bind(fixture.partners);
+    const add = vi.spyOn(fixture.partners, "add");
+    add.mockImplementationOnce(original).mockRejectedValueOnce(new Error("fixture interruption"));
+    await expect(service().install("programming", {})).rejects.toThrow("fixture interruption");
+    const partial = await fixture.partners.list();
+    expect(partial).toHaveLength(1);
+    const first = partial[0];
+    if (first === undefined) throw new Error("missing partial partner");
+    await fixture.partners.update(first.partnerId, { ...first, displayName: "User customized role" });
+    const result = await service().install("programming", {});
+    expect(result.outcomes.filter(role => role.outcome === "REUSED")).toHaveLength(1);
+    expect(result.outcomes.filter(role => role.outcome === "CREATED")).toHaveLength(result.installedRoleCount - 1);
+    expect(await fixture.partners.list()).toHaveLength(result.installedRoleCount);
+    expect((await fixture.partners.inspect(first.partnerId)).displayName).toBe("User customized role");
+  });
 });

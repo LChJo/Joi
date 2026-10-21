@@ -1,4 +1,24 @@
 {
+  "partialInstallationPreserved": {
+    "message": "Successfully installed partners have been kept. Retry to install any missing roles.",
+    "description": "partners: Explains recovery after an interrupted scenario installation.",
+    "sourceText": "已保留成功安装的搭档，可重试补齐。"
+  },
+  "modelConfigurationUnverified": {
+    "message": "Model configuration could not be checked. Retry to refresh its status.",
+    "description": "partners: Model configuration status is unknown after a read failure.",
+    "sourceText": "模型配置状态暂不可核验，请重试。"
+  },
+  "engineConfigurationUnverified": {
+    "message": "Partner engine status could not be checked. Retry to refresh its status.",
+    "description": "partners: Engine configuration status is unknown after a read failure.",
+    "sourceText": "搭档引擎状态暂不可核验，请重试。"
+  },
+  "loadingPartnerCatalog": {
+    "message": "Loading partner catalog…",
+    "description": "partners: Loading the initial partner catalog.",
+    "sourceText": "正在读取搭档目录…"
+  },
   "enableTheReadToolWhenAttachingASkillTo": {
     "message": "Enable the read tool when attaching a skill to Pi core.",
     "description": "partners: Enable the read tool when attaching a skill to Pi core.",

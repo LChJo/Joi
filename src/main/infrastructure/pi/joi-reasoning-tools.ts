@@ -879,7 +879,7 @@ export function createJoiReasoningTools(input: {
     workspacePath: Type.Optional(Type.String({ maxLength: 4_000, minLength: 1 })),
   });
   const bindWorkspaceTool: AgentTool<typeof bindWorkspaceParameters> = {
-    description: "Bind the current Workbench to an explicit absolute directory from the user's request when local file work needs one. A directory the user already bound (kind BOUND) belongs to the user: joi never rebinds it, and the tool reports that binding instead of changing it — never pass workspacePath to move such a Workbench, ask the user to change it on the card. Only a Workbench that has no binding, or one still on its default managed run directory, can be bound. Copy the path exactly; never invent or broaden it. When the user did not provide an absolute directory, omit workspacePath: the tool reports the current binding when one is already READY, and otherwise persists a clarification so the user can choose the directory on the card. The bound path is never returned to the user.",
+    description: "Bind the current Workbench to an explicit absolute directory from the user's request when local file work needs one. A directory the user already bound (kind BOUND) belongs to the user: joi never rebinds it, and the tool reports that binding instead of changing it — never pass workspacePath to move such a Workbench, ask the user to change it on the card. Only a Workbench that has no binding, or one still on its default managed run directory, can be bound. Copy the path exactly; never invent or broaden it. When the user did not provide an absolute directory, omit workspacePath: the tool reports a MANAGED binding with dispatchAllowed=true and its actual status because independent per-Work directories are prepared and verified at dispatch, even when the managed binding is PROVISIONING or FAILED. A READY BOUND binding is reported as already bound; an absent or unavailable BOUND binding persists a clarification so the user can choose the directory on the card. The bound path is never returned to the user.",
     execute: async (_toolCallId, arguments_) => {
       const workspacePath = nonBlank(arguments_.workspacePath);
       const existing = await input.workbenchWorkspaces.current(input.workbenchId);
@@ -901,8 +901,8 @@ export function createJoiReasoningTools(input: {
         const workspace = await input.workbenchWorkspaces.bindExisting(input.workbenchId, workspacePath);
         return result({ displayName: workspace.displayName, kind: workspace.kind, status: workspace.status });
       }
-      if (existing?.status === "READY") {
-        return result({ alreadyBound: true, displayName: existing.displayName, kind: existing.kind, status: existing.status });
+      if (existing?.kind === "MANAGED") {
+        return result({ alreadyBound: true, dispatchAllowed: true, displayName: existing.displayName, kind: existing.kind, status: existing.status });
       }
       await input.clarifications.requireClarification(
         goalContext(),

@@ -9,6 +9,12 @@ const base = {
 };
 
 describe("joi system prompt", () => {
+  it("uses dispatch-time preparation for a cold managed workspace", () => {
+    const prompt = buildJoiSystemPrompt({ ...base, workspace: { displayName: "Managed", kind: "MANAGED", status: "PROVISIONING" } });
+    expect(prompt).toContain("Managed Workbench bindings use independent per-Work directories prepared and verified at dispatch");
+    expect(prompt).toContain("Do not ask the user to select a directory merely because a MANAGED binding is PROVISIONING or FAILED");
+    expect(prompt).not.toContain("Workbench workspace line below is not READY, call workbench_bind_workspace");
+  });
   it("dispatches external read-only inputs without changing a bound workspace", () => {
     const prompt = buildJoiSystemPrompt({
       ...base,
@@ -111,8 +117,8 @@ describe("joi system prompt", () => {
       workspace: { displayName: "Zgame_20190440", kind: "BOUND", status: "READY" },
     });
     expect(prompt).toContain("Workbench workspace: Zgame_20190440 · BOUND · READY");
-    expect(prompt).toContain("not READY, call workbench_bind_workspace before dispatching");
-    expect(prompt).toContain("the tool reports the existing binding when one is already READY");
+    expect(prompt).toContain("with no binding or an unavailable BOUND binding, call workbench_bind_workspace before dispatching");
+    expect(prompt).toContain("reports a READY BOUND binding");
   });
 
   it("tells joi that partner work auto-receives the input attachments staged in the workspace", () => {

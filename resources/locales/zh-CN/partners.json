@@ -1,4 +1,8 @@
 {
+  "partialInstallationPreserved": "已保留成功安装的搭档，可重试补齐。",
+  "modelConfigurationUnverified": "模型配置状态暂不可核验，请重试。",
+  "engineConfigurationUnverified": "搭档引擎状态暂不可核验，请重试。",
+  "loadingPartnerCatalog": "正在读取搭档目录…",
   "enableTheReadToolWhenAttachingASkillTo": "Pi core 挂载 Skill 时必须启用 read 工具。",
   "someSkillReferencesAreInvalidSelectInstalledLocalSkills": "有技能引用已失效，请重新选择本机已安装的技能。",
   "selectedSkillNamesConflictKeepOnlyOneSourceFor": "选中的技能名称发生冲突，请只保留一个来源。",

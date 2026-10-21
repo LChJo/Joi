@@ -345,6 +345,13 @@ describe("joi reasoning tools", () => {
     expect(result).toEqual({ alreadyBound: true, displayName: "Zgame_20190440", kind: "BOUND", status: "READY" });
     expect(harness.clarificationCalls).toEqual([]);
   });
+  it.each(["PROVISIONING", "FAILED", "READY"] as const)("allows managed %s bindings to prepare an independent directory at dispatch", async status => {
+    const harness = makeTools({ workspaceCurrent: { displayName: "Managed", kind: "MANAGED", status } });
+    expect(await harness.call("workbench_bind_workspace", {})).toEqual({
+      alreadyBound: true, displayName: "Managed", dispatchAllowed: true, kind: "MANAGED", status,
+    });
+    expect(harness.clarificationCalls).toEqual([]);
+  });
   it("binds an explicit workspace path from the user request without another card action", async () => {
     const workspaceBindCalls: { workbenchId: string; rootPath: string }[] = [];
     const harness = makeTools({ workspaceBindCalls });

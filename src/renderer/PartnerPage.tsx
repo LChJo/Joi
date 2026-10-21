@@ -1,5 +1,5 @@
 import { localizeProductText, noticeMessage, t, useI18n, useNotice } from "./i18n";
-import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useState } from "react";
+import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useRef, useState } from "react";
 
 import type { CodexPermissionsDto, ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto, ToolPolicyModeDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
@@ -376,45 +376,67 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   </div>;
 }
 
-function ScenarioGrid({ api }: { api: DigitalLifeApi }) {
-  useI18n();
+function useScenarioCatalog(api: DigitalLifeApi, enabled: boolean, onInstalled: () => Promise<unknown>) {
   const [packs, setPacks] = useState<ScenarioPackDto[]>([]);
-  const [expandedPackId, setExpandedPackId] = useState<string | null>(null);
   const [installing, setInstalling] = useState<string | null>(null);
+  const [installationInterrupted, setInstallationInterrupted] = useState(false);
+  const installationPending = useRef(false);
+  const generation = useRef(0);
   const [packNotice, setPackNotice] = useNotice();
   const [catalogState, setCatalogState] = useState<"loading" | "ready" | "failed">("loading");
   const loadPacks = useCallback(async () => {
+    const request = ++generation.current;
     try {
-      setPacks((await api.scenarioPacks()).items);
+      const page = await api.scenarioPacks();
+      if (request !== generation.current) return;
+      setPacks(page.items);
       setCatalogState("ready");
     } catch {
-      setPacks([]);
-      setCatalogState("failed");
+      if (request === generation.current) setCatalogState("failed");
     }
   }, [api]);
   useEffect(() => {
+    if (!enabled) return;
     const timer = setTimeout(() => void loadPacks(), 0);
     return () => clearTimeout(timer);
-  }, [loadPacks]);
-  const install = (packId: string, teamIds?: string[]) => {
+  }, [enabled, loadPacks]);
+  useEffect(() => () => { generation.current++; }, []);
+  const install = async (packId: string, teamIds?: string[]) => {
+    if (installationPending.current) return;
+    installationPending.current = true;
     const key = teamIds?.[0] ?? "full";
     setInstalling(`${packId}:${key}`);
+    setInstallationInterrupted(false);
     setPackNotice(null);
-    void api.installScenarioPack(packId, teamIds).then(async (result) => {
+    try {
+      const result = await api.installScenarioPack(packId, teamIds);
       const created = result.outcomes.filter((item) => item.outcome === "CREATED").length;
       const reused = result.outcomes.filter((item) => item.outcome === "REUSED").length;
       const actionRequired = result.outcomes.filter((item) => item.outcome === "ACTION_REQUIRED").length;
       setPackNotice(noticeMessage("partners.presetPackProcessedValueCreatedValueReusedValue", { p0: String(created), p1: String(reused), p2: (actionRequired === 0 ? "" : t("partners.valueNeedAttention", { p0: String(actionRequired) })) }));
-      await loadPacks();
-    }).catch((error: unknown) => setPackNotice(failureMessage(error, t("partners.couldNotInstallThePresetPackTryAgainLater"))))
-      .finally(() => setInstalling(null));
+    } catch (error) {
+      setPackNotice(failureMessage(error, t("partners.couldNotInstallThePresetPackTryAgainLater")));
+      setInstallationInterrupted(true);
+    } finally {
+      await Promise.allSettled([loadPacks(), onInstalled()]);
+      installationPending.current = false;
+      setInstalling(null);
+    }
   };
+  return { packs, installing, installationInterrupted, packNotice, catalogState, loadPacks, install };
+}
+
+function ScenarioGrid({ catalog }: { catalog: ReturnType<typeof useScenarioCatalog> }) {
+  useI18n();
+  const [expandedPackId, setExpandedPackId] = useState<string | null>(null);
+  const { packs, installing, installationInterrupted, packNotice, catalogState, loadPacks, install } = catalog;
   if (catalogState === "loading") return <div aria-label={t("partners.loadingScenarioPacks")} className="scenario-pack-loading"><span /><span /><span /></div>;
-  if (catalogState === "failed") return <p className="inline-notice warning" role="alert">{t("partners.couldNotLoadScenarioPacksTryAgainLater")}</p>;
-  if (packs.length === 0) return <div className="plain-empty"><h2>{t("partners.noScenarioPacksYet")}</h2><p>{t("partners.youCanStillAddPartnersManuallyPacksAppearHere")}</p></div>;
   return <div className="scenario-catalog">
+    {catalogState === "failed" ? <div className="inline-notice warning" role="alert"><span>{t("partners.couldNotLoadScenarioPacksTryAgainLater")}</span><button className="button ghost" onClick={() => void loadPacks()} type="button">{t("common.retry")}</button></div> : null}
+    {catalogState === "ready" && packs.length === 0 ? <div className="plain-empty"><h2>{t("partners.noScenarioPacksYet")}</h2><p>{t("partners.youCanStillAddPartnersManuallyPacksAppearHere")}</p></div> : null}
     <section aria-label={t("partners.scenarioPacks")} className="scenario-pack-group">
       {packNotice === null ? null : <p className="inline-notice info" role="status">{packNotice}</p>}
+      {installationInterrupted ? <p className="field-hint" role="status">{t("partners.partialInstallationPreserved")}</p> : null}
       {packs.map((pack) => {
         const expanded = expandedPackId === pack.id;
         const fullKey = `${pack.id}:full`;
@@ -431,10 +453,10 @@ function ScenarioGrid({ api }: { api: DigitalLifeApi }) {
               return <article className="scenario-team" key={team.id}>
                 <div><strong>{builtinText(team.title)}</strong><p>{builtinText(team.blurb)}</p></div>
                 <div aria-label={t("partners.valuePartner", { p0: builtinText(team.title) })} className="scenario-role-list">{team.roles.map((role) => <span className="scenario-role" key={role.id} title={role.reasonCode}><span>{builtinText(role.title)}</span><small className={`role-state ${role.status.toLowerCase()}`}>{roleStateLabel(role.status)}</small></span>)}</div>
-                <button className="button ghost" disabled={installing !== null} onClick={() => install(pack.id, [team.id])} type="button">{installing === teamKey ? t("partners.installing") : t("partners.installValue", { p0: builtinText(team.title) })}</button>
+                <button className="button ghost" disabled={installing !== null} onClick={() => void install(pack.id, [team.id])} type="button">{installing === teamKey ? t("partners.installing") : t("partners.installValue", { p0: builtinText(team.title) })}</button>
               </article>;
             })}</div>}
-            <button className="button primary" disabled={installing !== null || pack.totalRoleCount === 0} onClick={() => install(pack.id)} type="button">{installing === fullKey ? t("partners.installing") : pack.totalRoleCount === 0 ? t("partners.nothingToInstall") : t("partners.installFullPack")}</button>
+            <button className="button primary" disabled={installing !== null || pack.totalRoleCount === 0} onClick={() => void install(pack.id)} type="button">{installing === fullKey ? t("partners.installing") : pack.totalRoleCount === 0 ? t("partners.nothingToInstall") : t("partners.installFullPack")}</button>
           </div> : null}
         </article>;
       })}
@@ -465,20 +487,39 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
   const [view, setView] = useState<PartnerView>({ mode: "grid" });
   const [notice, setNotice] = useNotice();
   const [modelTests, setModelTests] = useState<Record<string, PartnerModelTestDto | "TESTING">>({});
+  const loadGeneration = useRef({ value: 0 });
+  const [partnersLoaded, setPartnersLoaded] = useState(false);
+  const [catalogReadFailed, setCatalogReadFailed] = useState(false);
+  const [sourceReadFailed, setSourceReadFailed] = useState(false);
+  const [engineReadFailed, setEngineReadFailed] = useState(false);
   const load = useCallback(async () => {
-    const [partnerPage, sourcePage, enginePage] = await Promise.all([
-      api.listPartners(),
-      api.listModelSources(),
-      api.engineCatalog().catch(() => null),
-    ]);
-    setPartners(partnerPage.items);
-    setSources(sourcePage.items);
-    const statuses: Record<string, EngineStatus> = {};
-    for (const item of enginePage?.items ?? []) statuses[item.id] = { available: item.available, tools: item.tools, ...(item.reason === undefined ? {} : { reason: item.reason }) };
-    setEngineStatuses(statuses);
-    return partnerPage.items;
+    const request = ++loadGeneration.current.value;
+    const current = () => request === loadGeneration.current.value;
+    const partnerRead = api.listPartners().then(page => {
+      if (current()) { setPartners(page.items); setPartnersLoaded(true); setCatalogReadFailed(false); }
+      return page.items;
+    }, (error: unknown) => { if (current()) setCatalogReadFailed(true); throw error; });
+    const sourceRead = api.listModelSources().then(page => {
+      if (current()) { setSources(page.items); setSourceReadFailed(false); }
+    }, () => { if (current()) setSourceReadFailed(true); });
+    const engineRead = api.engineCatalog().then(page => {
+      if (!current()) return;
+      const statuses: Record<string, EngineStatus> = {};
+      for (const item of page.items) statuses[item.id] = { available: item.available, tools: item.tools, ...(item.reason === undefined ? {} : { reason: item.reason }) };
+      setEngineStatuses(statuses);
+      setEngineReadFailed(false);
+    }, () => { if (current()) setEngineReadFailed(true); });
+    void sourceRead;
+    void engineRead;
+    return partnerRead;
   }, [api]);
-  useEffect(() => { const timer = setTimeout(() => void load().catch(() => setNotice(noticeMessage("partners.couldNotLoadThePartnerCatalog"))), 0); return () => clearTimeout(timer); }, [load, setNotice]);
+  useEffect(() => {
+    const generation = loadGeneration.current;
+    const timer = setTimeout(() => void load().catch(() => undefined), 0);
+    return () => { clearTimeout(timer); generation.value++; };
+  }, [load]);
+  const currentTab = tab ?? "partners";
+  const scenarioCatalog = useScenarioCatalog(api, currentTab === "scenarios", load);
   const finishEdit = (message: string, partnerId?: string) => {
     setNotice(message);
     if (partnerId === undefined) { setView({ mode: "grid" }); return; }
@@ -487,7 +528,6 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
       setView(target === undefined ? { mode: "grid" } : { mode: "editor", partner: target });
     }).catch(() => setView({ mode: "grid" }));
   };
-  const currentTab = tab ?? "partners";
   const testPartnerModel = (partnerId: string) => {
     setModelTests((current) => ({ ...current, [partnerId]: "TESTING" }));
     void api.testPartnerModel(partnerId)
@@ -497,23 +537,32 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
         [partnerId]: { partnerId, reasonCode: "partner_model_test_failed", status: "FAILED", testedAt: new Date().toISOString() },
       })));
   };
+  const readNotice = catalogReadFailed || sourceReadFailed || engineReadFailed ? <div className="inline-notice warning" role="alert">
+    {catalogReadFailed ? <span>{t("partners.couldNotLoadThePartnerCatalog")}</span> : null}
+    {sourceReadFailed ? <span>{t("partners.modelConfigurationUnverified")}</span> : null}
+    {engineReadFailed ? <span>{t("partners.engineConfigurationUnverified")}</span> : null}
+    <button className="button ghost" onClick={() => void load().catch(() => undefined)} type="button">{t("common.retry")}</button>
+  </div> : null;
   if (view.mode === "editor") {
     return <section className="partner-manager page-section">
+      {readNotice}
       <PartnerEditor api={api} engineStatuses={engineStatuses} key={view.partner?.partnerRevisionId ?? "new"} onDone={finishEdit} {...(onManageProviders === undefined ? {} : { onManageProviders })} partner={view.partner} sources={sources} />
     </section>;
   }
   return <section className="partner-manager page-section">
     <header className="page-title-row"><div><p className="eyebrow">{t("partners.joiPartnerCatalog")}</p><h1>{t("common.partners")}</h1><p>{t("partners.buildAReusableTeamFromPacksOrRegisterPartner")}</p></div><button className="button primary" onClick={() => { setNotice(null); setView({ mode: "editor", partner: null }); }} type="button">{t("partners.addPartner")}</button></header>
     {notice === null ? null : <p className="inline-notice info">{notice}</p>}
+    {readNotice}
     <div className="tab-row" role="tablist">
       <button aria-selected={currentTab === "scenarios"} className={currentTab === "scenarios" ? "selected" : ""} onClick={() => onTabChange?.("scenarios")} role="tab" type="button">{t("partners.scenarioPresets")}</button>
       <button aria-selected={currentTab === "partners"} className={currentTab === "partners" ? "selected" : ""} onClick={() => onTabChange?.("partners")} role="tab" type="button">{t("partners.partnerCatalog")}</button>
     </div>
     {currentTab === "scenarios" ? <>
       <p className="field-hint">{t("partners.expandAPackToInstallASubteamOrThe")}</p>
-      <ScenarioGrid api={api} />
+      <ScenarioGrid catalog={scenarioCatalog} />
     </> : <>
-      {partners.length === 0 ? <div className="plain-empty"><h2>{t("partners.noPartnersYet")}</h2><p>{t("partners.create23LocalOrRemoteA2aPartnersSo")}</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">{t("partners.addYourFirstPartner")}</button></div> : null}
+      {!partnersLoaded && !catalogReadFailed ? <p role="status">{t("partners.loadingPartnerCatalog")}</p> : null}
+      {partnersLoaded && partners.length === 0 ? <div className="plain-empty"><h2>{t("partners.noPartnersYet")}</h2><p>{t("partners.create23LocalOrRemoteA2aPartnersSo")}</p><button className="button primary" onClick={() => setView({ mode: "editor", partner: null })} type="button">{t("partners.addYourFirstPartner")}</button></div> : null}
       {partners.length > 0 && partners.length < 2 ? <p className="inline-notice warning">{t("partners.startWith23PartnersSoJoiHasAlternatives")}</p> : null}
       <div className="partner-grid">{partners.map((partner) => <article className="partner-card" key={partner.partnerId}>
         <div className="partner-card-head"><strong>{partner.displayName}</strong>{partner.createdBy === "joi" ? <span className="badge-joi">{t("partners.createdByJoi")}</span> : null}<span className="engine-badge">{partner.kind === "local-pi" ? t("partners.local") : t("partners.remoteA2a")} · {ENGINE_LABELS[partner.engine]}</span></div>
@@ -521,7 +570,7 @@ export function PartnerPage({ api, onManageProviders, tab, onTabChange }: { api:
         {partner.configuration?.status === "ACTION_REQUIRED" ? <p className="inline-notice warning" role="alert">{configurationMessage(partner.configuration.reasonCodes)}</p> : null}
         <small>{[...partner.skills, ...partner.capabilities].join(" · ") || t("partners.noCapabilitiesDeclared")}{partner.knowledgeDocCount > 0 ? t("partners.valueKnowledgeDocuments", { p0: String(partner.knowledgeDocCount) }) : ""}</small>
         {partner.status === "DISABLED" && partner.inFlightCount > 0 ? <small>{t("partners.draining")} {String(partner.inFlightCount)}  {t("partners.workItemsInProgress")}</small> : null}
-        {partner.kind === "local-pi" ? <PartnerModelStatus engine={partner.engine} result={modelTests[partner.partnerId] ?? (partner.engine === "pi-core" ? persistedModelTest(partner, sources) : undefined)} /> : null}
+        {partner.kind === "local-pi" ? <PartnerModelStatus engine={partner.engine} result={modelTests[partner.partnerId] ?? (partner.engine === "pi-core" && !sourceReadFailed ? persistedModelTest(partner, sources) : undefined)} /> : null}
         <div className="partner-card-actions">
           <label className="switch"><input aria-label={t("partners.enableOrDisableValue", { p0: partner.displayName })} checked={partner.status === "ACTIVE"} onChange={() => void api.setPartnerEnabled(partner.partnerId, partner.status !== "ACTIVE").then(() => load()).catch(() => setNotice(noticeMessage("partners.partnerStatusCouldNotBeChanged")))} type="checkbox" /><span>{partner.status === "ACTIVE" ? t("evolution.enabled") : t("status.disabled")}</span></label>
           <button className="button ghost" onClick={() => void api.duplicatePartner(partner.partnerId).then(() => load()).then(() => setNotice(noticeMessage("partners.aNewPartnerHasBeenCopiedFromThisOne"))).catch(() => setNotice(noticeMessage("partners.couldNotCopyThePartner")))} type="button">{t("partners.copy")}</button>

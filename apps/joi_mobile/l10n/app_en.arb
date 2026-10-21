@@ -5108,6 +5108,26 @@
     "description": "onboarding: Skip for now",
     "placeholders": {}
   },
+  "partnersPartialInstallationPreserved": "Successfully installed partners have been kept. Retry to install any missing roles.",
+  "@partnersPartialInstallationPreserved": {
+    "description": "partners: Explains recovery after an interrupted scenario installation.",
+    "placeholders": {}
+  },
+  "partnersModelConfigurationUnverified": "Model configuration could not be checked. Retry to refresh its status.",
+  "@partnersModelConfigurationUnverified": {
+    "description": "partners: Model configuration status is unknown after a read failure.",
+    "placeholders": {}
+  },
+  "partnersEngineConfigurationUnverified": "Partner engine status could not be checked. Retry to refresh its status.",
+  "@partnersEngineConfigurationUnverified": {
+    "description": "partners: Engine configuration status is unknown after a read failure.",
+    "placeholders": {}
+  },
+  "partnersLoadingPartnerCatalog": "Loading partner catalog…",
+  "@partnersLoadingPartnerCatalog": {
+    "description": "partners: Loading the initial partner catalog.",
+    "placeholders": {}
+  },
   "partnersEnableTheReadToolWhenAttachingASkillTo": "Enable the read tool when attaching a skill to Pi core.",
   "@partnersEnableTheReadToolWhenAttachingASkillTo": {
     "description": "partners: Enable the read tool when attaching a skill to Pi core.",

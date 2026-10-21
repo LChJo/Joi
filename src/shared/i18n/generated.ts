@@ -963,6 +963,10 @@ export interface MessageParameters {
   "onboarding.useThisComputerOnly": undefined;
   "onboarding.enterJoi": undefined;
   "onboarding.skipForNow": undefined;
+  "partners.partialInstallationPreserved": undefined;
+  "partners.modelConfigurationUnverified": undefined;
+  "partners.engineConfigurationUnverified": undefined;
+  "partners.loadingPartnerCatalog": undefined;
   "partners.enableTheReadToolWhenAttachingASkillTo": undefined;
   "partners.someSkillReferencesAreInvalidSelectInstalledLocalSkills": undefined;
   "partners.selectedSkillNamesConflictKeepOnlyOneSourceFor": undefined;
@@ -2429,6 +2433,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "onboarding.useThisComputerOnly": "Use this computer only",
     "onboarding.enterJoi": "Enter joi",
     "onboarding.skipForNow": "Skip for now",
+    "partners.partialInstallationPreserved": "Successfully installed partners have been kept. Retry to install any missing roles.",
+    "partners.modelConfigurationUnverified": "Model configuration could not be checked. Retry to refresh its status.",
+    "partners.engineConfigurationUnverified": "Partner engine status could not be checked. Retry to refresh its status.",
+    "partners.loadingPartnerCatalog": "Loading partner catalog…",
     "partners.enableTheReadToolWhenAttachingASkillTo": "Enable the read tool when attaching a skill to Pi core.",
     "partners.someSkillReferencesAreInvalidSelectInstalledLocalSkills": "Some skill references are invalid. Select installed local skills again.",
     "partners.selectedSkillNamesConflictKeepOnlyOneSourceFor": "Selected skill names conflict. Keep only one source for each name.",
@@ -3893,6 +3901,10 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "onboarding.useThisComputerOnly": "先只用本机",
     "onboarding.enterJoi": "进入 joi",
     "onboarding.skipForNow": "暂时跳过",
+    "partners.partialInstallationPreserved": "已保留成功安装的搭档，可重试补齐。",
+    "partners.modelConfigurationUnverified": "模型配置状态暂不可核验，请重试。",
+    "partners.engineConfigurationUnverified": "搭档引擎状态暂不可核验，请重试。",
+    "partners.loadingPartnerCatalog": "正在读取搭档目录…",
     "partners.enableTheReadToolWhenAttachingASkillTo": "Pi core 挂载 Skill 时必须启用 read 工具。",
     "partners.someSkillReferencesAreInvalidSelectInstalledLocalSkills": "有技能引用已失效，请重新选择本机已安装的技能。",
     "partners.selectedSkillNamesConflictKeepOnlyOneSourceFor": "选中的技能名称发生冲突，请只保留一个来源。",
@@ -6162,6 +6174,14 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "进入 joi": "onboarding.enterJoi",
   "Skip for now": "onboarding.skipForNow",
   "暂时跳过": "onboarding.skipForNow",
+  "Successfully installed partners have been kept. Retry to install any missing roles.": "partners.partialInstallationPreserved",
+  "已保留成功安装的搭档，可重试补齐。": "partners.partialInstallationPreserved",
+  "Model configuration could not be checked. Retry to refresh its status.": "partners.modelConfigurationUnverified",
+  "模型配置状态暂不可核验，请重试。": "partners.modelConfigurationUnverified",
+  "Partner engine status could not be checked. Retry to refresh its status.": "partners.engineConfigurationUnverified",
+  "搭档引擎状态暂不可核验，请重试。": "partners.engineConfigurationUnverified",
+  "Loading partner catalog…": "partners.loadingPartnerCatalog",
+  "正在读取搭档目录…": "partners.loadingPartnerCatalog",
   "Enable the read tool when attaching a skill to Pi core.": "partners.enableTheReadToolWhenAttachingASkillTo",
   "Pi core 挂载 Skill 时必须启用 read 工具。": "partners.enableTheReadToolWhenAttachingASkillTo",
   "Some skill references are invalid. Select installed local skills again.": "partners.someSkillReferencesAreInvalidSelectInstalledLocalSkills",
