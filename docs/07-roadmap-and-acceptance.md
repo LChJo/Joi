@@ -10,7 +10,7 @@
 | AC-EVO-02 | 临时存储中采集同目标当前双版本的权威事实；无正文泄漏、历史任务重跑或生产副作用；既有目标固定策略，新目标需求 READY 后再绑定 | `learning-case.test.ts`、`sqlite-method-learning-store.test.ts`、`method-learning-service.test.ts`、Joi coordinator 回归 |
 | AC-EVO-03 | 全局默认每日 150 次、UTC 日界、兼容本台子上限；原子预留调用与检查点，未知消费不退款；前台优先、取消遗留输入不挡空闲；协议失败显式恢复、同策略有效试验可续跑 | `sqlite-method-learning-store.test.ts`、`method-learning-service.test.ts`、`evolution-component.test.ts`、`sqlite-evolution-store.test.ts` |
 | AC-EVO-04 | 30 个安全场景加至少 5 个独立来源组的生产封存案例，基线/候选各三次；零硬违规、逐案例不退化；质量提升 ≥5pp 且调用/已知配对 Token ≤+10%，或质量保持且调用/完整 Token 节省 ≥15% | `learning-evaluation.test.ts`、`learning-replay.test.ts`、`method-learning-service.test.ts` |
-| AC-EVO-05 | 安全 DTO 显示全局预算、真实阻塞、阶段、实验总成本和实际曝光数；启停、参与和显式恢复分开；旧 API 兼容；干跑标明替身范围 | `method-learning-http.test.ts`、`evolution-http.test.ts`、`evolution-settings.test.tsx`、隔离 Electron 设置页 E2E |
+| AC-EVO-05 | 安全 DTO 显示全局预算、真实阻塞、阶段、实验总成本和实际曝光数；启停、参与和显式恢复分开；页面按当前进展、已采用的方法、学习设置组织，最近评测结论与下一步分开；不展示旧版历史、合成干跑、评测器标识或已拒绝/回退的方法；旧 API 保持兼容，旧服务仅提示升级 | `method-learning-http.test.ts`、`evolution-http.test.ts`、`evolution-settings.test.tsx`、`evolution-redesign.test.tsx`、隔离 Electron 设置页 E2E |
 | AC-EVO-06 | 自动学习不修改人设、记忆正文、代码、权限、工具能力或判定器；用户管理入口保留 | 既有 Joi 工具、提示词与运行时契约测试 |
 | AC-EVO-07 | 同一双版本的验收/覆盖/引用/依赖/重复读取变化生成新不可变快照；仅时间变化不重复采样；同目标或已知同源近重复固定分组，开发/封存不交叉；无权威完成事实不能补造正例 | `learning-case.test.ts`、`learning-evaluation.test.ts`、`sqlite-method-learning-store.test.ts` |
 | AC-EVO-08 | 仅合格参与目标按 20% 灰度，至少五个候选及五个独立同期对照；生产收益通道再次过门；混合模型、取消/重开和失效观察退出归因；全局跨台监控、两次可归因失败/明确负反馈回退，不能恢复已失败父版本 | `method-learning-service.test.ts`、`method-learning-service.recovery.test.ts`、目标绑定及权威观察存储回归；真实使用效果另验收 |

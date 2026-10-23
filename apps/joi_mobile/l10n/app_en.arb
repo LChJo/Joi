@@ -1530,9 +1530,9 @@
     "description": "evolution: The dry run did not complete. Try again later.",
     "placeholders": {}
   },
-  "evolutionEvaluationRequestedItStartsWhenTheWorkbenchIsIdle": "Evaluation requested. It starts when the workbench is idle and budget is available, without waiting for more evidence.",
+  "evolutionEvaluationRequestedItStartsWhenTheWorkbenchIsIdle": "Evaluation queued. It will start when the workbench is idle and budget is available.",
   "@evolutionEvaluationRequestedItStartsWhenTheWorkbenchIsIdle": {
-    "description": "evolution: Evaluation requested. It starts when the workbench is idle and budget is available, without waiting for more evidence.",
+    "description": "evolution: Evaluation queued. It will start when the workbench is idle and budget is available.",
     "placeholders": {}
   },
   "evolutionCouldNotStartEvaluationMakeSureAutomaticEvolutionIs": "Could not start evaluation. Make sure automatic evolution is enabled and not paused.",
@@ -1940,9 +1940,9 @@
     "description": "evolution: Learned methods",
     "placeholders": {}
   },
-  "evolutionNoMethodsYet": "No evaluated methods yet",
+  "evolutionNoMethodsYet": "No new methods adopted yet",
   "@evolutionNoMethodsYet": {
-    "description": "evolution: No evaluated methods yet",
+    "description": "evolution: No new methods adopted yet",
     "placeholders": {}
   },
   "evolutionQualityBenefit": "Quality benefit",
@@ -2077,9 +2077,9 @@
     "description": "evolution: Paused; resume explicitly to continue",
     "placeholders": {}
   },
-  "evolutionBlockerNotIdle": "Foreground input, turn or Work has priority",
+  "evolutionBlockerNotIdle": "Foreground tasks take priority. Learning continues when they finish.",
   "@evolutionBlockerNotIdle": {
-    "description": "evolution: Foreground input, turn or Work has priority",
+    "description": "evolution: Foreground tasks take priority. Learning continues when they finish.",
     "placeholders": {}
   },
   "evolutionBlockerBudget": "Available evaluation budget exhausted for today",
@@ -2107,9 +2107,9 @@
     "description": "evolution: Model or evaluator version changed; revalidation required",
     "placeholders": {}
   },
-  "evolutionBlockerCandidate": "A new candidate was already started today",
+  "evolutionBlockerCandidate": "An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
   "@evolutionBlockerCandidate": {
-    "description": "evolution: A new candidate was already started today",
+    "description": "evolution: An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
     "placeholders": {}
   },
   "evolutionMethodReverted": "Reverted",
@@ -2120,6 +2120,160 @@
   "evolutionMethodRejected": "Rejected",
   "@evolutionMethodRejected": {
     "description": "evolution: Rejected",
+    "placeholders": {}
+  },
+  "evolutionLearningPageIntro": "Learn from real task problems. Adopt new methods after verification.",
+  "@evolutionLearningPageIntro": {
+    "description": "evolution: Learn from real task problems. Adopt new methods after verification.",
+    "placeholders": {}
+  },
+  "evolutionCurrentProgress": "Current progress",
+  "@evolutionCurrentProgress": {
+    "description": "evolution: Current progress",
+    "placeholders": {}
+  },
+  "evolutionAdoptedMethods": "Adopted methods",
+  "@evolutionAdoptedMethods": {
+    "description": "evolution: Adopted methods",
+    "placeholders": {}
+  },
+  "evolutionLearningSettings": "Learning settings",
+  "@evolutionLearningSettings": {
+    "description": "evolution: Learning settings",
+    "placeholders": {}
+  },
+  "evolutionWaitingForIdle": "Waiting for foreground tasks",
+  "@evolutionWaitingForIdle": {
+    "description": "evolution: Waiting for foreground tasks",
+    "placeholders": {}
+  },
+  "evolutionLearningPausedBadge": "Paused",
+  "@evolutionLearningPausedBadge": {
+    "description": "evolution: Paused",
+    "placeholders": {}
+  },
+  "evolutionLearningOffBadge": "Off",
+  "@evolutionLearningOffBadge": {
+    "description": "evolution: Off",
+    "placeholders": {}
+  },
+  "evolutionLearningRunningBadge": "Evaluating",
+  "@evolutionLearningRunningBadge": {
+    "description": "evolution: Evaluating",
+    "placeholders": {}
+  },
+  "evolutionLearningEnabledBadge": "Enabled",
+  "@evolutionLearningEnabledBadge": {
+    "description": "evolution: Enabled",
+    "placeholders": {}
+  },
+  "evolutionNextStep": "Next",
+  "@evolutionNextStep": {
+    "description": "evolution: Next",
+    "placeholders": {}
+  },
+  "evolutionAutomaticLearningHint": "Learning runs while idle. Verified methods are then tried on real tasks.",
+  "@evolutionAutomaticLearningHint": {
+    "description": "evolution: Learning runs while idle. Verified methods are then tried on real tasks.",
+    "placeholders": {}
+  },
+  "evolutionRunningEvaluation": "Evaluation in progress",
+  "@evolutionRunningEvaluation": {
+    "description": "evolution: Evaluation in progress",
+    "placeholders": {}
+  },
+  "evolutionLatestEvaluation": "Latest evaluation",
+  "@evolutionLatestEvaluation": {
+    "description": "evolution: Latest evaluation",
+    "placeholders": {}
+  },
+  "evolutionEvaluationCalls": "{p0} calls in this evaluation",
+  "@evolutionEvaluationCalls": {
+    "description": "evolution: {p0} calls in this evaluation",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionDevelopmentCases": "Development cases",
+  "@evolutionDevelopmentCases": {
+    "description": "evolution: Development cases",
+    "placeholders": {}
+  },
+  "evolutionIndependentCases": "Held-out cases",
+  "@evolutionIndependentCases": {
+    "description": "evolution: Held-out cases",
+    "placeholders": {}
+  },
+  "evolutionReproducibleProblems": "Reproducible problems",
+  "@evolutionReproducibleProblems": {
+    "description": "evolution: Reproducible problems",
+    "placeholders": {}
+  },
+  "evolutionNoIndependentCasesHint": "No held-out cases yet. These cases independently verify the effect of new methods.",
+  "@evolutionNoIndependentCasesHint": {
+    "description": "evolution: No held-out cases yet. These cases independently verify the effect of new methods.",
+    "placeholders": {}
+  },
+  "evolutionIndependentCasesHint": "Development cases help improve methods; held-out cases independently verify their effect.",
+  "@evolutionIndependentCasesHint": {
+    "description": "evolution: Development cases help improve methods; held-out cases independently verify their effect.",
+    "placeholders": {}
+  },
+  "evolutionManualEvaluationHint": "Starts when idle and counts toward the shared budget.",
+  "@evolutionManualEvaluationHint": {
+    "description": "evolution: Starts when idle and counts toward the shared budget.",
+    "placeholders": {}
+  },
+  "evolutionNoAdoptedMethodsHint": "Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
+  "@evolutionNoAdoptedMethodsHint": {
+    "description": "evolution: Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
+    "placeholders": {}
+  },
+  "evolutionMethodInTrial": "In trial",
+  "@evolutionMethodInTrial": {
+    "description": "evolution: In trial",
+    "placeholders": {}
+  },
+  "evolutionMethodActive": "Active",
+  "@evolutionMethodActive": {
+    "description": "evolution: Active",
+    "placeholders": {}
+  },
+  "evolutionAllWorkbenchesScope": "All workbenches",
+  "@evolutionAllWorkbenchesScope": {
+    "description": "evolution: All workbenches",
+    "placeholders": {}
+  },
+  "evolutionThisWorkbenchScope": "This workbench",
+  "@evolutionThisWorkbenchScope": {
+    "description": "evolution: This workbench",
+    "placeholders": {}
+  },
+  "evolutionEvaluationEvidence": "Evaluation evidence",
+  "@evolutionEvaluationEvidence": {
+    "description": "evolution: Evaluation evidence",
+    "placeholders": {}
+  },
+  "evolutionCallsUsedToday": "Calls used today",
+  "@evolutionCallsUsedToday": {
+    "description": "evolution: Calls used today",
+    "placeholders": {}
+  },
+  "evolutionDailyBudgetUsage": "Shared budget used today",
+  "@evolutionDailyBudgetUsage": {
+    "description": "evolution: Shared budget used today",
+    "placeholders": {}
+  },
+  "evolutionParticipationHint": "Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
+  "@evolutionParticipationHint": {
+    "description": "evolution: Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
+    "placeholders": {}
+  },
+  "evolutionUpgradeRequired": "Method learning is unavailable in this version. Update Joi and try again.",
+  "@evolutionUpgradeRequired": {
+    "description": "evolution: Method learning is unavailable in this version. Update Joi and try again.",
     "placeholders": {}
   },
   "exportProcessing": "Processing…",

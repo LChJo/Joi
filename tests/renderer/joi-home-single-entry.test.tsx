@@ -2248,15 +2248,19 @@ it("exposes the evolution panel on a dedicated workbench detail tab", async () =
     updatedAt: workbench.updatedAt, workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
   });
   vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
-  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, poolEvaluable: 5, poolVerificationFailed: 1, activeRevisionId: null, reason: "disabled", runRequestedAt: null, lastVerdict: null, versions: [] });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, poolEvaluable: 5, poolVerificationFailed: 1, activeRevisionId: null, reason: "disabled", runRequestedAt: null, lastVerdict: null, versions: [],
+    learning: { version: 2, evaluatorVersion: "fixture", stage: "OBSERVING", blockers: ["disabled"],
+      globalBudget: { enabled: false, paused: false, dailyCallLimit: 150, callsUsedToday: 0, tokensToday: null },
+      participation: { enabled: false, paused: false }, cases: { development: 0, sealed: 0, defects: 0 },
+      experiment: null, appliedGoals: 0, methods: [] } });
 
   render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
   const tabButton = await screen.findByRole("tab", { name: "自主进化" });
   expect(tabButton).toHaveAttribute("aria-selected", "false");
   fireEvent.click(tabButton);
-  expect(await screen.findByText(/候选必须先通过独立评测和生产灰度/u)).toBeInTheDocument();
-  expect(screen.getByRole("radio", { name: "关（只记录经验）" })).toBeChecked();
-  expect(screen.getByText("尚未启用自动进化")).toBeInTheDocument();
+  expect(await screen.findByRole("region", { name: "当前进展" })).toHaveTextContent("方法学习已关闭");
+  expect(screen.getByRole("radio", { name: "中（每日 150 次）" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "启用全局方法学习" })).not.toBeChecked();
 });
 
 describe("tool trace reveal", () => {

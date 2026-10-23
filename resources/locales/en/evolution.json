@@ -273,9 +273,9 @@
     "sourceText": "干跑没能完成，请稍后重试。"
   },
   "evaluationRequestedItStartsWhenTheWorkbenchIsIdle": {
-    "message": "Evaluation requested. It starts when the workbench is idle and budget is available, without waiting for more evidence.",
-    "description": "evolution: Evaluation requested. It starts when the workbench is idle and budget is available, without waiting for more evidence.",
-    "sourceText": "已请求立即评测：等工作台空闲且预算可用后自动开始，无需等证据攒满。"
+    "message": "Evaluation queued. It will start when the workbench is idle and budget is available.",
+    "description": "evolution: Evaluation queued. It will start when the workbench is idle and budget is available.",
+    "sourceText": "已安排评测，工作台空闲且预算可用后开始。"
   },
   "couldNotStartEvaluationMakeSureAutomaticEvolutionIs": {
     "message": "Could not start evaluation. Make sure automatic evolution is enabled and not paused.",
@@ -663,9 +663,9 @@
     "sourceText": "已学习的方法"
   },
   "noMethodsYet": {
-    "message": "No evaluated methods yet",
-    "description": "evolution: No evaluated methods yet",
-    "sourceText": "尚无经过评测的方法"
+    "message": "No new methods adopted yet",
+    "description": "evolution: No new methods adopted yet",
+    "sourceText": "尚未采用新方法"
   },
   "qualityBenefit": {
     "message": "Quality benefit",
@@ -792,9 +792,9 @@
     "sourceText": "已暂停，需显式恢复"
   },
   "blockerNotIdle": {
-    "message": "Foreground input, turn or Work has priority",
-    "description": "evolution: Foreground input, turn or Work has priority",
-    "sourceText": "前台待办、Turn 或 Work 优先"
+    "message": "Foreground tasks take priority. Learning continues when they finish.",
+    "description": "evolution: Foreground tasks take priority. Learning continues when they finish.",
+    "sourceText": "前台任务优先，等待任务完成后继续。"
   },
   "blockerBudget": {
     "message": "Available evaluation budget exhausted for today",
@@ -822,9 +822,9 @@
     "sourceText": "模型或评测器版本变化，需重新验证"
   },
   "blockerCandidate": {
-    "message": "A new candidate was already started today",
-    "description": "evolution: A new candidate was already started today",
-    "sourceText": "今日已启动过新候选"
+    "message": "An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
+    "description": "evolution: An automatic candidate was already started today. The next automatic attempt waits until the next day; you can also request an evaluation manually.",
+    "sourceText": "今天已自动启动过新候选，下一次自动学习需等待下一日；也可手动安排评测。"
   },
   "methodReverted": {
     "message": "Reverted",
@@ -835,5 +835,158 @@
     "message": "Rejected",
     "description": "evolution: Rejected",
     "sourceText": "已拒绝"
+  },
+  "learningPageIntro": {
+    "message": "Learn from real task problems. Adopt new methods after verification.",
+    "description": "evolution: Learn from real task problems. Adopt new methods after verification.",
+    "sourceText": "从真实任务中发现问题，验证后再采用新方法。"
+  },
+  "currentProgress": {
+    "message": "Current progress",
+    "description": "evolution: Current progress",
+    "sourceText": "当前进展"
+  },
+  "adoptedMethods": {
+    "message": "Adopted methods",
+    "description": "evolution: Adopted methods",
+    "sourceText": "已采用的方法"
+  },
+  "learningSettings": {
+    "message": "Learning settings",
+    "description": "evolution: Learning settings",
+    "sourceText": "学习设置"
+  },
+  "waitingForIdle": {
+    "message": "Waiting for foreground tasks",
+    "description": "evolution: Waiting for foreground tasks",
+    "sourceText": "等待前台任务完成"
+  },
+  "learningPausedBadge": {
+    "message": "Paused",
+    "description": "evolution: Paused",
+    "sourceText": "已暂停"
+  },
+  "learningOffBadge": {
+    "message": "Off",
+    "description": "evolution: Off",
+    "sourceText": "已关闭"
+  },
+  "learningRunningBadge": {
+    "message": "Evaluating",
+    "description": "evolution: Evaluating",
+    "sourceText": "评测中"
+  },
+  "learningEnabledBadge": {
+    "message": "Enabled",
+    "description": "evolution: Enabled",
+    "sourceText": "已开启"
+  },
+  "nextStep": {
+    "message": "Next",
+    "description": "evolution: Next",
+    "sourceText": "接下来"
+  },
+  "automaticLearningHint": {
+    "message": "Learning runs while idle. Verified methods are then tried on real tasks.",
+    "description": "evolution: Learning runs while idle. Verified methods are then tried on real tasks.",
+    "sourceText": "空闲时自动学习；新方法通过评测后，再进入实际任务试用。"
+  },
+  "runningEvaluation": {
+    "message": "Evaluation in progress",
+    "description": "evolution: Evaluation in progress",
+    "sourceText": "正在评测"
+  },
+  "latestEvaluation": {
+    "message": "Latest evaluation",
+    "description": "evolution: Latest evaluation",
+    "sourceText": "最近一次评测"
+  },
+  "evaluationCalls": {
+    "message": "{p0} calls in this evaluation",
+    "description": "evolution: {p0} calls in this evaluation",
+    "sourceText": "本轮 {p0} 次调用",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "developmentCases": {
+    "message": "Development cases",
+    "description": "evolution: Development cases",
+    "sourceText": "开发案例"
+  },
+  "independentCases": {
+    "message": "Held-out cases",
+    "description": "evolution: Held-out cases",
+    "sourceText": "独立评测案例"
+  },
+  "reproducibleProblems": {
+    "message": "Reproducible problems",
+    "description": "evolution: Reproducible problems",
+    "sourceText": "可复现问题"
+  },
+  "noIndependentCasesHint": {
+    "message": "No held-out cases yet. These cases independently verify the effect of new methods.",
+    "description": "evolution: No held-out cases yet. These cases independently verify the effect of new methods.",
+    "sourceText": "尚无独立评测案例；这些案例用于验证新方法的效果。"
+  },
+  "independentCasesHint": {
+    "message": "Development cases help improve methods; held-out cases independently verify their effect.",
+    "description": "evolution: Development cases help improve methods; held-out cases independently verify their effect.",
+    "sourceText": "开发案例用于改进方法，独立评测案例用于验证效果。"
+  },
+  "manualEvaluationHint": {
+    "message": "Starts when idle and counts toward the shared budget.",
+    "description": "evolution: Starts when idle and counts toward the shared budget.",
+    "sourceText": "空闲时开始，计入共享预算。"
+  },
+  "noAdoptedMethodsHint": {
+    "message": "Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
+    "description": "evolution: Candidate methods enter a trial or become active after verification. The existing strategy remains in use.",
+    "sourceText": "候选方法通过评测后才会试用或生效；目前继续使用现有策略。"
+  },
+  "methodInTrial": {
+    "message": "In trial",
+    "description": "evolution: In trial",
+    "sourceText": "试用中"
+  },
+  "methodActive": {
+    "message": "Active",
+    "description": "evolution: Active",
+    "sourceText": "已生效"
+  },
+  "allWorkbenchesScope": {
+    "message": "All workbenches",
+    "description": "evolution: All workbenches",
+    "sourceText": "全部工作台"
+  },
+  "thisWorkbenchScope": {
+    "message": "This workbench",
+    "description": "evolution: This workbench",
+    "sourceText": "本工作台"
+  },
+  "evaluationEvidence": {
+    "message": "Evaluation evidence",
+    "description": "evolution: Evaluation evidence",
+    "sourceText": "评测依据"
+  },
+  "callsUsedToday": {
+    "message": "Calls used today",
+    "description": "evolution: Calls used today",
+    "sourceText": "今日已用调用"
+  },
+  "dailyBudgetUsage": {
+    "message": "Shared budget used today",
+    "description": "evolution: Shared budget used today",
+    "sourceText": "今日共享预算用量"
+  },
+  "participationHint": {
+    "message": "Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
+    "description": "evolution: Allow this workbench to learn methods while idle, using the budget shared by all workbenches.",
+    "sourceText": "允许本工作台在空闲时参与方法学习，使用全部工作台共享的预算。"
+  },
+  "upgradeRequired": {
+    "message": "Method learning is unavailable in this version. Update Joi and try again.",
+    "description": "evolution: Method learning is unavailable in this version. Update Joi and try again.",
+    "sourceText": "此版本暂不提供方法学习，请更新 Joi 后重试。"
   }
 }

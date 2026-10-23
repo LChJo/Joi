@@ -215,7 +215,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     const participation = window.getByRole("checkbox", { name: "本工作台参与方法学习", exact: true });
     await expect(globalLearning).not.toBeChecked();
     await expect(participation).not.toBeChecked();
-    await expect(window.getByText("方法学习已关闭", { exact: true })).toBeVisible();
+    await expect(window.getByRole("status").filter({ hasText: "方法学习已关闭" })).toBeVisible();
     await expect(window.getByRole("radio", { name: "中（每日 150 次）" })).toBeChecked();
     await globalLearning.click();
     await expect(globalLearning).toBeChecked();

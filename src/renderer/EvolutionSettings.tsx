@@ -1,44 +1,24 @@
-import { noticeMessage, t, useI18n, useNotice } from "./i18n";
+import { formatNumber, noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { useEffect, useState } from "react";
 import type { DigitalLifeApi } from "./api";
-import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionLearningBlocker, EvolutionLearningDto, EvolutionLearningStage, EvolutionModelFailure, EvolutionOverviewDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
+import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionLearningBlocker, EvolutionLearningDto, EvolutionLearningStage, EvolutionOverviewDto, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
 import type { MessageKey } from "../shared/i18n/index";
-import { EVOLUTION_BUDGET_PRESETS, EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../shared/evolution";
+import { EVOLUTION_BUDGET_PRESETS } from "../shared/evolution";
 
-const labels: Record<EvolutionReason, string> = {
-  get collecting() { return t("evolution.collectingEvaluableExperience"); }, get disabled() { return t("evolution.automaticEvolutionIsNotEnabled"); }, get budget_exhausted() { return t("evolution.todaySBudgetIsUsedUpContinuingNextBilling"); }, get evaluating() { return t("evolution.evaluatingACandidatePolicy"); },
-  get canary() { return t("evolution.theCandidatePassedSyntheticEvaluationAndIsBeingTested"); }, get revalidation_required() { return t("evolution.theModelOrEvaluatorChangedThePolicyIsSuspended"); }, get revision_limit_reached() { return t("evolution.policyHistoryIsFullAuditItBeforeContinuing"); },
-  get promoted() { return t("evolution.anEvaluatedPolicyIsActive"); }, get rolled_back() { return t("evolution.automaticEvolutionPausedNewGoalsUseTheRolledBack"); }, get model_changed() { return t("evolution.theModelOrEvaluationEnvironmentChangedAwaitingReevaluation"); },
-  get insufficient_samples() { return t("evolution.notEnoughEvaluationSamplesKeepingTheCurrentPolicy"); }, get insufficient_gain() { return t("evolution.insufficientImprovementKeepingTheCurrentPolicy"); }, get quality_regression() { return t("evolution.candidateRejectedDueToReducedQuality"); },
-  get cost_regression() { return t("evolution.candidateRejectedForExceedingTheCallCostLimit"); }, get hard_violation() { return t("evolution.candidateRejectedForViolatingCompletionRequirements"); }, get invalid_evaluation() { return t("evolution.invalidEvaluationKeepingTheCurrentPolicy"); },
-  get invalid_candidate() { return t("evolution.insufficientCandidateEvidenceKeepingTheCurrentPolicy"); }, get call_failed() { return t("evolution.backgroundCallDidNotCompleteKeepingTheCurrentPolicy"); },
-  get model_response_invalid() { return t("evolution.theModelResponseDidNotMeetEvaluationRequirementsThis"); },
-};
-const failureLabels: Record<EvolutionModelFailure["kind"], string> = {
-  get provider_error() { return t("evolution.modelConnectionCallFailed"); }, get timeout() { return t("evolution.modelConnectionCallTimedOut"); }, get aborted() { return t("evolution.evaluationCallCanceled"); },
-  get response_truncated() { return t("evolution.modelOutputWasTruncated"); }, get no_tool_call() { return t("evolution.noToolCallReturned"); },
-  get multiple_tool_calls() { return t("evolution.multipleToolCallsReturned"); }, get unsupported_tool() { return t("evolution.unsupportedToolCallReturned"); },
-};
-function statusLabel(status: EvolutionStatusDto): string {
-  if (status.reason !== "model_response_invalid") return labels[status.reason];
-  return status.paused === true ? t("evolution.theModelResponseDidNotMeetEvaluationRequirementsAutomatic")
-    : t("evolution.theResponseDidNotMeetEvaluationRequirementsThisRound");
-}
+const labels = {
+  collecting: "evolution.collectingEvaluableExperience", disabled: "evolution.automaticEvolutionIsNotEnabled",
+  budget_exhausted: "evolution.todaySBudgetIsUsedUpContinuingNextBilling", evaluating: "evolution.evaluatingACandidatePolicy",
+  canary: "evolution.methodInTrial", revalidation_required: "evolution.theModelOrEvaluatorChangedThePolicyIsSuspended",
+  revision_limit_reached: "evolution.policyHistoryIsFullAuditItBeforeContinuing", promoted: "evolution.anEvaluatedPolicyIsActive",
+  rolled_back: "evolution.automaticEvolutionPausedNewGoalsUseTheRolledBack", model_changed: "evolution.theModelOrEvaluationEnvironmentChangedAwaitingReevaluation",
+  insufficient_samples: "evolution.notEnoughEvaluationSamplesKeepingTheCurrentPolicy", insufficient_gain: "evolution.insufficientImprovementKeepingTheCurrentPolicy",
+  quality_regression: "evolution.candidateRejectedDueToReducedQuality", cost_regression: "evolution.candidateRejectedForExceedingTheCallCostLimit",
+  hard_violation: "evolution.candidateRejectedForViolatingCompletionRequirements", invalid_evaluation: "evolution.invalidEvaluationKeepingTheCurrentPolicy",
+  invalid_candidate: "evolution.insufficientCandidateEvidenceKeepingTheCurrentPolicy", call_failed: "evolution.backgroundCallDidNotCompleteKeepingTheCurrentPolicy",
+  model_response_invalid: "evolution.theModelResponseDidNotMeetEvaluationRequirementsThis",
+} as const satisfies Record<EvolutionReason, MessageKey>;
 const presetLabels: Record<EvolutionBudgetPresetKey, string> = { get off() { return t("evolution.off"); }, get low() { return t("evolution.low"); }, get medium() { return t("evolution.medium"); }, get high() { return t("evolution.high"); } };
-const presetHints: Record<EvolutionBudgetPresetKey, string> = {
-  get off() { return t("evolution.recordExperienceWithoutMakingModelEvaluationCalls"); },
-  get low() { return t("evolution.aFullEvaluationTakesAboutTwoWeeksUsesThe"); },
-  get medium() { return t("evolution.aFullEvaluationTakesAboutFiveDaysBalancingSpeed"); },
-  get high() { return t("evolution.aFullEvaluationTakesAboutTwoDaysFastestResults"); },
-};
 const presetName = (preset: EvolutionBudgetPreset) => preset.key === "off" ? t("evolution.offRecordExperienceOnly") : t("evolution.valueValuePerDay", { p0: presetLabels[preset.key], p1: String(preset.limit) });
-const phaseLabels: Record<EvolutionPhase, string> = { get DEVELOP() { return t("evolution.development"); }, get PROPOSE() { return t("evolution.proposal"); }, get VALIDATE() { return t("evolution.candidateRetest"); }, get EVALUATE() { return t("evolution.heldOutEvaluation"); } };
-const dryRunOutcomes: Record<EvolutionDryRunOutcome, string> = {
-  get promoted() { return t("evolution.pipelineVerifiedTheBatchReachedThePromotionDecision"); },
-  get rejected() { return t("evolution.pipelineVerifiedButTheCandidateWasRejectedByA"); },
-  get truncated() { return t("evolution.pipelineIncompleteAStepOrTimeLimitWasReached"); },
-  get not_started() { return t("evolution.theBatchCouldNotStartBecauseSyntheticEvidenceDid"); },
-};
 const learningStages = {
   OBSERVING: "evolution.stageObserving", DIAGNOSING: "evolution.stageDiagnosing", PROTOCOL: "evolution.stageProtocol",
   DEVELOP: "evolution.stageDevelop", PROPOSE: "evolution.stagePropose", VALIDATE: "evolution.stageValidate",
@@ -50,176 +30,130 @@ const learningBlockers = {
   insufficient_samples: "evolution.blockerSamples", model_response_invalid: "evolution.blockerProtocol",
   model_changed: "evolution.blockerModel", daily_candidate_limit: "evolution.blockerCandidate",
 } as const satisfies Record<EvolutionLearningBlocker, MessageKey>;
+
 function LearningEvolutionPanel({ api, status, learning, overview, updateStatus, updateOverview, loadingNotice }: {
   api: DigitalLifeApi; status: EvolutionStatusDto; learning: EvolutionLearningDto; overview: EvolutionOverviewDto | null;
   updateStatus: (value: EvolutionStatusDto) => void; updateOverview: (value: EvolutionOverviewDto) => void; loadingNotice: string | null;
 }) {
   const [saving, setSaving] = useState(false);
   const [notice, setNotice] = useNotice();
-  const [dryRun, setDryRun] = useState<EvolutionDryRunReportDto | null>(null);
   const global = overview?.learning?.globalBudget ?? learning.globalBudget;
-  const legacyBatches = overview?.batches ?? status.batchHistory ?? [];
-  const act = async (operation: () => Promise<unknown>) => {
+  const methods = learning.methods.filter((method) => method.status === "ACTIVE" || method.status === "CANARY");
+  const act = async <T,>(operation: () => Promise<T>, success?: (value: T) => MessageKey) => {
     if (saving) return;
     setSaving(true);
-    try { await operation(); setNotice(noticeMessage("evolution.learningUpdated")); }
+    try { const value = await operation(); setNotice(noticeMessage(success?.(value) ?? "evolution.learningUpdated")); }
     catch { setNotice(noticeMessage("evolution.learningSaveFailed")); }
     finally { setSaving(false); }
   };
-  const globalSettings = async (enabled: boolean, limit: number) => {
-    updateOverview(await api.configureGlobalEvolution(enabled, limit));
-  };
+  const globalSettings = async (enabled: boolean, limit: number) => { updateOverview(await api.configureGlobalEvolution(enabled, limit)); };
   const canEvaluate = global.enabled && !global.paused && learning.participation.enabled && !learning.participation.paused && global.dailyCallLimit > 0;
-  const tokens = (value: number | null) => value === null ? t("evolution.tokenUsageUnknown") : `${String(value)} tokens`;
+  const running = learning.experiment?.reason === "evaluating" && ["PROTOCOL", "DEVELOP", "PROPOSE", "VALIDATE", "EVALUATE"].includes(learning.stage);
+  const paused = global.paused || learning.participation.paused || learning.stage === "PAUSED";
+  const disabled = !global.enabled || !learning.participation.enabled || global.dailyCallLimit === 0;
+  const headline: MessageKey = disabled ? "evolution.blockerDisabled" : paused ? "evolution.stagePaused"
+    : learning.blockers.includes("budget_exhausted") ? "evolution.blockerBudget"
+      : learning.blockers.includes("not_idle") ? "evolution.waitingForIdle" : learningStages[learning.stage];
+  const tokens = (value: number | null) => value === null ? t("evolution.tokenUsageUnknown") : `${formatNumber(value)} tokens`;
   return <div className="inline-settings workbench-evolution-panel">
-    <p className="workbench-evolution-intro">{t("evolution.methodLearningIntro")}</p>
-    {loadingNotice === null ? null : <p role="status">{loadingNotice}</p>}
-    {notice === null ? null : <p role="status">{notice}</p>}
-    <h3>{t("evolution.sharedGlobalBudget")}</h3>
-    <label><input type="checkbox" checked={global.enabled} disabled={saving}
-      onChange={(event) => void act(() => globalSettings(event.target.checked, global.dailyCallLimit || 150))} />{t("evolution.enableGlobalLearning")}</label>
-    <fieldset className="evolution-budget-presets" disabled={saving}>
-      <legend>{t("evolution.dailyModelCallLimit")}</legend>
-      <div className="evolution-budget-options">{EVOLUTION_BUDGET_PRESETS.map((preset) => <label key={preset.key}>
-        <input aria-label={presetName(preset)} checked={global.dailyCallLimit === preset.limit} name="global-evolution-budget"
-          onChange={() => void act(() => globalSettings(preset.limit > 0 && global.enabled, preset.limit))} type="radio" value={preset.limit} />{presetLabels[preset.key]}
-      </label>)}</div>
-    </fieldset>
-    <p className="field-hint">{t("evolution.sharedBudgetHint")}</p>
-    <p>{t("evolution.globalCallsToday", { p0: String(global.callsUsedToday), p1: String(global.dailyCallLimit) })} · {tokens(global.tokensToday)}</p>
-    {global.paused ? <button type="button" className="button ghost" disabled={saving}
-      onClick={() => void act(async () => { updateOverview(await api.resumeGlobalEvolution()); })}>{t("evolution.resumeGlobalLearning")}</button> : null}
-    <h3>{t("evolution.participateInLearning")}</h3>
-    <label><input type="checkbox" checked={learning.participation.enabled} disabled={saving}
-      onChange={(event) => void act(async () => { updateStatus(await api.setEvolutionParticipation(status.workbenchId, event.target.checked)); })} />{t("evolution.participateInLearning")}</label>
-    {learning.participation.paused ? <button type="button" className="button ghost" disabled={saving}
-      onClick={() => void act(async () => { updateStatus(await api.resumeEvolution(status.workbenchId)); })}>{t("evolution.resumeWorkbenchLearning")}</button> : null}
-    <p role="status">{t(learningStages[learning.stage])}</p>
-    {learning.blockers.length === 0 ? null : <ul>{learning.blockers.map((blocker) => <li key={blocker}>{t(learningBlockers[blocker])}</li>)}</ul>}
-    <p className="field-hint">{t("evolution.evaluatorVersion", { p0: learning.evaluatorVersion })}</p>
-    <p>{t("evolution.casesSummary", { p0: String(learning.cases.development), p1: String(learning.cases.sealed), p2: String(learning.cases.defects) })}</p>
-    <p>{t("evolution.appliedMethodGoals", { p0: String(learning.appliedGoals) })}</p>
-    {learning.experiment === null ? null : <p>{t("evolution.experimentSummary", { p0: learning.experiment.reason === "canary" ? t("evolution.stageCanary") : labels[learning.experiment.reason], p1: String(learning.experiment.calls) })} · {tokens(learning.experiment.tokens)}</p>}
-    <button className="button ghost" type="button" disabled={saving || !canEvaluate}
-      onClick={() => void act(async () => { updateStatus(await api.runEvolutionNow(status.workbenchId)); })}>{t("evolution.evaluateNow")}</button>
-    <h3>{t("evolution.methodHistory")}</h3>
-    {learning.methods.length === 0 ? <p>{t("evolution.noMethodsYet")}</p> : <ul>{learning.methods.map((method) => <li key={method.revisionId}>
-      <strong>{method.module === "context" ? t("evolution.contextOrganization") : method.module === "planning" ? t("evolution.planningMethods") : t("evolution.completionChecks")}</strong>
-      {" · "}{method.scope === "GLOBAL" ? t("evolution.globalBaseline") : t("evolution.workbenchOverride")}{" · "}
-      {method.status === "CANARY" ? t("evolution.stageCanary") : method.status === "ACTIVE" ? t("evolution.stageActive") : method.status === "REVERTED" ? t("evolution.methodReverted") : t("evolution.methodRejected")}
-      <p>{method.benefit === "quality" ? t("evolution.qualityBenefit") : method.benefit === "efficiency" ? t("evolution.efficiencyBenefit") : t("evolution.benefitUnverified")}</p>
-      <p>{t("evolution.methodEvaluation", { p0: String(method.baselineSuccesses), p1: String(method.candidateSuccesses), p2: String(method.evaluatedRuns) })}</p>
-      <p>{t("evolution.methodExposure", { p0: String(method.candidateGoals), p1: String(method.controlGoals) })}</p>
-      {method.status !== "ACTIVE" && method.status !== "CANARY" ? null : <button className="button ghost" type="button" disabled={saving}
-        onClick={() => void act(async () => { updateStatus(await api.rollbackEvolution(status.workbenchId, method.revisionId)); })}>{t("evolution.rollBackCurrentPolicyAndPause")}</button>}
-    </li>)}</ul>}
-    {legacyBatches.length === 0 ? null : <details><summary>{t("evolution.legacyHistory")}</summary><ul>{legacyBatches.map((batch) => <li key={`${batch.workbenchId}:${batch.batchId}`}>{phaseLabels[batch.phase]} · {labels[batch.reason]} · {batch.calls} {t("evolution.calls")} · {tokens(batch.tokens)}</li>)}</ul></details>}
-    <h3>{t("evolution.legacySyntheticDryRun")}</h3>
-    <p className="field-hint">{t("evolution.legacyDryRunHint")}</p>
-    <button className="button ghost" type="button" disabled={saving}
-      onClick={() => void act(async () => { setDryRun(null); setDryRun(await api.dryRunEvolution(status.workbenchId)); })}>{t("evolution.runADryRun")}</button>
-    {dryRun === null ? null : <p role="status">{dryRunOutcomes[dryRun.outcome]} · {String(dryRun.steps)} {t("evolution.syntheticCallsElapsed")} {String(dryRun.durationMs)} {t("evolution.msNoRealModelCallsWereMade")}{dryRun.selfCheck.matched ? "" : t("evolution.selfCheckFailedTheFakeMayNoLongerMatch")}</p>}
+    <p className="workbench-evolution-intro">{t("evolution.learningPageIntro")}</p>
+    {loadingNotice === null ? null : <p className="evolution-notice" role="status">{loadingNotice}</p>}
+    {notice === null ? null : <p className="evolution-notice" role="status">{notice}</p>}
+
+    <section className="evolution-progress" aria-labelledby="evolution-progress-heading">
+      <header className="evolution-section-header">
+        <h3 id="evolution-progress-heading">{t("evolution.currentProgress")}</h3>
+        <span className={`evolution-state ${disabled ? "disabled" : paused ? "paused" : ""}`}>{t(disabled ? "evolution.learningOffBadge" : paused ? "evolution.learningPausedBadge" : running ? "evolution.learningRunningBadge" : "evolution.learningEnabledBadge")}</span>
+      </header>
+      <p className="evolution-headline" role="status">{t(headline)}</p>
+      {learning.blockers.length === 0 ? <p className="evolution-description">{t("evolution.automaticLearningHint")}</p>
+        : <div className="evolution-next"><span>{t("evolution.nextStep")}</span><ul>{learning.blockers.map((blocker) => <li key={blocker}>{t(learningBlockers[blocker])}</li>)}</ul></div>}
+      {learning.experiment === null ? null : <div className="evolution-result">
+        <span>{t(running ? "evolution.runningEvaluation" : "evolution.latestEvaluation")}</span>
+        <p>{t(labels[learning.experiment.reason])}</p>
+        <small>{t("evolution.evaluationCalls", { p0: formatNumber(learning.experiment.calls) })} · {tokens(learning.experiment.tokens)}</small>
+      </div>}
+      <dl className="evolution-case-metrics">
+        <div><dt>{t("evolution.developmentCases")}</dt><dd>{formatNumber(learning.cases.development)}</dd></div>
+        <div><dt>{t("evolution.independentCases")}</dt><dd>{formatNumber(learning.cases.sealed)}</dd></div>
+        <div><dt>{t("evolution.reproducibleProblems")}</dt><dd>{formatNumber(learning.cases.defects)}</dd></div>
+      </dl>
+      <p className="evolution-description">{t(learning.cases.sealed === 0 ? "evolution.noIndependentCasesHint" : "evolution.independentCasesHint")}</p>
+      <div className="evolution-evaluate-action"><button className="button primary" type="button" disabled={saving || !canEvaluate}
+        onClick={() => void act(async () => {
+          const value = await api.runEvolutionNow(status.workbenchId);
+          updateStatus(value);
+          return value;
+        }, (value) => value.runRequestedAt === null ? "evolution.blockerNoCase" : "evolution.evaluationRequestedItStartsWhenTheWorkbenchIsIdle")}>{t("evolution.evaluateNow")}</button>
+        <span>{t("evolution.manualEvaluationHint")}</span></div>
+    </section>
+
+    <section className="evolution-methods" aria-labelledby="evolution-methods-heading">
+      <header className="evolution-section-header"><h3 id="evolution-methods-heading">{t("evolution.adoptedMethods")}</h3>
+        <span className="evolution-description">{t("evolution.appliedMethodGoals", { p0: formatNumber(learning.appliedGoals) })}</span></header>
+      {methods.length === 0 ? <div className="evolution-method-empty"><p>{t("evolution.noMethodsYet")}</p><p>{t("evolution.noAdoptedMethodsHint")}</p></div>
+        : <ul className="evolution-method-list">{methods.map((method) => <li key={method.revisionId}>
+          <div className="evolution-method-header"><div><strong>{method.module === "context" ? t("evolution.contextOrganization") : method.module === "planning" ? t("evolution.planningMethods") : t("evolution.completionChecks")}</strong>
+            <span>{method.scope === "GLOBAL" ? t("evolution.allWorkbenchesScope") : t("evolution.thisWorkbenchScope")}</span></div>
+            <span className="evolution-state">{t(method.status === "CANARY" ? "evolution.methodInTrial" : "evolution.methodActive")}</span></div>
+          <p className="evolution-description">{method.benefit === "quality" ? t("evolution.qualityBenefit") : method.benefit === "efficiency" ? t("evolution.efficiencyBenefit") : t("evolution.benefitUnverified")}</p>
+          <div className="evolution-method-actions"><details><summary>{t("evolution.evaluationEvidence")}</summary>
+            <p>{t("evolution.methodEvaluation", { p0: formatNumber(method.baselineSuccesses), p1: formatNumber(method.candidateSuccesses), p2: formatNumber(method.evaluatedRuns) })}</p>
+            <p>{t("evolution.methodExposure", { p0: formatNumber(method.candidateGoals), p1: formatNumber(method.controlGoals) })}</p>
+          </details><button className="button ghost" type="button" disabled={saving}
+            onClick={() => void act(async () => { updateStatus(await api.rollbackEvolution(status.workbenchId, method.revisionId)); })}>{t("evolution.rollBackCurrentPolicyAndPause")}</button></div>
+        </li>)}</ul>}
+    </section>
+
+    <section className="evolution-settings" aria-labelledby="evolution-settings-heading">
+      <h3 id="evolution-settings-heading">{t("evolution.learningSettings")}</h3>
+      <div className="evolution-budget-setting">
+        <div className="evolution-section-header"><h4>{t("evolution.sharedGlobalBudget")}</h4>
+          <label className="switch"><input type="checkbox" checked={global.enabled} disabled={saving}
+            onChange={(event) => void act(() => globalSettings(event.target.checked, global.dailyCallLimit || 150))} />{t("evolution.enableGlobalLearning")}</label></div>
+        <div className="evolution-budget-usage"><p><strong>{formatNumber(global.callsUsedToday)} <span>/ {formatNumber(global.dailyCallLimit)}</span></strong><span>{t("evolution.callsUsedToday")}</span></p><span>{tokens(global.tokensToday)}</span></div>
+        {global.dailyCallLimit === 0 ? null : <progress className="evolution-budget-progress" aria-label={t("evolution.dailyBudgetUsage")} max={global.dailyCallLimit} value={Math.min(global.callsUsedToday, global.dailyCallLimit)} />}
+        <fieldset className="evolution-budget-presets" disabled={saving}>
+          <legend>{t("evolution.dailyModelCallLimit")}</legend>
+          <div className="evolution-budget-options">{EVOLUTION_BUDGET_PRESETS.map((preset) => <label key={preset.key}>
+            <input aria-label={presetName(preset)} checked={global.dailyCallLimit === preset.limit} name="global-evolution-budget"
+              onChange={() => void act(() => globalSettings(preset.limit > 0 && global.enabled, preset.limit))} type="radio" value={preset.limit} />
+            <span>{presetLabels[preset.key]}</span>{preset.limit === 0 ? null : <strong>{formatNumber(preset.limit)}</strong>}
+          </label>)}</div>
+        </fieldset>
+        <p className="evolution-description">{t("evolution.sharedBudgetHint")}</p>
+        {global.paused ? <button type="button" className="button ghost" disabled={saving}
+          onClick={() => void act(async () => { updateOverview(await api.resumeGlobalEvolution()); })}>{t("evolution.resumeGlobalLearning")}</button> : null}
+      </div>
+      <div className="evolution-participation-setting"><div className="evolution-section-header"><label className="switch"><input type="checkbox" checked={learning.participation.enabled} disabled={saving}
+        onChange={(event) => void act(async () => { updateStatus(await api.setEvolutionParticipation(status.workbenchId, event.target.checked)); })} />{t("evolution.participateInLearning")}</label>
+        {learning.participation.paused ? <button type="button" className="button ghost" disabled={saving}
+          onClick={() => void act(async () => { updateStatus(await api.resumeEvolution(status.workbenchId)); })}>{t("evolution.resumeWorkbenchLearning")}</button> : null}</div>
+        <p className="evolution-description">{t("evolution.participationHint")}</p></div>
+    </section>
   </div>;
 }
+
 export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLifeApi; workbenchId: string }) {
   useI18n();
   const [status, setStatus] = useState<EvolutionStatusDto | null>(null);
   const [notice, setNotice] = useNotice();
-  const [saving, setSaving] = useState(false);
-  const [dryRun, setDryRun] = useState<EvolutionDryRunReportDto | null>(null);
-  const [dryRunning, setDryRunning] = useState(false);
   const [overview, setOverview] = useState<EvolutionOverviewDto | null>(null);
   useEffect(() => {
     let canceled = false;
     const load = () => {
       void api.evolutionOverview().then((aggregate) => { if (!canceled) setOverview(aggregate); }).catch(() => undefined);
-      return api.evolutionStatus(workbenchId).then((value) => { if (!canceled) setStatus(value); }).catch(() => { if (!canceled) setNotice(noticeMessage("evolution.couldNotLoadEvolutionStatusTryAgainLater")); });
+      return api.evolutionStatus(workbenchId).then((value) => { if (!canceled) { setStatus(value); setNotice(null); } }).catch(() => { if (!canceled) setNotice(noticeMessage("evolution.couldNotLoadEvolutionStatusTryAgainLater")); });
     };
     void load();
     const timer = setInterval(() => void load(), 10_000);
     return () => { canceled = true; clearInterval(timer); };
   }, [api, setNotice, workbenchId]);
-  const applyPreset = async (preset: EvolutionBudgetPreset) => {
-    if (saving) return;
-    setSaving(true);
-    try {
-      setStatus(await api.configureEvolution(workbenchId, preset.limit));
-      setNotice(preset.limit === 0 ? noticeMessage("evolution.evaluationBudgetDisabledExperienceWillStillBeRecorded") : noticeMessage("evolution.budgetSetToValueValuePerDayRunsAutomatically", { p0: presetLabels[preset.key], p1: String(preset.limit) }));
-    } catch { setNotice(noticeMessage("evolution.couldNotSaveTheBudgetTryAgain")); } finally { setSaving(false); }
-  };
-  const rollback = async () => {
-    const revisionId = status?.activeRevisionId ?? status?.globalRevisionId;
-    if (revisionId == null) return;
-    setSaving(true);
-    try { setStatus(await api.rollbackEvolution(workbenchId, revisionId)); setNotice(noticeMessage("evolution.rolledBackAndPausedAutomaticEvolutionRunningGoalsKeep")); }
-    catch { setNotice(noticeMessage("evolution.couldNotRollBackThePolicyRefreshStatusAnd")); } finally { setSaving(false); }
-  };
-  const runDryRun = async () => {
-    if (dryRunning) return;
-    setDryRunning(true);
-    try { setDryRun(await api.dryRunEvolution(workbenchId)); setNotice(null); }
-    catch { setDryRun(null); setNotice(noticeMessage("evolution.theDryRunDidNotCompleteTryAgainLater")); } finally { setDryRunning(false); }
-  };
-  const runNow = async () => {
-    if (saving) return;
-    setSaving(true);
-    try { setStatus(await api.runEvolutionNow(workbenchId)); setNotice(noticeMessage("evolution.evaluationRequestedItStartsWhenTheWorkbenchIsIdle")); }
-    catch { setNotice(noticeMessage("evolution.couldNotStartEvaluationMakeSureAutomaticEvolutionIs")); } finally { setSaving(false); }
-  };
-  const current = status === null ? null : EVOLUTION_BUDGET_PRESETS.find((preset) => preset.limit === status.dailyCallLimit) ?? null;
-  if (status?.learning !== undefined) return <LearningEvolutionPanel api={api} status={status} learning={status.learning}
-    overview={overview} updateStatus={setStatus} updateOverview={setOverview} loadingNotice={notice} />;
-  return <div className="inline-settings workbench-evolution-panel">
-    <p className="workbench-evolution-intro">{t("evolution.improveContextOrganizationAndCompletionChecksUsingExecutionExperience")}</p>
-    {notice === null ? null : <p role="status">{notice}</p>}
-    {overview === null ? null : <div>
-      <h3>{t("evolution.allWorkbenches")}</h3>
-      <p>{t("evolution.enabled")} {overview.enabled} / {overview.workbenches}  {t("evolution.evaluating")} {overview.evaluating}  {t("evolution.inTrial")} {overview.canary}  {t("evolution.activePolicy")} {overview.active}</p>
-      <p className="field-hint">{t("evolution.policyEvidencePoolEvaluable")} {overview.poolEvaluable}  {t("evolution.itemsFailed")} {overview.poolVerificationFailed}  {t("evolution.items")}{overview.revalidationRequired > 0 ? t("evolution.valueWorkbenchesNeedRevalidation", { p0: String(overview.revalidationRequired) }) : ""}</p>
-      {overview.batches.length === 0 ? <p className="field-hint">{t("evolution.noRealEvaluationBatchesYet")}</p> : <ul>{overview.batches.slice(0, 5).map((batch) => <li key={`${batch.workbenchId}:${batch.batchId}:${batch.finishedAt ?? "running"}`}>
-        {batch.scope === "GLOBAL" ? t("evolution.globalBaseline") : t("evolution.workbenchOverride")} · {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)}  {t("evolution.calls")} {batch.tokens === null ? t("evolution.tokenUsageUnknown") : `${String(batch.tokens)} tokens`}{batch.failure === undefined ? "" : ` · ${failureLabels[batch.failure.kind]}`}
-      </li>)}</ul>}
-    </div>}
-    {status === null ? <p>{t("evolution.loadingEvolutionStatus")}</p> : <>
-      <p>{statusLabel(status)}</p>
-      {status.failure === undefined ? null : <p className="field-hint">{failureLabels[status.failure.kind]}</p>}
-      <fieldset className="evolution-budget-presets" disabled={saving}>
-        <legend>{t("evolution.dailyModelCallLimit")}</legend>
-        <div className="evolution-budget-options">
-          {EVOLUTION_BUDGET_PRESETS.map((preset) => <label key={preset.key}>
-            <input aria-label={presetName(preset)} checked={status.dailyCallLimit === preset.limit} name="evolution-budget" onChange={() => void applyPreset(preset)} type="radio" value={preset.limit} />
-            {presetLabels[preset.key]}
-          </label>)}
-        </div>
-      </fieldset>
-      <p className="field-hint">{current === null ? t("evolution.customLimitValuePerDayChooseAPresetTo", { p0: String(status.dailyCallLimit) }) : presetHints[current.key]}</p>
-      <p className="field-hint">{t("evolution.theLimitResetsDailyAtUtcMidnightAndIs")}</p>
-      <p>{t("evolution.callsToday")} {status.callsUsedToday} / {status.dailyCallLimit}  {t("evolution.thisWorkbenchHasRecorded")} {status.evidenceCount}  {t("evolution.goalsIncluding")} {status.evaluableCount}  {t("evolution.objectivelyEvaluable")}</p>
-      <p className="field-hint">{t("evolution.startingAnEvaluationRequiresATotalAcrossAllWorkbenches")} {String(EVOLUTION_EVIDENCE_THRESHOLD)}  {t("evolution.objectivelyEvaluableGoalsIncluding")} {String(EVOLUTION_FAILURE_THRESHOLD)}  {t("evolution.acceptanceFailuresAttributableToContextOrCompletionJudgmentCurrently")} {String(status.poolEvaluable)}  {t("evolution.and")} {String(status.poolVerificationFailed)}  {t("evolution.itemsSharedEvidenceImprovesTheGlobalBaselineFirstA")}</p>
-      {status.canaryRevisionId == null ? null : <p className="field-hint" role="status">{t("evolution.theCandidateIsInAProductionTrialWithA")}</p>}
-      {status.revalidationRequired !== true ? null : <p className="field-hint" role="status">{t("evolution.thePinnedModelVersionDiffersFromTheEvaluatedVersion")}</p>}
-      <p className="field-hint">{t("evolution.eachEvaluationRoundStartsAtMostOneCandidatePer")}</p>
-      <button className="button ghost" type="button" disabled={saving || status.paused === true} onClick={() => void runNow()}>{t("evolution.evaluateNow")}</button>
-      {status.runRequestedAt === null ? null : <p className="field-hint" role="status">{t("evolution.queued")}{status.runRequestedAt.slice(0, 16).replace("T", " ")}  {t("evolution.requestWaitingForTheWorkbenchToBecomeIdle")}</p>}
-      {status.lastVerdict === null ? null : <p className="field-hint">{t("evolution.previousDecision")}{labels[status.lastVerdict.reason]}  {t("evolution.originalPolicyPassed")} {status.lastVerdict.baselineSuccesses}  {t("evolution.candidatePassed")} {status.lastVerdict.candidateSuccesses}  {t("evolution.outOf")} {status.lastVerdict.evaluatedRuns}  {t("evolution.evaluations")}</p>}
-      {(status.batchHistory ?? []).length === 0 ? null : <><h3>{t("evolution.realBatchHistory")}</h3><ul>{(status.batchHistory ?? []).slice(0, 10).map((batch) => <li key={`${batch.batchId}:${batch.finishedAt ?? "running"}`}>
-        {phaseLabels[batch.phase]} · {labels[batch.reason]} · {String(batch.calls)}  {t("evolution.calls")} {batch.tokens === null ? t("evolution.tokenUsageUnknown") : `${String(batch.tokens)} tokens`}{batch.failure === undefined ? "" : ` · ${failureLabels[batch.failure.kind]}`}
-      </li>)}</ul></>}
-      <h3>{t("evolution.manualDryRun")}</h3>
-      <p className="field-hint">{t("evolution.runTheFullEvaluationPipelineWithDeterministicFakesWithout")}</p>
-      <button className="button ghost" type="button" disabled={saving || dryRunning} onClick={() => void runDryRun()}>{dryRunning ? t("evolution.runningDryRun") : t("evolution.runADryRun")}</button>
-      {dryRun === null ? null : <div>
-        <p role="status">{dryRunOutcomes[dryRun.outcome]}</p>
-        <p className="field-hint">{dryRun.phases.map((entry) => t("evolution.valueValueRoundsValueCalls", { p0: phaseLabels[entry.phase], p1: String(entry.rollouts), p2: String(entry.steps) })).join(" · ")}</p>
-        <p className="field-hint">{t("evolution.total")} {String(dryRun.steps)}  {t("evolution.syntheticCallsElapsed")} {String(dryRun.durationMs)}  {t("evolution.msNoRealModelCallsWereMade")}{dryRun.selfCheck.matched ? "" : t("evolution.selfCheckFailedTheFakeMayNoLongerMatch")}</p>
-        {dryRun.promoted || dryRun.verdict === null ? null : <p>{labels[dryRun.verdict]}</p>}
-      </div>}
-      <h3>{t("evolution.policyHistory")}</h3>
-      {status.versions.length === 0 ? <p>{t("evolution.noCandidatePoliciesYetEvaluationStartsAutomaticallyWhenEnough")}</p> : <ul>{status.versions.map((version) => <li key={version.revisionId}>
-        <strong>{version.module === "context" ? t("evolution.contextOrganization") : t("evolution.completionChecks")}</strong> · {labels[version.reason]}<br />
-        <small>{version.createdAt.slice(0, 10)}  {t("evolution.evaluated")} {version.evaluatedRuns}  {t("evolution.timesOriginalPolicyPassed")} {version.baselineSuccesses}  {t("evolution.candidatePassed")} {version.candidateSuccesses}  {t("evolution.times")}</small>
-      </li>)}</ul>}
-      {(status.activeRevisionId ?? status.globalRevisionId) == null ? null : <button className="button ghost" type="button" disabled={saving} onClick={() => void rollback()}>{t("evolution.rollBackCurrentPolicyAndPause")}</button>}
-    </>}
+  if (status?.workbenchId !== workbenchId) return <div className="inline-settings workbench-evolution-panel evolution-loading" aria-busy={notice === null}>
+    <p role="status">{notice ?? t("evolution.loadingEvolutionStatus")}</p>
+    {notice === null ? <div className="evolution-loading-lines" aria-hidden="true"><span /><span /><span /></div> : null}
   </div>;
+  if (status.learning === undefined) return <div className="inline-settings workbench-evolution-panel"><p role="status">{t("evolution.upgradeRequired")}</p></div>;
+  return <LearningEvolutionPanel key={workbenchId} api={api} status={status} learning={status.learning}
+    overview={overview} updateStatus={setStatus} updateOverview={setOverview} loadingNotice={notice} />;
 }
