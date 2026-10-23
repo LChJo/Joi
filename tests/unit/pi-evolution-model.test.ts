@@ -11,6 +11,17 @@ describe("Pi evolution adapter", () => {
     return { model: new PiEvolutionModel({ resolver: { resolve }, sources: { selectInitial: vi.fn().mockResolvedValue(pin) } }), completeSimple };
   }
   const input = { pin, systemPrompt: "simulation", prompt: "fixture", mode: "simulation" as const, idempotencyId: "call-1" };
+  it("offers registered three-module methods only for the versioned learning contract", async () => {
+    const { model, completeSimple } = adapter({ content: [{ type: "toolCall", name: "propose_strategy", arguments: {
+      strategy: { version: 2, context: [], planning: ["dependency_outline"], completion: [] }, fixes: ["case-one"], risks: [],
+    } }], stopReason: "toolUse", usage });
+    await model.call({ ...input, mode: "proposal", contract: "METHOD_V2" });
+    const context = completeSimple.mock.calls[0]?.[1] as { tools: { parameters: { properties: { strategy: { properties: Record<string, unknown> } } } }[] };
+    expect(context.tools[0]?.parameters.properties.strategy.properties).toHaveProperty("version");
+    expect(context.tools[0]?.parameters.properties.strategy.properties).toHaveProperty("planning");
+    expect(JSON.stringify(context.tools)).toContain("dependency_outline");
+    expect(JSON.stringify(context.tools)).not.toContain("execute_code");
+  });
   it.each(["anthropic-messages", "openai-responses"])("limits %s requests to sequential tools while retaining thinking and idempotency", async (api) => {
     const { model, completeSimple } = adapter({ content: [finish], stopReason: "toolUse", usage }, api);
     await model.call(input);

@@ -1,5 +1,19 @@
 # README 实现追踪矩阵
 
+## 2026-10-23 自主进化 v2 验收追踪
+
+| 验收 | 关键行为及反例 | 对应测试 |
+| --- | --- | --- |
+| AC-EVO-01 / 06 | 三模块注册操作、单模块改变、拒绝自由指令；保留人格/权限/验收边界及逐次协议 | `tests/unit/learning-policy.test.ts`、`tests/unit/pi-evolution-model.test.ts`、既有 Joi 工具契约 |
+| AC-EVO-02 / 07 | 当前权威双版本、机械事实变化的新案例 ID、同源分组不泄漏、缺完成来源不补正例；排除取消/环境/执行问题 | `tests/unit/learning-case.test.ts`、`tests/integration/sqlite-method-learning-store.test.ts` |
+| AC-EVO-03 | 共享日预算、稳定 outbox 身份与检查点原子性、未知用量、跨日续跑、协议暂停和明确恢复；取消遗留待办不挡空闲 | `tests/integration/sqlite-method-learning-store.test.ts`、`tests/integration/method-learning-service.test.ts`、`tests/integration/method-learning-service.recovery.test.ts`、`tests/integration/sqlite-evolution-store.test.ts` |
+| AC-EVO-04 | 安全题与生产封存分开；至少五个独立来源组、各三次、质量/效率双通道；重复来源、硬违规、质量或已知配对成本退化必须拒绝 | `tests/unit/learning-evaluation.test.ts`、`tests/integration/method-learning-service.test.ts` |
+| AC-EVO-04 | 依赖问题必须实际提交隔离工作计划；自依赖、环、未知/跨案例引用和可执行能力拒绝；重复取证计费且验收不降 | `tests/unit/learning-replay.test.ts`、`tests/unit/pi-evolution-model.test.ts` |
+| AC-EVO-05 | 全局和本台设置/恢复入口分开、兼容旧接口、投影真实阻塞/成本/曝光，干跑范围明确 | `tests/contract/method-learning-http.test.ts`、`tests/contract/evolution-http.test.ts`、`tests/renderer/evolution-settings.test.tsx`、隔离 Electron E2E |
+| AC-EVO-08 | 需求 READY 后稳定分组、合格同期控制、模型/来源一致、当前观察失效处理、实测收益才能晋升、跨台回退及安全父版本 | `tests/integration/method-learning-service.test.ts`、`tests/integration/method-learning-service.recovery.test.ts`、目标绑定/权威观察存储及 Joi coordinator 回归 |
+
+本表定义工程完成门禁，不以列出测试文件代表所有场景已通过。最终证据须包含实际固定验证结果及未完成项。真实供应商逐次协议、完整学习成本、合格生产灰度收益和生产回退另行验收；结构案例与模型替身不证明真实长任务或实际用户质量已经改善。
+
 2026-10-19 AC-37/44/48 目标详情交互：设计师评审 `docs/design/goal-detail-ux-review.md`；鼠标定位全文提示、固定右键菜单、边缘避让/外部滚动关闭，以及紧凑概览、限高分区详情、分页事实与交互保留，覆盖 `goal-detail-ux.test.tsx`、`goal-detail-presentation.test.tsx`、`goal-detail-loading.test.tsx` 与 Electron 真实交互/长地图/窄屏截图。
 
 2026-10-19 AC-37/AC-44/AC-48 目标详情：完整安全目标标题的悬停/聚焦阅读与复制、分层路线图、同名路径保留、决策与雾区晋升、分页及刷新恢复，对应 `joi-goal-detail.test.ts`、`joi-goal-detail-http.test.ts`、`goal-detail-presentation.test.tsx`、`goal-detail-loading.test.tsx`；只读 Worker 透传及 WAL 快照对应 `runtime-workers.test.ts`，真实 Electron 标题提示框、菜单、节点关系与窄屏布局对应 `electron-smoke.spec.ts`。接口为 `GET /api/v1/joi/goals/:goalId/detail?offset=0&limit=50`，每个集合独立应用同一 offset/limit（默认 50，最大 100），返回完整安全标题、地图状态和层级、paths/decisions/fog、各集合总数及可选 nextOffset。缺失/已移除/派生输入返回 404，无会话 401，非法分页 400；首页 DTO 保持摘要。地图详情不返回原始消息或执行 payload。
@@ -14,7 +28,7 @@ AC-WR-01..06 按需写入：[ADR 0028](adr/0028-demand-driven-workspace-writing.
 
 AC-STATS-01..06 Token 统计：[ADR 0021](adr/0021-token-statistics.md)。SDK 归一化和故障隔离对应 `sdk-usage-normalization.test.ts`、`sdk-usage.test.ts`、`native-agent-usage.test.ts`、`pi-runtime-usage.test.ts`、`a2a-usage.test.ts`；时区、聚合和对账对应 `statistics-policy.test.ts`，账本/恢复/归属/缺失标记对应 `statistics-ledger.test.ts`，认证和有界查询对应 `statistics-http.test.ts`。页面与安全 HTTP 客户端对应 `statistics-page.test.tsx`、`api-client.test.ts`；隔离 Electron 的筛选、当日明细、目标跳转和浅深主题三宽度截图对应 `tests/e2e/statistics.spec.ts`。真实供应商用量未返回时不得模拟为零，测试不调用真实模型。
 
-AC-EVO-01..06 受限策略进化：[ADR 0020](adr/0020-bounded-strategy-evolution.md)。对应 `evolution-policy.test.ts`、`evolution-scenarios.test.ts`、`evolution-component.test.ts`、`sqlite-evolution-store.test.ts`、`evolution-evidence.test.ts`、`evolution-service.test.ts`、`evolution-dry-run.test.ts`、`evolution-dry-run-isolation.test.ts`、`pi-evolution-model.test.ts`、`evolution-http.test.ts`、`evolution-settings.test.tsx`、`joi-home-single-entry.test.tsx`（目标卡片负反馈入口）、`composition-root.test.ts`（审计 outbox 不进入通用调度器），以及原有 Joi 工具、提示词与运行时契约回归和 Electron 设置页 E2E。覆盖声明式单模块变更、工作台/目标隔离、最终验收事实采样、撤销目标的失败信号保留、预算与恢复、失败批次续跑与有界重试、开发/独立封存评测、自动晋升与回滚。手工干跑用确定性替身走完整条批次链路，证明编排与门禁可用，并断言不写运行库、不发真实调用。真实供应商收益未由测试替身证明。
+AC-EVO-01..08 受限方法学习：[ADR 0020](adr/0020-bounded-strategy-evolution.md) 与[当前验收](07-roadmap-and-acceptance.md#2026-10-23-自主进化-v2结构决策重放与生产收益分离)。当前策略合同 v2 从真实权威事实生成结构决策案例，30 个安全场景与至少 5 个独立来源组的生产封存案例分别判定，再进入生产灰度；固定题库不能单独证明收益。既有 `evolution-*`、工具、Joi coordinator 和 Electron 设置页测试继续保护兼容与隔离；新增 `learning-policy.test.ts`、`learning-case.test.ts`、`learning-replay.test.ts`、`learning-evaluation.test.ts`、`sqlite-method-learning-store.test.ts`、`method-learning-service.test.ts`、`method-learning-http.test.ts` 对应当前合同。自动化与干跑只证明工程流程，真实供应商协议、实际收益及生产回退另验收，不以测试替身宣称效果成立。
 
 AC-57 全文导出与安卓诊断入口：[规格与设备待验](19-result-export-acceptance.md)。对应 `tests/unit/result-export.test.ts`、`tests/integration/result-export-persistence.test.ts`、`tests/contract/result-export-http.test.ts`、`tests/renderer/result-export-menu.test.tsx`、`tests/e2e/result-export.spec.ts` 和 Flutter `result_export_test.dart` / `result_reader_test.dart`。复制仅最终 Markdown；文件导出使用快照、离线字体和下载/Joi，诊断图标按当前状态显示。
 

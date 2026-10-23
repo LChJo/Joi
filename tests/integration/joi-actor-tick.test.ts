@@ -17,6 +17,8 @@ const OLD = "2026-08-05T09:40:00.000Z";
 function makeDatabase(): DatabaseSync {
   const database = new DatabaseSync(":memory:");
   database.exec(`
+    CREATE TABLE workbenches (workbench_id TEXT PRIMARY KEY, status TEXT NOT NULL);
+    INSERT INTO workbenches VALUES ('workbench_h', 'ACTIVE');
     CREATE TABLE joi_inbox_messages (
       input_id TEXT PRIMARY KEY,
       idempotency_key TEXT NOT NULL,
@@ -28,6 +30,7 @@ function makeDatabase(): DatabaseSync {
       updated_at TEXT NOT NULL,
       canceled_at TEXT,
       dismissed_at TEXT,
+      failed_at TEXT,
       clarification_prompt TEXT,
       clarification_reason_code TEXT,
       reopened_at TEXT

@@ -92,6 +92,10 @@ export class DigitalLifeApi {
   listWorkbenches() { return this.request<{ items: WorkbenchDto[] }>("/api/v1/workbenches"); }
   evolutionStatus(workbenchId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`); }
   evolutionOverview() { return this.request<EvolutionOverviewDto>("/api/v1/evolution"); }
+  configureGlobalEvolution(enabled: boolean, dailyCallLimit: number) { return this.request<EvolutionOverviewDto>("/api/v1/evolution", { method: "PATCH", body: { enabled, dailyCallLimit } }); }
+  resumeGlobalEvolution() { return this.request<EvolutionOverviewDto>("/api/v1/evolution/resume", { method: "POST" }); }
+  resumeEvolution(workbenchId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/resume`, { method: "POST" }); }
+  setEvolutionParticipation(workbenchId: string, enabled: boolean) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`, { method: "PATCH", body: { enabled } }); }
   configureEvolution(workbenchId: string, dailyCallLimit: number) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`, { method: "PATCH", body: { dailyCallLimit } }); }
   rollbackEvolution(workbenchId: string, revisionId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/rollback`, { method: "POST", body: { revisionId } }); }
   evolutionNegativeFeedback(workbenchId: string, goalId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution/feedback`, { method: "POST", body: { goalId } }); }

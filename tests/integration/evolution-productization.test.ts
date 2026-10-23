@@ -41,6 +41,34 @@ describe("evolution productization", () => {
     expect(store.read("a")).toMatchObject({ dailyCallLimit: 0, reason: "disabled" });
   });
 
+  it("monitors a promoted global strategy across workbenches and restores its predecessor", () => {
+    fixture.database.transaction((db) => {
+      db.prepare(`INSERT INTO workbenches
+        (workbench_id,name,persona_revision_id,persona_summary,scope_summary,project_label,memory_namespace_id,status,created_at,updated_at)
+        VALUES ('b','B','p','','','','mem-b','ACTIVE',?,?)`).run(now, now);
+      for (const goal of ["global-failed-1", "global-failed-2"]) db.prepare(`INSERT INTO joi_inbox_messages
+        (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+        VALUES (?,?,'private','CONSUMED','b',?,?)`).run(goal, goal, now, now);
+    });
+    const revision = (revisionId: string, status: "ACTIVE" | "SUPERSEDED", parentRevisionId: string | null) => ({
+      revisionId, status, parentRevisionId, scope: "GLOBAL" as const, evaluatorVersion: EVOLUTION_EVALUATOR_VERSION,
+      monitoredGoals: [], controlGoals: [], strategy: { ...baselineStrategy, completion: "evidence_matrix" as const }, pin,
+      evidenceIds: [], prediction: { fixes: [], risks: [] }, module: "completion" as const,
+      createdAt: "2026-10-09T00:00:00.000Z", reason: "promoted" as const,
+      baselineSuccesses: 80, candidateSuccesses: 90, evaluatedRuns: 180,
+    });
+    store.update("a", (state) => { state.revisions = [revision("previous", "SUPERSEDED", null), revision("global", "ACTIVE", "previous")]; });
+    for (const goalId of ["global-failed-1", "global-failed-2"]) store.recordEvidence({
+      goalId, workbenchId: "b", revisionId: "global", observedAt: now, outcome: "VERIFICATION_FAILED", cause: "completion",
+    });
+    service().scan();
+    expect(store.read("a").revisions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ revisionId: "global", status: "ROLLED_BACK" }),
+      expect.objectContaining({ revisionId: "previous", status: "ACTIVE" }),
+    ]));
+    expect(store.read("a").paused).toBe(true);
+  });
+
   it("does not arm policy evolution from execution-attributed verification failures", () => {
     for (let index = 0; index < 10; index += 1) {
       const goalId = `goal-${String(index)}`;

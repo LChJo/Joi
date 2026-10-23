@@ -6,6 +6,8 @@ import type { ReasoningSourceSelector } from "../../application/model-sources/re
 import type { UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels } from "./pi-usage.js";
 import { normalizePiUsage } from "../usage/sdk-usage.js";
+import { METHOD_OPERATIONS } from "../../domain/evolution/learning-policy.js";
+import { METHOD_WORK_PLAN_SCHEMA } from "../../domain/evolution/learning-replay.js";
 
 function safeStopReason(value: unknown): EvolutionModelFailure["stopReason"] {
   switch (value) {
@@ -25,10 +27,16 @@ export class PiEvolutionModel implements EvolutionModel {
   async call(input: Parameters<EvolutionModel["call"]>[0] & { workbenchId?: string }): Promise<unknown> {
     const { model, models, thinkingLevel } = await this.dependencies.resolver.resolve(input.pin);
     const signal = input.signal === undefined ? AbortSignal.timeout(60_000) : AbortSignal.any([input.signal, AbortSignal.timeout(60_000)]);
+    const methodStrategy = Type.Object({ version: Type.Literal(2),
+      context: Type.Array(Type.Union(METHOD_OPERATIONS.context.map(value => Type.Literal(value))), { maxItems: 3, uniqueItems: true }),
+      planning: Type.Array(Type.Union(METHOD_OPERATIONS.planning.map(value => Type.Literal(value))), { maxItems: 3, uniqueItems: true }),
+      completion: Type.Array(Type.Union(METHOD_OPERATIONS.completion.map(value => Type.Literal(value))), { maxItems: 3, uniqueItems: true }),
+    }, { additionalProperties: false });
     const tools = input.mode === "proposal" ? [{
       name: "propose_strategy", description: "Propose exactly one module change with supporting development scenario IDs.",
-      parameters: Type.Object({ strategy: Type.Object({ context: Type.Union([Type.Literal("baseline"), Type.Literal("requirements_first"), Type.Literal("open_questions_first")]), completion: Type.Union([Type.Literal("baseline"), Type.Literal("evidence_matrix"), Type.Literal("contradiction_check")]) }), fixes: Type.Array(Type.String(), { maxItems: 10 }), risks: Type.Array(Type.String(), { maxItems: 10 }) }),
+      parameters: Type.Object({ strategy: input.contract === "METHOD_V2" ? methodStrategy : Type.Object({ context: Type.Union([Type.Literal("baseline"), Type.Literal("requirements_first"), Type.Literal("open_questions_first")]), completion: Type.Union([Type.Literal("baseline"), Type.Literal("evidence_matrix"), Type.Literal("contradiction_check")]) }), fixes: Type.Array(Type.String(), { maxItems: 10 }), risks: Type.Array(Type.String(), { maxItems: 10 }) }),
     }] : [{ name: "read_evidence", description: "Read one synthetic evidence record by ID.", parameters: Type.Object({ evidenceId: Type.String() }) },
+      ...(input.contract === "METHOD_V2" ? [{ name: "work_plan", description: "Validate the disposable current-case dependency plan without dispatching any work.", parameters: Type.Unsafe(METHOD_WORK_PLAN_SCHEMA) }] : []),
       { name: "finish", description: "Submit the completion decision and evidence IDs read.", parameters: Type.Object({ decision: Type.Union([Type.Literal("complete"), Type.Literal("continue"), Type.Literal("wait")]), evidenceIds: Type.Array(Type.String(), { maxItems: 10 }) }) }];
     const instruction = "Return exactly one tool call per response. Do not answer in plain text. After read_evidence, stop and wait for its observation before requesting another record or calling finish.";
     let response: AssistantMessage;

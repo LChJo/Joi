@@ -1,7 +1,8 @@
 import { noticeMessage, t, useI18n, useNotice } from "./i18n";
 import { useEffect, useState } from "react";
 import type { DigitalLifeApi } from "./api";
-import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionModelFailure, EvolutionOverviewDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
+import type { EvolutionBudgetPreset, EvolutionBudgetPresetKey, EvolutionDryRunOutcome, EvolutionDryRunReportDto, EvolutionLearningBlocker, EvolutionLearningDto, EvolutionLearningStage, EvolutionModelFailure, EvolutionOverviewDto, EvolutionPhase, EvolutionReason, EvolutionStatusDto } from "../shared/evolution";
+import type { MessageKey } from "../shared/i18n/index";
 import { EVOLUTION_BUDGET_PRESETS, EVOLUTION_EVIDENCE_THRESHOLD, EVOLUTION_FAILURE_THRESHOLD } from "../shared/evolution";
 
 const labels: Record<EvolutionReason, string> = {
@@ -38,6 +39,88 @@ const dryRunOutcomes: Record<EvolutionDryRunOutcome, string> = {
   get truncated() { return t("evolution.pipelineIncompleteAStepOrTimeLimitWasReached"); },
   get not_started() { return t("evolution.theBatchCouldNotStartBecauseSyntheticEvidenceDid"); },
 };
+const learningStages = {
+  OBSERVING: "evolution.stageObserving", DIAGNOSING: "evolution.stageDiagnosing", PROTOCOL: "evolution.stageProtocol",
+  DEVELOP: "evolution.stageDevelop", PROPOSE: "evolution.stagePropose", VALIDATE: "evolution.stageValidate",
+  EVALUATE: "evolution.stageEvaluate", CANARY: "evolution.stageCanary", ACTIVE: "evolution.stageActive", PAUSED: "evolution.stagePaused",
+} as const satisfies Record<EvolutionLearningStage, MessageKey>;
+const learningBlockers = {
+  disabled: "evolution.blockerDisabled", paused: "evolution.blockerPaused", not_idle: "evolution.blockerNotIdle",
+  budget_exhausted: "evolution.blockerBudget", no_reproducible_case: "evolution.blockerNoCase",
+  insufficient_samples: "evolution.blockerSamples", model_response_invalid: "evolution.blockerProtocol",
+  model_changed: "evolution.blockerModel", daily_candidate_limit: "evolution.blockerCandidate",
+} as const satisfies Record<EvolutionLearningBlocker, MessageKey>;
+function LearningEvolutionPanel({ api, status, learning, overview, updateStatus, updateOverview, loadingNotice }: {
+  api: DigitalLifeApi; status: EvolutionStatusDto; learning: EvolutionLearningDto; overview: EvolutionOverviewDto | null;
+  updateStatus: (value: EvolutionStatusDto) => void; updateOverview: (value: EvolutionOverviewDto) => void; loadingNotice: string | null;
+}) {
+  const [saving, setSaving] = useState(false);
+  const [notice, setNotice] = useNotice();
+  const [dryRun, setDryRun] = useState<EvolutionDryRunReportDto | null>(null);
+  const global = overview?.learning?.globalBudget ?? learning.globalBudget;
+  const legacyBatches = overview?.batches ?? status.batchHistory ?? [];
+  const act = async (operation: () => Promise<unknown>) => {
+    if (saving) return;
+    setSaving(true);
+    try { await operation(); setNotice(noticeMessage("evolution.learningUpdated")); }
+    catch { setNotice(noticeMessage("evolution.learningSaveFailed")); }
+    finally { setSaving(false); }
+  };
+  const globalSettings = async (enabled: boolean, limit: number) => {
+    updateOverview(await api.configureGlobalEvolution(enabled, limit));
+  };
+  const canEvaluate = global.enabled && !global.paused && learning.participation.enabled && !learning.participation.paused && global.dailyCallLimit > 0;
+  const tokens = (value: number | null) => value === null ? t("evolution.tokenUsageUnknown") : `${String(value)} tokens`;
+  return <div className="inline-settings workbench-evolution-panel">
+    <p className="workbench-evolution-intro">{t("evolution.methodLearningIntro")}</p>
+    {loadingNotice === null ? null : <p role="status">{loadingNotice}</p>}
+    {notice === null ? null : <p role="status">{notice}</p>}
+    <h3>{t("evolution.sharedGlobalBudget")}</h3>
+    <label><input type="checkbox" checked={global.enabled} disabled={saving}
+      onChange={(event) => void act(() => globalSettings(event.target.checked, global.dailyCallLimit || 150))} />{t("evolution.enableGlobalLearning")}</label>
+    <fieldset className="evolution-budget-presets" disabled={saving}>
+      <legend>{t("evolution.dailyModelCallLimit")}</legend>
+      <div className="evolution-budget-options">{EVOLUTION_BUDGET_PRESETS.map((preset) => <label key={preset.key}>
+        <input aria-label={presetName(preset)} checked={global.dailyCallLimit === preset.limit} name="global-evolution-budget"
+          onChange={() => void act(() => globalSettings(preset.limit > 0 && global.enabled, preset.limit))} type="radio" value={preset.limit} />{presetLabels[preset.key]}
+      </label>)}</div>
+    </fieldset>
+    <p className="field-hint">{t("evolution.sharedBudgetHint")}</p>
+    <p>{t("evolution.globalCallsToday", { p0: String(global.callsUsedToday), p1: String(global.dailyCallLimit) })} · {tokens(global.tokensToday)}</p>
+    {global.paused ? <button type="button" className="button ghost" disabled={saving}
+      onClick={() => void act(async () => { updateOverview(await api.resumeGlobalEvolution()); })}>{t("evolution.resumeGlobalLearning")}</button> : null}
+    <h3>{t("evolution.participateInLearning")}</h3>
+    <label><input type="checkbox" checked={learning.participation.enabled} disabled={saving}
+      onChange={(event) => void act(async () => { updateStatus(await api.setEvolutionParticipation(status.workbenchId, event.target.checked)); })} />{t("evolution.participateInLearning")}</label>
+    {learning.participation.paused ? <button type="button" className="button ghost" disabled={saving}
+      onClick={() => void act(async () => { updateStatus(await api.resumeEvolution(status.workbenchId)); })}>{t("evolution.resumeWorkbenchLearning")}</button> : null}
+    <p role="status">{t(learningStages[learning.stage])}</p>
+    {learning.blockers.length === 0 ? null : <ul>{learning.blockers.map((blocker) => <li key={blocker}>{t(learningBlockers[blocker])}</li>)}</ul>}
+    <p className="field-hint">{t("evolution.evaluatorVersion", { p0: learning.evaluatorVersion })}</p>
+    <p>{t("evolution.casesSummary", { p0: String(learning.cases.development), p1: String(learning.cases.sealed), p2: String(learning.cases.defects) })}</p>
+    <p>{t("evolution.appliedMethodGoals", { p0: String(learning.appliedGoals) })}</p>
+    {learning.experiment === null ? null : <p>{t("evolution.experimentSummary", { p0: learning.experiment.reason === "canary" ? t("evolution.stageCanary") : labels[learning.experiment.reason], p1: String(learning.experiment.calls) })} · {tokens(learning.experiment.tokens)}</p>}
+    <button className="button ghost" type="button" disabled={saving || !canEvaluate}
+      onClick={() => void act(async () => { updateStatus(await api.runEvolutionNow(status.workbenchId)); })}>{t("evolution.evaluateNow")}</button>
+    <h3>{t("evolution.methodHistory")}</h3>
+    {learning.methods.length === 0 ? <p>{t("evolution.noMethodsYet")}</p> : <ul>{learning.methods.map((method) => <li key={method.revisionId}>
+      <strong>{method.module === "context" ? t("evolution.contextOrganization") : method.module === "planning" ? t("evolution.planningMethods") : t("evolution.completionChecks")}</strong>
+      {" · "}{method.scope === "GLOBAL" ? t("evolution.globalBaseline") : t("evolution.workbenchOverride")}{" · "}
+      {method.status === "CANARY" ? t("evolution.stageCanary") : method.status === "ACTIVE" ? t("evolution.stageActive") : method.status === "REVERTED" ? t("evolution.methodReverted") : t("evolution.methodRejected")}
+      <p>{method.benefit === "quality" ? t("evolution.qualityBenefit") : method.benefit === "efficiency" ? t("evolution.efficiencyBenefit") : t("evolution.benefitUnverified")}</p>
+      <p>{t("evolution.methodEvaluation", { p0: String(method.baselineSuccesses), p1: String(method.candidateSuccesses), p2: String(method.evaluatedRuns) })}</p>
+      <p>{t("evolution.methodExposure", { p0: String(method.candidateGoals), p1: String(method.controlGoals) })}</p>
+      {method.status !== "ACTIVE" && method.status !== "CANARY" ? null : <button className="button ghost" type="button" disabled={saving}
+        onClick={() => void act(async () => { updateStatus(await api.rollbackEvolution(status.workbenchId, method.revisionId)); })}>{t("evolution.rollBackCurrentPolicyAndPause")}</button>}
+    </li>)}</ul>}
+    {legacyBatches.length === 0 ? null : <details><summary>{t("evolution.legacyHistory")}</summary><ul>{legacyBatches.map((batch) => <li key={`${batch.workbenchId}:${batch.batchId}`}>{phaseLabels[batch.phase]} · {labels[batch.reason]} · {batch.calls} {t("evolution.calls")} · {tokens(batch.tokens)}</li>)}</ul></details>}
+    <h3>{t("evolution.legacySyntheticDryRun")}</h3>
+    <p className="field-hint">{t("evolution.legacyDryRunHint")}</p>
+    <button className="button ghost" type="button" disabled={saving}
+      onClick={() => void act(async () => { setDryRun(null); setDryRun(await api.dryRunEvolution(status.workbenchId)); })}>{t("evolution.runADryRun")}</button>
+    {dryRun === null ? null : <p role="status">{dryRunOutcomes[dryRun.outcome]} · {String(dryRun.steps)} {t("evolution.syntheticCallsElapsed")} {String(dryRun.durationMs)} {t("evolution.msNoRealModelCallsWereMade")}{dryRun.selfCheck.matched ? "" : t("evolution.selfCheckFailedTheFakeMayNoLongerMatch")}</p>}
+  </div>;
+}
 export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLifeApi; workbenchId: string }) {
   useI18n();
   const [status, setStatus] = useState<EvolutionStatusDto | null>(null);
@@ -84,6 +167,8 @@ export function WorkbenchEvolutionPanel({ api, workbenchId }: { api: DigitalLife
     catch { setNotice(noticeMessage("evolution.couldNotStartEvaluationMakeSureAutomaticEvolutionIs")); } finally { setSaving(false); }
   };
   const current = status === null ? null : EVOLUTION_BUDGET_PRESETS.find((preset) => preset.limit === status.dailyCallLimit) ?? null;
+  if (status?.learning !== undefined) return <LearningEvolutionPanel api={api} status={status} learning={status.learning}
+    overview={overview} updateStatus={setStatus} updateOverview={setOverview} loadingNotice={notice} />;
   return <div className="inline-settings workbench-evolution-panel">
     <p className="workbench-evolution-intro">{t("evolution.improveContextOrganizationAndCompletionChecksUsingExecutionExperience")}</p>
     {notice === null ? null : <p role="status">{notice}</p>}

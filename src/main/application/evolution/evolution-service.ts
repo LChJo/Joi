@@ -118,7 +118,7 @@ export class EvolutionService {
    * the signature changes: the log stays a readable trace of the gate moving instead of a flood.
    */
   #skipGate(reason: GateReason, totals?: { evaluable: number; verificationFailed: number }, workbenchCount?: number): void {
-    const pool = totals ?? this.dependencies.store.evidenceTotals(null);
+    const pool = totals ?? this.dependencies.store.evidenceTotals(this.#globalEvidenceSince());
     const workbenches = workbenchCount ?? this.dependencies.store.listWorkbenchIds().length;
     const signature = `${reason}|${String(pool.evaluable)}|${String(pool.verificationFailed)}|${String(workbenches)}`;
     if (signature === this.#gateSignature) return;
@@ -209,6 +209,18 @@ export class EvolutionService {
     this.dependencies.store.update(workbenchId, (state) => { state.dailyCallLimit = dailyCallLimit; state.paused = false; delete state.failure; if (state.reason === "disabled" || state.reason === "rolled_back" || state.reason === "model_response_invalid") state.reason = "collecting"; });
     return this.status(workbenchId);
   }
+  configureGlobal(_patch: { enabled?: boolean; dailyCallLimit?: number }): EvolutionOverviewDto {
+    throw new DomainError("evolution_unavailable", "Global learning settings require the current learning engine.");
+  }
+  configureParticipation(workbenchId: string, enabled: boolean): EvolutionStatusDto {
+    return this.configure(workbenchId, enabled ? this.dependencies.store.read(workbenchId).dailyCallLimit || 150 : 0);
+  }
+  resumeGlobal(): EvolutionOverviewDto {
+    throw new DomainError("evolution_unavailable", "Global recovery requires the current learning engine.");
+  }
+  resumeWorkbench(workbenchId: string): EvolutionStatusDto {
+    return this.configure(workbenchId, this.dependencies.store.read(workbenchId).dailyCallLimit);
+  }
   /**
    * Queue an out-of-band batch start. It bypasses the evidence gate and the once-per-day candidate
    * lock — that is the point: after a rejection consumed the trigger window, waiting weeks for new
@@ -277,11 +289,7 @@ export class EvolutionService {
     }
     if (owner?.revision.status === "ACTIVE") {
       if (owner.revision.scope === "GLOBAL") {
-        this.dependencies.store.update(owner.workbenchId, (state) => {
-          const active = required(state.revisions.find((entry) => entry.revisionId === revision));
-          active.status = "ROLLED_BACK"; active.reason = "rolled_back"; state.reason = "rolled_back"; state.paused = true; state.revalidationRequired = false;
-        });
-        return this.status(workbenchId);
+        return this.rollback(workbenchId, owner.revision.revisionId);
       }
       return this.rollback(owner.workbenchId, revision ?? "");
     }
@@ -301,7 +309,7 @@ export class EvolutionService {
     const state = this.dependencies.store.read(id);
     return state.paused || state.dailyCallLimit === 0;
   }
-  strategyForGoal(workbenchId: string, goalId: string, pin?: EvolutionSourcePin): { strategyRevisionId: string | null; instructions: string } {
+  strategyForGoal(workbenchId: string, goalId: string, pin?: EvolutionSourcePin, _context?: { requirementsReady: boolean; requirementCount: number }): { strategyRevisionId: string | null; instructions: string } {
     const active = this.#effectiveActive(workbenchId);
     const canary = this.#applicableCanary(workbenchId);
     const selected = canary !== undefined && canaryBucket(goalId) ? canary : active;
@@ -377,6 +385,16 @@ export class EvolutionService {
         emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.evolution.monitor_warning",
           { workbenchId: id, failedCount: failing, threshold: EVOLUTION_MONITOR_REVERT_THRESHOLD });
       }
+    }
+    for (const { workbenchId, revision } of this.#allRevisions().filter(({ revision }) => revision.scope === "GLOBAL" && revision.status === "ACTIVE")) {
+      const recent = this.dependencies.store.listWorkbenchIds().flatMap((id) => this.dependencies.store.evidence(id))
+        .filter((e) => e.revisionId === revision.revisionId && evaluable(e) && e.observedAt > revision.createdAt)
+        .sort((a, b) => b.observedAt.localeCompare(a.observedAt) || a.goalId.localeCompare(b.goalId)).slice(0, 10);
+      const failures = recent.filter((e) => e.outcome === "VERIFICATION_FAILED").length;
+      this.dependencies.store.update(workbenchId, (state) => {
+        required(state.revisions.find((entry) => entry.revisionId === revision.revisionId)).monitoredGoals = recent.map((e) => e.goalId);
+      });
+      if (failures >= EVOLUTION_MONITOR_REVERT_THRESHOLD) this.rollback(workbenchId, revision.revisionId);
     }
     this.#advanceCanaries();
   }

@@ -81,7 +81,7 @@ joi 的工程目标继承自 [`docs/00-sources-and-glossary.md`](docs/00-sources
 | 工作台 Agent 会话流 | 搭档会话的只读安全投影（Markdown、工具、产物）。 | `src/main/application/partners/workbench-agent-service.ts`、`src/renderer/Console.tsx` |
 | 定时任务 Routine | 唯一全局 Joi scheduler 入口；Routine 可创建新目标，也可在既有首页目标卡收官后继续同一目标。 | `src/main/application/automation/`、`src/renderer/AutomationPanel.tsx` |
 | 统计 | 本机已观测的 Token 用量、日历/时段热力图、模型排名、工作台与高消耗目标。 | `src/main/application/statistics/`、`src/renderer/StatisticsPage.tsx`、[ADR 0021](docs/adr/0021-token-statistics.md) |
-| 有界自主进化 | 可选的上下文整理与完成检查策略改进，每日模型调用额度提供关/低/中/高四档，含灰度与评测进度。 | `src/main/application/evolution/`、`src/renderer/EvolutionSettings.tsx`、[ADR 0020](docs/adr/0020-bounded-strategy-evolution.md) |
+| 有界自主进化 | 从权威验收事实学习注册的上下文、规划与结项方法。参与工作台共享每日调用预算，独立评测通过后进入 20% 生产灰度，以实测收益决定晋升；已有目标固定原方法。 | `src/main/application/evolution/`、`src/renderer/EvolutionSettings.tsx`、[ADR 0020](docs/adr/0020-bounded-strategy-evolution.md) |
 | 技能 | 按需扫描 `~/.agents/skills`、`~/.claude/skills` 和 `~/.codex/skills`，默认不加载。 | `src/main/infrastructure/skills/local-skill-scanner.ts`、`src/renderer/JoiSkillSettings.tsx` |
 | 模型来源 | 六家厂商加一个通用平台的引导连接，区分 API / Coding-Plan / Token-Plan 访问方式，以及 OpenAI- 或 Anthropic-compatible 协议。 | `src/main/application/model-sources/`、`src/main/domain/model-sources/model-source.ts`、`src/renderer/Onboarding.tsx` |
 | 结果导出 | 桌面与 Android 端离线导出 A4 PDF 与 1080px PNG。 | `src/main/infrastructure/artifacts/electron-result-export.ts`、[docs/19](docs/19-result-export-acceptance.md) |

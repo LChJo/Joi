@@ -2,6 +2,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { EvolutionEvidence, EvolutionEvidenceSeed, EvolutionSourcePin, EvolutionState, EvolutionStore } from "../../application/ports/evolution.js";
 import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../../shared/evolution.js";
 import { DomainError } from "../../domain/errors.js";
+import { JOI_FOREGROUND_WORK_SQL, JOI_RUNNABLE_INPUT_SQL } from "./sqlite-joi-runnable.js";
 
 type Row = Record<string, unknown>;
 const optionalText = (value: unknown): string | null => typeof value === "string" ? value : null;
@@ -140,9 +141,9 @@ export class SqliteEvolutionStore implements EvolutionStore {
   }
   idle(): boolean {
     return this.database.transaction((db) => db.prepare(`SELECT 1 WHERE
-      EXISTS(SELECT 1 FROM joi_inbox_messages WHERE status = 'PENDING' AND canceled_at IS NULL AND dismissed_at IS NULL)
+      EXISTS(SELECT 1 FROM joi_inbox_messages i WHERE ${JOI_RUNNABLE_INPUT_SQL})
       OR EXISTS(SELECT 1 FROM joi_turns WHERE status = 'RUNNING')
-      OR EXISTS(SELECT 1 FROM work_items WHERE status IN ('PLANNED','READY','RUNNING','WAITING'))`).get() === undefined);
+      OR EXISTS(SELECT 1 FROM work_items w WHERE ${JOI_FOREGROUND_WORK_SQL})`).get() === undefined);
   }
   /**
    * The newest candidate day across ACTIVE workbenches only. Archived workbenches keep their

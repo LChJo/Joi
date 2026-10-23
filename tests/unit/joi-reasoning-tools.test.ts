@@ -7,6 +7,7 @@ import type { CreateAutomationInput, UpdateAutomationInput } from "../../src/sha
 import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import type { GoalRequirementsRepository } from "../../src/main/application/ports/goal-requirements.js";
 import type { GoalWorkListPage,GoalWorkListQuery } from "../../src/main/application/ports/work-orchestration.js";
+import type { MethodEvidenceRead } from "../../src/main/application/ports/method-learning.js";
 
 const partnerDto: PartnerDto = {
   capabilities: ["code"], createdBy: "user", displayName: "Coder", engine: "pi-core", inFlightCount: 0,
@@ -60,6 +61,9 @@ function makeTools(options: {
   workspacePicker?: () => Promise<string | null>;
   workspaceBlocked?: boolean;
   workResumeCalls?: Record<string, unknown>[];
+  recordEvidenceRead?: (receipt: MethodEvidenceRead) => void;
+  resultReadError?: Error;
+  evidenceReadError?: Error;
 } = {}) {
   const addCalls: unknown[] = [];
   const setModelCalls: unknown[] = [];
@@ -74,6 +78,7 @@ function makeTools(options: {
   const harnessCalls = options.harness?.calls ?? [];
   const push = (method: string, args: Record<string, unknown>): void => { harnessCalls.push({ args, method }); };
   const tools = createJoiReasoningTools({
+    ...(options.recordEvidenceRead === undefined ? {} : { recordEvidenceRead: options.recordEvidenceRead }),
     ...(options.requirements === undefined ? {} : { requirements: options.requirements }),
     ...(options.automationCalls === undefined ? {} : { automation: {
       create: async (automationInput: CreateAutomationInput, key?: string) => { options.automationCalls?.push({ input: automationInput as unknown as Record<string, unknown>, ...(key === undefined ? {} : { key }), method: "create" }); return {} as never; },
@@ -142,11 +147,11 @@ function makeTools(options: {
     },
     skills: { listForEngine: () => [{ description: "演示", displayName: "演示技能", id: "claude-code/demo-skill", modifiedAt: 1 }] },
     results: {
-      read: async ({ resultId }) => ({ content: "result", resultId }),
+      read: async ({ resultId }) => { if (options.resultReadError !== undefined) throw options.resultReadError; return { content: "result", resultId }; },
       index: async args => { evidenceCalls.push(args); return { content: "index",totalCharacters: 5 }; },
-      readConclusion: async args => { evidenceCalls.push(args); return { content: "conclusion",totalCharacters: 10 }; },
-      readHandoff: async args => { evidenceCalls.push(args); return { content: "handoff",totalCharacters: 7,resultId: args.resultId,handoffStatus: "PROVIDED" as const }; },
-      readState: async args => { evidenceCalls.push(args); return { content: "state",totalCharacters: 5,outcomeId: args.outcomeId,stateStatus: "PROVIDED" as const }; },
+      readConclusion: async args => { if (options.evidenceReadError !== undefined) throw options.evidenceReadError; evidenceCalls.push(args); return { content: "conclusion",totalCharacters: 10 }; },
+      readHandoff: async args => { if (options.evidenceReadError !== undefined) throw options.evidenceReadError; evidenceCalls.push(args); return { content: "handoff",totalCharacters: 7,resultId: args.resultId,handoffStatus: "PROVIDED" as const }; },
+      readState: async args => { if (options.evidenceReadError !== undefined) throw options.evidenceReadError; evidenceCalls.push(args); return { content: "state",totalCharacters: 5,outcomeId: args.outcomeId,stateStatus: "PROVIDED" as const }; },
       readChanges: async args => { evidenceCalls.push(args); return { changedResults: [],totalChanges: 0 }; },
     },
     turnId: "turn_1",
@@ -910,6 +915,41 @@ describe("joi reasoning tools", () => {
 
 
 describe("AC-43/48 evidence tools", () => {
+  it("records only stable read provenance after a full result succeeds", async () => {
+    const record = vi.fn<(receipt: MethodEvidenceRead) => void>();
+    const harness = makeTools({ goalInputId: "original", inputId: "derived", recordEvidenceRead: record });
+    expect(await harness.call("work_read_result", { resultId: "immutable-result", cursor: "8000" })).toEqual({ content: "result", resultId: "immutable-result" });
+    expect(record.mock.calls).toEqual([[{ workbenchId: "workbench_1", goalId: "original", turnId: "turn_1",
+      toolCallId: "tool_call_1", tool: "work_read_result", resultId: "immutable-result", cursor: "8000", mode: null }]]);
+  });
+  it.each(["handoff", "conclusion", "state"] as const)("records an immutable %s read without content", async (mode) => {
+    const record = vi.fn<(receipt: MethodEvidenceRead) => void>();
+    const harness = makeTools({ recordEvidenceRead: record });
+    await harness.call("work_read_evidence", { mode, ...(mode === "handoff" ? { resultId: "result" } : { outcomeId: "r6:q2" }) });
+    expect(record.mock.calls).toEqual([[{ workbenchId: "workbench_1", goalId: "input_1", turnId: "turn_1",
+      toolCallId: "tool_call_1", tool: "work_read_evidence", resultId: mode === "handoff" ? "result" : "r6:q2", cursor: null, mode }]]);
+  });
+  it("does not record unsuccessful or unversioned reads", async () => {
+    const record = vi.fn<(receipt: MethodEvidenceRead) => void>();
+    const error = new DomainError("goal_evidence_not_found", "Unavailable.");
+    const failed = makeTools({ recordEvidenceRead: record, resultReadError: error, evidenceReadError: error });
+    await expect(failed.call("work_read_result", { resultId: "missing" })).rejects.toBe(error);
+    for (const mode of ["handoff", "conclusion", "state"]) await expect(failed.call("work_read_evidence", {
+      mode, resultId: "missing", outcomeId: "missing",
+    })).rejects.toBe(error);
+    const harness = makeTools({ recordEvidenceRead: record });
+    await harness.call("work_read_evidence", {});
+    await harness.call("work_read_evidence", { mode: "index", cursor: "next-page" });
+    await harness.call("work_read_evidence", { mode: "changes", resultRevision: 7, requirementsRevision: 2, afterResultRevision: 6 });
+    expect(record).not.toHaveBeenCalled();
+  });
+  it("keeps successful foreground results unchanged when recording fails", async () => {
+    const record = vi.fn(() => { throw new Error("unavailable recorder"); });
+    const harness = makeTools({ recordEvidenceRead: record });
+    await expect(harness.call("work_read_result", { resultId: "result" })).resolves.toEqual({ content: "result", resultId: "result" });
+    await expect(harness.call("work_read_evidence", { mode: "handoff", resultId: "result" })).resolves.toMatchObject({ content: "handoff" });
+    expect(record).toHaveBeenCalledTimes(2);
+  });
   it("passes semantic evidence modes, scope, versions and opaque cursors through the production factory",async () => {
     const harness = makeTools({ inputId: "joi_result_input:goal:original:r7:q2",goalInputId: "original" });
     await harness.call("work_read_evidence",{ mode: "handoff",resultId: "result",cursor: "c1:handoff" });

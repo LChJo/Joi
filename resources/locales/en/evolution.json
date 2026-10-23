@@ -577,5 +577,263 @@
     "message": "Roll back current policy and pause",
     "description": "evolution: Roll back current policy and pause",
     "sourceText": "回退当前策略并暂停"
+  },
+  "methodLearningIntro": {
+    "message": "Learn context, planning and completion methods from reproducible task defects; independent evaluation and a production trial decide whether to keep them.",
+    "description": "evolution: Learn context, planning and completion methods from reproducible task defects; independent evaluation and a production trial decide whether to keep them.",
+    "sourceText": "从真实任务的可复现缺陷中学习上下文、规划和结项方法，经独立评测与生产灰度决定是否保留。"
+  },
+  "sharedGlobalBudget": {
+    "message": "Shared daily budget across all workbenches",
+    "description": "evolution: Shared daily budget across all workbenches",
+    "sourceText": "全部工作台共用每日预算"
+  },
+  "enableGlobalLearning": {
+    "message": "Enable global method learning",
+    "description": "evolution: Enable global method learning",
+    "sourceText": "启用全局方法学习"
+  },
+  "participateInLearning": {
+    "message": "Participate in method learning for this workbench",
+    "description": "evolution: Participate in method learning for this workbench",
+    "sourceText": "本工作台参与方法学习"
+  },
+  "resumeGlobalLearning": {
+    "message": "Resume global method learning",
+    "description": "evolution: Resume global method learning",
+    "sourceText": "恢复全局方法学习"
+  },
+  "resumeWorkbenchLearning": {
+    "message": "Resume method learning for this workbench",
+    "description": "evolution: Resume method learning for this workbench",
+    "sourceText": "恢复本工作台方法学习"
+  },
+  "sharedBudgetHint": {
+    "message": "All workbenches share this cap, reset at UTC midnight. Every background call and retry counts. Foreground tasks have priority. Changing the cap does not resume paused learning.",
+    "description": "evolution: All workbenches share this cap, reset at UTC midnight. Every background call and retry counts. Foreground tasks have priority. Changing the cap does not resume paused learning.",
+    "sourceText": "全部工作台共享此额度，按 UTC 日重置；所有后台调用及重试均计入，前台任务优先。修改额度不会恢复暂停的学习。"
+  },
+  "casesSummary": {
+    "message": "Development cases {p0} · Sealed cases {p1} · Reproducible defects {p2}",
+    "description": "evolution: Development cases {p0} · Sealed cases {p1} · Reproducible defects {p2}",
+    "sourceText": "开发案例 {p0} · 封存案例 {p1} · 可复现缺陷 {p2}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "evaluatorVersion": {
+    "message": "Evaluator version: {p0}",
+    "description": "evolution: Evaluator version: {p0}",
+    "sourceText": "评测器版本：{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "globalCallsToday": {
+    "message": "Shared calls today: {p0} / {p1}",
+    "description": "evolution: Shared calls today: {p0} / {p1}",
+    "sourceText": "今日共享调用：{p0} / {p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "appliedMethodGoals": {
+    "message": "Goals using a learned method: {p0}",
+    "description": "evolution: Goals using a learned method: {p0}",
+    "sourceText": "实际采用方法的目标：{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "experimentSummary": {
+    "message": "Current experiment · {p0} · {p1} calls",
+    "description": "evolution: Current experiment · {p0} · {p1} calls",
+    "sourceText": "当前实验 · {p0} · {p1} 次调用",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "methodHistory": {
+    "message": "Learned methods",
+    "description": "evolution: Learned methods",
+    "sourceText": "已学习的方法"
+  },
+  "noMethodsYet": {
+    "message": "No evaluated methods yet",
+    "description": "evolution: No evaluated methods yet",
+    "sourceText": "尚无经过评测的方法"
+  },
+  "qualityBenefit": {
+    "message": "Quality benefit",
+    "description": "evolution: Quality benefit",
+    "sourceText": "质量收益"
+  },
+  "efficiencyBenefit": {
+    "message": "Efficiency benefit",
+    "description": "evolution: Efficiency benefit",
+    "sourceText": "效率收益"
+  },
+  "benefitUnverified": {
+    "message": "Benefit unverified",
+    "description": "evolution: Benefit unverified",
+    "sourceText": "收益尚未验证"
+  },
+  "planningMethods": {
+    "message": "Task planning",
+    "description": "evolution: Task planning",
+    "sourceText": "任务规划"
+  },
+  "methodEvaluation": {
+    "message": "Baseline successes {p0} · Candidate successes {p1} / {p2}",
+    "description": "evolution: Baseline successes {p0} · Candidate successes {p1} / {p2}",
+    "sourceText": "基线通过 {p0} · 候选通过 {p1} / {p2}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "methodExposure": {
+    "message": "Candidate goals {p0} · Control goals {p1}",
+    "description": "evolution: Candidate goals {p0} · Control goals {p1}",
+    "sourceText": "候选目标 {p0} · 对照目标 {p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "legacySyntheticDryRun": {
+    "message": "Legacy synthetic pipeline dry run",
+    "description": "evolution: Legacy synthetic pipeline dry run",
+    "sourceText": "旧版合成链路干跑"
+  },
+  "legacyDryRunHint": {
+    "message": "Uses deterministic stand-ins for the legacy synthetic pipeline. It does not validate real-case method learning or production benefit.",
+    "description": "evolution: Uses deterministic stand-ins for the legacy synthetic pipeline. It does not validate real-case method learning or production benefit.",
+    "sourceText": "仅以确定性替身验证旧版合成链路，不验证真实案例方法学习或生产收益。"
+  },
+  "legacyHistory": {
+    "message": "Legacy synthetic evaluation history",
+    "description": "evolution: Legacy synthetic evaluation history",
+    "sourceText": "旧版合成评测历史"
+  },
+  "learningSaveFailed": {
+    "message": "Could not update method learning. Refresh and try again.",
+    "description": "evolution: Could not update method learning. Refresh and try again.",
+    "sourceText": "没能更新方法学习，请刷新后重试。"
+  },
+  "learningUpdated": {
+    "message": "Method learning settings updated",
+    "description": "evolution: Method learning settings updated",
+    "sourceText": "已更新方法学习设置"
+  },
+  "stageObserving": {
+    "message": "Observing real task facts",
+    "description": "evolution: Observing real task facts",
+    "sourceText": "观察真实任务事实"
+  },
+  "stageDiagnosing": {
+    "message": "Diagnosing reproducible defects",
+    "description": "evolution: Diagnosing reproducible defects",
+    "sourceText": "诊断可复现缺陷"
+  },
+  "stageProtocol": {
+    "message": "Checking the model tool protocol",
+    "description": "evolution: Checking the model tool protocol",
+    "sourceText": "检查模型工具协议"
+  },
+  "stageDevelop": {
+    "message": "Developing a method on replay cases",
+    "description": "evolution: Developing a method on replay cases",
+    "sourceText": "在重放案例上开发方法"
+  },
+  "stagePropose": {
+    "message": "Proposing a structured method",
+    "description": "evolution: Proposing a structured method",
+    "sourceText": "提议结构化方法"
+  },
+  "stageValidate": {
+    "message": "Retesting the candidate method",
+    "description": "evolution: Retesting the candidate method",
+    "sourceText": "复测候选方法"
+  },
+  "stageEvaluate": {
+    "message": "Independent held-out evaluation",
+    "description": "evolution: Independent held-out evaluation",
+    "sourceText": "独立封存评测"
+  },
+  "stageCanary": {
+    "message": "20% production trial",
+    "description": "evolution: 20% production trial",
+    "sourceText": "20% 生产灰度"
+  },
+  "stageActive": {
+    "message": "Evaluated method active",
+    "description": "evolution: Evaluated method active",
+    "sourceText": "经过评测的方法已生效"
+  },
+  "stagePaused": {
+    "message": "Method learning paused",
+    "description": "evolution: Method learning paused",
+    "sourceText": "方法学习已暂停"
+  },
+  "blockerDisabled": {
+    "message": "Method learning is disabled",
+    "description": "evolution: Method learning is disabled",
+    "sourceText": "方法学习已关闭"
+  },
+  "blockerPaused": {
+    "message": "Paused; resume explicitly to continue",
+    "description": "evolution: Paused; resume explicitly to continue",
+    "sourceText": "已暂停，需显式恢复"
+  },
+  "blockerNotIdle": {
+    "message": "Foreground input, turn or Work has priority",
+    "description": "evolution: Foreground input, turn or Work has priority",
+    "sourceText": "前台待办、Turn 或 Work 优先"
+  },
+  "blockerBudget": {
+    "message": "Available evaluation budget exhausted for today",
+    "description": "evolution: Available evaluation budget exhausted for today",
+    "sourceText": "今日可用评测预算已用完"
+  },
+  "blockerNoCase": {
+    "message": "No reproducible defect case yet",
+    "description": "evolution: No reproducible defect case yet",
+    "sourceText": "尚无可复现缺陷案例"
+  },
+  "blockerSamples": {
+    "message": "Not enough independent evaluation or trial samples",
+    "description": "evolution: Not enough independent evaluation or trial samples",
+    "sourceText": "独立评测或灰度样本不足"
+  },
+  "blockerProtocol": {
+    "message": "Model tool protocol failed; inspect the source before resuming",
+    "description": "evolution: Model tool protocol failed; inspect the source before resuming",
+    "sourceText": "模型工具协议失败，检查模型源后再恢复"
+  },
+  "blockerModel": {
+    "message": "Model or evaluator version changed; revalidation required",
+    "description": "evolution: Model or evaluator version changed; revalidation required",
+    "sourceText": "模型或评测器版本变化，需重新验证"
+  },
+  "blockerCandidate": {
+    "message": "A new candidate was already started today",
+    "description": "evolution: A new candidate was already started today",
+    "sourceText": "今日已启动过新候选"
+  },
+  "methodReverted": {
+    "message": "Reverted",
+    "description": "evolution: Reverted",
+    "sourceText": "已回退"
+  },
+  "methodRejected": {
+    "message": "Rejected",
+    "description": "evolution: Rejected",
+    "sourceText": "已拒绝"
   }
 }

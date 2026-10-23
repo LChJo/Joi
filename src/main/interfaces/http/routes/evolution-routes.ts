@@ -9,14 +9,30 @@ const id = (match: RouteMatch) => decodeURIComponent((match as RegExpExecArray)[
 export const EVOLUTION_ROUTES: RouteDefinition[] = [
   { auth: "read", id: "GET /api/v1/evolution", match: pattern("GET", /^\/api\/v1\/evolution$/),
     handle: (ctx) => { sendJson(ctx.response, 200, service(ctx).overview()); } },
+  { auth: "write", id: "PATCH /api/v1/evolution", match: pattern("PATCH", /^\/api\/v1\/evolution$/),
+    handle: async (ctx) => {
+      const body = await readJson(ctx.request);
+      if (Object.keys(body).length === 0 || Object.keys(body).some(key => !["enabled", "dailyCallLimit"].includes(key))
+        || (body.enabled !== undefined && typeof body.enabled !== "boolean")
+        || (body.dailyCallLimit !== undefined && typeof body.dailyCallLimit !== "number")) throw new HttpError("evolution_budget_invalid", "Global learning settings are invalid.", 400);
+      sendJson(ctx.response, 200, service(ctx).configureGlobal({ ...(body.enabled === undefined ? {} : { enabled: body.enabled }),
+        ...(body.dailyCallLimit === undefined ? {} : { dailyCallLimit: body.dailyCallLimit }) }));
+    } },
+  { auth: "write", id: "POST /api/v1/evolution/resume", match: pattern("POST", /^\/api\/v1\/evolution\/resume$/),
+    handle: (ctx) => { sendJson(ctx.response, 200, service(ctx).resumeGlobal()); } },
   { auth: "read", id: "GET /api/v1/workbenches/:workbenchId/evolution", match: pattern("GET", /^\/api\/v1\/workbenches\/([^/]+)\/evolution$/),
     handle: (ctx, match) => { sendJson(ctx.response, 200, service(ctx).status(id(match))); } },
   { auth: "write", id: "PATCH /api/v1/workbenches/:workbenchId/evolution", match: pattern("PATCH", /^\/api\/v1\/workbenches\/([^/]+)\/evolution$/),
     handle: async (ctx, match) => {
       const body = await readJson(ctx.request);
-      if (typeof body.dailyCallLimit !== "number" || Object.keys(body).some((key) => key !== "dailyCallLimit")) throw new HttpError("evolution_budget_invalid", "Daily call limit is invalid.", 400);
-      sendJson(ctx.response, 200, service(ctx).configure(id(match), body.dailyCallLimit));
+      if (Object.keys(body).length === 0 || Object.keys(body).some((key) => !["dailyCallLimit", "enabled"].includes(key))
+        || (body.dailyCallLimit !== undefined && typeof body.dailyCallLimit !== "number")
+        || (body.enabled !== undefined && typeof body.enabled !== "boolean")) throw new HttpError("evolution_budget_invalid", "Learning participation is invalid.", 400);
+      if (typeof body.dailyCallLimit === "number") service(ctx).configure(id(match), body.dailyCallLimit);
+      sendJson(ctx.response, 200, typeof body.enabled === "boolean" ? service(ctx).configureParticipation(id(match), body.enabled) : service(ctx).status(id(match)));
     } },
+  { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/resume", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/resume$/),
+    handle: (ctx, match) => { sendJson(ctx.response, 200, service(ctx).resumeWorkbench(id(match))); } },
   { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/rollback", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/rollback$/),
     handle: async (ctx, match) => { const body = await readJson(ctx.request); sendJson(ctx.response, 200, service(ctx).rollback(id(match), stringField(body, "revisionId"))); } },
   { auth: "write", id: "POST /api/v1/workbenches/:workbenchId/evolution/feedback", match: pattern("POST", /^\/api\/v1\/workbenches\/([^/]+)\/evolution\/feedback$/),

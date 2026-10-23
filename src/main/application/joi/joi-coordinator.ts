@@ -263,9 +263,14 @@ export class JoiCoordinator {
     });
     if (input.automationRoutineId !== undefined && contract?.executionPrompt !== undefined) requestText = contract.executionPrompt;
     const requirementsStore = this.dependencies.requirements;
+    let turnStrategyInstructions = "";
     const refreshRequiredContext = requirementsStore === undefined ? undefined : async () => {
       const current = await requirementsStore.load(goalId, workbenchId);
-      return current === null ? "" : renderGoalRequirements(current);
+      if (current === null) return "";
+      const strategy = this.dependencies.evolution?.strategyForGoal(workbenchId, goalId, pin,
+        { requirementsReady: current.status === "READY", requirementCount: current.requirements.length });
+      const addition = strategy !== undefined && strategy.instructions !== turnStrategyInstructions ? `\nRuntime method (subordinate to user requirements and fixed gates):\n${strategy.instructions}` : "";
+      return `${renderGoalRequirements(current)}${addition}`;
     };
     // A poisoned session is part of why retries reproduce their own failure; bump the
     // generation after consecutive flops so the next attempt starts with clean history.
@@ -405,7 +410,9 @@ export class JoiCoordinator {
       for (;;) {
         if (signal?.aborted) throw new DomainError("joi_turn_aborted", "joi turn was canceled.");
         attemptedSources.add(pin.sourceId);
-        const strategy = this.dependencies.evolution?.strategyForGoal(workbenchId, goalId, pin);
+        const strategy = this.dependencies.evolution?.strategyForGoal(workbenchId, goalId, pin,
+          contract === undefined ? undefined : { requirementsReady: contract.status === "READY", requirementCount: contract.requirements.length });
+        turnStrategyInstructions = strategy?.instructions ?? "";
       try {
         let attemptCompletionText = "";
         // Per-pass facts: a repair pass must be judged on its own output, not on the

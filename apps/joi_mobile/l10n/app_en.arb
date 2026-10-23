@@ -1843,6 +1843,285 @@
     "description": "evolution: Roll back current policy and pause",
     "placeholders": {}
   },
+  "evolutionMethodLearningIntro": "Learn context, planning and completion methods from reproducible task defects; independent evaluation and a production trial decide whether to keep them.",
+  "@evolutionMethodLearningIntro": {
+    "description": "evolution: Learn context, planning and completion methods from reproducible task defects; independent evaluation and a production trial decide whether to keep them.",
+    "placeholders": {}
+  },
+  "evolutionSharedGlobalBudget": "Shared daily budget across all workbenches",
+  "@evolutionSharedGlobalBudget": {
+    "description": "evolution: Shared daily budget across all workbenches",
+    "placeholders": {}
+  },
+  "evolutionEnableGlobalLearning": "Enable global method learning",
+  "@evolutionEnableGlobalLearning": {
+    "description": "evolution: Enable global method learning",
+    "placeholders": {}
+  },
+  "evolutionParticipateInLearning": "Participate in method learning for this workbench",
+  "@evolutionParticipateInLearning": {
+    "description": "evolution: Participate in method learning for this workbench",
+    "placeholders": {}
+  },
+  "evolutionResumeGlobalLearning": "Resume global method learning",
+  "@evolutionResumeGlobalLearning": {
+    "description": "evolution: Resume global method learning",
+    "placeholders": {}
+  },
+  "evolutionResumeWorkbenchLearning": "Resume method learning for this workbench",
+  "@evolutionResumeWorkbenchLearning": {
+    "description": "evolution: Resume method learning for this workbench",
+    "placeholders": {}
+  },
+  "evolutionSharedBudgetHint": "All workbenches share this cap, reset at UTC midnight. Every background call and retry counts. Foreground tasks have priority. Changing the cap does not resume paused learning.",
+  "@evolutionSharedBudgetHint": {
+    "description": "evolution: All workbenches share this cap, reset at UTC midnight. Every background call and retry counts. Foreground tasks have priority. Changing the cap does not resume paused learning.",
+    "placeholders": {}
+  },
+  "evolutionCasesSummary": "Development cases {p0} · Sealed cases {p1} · Reproducible defects {p2}",
+  "@evolutionCasesSummary": {
+    "description": "evolution: Development cases {p0} · Sealed cases {p1} · Reproducible defects {p2}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionEvaluatorVersion": "Evaluator version: {p0}",
+  "@evolutionEvaluatorVersion": {
+    "description": "evolution: Evaluator version: {p0}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionGlobalCallsToday": "Shared calls today: {p0} / {p1}",
+  "@evolutionGlobalCallsToday": {
+    "description": "evolution: Shared calls today: {p0} / {p1}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionAppliedMethodGoals": "Goals using a learned method: {p0}",
+  "@evolutionAppliedMethodGoals": {
+    "description": "evolution: Goals using a learned method: {p0}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionExperimentSummary": "Current experiment · {p0} · {p1} calls",
+  "@evolutionExperimentSummary": {
+    "description": "evolution: Current experiment · {p0} · {p1} calls",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionMethodHistory": "Learned methods",
+  "@evolutionMethodHistory": {
+    "description": "evolution: Learned methods",
+    "placeholders": {}
+  },
+  "evolutionNoMethodsYet": "No evaluated methods yet",
+  "@evolutionNoMethodsYet": {
+    "description": "evolution: No evaluated methods yet",
+    "placeholders": {}
+  },
+  "evolutionQualityBenefit": "Quality benefit",
+  "@evolutionQualityBenefit": {
+    "description": "evolution: Quality benefit",
+    "placeholders": {}
+  },
+  "evolutionEfficiencyBenefit": "Efficiency benefit",
+  "@evolutionEfficiencyBenefit": {
+    "description": "evolution: Efficiency benefit",
+    "placeholders": {}
+  },
+  "evolutionBenefitUnverified": "Benefit unverified",
+  "@evolutionBenefitUnverified": {
+    "description": "evolution: Benefit unverified",
+    "placeholders": {}
+  },
+  "evolutionPlanningMethods": "Task planning",
+  "@evolutionPlanningMethods": {
+    "description": "evolution: Task planning",
+    "placeholders": {}
+  },
+  "evolutionMethodEvaluation": "Baseline successes {p0} · Candidate successes {p1} / {p2}",
+  "@evolutionMethodEvaluation": {
+    "description": "evolution: Baseline successes {p0} · Candidate successes {p1} / {p2}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      },
+      "p2": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionMethodExposure": "Candidate goals {p0} · Control goals {p1}",
+  "@evolutionMethodExposure": {
+    "description": "evolution: Candidate goals {p0} · Control goals {p1}",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      },
+      "p1": {
+        "type": "String"
+      }
+    }
+  },
+  "evolutionLegacySyntheticDryRun": "Legacy synthetic pipeline dry run",
+  "@evolutionLegacySyntheticDryRun": {
+    "description": "evolution: Legacy synthetic pipeline dry run",
+    "placeholders": {}
+  },
+  "evolutionLegacyDryRunHint": "Uses deterministic stand-ins for the legacy synthetic pipeline. It does not validate real-case method learning or production benefit.",
+  "@evolutionLegacyDryRunHint": {
+    "description": "evolution: Uses deterministic stand-ins for the legacy synthetic pipeline. It does not validate real-case method learning or production benefit.",
+    "placeholders": {}
+  },
+  "evolutionLegacyHistory": "Legacy synthetic evaluation history",
+  "@evolutionLegacyHistory": {
+    "description": "evolution: Legacy synthetic evaluation history",
+    "placeholders": {}
+  },
+  "evolutionLearningSaveFailed": "Could not update method learning. Refresh and try again.",
+  "@evolutionLearningSaveFailed": {
+    "description": "evolution: Could not update method learning. Refresh and try again.",
+    "placeholders": {}
+  },
+  "evolutionLearningUpdated": "Method learning settings updated",
+  "@evolutionLearningUpdated": {
+    "description": "evolution: Method learning settings updated",
+    "placeholders": {}
+  },
+  "evolutionStageObserving": "Observing real task facts",
+  "@evolutionStageObserving": {
+    "description": "evolution: Observing real task facts",
+    "placeholders": {}
+  },
+  "evolutionStageDiagnosing": "Diagnosing reproducible defects",
+  "@evolutionStageDiagnosing": {
+    "description": "evolution: Diagnosing reproducible defects",
+    "placeholders": {}
+  },
+  "evolutionStageProtocol": "Checking the model tool protocol",
+  "@evolutionStageProtocol": {
+    "description": "evolution: Checking the model tool protocol",
+    "placeholders": {}
+  },
+  "evolutionStageDevelop": "Developing a method on replay cases",
+  "@evolutionStageDevelop": {
+    "description": "evolution: Developing a method on replay cases",
+    "placeholders": {}
+  },
+  "evolutionStagePropose": "Proposing a structured method",
+  "@evolutionStagePropose": {
+    "description": "evolution: Proposing a structured method",
+    "placeholders": {}
+  },
+  "evolutionStageValidate": "Retesting the candidate method",
+  "@evolutionStageValidate": {
+    "description": "evolution: Retesting the candidate method",
+    "placeholders": {}
+  },
+  "evolutionStageEvaluate": "Independent held-out evaluation",
+  "@evolutionStageEvaluate": {
+    "description": "evolution: Independent held-out evaluation",
+    "placeholders": {}
+  },
+  "evolutionStageCanary": "20% production trial",
+  "@evolutionStageCanary": {
+    "description": "evolution: 20% production trial",
+    "placeholders": {}
+  },
+  "evolutionStageActive": "Evaluated method active",
+  "@evolutionStageActive": {
+    "description": "evolution: Evaluated method active",
+    "placeholders": {}
+  },
+  "evolutionStagePaused": "Method learning paused",
+  "@evolutionStagePaused": {
+    "description": "evolution: Method learning paused",
+    "placeholders": {}
+  },
+  "evolutionBlockerDisabled": "Method learning is disabled",
+  "@evolutionBlockerDisabled": {
+    "description": "evolution: Method learning is disabled",
+    "placeholders": {}
+  },
+  "evolutionBlockerPaused": "Paused; resume explicitly to continue",
+  "@evolutionBlockerPaused": {
+    "description": "evolution: Paused; resume explicitly to continue",
+    "placeholders": {}
+  },
+  "evolutionBlockerNotIdle": "Foreground input, turn or Work has priority",
+  "@evolutionBlockerNotIdle": {
+    "description": "evolution: Foreground input, turn or Work has priority",
+    "placeholders": {}
+  },
+  "evolutionBlockerBudget": "Available evaluation budget exhausted for today",
+  "@evolutionBlockerBudget": {
+    "description": "evolution: Available evaluation budget exhausted for today",
+    "placeholders": {}
+  },
+  "evolutionBlockerNoCase": "No reproducible defect case yet",
+  "@evolutionBlockerNoCase": {
+    "description": "evolution: No reproducible defect case yet",
+    "placeholders": {}
+  },
+  "evolutionBlockerSamples": "Not enough independent evaluation or trial samples",
+  "@evolutionBlockerSamples": {
+    "description": "evolution: Not enough independent evaluation or trial samples",
+    "placeholders": {}
+  },
+  "evolutionBlockerProtocol": "Model tool protocol failed; inspect the source before resuming",
+  "@evolutionBlockerProtocol": {
+    "description": "evolution: Model tool protocol failed; inspect the source before resuming",
+    "placeholders": {}
+  },
+  "evolutionBlockerModel": "Model or evaluator version changed; revalidation required",
+  "@evolutionBlockerModel": {
+    "description": "evolution: Model or evaluator version changed; revalidation required",
+    "placeholders": {}
+  },
+  "evolutionBlockerCandidate": "A new candidate was already started today",
+  "@evolutionBlockerCandidate": {
+    "description": "evolution: A new candidate was already started today",
+    "placeholders": {}
+  },
+  "evolutionMethodReverted": "Reverted",
+  "@evolutionMethodReverted": {
+    "description": "evolution: Reverted",
+    "placeholders": {}
+  },
+  "evolutionMethodRejected": "Rejected",
+  "@evolutionMethodRejected": {
+    "description": "evolution: Rejected",
+    "placeholders": {}
+  },
   "exportProcessing": "Processing…",
   "@exportProcessing": {
     "description": "export: Processing…",

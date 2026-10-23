@@ -809,7 +809,7 @@
 .evolution-budget-presets:disabled { opacity: .6; }
 .evolution-budget-options { display: flex; flex-wrap: wrap; gap: 16px; }
 .evolution-budget-options label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
-.workbench-evolution-panel { grid-template-columns: minmax(0, 1fr); }
+.inline-settings.workbench-evolution-panel { grid-template-columns: minmax(0, 1fr); }
 .workbench-evolution-intro { margin: 0; color: var(--muted); }
 .kb-field { display: grid; gap: 8px; grid-column: 1 / -1; color: var(--muted); }
 .kb-field > small { color: var(--faint); }

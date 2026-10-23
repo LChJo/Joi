@@ -99,6 +99,16 @@ describe("evolution durable state", () => {
     fixture.database.transaction((db) => db.prepare("UPDATE workbenches SET status = 'ARCHIVED' WHERE workbench_id = 'a'").run());
     expect(store.lastCandidateDay()).toBe("2026-09-21");
   });
+  it("ignores a pending recovery child after its parent was canceled and dismissed", () => {
+    fixture.database.transaction((db) => {
+      db.prepare("UPDATE joi_inbox_messages SET canceled_at = '2026-09-23', dismissed_at = '2026-09-23' WHERE input_id = 'g'").run();
+      db.prepare(`INSERT INTO joi_inbox_messages
+        (input_id,idempotency_key,body,status,workbench_id,goal_input_id,created_at,updated_at)
+        VALUES ('recovery','recovery','private','PENDING','a','g','2026-09-23','2026-09-23')`).run();
+    });
+    expect(store.idle()).toBe(true);
+    expect(fixture.database.transaction((db) => db.prepare("SELECT status FROM joi_inbox_messages WHERE input_id = 'recovery'").get())).toEqual({ status: "PENDING" });
+  });
   it("writes the model outbox atomically and rolls back failed mutations", () => {
     store.update("a", (state) => { state.call = { id: "evo-call", state: "RUNNING", createdAt: "2026-09-22" }; });
     expect(fixture.database.transaction((db) => db.prepare("SELECT kind,status FROM outbox WHERE outbox_id = 'evo-call'").get())).toMatchObject({ kind: "evolution.model", status: "CLAIMED" });

@@ -372,6 +372,52 @@ export interface MessageParameters {
   "evolution.timesOriginalPolicyPassed": undefined;
   "evolution.times": undefined;
   "evolution.rollBackCurrentPolicyAndPause": undefined;
+  "evolution.methodLearningIntro": undefined;
+  "evolution.sharedGlobalBudget": undefined;
+  "evolution.enableGlobalLearning": undefined;
+  "evolution.participateInLearning": undefined;
+  "evolution.resumeGlobalLearning": undefined;
+  "evolution.resumeWorkbenchLearning": undefined;
+  "evolution.sharedBudgetHint": undefined;
+  "evolution.casesSummary": { "p0": string; "p1": string; "p2": string };
+  "evolution.evaluatorVersion": { "p0": string };
+  "evolution.globalCallsToday": { "p0": string; "p1": string };
+  "evolution.appliedMethodGoals": { "p0": string };
+  "evolution.experimentSummary": { "p0": string; "p1": string };
+  "evolution.methodHistory": undefined;
+  "evolution.noMethodsYet": undefined;
+  "evolution.qualityBenefit": undefined;
+  "evolution.efficiencyBenefit": undefined;
+  "evolution.benefitUnverified": undefined;
+  "evolution.planningMethods": undefined;
+  "evolution.methodEvaluation": { "p0": string; "p1": string; "p2": string };
+  "evolution.methodExposure": { "p0": string; "p1": string };
+  "evolution.legacySyntheticDryRun": undefined;
+  "evolution.legacyDryRunHint": undefined;
+  "evolution.legacyHistory": undefined;
+  "evolution.learningSaveFailed": undefined;
+  "evolution.learningUpdated": undefined;
+  "evolution.stageObserving": undefined;
+  "evolution.stageDiagnosing": undefined;
+  "evolution.stageProtocol": undefined;
+  "evolution.stageDevelop": undefined;
+  "evolution.stagePropose": undefined;
+  "evolution.stageValidate": undefined;
+  "evolution.stageEvaluate": undefined;
+  "evolution.stageCanary": undefined;
+  "evolution.stageActive": undefined;
+  "evolution.stagePaused": undefined;
+  "evolution.blockerDisabled": undefined;
+  "evolution.blockerPaused": undefined;
+  "evolution.blockerNotIdle": undefined;
+  "evolution.blockerBudget": undefined;
+  "evolution.blockerNoCase": undefined;
+  "evolution.blockerSamples": undefined;
+  "evolution.blockerProtocol": undefined;
+  "evolution.blockerModel": undefined;
+  "evolution.blockerCandidate": undefined;
+  "evolution.methodReverted": undefined;
+  "evolution.methodRejected": undefined;
   "export.processing": undefined;
   "export.fullTextCopied": undefined;
   "export.valueFilesSaved": { "p0": string };
@@ -1842,6 +1888,52 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.timesOriginalPolicyPassed": "times · Original policy passed",
     "evolution.times": "times",
     "evolution.rollBackCurrentPolicyAndPause": "Roll back current policy and pause",
+    "evolution.methodLearningIntro": "Learn context, planning and completion methods from reproducible task defects; independent evaluation and a production trial decide whether to keep them.",
+    "evolution.sharedGlobalBudget": "Shared daily budget across all workbenches",
+    "evolution.enableGlobalLearning": "Enable global method learning",
+    "evolution.participateInLearning": "Participate in method learning for this workbench",
+    "evolution.resumeGlobalLearning": "Resume global method learning",
+    "evolution.resumeWorkbenchLearning": "Resume method learning for this workbench",
+    "evolution.sharedBudgetHint": "All workbenches share this cap, reset at UTC midnight. Every background call and retry counts. Foreground tasks have priority. Changing the cap does not resume paused learning.",
+    "evolution.casesSummary": "Development cases {p0} · Sealed cases {p1} · Reproducible defects {p2}",
+    "evolution.evaluatorVersion": "Evaluator version: {p0}",
+    "evolution.globalCallsToday": "Shared calls today: {p0} / {p1}",
+    "evolution.appliedMethodGoals": "Goals using a learned method: {p0}",
+    "evolution.experimentSummary": "Current experiment · {p0} · {p1} calls",
+    "evolution.methodHistory": "Learned methods",
+    "evolution.noMethodsYet": "No evaluated methods yet",
+    "evolution.qualityBenefit": "Quality benefit",
+    "evolution.efficiencyBenefit": "Efficiency benefit",
+    "evolution.benefitUnverified": "Benefit unverified",
+    "evolution.planningMethods": "Task planning",
+    "evolution.methodEvaluation": "Baseline successes {p0} · Candidate successes {p1} / {p2}",
+    "evolution.methodExposure": "Candidate goals {p0} · Control goals {p1}",
+    "evolution.legacySyntheticDryRun": "Legacy synthetic pipeline dry run",
+    "evolution.legacyDryRunHint": "Uses deterministic stand-ins for the legacy synthetic pipeline. It does not validate real-case method learning or production benefit.",
+    "evolution.legacyHistory": "Legacy synthetic evaluation history",
+    "evolution.learningSaveFailed": "Could not update method learning. Refresh and try again.",
+    "evolution.learningUpdated": "Method learning settings updated",
+    "evolution.stageObserving": "Observing real task facts",
+    "evolution.stageDiagnosing": "Diagnosing reproducible defects",
+    "evolution.stageProtocol": "Checking the model tool protocol",
+    "evolution.stageDevelop": "Developing a method on replay cases",
+    "evolution.stagePropose": "Proposing a structured method",
+    "evolution.stageValidate": "Retesting the candidate method",
+    "evolution.stageEvaluate": "Independent held-out evaluation",
+    "evolution.stageCanary": "20% production trial",
+    "evolution.stageActive": "Evaluated method active",
+    "evolution.stagePaused": "Method learning paused",
+    "evolution.blockerDisabled": "Method learning is disabled",
+    "evolution.blockerPaused": "Paused; resume explicitly to continue",
+    "evolution.blockerNotIdle": "Foreground input, turn or Work has priority",
+    "evolution.blockerBudget": "Available evaluation budget exhausted for today",
+    "evolution.blockerNoCase": "No reproducible defect case yet",
+    "evolution.blockerSamples": "Not enough independent evaluation or trial samples",
+    "evolution.blockerProtocol": "Model tool protocol failed; inspect the source before resuming",
+    "evolution.blockerModel": "Model or evaluator version changed; revalidation required",
+    "evolution.blockerCandidate": "A new candidate was already started today",
+    "evolution.methodReverted": "Reverted",
+    "evolution.methodRejected": "Rejected",
     "export.processing": "Processing…",
     "export.fullTextCopied": "Full text copied",
     "export.valueFilesSaved": "{p0} files saved",
@@ -3310,6 +3402,52 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "evolution.timesOriginalPolicyPassed": "次 · 原策略通过",
     "evolution.times": "次",
     "evolution.rollBackCurrentPolicyAndPause": "回退当前策略并暂停",
+    "evolution.methodLearningIntro": "从真实任务的可复现缺陷中学习上下文、规划和结项方法，经独立评测与生产灰度决定是否保留。",
+    "evolution.sharedGlobalBudget": "全部工作台共用每日预算",
+    "evolution.enableGlobalLearning": "启用全局方法学习",
+    "evolution.participateInLearning": "本工作台参与方法学习",
+    "evolution.resumeGlobalLearning": "恢复全局方法学习",
+    "evolution.resumeWorkbenchLearning": "恢复本工作台方法学习",
+    "evolution.sharedBudgetHint": "全部工作台共享此额度，按 UTC 日重置；所有后台调用及重试均计入，前台任务优先。修改额度不会恢复暂停的学习。",
+    "evolution.casesSummary": "开发案例 {p0} · 封存案例 {p1} · 可复现缺陷 {p2}",
+    "evolution.evaluatorVersion": "评测器版本：{p0}",
+    "evolution.globalCallsToday": "今日共享调用：{p0} / {p1}",
+    "evolution.appliedMethodGoals": "实际采用方法的目标：{p0}",
+    "evolution.experimentSummary": "当前实验 · {p0} · {p1} 次调用",
+    "evolution.methodHistory": "已学习的方法",
+    "evolution.noMethodsYet": "尚无经过评测的方法",
+    "evolution.qualityBenefit": "质量收益",
+    "evolution.efficiencyBenefit": "效率收益",
+    "evolution.benefitUnverified": "收益尚未验证",
+    "evolution.planningMethods": "任务规划",
+    "evolution.methodEvaluation": "基线通过 {p0} · 候选通过 {p1} / {p2}",
+    "evolution.methodExposure": "候选目标 {p0} · 对照目标 {p1}",
+    "evolution.legacySyntheticDryRun": "旧版合成链路干跑",
+    "evolution.legacyDryRunHint": "仅以确定性替身验证旧版合成链路，不验证真实案例方法学习或生产收益。",
+    "evolution.legacyHistory": "旧版合成评测历史",
+    "evolution.learningSaveFailed": "没能更新方法学习，请刷新后重试。",
+    "evolution.learningUpdated": "已更新方法学习设置",
+    "evolution.stageObserving": "观察真实任务事实",
+    "evolution.stageDiagnosing": "诊断可复现缺陷",
+    "evolution.stageProtocol": "检查模型工具协议",
+    "evolution.stageDevelop": "在重放案例上开发方法",
+    "evolution.stagePropose": "提议结构化方法",
+    "evolution.stageValidate": "复测候选方法",
+    "evolution.stageEvaluate": "独立封存评测",
+    "evolution.stageCanary": "20% 生产灰度",
+    "evolution.stageActive": "经过评测的方法已生效",
+    "evolution.stagePaused": "方法学习已暂停",
+    "evolution.blockerDisabled": "方法学习已关闭",
+    "evolution.blockerPaused": "已暂停，需显式恢复",
+    "evolution.blockerNotIdle": "前台待办、Turn 或 Work 优先",
+    "evolution.blockerBudget": "今日可用评测预算已用完",
+    "evolution.blockerNoCase": "尚无可复现缺陷案例",
+    "evolution.blockerSamples": "独立评测或灰度样本不足",
+    "evolution.blockerProtocol": "模型工具协议失败，检查模型源后再恢复",
+    "evolution.blockerModel": "模型或评测器版本变化，需重新验证",
+    "evolution.blockerCandidate": "今日已启动过新候选",
+    "evolution.methodReverted": "已回退",
+    "evolution.methodRejected": "已拒绝",
     "export.processing": "正在处理…",
     "export.fullTextCopied": "已复制全文",
     "export.valueFilesSaved": "已保存 {p0} 个文件",
@@ -5120,6 +5258,84 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "次": "evolution.times",
   "Roll back current policy and pause": "evolution.rollBackCurrentPolicyAndPause",
   "回退当前策略并暂停": "evolution.rollBackCurrentPolicyAndPause",
+  "Learn context, planning and completion methods from reproducible task defects; independent evaluation and a production trial decide whether to keep them.": "evolution.methodLearningIntro",
+  "从真实任务的可复现缺陷中学习上下文、规划和结项方法，经独立评测与生产灰度决定是否保留。": "evolution.methodLearningIntro",
+  "Shared daily budget across all workbenches": "evolution.sharedGlobalBudget",
+  "全部工作台共用每日预算": "evolution.sharedGlobalBudget",
+  "Enable global method learning": "evolution.enableGlobalLearning",
+  "启用全局方法学习": "evolution.enableGlobalLearning",
+  "Participate in method learning for this workbench": "evolution.participateInLearning",
+  "本工作台参与方法学习": "evolution.participateInLearning",
+  "Resume global method learning": "evolution.resumeGlobalLearning",
+  "恢复全局方法学习": "evolution.resumeGlobalLearning",
+  "Resume method learning for this workbench": "evolution.resumeWorkbenchLearning",
+  "恢复本工作台方法学习": "evolution.resumeWorkbenchLearning",
+  "All workbenches share this cap, reset at UTC midnight. Every background call and retry counts. Foreground tasks have priority. Changing the cap does not resume paused learning.": "evolution.sharedBudgetHint",
+  "全部工作台共享此额度，按 UTC 日重置；所有后台调用及重试均计入，前台任务优先。修改额度不会恢复暂停的学习。": "evolution.sharedBudgetHint",
+  "Learned methods": "evolution.methodHistory",
+  "已学习的方法": "evolution.methodHistory",
+  "No evaluated methods yet": "evolution.noMethodsYet",
+  "尚无经过评测的方法": "evolution.noMethodsYet",
+  "Quality benefit": "evolution.qualityBenefit",
+  "质量收益": "evolution.qualityBenefit",
+  "Efficiency benefit": "evolution.efficiencyBenefit",
+  "效率收益": "evolution.efficiencyBenefit",
+  "Benefit unverified": "evolution.benefitUnverified",
+  "收益尚未验证": "evolution.benefitUnverified",
+  "Task planning": "evolution.planningMethods",
+  "任务规划": "evolution.planningMethods",
+  "Legacy synthetic pipeline dry run": "evolution.legacySyntheticDryRun",
+  "旧版合成链路干跑": "evolution.legacySyntheticDryRun",
+  "Uses deterministic stand-ins for the legacy synthetic pipeline. It does not validate real-case method learning or production benefit.": "evolution.legacyDryRunHint",
+  "仅以确定性替身验证旧版合成链路，不验证真实案例方法学习或生产收益。": "evolution.legacyDryRunHint",
+  "Legacy synthetic evaluation history": "evolution.legacyHistory",
+  "旧版合成评测历史": "evolution.legacyHistory",
+  "Could not update method learning. Refresh and try again.": "evolution.learningSaveFailed",
+  "没能更新方法学习，请刷新后重试。": "evolution.learningSaveFailed",
+  "Method learning settings updated": "evolution.learningUpdated",
+  "已更新方法学习设置": "evolution.learningUpdated",
+  "Observing real task facts": "evolution.stageObserving",
+  "观察真实任务事实": "evolution.stageObserving",
+  "Diagnosing reproducible defects": "evolution.stageDiagnosing",
+  "诊断可复现缺陷": "evolution.stageDiagnosing",
+  "Checking the model tool protocol": "evolution.stageProtocol",
+  "检查模型工具协议": "evolution.stageProtocol",
+  "Developing a method on replay cases": "evolution.stageDevelop",
+  "在重放案例上开发方法": "evolution.stageDevelop",
+  "Proposing a structured method": "evolution.stagePropose",
+  "提议结构化方法": "evolution.stagePropose",
+  "Retesting the candidate method": "evolution.stageValidate",
+  "复测候选方法": "evolution.stageValidate",
+  "Independent held-out evaluation": "evolution.stageEvaluate",
+  "独立封存评测": "evolution.stageEvaluate",
+  "20% production trial": "evolution.stageCanary",
+  "20% 生产灰度": "evolution.stageCanary",
+  "Evaluated method active": "evolution.stageActive",
+  "经过评测的方法已生效": "evolution.stageActive",
+  "Method learning paused": "evolution.stagePaused",
+  "方法学习已暂停": "evolution.stagePaused",
+  "Method learning is disabled": "evolution.blockerDisabled",
+  "方法学习已关闭": "evolution.blockerDisabled",
+  "Paused; resume explicitly to continue": "evolution.blockerPaused",
+  "已暂停，需显式恢复": "evolution.blockerPaused",
+  "Foreground input, turn or Work has priority": "evolution.blockerNotIdle",
+  "前台待办、Turn 或 Work 优先": "evolution.blockerNotIdle",
+  "Available evaluation budget exhausted for today": "evolution.blockerBudget",
+  "今日可用评测预算已用完": "evolution.blockerBudget",
+  "No reproducible defect case yet": "evolution.blockerNoCase",
+  "尚无可复现缺陷案例": "evolution.blockerNoCase",
+  "Not enough independent evaluation or trial samples": "evolution.blockerSamples",
+  "独立评测或灰度样本不足": "evolution.blockerSamples",
+  "Model tool protocol failed; inspect the source before resuming": "evolution.blockerProtocol",
+  "模型工具协议失败，检查模型源后再恢复": "evolution.blockerProtocol",
+  "Model or evaluator version changed; revalidation required": "evolution.blockerModel",
+  "模型或评测器版本变化，需重新验证": "evolution.blockerModel",
+  "A new candidate was already started today": "evolution.blockerCandidate",
+  "今日已启动过新候选": "evolution.blockerCandidate",
+  "Reverted": "evolution.methodReverted",
+  "已回退": "evolution.methodReverted",
+  "Rejected": "evolution.methodRejected",
+  "已拒绝": "evolution.methodRejected",
   "Processing…": "export.processing",
   "正在处理…": "export.processing",
   "Full text copied": "export.fullTextCopied",

@@ -1,5 +1,6 @@
 import path from "node:path";
-import { EvolutionService } from "../application/evolution/evolution-service.js";
+import { MethodLearningService } from "../application/evolution/method-learning-service.js";
+import { SqliteMethodLearningStore } from "../infrastructure/persistence/sqlite-method-learning-store.js";
 import { EvolutionDryRun } from "../application/evolution/evolution-dry-run.js";
 import { SqliteEvolutionStore } from "../infrastructure/persistence/sqlite-evolution-store.js";
 import { PiEvolutionModel } from "../infrastructure/pi/pi-evolution-model.js";
@@ -43,7 +44,8 @@ export function wireJoi(input: {
   workbenchStack: WorkbenchBundle;
 }) {
   const { clock, database, diagnostics, directoryPicker, ids, modelSourceStack, partnerStack, persistence, userDataDirectory, workbenchStack } = input;
-  const evolution = new EvolutionService({ store: new SqliteEvolutionStore(database), diagnostics,
+  const methodLearningStore = new SqliteMethodLearningStore(database);
+  const evolution = new MethodLearningService({ store: methodLearningStore, legacyStore: new SqliteEvolutionStore(database), diagnostics,
     // Read-only selection: freshness probes would spend unreserved calls outside evolution's outbox.
     model: new PiEvolutionModel({ resolver: modelSourceStack.configuredModelResolver,
       sources: new ReasoningSourceSelector(persistence.modelSourceRepository, { diagnostics }),
@@ -92,6 +94,7 @@ export function wireJoi(input: {
       attachments: joiAttachmentStorage,
       clarifications: persistence.joiInboxRepository,
       diagnostics,
+      recordEvidenceRead: (receipt) => methodLearningStore.recordEvidenceRead(receipt),
       goalInputId: turn.goalInputId ?? goalFromInputIdPrefix(turn.inputId),
       requirements: persistence.goalRequirements,
       harness: persistence.joiHarnessRepository,

@@ -120,6 +120,7 @@ export interface EvolutionBatchRecordDto {
   failure?: EvolutionModelFailure;
 }
 export interface EvolutionOverviewDto {
+  learning?: EvolutionLearningDto;
   workbenches: number;
   enabled: number;
   evaluating: number;
@@ -131,6 +132,7 @@ export interface EvolutionOverviewDto {
   batches: EvolutionBatchRecordDto[];
 }
 export interface EvolutionStatusDto {
+  learning?: EvolutionLearningDto;
   workbenchId: string;
   /** Missing only on older HTTP peers; absence does not establish a paused state. */
   paused?: boolean;
@@ -158,4 +160,33 @@ export interface EvolutionStatusDto {
   currentBatch?: EvolutionBatchRecordDto | null;
   batchHistory?: EvolutionBatchRecordDto[];
   versions: EvolutionVersionDto[];
+}
+
+export type EvolutionLearningStage = "OBSERVING" | "DIAGNOSING" | "PROTOCOL" | "DEVELOP" | "PROPOSE" | "VALIDATE" | "EVALUATE" | "CANARY" | "ACTIVE" | "PAUSED";
+export type EvolutionLearningBlocker = "disabled" | "paused" | "not_idle" | "budget_exhausted" | "no_reproducible_case" | "insufficient_samples" | "model_response_invalid" | "model_changed" | "daily_candidate_limit";
+export interface EvolutionMethodDto {
+  revisionId: string;
+  scope: EvolutionScope;
+  module: "context" | "planning" | "completion";
+  status: "CANARY" | "ACTIVE" | "REVERTED" | "REJECTED";
+  createdAt: string;
+  benefit: "quality" | "efficiency" | null;
+  baselineSuccesses: number;
+  candidateSuccesses: number;
+  evaluatedRuns: number;
+  candidateGoals: number;
+  controlGoals: number;
+}
+/** Numeric and version metadata only; private cases and model traces stay in the local store. */
+export interface EvolutionLearningDto {
+  version: 2;
+  evaluatorVersion: string;
+  stage: EvolutionLearningStage;
+  blockers: EvolutionLearningBlocker[];
+  globalBudget: { enabled: boolean; paused: boolean; dailyCallLimit: number; callsUsedToday: number; tokensToday: number | null };
+  participation: { enabled: boolean; paused: boolean };
+  cases: { development: number; sealed: number; defects: number };
+  experiment: { id: string; calls: number; tokens: number | null; reason: EvolutionReason } | null;
+  appliedGoals: number;
+  methods: EvolutionMethodDto[];
 }

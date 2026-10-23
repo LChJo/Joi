@@ -3,6 +3,7 @@
 import type { DatabaseSync } from "node:sqlite";
 
 import type { JoiTaskInbox, JoiTaskPendingInput, JoiTaskStaleTurn } from "../../application/ports/joi-task.js";
+import { JOI_RUNNABLE_INPUT_SQL } from "./sqlite-joi-runnable.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -33,18 +34,7 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
                 WHERE action.input_id = i.input_id AND action.status = 'RESOLVED'
              ) THEN 0 ELSE 1 END AS requires_model_source
         FROM joi_inbox_messages i
-       WHERE i.status = 'PENDING' AND i.dismissed_at IS NULL
-         AND NOT EXISTS (
-           SELECT 1 FROM joi_goal_execution_gates gate
-            WHERE gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
-              AND (gate.status = 'WAITING_INPUT'
-                OR (gate.status = 'REVIEWING' AND gate.resume_input_id <> i.input_id))
-         )
-         AND NOT EXISTS (
-           SELECT 1 FROM joi_inbox_messages goal
-            WHERE goal.input_id = COALESCE(i.goal_input_id, i.input_id)
-              AND goal.canceled_at IS NOT NULL
-         )
+       WHERE ${JOI_RUNNABLE_INPUT_SQL}
        ORDER BY i.created_at, i.input_id LIMIT 50`).all()) as Row[])
       .map((row) => ({
         createdAt: textValue(row, "created_at"),
