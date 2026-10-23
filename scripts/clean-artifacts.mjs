@@ -20,7 +20,19 @@ const generatedArtifacts = rootEntries
   .filter((entry) => (entry.isDirectory() && (entry.name === "release" || entry.name.startsWith("release-")))
     || (entry.isFile() && entry.name.endsWith(".tsbuildinfo")))
   .map((entry) => entry.name);
-const targets = [...new Set([...fixedArtifacts, ...generatedArtifacts])];
+const allowedTargets = [...new Set([...fixedArtifacts, ...generatedArtifacts])];
+const arguments_ = process.argv.slice(2);
+let targets = allowedTargets;
+if (arguments_.length > 0) {
+  if (arguments_[0] !== "--only" || arguments_.length < 2) {
+    throw new Error("Use --only followed by one or more allowlisted artifact paths.");
+  }
+  const requestedTargets = [...new Set(arguments_.slice(1))];
+  if (requestedTargets.some((target) => !allowedTargets.includes(target))) {
+    throw new Error("Cleanup targets must be allowlisted generated artifacts.");
+  }
+  targets = requestedTargets;
+}
 
 const failures = [];
 let cleaned = 0;

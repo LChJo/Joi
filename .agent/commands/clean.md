@@ -6,6 +6,14 @@
 npm run clean
 ```
 
+只清理选定的临时产物、保留历史安装包及已有构建时：
+
+```powershell
+npm run clean -- --only .cache .vite coverage playwright-report test-results tmp temp
+```
+
+`--only` 仅接受脚本白名单中的产物名称；未知路径、源码路径和空目标在删除前拒绝。
+
 ## 安全边界
 
 - 该命令不删除 `node_modules`、源码、真实 Electron `userData` 或用户凭据。
