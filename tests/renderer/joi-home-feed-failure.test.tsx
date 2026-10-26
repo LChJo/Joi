@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { DigitalLifeApi } from "../../src/renderer/api.js";
 import { JoiHome } from "../../src/renderer/JoiHome.js";
 import type { JoiHomeFeedDto, JoiSnapshotDto } from "../../src/shared/joi.js";
@@ -19,6 +19,96 @@ const feed: JoiHomeFeedDto = { goals: [{
 }], thinking: [], unassignedActions: [] };
 
 describe("home feed failure preserves execution truth", () => {
+  it("updates an open result's status and continuation controls when the goal starts running", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = new DigitalLifeApi("", true);
+      vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot);
+      const goal = feed.goals[0];
+      if (goal === undefined || goal.status === "NEEDS_ATTENTION") throw new Error("invalid fixture");
+      const feeds = vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ ...feed, goals: [{
+        ...goal, status: "COMPLETED", completionSummary: "阶段结果", work: { active: 0, completed: 1, failed: 0, total: 1 },
+      }] });
+      const retry = vi.spyOn(api, "retryJoiMessage");
+      render(<JoiHome api={api} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      fireEvent.click(screen.getByText("阶段结果"));
+      expect(within(screen.getByRole("dialog")).getByLabelText("补充说明")).toBeInTheDocument();
+      feeds.mockResolvedValue(feed);
+      await act(async () => { await vi.advanceTimersByTimeAsync(7_500); });
+      const result = within(screen.getByRole("dialog"));
+      expect(result.queryByLabelText("补充说明")).not.toBeInTheDocument();
+      expect(result.getByText("执行中")).toBeInTheDocument();
+      expect(result.getByText("阶段结果")).toBeInTheDocument();
+      expect(retry).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("removes an open continuation form when polling finds the goal is already running", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = new DigitalLifeApi("", true);
+      vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot);
+      const goal = feed.goals[0];
+      if (goal === undefined || goal.status === "NEEDS_ATTENTION") throw new Error("invalid fixture");
+      const feeds = vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ ...feed, goals: [{ ...goal, status: "COMPLETED" }] });
+      render(<JoiHome api={api} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      fireEvent.click(screen.getByRole("button", { name: "正在执行的任务 更多操作" }));
+      fireEvent.click(screen.getByRole("menuitem", { name: "继续" }));
+      expect(screen.getByLabelText("补充说明")).toBeInTheDocument();
+      feeds.mockResolvedValue(feed);
+      await act(async () => { await vi.advanceTimersByTimeAsync(7_500); });
+      expect(screen.queryByLabelText("补充说明")).not.toBeInTheDocument();
+      expect(screen.getByText("执行中")).toBeInTheDocument();
+      feeds.mockResolvedValue({ ...feed, goals: [{ ...goal, status: "COMPLETED" }] });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_500); });
+      expect(screen.queryByLabelText("补充说明")).not.toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("fetches current state after an answer even when an older question poll is in flight", async () => {
+    vi.useFakeTimers();
+    try {
+      const api = new DigitalLifeApi("", true);
+      vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot);
+      const goal = feed.goals[0];
+      if (goal === undefined || goal.status === "NEEDS_ATTENTION") throw new Error("invalid fixture");
+      const questionFeed: JoiHomeFeedDto = { ...feed, goals: [{
+        ...goal, status: "NEEDS_ATTENTION", clarification: {
+          reasonCode: "question_required", prompt: "确认分析范围？", questionId: "question-1", questionVersion: 1,
+        },
+      }] };
+      let resolveOldPoll!: (value: JoiHomeFeedDto) => void;
+      const feeds = vi.spyOn(api, "joiHomeFeed")
+        .mockResolvedValueOnce(questionFeed)
+        .mockImplementationOnce(() => new Promise((resolve) => { resolveOldPoll = resolve; }))
+        .mockResolvedValue(feed);
+      const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ inputId: "running", status: "ROUTED", acceptedAt: goal.updatedAt });
+      render(<JoiHome api={api} />);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      expect(screen.getByText("确认分析范围？")).toBeInTheDocument();
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_500); });
+      expect(feeds).toHaveBeenCalledTimes(2);
+      fireEvent.change(screen.getByLabelText("你的回答"), { target: { value: "继续" } });
+      await act(async () => { fireEvent.click(screen.getByRole("button", { name: "回答并继续" })); await Promise.resolve(); });
+      expect(clarify).toHaveBeenCalledOnce();
+      await act(async () => { resolveOldPoll(questionFeed); await Promise.resolve(); });
+      expect(feeds).toHaveBeenCalledTimes(3);
+      expect(screen.queryByText("确认分析范围？")).not.toBeInTheDocument();
+      expect(screen.getByText("执行中")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("shows an initial failure and retries without inferring status from inbox messages", async () => {
     const api = new DigitalLifeApi("", true);
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot);

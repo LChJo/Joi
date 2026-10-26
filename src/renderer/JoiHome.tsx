@@ -1246,6 +1246,7 @@ function GoalRetryPanel({ api, goal, onDone }: {
   const [notice, setNotice] = useNotice();
   const [feedback, setFeedback] = useNotice();
   const [feedbackBusy, setFeedbackBusy] = useState(false);
+  if (!TERMINAL_GOAL_STATUSES.includes(goal.status)) return null;
   const submit = () => {
     if (busy) return;
     setBusy(true); setNotice(null);
@@ -1476,7 +1477,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
 }) {
   useI18n();
   const [body] = useState(goal.completionSummary ?? "");
-  const resultLabel = goal.clarification?.reasonCode === "goal_continuation_required" ? t("home.currentResult") : t("home.finalResult");
+  const resultLabel = !TERMINAL_GOAL_STATUSES.includes(goal.status) ? t("home.currentResult") : t("home.finalResult");
   const [exportMenu, setExportMenu] = useState(false);
   const close = () => { if (exportMenu) setExportMenu(false); else onBack(); };
   useEffect(() => {
@@ -1542,7 +1543,8 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   const [workbenchChoiceId, setWorkbenchChoiceId] = useState<string | null>(null);
   const shownWorkbenchQuestions = useRef(new Set<string>());
   const [openGoalAgentStatus, setOpenGoalAgentStatus] = useState<WorkbenchAgentStatusDto | undefined>(undefined);
-  const [resultGoal, setResultGoal] = useState<JoiGoalCardDto | null>(null);
+  const [resultGoalId, setResultGoalId] = useState<string | null>(null);
+  const resultGoal = feed.goals.find((goal) => goal.goalId === resultGoalId);
   const [retryGoalId, setRetryGoalId] = useState<string | null>(null);
   const [expiryTick, setExpiryTick] = useState(() => Date.now());
   const [workbenchChanges, setWorkbenchChanges] = useState(snapshot.workbenchChanges);
@@ -1564,6 +1566,9 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
       feedNeedsFastRefreshRef.current = loaded.thinking.some((item) => item.phase === "queued" || item.phase === "progressing")
         || loaded.goals.some((goal) => !TERMINAL_GOAL_STATUSES.includes(goal.status));
       setFeed(loaded);
+      setResultGoalId((current) => current !== null && !loaded.goals.some((goal) => goal.goalId === current) ? null : current);
+      setRetryGoalId((current) => current !== null && !loaded.goals.some((goal) =>
+        goal.goalId === current && TERMINAL_GOAL_STATUSES.includes(goal.status)) ? null : current);
       setWorkbenchChanges(loaded.workbenchChanges ?? []);
       setFeedLoaded(true);
       setFeedError(false);
@@ -1582,6 +1587,10 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   // The feed already carries the pending workbench changes, so one poll covers both. The separate
   // snapshot call this replaced ran six queries per poll and only its workbenchChanges survived.
   const refresh = useCallback(async () => { await loadFeed(); }, [loadFeed]);
+  const refreshAfterMutation = useCallback(async () => {
+    feedRevisionRef.current += 1;
+    await loadFeed();
+  }, [loadFeed]);
   useEffect(() => {
     let stopped = false;
     let polling = false;
@@ -1699,7 +1708,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   ], [feed.unassignedActions, feed.goals]);
   const workbenchChoice = pendingWorkbenchChoices.find((message) => message.inputId === workbenchChoiceId);
   useEffect(() => {
-    if (workbenchChoice !== undefined || openGoalId !== null || resultGoal !== null || !feedLoaded || feedError) return;
+    if (workbenchChoice !== undefined || openGoalId !== null || resultGoalId !== null || !feedLoaded || feedError) return;
     const next = pendingWorkbenchChoices.find((message) =>
       !shownWorkbenchQuestions.current.has(`${message.inputId}:${message.questionId ?? "legacy"}:${String(message.questionVersion ?? 1)}`));
     if (next === undefined) return;
@@ -1708,7 +1717,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
       setWorkbenchChoiceId(next.inputId);
     }, 0);
     return () => clearTimeout(timer);
-  }, [pendingWorkbenchChoices, feedLoaded, feedError, openGoalId, resultGoal, workbenchChoice]);
+  }, [pendingWorkbenchChoices, feedLoaded, feedError, openGoalId, resultGoalId, workbenchChoice]);
   const dismissGoal = (goalId: string) => setFeed((current) => ({ ...current, goals: current.goals.filter((goal) => goal.goalId !== goalId) }));
   const dismissAction = (inputId: string) => setFeed((current) => ({ ...current, unassignedActions: current.unassignedActions.filter((item) => item.inputId !== inputId) }));
   const markRetryStarted = (goal: JoiGoalCardDto) => {
@@ -1719,25 +1728,25 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
   return <section className="joi-home joi-home-c2" aria-labelledby="joi-home-title">
     <header><h1 id="joi-home-title">{t("home.whatWouldYouLikeJoiToDo")}</h1><p>{t("home.tellJoiYourGoalItWillChooseTheWorkbench")}</p></header>
     {focusGoalId !== undefined && openGoalId === focusGoalId && feedLoaded && !feedError && openGoal === undefined ? <p className="inline-notice" role="status">{t("home.theGoalWasRemovedOrIsUnavailableHistoricalUsage")}</p> : null}
-    {workbenchChoice === undefined ? null : <WorkbenchChoiceDialog api={api} key={`${workbenchChoice.inputId}:${workbenchChoice.questionId ?? "legacy"}:${String(workbenchChoice.questionVersion ?? 1)}`} message={workbenchChoice} onClose={() => setWorkbenchChoiceId(null)} onResolved={() => { dismissAction(workbenchChoice.inputId); setWorkbenchChoiceId(null); void refresh().catch(() => undefined); }} workbenches={snapshot.workbenches} />}
+    {workbenchChoice === undefined ? null : <WorkbenchChoiceDialog api={api} key={`${workbenchChoice.inputId}:${workbenchChoice.questionId ?? "legacy"}:${String(workbenchChoice.questionVersion ?? 1)}`} message={workbenchChoice} onClose={() => setWorkbenchChoiceId(null)} onResolved={() => { dismissAction(workbenchChoice.inputId); setWorkbenchChoiceId(null); void refreshAfterMutation().catch(() => undefined); }} workbenches={snapshot.workbenches} />}
     {feedError ? <div className="inline-notice danger" role="alert"><p>{t("home.taskStatusCouldNotBeRefreshedTheLastSuccessful")}</p><button className="button quiet" onClick={() => void loadFeed()} type="button">{t("home.reloadTaskStatus")}</button></div> : null}
     {workbenchChanges.length === 0 ? null : <section className="joi-workbench-confirmations" aria-label={t("home.confirmWorkbenchChange")}><h2>{t("home.yourConfirmationIsNeeded")}</h2>{workbenchChanges.map((change) => <article key={change.requestId}>
       <div><strong>{change.kind === "MERGE" ? t("home.joiSuggestsMergingWorkbenches") : t("home.joiSuggestsArchivingAWorkbench")}</strong><span>{change.reason}</span><small>{change.kind === "MERGE" ? `${change.sourceWorkbenchId} → ${change.targetWorkbenchId ?? ""}` : change.sourceWorkbenchId}</small></div>
       <div className="row-actions"><button className="button ghost" onClick={() => void api.decideWorkbenchChange(change.requestId, "REJECT").then(refresh)} type="button">{t("home.keepAsIs")}</button><button className="button danger-text" onClick={() => void api.decideWorkbenchChange(change.requestId, "CONFIRM").then(refresh)} type="button">{change.kind === "MERGE" ? t("home.confirmMerge") : t("home.confirmArchive")}</button></div>
     </article>)}</section>}
-    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} {...(openGoalAgentStatus === undefined ? {} : { initialAgentStatus: openGoalAgentStatus })} onBack={() => { setOpenGoalId(null); setOpenGoalAgentStatus(undefined); }} onResolved={() => void refresh().catch(() => undefined)} onRetried={markRetryStarted} />}
-    {resultGoal?.completionSummary === undefined ? null : <GoalResultView api={api} goal={resultGoal} onBack={() => setResultGoal(null)} onOpenDetail={(preferredStatus) => { setResultGoal(null); setOpenGoalAgentStatus(preferredStatus); setOpenGoalId(resultGoal.goalId); }} onRetried={(retriedGoal) => { setResultGoal(null); markRetryStarted(retriedGoal); }} />}
+    {openGoal === undefined ? null : <GoalDetail key={openGoal.goalId} api={api} partners={snapshot.partners} workbenches={snapshot.workbenches} goal={openGoal} {...(onScheduleGoal === undefined ? {} : { onScheduleGoal })} {...(openGoalAgentStatus === undefined ? {} : { initialAgentStatus: openGoalAgentStatus })} onBack={() => { setOpenGoalId(null); setOpenGoalAgentStatus(undefined); }} onResolved={() => void refreshAfterMutation().catch(() => undefined)} onRetried={markRetryStarted} />}
+    {resultGoal === undefined ? null : <GoalResultView key={resultGoal.goalId} api={api} goal={resultGoal} onBack={() => setResultGoalId(null)} onOpenDetail={(preferredStatus) => { setResultGoalId(null); setOpenGoalAgentStatus(preferredStatus); setOpenGoalId(resultGoal.goalId); }} onRetried={(retriedGoal) => { setResultGoalId(null); markRetryStarted(retriedGoal); }} />}
     <div aria-label={t("home.joiActivityFeed")} className="joi-feed joi-feed-single">
       {visibleThinking.map((item) => <ThinkingRow item={item} key={item.turnId} />)}
-      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">{t("home.yourConfirmationIsNeeded")}</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString(currentLocale())}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}{needsWorkbenchChoice(message.clarificationReasonCode) ? <><p className="joi-clarify-reason">{clarificationText(message.clarificationReasonCode, message.clarificationPrompt)}</p><button className="button primary" onClick={() => setWorkbenchChoiceId(message.inputId)} type="button">{t("home.chooseWorkbench")}</button></> : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => dismissAction(message.inputId)} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} />}</article>)}
+      {feed.unassignedActions.map((message) => <article className="joi-feed-item needs-you" key={message.inputId}><div className="joi-feed-head"><span className="joi-feed-stage">{t("home.yourConfirmationIsNeeded")}</span><span className="joi-feed-head-right"><time className="joi-feed-time">{new Date(message.acceptedAt).toLocaleString(currentLocale())}</time><CancelInputButton api={api} inputId={message.inputId} onCanceled={() => dismissAction(message.inputId)} /></span></div>{message.textPreview === undefined ? null : <p className="joi-feed-text">{message.textPreview}</p>}{needsWorkbenchChoice(message.clarificationReasonCode) ? <><p className="joi-clarify-reason">{clarificationText(message.clarificationReasonCode, message.clarificationPrompt)}</p><button className="button primary" onClick={() => setWorkbenchChoiceId(message.inputId)} type="button">{t("home.chooseWorkbench")}</button></> : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={message.workbenchId} workbenches={snapshot.workbenches} inputId={message.inputId} onResolved={() => { dismissAction(message.inputId); void refreshAfterMutation().catch(() => undefined); }} prompt={message.clarificationPrompt} questionId={message.questionId} questionVersion={message.questionVersion} reasonCode={message.clarificationReasonCode} {...(message.textPreview === undefined ? {} : { suggestionSeed: message.textPreview })} />}</article>)}
       {visibleGoals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
-          <GoalCardHead goal={goal} onOpen={() => { setResultGoal(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} />
+          <GoalCardHead goal={goal} onOpen={() => { setResultGoalId(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} />
           <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><GoalActionMenu api={api} goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={() => dismissGoal(goal.goalId)} onChanged={() => void refresh().catch(() => undefined)} /></div>
         </div>
-        <GoalResultPreview goal={goal} onOpen={() => { setResultGoal(goal); setOpenGoalId(null); }} />
+        <GoalResultPreview goal={goal} onOpen={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} />
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
-        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refresh().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} onShowContinuationResult={() => { setResultGoal(goal); setOpenGoalId(null); }} />}
+        {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={snapshot.partners} workbenchId={goal.workbench.workbenchId} workbenches={snapshot.workbenches} inputId={goal.goalId} onResolved={() => void refreshAfterMutation().catch(() => undefined)} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} onShowContinuationResult={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} />}
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); markRetryStarted(goal); }} /> : null}
       </article>)}
       {!feedError && visibleThinking.length === 0 && feed.unassignedActions.length === 0 && visibleGoals.length === 0 ? <p className="joi-feed-empty">{t("home.aFreshStartTellJoiAGoalAndWork")}</p> : null}

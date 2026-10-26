@@ -1967,9 +1967,9 @@ describe("joi home single entry", () => {
     const api = new DigitalLifeApi("");
     vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "前端搭档")] });
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
-    mockHomeMessages(api).mockResolvedValue({ items: [
+    mockHomeMessages(api).mockResolvedValueOnce({ items: [
       { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "question_required", inputId: "clarify-x", status: "CLARIFICATION_REQUIRED" },
-    ] });
+    ] }).mockResolvedValue({ items: [] });
     const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "clarify-x", status: "PENDING" });
     render(<JoiHome api={api} />);
     const reason = await screen.findByLabelText('你的回答');
