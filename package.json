@@ -147,7 +147,8 @@
     "mac": {
       "icon": "resources/branding/icon.png",
       "target": "dmg",
-      "category": "public.app-category.productivity"
+      "category": "public.app-category.productivity",
+      "identity": "-"
     }
   }
 }
