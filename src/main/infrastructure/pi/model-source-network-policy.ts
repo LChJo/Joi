@@ -21,7 +21,7 @@ function ipv4Octets(value: string): number[] | null {
   return value.split(".").map(Number);
 }
 
-function isLanAddress(value: string): boolean {
+export function isLanModelSourceAddress(value: string): boolean {
   const parts = ipv4Octets(value);
   if (parts === null) return false;
   const [first, second] = parts;
@@ -77,7 +77,7 @@ export class ModelSourceNetworkPolicy {
     const hostname = literalHostname(url).toLowerCase();
     const local = hostname === "localhost" || hostname === "127.0.0.1";
     // Only a literal RFC1918 address opts into LAN access; DNS names remain public-only.
-    const lan = isLanAddress(hostname);
+    const lan = isLanModelSourceAddress(hostname);
     if (url.username !== "" || url.password !== "" || url.hash !== "" || url.search !== ""
       || (local || lan ? !new Set(["http:", "https:"]).has(url.protocol) : url.protocol !== "https:")) {
       throw prohibited();

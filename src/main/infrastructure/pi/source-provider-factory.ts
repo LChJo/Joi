@@ -14,6 +14,7 @@ import {
 import type { ModelSourceAccessMode, ModelSourceProtocol } from "../../domain/model-sources/model-source.js";
 import type { ThinkingEffort } from "../../../shared/joi.js";
 import { observedContextWindow, observedMaxOutputTokens } from "./pi-model-budget.js";
+import { withModelSourceHttpTransport } from "./model-source-http-transport.js";
 
 /** A model's own documented geometry, as configured on the settings page. */
 export interface ModelLimitOverrides {
@@ -245,7 +246,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
         : userEffort ? { thinkingLevelMap: { [effort]: effort } } : {}),
     };
     return createProvider({
-      api: anthropicMessagesApi(),
+      api: input.kind === "generic-openai" ? withModelSourceHttpTransport(anthropicMessagesApi(), baseUrl) : anthropicMessagesApi(),
       auth: { apiKey: noAmbientCredentialAuth(allowKeyless, input.anthropicAuthMode === "bearer") },
       baseUrl,
       ...(headers === undefined ? {} : { headers }),
@@ -280,7 +281,7 @@ export function createPiSourceProvider(input: PiSourceProviderInput): Provider {
   };
 
   return createProvider({
-    api: openAIResponsesApi(),
+    api: input.kind === "generic-openai" ? withModelSourceHttpTransport(openAIResponsesApi(), baseUrl) : openAIResponsesApi(),
     auth: { apiKey: noAmbientCredentialAuth(allowKeyless) },
     baseUrl,
     ...(headers === undefined ? {} : { headers }),

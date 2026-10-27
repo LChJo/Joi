@@ -13,7 +13,7 @@ const credentials: CredentialStore = {
 
 function record(protocol: "anthropic" | "openai" = "anthropic"): ModelSourceRecord {
   return {
-    baseUrl: "http://127.0.0.1:12345/", local: true, order: 0, primary: true,
+    baseUrl: "https://models.example.test/", local: false, order: 0, primary: true,
     source: createModelSource({
       createdAt: "2026-10-12T00:00:00.000Z", credentialRef: "joi-source:auth-test", credentialVersion: 1,
       displayName: "Auth test", kind: "generic-openai", modelCapability: "custom-unverified-tools",
@@ -106,6 +106,27 @@ describe("Anthropic authentication compatibility over the real Pi SDK", () => {
     vi.stubGlobal("fetch", fetch);
     expect(await validator().validate(record())).toMatchObject({ status: "NEEDS_AUTH", reasonCode: "auth_failed" });
     expect(fetch).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([[400, "bad_request"], [403, "auth_forbidden"], [404, "not_found"]] as const)("retains a safe summary when the Bearer probe fails with %s", async (status, reason) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(failure(401)).mockResolvedValueOnce(failure(status)));
+    const result = await validator().validate(record());
+    expect(result).toMatchObject({ status: "NEEDS_AUTH", reasonCode: "auth_failed" });
+    expect(result.error).toContain(`bearer_probe_failed:${reason}`);
+    expect(result.error).toContain("original 401 failure");
+    expect(result.error).not.toContain(`original ${String(status)} failure`);
+    expect(result).not.toHaveProperty("anthropicAuthMode");
+  });
+
+  it("does not include private alternate error details in the validation result", async () => {
+    let calls = 0;
+    const probe = () => {
+      calls++;
+      return Promise.reject(calls === 1 ? Object.assign(new Error("original 401 failure"), { status: 401 })
+        : Object.assign(new Error("private response fake-auth-token C:\\private\\secret.txt"), { status: 400 }));
+    };
+    const result = await new PiModelSourceValidator({ clock: { now: () => new Date() }, probe }).validate(record());
+    expect(result.error).toBe("[bearer_probe_failed:bad_request] original 401 failure");
   });
 
   it.each([400, 403, 404])("does not guess another auth scheme on %s", async (status) => {

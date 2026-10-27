@@ -35,9 +35,9 @@ function failureReason(error: unknown): { error?: string; reasonCode: string; st
     reasonCode = "model_unavailable";
   } else if (/(^|\D)5\d\d(\D|$)|overloaded_error|internal server error|bad gateway|service unavailable|gateway timeout/u.test(message)) {
     reasonCode = "server_error";
-  } else if (/(^|\D)404(\D|$)/u.test(message)) {
+  } else if (statusCode === 404 || /(^|\D)404(\D|$)/u.test(message)) {
     reasonCode = "not_found";
-  } else if (/(^|\D)400(\D|$)/u.test(message)) {
+  } else if (statusCode === 400 || /(^|\D)400(\D|$)/u.test(message)) {
     reasonCode = "bad_request";
   } else if (/invalid[_ -]?parameter|invalid_request_error/u.test(message)) {
     reasonCode = "bad_request";
@@ -107,8 +107,10 @@ export class PiModelSourceValidator implements ModelSourceValidator {
         try {
           await this.#probe({ ...record, anthropicAuthMode: "bearer" }, controller.signal);
           return { anthropicAuthMode: "bearer" as const, status: "READY" as const, validatedAt };
-        } catch {
-          // An unproven alternative leaves the original auth failure authoritative.
+        } catch (alternateError) {
+          // Preserve the original auth fact; expose only a stable code for the unproven alternative.
+          const original = failureReason(error);
+          return { ...original, error: `[bearer_probe_failed:${failureReason(alternateError).reasonCode}] ${original.error ?? ""}`.trim(), validatedAt };
         }
       }
       return { ...failureReason(error), validatedAt };
