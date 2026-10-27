@@ -22,6 +22,7 @@
 - 百炼 Token Plan 的 OpenAI-compatible endpoint 固定为 `https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1`，Anthropic-compatible endpoint 固定为 `https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`；它与百炼 Coding Plan、百炼按量 API 的 Key/Base URL 完全隔离，不得混用。
 - 已验证为 `READY` 的 API、Coding Plan 与 Token Plan 来源都可成为全局 joi 的主源或备用源；套餐表单明确提示订阅权益通常面向个人交互式使用，用户需遵守厂商条款。
 - 通用平台先选择 OpenAI-compatible（走 OpenAI Responses 接口）或 Anthropic-compatible Messages，再填写显示名称、Base URL、API Key、Model ID；localhost/127.0.0.1 可留空 Key。
+- 自定义 Base URL 支持公网 HTTPS、本机 localhost/127.0.0.1，以及明确填写的 RFC1918 局域网 IPv4（10/8、172.16/12、192.168/16）；本机和明确的局域网 IP 支持 HTTP/HTTPS，局域网仍须填写 API Key。域名解析到私网、link-local/metadata、其他回环别名、URL 内嵌凭据与跨来源重定向继续拒绝。地址或凭据校验失败显示安全的具体原因，不回显地址或密钥。
 - 验证失败时保留草稿、设置和诊断入口，但普通 composer 继续门禁；界面按鉴权、模型不可用、接口不可达给出可操作提示；验证旁提示兜底最小文本请求可能产生极少量费用。
 - 普通首页只保留正在推进的 `progressing`、需要用户处理的澄清/确认，以及按原始目标聚合的工作台卡；连续输入无需用户选择串行或并发。
 

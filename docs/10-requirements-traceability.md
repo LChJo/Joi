@@ -63,7 +63,7 @@ AC-57 的 2026-09-07 首页增量证据：`remote-home-queries.test.ts` 覆盖�
 | AC-21 | 工作台只拥有上下文 | 已自动证实：纯 domain aggregate；预算/调度/搭档策略独立关联 |
 | AC-22 | 新代码无 Life 词汇泄漏 | 已通过 architecture boundary 与目标路径静态扫描；旧兼容模块保留 Life |
 | AC-23 | 首次精确文案、7 个厂商入口、接入方案与协议 | 已自动证实：精确文案、恰好七个厂商入口、API/Coding Plan/Token Plan 与 OpenAI/Anthropic 分层选择；百炼两类套餐 endpoint 独立且无转发平台 |
-| AC-24 | 固定 endpoint 与通用 URL 网络策略 | 已自动证实：官方 endpoint、localhost 例外、SSRF/DNS/redirect 检查 |
+| AC-24 | 固定 endpoint 与通用 URL 网络策略 | 已自动证实：官方 endpoint、localhost 例外、显式 RFC1918 IPv4 的 HTTP/HTTPS 自定义来源（仍须 API Key）、DNS 私网/metadata/redirect 拒绝与安全中英错误提示；`model-source-network-policy.test.ts`、`model-source-service.test.ts`、`i18n.test.tsx` |
 | AC-25 | 多来源、主备顺序、revision/credential 边界 | 已自动证实：多源排序、不可变 revision、Turn pin 与 safeStorage reference |
 | AC-26 | 版本化模型 preset 与自定义模型 fail closed | preset contract 已证实；custom 首 Turn 未观察到 tool call 时 fail closed |
 | AC-27 | 首次验证和 composer 门禁 | 已自动证实：draft/验证/门禁、最小文本检查、不做 onboarding tool probe |

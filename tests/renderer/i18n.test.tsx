@@ -15,6 +15,16 @@ function NoticeExample() {
 }
 
 describe("AC-I18N-03 live language selection", () => {
+  it("explains model source URL and credential failures using safe localized messages", () => {
+    configureLocale({ preference: "zh-CN" });
+    const urlError = new ApiError("model_source_url_prohibited", "unapproved endpoint or secret", 400);
+    expect(urlError.displayMessage).toBe("模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。");
+    expect(new ApiError("model_source_key_required", "unapproved secret", 400).displayMessage).toBe("请填写 API Key；仅本机 localhost/127.0.0.1 可留空。");
+    configureLocale({ preference: "en" });
+    expect(urlError.displayMessage).toBe("Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).");
+    expect(new ApiError("model_source_redirect_cross_origin", "unapproved redirect", 400).displayMessage).toBe("The model URL redirects to a different origin. Enter the final Base URL directly.");
+  });
+
   it("AC-I18N-06 recognizes approved legacy messages without exposing arbitrary backend text", () => {
     configureLocale({ preference: "en" });
     expect(new ApiError("old_password_code", "当前密码不对。", 400).displayMessage).toBe("The current password is incorrect.");

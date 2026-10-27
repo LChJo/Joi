@@ -1,4 +1,19 @@
 {
+  "modelSourceUrlProhibited": {
+    "message": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
+    "description": "Explain which custom model endpoint addresses are supported without echoing the submitted URL.",
+    "errorCode": "model_source_url_prohibited"
+  },
+  "modelSourceKeyRequired": {
+    "message": "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.",
+    "description": "Credentials are required for public and LAN model endpoints.",
+    "errorCode": "model_source_key_required"
+  },
+  "modelSourceRedirectCrossOrigin": {
+    "message": "The model URL redirects to a different origin. Enter the final Base URL directly.",
+    "description": "Custom model endpoints cannot redirect credentials to a different origin.",
+    "errorCode": "model_source_redirect_cross_origin"
+  },
   "lanPortInvalid": {
     "message": "The LAN port must be between 1024 and 65535.",
     "description": "The LAN port must be between 1024 and 65535.",

@@ -1,4 +1,7 @@
 {
+  "modelSourceUrlProhibited": "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。",
+  "modelSourceKeyRequired": "请填写 API Key；仅本机 localhost/127.0.0.1 可留空。",
+  "modelSourceRedirectCrossOrigin": "模型地址重定向到了其他来源，请直接填写最终的 Base URL。",
   "lanPortInvalid": "LAN 端口必须在 1024 到 65535 之间。",
   "lanRiskRequired": "启用 LAN 访问前必须确认明文连接风险。",
   "lanAddressInvalid": "LAN 访问必须使用明确的 RFC1918 IPv4 地址。",

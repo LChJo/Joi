@@ -21,6 +21,15 @@ function ipv4Octets(value: string): number[] | null {
   return value.split(".").map(Number);
 }
 
+function isLanAddress(value: string): boolean {
+  const parts = ipv4Octets(value);
+  if (parts === null) return false;
+  const [first, second] = parts;
+  return first === 10
+    || first === 172 && second !== undefined && second >= 16 && second <= 31
+    || first === 192 && second === 168;
+}
+
 function isPublicAddress(value: string): boolean {
   const address = normalizedAddress(value);
   const parts = ipv4Octets(address);
@@ -67,17 +76,19 @@ export class ModelSourceNetworkPolicy {
     }
     const hostname = literalHostname(url).toLowerCase();
     const local = hostname === "localhost" || hostname === "127.0.0.1";
+    // Only a literal RFC1918 address opts into LAN access; DNS names remain public-only.
+    const lan = isLanAddress(hostname);
     if (url.username !== "" || url.password !== "" || url.hash !== "" || url.search !== ""
-      || (local ? !new Set(["http:", "https:"]).has(url.protocol) : url.protocol !== "https:")) {
+      || (local || lan ? !new Set(["http:", "https:"]).has(url.protocol) : url.protocol !== "https:")) {
       throw prohibited();
     }
-    if (isIP(hostname) !== 0 && hostname !== "127.0.0.1" && !isPublicAddress(hostname)) throw prohibited();
+    if (isIP(hostname) !== 0 && !local && !lan && !isPublicAddress(hostname)) throw prohibited();
 
     const addresses = isIP(hostname) === 0 ? await this.dependencies.resolve(hostname) : [hostname];
     if (addresses.length === 0) throw prohibited();
     if (local) {
       if (addresses.some((address) => normalizedAddress(address) !== "127.0.0.1")) throw prohibited();
-    } else if (addresses.some((address) => !isPublicAddress(address))) {
+    } else if (!lan && addresses.some((address) => !isPublicAddress(address))) {
       throw prohibited();
     }
     url.hostname = url.hostname.toLowerCase();

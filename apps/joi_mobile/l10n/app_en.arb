@@ -1091,6 +1091,21 @@
     "description": "common.inputAwaitingConfirmation",
     "placeholders": {}
   },
+  "errorsModelSourceUrlProhibited": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
+  "@errorsModelSourceUrlProhibited": {
+    "description": "Explain which custom model endpoint addresses are supported without echoing the submitted URL.",
+    "placeholders": {}
+  },
+  "errorsModelSourceKeyRequired": "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.",
+  "@errorsModelSourceKeyRequired": {
+    "description": "Credentials are required for public and LAN model endpoints.",
+    "placeholders": {}
+  },
+  "errorsModelSourceRedirectCrossOrigin": "The model URL redirects to a different origin. Enter the final Base URL directly.",
+  "@errorsModelSourceRedirectCrossOrigin": {
+    "description": "Custom model endpoints cannot redirect credentials to a different origin.",
+    "placeholders": {}
+  },
   "errorsLanPortInvalid": "The LAN port must be between 1024 and 65535.",
   "@errorsLanPortInvalid": {
     "description": "The LAN port must be between 1024 and 65535.",

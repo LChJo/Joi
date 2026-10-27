@@ -11,6 +11,8 @@ import type {
   ModelSourceValidator,
 } from "../../src/main/application/ports/model-source-ports.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { ModelSourceNetworkPolicy } from "../../src/main/infrastructure/pi/model-source-network-policy.js";
+import { PiModelSourceCatalog } from "../../src/main/infrastructure/pi/pi-model-source-catalog.js";
 
 class MemoryModelSourceRepository implements ModelSourceRepository {
   readonly records = new Map<string, ModelSourceRecord>();
@@ -40,6 +42,29 @@ class MemoryModelSourceRepository implements ModelSourceRepository {
 }
 
 describe("ModelSourceService", () => {
+  it.each(["anthropic", "openai"] as const)("saves and validates an explicit LAN %s source while requiring a credential", async (protocol) => {
+    const repository = new MemoryModelSourceRepository();
+    const saveApiKey = vi.fn(async () => 1);
+    const validate = vi.fn(async () => ({ status: "READY" as const, validatedAt: "2026-10-27T10:00:00.000Z" }));
+    const service = new ModelSourceService({
+      catalog: new PiModelSourceCatalog(),
+      clock: new TestClock(),
+      endpointPolicy: new ModelSourceNetworkPolicy({ resolve: async () => [] }),
+      ids: new TestIds(),
+      repository,
+      secrets: { delete: async () => undefined, saveApiKey },
+      validator: { validate },
+    });
+    const input = { accessMode: "custom" as const, apiKey: "", baseUrl: "http://10.30.208.181:34567", displayName: "LAN model", kind: "generic-openai" as const, modelId: "deepseek-flash", protocol };
+    await expect(service.create(input)).rejects.toMatchObject({ code: "model_source_key_required" });
+    expect(saveApiKey).not.toHaveBeenCalled();
+    const source = await service.create({ ...input, apiKey: "synthetic-lan-key" });
+    await expect(service.validate(source.sourceId)).resolves.toMatchObject({ status: "READY", protocol });
+    expect(validate).toHaveBeenCalledWith(expect.objectContaining({ baseUrl: "http://10.30.208.181:34567/", local: false }));
+    expect(JSON.stringify(await service.list())).not.toContain("synthetic-lan-key");
+    await expect(service.update(source.sourceId, { apiKey: "" })).rejects.toMatchObject({ code: "model_source_key_required" });
+  });
+
   it("creates multiple sources, keeps keys behind the secret port, validates, and reorders deterministically", async () => {
     const repository = new MemoryModelSourceRepository();
     const savedSecrets: { apiKey: string | undefined; providerId: string }[] = [];
