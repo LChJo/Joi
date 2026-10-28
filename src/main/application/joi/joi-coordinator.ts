@@ -378,7 +378,18 @@ export class JoiCoordinator {
     });
     await this.dependencies.events?.emit("joi.turn.started", turnId, { workbenchId, inputId, turnId });
     let formalOutputStarted = false;
-    let sideEffectStarted = false;
+    // Tracks each in-flight or settled tool call that still counts toward "this Turn is
+    // unsafe to replay". A non-replay-safe call is added here the moment it starts and
+    // normally stays until the Turn ends — a call interrupted before tool_finished arrives
+    // has an unknown real effect and must stay conservatively unsafe. The one narrow
+    // exception: work_dispatch is the only tool whose execute() is proven all-or-nothing
+    // (joi-reasoning-tools.ts's workDispatchTool never rethrows, and its one durable write is
+    // a single DB transaction), so a work_dispatch call that finishes with isError:true is
+    // known to have committed nothing and is removed. Every other non-replay-safe tool
+    // (work_cancel, work_reassign, ...) can durably mutate state before a later, unguarded
+    // step throws, so its isError:true is NOT proof of zero effect and it stays tracked.
+    const unsafeToReplayToolCalls = new Set<string>();
+    const sideEffectStarted = () => unsafeToReplayToolCalls.size > 0;
     const observedToolCalls = new Set<string>();
     const toolStartedAt = new Map<string, number>();
     const committedOutcomeTools = new Set<string>();
@@ -444,10 +455,10 @@ export class JoiCoordinator {
                 }
               }
               if (event.type === "tool_started") {
-                sideEffectStarted = sideEffectStarted || !REPLAY_SAFE_TOOL_NAMES.has(event.toolName);
                 observedToolCalls.add(event.toolCallId);
                 pass.observedToolCalls += 1;
                 toolStartedAt.set(event.toolCallId, this.dependencies.clock.now().getTime());
+                if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) unsafeToReplayToolCalls.add(event.toolCallId);
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.started", {
                   workbenchId,
                   inputId,
@@ -472,6 +483,14 @@ export class JoiCoordinator {
                   turnId,
                 });
                 toolStartedAt.delete(event.toolCallId);
+                // A failed work_dispatch produced no durable effect — its execute() never
+                // rethrows and its one write is a single DB transaction (see the comment on
+                // unsafeToReplayToolCalls above) — so replaying the Turn cannot duplicate
+                // anything and it is removed. Every other tracked tool stays recorded even
+                // on isError: a post-commit step (e.g. an event emit) can still throw after
+                // the durable mutation already landed, so its failure is not proof the Turn
+                // is safe to replay.
+                if (event.toolName === "work_dispatch" && event.isError) unsafeToReplayToolCalls.delete(event.toolCallId);
                 if (event.toolName === "work_dispatch") {
                   // Reflect the latest dispatch outcome: a later successful dispatch in the same
                   // Turn clears an earlier failure so a corrected retry is not wrongly failed.
@@ -486,8 +505,8 @@ export class JoiCoordinator {
                 if (event.outcome !== undefined) committedTurnOutcome = event.outcome;
                 if (event.toolName === "turn_complete") committedSynthesisState = event.synthesisState;
               }
-              if (formalOutputStarted || sideEffectStarted) {
-                void this.dependencies.store.recordTurnProgress?.(turnId, { formalOutputStarted, sideEffectStarted });
+              if (formalOutputStarted || sideEffectStarted()) {
+                void this.dependencies.store.recordTurnProgress?.(turnId, { formalOutputStarted, sideEffectStarted: sideEffectStarted() });
               }
             },
             prompt,
@@ -531,7 +550,7 @@ export class JoiCoordinator {
           // AC-26 gates the FIRST Turn of an unproven custom model only: once any Turn of the
           // pinned revision pair demonstrated structured tool calling, a later direct answer
           // (zero tool calls) is a valid outcome instead of a capability failure.
-          const textDecision = isGoalSynthesis && shouldRollbackTurn(sideEffectStarted, signal) && !pass.committedOutcome
+          const textDecision = isGoalSynthesis && shouldRollbackTurn(sideEffectStarted(), signal) && !pass.committedOutcome
             ? synthesisTextDecision(attemptCompletionText) : undefined;
           if (textDecision !== undefined) {
             committedTurnOutcome = textDecision.outcome;
@@ -607,7 +626,7 @@ export class JoiCoordinator {
             currentSourceId: pin.sourceId,
             failure,
             formalOutputStarted,
-            sideEffectStarted,
+            sideEffectStarted: sideEffectStarted(),
             turnId,
           }) ?? null;
           if (fallback === null || attemptedSources.has(fallback.sourceId)) throw error;
@@ -722,7 +741,7 @@ export class JoiCoordinator {
       // effect, or its work is still live, the row is consumed and never replayed, and the
       // transcript is then the only record the next Turn has of what this one already dispatched.
       // A user cancel is the same reasoning — nothing will re-run, so there is nothing to undo.
-      if (shouldRollbackTurn(sideEffectStarted, signal)) {
+      if (shouldRollbackTurn(sideEffectStarted(), signal)) {
         const rolledBack = await this.dependencies.runtime.rollbackTurn(sessionId, turnId);
         if (!rolledBack) {
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.session.rollback_skipped", {

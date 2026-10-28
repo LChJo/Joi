@@ -17,7 +17,7 @@ const workbench = createWorkbench({
  * never replayed, so its transcript is the only record of what it already dispatched.
  */
 describe("joi coordinator session rollback", () => {
-  function makeCoordinator(options: { failureCode: string; toolName?: string }) {
+  function makeCoordinator(options: { failureCode: string; toolError?: boolean; toolName?: string }) {
     const rollbacks: string[] = [];
     const coordinator = new JoiCoordinator({
       workbenches: { getWorkbench: async () => workbench, listSummaries: async () => [] },
@@ -30,6 +30,7 @@ describe("joi coordinator session rollback", () => {
           turn.onEvent?.({ delta: "处理完成", turnId: turn.turnId, type: "text_delta" });
           if (options.toolName !== undefined) {
             turn.onEvent?.({ toolCallId: "call_1", toolName: options.toolName, turnId: turn.turnId, type: "tool_started" });
+            turn.onEvent?.({ isError: options.toolError ?? false, toolCallId: "call_1", toolName: options.toolName, turnId: turn.turnId, type: "tool_finished" });
           }
         },
         steer: () => undefined, waitForIdle: async () => undefined,
@@ -53,9 +54,11 @@ describe("joi coordinator session rollback", () => {
 
   it("keeps the transcript of a Turn that committed a side effect", async () => {
     // `work_dispatch` is not replay-safe, so this input is consumed rather than re-queued. Rolling
-    // back would erase the only account of work that is now dispatched and still running.
+    // back would erase the only account of work that is now dispatched and still running. The
+    // Turn still reaches completeInput (here rejected by the fixture), not the uncommitted-outcome
+    // path, because a successful work_dispatch is itself a committed outcome.
     const { coordinator, rollbacks } = makeCoordinator({ failureCode: "unused", toolName: "work_dispatch" });
-    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "joi_turn_outcome_uncommitted" });
+    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "unused" });
     expect(rollbacks).toEqual([]);
   });
 
@@ -65,5 +68,25 @@ describe("joi coordinator session rollback", () => {
     const { coordinator, rollbacks } = makeCoordinator({ failureCode: "unused", toolName: "partner_list_available" });
     await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "joi_turn_outcome_uncommitted" });
     expect(rollbacks).toHaveLength(1);
+  });
+
+  it("rolls back a Turn whose only dispatch attempt errored out", async () => {
+    // A rejected work_dispatch call (e.g. tool_execution_error) creates no Work: there is
+    // nothing a replay could duplicate, so this must be treated the same as never having
+    // called it, not as a committed side effect that permanently consumes the input.
+    const { coordinator, rollbacks } = makeCoordinator({ failureCode: "unused", toolError: true, toolName: "work_dispatch" });
+    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "tool_execution_error" });
+    expect(rollbacks).toHaveLength(1);
+  });
+
+  it("keeps the transcript of a Turn whose cancel attempt errored out", async () => {
+    // Unlike work_dispatch, work_cancel's execute() is not wrapped in a non-rethrowing
+    // try/catch: its backing service can durably commit the cancellation and only then have
+    // an unguarded step (e.g. an event emit) throw. An isError:true result here is therefore
+    // not proof of zero effect, so this must stay unsafe to replay — the opposite of the
+    // work_dispatch case above.
+    const { coordinator, rollbacks } = makeCoordinator({ failureCode: "unused", toolError: true, toolName: "work_cancel" });
+    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "joi_turn_outcome_uncommitted" });
+    expect(rollbacks).toEqual([]);
   });
 });
