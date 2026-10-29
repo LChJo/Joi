@@ -1801,8 +1801,9 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(clarify).toHaveBeenCalledWith("large-workbench-choice", { workbenchId: "workbench-17", questionId: "legacy_question:large-workbench-choice", questionVersion: 1 }));
   });
 
-  it("does not ask the user to assert completion for an unrecoverable historical review", async () => {
+  it.each(["recheck", "supplement"])("continues an unrecoverable historical review with %s on the original goal", async (action) => {
     const api = new DigitalLifeApi("");
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "history-review-1", status: "ROUTED" });
     vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
     vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
     mockHomeMessages(api).mockResolvedValue({ items: [{
@@ -1810,13 +1811,30 @@ describe("joi home single entry", () => {
       clarificationPrompt: "历史评审记录无法安全恢复。",
       clarificationReasonCode: "harness_review_unrecoverable",
       inputId: "history-review-1",
+      workbenchId: "history-workbench-1",
+      questionId: "goal_question:history-review-1:v3",
+      questionVersion: 3,
       status: "CLARIFICATION_REQUIRED",
     }] });
 
     render(<JoiHome api={api} />);
-    expect(await screen.findByText("已交给 joi 自动校正")).toBeInTheDocument();
+    expect(await screen.findByText("内部复核已中断")).toBeInTheDocument();
+    expect(screen.getByText("复核中断", { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("需要你", { exact: true })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "确认完成并收官" })).not.toBeInTheDocument();
+    expect(screen.queryByText("已交给 joi 自动校正")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+    if (action === "recheck") {
+      fireEvent.click(screen.getByRole("button", { name: "重试复核" }));
+    } else {
+      fireEvent.click(screen.getByRole("button", { name: "补充要求（可选）" }));
+      fireEvent.change(screen.getByLabelText("补充信息"), { target: { value: "保留已有成果，只补充验证缺口" } });
+      fireEvent.click(screen.getByRole("button", { name: "补充并继续" }));
+    }
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("history-review-1", {
+      ...(action === "recheck" ? { actionChoice: "RESUME" } : { text: "保留已有成果，只补充验证缺口" }),
+      questionId: "goal_question:history-review-1:v3", questionVersion: 3,
+    }));
   });
 
   it("offers available partner cards and resumes with a stable partner id without free text", async () => {

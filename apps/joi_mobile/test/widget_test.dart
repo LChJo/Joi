@@ -5,6 +5,7 @@ import 'package:joi_mobile/archived_goals.dart';
 import 'package:joi_mobile/remote_controller.dart';
 import 'package:joi_mobile/goal_detail.dart';
 import 'package:joi_mobile/i18n.dart';
+import 'package:joi_mobile/home_screen.dart' show goalStatusLabel;
 
 class FakeRemoteController extends ChangeNotifier implements RemoteController {
   FakeRemoteController(this._state);
@@ -864,6 +865,101 @@ void main() {
     expect(card.questionId, 'goal_question:input-1:v1');
     expect(card.questionVersion, 1);
   });
+
+  test(
+    'distinguishes an interrupted review from a question requiring an answer',
+    () {
+      expect(
+        goalStatusLabel(
+          const RemoteGoalCard(
+            goalId: 'review',
+            title: '任务',
+            status: 'NEEDS_ATTENTION',
+            reasonCode: 'harness_review_unrecoverable',
+            activeWork: 0,
+            completedWork: 1,
+            totalWork: 1,
+          ),
+        ),
+        '复核中断',
+      );
+      expect(
+        goalStatusLabel(
+          const RemoteGoalCard(
+            goalId: 'question',
+            title: '任务',
+            status: 'NEEDS_ATTENTION',
+            reasonCode: 'question_required',
+            activeWork: 0,
+            completedWork: 1,
+            totalWork: 1,
+          ),
+        ),
+        '需要你',
+      );
+    },
+  );
+
+  testWidgets(
+    'rechecks a historical review and submits supplements on the same goal',
+    (tester) async {
+      final controller = FakeRemoteController(
+        const RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          supportsHome: true,
+        ),
+      );
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: GoalActions(
+                controller: controller,
+                goal: const RemoteGoalCard(
+                  goalId: 'historical-goal',
+                  title: '任务',
+                  status: 'NEEDS_ATTENTION',
+                  prompt: '历史评审记录无法安全恢复。请取消这条任务。',
+                  reasonCode: 'harness_review_unrecoverable',
+                  questionId: 'old-question',
+                  questionVersion: 3,
+                  activeWork: 0,
+                  completedWork: 2,
+                  totalWork: 2,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      expect(find.text('内部复核已中断'), findsOneWidget);
+      expect(find.text('结束历史整理'), findsNothing);
+      expect(find.byType(TextField), findsNothing);
+      await tester.tap(find.text('重试复核'));
+      await tester.pumpAndSettle();
+      expect(
+        controller.actions.single,
+        containsPair('inputId', 'historical-goal'),
+      );
+      expect(controller.actions.single, containsPair('action', 'clarify'));
+      expect(controller.actions.single, containsPair('actionChoice', 'RESUME'));
+      expect(
+        controller.actions.single,
+        containsPair('questionId', 'old-question'),
+      );
+      expect(controller.actions.single, containsPair('questionVersion', 3));
+      await tester.tap(find.text('补充要求（可选）'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), '保留已有成果，只补充验证缺口');
+      await tester.pump();
+      await tester.ensureVisible(find.text('补充并继续'));
+      await tester.tap(find.text('补充并继续'));
+      await tester.pumpAndSettle();
+      expect(controller.actions.last, containsPair('action', 'clarify'));
+      expect(controller.actions.last, containsPair('text', '保留已有成果，只补充验证缺口'));
+      expect(controller.actions.last, containsPair('questionVersion', 3));
+    },
+  );
 
   testWidgets('answers a goal continuation with the question the card advertised', (
     tester,

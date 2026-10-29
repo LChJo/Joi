@@ -62,6 +62,7 @@ test("evolution shows current learning without retired material across sizes and
     const refresh = async () => {
       await page.getByRole("tab", { name: /Agent/u }).click();
       await page.getByRole("tab", { name: "自主进化", exact: true }).click();
+      await expect(page.getByRole("region", { name: "当前进展" })).toBeVisible();
     };
     learning.stage = "CANARY";
     learning.blockers = [];

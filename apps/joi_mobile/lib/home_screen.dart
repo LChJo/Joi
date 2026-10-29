@@ -15,6 +15,12 @@ String goalWorkbenchName(RemoteGoalCard goal) => goal.workbenchName.isEmpty
 String goalTitle(RemoteGoalCard goal) =>
     goal.title.isEmpty ? tr(Msg.commonInputAwaitingConfirmation) : goal.title;
 
+String goalStatusLabel(RemoteGoalCard goal) =>
+    goal.status == 'NEEDS_ATTENTION' &&
+        goal.reasonCode == 'harness_review_unrecoverable'
+    ? tr(Msg.homeReviewInterrupted)
+    : statusLabel(goal.status);
+
 String statusLabel(String value) =>
     {
       'ARRANGING': tr(Msg.homePlanning),
@@ -139,7 +145,7 @@ class GoalCardBody extends StatelessWidget {
             _WorkbenchOrb(name: goalWorkbenchName(goal)),
             const SizedBox(width: 10),
             Expanded(child: Text(goalWorkbenchName(goal))),
-            Text(statusLabel(goal.status)),
+            Text(goalStatusLabel(goal)),
           ],
         ),
         const SizedBox(height: 6),
@@ -168,7 +174,7 @@ class GoalCardBody extends StatelessWidget {
       Row(
         children: [
           Expanded(child: Text(goalWorkbenchName(goal))),
-          Text(statusLabel(goal.status)),
+          Text(goalStatusLabel(goal)),
         ],
       ),
       const SizedBox(height: 8),

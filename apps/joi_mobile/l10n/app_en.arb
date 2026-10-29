@@ -4653,6 +4653,31 @@
     "description": "home.insufficient",
     "placeholders": {}
   },
+  "homeHistoricalReviewPaused": "Internal review interrupted",
+  "@homeHistoricalReviewPaused": {
+    "description": "Interrupted internal review with saved results",
+    "placeholders": {}
+  },
+  "homeRecheckAndContinue": "Retry review",
+  "@homeRecheckAndContinue": {
+    "description": "Retry an interrupted internal review",
+    "placeholders": {}
+  },
+  "homeHistoricalReviewRecoveryHint": "The internal review did not finish. Existing results are saved. Retry the review, or optionally update the requirements.",
+  "@homeHistoricalReviewRecoveryHint": {
+    "description": "Internal recovery does not require additional user information",
+    "placeholders": {}
+  },
+  "homeReviewInterrupted": "Review interrupted",
+  "@homeReviewInterrupted": {
+    "description": "Goal status for an interrupted internal review",
+    "placeholders": {}
+  },
+  "homeOptionalReviewRequirements": "Add requirements (optional)",
+  "@homeOptionalReviewRequirements": {
+    "description": "Expand optional requirements for an interrupted review",
+    "placeholders": {}
+  },
   "mobileBringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
   "@mobileBringTheJoiRunningOnYourComputerToYour": {
     "description": "Bring the joi running on your computer to your phone",

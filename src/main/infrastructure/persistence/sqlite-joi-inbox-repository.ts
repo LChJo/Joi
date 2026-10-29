@@ -14,6 +14,8 @@ import type { JoiInputCompletion } from "../../application/ports/joi-coordinator
 import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
 import { cascadeDependencyCancellation } from "./sqlite-work-dependency-cascade.js";
 import { closeHistoricalReviewInTransaction } from "./sqlite-joi-harness-review-closure.js";
+import { prepareHistoricalReviewRecovery } from "./sqlite-joi-historical-review.js";
+import { harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
 import { consumeSupersededGoalSynthesis, enqueueGoalResultSynthesis } from "./sqlite-goal-result-synthesis.js";
 import { consumeSatisfiedRequirementsReviews, enqueueGoalRequirementsReview } from "./sqlite-goal-requirements-review.js";
 import { loadJoiGoalContext } from "./sqlite-joi-goal-context.js";
@@ -127,7 +129,7 @@ function clearCompletedReviewMap(connection: DatabaseSync, goalInputId: string, 
          JOIN joi_goal_result_sets current_rs ON current_rs.original_input_id = m.goal_input_id
           WHERE t.turn_id = ? AND t.status IN ('RUNNING', 'WAITING')
             AND r.goal_input_id = m.goal_input_id
-            AND r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || current_rs.revision || COALESCE((SELECT ':q' || revision FROM joi_goal_requirements WHERE goal_input_id = m.goal_input_id), '')
+            AND r.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "current_rs.revision")}
             AND current_rs.revision = m.reviewed_revision
        )
        AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
@@ -1074,6 +1076,18 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           AND EXISTS (SELECT 1 FROM joi_inbox_messages WHERE input_id = ? AND status = 'CONSUMED')`).run(now, inputId, inputId);
       connection.prepare("UPDATE joi_inbox_messages SET automation_routine_id = NULL WHERE input_id = ?").run(inputId);
       connection.prepare("UPDATE partner_result_events SET consumed_at = ? WHERE input_id = ? AND consumed_at IS NULL").run(now, inputId);
+      const historicalRecovery = inputId.startsWith("joi_goal_resume:goal:") ? connection.prepare(`SELECT i.goal_input_id, i.workbench_id, m.review_recovery_epoch
+        FROM joi_inbox_messages i JOIN joi_goal_execution_gates gate ON gate.goal_input_id = i.goal_input_id
+        JOIN joi_inbox_messages goal ON goal.input_id = i.goal_input_id
+        JOIN joi_harness_maps m ON m.goal_input_id = goal.input_id
+        LEFT JOIN joi_goal_outcomes outcome ON outcome.input_id = goal.input_id
+        WHERE i.input_id = ? AND gate.resume_input_id = i.input_id AND gate.status = 'OPEN'
+          AND m.review_recovery_epoch = goal.reopened_at
+          AND (outcome.completed_at IS NULL OR m.review_recovery_epoch > outcome.completed_at)`).get(inputId) : undefined;
+      if (typeof historicalRecovery?.goal_input_id === "string" && typeof historicalRecovery.workbench_id === "string"
+        && typeof historicalRecovery.review_recovery_epoch === "string") {
+        enqueueGoalResultSynthesis(connection, historicalRecovery.goal_input_id, historicalRecovery.workbench_id, now, historicalRecovery.review_recovery_epoch);
+      }
       return undefined;
     });
   }
@@ -1096,10 +1110,15 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     ));
   }
 
-  async failTurn(inputId: string, turnId: string, failure?: { reasonCode: string }): Promise<void> {
+  async failTurn(inputId: string, turnId: string, failure?: { reasonCode: string; reviewReplaySafe?: boolean }): Promise<void> {
     this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
-      connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
+      const reviewFailure = inputId.startsWith("joi_harness_review:goal:") && failure?.reviewReplaySafe !== undefined;
+      if (reviewFailure) {
+        connection.prepare(`UPDATE joi_turns SET review_replay_safe = ?, status = 'FAILED', updated_at = ?
+          WHERE turn_id = ? AND input_id = ? AND status IN ('PENDING','RUNNING','WAITING')`)
+          .run(failure.reviewReplaySafe ? 1 : 0, now, turnId, inputId);
+      } else connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
       consumeSupersededGoalSynthesis(connection, inputId, now);
       // Re-driving is only safe when the failed turn committed nothing. If it already started
       // side effects (dispatched work, created routines, raised cards) or its work is still
@@ -1127,7 +1146,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         : connection.prepare(`SELECT 1 FROM joi_turns WHERE input_id = ? AND side_effect_started = 1
           AND (? IS NULL OR created_at >= ?) LIMIT 1`).get(inputId, openedAt, openedAt);
       // Revocation of the goal also governs late failure cleanup of its derived inputs.
-      const nextStatus = opened?.revoked === 1 || liveWork !== undefined || sideEffects !== undefined ? "CONSUMED" : "PENDING";
+      const reviewProtocolFailed = reviewFailure && failure.reasonCode === "joi_turn_outcome_uncommitted";
+      const nextStatus = opened?.revoked === 1 || liveWork !== undefined || sideEffects !== undefined || reviewProtocolFailed ? "CONSUMED" : "PENDING";
       // Never kick a row that is waiting on the user back into the scheduler: an orphan
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages
@@ -1277,9 +1297,13 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
   if (patch.workbenchId !== undefined && connection.prepare("SELECT 1 FROM workbenches WHERE workbench_id = ? AND status = 'ACTIVE'").get(patch.workbenchId) === undefined) return null;
   if (patch.expectedReasonCode !== undefined && current.clarificationReasonCode !== patch.expectedReasonCode) return null;
   const goalInputId = typeof row.goal_input_id === "string" ? row.goal_input_id : inputId;
-  const gate = connection.prepare(`SELECT question_id, question_version, status FROM joi_goal_execution_gates
-    WHERE goal_input_id = ?`).get(goalInputId) as { question_id?: unknown; question_version?: unknown; status?: unknown } | undefined;
-  if (gate !== undefined) {
+  const gate = connection.prepare(`SELECT question_id, question_version, reason_code, status FROM joi_goal_execution_gates
+    WHERE goal_input_id = ?`).get(goalInputId) as { question_id?: unknown; question_version?: unknown; reason_code?: unknown; status?: unknown } | undefined;
+  const historicalReview = current.clarificationReasonCode === "harness_review_unrecoverable";
+  const historicalRecovery = historicalReview && goalInputId === inputId
+    ? prepareHistoricalReviewRecovery(connection, current, patch, gate, now) : null;
+  if (historicalReview && historicalRecovery === null) return null;
+  if (!historicalReview && gate !== undefined) {
     if (gate.status !== "WAITING_INPUT" || typeof gate.question_id !== "string" || typeof gate.question_version !== "number") return null;
     // Versioned clients resolve exactly the advertised question; legacy workbench choices may omit the version.
     const choosingWorkbench = patch.workbenchId !== undefined;
@@ -1349,7 +1373,7 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
       const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row | undefined;
       return updated === undefined ? null : mapRow(updated);
     }
-  } else if (patch.actionChoice !== undefined) {
+  } else if (patch.actionChoice !== undefined && !historicalReview) {
     return null;
   }
   const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
@@ -1357,8 +1381,8 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
     appendGoalRequirementSource(connection, goalInputId, current.body, "LEGACY");
   }
   const nextWorkbench = patch.workbenchId ?? current.workbenchId;
-  const questionId = typeof gate?.question_id === "string" ? gate.question_id : `goal_question:${goalInputId}:v1`;
-  const questionVersion = typeof gate?.question_version === "number" ? gate.question_version : 1;
+  const questionId = historicalRecovery?.questionId ?? (typeof gate?.question_id === "string" ? gate.question_id : `goal_question:${goalInputId}:v1`);
+  const questionVersion = historicalRecovery?.questionVersion ?? (typeof gate?.question_version === "number" ? gate.question_version : 1);
   const resumeInputId = `joi_goal_resume:goal:${goalInputId}:v${String(questionVersion)}`;
   // Answering a clarification is a user opening, exactly like a retry: the goal the
   // user just replied to belongs at the top of the home feed. Without this the card
@@ -1369,6 +1393,15 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
       clarification_prompt = NULL, updated_at = ?, last_opened_at = ?
     WHERE input_id = ? AND status = 'CLARIFICATION_REQUIRED'`).run(nextBody, nextWorkbench ?? null, now, now, goalInputId);
   if (result.changes === 0) return null;
+  if (historicalRecovery !== null) {
+    connection.prepare("UPDATE joi_inbox_messages SET reopened_at = ? WHERE input_id = ?").run(historicalRecovery.reopenedAt, goalInputId);
+    connection.prepare(`UPDATE joi_harness_maps SET review_recovery_epoch = ?, status = 'ACTIVE',
+      cleared_at = NULL, feedback_recorded_at = NULL, revision = revision + 1, updated_at = ?
+      WHERE goal_input_id = ?`).run(historicalRecovery.reopenedAt, now, goalInputId);
+    connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
+      WHERE goal_input_id = ? AND input_id LIKE 'joi_harness_review:%'
+        AND status IN ('PENDING','ROUTED','CLARIFICATION_REQUIRED')`).run(now, goalInputId);
+  }
   if (patch.text !== undefined) appendGoalRequirementSource(connection, goalInputId, patch.text);
   if (action !== undefined) {
     const resolved = connection.prepare(`UPDATE joi_user_action_requests
@@ -1386,7 +1419,8 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
     FROM work_items w
     WHERE w.input_id = ? AND w.status NOT IN ('COMPLETED','FAILED','CANCELED')
     ORDER BY w.created_at, w.work_id LIMIT 24`).all(goalInputId) as Row[];
-  const answer = patch.text ?? (patch.workbenchId === undefined ? "已提交结构化选择。" : "已确认工作台选择。");
+  const answer = patch.text ?? (historicalReview ? "沿用已有要求，重新核对已保存的成果并继续剩余工作。"
+    : patch.workbenchId === undefined ? "已提交结构化选择。" : "已确认工作台选择。");
   const resumeBody = [
     "A blocking question for this goal has been answered. Review the saved Work before resuming execution.",
     `goalInputId=${goalInputId}`,
@@ -1405,6 +1439,11 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
     "If the original plan still applies, call goal_resume, then leave any RUNNING Work alone and resume or leave the queued Work as appropriate.",
     "If the answer changes the requirements, cancel affected unstarted Work first, call goal_resume, and dispatch replacements. Cancel a RUNNING Work only when its result is no longer wanted at all.",
     "If information is still missing, call user_ask; do not call goal_resume.",
+    ...(historicalReview ? [
+      "The user requested a fresh assessment of a quarantined historical review. Do not replay its Turn, completed Work, or OBSERVED/UNKNOWN side effects.",
+      "Read the saved goal conclusions and authoritative evidence. After goal_resume, dispatch only the remaining safe work, preserving the original acceptance checks and permissions.",
+      "If no new Work is needed, finish this recovery Turn; the existing evidence will be synthesized again before the goal can complete.",
+    ] : []),
   ].join("\n");
   connection.prepare(`INSERT INTO joi_inbox_messages
     (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
@@ -1420,7 +1459,8 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
   connection.prepare(`INSERT INTO joi_goal_execution_gates
     (goal_input_id, question_id, question_version, status, reason_code, resume_input_id, created_at, answered_at, updated_at)
     VALUES (?, ?, ?, 'REVIEWING', ?, ?, ?, ?, ?)
-    ON CONFLICT(goal_input_id) DO UPDATE SET status = 'REVIEWING', resume_input_id = excluded.resume_input_id,
+    ON CONFLICT(goal_input_id) DO UPDATE SET question_id = excluded.question_id, question_version = excluded.question_version,
+      reason_code = excluded.reason_code, status = 'REVIEWING', resume_input_id = excluded.resume_input_id,
       answered_at = excluded.answered_at, updated_at = excluded.updated_at`).run(
     goalInputId, questionId, questionVersion, current.clarificationReasonCode ?? "question_required",
     resumeInputId, now, now, now,

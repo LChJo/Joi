@@ -14,6 +14,7 @@ import { vi } from "vitest";
 import type {
   JoiReasoningSessionSnapshot,
   ReasoningSessionStore,
+  PrimaryReasoningEvent,
 } from "../../src/main/application/ports/primary-reasoning-runtime.js";
 import {
   compactionHeadroom,
@@ -58,6 +59,33 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
+  it.each([
+    { code: "goal_resume_not_allowed", proof: true, safe: true },
+    { code: "goal_resume_conflict", proof: true, safe: true },
+    { code: "goal_resume_not_allowed", proof: false, safe: false },
+    { code: "storage_failed", proof: true, safe: false },
+  ])("forwards only trusted transactional rejection proofs: %j", async ({ code, proof, safe }) => {
+    const faux = fauxProvider({ provider: `review-proof-${code}-${String(proof)}` });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("goal_resume", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Review interrupted.")]),
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const events: PrimaryReasoningEvent[] = [];
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: new MemorySessionStore(), thinkingLevel: "off",
+      tools: [{ name: "goal_resume", label: "Resume", description: "Resume this version", parameters: Type.Object({}),
+        execute: async () => ({ isError: true, content: [{ type: "text" as const, text: JSON.stringify({ reasonCode: code, status: "REJECTED" }) }],
+          details: proof ? { replaySafeRejection: true } : {} }) }],
+    });
+    await runtime.startTurn({ inputId: "joi_goal_resume:goal:g:v1", workbenchId: "wb", prompt: "Review",
+      sessionId: "review-proof", modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake",
+      systemPrompt: "POLICY", turnId: "turn", onEvent: event => events.push(event) });
+    const finished = events.find(event => event.type === "tool_finished");
+    expect(finished).toMatchObject({ type: "tool_finished", isError: true, reasonCode: code });
+    if (safe) expect(finished).toHaveProperty("replaySafeRejection", true);
+    else expect(finished).not.toHaveProperty("replaySafeRejection");
+  });
+
   it("reads a long source in one turn while preserving requirements and bounding every request", async () => {
     const faux = fauxProvider({ provider: "required-long-source" });
     const model = { ...faux.getModel(), contextWindow: 64000 };

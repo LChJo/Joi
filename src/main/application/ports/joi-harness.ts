@@ -27,6 +27,7 @@ export interface HarnessReviewResultRef {
 
 /** Bounded digest handed to a harness review turn (limits enforced by the scan). */
 export interface HarnessReviewDigest {
+  recoveryEpoch?: string;
   continuationRequested?: true;
   workbenchId: string;
   completionSummary: string;

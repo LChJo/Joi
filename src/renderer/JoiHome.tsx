@@ -905,6 +905,9 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useNotice();
   const isQuestion = reasonCode === "question_required";
+  const [supplementScope, setSupplementScope] = useState<string>();
+  const currentSupplementScope = `${inputId}:${questionId ?? "legacy"}:${String(questionVersion ?? 1)}`;
+  const showOptionalRequirements = supplementScope === currentSupplementScope;
   const needsPartnerChoice = reasonCode === "partner_selection_required";
   const needsWaitingRecovery = reasonCode === "partner_waiting_recovery_required" || reasonCode === "partner_auth_required";
   const needsGoalContinuation = reasonCode === "goal_continuation_required";
@@ -946,7 +949,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     }
   };
   return <div className="joi-clarify">
-    <p className="joi-clarify-label">{needsHistoricalReview ? t("home.joiIsReconcilingHistoricalStatus") : needsGoalContinuation ? t("home.continueImprovingTheResult") : t("home.joiNeedsYourConfirmation")}</p>
+    <p className="joi-clarify-label">{needsHistoricalReview ? t("home.historicalReviewPaused") : needsGoalContinuation ? t("home.continueImprovingTheResult") : t("home.joiNeedsYourConfirmation")}</p>
     <p className="joi-clarify-reason">{clarificationText(reasonCode, prompt, assignedWorkbench?.name)}</p>
     {needsGoalContinuation ? <section aria-label={t("home.currentResultAndRemainingWork")} className="joi-continuation-context">
       <strong>{t("home.currentResultAndRemainingWork")}</strong>
@@ -954,7 +957,11 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
       {continuationSummary?.trim() && onShowContinuationResult !== undefined ? <button className="button ghost" onClick={onShowContinuationResult} type="button">{t("home.viewTheFullCurrentResult")}</button> : null}
     </section> : null}
     {needsHistoricalReview ? <div className="joi-clarify-workspace">
-      <div><strong>{t("home.sentToJoiForReconciliation")}</strong><span>{t("home.joiReconcilesStatusUsingCompletedWorkAndClosedPaths")}</span></div>
+      <div><strong>{t("home.recheckExistingWork")}</strong><span>{t("home.existingAnswersAndResultsArePreservedJoiWillReview")}</span></div>
+      <span className="row-actions">
+        <button className="button primary" disabled={busy} onClick={() => void resolve({ actionChoice: "RESUME" })} type="button">{busy ? t("home.submitting") : t("home.recheckAndContinue")}</button>
+        <button aria-expanded={showOptionalRequirements} className="button quiet" disabled={busy} onClick={() => setSupplementScope(showOptionalRequirements ? undefined : currentSupplementScope)} type="button">{t("home.optionalReviewRequirements")}</button>
+      </span>
     </div> : needsPartnerChoice ? <>
       {selectablePartners.length === 0 ? <p className="joi-clarify-hint">{t("home.noPartnersAreAvailableOpenPartnersToFixOr")}</p> : null}
       {selectablePartners.length === 0 ? null : <div className="joi-clarify-partner-list" role="group" aria-label={t("home.chooseAPartnerToContinue")}>
@@ -964,7 +971,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
         </button>)}
       </div>}
     </> : needsWorkbenchChoice ? <WorkbenchChoiceForm api={api} message={{ inputId, ...(suggestionSeed === undefined ? {} : { textPreview: suggestionSeed }), ...(questionId === undefined ? {} : { questionId }), ...(questionVersion === undefined ? {} : { questionVersion }) }} onResolved={onResolved} workbenches={workbenches} /> : null}
-    {needsHistoricalReview || needsPartnerChoice ? null : needsReviewRetry ? <div className="joi-clarify-workspace">
+    {needsPartnerChoice ? null : needsReviewRetry ? <div className="joi-clarify-workspace">
       <div><strong>{t("home.recheckExistingWork")}</strong><span>{t("home.existingAnswersAndResultsArePreservedJoiWillReview")}</span></div>
       <button className="button primary" disabled={busy} onClick={() => void resolve({ text: REVIEW_RETRY_TEXT })} type="button">{busy ? t("home.submitting") : t("home.retryReview")}</button>
     </div> : needsGoalContinuation ? <div className="joi-clarify-workspace">
@@ -979,7 +986,7 @@ function ClarificationActions({ api, partners, workbenchId, workbenches, inputId
     </div> : needsWorkspace ? <div className="joi-clarify-workspace">
       <div><strong>{assignedWorkbench?.name ?? t("home.currentWorkbench")}</strong><span>{t("home.onlyASafeWorkspaceIdentifierIsSavedAbsolutePaths")}</span></div>
       <button className="button primary" disabled={busy || workbenchId === undefined} onClick={() => void chooseWorkspace()} type="button">{busy ? t("home.selecting") : t("home.chooseWorkingDirectory")}</button>
-    </div> : needsWorkbenchChoice ? null : <div className="joi-clarify-add">
+    </div> : needsWorkbenchChoice || needsHistoricalReview && !showOptionalRequirements ? null : <div className="joi-clarify-add">
       <ClarifyTextarea aria-label={isQuestion ? t("home.yourAnswer") : t("home.additionalInformation")} disabled={busy} onChange={(event) => setDraft(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey && draft.trim() !== "") { event.preventDefault(); submitDraft(); } }} placeholder={isQuestion ? t("home.answerAndJoiWillContinueTheTaskShiftEnter") : t("home.addDetailsSoJoiCanContinueShiftEnterFor")} value={draft} />
       <button className="button quiet" disabled={busy || draft.trim() === ""} onClick={submitDraft} type="button">{isQuestion ? t("home.answerAndContinue") : t("home.addDetailsAndContinue")}</button>
     </div>}
@@ -1070,9 +1077,12 @@ function recentOutcomeLabel(status: WorkbenchDetailDto["recentOutcomes"][number]
 
 const ACTIVE_GOAL_STATUSES: ReadonlySet<JoiGoalCardDto["status"]> = new Set(["ARRANGING", "ARRANGED", "RUNNING", "REVIEWING", "EXTENDING", "FINALIZING"]);
 
-function GoalStatusBadge({ status }: { status: JoiGoalCardDto["status"] }) {
+function GoalStatusBadge({ goal }: { goal: JoiGoalCardDto }) {
   useI18n();
-  return <span className={`joi-goal-status ${status.toLowerCase()}`}>{ACTIVE_GOAL_STATUSES.has(status) ? <i aria-hidden="true" className="joi-goal-status-dot" /> : null}{goalStatusLabel(status)}</span>;
+  const status = goal.status;
+  const label = status === "NEEDS_ATTENTION" && goal.clarification.reasonCode === "harness_review_unrecoverable"
+    ? t("home.reviewInterrupted") : goalStatusLabel(status);
+  return <span className={`joi-goal-status ${status.toLowerCase()}`}>{ACTIVE_GOAL_STATUSES.has(status) ? <i aria-hidden="true" className="joi-goal-status-dot" /> : null}{label}</span>;
 }
 
 function GoalProgress({ goal }: { goal: JoiGoalCardDto }) {
@@ -1429,7 +1439,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         <div className="joi-goal-detail-title">
           <p className="eyebrow">{goal.workbench.name}</p>
           <GoalTitle title={goal.title} {...(detailState.detail === undefined ? {} : { fullTitle: detailState.detail.fullTitle })} />
-          <span className="joi-goal-detail-meta"><GoalStatusBadge status={goal.status} /><GoalProgress goal={goal} /></span>
+          <span className="joi-goal-detail-meta"><GoalStatusBadge goal={goal} /><GoalProgress goal={goal} /></span>
         </div>
         <div className="joi-goal-detail-actions">
           <button aria-label={t("common.close")} className="icon-button joi-goal-detail-close" onClick={onBack} title={t("common.close")} type="button"><XIcon aria-hidden size={18} /></button>
@@ -1493,7 +1503,7 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
         <div className="joi-goal-detail-title">
           <p className="eyebrow">{goal.workbench.name}</p>
           <h1>{goal.title}</h1>
-          <span className="joi-goal-detail-meta"><GoalStatusBadge status={goal.status} />{goal.completedAt === undefined ? null : <time className="joi-feed-time">{new Date(goal.completedAt).toLocaleString(currentLocale())}</time>}</span>
+          <span className="joi-goal-detail-meta"><GoalStatusBadge goal={goal} />{goal.completedAt === undefined ? null : <time className="joi-feed-time">{new Date(goal.completedAt).toLocaleString(currentLocale())}</time>}</span>
         </div>
         <div className="row-actions"><button className="button ghost" disabled={goal.workbench.workbenchId === ""} onClick={() => onOpenDetail()} type="button">{t("home.viewDetails")}</button><button className="button quiet" onClick={close} type="button">{t("common.close")}</button></div>
       </header>
@@ -1742,7 +1752,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
       {visibleGoals.map((goal) => <article className={`joi-goal-card ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
           <GoalCardHead goal={goal} onOpen={() => { setResultGoalId(null); setOpenGoalAgentStatus(undefined); setOpenGoalId(goal.goalId); }} />
-          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><GoalActionMenu api={api} goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={() => dismissGoal(goal.goalId)} onChanged={() => void refresh().catch(() => undefined)} /></div>
+          <div className="joi-goal-side"><GoalStatusBadge goal={goal} /><GoalActionMenu api={api} goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={() => dismissGoal(goal.goalId)} onChanged={() => void refresh().catch(() => undefined)} /></div>
         </div>
         <GoalResultPreview goal={goal} onOpen={() => { setResultGoalId(goal.goalId); setOpenGoalId(null); }} />
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
@@ -1790,6 +1800,7 @@ function JoiComposer({ api, focusGoalId, onNavigate, onScheduleGoal, snapshot }:
 }
 
 function clarificationText(code: string | undefined, prompt?: string, workbenchName?: string): string {
+  if (code === "harness_review_unrecoverable") return t("home.historicalReviewRecoveryHint");
   if (code === "question_required") return prompt ?? t("home.joiNeedsAnAnswerBeforeContinuingToPlanThis");
   if (code === "partner_waiting_recovery_required") return prompt ?? t("home.aPartnerIsStillWaitingChooseResumeOriginalWork");
   if (code === "partner_auth_required") return prompt ?? t("home.thePartnerNeedsAuthorizationAgainAuthorizeItInPartner");
@@ -1862,7 +1873,7 @@ export function ArchivedGoals({ api, onContinued }: { api: DigitalLifeApi; onCon
       {archived.length === 0 ? <p className="joi-feed-empty">{t("home.noArchivedGoalsYetChooseArchiveFromACard")}</p> : archived.map((goal) => <article className={`joi-goal-card archived ${goal.status.toLowerCase()}`} key={goal.goalId}>
         <div className="joi-goal-row">
           <GoalCardHead compact goal={goal} onOpen={() => { setRetryGoalId(null); setOpenGoalId(goal.goalId); }} />
-          <div className="joi-goal-side"><GoalStatusBadge status={goal.status} /><GoalActionMenu api={api} archived goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={refresh} onChanged={refresh} /></div>
+          <div className="joi-goal-side"><GoalStatusBadge goal={goal} /><GoalActionMenu api={api} archived goal={goal} onRetried={() => setRetryGoalId((current) => current === goal.goalId ? null : goal.goalId)} onDismissed={refresh} onChanged={refresh} /></div>
         </div>
         {retryGoalId === goal.goalId ? <GoalRetryPanel api={api} goal={goal} onDone={() => { setRetryGoalId(null); onContinued?.(goal.goalId); }} /> : null}
       </article>)}

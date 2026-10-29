@@ -70,7 +70,7 @@ export function consumeSupersededGoalSynthesis(connection: DatabaseSync, inputId
 }
 
 /** Enqueues current evidence once per revision pair and explicit retry epoch. */
-export function enqueueGoalResultSynthesis(connection: DatabaseSync, goalInputId: string, workbenchId: string, now: string): string | null {
+export function enqueueGoalResultSynthesis(connection: DatabaseSync, goalInputId: string, workbenchId: string, now: string, recoveryEpoch?: string): string | null {
   const source = connection.prepare("SELECT body AS goal_body,reopened_at,status FROM joi_inbox_messages WHERE input_id = ? AND canceled_at IS NULL AND dismissed_at IS NULL AND failed_at IS NULL").get(goalInputId);
   if (typeof source?.goal_body !== "string") return null;
   const gate = connection.prepare("SELECT status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(goalInputId);
@@ -84,7 +84,7 @@ export function enqueueGoalResultSynthesis(connection: DatabaseSync, goalInputId
   const current = connection.prepare("SELECT result_revision,requirements_revision,disposition,completed_at FROM joi_goal_outcomes WHERE input_id=?").get(goalInputId);
   const resumeEpoch = source.status === "CONSUMED" && typeof source.reopened_at === "string" && current?.result_revision === resultSet.revision
     && Number(current.requirements_revision ?? 0) === (contract?.revision ?? 0)
-    && (current.disposition === "BLOCKED" || current.disposition === "CONTINUE")
+    && (current.disposition === "BLOCKED" || current.disposition === "CONTINUE" || recoveryEpoch === source.reopened_at)
     && typeof current.completed_at === "string" && source.reopened_at > current.completed_at ? source.reopened_at : undefined;
   if (resultSet.synthesized_revision >= resultSet.revision &&
     (contract === null || resultSet.synthesized_requirements_revision === contract.revision) && resumeEpoch === undefined) return null;

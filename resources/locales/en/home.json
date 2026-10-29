@@ -2164,5 +2164,30 @@
   "insufficient": {
     "message": "Insufficient",
     "description": "home.insufficient"
+  },
+  "historicalReviewPaused": {
+    "message": "Internal review interrupted",
+    "description": "Interrupted internal review with saved results",
+    "sourceText": "内部复核已中断"
+  },
+  "recheckAndContinue": {
+    "message": "Retry review",
+    "description": "Retry an interrupted internal review",
+    "sourceText": "重试复核"
+  },
+  "historicalReviewRecoveryHint": {
+    "message": "The internal review did not finish. Existing results are saved. Retry the review, or optionally update the requirements.",
+    "description": "Internal recovery does not require additional user information",
+    "sourceText": "内部复核未完成，已有成果已保留。可直接重试复核；仅在需要调整目标时补充要求。"
+  },
+  "reviewInterrupted": {
+    "message": "Review interrupted",
+    "description": "Goal status for an interrupted internal review",
+    "sourceText": "复核中断"
+  },
+  "optionalReviewRequirements": {
+    "message": "Add requirements (optional)",
+    "description": "Expand optional requirements for an interrupted review",
+    "sourceText": "补充要求（可选）"
   }
 }

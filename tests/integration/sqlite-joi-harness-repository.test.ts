@@ -140,6 +140,46 @@ function harnessSnapshot(fixture: RuntimeFixture, goalInputId: string): Record<s
       WHERE goal_input_id = ?`).get(goalInputId)) as Record<string, unknown>;
 }
 
+async function seedQuarantinedReview(fixture: RuntimeFixture, repository: SqliteJoiHarnessRepository, gate: "missing" | "open" | "waiting") {
+  const goalInputId = "goal-explicit-review-recovery";
+  fixture.clock.advance(Date.parse(NOW) - fixture.clock.now().getTime());
+  const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+  await repository.createMap({ workbenchId, goalInputId, now: NOW });
+  seedCompletedLayer(fixture, goalInputId, 1, "CONTINUE");
+  const partner = await fixture.partners.add({ capabilities: [], displayName: "Saved evidence", kind: "local-pi", skills: [], tools: [] });
+  seedCompletedWorkWithResult(fixture, { absorbed: true, goalInputId, partnerRevisionId: partner.partnerRevisionId, workId: "saved-work" });
+  fixture.database.transaction((db) => {
+    if (gate === "open") {
+      db.prepare("INSERT INTO joi_goal_execution_gates (goal_input_id, question_id, question_version, status, reason_code, created_at, updated_at) VALUES (?, 'old-question', 3, 'OPEN', 'question_required', ?, ?)")
+        .run(goalInputId, NOW, NOW);
+      db.prepare("INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at) VALUES (?, 'old-resume', 'saved answer', 'CONSUMED', ?, ?, ?, ?)")
+        .run("joi_goal_resume:goal:" + goalInputId + ":v3", workbenchId, goalInputId, NOW, NOW);
+    }
+  });
+  await repository.synchronizeWorkPaths({ now: NOW });
+  const [digest] = await repository.listReviewDigests();
+  if (digest === undefined) throw new Error("review digest missing");
+  const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+  if (reviewInputId === null) throw new Error("review input missing");
+  fixture.database.transaction((db) => {
+    db.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(reviewInputId);
+    db.prepare("INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at) VALUES ('historical-review', ?, ?, 'historical-review', 'FAILED', 1, ?, ?)")
+      .run(reviewInputId, workbenchId, NOW, NOW);
+  });
+  const [candidate] = await repository.listReviewRecoveries();
+  if (candidate === undefined) throw new Error("recovery candidate missing");
+  expect(await repository.reconcileReview({ candidate, now: NOW })).toEqual({ action: "QUARANTINED" });
+  if (gate !== "waiting") fixture.database.transaction((db) => {
+    if (gate === "missing") db.prepare("DELETE FROM joi_goal_execution_gates WHERE goal_input_id = ?").run(goalInputId);
+    else db.prepare("UPDATE joi_goal_execution_gates SET question_id = 'old-question', question_version = 3, status = 'OPEN', reason_code = 'question_required' WHERE goal_input_id = ?").run(goalInputId);
+  });
+  const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+  const goal = feed.goals.find((item) => item.goalId === goalInputId);
+  const question = goal?.status === "NEEDS_ATTENTION" ? goal.clarification : undefined;
+  if (typeof question?.questionId !== "string" || typeof question.questionVersion !== "number") throw new Error("recovery question missing");
+  return { candidate, goalInputId, reviewInputId, workbenchId, question: { questionId: question.questionId, questionVersion: question.questionVersion } };
+}
+
 describe("SqliteJoiHarnessRepository", () => {
   let fixture: RuntimeFixture;
   let repository: SqliteJoiHarnessRepository;
@@ -983,6 +1023,37 @@ describe("SqliteJoiHarnessRepository", () => {
       expect(await repository.listReviewRecoveries()).toEqual([]);
     });
 
+    it("rechecks a settled internal review once and then stops automatic protocol retries", async () => {
+      const goalInputId = "goal-internal-review";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1, "CONTINUE");
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const failReview = async (turnId: string) => {
+        await inbox.createTurn({ workbenchId, createdAt: NOW, inputId: reviewInputId, sessionId: "internal-review", turnId });
+        await inbox.recordTurnProgress(turnId, { formalOutputStarted: true, sideEffectStarted: true });
+        const failure = { reasonCode: "joi_turn_outcome_uncommitted", reviewReplaySafe: true };
+        await inbox.failTurn(reviewInputId, turnId, failure);
+      };
+      await failReview("internal-1");
+      const [first] = await repository.listReviewRecoveries();
+      expect(first).toMatchObject({ action: "REQUEUE", reasonCode: "review_turn_failed_without_side_effect" });
+      if (first === undefined) throw new Error("first candidate missing");
+      expect(await repository.reconcileReview({ candidate: first, now: NOW })).toEqual({ action: "REQUEUED", inputId: reviewInputId });
+      await failReview("internal-2");
+      const [second] = await repository.listReviewRecoveries();
+      expect(second).toMatchObject({ action: "QUARANTINE", reasonCode: "review_retry_exhausted" });
+      if (second === undefined) throw new Error("second candidate missing");
+      expect(await repository.reconcileReview({ candidate: second, now: NOW })).toEqual({ action: "QUARANTINED" });
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+      expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS count FROM work_items WHERE input_id = ?").get(goalInputId)))
+        .toEqual({ count: 0 });
+    });
+
     it("quarantines a consumed review when a historical side effect is present", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review-unsafe", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-review-unsafe", now: NOW });
@@ -1014,6 +1085,32 @@ describe("SqliteJoiHarnessRepository", () => {
         goals: [expect.objectContaining({ goalId: "goal-review-unsafe", status: "NEEDS_ATTENTION" })],
       });
       expect(await repository.listReviewRecoveries()).toEqual([]);
+    });
+
+    it("keeps interrupted review effects unproven and rejects a retry whose budget changed", async () => {
+      const goalInputId = "goal-review-proof-race";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1, "CONTINUE");
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review missing");
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      await inbox.createTurn({ workbenchId, createdAt: NOW, inputId: reviewInputId, sessionId: "proof-race", turnId: "proof-live" });
+      await inbox.recordTurnProgress("proof-live", { formalOutputStarted: true, sideEffectStarted: true });
+      expect(fixture.database.transaction(db => db.prepare("SELECT review_replay_safe FROM joi_turns WHERE turn_id = 'proof-live'").get()))
+        .toEqual({ review_replay_safe: null });
+      const failure = { reasonCode: "joi_turn_outcome_uncommitted", reviewReplaySafe: true };
+      await inbox.failTurn(reviewInputId, "proof-live", failure);
+      const [candidate] = await repository.listReviewRecoveries();
+      expect(candidate?.action).toBe("REQUEUE");
+      if (candidate === undefined) throw new Error("candidate missing");
+      fixture.database.transaction(db => db.prepare(`INSERT INTO joi_turns
+        (turn_id,input_id,workbench_id,session_id,status,side_effect_started,created_at,updated_at)
+        VALUES ('proof-second',?,?,'proof-race','FAILED',0,?,?)`).run(reviewInputId, workbenchId, NOW, NOW));
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+      expect((await repository.listReviewRecoveries())[0]).toMatchObject({ action: "QUARANTINE", reasonCode: "review_retry_exhausted" });
     });
 
     it("auto-clears a quarantined review when terminal Work facts prove the goal is complete", async () => {
@@ -1258,6 +1355,125 @@ describe("SqliteJoiHarnessRepository", () => {
       if (candidate === undefined) throw new Error("review recovery candidate missing");
       expect(candidate).toMatchObject({ action: "QUARANTINE", reasonCode: "review_row_missing" });
       await expect(repository.reconcileReview({ candidate, now: NOW })).resolves.toEqual({ action: "QUARANTINED" });
+    });
+  });
+
+  describe("explicit historical review recovery", () => {
+    it("does not schedule a fresh review solely because a legacy goal was reopened", async () => {
+      const goalInputId = "legacy-reopened-goal";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ goalInputId, workbenchId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1, "CONTINUE");
+      fixture.database.transaction((db) => {
+        db.prepare("UPDATE joi_inbox_messages SET reopened_at = ? WHERE input_id = ?").run(NOW, goalInputId);
+        db.prepare("UPDATE joi_harness_maps SET reviewed_revision = 1 WHERE goal_input_id = ?").run(goalInputId);
+        const reviewId = "joi_harness_review:goal:" + goalInputId + ":r1";
+        db.prepare("INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, goal_input_id, workbench_id, created_at, updated_at) VALUES (?, 'legacy-review', 'saved review', 'CONSUMED', ?, ?, ?, ?)").run(reviewId, goalInputId, workbenchId, NOW, NOW);
+        db.prepare("INSERT INTO joi_turns (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at) VALUES ('legacy-review', ?, ?, 'legacy-review', 'FAILED', 1, ?, ?)").run(reviewId, workbenchId, NOW, NOW);
+      });
+      expect(await repository.listReviewDigests()).toEqual([]);
+      expect(await repository.listReviewRecoveries()).toEqual([expect.objectContaining({ action: "QUARANTINE", reasonCode: "review_side_effect_unknown" })]);
+    });
+
+    it.each((["missing", "open", "waiting"] as const).flatMap((gate) =>
+      (["RESULT_CONTINUE", "RESULT_SYNTHESIZED"] as const).map((outcome) => ({ gate, outcome })),
+    ))("rechecks saved evidence with a $gate gate and $outcome without replaying the historical review", async ({ gate, outcome }) => {
+      const { candidate, goalInputId, reviewInputId, workbenchId, question } = await seedQuarantinedReview(fixture, repository, gate);
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const patch = { actionChoice: "RESUME" as const, expectedQuestionId: question.questionId, expectedQuestionVersion: question.questionVersion };
+      expect(await inbox.clarify(goalInputId, patch)).toMatchObject({ inputId: goalInputId, status: "ROUTED", body: "goal body" });
+      const recovered = fixture.database.transaction((db) => db.prepare("SELECT question_version, status, resume_input_id FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(goalInputId)) as { question_version: number; resume_input_id: string; status: string };
+      expect(recovered).toMatchObject({ question_version: gate === "open" ? 4 : 1, status: "REVIEWING" });
+      expect(await new SqliteJoiInboxRepository(fixture.database, fixture.clock).clarify(goalInputId, patch)).toBeNull();
+      const recovery = await inbox.loadInput(recovered.resume_input_id);
+      expect(recovery?.body).toContain("Do not replay");
+      await inbox.createTurn({ inputId: recovered.resume_input_id, workbenchId, sessionId: "explicit-recovery", turnId: "explicit-recovery", createdAt: NOW });
+      await expect(inbox.completeInput(recovered.resume_input_id, "explicit-recovery")).rejects.toMatchObject({ code: "goal_resume_required" });
+      await inbox.resumeGoal({ inputId: recovered.resume_input_id, turnId: "explicit-recovery" });
+      await inbox.completeInput(recovered.resume_input_id, "explicit-recovery");
+      const synthesis = fixture.database.transaction((db) => db.prepare("SELECT input_id FROM joi_inbox_messages WHERE goal_input_id = ? AND input_id LIKE 'joi_result_input:%' AND status = 'PENDING'").get(goalInputId)) as { input_id: string } | undefined;
+      expect(synthesis).toBeDefined();
+      if (synthesis === undefined) throw new Error("fresh synthesis missing");
+      await inbox.createTurn({ inputId: synthesis.input_id, workbenchId, sessionId: "fresh-synthesis", turnId: "fresh-synthesis", createdAt: NOW });
+      await inbox.completeInput(synthesis.input_id, "fresh-synthesis", { outcome, completionSummary: "Current evidence assessment." });
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+      expect(await repository.enqueueReview({ digest: candidate.digest, now: NOW })).toBeNull();
+      const [freshDigest] = await repository.listReviewDigests();
+      expect(freshDigest).toMatchObject({ goalInputId, resultRevision: 1 });
+      if (freshDigest === undefined) throw new Error("fresh review missing");
+      const freshReviewId = await repository.enqueueReview({ digest: freshDigest, now: NOW });
+      expect(freshReviewId).not.toBeNull();
+      expect(freshReviewId).not.toBe(reviewInputId);
+      expect(await repository.listReviewDigests()).toEqual([]);
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+      if (outcome === "RESULT_SYNTHESIZED") {
+        if (freshReviewId === null) throw new Error("fresh review missing");
+        await inbox.createTurn({ inputId: freshReviewId, workbenchId, sessionId: "fresh-review", turnId: "fresh-review", createdAt: NOW });
+        expect(await repository.clearMap({ goalInputId, turnId: "historical-review" })).toBe(false);
+        await inbox.completeInput(freshReviewId, "fresh-review");
+        expect((await repository.loadGoalProjections())[0]?.mapStatus).toBe("CLEARED");
+      }
+      expect(await inbox.loadInput(reviewInputId)).toMatchObject({ status: "CONSUMED" });
+      expect(fixture.database.transaction((db) => db.prepare("SELECT COUNT(*) AS n FROM work_items WHERE input_id = ?").get(goalInputId))).toEqual({ n: 1 });
+      expect(fixture.database.transaction((db) => db.prepare("SELECT COUNT(*) AS n FROM dispatch_attempts WHERE work_id = 'saved-work'").get())).toEqual({ n: 1 });
+      expect(fixture.database.transaction((db) => db.prepare("SELECT body FROM work_result_bodies WHERE body_ref = 'body-saved-work'").get())).toEqual({ body: "RAW" });
+      expect(fixture.database.transaction((db) => db.prepare("SELECT status, side_effect_started FROM joi_turns WHERE turn_id = 'historical-review'").get())).toEqual({ status: "FAILED", side_effect_started: 1 });
+    });
+
+    it("preserves supplements once across reconstruction and rejects the answered recovery card", async () => {
+      const { goalInputId, question } = await seedQuarantinedReview(fixture, repository, "open");
+      const patch = { text: "Only fill the evidence gap.", expectedQuestionId: question.questionId, expectedQuestionVersion: question.questionVersion };
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      expect(await inbox.clarify(goalInputId, patch)).toMatchObject({ status: "ROUTED", body: "goal body\n\n[用户补充] Only fill the evidence gap." });
+      expect(await new SqliteJoiInboxRepository(fixture.database, fixture.clock).clarify(goalInputId, patch)).toBeNull();
+      expect(fixture.database.transaction((db) => db.prepare("SELECT kind,body FROM joi_goal_requirement_sources WHERE goal_input_id = ? ORDER BY source_revision").all(goalInputId)))
+        .toEqual([{ kind: "LEGACY", body: "goal body" }, { kind: "USER", body: "Only fill the evidence gap." }]);
+    });
+
+    it("keeps a consumed legacy recovery input immutable when its gate is missing", async () => {
+      const { goalInputId, workbenchId, question } = await seedQuarantinedReview(fixture, repository, "missing");
+      const oldResumeId = "joi_goal_resume:goal:" + goalInputId + ":v1";
+      fixture.database.transaction((db) => db.prepare("INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at) VALUES (?, 'consumed-legacy-resume', 'saved answer', 'CONSUMED', ?, ?, ?, ?)").run(oldResumeId, workbenchId, goalInputId, NOW, NOW));
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      expect(await inbox.clarify(goalInputId, { actionChoice: "RESUME", expectedQuestionId: question.questionId, expectedQuestionVersion: question.questionVersion })).toMatchObject({ status: "ROUTED" });
+      expect(await inbox.loadInput(oldResumeId)).toMatchObject({ status: "CONSUMED", body: "saved answer" });
+      expect((await inbox.loadInput("joi_goal_resume:goal:" + goalInputId + ":v2"))?.body).toContain("Do not replay");
+    });
+
+    it("rechecks evidence after an interrupted historical recovery is retried", async () => {
+      const { goalInputId, workbenchId, question } = await seedQuarantinedReview(fixture, repository, "waiting");
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      await inbox.clarify(goalInputId, { actionChoice: "RESUME", expectedQuestionId: question.questionId, expectedQuestionVersion: question.questionVersion });
+      const resumeId = "joi_goal_resume:goal:" + goalInputId + ":v1";
+      await inbox.createTurn({ inputId: resumeId, workbenchId, sessionId: "interrupted", turnId: "interrupted", createdAt: NOW });
+      await inbox.recordTurnProgress("interrupted", { formalOutputStarted: false, sideEffectStarted: true });
+      await inbox.failTurn(resumeId, "interrupted");
+      await inbox.recoverInterruptedGoalReviews();
+      const interrupted = (await inbox.list()).find((item) => item.inputId === goalInputId);
+      expect(interrupted?.clarificationReasonCode).toBe("goal_review_interrupted");
+      if (interrupted?.questionId === undefined || interrupted.questionVersion === undefined) throw new Error("retry question missing");
+      await inbox.clarify(goalInputId, { text: "Keep the saved answers and retry the review.", expectedQuestionId: interrupted.questionId, expectedQuestionVersion: interrupted.questionVersion });
+      const retryId = "joi_goal_resume:goal:" + goalInputId + ":v" + String(interrupted.questionVersion);
+      await inbox.createTurn({ inputId: retryId, workbenchId, sessionId: "retry", turnId: "retry", createdAt: NOW });
+      await inbox.resumeGoal({ inputId: retryId, turnId: "retry" });
+      await inbox.completeInput(retryId, "retry");
+      expect(fixture.database.transaction((db) => db.prepare("SELECT COUNT(*) AS n FROM joi_inbox_messages WHERE goal_input_id = ? AND input_id LIKE 'joi_result_input:%' AND status = 'PENDING'").get(goalInputId))).toEqual({ n: 1 });
+    });
+
+    it.each(["canceled", "dismissed", "active-work", "live-turn", "pending-child", "waiting-question", "reviewing-gate", "stale-version", "wrong-action"])("refuses a historical recovery with %s without changing the saved goal", async (blocker) => {
+      const { goalInputId, workbenchId, question } = await seedQuarantinedReview(fixture, repository, "open");
+      fixture.database.transaction((db) => {
+        if (blocker === "canceled") db.prepare("UPDATE joi_inbox_messages SET canceled_at = ? WHERE input_id = ?").run(NOW, goalInputId);
+        if (blocker === "dismissed") db.prepare("UPDATE joi_inbox_messages SET dismissed_at = ? WHERE input_id = ?").run(NOW, goalInputId);
+        if (blocker === "active-work") db.prepare("UPDATE work_items SET status = 'RUNNING' WHERE work_id = 'saved-work'").run();
+        if (blocker === "live-turn") db.prepare("UPDATE joi_turns SET status = 'RUNNING' WHERE turn_id = 'historical-review'").run();
+        if (blocker === "pending-child") db.prepare("INSERT INTO joi_inbox_messages (input_id, idempotency_key, body, status, goal_input_id, workbench_id, created_at, updated_at) VALUES ('other-child', 'other-child', 'other request', 'PENDING', ?, ?, ?, ?)").run(goalInputId, workbenchId, NOW, NOW);
+        if (blocker === "waiting-question" || blocker === "reviewing-gate") db.prepare("UPDATE joi_goal_execution_gates SET status = ? WHERE goal_input_id = ?").run(blocker === "waiting-question" ? "WAITING_INPUT" : "REVIEWING", goalInputId);
+      });
+      const before = fixture.database.transaction((db) => db.prepare("SELECT * FROM joi_inbox_messages ORDER BY input_id").all());
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      expect(await inbox.clarify(goalInputId, { actionChoice: blocker === "wrong-action" ? "ACCEPT_CURRENT" : "RESUME", expectedQuestionId: question.questionId, expectedQuestionVersion: question.questionVersion + (blocker === "stale-version" ? 1 : 0) })).toBeNull();
+      expect(fixture.database.transaction((db) => db.prepare("SELECT * FROM joi_inbox_messages ORDER BY input_id").all())).toEqual(before);
     });
   });
 

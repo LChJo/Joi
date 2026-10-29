@@ -970,18 +970,23 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     } else if (event.type === "tool_execution_start") {
       mapped = { type: "tool_started", toolCallId: event.toolCallId, toolName: event.toolName, turnId: active.turnId };
     } else if (event.type === "tool_execution_end") {
+      const isError = event.isError || (event.result as { isError?: unknown } | undefined)?.isError === true;
       const reasonCode = safeToolResultReasonCode(event.result)
-        ?? (event.isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
+        ?? (isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
       runtime.dispatchAcceptanceCalls.delete(event.toolCallId);
       const outcome = safeTurnOutcome(event.toolName, event.result);
-      const synthesisState = event.toolName === "turn_complete" && !event.isError
+      const synthesisState = event.toolName === "turn_complete" && !isError
         ? parseGoalSynthesisDraft((event.result as { details?: { synthesisState?: unknown } } | undefined)?.details?.synthesisState) : undefined;
       mapped = {
         type: "tool_finished",
-        isError: event.isError,
+        isError,
         ...(outcome === undefined ? {} : { outcome }),
         ...(synthesisState === undefined ? {} : { synthesisState }),
-        ...(reasonCode === undefined && event.isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
+        ...(reasonCode === undefined && isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
+        ...(isError && event.toolName === "goal_resume"
+          && (reasonCode === "goal_resume_not_allowed" || reasonCode === "goal_resume_conflict")
+          && (event.result as { details?: { replaySafeRejection?: unknown } } | undefined)?.details?.replaySafeRejection === true
+          ? { replaySafeRejection: true as const } : {}),
         toolCallId: event.toolCallId,
         toolName: event.toolName,
         turnId: active.turnId,

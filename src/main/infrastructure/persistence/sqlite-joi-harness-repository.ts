@@ -26,6 +26,8 @@ import type {
 } from "../../application/ports/joi-harness.js";
 import { composeReviewBody } from "../../application/joi/joi-harness-review-body.js";
 import { DomainError } from "../../domain/errors.js";
+import { harnessReviewInputId as reviewInputId, harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
+import { quarantineHistoricalReview } from "./sqlite-joi-historical-review.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -51,6 +53,9 @@ const TASK_SUMMARY_KEEP_CHARS = 2_000;
  */
 const REVIEW_GATE_OPEN_SQL = `NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates gate
                             WHERE gate.goal_input_id = m.goal_input_id AND gate.status <> 'OPEN')`;
+const REVIEW_UNSEEN_SQL = `(rs.revision > m.reviewed_revision OR (m.review_recovery_epoch IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages epoch_review
+    WHERE epoch_review.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "rs.revision")})))`;
 // Outcome-driven actions wait for the current synthesis owner, including a parked clarification.
 const SYNTHESIS_IDLE_SQL = `NOT EXISTS (
                 SELECT 1 FROM joi_inbox_messages synthesis
@@ -95,7 +100,9 @@ const REVIEW_WASTED_TURN_COUNT_SQL = `
                 (SELECT COUNT(*) FROM joi_turns wasted_review
                   WHERE wasted_review.input_id = r.input_id AND wasted_review.status = 'COMPLETED'
                     AND wasted_review.side_effect_started = 0)`;
-const WASTED_REVIEW_REQUEUE_LIMIT = 1;
+const REVIEW_RETRY_COUNT_SQL = `(${REVIEW_WASTED_TURN_COUNT_SQL} +
+  (SELECT COUNT(*) FROM joi_turns failed_review WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'))`;
+const REVIEW_REQUEUE_LIMIT = 1;
 // A Work reaching its terminal state and its result joining the goal's result set are two
 // separate writes, milliseconds apart. Everything else these predicates read — reviewed_revision,
 // rs.revision, the outcome for that revision — still describes the previous layer during that
@@ -144,10 +151,6 @@ function requireText(value: string, limit: number, code: string): string {
   const trimmed = value.trim();
   if (trimmed.length === 0 || trimmed.length > limit) throw new DomainError(code, "Harness map entry is out of bounds.");
   return trimmed;
-}
-
-function reviewInputId(goalInputId: string, resultRevision: number, requirementsRevision?: number): string {
-  return `joi_harness_review:goal:${goalInputId}:r${String(resultRevision)}${requirementsRevision === undefined ? "" : `:q${String(requirementsRevision)}`}`;
 }
 
 function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
@@ -203,6 +206,7 @@ function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
       };
     });
   return {
+    ...(typeof row.review_recovery_epoch === "string" ? { recoveryEpoch: row.review_recovery_epoch } : {}),
     ...(optionalText(row, "outcome_disposition") === "CONTINUE" ? { continuationRequested: true as const } : {}),
     workbenchId: textValue(row, "workbench_id"),
     completionSummary: optionalText(row, "completion_summary") ?? "",
@@ -308,14 +312,14 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
   async listReviewDigests(): Promise<HarnessReviewDigest[]> {
     return this.database.transaction((connection) => {
       const candidates = connection.prepare(`
-        SELECT m.goal_input_id, m.workbench_id, m.destination, rs.revision AS result_revision,
+        SELECT m.goal_input_id, m.workbench_id, m.destination, m.review_recovery_epoch, rs.revision AS result_revision,
                o.completion_summary, o.disposition AS outcome_disposition
           FROM joi_harness_maps m
           JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
           JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
           JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
          WHERE m.status = 'ACTIVE'
-           AND rs.revision > m.reviewed_revision
+           AND ${REVIEW_UNSEEN_SQL}
            AND rs.synthesized_revision = rs.revision
            AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
            AND ${SYNTHESIS_IDLE_SQL}
@@ -343,7 +347,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
         JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
        WHERE m.status = 'ACTIVE'
-         AND rs.revision > m.reviewed_revision
+         AND ${REVIEW_UNSEEN_SQL}
          AND rs.synthesized_revision = rs.revision
          AND o.disposition = 'CONTINUE'
          AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
@@ -469,11 +473,13 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       // those facts converge, close it mechanically instead of waiting for a
       // failure that will never occur or replaying the completed review.
       const candidates = connection.prepare(`
-        SELECT m.goal_input_id, m.workbench_id, m.destination, rs.revision AS result_revision,
+        SELECT m.goal_input_id, m.workbench_id, m.destination, m.review_recovery_epoch, rs.revision AS result_revision,
                o.completion_summary, o.disposition AS outcome_disposition, r.input_id AS review_input_id,
                (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id) AS review_turn_count,
-               (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1) AS side_effect_turn_count,
+               (SELECT COUNT(*) FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1
+                 AND COALESCE(t.review_replay_safe, 0) <> 1) AS side_effect_turn_count,
                ${REVIEW_WASTED_TURN_COUNT_SQL} AS wasted_turn_count,
+               ${REVIEW_RETRY_COUNT_SQL} AS retry_count,
                (SELECT COUNT(*) FROM work_items w
                  WHERE w.input_id = m.goal_input_id AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED')) AS active_work_count,
                (SELECT COUNT(*) FROM joi_harness_paths p
@@ -486,7 +492,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
           JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
           JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
           LEFT JOIN joi_inbox_messages r
-            ON r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || rs.revision || COALESCE((SELECT ':q' || revision FROM joi_goal_requirements WHERE goal_input_id = m.goal_input_id), '')
+            ON r.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "rs.revision")}
          WHERE m.status IN ('ACTIVE', 'CLEARED')
            AND rs.revision > 0
            AND rs.synthesized_revision = rs.revision
@@ -514,6 +520,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                             WHERE w.input_id = m.goal_input_id
                               AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
            AND ${REVIEW_RESULTS_ABSORBED_SQL}
+            AND (m.review_recovery_epoch IS NULL OR r.input_id IS NOT NULL)
            AND NOT (o.disposition = 'BLOCKED' AND EXISTS (
              SELECT 1 FROM joi_inbox_messages recovery
               WHERE recovery.goal_input_id = m.goal_input_id
@@ -546,6 +553,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         const turnCount = numberValue(row, "review_turn_count");
         const sideEffectTurns = numberValue(row, "side_effect_turn_count");
         const wastedTurns = numberValue(row, "wasted_turn_count");
+        const retryCount = numberValue(row, "retry_count");
         const activeWork = numberValue(row, "active_work_count");
         const openPaths = numberValue(row, "open_path_count");
         const missingPaths = numberValue(row, "missing_path_count");
@@ -554,7 +562,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         const action = factsComplete && outcomeCompleted
           ? "AUTO_CLEAR" as const
           : reviewInput === null || turnCount === 0 || sideEffectTurns > 0 || activeWork > 0 || openPaths > 0 || missingPaths > 0
-            || wastedTurns > WASTED_REVIEW_REQUEUE_LIMIT
+            || retryCount > REVIEW_REQUEUE_LIMIT
           ? "QUARANTINE" as const
           : "REQUEUE" as const;
         const reasonCode = factsComplete && outcomeCompleted
@@ -565,8 +573,10 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
             ? "review_turn_missing"
             : sideEffectTurns > 0 || activeWork > 0 || openPaths > 0 || missingPaths > 0
               ? "review_side_effect_unknown"
-              : wastedTurns > WASTED_REVIEW_REQUEUE_LIMIT
+              : wastedTurns > REVIEW_REQUEUE_LIMIT
                 ? "review_repeatedly_completed_without_side_effect"
+                : retryCount > REVIEW_REQUEUE_LIMIT
+                  ? "review_retry_exhausted"
                 : wastedTurns > 0
                   ? "review_completed_without_side_effect"
                   : "review_turn_failed_without_side_effect";
@@ -675,7 +685,9 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
           JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
           JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
          WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
-           AND rs.revision > m.reviewed_revision
+            AND ${REVIEW_UNSEEN_SQL}
+            AND rs.revision = ? AND m.review_recovery_epoch IS ?
+            AND ${REVIEW_GATE_OPEN_SQL}
            AND rs.synthesized_revision = rs.revision
            AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
            AND ${SYNTHESIS_IDLE_SQL}
@@ -686,7 +698,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              AND g.clarification_reason_code IS NULL
              AND MAX(0, COALESCE((SELECT MAX(p.layer) FROM joi_harness_paths p
                                    WHERE p.goal_input_id = m.goal_input_id), 1) - 1) < m.continuation_allowance
-           ))`).get(digest.goalInputId) as Row | undefined;
+            ))`).get(digest.goalInputId, digest.resultRevision, digest.recoveryEpoch ?? null) as Row | undefined;
       if (gate === undefined) return null;
       const resultRevision = numberValue(gate, "result_revision");
       const active = connection.prepare(`
@@ -700,13 +712,13 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       if (goal === undefined) return null;
       if (goal.canceled_at !== null || goal.dismissed_at !== null) return null;
       const requirementRevision = loadGoalRequirements(connection, digest.goalInputId)?.revision;
-      const inputId = reviewInputId(digest.goalInputId, resultRevision, requirementRevision);
+      const inputId = reviewInputId(digest.goalInputId, resultRevision, requirementRevision, digest.recoveryEpoch);
       connection.prepare(`
         INSERT OR IGNORE INTO joi_inbox_messages
           (input_id, idempotency_key, body, status, workbench_id, goal_input_id, created_at, updated_at)
         VALUES (?, ?, ?, 'PENDING', ?, ?, ?, ?)`).run(
         inputId,
-        `harness_review_goal:${digest.goalInputId}:${String(resultRevision)}${requirementRevision === undefined ? "" : `:q${String(requirementRevision)}`}`,
+        `harness_review_goal:${digest.goalInputId}:${String(resultRevision)}${requirementRevision === undefined ? "" : `:q${String(requirementRevision)}`}${digest.recoveryEpoch === undefined ? "" : `:resume:${digest.recoveryEpoch}`}`,
         composeReviewBody({ ...digest, resultRevision }),
         digest.workbenchId,
         digest.goalInputId,
@@ -716,8 +728,8 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
       connection.prepare(`
         UPDATE joi_harness_maps
            SET reviewed_revision = ?, reviewed_requirements_revision = ?, revision = revision + 1, updated_at = ?
-         WHERE goal_input_id = ? AND reviewed_revision < ?`).run(
-        resultRevision, requirementRevision ?? null, now, digest.goalInputId, resultRevision,
+          WHERE goal_input_id = ? AND (reviewed_revision < ? OR ?)`).run(
+        resultRevision, requirementRevision ?? null, now, digest.goalInputId, resultRevision, digest.recoveryEpoch === undefined ? 0 : 1,
       );
       return inputId;
     });
@@ -731,7 +743,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
         JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
        WHERE m.goal_input_id = ? AND m.workbench_id = ? AND m.status = 'ACTIVE'
-         AND rs.revision = ? AND rs.revision > m.reviewed_revision
+         AND rs.revision = ? AND ${REVIEW_UNSEEN_SQL}
          AND rs.synthesized_revision = rs.revision AND o.disposition = 'CONTINUE'
          AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
          AND ${SYNTHESIS_IDLE_SQL}
@@ -938,7 +950,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
         JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
         JOIN joi_inbox_messages review
-          ON review.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || CAST(rs.revision AS TEXT) || COALESCE((SELECT ':q' || revision FROM joi_goal_requirements WHERE goal_input_id = m.goal_input_id), '')
+          ON review.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "rs.revision")}
         JOIN joi_inbox_messages goal ON goal.input_id = m.goal_input_id
        WHERE m.status = 'ACTIVE'
          AND rs.synthesized_revision = rs.revision
@@ -973,7 +985,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
           JOIN joi_goal_result_sets rs ON rs.original_input_id = m.goal_input_id
           JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
           JOIN joi_inbox_messages review
-            ON review.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || CAST(rs.revision AS TEXT) || COALESCE((SELECT ':q' || revision FROM joi_goal_requirements WHERE goal_input_id = m.goal_input_id), '')
+            ON review.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "rs.revision")}
           JOIN joi_inbox_messages goal ON goal.input_id = m.goal_input_id
          WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
            AND rs.synthesized_revision = rs.revision
@@ -997,7 +1009,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
     return this.database.transaction((connection) => {
       const { candidate, now } = input;
       const { goalInputId, resultRevision } = candidate.digest;
-      const reviewId = reviewInputId(goalInputId, resultRevision, loadGoalRequirements(connection, goalInputId)?.revision);
+      const reviewId = reviewInputId(goalInputId, resultRevision, loadGoalRequirements(connection, goalInputId)?.revision, candidate.digest.recoveryEpoch);
       const current = connection.prepare(`
         SELECT m.reviewed_revision, m.status AS map_status, o.disposition AS outcome_disposition, rs.revision AS result_revision
           FROM joi_harness_maps m
@@ -1008,6 +1020,8 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
          WHERE m.goal_input_id = ? AND m.status IN ('ACTIVE', 'CLEARED')
            AND rs.synthesized_revision = rs.revision
            AND rs.revision = ? AND m.reviewed_revision = rs.revision
+            AND m.review_recovery_epoch IS ?
+            AND (m.review_recovery_epoch IS NULL OR r.input_id IS NOT NULL)
            AND ${goalRequirementsCurrentSql('m.goal_input_id', 'm.reviewed_requirements_revision')}
            AND o.completed_at >= COALESCE(g.reopened_at, g.created_at)
            AND ${SYNTHESIS_IDLE_SQL}
@@ -1035,7 +1049,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                             WHERE w.input_id = m.goal_input_id
                               AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
            AND ${REVIEW_RESULTS_ABSORBED_SQL}`).get(
-        reviewId, goalInputId, resultRevision,
+        reviewId, goalInputId, resultRevision, candidate.digest.recoveryEpoch ?? null,
       ) as Row | undefined;
       if (current === undefined) return null;
 
@@ -1088,8 +1102,9 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
            WHERE r.input_id = ? AND r.status IN ('CONSUMED', 'ROUTED')
              AND EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id)
              AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id AND t.status IN ('PENDING', 'RUNNING', 'WAITING'))
-             AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1)
-             AND ${REVIEW_WASTED_TURN_COUNT_SQL} <= ${String(WASTED_REVIEW_REQUEUE_LIMIT)}
+             AND NOT EXISTS (SELECT 1 FROM joi_turns t WHERE t.input_id = r.input_id AND t.side_effect_started = 1
+               AND COALESCE(t.review_replay_safe, 0) <> 1)
+             AND ${REVIEW_RETRY_COUNT_SQL} <= ${String(REVIEW_REQUEUE_LIMIT)}
              AND NOT EXISTS (SELECT 1 FROM work_items w
                               WHERE w.input_id = ? AND w.status NOT IN ('COMPLETED', 'FAILED', 'CANCELED'))
              AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
@@ -1109,11 +1124,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         return updated.changes === 1 ? { action: "REQUEUED" as const, inputId: reviewId } : null;
       }
 
-      const quarantined = connection.prepare(`UPDATE joi_inbox_messages
-        SET status = 'CLARIFICATION_REQUIRED', clarification_reason_code = 'harness_review_unrecoverable',
-            clarification_prompt = '历史评审记录无法安全恢复。请补充新的要求后继续，或取消这条任务。', updated_at = ?
-        WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL AND failed_at IS NULL`).run(now, goalInputId);
-      return quarantined.changes === 1 ? { action: "QUARANTINED" as const } : null;
+      return quarantineHistoricalReview(connection, goalInputId, now) ? { action: "QUARANTINED" as const } : null;
     });
   }
 
@@ -1310,7 +1321,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
              JOIN joi_goal_result_sets current_rs ON current_rs.original_input_id = m.goal_input_id
               WHERE t.turn_id = ? AND t.status IN ('RUNNING', 'WAITING')
                 AND r.goal_input_id = m.goal_input_id
-                AND r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || current_rs.revision || COALESCE((SELECT ':q' || revision FROM joi_goal_requirements WHERE goal_input_id = m.goal_input_id), '')
+                AND r.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "current_rs.revision")}
                 AND current_rs.revision = m.reviewed_revision
            )
            AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id

@@ -81,6 +81,11 @@ const OUTCOME_REPAIR_PROMPT = [
   "Only when no execution is requested and the response is already complete may you call turn_complete with the matching outcome.",
 ].join(" ");
 
+// These tools persist map facts without scheduling Work or invoking external systems.
+const INTERNAL_REVIEW_TOOL_NAMES = new Set([
+  "harness_name_destination", "harness_chart_path", "harness_record_decision", "harness_note_fog",
+]);
+
 const SYNTHESIS_OUTCOME_REPAIR_PROMPT = [
   "[joi completion repair] This goal-result synthesis did not commit an outcome.",
   "Use the existing evidence; do not repeat completed work or merely describe future work.",
@@ -390,6 +395,8 @@ export class JoiCoordinator {
     // step throws, so its isError:true is NOT proof of zero effect and it stays tracked.
     const unsafeToReplayToolCalls = new Set<string>();
     const sideEffectStarted = () => unsafeToReplayToolCalls.size > 0;
+    const pendingReviewEffects = new Map<string, string>();
+    const reviewEffects = { unsafe: false };
     const observedToolCalls = new Set<string>();
     const toolStartedAt = new Map<string, number>();
     const committedOutcomeTools = new Set<string>();
@@ -455,6 +462,10 @@ export class JoiCoordinator {
                 }
               }
               if (event.type === "tool_started") {
+                if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) {
+                  if (pendingReviewEffects.has(event.toolCallId)) reviewEffects.unsafe = true;
+                  pendingReviewEffects.set(event.toolCallId, event.toolName);
+                }
                 observedToolCalls.add(event.toolCallId);
                 pass.observedToolCalls += 1;
                 toolStartedAt.set(event.toolCallId, this.dependencies.clock.now().getTime());
@@ -469,6 +480,12 @@ export class JoiCoordinator {
                 });
               }
               if (event.type === "tool_finished") {
+                if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) {
+                  const startedTool = pendingReviewEffects.get(event.toolCallId);
+                  pendingReviewEffects.delete(event.toolCallId);
+                  if (startedTool !== event.toolName || !(event.isError && event.replaySafeRejection === true
+                    || !event.isError && INTERNAL_REVIEW_TOOL_NAMES.has(event.toolName))) reviewEffects.unsafe = true;
+                }
                 const finishedAt = this.dependencies.clock.now().getTime();
                 const startedAt = toolStartedAt.get(event.toolCallId) ?? finishedAt;
                 emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.tool.finished", {
@@ -753,7 +770,10 @@ export class JoiCoordinator {
       }
       const failureReasonCode = runtimeDiagnosticErrorCode(error);
       await this.dependencies.store.failTurn?.(inputId, turnId,
-        failureReasonCode === dispatchFailureReason ? { reasonCode: failureReasonCode } : undefined);
+        inputId.startsWith("joi_harness_review:goal:") ? {
+          reasonCode: failureReasonCode,
+          reviewReplaySafe: !signal?.aborted && !reviewEffects.unsafe && pendingReviewEffects.size === 0,
+        } : failureReasonCode === dispatchFailureReason ? { reasonCode: failureReasonCode } : undefined);
       if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") {
         await this.dependencies.store.requireClarification(inputId, error.code, "当前有效需求超出了可用上下文容量。请选择更大上下文的模型，或明确精简有效需求后继续。");
       }

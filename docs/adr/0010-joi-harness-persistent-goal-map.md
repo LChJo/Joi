@@ -25,11 +25,14 @@ ADR 0005 把 wayfinder 方法论落为提示词纪律：destination-first、分�
 7. **执行路径机械同步（2026-08-26 增补）**：harness component 在 adopt 后按稳定 workId 为 goal-bound Work 幂等建立 path，按此前 review input 数计算层级，并以 Work 权威终态关闭 path。模型不再负责为已派发 Work 重复建 path；`harness_chart_path` 保留给不绑定 Work 的显式探索路径。
 8. **终态与评审投影（2026-08-26 增补）**：result outcome 是当前证据层总结，不等于 goal terminal。map ACTIVE 时 home-feed 投影 `REVIEWING`，复盘后存在活跃 Work 时投影 `EXTENDING`；只有 `MAP_CLEARED` 或后台安全收口事务重验 review turn、最新综合水位、Work-path 覆盖和无开放路径后，当前 outcome 才作为最终结果开放完成操作。2026-09-20 补充：成功结束的评审若先于 Work-path 同步，不得因没有 FAILED turn 而永远被恢复扫描遗漏。后台仅在当前综合明确为 COMPLETED、全部 Work 终态、路径齐全且关闭、无活跃评审、目标执行门禁未关闭时自动清图；写事务再次核验，重复 tick 不改写完成时间、不重跑评审或 Work。CONTINUE/BLOCKED、待回答和回答后尚未恢复执行的目标不得因此完成。
 9. **结果续跑（2026-09-04 增补）**：`CONTINUE` 结果按 ADR 0017 在持久额度内自动进入下一证据层；普通 `MAP_CLEARED` 只接受 `COMPLETED` disposition，接受缺口必须走 goal/revision 绑定的用户动作。
+10. **隔离后的显式恢复（2026-10-27 增补）**：无法安全重放的评审关闭执行门禁并形成版本化恢复问题；用户可在原目标重新核对或补充要求。旧无门禁与 OPEN 门禁记录在用户恢复事务中兼容，匹配恢复回合调用 `goal_resume` 后才能继续。恢复保留 Work、结果与旧回合，必要时重新综合已有证据。migration 084 只增加默认空的 `review_recovery_epoch`，由用户显式恢复事务写入，与 `reopened_at` 同步推进；旧记录保持原评审身份。恢复代次参与新评审身份，扫描、入队、重验和清图使用同一身份；同结果版本的恢复不复用旧评审，也不能重置完成事实、验收或自动续跑额度。
+
+11. **内部复核失败（2026-10-28 增补）**：普通评审不暴露 `goal_resume`。外部动作的保守副作用标记保持独立；migration 085 的 `review_replay_safe` 仅在失败回合全部工具已结束、且只含查询、成功地图事实或可信无修改拒绝时与 FAILED 原子写入。旧回合及中断未知回合默认无证明。当前证据与门禁允许时，同一评审身份至多自动重核一次，扫描与写入都核对失败/空转次数；耗尽或不安全状态保留显式重试。双端显示复核中断和重试入口，补充为可选折叠，不能把内部恢复提示伪装成需要用户补充的具体业务问题。
 
 ## 后果
 
 - 多层推进解锁：每层结果合成完成后，复盘 turn 可派发下一层（goal-binding 保证闭环），或判定 destination 达成而 MAP_CLEARED。
-- 复盘占用串行槽位，但受水位节流（每层一次而非每 tick）与 LIMIT 有界扫描约束；复盘失败经 failTurn 回 PENDING 重跑同一行（AC-39 等价）。
+- 复盘占用串行槽位，但受水位节流（每层一次而非每 tick）与 LIMIT 有界扫描约束；失败由无副作用调度退避或有界评审重核接管，保留相同输入身份和稳定 outbox，不重放外部动作。
 - ADR 0005「不加新存储」不做项被显式推翻，范围限定 harness 四表；wayfinder 的 ticket/blocking/claim 图不引入。
 - 诊断事件新增 `joi.harness.*`（只观测）；`JOI_REASONING_TOOL_NAMES` 24→29。
 - 回滚：三阶段独立——组件摘除（037 表保留无害）/ 推理面恢复（review 退化不破裂）/ UI 删除渲染块。

@@ -102,8 +102,20 @@ String actFailureNotice(Object error) => noticeText(actFailureMessage(error));
 class _GoalActionsState extends State<GoalActions> {
   final _draft = TextEditingController();
   bool _showContinue = false;
+  bool _showReviewRequirements = false;
   bool _busy = false;
   Object? _notice;
+
+  @override
+  void didUpdateWidget(covariant GoalActions oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.goal.goalId != widget.goal.goalId ||
+        oldWidget.goal.questionId != widget.goal.questionId ||
+        oldWidget.goal.questionVersion != widget.goal.questionVersion) {
+      _showReviewRequirements = false;
+      _draft.clear();
+    }
+  }
 
   @override
   void dispose() {
@@ -142,7 +154,10 @@ class _GoalActionsState extends State<GoalActions> {
       );
       if (mounted) {
         _draft.clear();
-        setState(() => _showContinue = false);
+        setState(() {
+          _showContinue = false;
+          _showReviewRequirements = false;
+        });
         widget.onChanged?.call();
       }
     } catch (error) {
@@ -260,6 +275,13 @@ class _GoalActionsState extends State<GoalActions> {
           children: [
             if (question) ...[
               const SizedBox(height: 12),
+              if (historical) ...[
+                Text(
+                  tr(Msg.homeHistoricalReviewPaused),
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: 8),
+              ],
               if (continuation) ...[
                 Text(
                   tr(Msg.homeContinueImprovingTheResult),
@@ -272,6 +294,8 @@ class _GoalActionsState extends State<GoalActions> {
                     ? tr(
                         Msg.homeTheResultStillNeedsAdditionsOrVerificationThisRound,
                       )
+                    : historical
+                    ? tr(Msg.homeHistoricalReviewRecoveryHint)
                     : goal.prompt ?? tr(Msg.homeJoiNeedsYourConfirmation),
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
@@ -346,9 +370,7 @@ class _GoalActionsState extends State<GoalActions> {
               Text(tr(Msg.mobileChooseAWorkingDirectoryForThisWorkbenchOnThe)),
             if (historical)
               Text(
-                tr(
-                  Msg.mobileConfirmThatHistoricalWorkHasFinishedBeforeClosingIt,
-                ),
+                tr(Msg.homeExistingAnswersAndResultsArePreservedJoiWillReview),
               ),
             if (workbench)
               FilledButton(
@@ -407,11 +429,30 @@ class _GoalActionsState extends State<GoalActions> {
                 ],
               ),
             if (historical)
-              TextButton(
-                onPressed: busy ? null : () => _act('closeHistoricalReview'),
-                child: Text(tr(Msg.mobileFinishHistoricalReconciliation)),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  FilledButton(
+                    onPressed: busy
+                        ? null
+                        : () => _act('clarify', actionChoice: 'RESUME'),
+                    child: Text(tr(Msg.homeRecheckAndContinue)),
+                  ),
+                  TextButton(
+                    onPressed: busy
+                        ? null
+                        : () => setState(
+                            () => _showReviewRequirements =
+                                !_showReviewRequirements,
+                          ),
+                    child: Text(tr(Msg.homeOptionalReviewRequirements)),
+                  ),
+                ],
               ),
-            if (answer || _showContinue) ...[
+            if (answer ||
+                historical && _showReviewRequirements ||
+                _showContinue) ...[
               const SizedBox(height: 8),
               TextField(
                 controller: _draft,
@@ -428,11 +469,14 @@ class _GoalActionsState extends State<GoalActions> {
                 ),
               ),
               FilledButton(
-                onPressed: busy || answer && _draft.text.trim().isEmpty
+                onPressed:
+                    busy || (answer || historical) && _draft.text.trim().isEmpty
                     ? null
-                    : () => _act(answer ? 'clarify' : 'retry'),
+                    : () => _act(answer || historical ? 'clarify' : 'retry'),
                 child: Text(
-                  answer
+                  historical
+                      ? tr(Msg.homeAddDetailsAndContinue)
+                      : answer
                       ? tr(Msg.homeAnswerAndContinue)
                       : tr(Msg.mobileSubmitContinuation),
                 ),
@@ -591,7 +635,7 @@ class _GoalDetailPageState extends State<GoalDetailPage>
             goalTitle(_goal),
             style: Theme.of(context).textTheme.headlineSmall,
           ),
-          Text(statusLabel(_goal.status)),
+          Text(goalStatusLabel(_goal)),
           Text(goalProgressLabel(_goal)),
           if (_error != null) Text(noticeText(_error!)),
           if (_text == null && _error == null)

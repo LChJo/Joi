@@ -1,5 +1,6 @@
 import { goalRequirementsCurrentSql } from "./sqlite-goal-requirements.js";
 import type { DatabaseSync } from "node:sqlite";
+import { harnessReviewInputIdSql } from "./sqlite-joi-harness-review-identity.js";
 
 import type { JoiInboxRecord, JoiInboxStatus } from "../../application/ports/joi-inbox.js";
 
@@ -44,11 +45,13 @@ export function closeHistoricalReviewInTransaction(connection: DatabaseSync, inp
       JOIN joi_current_goal_outcomes o ON o.input_id = m.goal_input_id AND o.result_revision = rs.revision
       JOIN joi_inbox_messages g ON g.input_id = m.goal_input_id
       LEFT JOIN joi_inbox_messages r
-        ON r.input_id = 'joi_harness_review:goal:' || m.goal_input_id || ':r' || rs.revision || COALESCE((SELECT ':q' || revision FROM joi_goal_requirements WHERE goal_input_id = m.goal_input_id), '')
+        ON r.input_id = ${harnessReviewInputIdSql("m.goal_input_id", "rs.revision")}
      WHERE m.goal_input_id = ? AND m.status IN ('ACTIVE', 'CLEARED')
        AND g.status = 'CLARIFICATION_REQUIRED'
        AND g.clarification_reason_code = 'harness_review_unrecoverable'
        AND g.canceled_at IS NULL AND g.dismissed_at IS NULL AND g.failed_at IS NULL
+       AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates gate
+         WHERE gate.goal_input_id = m.goal_input_id AND gate.status <> 'OPEN')
        AND rs.revision > 0 AND rs.synthesized_revision = rs.revision
        AND o.disposition = 'COMPLETED'
        AND m.reviewed_revision = rs.revision

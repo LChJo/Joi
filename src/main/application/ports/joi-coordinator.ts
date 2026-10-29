@@ -78,7 +78,11 @@ export interface JoiCoordinatorStore {
     sourceRevisionId?: string;
     turnId: string;
   }): Promise<void>;
-  failTurn?(inputId: string, turnId: string, failure?: { reasonCode: string }): Promise<void>;
+  failTurn?(inputId: string, turnId: string, failure?: {
+    reasonCode: string;
+    /** Settled review calls contain only lookups, internal map facts or proven pre-execution rejections. */
+    reviewReplaySafe?: boolean;
+  }): Promise<void>;
   loadInput(inputId: string): Promise<JoiPendingInput | null>;
   recordTurnProgress?(turnId: string, progress: { formalOutputStarted: boolean; sideEffectStarted: boolean }): Promise<void>;
   requireClarification(inputId: string, reasonCode: string, prompt?: string, action?: {

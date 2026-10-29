@@ -3,6 +3,7 @@ import { validateToolArguments } from "@earendil-works/pi-ai";
 import { createJoiReasoningTools, goalFromInputIdPrefix, selectJoiReasoningToolsForInput } from "../../src/main/infrastructure/pi/joi-reasoning-tools.js";
 import { JOI_REASONING_TOOL_NAMES } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { DomainError } from "../../src/main/domain/errors.js";
+import { harnessReviewInputId } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-review-identity.js";
 import type { CreateAutomationInput, UpdateAutomationInput } from "../../src/shared/automation.js";
 import type { ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
 import type { GoalRequirementsRepository } from "../../src/main/application/ports/goal-requirements.js";
@@ -55,6 +56,7 @@ function makeTools(options: {
   planError?: Error;
   briefError?: Error;
   resumeCalls?: { inputId: string; turnId: string }[];
+  resumeError?: Error;
   refineCalls?: { args: { workbenchId: string; input: Record<string, unknown> }[] };
   workspaceBindCalls?: { workbenchId: string; rootPath: string }[];
   workspaceCurrent?: { displayName: string; kind: "BOUND" | "MANAGED"; status: "FAILED" | "PROVISIONING" | "READY" } | null;
@@ -108,6 +110,7 @@ function makeTools(options: {
         clarificationCalls.push({ inputId, ...(prompt === undefined ? {} : { prompt }), reasonCode });
       },
       ...(options.resumeCalls === undefined ? {} : { resumeGoal: async (input: { inputId: string; turnId: string }) => {
+        if (options.resumeError !== undefined) throw options.resumeError;
         options.resumeCalls?.push(input);
         return { status: "OPEN" as const };
       } }),
@@ -636,6 +639,28 @@ describe("joi reasoning tools", () => {
     expect(resumeCalls).toEqual([{ inputId: "joi_goal_resume:goal:goal-1:v2", turnId: "turn_1" }]);
   });
 
+  it.each(["input_1", "joi_harness_review:goal:goal-1:r2:q1", "joi_harness_review:goal:goal-1:r2:q1:resume:2026-10-28T10:00:00.000Z"])(
+    "does not expose goal_resume outside its matching recovery input: %s", (inputId) => {
+      const harness = makeTools({ inputId, resumeCalls: [] });
+      expect(harness.tools.map(tool => tool.name)).not.toContain("goal_resume");
+    },
+  );
+
+  it.each(["goal_resume_not_allowed", "goal_resume_conflict"])("proves a transactional resume rejection is safe: %s", async code => {
+    const harness = makeTools({ inputId: "joi_goal_resume:goal:goal-1:v2", resumeCalls: [], resumeError: new DomainError(code, "Rejected") });
+    const tool = harness.tools.find(candidate => candidate.name === "goal_resume");
+    const output = await tool?.execute("resume-rejected", {});
+    expect(output).toMatchObject({ isError: true, details: { replaySafeRejection: true } });
+    expect(output?.content).toEqual([{ type: "text", text: JSON.stringify({ reasonCode: code, status: "REJECTED" }) }]);
+  });
+
+  it("does not classify an unknown resume error as a safe rejection", async () => {
+    const error = new Error("storage_failed");
+    const harness = makeTools({ inputId: "joi_goal_resume:goal:goal-1:v2", resumeCalls: [], resumeError: error });
+    const tool = harness.tools.find(candidate => candidate.name === "goal_resume");
+    await expect(tool?.execute("resume-unknown", {})).rejects.toBe(error);
+  });
+
   it("preserves a resolved action id when resuming waiting work", async () => {
     const workResumeCalls: Record<string, unknown>[] = [];
     const harness = makeTools({ workResumeCalls });
@@ -784,14 +809,15 @@ describe("joi reasoning tools", () => {
     expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1:resume:1792370000000")).toBe("goal-1");
     expect(goalFromInputIdPrefix("joi_result_input:goal:goal-1:r7:q2:resume:1792370000000")).toBe("goal-1");
     expect(goalFromInputIdPrefix("joi_harness_review:goal:goal-1:r3")).toBe("goal-1");
+    expect(goalFromInputIdPrefix(harnessReviewInputId("goal-1", 3, 2, "2026-10-27T10:00:00.000Z"))).toBe("goal-1");
     expect(goalFromInputIdPrefix("plain-input")).toBeUndefined();
     expect(goalFromInputIdPrefix("joi_signal_input:sig-1")).toBeUndefined();
   });
 
-  it("binds work dispatched from a review turn back to the original goal", async () => {
+  it.each(["joi_harness_review:goal:goal-1:r1", harnessReviewInputId("goal-1", 1, 0, "2026-10-27T10:00:00.000Z")])("binds work dispatched from review %s back to the original goal", async (inputId) => {
     const harness = makeTools({
-      goalInputId: "goal-1",
-      inputId: "joi_harness_review:goal:goal-1:r1",
+      goalInputId: goalFromInputIdPrefix(inputId) ?? inputId,
+      inputId,
     });
     await harness.call("work_dispatch", {
       dependencies: [],

@@ -41,8 +41,7 @@ export function goalFromInputIdPrefix(inputId: string): string | undefined {
   const reviewPrefix = "joi_harness_review:goal:";
   if (inputId.startsWith(reviewPrefix)) {
     const remainder = inputId.slice(reviewPrefix.length);
-    const separator = remainder.lastIndexOf(":r");
-    return separator < 0 ? remainder : remainder.slice(0, separator);
+    return /^(.*):r\d+(?::.*)?$/u.exec(remainder)?.[1] ?? remainder;
   }
   const recoveryPrefix = "joi_recovery:goal:";
   if (inputId.startsWith(recoveryPrefix)) {
@@ -725,7 +724,13 @@ export function createJoiReasoningTools(input: {
     execute: async (_id, raw) => {
       const args = raw as { requirementsRevision?: number };
       if (input.clarifications.resumeGoal === undefined) throw new DomainError("goal_resume_unavailable", "Goal resume is unavailable.");
-      return result(await input.clarifications.resumeGoal({ inputId: input.inputId, turnId: input.turnId, ...(args.requirementsRevision === undefined ? {} : { requirementsRevision: args.requirementsRevision }) }));
+      try {
+        return result(await input.clarifications.resumeGoal({ inputId: input.inputId, turnId: input.turnId, ...(args.requirementsRevision === undefined ? {} : { requirementsRevision: args.requirementsRevision }) }));
+      } catch (error) {
+        if (!(error instanceof DomainError) || !["goal_resume_not_allowed", "goal_resume_conflict"].includes(error.code)) throw error;
+        return { ...result({ reasonCode: error.code, status: "REJECTED" }), isError: true,
+          details: { replaySafeRejection: true } };
+      }
     },
     label: "Resume goal execution",
     name: "goal_resume",
@@ -1039,7 +1044,7 @@ export function createJoiReasoningTools(input: {
     workResumeTool,
     workCancelTool,
     readResultTool, readEvidenceTool,
-    goalResumeTool,
+    ...(input.inputId.startsWith("joi_goal_resume:goal:") ? [goalResumeTool] : []),
     userAskTool,
     turnCompleteTool,
     harnessNameDestinationTool,

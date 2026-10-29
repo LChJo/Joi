@@ -878,6 +878,11 @@ export interface MessageParameters {
   "home.routeRelatedNotLoaded": undefined;
   "home.routeLoading": undefined;
   "home.insufficient": undefined;
+  "home.historicalReviewPaused": undefined;
+  "home.recheckAndContinue": undefined;
+  "home.historicalReviewRecoveryHint": undefined;
+  "home.reviewInterrupted": undefined;
+  "home.optionalReviewRequirements": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
   "mobile.enterConnectionCode": undefined;
@@ -2427,6 +2432,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.routeRelatedNotLoaded": "Related content is not loaded yet. Load more to view it.",
     "home.routeLoading": "Loading route map details…",
     "home.insufficient": "Insufficient",
+    "home.historicalReviewPaused": "Internal review interrupted",
+    "home.recheckAndContinue": "Retry review",
+    "home.historicalReviewRecoveryHint": "The internal review did not finish. Existing results are saved. Retry the review, or optionally update the requirements.",
+    "home.reviewInterrupted": "Review interrupted",
+    "home.optionalReviewRequirements": "Add requirements (optional)",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
     "mobile.enterConnectionCode": "Enter connection code",
@@ -3974,6 +3984,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.routeRelatedNotLoaded": "关联内容尚未加载，请加载更多后查看。",
     "home.routeLoading": "正在加载路线详情…",
     "home.insufficient": "不充分",
+    "home.historicalReviewPaused": "内部复核已中断",
+    "home.recheckAndContinue": "重试复核",
+    "home.historicalReviewRecoveryHint": "内部复核未完成，已有成果已保留。可直接重试复核；仅在需要调整目标时补充要求。",
+    "home.reviewInterrupted": "复核中断",
+    "home.optionalReviewRequirements": "补充要求（可选）",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
     "mobile.enterConnectionCode": "输入连接码",
@@ -5903,7 +5918,7 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "已有回答和工作结果已保留，joi 会核对后继续。": "home.existingAnswersAndResultsArePreservedJoiWillReview",
   "Submitting…": "mobile.submitting",
   "提交中…": "home.submitting",
-  "Retry review": "home.retryReview",
+  "Retry review": "home.recheckAndContinue",
   "重试评审": "home.retryReview",
   "Continue improving: try up to two more rounds. You will be asked again if issues remain.": "home.continueImprovingTryUpToTwoMoreRoundsYou",
   "继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。": "home.continueImprovingTryUpToTwoMoreRoundsYou",
@@ -6251,6 +6266,15 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "正在加载路线详情…": "home.routeLoading",
   "Insufficient": "home.insufficient",
   "不充分": "home.insufficient",
+  "Internal review interrupted": "home.historicalReviewPaused",
+  "内部复核已中断": "home.historicalReviewPaused",
+  "重试复核": "home.recheckAndContinue",
+  "The internal review did not finish. Existing results are saved. Retry the review, or optionally update the requirements.": "home.historicalReviewRecoveryHint",
+  "内部复核未完成，已有成果已保留。可直接重试复核；仅在需要调整目标时补充要求。": "home.historicalReviewRecoveryHint",
+  "Review interrupted": "home.reviewInterrupted",
+  "复核中断": "home.reviewInterrupted",
+  "Add requirements (optional)": "home.optionalReviewRequirements",
+  "补充要求（可选）": "home.optionalReviewRequirements",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "把正在电脑上运行的 Joi 带到手机上": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "Scan a QR code to pair with joi": "mobile.scanAQrCodeToPairWithJoi",
