@@ -41,6 +41,7 @@ function makeDatabase(): DatabaseSync {
       status TEXT NOT NULL,
       formal_output_started INTEGER NOT NULL DEFAULT 0,
       side_effect_started INTEGER NOT NULL DEFAULT 0,
+      failure_replay_safe INTEGER,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );

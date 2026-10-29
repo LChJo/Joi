@@ -1023,7 +1023,7 @@ describe("SqliteJoiHarnessRepository", () => {
       expect(await repository.listReviewRecoveries()).toEqual([]);
     });
 
-    it("rechecks a settled internal review once and then stops automatic protocol retries", async () => {
+    it.each(["internal", "dispatch-rejection"] as const)("rechecks a settled %s review once and then stops automatic retries", async kind => {
       const goalInputId = "goal-internal-review";
       const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId, now: NOW });
@@ -1036,7 +1036,8 @@ describe("SqliteJoiHarnessRepository", () => {
       const failReview = async (turnId: string) => {
         await inbox.createTurn({ workbenchId, createdAt: NOW, inputId: reviewInputId, sessionId: "internal-review", turnId });
         await inbox.recordTurnProgress(turnId, { formalOutputStarted: true, sideEffectStarted: true });
-        const failure = { reasonCode: "joi_turn_outcome_uncommitted", reviewReplaySafe: true };
+        const failure = kind === "internal" ? { reasonCode: "joi_turn_outcome_uncommitted", reviewReplaySafe: true }
+          : { reasonCode: "tool_execution_error", reviewReplaySafe: true, replaySafe: true };
         await inbox.failTurn(reviewInputId, turnId, failure);
       };
       await failReview("internal-1");

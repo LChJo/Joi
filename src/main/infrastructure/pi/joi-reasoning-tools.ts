@@ -281,12 +281,18 @@ export function createJoiReasoningTools(input: {
   const workDispatchTool: AgentTool<typeof workDispatchParameters> = {
     description: "Persist a checked work DAG and queue each allowed partner dispatch through the outbox. Every Work must include at least one acceptance check. The result's queued entries are normal resource waits with stable reason codes, not denials and never a reason to ask the user for more information. Dependency keys may reference only Work keys declared in the current invocation; historical Work is evidence, not a DAG dependency. Use BODY_PRESENT for a textual answer; it verifies returned text, not a remote document update, so include remote completion evidence in the task instructions. Use ARTIFACT_PRESENT only for an exact filename the partner must create in its workspace, and FILE_EXISTS/FILE_CONTAINS_EXACT only for relative paths inside that workspace. Pass instanceId only as an exact instance id returned by partner_list_available or partner_list_instances; never substitute a partner or revision id. Never pass instanceId together with sessionPolicy. Use sessionPolicy resident only to request a resident conversation; omit both for one-shot ephemeral work.",
     execute: async (_toolCallId, arguments_) => {
+      const submission = { started: false };
+      const rejected = (output: ReturnType<typeof result>) => ({ ...output,
+        ...(output.terminate === true ? { isError: true } : {}),
+        ...(submission.started ? {} : { details: { ...output.details, replaySafeRejection: true } }),
+      });
       try {
         const currentKeys = new Set(arguments_.work.map((item) => item.key));
         const currentDependencies = (arguments_.dependencies ?? []).filter((dependency) => (
           currentKeys.has(dependency.workKey) && currentKeys.has(dependency.dependsOnKey)
         ));
         return result(await input.work.plan({
+          onCommitStart: () => { submission.started = true; },
           ...(arguments_.requirementsRevision === undefined ? {} : { requirementsRevision: arguments_.requirementsRevision }),
           workbenchId: input.workbenchId,
           dependencies: currentDependencies,
@@ -311,7 +317,7 @@ export function createJoiReasoningTools(input: {
         }));
       } catch (error) {
         const correction = accessFailure("work_dispatch", error) ?? instructionFailure("work_dispatch", error);
-        if (correction !== undefined) return correction;
+        if (correction !== undefined) return rejected(correction);
         const reasonCode = runtimeDiagnosticErrorCode(error);
         emitRuntimeDiagnostic(input.diagnostics, "joi.work.dispatch_rejected", {
           inputId: input.inputId,
@@ -321,10 +327,10 @@ export function createJoiReasoningTools(input: {
         });
         if (reasonCode === "work_acceptance_checks_required" && !acceptanceCorrectionOffered) {
           acceptanceCorrectionOffered = true;
-          return result({
+          return rejected(result({
             hint: "Add at least one acceptanceChecks entry to every Work and retry once. Use BODY_PRESENT for returned text; for remote changes, require completion evidence in the instructions. Do not ask the user to repair these internal parameters.",
             reasonCode, status: "RETRY_REQUIRED",
-          });
+          }));
         }
         if (error instanceof DomainError && error.code === DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady) {
           await input.clarifications.requireClarification(
@@ -337,10 +343,10 @@ export function createJoiReasoningTools(input: {
         if (reasonCode === "goal_execution_paused" && input.inputId.startsWith("joi_goal_resume:goal:")) {
           // The recovery Turn is allowed to open its gate with goal_resume. Keep this tool call
           // nonterminal so the model can correct its order in the same Turn.
-          return result({
+          return rejected(result({
             hint: "Call goal_resume first, then retry this dispatch once the goal gate is open.",
             reasonCode, status: "RETRY_REQUIRED",
-          });
+          }));
         }
         const correctable = reasonCode === "partner_not_found"
           || reasonCode === "partner_not_available"
@@ -348,12 +354,12 @@ export function createJoiReasoningTools(input: {
           || reasonCode.startsWith("partner_instance_");
         if (correctable && !dispatchCorrectionOffered) {
           dispatchCorrectionOffered = true;
-          return result({
+          return rejected(result({
             ...(reasonCode === "partner_not_found" ? {
               hint: "Call partner_list_available again and copy an exact partnerId from the returned list into each Work. Never reconstruct or guess an ID. Retry the complete plan once; no Work was committed by this rejection.",
             } : {}),
             reasonCode, status: "RETRY_REQUIRED",
-          });
+          }));
         }
         if (correctable) {
           await input.clarifications.requireClarification(
@@ -363,7 +369,7 @@ export function createJoiReasoningTools(input: {
           );
           return result({ reasonCode: "partner_selection_required", status: "CLARIFICATION_REQUIRED" }, true);
         }
-        return result({ reasonCode, status: "FAILED" }, true);
+        return rejected(result({ reasonCode, status: "FAILED" }, true));
       }
     },
     label: "Plan and dispatch work",

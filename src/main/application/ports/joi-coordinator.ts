@@ -80,6 +80,8 @@ export interface JoiCoordinatorStore {
   }): Promise<void>;
   failTurn?(inputId: string, turnId: string, failure?: {
     reasonCode: string;
+    /** Every mutating call settled with trusted proof that durable submission never began. */
+    replaySafe?: boolean;
     /** Settled review calls contain only lookups, internal map facts or proven pre-execution rejections. */
     reviewReplaySafe?: boolean;
   }): Promise<void>;

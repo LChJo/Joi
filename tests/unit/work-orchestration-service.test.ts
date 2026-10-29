@@ -7,6 +7,22 @@ import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 describe("work orchestration outbox", () => {
+  it.each(["preparation", "commit", "event"] as const)("signals durable submission before a %s failure can occur", async phase => {
+    const order: string[] = [];
+    const service = new WorkOrchestrationService({ clock: new TestClock(), ids: new TestIds(),
+      partners: { pinForDispatch: async partnerId => {
+        if (phase === "preparation") throw new Error("Synthetic preparation failure");
+        return { partnerId, partnerRevisionId: "revision", registryRevision: 1 };
+      } }, policy: { evaluate: async () => ({ allowed: true }) },
+      repository: { commit: async () => { order.push("commit"); if (phase === "commit") throw new Error("Synthetic commit failure"); } },
+      events: { emit: async () => { order.push("event"); throw new Error("Synthetic postcommit failure"); } },
+    });
+    const request = { workbenchId: "wb", inputId: "goal", turnId: "turn", dependencies: [], onCommitStart: () => { order.push("submission"); },
+      work: [{ key: "a", title: "Synthetic", partnerId: "p", accessMode: "READ" as const, instructions: "Synthetic task", acceptanceChecks: [{ kind: "BODY_PRESENT" as const }] }] };
+    await expect(service.plan(request)).rejects.toThrow();
+    expect(order).toEqual(phase === "preparation" ? [] : phase === "commit" ? ["submission", "commit"] : ["submission", "commit", "event"]);
+  });
+
   it("AC-43 validates explicit goal evidence before dispatch and preserves reference order", async () => {
     const assertReferences = vi.fn(async (): Promise<void> => { throw new Error("invalid reference"); });
     const commit = vi.fn(async (_plan: CommittedWorkPlan) => undefined);

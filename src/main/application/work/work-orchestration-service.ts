@@ -100,6 +100,8 @@ export class WorkOrchestrationService {
   }) {}
 
   async plan(input: {
+    /** Notify the trusted caller before entering durable submission; failures after this point have unknown effects. */
+    onCommitStart?: () => void;
     requirementsRevision?: number;
     workbenchId: string;
     dependencies: { dependsOnKey: string; workKey: string }[];
@@ -220,6 +222,7 @@ export class WorkOrchestrationService {
       throw new DomainError(DISPATCH_POLICY_REASONS.workbenchWorkspaceNotReady, "Select a workbench workspace before dispatching file work.");
     }
     const dispatchPlanId = this.dependencies.ids.next("dispatch_plan");
+    input.onCommitStart?.();
     const reused = await this.dependencies.repository.commit({
       attempts, briefs, createdAt, dependencies, dispatchPlanId, inputId: input.inputId, items, policyResults,
       ...(input.recovery === undefined ? {} : { recovery: {

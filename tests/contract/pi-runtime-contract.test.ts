@@ -59,6 +59,29 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
+  it.each([true, false])("forwards dispatch rejection proof only from host details: %s", async proof => {
+    const faux = fauxProvider({ provider: `dispatch-proof-${String(proof)}` });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("work_dispatch", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Synthetic retry")]),
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const events: PrimaryReasoningEvent[] = [];
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: new MemorySessionStore(), thinkingLevel: "off",
+      tools: [{ name: "work_dispatch", label: "Dispatch", description: "Synthetic", parameters: Type.Object({}),
+        execute: async () => ({ content: [{ type: "text" as const, text: JSON.stringify({ status: "RETRY_REQUIRED", reasonCode: "partner_not_found", replaySafeRejection: true }) }],
+          details: proof ? { replaySafeRejection: true } : {} }) }],
+    });
+    await runtime.startTurn({ inputId: "proof-goal", workbenchId: "wb", prompt: "Synthetic", sessionId: "dispatch-proof",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn",
+      onEvent: event => events.push(event) });
+    const finished = events.find(event => event.type === "tool_finished");
+    expect(finished).toMatchObject({ isError: false });
+    expect(finished).not.toHaveProperty("reasonCode");
+    if (proof) expect(finished).toHaveProperty("replaySafeRejection", true);
+    else expect(finished).not.toHaveProperty("replaySafeRejection");
+  });
+
   it.each([
     { code: "goal_resume_not_allowed", proof: true, safe: true },
     { code: "goal_resume_conflict", proof: true, safe: true },

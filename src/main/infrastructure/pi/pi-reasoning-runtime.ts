@@ -983,8 +983,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         ...(outcome === undefined ? {} : { outcome }),
         ...(synthesisState === undefined ? {} : { synthesisState }),
         ...(reasonCode === undefined && isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
-        ...(isError && event.toolName === "goal_resume"
-          && (reasonCode === "goal_resume_not_allowed" || reasonCode === "goal_resume_conflict")
+        ...((event.toolName === "work_dispatch" || isError && event.toolName === "goal_resume"
+          && (reasonCode === "goal_resume_not_allowed" || reasonCode === "goal_resume_conflict"))
           && (event.result as { details?: { replaySafeRejection?: unknown } } | undefined)?.details?.replaySafeRejection === true
           ? { replaySafeRejection: true as const } : {}),
         toolCallId: event.toolCallId,

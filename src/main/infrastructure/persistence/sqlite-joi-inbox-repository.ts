@@ -1110,14 +1110,25 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     ));
   }
 
-  async failTurn(inputId: string, turnId: string, failure?: { reasonCode: string; reviewReplaySafe?: boolean }): Promise<void> {
+  async failTurn(inputId: string, turnId: string, failure?: { reasonCode: string; reviewReplaySafe?: boolean; replaySafe?: boolean }): Promise<void> {
     this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
       const reviewFailure = inputId.startsWith("joi_harness_review:goal:") && failure?.reviewReplaySafe !== undefined;
-      if (reviewFailure) {
-        connection.prepare(`UPDATE joi_turns SET review_replay_safe = ?, status = 'FAILED', updated_at = ?
+      if (reviewFailure || failure?.replaySafe !== undefined) {
+        const columns: string[] = [];
+        const values: number[] = [];
+        for (const [column, value] of [
+          ["review_replay_safe", reviewFailure ? failure.reviewReplaySafe : undefined],
+          ["failure_replay_safe", failure.replaySafe],
+        ] as const) {
+          if (value === undefined) continue;
+          columns.push(`${column} = CASE WHEN ? = 1 AND NOT EXISTS (
+            SELECT 1 FROM dispatch_plans plan WHERE plan.turn_id = joi_turns.turn_id) THEN 1 ELSE 0 END`);
+          values.push(value ? 1 : 0);
+        }
+        connection.prepare(`UPDATE joi_turns SET ${columns.join(", ")}, status = 'FAILED', updated_at = ?
           WHERE turn_id = ? AND input_id = ? AND status IN ('PENDING','RUNNING','WAITING')`)
-          .run(failure.reviewReplaySafe ? 1 : 0, now, turnId, inputId);
+          .run(...values, now, turnId, inputId);
       } else connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
       consumeSupersededGoalSynthesis(connection, inputId, now);
       // Re-driving is only safe when the failed turn committed nothing. If it already started
@@ -1142,12 +1153,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         .get(inputId) as { reopened_at?: unknown; revoked?: unknown } | undefined;
       const openedAt = typeof opened?.reopened_at === "string" ? opened.reopened_at : null;
       const sideEffects = inputId.startsWith("joi_result_input:")
-        ? connection.prepare("SELECT 1 FROM joi_turns WHERE turn_id = ? AND side_effect_started = 1 LIMIT 1").get(turnId)
+        ? connection.prepare(`SELECT 1 FROM joi_turns WHERE turn_id = ? AND side_effect_started = 1
+          AND (status <> 'FAILED' OR COALESCE(failure_replay_safe, 0) <> 1) LIMIT 1`).get(turnId)
         : connection.prepare(`SELECT 1 FROM joi_turns WHERE input_id = ? AND side_effect_started = 1
+          AND (status <> 'FAILED' OR COALESCE(failure_replay_safe, 0) <> 1)
           AND (? IS NULL OR created_at >= ?) LIMIT 1`).get(inputId, openedAt, openedAt);
       // Revocation of the goal also governs late failure cleanup of its derived inputs.
-      const reviewProtocolFailed = reviewFailure && failure.reasonCode === "joi_turn_outcome_uncommitted";
-      const nextStatus = opened?.revoked === 1 || liveWork !== undefined || sideEffects !== undefined || reviewProtocolFailed ? "CONSUMED" : "PENDING";
+      const reviewNeedsBoundedRecovery = reviewFailure && (failure.reasonCode === "joi_turn_outcome_uncommitted" || failure.replaySafe !== undefined);
+      const nextStatus = opened?.revoked === 1 || liveWork !== undefined || sideEffects !== undefined || reviewNeedsBoundedRecovery ? "CONSUMED" : "PENDING";
       // Never kick a row that is waiting on the user back into the scheduler: an orphan
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages

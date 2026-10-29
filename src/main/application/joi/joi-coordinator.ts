@@ -383,18 +383,11 @@ export class JoiCoordinator {
     });
     await this.dependencies.events?.emit("joi.turn.started", turnId, { workbenchId, inputId, turnId });
     let formalOutputStarted = false;
-    // Tracks each in-flight or settled tool call that still counts toward "this Turn is
-    // unsafe to replay". A non-replay-safe call is added here the moment it starts and
-    // normally stays until the Turn ends — a call interrupted before tool_finished arrives
-    // has an unknown real effect and must stay conservatively unsafe. The one narrow
-    // exception: work_dispatch is the only tool whose execute() is proven all-or-nothing
-    // (joi-reasoning-tools.ts's workDispatchTool never rethrows, and its one durable write is
-    // a single DB transaction), so a work_dispatch call that finishes with isError:true is
-    // known to have committed nothing and is removed. Every other non-replay-safe tool
-    // (work_cancel, work_reassign, ...) can durably mutate state before a later, unguarded
-    // step throws, so its isError:true is NOT proof of zero effect and it stays tracked.
+    // Only a trusted pre-submission rejection resolves a mutating call as having no effect.
+    // SDK errors and unfinished calls retain their protection, including postcommit failures.
     const unsafeToReplayToolCalls = new Set<string>();
-    const sideEffectStarted = () => unsafeToReplayToolCalls.size > 0;
+    const replayState = { uncertain: false, rejected: false };
+    const sideEffectStarted = () => replayState.uncertain || unsafeToReplayToolCalls.size > 0;
     const pendingReviewEffects = new Map<string, string>();
     const reviewEffects = { unsafe: false };
     const observedToolCalls = new Set<string>();
@@ -464,6 +457,7 @@ export class JoiCoordinator {
               if (event.type === "tool_started") {
                 if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) {
                   if (pendingReviewEffects.has(event.toolCallId)) reviewEffects.unsafe = true;
+                  if (unsafeToReplayToolCalls.has(event.toolCallId)) replayState.uncertain = true;
                   pendingReviewEffects.set(event.toolCallId, event.toolName);
                 }
                 observedToolCalls.add(event.toolCallId);
@@ -483,7 +477,13 @@ export class JoiCoordinator {
                 if (!REPLAY_SAFE_TOOL_NAMES.has(event.toolName)) {
                   const startedTool = pendingReviewEffects.get(event.toolCallId);
                   pendingReviewEffects.delete(event.toolCallId);
-                  if (startedTool !== event.toolName || !(event.isError && event.replaySafeRejection === true
+                  const rejected = startedTool === event.toolName && event.replaySafeRejection === true;
+                  if (startedTool !== event.toolName) replayState.uncertain = true;
+                  if (rejected && event.toolName === "work_dispatch") {
+                    unsafeToReplayToolCalls.delete(event.toolCallId);
+                    replayState.rejected = true;
+                  }
+                  if (startedTool !== event.toolName || !(rejected
                     || !event.isError && INTERNAL_REVIEW_TOOL_NAMES.has(event.toolName))) reviewEffects.unsafe = true;
                 }
                 const finishedAt = this.dependencies.clock.now().getTime();
@@ -500,14 +500,6 @@ export class JoiCoordinator {
                   turnId,
                 });
                 toolStartedAt.delete(event.toolCallId);
-                // A failed work_dispatch produced no durable effect — its execute() never
-                // rethrows and its one write is a single DB transaction (see the comment on
-                // unsafeToReplayToolCalls above) — so replaying the Turn cannot duplicate
-                // anything and it is removed. Every other tracked tool stays recorded even
-                // on isError: a post-commit step (e.g. an event emit) can still throw after
-                // the durable mutation already landed, so its failure is not proof the Turn
-                // is safe to replay.
-                if (event.toolName === "work_dispatch" && event.isError) unsafeToReplayToolCalls.delete(event.toolCallId);
                 if (event.toolName === "work_dispatch") {
                   // Reflect the latest dispatch outcome: a later successful dispatch in the same
                   // Turn clears an earlier failure so a corrected retry is not wrongly failed.
@@ -516,7 +508,7 @@ export class JoiCoordinator {
                     : undefined;
                 }
               }
-              if (event.type === "tool_finished" && !event.isError && COMMITTED_OUTCOME_TOOL_NAMES.has(event.toolName)) {
+              if (event.type === "tool_finished" && !event.isError && event.replaySafeRejection !== true && COMMITTED_OUTCOME_TOOL_NAMES.has(event.toolName)) {
                 committedOutcomeTools.add(event.toolName);
                 pass.committedOutcome = true;
                 if (event.outcome !== undefined) committedTurnOutcome = event.outcome;
@@ -753,11 +745,8 @@ export class JoiCoordinator {
         }
         this.#sessionFailures.set(goalId, (this.#sessionFailures.get(goalId) ?? 0) + 1);
       }
-      // Drop the failed attempt from the session, but only when this input will be re-queued.
-      // `failTurn` re-queues exactly the turns that committed nothing: once a turn started a side
-      // effect, or its work is still live, the row is consumed and never replayed, and the
-      // transcript is then the only record the next Turn has of what this one already dispatched.
-      // A user cancel is the same reasoning — nothing will re-run, so there is nothing to undo.
+      // Preserve any attempt whose submission state is committed, uncertain or canceled.
+      // Settled no-submission attempts can be removed without erasing dispatched work.
       if (shouldRollbackTurn(sideEffectStarted(), signal)) {
         const rolledBack = await this.dependencies.runtime.rollbackTurn(sessionId, turnId);
         if (!rolledBack) {
@@ -769,11 +758,15 @@ export class JoiCoordinator {
         }
       }
       const failureReasonCode = runtimeDiagnosticErrorCode(error);
+      const replayProof = replayState.rejected ? {
+        replaySafe: !signal?.aborted && !sideEffectStarted() && pendingReviewEffects.size === 0,
+      } : {};
       await this.dependencies.store.failTurn?.(inputId, turnId,
         inputId.startsWith("joi_harness_review:goal:") ? {
           reasonCode: failureReasonCode,
+          ...replayProof,
           reviewReplaySafe: !signal?.aborted && !reviewEffects.unsafe && pendingReviewEffects.size === 0,
-        } : failureReasonCode === dispatchFailureReason ? { reasonCode: failureReasonCode } : undefined);
+        } : failureReasonCode === dispatchFailureReason || replayState.rejected ? { reasonCode: failureReasonCode, ...replayProof } : undefined);
       if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") {
         await this.dependencies.store.requireClarification(inputId, error.code, "当前有效需求超出了可用上下文容量。请选择更大上下文的模型，或明确精简有效需求后继续。");
       }

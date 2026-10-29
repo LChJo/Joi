@@ -24,6 +24,39 @@ function seedFailingSynthesis(database: RuntimeDatabase, inputId: string, failin
 }
 
 describe("sqlite joi inbox turn failure", () => {
+  it.each(["safe", "plan", "canceled", "clarification", "answer"] as const)(
+    "checks durable facts and lifecycle gates before replaying a proven rejection: %s", async state => {
+      const fixture = await createRuntimeFixture();
+      try {
+        const repository = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+        const now = fixture.clock.now().toISOString();
+        const workbench = await fixture.workbenchRegistry.create({ name: "Proof", personaSummary: "Synthetic", projectLabel: "Synthetic", scopeSummary: "Synthetic" });
+        await repository.create({ inputId: "proof-goal", idempotencyKey: "proof-goal", body: "Synthetic", status: "PENDING", createdAt: now, updatedAt: now });
+        await repository.createTurn({ inputId: "proof-goal", turnId: "proof-turn", sessionId: "proof-session", createdAt: now, workbenchId: workbench.workbenchId });
+        await repository.recordTurnProgress("proof-turn", { formalOutputStarted: false, sideEffectStarted: true });
+        const readTurn = () => fixture.database.transaction(db => db.prepare(
+          "SELECT status, side_effect_started, failure_replay_safe FROM joi_turns WHERE turn_id = 'proof-turn'").get());
+        expect(readTurn()).toMatchObject({ status: "RUNNING", side_effect_started: 1, failure_replay_safe: null });
+        if (state === "plan") fixture.database.transaction(db => db.prepare(`INSERT INTO dispatch_plans
+          (dispatch_plan_id,turn_id,candidate_json,policy_result_json,created_at)
+          VALUES ('proof-plan','proof-turn','{}','{}',?)`).run(now));
+        if (state === "canceled") await repository.cancel("proof-goal");
+        if (state === "clarification") await repository.requireClarification("proof-goal", "question_required", "Synthetic question?");
+        if (state === "answer") await repository.completeInput("proof-goal", "proof-turn", {
+          outcome: "DIRECT_ANSWER", completionSummary: "Synthetic answer", committedByTool: true,
+        });
+        await repository.failTurn("proof-goal", "proof-turn", { reasonCode: "tool_execution_error", replaySafe: true });
+        expect((await repository.loadInput("proof-goal"))?.status)
+          .toBe(state === "clarification" ? "CLARIFICATION_REQUIRED" : state === "safe" ? "PENDING" : "CONSUMED");
+        if (state === "safe" || state === "plan") {
+          expect(readTurn()).toMatchObject({ status: "FAILED", side_effect_started: 1, failure_replay_safe: state === "plan" ? 0 : 1 });
+          await repository.failTurn("proof-goal", "proof-turn", { reasonCode: "tool_execution_error", replaySafe: state !== "safe" });
+          expect(readTurn()).toHaveProperty("failure_replay_safe", state === "plan" ? 0 : 1);
+        }
+      } finally { await fixture.close(); }
+    },
+  );
+
   it.each([false, true])("does not requeue a canceled goal's in-flight recovery after dismissal=%s", async (dismissed) => {
     const fixture = await createRuntimeFixture();
     try {

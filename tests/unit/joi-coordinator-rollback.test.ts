@@ -17,8 +17,10 @@ const workbench = createWorkbench({
  * never replayed, so its transcript is the only record of what it already dispatched.
  */
 describe("joi coordinator session rollback", () => {
-  function makeCoordinator(options: { failureCode: string; toolError?: boolean; toolName?: string }) {
+  function makeCoordinator(options: { failureCode: string; toolError?: boolean; toolName?: string; replaySafeRejection?: true;
+    calls?: { name: string; id?: string; started?: boolean; finished?: boolean; safe?: true }[] }) {
     const rollbacks: string[] = [];
+    const failTurn = vi.fn(async () => undefined);
     const coordinator = new JoiCoordinator({
       workbenches: { getWorkbench: async () => workbench, listSummaries: async () => [] },
       clock: new TestClock(), ids: new TestIds(),
@@ -30,7 +32,14 @@ describe("joi coordinator session rollback", () => {
           turn.onEvent?.({ delta: "处理完成", turnId: turn.turnId, type: "text_delta" });
           if (options.toolName !== undefined) {
             turn.onEvent?.({ toolCallId: "call_1", toolName: options.toolName, turnId: turn.turnId, type: "tool_started" });
-            turn.onEvent?.({ isError: options.toolError ?? false, toolCallId: "call_1", toolName: options.toolName, turnId: turn.turnId, type: "tool_finished" });
+            turn.onEvent?.({ isError: options.toolError ?? false, toolCallId: "call_1", toolName: options.toolName, turnId: turn.turnId, type: "tool_finished",
+              ...(options.replaySafeRejection === undefined ? {} : { replaySafeRejection: options.replaySafeRejection }) });
+          }
+          for (const [index, call] of (options.calls ?? []).entries()) {
+            const shared = { toolCallId: call.id ?? `extra-${String(index)}`, toolName: call.name, turnId: turn.turnId };
+            if (call.started !== false) turn.onEvent?.({ ...shared, type: "tool_started" });
+            if (call.finished !== false) turn.onEvent?.({ ...shared, type: "tool_finished", isError: true,
+              ...(call.safe === undefined ? {} : { replaySafeRejection: call.safe }) });
           }
         },
         steer: () => undefined, waitForIdle: async () => undefined,
@@ -39,11 +48,12 @@ describe("joi coordinator session rollback", () => {
       store: {
         completeInput: async () => { throw Object.assign(new Error(options.failureCode), { code: options.failureCode }); },
         createTurn: async () => undefined,
+        failTurn,
         loadInput: async () => ({ body: "研究", inputId: "input", status: "PENDING", workbenchId: "workbench" }),
         requireClarification: async () => undefined,
       },
     });
-    return { coordinator, rollbacks };
+    return { coordinator, rollbacks, failTurn };
   }
 
   it("rolls a failed Turn back when its input will be re-queued", async () => {
@@ -70,23 +80,48 @@ describe("joi coordinator session rollback", () => {
     expect(rollbacks).toHaveLength(1);
   });
 
-  it("rolls back a Turn whose only dispatch attempt errored out", async () => {
-    // A rejected work_dispatch call (e.g. tool_execution_error) creates no Work: there is
-    // nothing a replay could duplicate, so this must be treated the same as never having
-    // called it, not as a committed side effect that permanently consumes the input.
+  it("keeps a dispatch failure whose commit state is unproven", async () => {
     const { coordinator, rollbacks } = makeCoordinator({ failureCode: "unused", toolError: true, toolName: "work_dispatch" });
+    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "tool_execution_error" });
+    expect(rollbacks).toEqual([]);
+  });
+
+  it("rolls back a dispatch rejected with trusted proof of no submission", async () => {
+    const { coordinator, rollbacks } = makeCoordinator({ failureCode: "unused", toolError: true, toolName: "work_dispatch", replaySafeRejection: true });
     await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "tool_execution_error" });
     expect(rollbacks).toHaveLength(1);
   });
 
+  it("does not treat a nonterminal dispatch correction as a committed outcome", async () => {
+    const { coordinator, rollbacks, failTurn } = makeCoordinator({ failureCode: "unused", toolName: "work_dispatch", replaySafeRejection: true });
+    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "joi_turn_outcome_uncommitted" });
+    expect(rollbacks).toHaveLength(1);
+    expect(failTurn).toHaveBeenCalledWith("input", expect.any(String), expect.objectContaining({ replaySafe: true }));
+  });
+
+  it("preserves explicit goal recovery semantics for a trusted goal_resume rejection", async () => {
+    const { coordinator, rollbacks, failTurn } = makeCoordinator({ failureCode: "unused", toolName: "goal_resume", toolError: true, replaySafeRejection: true });
+    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "joi_turn_outcome_uncommitted" });
+    expect(rollbacks).toEqual([]);
+    expect(failTurn).not.toHaveBeenCalledWith("input", expect.any(String), expect.objectContaining({ replaySafe: true }));
+  });
+
   it("keeps the transcript of a Turn whose cancel attempt errored out", async () => {
-    // Unlike work_dispatch, work_cancel's execute() is not wrapped in a non-rethrowing
-    // try/catch: its backing service can durably commit the cancellation and only then have
-    // an unguarded step (e.g. an event emit) throw. An isError:true result here is therefore
-    // not proof of zero effect, so this must stay unsafe to replay — the opposite of the
-    // work_dispatch case above.
+    // Cancellation can commit before a later step fails; SDK errors alone prove no replay safety.
     const { coordinator, rollbacks } = makeCoordinator({ failureCode: "unused", toolError: true, toolName: "work_cancel" });
     await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "joi_turn_outcome_uncommitted" });
     expect(rollbacks).toEqual([]);
+  });
+
+  it.each([
+    { calls: [{ name: "work_dispatch", safe: true as const }, { name: "work_cancel" }] },
+    { calls: [{ name: "work_dispatch", safe: true as const }, { name: "work_dispatch", finished: false }] },
+    { calls: [{ name: "work_dispatch", id: "duplicate" }, { name: "work_dispatch", id: "duplicate", safe: true as const }] },
+    { calls: [{ name: "work_dispatch", safe: true as const, started: false }] },
+  ])("retains protection for mixed or unmatched calls: %j", async ({ calls }) => {
+    const { coordinator, rollbacks, failTurn } = makeCoordinator({ failureCode: "unused", calls });
+    await expect(coordinator.handle("input")).rejects.toMatchObject({ code: "tool_execution_error" });
+    expect(rollbacks).toEqual([]);
+    expect(failTurn).not.toHaveBeenCalledWith("input", expect.any(String), expect.objectContaining({ replaySafe: true }));
   });
 });

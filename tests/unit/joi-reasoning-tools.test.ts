@@ -54,6 +54,7 @@ function makeTools(options: {
   inputId?: string;
   partners?: PartnerDto[];
   planError?: Error;
+  commitError?: Error;
   briefError?: Error;
   resumeCalls?: { inputId: string; turnId: string }[];
   resumeError?: Error;
@@ -165,6 +166,8 @@ function makeTools(options: {
         if (options.workspaceBlocked === true) throw new DomainError("workbench_workspace_not_ready", "workspace required");
         if (options.planError !== undefined) throw options.planError;
         if (options.briefError !== undefined && input.work.some((item) => item.instructions === undefined)) throw options.briefError;
+        input.onCommitStart?.();
+        if (options.commitError !== undefined) throw options.commitError;
         return { denied: [], queued: [], dispatchPlanId: "plan_1", waves: [] };
       },
       reassign: async (input) => ({
@@ -265,11 +268,27 @@ describe("joi reasoning tools", () => {
     expect(JSON.parse(first.content[0]?.type === "text" ? first.content[0].text : "null"))
       .toMatchObject({ reasonCode: "work_acceptance_checks_required", status: "RETRY_REQUIRED" });
     expect(first).not.toHaveProperty("terminate", true);
+    expect(first).toHaveProperty("details.replaySafeRejection", true);
     const second = await tool.execute("still-missing-check", args);
     expect(JSON.parse(second.content[0]?.type === "text" ? second.content[0].text : "null"))
       .toMatchObject({ reasonCode: "work_acceptance_checks_required", status: "FAILED" });
     expect(second).toHaveProperty("terminate", true);
+    expect(second).toMatchObject({ isError: true, details: { replaySafeRejection: true } });
     expect(harness.clarificationCalls).toEqual([]);
+  });
+
+  it("keeps host rejection proof out of successful, submitted and user-question results", async () => {
+    const args = { work: [{ accessMode: "READ", key: "one", partnerId: "partner_1", title: "Synthetic" }] };
+    const success = makeTools();
+    const submitted = makeTools({ commitError: new Error("Synthetic commit failure") });
+    const question = makeTools({ workspaceBlocked: true });
+    for (const harness of [success, submitted, question]) {
+      const tool = harness.tools.find(candidate => candidate.name === "work_dispatch");
+      if (tool === undefined) throw new Error("missing dispatch tool");
+      const output = await tool.execute("proof", args);
+      expect(output).not.toHaveProperty("details.replaySafeRejection");
+    }
+    expect(question.clarificationCalls).toHaveLength(1);
   });
 
   it.each(["work_dispatch", "work_supplement", "work_resume"])("offers one instruction correction for %s without asking the user", async (name) => {
