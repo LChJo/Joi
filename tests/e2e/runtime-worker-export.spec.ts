@@ -23,6 +23,10 @@ test("the runtime Worker exports through the native bridge and acknowledges dura
         VALUES ('worker-export-turn','worker-export','synthetic-wb','synthetic-session','COMPLETED',?,?)`).run(now, now);
       connection.prepare(`INSERT INTO joi_turn_completions(input_id,turn_id,outcome_kind,completion_summary,completed_at,updated_at)
         VALUES ('worker-export','worker-export-turn','DIRECT_ANSWER',?,?,?)`).run(body, now, now);
+      connection.prepare(`INSERT INTO joi_turns(turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+        VALUES ('new-worker-turn','worker-export','synthetic-wb','synthetic-session','COMPLETED',?,?)`).run(now, now);
+      connection.prepare(`UPDATE joi_turn_completions SET turn_id='new-worker-turn',completion_summary='# Newer result',completed_at=?,updated_at=?
+        WHERE input_id='worker-export'`).run(new Date(Date.parse(now) + 1000).toISOString(), now);
       connection.exec("COMMIT");
     } finally { connection.close(); }
     // Credentials stay inside the disposable browser context; only public job state is returned.
@@ -31,8 +35,13 @@ test("the runtime Worker exports through the native bridge and acknowledges dura
       if (grant === undefined) throw new Error("bridge_missing");
       const bootstrap = await fetch("/api/v1/auth/bootstrap", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ nonce: grant.nonce }) });
       const session = await bootstrap.json() as { csrfToken: string };
+      const history = await (await fetch('/api/v1/joi/goals/worker-export/results')).json() as { items: { resultId: string }[] };
+      const resultId = history.items[1]?.resultId;
+      if (resultId === undefined) throw new Error('history_snapshot_missing');
+      const snapshot = await (await fetch(`/api/v1/joi/goals/worker-export/results/${resultId}`)).json() as { body: string };
+      if (!snapshot.body.includes('Synthetic complete result.')) throw new Error('history_snapshot_incorrect');
       const response = await fetch("/api/v1/result-exports", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": session.csrfToken },
-        body: JSON.stringify({ goalId: "worker-export", digest, format: "pdf", idempotencyKey: "worker-export-pdf" }) });
+        body: JSON.stringify({ goalId: "worker-export", resultId, digest, format: "pdf", idempotencyKey: "worker-export-pdf" }) });
       if (response.status !== 202) throw new Error("export_not_accepted");
       return response.json() as Promise<ResultExportDto>;
     }, createHash("sha256").update(body).digest("hex"));
@@ -49,6 +58,9 @@ test("the runtime Worker exports through the native bridge and acknowledges dura
     expect(pdf.subarray(0, 4).toString()).toBe("%PDF");
     const inspect = new DatabaseSync(path.join(userData, "runtime.sqlite"), { readOnly: true });
     try {
+      expect(inspect.prepare('SELECT body,result_id FROM result_exports WHERE export_id=?').get(job.exportId)).toEqual({
+        body, result_id: expect.any(String),
+      });
       await expect.poll(() => inspect.prepare("SELECT status FROM outbox WHERE outbox_id = ?").get(`export_${job.exportId}`)?.status).toBe("DONE");
     } finally { inspect.close(); }
   } finally { await application.close(); }

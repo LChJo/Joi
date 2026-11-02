@@ -13,6 +13,8 @@ import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js"
 import type { JoiGoalDetailDto, JoiGoalDetailPage } from "../../../shared/joi.js";
 import { goalDetailPage } from "../../application/joi/goal-detail-page.js";
 import { queryJoiGoalDetail } from "./sqlite-joi-goal-detail.js";
+import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../../../shared/goal-results.js";
+import { queryGoalResult, queryGoalResults } from "./sqlite-goal-result-history.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
 type Row = Record<string, unknown>;
@@ -284,6 +286,14 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
     return this.database.transaction((connection) => queryJoiGoalDetail(connection, goalId, normalized));
   }
 
+  async listGoalResults(goalId: string, page: GoalResultPage = {}): Promise<GoalResultPageDto | null> {
+    return this.database.transaction(connection => queryGoalResults(connection, goalId, page));
+  }
+
+  async getGoalResult(goalId: string, resultId: string): Promise<GoalResultDto | null> {
+    return this.database.transaction(connection => queryGoalResult(connection, goalId, resultId));
+  }
+
   async load(now: Date): Promise<JoiHomeFeedDto> {
     return this.database.transaction((connection) => {
       const rows = connection.prepare(`SELECT i.input_id, i.body, i.status AS inbox_status, i.archived_at, i.clarification_reason_code, i.clarification_prompt,
@@ -348,6 +358,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           AND o.completed_at >= COALESCE(i.reopened_at, i.created_at) THEN 1 ELSE 0 END AS outcome_current,
         CASE WHEN o.completed_at < i.reopened_at THEN 1 ELSE 0 END AS outcome_stale,
         o.disposition AS outcome_disposition, o.completion_summary, o.completed_at, tc.completion_summary AS turn_completion_summary,
+        (SELECT h.result_id FROM joi_goal_result_history h WHERE h.goal_input_id=i.input_id
+          AND h.source_key=CASE WHEN o.input_id IS NOT NULL THEN COALESCE(o.completion_key,
+            'legacy-outcome:' || o.result_revision || ':' || COALESCE(o.requirements_revision,0) || ':' || o.completed_at)
+            ELSE 'turn:' || tc.turn_id END LIMIT 1) AS history_result_id,
         tc.completed_at AS turn_completed_at,
         CASE WHEN tc.completed_at >= COALESCE(i.reopened_at, i.created_at) THEN 1 ELSE 0 END AS turn_completion_current,
         EXISTS (SELECT 1 FROM partner_runs run JOIN work_items rw ON rw.work_id = run.work_id
@@ -422,6 +436,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
             && active === 0 && activeRuns === 0
             && ((row.canceled_at !== null && row.canceled_at !== undefined) || total === 0 || finalOutcome),
           goalId,
+          ...((status === "COMPLETED" || status === "COMPLETED_WITH_GAPS") && typeof row.history_result_id === "string" ? { resultId: row.history_result_id } : {}),
           ...(status === "FAILED" && (historicalFailure || (typeof failureCode === "string" && typeof failureCount === "number")) ? {
             failure: {
               attempts: typeof failureCount === "number" && failureCount > 0 ? failureCount : 1,

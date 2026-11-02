@@ -34,6 +34,8 @@ const GOLDEN_ROUTES = [
   "GET /api/v1/joi/activity",
   "GET /api/v1/joi/home-feed",
   "GET /api/v1/joi/goals/:goalId/detail",
+  "GET /api/v1/joi/goals/:goalId/results",
+  "GET /api/v1/joi/goals/:goalId/results/:resultId",
   "GET /api/v1/work",
   "GET /api/v1/automations",
   "GET /api/v1/automations/:routineId",

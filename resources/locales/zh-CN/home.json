@@ -451,5 +451,12 @@
   "joiProgressTurnWaiting": "回合等待中",
   "joiProgressSeconds": "{value} 秒",
   "joiProgressMinutes": "{value} 分钟",
-  "joiProgressHours": "{value} 小时 {minutes} 分钟"
+  "joiProgressHours": "{value} 小时 {minutes} 分钟",
+  "resultHistory": "历史结果",
+  "noResultHistory": "暂无历史结果",
+  "loadMoreResults": "加载更多",
+  "backToResultHistory": "返回历史结果",
+  "historyLoadFailed": "历史结果加载失败，请重试。",
+  "latestResult": "最新结果",
+  "resultAt": "完成于 {p0}"
 }

@@ -5,8 +5,14 @@ import type { DigitalLifeApi } from './api';
 import type { ResultExportDto, ResultExportFormat } from '../shared/result-export';
 import { randomUuid } from './random-uuid';
 
-export function ResultExportMenu({ api, goalId, body, expanded, onExpanded }: {
-  api: DigitalLifeApi; goalId: string; body: string; expanded: boolean; onExpanded: (value: boolean) => void;
+export function ResultExportMenu(props: {
+  api: DigitalLifeApi; goalId: string; resultId?: string; body: string; expanded: boolean; onExpanded: (value: boolean) => void;
+}) {
+  return <SnapshotExportMenu key={JSON.stringify([props.goalId, props.resultId, props.body])} {...props} />;
+}
+
+function SnapshotExportMenu({ api, goalId, resultId, body, expanded, onExpanded }: {
+  api: DigitalLifeApi; goalId: string; resultId?: string; body: string; expanded: boolean; onExpanded: (value: boolean) => void;
 }) {
   useI18n();
   const [busy, setBusy] = useState(false);
@@ -23,7 +29,7 @@ export function ResultExportMenu({ api, goalId, body, expanded, onExpanded }: {
       } else {
         if (pending.current?.format !== format) pending.current = { format, key: randomUuid() };
         const digest = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(body))), b => b.toString(16).padStart(2, '0')).join('');
-        let job = await api.request<ResultExportDto>('/api/v1/result-exports', { method: 'POST', body: { goalId, format, digest, idempotencyKey: pending.current.key } });
+        let job = await api.request<ResultExportDto>('/api/v1/result-exports', { method: 'POST', body: { goalId, ...(resultId === undefined ? {} : { resultId }), format, digest, idempotencyKey: pending.current.key } });
         while (job.status === 'queued' || job.status === 'rendering') {
           await new Promise(resolve => setTimeout(resolve, 800));
           job = await api.request<ResultExportDto>(`/api/v1/result-exports/${job.exportId}`);

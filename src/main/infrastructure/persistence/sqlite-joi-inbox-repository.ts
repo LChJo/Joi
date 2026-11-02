@@ -23,6 +23,7 @@ import { goalSynthesisInstruction, loadGoalSynthesisContext } from "./sqlite-goa
 import { appendGoalRequirementSource, assertGoalRequirementsReady, goalRequirementsCurrentSql } from "./sqlite-goal-requirements-repository.js";
 import { clearJoiTurnRetryState, joiTurnRetryState } from "./sqlite-joi-turn-retry-state.js";
 import { settleInterruptedJoiPlanning } from "./sqlite-joi-planning-failure.js";
+import { nextGoalReopenTime } from "./sqlite-goal-reopen-time.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -411,6 +412,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       if (busy !== undefined) return null;
       clearJoiTurnRetryState(connection,inputId,true);
       const now = this.#clock.now().toISOString();
+      const reopenAt = nextGoalReopenTime(connection, inputId, now);
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       // An explicit continuation of a parked synthesis reuses the evidence instead of dispatching it again.
       if (patch.text === undefined && current.canceledAt === undefined && current.failedAt === undefined
@@ -465,7 +467,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           failure_count = NULL, clarification_reason_code = NULL, clarification_prompt = NULL,
           updated_at = ?, last_opened_at = ?, reopened_at = ?, continuation_prompt = ?, automation_routine_id = NULL
         WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL`).run(
-          nextBody, now, now, now, patch.text ?? "Continue from the established results and complete the remaining work for this goal.", inputId,
+          nextBody, now, now, reopenAt, patch.text ?? "Continue from the established results and complete the remaining work for this goal.", inputId,
         );
       if (result.changes === 0) return null;
       if (patch.text !== undefined) appendGoalRequirementSource(connection, inputId, patch.text);
@@ -892,6 +894,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
 
   async completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion) {
     return this.database.transaction((connection) => {
+      if ((completion?.outcome === "DIRECT_ANSWER" || completion?.outcome === "TEAM_READY")
+        && connection.prepare("SELECT 1 FROM joi_turns WHERE turn_id=? AND input_id=? AND status='COMPLETED'").get(turnId, inputId) !== undefined) return undefined;
       const now = this.#clock.now().toISOString();
       clearJoiTurnRetryState(connection, inputId);
       const superseded = consumeSupersededGoalSynthesis(connection, inputId, now);
@@ -927,6 +931,9 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         FROM joi_turns t JOIN joi_inbox_messages i ON i.input_id = t.input_id WHERE t.turn_id = ? AND t.input_id = ?`).get(turnId, inputId);
       const requirements = typeof checkpoint?.goal_input_id === "string"
         ? assertGoalRequirementsReady(connection, checkpoint.goal_input_id, typeof checkpoint.requirements_revision === "number" ? checkpoint.requirements_revision : undefined) : null;
+      const epoch = typeof checkpoint?.goal_input_id === "string"
+        ? connection.prepare("SELECT reopened_at FROM joi_inbox_messages WHERE input_id=?").get(checkpoint.goal_input_id)?.reopened_at : undefined;
+      const completionTime = typeof epoch === "string" && epoch > now ? epoch : now;
       if (requirements !== null) {
         consumeSatisfiedRequirementsReviews(connection, requirements, now);
         enqueueGoalRequirementsReview(connection, requirements, now);
@@ -961,8 +968,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           const summary = normalizeCompletionSummary(completion.completionSummary);
           if (summary === "") throw new DomainError("joi_goal_followup_summary_empty", "A direct follow-up needs a visible answer.");
           connection.prepare(`UPDATE joi_goal_outcomes SET disposition = 'COMPLETED',
-            completion_summary = ?, completed_at = ?, updated_at = ?, requirements_revision = ? WHERE input_id = ?`)
-            .run(summary, now, now, requirements?.revision ?? null, inputId);
+            completion_summary = ?, completed_at = ?, updated_at = ?, requirements_revision = ?, completion_key = ? WHERE input_id = ?`)
+            .run(summary, completionTime, now, requirements?.revision ?? null, `turn:${turnId}`, inputId);
         }
       }
       const review = connection.prepare(`SELECT goal_input_id FROM joi_inbox_messages
@@ -1024,7 +1031,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           connection.prepare("UPDATE joi_inbox_messages SET status='CONSUMED',updated_at=? WHERE input_id=? AND status<>'CLARIFICATION_REQUIRED'").run(now,inputId);
           return { goalInputId: synthesis.goal_input_id, goalOutcomePersisted: false, resultRevision: synthesis.result_revision };
         }
-        const committedAt = explicitResume && reopenedAt > now ? reopenedAt : now;
+        const committedAt = explicitResume && reopenedAt > completionTime ? reopenedAt : completionTime;
         const synthesisState = buildGoalSynthesisState(connection, {
           goalInputId: synthesis.goal_input_id, workbenchId: requirements?.workbenchId ?? String(connection.prepare("SELECT workbench_id FROM joi_inbox_messages WHERE input_id=?").get(inputId)?.workbench_id),
           resultRevision: synthesis.result_revision, requirementsRevision: requirements?.revision ?? 0,
@@ -1040,13 +1047,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           }
         }
         connection.prepare(`INSERT INTO joi_goal_outcomes
-          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at, requirements_revision, synthesis_state_json)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          (input_id, result_revision, disposition, completion_summary, completed_at, updated_at, requirements_revision, synthesis_state_json, completion_key)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(input_id) DO UPDATE SET result_revision = excluded.result_revision,
             disposition = excluded.disposition, completion_summary = excluded.completion_summary, completed_at = excluded.completed_at,
-            updated_at = excluded.updated_at, requirements_revision = excluded.requirements_revision, synthesis_state_json = excluded.synthesis_state_json
+            updated_at = excluded.updated_at, requirements_revision = excluded.requirements_revision, synthesis_state_json = excluded.synthesis_state_json,
+            completion_key = excluded.completion_key
           WHERE excluded.result_revision >= joi_goal_outcomes.result_revision`).run(
-          synthesis.goal_input_id, synthesis.result_revision, disposition, summary, committedAt, committedAt, requirements?.revision ?? null, JSON.stringify(synthesisState),
+          synthesis.goal_input_id, synthesis.result_revision, disposition, summary, committedAt, committedAt, requirements?.revision ?? null, JSON.stringify(synthesisState), `turn:${turnId}`,
         );
         connection.prepare(`INSERT INTO joi_goal_outcome_history
           (goal_input_id, result_revision, requirements_revision, disposition, completion_summary, completed_at, synthesis_state_json)
@@ -1076,7 +1084,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           ON CONFLICT(input_id) DO UPDATE SET turn_id = excluded.turn_id,
             outcome_kind = excluded.outcome_kind, completion_summary = excluded.completion_summary,
             completed_at = excluded.completed_at, updated_at = excluded.updated_at`).run(
-          inputId, turnId, completion.outcome, summary, now, now,
+          inputId, turnId, completion.outcome, summary, completionTime, now,
         );
       }
       connection.prepare(`UPDATE joi_inbox_messages SET status = 'CONSUMED', updated_at = ?
@@ -1321,7 +1329,7 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
     if (action.kind === "GOAL_CONTINUATION") {
       if (patch.actionChoice !== "CONTINUE" && patch.actionChoice !== "ACCEPT_CURRENT") return null;
       if (typeof action.result_revision !== "number") throw new Error("joi_user_action_invalid");
-      const currentOutcome = connection.prepare(`SELECT o.disposition
+      const currentOutcome = connection.prepare(`SELECT o.disposition,o.completed_at
         FROM joi_goal_result_sets rs
         JOIN joi_current_goal_outcomes o ON o.input_id = rs.original_input_id AND o.result_revision = rs.revision
         JOIN joi_harness_maps m ON m.goal_input_id = rs.original_input_id
@@ -1343,9 +1351,11 @@ export function clarifyJoiInputInTransaction(connection: DatabaseSync, inputId: 
           WHERE goal_input_id = ? AND status = 'ACTIVE'`).run(now, inputId);
         if (authorized.changes !== 1) throw new Error("joi_goal_continuation_conflict");
       } else {
+        const reopenedAt = typeof row.reopened_at === "string" && row.reopened_at > now ? row.reopened_at : now;
+        const acceptedAt = typeof currentOutcome.completed_at === "string" && currentOutcome.completed_at > reopenedAt ? currentOutcome.completed_at : reopenedAt;
         const accepted = connection.prepare(`UPDATE joi_goal_outcomes
-          SET disposition = 'ACCEPTED_WITH_GAPS', completed_at = ?, updated_at = ?
-          WHERE input_id = ? AND result_revision = ? AND disposition = 'CONTINUE'`).run(now, now, inputId, action.result_revision);
+          SET disposition = 'ACCEPTED_WITH_GAPS', completed_at = ?, updated_at = ?, completion_key = ?
+          WHERE input_id = ? AND result_revision = ? AND disposition = 'CONTINUE'`).run(acceptedAt, now, `action:${action.action_id}`, inputId, action.result_revision);
         if (accepted.changes !== 1) throw new Error("joi_goal_continuation_conflict");
         const cleared = connection.prepare(`UPDATE joi_harness_maps
           SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?

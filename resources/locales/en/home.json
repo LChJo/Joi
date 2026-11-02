@@ -2438,5 +2438,43 @@
       "value": "string",
       "minutes": "string"
     }
+  },
+  "resultHistory": {
+    "message": "Result history",
+    "description": "Completed result history",
+    "sourceText": "历史结果"
+  },
+  "noResultHistory": {
+    "message": "No result history yet.",
+    "description": "Completed result history",
+    "sourceText": "暂无历史结果"
+  },
+  "loadMoreResults": {
+    "message": "Load more",
+    "description": "Completed result history",
+    "sourceText": "加载更多"
+  },
+  "backToResultHistory": {
+    "message": "Back to result history",
+    "description": "Completed result history",
+    "sourceText": "返回历史结果"
+  },
+  "historyLoadFailed": {
+    "message": "Could not load result history. Try again.",
+    "description": "Completed result history",
+    "sourceText": "历史结果加载失败，请重试。"
+  },
+  "latestResult": {
+    "message": "Latest result",
+    "description": "Completed result history",
+    "sourceText": "最新结果"
+  },
+  "resultAt": {
+    "message": "Completed at {p0}",
+    "description": "Completed result history",
+    "sourceText": "完成于 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
   }
 }

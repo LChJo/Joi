@@ -7,7 +7,7 @@ import { DomainError } from "../../domain/errors.js";
 
 export class RemoteHomeQueryService implements RemoteHomeQueries {
   constructor(private readonly dependencies: {
-    homeFeed: Pick<JoiHomeFeedService, "load">;
+    homeFeed: Pick<JoiHomeFeedService, "load"> & Partial<Pick<JoiHomeFeedService, "listGoalResults" | "getGoalResult">>;
     inputs: { readDisplayText(inputId: string): Promise<string | null> };
     agents: Pick<WorkbenchAgentService, "list" | "conversation">;
     workbenches: Pick<WorkbenchCatalog, "listSummaries">;
@@ -34,6 +34,18 @@ export class RemoteHomeQueryService implements RemoteHomeQueries {
     const { goal } = await this.goal(goalId);
     if (goal === undefined || goal.workbench.workbenchId === "") return { items: [] };
     return this.dependencies.agents.list({ goalId, workbenchId: goal.workbench.workbenchId, limit: 25, ...(cursor === undefined ? {} : { cursor }) });
+  }
+
+  async results(goalId: string, cursor?: string) {
+    const page = await this.dependencies.homeFeed.listGoalResults?.(goalId, cursor === undefined ? {} : { cursor });
+    if (page == null) throw new DomainError("remote_goal_unavailable", "Goal is unavailable.");
+    return page;
+  }
+
+  async result(goalId: string, resultId: string) {
+    const result = await this.dependencies.homeFeed.getGoalResult?.(goalId, resultId);
+    if (result == null) throw new DomainError("remote_goal_unavailable", "Goal is unavailable.");
+    return result;
   }
 
   async conversation(goalId: string, agentId: string, cursor?: string) {

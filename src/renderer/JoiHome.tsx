@@ -2,6 +2,7 @@ import { localizeProductText, currentLocale, noticeMessage, t, useI18n, useNotic
 import { WorkbenchChoiceDialog, WorkbenchChoiceForm } from "./WorkbenchChoiceDialog.js";
 import { needsWorkbenchChoice } from "../shared/workbench-choice.js";
 import { ResultExportMenu } from './ResultExportMenu';
+import { GoalResultHistory } from './GoalResultHistory';
 import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
 import { useGoalDetail } from "./useGoalDetail.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
@@ -1404,6 +1405,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
 }) {
   useI18n();
   const detailState = useGoalDetail(api, goal.goalId);
+  const [showHistory, setShowHistory] = useState(false);
   const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [notice, setNotice] = useNotice();
@@ -1427,12 +1429,17 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
   }, [loadAgents]);
   const selectedAgent = agents.find((agent) => agent.agentId === selectedAgentId);
   useEffect(() => {
+    if (showHistory) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") onBack(); };
     window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack, showHistory]);
+  useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = previousOverflow; };
-  }, [onBack]);
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
+  if (showHistory) return <GoalResultHistory api={api} goal={goal} lockPage={false} onClose={() => setShowHistory(false)} />;
   return <div className="joi-drawer-backdrop" onClick={onBack} role="presentation">
     <section aria-label={t("home.goalDetailsForValue", { p0: goal.workbench.name })} aria-modal="true" className="joi-goal-drawer" onClick={(event) => event.stopPropagation()} role="dialog">
       <header className="joi-goal-detail-header">
@@ -1443,6 +1450,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         </div>
         <div className="joi-goal-detail-actions">
           <button aria-label={t("common.close")} className="icon-button joi-goal-detail-close" onClick={onBack} title={t("common.close")} type="button"><XIcon aria-hidden size={18} /></button>
+          <button className="button ghost" onClick={() => setShowHistory(true)} type="button">{t("home.resultHistory")}</button>
           {onScheduleGoal === undefined ? null : <button className="button joi-goal-schedule" onClick={() => onScheduleGoal(goal.goalId)} title={t("home.scheduleContinuationForThisGoal")} type="button"><ClockIcon aria-hidden size={16} /><span>{t("home.schedule")}</span></button>}
         </div>
       </header>
@@ -1487,16 +1495,23 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
 }) {
   useI18n();
   const [body] = useState(goal.completionSummary ?? "");
+  const [resultId] = useState(goal.resultId);
+  const [showHistory, setShowHistory] = useState(false);
   const resultLabel = !TERMINAL_GOAL_STATUSES.includes(goal.status) ? t("home.currentResult") : t("home.finalResult");
   const [exportMenu, setExportMenu] = useState(false);
   const close = () => { if (exportMenu) setExportMenu(false); else onBack(); };
   useEffect(() => {
+    if (showHistory) return;
     const onKey = (event: KeyboardEvent) => { if (event.key === "Escape") { if (exportMenu) setExportMenu(false); else onBack(); } };
     window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onBack, exportMenu, showHistory]);
+  useEffect(() => {
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
-    return () => { window.removeEventListener("keydown", onKey); document.body.style.overflow = previousOverflow; };
-  }, [onBack, exportMenu]);
+    return () => { document.body.style.overflow = previousOverflow; };
+  }, []);
+  if (showHistory) return <GoalResultHistory api={api} goal={goal} lockPage={false} onClose={() => setShowHistory(false)} />;
   return <div className="joi-drawer-backdrop" onClick={close} role="presentation">
     <section aria-label={t("home.valueForValue", { p0: goal.workbench.name, p1: resultLabel })} aria-modal="true" className="joi-goal-drawer joi-result-drawer" onClick={(event) => { event.stopPropagation(); setExportMenu(false); }} role="dialog">
       <header className="joi-goal-detail-header">
@@ -1505,14 +1520,14 @@ function GoalResultView({ api, goal, onBack, onOpenDetail, onRetried }: {
           <h1>{goal.title}</h1>
           <span className="joi-goal-detail-meta"><GoalStatusBadge goal={goal} />{goal.completedAt === undefined ? null : <time className="joi-feed-time">{new Date(goal.completedAt).toLocaleString(currentLocale())}</time>}</span>
         </div>
-        <div className="row-actions"><button className="button ghost" disabled={goal.workbench.workbenchId === ""} onClick={() => onOpenDetail()} type="button">{t("home.viewDetails")}</button><button className="button quiet" onClick={close} type="button">{t("common.close")}</button></div>
+        <div className="row-actions"><button className="button ghost" disabled={goal.workbench.workbenchId === ""} onClick={() => onOpenDetail()} type="button">{t("home.viewDetails")}</button><button className="button ghost" onClick={() => { setExportMenu(false); setShowHistory(true); }} type="button">{t("home.resultHistory")}</button><button className="button quiet" onClick={close} type="button">{t("common.close")}</button></div>
       </header>
       <div className="joi-goal-drawer-body">
         <article className="joi-goal-result"><h2>{resultLabel}</h2><div className="joi-md"><Markdown>{body}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>
         <GoalAgentWarning goal={goal} onOpen={() => onOpenDetail("FAILED")} />
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}
       </div>
-      <ResultExportMenu api={api} goalId={goal.goalId} body={body} expanded={exportMenu} onExpanded={setExportMenu} />
+      <ResultExportMenu api={api} goalId={goal.goalId} {...(resultId === undefined ? {} : { resultId })} body={body} expanded={exportMenu} onExpanded={setExportMenu} />
     </section>
   </div>;
 }

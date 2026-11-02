@@ -23,6 +23,7 @@ import { connectDesktopLocale, localeVersion, t, errorNotice, translateNotice } 
 import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiRuntimeDto } from "../shared/joi";
+import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
 
 export class ApiError extends Error {
   get userMessage() { return errorNotice(this.code, this.message); }
@@ -125,6 +126,14 @@ export class DigitalLifeApi {
   joiGoalDetail(goalId: string, page: JoiGoalDetailPage = {}) {
     const query = new URLSearchParams({ offset: String(page.offset ?? 0), limit: String(page.limit ?? 50) });
     return this.request<JoiGoalDetailDto>(`/api/v1/joi/goals/${encodeURIComponent(goalId)}/detail?${query.toString()}`);
+  }
+  joiGoalResults(goalId: string, page: GoalResultPage = {}) {
+    const query = new URLSearchParams({ limit: String(page.limit ?? 20) });
+    if (page.cursor !== undefined) query.set("cursor", page.cursor);
+    return this.request<GoalResultPageDto>(`/api/v1/joi/goals/${encodeURIComponent(goalId)}/results?${query.toString()}`);
+  }
+  joiGoalResult(goalId: string, resultId: string) {
+    return this.request<GoalResultDto>(`/api/v1/joi/goals/${encodeURIComponent(goalId)}/results/${encodeURIComponent(resultId)}`);
   }
   listWorkbenchAgents(workbenchId: string, options: { cursor?: string; goalId?: string; limit?: number } = {}) {
     const query = [

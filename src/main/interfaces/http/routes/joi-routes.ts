@@ -82,6 +82,34 @@ export const JOI_READ_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "read",
+    id: "GET /api/v1/joi/goals/:goalId/results",
+    match: pattern("GET", /^\/api\/v1\/joi\/goals\/([^/]+)\/results$/),
+    handle: async (ctx, match) => {
+      const service = joiHomeFeedService(ctx.dependencies);
+      if (service.listGoalResults === undefined) throw new HttpError("joi_home_feed_unavailable", "Result history is unavailable.", 503);
+      const cursor = ctx.url.searchParams.get("cursor");
+      const result = await service.listGoalResults(decodeURIComponent((match as RegExpExecArray)[1] ?? ""), {
+        limit: Number(ctx.url.searchParams.get("limit") ?? "20"), ...(cursor === null ? {} : { cursor }),
+      });
+      if (result === null) throw new HttpError("goal_not_found", "Goal was not found.", 404);
+      sendJson(ctx.response, 200, result);
+    },
+  },
+  {
+    auth: "read",
+    id: "GET /api/v1/joi/goals/:goalId/results/:resultId",
+    match: pattern("GET", /^\/api\/v1\/joi\/goals\/([^/]+)\/results\/([^/]+)$/),
+    handle: async (ctx, match) => {
+      const service = joiHomeFeedService(ctx.dependencies);
+      if (service.getGoalResult === undefined) throw new HttpError("joi_home_feed_unavailable", "Result history is unavailable.", 503);
+      const parts = match as RegExpExecArray;
+      const result = await service.getGoalResult(decodeURIComponent(parts[1] ?? ""), decodeURIComponent(parts[2] ?? ""));
+      if (result === null) throw new HttpError("goal_result_not_found", "Result was not found.", 404);
+      sendJson(ctx.response, 200, result);
+    },
+  },
+  {
+    auth: "read",
     id: "GET /api/v1/work",
     match: exact("GET", "/api/v1/work"),
     handle: async (ctx) => {

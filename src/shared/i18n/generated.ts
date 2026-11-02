@@ -927,6 +927,13 @@ export interface MessageParameters {
   "home.joiProgressSeconds": { "value": string };
   "home.joiProgressMinutes": { "value": string };
   "home.joiProgressHours": { "value": string; "minutes": string };
+  "home.resultHistory": undefined;
+  "home.noResultHistory": undefined;
+  "home.loadMoreResults": undefined;
+  "home.backToResultHistory": undefined;
+  "home.historyLoadFailed": undefined;
+  "home.latestResult": undefined;
+  "home.resultAt": { "p0": string };
   "mobile.homeSyncFailedRetrying": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
@@ -2526,6 +2533,13 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.joiProgressSeconds": "{value}s",
     "home.joiProgressMinutes": "{value}m",
     "home.joiProgressHours": "{value}h {minutes}m",
+    "home.resultHistory": "Result history",
+    "home.noResultHistory": "No result history yet.",
+    "home.loadMoreResults": "Load more",
+    "home.backToResultHistory": "Back to result history",
+    "home.historyLoadFailed": "Could not load result history. Try again.",
+    "home.latestResult": "Latest result",
+    "home.resultAt": "Completed at {p0}",
     "mobile.homeSyncFailedRetrying": "Home sync failed. Retrying automatically; pull down to retry now.",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
@@ -4123,6 +4137,13 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.joiProgressSeconds": "{value} 秒",
     "home.joiProgressMinutes": "{value} 分钟",
     "home.joiProgressHours": "{value} 小时 {minutes} 分钟",
+    "home.resultHistory": "历史结果",
+    "home.noResultHistory": "暂无历史结果",
+    "home.loadMoreResults": "加载更多",
+    "home.backToResultHistory": "返回历史结果",
+    "home.historyLoadFailed": "历史结果加载失败，请重试。",
+    "home.latestResult": "最新结果",
+    "home.resultAt": "完成于 {p0}",
     "mobile.homeSyncFailedRetrying": "首页同步失败，将自动重试；也可下拉立即重试。",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
@@ -6481,6 +6502,18 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "回合已终止": "home.joiProgressTurnAborted",
   "Turn waiting": "home.joiProgressTurnWaiting",
   "回合等待中": "home.joiProgressTurnWaiting",
+  "Result history": "home.resultHistory",
+  "历史结果": "home.resultHistory",
+  "No result history yet.": "home.noResultHistory",
+  "暂无历史结果": "home.noResultHistory",
+  "Load more": "home.loadMoreResults",
+  "加载更多": "home.loadMoreResults",
+  "Back to result history": "home.backToResultHistory",
+  "返回历史结果": "home.backToResultHistory",
+  "Could not load result history. Try again.": "home.historyLoadFailed",
+  "历史结果加载失败，请重试。": "home.historyLoadFailed",
+  "Latest result": "home.latestResult",
+  "最新结果": "home.latestResult",
   "Home sync failed. Retrying automatically; pull down to retry now.": "mobile.homeSyncFailedRetrying",
   "首页同步失败，将自动重试；也可下拉立即重试。": "mobile.homeSyncFailedRetrying",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",

@@ -1,6 +1,7 @@
 export type ResultExportFormat = "pdf" | "png";
 export interface CreateResultExport {
   goalId: string;
+  resultId?: string;
   format: ResultExportFormat;
   digest: string;
   idempotencyKey: string;

@@ -36,6 +36,18 @@ describe("runtime Workers (AC-PERF-01)", () => {
       writer.exec("COMMIT");
       expect((await reader.load(new Date())).goals).toHaveLength(1);
       expect(await reader.loadGoalDetail("goal", {})).toEqual({ goalId: "goal", fullTitle: "synthetic" });
+      writer.exec("BEGIN IMMEDIATE");
+      const resultId = "a".repeat(32);
+      writer.prepare(`INSERT INTO joi_goal_result_history(result_id,goal_input_id,source_key,completed_at,status,body)
+        VALUES (?,'goal','synthetic-completion','2026-10-13T00:00:00.000Z','COMPLETED','# Frozen result')`).run(resultId);
+      expect((await reader.listGoalResults("goal", {}))?.items).toEqual([]);
+      expect(await reader.getGoalResult("goal", resultId)).toBeNull();
+      writer.exec("COMMIT");
+      expect((await reader.listGoalResults("goal", {}))?.items).toEqual([
+        { resultId, completedAt: "2026-10-13T00:00:00.000Z", status: "COMPLETED" },
+      ]);
+      expect(await reader.getGoalResult("goal", resultId)).toMatchObject({ resultId, body: "# Frozen result" });
+      await expect(reader.listGoalResults("goal", { limit: 0 })).rejects.toMatchObject({ code: "goal_result_page_invalid" });
       const pending = reader.load(new Date());
       await reader.close();
       await expect(pending).resolves.toMatchObject({ goals: [expect.objectContaining({ goalId: "goal" })] });

@@ -11,7 +11,8 @@ export const RESULT_EXPORT_ROUTES: RouteDefinition[] = [
     const exports = await service(ctx); const body = await readJson(ctx.request);
     const format = stringField(body, 'format');
     if (format !== 'pdf' && format !== 'png') throw new HttpError('export_invalid', '导出格式无效。', 400);
-    sendJson(ctx.response, 202, await exports.create({ goalId: stringField(body, 'goalId'), format, digest: stringField(body, 'digest'), idempotencyKey: stringField(body, 'idempotencyKey') }));
+    sendJson(ctx.response, 202, await exports.create({ goalId: stringField(body, 'goalId'), format, digest: stringField(body, 'digest'), idempotencyKey: stringField(body, 'idempotencyKey'),
+      ...(body.resultId === undefined ? {} : { resultId: stringField(body, 'resultId') }) }));
   } },
   { auth: 'read', id: 'GET /api/v1/result-exports/:id', match: pattern('GET', /^\/api\/v1\/result-exports\/([\w-]+)$/), handle: async (ctx, match) => {
     const result = await (await service(ctx)).get((match as RegExpExecArray)[1] ?? '');

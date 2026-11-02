@@ -5,16 +5,21 @@ import 'remote_controller.dart';
 import 'connection_diagnostics_view.dart';
 import 'goal_detail.dart';
 import 'result_export.dart';
+import 'result_history.dart';
 
 class ResultReaderPage extends StatefulWidget {
   const ResultReaderPage({
     super.key,
     required this.controller,
     required this.goal,
+    this.resultId,
+    this.fromHistory = false,
     this.service,
   });
   final RemoteController controller;
   final RemoteGoalCard goal;
+  final String? resultId;
+  final bool fromHistory;
   final ResultExportService? service;
   @override
   State<ResultReaderPage> createState() => _ResultReaderPageState();
@@ -28,6 +33,7 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
   Object _notice = '';
   bool _menu = false;
   bool _busy = false;
+  bool _loading = false;
   SavedResult? _saved;
   @override
   void initState() {
@@ -36,12 +42,31 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
   }
 
   Future<void> _load() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
     try {
+      final resultId = widget.resultId ?? widget.goal.resultId;
       final detail = await widget.controller.read(
-        'goal.get',
+        resultId == null ? 'goal.get' : 'goal.result',
         goalId: widget.goal.goalId,
+        resultId: resultId,
       );
-      final body = resultBody(detail);
+      final String body;
+      if (resultId == null) {
+        body = resultBody(detail);
+      } else {
+        final value = detail['body'];
+        if (value is! String ||
+            value.trim().isEmpty ||
+            detail['resultId'] != resultId ||
+            detail['goalId'] != widget.goal.goalId) {
+          throw StateError('remote_read_invalid');
+        }
+        body = value;
+      }
       if (mounted) setState(() => _body = body);
     } catch (_) {
       if (mounted) {
@@ -49,6 +74,8 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
           () => _error = UiNotice(Msg.mobileCouldNotLoadTheFullResultGoBackAnd),
         );
       }
+    } finally {
+      if (mounted) setState(() => _loading = false);
     }
   }
 
@@ -112,21 +139,57 @@ class _ResultReaderPageState extends State<ResultReaderPage> {
       },
       child: Scaffold(
         appBar: AppBar(
+          leading: widget.fromHistory
+              ? IconButton(
+                  tooltip: tr(Msg.homeBackToResultHistory),
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () => Navigator.maybePop(context),
+                )
+              : null,
           title: Text(
-            widget.goal.needsContinuationDecision
+            !widget.fromHistory && widget.goal.needsContinuationDecision
                 ? tr(Msg.homeCurrentResult)
                 : tr(Msg.mobileViewFullText),
           ),
-          actions: [ConnectionDiagnosticsButton(controller: widget.controller)],
+          actions: [
+            AnimatedBuilder(
+              animation: widget.controller,
+              builder: (context, _) =>
+                  !widget.fromHistory &&
+                      widget.controller.state.supportsResultHistory
+                  ? IconButton(
+                      tooltip: tr(Msg.homeResultHistory),
+                      icon: const Icon(Icons.history),
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => ResultHistoryPage(
+                              controller: widget.controller,
+                              goal: widget.goal,
+                              service: _service,
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : const SizedBox.shrink(),
+            ),
+            ConnectionDiagnosticsButton(controller: widget.controller),
+          ],
         ),
         body: Stack(
           children: [
             ListView(
               padding: const EdgeInsets.fromLTRB(20, 20, 20, 180),
               children: [
-                if (_error != null)
-                  Text(noticeText(_error!))
-                else if (_body == null)
+                if (_error != null) ...[
+                  Text(noticeText(_error!)),
+                  TextButton(
+                    onPressed: _loading ? null : _load,
+                    child: Text(tr(Msg.commonRetry)),
+                  ),
+                ] else if (_body == null)
                   const LinearProgressIndicator()
                 else
                   MessageBody(_body!),

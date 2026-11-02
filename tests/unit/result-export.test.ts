@@ -43,4 +43,25 @@ describe("final result export", () => {
     await expect(service.create({ goalId: 'g', format: 'pdf', digest: body, idempotencyKey: 'key' })).rejects.toThrow('export_empty');
     expect(jobs).toHaveLength(0);
   });
+  it("exports a selected historical snapshot after the latest result changes and forwards its identity", async () => {
+    const read = vi.fn().mockImplementation(async (_goalId: string, resultId?: string) => ({ title: 'Synthetic title', body: resultId === 'historical' ? '# Older delivery' : '# Latest delivery' }));
+    const create = vi.fn().mockResolvedValue({ exportId: 'history-export', status: 'queued', filenames: [], count: 0 });
+    const service = new ResultExportService({ read, digest: async body => body, create, get: async () => null, open: async () => {} });
+    const input = { goalId: 'goal', resultId: 'historical', format: 'pdf' as const, digest: '# Older delivery', idempotencyKey: 'history-key' };
+    await expect(service.create(input)).resolves.toMatchObject({ exportId: 'history-export' });
+    expect(read).toHaveBeenCalledExactlyOnceWith('goal', 'historical');
+    expect(create).toHaveBeenCalledExactlyOnceWith({ ...input, title: 'Synthetic title', body: '# Older delivery' });
+  });
+  it("rejects unavailable or foreign historical snapshots before queuing an export", async () => {
+    const read = vi.fn().mockImplementation(async (goalId: string, resultId?: string) => goalId === 'goal' && resultId === 'owned' ? { title: 'Synthetic', body: '# Owned delivery' } : null);
+    const create = vi.fn();
+    const service = new ResultExportService({ read, digest: async body => body, create, get: async () => null, open: async () => {} });
+    for (const input of [
+      { goalId: 'goal', resultId: 'missing' },
+      { goalId: 'another-goal', resultId: 'owned' },
+    ]) await expect(service.create({ ...input, format: 'png', digest: '# Owned delivery', idempotencyKey: 'missing-history' })).rejects.toThrow('export_empty');
+    expect(read).toHaveBeenCalledWith('goal', 'missing');
+    expect(read).toHaveBeenCalledWith('another-goal', 'owned');
+    expect(create).not.toHaveBeenCalled();
+  });
 });

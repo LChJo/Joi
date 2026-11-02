@@ -453,6 +453,7 @@ export interface JoiGoalCardBaseDto {
   /** Set while the card lives in the archived list instead of the home feed. */
   archivedAt?: string;
   completionSummary?: string;
+  resultId?: string;
   failure?: JoiGoalFailureDto;
   goalId: string;
   harness?: JoiGoalHarnessDto;

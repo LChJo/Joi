@@ -7,7 +7,7 @@ export class ResultExportService {
     if (!["pdf", "png"].includes(input.format) || !/^[\w-]{1,100}$/.test(input.idempotencyKey)) throw new DomainError("export_invalid", "export_invalid");
     const existing = await this.ports.find?.(input);
     if (existing) return existing;
-    const snapshot = await this.ports.read(input.goalId);
+    const snapshot = await this.ports.read(input.goalId, input.resultId);
     if (!snapshot?.body.trim()) throw new DomainError("export_empty", "export_empty");
     if (await this.ports.digest(snapshot.body) !== input.digest) throw new DomainError("export_snapshot_changed", "export_snapshot_changed");
     return this.ports.create({ ...input, ...snapshot });

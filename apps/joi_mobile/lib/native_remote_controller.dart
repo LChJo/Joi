@@ -361,6 +361,7 @@ class NativeRemoteController extends ChangeNotifier
       _state.copyWith(
         connection: RemoteConnectionState.connecting,
         supportsHome: false,
+        supportsResultHistory: false,
       ),
     );
     final generation = _generation;
@@ -627,10 +628,15 @@ class NativeRemoteController extends ChangeNotifier
   Future<Map<String, dynamic>> read(
     String kind, {
     String? goalId,
+    String? resultId,
     String? agentId,
     String? cursor,
   }) async {
     if (kind != 'feed.get' && !_state.supportsHome) {
+      throw StateError('remote_upgrade_required');
+    }
+    if ((kind == 'goal.results' || kind == 'goal.result') &&
+        !_state.supportsResultHistory) {
       throw StateError('remote_upgrade_required');
     }
     final generation = _generation;
@@ -640,6 +646,7 @@ class NativeRemoteController extends ChangeNotifier
       if (kind == 'feed.get' && _state.supportsHome) 'paged': true,
       if (kind == 'feed.get' && _state.supportsHome) 'preview': true,
       'goalId': ?goalId,
+      'resultId': ?resultId,
       'agentId': ?agentId,
       'cursor': ?cursor,
     });
@@ -996,6 +1003,9 @@ class NativeRemoteController extends ChangeNotifier
           supportsWorkbenchCreation:
               value['capabilities'] is List &&
               (value['capabilities'] as List).contains('workbench.create'),
+          supportsResultHistory:
+              value['capabilities'] is List &&
+              (value['capabilities'] as List).contains('goal.results.v1'),
           sending: false,
           busyGoals: {},
         ),

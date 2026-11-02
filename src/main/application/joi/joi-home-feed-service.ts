@@ -1,4 +1,5 @@
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiHomeFeedDto } from "../../../shared/joi.js";
+import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../../../shared/goal-results.js";
 import type { JoiHomeFeedRepository } from "../ports/joi-home-feed.js";
 import type { Clock } from "../ports/runtime-store.js";
 import { goalDetailPage } from "./goal-detail-page.js";
@@ -12,5 +13,13 @@ export class JoiHomeFeedService {
 
   loadGoalDetail(goalId: string, page: JoiGoalDetailPage = {}): Promise<JoiGoalDetailDto | null> {
     return this.dependencies.repository.loadGoalDetail(goalId, goalDetailPage(page));
+  }
+
+  listGoalResults(goalId: string, page: GoalResultPage = {}): Promise<GoalResultPageDto | null> {
+    return this.dependencies.repository.listGoalResults?.(goalId, page) ?? Promise.resolve(null);
+  }
+
+  getGoalResult(goalId: string, resultId: string): Promise<GoalResultDto | null> {
+    return this.dependencies.repository.getGoalResult?.(goalId, resultId) ?? Promise.resolve(null);
   }
 }

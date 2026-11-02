@@ -60,3 +60,16 @@ it('reuses a request key after an unconfirmed response and reports a changed sna
   fireEvent.click(screen.getByRole('button', { name: '导出全文' }));
   expect(expanded).toHaveBeenCalledWith(false);
 });
+
+it('exports the selected historical snapshot and clears saved feedback when the selection changes', async () => {
+  const api = new DigitalLifeApi('', true);
+  const request = vi.spyOn(api, 'request').mockResolvedValue({ exportId: 'old-export', status: 'completed', filenames: ['result'], count: 1 });
+  Object.defineProperty(globalThis.crypto, 'subtle', { configurable: true, value: { digest: vi.fn().mockResolvedValue(new ArrayBuffer(0)) } });
+  const view = render(<ResultExportMenu api={api} goalId="g" resultId="old-result" body="old body" expanded onExpanded={vi.fn()} />);
+  fireEvent.click(screen.getByRole('menuitem', { name: '导出 PDF' }));
+  await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('已保存 1 个文件'));
+  expect(request.mock.calls[0]?.[1]?.body).toMatchObject({ goalId: 'g', resultId: 'old-result', format: 'pdf' });
+  view.rerender(<ResultExportMenu api={api} goalId="g" resultId="new-result" body="new body" expanded onExpanded={vi.fn()} />);
+  expect(screen.queryByRole('group', { name: '导出反馈' })).not.toBeInTheDocument();
+  expect(screen.queryByRole('button', { name: '打开' })).not.toBeInTheDocument();
+});

@@ -3,6 +3,7 @@ import { parentPort, type MessagePort, workerData } from "node:worker_threads";
 import { WorkerRpc } from "../runtime/worker-rpc.js";
 import { SqliteJoiHomeFeedRepository } from "./sqlite-joi-home-feed-repository.js";
 import type { JoiGoalDetailPage } from "../../../shared/joi.js";
+import type { GoalResultPage } from "../../../shared/goal-results.js";
 
 const input = workerData as { databasePath: string; port: MessagePort };
 const connection = new DatabaseSync(input.databasePath, { readOnly: true });
@@ -21,6 +22,14 @@ const peer = new WorkerRpc(input.port, {
   loadGoalDetail: (argument) => {
     const request = argument as { goalId: string; page: JoiGoalDetailPage };
     return repository.loadGoalDetail(request.goalId, request.page);
+  },
+  listGoalResults: argument => {
+    const request = argument as { goalId: string; page: GoalResultPage };
+    return repository.listGoalResults(request.goalId, request.page);
+  },
+  getGoalResult: argument => {
+    const request = argument as { goalId: string; resultId: string };
+    return repository.getGoalResult(request.goalId, request.resultId);
   },
   close: () => {
     if (!closed) { closed = true; connection.close(); }

@@ -218,7 +218,13 @@ export function wireRuntime(input: {
   const exporter = input.exporterFactory(exportJobs);
   const resultExports = new ResultExportService({
     find: input => exportJobs.find(input),
-    read: async goalId => {
+    read: async (goalId, resultId) => {
+      if (resultId !== undefined) {
+        const snapshot = await workbenchStack.joiHomeFeed.getGoalResult(goalId, resultId);
+        if (snapshot === null) return null;
+        const goal = await workbenchStack.joiHomeFeed.loadGoalDetail(goalId);
+        return goal === null ? null : { title: goal.fullTitle, body: snapshot.body };
+      }
       const goal = (await workbenchStack.joiHomeFeed.load()).goals.find(g => g.goalId === goalId);
       return goal ? { title: goal.title, body: goal.completionSummary ?? '' } : null;
     },

@@ -1,6 +1,7 @@
 /* SQLite is synchronous by design; this adapter keeps the async port shape. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
+import { nextGoalReopenTime } from "./sqlite-goal-reopen-time.js";
 
 import type { AutomationGoalInspection, AutomationRecord, AutomationRunRecord, AutomationStore, AutomationTrigger } from "../../application/ports/automation.js";
 import { createRoutine, nextRoutineOccurrence, type RoutineFrequency } from "../../domain/automation/routine.js";
@@ -398,9 +399,9 @@ function queueGoalContinuation(
   // goal starts it running again, and an archived card is hidden from the home feed by definition.
   const claimed = connection.prepare(`UPDATE joi_inbox_messages
     SET status = 'PENDING', archived_at = NULL, canceled_at = NULL, failed_at = NULL, failure_reason_code = NULL, failure_count = NULL,
-      clarification_reason_code = NULL, clarification_prompt = NULL, automation_routine_id = ?, updated_at = ?, last_opened_at = ?
+      clarification_reason_code = NULL, clarification_prompt = NULL, automation_routine_id = ?, updated_at = ?, last_opened_at = ?, reopened_at = ?
     WHERE input_id = ? AND status = 'CONSUMED' AND dismissed_at IS NULL AND canceled_at IS NULL`).run(
-    routine.routineId, occurrence.now, occurrence.now, goal.goalId,
+    routine.routineId, occurrence.now, occurrence.now, nextGoalReopenTime(connection, goal.goalId, occurrence.now), goal.goalId,
   );
   if (claimed.changes !== 1) return null;
   connection.prepare(`UPDATE joi_harness_maps SET status = 'ACTIVE', cleared_at = NULL, feedback_recorded_at = NULL,

@@ -46,6 +46,7 @@ class Peer implements NativeTransport {
   final commands = <Map<String, dynamic>>[];
   final sequences = <int>[];
   bool modern = true;
+  bool history = true;
   bool failSend = false;
   bool failFeed = false;
   String? feedError;
@@ -139,6 +140,7 @@ class Peer implements NativeTransport {
                 'home.v2',
                 'workbench.create',
                 'workbench.choice.v1',
+                if (history) 'goal.results.v1',
               ],
           },
         ),
@@ -187,6 +189,31 @@ class Peer implements NativeTransport {
         'nextCursor': 'next',
       };
     }
+    if (command['kind'] == 'goal.results') {
+      result = {
+        'items': [
+          {
+            'resultId': 'result-previous',
+            'completedAt': '2026-11-02T13:00:00.000Z',
+            'status': 'COMPLETED',
+          },
+        ],
+        'nextCursor': 'more-results',
+      };
+    }
+    if (command['kind'] == 'goal.result') {
+      final text = jsonEncode({
+        'goalId': command['goalId'],
+        'resultId': command['resultId'],
+        'body': '中文😀' * 10000,
+      });
+      tail = text.substring(10000);
+      result = {
+        'encoding': 'json',
+        'chunk': text.substring(0, 10000),
+        'nextCursor': 'next',
+      };
+    }
     if (command['kind'] == 'read.next') {
       result = {'encoding': 'json', 'chunk': tail};
     }
@@ -223,6 +250,109 @@ Future<void> settleUntil(bool Function() ready) async {
 }
 
 void main() {
+  test(
+    'history reads preserve result identity and reassemble long snapshots',
+    () async {
+      final peer = Peer();
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      try {
+        await controller.initialize();
+        await settleUntil(() => controller.state.supportsResultHistory);
+        final page = await controller.read(
+          'goal.results',
+          goalId: 'goal',
+          cursor: 'page-before',
+        );
+        expect((page['items'] as List).single['resultId'], 'result-previous');
+        expect(page['nextCursor'], 'more-results');
+        final result = await controller.read(
+          'goal.result',
+          goalId: 'goal',
+          resultId: 'result-previous',
+        );
+        expect(result['body'], '中文😀' * 10000);
+        expect(result['goalId'], 'goal');
+        expect(result['resultId'], 'result-previous');
+        expect(
+          peer.commands.firstWhere(
+            (command) => command['kind'] == 'goal.result',
+          )['resultId'],
+          'result-previous',
+        );
+        expect(
+          peer.commands.firstWhere(
+            (command) => command['kind'] == 'goal.results',
+          )['cursor'],
+          'page-before',
+        );
+        expect(
+          peer.commands.any((command) => command['kind'] == 'read.next'),
+          isTrue,
+        );
+        peer.bus.add(const NativeTransportEvent(type: 'disconnected'));
+        await settleUntil(
+          () =>
+              controller.state.connection == RemoteConnectionState.reconnecting,
+        );
+        expect(controller.state.supportsResultHistory, isTrue);
+        peer.history = false;
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+        await settleUntil(() => peer.hellos.length == 2);
+        await settleUntil(
+          () => controller.state.connection == RemoteConnectionState.connected,
+        );
+        expect(controller.state.supportsResultHistory, isFalse);
+      } finally {
+        controller.dispose();
+        await peer.bus.close();
+      }
+    },
+  );
+
+  test(
+    'a host without history capability refuses unsupported reads locally',
+    () async {
+      final peer = Peer()..history = false;
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      try {
+        await controller.initialize();
+        await settleUntil(
+          () => controller.state.connection == RemoteConnectionState.connected,
+        );
+        expect(controller.state.supportsHome, isTrue);
+        expect(controller.state.supportsResultHistory, isFalse);
+        for (final kind in ['goal.results', 'goal.result']) {
+          await expectLater(
+            controller.read(kind, goalId: 'goal', resultId: 'result'),
+            throwsA(
+              isA<StateError>().having(
+                (error) => error.message,
+                'reason',
+                'remote_upgrade_required',
+              ),
+            ),
+          );
+        }
+        expect(
+          peer.commands.where(
+            (command) =>
+                ['goal.results', 'goal.result'].contains(command['kind']),
+          ),
+          isEmpty,
+        );
+      } finally {
+        controller.dispose();
+        await peer.bus.close();
+      }
+    },
+  );
+
   testWidgets(
     'the authenticated session stays amber until the first feed arrives',
     (tester) async {

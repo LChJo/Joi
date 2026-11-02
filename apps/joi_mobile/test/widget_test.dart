@@ -100,6 +100,7 @@ class FakeRemoteController extends ChangeNotifier implements RemoteController {
   Future<Map<String, dynamic>> read(
     String kind, {
     String? goalId,
+    String? resultId,
     String? agentId,
     String? cursor,
   }) async => switch (kind) {

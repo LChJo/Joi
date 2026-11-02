@@ -4945,6 +4945,45 @@
       }
     }
   },
+  "homeResultHistory": "Result history",
+  "@homeResultHistory": {
+    "description": "Completed result history",
+    "placeholders": {}
+  },
+  "homeNoResultHistory": "No result history yet.",
+  "@homeNoResultHistory": {
+    "description": "Completed result history",
+    "placeholders": {}
+  },
+  "homeLoadMoreResults": "Load more",
+  "@homeLoadMoreResults": {
+    "description": "Completed result history",
+    "placeholders": {}
+  },
+  "homeBackToResultHistory": "Back to result history",
+  "@homeBackToResultHistory": {
+    "description": "Completed result history",
+    "placeholders": {}
+  },
+  "homeHistoryLoadFailed": "Could not load result history. Try again.",
+  "@homeHistoryLoadFailed": {
+    "description": "Completed result history",
+    "placeholders": {}
+  },
+  "homeLatestResult": "Latest result",
+  "@homeLatestResult": {
+    "description": "Completed result history",
+    "placeholders": {}
+  },
+  "homeResultAt": "Completed at {p0}",
+  "@homeResultAt": {
+    "description": "Completed result history",
+    "placeholders": {
+      "p0": {
+        "type": "String"
+      }
+    }
+  },
   "mobileHomeSyncFailedRetrying": "Home sync failed. Retrying automatically; pull down to retry now.",
   "@mobileHomeSyncFailedRetrying": {
     "description": "A failed home read keeps the session and previous content available while retrying.",

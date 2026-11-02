@@ -1,5 +1,6 @@
 import 'i18n.dart';
 import 'result_reader.dart';
+import 'result_history.dart';
 import 'connection_diagnostics_view.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -662,6 +663,25 @@ class _GoalDetailPageState extends State<GoalDetailPage>
             ),
             MessageBody(_goal.summary!),
           ],
+          AnimatedBuilder(
+            animation: widget.controller,
+            builder: (context, _) =>
+                widget.controller.state.supportsResultHistory
+                ? TextButton.icon(
+                    onPressed: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => ResultHistoryPage(
+                          controller: widget.controller,
+                          goal: _goal,
+                        ),
+                      ),
+                    ),
+                    icon: const Icon(Icons.history),
+                    label: Text(tr(Msg.homeResultHistory)),
+                  )
+                : const SizedBox.shrink(),
+          ),
           if (_facts['failure'] case final Map<String, dynamic> failure) ...[
             const Divider(height: 32),
             Text(

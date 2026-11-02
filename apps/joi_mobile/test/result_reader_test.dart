@@ -14,6 +14,7 @@ class ReaderController extends FakeRemoteController {
   final result = Completer<Map<String, dynamic>>();
   bool offline = false;
   int reads = 0;
+  final readKinds = <String>[];
   @override
   RemoteViewState get state => RemoteViewState(
     connection: offline
@@ -24,10 +25,12 @@ class ReaderController extends FakeRemoteController {
   Future<Map<String, dynamic>> read(
     String kind, {
     String? goalId,
+    String? resultId,
     String? agentId,
     String? cursor,
   }) {
     reads++;
+    readKinds.add(kind);
     return result.future;
   }
 }
@@ -43,6 +46,34 @@ const goal = RemoteGoalCard(
 );
 
 void main() {
+  testWidgets(
+    'reads the identified completed snapshot instead of the mutable goal',
+    (tester) async {
+      final controller = ReaderController();
+      final identified = RemoteGoalCard.fromJson({
+        'goalId': 'goal',
+        'title': '任务',
+        'status': 'COMPLETED',
+        'resultId': 'result-previous',
+        'completionSummary': '截断预览',
+      });
+      await tester.pumpWidget(
+        MaterialApp(
+          home: ResultReaderPage(controller: controller, goal: identified),
+        ),
+      );
+      controller.result.complete({
+        'goalId': 'goal',
+        'resultId': 'result-previous',
+        'body': '# 指定结果正文',
+      });
+      await tester.pumpAndSettle();
+      expect(controller.readKinds, ['goal.result']);
+      expect(find.text('指定结果正文'), findsOneWidget);
+      expect(find.text('截断预览'), findsNothing);
+    },
+  );
+
   for (final stage in ResultExportStage.values) {
     testWidgets('shows safe ${stage.name} export failure and allows retry', (
       tester,

@@ -96,6 +96,7 @@ class RemoteGoalCard {
     this.canDelete = false,
     this.archivedAt,
     this.summary,
+    this.resultId,
     this.prompt,
     this.reasonCode,
     this.questionId,
@@ -147,6 +148,7 @@ class RemoteGoalCard {
     canDelete: canDelete,
     archivedAt: value,
     summary: summary,
+    resultId: resultId,
     prompt: prompt,
     reasonCode: reasonCode,
     questionId: questionId,
@@ -160,6 +162,7 @@ class RemoteGoalCard {
     waitingReasons: waitingReasons,
   );
   final String? summary;
+  final String? resultId;
   final String? prompt;
   final String? reasonCode;
 
@@ -219,6 +222,7 @@ class RemoteGoalCard {
       canDelete: json['canDelete'] == true,
       archivedAt: json['archivedAt'] as String?,
       summary: json['completionSummary'] as String?,
+      resultId: json['resultId'] as String?,
       prompt:
           question['prompt'] as String? ??
           json['clarificationPrompt'] as String?,
@@ -270,6 +274,7 @@ class RemoteViewState {
     this.supportsHome = false,
     this.supportsWorkbenchCreation = false,
     this.supportsWorkbenchChoice = false,
+    this.supportsResultHistory = false,
     this.workbenches = const [],
     this.partners = const [],
     this.busyGoals = const {},
@@ -289,6 +294,7 @@ class RemoteViewState {
   final bool supportsHome;
   final bool supportsWorkbenchCreation;
   final bool supportsWorkbenchChoice;
+  final bool supportsResultHistory;
   final List<RemoteChoice> workbenches;
   final List<RemoteChoice> partners;
   final Set<String> busyGoals;
@@ -304,6 +310,7 @@ class RemoteViewState {
     bool? supportsHome,
     bool? supportsWorkbenchCreation,
     bool? supportsWorkbenchChoice,
+    bool? supportsResultHistory,
     List<RemoteChoice>? workbenches,
     List<RemoteChoice>? partners,
     Set<String>? busyGoals,
@@ -322,6 +329,7 @@ class RemoteViewState {
         supportsWorkbenchCreation ?? this.supportsWorkbenchCreation,
     supportsWorkbenchChoice:
         supportsWorkbenchChoice ?? this.supportsWorkbenchChoice,
+    supportsResultHistory: supportsResultHistory ?? this.supportsResultHistory,
     workbenches: workbenches ?? this.workbenches,
     partners: partners ?? this.partners,
     busyGoals: busyGoals ?? this.busyGoals,
@@ -359,6 +367,7 @@ abstract interface class RemoteController implements Listenable {
   Future<Map<String, dynamic>> read(
     String kind, {
     String? goalId,
+    String? resultId,
     String? agentId,
     String? cursor,
   });
@@ -411,6 +420,7 @@ class PlaceholderRemoteController extends ChangeNotifier
   Future<Map<String, dynamic>> read(
     String kind, {
     String? goalId,
+    String? resultId,
     String? agentId,
     String? cursor,
   }) async => {};

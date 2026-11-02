@@ -7,24 +7,25 @@ import { exportBasename, type CreateResultExport, type ResultExportDto } from ".
 
 export interface ExportRecord extends ResultExportDto {
   body: string; basename: string; format: "pdf" | "png"; digest: string; goalId: string;
+  resultId?: string;
 }
 export class SqliteResultExports {
   constructor(private readonly db: Pick<RuntimeDatabase, "transaction">) {}
   async find(input: CreateResultExport): Promise<ResultExportDto | null> {
-    const row = this.db.transaction(c => c.prepare('SELECT export_id, digest, format, goal_id FROM result_exports WHERE idempotency_key = ?').get(input.idempotencyKey));
+    const row = this.db.transaction(c => c.prepare('SELECT export_id, digest, format, goal_id, result_id FROM result_exports WHERE idempotency_key = ?').get(input.idempotencyKey));
     if (!row) return null;
-    if (row.digest !== input.digest || row.format !== input.format || row.goal_id !== input.goalId) throw new DomainError('export_idempotency_conflict', 'export_idempotency_conflict');
+    if (row.digest !== input.digest || row.format !== input.format || row.goal_id !== input.goalId || row.result_id !== (input.resultId ?? null)) throw new DomainError('export_idempotency_conflict', 'export_idempotency_conflict');
     return this.get(String(row.export_id));
   }
   async create(input: CreateResultExport & { title: string; body: string }): Promise<ResultExportDto> {
     const exportId = this.db.transaction(c => {
-      const old = c.prepare('SELECT export_id, digest, format, goal_id FROM result_exports WHERE idempotency_key = ?').get(input.idempotencyKey);
+      const old = c.prepare('SELECT export_id, digest, format, goal_id, result_id FROM result_exports WHERE idempotency_key = ?').get(input.idempotencyKey);
       if (old) {
-        if (old.digest !== input.digest || old.format !== input.format || old.goal_id !== input.goalId) throw new DomainError('export_idempotency_conflict', 'export_idempotency_conflict');
+        if (old.digest !== input.digest || old.format !== input.format || old.goal_id !== input.goalId || old.result_id !== (input.resultId ?? null)) throw new DomainError('export_idempotency_conflict', 'export_idempotency_conflict');
         return String(old.export_id);
       }
       const id = randomUUID(); const time = new Date().toISOString();
-      c.prepare(`INSERT INTO result_exports (export_id,idempotency_key,goal_id,format,digest,body,basename,status,created_at) VALUES (?,?,?,?,?,?,?,'queued',?)`).run(id, input.idempotencyKey, input.goalId, input.format, input.digest, input.body, exportBasename(input.title,time,id),time);
+      c.prepare(`INSERT INTO result_exports (export_id,idempotency_key,goal_id,format,digest,body,basename,status,created_at,result_id) VALUES (?,?,?,?,?,?,?,'queued',?,?)`).run(id, input.idempotencyKey, input.goalId, input.format, input.digest, input.body, exportBasename(input.title,time,id),time,input.resultId ?? null);
       c.prepare(`INSERT INTO outbox (outbox_id,kind,payload_json,status,attempt_count,available_at,created_at) VALUES (?,'result.export',?,'PENDING',0,?,?)`).run(`export_${id}`, JSON.stringify({ exportId: id }),time,time);
       return id;
     });
@@ -38,6 +39,7 @@ export class SqliteResultExports {
     const filenames = JSON.parse(String(r.filenames_json)) as string[];
     return { exportId: id, status: r.status as ExportRecord['status'], filenames, count: filenames.length,
       body: String(r.body), basename: String(r.basename), format: r.format as 'pdf' | 'png', digest: String(r.digest), goalId: String(r.goal_id),
+      ...(typeof r.result_id === 'string' ? { resultId: r.result_id } : {}),
       ...(typeof r.error_code === 'string' ? { errorCode: r.error_code } : {}) };
   }
   public(r: ExportRecord): ResultExportDto {
