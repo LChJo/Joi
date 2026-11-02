@@ -140,6 +140,7 @@ export function createJoiReasoningTools(input: {
 }): AgentTool[] {
   let dispatchCorrectionOffered = false;
   let acceptanceCorrectionOffered = false;
+  let evidenceCorrectionOffered = false;
   const accessCorrections = new Set<string>();
   const accessFailure = (name: string, error: unknown): ReturnType<typeof result> | undefined => {
     if (!(error instanceof DomainError) || !["work_execution_access_conflict", "work_execution_needs_invalid"].includes(error.code)) return undefined;
@@ -325,6 +326,13 @@ export function createJoiReasoningTools(input: {
           turnId: input.turnId,
           workbenchId: input.workbenchId,
         });
+        if (reasonCode === "work_evidence_reference_invalid" && !submission.started && !evidenceCorrectionOffered) {
+          evidenceCorrectionOffered = true;
+          return rejected(result({
+            hint: "No Work was committed. Read work_read_evidence(mode=index) for this goal and copy exact stored resultIds into evidenceResultIds, then retry this plan once. Work ids and inferred result identities are not resultIds. Preserve the required evidence; do not silently drop invalid references or ask the user to repair internal ids.",
+            reasonCode, status: "RETRY_REQUIRED",
+          }));
+        }
         if (reasonCode === "work_acceptance_checks_required" && !acceptanceCorrectionOffered) {
           acceptanceCorrectionOffered = true;
           return rejected(result({

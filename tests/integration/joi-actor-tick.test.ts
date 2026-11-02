@@ -33,7 +33,13 @@ function makeDatabase(): DatabaseSync {
       failed_at TEXT,
       clarification_prompt TEXT,
       clarification_reason_code TEXT,
-      reopened_at TEXT
+      reopened_at TEXT,
+      turn_failure_count INTEGER NOT NULL DEFAULT 0,
+      turn_failed_at TEXT,
+      turn_failure_reason_code TEXT,
+      turn_retry_at TEXT,
+      session_generation INTEGER NOT NULL DEFAULT 0,
+      turn_retry_epoch INTEGER NOT NULL DEFAULT 0
     );
     CREATE TABLE joi_turns (
       turn_id TEXT PRIMARY KEY,
@@ -84,7 +90,7 @@ describe("joi actor tick over persisted facts", () => {
   it("drives pending inputs and recovers orphaned turns from the DB", async () => {
     const database = makeDatabase();
     const wrapper = { transaction: <T,>(operation: (connection: DatabaseSync) => T): T => operation(database) };
-    const inboxRepository = new SqliteJoiInboxRepository(wrapper);
+    const inboxRepository = new SqliteJoiInboxRepository(wrapper,{now:()=>new Date(NOW)});
     insertInput(database, "input_a", "PENDING", NOW);
     insertInput(database, "input_old", "ROUTED", OLD);
     insertTurn(database, "turn_old", "input_old", "RUNNING", OLD);
@@ -95,7 +101,10 @@ describe("joi actor tick over persisted facts", () => {
       roots: [new JoiActor({
         workbenchComponent: new JoiWorkbenchComponent({ workbenches: { listSummaries: async () => [] } }),
         components: [new JoiTaskComponent({
-          driver: { handle: async (inputId) => { handled.push(inputId); } },
+          driver: { handle: async (inputId) => {
+            handled.push(inputId);
+            database.prepare("UPDATE joi_inbox_messages SET status='CONSUMED' WHERE input_id=?").run(inputId);
+          } },
           gate: { hasReadySource: async () => true },
           inbox: new SqliteJoiTaskReader({
             database: wrapper,
@@ -116,6 +125,8 @@ describe("joi actor tick over persisted facts", () => {
     expect(repended.status).toBe("PENDING");
 
     await tree.tick(new Date(NOW));
+    expect(handled).toEqual(["input_a"]);
+    await tree.tick(new Date(Date.parse(NOW)+30_000));
     expect(handled).toEqual(["input_a", "input_old"]);
   });
 

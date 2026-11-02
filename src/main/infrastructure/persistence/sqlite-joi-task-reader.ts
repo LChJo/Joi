@@ -2,8 +2,10 @@
 /* eslint-disable @typescript-eslint/require-await */
 import type { DatabaseSync } from "node:sqlite";
 
-import type { JoiTaskInbox, JoiTaskPendingInput, JoiTaskStaleTurn } from "../../application/ports/joi-task.js";
+import type { JoiTaskInbox, JoiTaskPendingInput, JoiTaskStaleTurn, JoiTurnRetryState } from "../../application/ports/joi-task.js";
 import { JOI_RUNNABLE_INPUT_SQL } from "./sqlite-joi-runnable.js";
+import { joiTurnRetryState } from "./sqlite-joi-turn-retry-state.js";
+import { normalizeJoiFailureReasonCode } from "../../application/joi/joi-input-failure.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -28,7 +30,8 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
 
   async listPendingInputs(): Promise<JoiTaskPendingInput[]> {
     const pending = (this.dependencies.database.transaction((connection) => connection.prepare(`
-      SELECT i.input_id, i.created_at,
+      SELECT i.input_id, i.created_at, i.status,i.turn_failure_count,i.turn_failed_at,
+             i.turn_failure_reason_code,i.turn_retry_at,i.session_generation,i.turn_retry_epoch,
              CASE WHEN EXISTS (
                SELECT 1 FROM joi_user_action_requests action
                 WHERE action.input_id = i.input_id AND action.status = 'RESOLVED'
@@ -40,12 +43,35 @@ export class SqliteJoiTaskReader implements JoiTaskInbox {
         createdAt: textValue(row, "created_at"),
         inputId: textValue(row, "input_id"),
         requiresModelSource: row.requires_model_source !== 0,
+        retryState: joiTurnRetryState(row),
       }));
     return pending.length === 0 ? this.dependencies.background?.pending() ?? [] : pending;
   }
 
   async park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<void> {
     await this.dependencies.park(inputId, failure);
+  }
+
+  async getRetryState(inputId: string): Promise<JoiTurnRetryState | undefined> {
+    const row = this.dependencies.database.transaction(db => db.prepare(`SELECT status,turn_failure_count,turn_failed_at,
+      turn_failure_reason_code,turn_retry_at,session_generation,turn_retry_epoch FROM joi_inbox_messages WHERE input_id=?`).get(inputId));
+    return row === undefined ? undefined : joiTurnRetryState(row);
+  }
+
+  async deferRetry(inputId: string, input: { failureCount: number; retryAt: string; epoch?: number }): Promise<boolean> {
+    if (!Number.isInteger(input.failureCount) || input.failureCount < 1 || !Number.isFinite(Date.parse(input.retryAt))) throw new Error("joi_retry_state_invalid");
+    return this.dependencies.database.transaction(db => db.prepare(`UPDATE joi_inbox_messages SET turn_retry_at=?
+      WHERE input_id=? AND status='PENDING' AND turn_failure_count=? AND failed_at IS NULL
+        AND canceled_at IS NULL AND dismissed_at IS NULL AND (? IS NULL OR turn_retry_epoch=?)`)
+      .run(input.retryAt, inputId, input.failureCount, input.epoch ?? null, input.epoch ?? null).changes === 1);
+  }
+
+  async recordSchedulingFailure(inputId: string, input: { startedAt: string; failedAt: string; reasonCode: string; epoch?: number }): Promise<void> {
+    this.dependencies.database.transaction(db => db.prepare(`UPDATE joi_inbox_messages SET turn_failure_count=turn_failure_count+1,
+      turn_failed_at=?,turn_failure_reason_code=?,turn_retry_at=NULL WHERE input_id=? AND status='PENDING'
+        AND canceled_at IS NULL AND dismissed_at IS NULL AND failed_at IS NULL
+        AND (turn_failed_at IS NULL OR turn_failed_at<?) AND (? IS NULL OR turn_retry_epoch=?)`)
+      .run(input.failedAt, normalizeJoiFailureReasonCode(input.reasonCode), inputId, input.startedAt, input.epoch ?? null, input.epoch ?? null));
   }
 
   async recoverInterruptedGoalReviews(): Promise<void> {

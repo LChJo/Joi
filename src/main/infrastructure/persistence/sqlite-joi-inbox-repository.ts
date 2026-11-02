@@ -21,6 +21,8 @@ import { consumeSatisfiedRequirementsReviews, enqueueGoalRequirementsReview } fr
 import { loadJoiGoalContext } from "./sqlite-joi-goal-context.js";
 import { goalSynthesisInstruction, loadGoalSynthesisContext } from "./sqlite-goal-result-synthesis.js";
 import { appendGoalRequirementSource, assertGoalRequirementsReady, goalRequirementsCurrentSql } from "./sqlite-goal-requirements-repository.js";
+import { clearJoiTurnRetryState, joiTurnRetryState } from "./sqlite-joi-turn-retry-state.js";
+import { settleInterruptedJoiPlanning } from "./sqlite-joi-planning-failure.js";
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
@@ -407,6 +409,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         OR EXISTS (SELECT 1 FROM joi_turns t JOIN joi_inbox_messages source ON source.input_id=t.input_id
           WHERE COALESCE(source.goal_input_id,source.input_id)=? AND t.status IN ('PENDING','RUNNING','WAITING'))`).get(inputId,inputId);
       if (busy !== undefined) return null;
+      clearJoiTurnRetryState(connection,inputId,true);
       const now = this.#clock.now().toISOString();
       const nextBody = patch.text === undefined ? current.body : `${current.body}\n\n[用户补充] ${patch.text}`;
       // An explicit continuation of a parked synthesis reuses the evidence instead of dispatching it again.
@@ -444,6 +447,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
             AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates gate WHERE gate.goal_input_id = ? AND gate.status <> 'OPEN')`)
           .run(now, inputId, inputId, inputId, inputId, inputId);
         if (retried.changes === 1) {
+          const synthesis=connection.prepare("SELECT synthetic_input_id FROM joi_goal_result_sets WHERE original_input_id=?").get(inputId);
+          if(typeof synthesis?.synthetic_input_id==="string") clearJoiTurnRetryState(connection,synthesis.synthetic_input_id,true);
           connection.prepare(`UPDATE joi_inbox_messages SET archived_at = NULL, updated_at = ?, last_opened_at = ?, reopened_at = ?
             WHERE input_id = ?`).run(now, now, now, inputId);
           const updated = connection.prepare("SELECT * FROM joi_inbox_messages WHERE input_id = ?").get(inputId) as Row;
@@ -594,6 +599,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     const row = this.database.transaction((connection) => connection.prepare(
       `SELECT i.input_id, i.body, i.status, i.workbench_id, i.goal_input_id, i.result_revision, i.automation_routine_id,
         i.continuation_prompt, i.reopened_at, i.requirements_revision,
+        i.turn_failure_count,i.turn_failed_at,i.turn_failure_reason_code,i.turn_retry_at,i.session_generation,i.turn_retry_epoch,
         (SELECT run.run_id FROM joi_automation_runs run WHERE run.input_id = i.input_id AND run.routine_id = i.automation_routine_id
           ORDER BY run.queued_at DESC, run.run_id DESC LIMIT 1) AS automation_execution_id,
         (SELECT a.action_id FROM joi_user_action_requests a
@@ -645,6 +651,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       return typeof source?.body === "string" ? source.body : undefined;
     });
     return {
+      retryState: joiTurnRetryState(row),
       ...(typeof row.workbench_id === "string" ? { workbenchId: row.workbench_id } : {}),
       ...(typeof row.automation_routine_id === "string" ? { automationRoutineId: row.automation_routine_id } : {}),
       ...(typeof row.automation_execution_id === "string" ? { automationExecutionId: row.automation_execution_id } : {}),
@@ -866,6 +873,7 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
     modelRevisionId?: string;
     requirementsRevision?: number;
     sessionId: string;
+    sessionGeneration?: number;
     sourceRevisionId?: string;
     turnId: string;
   }): Promise<void> {
@@ -876,14 +884,16 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
         input.turnId, input.inputId, input.workbenchId, input.sessionId, input.sourceRevisionId ?? null,
         input.modelRevisionId ?? null, input.requirementsRevision ?? null, input.createdAt, input.createdAt,
       );
-      connection.prepare(`UPDATE joi_inbox_messages SET status = 'ROUTED', workbench_id = ?, updated_at = ?
-        WHERE input_id = ? AND status <> 'CONSUMED'`).run(input.workbenchId, input.createdAt, input.inputId);
+      connection.prepare(`UPDATE joi_inbox_messages SET status = 'ROUTED', workbench_id = ?, updated_at = ?,
+        session_generation=MAX(session_generation,?) WHERE input_id = ? AND status <> 'CONSUMED'`)
+        .run(input.workbenchId, input.createdAt, input.sessionGeneration ?? 0, input.inputId);
     });
   }
 
   async completeInput(inputId: string, turnId: string, completion?: JoiInputCompletion) {
     return this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
+      clearJoiTurnRetryState(connection, inputId);
       const superseded = consumeSupersededGoalSynthesis(connection, inputId, now);
       if (superseded !== null) {
         const completedTurn = connection.prepare(`UPDATE joi_turns SET status = 'COMPLETED', updated_at = ?
@@ -1113,6 +1123,8 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
   async failTurn(inputId: string, turnId: string, failure?: { reasonCode: string; reviewReplaySafe?: boolean; replaySafe?: boolean }): Promise<void> {
     this.database.transaction((connection) => {
       const now = this.#clock.now().toISOString();
+      const turn = connection.prepare("SELECT status FROM joi_turns WHERE turn_id=? AND input_id=?").get(turnId,inputId);
+      if (turn === undefined || !["PENDING","RUNNING","WAITING"].includes(String(turn.status))) return;
       const reviewFailure = inputId.startsWith("joi_harness_review:goal:") && failure?.reviewReplaySafe !== undefined;
       if (reviewFailure || failure?.replaySafe !== undefined) {
         const columns: string[] = [];
@@ -1130,20 +1142,14 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
           WHERE turn_id = ? AND input_id = ? AND status IN ('PENDING','RUNNING','WAITING')`)
           .run(...values, now, turnId, inputId);
       } else connection.prepare("UPDATE joi_turns SET status = 'FAILED', updated_at = ? WHERE turn_id = ?").run(now, turnId);
+      connection.prepare(`UPDATE joi_inbox_messages SET turn_failure_count=turn_failure_count+1,
+        turn_failed_at=?,turn_failure_reason_code=?,turn_retry_at=NULL WHERE input_id=?`)
+        .run(now,normalizeJoiFailureReasonCode(failure?.reasonCode??"joi_task_turn_interrupted"),inputId);
       consumeSupersededGoalSynthesis(connection, inputId, now);
-      // Re-driving is only safe when the failed turn committed nothing. If it already started
-      // side effects (dispatched work, created routines, raised cards) or its work is still
-      // live, replaying the same prompt would duplicate those side effects: the codebase treats
-      // "revive after side effects" as a double-dispatch hazard everywhere else (see retry()).
-      // Such inputs converge through their live work / result synthesis instead of being re-queued.
+      // Active work and unproven mutations retain ownership instead of replaying the input.
       const liveWork = connection.prepare(`SELECT 1 FROM work_items
         WHERE input_id = ? AND status NOT IN ('COMPLETED', 'FAILED', 'CANCELED') LIMIT 1`).get(inputId);
-      // A result-synthesis input keeps one row for every revision, so "has any turn on this input
-      // ever started a side effect" answers yes almost immediately and stays yes forever — which
-      // consumed a failed synthesis silently even when every Work was already terminal and there
-      // was nothing left to converge through, leaving the goal parked with no retry and no card.
-      // Judge the turn that actually failed instead; a goal's own input row keeps the historical
-      // check, where an earlier side effect still means a replay could duplicate work.
+      // Synthesis owns a versioned input; ordinary input replay also considers its current cycle's history.
       const opened = connection.prepare(`SELECT i.reopened_at,
         CASE WHEN i.canceled_at IS NOT NULL OR i.dismissed_at IS NOT NULL OR EXISTS (
           SELECT 1 FROM joi_inbox_messages goal WHERE goal.input_id = i.goal_input_id
@@ -1165,44 +1171,19 @@ export class SqliteJoiInboxRepository implements JoiInboxRepository, JoiCoordina
       // turn cleanup must not swallow a live question card (CLARIFICATION_REQUIRED).
       connection.prepare(`UPDATE joi_inbox_messages
         SET status = ?, updated_at = ? WHERE input_id = ? AND status NOT IN ('CONSUMED', 'CLARIFICATION_REQUIRED')`).run(nextStatus, now, inputId);
-      // An inactive goal needs explicit recovery when neither canceled history nor pending
-      // requirements can advance it. Historical results do not process new requirement sources.
       if (failure !== undefined && nextStatus === "CONSUMED") {
-        connection.prepare(`UPDATE joi_inbox_messages AS i
-          SET failed_at = COALESCE(failed_at, ?), failure_reason_code = ?, failure_count = 1
-          WHERE i.input_id = ? AND i.status = 'CONSUMED' AND i.goal_input_id IS NULL
-            AND i.canceled_at IS NULL AND i.dismissed_at IS NULL
-            AND i.clarification_reason_code IS NULL
-            AND i.input_id NOT LIKE 'joi_result_input:%' AND i.input_id NOT LIKE 'joi_harness_review:%'
-            AND i.input_id NOT LIKE 'joi_signal_input:%' AND i.input_id NOT LIKE 'joi_goal_resume:%'
-            AND ((NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id AND w.status <> 'CANCELED')
-              AND NOT EXISTS (SELECT 1 FROM joi_goal_result_sets rs WHERE rs.original_input_id = i.input_id AND rs.revision > 0))
-              OR (EXISTS (SELECT 1 FROM joi_goal_requirements requirements WHERE requirements.goal_input_id = i.input_id
-                AND EXISTS (SELECT 1 FROM joi_goal_requirement_sources source WHERE source.goal_input_id = i.input_id
-                  AND source.kind <> 'LEGACY' AND source.source_revision > requirements.processed_source_revision))
-                AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = i.input_id
-                  AND w.status IN ('PLANNED','READY','RUNNING','WAITING'))))
-            AND NOT EXISTS (SELECT 1 FROM partner_runs r JOIN work_items w ON w.work_id = r.work_id
-              WHERE w.input_id = i.input_id AND r.status IN ('RUNNING','WAITING_INPUT','WAITING_AUTH'))
-            AND NOT EXISTS (SELECT 1 FROM joi_turns t JOIN joi_inbox_messages source ON source.input_id = t.input_id
-              WHERE (source.input_id = i.input_id OR source.goal_input_id = i.input_id)
-                AND t.status IN ('PENDING','RUNNING','WAITING'))
-            AND NOT EXISTS (SELECT 1 FROM joi_inbox_messages child WHERE child.goal_input_id = i.input_id
-              AND child.status IN ('PENDING','ROUTED','CLARIFICATION_REQUIRED'))
-            AND NOT EXISTS (SELECT 1 FROM joi_goal_execution_gates g WHERE g.goal_input_id = i.input_id
-              AND g.status IN ('WAITING_INPUT','REVIEWING'))
-            AND NOT EXISTS (SELECT 1 FROM joi_turn_completions c WHERE c.input_id = i.input_id
-              AND c.completed_at >= COALESCE(i.reopened_at, i.created_at))
-            AND NOT EXISTS (SELECT 1 FROM joi_current_goal_outcomes o WHERE o.input_id = i.input_id
-              AND o.completed_at >= COALESCE(i.reopened_at, i.created_at))`)
-          .run(now, normalizeJoiFailureReasonCode(failure.reasonCode), inputId);
+        settleInterruptedJoiPlanning(connection,{now,inputId,reasonCode:normalizeJoiFailureReasonCode(failure.reasonCode)});
       }
       recoverInterruptedGoalReviews(connection, now);
     });
   }
 
   async recoverInterruptedGoalReviews(): Promise<void> {
-    this.database.transaction((connection) => recoverInterruptedGoalReviews(connection, this.#clock.now().toISOString()));
+    this.database.transaction((connection) => {
+      const now=this.#clock.now().toISOString();
+      recoverInterruptedGoalReviews(connection,now);
+      settleInterruptedJoiPlanning(connection,{now,stoppedBefore:new Date(Date.parse(now)-30_000).toISOString()});
+    });
   }
 }
 

@@ -12,14 +12,16 @@ describe("foreground runnable facts and evolution idle", () => {
     connection.exec(`
       CREATE TABLE workbenches (workbench_id TEXT PRIMARY KEY, status TEXT);
       CREATE TABLE joi_inbox_messages (input_id TEXT PRIMARY KEY, status TEXT, workbench_id TEXT,
-        goal_input_id TEXT, canceled_at TEXT, dismissed_at TEXT, failed_at TEXT, created_at TEXT);
+        goal_input_id TEXT, canceled_at TEXT, dismissed_at TEXT, failed_at TEXT, created_at TEXT,
+        turn_failure_count INTEGER NOT NULL DEFAULT 0,turn_failed_at TEXT,turn_failure_reason_code TEXT,
+        turn_retry_at TEXT,session_generation INTEGER NOT NULL DEFAULT 0,turn_retry_epoch INTEGER NOT NULL DEFAULT 0);
       CREATE TABLE joi_goal_execution_gates (goal_input_id TEXT, status TEXT, resume_input_id TEXT);
       CREATE TABLE joi_user_action_requests (action_id TEXT, input_id TEXT, work_id TEXT, status TEXT);
       CREATE TABLE joi_turns (turn_id TEXT, input_id TEXT, status TEXT);
       CREATE TABLE work_items (work_id TEXT, input_id TEXT, workbench_id TEXT, status TEXT);
       INSERT INTO workbenches VALUES ('bench','ACTIVE');
-      INSERT INTO joi_inbox_messages VALUES ('goal','CONSUMED','bench',NULL,NULL,NULL,NULL,'0');
-      INSERT INTO joi_inbox_messages VALUES ('child','PENDING','bench','goal',NULL,NULL,NULL,'1');
+      INSERT INTO joi_inbox_messages(input_id,status,workbench_id,created_at) VALUES ('goal','CONSUMED','bench','0');
+      INSERT INTO joi_inbox_messages(input_id,status,workbench_id,goal_input_id,created_at) VALUES ('child','PENDING','bench','goal','1');
     `);
     const database = { transaction: <T>(operation: (db: DatabaseSync) => T) => operation(connection) };
     store = new SqliteEvolutionStore(database);
@@ -34,7 +36,8 @@ describe("foreground runnable facts and evolution idle", () => {
     expect(store.idle()).toBe(true);
   });
   it("gives a valid foreground child priority over background work", async () => {
-    expect(await reader.listPendingInputs()).toEqual([{ inputId: "child", createdAt: "1", requiresModelSource: true }]);
+    expect(await reader.listPendingInputs()).toEqual([{ inputId: "child", createdAt: "1", requiresModelSource: true,
+      retryState:{failureCount:0,sessionGeneration:0,epoch:0,queued:true} }]);
     expect(store.idle()).toBe(false);
   });
   it("excludes archived workbench inputs and queued Work", async () => {

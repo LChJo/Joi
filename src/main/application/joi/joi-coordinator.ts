@@ -110,6 +110,19 @@ const EMPTY_COMPLETION_REPAIR_PROMPT = [
   "Emit the concise final answer for the user now; if tools were used, keep the already committed outcome.",
 ].join(" ");
 
+const REQUIREMENTS_REPAIR_PROMPT = [
+  "[joi prerequisite repair] This goal has unprocessed trusted inputs and cannot finish yet.",
+  "Call goal_read_inputs, process every remaining page and call goal_update_requirements with the exact returned revisions.",
+  "Then continue only the remaining work with the current requirementsRevision. Preserve completed Work and existing goal facts.",
+  "Do not repeat a direct answer or ask the user to repair internal requirement versions.",
+].join(" ");
+
+const TOOL_CAPABILITY_REPAIR_PROMPT = [
+  "[joi prerequisite repair] This model revision has not demonstrated real structured tool calling.",
+  "Call partner_list_available through the actual tool-call mechanism before responding.",
+  "Then process the current goal requirements and commit the required outcome. Plain-text tool markup does not execute tools.",
+].join(" ");
+
 const LEAKED_TOOL_CALL_REPAIR_PROMPT = [
   "[joi tool-call repair] Your preceding response wrote tool-call markup as plain text (DSML-style tags), so none of those tools actually ran.",
   "Re-issue the tool calls through the real tool-call mechanism; never write markup as message text.",
@@ -279,8 +292,14 @@ export class JoiCoordinator {
     };
     // A poisoned session is part of why retries reproduce their own failure; bump the
     // generation after consecutive flops so the next attempt starts with clean history.
-    let sessionGeneration = this.#sessionGenerations.get(goalId) ?? 0;
-    if ((this.#sessionFailures.get(goalId) ?? 0) >= SESSION_RESET_AFTER_CONSECUTIVE_FAILURES) {
+    let sessionGeneration = input.retryState?.sessionGeneration ?? this.#sessionGenerations.get(goalId) ?? 0;
+    const persistedFailures = input.retryState?.failureCount;
+    const resetSession = persistedFailures === undefined
+      ? (this.#sessionFailures.get(goalId) ?? 0) >= SESSION_RESET_AFTER_CONSECUTIVE_FAILURES
+      : persistedFailures > 0 && (persistedFailures % SESSION_RESET_AFTER_CONSECUTIVE_FAILURES === 0
+        || input.retryState?.reasonCode === "custom_model_tool_capability_unverified"
+        || input.retryState?.reasonCode === "joi_model_toolcall_leak");
+    if (resetSession) {
       sessionGeneration += 1;
       this.#sessionGenerations.set(goalId, sessionGeneration);
       this.#sessionFailures.delete(goalId);
@@ -362,6 +381,7 @@ export class JoiCoordinator {
       // other way to record one, and it still has to end on the contract it started from.
       ...(contract === undefined ? {} : { requirementsRevision: contract.revision }),
       sessionId,
+      sessionGeneration,
       sourceRevisionId: pin.sourceRevisionId,
       turnId,
     });
@@ -398,6 +418,8 @@ export class JoiCoordinator {
     const attemptedSources = new Set<string>();
     let completionRepairAttempted = false;
     let toolLeakRepairAttempted = false;
+    let requirementsRepairAttempted = false;
+    let toolCapabilityRepairAttempted = false;
     let completionText = "";
     let dispatchFailureReason: string | undefined;
     let prompt = backgroundContext === undefined ? requestText : `Current continuation request:\n${requestText}`;
@@ -565,8 +587,24 @@ export class JoiCoordinator {
             committedTurnOutcome = textDecision.outcome;
             completionText = textDecision.body;
           }
+          if (!isGoalSynthesis && observedToolCalls.size === 0 && requirementsStore !== undefined) {
+            const current = await requirementsStore.load(goalId, workbenchId);
+            if (current?.status === "DIRTY") {
+              if (requirementsRepairAttempted) throw new DomainError("goal_requirements_pending", "Process the goal's trusted inputs before completing the turn.");
+              requirementsRepairAttempted = true;
+              emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", { workbenchId, inputId, observedToolCount: 0, turnId });
+              prompt = REQUIREMENTS_REPAIR_PROMPT;
+              turnImages = undefined;
+              continue;
+            }
+          }
           if (!isGoalSynthesis && pin.modelCapability === "custom-unverified-tools" && pin.toolCapabilityProven !== true && observedToolCalls.size === 0) {
-            throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
+            if (toolCapabilityRepairAttempted) throw new DomainError("custom_model_tool_capability_unverified", "Custom model did not demonstrate structured tool calling.");
+            toolCapabilityRepairAttempted = true;
+            emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.repair_requested", { workbenchId, inputId, observedToolCount: 0, turnId });
+            prompt = TOOL_CAPABILITY_REPAIR_PROMPT;
+            turnImages = undefined;
+            continue;
           }
           // A pass that rendered tool-call markup as plain text ran nothing: let the model
           // re-emit real calls once, then treat the source as protocol-broken so a fallback
@@ -734,7 +772,7 @@ export class JoiCoordinator {
       }
       if (!signal?.aborted) {
         const failureKind = this.dependencies.failureClassifier?.classify(error) ?? null;
-        if (failureKind === "protocol") {
+        if (failureKind === "protocol" && !(error instanceof DomainError && error.code === "custom_model_tool_capability_unverified")) {
           this.dependencies.sources.avoidSource?.(pin.sourceId, PROTOCOL_AVOID_MILLIS);
           emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.source.avoided", {
             millis: PROTOCOL_AVOID_MILLIS,
@@ -761,14 +799,18 @@ export class JoiCoordinator {
       const replayProof = replayState.rejected ? {
         replaySafe: !signal?.aborted && !sideEffectStarted() && pendingReviewEffects.size === 0,
       } : {};
-      await this.dependencies.store.failTurn?.(inputId, turnId,
-        inputId.startsWith("joi_harness_review:goal:") ? {
-          reasonCode: failureReasonCode,
-          ...replayProof,
-          reviewReplaySafe: !signal?.aborted && !reviewEffects.unsafe && pendingReviewEffects.size === 0,
-        } : failureReasonCode === dispatchFailureReason || replayState.rejected ? { reasonCode: failureReasonCode, ...replayProof } : undefined);
-      if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") {
-        await this.dependencies.store.requireClarification(inputId, error.code, "当前有效需求超出了可用上下文容量。请选择更大上下文的模型，或明确精简有效需求后继续。");
+      // A persisted question owns the next step before failure convergence may park the input.
+      try {
+        if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") {
+          await this.dependencies.store.requireClarification(inputId, error.code, "当前有效需求超出了可用上下文容量。请选择更大上下文的模型，或明确精简有效需求后继续。");
+        }
+      } finally {
+        await this.dependencies.store.failTurn?.(inputId, turnId,
+          inputId.startsWith("joi_harness_review:goal:") ? {
+            reasonCode: failureReasonCode,
+            ...replayProof,
+            reviewReplaySafe: !signal?.aborted && !reviewEffects.unsafe && pendingReviewEffects.size === 0,
+          } : failureReasonCode === dispatchFailureReason || replayState.rejected ? { reasonCode: failureReasonCode, ...replayProof } : { reasonCode: failureReasonCode });
       }
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.turn.failed", {
         workbenchId,

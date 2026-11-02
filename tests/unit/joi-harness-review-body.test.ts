@@ -76,6 +76,8 @@ describe("composeReviewBody", () => {
     expect(pathSection.split("\n").filter((line) => line.startsWith("- L"))).toHaveLength(6);
     const resultLines = body.split("\n").filter((line) => line.startsWith("resultId="));
     expect(resultLines).toHaveLength(8);
+    expect(resultLines.at(-1)).toContain("resultId=r8 ");
+    expect(resultLines.join("\n")).not.toContain("resultId=r0 ");
     expect(body).toContain("（另有 1 条更早的结果）");
     // The completion preview ends at a sentence boundary instead of mid-sentence.
     expect(body).toContain("Latest completion: 首句。");

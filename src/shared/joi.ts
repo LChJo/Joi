@@ -364,6 +364,7 @@ export interface JoiGoalMapPathDto {
 }
 
 export interface JoiGoalMapDetailDto {
+  progress?: JoiGoalProgressDto;
   destination?: string;
   mapStatus: "ACTIVE" | "CLEARED";
   revision: number;
@@ -385,6 +386,28 @@ export interface JoiGoalMapDetailDto {
     status: "ACTIVE" | "GRADUATED";
     graduatedPathId?: string;
   }[];
+}
+
+export type JoiGoalProgressStageDto = "PLANNING" | "FINALIZING" | "REVIEWING" | "RECOVERING";
+
+export interface JoiGoalTurnProgressDto {
+  turnId: string;
+  stage: JoiGoalProgressStageDto;
+  status: "PENDING" | "RUNNING" | "WAITING" | "COMPLETED" | "FAILED" | "ABORTED";
+  startedAt: string;
+  updatedAt: string;
+}
+
+/** Safe execution facts only; private reasoning and tool bodies never enter this projection. */
+export interface JoiGoalProgressDto {
+  state: "QUEUED" | "RUNNING" | "WAITING_PARTNERS" | "WAITING_USER" | "RECOVERING" | "IDLE" | "COMPLETED" | "FAILED" | "CANCELED";
+  stage?: JoiGoalProgressStageDto;
+  startedAt: string;
+  updatedAt: string;
+  turnCount: number;
+  reviewCount: number;
+  work: JoiGoalWorkDto;
+  recentTurns: JoiGoalTurnProgressDto[];
 }
 
 /** Each map collection is paged with the same offset and limit, independently of the feed. */

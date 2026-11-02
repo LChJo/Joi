@@ -4678,6 +4678,278 @@
     "description": "Expand optional requirements for an interrupted review",
     "placeholders": {}
   },
+  "homeJoiProgressOpen": "View JOI progress",
+  "@homeJoiProgressOpen": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressTitle": "JOI progress",
+  "@homeJoiProgressTitle": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressClose": "Close progress window",
+  "@homeJoiProgressClose": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressQueued": "Queued",
+  "@homeJoiProgressQueued": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressRunning": "Working",
+  "@homeJoiProgressRunning": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressPartners": "Waiting for partners",
+  "@homeJoiProgressPartners": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressUser": "Waiting for your response",
+  "@homeJoiProgressUser": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressRecovering": "Awaiting recovery",
+  "@homeJoiProgressRecovering": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressIdle": "Awaiting the next step",
+  "@homeJoiProgressIdle": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressCompleted": "Finished",
+  "@homeJoiProgressCompleted": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressFailed": "Stopped",
+  "@homeJoiProgressFailed": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressCanceled": "Canceled",
+  "@homeJoiProgressCanceled": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressPlanning": "Plan and arrange work",
+  "@homeJoiProgressPlanning": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressFinalizing": "Synthesize results",
+  "@homeJoiProgressFinalizing": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressReviewing": "Review results",
+  "@homeJoiProgressReviewing": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressRecovery": "Reconcile and recover",
+  "@homeJoiProgressRecovery": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressQueuedHint": "This turn has not started yet and is waiting for JOI to schedule it.",
+  "@homeJoiProgressQueuedHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressRunningHint": "JOI is working on this turn. Its latest activity time is shown below.",
+  "@homeJoiProgressRunningHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressPartnersHint": "JOI has arranged the work and is waiting for partner results.",
+  "@homeJoiProgressPartnersHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressUserHint": "Your response is needed. Return to the goal details to continue.",
+  "@homeJoiProgressUserHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressRecoveringHint": "The last turn was interrupted. The runtime must check recovery conditions.",
+  "@homeJoiProgressRecoveringHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressIdleHint": "No JOI turn is running or queued. The goal is awaiting its next step.",
+  "@homeJoiProgressIdleHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressCompletedHint": "The route map for this goal is finished.",
+  "@homeJoiProgressCompletedHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressFailedHint": "This goal has stopped. Return to its details for next steps.",
+  "@homeJoiProgressFailedHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressCanceledHint": "This goal was canceled. Completed work records are retained.",
+  "@homeJoiProgressCanceledHint": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressUpdated": "Latest activity",
+  "@homeJoiProgressUpdated": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressStarted": "Goal started",
+  "@homeJoiProgressStarted": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressElapsed": "Elapsed {duration}",
+  "@homeJoiProgressElapsed": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "homeJoiProgressCurrentElapsed": "Current turn {duration}",
+  "@homeJoiProgressCurrentElapsed": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "homeJoiProgressCounts": "{turns} turns ? {reviews} reviews",
+  "@homeJoiProgressCounts": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "turns": {
+        "type": "String"
+      },
+      "reviews": {
+        "type": "String"
+      }
+    }
+  },
+  "homeJoiProgressWork": "Partner work: {completed} completed ? {active} active ? {failed} failed ? {total} total",
+  "@homeJoiProgressWork": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "completed": {
+        "type": "String"
+      },
+      "active": {
+        "type": "String"
+      },
+      "failed": {
+        "type": "String"
+      },
+      "total": {
+        "type": "String"
+      }
+    }
+  },
+  "homeJoiProgressRecent": "Recent turns",
+  "@homeJoiProgressRecent": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressRecentLimit": "Up to 12 recent turns, including active turns.",
+  "@homeJoiProgressRecentLimit": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressNoTurns": "No JOI turns recorded yet.",
+  "@homeJoiProgressNoTurns": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressUnavailable": "JOI progress is currently unavailable.",
+  "@homeJoiProgressUnavailable": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressRefreshFailed": "Refresh failed. Showing the last successfully loaded progress.",
+  "@homeJoiProgressRefreshFailed": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressQuiet": "No new progress for {duration}.",
+  "@homeJoiProgressQuiet": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "duration": {
+        "type": "String"
+      }
+    }
+  },
+  "homeJoiProgressTurnCompleted": "Turn ended",
+  "@homeJoiProgressTurnCompleted": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressTurnFailed": "Turn failed",
+  "@homeJoiProgressTurnFailed": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressTurnAborted": "Turn aborted",
+  "@homeJoiProgressTurnAborted": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressTurnWaiting": "Turn waiting",
+  "@homeJoiProgressTurnWaiting": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {}
+  },
+  "homeJoiProgressSeconds": "{value}s",
+  "@homeJoiProgressSeconds": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "homeJoiProgressMinutes": "{value}m",
+  "@homeJoiProgressMinutes": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "homeJoiProgressHours": "{value}h {minutes}m",
+  "@homeJoiProgressHours": {
+    "description": "Goal-scoped JOI execution progress",
+    "placeholders": {
+      "value": {
+        "type": "String"
+      },
+      "minutes": {
+        "type": "String"
+      }
+    }
+  },
+  "mobileHomeSyncFailedRetrying": "Home sync failed. Retrying automatically; pull down to retry now.",
+  "@mobileHomeSyncFailedRetrying": {
+    "description": "A failed home read keeps the session and previous content available while retrying.",
+    "placeholders": {}
+  },
   "mobileBringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
   "@mobileBringTheJoiRunningOnYourComputerToYour": {
     "description": "Bring the joi running on your computer to your phone",

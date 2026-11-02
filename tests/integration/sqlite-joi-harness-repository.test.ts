@@ -140,6 +140,43 @@ function harnessSnapshot(fixture: RuntimeFixture, goalInputId: string): Record<s
       WHERE goal_input_id = ?`).get(goalInputId)) as Record<string, unknown>;
 }
 
+function seedHistoricalWorkResult(fixture: RuntimeFixture, options: {
+  isLate: number;
+  status: "WAITING_INPUT" | "WAITING_AUTH" | "COMPLETED";
+  workId: string;
+}): void {
+  const { isLate, status, workId } = options;
+  const attemptId = `historical-attempt-${workId}`;
+  const actionId = `historical-action-${workId}`;
+  const runId = `historical-run-${workId}`;
+  const resultId = `historical-result-${workId}`;
+  fixture.database.transaction((connection) => {
+    connection.prepare(`INSERT INTO dispatch_attempts
+      (dispatch_attempt_id, dispatch_plan_id, work_id, partner_revision_id, registry_revision,
+       action_id, status, created_at, updated_at)
+      SELECT ?, dispatch_plan_id, work_id, partner_revision_id, registry_revision, ?, ?, created_at, updated_at
+        FROM dispatch_attempts WHERE dispatch_attempt_id = ?`)
+      .run(attemptId, actionId, status, `attempt-${workId}`);
+    connection.prepare(`INSERT INTO partner_runs
+      (run_id, dispatch_attempt_id, action_id, workbench_id, work_id, partner_revision_id, kind,
+       external_run_id, status, created_at, updated_at)
+      SELECT ?, ?, ?, workbench_id, work_id, partner_revision_id, kind, ?, ?, created_at, updated_at
+        FROM partner_runs WHERE run_id = ?`)
+      .run(runId, attemptId, actionId, `local:${runId}`, status, `run-${workId}`);
+    connection.prepare(`INSERT INTO work_results
+      (result_id, run_id, action_id, workbench_id, work_id, partner_revision_id, status, summary,
+       body_ref, artifacts_json, is_late, is_authoritative, created_at)
+      SELECT ?, ?, ?, workbench_id, work_id, partner_revision_id, ?, '', body_ref, '[]', ?, 1, created_at
+        FROM work_results WHERE result_id = ?`)
+      .run(resultId, runId, actionId, status, isLate, `result-${workId}`);
+    connection.prepare(`INSERT INTO partner_result_events
+      (event_id, run_id, workbench_id, work_id, partner_revision_id, status, created_at)
+      SELECT ?, run_id, workbench_id, work_id, partner_revision_id, status, created_at
+        FROM work_results WHERE result_id = ?`)
+      .run(`historical-event-${workId}`, resultId);
+  });
+}
+
 async function seedQuarantinedReview(fixture: RuntimeFixture, repository: SqliteJoiHarnessRepository, gate: "missing" | "open" | "waiting") {
   const goalInputId = "goal-explicit-review-recovery";
   fixture.clock.advance(Date.parse(NOW) - fixture.clock.now().getTime());
@@ -309,6 +346,62 @@ describe("SqliteJoiHarnessRepository", () => {
   });
 
   describe("close-out race with in-flight results", () => {
+    it.each([
+      ["FAILED", "CONTINUE", "scan"],
+      ["FAILED", "CONTINUE", "write-recheck"],
+      ["UNKNOWN", "CONTINUE", "scan"],
+      ["UNKNOWN", "CONTINUE", "write-recheck"],
+      ["FAILED", "COMPLETED", "scan"],
+      ["FAILED", "COMPLETED", "write-recheck"],
+      ["UNKNOWN", "COMPLETED", "scan"],
+      ["UNKNOWN", "COMPLETED", "write-recheck"],
+    ] as const)("waits for unabsorbed %s results with outcome=%s during %s", async (status, disposition, stage) => {
+      const goalInputId = "goal-pending-terminal-result";
+      const workId = "work-pending-terminal-result";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1, disposition);
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(reviewInputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at)
+          VALUES ('settled-terminal-review', ?, ?, 'terminal-review', 'COMPLETED', 1, ?, ?)`)
+          .run(reviewInputId, workbenchId, NOW, NOW);
+      });
+      const [candidate] = await repository.listReviewRecoveries();
+      expect(candidate?.action).toBe(disposition === "COMPLETED" ? "AUTO_CLEAR" : "QUARANTINE");
+      if (candidate === undefined) throw new Error("review recovery missing");
+      const partner = await fixture.partners.add({
+        capabilities: [], displayName: "分析搭档", kind: "local-pi", skills: [], tools: [],
+      });
+      seedCompletedWorkWithResult(fixture, { absorbed: false, goalInputId, partnerRevisionId: partner.partnerRevisionId, workId });
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE work_items SET status = 'FAILED' WHERE work_id = ?").run(workId);
+        connection.prepare("UPDATE partner_runs SET status = ? WHERE work_id = ?").run(status, workId);
+        connection.prepare("UPDATE work_results SET status = ? WHERE work_id = ?").run(status, workId);
+        connection.prepare("UPDATE partner_result_events SET status = ? WHERE work_id = ?").run(status, workId);
+      });
+      await repository.synchronizeWorkPaths({ now: NOW });
+      if (stage === "scan") expect(await repository.listReviewRecoveries()).toEqual([]);
+      else expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+
+      const inbox = new SqliteJoiInboxRepository(fixture.database, fixture.clock);
+      const synthesisId = await inbox.enqueuePartnerResult({
+        workbenchId, eventId: `event-${workId}`, resultId: `result-${workId}`, status, summary: "失败结果", workId,
+      });
+      expect(synthesisId).not.toBeNull();
+      expect(fixture.database.transaction((connection) => connection.prepare(`SELECT revision, synthesized_revision
+        FROM joi_goal_result_sets WHERE original_input_id = ?`).get(goalInputId)))
+        .toEqual({ revision: 2, synthesized_revision: 1 });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT status FROM work_items WHERE work_id = ?").get(workId))).toEqual({ status: "FAILED" });
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+    });
+
     it("withholds AUTO_CLEAR until the result set has absorbed every completed result", async () => {
       // The incident: a Work turned COMPLETED, the close-out read the still-stale result set as
       // "facts complete" and cleared the map, and the synthesis landing 16ms later published a
@@ -351,6 +444,63 @@ describe("SqliteJoiHarnessRepository", () => {
       const candidates = await repository.listReviewRecoveries();
       expect(candidates.map((candidate) => candidate.digest.goalInputId)).toEqual(["goal-absorbed"]);
       expect(candidates[0]).toMatchObject({ action: "AUTO_CLEAR", reasonCode: "review_facts_complete" });
+
+      seedCompletedWorkWithResult(fixture, {
+        absorbed: false, goalInputId: "goal-absorbed", partnerRevisionId: partner.partnerRevisionId, workId: "work-arrived-after-scan",
+      });
+      await repository.synchronizeWorkPaths({ now: NOW });
+      const candidate = candidates[0];
+      if (candidate === undefined) throw new Error("review recovery missing");
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+      expect(harnessSnapshot(fixture, "goal-absorbed")).toMatchObject({ status: "ACTIVE" });
+    });
+
+    it.each([
+      ["WAITING_INPUT", 0, "scan"],
+      ["WAITING_INPUT", 0, "write-recheck"],
+      ["WAITING_AUTH", 0, "scan"],
+      ["WAITING_AUTH", 0, "write-recheck"],
+      ["COMPLETED", 1, "scan"],
+      ["COMPLETED", 1, "write-recheck"],
+    ] as const)("ignores historical %s results with isLate=%i during %s", async (status, isLate, stage) => {
+      const goalInputId = "goal-review-history";
+      const workId = "work-review-history";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      const partner = await fixture.partners.add({
+        capabilities: [], displayName: "分析搭档", kind: "local-pi", skills: [], tools: [],
+      });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1);
+      const digest = (await repository.listReviewDigests())[0];
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(reviewInputId);
+        connection.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, side_effect_started, review_replay_safe, created_at, updated_at)
+          VALUES ('review-history-failed', ?, ?, 'review-history-session', 'FAILED', 1, 1, ?, ?)`)
+          .run(reviewInputId, workbenchId, NOW, NOW);
+      });
+      seedCompletedWorkWithResult(fixture, {
+        absorbed: true, goalInputId, partnerRevisionId: partner.partnerRevisionId, workId,
+      });
+      await repository.synchronizeWorkPaths({ now: NOW });
+      const scannedCandidate = (await repository.listReviewRecoveries())[0];
+      expect(scannedCandidate).toMatchObject({ action: "AUTO_CLEAR", reasonCode: "review_facts_complete" });
+
+      seedHistoricalWorkResult(fixture, { isLate, status, workId });
+      const candidate = stage === "scan" ? (await repository.listReviewRecoveries())[0] : scannedCandidate;
+      expect(candidate).toMatchObject({ action: "AUTO_CLEAR", reasonCode: "review_facts_complete" });
+      if (candidate === undefined) throw new Error("review recovery missing");
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toEqual({ action: "AUTO_CLEARED" });
+      const feed = await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW));
+      expect(feed.goals.find((goal) => goal.goalId === goalInputId)).toMatchObject({ status: "COMPLETED" });
+      expect(fixture.database.transaction((connection) => connection.prepare(
+        "SELECT COUNT(*) AS count FROM joi_goal_result_members WHERE original_input_id = ?").get(goalInputId)))
+        .toEqual({ count: 1 });
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
     });
 
     it("re-opens a map that was closed while a newer layer was still arriving", async () => {
@@ -646,6 +796,41 @@ describe("SqliteJoiHarnessRepository", () => {
   });
 
   describe("review enqueue gates", () => {
+    it("reviews the newest completed evidence after more than eight results without crossing goals", async () => {
+      const goalInputId = "goal-review-latest-evidence";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 10);
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "Evidence", kind: "local-pi", skills: [], tools: [] });
+      for (let revision = 1; revision <= 10; revision += 1) {
+        const workId = `evidence-${String(revision).padStart(2, "0")}`;
+        seedCompletedWorkWithResult(fixture, { absorbed: true, goalInputId, partnerRevisionId: partner.partnerRevisionId, workId });
+        fixture.database.transaction((db) => {
+          db.prepare("UPDATE joi_goal_result_members SET revision = ? WHERE original_input_id = ? AND event_id = ?")
+            .run(revision, goalInputId, `event-${workId}`);
+          db.prepare("UPDATE work_results SET summary = ? WHERE result_id = ?")
+            .run(revision === 10 ? "已补齐关键缺口" : "已有证据", `result-${workId}`);
+        });
+      }
+      const otherGoalInputId = "goal-other-evidence";
+      seedGoal(fixture, { goalInputId: otherGoalInputId, status: "CONSUMED", turn: true });
+      seedCompletedLayer(fixture, otherGoalInputId, 1);
+      seedCompletedWorkWithResult(fixture, { absorbed: true, goalInputId: otherGoalInputId, partnerRevisionId: partner.partnerRevisionId, workId: "other-evidence" });
+
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      expect(digest.results).toHaveLength(8);
+      expect(digest.results.map((result) => result.resultId)).toEqual(
+        Array.from({ length: 8 }, (_, index) => `result-evidence-${String(index + 3).padStart(2, "0")}`),
+      );
+      expect(digest.results.at(-1)).toMatchObject({ resultId: "result-evidence-10", summary: "已补齐关键缺口" });
+      const inputId = await repository.enqueueReview({ digest, now: NOW });
+      const review = fixture.database.transaction((db) => db.prepare("SELECT body FROM joi_inbox_messages WHERE input_id = ?").get(inputId)) as { body: string };
+      expect(review.body).toContain("resultId=result-evidence-10");
+      expect(review.body).not.toContain("result-evidence-01");
+      expect(review.body).not.toContain("other-evidence");
+    });
+
     it("posts exactly one review input per completed result layer", async () => {
       const { workbenchId } = seedGoal(fixture, { goalInputId: "goal-review", status: "CONSUMED", turn: true });
       await repository.createMap({ workbenchId, goalInputId: "goal-review", now: NOW });
@@ -1053,6 +1238,58 @@ describe("SqliteJoiHarnessRepository", () => {
       expect(await repository.listReviewRecoveries()).toEqual([]);
       expect(fixture.database.transaction(db => db.prepare("SELECT COUNT(*) AS count FROM work_items WHERE input_id = ?").get(goalInputId)))
         .toEqual({ count: 0 });
+    });
+
+    it.each([false, true])("pauses a completed continuation review with an internal decision and open path=%s", async (openPath) => {
+      const goalInputId = "goal-review-no-next-layer";
+      const { workbenchId } = seedGoal(fixture, { goalInputId, status: "CONSUMED", turn: true });
+      await repository.createMap({ workbenchId, goalInputId, now: NOW });
+      seedCompletedLayer(fixture, goalInputId, 1, "CONTINUE");
+      const partner = await fixture.partners.add({ capabilities: [], displayName: "Saved evidence", kind: "local-pi", skills: [], tools: [] });
+      seedCompletedWorkWithResult(fixture, { absorbed: true, goalInputId, partnerRevisionId: partner.partnerRevisionId, workId: "saved-evidence" });
+      await repository.synchronizeWorkPaths({ now: NOW });
+      const [digest] = await repository.listReviewDigests();
+      if (digest === undefined) throw new Error("review digest missing");
+      const reviewInputId = await repository.enqueueReview({ digest, now: NOW });
+      if (reviewInputId === null) throw new Error("review input missing");
+      fixture.database.transaction((db) => {
+        db.prepare("UPDATE joi_inbox_messages SET status = 'CONSUMED' WHERE input_id = ?").run(reviewInputId);
+        db.prepare(`INSERT INTO joi_turns
+          (turn_id, input_id, workbench_id, session_id, status, side_effect_started, created_at, updated_at)
+          VALUES ('settled-review', ?, ?, 'settled-review', 'COMPLETED', 1, ?, ?)`)
+          .run(reviewInputId, workbenchId, NOW, NOW);
+      });
+      await repository.recordDecision({ goalInputId, kind: "APPROACH", summary: "已有成果保留，仍需核对一项", turnId: "settled-review" });
+      if (openPath) await repository.chartPath({ goalInputId, open: { layer: 2, title: "待核对路径" }, turnId: "settled-review" });
+
+      const [candidate] = await repository.listReviewRecoveries();
+      expect(candidate).toMatchObject({ action: "QUARANTINE", reasonCode: "review_side_effect_unknown" });
+      if (candidate === undefined) throw new Error("review recovery candidate missing");
+      fixture.database.transaction((db) => db.prepare("UPDATE joi_turns SET status = 'RUNNING' WHERE turn_id = 'settled-review'").run());
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+      fixture.database.transaction((db) => db.prepare("UPDATE joi_turns SET status = 'COMPLETED' WHERE turn_id = 'settled-review'").run());
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toEqual({ action: "QUARANTINED" });
+      expect(await new SqliteJoiHomeFeedRepository(fixture.database).load(new Date(NOW))).toMatchObject({
+        goals: [expect.objectContaining({ goalId: goalInputId, status: "NEEDS_ATTENTION" })],
+      });
+      const snapshot = () => fixture.database.transaction((db) => ({
+        question: db.prepare("SELECT question_id, question_version, status FROM joi_goal_execution_gates WHERE goal_input_id = ?").get(goalInputId),
+        works: db.prepare("SELECT work_id, status FROM work_items WHERE input_id = ?").all(goalInputId),
+        results: db.prepare("SELECT result_id FROM work_results WHERE work_id = 'saved-evidence'").all(),
+        review: db.prepare("SELECT status FROM joi_inbox_messages WHERE input_id = ?").get(reviewInputId),
+      }));
+      const paused = snapshot();
+      expect(paused).toMatchObject({
+        question: { question_version: 1, status: "WAITING_INPUT" },
+        works: [{ work_id: "saved-evidence", status: "COMPLETED" }],
+        results: [{ result_id: "result-saved-evidence" }],
+        review: { status: "CONSUMED" },
+      });
+      repository = new SqliteJoiHarnessRepository(fixture.database);
+      expect(await repository.listReviewRecoveries()).toEqual([]);
+      expect(await repository.reconcileReview({ candidate, now: NOW })).toBeNull();
+      expect(snapshot()).toEqual(paused);
     });
 
     it("quarantines a consumed review when a historical side effect is present", async () => {

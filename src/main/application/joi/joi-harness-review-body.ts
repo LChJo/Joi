@@ -23,7 +23,7 @@ export function composeReviewBody(digest: HarnessReviewDigest): string {
     : `destination=${digest.destination}`);
   if (digest.results.length > 0) {
     lines.push("Results in this revision:");
-    for (const result of digest.results.slice(0, RESULT_LINE_LIMIT)) {
+    for (const result of digest.results.slice(-RESULT_LINE_LIMIT)) {
       lines.push(`resultId=${result.resultId} workId=${result.workId} title=${result.title} status=${result.status} verification=${result.verification} summary=${truncateAtSentenceBoundary(result.summary, COMPLETION_SUMMARY_LIMIT)}`);
     }
     if (digest.results.length > RESULT_LINE_LIMIT) {

@@ -1,4 +1,9 @@
 {
+  "homeSyncFailedRetrying": {
+    "message": "Home sync failed. Retrying automatically; pull down to retry now.",
+    "description": "A failed home read keeps the session and previous content available while retrying.",
+    "sourceText": "首页同步失败，将自动重试；也可下拉立即重试。"
+  },
   "bringTheJoiRunningOnYourComputerToYour": {
     "message": "Bring the joi running on your computer to your phone",
     "description": "Bring the joi running on your computer to your phone",

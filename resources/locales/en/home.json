@@ -2189,5 +2189,254 @@
     "message": "Add requirements (optional)",
     "description": "Expand optional requirements for an interrupted review",
     "sourceText": "补充要求（可选）"
+  },
+  "joiProgressOpen": {
+    "message": "View JOI progress",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "查看 JOI 工作进展"
+  },
+  "joiProgressTitle": {
+    "message": "JOI progress",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "JOI 工作进展"
+  },
+  "joiProgressClose": {
+    "message": "Close progress window",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "关闭进展窗口"
+  },
+  "joiProgressQueued": {
+    "message": "Queued",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待调度"
+  },
+  "joiProgressRunning": {
+    "message": "Working",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "正在处理"
+  },
+  "joiProgressPartners": {
+    "message": "Waiting for partners",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待搭档结果"
+  },
+  "joiProgressUser": {
+    "message": "Waiting for your response",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待你的回应"
+  },
+  "joiProgressRecovering": {
+    "message": "Awaiting recovery",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待系统恢复"
+  },
+  "joiProgressIdle": {
+    "message": "Awaiting the next step",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待下一步处理"
+  },
+  "joiProgressCompleted": {
+    "message": "Finished",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已收尾"
+  },
+  "joiProgressFailed": {
+    "message": "Stopped",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已停止"
+  },
+  "joiProgressCanceled": {
+    "message": "Canceled",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已取消"
+  },
+  "joiProgressPlanning": {
+    "message": "Plan and arrange work",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "整理与安排工作"
+  },
+  "joiProgressFinalizing": {
+    "message": "Synthesize results",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "汇总结果"
+  },
+  "joiProgressReviewing": {
+    "message": "Review results",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "评审结果"
+  },
+  "joiProgressRecovery": {
+    "message": "Reconcile and recover",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "核对与恢复"
+  },
+  "joiProgressQueuedHint": {
+    "message": "This turn has not started yet and is waiting for JOI to schedule it.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "当前回合尚未开始，正在等待 JOI 调度。"
+  },
+  "joiProgressRunningHint": {
+    "message": "JOI is working on this turn. Its latest activity time is shown below.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "JOI 正在推进当前回合，最近活动时间见下方。"
+  },
+  "joiProgressPartnersHint": {
+    "message": "JOI has arranged the work and is waiting for partner results.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "JOI 已安排工作，正在等待搭档返回结果。"
+  },
+  "joiProgressUserHint": {
+    "message": "Your response is needed. Return to the goal details to continue.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "需要你的选择或补充，请返回目标详情处理。"
+  },
+  "joiProgressRecoveringHint": {
+    "message": "The last turn was interrupted. The runtime must check recovery conditions.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "上一回合已中断，等待运行时核对恢复条件。"
+  },
+  "joiProgressIdleHint": {
+    "message": "No JOI turn is running or queued. The goal is awaiting its next step.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "当前没有运行或排队的 JOI 回合，目标仍在等待下一步推进。"
+  },
+  "joiProgressCompletedHint": {
+    "message": "The route map for this goal is finished.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "该目标的路线图已收尾。"
+  },
+  "joiProgressFailedHint": {
+    "message": "This goal has stopped. Return to its details for next steps.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "该目标已停止，可返回详情查看处理建议。"
+  },
+  "joiProgressCanceledHint": {
+    "message": "This goal was canceled. Completed work records are retained.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "该目标已取消，已完成的工作记录仍然保留。"
+  },
+  "joiProgressUpdated": {
+    "message": "Latest activity",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "最近更新时间"
+  },
+  "joiProgressStarted": {
+    "message": "Goal started",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "任务开始时间"
+  },
+  "joiProgressElapsed": {
+    "message": "Elapsed {duration}",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "任务已用 {duration}",
+    "placeholders": {
+      "duration": "string"
+    }
+  },
+  "joiProgressCurrentElapsed": {
+    "message": "Current turn {duration}",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "当前回合已用 {duration}",
+    "placeholders": {
+      "duration": "string"
+    }
+  },
+  "joiProgressCounts": {
+    "message": "{turns} turns ? {reviews} reviews",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已运行 {turns} 个回合 · 其中 {reviews} 次评审",
+    "placeholders": {
+      "turns": "string",
+      "reviews": "string"
+    }
+  },
+  "joiProgressWork": {
+    "message": "Partner work: {completed} completed ? {active} active ? {failed} failed ? {total} total",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "搭档工作：{completed} 完成 · {active} 进行中 · {failed} 失败 · 共 {total} 项",
+    "placeholders": {
+      "completed": "string",
+      "active": "string",
+      "failed": "string",
+      "total": "string"
+    }
+  },
+  "joiProgressRecent": {
+    "message": "Recent turns",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "近期回合"
+  },
+  "joiProgressRecentLimit": {
+    "message": "Up to 12 recent turns, including active turns.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "最多显示最近 12 个回合，包含当前活动回合。"
+  },
+  "joiProgressNoTurns": {
+    "message": "No JOI turns recorded yet.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "尚无 JOI 回合记录。"
+  },
+  "joiProgressUnavailable": {
+    "message": "JOI progress is currently unavailable.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "暂时无法获取 JOI 工作进展。"
+  },
+  "joiProgressRefreshFailed": {
+    "message": "Refresh failed. Showing the last successfully loaded progress.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "状态刷新失败，当前显示上次成功获取的进展。"
+  },
+  "joiProgressQuiet": {
+    "message": "No new progress for {duration}.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已有 {duration} 未收到新的进展。",
+    "placeholders": {
+      "duration": "string"
+    }
+  },
+  "joiProgressTurnCompleted": {
+    "message": "Turn ended",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合已结束"
+  },
+  "joiProgressTurnFailed": {
+    "message": "Turn failed",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合中断"
+  },
+  "joiProgressTurnAborted": {
+    "message": "Turn aborted",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合已终止"
+  },
+  "joiProgressTurnWaiting": {
+    "message": "Turn waiting",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合等待中"
+  },
+  "joiProgressSeconds": {
+    "message": "{value}s",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "{value} 秒",
+    "placeholders": {
+      "value": "string"
+    }
+  },
+  "joiProgressMinutes": {
+    "message": "{value}m",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "{value} 分钟",
+    "placeholders": {
+      "value": "string"
+    }
+  },
+  "joiProgressHours": {
+    "message": "{value}h {minutes}m",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "{value} 小时 {minutes} 分钟",
+    "placeholders": {
+      "value": "string",
+      "minutes": "string"
+    }
   }
 }

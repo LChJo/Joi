@@ -883,6 +883,51 @@ export interface MessageParameters {
   "home.historicalReviewRecoveryHint": undefined;
   "home.reviewInterrupted": undefined;
   "home.optionalReviewRequirements": undefined;
+  "home.joiProgressOpen": undefined;
+  "home.joiProgressTitle": undefined;
+  "home.joiProgressClose": undefined;
+  "home.joiProgressQueued": undefined;
+  "home.joiProgressRunning": undefined;
+  "home.joiProgressPartners": undefined;
+  "home.joiProgressUser": undefined;
+  "home.joiProgressRecovering": undefined;
+  "home.joiProgressIdle": undefined;
+  "home.joiProgressCompleted": undefined;
+  "home.joiProgressFailed": undefined;
+  "home.joiProgressCanceled": undefined;
+  "home.joiProgressPlanning": undefined;
+  "home.joiProgressFinalizing": undefined;
+  "home.joiProgressReviewing": undefined;
+  "home.joiProgressRecovery": undefined;
+  "home.joiProgressQueuedHint": undefined;
+  "home.joiProgressRunningHint": undefined;
+  "home.joiProgressPartnersHint": undefined;
+  "home.joiProgressUserHint": undefined;
+  "home.joiProgressRecoveringHint": undefined;
+  "home.joiProgressIdleHint": undefined;
+  "home.joiProgressCompletedHint": undefined;
+  "home.joiProgressFailedHint": undefined;
+  "home.joiProgressCanceledHint": undefined;
+  "home.joiProgressUpdated": undefined;
+  "home.joiProgressStarted": undefined;
+  "home.joiProgressElapsed": { "duration": string };
+  "home.joiProgressCurrentElapsed": { "duration": string };
+  "home.joiProgressCounts": { "turns": string; "reviews": string };
+  "home.joiProgressWork": { "completed": string; "active": string; "failed": string; "total": string };
+  "home.joiProgressRecent": undefined;
+  "home.joiProgressRecentLimit": undefined;
+  "home.joiProgressNoTurns": undefined;
+  "home.joiProgressUnavailable": undefined;
+  "home.joiProgressRefreshFailed": undefined;
+  "home.joiProgressQuiet": { "duration": string };
+  "home.joiProgressTurnCompleted": undefined;
+  "home.joiProgressTurnFailed": undefined;
+  "home.joiProgressTurnAborted": undefined;
+  "home.joiProgressTurnWaiting": undefined;
+  "home.joiProgressSeconds": { "value": string };
+  "home.joiProgressMinutes": { "value": string };
+  "home.joiProgressHours": { "value": string; "minutes": string };
+  "mobile.homeSyncFailedRetrying": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
   "mobile.enterConnectionCode": undefined;
@@ -2437,6 +2482,51 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.historicalReviewRecoveryHint": "The internal review did not finish. Existing results are saved. Retry the review, or optionally update the requirements.",
     "home.reviewInterrupted": "Review interrupted",
     "home.optionalReviewRequirements": "Add requirements (optional)",
+    "home.joiProgressOpen": "View JOI progress",
+    "home.joiProgressTitle": "JOI progress",
+    "home.joiProgressClose": "Close progress window",
+    "home.joiProgressQueued": "Queued",
+    "home.joiProgressRunning": "Working",
+    "home.joiProgressPartners": "Waiting for partners",
+    "home.joiProgressUser": "Waiting for your response",
+    "home.joiProgressRecovering": "Awaiting recovery",
+    "home.joiProgressIdle": "Awaiting the next step",
+    "home.joiProgressCompleted": "Finished",
+    "home.joiProgressFailed": "Stopped",
+    "home.joiProgressCanceled": "Canceled",
+    "home.joiProgressPlanning": "Plan and arrange work",
+    "home.joiProgressFinalizing": "Synthesize results",
+    "home.joiProgressReviewing": "Review results",
+    "home.joiProgressRecovery": "Reconcile and recover",
+    "home.joiProgressQueuedHint": "This turn has not started yet and is waiting for JOI to schedule it.",
+    "home.joiProgressRunningHint": "JOI is working on this turn. Its latest activity time is shown below.",
+    "home.joiProgressPartnersHint": "JOI has arranged the work and is waiting for partner results.",
+    "home.joiProgressUserHint": "Your response is needed. Return to the goal details to continue.",
+    "home.joiProgressRecoveringHint": "The last turn was interrupted. The runtime must check recovery conditions.",
+    "home.joiProgressIdleHint": "No JOI turn is running or queued. The goal is awaiting its next step.",
+    "home.joiProgressCompletedHint": "The route map for this goal is finished.",
+    "home.joiProgressFailedHint": "This goal has stopped. Return to its details for next steps.",
+    "home.joiProgressCanceledHint": "This goal was canceled. Completed work records are retained.",
+    "home.joiProgressUpdated": "Latest activity",
+    "home.joiProgressStarted": "Goal started",
+    "home.joiProgressElapsed": "Elapsed {duration}",
+    "home.joiProgressCurrentElapsed": "Current turn {duration}",
+    "home.joiProgressCounts": "{turns} turns ? {reviews} reviews",
+    "home.joiProgressWork": "Partner work: {completed} completed ? {active} active ? {failed} failed ? {total} total",
+    "home.joiProgressRecent": "Recent turns",
+    "home.joiProgressRecentLimit": "Up to 12 recent turns, including active turns.",
+    "home.joiProgressNoTurns": "No JOI turns recorded yet.",
+    "home.joiProgressUnavailable": "JOI progress is currently unavailable.",
+    "home.joiProgressRefreshFailed": "Refresh failed. Showing the last successfully loaded progress.",
+    "home.joiProgressQuiet": "No new progress for {duration}.",
+    "home.joiProgressTurnCompleted": "Turn ended",
+    "home.joiProgressTurnFailed": "Turn failed",
+    "home.joiProgressTurnAborted": "Turn aborted",
+    "home.joiProgressTurnWaiting": "Turn waiting",
+    "home.joiProgressSeconds": "{value}s",
+    "home.joiProgressMinutes": "{value}m",
+    "home.joiProgressHours": "{value}h {minutes}m",
+    "mobile.homeSyncFailedRetrying": "Home sync failed. Retrying automatically; pull down to retry now.",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
     "mobile.enterConnectionCode": "Enter connection code",
@@ -3989,6 +4079,51 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.historicalReviewRecoveryHint": "内部复核未完成，已有成果已保留。可直接重试复核；仅在需要调整目标时补充要求。",
     "home.reviewInterrupted": "复核中断",
     "home.optionalReviewRequirements": "补充要求（可选）",
+    "home.joiProgressOpen": "查看 JOI 工作进展",
+    "home.joiProgressTitle": "JOI 工作进展",
+    "home.joiProgressClose": "关闭进展窗口",
+    "home.joiProgressQueued": "等待调度",
+    "home.joiProgressRunning": "正在处理",
+    "home.joiProgressPartners": "等待搭档结果",
+    "home.joiProgressUser": "等待你的回应",
+    "home.joiProgressRecovering": "等待系统恢复",
+    "home.joiProgressIdle": "等待下一步处理",
+    "home.joiProgressCompleted": "已收尾",
+    "home.joiProgressFailed": "已停止",
+    "home.joiProgressCanceled": "已取消",
+    "home.joiProgressPlanning": "整理与安排工作",
+    "home.joiProgressFinalizing": "汇总结果",
+    "home.joiProgressReviewing": "评审结果",
+    "home.joiProgressRecovery": "核对与恢复",
+    "home.joiProgressQueuedHint": "当前回合尚未开始，正在等待 JOI 调度。",
+    "home.joiProgressRunningHint": "JOI 正在推进当前回合，最近活动时间见下方。",
+    "home.joiProgressPartnersHint": "JOI 已安排工作，正在等待搭档返回结果。",
+    "home.joiProgressUserHint": "需要你的选择或补充，请返回目标详情处理。",
+    "home.joiProgressRecoveringHint": "上一回合已中断，等待运行时核对恢复条件。",
+    "home.joiProgressIdleHint": "当前没有运行或排队的 JOI 回合，目标仍在等待下一步推进。",
+    "home.joiProgressCompletedHint": "该目标的路线图已收尾。",
+    "home.joiProgressFailedHint": "该目标已停止，可返回详情查看处理建议。",
+    "home.joiProgressCanceledHint": "该目标已取消，已完成的工作记录仍然保留。",
+    "home.joiProgressUpdated": "最近更新时间",
+    "home.joiProgressStarted": "任务开始时间",
+    "home.joiProgressElapsed": "任务已用 {duration}",
+    "home.joiProgressCurrentElapsed": "当前回合已用 {duration}",
+    "home.joiProgressCounts": "已运行 {turns} 个回合 · 其中 {reviews} 次评审",
+    "home.joiProgressWork": "搭档工作：{completed} 完成 · {active} 进行中 · {failed} 失败 · 共 {total} 项",
+    "home.joiProgressRecent": "近期回合",
+    "home.joiProgressRecentLimit": "最多显示最近 12 个回合，包含当前活动回合。",
+    "home.joiProgressNoTurns": "尚无 JOI 回合记录。",
+    "home.joiProgressUnavailable": "暂时无法获取 JOI 工作进展。",
+    "home.joiProgressRefreshFailed": "状态刷新失败，当前显示上次成功获取的进展。",
+    "home.joiProgressQuiet": "已有 {duration} 未收到新的进展。",
+    "home.joiProgressTurnCompleted": "回合已结束",
+    "home.joiProgressTurnFailed": "回合中断",
+    "home.joiProgressTurnAborted": "回合已终止",
+    "home.joiProgressTurnWaiting": "回合等待中",
+    "home.joiProgressSeconds": "{value} 秒",
+    "home.joiProgressMinutes": "{value} 分钟",
+    "home.joiProgressHours": "{value} 小时 {minutes} 分钟",
+    "mobile.homeSyncFailedRetrying": "首页同步失败，将自动重试；也可下拉立即重试。",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
     "mobile.enterConnectionCode": "输入连接码",
@@ -5975,7 +6110,7 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "没有匹配的工作台，请换个关键词。": "home.noMatchingWorkbenchesTryADifferentKeyword",
   "Planning": "mobile.planning",
   "正在安排": "home.planning",
-  "Queued": "home.queued",
+  "Queued": "home.joiProgressQueued",
   "排队中": "home.queued",
   "Executing": "home.executing",
   "执行中": "home.executing",
@@ -6275,6 +6410,79 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "复核中断": "home.reviewInterrupted",
   "Add requirements (optional)": "home.optionalReviewRequirements",
   "补充要求（可选）": "home.optionalReviewRequirements",
+  "View JOI progress": "home.joiProgressOpen",
+  "查看 JOI 工作进展": "home.joiProgressOpen",
+  "JOI progress": "home.joiProgressTitle",
+  "JOI 工作进展": "home.joiProgressTitle",
+  "Close progress window": "home.joiProgressClose",
+  "关闭进展窗口": "home.joiProgressClose",
+  "等待调度": "home.joiProgressQueued",
+  "Working": "home.joiProgressRunning",
+  "正在处理": "home.joiProgressRunning",
+  "Waiting for partners": "home.joiProgressPartners",
+  "等待搭档结果": "home.joiProgressPartners",
+  "Waiting for your response": "home.joiProgressUser",
+  "等待你的回应": "home.joiProgressUser",
+  "Awaiting recovery": "home.joiProgressRecovering",
+  "等待系统恢复": "home.joiProgressRecovering",
+  "Awaiting the next step": "home.joiProgressIdle",
+  "等待下一步处理": "home.joiProgressIdle",
+  "Finished": "mobile.finished",
+  "已收尾": "home.joiProgressCompleted",
+  "Stopped": "status.stopped",
+  "已停止": "status.stopped",
+  "Canceled": "status.canceled",
+  "已取消": "status.canceled",
+  "Plan and arrange work": "home.joiProgressPlanning",
+  "整理与安排工作": "home.joiProgressPlanning",
+  "Synthesize results": "home.joiProgressFinalizing",
+  "汇总结果": "home.joiProgressFinalizing",
+  "Review results": "home.joiProgressReviewing",
+  "评审结果": "home.joiProgressReviewing",
+  "Reconcile and recover": "home.joiProgressRecovery",
+  "核对与恢复": "home.joiProgressRecovery",
+  "This turn has not started yet and is waiting for JOI to schedule it.": "home.joiProgressQueuedHint",
+  "当前回合尚未开始，正在等待 JOI 调度。": "home.joiProgressQueuedHint",
+  "JOI is working on this turn. Its latest activity time is shown below.": "home.joiProgressRunningHint",
+  "JOI 正在推进当前回合，最近活动时间见下方。": "home.joiProgressRunningHint",
+  "JOI has arranged the work and is waiting for partner results.": "home.joiProgressPartnersHint",
+  "JOI 已安排工作，正在等待搭档返回结果。": "home.joiProgressPartnersHint",
+  "Your response is needed. Return to the goal details to continue.": "home.joiProgressUserHint",
+  "需要你的选择或补充，请返回目标详情处理。": "home.joiProgressUserHint",
+  "The last turn was interrupted. The runtime must check recovery conditions.": "home.joiProgressRecoveringHint",
+  "上一回合已中断，等待运行时核对恢复条件。": "home.joiProgressRecoveringHint",
+  "No JOI turn is running or queued. The goal is awaiting its next step.": "home.joiProgressIdleHint",
+  "当前没有运行或排队的 JOI 回合，目标仍在等待下一步推进。": "home.joiProgressIdleHint",
+  "The route map for this goal is finished.": "home.joiProgressCompletedHint",
+  "该目标的路线图已收尾。": "home.joiProgressCompletedHint",
+  "This goal has stopped. Return to its details for next steps.": "home.joiProgressFailedHint",
+  "该目标已停止，可返回详情查看处理建议。": "home.joiProgressFailedHint",
+  "This goal was canceled. Completed work records are retained.": "home.joiProgressCanceledHint",
+  "该目标已取消，已完成的工作记录仍然保留。": "home.joiProgressCanceledHint",
+  "Latest activity": "home.joiProgressUpdated",
+  "最近更新时间": "home.joiProgressUpdated",
+  "Goal started": "home.joiProgressStarted",
+  "任务开始时间": "home.joiProgressStarted",
+  "Recent turns": "home.joiProgressRecent",
+  "近期回合": "home.joiProgressRecent",
+  "Up to 12 recent turns, including active turns.": "home.joiProgressRecentLimit",
+  "最多显示最近 12 个回合，包含当前活动回合。": "home.joiProgressRecentLimit",
+  "No JOI turns recorded yet.": "home.joiProgressNoTurns",
+  "尚无 JOI 回合记录。": "home.joiProgressNoTurns",
+  "JOI progress is currently unavailable.": "home.joiProgressUnavailable",
+  "暂时无法获取 JOI 工作进展。": "home.joiProgressUnavailable",
+  "Refresh failed. Showing the last successfully loaded progress.": "home.joiProgressRefreshFailed",
+  "状态刷新失败，当前显示上次成功获取的进展。": "home.joiProgressRefreshFailed",
+  "Turn ended": "home.joiProgressTurnCompleted",
+  "回合已结束": "home.joiProgressTurnCompleted",
+  "Turn failed": "home.joiProgressTurnFailed",
+  "回合中断": "home.joiProgressTurnFailed",
+  "Turn aborted": "home.joiProgressTurnAborted",
+  "回合已终止": "home.joiProgressTurnAborted",
+  "Turn waiting": "home.joiProgressTurnWaiting",
+  "回合等待中": "home.joiProgressTurnWaiting",
+  "Home sync failed. Retrying automatically; pull down to retry now.": "mobile.homeSyncFailedRetrying",
+  "首页同步失败，将自动重试；也可下拉立即重试。": "mobile.homeSyncFailedRetrying",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "把正在电脑上运行的 Joi 带到手机上": "mobile.bringTheJoiRunningOnYourComputerToYour",
   "Scan a QR code to pair with joi": "mobile.scanAQrCodeToPairWithJoi",
@@ -6322,7 +6530,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "中继": "mobile.relay",
   "Connected": "mobile.connected",
   "已连接": "mobile.connected",
-  "Finished": "mobile.finished",
   "已结束": "mobile.finished",
   "The desktop version is older. Update it to read details and use card actions.": "mobile.theDesktopVersionIsOlderUpdateItToRead",
   "桌面版本较旧，升级后可阅读详情和操作卡片。": "mobile.theDesktopVersionIsOlderUpdateItToRead",
@@ -7435,8 +7642,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "准备行动": "status.readyToAct",
   "Quiet": "status.quiet",
   "安静中": "status.quiet",
-  "Stopped": "status.stopped",
-  "已停止": "status.stopped",
   "Ready": "status.ready",
   "可用": "status.ready",
   "Collaboration only": "status.collaborationOnly",
@@ -7450,8 +7655,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "需要重新确认": "status.needsConfirmation",
   "Credentials need updating": "status.credentialsNeedUpdating",
   "需要更新密钥": "status.credentialsNeedUpdating",
-  "Canceled": "status.canceled",
-  "已取消": "status.canceled",
   "Processing": "status.processing",
   "处理中": "status.processing",
   "已完成": "status.completed",

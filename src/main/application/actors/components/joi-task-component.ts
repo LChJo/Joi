@@ -32,6 +32,7 @@ interface InFlightTurn {
   settled: "failed" | "ok" | undefined;
   startedAt: number;
   userCanceled?: boolean;
+  retryEpoch?: number;
 }
 
 /**
@@ -121,9 +122,18 @@ export class JoiTaskComponent implements ActorComponent {
       // Crash-loop breaker: a poisoned session or deterministic failure would otherwise
       // re-PEND and retry every tick forever. After N consecutive failures the input is
       // parked as an explicit system failure; user cancellation remains a separate fact.
-      const failures = (this.#failures.get(turn.inputId) ?? 0) + 1;
+      await this.dependencies.inbox.recordSchedulingFailure?.(turn.inputId, {
+        startedAt: new Date(turn.startedAt).toISOString(), failedAt: ctx.now.toISOString(), reasonCode: errorCode ?? "joi_task_turn_failed",
+        ...(turn.retryEpoch === undefined ? {} : { epoch: turn.retryEpoch }),
+      });
+      const retryState = await this.dependencies.inbox.getRetryState?.(turn.inputId);
+      const failures = retryState?.failureCount ?? (this.#failures.get(turn.inputId) ?? 0) + 1;
       const synthesisProtocolFailed = turn.inputId.startsWith("joi_result_input:") && SYNTHESIS_PROTOCOL_FAILURES.has(errorCode ?? "");
-      if (synthesisProtocolFailed || failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
+      const superseded = turn.retryEpoch !== undefined && retryState !== undefined && turn.retryEpoch !== retryState.epoch;
+      if (superseded || retryState?.failureCount === 0 || !synthesisProtocolFailed && retryState?.queued === false) {
+        this.#failures.delete(turn.inputId);
+        this.#backoffUntil.delete(turn.inputId);
+      } else if (synthesisProtocolFailed || failures >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
         this.#failures.delete(turn.inputId);
         this.#backoffUntil.delete(turn.inputId);
         await this.dependencies.inbox.park(turn.inputId, {
@@ -137,15 +147,20 @@ export class JoiTaskComponent implements ActorComponent {
         });
       } else {
         this.#failures.set(turn.inputId, failures);
-        const base = this.dependencies.retryBackoffBaseMillis ?? DEFAULT_RETRY_BACKOFF_BASE_MILLIS;
-        const max = this.dependencies.retryBackoffMaxMillis ?? DEFAULT_RETRY_BACKOFF_MAX_MILLIS;
-        const backoff = Math.min(max, base * 2 ** (failures - 1));
-        this.#backoffUntil.set(turn.inputId, ctx.now.getTime() + backoff);
-        emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_backoff", {
-          backoffMillis: backoff,
-          consecutiveFailures: failures,
-          inputId: turn.inputId,
-        });
+        const backoff = this.#retryBackoff(failures);
+        const retryAt = new Date((retryState?.failedAt === undefined ? ctx.now.getTime() : Date.parse(retryState.failedAt)) + backoff);
+        const deferred = await this.dependencies.inbox.deferRetry?.(turn.inputId, {
+          failureCount: failures, retryAt: retryAt.toISOString(),
+          ...(turn.retryEpoch === undefined ? {} : { epoch: turn.retryEpoch }),
+        }) ?? true;
+        if (deferred) {
+          this.#backoffUntil.set(turn.inputId, retryAt.getTime());
+          emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_backoff", {
+            backoffMillis: backoff,
+            consecutiveFailures: failures,
+            inputId: turn.inputId,
+          });
+        }
       }
     } else {
       this.#failures.delete(turn.inputId);
@@ -161,14 +176,38 @@ export class JoiTaskComponent implements ActorComponent {
   async #startNext(ctx: ActorTickContext): Promise<void> {
     const pending = await this.dependencies.inbox.listPendingInputs();
     const now = ctx.now.getTime();
-    // A cooldown throttles the scheduler's own retry of a queued row, so it only means something
-    // while that row is still queued. A row a failure consumed (side effect already started), a
-    // cancel, or a gate that parked it has nothing left to throttle — and keeping the window
-    // would swallow the user's next retry, because `retry` re-queues the row at once and it must
-    // start at once.
+    // Cooldowns belong to the queued attempt; explicit continuation starts a fresh retry epoch.
     const queued = new Set(pending.map((candidate) => candidate.inputId));
     for (const inputId of [...this.#backoffUntil.keys()]) {
       if (!queued.has(inputId)) this.#backoffUntil.delete(inputId);
+    }
+    for (const candidate of pending) {
+      const state = candidate.retryState;
+      if (state === undefined) continue;
+      if (state.failureCount === 0) {
+        this.#backoffUntil.delete(candidate.inputId);
+        this.#failures.delete(candidate.inputId);
+        continue;
+      }
+      if (state.failureCount >= (this.dependencies.maxConsecutiveFailures ?? DEFAULT_MAX_CONSECUTIVE_FAILURES)) {
+        await this.dependencies.inbox.park(candidate.inputId, { failureCount: state.failureCount, reasonCode: state.reasonCode ?? "joi_task_turn_failed" });
+        this.#backoffUntil.set(candidate.inputId, Number.POSITIVE_INFINITY);
+        emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_parked", {
+          inputId: candidate.inputId, consecutiveFailures: state.failureCount, errorCode: state.reasonCode ?? "joi_task_turn_failed",
+        });
+        continue;
+      }
+      const retryAt = state.retryAt ?? (state.failedAt === undefined ? undefined : new Date(Date.parse(state.failedAt) + this.#retryBackoff(state.failureCount)).toISOString());
+      if (retryAt !== undefined) {
+        if (state.retryAt === undefined) {
+          const deferred = await this.dependencies.inbox.deferRetry?.(candidate.inputId, { failureCount: state.failureCount, retryAt, epoch: state.epoch });
+          if (deferred === false) {
+            this.#backoffUntil.set(candidate.inputId, Number.POSITIVE_INFINITY);
+            continue;
+          }
+        }
+        this.#backoffUntil.set(candidate.inputId, Date.parse(retryAt));
+      }
     }
     // An input cooling down after a failure is skipped, not blocking: later pending
     // inputs stay claimable while it waits out its backoff.
@@ -181,7 +220,8 @@ export class JoiTaskComponent implements ActorComponent {
     const inputId = next.inputId;
     const startedAt = ctx.now.getTime();
     const abortController = new AbortController();
-    this.#inFlight = { abortController, cancelRequested: false, inputId, settled: undefined, startedAt };
+    this.#inFlight = { abortController, cancelRequested: false, inputId, settled: undefined, startedAt,
+      ...(next.retryState === undefined ? {} : { retryEpoch: next.retryState.epoch }) };
     emitRuntimeDiagnostic(ctx.diagnostics, "joi.task.input_started", { inputId });
     void this.dependencies.driver.handle(inputId, abortController.signal).then(() => {
       if (this.#inFlight?.inputId !== inputId) return;
@@ -192,6 +232,12 @@ export class JoiTaskComponent implements ActorComponent {
       this.#inFlight.settled = "failed";
       this.#inFlight.errorCode = runtimeDiagnosticErrorCode(error);
     });
+  }
+
+  #retryBackoff(failures: number): number {
+    const base = this.dependencies.retryBackoffBaseMillis ?? DEFAULT_RETRY_BACKOFF_BASE_MILLIS;
+    const max = this.dependencies.retryBackoffMaxMillis ?? DEFAULT_RETRY_BACKOFF_MAX_MILLIS;
+    return Math.min(max, base * 2 ** (failures - 1));
   }
 
   async #recoverOrphanTurns(ctx: ActorTickContext): Promise<void> {

@@ -21,7 +21,7 @@ export class PiReasoningFailureClassifier implements ReasoningFailureClassifier 
     const code = value.code;
     // A model that renders tool calls as literal text (DSML-style markup) is a protocol
     // failure of the source, not of the request: another route can still answer it.
-    if (code === "joi_model_toolcall_leak") return "protocol";
+    if (code === "joi_model_toolcall_leak" || code === "custom_model_tool_capability_unverified") return "protocol";
     if (code === "ETIMEDOUT" || code === "UND_ERR_CONNECT_TIMEOUT") return "timeout";
     if (["ECONNREFUSED", "ECONNRESET", "ENETUNREACH", "ENOTFOUND", "EAI_AGAIN"].includes(String(code))) return "connect";
     return null;

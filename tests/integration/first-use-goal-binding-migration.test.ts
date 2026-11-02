@@ -24,12 +24,19 @@ describe("goal binding migration", () => {
       const second = await registry.create({ name: "Second", personaSummary: "Fixture", projectLabel: "Fixture", scopeSummary: "Second" });
       const now = fixture.clock.now().toISOString();
       const inbox = new SqliteJoiInboxRepository(database, fixture.clock);
+      // Historical fixtures use the columns available in the schema being upgraded.
+      const createHistoricalTurn = (inputId: string, turnId: string, sessionId: string) => database.transaction(db => {
+        db.prepare(`INSERT INTO joi_turns
+          (turn_id,input_id,workbench_id,session_id,status,created_at,updated_at)
+          VALUES (?,?,?,?,'RUNNING',?,?)`).run(turnId,inputId,first.workbenchId,sessionId,now,now);
+        db.prepare("UPDATE joi_inbox_messages SET status='ROUTED',updated_at=? WHERE input_id=?").run(now,inputId);
+      });
       for (const inputId of ["original", "other-goal", "direct"]) await inbox.create({ inputId, idempotencyKey: inputId,
         body: "Fixture", workbenchId: first.workbenchId, status: "PENDING", createdAt: now, updatedAt: now });
       await inbox.create({ inputId: "recovery", idempotencyKey: "recovery", body: "Fixture recovery",
         workbenchId: first.workbenchId, status: "PENDING", createdAt: now, updatedAt: now });
       database.transaction(db => db.prepare("UPDATE joi_inbox_messages SET goal_input_id = 'original' WHERE input_id = 'recovery'").run());
-      await inbox.createTurn({ inputId: "recovery", turnId: "recovery-turn", workbenchId: first.workbenchId, sessionId: "recovery-session", createdAt: now });
+      createHistoricalTurn("recovery", "recovery-turn", "recovery-session");
       const insert = (id: string, inputId: string, workbenchId = first.workbenchId) => database.transaction(db => db.prepare(`INSERT INTO work_items
         (work_id, workbench_id, input_id, title, intent_json, access_mode, status, created_at, updated_at)
         VALUES (?, ?, ?, 'Fixture', '{}', 'READ', 'READY', ?, ?)`)
@@ -45,8 +52,7 @@ describe("goal binding migration", () => {
         .toThrow("work_goal_binding_invalid");
       expect(() => database.transaction(db => db.prepare("UPDATE work_items SET workbench_id = ? WHERE work_id = 'valid'").run(second.workbenchId)))
         .toThrow("work_goal_binding_invalid");
-      await new SqliteJoiInboxRepository(database, fixture.clock).createTurn({ inputId: "direct", turnId: "direct-turn",
-        workbenchId: first.workbenchId, sessionId: "direct-session", createdAt: now });
+      createHistoricalTurn("direct", "direct-turn", "direct-session");
       expect(() => insert("valid-direct", "direct")).not.toThrow();
       expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_turns WHERE input_id = 'original'").get())).toEqual({ n: 0 });
       expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_inbox_messages").get())).toEqual({ n: 4 });

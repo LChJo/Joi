@@ -1,8 +1,19 @@
+export interface JoiTurnRetryState {
+  failureCount: number;
+  sessionGeneration: number;
+  epoch: number;
+  failedAt?: string;
+  reasonCode?: string;
+  retryAt?: string;
+  queued?: boolean;
+}
+
 export interface JoiTaskPendingInput {
   createdAt: string;
   inputId: string;
   /** Persisted user actions are deterministic and do not require a model source. */
   requiresModelSource?: boolean;
+  retryState?: JoiTurnRetryState;
 }
 
 export interface JoiTaskStaleTurn {
@@ -12,6 +23,9 @@ export interface JoiTaskStaleTurn {
 
 /** DB-fact view the joi task component traverses; PENDING rows are the only scheduling truth. */
 export interface JoiTaskInbox {
+  getRetryState?(inputId: string): Promise<JoiTurnRetryState | undefined>;
+  deferRetry?(inputId: string, input: { failureCount: number; retryAt: string; epoch?: number }): Promise<boolean>;
+  recordSchedulingFailure?(inputId: string, input: { startedAt: string; failedAt: string; reasonCode: string; epoch?: number }): Promise<void>;
   recoverInterruptedGoalReviews?(): Promise<void>;
   park(inputId: string, failure: { failureCount: number; reasonCode: string }): Promise<void>;
   listPendingInputs(): Promise<JoiTaskPendingInput[]>;

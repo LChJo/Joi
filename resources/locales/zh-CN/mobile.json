@@ -1,4 +1,5 @@
 {
+  "homeSyncFailedRetrying": "首页同步失败，将自动重试；也可下拉立即重试。",
   "bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
   "scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
   "enterConnectionCode": "输入连接码",

@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import type { JoiGoalDetailDto, JoiGoalMapDetailDto, JoiGoalMapPathDto } from "../../../shared/joi.js";
 import { sanitizeAgentConversationText } from "../../application/partners/agent-conversation-presentation.js";
+import { queryJoiGoalProgress } from "./sqlite-joi-goal-progress.js";
 
 type Row = Record<string, string | number | null>;
 const display = (value: string | number | null | undefined): string => sanitizeAgentConversationText(String(value ?? "")).replace(/\r\n?/gu, "\n").trim();
@@ -31,6 +32,7 @@ export function queryJoiGoalDetail(db: DatabaseSync, goalId: string, page: { off
     LEFT JOIN joi_harness_paths p ON p.path_id=f.graduated_path_id AND p.goal_input_id=f.goal_input_id
     WHERE f.goal_input_id=? ORDER BY f.created_at DESC,f.fog_id DESC LIMIT ? OFFSET ?`).all(goalId, page.limit, page.offset) as Row[];
   result.harness = {
+    progress: queryJoiGoalProgress(db, goalId),
     ...(map.destination === null ? {} : { destination: display(map.destination) }),
     mapStatus: map.status as JoiGoalMapDetailDto["mapStatus"], revision: Number(map.revision), currentLayer: Number(map.current_layer),
     pathCount: Number(map.path_count), decisionCount: Number(map.decision_count), fogCount: Number(map.fog_count),

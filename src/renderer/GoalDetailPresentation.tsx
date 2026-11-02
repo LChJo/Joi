@@ -2,6 +2,7 @@ import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from
 import { ArrowUpRightIcon, CaretDownIcon, CheckCircleIcon, CircleIcon, CopyIcon, FlagIcon, ProhibitIcon, WarningCircleIcon } from "@phosphor-icons/react";
 import type { JoiGoalMapDetailDto, JoiGoalMapPathDto } from "../shared/joi.js";
 import { t, useI18n } from "./i18n";
+import { JoiGoalProgress } from "./JoiGoalProgress.js";
 
 export function GoalTitle({ title, fullTitle }: { title: string; fullTitle?: string }) {
   useI18n();
@@ -132,6 +133,7 @@ export function GoalMap({ harness, hasMore = false, busy = false, failed = false
     <div className="joi-route-destination compact"><small>{t("home.routeDestination")}</small><p>{harness.destination ?? t("home.unnamedDestinationJoiWillNameItDuringReview")}</p></div>
     <p className="joi-route-counts">{t("home.routeMapCounts", { paths: String(harness.pathCount), decisions: String(harness.decisionCount), fog: String(harness.fogCount) })}</p>
     <div className="joi-route-overview-actions"><small>{harness.pathCount === 0 ? t("home.routeMapEmpty") : t("home.routeCurrentLayer", { layer: String(harness.currentLayer) })}</small>
+      <JoiGoalProgress {...(harness.progress === undefined ? {} : { progress: harness.progress })} failed={failed} busy={busy} onRetry={onRetry} />
       <button ref={toggle} className="button ghost" type="button" aria-expanded={expanded} aria-controls={detailsId} onClick={() => {
         setVisited(true); setExpanded(!expanded);
         if (expanded) requestAnimationFrame(() => toggle.current?.scrollIntoView({ block: "nearest" }));

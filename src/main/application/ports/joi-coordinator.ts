@@ -3,6 +3,7 @@ import type { WorkbenchProposalDto } from "../../../shared/joi.js";
 import type { SourceFailureKind } from "../../domain/model-sources/model-source.js";
 import type { GoalSynthesisDraft, GoalSynthesisState } from "../../domain/work/goal-synthesis-state.js";
 import type { GoalEvidenceChange, GoalEvidenceChangesQuery } from "./goal-evidence.js";
+import type { JoiTurnRetryState } from "./joi-task.js";
 
 /** Private persisted evidence for one goal; never a display or diagnostics projection. */
 export interface JoiGoalContext {
@@ -23,6 +24,7 @@ export interface JoiGoalContext {
 }
 
 export interface JoiPendingInput {
+  retryState?: JoiTurnRetryState;
   /** Per-version private background; it never becomes a persisted user message. */
   synthesisContext?: {
     originalRequest: string;
@@ -75,6 +77,7 @@ export interface JoiCoordinatorStore {
     /** The requirements revision this turn starts from; a tool-less turn ends against it. */
     requirementsRevision?: number;
     sessionId: string;
+    sessionGeneration?: number;
     sourceRevisionId?: string;
     turnId: string;
   }): Promise<void>;

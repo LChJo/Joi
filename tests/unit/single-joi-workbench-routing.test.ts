@@ -40,7 +40,7 @@ describe("single-joi-workbench-scoped-thread-isolation", () => {
     });
     await expect(coordinator.handle("capacity-goal")).rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
     expect(failures).toHaveLength(1);
-    expect(failures[0]?.[2]).toBeUndefined();
+    expect(failures[0]?.[2]).toEqual({ reasonCode: "goal_requirements_capacity_exceeded" });
     expect(clarifications).toEqual(["goal_requirements_capacity_exceeded"]);
   });
 

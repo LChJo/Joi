@@ -79,45 +79,32 @@ const REVIEW_FACTS_COMPLETE_SQL = `
                                  WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
                 AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
                                  AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`;
-// A review turn can end COMPLETED without having done anything: an output-budget
-// truncation or a prose-only answer leaves zero tool calls, so side_effect_started
-// stays 0 (dispatch/decision/turn_complete all flip it). With disposition CONTINUE
-// the synthesis already promised a safe next layer, yet nothing else ever re-arms the
-// goal — no work completion to trigger synthesis, REVIEW_FACTS_COMPLETE_SQL never
-// matches — making it a silent dead zone. Restricted to CONTINUE with converged path
-// facts: BLOCKED outcomes and open/missing paths keep their own (user-facing or
-// self-converging) recovery surfaces instead of being replayed here.
-const REVIEW_WASTED_TURN_SQL = `
+// A settled continuation review needs either a next evidence layer or an explicit
+// recovery decision. Internal map writes alone do not establish replay safety;
+// only persisted proof permits a bounded retry, otherwise the goal must pause.
+const REVIEW_INCOMPLETE_TURN_SQL = `
                 o.disposition = 'CONTINUE'
-                AND EXISTS (SELECT 1 FROM joi_turns wasted_review
-                             WHERE wasted_review.input_id = r.input_id AND wasted_review.status = 'COMPLETED'
-                               AND wasted_review.side_effect_started = 0)
-                AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p
-                                 WHERE p.goal_input_id = m.goal_input_id AND p.status = 'OPEN')
-                AND NOT EXISTS (SELECT 1 FROM work_items w WHERE w.input_id = m.goal_input_id
-                                 AND NOT EXISTS (SELECT 1 FROM joi_harness_paths p WHERE p.work_id = w.work_id))`;
+                AND EXISTS (SELECT 1 FROM joi_turns settled_review
+                             WHERE settled_review.input_id = r.input_id AND settled_review.status = 'COMPLETED')`;
 const REVIEW_WASTED_TURN_COUNT_SQL = `
                 (SELECT COUNT(*) FROM joi_turns wasted_review
                   WHERE wasted_review.input_id = r.input_id AND wasted_review.status = 'COMPLETED'
                     AND wasted_review.side_effect_started = 0)`;
-const REVIEW_RETRY_COUNT_SQL = `(${REVIEW_WASTED_TURN_COUNT_SQL} +
-  (SELECT COUNT(*) FROM joi_turns failed_review WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'))`;
+const REVIEW_RETRY_COUNT_SQL = `(SELECT COUNT(*) FROM joi_turns settled_review
+  WHERE settled_review.input_id = r.input_id AND settled_review.status IN ('COMPLETED', 'FAILED'))`;
 const REVIEW_REQUEUE_LIMIT = 1;
-// A Work reaching its terminal state and its result joining the goal's result set are two
-// separate writes, milliseconds apart. Everything else these predicates read — reviewed_revision,
-// rs.revision, the outcome for that revision — still describes the previous layer during that
-// window, so "facts complete" holds while evidence is demonstrably in flight. Auto-clearing on
-// that reading closes the map under a synthesis that lands a moment later; the map is never
-// re-visited, so the goal idles forever behind a review badge. Require the result set to have
-// absorbed every authoritative completed result before any close-out may fire.
+// Review reconciliation waits for every eligible terminal result to enter the goal result set.
+// Waiting states and late results are excluded by the synthesis scan.
 const REVIEW_RESULTS_ABSORBED_SQL = `NOT EXISTS (
                 SELECT 1 FROM partner_result_events pending_event
                   JOIN work_items pending_work ON pending_work.work_id = pending_event.work_id
                   JOIN work_results pending_result ON pending_result.run_id = pending_event.run_id
                     AND pending_result.status = pending_event.status
                  WHERE pending_work.input_id = m.goal_input_id
-                   AND pending_work.status = 'COMPLETED'
+                   AND pending_work.status IN ('COMPLETED', 'FAILED')
                    AND pending_result.is_authoritative = 1
+                   AND pending_result.is_late = 0
+                   AND pending_result.status IN ('COMPLETED', 'FAILED', 'UNKNOWN')
                    AND NOT EXISTS (SELECT 1 FROM joi_goal_result_members pending_member
                                     WHERE pending_member.event_id = pending_event.event_id))`;
 
@@ -188,7 +175,7 @@ function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
       JOIN work_items w ON w.work_id = r.work_id
       LEFT JOIN work_result_verifications v ON v.result_id = r.result_id
      WHERE m.original_input_id = ? AND m.revision <= ?
-     ORDER BY m.revision, m.event_id LIMIT 8`).all(
+     ORDER BY m.revision DESC, m.event_id DESC LIMIT 8`).all(
     goalInputId, numberValue(row, "result_revision"),
   ) as Row[])
     .map((resultRow) => {
@@ -204,7 +191,7 @@ function reviewDigest(connection: DatabaseSync, row: Row): HarnessReviewDigest {
             : "NOT_REQUIRED",
         summary: optionalText(resultRow, "summary") ?? "",
       };
-    });
+    }).reverse();
   return {
     ...(typeof row.review_recovery_epoch === "string" ? { recoveryEpoch: row.review_recovery_epoch } : {}),
     ...(optionalText(row, "outcome_disposition") === "CONTINUE" ? { continuationRequested: true as const } : {}),
@@ -532,7 +519,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                 SELECT 1 FROM joi_turns failed_review
                  WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
               ) OR (${REVIEW_FACTS_COMPLETE_SQL}
-              ) OR (${REVIEW_WASTED_TURN_SQL}
+              ) OR (${REVIEW_INCOMPLETE_TURN_SQL}
               ))
               AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
                                WHERE live_review.input_id = r.input_id
@@ -1035,7 +1022,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
                SELECT 1 FROM joi_turns failed_review
                 WHERE failed_review.input_id = r.input_id AND failed_review.status = 'FAILED'
              ) OR (${REVIEW_FACTS_COMPLETE_SQL}
-             ) OR (${REVIEW_WASTED_TURN_SQL}
+             ) OR (${REVIEW_INCOMPLETE_TURN_SQL}
              ))
              AND NOT EXISTS (SELECT 1 FROM joi_turns live_review
                               WHERE live_review.input_id = r.input_id

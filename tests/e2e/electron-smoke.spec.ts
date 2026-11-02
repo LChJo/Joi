@@ -324,12 +324,20 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-stream-latest.png") });
     const fullGoalTitle = `${"完整目标阅读与复制。".repeat(160)}最后一条要求`;
     let largeMap = false;
+    let joiProgressState: "QUEUED" | "RUNNING" = "QUEUED";
+    const progressStartedAt = new Date(Date.now() - 12 * 60_000).toISOString();
+    const progressUpdatedAt = new Date().toISOString();
     await window.route("**/api/v1/joi/goals/stream-goal/detail?*", route => {
       const offset = Number(new URL(route.request().url()).searchParams.get("offset") ?? 0);
       return route.fulfill({ json: {
       goalId: "stream-goal", fullTitle: fullGoalTitle,
       ...(largeMap && offset + 50 < 167 ? { nextOffset: offset + 50 } : {}),
       harness: {
+        progress: {
+          state: joiProgressState, stage: "REVIEWING", startedAt: progressStartedAt, updatedAt: progressUpdatedAt,
+          turnCount: 16, reviewCount: 8, work: { active: 0, completed: 35, failed: 2, total: 38 },
+          recentTurns: [{ turnId: "joi-review", stage: "REVIEWING", status: joiProgressState === "RUNNING" ? "RUNNING" : "COMPLETED", startedAt: progressStartedAt, updatedAt: progressUpdatedAt }],
+        },
         destination: "交付中英文 README，确保事实可追溯、图片引用有效。", mapStatus: "ACTIVE", revision: largeMap ? 4 : 3, currentLayer: largeMap ? 32 : 3,
         pathCount: largeMap ? 167 : 7, decisionCount: largeMap ? 32 : 1, fogCount: 2,
         paths: Array.from({ length: largeMap ? Math.min(50, 167 - offset) : 7 }, (_, item) => {
@@ -346,6 +354,19 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await expect(map).toBeVisible();
     await expect(map.getByRole("button", { name: "展开路线图" })).toHaveAttribute("aria-expanded", "false");
     await expect(map.getByRole("button", { name: /独立复核/u })).toHaveCount(0);
+    const progressTrigger = map.getByRole("button", { name: "查看 JOI 工作进展" });
+    await progressTrigger.click();
+    const joiProgress = window.getByRole("dialog", { name: "JOI 工作进展", exact: true });
+    await expect(joiProgress.getByText("等待调度", { exact: true })).toBeVisible();
+    await expect(joiProgress.getByText("已运行 16 个回合 · 其中 8 次评审")).toBeVisible();
+    await expect(joiProgress.getByText("回合已结束", { exact: true })).toBeVisible();
+    joiProgressState = "RUNNING";
+    await expect(joiProgress.locator(".joi-progress-state")).toHaveText("正在处理");
+    await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-joi-progress.png") });
+    await joiProgress.getByRole("button", { name: "关闭进展窗口" }).press("Escape");
+    await expect(joiProgress).toHaveCount(0);
+    await expect(progressTrigger).toBeFocused();
+    await expect(window.getByRole("dialog")).toBeVisible();
     await window.locator(".joi-goal-drawer-body").evaluate(element => { element.scrollTop = 0; });
     const title = window.getByRole("button", { name: "长任务执行记录", exact: true });
     await title.hover({ position: { x: 20, y: 5 } });
@@ -395,6 +416,12 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     await window.locator(".joi-goal-drawer-body").evaluate(element => { element.scrollTop = 0; });
     await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-route-map.png") });
     await window.setViewportSize({ height: 900, width: 480 });
+    await progressTrigger.click();
+    await expect(joiProgress).toBeVisible();
+    await expectNoHorizontalOverflow(window);
+    expect(await joiProgress.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-joi-progress-480.png") });
+    await joiProgress.getByRole("button", { name: "关闭进展窗口" }).click();
     const historicalNodes = map.locator(".joi-route-layer").first().locator(".joi-route-nodes");
     expect(await historicalNodes.evaluate(element => getComputedStyle(element).gridTemplateColumns.split(" ").length)).toBe(1);
     const narrowMap = await map.evaluate(element => ({ right: element.getBoundingClientRect().right, client: element.clientWidth, scroll: element.scrollWidth }));
