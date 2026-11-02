@@ -19,6 +19,10 @@ String connectionLabel(RemoteConnectionState state) => switch (state) {
   RemoteConnectionState.unpaired => tr(Msg.mobileNotPaired),
 };
 
+bool homeSyncPending(RemoteViewState state) =>
+    state.connection == RemoteConnectionState.connected &&
+    state.diagnostics.stage == ConnectionStage.feedLoad;
+
 class ConnectionDiagnosticsButton extends StatelessWidget {
   const ConnectionDiagnosticsButton({super.key, required this.controller});
   final RemoteController controller;
@@ -29,14 +33,18 @@ class ConnectionDiagnosticsButton extends StatelessWidget {
       animation: controller,
       builder: (context, _) => IconButton(
         tooltip: tr(Msg.mobileConnectionDiagnosticsValue, {
-          'p0': (connectionLabel(controller.state.connection)).toString(),
+          'p0': homeSyncPending(controller.state)
+              ? stageLabel(ConnectionStage.feedLoad)
+              : connectionLabel(controller.state.connection),
         }),
         icon: Text(
           'i',
           style: TextStyle(
             fontSize: 22,
             fontWeight: FontWeight.w600,
-            color: connectionColor(controller.state.connection),
+            color: homeSyncPending(controller.state)
+                ? Colors.amber
+                : connectionColor(controller.state.connection),
           ),
         ),
         onPressed: () => showDialog<void>(

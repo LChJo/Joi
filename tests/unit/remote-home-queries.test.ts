@@ -62,6 +62,8 @@ describe("remote home queries", () => {
       expect(isRemoteCommand({ kind, requestId: "r", goalId: "g", agentId: "a", inputId: "g", cursor: "c" })).toBe(true);
     }
     expect(isRemoteCommand({ kind: "feed.get", requestId: "r", paged: "yes" })).toBe(false);
+    expect(isRemoteCommand({ kind: "feed.get", requestId: "r", paged: true, preview: true })).toBe(true);
+    expect(isRemoteCommand({ kind: "feed.get", requestId: "r", paged: true, preview: "yes" })).toBe(false);
     expect(isRemoteCommand({ kind: "message.send", requestId: "r", text: "t", idempotencyKey: "k", workbenchId: 42 })).toBe(false);
     expect(isRemoteCommand({ kind: "message.retry", requestId: "r", inputId: "g", text: "x".repeat(8001) })).toBe(false);
     expect(isRemoteCommand({ kind: "message.clarify", requestId: "r", inputId: "g", actionChoice: "DELETE" })).toBe(false);

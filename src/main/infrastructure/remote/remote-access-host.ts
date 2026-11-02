@@ -84,7 +84,8 @@ export function isRemoteCommand(value: unknown): value is RemoteCommand {
   const string = (key: string, max = 160, optional = false) => item[key] === undefined ? optional
     : typeof item[key] === "string" && item[key].length > 0 && item[key].length <= max;
   if (!string("requestId")) return false;
-  if (item.kind === "feed.get") return item.paged === undefined || typeof item.paged === "boolean";
+  if (item.kind === "feed.get") return (item.paged === undefined || typeof item.paged === "boolean")
+    && (item.preview === undefined || typeof item.preview === "boolean");
   if (item.kind === "catalog.get") return true;
   if (item.kind === "workbench.create") return string("inputId") && string("name", 80) && string("personaSummary", 4_000)
     && string("projectLabel", 160) && string("scopeSummary", 1_000) && string("bindInputId", 160, true)

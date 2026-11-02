@@ -4,6 +4,7 @@ import type { WorkbenchRegistryService } from "../joi/workbench-registry-service
 import type { RemoteCommand, RemoteCommandResponse, RemoteReadPage } from "../../../shared/remote.js";
 import { DomainError } from "../../domain/errors.js";
 import { sanitizeAgentConversationText } from "../partners/agent-conversation-presentation.js";
+import type { JoiHomeFeedDto } from "../../../shared/joi.js";
 
 export interface RemoteHomeQueries {
   catalog(): Promise<unknown>;
@@ -21,6 +22,21 @@ function safeProjection(value: unknown): unknown {
   if (Array.isArray(value)) return value.map(safeProjection);
   if (value !== null && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, safeProjection(item)]));
   return value;
+}
+
+/** Feed cards contain previews; complete results and artifacts belong to goal.get. */
+function feedPreview(feed: JoiHomeFeedDto): JoiHomeFeedDto {
+  return { ...feed, goals: feed.goals.map((goal) => {
+    const card = { ...goal };
+    delete card.artifacts;
+    if (card.completionSummary !== undefined && card.completionSummary.length > 400) {
+      let end = 400;
+      const last = card.completionSummary.charCodeAt(end - 1);
+      if (last >= 0xd800 && last <= 0xdbff) end -= 1;
+      card.completionSummary = `${card.completionSummary.slice(0, end)}…`;
+    }
+    return card;
+  }) };
 }
 
 export class RemoteCommandService {
@@ -46,7 +62,7 @@ export class RemoteCommandService {
       if (c.kind === "read.next") return { ...base, result: this.#next(c.cursor, scope) };
       if (c.kind === "feed.get") {
         const feed = await this.dependencies.homeFeed.load();
-        return { ...base, result: c.paged === true ? this.#page(feed, scope) : safeResult(feed) };
+        return { ...base, result: c.paged === true ? this.#page(c.preview === true ? feedPreview(feed) : feed, scope) : safeResult(feed) };
       }
       if (c.kind === "catalog.get" && queries !== undefined) return { ...base, result: this.#page(await queries.catalog(), scope) };
       if (c.kind === "goal.get" && queries !== undefined) return { ...base, result: this.#page(await queries.goal(c.goalId), scope) };

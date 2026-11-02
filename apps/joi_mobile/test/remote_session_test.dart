@@ -2,9 +2,14 @@ import 'dart:async';
 import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:joi_mobile/app.dart';
+import 'package:joi_mobile/connection_diagnostics_view.dart';
+import 'widget_test.dart' show FakeRemoteController;
 import 'package:joi_mobile/iroh_ffi_transport.dart';
 import 'package:joi_mobile/native_remote_controller.dart';
 import 'package:joi_mobile/remote_controller.dart';
+import 'package:joi_mobile/connection_diagnostics.dart';
 
 const credential = PairingCredential(
   deviceId: 'device',
@@ -43,6 +48,9 @@ class Peer implements NativeTransport {
   bool modern = true;
   bool failSend = false;
   bool failFeed = false;
+  String? feedError;
+  Object? feedResult;
+  bool holdFeed = false;
 
   /// Set to make every command come back refused, the way the host answers an operation it will
   /// not perform: an error envelope on the same session, never a dropped connection.
@@ -142,11 +150,15 @@ class Peer implements NativeTransport {
         await RemoteSessionCrypto.decrypt(key!, frame, credential.deviceId)
             as Map<String, dynamic>;
     commands.add(command);
+    if (command['kind'] == 'feed.get' && holdFeed) return;
     if (command['kind'] == 'message.send' && failSend) {
       failSend = false;
       throw StateError('receipt lost');
     }
     Object result = {'goals': [], 'thinking': [], 'unassignedActions': []};
+    if (command['kind'] == 'feed.get' && feedResult != null) {
+      result = feedResult!;
+    }
     if (command['kind'] == 'catalog.get') {
       result = {
         'workbenches': [
@@ -180,7 +192,9 @@ class Peer implements NativeTransport {
     }
     final refusal =
         refuseWith ??
-        (command['kind'] == 'feed.get' && failFeed ? 'failed' : null);
+        (command['kind'] == 'feed.get'
+            ? feedError ?? (failFeed ? 'failed' : null)
+            : null);
     final response = {
       'requestId': command['requestId'],
       'kind': 'response',
@@ -209,6 +223,155 @@ Future<void> settleUntil(bool Function() ready) async {
 }
 
 void main() {
+  testWidgets(
+    'the authenticated session stays amber until the first feed arrives',
+    (tester) async {
+      final controller = FakeRemoteController(
+        const RemoteViewState(
+          connection: RemoteConnectionState.connected,
+          diagnostics: ConnectionDiagnostics(stage: ConnectionStage.feedLoad),
+        ),
+      );
+      try {
+        await tester.pumpWidget(JoiMobileApp(controller: controller));
+        await tester.pump();
+        expect(controller.state.connection, RemoteConnectionState.connected);
+        expect(find.byType(ConnectionProgress), findsOneWidget);
+        expect(tester.widget<Text>(find.text('i')).style?.color, Colors.amber);
+      } finally {
+        controller.dispose();
+        await tester.pumpWidget(const SizedBox());
+        await tester.pump();
+      }
+    },
+  );
+
+  test('modern feeds request bounded previews', () async {
+    final peer = Peer();
+    final controller = NativeRemoteController(
+      credentials: MemoryCredentials(),
+      transport: peer,
+    );
+    try {
+      await controller.initialize();
+      await settleUntil(
+        () => peer.commands.any((c) => c['kind'] == 'feed.get'),
+      );
+      final command = peer.commands.firstWhere((c) => c['kind'] == 'feed.get');
+      expect(command['paged'], isTrue);
+      expect(command['preview'], isTrue);
+    } finally {
+      controller.dispose();
+      await peer.bus.close();
+    }
+  });
+
+  for (final entry in {
+    'remote_cursor_expired': 'feedCursorExpired',
+    'remote_read_busy': 'feedBusy',
+    'remote_read_too_large': 'feedTooLarge',
+    'runtime_worker_closed': 'feedHostUnavailable',
+    'remote_command_failed': 'feedHostFailed',
+    'secret=private /home/private': 'feedRejected',
+  }.entries) {
+    test(
+      'feed refusals classify ${entry.value} without leaking payloads',
+      () async {
+        final peer = Peer()..feedError = entry.key;
+        final controller = NativeRemoteController(
+          credentials: MemoryCredentials(),
+          transport: peer,
+        );
+        try {
+          await controller.initialize();
+          await settleUntil(
+            () => controller.state.diagnostics.lastFailure != null,
+          );
+          expect(
+            controller.state.diagnostics.lastFailure,
+            contains(entry.value),
+          );
+          expect(
+            controller.state.diagnostics.summary,
+            isNot(contains('private')),
+          );
+          expect(controller.state.connection, RemoteConnectionState.connected);
+          expect(controller.state.diagnostics.stage, ConnectionStage.feedLoad);
+        } finally {
+          controller.dispose();
+          await peer.bus.close();
+        }
+      },
+    );
+  }
+
+  test(
+    'invalid feed structures fail instead of erasing the last snapshot',
+    () async {
+      final peer = Peer()
+        ..feedResult = {
+          'goals': [
+            {'goalId': 'cached', 'title': 'Cached goal', 'status': 'COMPLETED'},
+          ],
+        };
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      try {
+        await controller.initialize();
+        await settleUntil(() => controller.state.goals.isNotEmpty);
+        peer.feedResult = {'goals': 'invalid'};
+        await expectLater(controller.refresh(), throwsFormatException);
+        expect(controller.state.goals.single.title, 'Cached goal');
+        expect(
+          controller.state.diagnostics.lastFailure,
+          contains('feedInvalid'),
+        );
+        expect(controller.state.diagnostics.stage, ConnectionStage.feedLoad);
+      } finally {
+        controller.dispose();
+        await peer.bus.close();
+      }
+    },
+  );
+
+  test(
+    'feed failures back off and manual refresh bypasses the delay',
+    () async {
+      final peer = Peer()..feedError = 'remote_read_busy';
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      int feeds() => peer.commands.where((c) => c['kind'] == 'feed.get').length;
+      try {
+        await controller.initialize();
+        await settleUntil(
+          () => controller.state.diagnostics.lastFailure != null,
+        );
+        expect(feeds(), 1);
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+        await settleUntil(() => feeds() == 2);
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+        expect(feeds(), 2);
+        peer.feedError = null;
+        await controller.refresh();
+        expect(feeds(), 3);
+        expect(controller.state.diagnostics.stage, ConnectionStage.ready);
+        controller.setForeground(true);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(feeds(), 3);
+        controller.setForeground(false);
+        await Future<void>.delayed(const Duration(milliseconds: 2100));
+        expect(feeds(), 3);
+      } finally {
+        controller.dispose();
+        await peer.bus.close();
+      }
+    },
+  );
+
   test(
     'native failures retain stage, unknown errors never reach diagnostics',
     () async {
@@ -266,6 +429,36 @@ void main() {
     controller.dispose();
     await peer.bus.close();
   });
+
+  test(
+    'a silent feed times out with a safe cause and can be retried immediately',
+    () async {
+      final peer = Peer()..holdFeed = true;
+      final controller = NativeRemoteController(
+        credentials: MemoryCredentials(),
+        transport: peer,
+      );
+      try {
+        await controller.initialize();
+        await settleUntil(
+          () => peer.commands.any((c) => c['kind'] == 'feed.get'),
+        );
+        await Future<void>.delayed(const Duration(seconds: 21));
+        expect(
+          controller.state.diagnostics.lastFailure,
+          contains('feedTimeout'),
+        );
+        expect(controller.state.connection, RemoteConnectionState.connected);
+        peer.holdFeed = false;
+        await controller.refresh();
+        expect(controller.state.diagnostics.stage, ConnectionStage.ready);
+        expect(controller.state.localizedNotice, isNull);
+      } finally {
+        controller.dispose();
+        await peer.bus.close();
+      }
+    },
+  );
   testWidgets('late native success gets a separate handshake budget', (
     tester,
   ) async {
@@ -561,6 +754,9 @@ void main() {
         );
         await controller.sendMessage('hello');
         expect(controller.state.supportsHome, isFalse);
+        final feed = peer.commands.firstWhere((c) => c['kind'] == 'feed.get');
+        expect(feed.containsKey('preview'), isFalse);
+        expect(feed.containsKey('paged'), isFalse);
         expect(peer.commands.any((c) => c['kind'] == 'catalog.get'), isFalse);
         await expectLater(
           controller.sendMessage('hello', workbenchId: 'b'),

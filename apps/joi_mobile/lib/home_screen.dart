@@ -482,12 +482,14 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                   semanticsLabel: noticeText(notice),
                 ),
               ),
-            if (!ready) ConnectionProgress(controller: widget.controller),
+            if (!ready || homeSyncPending(state))
+              ConnectionProgress(controller: widget.controller),
             Expanded(
               child: RefreshIndicator(
                 onRefresh: () async {
                   try {
                     await widget.controller.refresh();
+                    if (mounted) setState(() => _notice = null);
                     widget.controller.setForeground(true);
                   } catch (_) {
                     if (mounted) {

@@ -282,6 +282,7 @@ class NativeRemoteController extends ChangeNotifier
   bool _disposed = false;
   bool _handshakeSent = false;
   bool _feedLoaded = false;
+  int _feedFailures = 0;
   int _generation = 0;
   Future<void> _inbound = Future.value();
   Future<void> _outbound = Future.value();
@@ -333,6 +334,7 @@ class NativeRemoteController extends ChangeNotifier
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _handshakeTimer?.cancel();
+    _refreshTimer?.cancel();
     _generation += 1;
     for (final pending in _pending.values) {
       if (!pending.isCompleted) {
@@ -349,6 +351,8 @@ class NativeRemoteController extends ChangeNotifier
     _mode = mode;
     _handshakeSent = false;
     _feedLoaded = false;
+    _feedFailures = 0;
+    _refreshing = false;
     _key = null;
     _clientNonce = null;
     _inboundSequence = 0;
@@ -390,36 +394,39 @@ class NativeRemoteController extends ChangeNotifier
       return;
     }
     _refreshing = true;
+    _refreshTimer?.cancel();
     final generation = _generation;
     try {
       final result = await read('feed.get');
       final goals = result['goals'];
-      final cards = <RemoteGoalCard>[];
-      if (goals is List) {
-        for (final item in goals) {
-          if (item is! Map<String, dynamic> ||
-              item['title'] is! String ||
-              item['status'] is! String) {
-            continue;
-          }
-          final thinking = (result['thinking'] as List? ?? [])
-              .whereType<Map<String, dynamic>>()
-              .where((t) => t['goalId'] == item['goalId']);
-          cards.add(
-            RemoteGoalCard.fromJson(
-              item,
-              stage: thinking.firstOrNull?['stage'] as String?,
-            ),
-          );
-        }
+      final thinkingItems = result['thinking'] ?? const [];
+      final actions = result['unassignedActions'] ?? const [];
+      if (goals is! List || thinkingItems is! List || actions is! List) {
+        throw const FormatException('joi_remote_feed_invalid');
       }
-      for (final item
-          in (result['unassignedActions'] as List? ?? [])
-              .whereType<Map<String, dynamic>>()) {
+      final cards = <RemoteGoalCard>[];
+      for (final item in goals) {
+        if (item is! Map<String, dynamic> ||
+            item['title'] is! String ||
+            item['status'] is! String) {
+          throw const FormatException('joi_remote_feed_invalid');
+        }
+        final thinking = thinkingItems.whereType<Map<String, dynamic>>().where(
+          (t) => t['goalId'] == item['goalId'],
+        );
+        cards.add(
+          RemoteGoalCard.fromJson(
+            item,
+            stage: thinking.firstOrNull?['stage'] as String?,
+          ),
+        );
+      }
+      for (final item in actions.whereType<Map<String, dynamic>>()) {
         cards.add(RemoteGoalCard.fromJson(item));
       }
       if (generation == _generation) {
-        if (!_feedLoaded) {
+        _feedFailures = 0;
+        if (!_feedLoaded || _state.diagnostics.stage != ConnectionStage.ready) {
           _feedLoaded = true;
           _record(stage: ConnectionStage.ready);
         }
@@ -433,8 +440,26 @@ class NativeRemoteController extends ChangeNotifier
           ),
         );
       }
+    } catch (error) {
+      if (generation == _generation && !_disposed) {
+        _feedFailures = min(5, _feedFailures + 1);
+        _record(
+          stage: ConnectionStage.feedLoad,
+          code: _feedFailureCode(error),
+          failure: true,
+        );
+        _setState(
+          _state.copyWith(
+            localizedNotice: const UiNotice(Msg.mobileHomeSyncFailedRetrying),
+          ),
+        );
+      }
+      rethrow;
     } finally {
-      _refreshing = false;
+      if (generation == _generation) {
+        _refreshing = false;
+        _scheduleRefresh();
+      }
     }
   }
 
@@ -538,15 +563,64 @@ class NativeRemoteController extends ChangeNotifier
   }
 
   Future<void> _refreshSafely() async {
-    final generation = _generation;
     try {
       await refresh();
     } catch (_) {
-      if (generation == _generation) {
-        _record(code: 'feedFailed', failure: true);
-        _setState(_state.copyWith(notice: '未能刷新，已保留上次内容。下拉重试。'));
-      }
+      // Refresh owns failure reporting; background callbacks do not propagate errors.
     }
+  }
+
+  void _scheduleRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+    if (_disposed ||
+        !_foreground ||
+        _state.connection != RemoteConnectionState.connected) {
+      return;
+    }
+    final seconds = switch (_feedFailures) {
+      0 || 1 => 2,
+      2 => 4,
+      3 => 8,
+      4 => 16,
+      _ => 30,
+    };
+    _refreshTimer = Timer(Duration(seconds: seconds), () {
+      _refreshTimer = null;
+      if (_state.sending) {
+        _scheduleRefresh();
+      } else {
+        unawaited(_refreshSafely());
+      }
+    });
+  }
+
+  String _feedFailureCode(Object error) {
+    if (error is TimeoutException) return 'feedTimeout';
+    if (error is RemoteActionFailure) {
+      return switch (error.code) {
+        'remote_cursor_expired' => 'feedCursorExpired',
+        'remote_read_busy' => 'feedBusy',
+        'remote_read_too_large' => 'feedTooLarge',
+        'runtime_worker_closed' ||
+        'runtime_worker_overloaded' => 'feedHostUnavailable',
+        'remote_command_failed' ||
+        'runtime_worker_command_failed' ||
+        'runtime_worker_response_invalid' => 'feedHostFailed',
+        _ => 'feedRejected',
+      };
+    }
+    if (error is FormatException || error is TypeError) return 'feedInvalid';
+    if (error is StateError) {
+      return switch (error.message) {
+        'remote_read_invalid' => 'feedInvalid',
+        'remote_read_too_large' => 'feedTooLarge',
+        'native_remote_send_failed' ||
+        'native_remote_not_connected' => 'feedSendFailed',
+        _ => 'feedFailed',
+      };
+    }
+    return 'feedFailed';
   }
 
   @override
@@ -564,6 +638,7 @@ class NativeRemoteController extends ChangeNotifier
       'kind': kind,
       'requestId': _requestId('read'),
       if (kind == 'feed.get' && _state.supportsHome) 'paged': true,
+      if (kind == 'feed.get' && _state.supportsHome) 'preview': true,
       'goalId': ?goalId,
       'agentId': ?agentId,
       'cursor': ?cursor,
@@ -717,8 +792,13 @@ class NativeRemoteController extends ChangeNotifier
 
   @override
   void setForeground(bool value) {
+    final resumed = value && !_foreground;
     _foreground = value;
-    if (value && _state.connection == RemoteConnectionState.connected) {
+    if (!value) {
+      _refreshTimer?.cancel();
+      _refreshTimer = null;
+    }
+    if (resumed && _state.connection == RemoteConnectionState.connected) {
       unawaited(_refreshSafely());
       if (_state.supportsHome) unawaited(_loadCatalog());
     }
@@ -920,14 +1000,6 @@ class NativeRemoteController extends ChangeNotifier
           busyGoals: {},
         ),
       );
-      _refreshTimer?.cancel();
-      _refreshTimer = Timer.periodic(const Duration(seconds: 2), (_) {
-        if (_foreground &&
-            _state.connection == RemoteConnectionState.connected &&
-            !_state.sending) {
-          unawaited(_refreshSafely());
-        }
-      });
       _record(stage: ConnectionStage.feedLoad);
       unawaited(_refreshSafely());
       if (_state.supportsHome) unawaited(_loadCatalog());

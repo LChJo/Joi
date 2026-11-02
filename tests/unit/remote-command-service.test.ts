@@ -5,6 +5,61 @@ import { describe, expect, it, vi } from "vitest";
 import { RemoteCommandService } from "../../src/main/application/remote/remote-command-service.js";
 
 describe("RemoteCommandService", () => {
+  it("bounds opt-in feed previews while retaining complete on-demand goal results and legacy reads", async () => {
+    const summary = "x".repeat(399) + "😀" + "中文".repeat(16_000);
+    const artifacts = Array.from({ length: 1_000 }, (_, index) => ({
+      artifactId: `artifact-${String(index)}`, kind: "FILE", mimeType: "text/plain", name: `result-${String(index)}.txt`, size: 100,
+    }));
+    const feed = {
+      goals: Array.from({ length: 44 }, (_, index) => ({
+        goalId: `goal-${String(index)}`, title: "A goal", status: "COMPLETED",
+        ...(index === 43 ? {} : { completionSummary: index === 42 ? "Short 😀" : summary }),
+        ...(index < 27 ? { archivedAt: "2026-11-02T00:00:00Z" } : {}), artifacts,
+        work: { active: 0, completed: 1, failed: 0, total: 1 }, workbench: { workbenchId: "b", name: "Bench" },
+        agentCount: 1, canArchive: true, canDelete: true, updatedAt: "2026-11-02T00:00:00Z",
+      })), thinking: [], unassignedActions: [],
+    };
+    const service = new RemoteCommandService({
+      homeFeed: { load: vi.fn().mockResolvedValue(feed) }, inbox: { accept: vi.fn() },
+      queries: { goal: vi.fn().mockResolvedValue({ goal: feed.goals[0], text: "Original input" }), catalog: vi.fn(), agents: vi.fn(), conversation: vi.fn() },
+    });
+    const read = async (command: Record<string, unknown>) => {
+      let response = await service.handle(command as never, "phone");
+      let body = "";
+      let pages = 0;
+      while (response.result !== undefined) {
+        expect(response.error).toBeUndefined();
+        const page = response.result as { chunk: string; nextCursor?: string };
+        body += page.chunk;
+        pages += 1;
+        if (page.nextCursor === undefined) break;
+        response = await service.handle({ kind: "read.next", requestId: "next", cursor: page.nextCursor }, "phone");
+      }
+      expect(response.error).toBeUndefined();
+      return { body, pages, value: JSON.parse(body) as typeof feed & { goal: typeof feed.goals[number] } };
+    };
+    const preview = await read({ kind: "feed.get", requestId: "preview", paged: true, preview: true });
+    expect(Buffer.byteLength(preview.body)).toBeLessThan(100_000);
+    expect(preview.pages).toBeLessThan(5);
+    expect(preview.value.goals).toHaveLength(44);
+    expect(preview.value.goals.filter((goal) => goal.archivedAt !== undefined)).toHaveLength(27);
+    for (const goal of preview.value.goals) {
+      expect(goal.artifacts).toBeUndefined();
+      expect((goal.completionSummary ?? "").length).toBeLessThanOrEqual(401);
+      if (goal.completionSummary !== undefined) expect(Buffer.from(goal.completionSummary).toString("utf8")).toBe(goal.completionSummary);
+    }
+    expect(preview.value.goals[42]?.completionSummary).toBe("Short 😀");
+    expect(preview.value.goals[43]?.completionSummary).toBeUndefined();
+    const detail = await read({ kind: "goal.get", requestId: "detail", goalId: "goal-0" });
+    expect(detail.value.goal.completionSummary).toBe(summary);
+    expect(detail.value.goal.artifacts).toHaveLength(1_000);
+    const legacy = await service.handle({ kind: "feed.get", requestId: "legacy" });
+    expect(legacy.result).toEqual(feed);
+    const pagedLegacy = await read({ kind: "feed.get", requestId: "paged-legacy", paged: true });
+    expect(pagedLegacy.value).toEqual(feed);
+    expect(feed.goals[0]?.completionSummary).toBe(summary);
+    expect(feed.goals[0]?.artifacts).toHaveLength(1_000);
+  });
   it("forwards a versioned creation to the atomic registry without attaching in a second transaction", async () => {
     const create = vi.fn().mockResolvedValue({ profile: { name: "工程工坊", scopeSummary: "工程维护。" }, updatedAt: "2026-10-15", workbenchId: "created" });
     const attachWorkbench = vi.fn();

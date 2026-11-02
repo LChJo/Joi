@@ -46,7 +46,7 @@ export interface RemoteAccessStatusDto {
 }
 
 export type RemoteCommand =
-  | { kind: "feed.get"; requestId: string; paged?: boolean }
+  | { kind: "feed.get"; requestId: string; paged?: boolean; preview?: boolean }
   | { kind: "catalog.get"; requestId: string }
   | { kind: "goal.get" | "goal.agents"; requestId: string; goalId: string; cursor?: string }
   | { kind: "agent.conversation"; requestId: string; goalId: string; agentId: string; cursor?: string }
