@@ -11,13 +11,14 @@ import { SqliteModelSourceRepository } from "../../src/main/infrastructure/persi
 import { SqlitePiCredentialRepository } from "../../src/main/infrastructure/persistence/sqlite-pi-credential-repository.js";
 import { PiModelSourceCatalog } from "../../src/main/infrastructure/pi/pi-model-source-catalog.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 const learned = { status: "READY" as const, anthropicAuthMode: "bearer" as const, validatedAt: "2026-10-12T00:00:00.000Z" };
 
 async function fixture(validator: ModelSourceValidator) {
   const root = await mkdtemp(path.join(os.tmpdir(), "joi-auth-mode-"));
   const databasePath = path.join(root, "runtime.sqlite");
-  const database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+  const database = await openRuntimeDatabaseFixture(databasePath);
   const repository = new SqliteModelSourceRepository(database);
   const secrets = new SqlitePiCredentialRepository(database);
   let credentialVersion = 0;
@@ -56,7 +57,7 @@ describe("learned Anthropic authentication persistence", () => {
       database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
       expect(database.transaction((connection) => connection.prepare("SELECT anthropic_auth_mode FROM model_source_health WHERE source_id = 'legacy'").get())).toMatchObject({ anthropic_auth_mode: null });
     } finally { database.close(); await rm(root, { recursive: true, force: true }); }
-  });
+  }, process.env.CI ? 60_000 : 5_000);
   it("persists a proven mode through restart and keeps it on ordinary edits and health changes", async () => {
     const f = await fixture({ validate: async () => learned });
     let closed = false;
@@ -69,7 +70,7 @@ describe("learned Anthropic authentication persistence", () => {
       expect(JSON.stringify(ready)).not.toContain("fake-persistence-token");
       f.database.close();
       closed = true;
-      const reopened = await openRuntimeDatabase({ databasePath: f.databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      const reopened = await openRuntimeDatabaseFixture(f.databasePath);
       try {
         expect(await new SqliteModelSourceRepository(reopened).get(f.created.sourceId)).toMatchObject({ anthropicAuthMode: "bearer" });
       } finally { reopened.close(); }

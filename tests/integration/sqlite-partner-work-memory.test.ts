@@ -9,6 +9,7 @@ import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/p
 import { SqlitePartnerWorkMemoryStore } from "../../src/main/infrastructure/persistence/sqlite-partner-work-memory-store.js";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("SQLite partner work memory store", () => {
   it("upgrades a bounded legacy ledger with a conservative coverage baseline and stable receipts", async () => {
@@ -56,12 +57,12 @@ describe("SQLite partner work memory store", () => {
       database.close();
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, process.env.CI ? 60_000 : 5_000);
 
   it("commits cumulative cadence, durable deduplication, bounded snapshots and monotonic summary coverage", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-memory-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    const database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(databasePath);
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
         (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)

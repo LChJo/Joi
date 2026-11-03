@@ -5,12 +5,12 @@ import { vi } from "vitest";
 
 import type { JoiReasoningSessionSnapshot } from "../../src/main/application/ports/primary-reasoning-runtime.js";
 import { SqlitePiReasoningSessionStore } from "../../src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("Pi SQLite session restore", () => {
   it("moves legacy archives out of metadata and only writes changed rows across append, compaction and rollback", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-pi-incremental-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       database.transaction(connection => {
         connection.prepare(`INSERT INTO workbenches
@@ -80,7 +80,7 @@ describe("Pi SQLite session restore", () => {
   it("restores a workbench-scoped message tree and pinned source/model revisions after restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-pi-session-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    let database = await openRuntimeDatabaseFixture(databasePath);
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
         (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, task_summary, status, created_at, updated_at)
@@ -106,7 +106,7 @@ describe("Pi SQLite session restore", () => {
       await new SqlitePiReasoningSessionStore(database).save(snapshot);
       database.close();
 
-      database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      database = await openRuntimeDatabaseFixture(databasePath);
       expect(await new SqlitePiReasoningSessionStore(database).load("session-1")).toEqual(snapshot);
       expect(await new SqlitePiReasoningSessionStore(database).load("missing")).toBeNull();
     } finally {

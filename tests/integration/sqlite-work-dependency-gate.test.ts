@@ -10,14 +10,14 @@ import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/p
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 const NOW = "2026-09-04T10:00:00.000Z";
 
 async function openFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "joi-dependency-gate-"));
-  const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+  const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
   const clock = new TestClock();
   const ids = new TestIds();
   const partners = new PartnerRegistryService({ clock, ids, repository: new SqlitePartnerRegistryRepository(database) });

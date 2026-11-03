@@ -9,13 +9,13 @@ import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/p
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
 import { SqliteWorkbenchAgentScan } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-scan.js";
 import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-context-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("SQLite work plan outbox", () => {
   it("AC-WR-07 supplements a legacy READ failure once across concurrent requests and replay", async () => {
@@ -60,7 +60,7 @@ describe("SQLite work plan outbox", () => {
       await expect(makeService().supplement({ ...request, turnId: "resumed-turn" })).resolves.toEqual(results[0]);
       database.transaction(db => db.prepare("UPDATE work_items SET status='COMPLETED' WHERE work_id=?").run(replacement ?? ""));
       database.close();
-      database = await openRuntimeDatabase({ databasePath: path.join(fixture.root,"runtime.sqlite"),migrationsDirectory: path.resolve("resources/migrations") });
+      database = await openRuntimeDatabaseFixture(path.join(fixture.root,"runtime.sqlite"));
       await expect(makeService().supplement(request)).resolves.toEqual(results[0]);
       await expect(makeService().supplement({ ...request, turnId: "resumed-turn" })).resolves.toEqual(results[0]);
       expect(database.transaction(db => db.prepare("SELECT access_mode FROM work_access_policies WHERE work_id='legacy-read'").get()?.access_mode)).toBe("READ");
@@ -120,7 +120,7 @@ describe("SQLite work plan outbox", () => {
 
   it("commits work, partner revision pins and side-effect outbox atomically", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-plan-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const ids = new TestIds();
@@ -286,7 +286,7 @@ describe("SQLite work plan outbox", () => {
 
   it("lets a harness review turn dispatch on behalf of the original goal but rejects unrelated turns", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-plan-review-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const ids = new TestIds();

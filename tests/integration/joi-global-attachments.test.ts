@@ -5,13 +5,13 @@ import path from "node:path";
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import { JoiAttachmentService } from "../../src/main/infrastructure/artifacts/joi-attachment-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("global joi attachments", () => {
   it("stages before Workbench routing and atomically binds metadata to one durable input", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const ids = new TestIds();
@@ -38,7 +38,7 @@ describe("global joi attachments", () => {
 
   it("reads stored attachment bytes back with verified integrity", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const attachments = new JoiAttachmentService({ clock: new TestClock(), database, ids: new TestIds(), rootDirectory: path.join(root, "artifacts") });
       const uploaded = await attachments.upload({ bytes: new TextEncoder().encode("round trip body"), filename: "notes.md", mimeType: "text/markdown" });
@@ -55,7 +55,7 @@ describe("global joi attachments", () => {
 
   it("rejects reads of missing attachments and tampered files", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const attachments = new JoiAttachmentService({ clock: new TestClock(), database, ids: new TestIds(), rootDirectory: path.join(root, "artifacts") });
       await expect(attachments.read("joi_attachment_missing")).rejects.toMatchObject({ code: "joi_attachment_not_found" });
@@ -70,7 +70,7 @@ describe("global joi attachments", () => {
 
   it("imports a local image file by absolute path and rejects invalid import targets", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const attachments = new JoiAttachmentService({ clock: new TestClock(), database, ids: new TestIds(), rootDirectory: path.join(root, "artifacts") });
       const imagePath = path.join(root, "captures", "terminal-paste.bmp");
@@ -95,7 +95,7 @@ describe("global joi attachments", () => {
 
   it("transcodes bitmap uploads through the injected normalizer and keeps undecodable bytes as-is", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-global-attachment-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const oversizedBitmap = new Uint8Array(10 * 1024 * 1024 + 1);
       oversizedBitmap.set([0x42, 0x4d], 0);

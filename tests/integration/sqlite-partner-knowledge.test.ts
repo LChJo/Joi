@@ -6,14 +6,14 @@ import { PartnerKnowledgeService } from "../../src/main/application/partners/par
 import { PartnerRegistryService } from "../../src/main/application/partners/partner-registry-service.js";
 import { SqlitePartnerKnowledgeStore } from "../../src/main/infrastructure/persistence/sqlite-partner-knowledge-store.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("SQLite partner knowledge store", () => {
   it("persists knowledge docs, copies them between partners and survives restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-knowledge-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    let database = await openRuntimeDatabaseFixture(databasePath);
     try {
       const ids = new TestIds();
       let partners = new PartnerRegistryService({ clock: new TestClock(), ids, repository: new SqlitePartnerRegistryRepository(database) });
@@ -30,7 +30,7 @@ describe("SQLite partner knowledge store", () => {
       expect(injection).toContain("先读后写。");
 
       database.close();
-      database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      database = await openRuntimeDatabaseFixture(databasePath);
       partners = new PartnerRegistryService({ clock: new TestClock(), ids, repository: new SqlitePartnerRegistryRepository(database) });
       store = new SqlitePartnerKnowledgeStore(database);
       knowledge = new PartnerKnowledgeService({ clock: new TestClock(), ids, store });
@@ -56,7 +56,7 @@ describe("SQLite partner knowledge store", () => {
   it("round-trips the new partner config columns through revisions and restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-config-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    let database = await openRuntimeDatabaseFixture(databasePath);
     try {
       const ids = new TestIds();
       let repository = new SqlitePartnerRegistryRepository(database);
@@ -68,7 +68,7 @@ describe("SQLite partner knowledge store", () => {
       expect(created).toMatchObject({ createdBy: "user", description: "工程搭档", engine: "pi-core", modelIdOverride: "kimi-k2.5" });
 
       database.close();
-      database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      database = await openRuntimeDatabaseFixture(databasePath);
       repository = new SqlitePartnerRegistryRepository(database);
       service = new PartnerRegistryService({ clock: new TestClock(), ids, repository });
       const restored = await repository.getActive(created.partnerId);

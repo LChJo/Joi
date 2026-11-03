@@ -9,8 +9,8 @@ import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persis
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 async function questionVersion(repository: SqliteJoiInboxRepository, inputId: string) {
   const question = (await repository.list()).find((item) => item.inputId === inputId);
@@ -160,7 +160,7 @@ describe("sqlite joi inbox clarify", () => {
 
   it("re-queues a clarified input with the chosen Workbench and refuses non-clarification rows", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const repository = new SqliteJoiInboxRepository(database, clock);
@@ -190,7 +190,7 @@ describe("sqlite joi inbox clarify", () => {
 
   it("rejects stale workbench choices and accepts the current question version", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-workbench-stale-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const repository = new SqliteJoiInboxRepository(database, clock);
@@ -220,7 +220,7 @@ describe("sqlite joi inbox clarify", () => {
 
   it("still refuses an answer that does not match the question on screen", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-stale-answer-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const repository = new SqliteJoiInboxRepository(database, clock);
@@ -241,7 +241,7 @@ describe("sqlite joi inbox clarify", () => {
 
   it("inherits the goal's attachments and embeds the goal body when building the resume input", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-resume-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const ids = new TestIds();
@@ -278,7 +278,7 @@ describe("sqlite joi inbox clarify", () => {
 
   it("appends supplementary text to the stored body before re-queuing", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-clarify-text-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const repository = new SqliteJoiInboxRepository(database, clock);
@@ -325,7 +325,7 @@ describe("sqlite joi inbox clarify", () => {
 
   it("atomically applies a partner choice only to the matching clarification reason", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-choice-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const repository = new SqliteJoiInboxRepository(database, clock);
@@ -352,7 +352,7 @@ describe("sqlite joi inbox clarify", () => {
 
   it("persists the question and does not consume an input that is waiting for an answer", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-question-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const repository = new SqliteJoiInboxRepository(database, clock);

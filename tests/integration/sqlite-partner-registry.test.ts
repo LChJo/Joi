@@ -6,6 +6,7 @@ import { PartnerRegistryService } from "../../src/main/application/partners/part
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { latestMigrationVersion, openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 /** Seeds the foreign-key chain a dispatch attempt needs: workbench -> inbox -> turn -> plan -> work. */
 function seedDispatchableWork(database: RuntimeDatabase, partnerRevisionId: string, status: string): void {
@@ -32,7 +33,7 @@ describe("SQLite partner registry", () => {
   it("persists immutable revisions and restores the active revision after restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-partners-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    let database = await openRuntimeDatabaseFixture(databasePath);
     try {
       let service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
       const first = await service.add({ capabilities: ["research"], displayName: "Local Pi", kind: "local-pi", skills: ["web"], tools: ["read"] });
@@ -42,7 +43,7 @@ describe("SQLite partner registry", () => {
       expect((await new SqlitePartnerRegistryRepository(database).getRevision(second.partnerRevisionId))?.status).toBe("ACTIVE");
       database.close();
 
-      database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      database = await openRuntimeDatabaseFixture(databasePath);
       service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
       await expect(service.pinForDispatch(first.partnerId)).rejects.toMatchObject({ code: "partner_not_available" });
       expect(database.transaction((connection) => connection.prepare("SELECT COUNT(*) AS count FROM partner_revisions WHERE partner_id = ?").get(first.partnerId)))
@@ -55,7 +56,7 @@ describe("SQLite partner registry", () => {
 
   it("persists explicit Codex permissions and derives compatibility permissions only for legacy rows", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-codex-permissions-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
       const safe = await service.add({ capabilities: [], displayName: "Safe Codex", engine: "codex", kind: "local-pi", skills: [], tools: [] });
@@ -79,7 +80,7 @@ describe("SQLite partner registry", () => {
 
   it("persists ALL/CUSTOM in execution policy JSON and infers legacy rows without rewriting them", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-tool-policy-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
       const all = await service.add({ capabilities: [], displayName: "All", kind: "local-pi", skills: [], toolPolicyMode: "ALL", tools: ["read"] });
@@ -102,7 +103,7 @@ describe("SQLite partner registry", () => {
 
   it("keeps the directory in creation order across enable, disable and edit", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-order-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const service = new PartnerRegistryService({ clock, ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
@@ -130,7 +131,7 @@ describe("SQLite partner registry", () => {
 
   it("treats an UNKNOWN dispatch attempt as settled so a disabled partner can still be deleted", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-partner-unknown-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const repository = new SqlitePartnerRegistryRepository(database);
       const service = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository });
@@ -184,5 +185,5 @@ describe("SQLite partner registry", () => {
       database.close();
       await rm(root, { force: true, recursive: true });
     }
-  });
+  }, process.env.CI ? 60_000 : 5_000);
 });

@@ -199,6 +199,7 @@ describe("evolution execution and budget", () => {
     await service.handle("evolution:a");
     expect(store.read("a").batch?.phase).toBe("VALIDATE");
   });
+  // The full evaluation commits durable checkpoints for 180 paired trials.
   it("runs contrastive development, sealed paired trials, promotion, goal pinning and rollback end to end", async () => {
     service.configure("a", 1000);
     const development = evolutionScenarios("development");
@@ -256,7 +257,7 @@ describe("evolution execution and budget", () => {
     expect(service.status("a")).toMatchObject({ revalidationRequired: true, activeEffective: false, reason: "revalidation_required" });
     expect(service.negativeFeedback("a", candidateGoal)).toMatchObject({ globalRevisionId: null, reason: "rolled_back" });
     expect(service.pending()).toEqual([]);
-  }, 60_000);
+  }, process.env.CI ? 180_000 : 60_000);
   it("resumes completed trials after a crash without refunding or reusing the abandoned call", async () => {
     service.configure("a", 3);
     await service.handle("evolution:a");

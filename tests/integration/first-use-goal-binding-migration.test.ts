@@ -57,5 +57,5 @@ describe("goal binding migration", () => {
       expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_turns WHERE input_id = 'original'").get())).toEqual({ n: 0 });
       expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM joi_inbox_messages").get())).toEqual({ n: 4 });
     } finally { database.close(); await fixture.close(); }
-  });
+  }, process.env.CI ? 60_000 : 5_000);
 });

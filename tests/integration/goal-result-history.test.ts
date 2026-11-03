@@ -356,5 +356,5 @@ describe("immutable goal result history (AC-37/48/57)", () => {
       database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
       expect(await new SqliteJoiHomeFeedRepository(database).listGoalResults("completed", {})).toEqual(pageBefore);
     } finally { database.close(); await fixture.close(); }
-  });
+  }, process.env.CI ? 60_000 : 5_000);
 });

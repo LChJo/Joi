@@ -6,9 +6,9 @@ import { MessageChannel, Worker } from "node:worker_threads";
 import { WorkerHomeFeedRepository } from "../../src/main/infrastructure/persistence/worker-home-feed-repository";
 import { WorkerRpc } from "../../src/main/infrastructure/runtime/worker-rpc";
 import { DomainError } from "../../src/main/domain/errors";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
 import { compileWorkerFixture } from "../support/compile-worker-fixture";
 import { createGoalEvidenceFixture } from "../support/goal-evidence-fixture";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("runtime Workers (AC-PERF-01)", () => {
   let directory: string;
@@ -54,7 +54,7 @@ describe("runtime Workers (AC-PERF-01)", () => {
 
   it("reads committed WAL snapshots while a writer holds an uncommitted transaction", async () => {
     const databasePath = path.join(directory, "wal.sqlite");
-    const database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(databasePath);
     const writer = new DatabaseSync(databasePath);
     const reader = new WorkerHomeFeedRepository(databasePath, readWorkerUrl);
     try {

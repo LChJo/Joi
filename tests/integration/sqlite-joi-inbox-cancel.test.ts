@@ -7,13 +7,13 @@ import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persiste
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteWorkbenchAttentionReconciler } from "../../src/main/infrastructure/persistence/sqlite-workbench-attention-reconciler.js";
 import { SqliteJoiTaskReader } from "../../src/main/infrastructure/persistence/sqlite-joi-task-reader.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("sqlite joi inbox cancel", () => {
   it("parks scheduler failures without claiming that the user canceled them", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-park-failure-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
@@ -43,7 +43,7 @@ describe("sqlite joi inbox cancel", () => {
 
   it("cancels a clarification input and refuses rows that already left the queue", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-cancel-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
@@ -65,7 +65,7 @@ describe("sqlite joi inbox cancel", () => {
 
   it("cancels a pending input and the service rejects a non-cancelable one", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-cancel-pending-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });

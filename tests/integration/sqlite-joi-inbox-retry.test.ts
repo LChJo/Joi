@@ -6,13 +6,13 @@ import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-servic
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
 import { SqliteJoiHarnessRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-harness-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { createRuntimeFixture, TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("sqlite joi inbox retry", () => {
   it("re-queues a parked goal, clears the failure markers and refuses live rows", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-retry-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });
@@ -42,7 +42,7 @@ describe("sqlite joi inbox retry", () => {
 
   it("appends supplementary text to the stored body when continuing a terminal goal", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-retry-text-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });

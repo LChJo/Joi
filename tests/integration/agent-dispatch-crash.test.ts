@@ -12,9 +12,10 @@ import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/pe
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persistence/sqlite-work-result-repository.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
-import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import type { RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 import type { ActorTickContext } from "../../src/main/application/ports/actor-runtime";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 const NOW = "2026-07-29T10:00:00.000Z";
 
@@ -25,7 +26,7 @@ function ctxAt(offsetMillis: number): ActorTickContext {
 
 async function openFixture() {
   const root = await mkdtemp(path.join(os.tmpdir(), "joi-agent-crash-"));
-  const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+  const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
   const partners = new PartnerRegistryService({ clock: new TestClock(), ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
   const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
   database.transaction((connection) => {
