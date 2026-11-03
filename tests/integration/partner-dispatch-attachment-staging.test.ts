@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/require-await */
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, realpath, rm, stat, symlink, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -20,8 +20,8 @@ import { TestClock, TestIds } from "../support/runtime-fixture.js";
 
 const NOW = "2026-07-29T10:00:00.000Z";
 
-async function openFixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "joi-attachment-staging-"));
+async function openFixture(temporaryRoot = os.tmpdir()) {
+  const root = await realpath(await mkdtemp(path.join(temporaryRoot, "joi-attachment-staging-")));
   const workspaceDir = path.join(root, "workspace");
   await mkdir(workspaceDir, { recursive: true });
   const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
@@ -103,6 +103,26 @@ function outboxRecord(outboxId: string, dispatchAttemptId: string, workId: strin
 }
 
 describe("partner dispatch attachment staging", () => {
+  it("uses canonical input paths when the temporary parent is an alias", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "joi-attachment-alias-"));
+    const physical = path.join(parent, "physical");
+    const alias = path.join(parent, "alias");
+    await mkdir(physical);
+    await symlink(physical, alias, process.platform === "win32" ? "junction" : "dir");
+    let fixture: Awaited<ReturnType<typeof openFixture>> | undefined;
+    try {
+      fixture = await openFixture(alias);
+      const spy = { calls: [] as unknown[] };
+      await makeDelivery(fixture, spy).handle(outboxRecord("outbox_1", "attempt_1", "work_1"));
+      const stagedPath = path.join(fixture.root, "inputs", "work_1", "joi-attachments", fixture.uploaded.attachmentId, "screen.png");
+      expect(stagedPath).toBe(await realpath(stagedPath));
+      expect((spy.calls[0] as { request: { taskProjection: string } }).request.taskProjection).toContain(stagedPath);
+    } finally {
+      fixture?.database.close();
+      await rm(parent, { force: true, recursive: true });
+    }
+  });
+
   it("AC-53 measures workspace waiting independently from model execution", async () => {
     const fixture = await openFixture();
     try {

@@ -80,7 +80,8 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
 
   create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[] {
     const needsWorkspace = names.some((name) => !(PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name));
-    const canonical = needsWorkspace ? realpathSync(cwd) : cwd;
+    // Native resolution expands Windows short names to match asynchronous filesystem checks.
+    const canonical = needsWorkspace ? realpathSync.native(cwd) : cwd;
     if (needsWorkspace && !statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");
     return [...new Set(names)].map((name) => {
       if (name === "bash") return createBashTool(canonical, {

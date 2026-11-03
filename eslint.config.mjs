@@ -11,7 +11,11 @@ export default tseslint.config(
       // delegated task can work in isolation. Linting them reports another branch's in-progress
       // state against this checkout's rules, which is noise on every run.
       ".claude/worktrees/**",
+      ".codux/worktrees/**",
+      ".cache/**",
       "coverage/**",
+      "native/**/target/**",
+      "apps/joi_mobile/.dart_tool/**",
       "apps/joi_mobile/build/**",
       "dist/**",
       "node_modules/**",

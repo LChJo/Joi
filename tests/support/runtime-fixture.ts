@@ -1,6 +1,7 @@
-import { mkdtemp, realpath, rm } from "node:fs/promises";
+import { copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { inject } from "vitest";
 
 import { AgentService } from "../../src/main/application/agents/agent-service";
 import { AuthService } from "../../src/main/application/auth/auth-service";
@@ -89,8 +90,10 @@ export interface RuntimeFixture {
 
 export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "joi-runtime-")));
+  const databasePath = path.join(root, "runtime.sqlite");
+  await copyFile(inject("runtimeDatabaseTemplate"), databasePath);
   const database = await openRuntimeDatabase({
-    databasePath: path.join(root, "runtime.sqlite"),
+    databasePath,
     migrationsDirectory: path.resolve("resources/migrations"),
   });
   const clock = new TestClock();
