@@ -12,14 +12,16 @@ vi.setConfig({ testTimeout: 30_000 });
 describe("Pi coding tool workspace scope", () => {
   it.skipIf(process.platform !== "win32")("allows writes through a Windows short workspace alias", async () => {
     const root = mkdtempSync(join(tmpdir(), "joi-pi-short-workspace-"));
+    const workspace = join(root, "workspace-with-long-name");
+    mkdirSync(workspace);
     try {
       const alias = execFileSync("cmd.exe", ["/d", "/c", "for %I in (.) do @echo %~sI"], {
-        cwd: root, encoding: "utf8",
+        cwd: workspace, encoding: "utf8",
       }).trim();
       const [write] = new BuiltinPiCodingToolFactory().create(alias, ["write"]);
       if (write === undefined) throw new Error("write tool missing");
       await write.execute("call-short-path", { content: "inside", path: join(alias, "marker.txt") });
-      expect(readFileSync(join(realpathSync.native(root), "marker.txt"), "utf8")).toBe("inside");
+      expect(readFileSync(join(realpathSync.native(workspace), "marker.txt"), "utf8")).toBe("inside");
       await expect(write.execute("call-short-escape", { content: "outside", path: "../escaped.txt" }))
         .rejects.toThrow(/outside the assigned workspace/u);
     } finally {
