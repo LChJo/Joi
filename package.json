@@ -17,7 +17,7 @@
     "assets:icons": "electron scripts/render-app-icon.cjs",
     "clean": "node scripts/clean-artifacts.mjs",
     "typecheck": "tsc -b tsconfig.json",
-    "lint": "eslint . --max-warnings 0",
+    "lint": "node --max-old-space-size=4096 node_modules/eslint/bin/eslint.js . --max-warnings 0",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "test:renderer": "vitest run tests/renderer",
