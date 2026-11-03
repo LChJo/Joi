@@ -9,7 +9,7 @@ import type { StagedAttachment } from "../../src/main/application/ports/partner-
 import { SqlitePartnerDispatchDelivery } from "../../src/main/infrastructure/a2a/partner-dispatch-delivery-adapter.js";
 import { JoiAttachmentService } from "../../src/main/infrastructure/artifacts/joi-attachment-service.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteWorkbenchAgentRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-agent-repository.js";
 import { SqliteWorkbenchContextRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-context-repository.js";
@@ -24,7 +24,7 @@ async function openFixture(temporaryRoot = os.tmpdir()) {
   const root = await realpath(await mkdtemp(path.join(temporaryRoot, "joi-attachment-staging-")));
   const workspaceDir = path.join(root, "workspace");
   await mkdir(workspaceDir, { recursive: true });
-  const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+  const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
   const clock = new TestClock();
   const ids = new TestIds();
   const attachments = new JoiAttachmentService({ clock, database, ids, rootDirectory: path.join(root, "artifacts") });

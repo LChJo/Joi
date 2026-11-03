@@ -3,8 +3,27 @@ import os from "node:os";
 import path from "node:path";
 
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture";
 
 describe("runtime fixture directory identity", () => {
+  it("preserves committed fixture state when the database is reopened", async () => {
+    const fixture = await createRuntimeFixture();
+    let reopened: Awaited<ReturnType<typeof openRuntimeDatabaseFixture>> | undefined;
+    try {
+      fixture.database.transaction((connection) => {
+        connection.exec("CREATE TABLE fixture_state (value TEXT)");
+        connection.prepare("INSERT INTO fixture_state VALUES (?)").run("committed");
+      });
+      fixture.database.close();
+      reopened = await openRuntimeDatabaseFixture(path.join(fixture.root, "runtime.sqlite"));
+      expect(reopened.transaction((connection) => connection.prepare("SELECT value FROM fixture_state").get()))
+        .toEqual({ value: "committed" });
+    } finally {
+      reopened?.close();
+      await fixture.close();
+    }
+  });
+
   it("keeps migrated database copies independent with production SQLite settings", async () => {
     const first = await createRuntimeFixture();
     let second: RuntimeFixture | undefined;

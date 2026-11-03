@@ -28,6 +28,9 @@ async function copyMigrationsThrough(destination: string, maximumVersion: number
   }
 }
 
+// Schema upgrade cases run real migrations, including their durable commits.
+vi.setConfig({ testTimeout: process.env.CI ? 60_000 : 5_000 });
+
 describe("JOI-01 non-destructive migration", () => {
   it("moves an unresolved derived question onto its original goal and creates a versioned gate", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-goal-gate-upgrade-"));
