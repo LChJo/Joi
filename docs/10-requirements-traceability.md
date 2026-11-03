@@ -1,5 +1,7 @@
 # README 实现追踪矩阵
 
+M0 Windows/macOS 可重复构建与打包：原生 Cargo 查找覆盖显式路径、`CARGO_HOME`、默认 rustup 目录及系统 `PATH`，不依赖 runner 预装位置；对应 `tests/contract/native-build-toolchain.test.ts`，双平台 CI 显式安装 Rust 并执行完整构建、E2E 和打包门禁。
+
 ## 2026-10-23 自主进化 v2 验收追踪
 
 | 验收 | 关键行为及反例 | 对应测试 |

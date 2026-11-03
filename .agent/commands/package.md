@@ -4,6 +4,8 @@
 
 ## 桌面端
 
+生产构建需要 Rust stable 与 Cargo。原生构建依次查找 `CARGO` 指定的可执行文件、`CARGO_HOME/bin`、用户目录的 `.cargo/bin` 和系统 `PATH`；CI 在 Windows/macOS 上显式安装 Rust 工具链。
+
 ```powershell
 # 根据当前平台选择安装包目标
 npm run package
