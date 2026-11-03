@@ -135,7 +135,9 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     const window = await application.firstWindow({ timeout: 60_000 });
     await setDesktopTestLocale(window, "zh-CN");
     await expect(window).toHaveTitle("joi");
-    expect(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMenuBarVisible())).toBe(false);
+    if (process.platform === "win32" || process.platform === "linux") {
+      expect(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMenuBarVisible())).toBe(false);
+    }
     await expect(window.getByRole("heading", { name: "先帮 joi 设个密码。" })).toBeVisible();
     await window.getByLabel("管理密码").fill("correct horse battery staple");
     await window.getByLabel("确认密码").fill("correct horse battery staple");
