@@ -227,7 +227,7 @@ AC-60 补充：首次打开执行记录时，外层长任务抽屉也定位到�
 | E2E-07 context 过期 | bounded context rebuild integration | 真实远端清理 |
 | E2E-08 预算与安静时段 | budget/quiet/alarm/idle tests | 真实跨夜 |
 | E2E-09 LAN 控制面 | dual listener/auth/SSE/HTTP contract | 第二台 LAN 浏览器与 DevTools |
-| E2E-10 备份恢复 | online backup/hash/quarantine/session/token/unknown integration | 干净机器恢复 |
+| E2E-10 备份恢复 | online backup/hash/quarantine/session/token/unknown integration；`backup-restore.test.ts` 验证排他复制使用全新产物目录、缺失产物形成空快照、失败不发布 | 干净机器恢复 |
 | E2E-11 Endpoint 退避与审计 | shared breaker、Retry-After、activity projection tests | 真实网络抖动与 Agent |
 
 ## 当前发布 concerns

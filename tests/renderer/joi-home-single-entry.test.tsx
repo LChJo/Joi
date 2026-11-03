@@ -2188,9 +2188,8 @@ describe("joi home single entry", () => {
     expect(archivedCard).not.toBeNull();
     expect(archivedCard?.querySelector(".joi-goal-progress")).toBeNull();
     expect(archivedCard?.querySelector(".joi-goal-result-preview")).toBeNull();
-    // Compared through the same formatter the component uses: the rendered date is locale-dependent,
-    // so a literal would pin the assertion to whatever ICU the machine running it happens to have.
-    expect(archivedCard?.querySelector(".joi-goal-copy i")?.textContent).toBe(`${new Date("2026-10-09T09:00:00.000Z").toLocaleString()} 归档`);
+    // Archived timestamps follow the UI locale independently of the host locale.
+    expect(archivedCard?.querySelector(".joi-goal-copy i")?.textContent).toBe(`${new Date("2026-10-09T09:00:00.000Z").toLocaleString("zh-CN")} 归档`);
     openGoalMenuItem("收起来的目标", "取消归档");
     await waitFor(() => expect(unarchive).toHaveBeenCalledWith("goal-archive"));
   });

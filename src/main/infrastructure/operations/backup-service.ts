@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { copyFile, cp, mkdir, readdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
+import { copyFile, cp, lstat, mkdir, readdir, readFile, rename, rm, stat, statfs, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -134,11 +134,16 @@ export class BackupService {
         sanitizedDatabase.close();
       }
       const artifactTarget = path.join(temporary, "artifacts");
-      await mkdir(artifactTarget, { recursive: true });
-      await cp(this.dependencies.artifactsDirectory, artifactTarget, { recursive: true, force: false, errorOnExist: true }).catch((error: unknown) => {
+      try {
+        if (!(await lstat(this.dependencies.artifactsDirectory)).isDirectory()) {
+          throw new Error("Backup artifact storage must be a directory.");
+        }
+        await cp(this.dependencies.artifactsDirectory, artifactTarget, { recursive: true, force: false, errorOnExist: true });
+      } catch (error) {
         const code = error !== null && typeof error === "object" && "code" in error ? error.code : undefined;
         if (code !== "ENOENT") throw error;
-      });
+        await mkdir(artifactTarget, { recursive: true });
+      }
       const database = await stat(databasePath);
       const artifactFiles = await filesBelow(artifactTarget);
       const base: Omit<BackupManifest, "manifestHash"> = {

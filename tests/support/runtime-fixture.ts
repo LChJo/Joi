@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
@@ -88,7 +88,7 @@ export interface RuntimeFixture {
 }
 
 export async function createRuntimeFixture(): Promise<RuntimeFixture> {
-  const root = await mkdtemp(path.join(os.tmpdir(), "joi-runtime-"));
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "joi-runtime-")));
   const database = await openRuntimeDatabase({
     databasePath: path.join(root, "runtime.sqlite"),
     migrationsDirectory: path.resolve("resources/migrations"),
