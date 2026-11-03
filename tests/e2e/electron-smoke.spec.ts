@@ -121,7 +121,8 @@ async function expectStableSidebar(page: Page): Promise<void> {
 }
 
 test("Electron completes setup, native workbench creation, and responsive joi-console paths", async () => {
-  test.setTimeout(60_000);
+  // A cold desktop run initializes the durable schema before opening its first window.
+  test.setTimeout(120_000);
   const skillsRoot = await mkdtemp(path.join(tmpdir(), "joi-e2e-skills-"));
   await mkdir(path.join(skillsRoot, "example"));
   await writeFile(path.join(skillsRoot, "example", "SKILL.md"), "---\nname: example\ndescription: Disposable skill for main Joi settings.\n---\nUse the test workflow.\n");
@@ -131,7 +132,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
   } });
 
   try {
-    const window = await application.firstWindow();
+    const window = await application.firstWindow({ timeout: 60_000 });
     await setDesktopTestLocale(window, "zh-CN");
     await expect(window).toHaveTitle("joi");
     expect(await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isMenuBarVisible())).toBe(false);

@@ -1,7 +1,13 @@
 import type { Page } from "@playwright/test";
 
+/** The renderer owns startup authentication before a test establishes its own session. */
+export async function waitForDesktopTestReady(page: Page): Promise<void> {
+  await page.locator(".setup-layout, .access-layout, .console-main").first().waitFor({ state: "visible" });
+}
+
 /** Existing scenarios choose their fixture language independently of the host OS. */
 export async function setDesktopTestLocale(page: Page, uiLocale: "en" | "zh-CN"): Promise<void> {
+  await waitForDesktopTestReady(page);
   await page.evaluate(async (locale) => {
     const bridge = window.digitalLifeDesktop;
     if (bridge === undefined) throw new Error("Expected the disposable desktop bridge");
