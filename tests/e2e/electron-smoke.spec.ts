@@ -321,10 +321,6 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     feedUnavailable = false;
     await window.getByRole("button", { name: "重新加载任务状态" }).click();
     await expect(window.getByText("任务状态暂时无法刷新，已保留上次成功获取的数据。")).toHaveCount(0);
-    await window.getByText("长任务执行记录", { exact: true }).click();
-    const goalStream = window.getByRole("log", { name: "Agent 执行记录" });
-    await expect(goalStream.getByText("执行记录 126", { exact: true })).toBeInViewport();
-    await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-stream-latest.png") });
     const fullGoalTitle = `${"完整目标阅读与复制。".repeat(160)}最后一条要求`;
     let largeMap = false;
     let joiProgressState: "QUEUED" | "RUNNING" = "QUEUED";
@@ -353,6 +349,10 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
         fog: [{ fogId: "active", note: "真实运行截图是否可行", status: "ACTIVE" }, { fogId: "promoted", note: "补齐配图资产", status: "GRADUATED", graduatedPathId: "map-path-1" }].slice(offset, offset + 50),
       },
     } }); });
+    await window.getByText("长任务执行记录", { exact: true }).click();
+    const goalStream = window.getByRole("log", { name: "Agent 执行记录" });
+    await expect(goalStream.getByText("执行记录 126", { exact: true })).toBeInViewport();
+    await window.screenshot({ animations: "disabled", path: path.resolve("test-results/e2e-goal-stream-latest.png") });
     const map = window.getByRole("region", { name: "目标路线图" });
     await expect(map).toBeVisible();
     await expect(map.getByRole("button", { name: "展开路线图" })).toHaveAttribute("aria-expanded", "false");
