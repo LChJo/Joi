@@ -21,8 +21,8 @@ jobs:
       - run: npm run i18n:check
       - run: npm run typecheck
       - run: npm run lint
-      - run: npm run test
-      - run: npm run test:coverage
+      - name: Unit, integration, and renderer tests with coverage
+        run: npm run test:coverage
       - run: npm run test:e2e
       - run: npm run package:verify
       - run: npm run package:dir
