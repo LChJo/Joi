@@ -21,9 +21,12 @@ jobs:
       - run: npm run i18n:check
       - run: npm run typecheck
       - run: npm run lint
+      - name: Build production desktop
+        run: node scripts/ci-build.mjs
       - name: Unit, integration, and renderer tests with coverage
         run: npm run test:coverage
-      - run: npm run test:e2e
+      - name: Electron E2E
+        run: npx playwright test
       - run: npm run package:verify
       - run: npm run package:dir
         env:
