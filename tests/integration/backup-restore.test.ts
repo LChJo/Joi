@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -7,6 +7,63 @@ import { latestMigrationVersion, openRuntimeDatabase } from "../../src/main/infr
 import { createRuntimeFixture } from "../support/runtime-fixture";
 
 describe("consistent backup and quarantine restore", () => {
+  it("publishes an empty artifact snapshot when the artifact store is absent", async () => {
+    const fixture = await createRuntimeFixture();
+    const backupsDirectory = path.join(fixture.root, "backups");
+    try {
+      const service = new BackupService({
+        appVersion: "0.1.0", artifactsDirectory: path.join(fixture.root, "missing-artifacts"),
+        backupsDirectory, clock: fixture.clock, database: fixture.database, userDataDirectory: fixture.root,
+      });
+      const backup = await service.create();
+      const snapshot = path.join(backupsDirectory, backup.backupId);
+      const manifest: unknown = JSON.parse(await readFile(path.join(snapshot, "manifest.json"), "utf8"));
+      expect(manifest).toMatchObject({ artifacts: { count: 0, files: [], totalBytes: 0 } });
+      expect(await readdir(path.join(snapshot, "artifacts"))).toEqual([]);
+      expect(await service.list()).toHaveLength(1);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("cleans an unpublished snapshot when the artifact store is not a directory", async () => {
+    const fixture = await createRuntimeFixture();
+    const artifactsDirectory = path.join(fixture.root, "artifacts");
+    const backupsDirectory = path.join(fixture.root, "backups");
+    try {
+      await writeFile(artifactsDirectory, "not a directory");
+      const service = new BackupService({
+        appVersion: "0.1.0", artifactsDirectory, backupsDirectory,
+        clock: fixture.clock, database: fixture.database, userDataDirectory: fixture.root,
+      });
+      await expect(service.create()).rejects.toBeInstanceOf(Error);
+      expect(await readdir(backupsDirectory)).toEqual([]);
+    } finally {
+      await fixture.close();
+    }
+  });
+
+  it("rejects a linked artifact store without publishing a snapshot", async () => {
+    const fixture = await createRuntimeFixture();
+    const artifactsDirectory = path.join(fixture.root, "artifacts");
+    const target = path.join(fixture.root, "linked-artifacts");
+    const backupsDirectory = path.join(fixture.root, "backups");
+    try {
+      await mkdir(target);
+      await writeFile(path.join(target, "result.txt"), "artifact");
+      await symlink(target, artifactsDirectory, process.platform === "win32" ? "junction" : "dir");
+      const service = new BackupService({
+        appVersion: "0.1.0", artifactsDirectory, backupsDirectory,
+        clock: fixture.clock, database: fixture.database, userDataDirectory: fixture.root,
+      });
+      await expect(service.create()).rejects.toThrow("Backup artifact storage must be a directory.");
+      expect(await readdir(backupsDirectory)).toEqual([]);
+      expect(await readFile(path.join(target, "result.txt"), "utf8")).toBe("artifact");
+    } finally {
+      await fixture.close();
+    }
+  });
+
   it("publishes a verified snapshot and restores it without replaying ambiguous work", async () => {
     const fixture = await createRuntimeFixture();
     const artifactsDirectory = path.join(fixture.root, "artifacts");
