@@ -1,19 +1,11 @@
-import { access, copyFile, mkdir, readdir, rm } from "node:fs/promises";
-import os from "node:os";
+import { copyFile, mkdir, readdir, rm } from "node:fs/promises";
 import path from "node:path";
 import { spawn } from "node:child_process";
+import { resolveCargo } from "./cargo-path.mjs";
 
 const projectRoot = path.resolve(".");
 const crateRoot = path.join(projectRoot, "native", "joi-remote");
 const android = process.argv.includes("--android");
-
-async function firstExisting(candidates) {
-  for (const candidate of candidates) {
-    if (!candidate) continue;
-    try { await access(candidate); return candidate; } catch { /* Try the next candidate. */ }
-  }
-  return undefined;
-}
 
 function run(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -26,11 +18,7 @@ function run(command, args, options = {}) {
   });
 }
 
-const cargoName = process.platform === "win32" ? "cargo.exe" : "cargo";
-const cargo = await firstExisting([
-  process.env.CARGO,
-  path.join(os.homedir(), ".cargo", "bin", cargoName),
-]);
+const cargo = await resolveCargo();
 if (cargo === undefined) throw new Error("Rust Cargo is required to build Joi native remote support.");
 
 if (!android) {
