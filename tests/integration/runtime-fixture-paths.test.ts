@@ -5,6 +5,25 @@ import path from "node:path";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
 
 describe("runtime fixture directory identity", () => {
+  it("keeps migrated database copies independent with production SQLite settings", async () => {
+    const first = await createRuntimeFixture();
+    let second: RuntimeFixture | undefined;
+    try {
+      first.database.transaction((connection) => connection.exec("CREATE TABLE fixture_private (value TEXT)"));
+      second = await createRuntimeFixture();
+      expect(second.database.inspect()).toEqual(first.database.inspect());
+      expect(second.database.inspect()).toMatchObject({ foreignKeys: true, journalMode: "wal", mode: "read-write" });
+      expect(second.database.transaction((connection) => connection.prepare(
+        "SELECT name FROM sqlite_master WHERE name = 'fixture_private'",
+      ).get())).toBeUndefined();
+      expect(second.database.transaction((connection) => connection.prepare("PRAGMA synchronous").get()))
+        .toEqual(first.database.transaction((connection) => connection.prepare("PRAGMA synchronous").get()));
+    } finally {
+      await second?.close();
+      await first.close();
+    }
+  });
+
   it("resolves temporary directory aliases before exposing workspace roots", async () => {
     const parent = await mkdtemp(path.join(os.tmpdir(), "joi-fixture-identity-"));
     const physical = path.join(parent, "physical");

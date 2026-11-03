@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -9,6 +10,23 @@ import { BuiltinPiCodingToolFactory } from "../../src/main/infrastructure/pi/pi-
 vi.setConfig({ testTimeout: 30_000 });
 
 describe("Pi coding tool workspace scope", () => {
+  it.skipIf(process.platform !== "win32")("allows writes through a Windows short workspace alias", async () => {
+    const root = mkdtempSync(join(tmpdir(), "joi-pi-short-workspace-"));
+    try {
+      const alias = execFileSync("cmd.exe", ["/d", "/c", "for %I in (.) do @echo %~sI"], {
+        cwd: root, encoding: "utf8",
+      }).trim();
+      const [write] = new BuiltinPiCodingToolFactory().create(alias, ["write"]);
+      if (write === undefined) throw new Error("write tool missing");
+      await write.execute("call-short-path", { content: "inside", path: join(alias, "marker.txt") });
+      expect(readFileSync(join(realpathSync.native(root), "marker.txt"), "utf8")).toBe("inside");
+      await expect(write.execute("call-short-escape", { content: "outside", path: "../escaped.txt" }))
+        .rejects.toThrow(/outside the assigned workspace/u);
+    } finally {
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
   it("passes a broad non-secret baseline but rejects unknown environment variables", async () => {
     const root = mkdtempSync(join(tmpdir(), "joi-pi-env-scope-"));
     const previousHome = process.env.HOME;

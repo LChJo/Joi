@@ -1874,13 +1874,18 @@ describe("SqliteJoiHarnessRepository", () => {
       await repository.createMap({ workbenchId: "workbench-goal-dedup", goalInputId: "goal-dedup", now: NOW });
       await repository.nameDestination({ destination: "目的地", goalInputId: "goal-dedup", turnId: "turn-goal-dedup" });
       await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 1, title: "同一路径" }, turnId: "turn-goal-dedup" });
-      await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 2, title: "同一路径" }, turnId: "turn-goal-dedup" });
-      await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 2, title: "另一条" }, turnId: "turn-goal-dedup" });
+      const deepest = await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 2, title: "同一路径" }, turnId: "turn-goal-dedup" });
+      const other = await repository.chartPath({ goalInputId: "goal-dedup", open: { layer: 2, title: "另一条" }, turnId: "turn-goal-dedup" });
+      fixture.database.transaction((connection) => {
+        connection.prepare("UPDATE joi_harness_paths SET created_at = ? WHERE goal_input_id = ?").run(NOW, "goal-dedup");
+        connection.prepare("UPDATE joi_harness_paths SET path_id = 'z-deepest' WHERE path_id = ?").run(deepest.pathId);
+        connection.prepare("UPDATE joi_harness_paths SET path_id = 'a-other' WHERE path_id = ?").run(other.pathId);
+      });
       const projection = (await repository.loadGoalProjections()).find((candidate) => candidate.goalInputId === "goal-dedup");
       if (projection === undefined) throw new Error("projection missing");
-      expect(projection.topPaths.map((topPath) => ({ status: topPath.status, title: topPath.title }))).toEqual([
-        { status: "OPEN", title: "另一条" },
-        { status: "OPEN", title: "同一路径" },
+      expect(projection.topPaths).toEqual([
+        { pathId: "z-deepest", status: "OPEN", title: "同一路径" },
+        { pathId: "a-other", status: "OPEN", title: "另一条" },
       ]);
     });
   });
