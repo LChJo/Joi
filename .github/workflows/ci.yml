@@ -19,6 +19,11 @@ jobs:
           cache: npm
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
+      - name: Cache native build dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: native/joi-remote -> target
+          cache-on-failure: "true"
       - run: npm ci
       - run: npm run i18n:check
       - run: npm run typecheck

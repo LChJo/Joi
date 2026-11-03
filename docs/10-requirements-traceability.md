@@ -2,6 +2,8 @@
 
 M0 Windows/macOS 可重复构建与打包：原生 Cargo 查找覆盖显式路径、`CARGO_HOME`、默认 rustup 目录及系统 `PATH`，不依赖 runner 预装位置；对应 `tests/contract/native-build-toolchain.test.ts`，双平台 CI 显式安装 Rust 并执行完整构建、E2E 和打包门禁。
 
+桌面原生菜单（`docs/02-ux-specification.md`）：`electron-smoke.spec.ts` 在 Windows/Linux 断言窗口菜单栏隐藏；`isMenuBarVisible()` 不适用于 macOS，macOS 继续执行同一完整设置、工作台与响应式交互流程。
+
 测试隔离与持久化验证：功能测试通过 `runtime-database-fixture.ts` 复制独立的当前空 schema，保留 WAL、FULL 同步、重开数据和全部业务断言；升级与恢复测试仍运行真实迁移，完整旧库升级场景在 CI 使用 60 秒预算。`sqlite-work-dependency-gate.test.ts` 覆盖依赖、取消级联与派发门禁；`evolution-service.test.ts` 完整执行 180 次成对评测及持久检查点，CI 为该完整流程提供 180 秒预算。
 
 ## 2026-10-23 自主进化 v2 验收追踪
