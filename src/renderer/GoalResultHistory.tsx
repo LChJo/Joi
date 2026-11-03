@@ -1,22 +1,11 @@
-import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { ArrowLeftIcon, ArrowUpRightIcon } from "@phosphor-icons/react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown } from "./SafeMarkdown";
 import type { JoiGoalCardDto } from "../shared/joi";
 import type { GoalResultDto, GoalResultSummaryDto } from "../shared/goal-results";
 import type { DigitalLifeApi } from "./api";
 import { ResultExportMenu } from "./ResultExportMenu";
 import { currentLocale, t, useI18n } from "./i18n";
-
-const MARKDOWN_COMPONENTS: Components = {
-  a: ({ href, children }) => href !== undefined && /^https?:\/\//iu.test(href) ? <a href={href} rel="noreferrer" target="_blank">{children}</a> : <span>{children}</span>,
-  img: ({ alt }) => <span className="agent-remote-image">{t("home.image")}{alt === undefined ? "" : `：${alt}`}]</span>,
-};
-const MARKDOWN_PLUGINS = [remarkGfm];
-const HistoryMarkdown = memo(function HistoryMarkdown({ body }: { body: string }) {
-  useI18n();
-  return <ReactMarkdown components={MARKDOWN_COMPONENTS} remarkPlugins={MARKDOWN_PLUGINS} skipHtml>{body}</ReactMarkdown>;
-});
 
 function statusLabel(status: GoalResultSummaryDto["status"]) {
   return status === "COMPLETED_WITH_GAPS" ? t("home.completedWithGaps") : t("status.completed");
@@ -120,7 +109,7 @@ export function GoalResultHistory({ api, goal, onClose, lockPage = true }: { api
       </div> : <div className="joi-goal-drawer-body" aria-busy={readerBusy}>
         {readerBusy ? <p className="content-state" role="status">{t("home.loading")}</p> : null}
         {readerFailed ? <p className="joi-detail-load-notice" role="alert">{t("home.historyLoadFailed")} <button className="button ghost" onClick={() => void read(selected)} type="button">{t("common.retry")}</button></p> : null}
-        {result === null ? null : <article className="joi-goal-result"><div className="joi-md"><HistoryMarkdown body={result.body} /></div></article>}
+        {result === null ? null : <article className="joi-goal-result"><div className="joi-md"><SafeMarkdown>{result.body}</SafeMarkdown></div></article>}
       </div>}
       {result === null ? null : <ResultExportMenu api={api} goalId={goal.goalId} resultId={result.resultId} body={result.body} expanded={exportMenu} onExpanded={setExportMenu} />}
     </section>

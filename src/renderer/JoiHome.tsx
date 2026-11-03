@@ -6,34 +6,15 @@ import { GoalResultHistory } from './GoalResultHistory';
 import { GoalTitle, GoalMap } from "./GoalDetailPresentation.js";
 import { useGoalDetail } from "./useGoalDetail.js";
 import { WorkbenchEvolutionPanel } from './EvolutionSettings';
-import { memo, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent, type SyntheticEvent, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ArrowUpIcon, ArrowUpRightIcon, ClockIcon, DotsThreeIcon, PaperclipIcon, XIcon } from "@phosphor-icons/react";
-import ReactMarkdown, { type Components } from "react-markdown";
-import remarkGfm from "remark-gfm";
+import { SafeMarkdown as Markdown } from "./SafeMarkdown";
 
 import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
 import { GOAL_ARTIFACT_PREVIEW_LIMIT, type GoalArtifactPageDto } from "../shared/goal-artifacts";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { thinkingEffortLabel } from "./copy";
-
-const SAFE_MARKDOWN_COMPONENTS: Components = {
-  a: ({ href, children }) => href !== undefined && /^https?:\/\//iu.test(href) ? <a href={href} rel="noreferrer" target="_blank">{children}</a> : <span>{children}</span>,
-  img: ({ alt }) => <span className="agent-remote-image">{t("home.image")}{alt === undefined ? "" : `：${alt}`}]</span>,
-};
-
-// A fresh array on every render defeats react-markdown's own memoization, and this stream
-// re-renders on a poll timer, so the plugin list has to be module-scoped.
-const MARKDOWN_REMARK_PLUGINS = [remarkGfm];
-
-/**
- * Parsing a document is the expensive part of displaying it. Memoizing here means a poll that
- * returns identical text costs a prop comparison instead of a full reparse.
- */
-const Markdown = memo(function Markdown({ children }: { children: string }) {
-  useI18n();
-  return <ReactMarkdown components={SAFE_MARKDOWN_COMPONENTS} remarkPlugins={MARKDOWN_REMARK_PLUGINS} skipHtml>{children}</ReactMarkdown>;
-});
 
 export function ModelSourceSetup({ api, changed }: { api: DigitalLifeApi; changed: () => Promise<void> }) {
   useI18n();
@@ -910,6 +891,7 @@ function ClarifyTextarea({ "aria-label": ariaLabel, disabled, onChange, onKeyDow
   useLayoutEffect(() => {
     const node = ref.current;
     if (node === null) return;
+    if (value === "") { node.style.height = "auto"; return; }
     const computed = getComputedStyle(node);
     const borders = Number.parseFloat(computed.borderTopWidth) + Number.parseFloat(computed.borderBottomWidth);
     node.style.height = "auto";
@@ -1169,7 +1151,7 @@ function GoalCardHead({ goal, onOpen, compact = false }: { goal: JoiGoalCardDto;
 function GoalResultPreview({ goal, onOpen }: { goal: JoiGoalCardDto; onOpen: () => void }) {
   useI18n();
   if (goal.completionSummary === undefined || goal.clarification?.reasonCode === "goal_continuation_required") return null;
-  return <div aria-haspopup="dialog" aria-label={t("home.openTheFullFinalResultForValue", { p0: goal.title })} data-full-text-label={t("home.viewTheFullCurrentResult")} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><div className="joi-goal-result-copy"><Markdown>{goal.completionSummary}</Markdown></div><span aria-hidden="true" className="joi-goal-result-link">{t("home.viewTheFullCurrentResult")}<ArrowUpRightIcon /></span></div>;
+  return <div aria-haspopup="dialog" aria-label={t("home.openTheFullFinalResultForValue", { p0: goal.title })} data-full-text-label={t("home.viewTheFullCurrentResult")} className="joi-goal-result-preview joi-md" role="button" tabIndex={0} onClick={onOpen} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpen(); } }}><div className="joi-goal-result-copy"><Markdown preview>{goal.completionSummary}</Markdown></div><span aria-hidden="true" className="joi-goal-result-link">{t("home.viewTheFullCurrentResult")}<ArrowUpRightIcon /></span></div>;
 }
 
 /** Terminal and archived facts determine the actions behind each card's single menu. */

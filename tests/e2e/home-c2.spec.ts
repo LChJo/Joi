@@ -7,13 +7,15 @@ test("C2 home keeps compact targets, a narrow expanding composer and reachable a
   try {
     expect(await application.evaluate(({ app }) => app.getPath("userData"))).toContain("joi-e2e");
     const page = await application.firstWindow();
+    await application.evaluate(({ app }) => app.setAccessibilitySupportEnabled(true));
+    expect(await application.evaluate(({ app }) => app.isAccessibilitySupportEnabled())).toBe(true);
     await setDesktopTestLocale(page, "zh-CN");
     const goals: JoiGoalCardDto[] = Array.from({ length: 3 }, (_, index) => ({
       agentCount: 2, canArchive: index > 0, canDelete: index > 0, goalId: `c2-${String(index)}`,
       status: index === 0 ? "RUNNING" : "COMPLETED", title: `目标 ${String(index + 1)}：保留较长标题和完整阅读入口`,
       updatedAt: "2026-10-20T00:00:00Z", workbench: { workbenchId: "fixture", name: index === 2 ? "a_very_long_workbench_name_".repeat(6) : "工程工作台" },
       work: { active: index === 0 ? 1 : 0, completed: index === 0 ? 1 : 2, failed: 0, total: 2 },
-      ...(index === 0 ? {} : { completionSummary: "# 结果概要\n\n" + "完成验证与资料整理。\n\n".repeat(12) + "完整结果末尾" }),
+      ...(index === 0 ? {} : { completionSummary: "# 结果概要\n\n" + "完成验证与资料整理。\n\n".repeat(300) + "完整结果末尾" }),
     }));
     const snapshot: JoiSnapshotDto = {
       workbenchChanges: [], workbenches: [], modelSources: [], work: [], runtime: { configured: true, status: "READY" },
@@ -32,6 +34,7 @@ test("C2 home keeps compact targets, a narrow expanding composer and reachable a
     });
     await page.reload();
     await expect(page.locator(".joi-goal-card")).toHaveCount(3);
+    expect(await page.locator(".joi-goal-result-copy").evaluateAll(elements => elements.every(element => element.childElementCount === 0 && element.textContent.length <= 321))).toBe(true);
     const input = page.getByLabel("给 joi 输入", { exact: true });
     const composer = page.locator(".joi-composer");
     await expect(input).not.toBeFocused();
@@ -61,7 +64,7 @@ test("C2 home keeps compact targets, a narrow expanding composer and reachable a
         await page.getByRole("heading", { name: "现在想让 joi 做什么？" }).click();
         expect(await page.locator(".joi-goal-card").first().evaluate(element => getComputedStyle(element).backgroundColor)).not.toBe("rgba(0, 0, 0, 0)");
         expect((await page.locator(".joi-goal-result-preview").first().boundingBox())?.height).toBeLessThanOrEqual(64);
-        await expect(page.locator(".joi-goal-result-copy p").first()).toBeInViewport();
+        await expect(page.locator(".joi-goal-result-copy").first()).toBeInViewport();
         expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
         await feed.evaluate(element => { element.scrollTop = element.scrollHeight; });
         await expect(page.locator(".joi-goal-card").last()).toBeInViewport({ ratio: 1 });

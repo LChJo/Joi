@@ -23,7 +23,7 @@ describe("production method learning", () => {
     call.mockReset();
   });
   afterEach(async () => fixture.close());
-  const service = () => new MethodLearningService({ store, legacyStore: new SqliteEvolutionStore(fixture.database),
+  const service = (legacyStore = new SqliteEvolutionStore(fixture.database)) => new MethodLearningService({ store, legacyStore,
     model: { pin: () => Promise.resolve(pin), call }, now: () => now, id: () => "method-test", stepsPerHandle: 1 });
   function seedDefect() {
     for (let i = 0; i < 30; i += 1) {
@@ -38,6 +38,27 @@ describe("production method learning", () => {
       }));
     }
   }
+  it.each([
+    { enabled: false, paused: false, dailyCallLimit: 150 },
+    { enabled: true, paused: true, dailyCallLimit: 150 },
+    { enabled: true, paused: false, dailyCallLimit: 0 },
+  ])("does not scan foreground history behind a closed learning control: %j", control => {
+    store.configureGlobal(control);
+    const legacy = new SqliteEvolutionStore(fixture.database);
+    const idle = vi.spyOn(legacy, "idle");
+    const subject = service(legacy);
+    expect(subject.pending()).toEqual([]);
+    expect(subject.pending()).toEqual([]);
+    expect(idle).not.toHaveBeenCalled();
+  });
+  it("checks the exhausted global budget before foreground history", () => {
+    store.configureGlobal({ enabled: true, paused: false, dailyCallLimit: 150 });
+    vi.spyOn(store, "usage").mockReturnValue({ ...store.usage(now.slice(0, 10)), calls: 150 });
+    const legacy = new SqliteEvolutionStore(fixture.database);
+    const idle = vi.spyOn(legacy, "idle");
+    expect(service(legacy).pending()).toEqual([]);
+    expect(idle).not.toHaveBeenCalled();
+  });
   it("skips monitoring facts when no method is active even while learning is paused", () => {
     store.configureGlobal({ enabled: true, paused: true });
     const monitor = vi.spyOn(store, "currentEvaluationCases");

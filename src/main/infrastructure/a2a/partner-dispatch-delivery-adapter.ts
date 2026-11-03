@@ -178,22 +178,25 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
 
   async listClaimable(input: { workbenchId: string; now: string; partnerId: string }): Promise<PartnerDispatchClaimRow[]> {
     const initial = (this.database.transaction((connection) => connection.prepare(`
-      SELECT o.outbox_id, o.payload_json, o.attempt_count, a.dispatch_attempt_id, p.kind
-        FROM outbox o
-        JOIN dispatch_attempts a ON a.outbox_id = o.outbox_id
-        JOIN work_items w ON w.work_id = a.work_id
+      WITH due AS MATERIALIZED (
+        SELECT outbox_id, attempt_count, created_at FROM outbox
+         WHERE kind = 'partner.dispatch' AND available_at <= ?
+           AND (status = 'PENDING' OR (status = 'CLAIMED' AND claim_until <= ?))
+      ), eligible AS MATERIALIZED (
+      SELECT o.outbox_id, o.attempt_count, o.created_at, a.dispatch_attempt_id, p.kind
+        FROM due o
+        CROSS JOIN dispatch_attempts a ON a.outbox_id = o.outbox_id
+        CROSS JOIN work_items w ON w.work_id = a.work_id
         JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
         JOIN partners p ON p.partner_id = rev.partner_id
         JOIN joi_inbox_messages i ON i.input_id = w.input_id
         LEFT JOIN joi_goal_execution_gates gate ON gate.goal_input_id = COALESCE(i.goal_input_id, i.input_id)
-       WHERE o.kind = 'partner.dispatch' AND w.workbench_id = ? AND rev.partner_id = ?
+       WHERE w.workbench_id = ? AND rev.partner_id = ?
          AND ((w.status IN ('PLANNED', 'READY') AND (gate.status IS NULL OR gate.status = 'OPEN'))
            -- A crash between persisted start and outbox ACK only needs re-ACK, never
            -- another execution. prepare skips existing runs; orphan recovery owns them.
            OR (w.status IN ('PLANNED','READY','RUNNING','CANCELED') AND EXISTS (
              SELECT 1 FROM partner_runs started WHERE started.dispatch_attempt_id = a.dispatch_attempt_id AND started.status = 'RUNNING')))
-         AND o.available_at <= ?
-         AND (o.status = 'PENDING' OR (o.status = 'CLAIMED' AND o.claim_until <= ?))
          -- Dependency gate: a Work is only claimable once every declared predecessor
          -- has completed. In-flight predecessors keep it waiting; FAILED/CANCELED
          -- predecessors cancel it through the cascade instead of stranding it here.
@@ -202,8 +205,11 @@ export class SqlitePartnerDispatchClaims implements PartnerDispatchClaims {
            JOIN work_items dep ON dep.work_id = d.depends_on_work_id
            WHERE d.work_id = w.work_id AND dep.status <> 'COMPLETED'
          )
-       ORDER BY o.created_at ASC, o.outbox_id ASC LIMIT 10`)
-      .all(input.workbenchId, input.partnerId, input.now, input.now)) as Record<string, unknown>[])
+       ORDER BY o.created_at ASC, o.outbox_id ASC LIMIT 10
+      ) SELECT e.outbox_id, o.payload_json, e.attempt_count, e.dispatch_attempt_id, e.kind
+          FROM eligible e JOIN outbox o ON o.outbox_id = e.outbox_id
+         ORDER BY e.created_at, e.outbox_id`)
+      .all(input.now, input.now, input.workbenchId, input.partnerId)) as Record<string, unknown>[])
       .map((row) => ({
         attemptCount: typeof row.attempt_count === "number" ? row.attempt_count : 0,
         dispatchAttemptId: String(row.dispatch_attempt_id),

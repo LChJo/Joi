@@ -206,16 +206,18 @@ export class MethodLearningService extends EvolutionService {
     super.scan();
     this.#retireArchivedExperiments();
     this.#capture();
+    this.#refreshHeldOut();
     this.#monitor();
   }
   override pending(): { inputId: string; createdAt: string }[] {
-    if (this.#running || !this.#learning.legacyStore.idle()) return [];
-    this.#retireArchivedExperiments();
+    if (this.#running) return [];
     const store = this.#learning.store;
-    this.#refreshHeldOut();
     const control = store.control();
     const now = this.#learning.now();
-    if (!control.enabled || control.paused || store.usage(now.slice(0, 10)).calls >= control.dailyCallLimit) return [];
+    if (!control.enabled || control.paused || control.dailyCallLimit === 0 || store.usage(now.slice(0, 10)).calls >= control.dailyCallLimit) return [];
+    if (!this.#learning.legacyStore.idle()) return [];
+    this.#retireArchivedExperiments();
+    this.#refreshHeldOut();
     const running = store.experiments().find(e => e.status === "RUNNING" || e.status === "PAUSED");
     if (running !== undefined) {
       const p = store.participant(running.workbenchId);

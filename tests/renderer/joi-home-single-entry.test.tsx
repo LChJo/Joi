@@ -871,16 +871,17 @@ describe("joi home single entry", () => {
       items: [{ createdAt: "2026-07-28T10:00:00.000Z", entryId: `entry-${agentId}`, kind: "MARKDOWN" as const, role: "AGENT" as const, sequence: 0, text: agentId === "agent-2" ? "审查通过" : "改造完成报告" }],
     }));
     render(<JoiHome api={api} />);
-    const previewStrong = await screen.findByText("功能");
-    expect(previewStrong.tagName).toBe("STRONG");
-    expect(screen.getAllByRole("table")).toHaveLength(1);
+    const preview = await screen.findByText("登录改造完成 功能 已通过验收。 维度 结果 回归 通过", { selector: ".joi-goal-result-copy" });
+    expect(preview.childElementCount).toBe(0);
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByText("研究一下登录改造"));
     expect(await screen.findByRole("dialog")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "研究一下登录改造" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
     expect(screen.getByLabelText("joi 信息流")).toBeInTheDocument();
-    expect(screen.getAllByRole("table")).toHaveLength(2);
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.getByText("功能").tagName).toBe("STRONG");
     expect(screen.getByLabelText("这条目标的 Agent 列表")).toBeInTheDocument();
     await waitFor(() => expect(listAgents).toHaveBeenCalledWith(workbench.workbenchId, { goalId: "goal-1", limit: 100 }));
     expect(await screen.findByText("改造完成报告")).toBeInTheDocument();
@@ -958,7 +959,7 @@ describe("joi home single entry", () => {
 
     render(<JoiHome api={api} />);
     expect(await screen.findByText("已完成")).toBeInTheDocument();
-    expect(screen.getByText("已有信息足够回答原问题。")).toBeInTheDocument();
+    expect(screen.getByText("最终结论 已有信息足够回答原问题。", { selector: ".joi-goal-result-copy" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "查看 1 个异常搭档" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByText("汇总搭档结论"));
     await screen.findByRole("button", { name: /失败搭档/u });

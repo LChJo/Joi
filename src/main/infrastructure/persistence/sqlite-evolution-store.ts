@@ -143,7 +143,8 @@ export class SqliteEvolutionStore implements EvolutionStore {
     return this.database.transaction((db) => db.prepare(`SELECT 1 WHERE
       EXISTS(SELECT 1 FROM joi_inbox_messages i WHERE ${JOI_RUNNABLE_INPUT_SQL})
       OR EXISTS(SELECT 1 FROM joi_turns WHERE status = 'RUNNING')
-      OR EXISTS(SELECT 1 FROM work_items w WHERE ${JOI_FOREGROUND_WORK_SQL})`).get() === undefined);
+      OR EXISTS(SELECT 1 FROM work_items w
+        WHERE w.status IN ('PLANNED','READY','RUNNING','WAITING') AND (${JOI_FOREGROUND_WORK_SQL}))`).get() === undefined);
   }
   /**
    * The newest candidate day across ACTIVE workbenches only. Archived workbenches keep their

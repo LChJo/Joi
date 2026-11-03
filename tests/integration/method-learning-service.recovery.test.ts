@@ -71,6 +71,26 @@ describe("method learning recovery and exposure safeguards", () => {
       subject.strategyForGoal("a", id, pin, { requirementsReady: true, requirementCount: 2 });
     }
   }
+  it("refreshes held-out cases during the safety scan while scheduling is paused", () => {
+    const paused = experiment("PAUSED", "EVALUATE");
+    paused.state.reason = "insufficient_samples";
+    store.saveExperiment(paused);
+    for (let i = 0; i < 80; i += 1) goal(`held-out-${String(i)}`);
+    expect(store.listCases().filter(item => item.split === "sealed").length).toBeGreaterThanOrEqual(5);
+    store.configureGlobal({ paused: true });
+    subject.scan();
+    expect(store.experiment("experiment")).toMatchObject({ status: "RUNNING", phase: "EVALUATE", state: { reason: "evaluating" } });
+    expect(subject.pending()).toEqual([]);
+    expect(call).not.toHaveBeenCalled();
+  });
+  it("retires archived experiments during the safety scan while scheduling is disabled", () => {
+    store.saveExperiment(experiment());
+    store.configureGlobal({ enabled: false });
+    fixture.database.transaction(db => db.prepare("UPDATE workbenches SET status='ARCHIVED' WHERE workbench_id='a'").run());
+    subject.scan();
+    expect(store.experiment("experiment")).toMatchObject({ status: "REJECTED", state: { reason: "disabled" } });
+    expect(call).not.toHaveBeenCalled();
+  });
   it("continues a locally parked experiment through explicit local resume", () => {
     store.saveExperiment(experiment());
     subject.park("evolution:a");

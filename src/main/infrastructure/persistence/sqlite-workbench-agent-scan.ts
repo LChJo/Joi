@@ -30,8 +30,8 @@ export class SqliteWorkbenchAgentScan implements WorkbenchAgentScan {
       SELECT partner_id FROM (
         SELECT rev.partner_id AS partner_id
           FROM dispatch_attempts a
+          CROSS JOIN work_items w ON w.work_id = a.work_id
           JOIN partner_revisions rev ON rev.partner_revision_id = a.partner_revision_id
-          JOIN work_items w ON w.work_id = a.work_id
          WHERE w.workbench_id = ? AND a.status NOT IN ${TERMINAL_RUN_STATUSES}
         UNION
         SELECT i.partner_id FROM partner_instances i
