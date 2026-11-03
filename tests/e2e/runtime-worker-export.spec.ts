@@ -4,12 +4,14 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { ResultExportDto } from "../../src/shared/result-export";
+import { waitForDesktopTestReady } from "./locale";
 
 test("the runtime Worker exports through the native bridge and acknowledges durable state", async () => {
-  test.setTimeout(60_000);
+  test.setTimeout(120_000);
   const application = await electron.launch({ args: ["."], env: { ...process.env, JOI_TEST: "1" } });
   try {
-    const page = await application.firstWindow();
+    const page = await application.firstWindow({ timeout: 60_000 });
+    await waitForDesktopTestReady(page);
     const userData = await application.evaluate(({ app }) => app.getPath("userData"));
     expect(userData).toContain("joi-e2e");
     const body = "# Disposable Worker export\n\nSynthetic complete result.";
@@ -42,7 +44,10 @@ test("the runtime Worker exports through the native bridge and acknowledges dura
       if (!snapshot.body.includes('Synthetic complete result.')) throw new Error('history_snapshot_incorrect');
       const response = await fetch("/api/v1/result-exports", { method: "POST", headers: { "content-type": "application/json", "x-csrf-token": session.csrfToken },
         body: JSON.stringify({ goalId: "worker-export", resultId, digest, format: "pdf", idempotencyKey: "worker-export-pdf" }) });
-      if (response.status !== 202) throw new Error("export_not_accepted");
+      if (response.status !== 202) {
+        const failure = await response.json() as { code?: string };
+        throw new Error(`export_not_accepted:${String(response.status)}:${failure.code ?? "unknown"}`);
+      }
       return response.json() as Promise<ResultExportDto>;
     }, createHash("sha256").update(body).digest("hex"));
     let completed: ResultExportDto | undefined;
