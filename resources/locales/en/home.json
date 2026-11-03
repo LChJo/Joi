@@ -1,0 +1,2495 @@
+{
+  "image": {
+    "message": "[Image",
+    "description": "home: [Image",
+    "sourceText": "[图片"
+  },
+  "checkingTheConnectionThisMayIncurASmallModel": {
+    "message": "Checking the connection. This may incur a small model charge…",
+    "description": "home: Checking the connection. This may incur a small model charge…",
+    "sourceText": "正在检查连接，这可能产生极少量模型费用…"
+  },
+  "connectedJoiIsReadyToThink": {
+    "message": "Connected. joi is ready to think.",
+    "description": "home: Connected. joi is ready to think.",
+    "sourceText": "已连接，joi 可以开始思考了。"
+  },
+  "connectionCheckFailedYourDraftIsSavedForAnother": {
+    "message": "Connection check failed. Your draft is saved for another try.",
+    "description": "home: Connection check failed. Your draft is saved for another try.",
+    "sourceText": "连接没检查成功，草稿仍可稍后重试。"
+  },
+  "niceToMeetYou": {
+    "message": "Nice to meet you",
+    "description": "home: Nice to meet you",
+    "sourceText": "第一次见面"
+  },
+  "joiNeedsAModelConnection": {
+    "message": "joi needs a model connection",
+    "description": "home: joi needs a model connection",
+    "sourceText": "joi需要链接到大模型网络"
+  },
+  "chooseAModelProviderYouAlreadyUseCredentialsAre": {
+    "message": "Choose a model provider you already use. Credentials are encrypted on this computer and will not be shown again.",
+    "description": "home: Choose a model provider you already use. Credentials are encrypted on this computer and will not be shown again.",
+    "sourceText": "选一个你已有账号的主流模型网络。密钥加密保存在本机，不会在页面再次显示。"
+  },
+  "connect": {
+    "message": "Connect",
+    "description": "home: Connect",
+    "sourceText": "连接"
+  },
+  "valueAccessPlan": {
+    "message": "{p0} access plan",
+    "description": "home: {p0} access plan",
+    "sourceText": "{p0} 接入方案",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "accessPlan": {
+    "message": "access plan",
+    "description": "home: access plan",
+    "sourceText": "的接入方案"
+  },
+  "valueApiProtocol": {
+    "message": "{p0} API protocol",
+    "description": "home: {p0} API protocol",
+    "sourceText": "{p0} 接口协议",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "apiProtocol": {
+    "message": "API protocol",
+    "description": "home: API protocol",
+    "sourceText": "的接口协议"
+  },
+  "subscriptionPlansAreIntendedForPersonalInteractiveUseCheck": {
+    "message": "Subscription plans are intended for personal interactive use. Check that your use complies with the provider''s terms.",
+    "description": "home: Subscription plans are intended for personal interactive use. Check that your use complies with the provider's terms.",
+    "sourceText": "订阅套餐仅适合个人交互使用，请确认你的使用符合厂商条款。"
+  },
+  "theK3ModelIdIsK3NotKimiK3": {
+    "message": "The K3 model ID is k3, not kimi-k3. Leave blank to use kimi-for-coding, available to all members.",
+    "description": "home: The K3 model ID is k3, not kimi-k3. Leave blank to use kimi-for-coding, available to all members.",
+    "sourceText": "K3 的 Model ID 是 k3，不是 kimi-k3；留空则使用所有会员可用的 kimi-for-coding。"
+  },
+  "displayName": {
+    "message": "Display name",
+    "description": "home: Display name",
+    "sourceText": "显示名称"
+  },
+  "modelIdOptionalAdvanced": {
+    "message": "Model ID (optional, advanced)",
+    "description": "home: Model ID (optional, advanced)",
+    "sourceText": "Model ID（可选，高级设置）"
+  },
+  "leaveBlankForTheRecommendedModel": {
+    "message": "Leave blank for the recommended model",
+    "description": "home: Leave blank for the recommended model",
+    "sourceText": "留空使用推荐模型"
+  },
+  "optionalForLocalLocalhost": {
+    "message": "(optional for local localhost)",
+    "description": "home: (optional for local localhost)",
+    "sourceText": "（本机 localhost 可留空）"
+  },
+  "advancedSettingsOptional": {
+    "message": "Advanced settings (optional)",
+    "description": "home: Advanced settings (optional)",
+    "sourceText": "高级设置（可选）"
+  },
+  "leaveBlankForRecommendedValuesChooseContextAndOutput": {
+    "message": "Leave blank for recommended values. Choose context and output limits using provider documentation. If rejected, joi temporarily lowers them to the reported limits until restart.",
+    "description": "home: Leave blank for recommended values. Choose context and output limits using provider documentation. If rejected, joi temporarily lowers them to the reported limits until restart.",
+    "sourceText": "留空就用该模型的推荐值。上下文窗口与最大输出按模型厂商文档选择；选大了会被服务商拒绝，joi 记下它报出的上限后会临时下调，重启恢复。"
+  },
+  "contextWindowTokens": {
+    "message": "Context window (tokens)",
+    "description": "home: Context window (tokens)",
+    "sourceText": "上下文窗口（tokens）"
+  },
+  "maximumOutputTokens": {
+    "message": "Maximum output (tokens)",
+    "description": "home: Maximum output (tokens)",
+    "sourceText": "最大输出（tokens）"
+  },
+  "contextWindowUsagePercentageThatTriggersCompaction": {
+    "message": "Context window usage percentage that triggers compaction",
+    "description": "home: Context window usage percentage that triggers compaction",
+    "sourceText": "用到窗口的百分之多少时压缩会话"
+  },
+  "thinkingEffort": {
+    "message": "Thinking effort",
+    "description": "home: Thinking effort",
+    "sourceText": "思考强度"
+  },
+  "defaultChosenByJoi": {
+    "message": "Default (chosen by joi)",
+    "description": "home: Default (chosen by joi)",
+    "sourceText": "默认（跟随 joi 判定）"
+  },
+  "forModelsThatAlwaysThinkAndCannotDisableThinking": {
+    "message": "For models that always think and cannot disable thinking, such as glm-5.3-flash, choose Low, Medium, High, Very high, or Maximum.",
+    "description": "home: For models that always think and cannot disable thinking, such as glm-5.3-flash, choose Low, Medium, High, Very high, or Maximum.",
+    "sourceText": "模型始终思考、不支持关闭思考时（如 glm-5.3-flash），请在低/中/高/极高/最高中选择。"
+  },
+  "checking": {
+    "message": "Checking…",
+    "description": "home: Checking…",
+    "sourceText": "正在检查…"
+  },
+  "saveAndValidate": {
+    "message": "Save and validate",
+    "description": "home: Save and validate",
+    "sourceText": "保存并验证"
+  },
+  "theApiKeyDoesNotMatchThisAccessPlan": {
+    "message": "The API key does not match this access plan or lacks permission. Check the key and plan, then validate again.",
+    "description": "home: The API key does not match this access plan or lacks permission. Check the key and plan, then validate again.",
+    "sourceText": "API Key 与所选接入方案不匹配，或没有访问权限。请确认 Key 和套餐类型后再验证。"
+  },
+  "theApiIsRateLimitedOrOverloadedTryLater": {
+    "message": "The API is rate-limited or overloaded. Try later or check your plan quota.",
+    "description": "home: The API is rate-limited or overloaded. Try later or check your plan quota.",
+    "sourceText": "接口限流或超载，请稍后重试或检查套餐额度。"
+  },
+  "thisModelIdWasNotFoundLeaveBlankFor": {
+    "message": "This model ID was not found. Leave blank for the recommended model or enter one supported by your plan.",
+    "description": "home: This model ID was not found. Leave blank for the recommended model or enter one supported by your plan.",
+    "sourceText": "所选接口找不到这个 Model ID。请留空使用推荐模型，或填写该套餐支持的模型。"
+  },
+  "theApiReturnedAServerError5xxTheService": {
+    "message": "The API returned a server error (5xx). The service may be temporarily unavailable. Try later.",
+    "description": "home: The API returned a server error (5xx). The service may be temporarily unavailable. Try later.",
+    "sourceText": "接口返回服务端错误（5xx），服务可能暂时不可用，请稍后重试。"
+  },
+  "apiAddressOrResourceNotFound404CheckThat": {
+    "message": "API address or resource not found (404). Check that the access plan and protocol match your subscription.",
+    "description": "home: API address or resource not found (404). Check that the access plan and protocol match your subscription.",
+    "sourceText": "接口地址或资源不存在（404），请确认接入方案/协议与该套餐匹配。"
+  },
+  "theApiRejectedRequestParameters400CheckTheModel": {
+    "message": "The API rejected request parameters (400). Check the model ID and protocol against your plan.",
+    "description": "home: The API rejected request parameters (400). Check the model ID and protocol against your plan.",
+    "sourceText": "接口拒绝了请求参数（400），请检查 Model ID 与协议是否与该套餐匹配。"
+  },
+  "couldNotReachTheApiDnsConnectionOrTls": {
+    "message": "Could not reach the API (DNS, connection, or TLS failure). Check the network, proxy, and service availability.",
+    "description": "home: Could not reach the API (DNS, connection, or TLS failure). Check the network, proxy, and service availability.",
+    "sourceText": "无法连通所选接口（DNS/连接/TLS 失败），请检查网络、代理与接口可用性。"
+  },
+  "theApiConnectionTimedOutCheckYourNetworkOr": {
+    "message": "The API connection timed out. Check your network or try later.",
+    "description": "home: The API connection timed out. Check your network or try later.",
+    "sourceText": "连接所选接口超时，请检查网络或稍后重试。"
+  },
+  "theApiRespondedWithoutUsableContentValidateAgainLater": {
+    "message": "The API responded without usable content. Validate again later. If it persists, check model and protocol compatibility.",
+    "description": "home: The API responded without usable content. Validate again later. If it persists, check model and protocol compatibility.",
+    "sourceText": "接口已响应，但未返回有效正文。请稍后重新验证，若持续出现请检查模型与协议兼容性。"
+  },
+  "theValidationResponseHitTheOutputLimitPossiblyDue": {
+    "message": "The validation response hit the output limit, possibly due to thinking mode. Validate again. If it persists, check model and protocol compatibility.",
+    "description": "home: The validation response hit the output limit, possibly due to thinking mode. Validate again. If it persists, check model and protocol compatibility.",
+    "sourceText": "验证回复达到输出上限而被截断，可能与模型思考模式有关。请重新验证，若持续出现请检查模型与协议兼容性。"
+  },
+  "theApiReturnedAnErrorExpandToViewThe": {
+    "message": "The API returned an error. Expand to view the original error.",
+    "description": "home: The API returned an error. Expand to view the original error.",
+    "sourceText": "接口返回了错误响应，可展开查看原始报错。"
+  },
+  "joiCannotAccessThisApiCheckYourNetworkService": {
+    "message": "joi cannot access this API. Check your network, service status, and plan balance, then validate again.",
+    "description": "home: joi cannot access this API. Check your network, service status, and plan balance, then validate again.",
+    "sourceText": "joi 无法访问所选接口。请检查网络、服务状态和套餐余额后再验证。"
+  },
+  "effectiveContextValueOutputValueValue": {
+    "message": "Effective: context {p0} · output {p1}{p2}",
+    "description": "home: Effective: context {p0} · output {p1}{p2}",
+    "sourceText": "生效：窗口 {p0} · 输出 {p1}{p2}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "providerLimitReducedFromValue": {
+    "message": "(provider limit, reduced from {p0})",
+    "description": "home: (provider limit, reduced from {p0})",
+    "sourceText": "（服务商实测，已从 {p0} 下调）",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "customApi": {
+    "message": "Custom API",
+    "description": "home: Custom API",
+    "sourceText": "自定义接口"
+  },
+  "draft": {
+    "message": "Draft",
+    "description": "home: Draft",
+    "sourceText": "草稿"
+  },
+  "validating": {
+    "message": "Validating",
+    "description": "home: Validating",
+    "sourceText": "正在验证"
+  },
+  "temporarilyUnavailable": {
+    "message": "Temporarily unavailable",
+    "description": "home: Temporarily unavailable",
+    "sourceText": "暂时异常"
+  },
+  "reconnectNeeded": {
+    "message": "Reconnect needed",
+    "description": "home: Reconnect needed",
+    "sourceText": "需要重新连接"
+  },
+  "message85Recommended": {
+    "message": "85% (recommended)",
+    "description": "home: 85% (recommended)",
+    "sourceText": "85%（推荐）"
+  },
+  "valueValueCurrentValue": {
+    "message": "{p0}{p1} (current value)",
+    "description": "home: {p0}{p1} (current value)",
+    "sourceText": "{p0}{p1}（当前值）",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "leaveBlankForTheRecommendedValue": {
+    "message": "Leave blank for the recommended value",
+    "description": "home: Leave blank for the recommended value",
+    "sourceText": "留空使用推荐值"
+  },
+  "couldNotLoadModelConnectionSettings": {
+    "message": "Could not load model connection settings.",
+    "description": "home: Could not load model connection settings.",
+    "sourceText": "没能读取模型网络设置。"
+  },
+  "modelConnectionDeleted": {
+    "message": "Model connection deleted.",
+    "description": "home: Model connection deleted.",
+    "sourceText": "模型网络已删除。"
+  },
+  "couldNotDeleteTheModelConnectionTryAgain": {
+    "message": "Could not delete the model connection. Try again.",
+    "description": "home: Could not delete the model connection. Try again.",
+    "sourceText": "模型网络未删除，请重试。"
+  },
+  "changesSavedAsADraftRevisionValidateBeforeEnabling": {
+    "message": "Changes saved as a draft revision. Validate before enabling.",
+    "description": "home: Changes saved as a draft revision. Validate before enabling.",
+    "sourceText": "修改已保存为草稿 revision，请验证后启用。"
+  },
+  "changesSavedAsADraftRevisionValidateBeforeEnablinga5ebda": {
+    "message": "Changes saved as a draft revision. Validate before enabling. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
+    "description": "home: Changes saved as a draft revision. Validate before enabling. The {p0} partners pinned to this connection ({p1}{p2}) cannot receive work until validation succeeds.",
+    "sourceText": "修改已保存为草稿 revision，请验证后启用。钉在这个网络上的 {p0} 个搭档（{p1}{p2}）在你验证通过前会派发失败。",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "andOthers": {
+    "message": "and others",
+    "description": "home: and others",
+    "sourceText": " 等"
+  },
+  "modelConnectionChangesCouldNotBeSaved": {
+    "message": "Model connection changes could not be saved.",
+    "description": "home: Model connection changes could not be saved.",
+    "sourceText": "模型网络修改未保存。"
+  },
+  "modelConnections": {
+    "message": "Model connections",
+    "description": "home: Model connections",
+    "sourceText": "大模型网络"
+  },
+  "primaryAndBackupConnectionsAreUsedInThisOrder": {
+    "message": "Primary and backup connections are used in this order. Saved credentials are never displayed.",
+    "description": "home: Primary and backup connections are used in this order. Saved credentials are never displayed.",
+    "sourceText": "主源和备用源按这里的顺序使用。页面不会显示已保存的密钥。"
+  },
+  "collapse": {
+    "message": "Collapse",
+    "description": "home: Collapse",
+    "sourceText": "收起"
+  },
+  "addConnection": {
+    "message": "Add connection",
+    "description": "home: Add connection",
+    "sourceText": "添加网络"
+  },
+  "primary": {
+    "message": "Primary",
+    "description": "home: Primary",
+    "sourceText": "主源"
+  },
+  "backupValue": {
+    "message": "Backup {p0}",
+    "description": "home: Backup {p0}",
+    "sourceText": "备用 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "model": {
+    "message": "Model:",
+    "description": "home: Model:",
+    "sourceText": "模型："
+  },
+  "authenticationBearerAuthTokenDetectedAutomatically": {
+    "message": "Authentication: Bearer / Auth Token (detected automatically)",
+    "description": "home: Authentication: Bearer / Auth Token (detected automatically)",
+    "sourceText": "鉴权：Bearer / Auth Token（自动识别）"
+  },
+  "thinkingEffort767f05": {
+    "message": "Thinking effort:",
+    "description": "home: Thinking effort:",
+    "sourceText": "思考强度："
+  },
+  "lastValidated": {
+    "message": "Last validated:",
+    "description": "home: Last validated:",
+    "sourceText": "上次验证："
+  },
+  "viewOriginalError": {
+    "message": "View original error",
+    "description": "home: View original error",
+    "sourceText": "查看原始报错"
+  },
+  "valueActions": {
+    "message": "{p0} actions",
+    "description": "home: {p0} actions",
+    "sourceText": "{p0} 操作",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "editValue": {
+    "message": "Edit {p0}",
+    "description": "home: Edit {p0}",
+    "sourceText": "编辑 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "moveUp": {
+    "message": "Move up",
+    "description": "home: Move up",
+    "sourceText": "上移"
+  },
+  "moveDown": {
+    "message": "Move down",
+    "description": "home: Move down",
+    "sourceText": "下移"
+  },
+  "validationFailed": {
+    "message": "Validation failed.",
+    "description": "home: Validation failed.",
+    "sourceText": "验证没有通过。"
+  },
+  "validate": {
+    "message": "Validate",
+    "description": "home: Validate",
+    "sourceText": "验证"
+  },
+  "disable": {
+    "message": "Disable",
+    "description": "home: Disable",
+    "sourceText": "停用"
+  },
+  "editDisplayName": {
+    "message": "Edit display name",
+    "description": "home: Edit display name",
+    "sourceText": "编辑显示名称"
+  },
+  "editBaseUrl": {
+    "message": "Edit base URL",
+    "description": "home: Edit base URL",
+    "sourceText": "编辑 Base URL"
+  },
+  "editModelId": {
+    "message": "Edit model ID",
+    "description": "home: Edit model ID",
+    "sourceText": "编辑 Model ID"
+  },
+  "replaceApiKeyLeaveBlankToKeep": {
+    "message": "Replace API key (leave blank to keep)",
+    "description": "home: Replace API key (leave blank to keep)",
+    "sourceText": "替换 API Key（留空则保留）"
+  },
+  "advancedSettings": {
+    "message": "Advanced settings",
+    "description": "home: Advanced settings",
+    "sourceText": "高级设置"
+  },
+  "chooseTheRecommendedDefaultToResetThisValueCompaction": {
+    "message": "Choose the recommended default to reset this value. Compaction affects only the main joi session, not partners or coding routes. Changing the model ID resets all four values. For models that always think, choose Low, Medium, High, Very high, or Maximum.",
+    "description": "home: Choose the recommended default to reset this value. Compaction affects only the main joi session, not partners or coding routes. Changing the model ID resets all four values. For models that always think, choose Low, Medium, High, Very high, or Maximum.",
+    "sourceText": "选「留空使用推荐值」即回到该模型的推荐值。压缩阈值只影响 joi 主会话，对搭档与编码线路不生效。改动 Model ID 会重置这四项。模型始终思考、不支持关闭思考时（如 glm-5.3-flash），请在低/中/高/极高/最高中选择。"
+  },
+  "compactionThresholdWindowPercentage": {
+    "message": "Compaction threshold (window percentage)",
+    "description": "home: Compaction threshold (window percentage)",
+    "sourceText": "压缩阈值（窗口百分比）"
+  },
+  "saveChanges": {
+    "message": "Save changes",
+    "description": "home: Save changes",
+    "sourceText": "保存修改"
+  },
+  "opening": {
+    "message": "Opening…",
+    "description": "home: Opening…",
+    "sourceText": "正在打开…"
+  },
+  "locating": {
+    "message": "Locating…",
+    "description": "home: Locating…",
+    "sourceText": "正在定位…"
+  },
+  "sentToTheSystemToOpen": {
+    "message": "Sent to the system to open.",
+    "description": "home: Sent to the system to open.",
+    "sourceText": "已交给系统打开。"
+  },
+  "revealedInTheFolder": {
+    "message": "Revealed in the folder.",
+    "description": "home: Revealed in the folder.",
+    "sourceText": "已在文件夹中定位。"
+  },
+  "thisArtifactCannotBeOpenedRightNow": {
+    "message": "This artifact cannot be opened right now.",
+    "description": "home: This artifact cannot be opened right now.",
+    "sourceText": "这个产物暂时无法打开。"
+  },
+  "folder": {
+    "message": "Folder",
+    "description": "home: Folder",
+    "sourceText": "文件夹"
+  },
+  "openArtifactValue": {
+    "message": "Open artifact {p0}",
+    "description": "home: Open artifact {p0}",
+    "sourceText": "打开产物 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "clickToOpenRightClickToRevealInFolder": {
+    "message": "Click to open; right-click to reveal in folder",
+    "description": "home: Click to open; right-click to reveal in folder",
+    "sourceText": "点击打开；右键在文件夹中定位"
+  },
+  "openFolder": {
+    "message": "Open folder",
+    "description": "home: Open folder",
+    "sourceText": "打开文件夹"
+  },
+  "file": {
+    "message": "File",
+    "description": "home: File",
+    "sourceText": "文件"
+  },
+  "files": {
+    "message": "files",
+    "description": "home: files",
+    "sourceText": "个文件"
+  },
+  "command": {
+    "message": "Command",
+    "description": "home: Command",
+    "sourceText": "命令"
+  },
+  "noCommandText": {
+    "message": "(no command text)",
+    "description": "home: (no command text)",
+    "sourceText": "（没有命令正文）"
+  },
+  "output": {
+    "message": "Output",
+    "description": "home: Output",
+    "sourceText": "输出"
+  },
+  "failed": {
+    "message": "(failed)",
+    "description": "home: (failed)",
+    "sourceText": "（失败）"
+  },
+  "noOutput": {
+    "message": "(no output)",
+    "description": "home: (no output)",
+    "sourceText": "（没有输出）"
+  },
+  "contentExceeded8KbAndWasTruncated": {
+    "message": "Content exceeded 8 KB and was truncated.",
+    "description": "home: Content exceeded 8 KB and was truncated.",
+    "sourceText": "内容超过 8 KB，已截断。"
+  },
+  "reload": {
+    "message": "Reload",
+    "description": "home: Reload",
+    "sourceText": "重新读取"
+  },
+  "loading": {
+    "message": "Loading…",
+    "description": "home: Loading…",
+    "sourceText": "读取中…"
+  },
+  "viewFullOutput": {
+    "message": "View full output",
+    "description": "home: View full output",
+    "sourceText": "查看完整输出"
+  },
+  "tool": {
+    "message": "Tool",
+    "description": "home: Tool",
+    "sourceText": "工具"
+  },
+  "toolCall": {
+    "message": "Tool call",
+    "description": "home: Tool call",
+    "sourceText": "调用工具"
+  },
+  "toolResult": {
+    "message": "Tool result",
+    "description": "home: Tool result",
+    "sourceText": "工具结果"
+  },
+  "running": {
+    "message": "Running",
+    "description": "home: Running",
+    "sourceText": "运行中"
+  },
+  "resultArtifact": {
+    "message": "Result artifact",
+    "description": "home: Result artifact",
+    "sourceText": "结论产物"
+  },
+  "artifacts": {
+    "message": "Artifacts",
+    "description": "home: Artifacts",
+    "sourceText": "产物"
+  },
+  "couldNotLoadTheAgentConversation": {
+    "message": "Could not load the agent conversation.",
+    "description": "home: Could not load the agent conversation.",
+    "sourceText": "没能读取 Agent 对话。"
+  },
+  "couldNotLoadTheFullToolOutput": {
+    "message": "Could not load the full tool output.",
+    "description": "home: Could not load the full tool output.",
+    "sourceText": "没能读取工具的完整输出。"
+  },
+  "couldNotLoadEarlierEntriesScrollUpToRetry": {
+    "message": "Could not load earlier entries. Scroll up to retry.",
+    "description": "home: Could not load earlier entries. Scroll up to retry.",
+    "sourceText": "没能读取更早记录，向上滚动可重试。"
+  },
+  "agentExecutionHistory": {
+    "message": "Agent execution history",
+    "description": "home: Agent execution history",
+    "sourceText": "Agent 执行记录"
+  },
+  "loadingEarlierEntries": {
+    "message": "Loading earlier entries…",
+    "description": "home: Loading earlier entries…",
+    "sourceText": "正在加载历史记录…"
+  },
+  "scrollUpForEarlierEntries": {
+    "message": "Scroll up for earlier entries",
+    "description": "home: Scroll up for earlier entries",
+    "sourceText": "向上滚动查看更早记录"
+  },
+  "preparingTheConversation": {
+    "message": "Preparing the conversation…",
+    "description": "home: Preparing the conversation…",
+    "sourceText": "正在整理对话…"
+  },
+  "thisAgentHasNoExecutionMessagesToShowYet": {
+    "message": "This agent has no execution messages to show yet.",
+    "description": "home: This agent has no execution messages to show yet.",
+    "sourceText": "这位 Agent 还没有可展示的执行消息。"
+  },
+  "task": {
+    "message": "Task",
+    "description": "home: Task",
+    "sourceText": "任务"
+  },
+  "system": {
+    "message": "System",
+    "description": "home: System",
+    "sourceText": "系统"
+  },
+  "file0B": {
+    "message": "File · 0 B",
+    "description": "home: File · 0 B",
+    "sourceText": "文件 · 0 B"
+  },
+  "jumpToLatest": {
+    "message": "Jump to latest",
+    "description": "home: Jump to latest",
+    "sourceText": "回到最新"
+  },
+  "valueConversation": {
+    "message": "{p0} conversation",
+    "description": "home: {p0} conversation",
+    "sourceText": "{p0} 对话",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "backToAgents": {
+    "message": "Back to agents",
+    "description": "home: Back to agents",
+    "sourceText": "返回 Agent 列表"
+  },
+  "readOnlyExecutionHistory": {
+    "message": "Read-only execution history",
+    "description": "home: Read-only execution history",
+    "sourceText": "只读执行记录"
+  },
+  "couldNotLoadTheWorkbenchContext": {
+    "message": "Could not load the workbench context.",
+    "description": "home: Could not load the workbench context.",
+    "sourceText": "没能读取工作台上下文。"
+  },
+  "couldNotLoadTheWorkbenchList": {
+    "message": "Could not load the workbench list.",
+    "description": "home: Could not load the workbench list.",
+    "sourceText": "没能读取工作台列表。"
+  },
+  "workbenchCreatedJoiWillContinueToAssignAndManage": {
+    "message": "Workbench created. joi will continue to assign and manage task context.",
+    "description": "home: Workbench created. joi will continue to assign and manage task context.",
+    "sourceText": "工作台已创建；之后的任务上下文仍由 joi 归属和管理。"
+  },
+  "workbenchContextUpdated": {
+    "message": "Workbench context updated.",
+    "description": "home: Workbench context updated.",
+    "sourceText": "工作台上下文已更新。"
+  },
+  "workbenchCouldNotBeSaved": {
+    "message": "Workbench could not be saved.",
+    "description": "home: Workbench could not be saved.",
+    "sourceText": "工作台没保存成功。"
+  },
+  "existingDirectoryBound": {
+    "message": "Existing directory bound.",
+    "description": "home: Existing directory bound.",
+    "sourceText": "已绑定现有目录。"
+  },
+  "switchedToTheDefaultRunDirectoryNewTasksWill": {
+    "message": "Switched to the default run directory. New tasks will have separate directories.",
+    "description": "home: Switched to the default run directory. New tasks will have separate directories.",
+    "sourceText": "已切换为默认运行目录，新任务将创建独立目录。"
+  },
+  "theWorkspaceOperationDidNotComplete": {
+    "message": "The workspace operation did not complete.",
+    "description": "home: The workspace operation did not complete.",
+    "sourceText": "工作区操作没有完成。"
+  },
+  "theAgentCouldNotBeDeleted": {
+    "message": "The agent could not be deleted.",
+    "description": "home: The agent could not be deleted.",
+    "sourceText": "Agent 没有删除。"
+  },
+  "workbenchRemovedHistoryAndWorkingDirectoryArePreserved": {
+    "message": "Workbench removed. History and working directory are preserved.",
+    "description": "home: Workbench removed. History and working directory are preserved.",
+    "sourceText": "工作台已移除，历史记录和工作目录已保留。"
+  },
+  "theWorkbenchStillHasUnfinishedTasksCompleteOrCancel": {
+    "message": "The workbench still has unfinished tasks. Complete or cancel them before removing it.",
+    "description": "home: The workbench still has unfinished tasks. Complete or cancel them before removing it.",
+    "sourceText": "工作台仍有未结束的任务，请先完成或取消任务后再移除。"
+  },
+  "workbenchCouldNotBeRemovedTryAgain": {
+    "message": "Workbench could not be removed. Try again.",
+    "description": "home: Workbench could not be removed. Try again.",
+    "sourceText": "工作台没有移除，请重试。"
+  },
+  "theWorkbenchWillBeRemovedFromTheListAnd": {
+    "message": "The workbench will be removed from the list and stop receiving new tasks. History and the working directory are preserved. Finish active tasks before removing it.",
+    "description": "home: The workbench will be removed from the list and stop receiving new tasks. History and the working directory are preserved. Finish active tasks before removing it.",
+    "sourceText": "工作台将从列表移除，不再接收新任务。历史记录和工作目录会保留。有未结束的任务时无法移除。"
+  },
+  "removing": {
+    "message": "Removing…",
+    "description": "home: Removing…",
+    "sourceText": "正在移除…"
+  },
+  "confirmRemoval": {
+    "message": "Confirm removal",
+    "description": "home: Confirm removal",
+    "sourceText": "确认移除"
+  },
+  "workbenchAgent": {
+    "message": "Workbench / Agent",
+    "description": "home: Workbench / Agent",
+    "sourceText": "工作台 / Agent"
+  },
+  "eachWorkbenchHoldsALongTermContextAgentsAre": {
+    "message": "Each workbench holds a long-term context. Agents are the workers it starts.",
+    "description": "home: Each workbench holds a long-term context. Agents are the workers it starts.",
+    "sourceText": "每个工作台保存一个长期上下文，Agent 是它实际启动的工作者。"
+  },
+  "allAgentsStartedByThisWorkbenchRemainHereUntil": {
+    "message": "All agents started by this workbench remain here until deleted.",
+    "description": "home: All agents started by this workbench remain here until deleted.",
+    "sourceText": "这里始终展示这个工作台启动过且尚未删除的全部 Agent。"
+  },
+  "createWorkbench": {
+    "message": "Create workbench",
+    "description": "home: Create workbench",
+    "sourceText": "创建工作台"
+  },
+  "removeWorkbench": {
+    "message": "Remove workbench",
+    "description": "home: Remove workbench",
+    "sourceText": "移除工作台"
+  },
+  "backToWorkbenches": {
+    "message": "Back to workbenches",
+    "description": "home: Back to workbenches",
+    "sourceText": "返回工作台列表"
+  },
+  "workCategoryEGFrontendDebugging": {
+    "message": "Work category, e.g. frontend debugging",
+    "description": "home: Work category, e.g. frontend debugging",
+    "sourceText": "工作聚类名称，如：前端调试分析"
+  },
+  "projectName": {
+    "message": "Project name",
+    "description": "home: Project name",
+    "sourceText": "工程名称"
+  },
+  "workEnvironmentProjectEGDigitalLife": {
+    "message": "Work environment / project, e.g. digital life",
+    "description": "home: Work environment / project, e.g. digital life",
+    "sourceText": "工作环境 / 工程，如：数字生活"
+  },
+  "responsibilities": {
+    "message": "Responsibilities",
+    "description": "home: Responsibilities",
+    "sourceText": "职责范围"
+  },
+  "describeTheSharedEnvironmentAndBoundariesOfThisWork": {
+    "message": "Describe the shared environment and boundaries of this work",
+    "description": "home: Describe the shared environment and boundaries of this work",
+    "sourceText": "描述这类工作共享的环境和边界"
+  },
+  "personaSummary": {
+    "message": "Persona summary",
+    "description": "home: Persona summary",
+    "sourceText": "人格摘要"
+  },
+  "describeLongTermWorkConstraintsRatherThanAnIndividual": {
+    "message": "Describe long-term work constraints, rather than an individual agent role",
+    "description": "home: Describe long-term work constraints, rather than an individual agent role",
+    "sourceText": "描述工作环境的长期约束，不要写单个 Agent 角色"
+  },
+  "saveWorkbench": {
+    "message": "Save workbench",
+    "description": "home: Save workbench",
+    "sourceText": "保存工作台"
+  },
+  "noWorkbenchesYet": {
+    "message": "No workbenches yet",
+    "description": "home: No workbenches yet",
+    "sourceText": "还没有工作台"
+  },
+  "tellJoiYourGoalOnTheHomePageIt": {
+    "message": "Tell joi your goal on the home page. It can create a workbench when needed.",
+    "description": "home: Tell joi your goal on the home page. It can create a workbench when needed.",
+    "sourceText": "直接从首页告诉 joi 目标，它也可以按需要创建。"
+  },
+  "openWorkbenchValue": {
+    "message": "Open workbench {p0}",
+    "description": "home: Open workbench {p0}",
+    "sourceText": "打开工作台 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "updated": {
+    "message": "Updated",
+    "description": "home: Updated",
+    "sourceText": "更新于"
+  },
+  "manageContextValue": {
+    "message": "Manage context {p0}",
+    "description": "home: Manage context {p0}",
+    "sourceText": "管理上下文 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "manageContext": {
+    "message": "Manage context",
+    "description": "home: Manage context",
+    "sourceText": "管理上下文"
+  },
+  "removeWorkbenchValue": {
+    "message": "Remove workbench {p0}",
+    "description": "home: Remove workbench {p0}",
+    "sourceText": "移除工作台 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "workspace": {
+    "message": "Workspace",
+    "description": "home: Workspace",
+    "sourceText": "工作区"
+  },
+  "newTasksInThisWorkbenchUseTheSpecifiedDirectory": {
+    "message": "New tasks in this workbench use the specified directory.",
+    "description": "home: New tasks in this workbench use the specified directory.",
+    "sourceText": "此工作台的新任务固定使用指定目录。"
+  },
+  "eachNewTaskGetsASeparateDirectoryUnderJoi": {
+    "message": "Each new task gets a separate directory under joi/runs in your home directory. Resuming and retrying reuse it.",
+    "description": "home: Each new task gets a separate directory under joi/runs in your home directory. Resuming and retrying reuse it.",
+    "sourceText": "每个新任务在用户主目录 joi/runs 下创建独立目录；恢复和重试复用原目录。"
+  },
+  "defaultRunDirectory": {
+    "message": "Default run directory",
+    "description": "home: Default run directory",
+    "sourceText": "默认运行目录"
+  },
+  "bindExistingDirectory": {
+    "message": "Bind existing directory",
+    "description": "home: Bind existing directory",
+    "sourceText": "绑定已有目录"
+  },
+  "useDefaultRunDirectory": {
+    "message": "Use default run directory",
+    "description": "home: Use default run directory",
+    "sourceText": "使用默认运行目录"
+  },
+  "contextSettings": {
+    "message": "Context settings",
+    "description": "home: Context settings",
+    "sourceText": "上下文设置"
+  },
+  "automaticEvolution": {
+    "message": "Automatic evolution",
+    "description": "home: Automatic evolution",
+    "sourceText": "自主进化"
+  },
+  "noAgentsYet": {
+    "message": "No agents yet",
+    "description": "home: No agents yet",
+    "sourceText": "还没有 Agent"
+  },
+  "agentsAppearHereWhenJoiAssignsWorkToThis": {
+    "message": "Agents appear here when joi assigns work to this workbench.",
+    "description": "home: Agents appear here when joi assigns work to this workbench.",
+    "sourceText": "当 joi 为这个工作台安排实际工作后，Agent 会出现在这里。"
+  },
+  "viewDetailsForValue": {
+    "message": "View details for {p0}",
+    "description": "home: View details for {p0}",
+    "sourceText": "查看 {p0} 详情",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "deleteValue": {
+    "message": "Delete {p0}",
+    "description": "home: Delete {p0}",
+    "sourceText": "删除 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "submitANewPersonaRevisionLeaveBlankToKeep": {
+    "message": "Submit a new persona revision (leave blank to keep current)",
+    "description": "home: Submit a new persona revision (leave blank to keep current)",
+    "sourceText": "提交新人格 revision（留空保持当前）"
+  },
+  "saveContext": {
+    "message": "Save context",
+    "description": "home: Save context",
+    "sourceText": "保存上下文"
+  },
+  "activeWork": {
+    "message": "Active work",
+    "description": "home: Active work",
+    "sourceText": "活跃工作"
+  },
+  "noUnfinishedWorkRightNow": {
+    "message": "No unfinished work right now.",
+    "description": "home: No unfinished work right now.",
+    "sourceText": "当前没有非终态工作。"
+  },
+  "recentResultSummaries": {
+    "message": "Recent result summaries",
+    "description": "home: Recent result summaries",
+    "sourceText": "最近结果总结"
+  },
+  "noGoalLevelSummariesYet": {
+    "message": "No goal-level summaries yet.",
+    "description": "home: No goal-level summaries yet.",
+    "sourceText": "还没有目标级结果总结。"
+  },
+  "sentToJoiRearranging": {
+    "message": "Sent to joi. Rearranging…",
+    "description": "home: Sent to joi. Rearranging…",
+    "sourceText": "已交给 joi，正在重新安排…"
+  },
+  "couldNotSendToJoiTryAgain": {
+    "message": "Could not send to joi. Try again.",
+    "description": "home: Could not send to joi. Try again.",
+    "sourceText": "没能交给 joi，请重试。"
+  },
+  "thisTaskHasNoWorkbenchYetSoAWorking": {
+    "message": "This task has no workbench yet, so a working directory cannot be selected.",
+    "description": "home: This task has no workbench yet, so a working directory cannot be selected.",
+    "sourceText": "这条任务还没有关联工作台，暂时不能选择工作目录。"
+  },
+  "workingDirectoryBoundJoiIsContinuingThePlan": {
+    "message": "Working directory bound. joi is continuing the plan…",
+    "description": "home: Working directory bound. joi is continuing the plan…",
+    "sourceText": "工作目录已绑定，joi 正在继续安排…"
+  },
+  "couldNotBindTheWorkingDirectoryTryAgain": {
+    "message": "Could not bind the working directory. Try again.",
+    "description": "home: Could not bind the working directory. Try again.",
+    "sourceText": "工作目录没有绑定成功，请重试。"
+  },
+  "joiIsReconcilingHistoricalStatus": {
+    "message": "joi is reconciling historical status",
+    "description": "home: joi is reconciling historical status",
+    "sourceText": "joi 正在整理历史状态"
+  },
+  "continueImprovingTheResult": {
+    "message": "Continue improving the result?",
+    "description": "home: Continue improving the result?",
+    "sourceText": "是否继续完善结果？"
+  },
+  "joiNeedsYourConfirmation": {
+    "message": "joi needs your confirmation",
+    "description": "home: joi needs your confirmation",
+    "sourceText": "joi 需要你确认"
+  },
+  "currentResultAndRemainingWork": {
+    "message": "Current result and remaining work",
+    "description": "home: Current result and remaining work",
+    "sourceText": "当前结果与待补充内容"
+  },
+  "currentResultNotes": {
+    "message": "Current result notes",
+    "description": "home: Current result notes",
+    "sourceText": "当前结果说明"
+  },
+  "noResultNotesAreAvailableYetToIdentifySpecific": {
+    "message": "No result notes are available yet to identify specific remaining work.",
+    "description": "home: No result notes are available yet to identify specific remaining work.",
+    "sourceText": "暂时没有可展示的结果说明，无法列出具体待补充内容。"
+  },
+  "viewTheFullCurrentResult": {
+    "message": "View the full current result",
+    "description": "home: View the full current result",
+    "sourceText": "查看当前结果全文"
+  },
+  "sentToJoiForReconciliation": {
+    "message": "Sent to joi for reconciliation",
+    "description": "home: Sent to joi for reconciliation",
+    "sourceText": "已交给 joi 自动校正"
+  },
+  "joiReconcilesStatusUsingCompletedWorkAndClosedPaths": {
+    "message": "joi reconciles status using completed work and closed paths without replaying past reviews. If completion is still unsupported, cancel this task and describe the next steps in a new input.",
+    "description": "home: joi reconciles status using completed work and closed paths without replaying past reviews. If completion is still unsupported, cancel this task and describe the next steps in a new input.",
+    "sourceText": "Joi 会依据已完成的 Work 和闭合路径收敛状态，不会重放历史评审。若事实仍不足以证明完成，请取消这条任务，并用新的输入重新描述后续要求。"
+  },
+  "noPartnersAreAvailableOpenPartnersToFixOr": {
+    "message": "No partners are available. Open Partners to fix or create one.",
+    "description": "home: No partners are available. Open Partners to fix or create one.",
+    "sourceText": "当前没有可用搭档。请先到「搭档」页修复或创建搭档。"
+  },
+  "chooseAPartnerToContinue": {
+    "message": "Choose a partner to continue",
+    "description": "home: Choose a partner to continue",
+    "sourceText": "选择一个搭档继续任务"
+  },
+  "localPartner": {
+    "message": "Local partner",
+    "description": "home: Local partner",
+    "sourceText": "本地搭档"
+  },
+  "remotePartner": {
+    "message": "Remote partner",
+    "description": "home: Remote partner",
+    "sourceText": "远程搭档"
+  },
+  "recheckExistingWork": {
+    "message": "Recheck existing work",
+    "description": "home: Recheck existing work",
+    "sourceText": "重新核对已有工作"
+  },
+  "existingAnswersAndResultsArePreservedJoiWillReview": {
+    "message": "Existing answers and results are preserved. joi will review them before continuing.",
+    "description": "home: Existing answers and results are preserved. joi will review them before continuing.",
+    "sourceText": "已有回答和工作结果已保留，joi 会核对后继续。"
+  },
+  "submitting": {
+    "message": "Submitting…",
+    "description": "home: Submitting…",
+    "sourceText": "提交中…"
+  },
+  "retryReview": {
+    "message": "Retry review",
+    "description": "home: Retry review",
+    "sourceText": "重试评审"
+  },
+  "continueImprovingTryUpToTwoMoreRoundsYou": {
+    "message": "Continue improving: try up to two more rounds. You will be asked again if issues remain.",
+    "description": "home: Continue improving: try up to two more rounds. You will be asked again if issues remain.",
+    "sourceText": "继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。"
+  },
+  "keepCurrentResultEndThisTaskPreserveConclusionsAnd": {
+    "message": "Keep current result: end this task, preserve conclusions and unresolved items, and mark it as completed with gaps.",
+    "description": "home: Keep current result: end this task, preserve conclusions and unresolved items, and mark it as completed with gaps.",
+    "sourceText": "保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。"
+  },
+  "continueImproving": {
+    "message": "Continue improving",
+    "description": "home: Continue improving",
+    "sourceText": "继续完善"
+  },
+  "keepCurrentResult": {
+    "message": "Keep current result",
+    "description": "home: Keep current result",
+    "sourceText": "保留当前结果"
+  },
+  "resumeOriginalWork": {
+    "message": "Resume original work",
+    "description": "home: Resume original work",
+    "sourceText": "恢复原工作"
+  },
+  "joiResumesTheSavedWorkAndPartnerSessionWithout": {
+    "message": "joi resumes the saved work and partner session without creating another task.",
+    "description": "home: joi resumes the saved work and partner session without creating another task.",
+    "sourceText": "joi 会使用已保存的 Work 和搭档会话继续，不会重新创建一份任务。"
+  },
+  "resuming": {
+    "message": "Resuming…",
+    "description": "home: Resuming…",
+    "sourceText": "恢复中…"
+  },
+  "resumeOriginalWorkfa2119": {
+    "message": "Resume original work",
+    "description": "home: Resume original work",
+    "sourceText": "继续原工作"
+  },
+  "currentWorkbench": {
+    "message": "Current workbench",
+    "description": "home: Current workbench",
+    "sourceText": "当前工作台"
+  },
+  "onlyASafeWorkspaceIdentifierIsSavedAbsolutePaths": {
+    "message": "Only a safe workspace identifier is saved. Absolute paths are not exposed on the page or API.",
+    "description": "home: Only a safe workspace identifier is saved. Absolute paths are not exposed on the page or API.",
+    "sourceText": "选择后只保存安全的工作区标识，不会在页面或接口中暴露绝对路径。"
+  },
+  "selecting": {
+    "message": "Selecting…",
+    "description": "home: Selecting…",
+    "sourceText": "选择中…"
+  },
+  "chooseWorkingDirectory": {
+    "message": "Choose working directory",
+    "description": "home: Choose working directory",
+    "sourceText": "选择工作目录"
+  },
+  "yourAnswer": {
+    "message": "Your answer",
+    "description": "home: Your answer",
+    "sourceText": "你的回答"
+  },
+  "additionalInformation": {
+    "message": "Additional information",
+    "description": "home: Additional information",
+    "sourceText": "补充信息"
+  },
+  "answerAndJoiWillContinueTheTaskShiftEnter": {
+    "message": "Answer and joi will continue the task… (Shift+Enter for a new line)",
+    "description": "home: Answer and joi will continue the task… (Shift+Enter for a new line)",
+    "sourceText": "输入回答，joi 会接着原任务继续…（Shift+Enter 换行）"
+  },
+  "addDetailsSoJoiCanContinueShiftEnterFor": {
+    "message": "Add details so joi can continue… (Shift+Enter for a new line)",
+    "description": "home: Add details so joi can continue… (Shift+Enter for a new line)",
+    "sourceText": "补充细节，让 joi 接着这条输入往下做…（Shift+Enter 换行）"
+  },
+  "answerAndContinue": {
+    "message": "Answer and continue",
+    "description": "home: Answer and continue",
+    "sourceText": "回答并继续"
+  },
+  "addDetailsAndContinue": {
+    "message": "Add details and continue",
+    "description": "home: Add details and continue",
+    "sourceText": "补充并继续"
+  },
+  "couldNotCancelThisTaskTryAgain": {
+    "message": "Could not cancel this task. Try again.",
+    "description": "home: Could not cancel this task. Try again.",
+    "sourceText": "没能取消这条任务，请重试。"
+  },
+  "cancelThisTask": {
+    "message": "Cancel this task",
+    "description": "home: Cancel this task",
+    "sourceText": "取消这条任务"
+  },
+  "canceling": {
+    "message": "Canceling…",
+    "description": "home: Canceling…",
+    "sourceText": "取消中…"
+  },
+  "letJoiDecide": {
+    "message": "Let joi decide",
+    "description": "home: Let joi decide",
+    "sourceText": "joi 自主分发"
+  },
+  "assignToValue": {
+    "message": "Assign to {p0}",
+    "description": "home: Assign to {p0}",
+    "sourceText": "分发给 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "chooseWorkbench": {
+    "message": "Choose workbench",
+    "description": "home: Choose workbench",
+    "sourceText": "选择工作台"
+  },
+  "searchWorkbenches": {
+    "message": "Search workbenches",
+    "description": "home: Search workbenches",
+    "sourceText": "搜索工作台"
+  },
+  "searchByNameOrScope": {
+    "message": "Search by name or scope…",
+    "description": "home: Search by name or scope…",
+    "sourceText": "按名称或范围搜索…"
+  },
+  "workbenchList": {
+    "message": "Workbench list",
+    "description": "home: Workbench list",
+    "sourceText": "工作台列表"
+  },
+  "noMatchingWorkbenchesTryADifferentKeyword": {
+    "message": "No matching workbenches. Try a different keyword.",
+    "description": "home: No matching workbenches. Try a different keyword.",
+    "sourceText": "没有匹配的工作台，请换个关键词。"
+  },
+  "planning": {
+    "message": "Planning",
+    "description": "home: Planning",
+    "sourceText": "正在安排"
+  },
+  "queued": {
+    "message": "Queued",
+    "description": "home: Queued",
+    "sourceText": "排队中"
+  },
+  "executing": {
+    "message": "Executing",
+    "description": "home: Executing",
+    "sourceText": "执行中"
+  },
+  "reviewing": {
+    "message": "Reviewing",
+    "description": "home: Reviewing",
+    "sourceText": "正在评审"
+  },
+  "extendingAfterReview": {
+    "message": "Extending after review",
+    "description": "home: Extending after review",
+    "sourceText": "评审后补充执行"
+  },
+  "needsYou": {
+    "message": "Needs you",
+    "description": "home: Needs you",
+    "sourceText": "需要你"
+  },
+  "summarizing": {
+    "message": "Summarizing",
+    "description": "home: Summarizing",
+    "sourceText": "正在总结"
+  },
+  "completedWithGaps": {
+    "message": "Completed with gaps",
+    "description": "home: Completed with gaps",
+    "sourceText": "已完成（有缺口）"
+  },
+  "failed763284": {
+    "message": "Failed",
+    "description": "home: Failed",
+    "sourceText": "处理失败"
+  },
+  "waitingForExecutionCapacity": {
+    "message": "Waiting for execution capacity",
+    "description": "home: Waiting for execution capacity",
+    "sourceText": "等待执行容量"
+  },
+  "waitingForWorkspaceReadAccess": {
+    "message": "Waiting for workspace read access",
+    "description": "home: Waiting for workspace read access",
+    "sourceText": "等待工作区可读"
+  },
+  "waitingToWrite": {
+    "message": "Waiting to write",
+    "description": "home: Waiting to write",
+    "sourceText": "等待写入"
+  },
+  "analyzing": {
+    "message": "Analyzing",
+    "description": "home: Analyzing",
+    "sourceText": "分析中"
+  },
+  "writing": {
+    "message": "Writing",
+    "description": "home: Writing",
+    "sourceText": "写入执行中"
+  },
+  "valueWorkCompleted": {
+    "message": "{p0} work completed",
+    "description": "home: {p0} work completed",
+    "sourceText": "{p0} 工作完成",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueFailedValueResolved": {
+    "message": "{p0} failed ({p1} resolved)",
+    "description": "home: {p0} failed ({p1} resolved)",
+    "sourceText": "{p0} 失败({p1} 已解决)",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "valueFailed": {
+    "message": "{p0} failed",
+    "description": "home: {p0} failed",
+    "sourceText": "{p0} 失败",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueExecuting": {
+    "message": "{p0} executing",
+    "description": "home: {p0} executing",
+    "sourceText": "{p0} 执行中",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueWaiting": {
+    "message": "{p0} waiting",
+    "description": "home: {p0} waiting",
+    "sourceText": "{p0} 等待中",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueInProgress": {
+    "message": "{p0} in progress",
+    "description": "home: {p0} in progress",
+    "sourceText": "{p0} 进行中",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueArchived": {
+    "message": "{p0} archived",
+    "description": "home: {p0} archived",
+    "sourceText": "{p0} 归档",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "openTheFullFinalResultForValue": {
+    "message": "Open the full final result for {p0}",
+    "description": "home: Open the full final result for {p0}",
+    "sourceText": "打开「{p0}」的最终结果全文",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "couldNotUnarchiveTryAgain": {
+    "message": "Could not unarchive. Try again.",
+    "description": "home: Could not unarchive. Try again.",
+    "sourceText": "没能取消归档，请重试。"
+  },
+  "couldNotArchiveThisCardTryAgain": {
+    "message": "Could not archive this card. Try again.",
+    "description": "home: Could not archive this card. Try again.",
+    "sourceText": "没能归档这张卡片，请重试。"
+  },
+  "cancelTask": {
+    "message": "Cancel task",
+    "description": "home: Cancel task",
+    "sourceText": "取消任务"
+  },
+  "remove2f752c": {
+    "message": "Remove",
+    "description": "home: Remove",
+    "sourceText": "移除"
+  },
+  "couldNotRemoveThisCardTryAgain": {
+    "message": "Could not remove this card. Try again.",
+    "description": "home: Could not remove this card. Try again.",
+    "sourceText": "没能移除这张卡片，请重试。"
+  },
+  "moreActionsForValue": {
+    "message": "More actions for {p0}",
+    "description": "home: More actions for {p0}",
+    "sourceText": "{p0} 更多操作",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "viewValuePartnerIssues": {
+    "message": "View {p0} partner issues",
+    "description": "home: View {p0} partner issues",
+    "sourceText": "查看 {p0} 个异常搭档",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "partnerIssuesViewDetails": {
+    "message": "partner issues · View details",
+    "description": "home: partner issues · View details",
+    "sourceText": "个搭档异常 · 查看详情"
+  },
+  "thisIsAnInternalJoiConfigurationIssueRestartOr": {
+    "message": "This is an internal joi configuration issue. Restart or update joi, then submit again. If it recurs, export diagnostics to report it.",
+    "description": "home: This is an internal joi configuration issue. Restart or update joi, then submit again. If it recurs, export diagnostics to report it.",
+    "sourceText": "这是 joi 的内部配置问题。请重启或升级 joi 后重新提交；如果再次出现，请导出诊断信息反馈。"
+  },
+  "checkThePrimaryModelConnectionCredentialsAndAvailabilityIn": {
+    "message": "Check the primary model connection, credentials, and availability in Settings. Validate it before submitting again.",
+    "description": "home: Check the primary model connection, credentials, and availability in Settings. Validate it before submitting again.",
+    "sourceText": "请在设置中检查主模型源的网络、凭证和可用状态，重新验证后再提交。"
+  },
+  "submitAgainIfItFailsAgainExportDiagnosticsTo": {
+    "message": "Submit again. If it fails again, export diagnostics to report it.",
+    "description": "home: Submit again. If it fails again, export diagnostics to report it.",
+    "sourceText": "请重新提交一次；如果再次失败，请导出诊断信息反馈。"
+  },
+  "joiHasStoppedRetrying": {
+    "message": "joi has stopped retrying",
+    "description": "home: joi has stopped retrying",
+    "sourceText": "joi 已停止重试"
+  },
+  "automaticAttempts": {
+    "message": "Automatic attempts:",
+    "description": "home: Automatic attempts:",
+    "sourceText": "已自动尝试"
+  },
+  "retriesHaveNowStopped": {
+    "message": ". Retries have now stopped.",
+    "description": "home: . Retries have now stopped.",
+    "sourceText": "次，现已停止重试。"
+  },
+  "executionHasStartedAndSomeWorkMayAlreadyHave": {
+    "message": "Execution has started, and some work may already have results.",
+    "description": "home: Execution has started, and some work may already have results.",
+    "sourceText": "任务已经开始执行，部分工作可能已有结果。"
+  },
+  "noAgentsHaveStartedAndNoWorkHasBeen": {
+    "message": "No agents have started and no work has been dispatched.",
+    "description": "home: No agents have started and no work has been dispatched.",
+    "sourceText": "尚未启动 Agent，也没有派发工作。"
+  },
+  "diagnosticCode": {
+    "message": "Diagnostic code:",
+    "description": "home: Diagnostic code:",
+    "sourceText": "诊断编号："
+  },
+  "continueThisTaskOnceTheIssueIsResolvedAdd": {
+    "message": "Continue this task once the issue is resolved. Add requirements, or leave blank to dispatch again.",
+    "description": "home: Continue this task once the issue is resolved. Add requirements, or leave blank to dispatch again.",
+    "sourceText": "问题处理好后，可以继续这条任务。补充新的要求，或留空直接重新派发。"
+  },
+  "thisTaskWasCanceledContinueFromTheOriginalGoal": {
+    "message": "This task was canceled. Continue from the original goal or add new requirements.",
+    "description": "home: This task was canceled. Continue from the original goal or add new requirements.",
+    "sourceText": "这条任务之前被取消了。可以基于原目标继续，也可以补充新的要求。"
+  },
+  "thisGoalHasFinishedAddFollowUpRequirementsTo": {
+    "message": "This goal has finished. Add follow-up requirements to continue in the same context.",
+    "description": "home: This goal has finished. Add follow-up requirements to continue in the same context.",
+    "sourceText": "这条目标已经收官。补充后续要求，joi 会接着这个上下文继续。"
+  },
+  "couldNotContinueThisGoalTryAgain": {
+    "message": "Could not continue this goal. Try again.",
+    "description": "home: Could not continue this goal. Try again.",
+    "sourceText": "没能继续这条目标，请重试。"
+  },
+  "policyRolledBackAndAutomaticEvolutionPausedRunningGoals": {
+    "message": "Policy rolled back and automatic evolution paused. Running goals keep their original policy.",
+    "description": "home: Policy rolled back and automatic evolution paused. Running goals keep their original policy.",
+    "sourceText": "已回退该策略并暂停自动进化；运行中的目标保留原策略。"
+  },
+  "feedbackRecordedThisGoalDidNotUseTheCurrent": {
+    "message": "Feedback recorded. This goal did not use the current policy, so no rollback is needed.",
+    "description": "home: Feedback recorded. This goal did not use the current policy, so no rollback is needed.",
+    "sourceText": "已记录反馈。这条目标没有运行当前策略，无需回退。"
+  },
+  "thisGoalHasNoEvolutionPolicyToGiveFeedback": {
+    "message": "This goal has no evolution policy to give feedback on.",
+    "description": "home: This goal has no evolution policy to give feedback on.",
+    "sourceText": "这条目标没有绑定进化策略，无需反馈。"
+  },
+  "couldNotSubmitPolicyFeedbackTryAgain": {
+    "message": "Could not submit policy feedback. Try again.",
+    "description": "home: Could not submit policy feedback. Try again.",
+    "sourceText": "没能提交策略反馈，请重试。"
+  },
+  "submittingContinuationRequest": {
+    "message": "Submitting continuation request",
+    "description": "home: Submitting continuation request",
+    "sourceText": "正在提交继续请求"
+  },
+  "onceJoiConfirmsReceiptTheTaskMovesToPlanning": {
+    "message": "Once joi confirms receipt, the task moves to Planning.",
+    "description": "home: Once joi confirms receipt, the task moves to Planning.",
+    "sourceText": "joi 确认接收后，会立即进入“正在安排”。"
+  },
+  "additionalNotes": {
+    "message": "Additional notes",
+    "description": "home: Additional notes",
+    "sourceText": "补充说明"
+  },
+  "addRequirementsLeaveBlankToContinueShiftEnterFor": {
+    "message": "Add requirements (leave blank to continue; Shift+Enter for a new line)",
+    "description": "home: Add requirements (leave blank to continue; Shift+Enter for a new line)",
+    "sourceText": "补充要求，可换行（留空则直接继续；Shift+Enter 换行）"
+  },
+  "sendingToJoi": {
+    "message": "Sending to joi…",
+    "description": "home: Sending to joi…",
+    "sourceText": "正在交给 joi…"
+  },
+  "reportAPoorResultToTheEvolutionPolicyThat": {
+    "message": "Report a poor result to the evolution policy that ran this goal. If it is the current policy, it will be rolled back and automatic evolution paused",
+    "description": "home: Report a poor result to the evolution policy that ran this goal. If it is the current policy, it will be rolled back and automatic evolution paused",
+    "sourceText": "如果这条目标的结果明显糟糕，向运行它的进化策略提交负反馈；命中当前策略时会回退并暂停自动进化"
+  },
+  "submittingFeedback": {
+    "message": "Submitting feedback…",
+    "description": "home: Submitting feedback…",
+    "sourceText": "正在提交反馈…"
+  },
+  "reportUnhelpfulPolicy": {
+    "message": "Report unhelpful policy",
+    "description": "home: Report unhelpful policy",
+    "sourceText": "反馈策略没帮上忙"
+  },
+  "organizingTheTask": {
+    "message": "Organizing the task",
+    "description": "home: Organizing the task",
+    "sourceText": "正在整理任务"
+  },
+  "breakingDownWork": {
+    "message": "Breaking down work",
+    "description": "home: Breaking down work",
+    "sourceText": "正在拆分工作"
+  },
+  "assigningPartners": {
+    "message": "Assigning partners",
+    "description": "home: Assigning partners",
+    "sourceText": "正在安排搭档"
+  },
+  "partnersAreWorking": {
+    "message": "Partners are working",
+    "description": "home: Partners are working",
+    "sourceText": "搭档执行中"
+  },
+  "waitingForAPartnerResponse": {
+    "message": "Waiting for a partner response",
+    "description": "home: Waiting for a partner response",
+    "sourceText": "等待搭档回应"
+  },
+  "combiningResults": {
+    "message": "Combining results",
+    "description": "home: Combining results",
+    "sourceText": "正在汇总结果"
+  },
+  "reviewingResults": {
+    "message": "Reviewing results",
+    "description": "home: Reviewing results",
+    "sourceText": "正在评审结果"
+  },
+  "valueS": {
+    "message": "{p0} s",
+    "description": "home: {p0} s",
+    "sourceText": "{p0} 秒",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueMin": {
+    "message": "{p0} min",
+    "description": "home: {p0} min",
+    "sourceText": "{p0} 分钟",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueHValue": {
+    "message": "{p0} h {p1}",
+    "description": "home: {p0} h {p1}",
+    "sourceText": "{p0} 小时{p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "valueMin863710": {
+    "message": "{p0} min",
+    "description": "home: {p0} min",
+    "sourceText": " {p0} 分钟",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueValueWorkCompleted": {
+    "message": "{p0}/{p1} work completed",
+    "description": "home: {p0}/{p1} work completed",
+    "sourceText": "{p0}/{p1} 工作完成",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "used": {
+    "message": "· Used",
+    "description": "home: · Used",
+    "sourceText": "· 已用"
+  },
+  "unnamedDestinationJoiWillNameItDuringReview": {
+    "message": "Unnamed destination (joi will name it during review)",
+    "description": "home: Unnamed destination (joi will name it during review)",
+    "sourceText": "目的地未命名（joi 将在复盘中命名）"
+  },
+  "destinationValue": {
+    "message": "Destination: {p0}",
+    "description": "home: Destination: {p0}",
+    "sourceText": "目的地：{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "mapCompleted": {
+    "message": "· Map completed",
+    "description": "home: · Map completed",
+    "sourceText": " · 地图已收官"
+  },
+  "decisions": {
+    "message": "Decisions",
+    "description": "home: Decisions",
+    "sourceText": "已决策"
+  },
+  "unknowns": {
+    "message": "· Unknowns",
+    "description": "home: · Unknowns",
+    "sourceText": "· 雾区"
+  },
+  "level": {
+    "message": "· Level",
+    "description": "home: · Level",
+    "sourceText": "· 第"
+  },
+  "paths": {
+    "message": "paths",
+    "description": "home: paths",
+    "sourceText": "层路径"
+  },
+  "unknown": {
+    "message": "Unknown:",
+    "description": "home: Unknown:",
+    "sourceText": "雾区："
+  },
+  "couldNotLoadAgentsForThisGoal": {
+    "message": "Could not load agents for this goal.",
+    "description": "home: Could not load agents for this goal.",
+    "sourceText": "没能读取这条目标的 Agent 列表。"
+  },
+  "goalDetailsForValue": {
+    "message": "Goal details for {p0}",
+    "description": "home: Goal details for {p0}",
+    "sourceText": "{p0} 的目标详情",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "scheduleContinuationForThisGoal": {
+    "message": "Schedule continuation for this goal",
+    "description": "home: Schedule continuation for this goal",
+    "sourceText": "设置当前目标的定时继续计划"
+  },
+  "schedule": {
+    "message": "Schedule",
+    "description": "home: Schedule",
+    "sourceText": "定时"
+  },
+  "finalResult": {
+    "message": "Final result",
+    "description": "home: Final result",
+    "sourceText": "最终结果"
+  },
+  "agentsForThisGoal": {
+    "message": "Agents for this goal",
+    "description": "home: Agents for this goal",
+    "sourceText": "这条目标的 Agent 列表"
+  },
+  "joiHasNotStartedAnyAgentsForThisGoal": {
+    "message": "joi has not started any agents for this goal yet.",
+    "description": "home: joi has not started any agents for this goal yet.",
+    "sourceText": "joi 还没有为这条目标启动 Agent。"
+  },
+  "agentActivityAndResultsAppearHereOnceAnAgent": {
+    "message": "Agent activity and results appear here once an agent starts.",
+    "description": "home: Agent activity and results appear here once an agent starts.",
+    "sourceText": "Agent 启动后，这里会直接展示它的执行数据流和结果。"
+  },
+  "currentResult": {
+    "message": "Current result",
+    "description": "home: Current result",
+    "sourceText": "当前结果"
+  },
+  "valueForValue": {
+    "message": "{p1} for {p0}",
+    "description": "home: {p1} for {p0}",
+    "sourceText": "{p0} 的{p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "viewDetails": {
+    "message": "View details",
+    "description": "home: View details",
+    "sourceText": "查看详情"
+  },
+  "valueExceeds10MibAndWasNotAttached": {
+    "message": "{p0} exceeds 10 MiB and was not attached.",
+    "description": "home: {p0} exceeds 10 MiB and was not attached.",
+    "sourceText": "「{p0}」超过 10 MiB，没有添加。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "upToValueAttachmentsAreAllowedExtraFilesWere": {
+    "message": "Up to {p0} attachments are allowed. Extra files were not attached.",
+    "description": "home: Up to {p0} attachments are allowed. Extra files were not attached.",
+    "sourceText": "最多只能添加 {p0} 个附件，多出的没有添加。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "upToValueAttachmentsAreAllowed": {
+    "message": "Up to {p0} attachments are allowed.",
+    "description": "home: Up to {p0} attachments are allowed.",
+    "sourceText": "最多只能添加 {p0} 个附件。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "couldNotAttachTheImagePathPasteTheImage": {
+    "message": "Could not attach the image path. Paste the image itself instead.",
+    "description": "home: Could not attach the image path. Paste the image itself instead.",
+    "sourceText": "没能把图片路径导入为附件，请直接粘贴图片本体。"
+  },
+  "yourInputCouldNotBeSavedTryAgain": {
+    "message": "Your input could not be saved. Try again.",
+    "description": "home: Your input could not be saved. Try again.",
+    "sourceText": "输入没保存成功，请再试一次。"
+  },
+  "whatWouldYouLikeJoiToDo": {
+    "message": "What would you like joi to do?",
+    "description": "home: What would you like joi to do?",
+    "sourceText": "现在想让 joi 做什么？"
+  },
+  "tellJoiYourGoalItWillChooseTheWorkbench": {
+    "message": "Tell joi your goal. It will choose the workbench, partners, and what can run in parallel.",
+    "description": "home: Tell joi your goal. It will choose the workbench, partners, and what can run in parallel.",
+    "sourceText": "你只管说目标。工作台归属、是否并发、找哪位搭档，都由 joi 判断和安排。"
+  },
+  "theGoalWasRemovedOrIsUnavailableHistoricalUsage": {
+    "message": "The goal was removed or is unavailable. Historical usage is preserved.",
+    "description": "home: The goal was removed or is unavailable. Historical usage is preserved.",
+    "sourceText": "目标已移除或不可用，历史用量仍保留。"
+  },
+  "taskStatusCouldNotBeRefreshedTheLastSuccessful": {
+    "message": "Task status could not be refreshed. The last successful data is preserved.",
+    "description": "home: Task status could not be refreshed. The last successful data is preserved.",
+    "sourceText": "任务状态暂时无法刷新，已保留上次成功获取的数据。"
+  },
+  "reloadTaskStatus": {
+    "message": "Reload task status",
+    "description": "home: Reload task status",
+    "sourceText": "重新加载任务状态"
+  },
+  "confirmWorkbenchChange": {
+    "message": "Confirm workbench change",
+    "description": "home: Confirm workbench change",
+    "sourceText": "工作台变更确认"
+  },
+  "yourConfirmationIsNeeded": {
+    "message": "Your confirmation is needed",
+    "description": "home: Your confirmation is needed",
+    "sourceText": "需要你确认"
+  },
+  "joiSuggestsMergingWorkbenches": {
+    "message": "joi suggests merging workbenches",
+    "description": "home: joi suggests merging workbenches",
+    "sourceText": "joi 建议合并工作台"
+  },
+  "joiSuggestsArchivingAWorkbench": {
+    "message": "joi suggests archiving a workbench",
+    "description": "home: joi suggests archiving a workbench",
+    "sourceText": "joi 建议归档工作台"
+  },
+  "keepAsIs": {
+    "message": "Keep as is",
+    "description": "home: Keep as is",
+    "sourceText": "保留原样"
+  },
+  "confirmMerge": {
+    "message": "Confirm merge",
+    "description": "home: Confirm merge",
+    "sourceText": "确认合并"
+  },
+  "confirmArchive": {
+    "message": "Confirm archive",
+    "description": "home: Confirm archive",
+    "sourceText": "确认归档"
+  },
+  "joiActivityFeed": {
+    "message": "joi activity feed",
+    "description": "home: joi activity feed",
+    "sourceText": "joi 信息流"
+  },
+  "aFreshStartTellJoiAGoalAndWork": {
+    "message": "A fresh start. Tell joi a goal, and work in progress will appear here.",
+    "description": "home: A fresh start. Tell joi a goal, and work in progress will appear here.",
+    "sourceText": "这里很干净。告诉 joi 一个目标，正在推进的工作会暂时出现在这里。"
+  },
+  "noWorkPartnersYet": {
+    "message": "No work partners yet.",
+    "description": "home: No work partners yet.",
+    "sourceText": "当前还没有工作搭档。"
+  },
+  "onlyValueWorkPartnersAreAvailable": {
+    "message": "Only {p0} work partners are available.",
+    "description": "home: Only {p0} work partners are available.",
+    "sourceText": "当前只有 {p0} 个工作搭档。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "buildATeamFromAScenarioPresetOrCreate": {
+    "message": "Build a team from a scenario preset, or create 2–3 partners on the Partners page.",
+    "description": "home: Build a team from a scenario preset, or create 2–3 partners on the Partners page.",
+    "sourceText": "可以先用场景预设一键组建团队，或去搭档页手动创建 2-3 个。"
+  },
+  "viewScenarioPresets": {
+    "message": "View scenario presets",
+    "description": "home: View scenario presets",
+    "sourceText": "看场景预设"
+  },
+  "createPartners": {
+    "message": "Create partners",
+    "description": "home: Create partners",
+    "sourceText": "去搭档页创建"
+  },
+  "messageJoi": {
+    "message": "Message joi",
+    "description": "home: Message joi",
+    "sourceText": "给 joi 输入"
+  },
+  "describeAGoalAddAnIdeaOrContinueA": {
+    "message": "Describe a goal, add an idea, or continue a conversation…",
+    "description": "home: Describe a goal, add an idea, or continue a conversation…",
+    "sourceText": "描述目标、补充想法，或继续上一段对话…"
+  },
+  "addAttachment": {
+    "message": "Add attachment",
+    "description": "home: Add attachment",
+    "sourceText": "添加附件"
+  },
+  "addAnAttachmentForJoi": {
+    "message": "Add an attachment for joi",
+    "description": "home: Add an attachment for joi",
+    "sourceText": "给 joi 添加附件"
+  },
+  "sendToJoi": {
+    "message": "Send to joi",
+    "description": "home: Send to joi",
+    "sourceText": "交给 joi"
+  },
+  "joiNeedsAnAnswerBeforeContinuingToPlanThis": {
+    "message": "joi needs an answer before continuing to plan this task.",
+    "description": "home: joi needs an answer before continuing to plan this task.",
+    "sourceText": "joi 需要你回答一个问题，才能继续安排这条任务。"
+  },
+  "aPartnerIsStillWaitingChooseResumeOriginalWork": {
+    "message": "A partner is still waiting. Choose Resume original work to continue.",
+    "description": "home: A partner is still waiting. Choose Resume original work to continue.",
+    "sourceText": "一项搭档工作仍在等待。点击继续原工作即可恢复。"
+  },
+  "thePartnerNeedsAuthorizationAgainAuthorizeItInPartner": {
+    "message": "The partner needs authorization again. Authorize it in partner settings, then choose Resume original work.",
+    "description": "home: The partner needs authorization again. Authorize it in partner settings, then choose Resume original work.",
+    "sourceText": "搭档需要重新授权。请先在搭档设置完成授权，然后点击继续原工作。"
+  },
+  "theResultStillNeedsAdditionsOrVerificationThisRound": {
+    "message": "The result still needs additions or verification. This round reached its extension limit. joi is waiting for your decision.",
+    "description": "home: The result still needs additions or verification. This round reached its extension limit. joi is waiting for your decision.",
+    "sourceText": "当前结果仍有内容需要补充或核实。自动补充已达到本次上限，joi 已暂停，等待你决定是否继续。"
+  },
+  "valueHasNoWorkingDirectoryYetChooseADirectory": {
+    "message": "{p0} has no working directory yet. Choose a directory and joi will continue automatically.",
+    "description": "home: {p0} has no working directory yet. Choose a directory and joi will continue automatically.",
+    "sourceText": "“{p0}”还没有可用的工作目录。选择一个目录后，joi 会自动继续这条任务。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "chooseAnAvailablePartnerToContinueThisTask": {
+    "message": "Choose an available partner to continue this task.",
+    "description": "home: Choose an available partner to continue this task.",
+    "sourceText": "请选择一个可用搭档继续这条任务。"
+  },
+  "joiCouldNotDispatchThisTaskItIsPaused": {
+    "message": "joi could not dispatch this task. It is paused until the partner configuration is fixed.",
+    "description": "home: joi could not dispatch this task. It is paused until the partner configuration is fixed.",
+    "sourceText": "joi 暂时无法把这条任务派发给搭档，任务已暂停。修复搭档配置后可以继续重试。"
+  },
+  "joiCannotDetermineTheContextForThisInputChoose": {
+    "message": "joi cannot determine the context for this input. Choose a workbench below or clarify the project or role.",
+    "description": "home: joi cannot determine the context for this input. Choose a workbench below or clarify the project or role.",
+    "sourceText": "joi 没法定位这条输入属于哪个上下文。在下方点选它对应的工作台，或补充更明确的项目/角色。"
+  },
+  "joiWantsToCreateAWorkbenchForThisInput": {
+    "message": "joi wants to create a workbench for this input but cannot do so right now. Clarify its context or create one on the Workbenches page.",
+    "description": "home: joi wants to create a workbench for this input but cannot do so right now. Clarify its context or create one on the Workbenches page.",
+    "sourceText": "joi 想新建一个工作台来承接这条输入，但当前无法创建。请补充更明确的归属，或先到「工作台」页手动创建。"
+  },
+  "theWorkbenchForThisInputNoLongerExistsChoose": {
+    "message": "The workbench for this input no longer exists. Choose another below or clarify the project or role.",
+    "description": "home: The workbench for this input no longer exists. Choose another below or clarify the project or role.",
+    "sourceText": "这条输入指向的工作台已不存在。在下方点选它应归属的工作台，或补充项目/角色。"
+  },
+  "joiNeedsMoreInformationToContinueAddDetailsBelow": {
+    "message": "joi needs more information to continue. Add details below to keep this input moving.",
+    "description": "home: joi needs more information to continue. Add details below to keep this input moving.",
+    "sourceText": "joi 需要你补充信息后才能继续。在下方补充细节，它会接着这条输入往下做。"
+  },
+  "couldNotLoadJoiStatus": {
+    "message": "Could not load joi status.",
+    "description": "home: Could not load joi status.",
+    "sourceText": "没能读取 joi 的状态。"
+  },
+  "joiIsPreparingOverallStatus": {
+    "message": "joi is preparing overall status…",
+    "description": "home: joi is preparing overall status…",
+    "sourceText": "joi 正在整理全局状态…"
+  },
+  "couldNotLoadArchivedGoals": {
+    "message": "Could not load archived goals.",
+    "description": "home: Could not load archived goals.",
+    "sourceText": "没能读取已归档的目标。"
+  },
+  "joiIsLoadingArchivedGoals": {
+    "message": "joi is loading archived goals…",
+    "description": "home: joi is loading archived goals…",
+    "sourceText": "joi 正在整理已归档的目标…"
+  },
+  "archivingHidesACardFromTheHomePageUnarchive": {
+    "message": "Archiving hides a card from the home page. Unarchive to bring it back, or continue to resume the work.",
+    "description": "home: Archiving hides a card from the home page. Unarchive to bring it back, or continue to resume the work.",
+    "sourceText": "归档只是把卡片从首页收起来。取消归档可以放回首页，继续会重新把它跑起来。"
+  },
+  "archivedGoals": {
+    "message": "Archived goals",
+    "description": "home: Archived goals",
+    "sourceText": "已归档的目标"
+  },
+  "noArchivedGoalsYetChooseArchiveFromACard": {
+    "message": "No archived goals yet. Choose Archive from a card menu on the home page to move it here.",
+    "description": "home: No archived goals yet. Choose Archive from a card menu on the home page to move it here.",
+    "sourceText": "还没有归档的目标。在首页的卡片菜单里选「归档」，它就会收到这里。"
+  },
+  "goalTitleActions": {
+    "message": "Goal title actions",
+    "description": "Goal detail: Goal title actions",
+    "sourceText": "目标标题操作"
+  },
+  "fullTitleNotLoaded": {
+    "message": "The full title has not loaded yet.",
+    "description": "Goal detail: The full title has not loaded yet.",
+    "sourceText": "全文尚未加载，请稍后重试。"
+  },
+  "titleCopyFailed": {
+    "message": "Copy failed. Select the full text to copy manually.",
+    "description": "Goal detail: Copy failed. Select the full text to copy manually.",
+    "sourceText": "复制失败，请选中全文手动复制。"
+  },
+  "goalRouteMap": {
+    "message": "Goal route map",
+    "description": "Goal detail: Goal route map",
+    "sourceText": "目标路线图"
+  },
+  "routeMapCleared": {
+    "message": "Map cleared",
+    "description": "Goal detail: Map cleared",
+    "sourceText": "地图已收官"
+  },
+  "routeMapActive": {
+    "message": "In progress",
+    "description": "Goal detail: In progress",
+    "sourceText": "推进中"
+  },
+  "routeDestination": {
+    "message": "Destination",
+    "description": "Goal detail: Destination",
+    "sourceText": "目的地"
+  },
+  "routeMapCounts": {
+    "message": "{paths} paths · {decisions} decisions · {fog} unknowns",
+    "description": "Goal detail: paths, decisions and unknowns",
+    "sourceText": "{paths} 条路径 · {decisions} 项决策 · {fog} 项雾区",
+    "placeholders": {
+      "paths": "string",
+      "decisions": "string",
+      "fog": "string"
+    }
+  },
+  "routeMapEmpty": {
+    "message": "No paths have been charted yet.",
+    "description": "Goal detail: No paths have been charted yet.",
+    "sourceText": "尚未建立路径。"
+  },
+  "routeLayer": {
+    "message": "Layer {layer}",
+    "description": "Goal detail: Layer {layer}",
+    "sourceText": "第 {layer} 层",
+    "placeholders": {
+      "layer": "string"
+    }
+  },
+  "routeLatestLayer": {
+    "message": "Latest layer",
+    "description": "Goal detail: Latest layer",
+    "sourceText": "最新层"
+  },
+  "mapPathOpen": {
+    "message": "Open",
+    "description": "Goal detail: Open",
+    "sourceText": "开放中"
+  },
+  "mapPathClosed": {
+    "message": "Closed",
+    "description": "Goal detail: Closed",
+    "sourceText": "已关闭"
+  },
+  "mapPathOutOfScope": {
+    "message": "Out of scope",
+    "description": "Goal detail: Out of scope",
+    "sourceText": "范围外"
+  },
+  "mapWorkPlanned": {
+    "message": "Task planned",
+    "description": "Goal detail: Task planned",
+    "sourceText": "任务待安排"
+  },
+  "mapWorkReady": {
+    "message": "Task queued",
+    "description": "Goal detail: Task queued",
+    "sourceText": "任务排队中"
+  },
+  "mapWorkRunning": {
+    "message": "Task running",
+    "description": "Goal detail: Task running",
+    "sourceText": "任务执行中"
+  },
+  "mapWorkWaiting": {
+    "message": "Task waiting",
+    "description": "Goal detail: Task waiting",
+    "sourceText": "任务等待中"
+  },
+  "mapWorkCompleted": {
+    "message": "Task completed",
+    "description": "Goal detail: Task completed",
+    "sourceText": "任务完成"
+  },
+  "mapWorkFailed": {
+    "message": "Task failed",
+    "description": "Goal detail: Task failed",
+    "sourceText": "任务失败"
+  },
+  "mapWorkCanceled": {
+    "message": "Task canceled",
+    "description": "Goal detail: Task canceled",
+    "sourceText": "任务已取消"
+  },
+  "routePathDetails": {
+    "message": "Path details",
+    "description": "Goal detail: Path details",
+    "sourceText": "路径详情"
+  },
+  "routePromotedFromFog": {
+    "message": "Exploring an earlier unknown: {note}",
+    "description": "Goal detail: Exploring an earlier unknown: {note}",
+    "sourceText": "来自雾区：{note}",
+    "placeholders": {
+      "note": "string"
+    }
+  },
+  "routeNotes": {
+    "message": "Decisions and unknowns",
+    "description": "Goal detail: Decisions and unknowns",
+    "sourceText": "决策与雾区"
+  },
+  "routeDecisions": {
+    "message": "Decisions",
+    "description": "Goal detail: Decisions",
+    "sourceText": "决策"
+  },
+  "routeFog": {
+    "message": "Unknowns",
+    "description": "Goal detail: Unknowns",
+    "sourceText": "雾区"
+  },
+  "routeNoDecisions": {
+    "message": "No decisions recorded yet.",
+    "description": "Goal detail: No decisions recorded yet.",
+    "sourceText": "尚未记录决策。"
+  },
+  "routeNoFog": {
+    "message": "No unknowns recorded.",
+    "description": "Goal detail: No unknowns recorded.",
+    "sourceText": "尚未记录雾区。"
+  },
+  "routeFogActive": {
+    "message": "Unresolved",
+    "description": "Goal detail: Unresolved",
+    "sourceText": "待探索"
+  },
+  "routeFogGraduated": {
+    "message": "Promoted to a path",
+    "description": "Goal detail: Promoted to a path",
+    "sourceText": "已晋升为路径"
+  },
+  "routeViewPromotedPath": {
+    "message": "View promoted path",
+    "description": "Goal detail: View promoted path",
+    "sourceText": "查看晋升路径"
+  },
+  "goalDetailLoadFailed": {
+    "message": "Could not refresh goal details. Previously loaded content is retained.",
+    "description": "Goal detail: Could not refresh goal details. Previously loaded content is retained.",
+    "sourceText": "目标详情暂时无法刷新，已加载的内容仍然保留。"
+  },
+  "routeLoadMore": {
+    "message": "Load more paths, decisions and unknowns",
+    "description": "Goal detail: Load more paths, decisions and unknowns",
+    "sourceText": "加载更多路径、决策与雾区"
+  },
+  "routeExpand": {
+    "message": "Expand route map",
+    "description": "Goal details: Expand route map",
+    "sourceText": "展开路线图"
+  },
+  "routeCollapse": {
+    "message": "Collapse route map",
+    "description": "Goal details: Collapse route map",
+    "sourceText": "收起路线图"
+  },
+  "routeCurrentLayer": {
+    "message": "Current layer {layer}",
+    "description": "Goal details: Current layer {layer}",
+    "sourceText": "当前第 {layer} 层",
+    "placeholders": {
+      "layer": "string"
+    }
+  },
+  "routePaths": {
+    "message": "Paths",
+    "description": "Goal details: Paths",
+    "sourceText": "路径"
+  },
+  "routeDetails": {
+    "message": "Route map details",
+    "description": "Goal details: Route map details",
+    "sourceText": "路线图详情"
+  },
+  "routeLoaded": {
+    "message": "Loaded {loaded} / {total}",
+    "description": "Goal details: Loaded {loaded} / {total}",
+    "sourceText": "已加载 {loaded} / 共 {total} 项",
+    "placeholders": {
+      "loaded": "string",
+      "total": "string"
+    }
+  },
+  "routeRelatedNotLoaded": {
+    "message": "Related content is not loaded yet. Load more to view it.",
+    "description": "Goal details: Related content is not loaded yet. Load more to view it.",
+    "sourceText": "关联内容尚未加载，请加载更多后查看。"
+  },
+  "routeLoading": {
+    "message": "Loading route map details…",
+    "description": "Goal details: Loading route map details…",
+    "sourceText": "正在加载路线详情…"
+  },
+  "insufficient": {
+    "message": "Insufficient",
+    "description": "home.insufficient"
+  },
+  "historicalReviewPaused": {
+    "message": "Internal review interrupted",
+    "description": "Interrupted internal review with saved results",
+    "sourceText": "内部复核已中断"
+  },
+  "recheckAndContinue": {
+    "message": "Retry review",
+    "description": "Retry an interrupted internal review",
+    "sourceText": "重试复核"
+  },
+  "historicalReviewRecoveryHint": {
+    "message": "The internal review did not finish. Existing results are saved. Retry the review, or optionally update the requirements.",
+    "description": "Internal recovery does not require additional user information",
+    "sourceText": "内部复核未完成，已有成果已保留。可直接重试复核；仅在需要调整目标时补充要求。"
+  },
+  "reviewInterrupted": {
+    "message": "Review interrupted",
+    "description": "Goal status for an interrupted internal review",
+    "sourceText": "复核中断"
+  },
+  "optionalReviewRequirements": {
+    "message": "Add requirements (optional)",
+    "description": "Expand optional requirements for an interrupted review",
+    "sourceText": "补充要求（可选）"
+  },
+  "joiProgressOpen": {
+    "message": "View JOI progress",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "查看 JOI 工作进展"
+  },
+  "joiProgressTitle": {
+    "message": "JOI progress",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "JOI 工作进展"
+  },
+  "joiProgressClose": {
+    "message": "Close progress window",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "关闭进展窗口"
+  },
+  "joiProgressQueued": {
+    "message": "Queued",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待调度"
+  },
+  "joiProgressRunning": {
+    "message": "Working",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "正在处理"
+  },
+  "joiProgressPartners": {
+    "message": "Waiting for partners",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待搭档结果"
+  },
+  "joiProgressUser": {
+    "message": "Waiting for your response",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待你的回应"
+  },
+  "joiProgressRecovering": {
+    "message": "Awaiting recovery",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待系统恢复"
+  },
+  "joiProgressIdle": {
+    "message": "Awaiting the next step",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "等待下一步处理"
+  },
+  "joiProgressCompleted": {
+    "message": "Finished",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已收尾"
+  },
+  "joiProgressFailed": {
+    "message": "Stopped",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已停止"
+  },
+  "joiProgressCanceled": {
+    "message": "Canceled",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已取消"
+  },
+  "joiProgressPlanning": {
+    "message": "Plan and arrange work",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "整理与安排工作"
+  },
+  "joiProgressFinalizing": {
+    "message": "Synthesize results",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "汇总结果"
+  },
+  "joiProgressReviewing": {
+    "message": "Review results",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "评审结果"
+  },
+  "joiProgressRecovery": {
+    "message": "Reconcile and recover",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "核对与恢复"
+  },
+  "joiProgressQueuedHint": {
+    "message": "This turn has not started yet and is waiting for JOI to schedule it.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "当前回合尚未开始，正在等待 JOI 调度。"
+  },
+  "joiProgressRunningHint": {
+    "message": "JOI is working on this turn. Its latest activity time is shown below.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "JOI 正在推进当前回合，最近活动时间见下方。"
+  },
+  "joiProgressPartnersHint": {
+    "message": "JOI has arranged the work and is waiting for partner results.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "JOI 已安排工作，正在等待搭档返回结果。"
+  },
+  "joiProgressUserHint": {
+    "message": "Your response is needed. Return to the goal details to continue.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "需要你的选择或补充，请返回目标详情处理。"
+  },
+  "joiProgressRecoveringHint": {
+    "message": "The last turn was interrupted. The runtime must check recovery conditions.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "上一回合已中断，等待运行时核对恢复条件。"
+  },
+  "joiProgressIdleHint": {
+    "message": "No JOI turn is running or queued. The goal is awaiting its next step.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "当前没有运行或排队的 JOI 回合，目标仍在等待下一步推进。"
+  },
+  "joiProgressCompletedHint": {
+    "message": "The route map for this goal is finished.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "该目标的路线图已收尾。"
+  },
+  "joiProgressFailedHint": {
+    "message": "This goal has stopped. Return to its details for next steps.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "该目标已停止，可返回详情查看处理建议。"
+  },
+  "joiProgressCanceledHint": {
+    "message": "This goal was canceled. Completed work records are retained.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "该目标已取消，已完成的工作记录仍然保留。"
+  },
+  "joiProgressUpdated": {
+    "message": "Latest activity",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "最近更新时间"
+  },
+  "joiProgressStarted": {
+    "message": "Goal started",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "任务开始时间"
+  },
+  "joiProgressElapsed": {
+    "message": "Elapsed {duration}",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "任务已用 {duration}",
+    "placeholders": {
+      "duration": "string"
+    }
+  },
+  "joiProgressCurrentElapsed": {
+    "message": "Current turn {duration}",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "当前回合已用 {duration}",
+    "placeholders": {
+      "duration": "string"
+    }
+  },
+  "joiProgressCounts": {
+    "message": "{turns} turns ? {reviews} reviews",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已运行 {turns} 个回合 · 其中 {reviews} 次评审",
+    "placeholders": {
+      "turns": "string",
+      "reviews": "string"
+    }
+  },
+  "joiProgressWork": {
+    "message": "Partner work: {completed} completed ? {active} active ? {failed} failed ? {total} total",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "搭档工作：{completed} 完成 · {active} 进行中 · {failed} 失败 · 共 {total} 项",
+    "placeholders": {
+      "completed": "string",
+      "active": "string",
+      "failed": "string",
+      "total": "string"
+    }
+  },
+  "joiProgressRecent": {
+    "message": "Recent turns",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "近期回合"
+  },
+  "joiProgressRecentLimit": {
+    "message": "Up to 12 recent turns, including active turns.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "最多显示最近 12 个回合，包含当前活动回合。"
+  },
+  "joiProgressNoTurns": {
+    "message": "No JOI turns recorded yet.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "尚无 JOI 回合记录。"
+  },
+  "joiProgressUnavailable": {
+    "message": "JOI progress is currently unavailable.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "暂时无法获取 JOI 工作进展。"
+  },
+  "joiProgressRefreshFailed": {
+    "message": "Refresh failed. Showing the last successfully loaded progress.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "状态刷新失败，当前显示上次成功获取的进展。"
+  },
+  "joiProgressQuiet": {
+    "message": "No new progress for {duration}.",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "已有 {duration} 未收到新的进展。",
+    "placeholders": {
+      "duration": "string"
+    }
+  },
+  "joiProgressTurnCompleted": {
+    "message": "Turn ended",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合已结束"
+  },
+  "joiProgressTurnFailed": {
+    "message": "Turn failed",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合中断"
+  },
+  "joiProgressTurnAborted": {
+    "message": "Turn aborted",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合已终止"
+  },
+  "joiProgressTurnWaiting": {
+    "message": "Turn waiting",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "回合等待中"
+  },
+  "joiProgressSeconds": {
+    "message": "{value}s",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "{value} 秒",
+    "placeholders": {
+      "value": "string"
+    }
+  },
+  "joiProgressMinutes": {
+    "message": "{value}m",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "{value} 分钟",
+    "placeholders": {
+      "value": "string"
+    }
+  },
+  "joiProgressHours": {
+    "message": "{value}h {minutes}m",
+    "description": "Goal-scoped JOI execution progress",
+    "sourceText": "{value} 小时 {minutes} 分钟",
+    "placeholders": {
+      "value": "string",
+      "minutes": "string"
+    }
+  },
+  "resultHistory": {
+    "message": "Result history",
+    "description": "Completed result history",
+    "sourceText": "历史结果"
+  },
+  "noResultHistory": {
+    "message": "No result history yet.",
+    "description": "Completed result history",
+    "sourceText": "暂无历史结果"
+  },
+  "loadMoreResults": {
+    "message": "Load more",
+    "description": "Completed result history",
+    "sourceText": "加载更多"
+  },
+  "backToResultHistory": {
+    "message": "Back to result history",
+    "description": "Completed result history",
+    "sourceText": "返回历史结果"
+  },
+  "historyLoadFailed": {
+    "message": "Could not load result history. Try again.",
+    "description": "Completed result history",
+    "sourceText": "历史结果加载失败，请重试。"
+  },
+  "latestResult": {
+    "message": "Latest result",
+    "description": "Completed result history",
+    "sourceText": "最新结果"
+  },
+  "resultAt": {
+    "message": "Completed at {p0}",
+    "description": "Completed result history",
+    "sourceText": "完成于 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "artifactPageFailed": {
+    "message": "Could not load files. Try again.",
+    "description": "home.artifactPageFailed"
+  },
+  "changedFiles": {
+    "message": "Files changed this round",
+    "description": "home.changedFiles"
+  },
+  "artifactCount": {
+    "message": "{count} files",
+    "description": "home.artifactCount",
+    "placeholders": {
+      "count": "string"
+    }
+  }
+}

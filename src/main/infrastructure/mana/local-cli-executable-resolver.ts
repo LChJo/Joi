@@ -1,0 +1,121 @@
+import { existsSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, dirname, extname, join, normalize } from "node:path";
+
+/**
+ * Resolves the user's locally installed Claude Code / Codex CLI that the Agent
+ * SDK spawns. Ported from ai_mana_front_debug's resolve-executable so a partner
+ * runs on the user's own login / forwarding / subscription config. No bundled
+ * binary fallback: if the CLI is absent the engine reports unavailable.
+ */
+export type LocalCliProtocol = "claude" | "codex";
+
+export interface ResolvedLocalCliExecutable {
+  commandName: string;
+  executablePath?: string;
+  protocol: LocalCliProtocol;
+}
+
+function executableCandidates(commandName: string): string[] {
+  if (process.platform !== "win32") return [commandName];
+  if (/\.[a-z0-9]+$/iu.test(commandName)) return [commandName];
+  const pathext = process.env.PATHEXT?.split(";").filter(Boolean) ?? [".COM", ".EXE", ".BAT", ".CMD"];
+  return pathext.map((ext) => `${commandName}${ext.toLowerCase()}`);
+}
+
+function resolvePathExecutable(commandNames: string[]): string | undefined {
+  const pathEntries = (process.env.PATH ?? "").split(delimiter).filter(Boolean);
+  for (const dir of pathEntries) {
+    if (isNodeModulesBinDirectory(dir)) continue;
+    for (const commandName of commandNames) {
+      for (const candidateName of executableCandidates(commandName)) {
+        const candidate = join(dir, candidateName);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** npm scripts prepend the app's own node_modules/.bin; it is not a user CLI installation. */
+function isNodeModulesBinDirectory(directory: string): boolean {
+  const parts = normalize(directory).split(/[\\/]+/u).map((part) => part.toLowerCase());
+  return parts.some((part, index) => part === "node_modules" && parts[index + 1] === ".bin");
+}
+
+interface CodexNativeTarget {
+  binary: string;
+  packageName: string;
+  triple: string;
+}
+
+function getCodexNativeTarget(): CodexNativeTarget | undefined {
+  if (process.platform === "win32" && process.arch === "x64") {
+    return { binary: "codex.exe", packageName: "codex-win32-x64", triple: "x86_64-pc-windows-msvc" };
+  }
+  if (process.platform === "win32" && process.arch === "arm64") {
+    return { binary: "codex.exe", packageName: "codex-win32-arm64", triple: "aarch64-pc-windows-msvc" };
+  }
+  return undefined;
+}
+
+function resolveNativeCodexFromPackageRoot(packageRoot: string): string | undefined {
+  const target = getCodexNativeTarget();
+  if (target === undefined) return undefined;
+  const nativeRoots = [
+    join(dirname(packageRoot), target.packageName, "vendor", target.triple),
+    join(packageRoot, "node_modules", "@openai", target.packageName, "vendor", target.triple),
+  ];
+  for (const nativeRoot of nativeRoots) {
+    const modern = join(nativeRoot, "bin", target.binary);
+    if (existsSync(modern)) return modern;
+    const legacy = join(nativeRoot, "codex", target.binary);
+    if (existsSync(legacy)) return legacy;
+  }
+  return undefined;
+}
+
+/** Native conversations need the real Codex binary, not an npm cmd/bat shim. */
+function resolveNativeCodexExecutable(executablePath: string): string | undefined {
+  if (process.platform !== "win32") return executablePath;
+  const extension = extname(executablePath).toLowerCase();
+  if (extension !== ".cmd" && extension !== ".bat" && extension !== ".ps1" && extension !== ".js") return executablePath;
+  const shimDir = dirname(executablePath);
+  const packageRoots = [join(shimDir, "node_modules", "@openai", "codex"), join(shimDir, "..", "@openai", "codex")];
+  for (const packageRoot of packageRoots) {
+    const native = resolveNativeCodexFromPackageRoot(packageRoot);
+    if (native !== undefined) return native;
+  }
+  return undefined;
+}
+
+function resolveCodexDesktopExecutable(): string | undefined {
+  if (process.platform !== "darwin") return undefined;
+  const candidates = ["/Applications/Codex.app/Contents/Resources/codex", join(homedir(), "Applications", "Codex.app", "Contents", "Resources", "codex")];
+  return candidates.find((candidate) => existsSync(candidate));
+}
+
+export function resolveLocalCliExecutable(protocol: LocalCliProtocol): ResolvedLocalCliExecutable {
+  if (protocol === "codex") {
+    const pathExecutable = resolvePathExecutable(["codex"]);
+    const executablePath = pathExecutable === undefined ? resolveCodexDesktopExecutable() : (resolveNativeCodexExecutable(pathExecutable) ?? pathExecutable);
+    return {
+      commandName: process.platform === "win32" ? "codex.cmd" : "codex",
+      ...(executablePath === undefined ? {} : { executablePath }),
+      protocol,
+    };
+  }
+  const located = resolvePathExecutable(["claude"]);
+  const nativeCandidates = located === undefined ? [] : [
+    join(dirname(located), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"),
+    join(dirname(located), "..", "@anthropic-ai", "claude-code", "bin", "claude.exe"),
+    join(dirname(located), "node_modules", "@anthropic-ai", `claude-code-win32-${process.arch}`, "claude.exe"),
+  ];
+  const executablePath = process.platform === "win32" && located !== undefined && /\.(?:cmd|bat|ps1)$/iu.test(located)
+    ? nativeCandidates.find(candidate => existsSync(candidate)) ?? located : located;
+  return {
+    commandName: process.platform === "win32" ? "claude.exe" : "claude",
+    ...(executablePath === undefined ? {} : { executablePath }),
+    protocol,
+  };
+}

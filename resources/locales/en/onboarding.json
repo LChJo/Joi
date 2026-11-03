@@ -1,0 +1,192 @@
+{
+  "joiIsGettingReady": {
+    "message": "joi is getting ready",
+    "description": "onboarding: joi is getting ready",
+    "sourceText": "joi 正在准备"
+  },
+  "joiIsHere": {
+    "message": "joi is here",
+    "description": "onboarding: joi is here",
+    "sourceText": "joi 在这里"
+  },
+  "almostReady": {
+    "message": "Almost ready",
+    "description": "onboarding: Almost ready",
+    "sourceText": "马上就好"
+  },
+  "joiIsPreparingYourDataAndStatus": {
+    "message": "joi is preparing your data and status.",
+    "description": "onboarding: joi is preparing your data and status.",
+    "sourceText": "joi 正在整理数据和状态。"
+  },
+  "joiNeedsAHand": {
+    "message": "joi needs a hand",
+    "description": "onboarding: joi needs a hand",
+    "sourceText": "joi 遇到了问题"
+  },
+  "somethingWentWrong": {
+    "message": "Something went wrong",
+    "description": "onboarding: Something went wrong",
+    "sourceText": "出了点状况"
+  },
+  "tryAgain": {
+    "message": "Try again",
+    "description": "onboarding: Try again",
+    "sourceText": "再试一次"
+  },
+  "completeTheInitialSetupInTheDesktopWindow": {
+    "message": "Complete the initial setup in the desktop window.",
+    "description": "onboarding: Complete the initial setup in the desktop window.",
+    "sourceText": "请在本机窗口完成首次设置。"
+  },
+  "cannotConnectToTheLocalServiceMakeSureJoi": {
+    "message": "Cannot connect to the local service. Make sure joi is running.",
+    "description": "onboarding: Cannot connect to the local service. Make sure joi is running.",
+    "sourceText": "连不上本机服务，请确认 joi 还在运行。"
+  },
+  "verificationFailedTryAgain": {
+    "message": "Verification failed. Try again.",
+    "description": "onboarding: Verification failed. Try again.",
+    "sourceText": "没验证成功，再试一次。"
+  },
+  "aboutJoi": {
+    "message": "About joi",
+    "description": "onboarding: About joi",
+    "sourceText": "joi 介绍"
+  },
+  "welcomeBackJoiIsHere": {
+    "message": "Welcome back. joi is here.",
+    "description": "onboarding: Welcome back. joi is here.",
+    "sourceText": "欢迎回来，joi 一直在。"
+  },
+  "enterYourPasswordToPickUpWhereYouLeft": {
+    "message": "Enter your password to pick up where you left off.",
+    "description": "onboarding: Enter your password to pick up where you left off.",
+    "sourceText": "输入密码，接着之前的事继续。"
+  },
+  "yourPasswordStaysOnTheComputerRunningJoiAnd": {
+    "message": "Your password stays on the computer running joi and is never given to the browser.",
+    "description": "onboarding: Your password stays on the computer running joi and is never given to the browser.",
+    "sourceText": "密码只存在运行 joi 的电脑上，不会交给浏览器。"
+  },
+  "backToJoi": {
+    "message": "Back to joi",
+    "description": "onboarding: Back to joi",
+    "sourceText": "回到 joi"
+  },
+  "confirmItIsYou": {
+    "message": "Confirm it is you",
+    "description": "onboarding: Confirm it is you",
+    "sourceText": "确认是你"
+  },
+  "enterTheAdminPasswordSavedDuringSetup": {
+    "message": "Enter the admin password saved during setup.",
+    "description": "onboarding: Enter the admin password saved during setup.",
+    "sourceText": "请输入首次设置时保存的管理密码。"
+  },
+  "adminPassword": {
+    "message": "Admin password",
+    "description": "onboarding: Admin password",
+    "sourceText": "管理密码"
+  },
+  "joiIsChecking": {
+    "message": "joi is checking…",
+    "description": "onboarding: joi is checking…",
+    "sourceText": "joi 确认中…"
+  },
+  "thePasswordsDoNotMatch": {
+    "message": "The passwords do not match.",
+    "description": "onboarding: The passwords do not match.",
+    "sourceText": "两次密码不一致。"
+  },
+  "couldNotSaveThePasswordTryAgain": {
+    "message": "Could not save the password. Try again.",
+    "description": "onboarding: Could not save the password. Try again.",
+    "sourceText": "密码没存上，再试一次。"
+  },
+  "setupProgress": {
+    "message": "Setup progress",
+    "description": "onboarding: Setup progress",
+    "sourceText": "首次设置进度"
+  },
+  "setPassword": {
+    "message": "Set password",
+    "description": "onboarding: Set password",
+    "sourceText": "设密码"
+  },
+  "chooseAccess": {
+    "message": "Choose access",
+    "description": "onboarding: Choose access",
+    "sourceText": "选择访问范围"
+  },
+  "connectAModel": {
+    "message": "Connect a model",
+    "description": "onboarding: Connect a model",
+    "sourceText": "连接模型网络"
+  },
+  "protectJoiFirst": {
+    "message": "Protect joi first",
+    "description": "onboarding: Protect joi first",
+    "sourceText": "先保护 joi"
+  },
+  "setAPasswordForJoiFirst": {
+    "message": "Set a password for joi first.",
+    "description": "onboarding: Set a password for joi first.",
+    "sourceText": "先帮 joi 设个密码。"
+  },
+  "aPasswordLetsDevicesOnTheSameNetworkAccess": {
+    "message": "A password lets devices on the same network access joi. It is stored locally. If forgotten, it must be reset.",
+    "description": "onboarding: A password lets devices on the same network access joi. It is stored locally. If forgotten, it must be reset.",
+    "sourceText": "有了密码，同一网络里的设备就能找到 joi。密码只存本机，忘了只能重置。"
+  },
+  "confirmPassword": {
+    "message": "Confirm password",
+    "description": "onboarding: Confirm password",
+    "sourceText": "确认密码"
+  },
+  "saveAndContinue": {
+    "message": "Save and continue",
+    "description": "onboarding: Save and continue",
+    "sourceText": "保存并继续"
+  },
+  "chooseWhoCanAccessJoi": {
+    "message": "Choose who can access joi",
+    "description": "onboarding: Choose who can access joi",
+    "sourceText": "选择谁能找到 joi"
+  },
+  "shouldOtherDevicesBeAbleToReachJoi": {
+    "message": "Should other devices be able to reach joi?",
+    "description": "onboarding: Should other devices be able to reach joi?",
+    "sourceText": "其他设备也要来找 joi 吗？"
+  },
+  "keepingItOffIsSafestYouCanEnableA": {
+    "message": "Keeping it off is safest. You can enable a LAN address in Settings later. joi will not change your firewall automatically.",
+    "description": "onboarding: Keeping it off is safest. You can enable a LAN address in Settings later. joi will not change your firewall automatically.",
+    "sourceText": "现在关着最安全。之后需要时，可以在设置里选一个局域网地址开放。joi 不会自动改防火墙。"
+  },
+  "current": {
+    "message": "Current",
+    "description": "onboarding: Current",
+    "sourceText": "当前"
+  },
+  "changeThisAnytimeInSettings": {
+    "message": "Change this anytime in Settings",
+    "description": "onboarding: Change this anytime in Settings",
+    "sourceText": "随时可在设置中更改"
+  },
+  "useThisComputerOnly": {
+    "message": "Use this computer only",
+    "description": "onboarding: Use this computer only",
+    "sourceText": "先只用本机"
+  },
+  "enterJoi": {
+    "message": "Enter joi",
+    "description": "onboarding: Enter joi",
+    "sourceText": "进入 joi"
+  },
+  "skipForNow": {
+    "message": "Skip for now",
+    "description": "onboarding: Skip for now",
+    "sourceText": "暂时跳过"
+  }
+}

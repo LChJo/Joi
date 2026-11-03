@@ -1,0 +1,12 @@
+{
+  "layoutFailed": "正文排版失败，请重试。",
+  "rasterFailed": "图片转换失败，请重试或导出 PDF。",
+  "saveFailed": "保存失败，请检查可用空间和目录授权。",
+  "cancelled": "已取消导出。",
+  "layout": "正在排版…",
+  "raster": "正在生成图片 {page}/{total}…",
+  "save": "正在保存…",
+  "pair": "首次配对 pair",
+  "resume": "恢复连接 resume",
+  "none": "无"
+}

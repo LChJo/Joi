@@ -1,0 +1,49 @@
+/* In-memory async ports resolve immediately. */
+/* eslint-disable @typescript-eslint/require-await */
+import { WorkResultService } from "../../src/main/application/work/work-result-service.js";
+import type { WorkResultRepository } from "../../src/main/application/ports/work-results.js";
+
+describe("WorkResultService", () => {
+  it("returns bounded chunks only inside the current Workbench scope", async () => {
+    const full = "a".repeat(8_000) + "tail";
+    const repository: WorkResultRepository = {
+      readBody: async (input) => input.workbenchId === "workbench-a" && input.resultId === "result-a"
+        ? { body: full.slice(input.offset, input.offset + input.limit), total: full.length }
+        : null,
+      readVerification: async (resultId) => resultId === "result-a" ? { status: "PASSED" } : null,
+      record: async () => { throw new Error("not used"); },
+    };
+    const service = new WorkResultService(repository);
+    // The first chunk carries the acceptance verdict; later chunks stay pure content.
+    await expect(service.read({ workbenchId: "workbench-a", resultId: "result-a" })).resolves.toEqual({
+      content: "a".repeat(8_000), nextCursor: "8000", resultId: "result-a", verification: { status: "PASSED" },
+    });
+    await expect(service.read({ workbenchId: "workbench-a", cursor: "8000", resultId: "result-a" })).resolves.toEqual({
+      content: "tail", resultId: "result-a",
+    });
+    await expect(service.read({ workbenchId: "workbench-b", resultId: "result-a" }))
+      .rejects.toMatchObject({ code: "work_result_not_found" });
+  });
+
+  it("surfaces a failed verification verdict with its reason on the first chunk", async () => {
+    const repository: WorkResultRepository = {
+      readBody: async () => ({ body: "body", total: 4 }),
+      readVerification: async () => ({ reasonCode: "verification_file_missing", status: "FAILED" }),
+      record: async () => { throw new Error("not used"); },
+    };
+    await expect(new WorkResultService(repository).read({ workbenchId: "workbench-a", resultId: "result-a" }))
+      .resolves.toEqual({ content: "body", resultId: "result-a", verification: { reasonCode: "verification_file_missing", status: "FAILED" } });
+  });
+
+  it("rejects non-canonical cursors instead of partially parsing them", async () => {
+    const service = new WorkResultService({
+      readBody: async () => ({ body: "", total: 0 }),
+      readVerification: async () => null,
+      record: async () => { throw new Error("not used"); },
+    });
+    await expect(service.read({ workbenchId: "workbench-a", cursor: "1junk", resultId: "result-a" }))
+      .rejects.toMatchObject({ code: "work_result_cursor_invalid" });
+    await expect(service.read({ workbenchId: "workbench-a", cursor: "999999999999999999999", resultId: "result-a" }))
+      .rejects.toMatchObject({ code: "work_result_cursor_invalid" });
+  });
+});

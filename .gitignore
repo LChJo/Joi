@@ -1,0 +1,41 @@
+node_modules/
+.cache/
+.vite/
+dist/
+release/
+release-*/
+coverage/
+playwright-report/
+blob-report/
+test-results/
+tmp/
+temp/
+native/**/target/
+resources/native/
+apps/joi_mobile/android/app/src/main/jniLibs/
+.harnesslite/
+*.log
+*.dmp
+*.tsbuildinfo
+.eslintcache
+.env
+.env.*
+!.env.example
+.idea/
+.vscode/
+.vs/
+.DS_Store
+Thumbs.db
+Desktop.ini
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Agent runtime state: local settings, and the worktree copies a delegated task works in.
+# They are whole checkouts of this repository, so tracking one records another branch's
+# files as a gitlink — and `git add -A` picks it up silently.
+.claude/

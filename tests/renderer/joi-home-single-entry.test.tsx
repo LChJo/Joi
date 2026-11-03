@@ -1,0 +1,2371 @@
+// @vitest-environment jsdom
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+
+import { ApiError, DigitalLifeApi } from "../../src/renderer/api.js";
+import { AgentMessageStream, ArchivedGoals, WorkbenchManager, JoiHome, ModelSourceManager } from "../../src/renderer/JoiHome.js";
+import type { ThinkingEffort, WorkbenchAgentCardDto, WorkbenchDetailDto, WorkbenchDto, JoiAcceptedMessageDto, JoiGoalCardDto, JoiSnapshotDto, JoiThinkingItemDto, ModelSourceDto, PartnerDto } from "../../src/shared/joi.js";
+import { DEFAULT_EVOLUTION_DAILY_CALL_LIMIT } from "../../src/shared/evolution.js";
+
+const readySource: ModelSourceDto = {
+  accessMode: "api",
+  activeModel: { capability: "release-tested", id: "deepseek-chat", revisionId: "model-1" },
+  activeSourceRevisionId: "source-revision-1",
+  credential: { configured: true, version: 1 },
+  displayName: "DeepSeek",
+  kind: "deepseek",
+  order: 0,
+  primary: true,
+  protocol: "openai",
+  sourceId: "source-1",
+  status: "READY",
+};
+
+function snapshot(modelSources: ModelSourceDto[]): JoiSnapshotDto {
+  const configured = modelSources.some((source) => source.status === "READY");
+  return { workbenchChanges: [], workbenches: [], modelSources, partners: [], runtime: { configured, status: configured ? "READY" : "NOT_CONFIGURED" }, work: [] };
+}
+
+// Legacy test cases describe message cards. Supply those fixtures through the current
+// feed endpoint; production must not infer execution truth from the message endpoint.
+function mockHomeMessages(api: DigitalLifeApi) {
+  const spy = vi.spyOn(api, "joiHomeFeed");
+  const projection = ({ items }: { items: JoiAcceptedMessageDto[] }) => {
+    const unassignedActions = items.filter((item) => item.status === "CLARIFICATION_REQUIRED" && item.workbenchId === undefined);
+    const goals: JoiGoalCardDto[] = items.filter((item) => !unassignedActions.includes(item)).map((item) => {
+      const base = {
+        agentCount: 0, canDelete: item.status === "CONSUMED", goalId: item.inputId,
+        title: item.textPreview ?? "正在安排的新目标", updatedAt: item.acceptedAt,
+        workbench: { workbenchId: item.workbenchId ?? "", name: item.workbenchId ?? "等待归属" },
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      };
+      if (item.status === "CLARIFICATION_REQUIRED") return { ...base, status: "NEEDS_ATTENTION", clarification: {
+        reasonCode: item.clarificationReasonCode ?? "clarification_required",
+        ...(item.clarificationPrompt === undefined ? {} : { prompt: item.clarificationPrompt }),
+        ...(item.questionId === undefined ? {} : { questionId: item.questionId }),
+        ...(item.questionVersion === undefined ? {} : { questionVersion: item.questionVersion }),
+      } };
+      return { ...base, status: item.canceled ? "CANCELED" : item.status === "CONSUMED" ? "COMPLETED" : item.status === "ROUTED" ? "ARRANGED" : "ARRANGING" };
+    });
+    return { goals, thinking: [], unassignedActions };
+  };
+  const mock = {
+    mockResolvedValue: (value: { items: JoiAcceptedMessageDto[] }) => { spy.mockResolvedValue(projection(value)); return mock; },
+    mockResolvedValueOnce: (value: { items: JoiAcceptedMessageDto[] }) => { spy.mockResolvedValueOnce(projection(value)); return mock; },
+  };
+  return mock;
+}
+
+/**
+ * Every per-card action lives behind the card's ⋯ menu, so an assertion on one of them has to open
+ * the menu first. `menuItem` matches the opened item by its own label.
+ */
+function openGoalMenu(title: string) {
+  fireEvent.click(screen.getByRole("button", { name: `${title} 更多操作` }));
+}
+
+function goalMenuItem(name: "继续" | "取消任务" | "归档" | "取消归档" | "移除") {
+  return screen.getByRole("menuitem", { name });
+}
+
+function openGoalMenuItem(title: string, name: "继续" | "取消任务" | "归档" | "取消归档" | "移除") {
+  openGoalMenu(title);
+  fireEvent.click(goalMenuItem(name));
+}
+
+describe("Workbench context center", () => {
+  it("blocks duplicate removal and dismissal while saving, then allows escape after a network failure", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbenchDto("pending", "等待移除")] });
+    let rejectRemoval!: (error: Error) => void;
+    const pending = new Promise<never>((_resolve, reject) => { rejectRemoval = reject; });
+    const archive = vi.spyOn(api, "archiveWorkbench").mockReturnValue(pending);
+    render(<WorkbenchManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "移除工作台 等待移除" }));
+    fireEvent.keyDown(screen.getByRole("button", { name: "取消" }), { key: "Tab" });
+    expect(screen.getByRole("button", { name: "确认移除" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
+    const saving = screen.getByRole("button", { name: "正在移除…" });
+    expect(saving).toBeDisabled();
+    expect(screen.getByRole("button", { name: "取消" })).toBeDisabled();
+    fireEvent.click(saving);
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Tab" });
+    expect(screen.getByRole("dialog")).toHaveFocus();
+    expect(archive).toHaveBeenCalledTimes(1);
+    await act(async () => { rejectRemoval(new Error("private network failure")); await pending.catch(() => undefined); });
+    expect(screen.getByRole("alert")).toHaveTextContent("工作台没有移除，请重试。");
+    expect(document.body.textContent).not.toContain("private network failure");
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "移除工作台 等待移除" })).toBeInTheDocument();
+  });
+
+  it.each(["catalog", "detail"])("confirms removal from %s once, keeps failures, and clears success", async (entry) => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("remove-me", "待移除工作台");
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue({
+      activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+      personaRevisionId: "persona", projectLabel: "project", recentOutcomes: [], recentResults: [], responsibility: "scope",
+      updatedAt: workbench.updatedAt, workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
+    });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    const archive = vi.spyOn(api, "archiveWorkbench").mockRejectedValueOnce(new ApiError("workbench_change_active_work", "busy", 409)).mockResolvedValue({} as never);
+    render(<WorkbenchManager api={api} />);
+    if (entry === "detail") fireEvent.click(await screen.findByRole("button", { name: "打开工作台 待移除工作台" }));
+    const removalLabel = entry === "detail" ? "移除工作台" : "移除工作台 待移除工作台";
+    fireEvent.click(await screen.findByRole("button", { name: removalLabel }));
+    expect(archive).not.toHaveBeenCalled();
+    expect(screen.getByRole("dialog")).toHaveTextContent("历史记录和工作目录会保留");
+    expect(screen.getByRole("button", { name: "取消" })).toHaveFocus();
+    fireEvent.keyDown(screen.getByRole("button", { name: "取消" }), { key: "Tab", shiftKey: true });
+    expect(screen.getByRole("button", { name: "确认移除" })).toHaveFocus();
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(archive).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: removalLabel }));
+    fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
+    expect(await screen.findByText("工作台仍有未结束的任务，请先完成或取消任务后再移除。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认移除" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(archive).toHaveBeenCalledWith("remove-me");
+    expect(screen.queryByRole("button", { name: "移除工作台 待移除工作台" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "还没有工作台" })).toBeInTheDocument();
+  });
+
+  it("shows safe workspace, work, result and private-instance metadata and runs management actions", async () => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("workbench-1", "发布 Workbench");
+    const detail: WorkbenchDetailDto = {
+      activeWork: [{ workbenchId: workbench.workbenchId, status: "RUNNING", title: "更新发布文档", workId: "work-1" }],
+      workbenchId: workbench.workbenchId,
+      instances: [{ engine: "pi-core", instanceId: "instance-1", lastUsedAt: workbench.updatedAt, partnerId: "partner-1", partnerName: "写作者", sessionPolicy: "RESIDENT", status: "IDLE" }],
+      name: workbench.name,
+      personaRevisionId: "persona-revision-2",
+      projectLabel: "发布工程",
+      recentResults: [{ createdAt: workbench.updatedAt, isLate: true, partnerRevisionId: "partner-revision-1", resultId: "result-1", status: "COMPLETED", summary: "发布检查完成", workId: "work-old" }],
+      recentOutcomes: [{ completedAt: workbench.updatedAt, goalId: "goal-1", resultRevision: 1, status: "COMPLETED", summary: "发布文档已经完成，风险已收口。", title: "更新发布文档" }],
+      responsibility: "维护发布流水线",
+      updatedAt: workbench.updatedAt,
+      workspace: { displayName: "release", kind: "BOUND", status: "READY" },
+    };
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue(detail);
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [{
+      agentId: "instance-1", workbenchId: workbench.workbenchId, canDelete: false, createdAt: workbench.updatedAt,
+      engine: "pi-core", lastActivityAt: workbench.updatedAt, partnerId: "partner-1", partnerName: "写作者",
+      sessionPolicy: "RESIDENT", status: "IDLE", transport: "LOCAL",
+    }] });
+    const update = vi.spyOn(api, "updateWorkbench").mockResolvedValue({ ...detail, personaRevisionId: "persona-revision-3" });
+    const bind = vi.spyOn(api, "bindWorkbenchWorkspace").mockResolvedValue(detail.workspace);
+    const rebuild = vi.spyOn(api, "rebuildWorkbenchWorkspace").mockResolvedValue({ displayName: "发布 Workbench 工作区", kind: "MANAGED", status: "PROVISIONING" });
+
+    render(<WorkbenchManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开工作台 发布 Workbench" }));
+    expect(await screen.findByRole("heading", { name: "发布 Workbench" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "查看 写作者 详情" })).toBeInTheDocument();
+    // The workspace binding sits above the tab strip: visible regardless of tab, before any context drill-in.
+    const workspaceBar = screen.getByRole("heading", { name: "工作区" }).closest("article");
+    expect(workspaceBar).toHaveTextContent("release · BOUND · READY");
+    expect(workspaceBar?.compareDocumentPosition(screen.getByRole("tablist"))).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    fireEvent.click(screen.getByRole("tab", { name: "上下文设置" }));
+    expect(screen.getByRole("heading", { name: "工作区" }).closest("article")).toHaveTextContent("release · BOUND · READY");
+    expect(screen.getByText(/更新发布文档 · RUNNING/u)).toBeInTheDocument();
+    expect(screen.getByText("发布文档已经完成，风险已收口。")).toBeInTheDocument();
+    const recentOutcomes = screen.getByRole("heading", { name: "最近结果总结" }).closest("article");
+    expect(recentOutcomes).toHaveTextContent("更新发布文档");
+    expect(recentOutcomes).toHaveTextContent("已完成");
+    expect(recentOutcomes).not.toHaveTextContent("发布检查完成");
+    expect(document.body.textContent).not.toContain("PRIVATE_PERSONA_BODY");
+    expect(document.body.textContent).not.toMatch(/[A-Za-z]:\\/u);
+
+    fireEvent.change(screen.getByLabelText("提交新人格 revision（留空保持当前）"), { target: { value: "NEW_PRIVATE_PERSONA" } });
+    fireEvent.click(screen.getByRole("button", { name: "保存上下文" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith(workbench.workbenchId, expect.objectContaining({ persona: "NEW_PRIVATE_PERSONA" })));
+    expect(document.body.textContent).not.toContain("NEW_PRIVATE_PERSONA");
+
+    fireEvent.click(screen.getByRole("button", { name: "绑定已有目录" }));
+    await waitFor(() => expect(bind).toHaveBeenCalledWith(workbench.workbenchId));
+    expect(screen.getByText("此工作台的新任务固定使用指定目录。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "使用默认运行目录" }));
+    await waitFor(() => expect(rebuild).toHaveBeenCalledWith(workbench.workbenchId));
+  });
+
+  it("drills from Workbench Agent cards into a read-only Markdown/tool stream and deletes only terminal ephemeral Agents", async () => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("workbench-agent", "研发 Workbench");
+    const detail: WorkbenchDetailDto = {
+      activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name, personaRevisionId: "persona-1",
+      projectLabel: "研发", recentOutcomes: [], recentResults: [], responsibility: "研发", updatedAt: workbench.updatedAt,
+      workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
+    };
+    const ephemeral = {
+      agentId: "agent-once", workbenchId: workbench.workbenchId, canDelete: true, createdAt: workbench.updatedAt, engine: "codex" as const,
+      lastActivityAt: workbench.updatedAt, partnerId: "partner-1", partnerName: "实现者", sessionPolicy: "EPHEMERAL" as const,
+      status: "COMPLETED" as const, transport: "LOCAL" as const,
+    };
+    const resident = { ...ephemeral, agentId: "agent-resident", canDelete: false, partnerName: "长期搭档", sessionPolicy: "RESIDENT" as const, status: "IDLE" as const };
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue(detail);
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [ephemeral, resident] });
+    vi.spyOn(api, "agentConversation")
+      .mockResolvedValueOnce({ agent: ephemeral, items: [
+        { createdAt: workbench.updatedAt, entryId: "entry-1", kind: "MARKDOWN", role: "AGENT", sequence: 0, text: "## 完成\n\n- 已验证\n\n[安全链接](https://example.com/result) [内部链接](/private)\n\n![remote](https://example.com/private.png)" },
+        { createdAt: workbench.updatedAt, entryId: "entry-2", kind: "TOOL_CALL", role: "TOOL", sequence: 1, text: "已调用", toolName: "apply_patch" },
+        { createdAt: workbench.updatedAt, entryId: "entry-3", kind: "TOOL_RESULT", role: "TOOL", sequence: 2, text: "测试通过" },
+        { artifact: { artifactId: "entry-4", kind: "FILE", mimeType: "text/markdown", name: "report.md", size: 128 }, createdAt: workbench.updatedAt, entryId: "entry-4", kind: "ARTIFACT", role: "AGENT", sequence: 3 },
+        { createdAt: workbench.updatedAt, entryId: "entry-user", kind: "MARKDOWN", role: "USER", sequence: 4, text: "原始任务投影" },
+        { createdAt: workbench.updatedAt, entryId: "entry-tool-fallback", kind: "TOOL_CALL", role: "TOOL", sequence: 5 },
+        { createdAt: workbench.updatedAt, entryId: "entry-result-fallback", kind: "TOOL_RESULT", role: "TOOL", sequence: 6, toolName: "shell" },
+        { createdAt: workbench.updatedAt, entryId: "entry-artifact-fallback", kind: "ARTIFACT", role: "AGENT", sequence: 7 },
+        { artifact: { artifactId: "entry-directory", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0 }, createdAt: workbench.updatedAt, entryId: "entry-directory", kind: "ARTIFACT", role: "AGENT", sequence: 8 },
+        { artifact: { artifactId: "entry-code-dir", directory: "src", kind: "DIRECTORY", mimeType: "inode/directory", name: "src", size: 0 }, createdAt: workbench.updatedAt, entryId: "entry-code-dir", kind: "ARTIFACT", role: "AGENT", sequence: 9 },
+        { artifact: { artifactId: "entry-code-1", directory: "src", kind: "FILE", mimeType: "text/typescript", name: "a.ts", size: 64 }, createdAt: workbench.updatedAt, entryId: "entry-code-1", kind: "ARTIFACT", role: "AGENT", sequence: 10 },
+        { artifact: { artifactId: "entry-code-2", directory: "src", kind: "FILE", mimeType: "text/typescript", name: "b.ts", size: 96 }, createdAt: workbench.updatedAt, entryId: "entry-code-2", kind: "ARTIFACT", role: "AGENT", sequence: 11 },
+        { artifact: { kind: "FILE", mimeType: "text/plain", name: "legacy.txt", size: 12 }, createdAt: workbench.updatedAt, entryId: "entry-legacy", kind: "ARTIFACT", role: "AGENT", sequence: 12 },
+        ...Array.from({ length: 6 }, (_, index) => ({ createdAt: workbench.updatedAt, entryId: `bash-${String(index)}`, kind: index % 2 === 0 ? "TOOL_CALL" as const : "TOOL_RESULT" as const, role: "TOOL" as const, sequence: 13 + index, toolName: "bash", ...(index === 5 ? { text: "执行失败" } : {}) })),
+      ], nextCursor: "page-2" })
+      .mockResolvedValueOnce({ agent: ephemeral, items: [
+        { createdAt: workbench.updatedAt, entryId: "entry-5", kind: "ERROR", role: "SYSTEM", sequence: 4, text: "**已恢复**" },
+      ] });
+    const remove = vi.spyOn(api, "deleteWorkbenchAgent").mockResolvedValue(undefined);
+    const openArtifact = vi.spyOn(api, "openWorkbenchArtifact")
+      .mockResolvedValueOnce({ opened: true })
+      .mockResolvedValueOnce({ opened: true })
+      .mockRejectedValueOnce(new Error("desktop unavailable"))
+      .mockRejectedValueOnce(new ApiError("artifact_missing", "产物已经移动。", 404))
+      .mockResolvedValue({ opened: true });
+
+    render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+    expect(await screen.findByRole("button", { name: "查看 实现者 详情" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "删除 实现者" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "删除 长期搭档" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "查看 实现者 详情" }));
+    expect(await screen.findByRole("heading", { name: "完成" })).toBeInTheDocument();
+    expect(screen.getByText("apply_patch")).toBeInTheDocument();
+    const groupedTool = screen.getByText("bash ×3").closest("details");
+    expect(groupedTool).not.toBeNull();
+    expect(screen.getByText("执行失败")).not.toBeVisible();
+    fireEvent.click(screen.getByText("bash ×3"));
+    expect(screen.getByText("执行失败")).toBeVisible();
+    const toolResult = screen.getByText("测试通过");
+    expect(toolResult).not.toBeVisible();
+    const toolResultDetails = toolResult.closest("details");
+    if (toolResultDetails === null) throw new Error("missing compact tool result");
+    fireEvent.click(within(toolResultDetails).getByText("工具结果"));
+    expect(toolResult).toBeVisible();
+    expect(screen.getByText("report.md")).toBeInTheDocument();
+    const artifactButton = screen.getByRole("button", { name: "打开产物 report.md" });
+    fireEvent.click(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "entry-4", mode: "OPEN", source: "AGENT", sourceId: ephemeral.agentId,
+    }));
+    fireEvent.contextMenu(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "entry-4", mode: "REVEAL", source: "AGENT", sourceId: ephemeral.agentId,
+    }));
+    const directoryButton = screen.getByRole("button", { name: "打开产物 reports" });
+    expect(directoryButton).toHaveTextContent("打开文件夹");
+    fireEvent.click(directoryButton);
+    expect(await screen.findByText("这个产物暂时无法打开。")).toBeInTheDocument();
+    fireEvent.contextMenu(directoryButton);
+    expect(await screen.findByText("产物已经移动。")).toBeInTheDocument();
+    expect(screen.getByText("legacy.txt")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "打开产物 legacy.txt" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "打开产物 a.ts" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开产物 b.ts" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "打开产物 src" })).not.toBeInTheDocument();
+    const collapsedCode = await screen.findByRole("button", { name: "打开产物 a.ts" });
+    expect(collapsedCode).toBeVisible();
+    fireEvent.click(collapsedCode);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "entry-code-1", mode: "OPEN", source: "AGENT", sourceId: ephemeral.agentId,
+    }));
+    expect(screen.getByText("原始任务投影")).toBeInTheDocument();
+    expect(screen.getByText("tool")).toBeInTheDocument();
+    expect(screen.getByText("shell")).toBeInTheDocument();
+    expect(screen.getByText("产物")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "安全链接" })).toHaveAttribute("href", "https://example.com/result");
+    expect(screen.getByText("内部链接").closest("a")).toBeNull();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+    const log = screen.getByRole("log", { name: "Agent 执行记录" });
+    Object.defineProperties(log, { clientHeight: { value: 200 }, scrollHeight: { value: 1000 } });
+    log.scrollTop = 0;
+    fireEvent.scroll(log);
+    expect(await screen.findByText("已恢复")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "加载更早记录" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "返回 Agent 列表" }));
+    fireEvent.click(await screen.findByRole("button", { name: "删除 实现者" }));
+    await waitFor(() => expect(remove).toHaveBeenCalledWith(workbench.workbenchId, ephemeral.agentId));
+  });
+
+  it("labels retained unverified Agent output as insufficient while keeping its deliverable readable", async () => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("workbench-partial", "研究");
+    const agent = { agentId: "partial", workbenchId: workbench.workbenchId, canDelete: true, createdAt: workbench.updatedAt,
+      engine: "pi-core" as const, lastActivityAt: workbench.updatedAt, partnerId: "partner", partnerName: "证据搭档",
+      sessionPolicy: "EPHEMERAL" as const, status: "FAILED" as const, transport: "LOCAL" as const, resultAssessment: "INSUFFICIENT" as const };
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue({ activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+      personaRevisionId: "persona", projectLabel: "Test", recentOutcomes: [], recentResults: [], responsibility: "Test", updatedAt: workbench.updatedAt,
+      workspace: { displayName: "workspace", kind: "BOUND", status: "READY" } });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent] });
+    vi.spyOn(api, "agentConversation").mockResolvedValue({ agent, items: [{ entryId: "output", sequence: 0, createdAt: workbench.updatedAt,
+      kind: "MARKDOWN", role: "AGENT", text: "已有证据，尚缺一项核验。" }] });
+    render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+    expect(await screen.findByText("不充分")).toHaveClass("insufficient");
+    fireEvent.click(screen.getByRole("button", { name: "查看 证据搭档 详情" }));
+    expect(await screen.findByText("已有证据，尚缺一项核验。")).toBeInTheDocument();
+    expect(screen.getByText(/不充分/u)).toBeInTheDocument();
+  });
+
+  it("keeps the Agent area usable when its list is invalid and reports a read failure without exposing a composer", async () => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("workbench-fallback", "容错 Workbench");
+    const detail: WorkbenchDetailDto = {
+      activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name, personaRevisionId: "persona-1",
+      projectLabel: "容错", recentOutcomes: [], recentResults: [], responsibility: "容错", updatedAt: workbench.updatedAt,
+      workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
+    };
+    const agent = {
+      agentId: "agent-fallback", workbenchId: workbench.workbenchId, canDelete: false, createdAt: workbench.updatedAt, engine: "pi-core" as const,
+      lastActivityAt: workbench.updatedAt, partnerId: "partner-1", partnerName: "容错搭档", sessionPolicy: "RESIDENT" as const,
+      status: "IDLE" as const, transport: "LOCAL" as const,
+    };
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue(detail);
+    vi.spyOn(api, "listWorkbenchAgents")
+      .mockResolvedValueOnce({ items: null as never })
+      .mockResolvedValue({ items: [agent] });
+    vi.spyOn(api, "agentConversation").mockRejectedValue(new Error("offline"));
+
+    const view = render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+    expect(await screen.findByRole("heading", { name: "还没有 Agent" })).toBeInTheDocument();
+    view.unmount();
+
+    vi.restoreAllMocks();
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue(detail);
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent] });
+    vi.spyOn(api, "agentConversation").mockRejectedValue(new Error("offline"));
+    render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+    fireEvent.click(await screen.findByRole("button", { name: "查看 容错搭档 详情" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("没能读取 Agent 对话。");
+    expect(screen.queryByRole("textbox")).not.toBeInTheDocument();
+  });
+});
+
+function parentForm(element: HTMLElement): HTMLFormElement {
+  const form = element.closest("form");
+  if (!(form instanceof HTMLFormElement)) throw new Error("Expected a parent form.");
+  return form;
+}
+
+function workbenchDto(workbenchId: string, name: string): WorkbenchDto {
+  return { workbenchId, name, scopeSummary: "scope", updatedAt: "2026-01-01T00:00:00.000Z" };
+}
+
+describe("joi home single entry", () => {
+  it("shows the exact first-run copy and exactly seven direct connection choices", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([]));
+    render(<JoiHome api={api} />);
+    expect(await screen.findByRole("heading", { name: "joi需要链接到大模型网络" })).toBeInTheDocument();
+    const choices = screen.getAllByRole("button", { name: /连接/u });
+    expect(choices).toHaveLength(7);
+    expect(choices.map((choice) => choice.textContent)).toEqual(expect.arrayContaining(["连接 Kimi", "连接 GLM", "连接 Qwen", "连接 Doubao", "连接 MiniMax", "连接 DeepSeek", "连接 通用平台"]));
+    expect(screen.queryByLabelText("给 joi 输入")).not.toBeInTheDocument();
+    expect(document.body.textContent).not.toMatch(/OpenRouter|SiliconFlow|转发平台|聚合平台/iu);
+  });
+
+  it("uses one composer when a source is ready and keeps consecutive inputs accepted", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    const submitted: string[] = [];
+    vi.spyOn(api, "joiHomeFeed").mockImplementation(() => Promise.resolve({
+      goals: [],
+      thinking: submitted.map((inputId, index) => ({
+        agentCount: 0,
+        goalId: inputId,
+        phase: "queued" as const,
+        stage: "ROUTING" as const,
+        startedAt: `2026-07-28T10:00:0${String(index)}.000Z`,
+        turnId: `pending:${inputId}`,
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      })),
+      unassignedActions: [],
+    }));
+    const send = vi.spyOn(api, "sendJoiMessage").mockImplementation((_message) => {
+      const inputId = `input-${String(submitted.length + 1)}`;
+      submitted.push(inputId);
+      return Promise.resolve({ acceptedAt: `2026-07-28T10:00:0${String(submitted.length - 1)}.000Z`, inputId, status: "PENDING" });
+    });
+    render(<JoiHome api={api} />);
+    const composer = await screen.findByLabelText("给 joi 输入");
+    fireEvent.change(composer, { target: { value: "先研究方案" } });
+    fireEvent.submit(parentForm(composer));
+    await waitFor(() => expect(send).toHaveBeenCalledWith("先研究方案", {}));
+    fireEvent.change(composer, { target: { value: "同时整理风险" } });
+    fireEvent.submit(parentForm(composer));
+    await waitFor(() => expect(send).toHaveBeenCalledWith("同时整理风险", {}));
+    expect(await screen.findAllByText("排队中")).toHaveLength(2);
+  });
+
+  it("routes the composer input to the Workbench chosen in the toolbar", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-work", "发布工程")] });
+    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "input-1", status: "PENDING" });
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "joi 自主分发" }));
+    expect(screen.queryByText("这条输入交给谁")).not.toBeInTheDocument();
+    expect(screen.queryByText(/不选择时由 joi 自主判断归属/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "joi 自主分发（默认）" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "发布工程" }));
+    expect(screen.getByRole("button", { name: "分发给 发布工程" })).toBeInTheDocument();
+
+    const composer = screen.getByLabelText("给 joi 输入");
+    fireEvent.change(composer, { target: { value: "发布一版" } });
+    fireEvent.submit(parentForm(composer));
+    await waitFor(() => expect(send).toHaveBeenCalledWith("发布一版", { workbenchId: "workbench-work" }));
+  });
+
+  it("keeps a large composer workbench picker searchable", async () => {
+    const api = new DigitalLifeApi("");
+    const workbenches = Array.from({ length: 20 }, (_, index) => workbenchDto(`composer-workbench-${String(index)}`, `工作台 ${String(index)}`));
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [], thinking: [], unassignedActions: [] });
+
+    render(<JoiHome api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "joi 自主分发" }));
+    expect(screen.queryByText("这条输入交给谁")).not.toBeInTheDocument();
+    expect(screen.queryByText(/不选择时由 joi 自主判断归属/u)).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "joi 自主分发（默认）" })).not.toBeInTheDocument();
+    const search = screen.getByLabelText("搜索工作台");
+    const list = screen.getByRole("group", { name: "工作台列表" });
+    expect(list).toHaveClass("joi-workbench-options");
+    expect(within(list).getAllByRole("button")).toHaveLength(20);
+    fireEvent.change(search, { target: { value: "工作台 17" } });
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
+    expect(within(list).getByRole("button", { name: "工作台 17" })).toBeInTheDocument();
+  });
+
+  it("shows Joi-proposed Workbench changes and requires an explicit user decision", async () => {
+    const api = new DigitalLifeApi("");
+    const pending = {
+      createdAt: "2026-07-28T10:00:00.000Z", kind: "MERGE" as const, reason: "同一工程上下文",
+      requestId: "change-1", sourceWorkbenchId: "workbench-old", status: "PENDING" as const, targetWorkbenchId: "workbench-current",
+    };
+    vi.spyOn(api, "joiSnapshot")
+      .mockResolvedValueOnce({ ...snapshot([readySource]), workbenchChanges: [pending] })
+      .mockResolvedValue(snapshot([readySource]));
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    const decide = vi.spyOn(api, "decideWorkbenchChange").mockResolvedValue({ ...pending, status: "CONFIRMED" });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("joi 建议合并工作台")).toBeInTheDocument();
+    expect(screen.getByText("同一工程上下文")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "确认合并" }));
+    await waitFor(() => expect(decide).toHaveBeenCalledWith("change-1", "CONFIRM"));
+    await waitFor(() => expect(screen.queryByText("joi 建议合并工作台")).not.toBeInTheDocument());
+  });
+
+  it("selects a provider access mode before saving and validating a source", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValueOnce(snapshot([])).mockResolvedValue(snapshot([readySource]));
+    const create = vi.spyOn(api, "createModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(readySource);
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接 Kimi" }));
+    expect(screen.getByRole("button", { name: "开放平台 API" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Kimi Code" }));
+    expect(screen.getByRole("button", { name: "OpenAI-compatible" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic-compatible" }));
+    expect(screen.getByText(/订阅套餐仅适合个人交互使用/u)).toBeInTheDocument();
+    expect(screen.getByText(/K3 的 Model ID 是 k3，不是 kimi-k3/u)).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Model ID（可选，高级设置）"), { target: { value: "kimi-custom" } });
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "test-key" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("API Key")));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "coding-plan", apiKey: "test-key", kind: "kimi", modelId: "kimi-custom", protocol: "anthropic" }));
+    expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
+  });
+
+  it("offers a separate Qwen Token Plan connection", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValueOnce(snapshot([])).mockResolvedValue(snapshot([readySource]));
+    const create = vi.spyOn(api, "createModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(readySource);
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接 Qwen" }));
+    expect(screen.getByRole("button", { name: "百炼 Coding Plan" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "百炼 Token Plan" }));
+    fireEvent.click(screen.getByRole("button", { name: "Anthropic-compatible" }));
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "test-key" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("API Key")));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "token-plan", apiKey: "test-key", kind: "qwen", modelId: undefined, protocol: "anthropic" }));
+  });
+
+  it("keeps a failed generic source as a diagnosable draft and supports local keyless fields", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([]));
+    const generic = { ...readySource, baseUrl: "http://127.0.0.1:11434/v1", displayName: "本机", kind: "generic-openai" as const, status: "DRAFT" as const };
+    const create = vi.spyOn(api, "createModelSource").mockResolvedValue(generic);
+    vi.spyOn(api, "validateModelSource").mockResolvedValue({ ...generic, reasonCode: "endpoint_unreachable", status: "DEGRADED" });
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接 通用平台" }));
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI-compatible" }));
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "本机" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "http://127.0.0.1:11434/v1" } });
+    fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "local-model" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("API Key（本机 localhost 可留空）")));
+    await waitFor(() => expect(create).toHaveBeenCalledWith({ accessMode: "custom", apiKey: "", baseUrl: "http://127.0.0.1:11434/v1", displayName: "本机", kind: "generic-openai", modelId: "local-model", protocol: "openai" }));
+    expect(await screen.findByText(/无法访问所选接口/u)).toBeInTheDocument();
+  });
+
+  it("manages redacted source ordering, validation, disable and deletion", async () => {
+    const api = new DigitalLifeApi("");
+    const backup = { ...readySource, accessMode: "coding-plan" as const, activeModel: { ...readySource.activeModel, id: "kimi-for-coding" }, displayName: "Kimi Code", kind: "kimi" as const, order: 1, primary: false, protocol: "anthropic" as const, sourceId: "source-2" };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource, backup] });
+    const order = vi.spyOn(api, "orderModelSources").mockResolvedValue({ items: [{ ...backup, order: 0, primary: true }, { ...readySource, order: 1, primary: false }] });
+    const validate = vi.spyOn(api, "validateModelSource").mockResolvedValueOnce(readySource).mockRejectedValueOnce(new Error("offline"));
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue({ ...readySource, status: "DISABLED" });
+    const remove = vi.spyOn(api, "deleteModelSource").mockResolvedValue(undefined);
+    render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText("DeepSeek")).toBeInTheDocument();
+    expect(screen.getByText(/Coding Plan/u)).toBeInTheDocument();
+    expect(screen.getByText(/Anthropic-compatible/u)).toBeInTheDocument();
+    const kimi = screen.getByText("Kimi Code").closest("article");
+    if (kimi === null) throw new Error("Kimi source row missing");
+    expect(kimi).toHaveClass("model-source-item");
+    expect(within(kimi).getByRole("group", { name: "Kimi Code 操作" })).toHaveClass("model-source-actions");
+    fireEvent.click(within(kimi).getByRole("button", { name: "上移" }));
+    await waitFor(() => expect(order).toHaveBeenCalledWith(["source-2", "source-1"]));
+    const deepseek = screen.getByText("DeepSeek").closest("article");
+    if (deepseek === null) throw new Error("DeepSeek source row missing");
+    fireEvent.click(within(deepseek).getByRole("button", { name: "验证" }));
+    fireEvent.click(within(deepseek).getByRole("button", { name: "停用" }));
+    fireEvent.click(within(deepseek).getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(validate).toHaveBeenCalled());
+    expect(update).toHaveBeenCalledWith("source-1", { disabled: true });
+    expect(remove).toHaveBeenCalledWith("source-1");
+    fireEvent.click(within(kimi).getByRole("button", { name: "验证" }));
+    expect(await screen.findByText("验证没有通过。")).toBeInTheDocument();
+  });
+
+  it("shows automatically learned Bearer auth after validation without exposing the token", async () => {
+    const api = new DigitalLifeApi("");
+    const input: ModelSourceDto = { ...readySource, accessMode: "custom", kind: "generic-openai", protocol: "anthropic", status: "NEEDS_AUTH" };
+    const list = vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [input] });
+    const validate = vi.spyOn(api, "validateModelSource").mockImplementation(() => {
+      const ready = { ...input, anthropicAuthMode: "bearer" as const, status: "READY" as const };
+      list.mockResolvedValue({ items: [ready] });
+      return Promise.resolve(ready);
+    });
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "验证" }));
+    expect(await screen.findByText("鉴权：Bearer / Auth Token（自动识别）")).toBeInTheDocument();
+    expect(validate).toHaveBeenCalledWith(input.sourceId);
+    expect(screen.getByText("可用")).toBeInTheDocument();
+  });
+
+  it("shows a safe deletion failure and refreshes the list after retry", async () => {
+    const api = new DigitalLifeApi("");
+    const list = vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource] });
+    const remove = vi.spyOn(api, "deleteModelSource").mockRejectedValueOnce(new Error("private backend detail")).mockResolvedValue(undefined);
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "删除" }));
+    expect(await screen.findByText("模型网络未删除，请重试。")).toBeInTheDocument();
+    expect(screen.queryByText("private backend detail")).not.toBeInTheDocument();
+    expect(screen.getByText("DeepSeek")).toBeInTheDocument();
+    list.mockResolvedValue({ items: [] });
+    fireEvent.click(screen.getByRole("button", { name: "删除" }));
+    await waitFor(() => expect(screen.queryByText("DeepSeek")).not.toBeInTheDocument());
+    expect(remove).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText("模型网络未删除，请重试。")).not.toBeInTheDocument();
+    expect(screen.getByText("模型网络已删除。")).toBeInTheDocument();
+  });
+
+  it("edits model, endpoint metadata and optional replacement credentials as a new draft revision", async () => {
+    const api = new DigitalLifeApi("");
+    const generic = {
+      ...readySource, accessMode: "custom" as const, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
+      displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue({
+      ...generic, activeModel: { ...generic.activeModel, id: "new-model" }, baseUrl: "https://new.example/v1", displayName: "Private 2", status: "DRAFT",
+    });
+    render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText(/自定义接口/u)).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    fireEvent.change(screen.getByLabelText("编辑显示名称"), { target: { value: "Private 2" } });
+    fireEvent.change(screen.getByLabelText("编辑 Base URL"), { target: { value: "https://new.example/v1" } });
+    fireEvent.change(screen.getByLabelText("编辑 Model ID"), { target: { value: "new-model" } });
+    fireEvent.change(screen.getByLabelText("替换 API Key（留空则保留）"), { target: { value: "replacement-key" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", {
+      apiKey: "replacement-key", baseUrl: "https://new.example/v1", displayName: "Private 2", modelId: "new-model",
+      // Left blank in the advanced section, which is the explicit "back to the provider default":
+      // sending nothing at all would leave the current value in place, since the service carries
+      // unchanged limits into the new revision.
+      compactionThresholdPercent: null, contextWindow: null, maxOutputTokens: null,
+      thinkingEffort: null,
+    }));
+    expect(await screen.findByText("修改已保存为草稿 revision，请验证后启用。")).toBeInTheDocument();
+  });
+
+  it("edits the thinking effort tier and shows it on the source card", async () => {
+    const api = new DigitalLifeApi("");
+    let active: ModelSourceDto = {
+      ...readySource,
+      activeModel: { ...readySource.activeModel, thinkingEffort: "low" },
+      protocol: "anthropic",
+    };
+    // The list has to follow the save: the card renders whatever `listModelSources` returned, so a
+    // static mock would keep showing the pre-edit tier and the last assertion would be passing on
+    // the fixture rather than on the save path.
+    vi.spyOn(api, "listModelSources").mockImplementation(() => Promise.resolve({ items: [active] }));
+    const update = vi.spyOn(api, "updateModelSource").mockImplementation((_sourceId, body) => {
+      const requested = body.thinkingEffort as ThinkingEffort | undefined;
+      active = { ...active, status: "DRAFT", activeModel: { ...active.activeModel, ...(requested === undefined ? {} : { thinkingEffort: requested }) } };
+      return Promise.resolve(active);
+    });
+    render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText("思考强度：低")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "编辑 DeepSeek" }));
+    fireEvent.change(screen.getByLabelText("思考强度"), { target: { value: "high" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("思考强度")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-1", expect.objectContaining({ thinkingEffort: "high" })));
+    expect(await screen.findByText("思考强度：高")).toBeInTheDocument();
+  });
+
+  it("warns that saving an edit strands the partners pinned to that source", async () => {
+    const api = new DigitalLifeApi("");
+    const pinnedPartner: PartnerDto = {
+      capabilities: [], createdBy: "user", displayName: "绑在 DeepSeek 上的搭档", engine: "pi-core",
+      inFlightCount: 0, kind: "local-pi", knowledgeDocCount: 0, lifecyclePolicy: "DRAIN",
+      modelSourceId: "source-1", partnerId: "partner-pinned", partnerRevisionId: "revision-pinned",
+      registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource] });
+    vi.spyOn(api, "listPartners").mockResolvedValue({ items: [pinnedPartner] });
+    vi.spyOn(api, "updateModelSource").mockResolvedValue({ ...readySource, status: "DRAFT" });
+    render(<ModelSourceManager api={api} />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 DeepSeek" }));
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+
+    // Saving drops the source to DRAFT, so every partner pinned to it stops dispatching until the
+    // user validates again. That is worth saying at the moment it is caused, not at the next run.
+    const warning = await screen.findByText(/钉在这个网络上的 1 个搭档（绑在 DeepSeek 上的搭档）在你验证通过前会派发失败。/u);
+    expect(warning).toHaveClass("inline-notice", "warning");
+    expect(warning).toHaveAttribute("role", "alert");
+  });
+
+  it("sends the advanced model limits from the edit form", async () => {
+    const api = new DigitalLifeApi("");
+    const generic = {
+      ...readySource, accessMode: "custom" as const, activeModel: { ...readySource.activeModel, id: "old-model" }, baseUrl: "https://old.example/v1",
+      displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(generic);
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    fireEvent.change(screen.getByLabelText("上下文窗口（tokens）"), { target: { value: "1000000" } });
+    fireEvent.change(screen.getByLabelText("压缩阈值（窗口百分比）"), { target: { value: "70" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", expect.objectContaining({
+      compactionThresholdPercent: 70, contextWindow: 1_000_000,
+    })));
+  });
+
+  it("sends a chosen tier from the create form's advanced section", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([]));
+    const generic = { ...readySource, baseUrl: "http://127.0.0.1:11434/v1", displayName: "本机", kind: "generic-openai" as const, status: "DRAFT" as const };
+    const create = vi.spyOn(api, "createModelSource").mockResolvedValue(generic);
+    vi.spyOn(api, "validateModelSource").mockResolvedValue(generic);
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接 通用平台" }));
+    fireEvent.click(screen.getByRole("button", { name: "OpenAI-compatible" }));
+    fireEvent.change(screen.getByLabelText("显示名称"), { target: { value: "本机" } });
+    fireEvent.change(screen.getByLabelText("Base URL"), { target: { value: "http://127.0.0.1:11434/v1" } });
+    fireEvent.change(screen.getByLabelText("Model ID"), { target: { value: "local-model" } });
+    // The section opens on "use the recommended value"; a picked tier is what has to reach the
+    // service, and its figure is the tier's own rather than whatever a box happened to hold.
+    fireEvent.change(screen.getByLabelText("上下文窗口（tokens）"), { target: { value: "200000" } });
+    fireEvent.change(screen.getByLabelText("最大输出（tokens）"), { target: { value: "32768" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("API Key（本机 localhost 可留空）")));
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      contextWindow: 200_000, maxOutputTokens: 32_768,
+    })));
+  });
+
+  it("offers the token limits as tiers and keeps a figure the tiers do not name", async () => {
+    const api = new DigitalLifeApi("");
+    const generic = {
+      ...readySource, accessMode: "custom" as const,
+      activeModel: { ...readySource.activeModel, contextWindow: 999_424, id: "old-model", maxOutputTokens: 119_040 },
+      baseUrl: "https://old.example/v1", displayName: "Private", kind: "generic-openai" as const, sourceId: "source-generic",
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [generic] });
+    const update = vi.spyOn(api, "updateModelSource").mockResolvedValue(generic);
+    render(<ModelSourceManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "编辑 Private" }));
+    const windowTier = screen.getByLabelText("上下文窗口（tokens）");
+    // A select can only submit one of its own options, so a revision sized by hand has to keep an
+    // entry of its own: otherwise merely opening this form and saving would rewrite a limit nobody
+    // touched. The tiers themselves are the sizes joi already sizes requests against.
+    expect(windowTier).toHaveValue("999424");
+    expect(screen.getByRole("option", { name: "999424（当前值）" })).toBeInTheDocument();
+    expect(within(windowTier).getByRole("option", { name: "1M" })).toHaveValue("1000000");
+    fireEvent.change(windowTier, { target: { value: "500000" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("编辑 Model ID")));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("source-generic", expect.objectContaining({
+      contextWindow: 500_000, maxOutputTokens: 119_040,
+    })));
+  });
+
+  it("renders a human-readable label for every model-source status", async () => {
+    const api = new DigitalLifeApi("");
+    const states: ModelSourceDto["status"][] = ["DRAFT", "VALIDATING", "DEGRADED", "NEEDS_AUTH", "DISABLED"];
+    const items = states.map((status, index) => ({ ...readySource, displayName: `源 ${String(index)}`, sourceId: `source-${String(index)}`, status }));
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items });
+    render(<ModelSourceManager api={api} />);
+    for (const label of ["草稿", "正在验证", "暂时异常", "需要重新连接", "已停用"]) {
+      expect(await screen.findByText(label)).toBeInTheDocument();
+    }
+  });
+
+  it("keeps snapshot and composer failures retryable without losing text", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [], thinking: [], unassignedActions: [] });
+    const snapshotSpy = vi.spyOn(api, "joiSnapshot")
+      .mockRejectedValueOnce(new ApiError("offline", "模型网络离线", 503))
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "sendJoiMessage").mockRejectedValue(new ApiError("save_failed", "输入暂时无法保存", 503));
+    render(<JoiHome api={api} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("模型网络离线");
+    fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("没能读取 joi 的状态");
+    fireEvent.click(screen.getByRole("button", { name: "再试一次" }));
+    const composer = await screen.findByLabelText("给 joi 输入");
+    fireEvent.change(composer, { target: { value: "不能丢失" } });
+    fireEvent.submit(parentForm(composer));
+    expect(await screen.findByRole("alert")).toHaveTextContent("输入暂时无法保存");
+    expect(composer).toHaveValue("不能丢失");
+    expect(snapshotSpy).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports setup and settings load failures and allows canceling a selected network", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([]));
+    vi.spyOn(api, "createModelSource").mockRejectedValueOnce(new ApiError("invalid", "密钥不正确", 400)).mockRejectedValue(new Error("failed"));
+    const view = render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "连接 DeepSeek" }));
+    fireEvent.click(screen.getByRole("button", { name: "取消" }));
+    expect(screen.queryByLabelText("API Key")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "连接 DeepSeek" }));
+    fireEvent.change(screen.getByLabelText("API Key"), { target: { value: "bad" } });
+    fireEvent.submit(parentForm(screen.getByLabelText("API Key")));
+    expect(await screen.findByText("密钥不正确")).toBeInTheDocument();
+    fireEvent.submit(parentForm(screen.getByLabelText("API Key")));
+    expect(await screen.findByText(/连接没检查成功/)).toBeInTheDocument();
+    view.unmount();
+    vi.spyOn(api, "listModelSources").mockRejectedValue(new Error("offline"));
+    render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText("没能读取模型网络设置。")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "添加网络" }));
+    expect(screen.getByRole("heading", { name: "joi需要链接到大模型网络" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "收起" }));
+  });
+
+  it("renders one minimal goal stream with transient thinking and no right-side work panel", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "登录工程")] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{ agentCount: 2, workbench: { workbenchId: "workbench-1", name: "登录工程" }, canDelete: false, goalId: "goal-1", status: "RUNNING", title: "研究一下登录改造", updatedAt: "2026-07-28T10:00:00.000Z", work: { active: 1, completed: 1, failed: 0, total: 2 } }],
+      thinking: [{
+        agentCount: 2,
+        goalId: "goal-1",
+        phase: "progressing",
+        stage: "RUNNING",
+        startedAt: "2026-07-28T10:00:00.000Z",
+        turnId: "turn-1",
+        work: { active: 1, completed: 1, failed: 0, total: 2 },
+      }],
+      unassignedActions: [{ acceptedAt: "2026-07-28T10:00:03.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "clarify", status: "CLARIFICATION_REQUIRED", textPreview: "这条到底归谁" }],
+    });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByRole("heading", { name: "现在想让 joi 做什么？" })).toBeInTheDocument();
+    expect(await screen.findByText("研究一下登录改造")).toBeInTheDocument();
+    expect(screen.getByText("这条到底归谁")).toBeInTheDocument();
+    expect(screen.queryByText("progressing")).not.toBeInTheDocument();
+    expect(screen.getByText("搭档执行中", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText(/已用/u, { selector: ".joi-thinking-elapsed" })).toBeInTheDocument();
+    expect(screen.getByText(/2 Agent · 1\/2 工作完成/u, { selector: ".joi-thinking-meta" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "工作状态" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "登录工程" })).toBeInTheDocument();
+  });
+
+  it("shows safe stage/count summaries across elapsed-time bands and tolerates an old thinking DTO", async () => {
+    const api = new DigitalLifeApi("");
+    const now = Date.now();
+    const legacyThinking = {
+      goalId: "legacy-thinking",
+      phase: "progressing" as const,
+      startedAt: new Date(now - 5_000).toISOString(),
+      turnId: "legacy-thinking-turn",
+    } as unknown as JoiThinkingItemDto;
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [],
+      thinking: [
+        { agentCount: 0, goalId: "planning", phase: "progressing", stage: "PLANNING", startedAt: new Date(now - 5_000).toISOString(), turnId: "planning-turn", work: { active: 0, completed: 0, failed: 0, total: 0 } },
+        { agentCount: 2, goalId: "dispatching", phase: "progressing", stage: "DISPATCHING", startedAt: new Date(now - 65_000).toISOString(), turnId: "dispatching-turn", work: { active: 2, completed: 1, failed: 1, total: 3 } },
+        { agentCount: 0, goalId: "waiting", phase: "progressing", stage: "WAITING", startedAt: new Date(now - 65_000).toISOString(), turnId: "waiting-turn", work: { active: 1, completed: 0, failed: 0, total: 1 } },
+        { agentCount: 1, goalId: "finalizing", phase: "progressing", stage: "FINALIZING", startedAt: new Date(now - 2 * 60 * 60 * 1_000).toISOString(), turnId: "finalizing-turn", work: { active: 0, completed: 1, failed: 0, total: 1 } },
+        legacyThinking,
+      ],
+      unassignedActions: [],
+    });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("正在拆分工作", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("正在安排搭档", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("等待搭档回应", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("正在汇总结果", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("正在整理任务", { selector: ".joi-thinking-stage" })).toBeInTheDocument();
+    expect(screen.getByText("2 Agent · 1/3 工作完成", { selector: ".joi-thinking-meta" })).toBeInTheDocument();
+    expect(screen.queryByText(/失败/u, { selector: ".joi-thinking-meta" })).not.toBeInTheDocument();
+    expect(screen.getAllByText(/已用 [0-9]+ 秒/u, { selector: ".joi-thinking-elapsed" })).toHaveLength(2);
+    expect(screen.getAllByText(/已用 1 分钟/u, { selector: ".joi-thinking-elapsed" })).toHaveLength(2);
+    expect(screen.getByText(/已用 2 小时/u, { selector: ".joi-thinking-elapsed" })).toBeInTheDocument();
+  });
+
+  it("drills from a goal card into an inline detail with the Workbench title, agent list and live data stream", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-1", "登录工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 2, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
+        completionSummary: "## 登录改造完成\n\n**功能** 已通过验收。\n\n| 维度 | 结果 |\n| --- | --- |\n| 回归 | 通过 |",
+        goalId: "goal-1", status: "COMPLETED", title: "研究一下登录改造", updatedAt: "2026-07-28T10:00:00.000Z", work: { active: 0, completed: 2, failed: 0, total: 2 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const agent = {
+      agentId: "agent-1", workbenchId: workbench.workbenchId, canDelete: true, createdAt: "2026-07-28T10:00:00.000Z", engine: "pi-core" as const,
+      lastActivityAt: "2026-07-28T10:00:00.000Z", partnerId: "partner-1", partnerName: "实现者", sessionPolicy: "EPHEMERAL" as const,
+      status: "COMPLETED" as const, transport: "LOCAL" as const,
+    };
+    const other = { ...agent, agentId: "agent-2", partnerName: "审查者" };
+    const listAgents = vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent, other] });
+    vi.spyOn(api, "agentConversation").mockImplementation((_workbenchId: string, agentId: string) => Promise.resolve({
+      agent: agentId === "agent-2" ? other : agent,
+      items: [{ createdAt: "2026-07-28T10:00:00.000Z", entryId: `entry-${agentId}`, kind: "MARKDOWN" as const, role: "AGENT" as const, sequence: 0, text: agentId === "agent-2" ? "审查通过" : "改造完成报告" }],
+    }));
+    render(<JoiHome api={api} />);
+    const preview = await screen.findByText("登录改造完成 功能 已通过验收。 维度 结果 回归 通过", { selector: ".joi-goal-result-copy" });
+    expect(preview.childElementCount).toBe(0);
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("研究一下登录改造"));
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "研究一下登录改造" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
+    expect(screen.getByLabelText("joi 信息流")).toBeInTheDocument();
+    expect(screen.getAllByRole("table")).toHaveLength(1);
+    expect(screen.getByText("功能").tagName).toBe("STRONG");
+    expect(screen.getByLabelText("这条目标的 Agent 列表")).toBeInTheDocument();
+    await waitFor(() => expect(listAgents).toHaveBeenCalledWith(workbench.workbenchId, { goalId: "goal-1", limit: 100 }));
+    expect(await screen.findByText("改造完成报告")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /审查者/u }));
+    expect(await screen.findByText("审查通过")).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("joi 信息流")).toBeInTheDocument();
+  });
+
+  it("refreshes the selected running Agent quickly enough to reveal an incoming visible message", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-live", "实时分析");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 1, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: false,
+        goalId: "goal-live", status: "RUNNING", title: "跟踪分析过程", updatedAt: workbench.updatedAt,
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const agent = {
+      agentId: "agent-live", workbenchId: workbench.workbenchId, canDelete: false, createdAt: workbench.updatedAt,
+      engine: "pi-core" as const, lastActivityAt: workbench.updatedAt, partnerId: "partner-live", partnerName: "分析搭档",
+      sessionPolicy: "EPHEMERAL" as const, status: "RUNNING" as const, transport: "LOCAL" as const,
+    };
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [agent] });
+    const conversation = vi.spyOn(api, "agentConversation")
+      .mockResolvedValueOnce({ agent, items: [] })
+      .mockResolvedValue({
+        agent,
+        items: [{ createdAt: workbench.updatedAt, entryId: "entry-live", kind: "MARKDOWN", role: "AGENT", sequence: 0, text: "正在流式整理证据" }],
+      });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByText("跟踪分析过程"));
+    expect(await screen.findByText("这位 Agent 还没有可展示的执行消息。")).toBeInTheDocument();
+    expect(await screen.findByText("正在流式整理证据", {}, { timeout: 1_400 })).toBeInTheDocument();
+    expect(conversation.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+
+  it("hides a failed partner on the home card but keeps its warning and error stream in goal detail", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-partial", "综合工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 2, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
+        completionSummary: "## 最终结论\n\n已有信息足够回答原问题。", goalId: "goal-partial", status: "COMPLETED",
+        title: "汇总搭档结论", updatedAt: workbench.updatedAt, work: { active: 0, completed: 1, failed: 1, total: 2 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const completed = {
+      agentId: "agent-completed", workbenchId: workbench.workbenchId, canDelete: true, createdAt: workbench.updatedAt,
+      engine: "pi-core" as const, lastActivityAt: workbench.updatedAt, partnerId: "partner-completed", partnerName: "完成搭档",
+      sessionPolicy: "EPHEMERAL" as const, status: "COMPLETED" as const, transport: "LOCAL" as const,
+    };
+    const failed = {
+      ...completed, agentId: "agent-failed", partnerId: "partner-failed", partnerName: "失败搭档", status: "FAILED" as const,
+    };
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [completed, failed] });
+    const conversation = vi.spyOn(api, "agentConversation").mockImplementation((_workbenchId, agentId) => Promise.resolve({
+      agent: agentId === failed.agentId ? failed : completed,
+      items: [{
+        createdAt: workbench.updatedAt, entryId: `entry-${agentId}`, kind: agentId === failed.agentId ? "ERROR" as const : "MARKDOWN" as const,
+        role: "AGENT" as const, sequence: 0, text: agentId === failed.agentId ? "安全错误详情" : "成功结果详情",
+      }],
+    }));
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("已完成")).toBeInTheDocument();
+    expect(screen.getByText("最终结论 已有信息足够回答原问题。", { selector: ".joi-goal-result-copy" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "查看 1 个异常搭档" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("汇总搭档结论"));
+    await screen.findByRole("button", { name: /失败搭档/u });
+    fireEvent.click(screen.getByRole("button", { name: "查看 1 个异常搭档" }));
+
+    expect(await screen.findByText("安全错误详情")).toBeInTheDocument();
+    expect(conversation).toHaveBeenCalledWith(workbench.workbenchId, failed.agentId, { limit: 50, latest: true, goalId: "goal-partial" });
+    expect(screen.getByRole("button", { name: /失败搭档/u })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("opens the clean final-result drawer from the card preview and can switch into the full goal detail", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-1", "登录工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 1, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
+        completedAt: "2026-07-28T11:00:00.000Z",
+        completionSummary: "## 登录改造完成\n\n**功能** 已通过验收，完整报告如下。",
+        goalId: "goal-1", status: "COMPLETED", title: "研究一下登录改造", updatedAt: "2026-07-28T11:00:00.000Z", work: { active: 0, completed: 2, failed: 0, total: 2 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const listAgents = vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    render(<JoiHome api={api} />);
+    const preview = await screen.findByRole("button", { name: /最终结果全文/u });
+    expect(preview).toHaveTextContent("已通过验收");
+
+    fireEvent.keyDown(preview, { key: "ArrowDown" });
+    fireEvent.keyDown(preview, { key: " " });
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "导出全文" }));
+    expect(screen.getByRole("menuitem", { name: "复制全文" })).toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "复制全文" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "导出全文" }));
+    fireEvent.click(screen.getByRole("dialog"));
+    expect(screen.queryByRole("menuitem", { name: "复制全文" })).not.toBeInTheDocument();
+    fireEvent.keyDown(window, { key: "Escape" });
+
+    fireEvent.click(preview);
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
+    expect(within(drawer).getByText("已通过验收，完整报告如下。")).toBeInTheDocument();
+    expect(within(drawer).queryByLabelText("这条目标的 Agent 列表")).not.toBeInTheDocument();
+
+    fireEvent.click(within(drawer).getByRole("button", { name: "查看详情" }));
+    expect(await screen.findByLabelText("这条目标的 Agent 列表")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "研究一下登录改造" })).toBeInTheDocument();
+    await waitFor(() => expect(listAgents).toHaveBeenCalledWith(workbench.workbenchId, { goalId: "goal-1", limit: 100 }));
+
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("keeps an opened result snapshot when the live feed loses its conclusion", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    const goal: JoiGoalCardDto = { agentCount: 0, workbench: { workbenchId: "b", name: "工作台" }, canDelete: false, completionSummary: "旧版最终正文", goalId: "g", status: "COMPLETED", title: "快照", updatedAt: "2026-09-17T00:00:00Z", work: { active: 0, completed: 0, failed: 0, total: 0 } };
+    const feed = vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [goal], thinking: [], unassignedActions: [] });
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开「快照」的最终结果全文" }));
+    feed.mockResolvedValue({ goals: [], thinking: [], unassignedActions: [] });
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 1700)); });
+    expect(screen.getByRole("dialog")).toHaveTextContent("旧版最终正文");
+  });
+
+  it("shows a persisted direct answer on a zero-Work completed card", async () => {
+    const api = new DigitalLifeApi("", true);
+    const workbench = workbenchDto("workbench-direct", "问答工作台");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: true,
+        artifacts: [
+          { artifactId: "goal-artifact-1", kind: "FILE", mimeType: "text/markdown", name: "answer.md", size: 256 },
+          { artifactId: "goal-artifact-2", directory: "out", kind: "FILE", mimeType: "text/typescript", name: "build.ts", size: 64 },
+          { artifactId: "goal-artifact-3", directory: "out", kind: "FILE", mimeType: "application/octet-stream", name: "build.zip", size: 1024 },
+        ],
+        completedAt: "2026-08-24T09:00:00.000Z", completionSummary: "## 身份\n\n我是 **Joi**，你的 AI 助手。",
+        goalId: "input-direct", status: "COMPLETED", title: "你是谁", updatedAt: "2026-08-24T09:00:00.000Z",
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    const openArtifact = vi.spyOn(api, "openWorkbenchArtifact").mockResolvedValue({ opened: true });
+    render(<JoiHome api={api} />);
+
+    const preview = await screen.findByRole("button", { name: "打开「你是谁」的最终结果全文" });
+    expect(preview).toHaveTextContent("我是 Joi，你的 AI 助手。");
+    fireEvent.click(preview);
+    const drawer = await screen.findByRole("dialog");
+    expect(within(drawer).getByRole("heading", { name: "最终结果" })).toBeInTheDocument();
+    const artifactButton = within(drawer).getByRole("button", { name: "打开产物 answer.md" });
+    fireEvent.click(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "goal-artifact-1", mode: "OPEN", source: "GOAL", sourceId: "input-direct",
+    }));
+    fireEvent.contextMenu(artifactButton);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "goal-artifact-1", mode: "REVEAL", source: "GOAL", sourceId: "input-direct",
+    }));
+    expect(within(drawer).getByRole("button", { name: "打开产物 build.zip" })).toBeVisible();
+    const collapsedZip = await within(drawer).findByRole("button", { name: "打开产物 build.zip" });
+    expect(collapsedZip).toBeVisible();
+    fireEvent.click(collapsedZip);
+    await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
+      artifactId: "goal-artifact-3", mode: "OPEN", source: "GOAL", sourceId: "input-direct",
+    }));
+  });
+
+  it("shows a compact route overview and reads full paths only in expanded goal details", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-h", "分析工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [
+        {
+          agentCount: 0, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: false,
+          goalId: "goal-h",
+          harness: {
+            currentLayer: 2, decisionCount: 3, destination: "完成 688141 分析", fogCount: 1, mapStatus: "ACTIVE",
+            openPathCount: 1, reviewedRevision: 1, revision: 5, topFogNote: "数据源未定",
+            topPaths: [
+              { pathId: "p2", status: "OPEN", title: "深入财报" },
+              { pathId: "p1", status: "CLOSED", title: "收集资料" },
+              { pathId: "p0", status: "OUT_OF_SCOPE", title: "盯盘" },
+            ],
+          },
+          status: "RUNNING", title: "分析股票", updatedAt: "2026-08-06T10:00:00.000Z",
+          work: { active: 1, completed: 0, failed: 0, total: 1 },
+        },
+        {
+          agentCount: 0, workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, canDelete: false,
+          goalId: "goal-plain", status: "ARRANGING", title: "随手一问", updatedAt: "2026-08-06T10:00:00.000Z",
+          work: { active: 0, completed: 0, failed: 0, total: 0 },
+        },
+      ],
+      thinking: [],
+      unassignedActions: [],
+    });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+
+    vi.spyOn(api, "joiGoalDetail").mockImplementation((goalId) => Promise.resolve({ goalId, fullTitle: goalId === "goal-h" ? "分析股票" : "随手一问",
+      ...(goalId === "goal-h" ? { harness: {
+        currentLayer: 2, decisionCount: 3, destination: "完成 688141 分析", fogCount: 1, mapStatus: "ACTIVE" as const, pathCount: 3, revision: 5,
+        paths: [{ pathId: "p2", layer: 2, status: "OPEN" as const, title: "深入财报" }, { pathId: "p1", layer: 1, status: "CLOSED" as const, title: "收集资料" }, { pathId: "p0", layer: 1, status: "OUT_OF_SCOPE" as const, title: "盯盘" }],
+        decisions: [], fog: [{ fogId: "fog", note: "数据源未定", status: "ACTIVE" as const }],
+      } } : {}),
+    }));
+
+    const view = render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByText("分析股票"));
+    const expand = await screen.findByRole("button", { name: "展开路线图" });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+    expect(screen.getByText("完成 688141 分析")).toBeInTheDocument();
+    expect(screen.queryByText("深入财报")).not.toBeInTheDocument();
+    expect(screen.getByText("3 条路径 · 3 项决策 · 1 项雾区")).toBeInTheDocument();
+    fireEvent.click(expand);
+    expect(screen.getByText("深入财报")).toBeInTheDocument();
+    expect(screen.getByText("收集资料")).toBeInTheDocument();
+    expect(screen.getByText("盯盘")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^雾区/u }));
+    expect(screen.getByText("数据源未定")).toBeInTheDocument();
+
+    view.unmount();
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByText("随手一问"));
+    await screen.findByRole("heading", { name: "随手一问" });
+    expect(screen.queryByText(/目的地/u)).not.toBeInTheDocument();
+  });
+
+  it("renders every goal phase, keeps settled thinking briefly, expires old thinking and removes a terminal goal", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-phases", "阶段 Workbench");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const statuses = ["ARRANGING", "ARRANGED", "RUNNING", "REVIEWING", "EXTENDING", "NEEDS_ATTENTION", "FINALIZING", "COMPLETED", "COMPLETED_WITH_GAPS", "FAILED", "CANCELED"] as const;
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: statuses.map((status, index): JoiGoalCardDto => {
+        const base = {
+          agentCount: index,
+          workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+          canDelete: status === "COMPLETED",
+          goalId: `goal-${status}`,
+          ...(status === "FAILED" ? { completionSummary: "有一项执行未完成" } : {}),
+          title: `目标 ${status}`,
+          updatedAt: workbench.updatedAt,
+          work: { active: status === "RUNNING" ? 1 : 0, completed: status === "COMPLETED" ? 1 : 0, failed: status === "FAILED" ? 1 : 0, total: 1 },
+        };
+        return status === "NEEDS_ATTENTION"
+          ? { ...base, clarification: { reasonCode: "question_required" }, status }
+          : { ...base, status };
+      }),
+      thinking: [
+        { agentCount: 6, expiresAt: "2099-01-01T00:00:00.000Z", goalId: "goal-COMPLETED", phase: "settled", stage: "FINALIZING", startedAt: workbench.updatedAt, turnId: "settled-visible", work: { active: 0, completed: 1, failed: 0, total: 1 } },
+        { agentCount: 0, expiresAt: "2000-01-01T00:00:00.000Z", goalId: "goal-CANCELED", phase: "settled", stage: "FINALIZING", startedAt: workbench.updatedAt, turnId: "settled-expired", work: { active: 0, completed: 0, failed: 0, total: 0 } },
+      ],
+      unassignedActions: [],
+    });
+    const dismiss = vi.spyOn(api, "dismissJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-COMPLETED", status: "CONSUMED" });
+    const onScheduleGoal = vi.fn();
+
+    render(<JoiHome api={api} onScheduleGoal={onScheduleGoal} />);
+    expect(await screen.findByText("正在评审")).toBeInTheDocument();
+    expect(screen.getByText("评审后补充执行")).toBeInTheDocument();
+    for (const label of ["正在安排", "排队中", "执行中", "需要你", "正在总结", "已完成", "已完成（有缺口）", "处理失败", "已取消"]) {
+      expect(await screen.findByText(label)).toBeInTheDocument();
+    }
+    expect(screen.getByText("有一项执行未完成")).toBeInTheDocument();
+    expect(screen.queryByText("progressing")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /定时/u })).not.toBeInTheDocument();
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+    fireEvent.click(screen.getByText("目标 RUNNING"));
+    fireEvent.click(await screen.findByRole("button", { name: "定时" }));
+    expect(onScheduleGoal).toHaveBeenCalledWith("goal-RUNNING");
+    fireEvent.click(screen.getByRole("button", { name: "关闭" }));
+    openGoalMenuItem("目标 COMPLETED", "移除");
+    await waitFor(() => expect(dismiss).toHaveBeenCalledWith("goal-COMPLETED"));
+    expect(screen.queryByText("目标 COMPLETED")).not.toBeInTheDocument();
+  });
+
+  it("offers cancellation for an arranged goal so a stuck queue has a safe fallback", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-arranged-cancel", "排队 Workbench");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        goalId: "goal-arranged-cancel",
+        status: "ARRANGED",
+        title: "卡住的排队任务",
+        updatedAt: workbench.updatedAt,
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const cancel = vi.spyOn(api, "cancelJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, canceled: true, inputId: "goal-arranged-cancel", status: "CONSUMED" });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("排队中")).toBeInTheDocument();
+    openGoalMenuItem("卡住的排队任务", "取消任务");
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-arranged-cancel"));
+  });
+
+  it("offers cancellation for an in-flight goal so a running main task can be stopped", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-running-cancel", "在途 Workbench");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 1,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        goalId: "goal-running-cancel",
+        status: "RUNNING",
+        title: "正在执行的主任务",
+        updatedAt: workbench.updatedAt,
+        work: { active: 1, completed: 0, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const cancel = vi.spyOn(api, "cancelJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, canceled: true, inputId: "goal-running-cancel", status: "CONSUMED" });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("执行中")).toBeInTheDocument();
+    openGoalMenuItem("正在执行的主任务", "取消任务");
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("goal-running-cancel"));
+  });
+
+  it("explains a parked internal failure without presenting it as a cancellation", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-failure", "失败说明");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: true,
+        failure: { attempts: 8, executionStarted: false, reasonCode: "unsafe_reasoning_tool", suggestedAction: "RESTART_OR_UPDATE" },
+        goalId: "goal-failure",
+        status: "FAILED",
+        title: "刚提交就停止的任务",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 0, total: 0 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("处理失败")).toBeInTheDocument();
+    expect(screen.getByText(/已自动尝试 8 次，现已停止重试/u)).toBeInTheDocument();
+    expect(screen.getByText(/尚未启动 Agent，也没有派发工作/u)).toBeInTheDocument();
+    expect(screen.getByText(/重启或升级 joi 后重新提交/u)).toBeInTheDocument();
+    expect(screen.getByText(/诊断编号：unsafe_reasoning_tool/u)).toBeInTheDocument();
+    expect(screen.queryByText("已取消")).not.toBeInTheDocument();
+  });
+
+  it("offers a unified continue action on every terminal goal card and re-dispatches with optional supplementary text", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-retry", "继续工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const makeGoal = (status: "CANCELED" | "COMPLETED" | "FAILED", goalId: string, title: string) => ({
+      agentCount: 0,
+      workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+      canDelete: status !== "FAILED",
+      ...(status === "FAILED" ? { failure: { attempts: 8, executionStarted: false, reasonCode: "work_dispatch_failed", suggestedAction: "RETRY_OR_EXPORT_DIAGNOSTICS" as const } } : {}),
+      ...(status === "COMPLETED" ? { completionSummary: "结果已汇总", completedAt: workbench.updatedAt } : {}),
+      goalId,
+      status,
+      title,
+      updatedAt: workbench.updatedAt,
+      work: { active: 0, completed: 0, failed: status === "FAILED" ? 1 : 0, total: 1 },
+    });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [
+        makeGoal("FAILED", "goal-failed", "失败的目标"),
+        makeGoal("CANCELED", "goal-canceled", "取消的目标"),
+        makeGoal("COMPLETED", "goal-completed", "完成的目标"),
+      ],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const retry = vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-failed", status: "PENDING" });
+
+    render(<JoiHome api={api} />);
+    // Every terminal card offers continue from its menu; running cards do not.
+    for (const title of ["失败的目标", "取消的目标", "完成的目标"]) {
+      expect(await screen.findByRole("button", { name: `${title} 更多操作` })).toBeInTheDocument();
+    }
+    const failedGoalTrigger = screen.getByRole("button", { name: "失败的目标 更多操作" });
+    const failedGoalSide = failedGoalTrigger.closest(".joi-goal-side");
+    expect(failedGoalSide).not.toBeNull();
+    const failedGoalStatus = failedGoalSide?.querySelector(".joi-goal-status");
+    expect(failedGoalStatus).toHaveTextContent("处理失败");
+    const failedGoalTitle = failedGoalTrigger.closest(".joi-goal-card")?.querySelector(".joi-goal-title");
+    expect(failedGoalTitle).toHaveTextContent("失败的目标");
+    // A failed card with work behind it has no finalized outcome, so removal stays out of reach —
+    // archiving is the action that takes it off the feed.
+    openGoalMenu("失败的目标");
+    expect(goalMenuItem("继续")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "移除" })).not.toBeInTheDocument();
+
+    // Expanding the failed card shows the supplementary input and submits with text.
+    fireEvent.click(goalMenuItem("继续"));
+    expect(await screen.findByText(/问题处理好后，可以继续这条任务/u)).toBeInTheDocument();
+    const supplementary = screen.getByLabelText("补充说明");
+    fireEvent.change(supplementary, { target: { value: "已修复搭档技能，重新派发" } });
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-failed", { text: "已修复搭档技能，重新派发" }));
+
+    // The canceled card retries with an empty body (no text field).
+    openGoalMenuItem("取消的目标", "继续");
+    expect(await screen.findByText(/这条任务之前被取消了/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledWith("goal-canceled", {}));
+  });
+
+  it("keeps canceled history visible on a failed goal and retries only after explicit continue", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("historical-workbench", "历史工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [{
+      agentCount: 1, canArchive: true, canDelete: false, goalId: "historical-goal", title: "中断的目标", status: "FAILED",
+      workbench: { workbenchId: workbench.workbenchId, name: workbench.name }, updatedAt: workbench.updatedAt,
+      work: { total: 2, active: 0, completed: 0, failed: 0 },
+      failure: { attempts: 1, executionStarted: true, reasonCode: "joi_task_turn_failed", suggestedAction: "RETRY_OR_EXPORT_DIAGNOSTICS" },
+    }], thinking: [], unassignedActions: [] });
+    const retry = vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "historical-goal", status: "PENDING" });
+    render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "中断的目标 更多操作" });
+    expect(screen.getByText("处理失败")).toBeInTheDocument();
+    expect(screen.queryByText("正在总结")).not.toBeInTheDocument();
+    expect(retry).not.toHaveBeenCalled();
+    openGoalMenu("中断的目标");
+    expect(goalMenuItem("归档")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "移除" })).not.toBeInTheDocument();
+    fireEvent.click(goalMenuItem("继续"));
+    expect(retry).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+    await waitFor(() => expect(retry).toHaveBeenCalledExactlyOnceWith("historical-goal", {}));
+  });
+
+  it("sends negative evolution feedback from a terminal goal card", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-feedback", "反馈工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        canDelete: false,
+        completionSummary: "结果已汇总",
+        completedAt: workbench.updatedAt,
+        goalId: "goal-feedback",
+        status: "COMPLETED" as const,
+        title: "完成的目标",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 1, failed: 0, total: 1 },
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const feedback = vi.spyOn(api, "evolutionNegativeFeedback")
+      .mockRejectedValueOnce(new ApiError("evolution_goal_invalid", "Goal does not belong to this workbench.", 400))
+      .mockResolvedValueOnce({ workbenchId: workbench.workbenchId, dailyCallLimit: 5, callsUsedToday: 1, evidenceCount: 12, evaluableCount: 10, poolEvaluable: 12, poolVerificationFailed: 4, activeRevisionId: null, reason: "rolled_back", runRequestedAt: null, lastVerdict: null, versions: [] });
+
+    render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "完成的目标 更多操作" });
+    openGoalMenuItem("完成的目标", "继续");
+    const button = await screen.findByRole("button", { name: "反馈策略没帮上忙" });
+    fireEvent.click(button);
+    expect(await screen.findByText("这条目标没有绑定进化策略，无需反馈。")).toBeInTheDocument();
+    fireEvent.click(button);
+    await waitFor(() => expect(feedback).toHaveBeenCalledTimes(2));
+    expect(feedback).toHaveBeenCalledWith(workbench.workbenchId, "goal-feedback");
+    expect(await screen.findByText("已回退该策略并暂停自动进化；运行中的目标保留原策略。")).toBeInTheDocument();
+  });
+
+  it("shows a result-drawer retry as arranging before the follow-up feed refresh completes", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-result-retry", "结果继续工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const feed = {
+      goals: [{
+        agentCount: 0,
+        canDelete: true,
+        completionSummary: "已完成的结果",
+        completedAt: workbench.updatedAt,
+        goalId: "goal-result-retry",
+        status: "COMPLETED" as const,
+        title: "结果目标",
+        updatedAt: workbench.updatedAt,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        work: { active: 0, completed: 1, failed: 0, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    };
+    let releaseRefresh: (() => void) | undefined;
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockImplementation(() => new Promise((resolve) => { releaseRefresh = () => resolve(feed); }));
+    vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-result-retry", status: "PENDING" });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开「结果目标」的最终结果全文" }));
+    const drawer = await screen.findByRole("dialog", { name: "结果继续工程 的最终结果" });
+    fireEvent.change(within(drawer).getByLabelText("补充说明"), { target: { value: "补充后续要求" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "继续" }));
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "排队中" })).toBeInTheDocument();
+    releaseRefresh?.();
+  });
+
+  it("breaks the work counts down and counts failures toward progress", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-goal-progress", "进度工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 7,
+        canDelete: false,
+        goalId: "goal-progress",
+        status: "ARRANGING" as const,
+        title: "十一个工作",
+        updatedAt: workbench.updatedAt,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        work: { active: 1, completed: 6, failed: 4, failedResolved: 3, total: 11, executing: 0, resourceWaiting: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+
+    render(<JoiHome api={api} />);
+    // The five Works that are not completions have to be readable, and a failure a replacement
+    // answered is not the same fact as one that is still open.
+    const label = await screen.findByText("7 Agent · 6 工作完成 · 4 失败(3 已解决) · 1 等待中");
+    // A settled Work is settled whatever it produced, so ten of the eleven fill the bar.
+    expect(label.closest(".joi-goal-progress")?.querySelector(".joi-goal-progress-track i"))
+      .toHaveStyle({ width: "91%" });
+  });
+
+  it("shows a retry as arranging before the follow-up feed refresh completes", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-fast-retry", "即时反馈工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const feed = {
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: true,
+        goalId: "goal-fast-retry",
+        status: "FAILED" as const,
+        title: "马上继续的目标",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 1, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    };
+    let releaseRefresh: (() => void) | undefined;
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockImplementation(() => new Promise((resolve) => { releaseRefresh = () => resolve(feed); }));
+    vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-fast-retry", status: "PENDING" });
+
+    render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "马上继续的目标 更多操作" });
+    openGoalMenuItem("马上继续的目标", "继续");
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "排队中" })).toBeInTheDocument();
+    releaseRefresh?.();
+  });
+
+  it("shows an explicit submitting stage before the retry request is acknowledged", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-submit-gap", "提交反馈工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const feed = {
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        goalId: "goal-submit-gap",
+        status: "FAILED" as const,
+        title: "继续提交不能静默",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 1, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    };
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockImplementation(() => new Promise(() => undefined));
+    let acknowledge: ((accepted: JoiAcceptedMessageDto) => void) | undefined;
+    vi.spyOn(api, "retryJoiMessage").mockImplementation(() => new Promise((resolve) => { acknowledge = resolve; }));
+
+    render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "继续提交不能静默 更多操作" });
+    openGoalMenuItem("继续提交不能静默", "继续");
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+
+    expect(await screen.findByRole("status", { name: "正在提交继续请求" })).toBeInTheDocument();
+    expect(screen.queryByText("正在安排")).not.toBeInTheDocument();
+
+    await act(async () => {
+      acknowledge?.({ acceptedAt: workbench.updatedAt, inputId: "goal-submit-gap", status: "PENDING" });
+      await Promise.resolve();
+    });
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+  });
+
+  it("clears the submitting stage and keeps retry actionable when the request is rejected", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-submit-rejected", "提交失败工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        goalId: "goal-submit-rejected",
+        status: "FAILED" as const,
+        title: "提交失败后仍可重试",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 1, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    let rejectRetry: ((reason: Error) => void) | undefined;
+    vi.spyOn(api, "retryJoiMessage").mockImplementation(() => new Promise((_resolve, reject) => { rejectRetry = reject; }));
+
+    render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "提交失败后仍可重试 更多操作" });
+    openGoalMenuItem("提交失败后仍可重试", "继续");
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+    expect(await screen.findByRole("status", { name: "正在提交继续请求" })).toBeInTheDocument();
+
+    await act(async () => {
+      rejectRetry?.(new ApiError("offline", "继续请求没有提交成功", 503));
+      await Promise.resolve();
+    });
+    expect(await screen.findByRole("alert")).toHaveTextContent("继续请求没有提交成功");
+    expect(screen.queryByRole("status", { name: "正在提交继续请求" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "继续" })).toBeEnabled();
+  });
+
+  it("does not let an older polling response overwrite an optimistic retry", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-stale-retry", "防旧响应工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const feed = {
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: true,
+        goalId: "goal-stale-retry",
+        status: "FAILED" as const,
+        title: "防旧响应目标",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 0, failed: 1, total: 1 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    };
+    let releaseOldPoll: (() => void) | undefined;
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockImplementationOnce(() => new Promise((resolve) => { releaseOldPoll = () => resolve(feed); }))
+      .mockImplementationOnce(() => new Promise(() => undefined))
+      .mockResolvedValue(feed);
+    vi.spyOn(api, "retryJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-stale-retry", status: "PENDING" });
+
+    const view = render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "防旧响应目标 更多操作" });
+    openGoalMenuItem("防旧响应目标", "继续");
+    act(() => { document.dispatchEvent(new Event("visibilitychange")); });
+    await waitFor(() => expect(releaseOldPoll).toBeDefined());
+    fireEvent.click(await screen.findByRole("button", { name: "继续" }));
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    await act(async () => { releaseOldPoll?.(); await Promise.resolve(); });
+    expect(await screen.findByText("正在安排")).toBeInTheDocument();
+    view.unmount();
+  });
+
+  it("binds uploaded files to one global joi input and ignores an empty submit", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    const upload = vi.spyOn(api, "uploadJoiAttachment").mockResolvedValue({
+      attachmentId: "attachment-1", createdAt: "2026-07-28T10:00:00.000Z", filename: "brief.txt", mimeType: "text/plain", size: 5,
+    });
+    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "input-file", status: "PENDING" });
+    render(<JoiHome api={api} />);
+    const composer = await screen.findByLabelText("给 joi 输入");
+    fireEvent.submit(parentForm(composer));
+    expect(send).not.toHaveBeenCalled();
+    const fileInput = screen.getByLabelText("给 joi 添加附件");
+    fireEvent.change(fileInput, { target: { files: null } });
+    fireEvent.change(fileInput, { target: { files: [new File(["brief"], "brief.txt", { type: "text/plain" })] } });
+    expect(screen.getByText("brief.txt")).toBeInTheDocument();
+    fireEvent.change(composer, { target: { value: "按附件执行" } });
+    fireEvent.submit(parentForm(composer));
+    await waitFor(() => expect(upload).toHaveBeenCalledOnce());
+    expect(send).toHaveBeenCalledWith("按附件执行", { attachmentIds: ["attachment-1"] });
+  });
+
+  it("accepts attachments through drag-and-drop and paste and sends them with the message", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    let uploadCount = 0;
+    const upload = vi.spyOn(api, "uploadJoiAttachment").mockImplementation((file) => {
+      uploadCount += 1;
+      return Promise.resolve({ attachmentId: `attachment-${String(uploadCount)}`, createdAt: "2026-07-28T10:00:00.000Z", filename: file.name, mimeType: file.type, size: file.size });
+    });
+    const send = vi.spyOn(api, "sendJoiMessage").mockResolvedValue({ acceptedAt: "2026-07-28T10:00:00.000Z", inputId: "input-drop", status: "PENDING" });
+    render(<JoiHome api={api} />);
+    const composer = await screen.findByLabelText("给 joi 输入");
+    const form = parentForm(composer);
+
+    fireEvent.drop(form, { dataTransfer: { files: [new File(["dropped"], "dropped.md", { type: "text/markdown" })] } });
+    expect(screen.getByText("dropped.md")).toBeInTheDocument();
+    fireEvent.drop(form, { dataTransfer: { files: [new File(["dropped"], "dropped.md", { type: "text/markdown" })] } });
+    expect(screen.getByText("dropped.md")).toBeInTheDocument();
+    expect(screen.queryByText("dropped.md、dropped.md")).not.toBeInTheDocument();
+
+    fireEvent.paste(composer, { clipboardData: { files: [new File(["pixels"], "shot.png", { type: "image/png" })] } });
+    expect(screen.getByText("dropped.md、shot.png")).toBeInTheDocument();
+
+    fireEvent.change(composer, { target: { value: "按拖拽附件执行" } });
+    fireEvent.submit(form);
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
+    expect(send).toHaveBeenCalledWith("按拖拽附件执行", { attachmentIds: ["attachment-1", "attachment-2"] });
+  });
+
+  it("rejects oversized files and enforces the 8-file cap with visible notices", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    render(<JoiHome api={api} />);
+    const composer = await screen.findByLabelText("给 joi 输入");
+    const form = parentForm(composer);
+
+    const oversized = new File(["x"], "huge.bin", { type: "application/octet-stream" });
+    Object.defineProperty(oversized, "size", { value: 11 * 1024 * 1024 });
+    fireEvent.drop(form, { dataTransfer: { files: [oversized] } });
+    expect(screen.getByRole("alert").textContent).toContain("超过 10 MiB");
+    expect(screen.queryByText("huge.bin")).not.toBeInTheDocument();
+
+    const many = Array.from({ length: 9 }, (_, index) => new File([`f${String(index)}`], `file-${String(index)}.txt`, { type: "text/plain" }));
+    fireEvent.drop(form, { dataTransfer: { files: many } });
+    expect(screen.getByRole("alert").textContent).toContain("最多只能添加 8 个附件");
+    expect(screen.getByText(/file-0\.txt/u)).toBeInTheDocument();
+    expect(screen.queryByText(/file-8\.txt/u)).not.toBeInTheDocument();
+  });
+
+  it("nudges the home page to build two or three partners when the roster is thin", async () => {
+    const api = new DigitalLifeApi("");
+    const thin = snapshot([readySource]);
+    thin.partners = [{
+      capabilities: [], createdBy: "user", displayName: "Solo", engine: "pi-core", inFlightCount: 0, kind: "local-pi",
+      knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner-solo", partnerRevisionId: "revision-solo",
+      registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+    }];
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(thin);
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText(/场景预设一键组建团队/u)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "看场景预设" })).toBeInTheDocument();
+  });
+
+  it("hides the partner nudge once at least two partners exist", async () => {
+    const api = new DigitalLifeApi("");
+    const enough = snapshot([readySource]);
+    const one: PartnerDto = {
+      capabilities: [], createdBy: "user", displayName: "Solo", engine: "pi-core", inFlightCount: 0, kind: "local-pi",
+      knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner-solo", partnerRevisionId: "revision-solo",
+      registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+    };
+    enough.partners = [one, { ...one, displayName: "Duo", partnerId: "partner-duo", partnerRevisionId: "revision-duo" }];
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(enough);
+    render(<JoiHome api={api} />);
+    expect(await screen.findByLabelText("给 joi 输入")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "看场景预设" })).not.toBeInTheDocument();
+  });
+
+  it("shows an actionable clarification message keyed by the reason code", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "clarify-1", status: "CLARIFICATION_REQUIRED" },
+      { acceptedAt: "2026-08-01T00:00:01.000Z", clarificationReasonCode: "workbench_creation_unavailable", inputId: "clarify-2", status: "CLARIFICATION_REQUIRED" },
+      { acceptedAt: "2026-08-01T00:00:02.000Z", clarificationReasonCode: "workbench_not_found", inputId: "clarify-3", status: "CLARIFICATION_REQUIRED" },
+      { acceptedAt: "2026-08-01T00:00:03.000Z", clarificationPrompt: "搭档配置暂不可用，请先检查设置。", clarificationReasonCode: "work_dispatch_failed", inputId: "clarify-4", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText(/没法定位这条输入属于哪个上下文/u)).toBeInTheDocument();
+    expect(screen.getByText(/想新建一个工作台来承接/u)).toBeInTheDocument();
+    expect(screen.getByText(/指向的工作台已不存在/u)).toBeInTheDocument();
+    expect(screen.getByText("搭档配置暂不可用，请先检查设置。")).toBeInTheDocument();
+  });
+
+  it.each([true, false])("explains bounded continuation using available result context (summary: %s)", async (hasSummary) => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-continuation", "研究 Workbench");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({
+      goals: [{
+        agentCount: 0,
+        workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+        canDelete: false,
+        clarification: {
+          prompt: "已自动补充两轮，当前结果仍有明确缺口。",
+          reasonCode: "goal_continuation_required",
+        },
+        ...(hasSummary ? { completionSummary: "横评维度已建立，但近七天来源不足。" } : {}),
+        goalId: "goal-continuation",
+        status: "NEEDS_ATTENTION",
+        title: "评估中文 AI 资讯网站",
+        updatedAt: workbench.updatedAt,
+        work: { active: 0, completed: 3, failed: 0, total: 3 },
+      }],
+      thinking: [],
+      unassignedActions: [],
+    });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: workbench.updatedAt, inputId: "goal-continuation", status: "CONSUMED",
+    });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("是否继续完善结果？")).toBeInTheDocument();
+    expect(screen.getByText("当前结果与待补充内容")).toBeInTheDocument();
+    if (hasSummary) {
+      expect(screen.getByText("横评维度已建立，但近七天来源不足。")).toBeInTheDocument();
+    } else {
+      expect(screen.getByText("暂时没有可展示的结果说明，无法列出具体待补充内容。")).toBeInTheDocument();
+    }
+    expect(screen.getByText("继续完善：再尝试最多两轮补充；仍有未解决事项时会再次询问你。")).toBeInTheDocument();
+    expect(screen.getByText("保留当前结果：结束本次任务，保存已有结论和未解决事项，标记为“已完成（有缺口）”。")).toBeInTheDocument();
+    expect(screen.queryByText(/已自动补充两轮/u)).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/最终结果全文/u)).not.toBeInTheDocument();
+    if (hasSummary) {
+      fireEvent.click(screen.getByRole("button", { name: "查看全文" }));
+      const resultDialog = screen.getByRole("dialog", { name: "研究 Workbench 的当前结果" });
+      expect(within(resultDialog).getByRole("heading", { name: "当前结果" })).toBeInTheDocument();
+      expect(within(resultDialog).queryByRole("heading", { name: "最终结果" })).not.toBeInTheDocument();
+      fireEvent.click(within(resultDialog).getByRole("button", { name: "关闭" }));
+    }
+    fireEvent.click(screen.getByRole("button", { name: "继续完善" }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "CONTINUE" }));
+    fireEvent.click(screen.getByRole("button", { name: "保留当前结果" }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("goal-continuation", { actionChoice: "ACCEPT_CURRENT" }));
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
+  it("keeps a large workbench choice list bounded and searchable", async () => {
+    const api = new DigitalLifeApi("");
+    const workbenches = Array.from({ length: 20 }, (_, index) => workbenchDto(`workbench-${String(index)}`, `工作台 ${String(index)}`));
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches });
+    vi.spyOn(api, "joiHomeFeed").mockResolvedValue({ goals: [], thinking: [], unassignedActions: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationReasonCode: "workbench_selection_invalid",
+      inputId: "large-workbench-choice",
+      status: "CLARIFICATION_REQUIRED",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "large-workbench-choice", status: "PENDING",
+    });
+
+    render(<JoiHome api={api} />);
+
+    const search = await screen.findByLabelText("搜索工作台");
+    const list = screen.getByRole("group", { name: "选择一个工作台继续" });
+    expect(list).toHaveClass("joi-clarify-workbench-list");
+    expect(within(list).getAllByRole("button")).toHaveLength(20);
+    fireEvent.change(search, { target: { value: "工作台 17" } });
+    expect(screen.getByRole("button", { name: /工作台 17/u })).toBeInTheDocument();
+    expect(within(list).getAllByRole("button")).toHaveLength(1);
+
+    fireEvent.click(screen.getByRole("button", { name: /工作台 17/u }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("large-workbench-choice", { workbenchId: "workbench-17", questionId: "legacy_question:large-workbench-choice", questionVersion: 1 }));
+  });
+
+  it.each(["recheck", "supplement"])("continues an unrecoverable historical review with %s on the original goal", async (action) => {
+    const api = new DigitalLifeApi("");
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "history-review-1", status: "ROUTED" });
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationPrompt: "历史评审记录无法安全恢复。",
+      clarificationReasonCode: "harness_review_unrecoverable",
+      inputId: "history-review-1",
+      workbenchId: "history-workbench-1",
+      questionId: "goal_question:history-review-1:v3",
+      questionVersion: 3,
+      status: "CLARIFICATION_REQUIRED",
+    }] });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText("内部复核已中断")).toBeInTheDocument();
+    expect(screen.getByText("复核中断", { exact: true })).toBeInTheDocument();
+    expect(screen.queryByText("需要你", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "确认完成并收官" })).not.toBeInTheDocument();
+    expect(screen.queryByText("已交给 joi 自动校正")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+    if (action === "recheck") {
+      fireEvent.click(screen.getByRole("button", { name: "重试复核" }));
+    } else {
+      fireEvent.click(screen.getByRole("button", { name: "补充要求（可选）" }));
+      fireEvent.change(screen.getByLabelText("补充信息"), { target: { value: "保留已有成果，只补充验证缺口" } });
+      fireEvent.click(screen.getByRole("button", { name: "补充并继续" }));
+    }
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("history-review-1", {
+      ...(action === "recheck" ? { actionChoice: "RESUME" } : { text: "保留已有成果，只补充验证缺口" }),
+      questionId: "goal_question:history-review-1:v3", questionVersion: 3,
+    }));
+  });
+
+  it("offers available partner cards and resumes with a stable partner id without free text", async () => {
+    const api = new DigitalLifeApi("");
+    const ready: PartnerDto = {
+      capabilities: ["code"], createdBy: "user", description: "适合代码分析", displayName: "代码搭档", engine: "pi-core",
+      inFlightCount: 0, kind: "local-pi", knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner-ready",
+      partnerRevisionId: "revision-ready", registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+    };
+    const blocked: PartnerDto = {
+      ...ready, configuration: { reasonCodes: ["skill_missing"], status: "ACTION_REQUIRED" }, displayName: "待修复搭档",
+      partnerId: "partner-blocked", partnerRevisionId: "revision-blocked",
+    };
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), partners: [ready, blocked] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z", clarificationPrompt: "选择一个搭档继续原任务。",
+      clarificationReasonCode: "partner_selection_required", inputId: "partner-choice", status: "CLARIFICATION_REQUIRED",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "partner-choice", status: "PENDING",
+    });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: /代码搭档/u }));
+
+    expect(clarify).toHaveBeenCalledWith("partner-choice", { partnerId: "partner-ready" });
+    expect(screen.queryByRole("button", { name: /待修复搭档/u })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
+  it("offers one-click recovery for a waiting Work whose original question linkage was lost", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationPrompt: "检测到一项等待中的原工作。",
+      clarificationReasonCode: "partner_waiting_recovery_required",
+      inputId: "waiting-recovery",
+      status: "CLARIFICATION_REQUIRED",
+      workbenchId: "workbench-recovery",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "waiting-recovery", status: "PENDING",
+    });
+
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "继续原工作" }));
+
+    expect(clarify).toHaveBeenCalledWith("waiting-recovery", { actionChoice: "RESUME" });
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
+  it("retries an interrupted goal review with the saved answer and current question version", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "review-retry", status: "CLARIFICATION_REQUIRED",
+      clarificationReasonCode: "goal_review_interrupted", clarificationPrompt: "恢复评审中断，已有回答已保留。",
+      questionId: "review-question-v2", questionVersion: 2,
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "review-retry", status: "ROUTED" });
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "重试评审" }));
+    expect(clarify).toHaveBeenCalledWith("review-retry", { text: "沿用已保存的回答，重试评审。", questionId: "review-question-v2", questionVersion: 2 });
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
+  it("shows authorization repair as an explicit one-click recovery instead of a blank input", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z",
+      clarificationReasonCode: "partner_auth_required",
+      inputId: "waiting-auth",
+      status: "CLARIFICATION_REQUIRED",
+      workbenchId: "workbench-auth",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({
+      acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "waiting-auth", status: "PENDING",
+    });
+
+    render(<JoiHome api={api} />);
+    expect(await screen.findByText(/需要重新授权/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "继续原工作" }));
+
+    expect(clarify).toHaveBeenCalledWith("waiting-auth", { actionChoice: "RESUME" });
+    expect(screen.queryByLabelText("补充信息")).not.toBeInTheDocument();
+  });
+
+  it("shows partner kind hints when descriptions are absent", async () => {
+    const api = new DigitalLifeApi("");
+    const local: PartnerDto = {
+      capabilities: [], createdBy: "user", displayName: "本地搭档", engine: "pi-core", inFlightCount: 0,
+      kind: "local-pi", knowledgeDocCount: 0, lifecyclePolicy: "DRAIN", partnerId: "partner-local",
+      partnerRevisionId: "revision-local", registryRevision: 1, skills: [], status: "ACTIVE", tools: [],
+    };
+    const remote: PartnerDto = {
+      ...local, displayName: "远程搭档", kind: "a2a", partnerId: "partner-remote", partnerRevisionId: "revision-remote",
+    };
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), partners: [local, remote] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "partner_selection_required",
+      inputId: "partner-kind-hints", status: "CLARIFICATION_REQUIRED",
+    }] });
+
+    render(<JoiHome api={api} />);
+
+    expect(await screen.findByText("本地搭档", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("远程搭档", { selector: "span" })).toBeInTheDocument();
+  });
+
+  it("explains how to recover when no partner can be selected", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), partners: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "partner_selection_required",
+      inputId: "no-partner-choice", status: "CLARIFICATION_REQUIRED",
+    }] });
+
+    render(<JoiHome api={api} />);
+
+    expect(await screen.findByText("当前没有可用搭档。请先到「搭档」页修复或创建搭档。")).toBeInTheDocument();
+    expect(screen.queryByRole("group", { name: "选择一个搭档继续任务" })).not.toBeInTheDocument();
+  });
+
+  it("offers scenario and partner-page exits from the thin-roster nudge", async () => {
+    const api = new DigitalLifeApi("");
+    const thin = snapshot([readySource]);
+    thin.partners = [];
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(thin);
+    mockHomeMessages(api).mockResolvedValue({ items: [] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    const nav = vi.fn();
+    render(<JoiHome api={api} onNavigate={nav} />);
+    fireEvent.click(await screen.findByRole("button", { name: "看场景预设" }));
+    expect(nav).toHaveBeenCalledWith("agents", "scenarios");
+    fireEvent.click(screen.getByRole("button", { name: "去搭档页创建" }));
+    expect(nav).toHaveBeenCalledWith("agents", "partners");
+  });
+
+  it("removes a clarification card immediately after supplemental information succeeds", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "前端搭档")] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValueOnce({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "question_required", inputId: "clarify-x", status: "CLARIFICATION_REQUIRED" },
+    ] }).mockResolvedValue({ items: [] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "clarify-x", status: "PENDING" });
+    render(<JoiHome api={api} />);
+    const reason = await screen.findByLabelText('你的回答');
+    fireEvent.change(await screen.findByLabelText("你的回答"), { target: { value: "其实是登录模块" } });
+    fireEvent.click(screen.getByRole("button", { name: "回答并继续" }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("clarify-x", { text: "其实是登录模块" }));
+    await waitFor(() => expect(reason).not.toBeInTheDocument());
+  });
+
+  it("creates a prepared workbench and binds it without a second clarification request", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "manual-create", status: "CLARIFICATION_REQUIRED", questionId: "q1", questionVersion: 1 },
+    ] });
+    const create = vi.spyOn(api, "createWorkbench").mockResolvedValue(workbenchDto("created", "工程维护工坊"));
+    const clarify = vi.spyOn(api, "clarifyJoiMessage");
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "创建 调研与分析工坊 并继续" }));
+    expect(screen.queryByLabelText("工作台名称")).not.toBeInTheDocument();
+    await waitFor(() => expect(create).toHaveBeenCalledWith(expect.objectContaining({ name: "调研与分析工坊", bindInputId: "manual-create", questionId: "q1", questionVersion: 1 })));
+    expect(clarify).not.toHaveBeenCalled();
+  });
+
+  it("reuses an existing workbench from the choice dialog", async () => {
+    const api = new DigitalLifeApi("");
+    const existing = workbenchDto("existing", "工程维护工坊");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [existing] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "reuse", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    const create = vi.spyOn(api, "createWorkbench");
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: existing.updatedAt, inputId: "reuse", status: "ROUTED" });
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: existing.name }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("reuse", { workbenchId: "existing", questionId: "legacy_question:reuse", questionVersion: 1 }));
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("shows a safe error when a workbench choice fails", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("existing", "工程维护工坊")] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_not_found", inputId: "failed-choice", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    vi.spyOn(api, "clarifyJoiMessage").mockRejectedValue(new Error("PRIVATE_TRANSPORT_DETAIL"));
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "工程维护工坊" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("工作台选择未完成");
+    expect(document.body.textContent).not.toContain("PRIVATE_TRANSPORT_DETAIL");
+  });
+
+  it("renders a persisted joi question and sends the answer back to the same input", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z", clarificationPrompt: "验收需要覆盖哪些浏览器？",
+      clarificationReasonCode: "question_required", inputId: "question-1", status: "CLARIFICATION_REQUIRED",
+    }] });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "question-1", status: "PENDING" });
+    render(<JoiHome api={api} />);
+
+    expect(await screen.findByText("验收需要覆盖哪些浏览器？")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("你的回答"), { target: { value: "Chrome 和 Edge" } });
+    fireEvent.click(screen.getByRole("button", { name: "回答并继续" }));
+    await waitFor(() => expect(clarify).toHaveBeenCalledWith("question-1", { text: "Chrome 和 Edge" }));
+  });
+
+  it("binds a workspace from its clarification card and resumes the same input", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-work", "发布工程")] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [{
+      acceptedAt: "2026-08-01T00:00:00.000Z", workbenchId: "workbench-work", clarificationReasonCode: "workbench_workspace_not_ready",
+      inputId: "workspace-1", status: "CLARIFICATION_REQUIRED",
+    }] });
+    const bind = vi.spyOn(api, "bindWorkbenchWorkspace").mockResolvedValue({ displayName: "release", kind: "BOUND", status: "READY" });
+    const clarify = vi.spyOn(api, "clarifyJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", workbenchId: "workbench-work", inputId: "workspace-1", status: "PENDING" });
+    render(<JoiHome api={api} />);
+
+    expect(await screen.findByText("joi 需要你确认")).toBeInTheDocument();
+    expect(bind).not.toHaveBeenCalled();
+    fireEvent.click(await screen.findByRole("button", { name: "选择工作目录" }));
+    await waitFor(() => expect(bind).toHaveBeenCalledWith("workbench-work"));
+    expect(clarify).toHaveBeenCalledWith("workspace-1", { workbenchId: "workbench-work" });
+  });
+
+  it("removes an unassigned clarification from the minimal home after cancellation succeeds", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbenchDto("workbench-1", "前端搭档")] });
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api)
+      .mockResolvedValueOnce({ items: [
+        { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_selection_invalid", inputId: "cancel-1", status: "CLARIFICATION_REQUIRED" },
+      ] })
+      .mockResolvedValue({ items: [
+        { acceptedAt: "2026-08-01T00:00:00.000Z", canceled: true, inputId: "cancel-1", status: "CONSUMED" },
+      ] });
+    const cancel = vi.spyOn(api, "cancelJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", canceled: true, inputId: "cancel-1", status: "CONSUMED" });
+    render(<JoiHome api={api} />);
+    const cancelButton = await screen.findByRole("button", { name: "取消这条任务" });
+    fireEvent.click(cancelButton);
+    await waitFor(() => expect(cancel).toHaveBeenCalledWith("cancel-1"));
+    await waitFor(() => expect(screen.queryByText(/没法定位这条输入属于哪个上下文/u)).not.toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: "取消这条任务" })).not.toBeInTheDocument();
+  });
+
+  it("offers a persistent remove button only on finished or canceled cards", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:04.000Z", inputId: "done-1", status: "CONSUMED" },
+      { acceptedAt: "2026-08-01T00:00:01.000Z", canceled: true, inputId: "canceled-1", status: "CONSUMED" },
+      { acceptedAt: "2026-08-01T00:00:02.000Z", inputId: "live-1", status: "PENDING" },
+      { acceptedAt: "2026-08-01T00:00:03.000Z", clarificationReasonCode: "question_required", inputId: "clarify-1", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    const dismiss = vi.spyOn(api, "dismissJoiMessage").mockResolvedValue({ acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "done-1", status: "CONSUMED" });
+    render(<JoiHome api={api} />);
+    // Every card carries the trigger; only the finished ones carry a removal inside it. The cards
+    // render in feed order, so the last trigger is the one still running.
+    const triggers = await screen.findAllByRole("button", { name: "正在安排的新目标 更多操作" });
+    expect(triggers).toHaveLength(3);
+    const liveTrigger = triggers[2];
+    if (liveTrigger === undefined) throw new Error("expected a running card");
+    fireEvent.click(liveTrigger);
+    expect(goalMenuItem("取消任务")).toBeInTheDocument();
+    expect(screen.queryByRole("menuitem", { name: "移除" })).not.toBeInTheDocument();
+    fireEvent.click(liveTrigger);
+
+    const doneTrigger = triggers[0];
+    if (doneTrigger === undefined) throw new Error("expected a finished card");
+    fireEvent.click(doneTrigger);
+    fireEvent.click(goalMenuItem("移除"));
+    await waitFor(() => expect(dismiss).toHaveBeenCalledWith("done-1"));
+    await waitFor(() => expect(screen.queryAllByRole("button", { name: "正在安排的新目标 更多操作" })).toHaveLength(2));
+  });
+
+  it("surfaces a dismiss failure inline at the card", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", inputId: "done-2", status: "CONSUMED" },
+    ] });
+    vi.spyOn(api, "dismissJoiMessage").mockRejectedValue(new ApiError("gone", "这条还在处理中", 400));
+    render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "正在安排的新目标 更多操作" });
+    openGoalMenuItem("正在安排的新目标", "移除");
+    expect(await screen.findByText("这条还在处理中")).toBeInTheDocument();
+  });
+
+  it("archives a finished goal off the home feed and restores it from the archive", async () => {
+    const api = new DigitalLifeApi("");
+    const workbench = workbenchDto("workbench-archive", "归档工程");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue({ ...snapshot([readySource]), workbenches: [workbench] });
+    const goal = {
+      agentCount: 0,
+      workbench: { workbenchId: workbench.workbenchId, name: workbench.name },
+      // A failed goal that never reached a finalized outcome: removal stays out of reach here, and
+      // archiving is the action that takes it off the feed.
+      canArchive: true,
+      canDelete: false,
+      // Carried so the archive screen's "no result preview" assertion below has something it could
+      // have shown: without a summary that check would pass on a fixture that never had a preview.
+      completionSummary: "## 最终结论\n\n失败原因已经定位。",
+      goalId: "goal-archive",
+      status: "FAILED" as const,
+      title: "收起来的目标",
+      updatedAt: workbench.updatedAt,
+      work: { active: 0, completed: 0, failed: 1, total: 1 },
+    };
+    const feed = { goals: [goal], thinking: [], unassignedActions: [] };
+    vi.spyOn(api, "joiHomeFeed")
+      .mockResolvedValueOnce(feed)
+      .mockResolvedValue({ ...feed, goals: [{ ...goal, archivedAt: "2026-10-09T09:00:00.000Z" }] });
+    const archive = vi.spyOn(api, "archiveJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-archive", status: "CONSUMED" });
+
+    const view = render(<JoiHome api={api} />);
+    await screen.findByRole("button", { name: "收起来的目标 更多操作" });
+    // While it is still on the feed it is the full card: progress and the result preview are there.
+    const homeCard = document.querySelector(".joi-goal-card");
+    expect(homeCard?.querySelector(".joi-goal-progress")).not.toBeNull();
+    expect(homeCard?.querySelector(".joi-goal-result-preview")).not.toBeNull();
+    openGoalMenuItem("收起来的目标", "归档");
+    await waitFor(() => expect(archive).toHaveBeenCalledWith("goal-archive"));
+    // The poll that follows is what actually moves the card; the feed the host now returns carries
+    // it as archived, and the home screen must not render it any more.
+    await waitFor(() => expect(screen.queryByRole("button", { name: "收起来的目标 更多操作" })).not.toBeInTheDocument());
+    expect(screen.getByText(/这里很干净/u)).toBeInTheDocument();
+    view.unmount();
+
+    const unarchive = vi.spyOn(api, "unarchiveJoiMessage").mockResolvedValue({ acceptedAt: workbench.updatedAt, inputId: "goal-archive", status: "CONSUMED" });
+    render(<ArchivedGoals api={api} />);
+    expect(await screen.findByText("收起来的目标")).toBeInTheDocument();
+    // The archive screen is a list of things filed away, not a second feed: the card keeps the
+    // workbench, the goal and when it was filed, and drops what only means something mid-flight.
+    const archivedCard = document.querySelector(".joi-goal-card.archived");
+    expect(archivedCard).not.toBeNull();
+    expect(archivedCard?.querySelector(".joi-goal-progress")).toBeNull();
+    expect(archivedCard?.querySelector(".joi-goal-result-preview")).toBeNull();
+    // Compared through the same formatter the component uses: the rendered date is locale-dependent,
+    // so a literal would pin the assertion to whatever ICU the machine running it happens to have.
+    expect(archivedCard?.querySelector(".joi-goal-copy i")?.textContent).toBe(`${new Date("2026-10-09T09:00:00.000Z").toLocaleString()} 归档`);
+    openGoalMenuItem("收起来的目标", "取消归档");
+    await waitFor(() => expect(unarchive).toHaveBeenCalledWith("goal-archive"));
+  });
+
+  it("surfaces a cancel failure inline at the card", async () => {
+    const api = new DigitalLifeApi("");
+    vi.spyOn(api, "joiSnapshot").mockResolvedValue(snapshot([readySource]));
+    vi.spyOn(api, "listJoiActivity").mockResolvedValue({ items: [] });
+    mockHomeMessages(api).mockResolvedValue({ items: [
+      { acceptedAt: "2026-08-01T00:00:00.000Z", clarificationReasonCode: "workbench_not_found", inputId: "cancel-2", status: "CLARIFICATION_REQUIRED" },
+    ] });
+    vi.spyOn(api, "cancelJoiMessage").mockRejectedValue(new ApiError("gone", "这条已经处理过了", 400));
+    render(<JoiHome api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "取消这条任务" }));
+    expect(await screen.findByText("这条已经处理过了")).toBeInTheDocument();
+  });
+
+  it("shows the validation reason, last-validated time and raw error on a degraded source card", async () => {
+    const api = new DigitalLifeApi("");
+    const degraded: ModelSourceDto = {
+      ...readySource,
+      displayName: "百炼 Token Plan",
+      lastError: "400 {\"error\":{\"message\":\"bad model id\"}}",
+      lastValidatedAt: "2026-08-02T14:59:30.000Z",
+      reasonCode: "connection_error",
+      sourceId: "source-degraded",
+      status: "DEGRADED",
+    };
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items: [readySource, degraded] });
+    render(<ModelSourceManager api={api} />);
+    expect(await screen.findByText(/无法连通所选接口/u)).toBeInTheDocument();
+    expect(screen.getByText(/上次验证：/u)).toBeInTheDocument();
+    expect(screen.getByText("查看原始报错")).toBeInTheDocument();
+    expect(screen.getByText(/bad model id/u)).toBeInTheDocument();
+  });
+
+  it("renders a distinct reason sentence for each validation reason code", async () => {
+    const api = new DigitalLifeApi("");
+    const cases: [ModelSourceDto["status"], string, string][] = [
+      ["NEEDS_AUTH", "auth_failed", "没有访问权限"],
+      ["DEGRADED", "rate_limited", "接口限流或超载"],
+      ["DEGRADED", "model_unavailable", "找不到这个 Model ID"],
+      ["DEGRADED", "server_error", "服务端错误"],
+      ["DEGRADED", "not_found", "资源不存在"],
+      ["DEGRADED", "bad_request", "拒绝了请求参数"],
+      ["DEGRADED", "connection_error", "无法连通所选接口"],
+      ["DEGRADED", "timeout", "连接所选接口超时"],
+      ["DEGRADED", "empty_response", "接口已响应，但未返回有效正文"],
+      ["DEGRADED", "response_truncated", "验证回复达到输出上限而被截断"],
+      ["DEGRADED", "http_error", "可展开查看原始报错"],
+      ["DEGRADED", "endpoint_unreachable", "joi 无法访问所选接口"],
+    ];
+    const items = cases.map((entry, index) => ({
+      ...readySource, displayName: `源 ${String(index)}`, reasonCode: entry[1], sourceId: `source-r-${String(index)}`, status: entry[0],
+    }));
+    vi.spyOn(api, "listModelSources").mockResolvedValue({ items });
+    render(<ModelSourceManager api={api} />);
+    for (const entry of cases) {
+      expect(await screen.findByText(new RegExp(entry[2]))).toBeInTheDocument();
+    }
+  });
+});
+
+it("exposes the evolution panel on a dedicated workbench detail tab", async () => {
+  const api = new DigitalLifeApi("");
+  const workbench = workbenchDto("workbench-evo", "进化工作台");
+  vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+  vi.spyOn(api, "getWorkbench").mockResolvedValue({
+    activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+    personaRevisionId: "persona", projectLabel: "project", recentOutcomes: [], recentResults: [], responsibility: "scope",
+    updatedAt: workbench.updatedAt, workspace: { displayName: "workspace", kind: "BOUND", status: "READY" },
+  });
+  vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [] });
+  vi.spyOn(api, "evolutionStatus").mockResolvedValue({ workbenchId: workbench.workbenchId, dailyCallLimit: DEFAULT_EVOLUTION_DAILY_CALL_LIMIT, callsUsedToday: 0, evidenceCount: 3, evaluableCount: 2, poolEvaluable: 5, poolVerificationFailed: 1, activeRevisionId: null, reason: "disabled", runRequestedAt: null, lastVerdict: null, versions: [],
+    learning: { version: 2, evaluatorVersion: "fixture", stage: "OBSERVING", blockers: ["disabled"],
+      globalBudget: { enabled: false, paused: false, dailyCallLimit: 150, callsUsedToday: 0, tokensToday: null },
+      participation: { enabled: false, paused: false }, cases: { development: 0, sealed: 0, defects: 0 },
+      experiment: null, appliedGoals: 0, methods: [] } });
+
+  render(<WorkbenchManager api={api} initialWorkbenchId={workbench.workbenchId} />);
+  const tabButton = await screen.findByRole("tab", { name: "自主进化" });
+  expect(tabButton).toHaveAttribute("aria-selected", "false");
+  fireEvent.click(tabButton);
+  expect(await screen.findByRole("region", { name: "当前进展" })).toHaveTextContent("方法学习已关闭");
+  expect(screen.getByRole("radio", { name: "中（每日 150 次）" })).toBeChecked();
+  expect(screen.getByRole("checkbox", { name: "启用全局方法学习" })).not.toBeChecked();
+});
+
+describe("tool trace reveal", () => {
+  const agent: WorkbenchAgentCardDto = {
+    agentId: "agent-trace", canDelete: false, createdAt: "2026-09-26T10:00:00.000Z", engine: "pi-core",
+    lastActivityAt: "2026-09-26T10:00:00.000Z", partnerId: "partner-1", partnerName: "实现者",
+    sessionPolicy: "RESIDENT", status: "RUNNING", transport: "LOCAL", workbenchId: "workbench-1",
+  };
+  const runCall = { createdAt: "2026-09-26T10:00:00.000Z", entryId: "call-1", kind: "TOOL_CALL" as const, role: "TOOL" as const, sequence: 0, text: "npm test", toolCallId: "toolu_1", toolName: "bash" };
+  const runResult = { createdAt: "2026-09-26T10:00:01.000Z", entryId: "result-1", kind: "TOOL_RESULT" as const, role: "TOOL" as const, sequence: 1, text: "执行完成", toolCallId: "toolu_1", toolName: "bash" };
+  const liveCall = { createdAt: "2026-09-26T10:00:02.000Z", entryId: "call-2", kind: "TOOL_CALL" as const, role: "TOOL" as const, sequence: 2, text: "npm run lint", toolCallId: "toolu_2", toolName: "bash" };
+
+  it.each([
+    ["READ_RUNNING", undefined, "分析中"],
+    ["READ_QUEUED", "WORKSPACE_READ", "等待工作区可读"],
+    ["WRITE_QUEUED", "WORKSPACE_WRITE", "等待写入"],
+    ["WRITE_RUNNING", undefined, "写入执行中"],
+    ["READ_QUEUED", "CAPACITY", "等待执行容量"],
+  ] as const)("AC-WR-06 shows %s from the API projection", async (executionPhase, waitReason, label) => {
+    const api = new DigitalLifeApi("", true);
+    const projected = { ...agent, executionPhase, ...(waitReason === undefined ? {} : { waitReason }) };
+    const workbench = workbenchDto("workbench-1", "资源等待");
+    vi.spyOn(api, "listWorkbenches").mockResolvedValue({ items: [workbench] });
+    vi.spyOn(api, "listWorkbenchAgents").mockResolvedValue({ items: [projected] });
+    vi.spyOn(api, "getWorkbench").mockResolvedValue({ activeWork: [], workbenchId: workbench.workbenchId, instances: [], name: workbench.name,
+      personaRevisionId: "persona", projectLabel: "test", recentOutcomes: [], recentResults: [], responsibility: "test", updatedAt: workbench.updatedAt,
+      workspace: { displayName: "workspace", kind: "BOUND", status: "READY" } });
+    render(<WorkbenchManager api={api} />);
+    fireEvent.click(await screen.findByRole("button", { name: "打开工作台 资源等待" }));
+    expect(await screen.findByText(label)).toBeInTheDocument();
+  });
+
+  it("names the running call, shows its summary folded, and reveals the body only on demand", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "agentConversation").mockResolvedValue({ agent, items: [runCall, runResult, liveCall] });
+    const reveal = vi.spyOn(api, "revealWorkbenchToolTrace").mockResolvedValue({
+      command: "npm test", isError: false, result: "42 passing", toolCallId: "toolu_1", toolName: "bash", truncated: false,
+    });
+
+    render(<AgentMessageStream agent={agent} api={api} workbenchId="workbench-1" />);
+
+    // The folded line marks the in-flight call and still names what it is running.
+    expect(await screen.findByText("bash ×2")).toBeInTheDocument();
+    expect(screen.getByText("运行中")).toBeInTheDocument();
+    expect(screen.getByText("npm run lint", { selector: ".agent-tool-summary" })).toBeInTheDocument();
+
+    const details = screen.getByText("bash ×2").closest("details");
+    if (details === null) throw new Error("missing tool group");
+    const revealButton = within(details).getByText("查看完整输出");
+    expect(revealButton).not.toBeVisible();
+    expect(reveal).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByText("bash ×2"));
+    expect(revealButton).toBeVisible();
+    fireEvent.click(revealButton);
+    expect(reveal).toHaveBeenCalledWith("workbench-1", "agent-trace", "toolu_1");
+    expect(await within(details).findByText("42 passing")).toBeInTheDocument();
+    expect(within(details).getByText("命令")).toBeInTheDocument();
+  });
+
+  it("reports a failed read and never offers a body for calls recorded without an id", async () => {
+    const api = new DigitalLifeApi("", true);
+    vi.spyOn(api, "agentConversation").mockResolvedValue({
+      agent: { ...agent, status: "COMPLETED" },
+      items: [
+        runCall, runResult,
+        { createdAt: "2026-09-26T10:00:03.000Z", entryId: "legacy-call", kind: "TOOL_CALL", role: "TOOL", sequence: 3, text: "历史调用", toolName: "read" },
+        { createdAt: "2026-09-26T10:00:04.000Z", entryId: "legacy-result", kind: "TOOL_RESULT", role: "TOOL", sequence: 4, text: "执行完成", toolName: "read" },
+      ],
+    });
+    vi.spyOn(api, "revealWorkbenchToolTrace").mockRejectedValue(new ApiError("workbench_tool_trace_not_found", "这条工具调用没有保存输出。", 404));
+
+    render(<AgentMessageStream agent={agent} api={api} workbenchId="workbench-1" />);
+
+    // A finished run must not keep claiming a live call.
+    expect(await screen.findByText("bash ×1")).toBeInTheDocument();
+    expect(screen.queryByText("运行中")).not.toBeInTheDocument();
+
+    // Entries persisted before tool call ids existed simply have nothing to reveal.
+    const legacy = screen.getByText("read ×1").closest("details");
+    if (legacy === null) throw new Error("missing legacy tool entry");
+    fireEvent.click(screen.getByText("read ×1"));
+    expect(within(legacy).queryByText("查看完整输出")).not.toBeInTheDocument();
+
+    const bash = screen.getByText("bash ×1").closest("details");
+    if (bash === null) throw new Error("missing tool entry");
+    fireEvent.click(screen.getByText("bash ×1"));
+    fireEvent.click(within(bash).getByText("查看完整输出"));
+    expect(await within(bash).findByRole("alert")).toHaveTextContent("这条工具调用没有保存输出。");
+    expect(within(bash).getByText("重试")).toBeInTheDocument();
+  });
+});

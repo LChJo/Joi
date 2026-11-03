@@ -1,0 +1,21 @@
+{
+  "securelyConnected": "已安全连接",
+  "connectingToJoi": "正在连接 joi",
+  "disconnected": "连接已断开",
+  "extending": "补充执行",
+  "valueExecuting": "{p0} 项执行中",
+  "valueCompleted": "{p0} 项已完成",
+  "valueIssues": "{p0} 项异常",
+  "joiIsOrganizingTheWork": "joi 正在梳理",
+  "joiReceivedItAndIsPlanning": "joi 已收到，正在安排。",
+  "theMessageCouldNotBeDeliveredRetryWhenThe": "消息没能送达，请等连接恢复后重试。",
+  "yourWorkContinuesHere": "你的工作正在这里继续",
+  "joiTasks": "joi 任务",
+  "noTasksToShowYet": "还没有正在展示的任务",
+  "tellJoiWhatYouWantToDoBelow": "在下面告诉 joi 你想做什么。",
+  "returnToTheDesktopToConfirmThisTask": "这个任务需要你回到桌面确认。",
+  "messageJoi": "给 joi 发消息",
+  "tellJoiWhatToDoNext": "告诉 joi 接下来要做什么…",
+  "send": "发送",
+  "remoteAccessSupportsConversationsAndTaskViewingOnly": "远程页面仅支持对话与任务查看"
+}

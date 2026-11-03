@@ -1,0 +1,18 @@
+{
+  "title": "joi · 安全恢复",
+  "eyebrow": "joi 的安全恢复",
+  "heading": "joi 需要先修复本机数据",
+  "description": "joi 已暂停所有智能体和数据写入，避免问题扩大。你可以先保存当前数据快照，或选择一份备份恢复。joi 不会在这里显示敏感内容或文件位置。",
+  "snapshot": "保存当前数据快照",
+  "backups": "可以恢复的备份",
+  "loading": "joi 读取备份中…",
+  "empty": "没有可用备份。",
+  "loadFailed": "joi 读取备份失败。",
+  "format": "数据格式 v",
+  "restore": "恢复并重启",
+  "confirm": "joi 会先把当前数据隔离。确认恢复这份备份吗？",
+  "restored": "恢复已经安排好，应用即将重启。",
+  "saving": "joi 保存数据快照中…",
+  "saved": "数据快照已保存。",
+  "saveFailed": "数据快照没保存成功。"
+}

@@ -1,0 +1,191 @@
+{
+  "modelSourceUrlProhibited": {
+    "message": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
+    "description": "Explain which custom model endpoint addresses are supported without echoing the submitted URL.",
+    "errorCode": "model_source_url_prohibited"
+  },
+  "modelSourceKeyRequired": {
+    "message": "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.",
+    "description": "Credentials are required for public and LAN model endpoints.",
+    "errorCode": "model_source_key_required"
+  },
+  "modelSourceRedirectCrossOrigin": {
+    "message": "The model URL redirects to a different origin. Enter the final Base URL directly.",
+    "description": "Custom model endpoints cannot redirect credentials to a different origin.",
+    "errorCode": "model_source_redirect_cross_origin"
+  },
+  "lanPortInvalid": {
+    "message": "The LAN port must be between 1024 and 65535.",
+    "description": "The LAN port must be between 1024 and 65535.",
+    "sourceText": "LAN 端口必须在 1024 到 65535 之间。",
+    "errorCode": "lan_port_invalid"
+  },
+  "lanRiskRequired": {
+    "message": "Acknowledge the unencrypted connection risk before enabling LAN access.",
+    "description": "Acknowledge the unencrypted connection risk before enabling LAN access.",
+    "sourceText": "启用 LAN 访问前必须确认明文连接风险。",
+    "errorCode": "lan_risk_required"
+  },
+  "lanAddressInvalid": {
+    "message": "LAN access requires a specific private RFC1918 IPv4 address.",
+    "description": "LAN access requires a specific private RFC1918 IPv4 address.",
+    "sourceText": "LAN 访问必须使用明确的 RFC1918 IPv4 地址。",
+    "errorCode": "lan_address_invalid"
+  },
+  "lanAddressUnavailable": {
+    "message": "The selected LAN address is not available on this computer.",
+    "description": "The selected LAN address is not available on this computer.",
+    "sourceText": "所选局域网地址当前不在本机网卡上。",
+    "errorCode": "lan_address_unavailable"
+  },
+  "joiSkillsInvalid": {
+    "message": "Select skills from the available references.",
+    "description": "Select skills from the available references.",
+    "sourceText": "技能选择必须是引用列表。",
+    "errorCode": "joi_skills_invalid"
+  },
+  "joiSkillsUnavailable": {
+    "message": "Skill loading is temporarily unavailable.",
+    "description": "Skill loading is temporarily unavailable.",
+    "sourceText": "技能加载暂不可用。",
+    "errorCode": "joi_skills_unavailable"
+  },
+  "joiSkillNotSelected": {
+    "message": "Select this skill in Settings first.",
+    "description": "Select this skill in Settings first.",
+    "sourceText": "请先在设置中选择此技能。",
+    "errorCode": "joi_skill_not_selected"
+  },
+  "desktopRequired": {
+    "message": "Files can only be exported from the desktop.",
+    "description": "Files can only be exported from the desktop.",
+    "sourceText": "仅电脑端可导出文件。",
+    "errorCode": "desktop_required"
+  },
+  "exportUnavailable": {
+    "message": "Export is temporarily unavailable.",
+    "description": "Export is temporarily unavailable.",
+    "sourceText": "导出暂不可用。",
+    "errorCode": "export_unavailable"
+  },
+  "exportInvalid": {
+    "message": "Invalid export format.",
+    "description": "Invalid export format.",
+    "sourceText": "导出格式无效。",
+    "errorCode": "export_invalid"
+  },
+  "exportNotFound": {
+    "message": "Export job not found.",
+    "description": "Export job not found.",
+    "sourceText": "未找到导出任务。",
+    "errorCode": "export_not_found"
+  },
+  "lanBindFailed": {
+    "message": "The LAN listener could not bind to the selected address and port.",
+    "description": "The LAN listener could not bind to the selected address and port.",
+    "sourceText": "LAN 监听器暂时无法绑定所选地址和端口。",
+    "errorCode": "lan_bind_failed"
+  },
+  "lanNotApplied": {
+    "message": "The LAN configuration has not been applied to this process.",
+    "description": "The LAN configuration has not been applied to this process.",
+    "sourceText": "LAN 配置尚未应用到当前进程。",
+    "errorCode": "lan_not_applied"
+  },
+  "lanRuntimeUnavailable": {
+    "message": "The LAN listener is not ready yet.",
+    "description": "The LAN listener is not ready yet.",
+    "sourceText": "LAN 监听器尚未就绪。",
+    "errorCode": "lan_runtime_unavailable"
+  },
+  "artifactMoved": {
+    "message": "The artifact has moved.",
+    "description": "Approved compatibility error: The artifact has moved.",
+    "sourceText": "产物已经移动。"
+  },
+  "modelOffline": {
+    "message": "The model connection is offline.",
+    "description": "Approved compatibility error: The model connection is offline.",
+    "sourceText": "模型网络离线"
+  },
+  "invalidCredential": {
+    "message": "The API key is incorrect.",
+    "description": "Approved compatibility error: The API key is incorrect.",
+    "sourceText": "密钥不正确"
+  },
+  "continuationFailed": {
+    "message": "The continuation request could not be submitted.",
+    "description": "Approved compatibility error: The continuation request could not be submitted.",
+    "sourceText": "继续请求没有提交成功"
+  },
+  "stillProcessing": {
+    "message": "This item is still being processed.",
+    "description": "Approved compatibility error: This item is still being processed.",
+    "sourceText": "这条还在处理中"
+  },
+  "alreadyHandled": {
+    "message": "This item has already been handled.",
+    "description": "Approved compatibility error: This item has already been handled.",
+    "sourceText": "这条已经处理过了"
+  },
+  "toolOutputMissing": {
+    "message": "No output was saved for this tool call.",
+    "description": "Approved compatibility error: No output was saved for this tool call.",
+    "sourceText": "这条工具调用没有保存输出。"
+  },
+  "incorrectPassword": {
+    "message": "The password is incorrect.",
+    "description": "Approved compatibility error: The password is incorrect.",
+    "sourceText": "密码不正确"
+  },
+  "passwordSaveFailed": {
+    "message": "The password could not be saved.",
+    "description": "Approved compatibility error: The password could not be saved.",
+    "sourceText": "密码无法保存"
+  },
+  "descriptionTooLong": {
+    "message": "The description is too long.",
+    "description": "Approved compatibility error: The description is too long.",
+    "sourceText": "描述太长。"
+  },
+  "knowledgeFull": {
+    "message": "The knowledge base is full.",
+    "description": "Approved compatibility error: The knowledge base is full.",
+    "sourceText": "知识库已满。"
+  },
+  "packActionRequired": {
+    "message": "The pack configuration needs attention.",
+    "description": "Approved compatibility error: The pack configuration needs attention.",
+    "sourceText": "套件配置需要处理。"
+  },
+  "statusUnavailable": {
+    "message": "Status is temporarily unavailable.",
+    "description": "Approved compatibility error: Status is temporarily unavailable.",
+    "sourceText": "状态暂不可用"
+  },
+  "backupValidationFailed": {
+    "message": "Backup validation failed.",
+    "description": "Approved compatibility error: Backup validation failed.",
+    "sourceText": "备份校验失败"
+  },
+  "invalidPort": {
+    "message": "The port is invalid.",
+    "description": "Approved compatibility error: The port is invalid.",
+    "sourceText": "端口不合法。"
+  },
+  "incorrectCurrentPassword": {
+    "message": "The current password is incorrect.",
+    "description": "Approved compatibility error: The current password is incorrect.",
+    "sourceText": "当前密码不对。"
+  },
+  "inputSaveUnavailable": {
+    "message": "Your input cannot be saved right now.",
+    "description": "Approved compatibility error: Your input cannot be saved right now.",
+    "sourceText": "输入暂时无法保存"
+  },
+  "currentPasswordWrong": {
+    "message": "The current password is wrong.",
+    "description": "Approved compatibility error: The current password is wrong.",
+    "sourceText": "当前密码错误"
+  }
+}

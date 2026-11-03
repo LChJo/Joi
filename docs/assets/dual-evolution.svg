@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 780" width="1400" height="780" font-family="-apple-system, 'Segoe UI', system-ui, 'Noto Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif">
+  <rect x="0" y="0" width="1400" height="780" fill="#ffffff"/>
+
+  <text x="32" y="42" font-size="20" font-weight="700" fill="#1f2328">joi · dual evolution · 双重进化</text>
+
+  <rect x="32" y="88" width="536" height="576" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+  <rect x="832" y="88" width="536" height="576" rx="10" fill="#f6f8fa" stroke="#d0d7de" stroke-width="1"/>
+  <text x="300" y="113" font-size="16" font-weight="700" fill="#1a7f37" text-anchor="middle">Loop A · partner evolution</text>
+  <text x="300" y="131" font-size="15" font-weight="600" fill="#1a7f37" text-anchor="middle">回路 A · 搭档进化</text>
+  <text x="1100" y="113" font-size="16" font-weight="700" fill="#0969da" text-anchor="middle">Loop B · workbench evolution</text>
+  <text x="1100" y="131" font-size="15" font-weight="600" fill="#0969da" text-anchor="middle">回路 B · 工作台进化</text>
+
+  <rect x="48" y="140" width="240" height="210" rx="8" fill="#ffffff" stroke="#1a7f37" stroke-width="1.5"/>
+  <rect x="312" y="140" width="240" height="210" rx="8" fill="#ffffff" stroke="#1a7f37" stroke-width="1.5"/>
+  <rect x="312" y="385" width="240" height="210" rx="8" fill="#ffffff" stroke="#1a7f37" stroke-width="1.5"/>
+  <rect x="48" y="385" width="240" height="210" rx="8" fill="#ffffff" stroke="#1a7f37" stroke-width="1.5"/>
+  <rect x="848" y="140" width="240" height="210" rx="8" fill="#ffffff" stroke="#0969da" stroke-width="1.5"/>
+  <rect x="1112" y="140" width="240" height="210" rx="8" fill="#ffffff" stroke="#0969da" stroke-width="1.5"/>
+  <rect x="848" y="385" width="240" height="210" rx="8" fill="#ffffff" stroke="#0969da" stroke-width="1.5"/>
+  <rect x="1112" y="385" width="240" height="210" rx="8" fill="#ffffff" stroke="#0969da" stroke-width="1.5"/>
+  <rect x="596" y="270" width="208" height="210" rx="8" fill="#fff8c5" stroke="#d4a72c" stroke-width="1.5"/>
+  <rect x="880" y="688" width="280" height="52" rx="8" fill="#f6f8fa" stroke="#8c959f" stroke-width="1.2"/>
+
+  <path d="M 289 245 H 309" fill="none" stroke="#1a7f37" stroke-width="1.8"/>
+  <path d="M 310 245 L 301 240.5 L 301 249.5 Z" fill="#1a7f37"/>
+  <path d="M 432 352 V 382" fill="none" stroke="#1a7f37" stroke-width="1.8"/>
+  <path d="M 432 383 L 427.5 374 L 436.5 374 Z" fill="#1a7f37"/>
+  <path d="M 311 490 H 291" fill="none" stroke="#1a7f37" stroke-width="1.8"/>
+  <path d="M 290 490 L 299 485.5 L 299 494.5 Z" fill="#1a7f37"/>
+  <path d="M 168 383 V 353" fill="none" stroke="#1a7f37" stroke-width="1.8"/>
+  <path d="M 168 352 L 163.5 361 L 172.5 361 Z" fill="#1a7f37"/>
+
+  <path d="M 968 352 V 382" fill="none" stroke="#0969da" stroke-width="1.8"/>
+  <path d="M 968 383 L 963.5 374 L 972.5 374 Z" fill="#0969da"/>
+  <path d="M 1089 490 H 1109" fill="none" stroke="#0969da" stroke-width="1.8"/>
+  <path d="M 1110 490 L 1101 485.5 L 1101 494.5 Z" fill="#0969da"/>
+  <path d="M 1232 383 V 353" fill="none" stroke="#0969da" stroke-width="1.8"/>
+  <path d="M 1232 352 L 1227.5 361 L 1236.5 361 Z" fill="#0969da"/>
+  <path d="M 1111 245 H 1091" fill="none" stroke="#0969da" stroke-width="1.8"/>
+  <path d="M 1090 245 L 1099 240.5 L 1099 249.5 Z" fill="#0969da"/>
+
+  <path d="M 553 310 H 595" fill="none" stroke="#1a7f37" stroke-width="1.8"/>
+  <path d="M 596 310 L 587 305.5 L 587 314.5 Z" fill="#1a7f37"/>
+  <path d="M 847 310 H 805" fill="none" stroke="#0969da" stroke-width="1.8"/>
+  <path d="M 804 310 L 813 305.5 L 813 314.5 Z" fill="#0969da"/>
+  <path d="M 805 440 H 847" fill="none" stroke="#0969da" stroke-width="1.8"/>
+  <path d="M 848 440 L 839 435.5 L 839 444.5 Z" fill="#0969da"/>
+
+  <path d="M 1020 686 V 666" fill="none" stroke="#0969da" stroke-width="1.5"/>
+  <path d="M 1020 665 L 1015.5 674 L 1024.5 674 Z" fill="#0969da"/>
+  <text x="1032" y="680" font-size="15" fill="#57606a">standing input · 常驻输入</text>
+
+  <path d="M 1352 490 H 1384 V 70 H 168 V 135" fill="none" stroke="#8250df" stroke-width="1.8" stroke-dasharray="7 5"/>
+  <path d="M 168 136 L 163.5 127 L 172.5 127 Z" fill="#8250df"/>
+  <text x="776" y="62" font-size="15" fill="#8250df" text-anchor="middle">strategy instructions · 策略指令</text>
+
+  <text x="168" y="172" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">① Dispatch · reuse first</text>
+  <text x="168" y="192" font-size="15" font-weight="600" fill="#1a7f37" text-anchor="middle">① 派发 · 先复用</text>
+  <line x1="62" y1="206" x2="274" y2="206" stroke="#1a7f37" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="58" y="233" font-size="15" fill="#57606a">partner_list_available</text>
+  <text x="58" y="254" font-size="15" fill="#57606a">→ partner_create if no fit</text>
+  <text x="58" y="275" font-size="15" fill="#57606a">partnerClusterName/Key</text>
+  <text x="58" y="296" font-size="15" fill="#57606a">reused: true · 同名簇复用</text>
+
+  <text x="432" y="172" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">② Run · record result</text>
+  <text x="432" y="192" font-size="15" font-weight="600" fill="#1a7f37" text-anchor="middle">② 运行 · 落记录</text>
+  <line x1="326" y1="206" x2="538" y2="206" stroke="#1a7f37" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="322" y="233" font-size="15" fill="#57606a">workbench_partner_</text>
+  <text x="322" y="254" font-size="15" fill="#57606a">work_memories</text>
+  <text x="322" y="275" font-size="15" fill="#57606a">entryLimit 32 · cadence 8</text>
+  <text x="322" y="296" font-size="15" fill="#57606a">digest: last3 · successRate</text>
+  <text x="322" y="317" font-size="15" fill="#57606a">scoped per workbench</text>
+
+  <text x="432" y="417" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">③ Next pick · by digest</text>
+  <text x="432" y="437" font-size="15" font-weight="600" fill="#1a7f37" text-anchor="middle">③ 下次派发 · 按摘要挑</text>
+  <line x1="326" y1="451" x2="538" y2="451" stroke="#1a7f37" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="322" y="478" font-size="15" fill="#57606a">digest() → memoryDigest</text>
+  <text x="322" y="499" font-size="15" fill="#57606a">via partner_list_available</text>
+  <text x="322" y="520" font-size="15" fill="#57606a">successRate in digest</text>
+  <text x="322" y="541" font-size="15" fill="#57606a">last3 · 最近三次结果</text>
+
+  <text x="168" y="417" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">④ Partner upgrade</text>
+  <text x="168" y="437" font-size="15" font-weight="600" fill="#1a7f37" text-anchor="middle">④ 搭档升级</text>
+  <line x1="62" y1="451" x2="274" y2="451" stroke="#1a7f37" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="58" y="478" font-size="15" fill="#57606a">partner_revisions · immutable</text>
+  <text x="58" y="499" font-size="15" fill="#57606a">registry_revision +1 · 单调递增</text>
+  <text x="58" y="520" font-size="15" fill="#57606a">partner_knowledge_docs</text>
+  <text x="58" y="541" font-size="15" fill="#57606a">≤ 8 docs · 6k / 16k chars</text>
+
+  <text x="968" y="172" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">① Persist to SQLite</text>
+  <text x="968" y="192" font-size="15" font-weight="600" fill="#0969da" text-anchor="middle">① 落盘 SQLite</text>
+  <line x1="862" y1="206" x2="1074" y2="206" stroke="#0969da" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="862" y="233" font-size="15" fill="#57606a">joi_session_messages</text>
+  <text x="862" y="254" font-size="15" fill="#57606a">joi_turns · work_items</text>
+  <text x="862" y="275" font-size="15" fill="#57606a">work_results · body_ref</text>
+  <text x="862" y="296" font-size="15" fill="#57606a">→ work_result_bodies</text>
+
+  <text x="1232" y="172" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">④ Context reassembly</text>
+  <text x="1232" y="192" font-size="15" font-weight="600" fill="#0969da" text-anchor="middle">④ 上下文重装</text>
+  <line x1="1126" y1="206" x2="1338" y2="206" stroke="#0969da" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="1126" y="233" font-size="15" fill="#57606a">modelContextMaxChars</text>
+  <text x="1126" y="254" font-size="15" fill="#57606a">≤ 1,000,000 · 32 msgs</text>
+  <text x="1126" y="275" font-size="15" fill="#57606a">boundModelContext</text>
+  <text x="1126" y="296" font-size="15" fill="#57606a">compaction 85% · 12k 摘要</text>
+  <text x="1126" y="317" font-size="15" fill="#57606a">resultId → work_read_result</text>
+
+  <text x="968" y="417" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">② Write-back &amp; verdicts</text>
+  <text x="968" y="437" font-size="15" font-weight="600" fill="#0969da" text-anchor="middle">② 写回 · 判定</text>
+  <line x1="862" y1="451" x2="1074" y2="451" stroke="#0969da" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="862" y="478" font-size="15" fill="#57606a">joi_goal_outcomes</text>
+  <text x="862" y="499" font-size="15" fill="#57606a">COMPLETED → VERIFIED</text>
+  <text x="862" y="520" font-size="15" fill="#57606a">workbench_persona_revisions</text>
+  <text x="862" y="541" font-size="15" fill="#57606a">evolution_evidence</text>
+  <text x="862" y="562" font-size="15" fill="#57606a">else VERIFICATION_FAILED</text>
+
+  <text x="1232" y="417" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">③ Strategy revision</text>
+  <text x="1232" y="437" font-size="15" font-weight="600" fill="#0969da" text-anchor="middle">③ 策略修订</text>
+  <line x1="1126" y1="451" x2="1338" y2="451" stroke="#0969da" stroke-opacity="0.25" stroke-width="1"/>
+  <text x="1126" y="478" font-size="15" fill="#57606a">one strategy module · 单模块</text>
+  <text x="1126" y="499" font-size="15" fill="#57606a">thresholds 10 / 3 / 2 · 阈值</text>
+  <text x="1126" y="520" font-size="15" fill="#57606a">canary 1/5 · quality_regression</text>
+  <text x="1126" y="541" font-size="15" fill="#57606a">revert · gates idle/evidence</text>
+  <text x="1126" y="562" font-size="15" fill="#57606a">gates limits · 门禁</text>
+
+  <text x="700" y="302" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">work_results</text>
+  <text x="700" y="326" font-size="15" fill="#57606a" text-anchor="middle">shared table · 共享表</text>
+  <text x="700" y="352" font-size="15" fill="#57606a" text-anchor="middle">body_ref →</text>
+  <text x="700" y="372" font-size="15" fill="#57606a" text-anchor="middle">work_result_bodies</text>
+  <text x="700" y="404" font-size="15" font-weight="600" fill="#1f2328" text-anchor="middle">A writes · B reads evidence</text>
+  <text x="700" y="428" font-size="15" font-weight="700" fill="#1f2328" text-anchor="middle">A 写入 · B 取证</text>
+
+  <text x="1020" y="709" font-size="16" font-weight="700" fill="#1f2328" text-anchor="middle">System settings</text>
+  <text x="1020" y="730" font-size="15" font-weight="600" fill="#57606a" text-anchor="middle">系统设置</text>
+
+  <text x="32" y="750" font-size="15" fill="#57606a">Real tables &amp; services · 真实表与服务: partner_revisions · partner_knowledge_docs · workbench_partner_work_memories · work_results</text>
+  <text x="32" y="772" font-size="15" fill="#57606a">work_items · joi_goal_outcomes · workbench_persona_revisions · evolution_evidence · System settings</text>
+</svg>

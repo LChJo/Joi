@@ -1,0 +1,55 @@
+{
+  "layoutFailed": {
+    "message": "Document layout failed. Try again.",
+    "description": "Local document layout failure",
+    "sourceText": "正文排版失败，请重试。"
+  },
+  "rasterFailed": {
+    "message": "Image conversion failed. Try again or export PDF.",
+    "description": "Local image rendering failure",
+    "sourceText": "图片转换失败，请重试或导出 PDF。"
+  },
+  "saveFailed": {
+    "message": "Could not save. Check free space and directory permission.",
+    "description": "Local export save failure",
+    "sourceText": "保存失败，请检查可用空间和目录授权。"
+  },
+  "cancelled": {
+    "message": "Export canceled.",
+    "description": "Export canceled by the user",
+    "sourceText": "已取消导出。"
+  },
+  "layout": {
+    "message": "Laying out the document…",
+    "description": "Document export progress",
+    "sourceText": "正在排版…"
+  },
+  "raster": {
+    "message": "Rendering image {page}/{total}…",
+    "description": "Image export progress",
+    "placeholders": {
+      "page": "string",
+      "total": "string"
+    }
+  },
+  "save": {
+    "message": "Saving…",
+    "description": "Export save progress",
+    "sourceText": "正在保存…"
+  },
+  "pair": {
+    "message": "Initial pairing (pair)",
+    "description": "Diagnostic pairing mode",
+    "sourceText": "首次配对 pair"
+  },
+  "resume": {
+    "message": "Resume connection (resume)",
+    "description": "Diagnostic resume mode",
+    "sourceText": "恢复连接 resume"
+  },
+  "none": {
+    "message": "None",
+    "description": "No diagnostic failure",
+    "sourceText": "无"
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "securelyConnected": {
+    "message": "Securely connected",
+    "description": "remote: Securely connected",
+    "sourceText": "已安全连接"
+  },
+  "connectingToJoi": {
+    "message": "Connecting to joi",
+    "description": "remote: Connecting to joi",
+    "sourceText": "正在连接 joi"
+  },
+  "disconnected": {
+    "message": "Disconnected",
+    "description": "remote: Disconnected",
+    "sourceText": "连接已断开"
+  },
+  "extending": {
+    "message": "Extending",
+    "description": "remote: Extending",
+    "sourceText": "补充执行"
+  },
+  "valueExecuting": {
+    "message": "{p0} executing",
+    "description": "remote: {p0} executing",
+    "sourceText": "{p0} 项执行中",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueCompleted": {
+    "message": "{p0} completed",
+    "description": "remote: {p0} completed",
+    "sourceText": "{p0} 项已完成",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueIssues": {
+    "message": "{p0} issues",
+    "description": "remote: {p0} issues",
+    "sourceText": "{p0} 项异常",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "joiIsOrganizingTheWork": {
+    "message": "joi is organizing the work",
+    "description": "remote: joi is organizing the work",
+    "sourceText": "joi 正在梳理"
+  },
+  "joiReceivedItAndIsPlanning": {
+    "message": "joi received it and is planning.",
+    "description": "remote: joi received it and is planning.",
+    "sourceText": "joi 已收到，正在安排。"
+  },
+  "theMessageCouldNotBeDeliveredRetryWhenThe": {
+    "message": "The message could not be delivered. Retry when the connection returns.",
+    "description": "remote: The message could not be delivered. Retry when the connection returns.",
+    "sourceText": "消息没能送达，请等连接恢复后重试。"
+  },
+  "yourWorkContinuesHere": {
+    "message": "Your work continues here",
+    "description": "remote: Your work continues here",
+    "sourceText": "你的工作正在这里继续"
+  },
+  "joiTasks": {
+    "message": "joi tasks",
+    "description": "remote: joi tasks",
+    "sourceText": "joi 任务"
+  },
+  "noTasksToShowYet": {
+    "message": "No tasks to show yet",
+    "description": "remote: No tasks to show yet",
+    "sourceText": "还没有正在展示的任务"
+  },
+  "tellJoiWhatYouWantToDoBelow": {
+    "message": "Tell joi what you want to do below.",
+    "description": "remote: Tell joi what you want to do below.",
+    "sourceText": "在下面告诉 joi 你想做什么。"
+  },
+  "returnToTheDesktopToConfirmThisTask": {
+    "message": "Return to the desktop to confirm this task.",
+    "description": "remote: Return to the desktop to confirm this task.",
+    "sourceText": "这个任务需要你回到桌面确认。"
+  },
+  "messageJoi": {
+    "message": "Message joi",
+    "description": "remote: Message joi",
+    "sourceText": "给 joi 发消息"
+  },
+  "tellJoiWhatToDoNext": {
+    "message": "Tell joi what to do next…",
+    "description": "remote: Tell joi what to do next…",
+    "sourceText": "告诉 joi 接下来要做什么…"
+  },
+  "send": {
+    "message": "Send",
+    "description": "remote: Send",
+    "sourceText": "发送"
+  },
+  "remoteAccessSupportsConversationsAndTaskViewingOnly": {
+    "message": "Remote access supports conversations and task viewing only",
+    "description": "remote: Remote access supports conversations and task viewing only",
+    "sourceText": "远程页面仅支持对话与任务查看"
+  }
+}

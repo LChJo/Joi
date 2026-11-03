@@ -1,0 +1,87 @@
+{
+  "skillCatalogRefreshedUnsavedSelectionsArePreserved": {
+    "message": "Skill catalog refreshed. Unsaved selections are preserved.",
+    "description": "skills: Skill catalog refreshed. Unsaved selections are preserved.",
+    "sourceText": "技能目录已刷新，未保存的选择已保留。"
+  },
+  "couldNotLoadTheSkillCatalogTryAgain": {
+    "message": "Could not load the skill catalog. Try again.",
+    "description": "skills: Could not load the skill catalog. Try again.",
+    "sourceText": "没能读取技能目录，请重试。"
+  },
+  "skillSelectionSavedItTakesEffectOnTheNext": {
+    "message": "Skill selection saved. It takes effect on the next turn.",
+    "description": "skills: Skill selection saved. It takes effect on the next turn.",
+    "sourceText": "技能选择已保存，下次思考时生效。"
+  },
+  "couldNotSaveTheSkillSelectionTryAgain": {
+    "message": "Could not save the skill selection. Try again.",
+    "description": "skills: Could not save the skill selection. Try again.",
+    "sourceText": "没能保存技能选择，请重试。"
+  },
+  "skillsForJoi": {
+    "message": "Skills for joi",
+    "description": "skills: Skills for joi",
+    "sourceText": "主 joi 的技能"
+  },
+  "chooseSkillsJoiCanConsultWhenThinkingAndPlanning": {
+    "message": "Choose skills joi can consult when thinking and planning. Partners execute commands and external service operations.",
+    "description": "skills: Choose skills joi can consult when thinking and planning. Partners execute commands and external service operations.",
+    "sourceText": "选择 joi 思考和安排工作时可以参考的技能。需要运行命令或操作外部服务时，由搭档执行。"
+  },
+  "discoversSkillMdFilesInAgentsSkillsClaudeSkills": {
+    "message": "Discovers SKILL.md files in .agents/skills, .claude/skills, and .codex/skills. Unchecked skills are not loaded. Partner skills are configured separately.",
+    "description": "skills: Discovers SKILL.md files in .agents/skills, .claude/skills, and .codex/skills. Unchecked skills are not loaded. Partner skills are configured separately.",
+    "sourceText": "自动发现本机 .agents/skills、.claude/skills 和 .codex/skills 中的 SKILL.md。不勾选表示不加载；搭档的技能仍在搭档设置中单独选择。"
+  },
+  "refreshSkillCatalog": {
+    "message": "Refresh skill catalog",
+    "description": "skills: Refresh skill catalog",
+    "sourceText": "刷新技能目录"
+  },
+  "selected": {
+    "message": "Selected",
+    "description": "skills: Selected",
+    "sourceText": "已选择"
+  },
+  "items": {
+    "message": "items",
+    "description": "skills: items",
+    "sourceText": "个"
+  },
+  "loadingTheSkillCatalog": {
+    "message": "Loading the skill catalog…",
+    "description": "skills: Loading the skill catalog…",
+    "sourceText": "正在读取技能目录…"
+  },
+  "searchSkills": {
+    "message": "Search skills",
+    "description": "skills: Search skills",
+    "sourceText": "搜索技能"
+  },
+  "nameOrSource": {
+    "message": "Name or source",
+    "description": "skills: Name or source",
+    "sourceText": "名称或来源"
+  },
+  "someSelectedSkillsAreUnavailableReinstallOrRemoveThem": {
+    "message": "Some selected skills are unavailable. Reinstall or remove them before saving.",
+    "description": "skills: Some selected skills are unavailable. Reinstall or remove them before saving.",
+    "sourceText": "部分已选技能不可用，请重新安装或移除后保存。"
+  },
+  "noAvailableSkillsFoundInstallASkillAndRefresh": {
+    "message": "No available skills found. Install a skill and refresh the catalog.",
+    "description": "skills: No available skills found. Install a skill and refresh the catalog.",
+    "sourceText": "还没有发现可用技能。安装 Skill 后刷新目录。"
+  },
+  "noMatchingSkills": {
+    "message": "No matching skills.",
+    "description": "skills: No matching skills.",
+    "sourceText": "没有匹配的技能。"
+  },
+  "saveSkillSelection": {
+    "message": "Save skill selection",
+    "description": "skills: Save skill selection",
+    "sourceText": "保存技能选择"
+  }
+}

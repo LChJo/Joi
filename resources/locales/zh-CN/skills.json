@@ -1,0 +1,19 @@
+{
+  "skillCatalogRefreshedUnsavedSelectionsArePreserved": "技能目录已刷新，未保存的选择已保留。",
+  "couldNotLoadTheSkillCatalogTryAgain": "没能读取技能目录，请重试。",
+  "skillSelectionSavedItTakesEffectOnTheNext": "技能选择已保存，下次思考时生效。",
+  "couldNotSaveTheSkillSelectionTryAgain": "没能保存技能选择，请重试。",
+  "skillsForJoi": "主 joi 的技能",
+  "chooseSkillsJoiCanConsultWhenThinkingAndPlanning": "选择 joi 思考和安排工作时可以参考的技能。需要运行命令或操作外部服务时，由搭档执行。",
+  "discoversSkillMdFilesInAgentsSkillsClaudeSkills": "自动发现本机 .agents/skills、.claude/skills 和 .codex/skills 中的 SKILL.md。不勾选表示不加载；搭档的技能仍在搭档设置中单独选择。",
+  "refreshSkillCatalog": "刷新技能目录",
+  "selected": "已选择",
+  "items": "个",
+  "loadingTheSkillCatalog": "正在读取技能目录…",
+  "searchSkills": "搜索技能",
+  "nameOrSource": "名称或来源",
+  "someSelectedSkillsAreUnavailableReinstallOrRemoveThem": "部分已选技能不可用，请重新安装或移除后保存。",
+  "noAvailableSkillsFoundInstallASkillAndRefresh": "还没有发现可用技能。安装 Skill 后刷新目录。",
+  "noMatchingSkills": "没有匹配的技能。",
+  "saveSkillSelection": "保存技能选择"
+}

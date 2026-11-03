@@ -1,0 +1,95 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
+/* In-memory context ports resolve immediately. */
+/* eslint-disable @typescript-eslint/require-await */
+
+import { WorkspaceWorkVerifier } from "../../src/main/infrastructure/workspace/workspace-work-verifier.js";
+
+describe("workspace Work verifier", () => {
+  it("checks exact file content inside the controlled Workbench workspace", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-verifier-"));
+    try {
+      await writeFile(path.join(root, "hello.txt"), "hellow", "utf8");
+      const verifier = new WorkspaceWorkVerifier({
+        contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {}, workspacePath: root }) },
+      });
+      await expect(verifier.verify({
+        acceptanceChecks: [{ expectedText: "hellow", kind: "FILE_CONTAINS_EXACT", relativePath: "hello.txt" }],
+        artifacts: [], contextSnapshotId: "context_1",
+      })).resolves.toEqual({ status: "PASSED" });
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("rejects traversal and reports only a stable reason code", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-verifier-boundary-"));
+    try {
+      await mkdir(path.join(root, "inside"));
+      const verifier = new WorkspaceWorkVerifier({
+        contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {}, workspacePath: root }) },
+      });
+      const result = await verifier.verify({
+        acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "../secret.txt" }],
+        artifacts: [], contextSnapshotId: "context_1",
+      });
+      expect(result).toMatchObject({ reasonCode: "verification_path_invalid", status: "FAILED" });
+      expect(result.detail).toContain("FILE_EXISTS ../secret.txt");
+      expect(JSON.stringify(result)).not.toContain(root);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("reports a missing deliverable by relative path without leaking the root", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-work-verifier-missing-"));
+    try {
+      const verifier = new WorkspaceWorkVerifier({
+        contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {}, workspacePath: root }) },
+      });
+      const result = await verifier.verify({
+        acceptanceChecks: [{ kind: "FILE_EXISTS", relativePath: "plugin-module-evidence.md" }],
+        artifacts: [], contextSnapshotId: "context_1",
+      });
+      expect(result).toMatchObject({ reasonCode: "verification_file_missing", status: "FAILED" });
+      expect(result.detail).toBe("FILE_EXISTS plugin-module-evidence.md was not found under this Work's execution root; acceptance checks cannot reference files outside it.");
+      expect(JSON.stringify(result)).not.toContain(root);
+    } finally {
+      await rm(root, { force: true, recursive: true });
+    }
+  });
+
+  it("checks named output artifacts without requiring a workspace", async () => {
+    const verifier = new WorkspaceWorkVerifier({
+      contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {} }) },
+    });
+    await expect(verifier.verify({
+      acceptanceChecks: [{ kind: "ARTIFACT_PRESENT", name: "report.md" }],
+      artifacts: [{ name: "report.md", size: 12 }], contextSnapshotId: "context_1",
+    })).resolves.toEqual({ status: "PASSED" });
+  });
+
+  it("does not let a Markdown body satisfy a required file artifact", async () => {
+    const verifier = new WorkspaceWorkVerifier({
+      contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {} }) },
+    });
+    await expect(verifier.verify({
+      acceptanceChecks: [{ kind: "ARTIFACT_PRESENT", name: "report.html" }, { kind: "BODY_PRESENT" }],
+      artifacts: [], body: "# Markdown report", contextSnapshotId: "context_1",
+    })).resolves.toEqual({ reasonCode: "verification_artifact_missing", status: "FAILED" });
+  });
+
+  it("checks non-empty partner text with BODY_PRESENT", async () => {
+    const verifier = new WorkspaceWorkVerifier({
+      contexts: { loadForExecution: async () => ({ promptSection: "safe", sanitized: {} }) },
+    });
+    await expect(verifier.verify({
+      acceptanceChecks: [{ kind: "BODY_PRESENT" }], artifacts: [], body: "evidence", contextSnapshotId: "context_1",
+    })).resolves.toEqual({ status: "PASSED" });
+    await expect(verifier.verify({
+      acceptanceChecks: [{ kind: "BODY_PRESENT" }], artifacts: [], body: "  ", contextSnapshotId: "context_1",
+    })).resolves.toEqual({ reasonCode: "verification_body_missing", status: "FAILED" });
+  });
+});

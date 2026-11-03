@@ -1,0 +1,562 @@
+{
+  "payAsYouGoPlatform": {
+    "message": "Pay-as-you-go platform",
+    "description": "Pay-as-you-go platform",
+    "sourceText": "开放平台按量计费"
+  },
+  "platformApi": {
+    "message": "Platform API",
+    "description": "Platform API",
+    "sourceText": "开放平台 API"
+  },
+  "kimiMembershipCodingBenefits": {
+    "message": "Kimi membership coding benefits",
+    "description": "Kimi membership coding benefits",
+    "sourceText": "Kimi 会员编程权益"
+  },
+  "zhipuPayAsYouGoPlatform": {
+    "message": "Zhipu pay-as-you-go platform",
+    "description": "Zhipu pay-as-you-go platform",
+    "sourceText": "智谱开放平台按量计费"
+  },
+  "glmCodingSubscription": {
+    "message": "GLM coding subscription",
+    "description": "GLM coding subscription",
+    "sourceText": "GLM 编程订阅套餐"
+  },
+  "alibabaCloudModelStudioPayAsYouGo": {
+    "message": "Alibaba Cloud Model Studio pay-as-you-go",
+    "description": "Alibaba Cloud Model Studio pay-as-you-go",
+    "sourceText": "阿里云百炼按量计费"
+  },
+  "modelStudioApi": {
+    "message": "Model Studio API",
+    "description": "Model Studio API",
+    "sourceText": "百炼 API"
+  },
+  "modelStudioCodingSubscription": {
+    "message": "Model Studio coding subscription",
+    "description": "Model Studio coding subscription",
+    "sourceText": "百炼编程订阅套餐"
+  },
+  "modelStudioCodingPlan": {
+    "message": "Model Studio Coding Plan",
+    "description": "Model Studio Coding Plan",
+    "sourceText": "百炼 Coding Plan"
+  },
+  "modelStudioCreditsSubscription": {
+    "message": "Model Studio Credits subscription",
+    "description": "Model Studio Credits subscription",
+    "sourceText": "百炼 Credits 订阅套餐"
+  },
+  "modelStudioTokenPlan": {
+    "message": "Model Studio Token Plan",
+    "description": "Model Studio Token Plan",
+    "sourceText": "百炼 Token Plan"
+  },
+  "volcengineArkPayAsYouGo": {
+    "message": "Volcengine Ark pay-as-you-go",
+    "description": "Volcengine Ark pay-as-you-go",
+    "sourceText": "火山方舟按量计费"
+  },
+  "arkApi": {
+    "message": "Ark API",
+    "description": "Ark API",
+    "sourceText": "方舟 API"
+  },
+  "volcengineArkCodingSubscription": {
+    "message": "Volcengine Ark coding subscription",
+    "description": "Volcengine Ark coding subscription",
+    "sourceText": "火山方舟编程订阅套餐"
+  },
+  "arkCodingPlan": {
+    "message": "Ark Coding Plan",
+    "description": "Ark Coding Plan",
+    "sourceText": "方舟 Coding Plan"
+  },
+  "minimaxSubscriptionQuota": {
+    "message": "MiniMax subscription quota",
+    "description": "MiniMax subscription quota",
+    "sourceText": "MiniMax 订阅额度"
+  },
+  "deepseekPayAsYouGoPlatform": {
+    "message": "DeepSeek pay-as-you-go platform",
+    "description": "DeepSeek pay-as-you-go platform",
+    "sourceText": "DeepSeek 开放平台按量计费"
+  },
+  "customProvider": {
+    "message": "Custom provider",
+    "description": "Custom provider",
+    "sourceText": "通用平台"
+  },
+  "customCompatibleApi": {
+    "message": "Custom compatible API",
+    "description": "Custom compatible API",
+    "sourceText": "自定义兼容接口"
+  },
+  "buildAPartnerTeamToClarifyAndPlanAn": {
+    "message": "Build a partner team to clarify and plan an ambiguous goal",
+    "description": "Build a partner team to clarify and plan an ambiguous goal",
+    "sourceText": "组建一支能把模糊目标规划清楚的搭档团队"
+  },
+  "breakAnAmbiguousGoalIntoOutcomesMilestonesAndNext": {
+    "message": "Break an ambiguous goal into outcomes, milestones, and next steps",
+    "description": "Break an ambiguous goal into outcomes, milestones, and next steps",
+    "sourceText": "把模糊大目标拆成结果、里程碑与下一步动作"
+  },
+  "goalPlanningPartner": {
+    "message": "Goal planning partner",
+    "description": "Goal planning partner",
+    "sourceText": "目标规划搭档"
+  },
+  "identifyKeyUncertaintiesExternalDependenciesAndFallbackOptions": {
+    "message": "Identify key uncertainties, external dependencies, and fallback options",
+    "description": "Identify key uncertainties, external dependencies, and fallback options",
+    "sourceText": "识别关键不确定性、外部依赖与兜底方向"
+  },
+  "riskScoutingPartner": {
+    "message": "Risk scouting partner",
+    "description": "Risk scouting partner",
+    "sourceText": "风险侦察搭档"
+  },
+  "planABigGoal": {
+    "message": "Plan a big goal",
+    "description": "Plan a big goal",
+    "sourceText": "规划一个大目标"
+  },
+  "buildAPartnerTeamForTestDrivenFeatureDevelopment": {
+    "message": "Build a partner team for test-driven feature development",
+    "description": "Build a partner team for test-driven feature development",
+    "sourceText": "组建一支用测试驱动实现功能的搭档团队"
+  },
+  "writeFailingTestsFirstThenImplementInSmallVerifiable": {
+    "message": "Write failing tests first, then implement in small verifiable steps",
+    "description": "Write failing tests first, then implement in small verifiable steps",
+    "sourceText": "先写失败测试再实现，保持小步可验证"
+  },
+  "codingPartner": {
+    "message": "Coding partner",
+    "description": "Coding partner",
+    "sourceText": "编码搭档"
+  },
+  "verifyAcceptanceCriteriaAndRunRegressionChecks": {
+    "message": "Verify acceptance criteria and run regression checks",
+    "description": "Verify acceptance criteria and run regression checks",
+    "sourceText": "对照验收标准逐项核对并跑回归"
+  },
+  "acceptanceAndRegressionPartner": {
+    "message": "Acceptance and regression partner",
+    "description": "Acceptance and regression partner",
+    "sourceText": "验收回归搭档"
+  },
+  "implementAFeature": {
+    "message": "Implement a feature",
+    "description": "Implement a feature",
+    "sourceText": "实现一个功能"
+  },
+  "buildATeamForCodeReviewFromMultiplePerspectives": {
+    "message": "Build a team for code review from multiple perspectives",
+    "description": "Build a team for code review from multiple perspectives",
+    "sourceText": "组建一支覆盖多视角的代码审查搭档团队"
+  },
+  "checkLogicEdgeCasesConcurrencyAndResourceHandling": {
+    "message": "Check logic, edge cases, concurrency, and resource handling",
+    "description": "Check logic, edge cases, concurrency, and resource handling",
+    "sourceText": "盯逻辑错误、边界条件与并发/资源问题"
+  },
+  "correctnessReviewPartner": {
+    "message": "Correctness review partner",
+    "description": "Correctness review partner",
+    "sourceText": "正确性审查搭档"
+  },
+  "checkStructureReadabilityTestabilityAndLongTermCost": {
+    "message": "Check structure, readability, testability, and long-term cost",
+    "description": "Check structure, readability, testability, and long-term cost",
+    "sourceText": "盯结构、可读性、可测试性与长期成本"
+  },
+  "maintainabilityPartner": {
+    "message": "Maintainability partner",
+    "description": "Maintainability partner",
+    "sourceText": "可维护性搭档"
+  },
+  "reviewCode": {
+    "message": "Review code",
+    "description": "Review code",
+    "sourceText": "审查一段代码"
+  },
+  "buildATeamToReproduceAndDiagnoseDefects": {
+    "message": "Build a team to reproduce and diagnose defects",
+    "description": "Build a team to reproduce and diagnose defects",
+    "sourceText": "组建一支能复现并诊断缺陷的搭档团队"
+  },
+  "reproduceTheDefectAndProvideMinimalReproductionStepsWith": {
+    "message": "Reproduce the defect and provide minimal reproduction steps with evidence",
+    "description": "Reproduce the defect and provide minimal reproduction steps with evidence",
+    "sourceText": "先复现缺陷，产出最小复现步骤与证据"
+  },
+  "reproductionPartner": {
+    "message": "Reproduction partner",
+    "description": "Reproduction partner",
+    "sourceText": "复现定位搭档"
+  },
+  "useReproductionEvidenceToIdentifyCausesAndRepairOptions": {
+    "message": "Use reproduction evidence to identify causes and repair options",
+    "description": "Use reproduction evidence to identify causes and repair options",
+    "sourceText": "基于复现证据给出根因与修复选项"
+  },
+  "rootCausePartner": {
+    "message": "Root cause partner",
+    "description": "Root cause partner",
+    "sourceText": "根因诊断搭档"
+  },
+  "diagnoseABug": {
+    "message": "Diagnose a bug",
+    "description": "Diagnose a bug",
+    "sourceText": "诊断一个 Bug"
+  },
+  "buildATeamForParallelResearchAndSynthesis": {
+    "message": "Build a team for parallel research and synthesis",
+    "description": "Build a team for parallel research and synthesis",
+    "sourceText": "组建一支能并行调研并汇总的搭档团队"
+  },
+  "researchAnIndependentPerspectiveWithSourcesAndCounterexamples": {
+    "message": "Research an independent perspective with sources and counterexamples",
+    "description": "Research an independent perspective with sources and counterexamples",
+    "sourceText": "从一个独立视角并行调研，附来源与反例"
+  },
+  "researchPerspectivePartner": {
+    "message": "Research perspective partner",
+    "description": "Research perspective partner",
+    "sourceText": "多视角研究搭档"
+  },
+  "synthesizeResearchPerspectivesIntoAClearConclusion": {
+    "message": "Synthesize research perspectives into a clear conclusion",
+    "description": "Synthesize research perspectives into a clear conclusion",
+    "sourceText": "把各视角调研汇总成有立场的结论"
+  },
+  "researchSynthesisPartner": {
+    "message": "Research synthesis partner",
+    "description": "Research synthesis partner",
+    "sourceText": "结论汇总搭档"
+  },
+  "createAResearchReview": {
+    "message": "Create a research review",
+    "description": "Create a research review",
+    "sourceText": "做一次研究综述"
+  },
+  "buildATeamToEvaluateAndImproveArchitecture": {
+    "message": "Build a team to evaluate and improve architecture",
+    "description": "Build a team to evaluate and improve architecture",
+    "sourceText": "组建一支能评估并改进架构的搭档团队"
+  },
+  "evaluateArchitecturalProblemsAndTheirActualCosts": {
+    "message": "Evaluate architectural problems and their actual costs",
+    "description": "Evaluate architectural problems and their actual costs",
+    "sourceText": "评估现状架构痛点及其真实成本"
+  },
+  "architectureAssessmentPartner": {
+    "message": "Architecture assessment partner",
+    "description": "Architecture assessment partner",
+    "sourceText": "架构评估搭档"
+  },
+  "planImprovementsAsSmallVerifiableAndReversibleMigrations": {
+    "message": "Plan improvements as small verifiable and reversible migrations",
+    "description": "Plan improvements as small verifiable and reversible migrations",
+    "sourceText": "把改进拆成可验证、可回滚的小步迁移"
+  },
+  "migrationPlanningPartner": {
+    "message": "Migration planning partner",
+    "description": "Migration planning partner",
+    "sourceText": "迁移规划搭档"
+  },
+  "improveCodebaseArchitecture": {
+    "message": "Improve codebase architecture",
+    "description": "Improve codebase architecture",
+    "sourceText": "改进代码库架构"
+  },
+  "workspaceRoot": {
+    "message": "(workspace root)",
+    "description": "(workspace root)",
+    "sourceText": "（工作区根目录）"
+  },
+  "aProgrammingCollaborationPackCoveringImplementationReviewDefectDiagnosis": {
+    "message": "A programming collaboration pack covering implementation, review, defect diagnosis, and architecture.",
+    "description": "A programming collaboration pack covering implementation, review, defect diagnosis, and architecture.",
+    "sourceText": "从功能实现、代码审查、缺陷诊断到架构演进的完整编程协作套件。"
+  },
+  "programmingPack": {
+    "message": "Programming pack",
+    "description": "Programming pack",
+    "sourceText": "编程套件"
+  },
+  "aReusableAnalysisTeamForGoalPlanningRiskIdentification": {
+    "message": "A reusable analysis team for goal planning, risk identification, research, and synthesis.",
+    "description": "A reusable analysis team for goal planning, risk identification, research, and synthesis.",
+    "sourceText": "把目标拆解、风险识别、多视角调研和结论汇总组合成可复用的分析团队。"
+  },
+  "researchAndAnalysisPack": {
+    "message": "Research and analysis pack",
+    "description": "Research and analysis pack",
+    "sourceText": "调研分析套件"
+  },
+  "builtInSkillsPack": {
+    "message": "Built-in skills pack",
+    "description": "Built-in skills pack",
+    "sourceText": "内置 Skills 套件"
+  },
+  "filterLowValueOpportunitiesUsingQualityValuationAndVerifiability": {
+    "message": "Filter low-value opportunities using quality, valuation, and verifiability thresholds.",
+    "description": "Filter low-value opportunities using quality, valuation, and verifiability thresholds.",
+    "sourceText": "用质量、估值与可验证性门槛快速淘汰低价值机会。"
+  },
+  "qualityScreeningPartner": {
+    "message": "Quality screening partner",
+    "description": "Quality screening partner",
+    "sourceText": "质量筛选搭档"
+  },
+  "identifyIndustryProfitPoolsSupplyDemandShiftsAndKey": {
+    "message": "Identify industry profit pools, supply-demand shifts, and key bottlenecks.",
+    "description": "Identify industry profit pools, supply-demand shifts, and key bottlenecks.",
+    "sourceText": "定位产业链利润池、供需拐点与关键瓶颈。"
+  },
+  "industryAndBottleneckPartner": {
+    "message": "Industry and bottleneck partner",
+    "description": "Industry and bottleneck partner",
+    "sourceText": "产业链与瓶颈搭档"
+  },
+  "analyzeRevenueDriversUnitEconomicsAndGrowthQuality": {
+    "message": "Analyze revenue drivers, unit economics, and growth quality.",
+    "description": "Analyze revenue drivers, unit economics, and growth quality.",
+    "sourceText": "拆解收入引擎、单位经济性与增长质量。"
+  },
+  "businessModelPartner": {
+    "message": "Business model partner",
+    "description": "Business model partner",
+    "sourceText": "商业模式搭档"
+  },
+  "validateFinancialDataConsistentlyAndProduceScenarioValuations": {
+    "message": "Validate financial data consistently and produce scenario valuations.",
+    "description": "Validate financial data consistently and produce scenario valuations.",
+    "sourceText": "统一口径验证财务数据并给出情景估值。"
+  },
+  "financialValuationPartner": {
+    "message": "Financial valuation partner",
+    "description": "Financial valuation partner",
+    "sourceText": "财务估值搭档"
+  },
+  "traceFiguresAndCitationsToTheirSourcesMarkingConflicts": {
+    "message": "Trace figures and citations to their sources, marking conflicts and gaps.",
+    "description": "Trace figures and citations to their sources, marking conflicts and gaps.",
+    "sourceText": "追溯数字与引文来源，标记冲突和缺口。"
+  },
+  "dataAuditPartner": {
+    "message": "Data audit partner",
+    "description": "Data audit partner",
+    "sourceText": "数据审计搭档"
+  },
+  "seekOpposingEvidenceFailurePathsAndPermanentLossRisks": {
+    "message": "Seek opposing evidence, failure paths, and permanent loss risks.",
+    "description": "Seek opposing evidence, failure paths, and permanent loss risks.",
+    "sourceText": "主动寻找反方证据、失败路径与永久损失风险。"
+  },
+  "contrarianRiskPartner": {
+    "message": "Contrarian risk partner",
+    "description": "Contrarian risk partner",
+    "sourceText": "逆向风险搭档"
+  },
+  "assessCompetitionMoatStrengthAndErosionRates": {
+    "message": "Assess competition, moat strength, and erosion rates.",
+    "description": "Assess competition, moat strength, and erosion rates.",
+    "sourceText": "评估竞争格局、护城河强度与侵蚀速度。"
+  },
+  "moatAndCompetitionPartner": {
+    "message": "Moat and competition partner",
+    "description": "Moat and competition partner",
+    "sourceText": "护城河竞争搭档"
+  },
+  "studyManagementAbilityIncentivesGovernanceAndCapitalAllocation": {
+    "message": "Study management ability, incentives, governance, and capital allocation.",
+    "description": "Study management ability, incentives, governance, and capital allocation.",
+    "sourceText": "研究管理层能力、激励、治理与资本配置记录。"
+  },
+  "managementAndGovernancePartner": {
+    "message": "Management and governance partner",
+    "description": "Management and governance partner",
+    "sourceText": "管理层治理搭档"
+  },
+  "findChangesAndAnomaliesInReportsEarningsCallsAnd": {
+    "message": "Find changes and anomalies in reports, earnings calls, and notes.",
+    "description": "Find changes and anomalies in reports, earnings calls, and notes.",
+    "sourceText": "从财报、电话会与附注中识别变化和异常。"
+  },
+  "financialReportingPartner": {
+    "message": "Financial reporting partner",
+    "description": "Financial reporting partner",
+    "sourceText": "财报取证搭档"
+  },
+  "trackNewsAnnouncementsAndCatalystsToAssessTheirActual": {
+    "message": "Track news, announcements, and catalysts to assess their actual impact.",
+    "description": "Track news, announcements, and catalysts to assess their actual impact.",
+    "sourceText": "持续跟踪新闻、公告与催化剂，评估真实影响。"
+  },
+  "eventIntelligencePartner": {
+    "message": "Event intelligence partner",
+    "description": "Event intelligence partner",
+    "sourceText": "事件情报搭档"
+  },
+  "researchPrivateCompaniesChannelSignalsAndAlternativeData": {
+    "message": "Research private companies, channel signals, and alternative data.",
+    "description": "Research private companies, channel signals, and alternative data.",
+    "sourceText": "研究未上市公司、渠道信号与另类数据。"
+  },
+  "privateCompanyAndAlternativeDataPartner": {
+    "message": "Private company and alternative data partner",
+    "description": "Private company and alternative data partner",
+    "sourceText": "未上市与另类数据搭档"
+  },
+  "assessPortfolioConcentrationIncomeQualityCorrelationsAndRebalancing": {
+    "message": "Assess portfolio concentration, income quality, correlations, and rebalancing.",
+    "description": "Assess portfolio concentration, income quality, correlations, and rebalancing.",
+    "sourceText": "评估组合集中度、收益质量、相关性与再平衡。"
+  },
+  "portfolioIncomePartner": {
+    "message": "Portfolio income partner",
+    "description": "Portfolio income partner",
+    "sourceText": "组合收益搭档"
+  },
+  "maintainInvestmentThesesEvidenceChangesCatalystsAndFalsificationConditions": {
+    "message": "Maintain investment theses, evidence changes, catalysts, and falsification conditions.",
+    "description": "Maintain investment theses, evidence changes, catalysts, and falsification conditions.",
+    "sourceText": "维护投资论文、证据变更、催化剂和证伪条件。"
+  },
+  "investmentThesisSteward": {
+    "message": "Investment thesis steward",
+    "description": "Investment thesis steward",
+    "sourceText": "投资论文管家"
+  },
+  "organizeResearchEvidenceIntoClearAndReviewableLongForm": {
+    "message": "Organize research evidence into clear and reviewable long-form writing.",
+    "description": "Organize research evidence into clear and reviewable long-form writing.",
+    "sourceText": "把研究证据组织为清晰、克制、可审阅的长文。"
+  },
+  "longFormResearchWriter": {
+    "message": "Long-form research writer",
+    "description": "Long-form research writer",
+    "sourceText": "长篇研究作者"
+  },
+  "reviewCredibilityAndReadabilityFromEditorialAndReaderPerspectives": {
+    "message": "Review credibility and readability from editorial and reader perspectives.",
+    "description": "Review credibility and readability from editorial and reader perspectives.",
+    "sourceText": "从编辑和目标读者视角检查可信度与可读性。"
+  },
+  "editorAndReaderReviewer": {
+    "message": "Editor and reader reviewer",
+    "description": "Editor and reader reviewer",
+    "sourceText": "编辑与读者评审"
+  },
+  "aValueInvestingCollaborationPackFromScreeningAndCompany": {
+    "message": "A value investing collaboration pack from screening and company research to portfolio management and publishing.",
+    "description": "A value investing collaboration pack from screening and company research to portfolio management and publishing.",
+    "sourceText": "从机会筛选、公司与行业研究到组合管理和研究发布的完整价值投资协作套件。"
+  },
+  "screenOpportunitiesAcrossQualityIndustryBusinessModelsValuationData": {
+    "message": "Screen opportunities across quality, industry, business models, valuation, data, and risk.",
+    "description": "Screen opportunities across quality, industry, business models, valuation, data, and risk.",
+    "sourceText": "从质量、产业、商业模式、估值、数据和风险六个视角快速筛选机会。"
+  },
+  "opportunityScreening": {
+    "message": "Opportunity screening",
+    "description": "Opportunity screening",
+    "sourceText": "机会筛选"
+  },
+  "researchPublicCompaniesAcrossBusinessFinanceCompetitionManagementAnd": {
+    "message": "Research public companies across business, finance, competition, management, and opposing evidence.",
+    "description": "Research public companies across business, finance, competition, management, and opposing evidence.",
+    "sourceText": "完成上市公司的商业、财务、竞争、管理层和反方深度研究。"
+  },
+  "publicCompanyResearch": {
+    "message": "Public company research",
+    "description": "Public company research",
+    "sourceText": "上市公司深度研究"
+  },
+  "reviewReportsAndTrackEventsAffectingEnterpriseValueAnd": {
+    "message": "Review reports and track events affecting enterprise value and investment theses.",
+    "description": "Review reports and track events affecting enterprise value and investment theses.",
+    "sourceText": "复核财报并持续追踪事件对企业价值与投资论文的影响。"
+  },
+  "reportsAndEvents": {
+    "message": "Reports and events",
+    "description": "Reports and events",
+    "sourceText": "财报与事件"
+  },
+  "researchIndustriesPrivateCompaniesAndAlternativeDataWhenDisclosure": {
+    "message": "Research industries, private companies, and alternative data when disclosure is limited.",
+    "description": "Research industries, private companies, and alternative data when disclosure is limited.",
+    "sourceText": "研究产业链、未上市公司和替代数据，补足低披露场景。"
+  },
+  "industriesAndPrivateCompanies": {
+    "message": "Industries and private companies",
+    "description": "Industries and private companies",
+    "sourceText": "行业与未上市公司"
+  },
+  "maintainPortfoliosIncomeTargetsThesisChangesCatalystsAndFalsification": {
+    "message": "Maintain portfolios, income targets, thesis changes, catalysts, and falsification conditions.",
+    "description": "Maintain portfolios, income targets, thesis changes, catalysts, and falsification conditions.",
+    "sourceText": "维护组合、收益目标、论文变化、催化剂和证伪条件。"
+  },
+  "portfolioAndInvestmentTheses": {
+    "message": "Portfolio and investment theses",
+    "description": "Portfolio and investment theses",
+    "sourceText": "组合与投资论文"
+  },
+  "createLongFormResearchFromEvidenceWithDataEditorial": {
+    "message": "Create long-form research from evidence, with data, editorial, and reader reviews.",
+    "description": "Create long-form research from evidence, with data, editorial, and reader reviews.",
+    "sourceText": "把证据整理为长篇研究，并进行数据、编辑和读者审查。"
+  },
+  "researchPublishing": {
+    "message": "Research publishing",
+    "description": "Research publishing",
+    "sourceText": "研究发布"
+  },
+  "aiBerkshireValueResearchPack": {
+    "message": "AI Berkshire value research pack",
+    "description": "AI Berkshire value research pack",
+    "sourceText": "AI Berkshire 价值研究套件"
+  },
+  "veryHigh": {
+    "message": "Very high",
+    "description": "Very high",
+    "sourceText": "极高"
+  },
+  "maximum": {
+    "message": "Maximum",
+    "description": "Maximum",
+    "sourceText": "最高"
+  },
+  "builtIn": {
+    "message": "Built-in",
+    "description": "Built-in",
+    "sourceText": "内置"
+  },
+  "completeTheAssignedResponsibilitiesWithIndependentlyVerifiableResults": {
+    "message": "Complete the assigned responsibilities with independently verifiable results.",
+    "description": "Complete the assigned responsibilities with independently verifiable results.",
+    "sourceText": "按既定职责完成工作并给出可独立验证的结果。"
+  },
+  "builtinSkillsEmpty": {
+    "message": "Automatically collects the 6 most recent local Pi core skills. No installable skills have been found yet.",
+    "description": "Automatically collects the 6 most recent local Pi core skills. No installable skills have been found yet.",
+    "sourceText": "自动收纳 Pi core 可用的最近 6 个本机 Skill；当前尚未发现可安装项。"
+  },
+  "builtinSkillsDescription": {
+    "message": "Build capability partners from the 6 most recent local Pi core skills, individually or as a full pack.",
+    "description": "Build capability partners from the 6 most recent local Pi core skills, individually or as a full pack.",
+    "sourceText": "把 Pi core 当前可用的最近 6 个本机 Skill 组装为可单独或整套安装的能力搭档。"
+  },
+  "skillLicense": {
+    "message": "As declared by each skill",
+    "description": "As declared by each skill",
+    "sourceText": "依各 Skill 声明"
+  }
+}

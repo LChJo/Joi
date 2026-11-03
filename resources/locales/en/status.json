@@ -1,0 +1,192 @@
+{
+  "todaySLimitReached": {
+    "message": "Today''s limit reached",
+    "description": "status: Today's limit reached",
+    "sourceText": "今天的次数用完了"
+  },
+  "needsALook": {
+    "message": "Needs a look",
+    "description": "status: Needs a look",
+    "sourceText": "需要看看"
+  },
+  "paused": {
+    "message": "Paused",
+    "description": "status: Paused",
+    "sourceText": "已暂停"
+  },
+  "readyToAct": {
+    "message": "Ready to act",
+    "description": "status: Ready to act",
+    "sourceText": "准备行动"
+  },
+  "quiet": {
+    "message": "Quiet",
+    "description": "status: Quiet",
+    "sourceText": "安静中"
+  },
+  "stopped": {
+    "message": "Stopped",
+    "description": "status: Stopped",
+    "sourceText": "已停止"
+  },
+  "ready": {
+    "message": "Ready",
+    "description": "status: Ready",
+    "sourceText": "可用"
+  },
+  "collaborationOnly": {
+    "message": "Collaboration only",
+    "description": "status: Collaboration only",
+    "sourceText": "仅协作"
+  },
+  "disabled": {
+    "message": "Disabled",
+    "description": "status: Disabled",
+    "sourceText": "已停用"
+  },
+  "notChecked": {
+    "message": "Not checked",
+    "description": "status: Not checked",
+    "sourceText": "待检查"
+  },
+  "connectionIssue": {
+    "message": "Connection issue",
+    "description": "status: Connection issue",
+    "sourceText": "连接异常"
+  },
+  "needsConfirmation": {
+    "message": "Needs confirmation",
+    "description": "status: Needs confirmation",
+    "sourceText": "需要重新确认"
+  },
+  "credentialsNeedUpdating": {
+    "message": "Credentials need updating",
+    "description": "status: Credentials need updating",
+    "sourceText": "需要更新密钥"
+  },
+  "canceled": {
+    "message": "Canceled",
+    "description": "status: Canceled",
+    "sourceText": "已取消"
+  },
+  "processing": {
+    "message": "Processing",
+    "description": "status: Processing",
+    "sourceText": "处理中"
+  },
+  "completed": {
+    "message": "Completed",
+    "description": "status: Completed",
+    "sourceText": "已完成"
+  },
+  "read": {
+    "message": "Read",
+    "description": "status: Read",
+    "sourceText": "已读取"
+  },
+  "actionNeeded": {
+    "message": "Action needed",
+    "description": "status: Action needed",
+    "sourceText": "需要处理"
+  },
+  "deferred": {
+    "message": "Deferred",
+    "description": "status: Deferred",
+    "sourceText": "稍后处理"
+  },
+  "somethingWentWrong": {
+    "message": "Something went wrong",
+    "description": "status: Something went wrong",
+    "sourceText": "出问题了"
+  },
+  "failed": {
+    "message": "Failed",
+    "description": "status: Failed",
+    "sourceText": "没成功"
+  },
+  "resultNeedsConfirmation": {
+    "message": "Result needs confirmation",
+    "description": "status: Result needs confirmation",
+    "sourceText": "结果待确认"
+  },
+  "notified": {
+    "message": "Notified",
+    "description": "status: Notified",
+    "sourceText": "已提醒"
+  },
+  "forgotten": {
+    "message": "Forgotten",
+    "description": "status: Forgotten",
+    "sourceText": "已遗忘"
+  },
+  "notStarted": {
+    "message": "Not started",
+    "description": "status: Not started",
+    "sourceText": "待开始"
+  },
+  "waiting": {
+    "message": "Waiting",
+    "description": "status: Waiting",
+    "sourceText": "等待中"
+  },
+  "inProgress": {
+    "message": "In progress",
+    "description": "status: In progress",
+    "sourceText": "进行中"
+  },
+  "scheduled": {
+    "message": "Scheduled",
+    "description": "status: Scheduled",
+    "sourceText": "已安排"
+  },
+  "sentAwaitingResponse": {
+    "message": "Sent, awaiting response",
+    "description": "status: Sent, awaiting response",
+    "sourceText": "已发出，等回复"
+  },
+  "updated": {
+    "message": "Updated",
+    "description": "status: Updated",
+    "sourceText": "已更新"
+  },
+  "unconfirmed": {
+    "message": "Unconfirmed",
+    "description": "status: Unconfirmed",
+    "sourceText": "待确认"
+  },
+  "awaitingAuthorization": {
+    "message": "Awaiting authorization",
+    "description": "status: Awaiting authorization",
+    "sourceText": "等授权"
+  },
+  "awaitingYourInput": {
+    "message": "Awaiting your input",
+    "description": "status: Awaiting your input",
+    "sourceText": "等你补充"
+  },
+  "retryLater": {
+    "message": "Retry later",
+    "description": "status: Retry later",
+    "sourceText": "稍后重试"
+  },
+  "statusRecorded": {
+    "message": "Status recorded",
+    "description": "status: Status recorded",
+    "sourceText": "状态已记录"
+  },
+  "partnerCollaboration": {
+    "message": "Partner collaboration",
+    "description": "status: Partner collaboration",
+    "sourceText": "搭档协作"
+  },
+  "conversation": {
+    "message": "Conversation",
+    "description": "status: Conversation",
+    "sourceText": "一次对话"
+  },
+  "action": {
+    "message": "Action",
+    "description": "status: Action",
+    "sourceText": "一次行动"
+  }
+}

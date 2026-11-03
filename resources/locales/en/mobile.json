@@ -1,0 +1,683 @@
+{
+  "homeSyncFailedRetrying": {
+    "message": "Home sync failed. Retrying automatically; pull down to retry now.",
+    "description": "A failed home read keeps the session and previous content available while retrying.",
+    "sourceText": "首页同步失败，将自动重试；也可下拉立即重试。"
+  },
+  "bringTheJoiRunningOnYourComputerToYour": {
+    "message": "Bring the joi running on your computer to your phone",
+    "description": "Bring the joi running on your computer to your phone",
+    "sourceText": "把正在电脑上运行的 Joi 带到手机上"
+  },
+  "scanAQrCodeToPairWithJoi": {
+    "message": "Scan a QR code to pair with joi",
+    "description": "Scan a QR code to pair with joi",
+    "sourceText": "扫描二维码绑定 Joi"
+  },
+  "enterConnectionCode": {
+    "message": "Enter connection code",
+    "description": "Enter connection code",
+    "sourceText": "输入连接码"
+  },
+  "pairMultiplePhonesSecurelyWithTheSameJoi": {
+    "message": "Pair multiple phones securely with the same joi",
+    "description": "Pair multiple phones securely with the same joi",
+    "sourceText": "同一台 Joi 可以安全绑定多台手机"
+  },
+  "pasteAJoiPairLink": {
+    "message": "Paste a joi://pair link",
+    "description": "Paste a joi://pair link",
+    "sourceText": "粘贴 joi://pair 链接"
+  },
+  "theQrCodeIsInvalidOrExpired": {
+    "message": "The QR code is invalid or expired.",
+    "description": "The QR code is invalid or expired.",
+    "sourceText": "二维码无效或已经过期。"
+  },
+  "reviewing": {
+    "message": "Reviewing",
+    "description": "Reviewing",
+    "sourceText": "复盘中"
+  },
+  "preparingResults": {
+    "message": "Preparing results",
+    "description": "Preparing results",
+    "sourceText": "整理结果"
+  },
+  "completedWithGaps": {
+    "message": "Completed with gaps",
+    "description": "Completed with gaps",
+    "sourceText": "有缺口完成"
+  },
+  "notCompleted": {
+    "message": "Not completed",
+    "description": "Not completed",
+    "sourceText": "未完成"
+  },
+  "awaitingAnAnswer": {
+    "message": "Awaiting an answer",
+    "description": "Awaiting an answer",
+    "sourceText": "等待回答"
+  },
+  "idle": {
+    "message": "Idle",
+    "description": "Idle",
+    "sourceText": "空闲"
+  },
+  "statusUnconfirmed": {
+    "message": "Status unconfirmed",
+    "description": "Status unconfirmed",
+    "sourceText": "状态待确认"
+  },
+  "planning": {
+    "message": "Planning",
+    "description": "Planning",
+    "sourceText": "规划中"
+  },
+  "assigningPartners": {
+    "message": "Assigning partners",
+    "description": "Assigning partners",
+    "sourceText": "安排搭档"
+  },
+  "updatingStatus": {
+    "message": "Updating status",
+    "description": "Updating status",
+    "sourceText": "状态更新中"
+  },
+  "valuePartners": {
+    "message": "{p0} partners",
+    "description": "{p0} partners",
+    "sourceText": "{p0} 位搭档",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueValueCompleted": {
+    "message": "{p0}/{p1} completed",
+    "description": "{p0}/{p1} completed",
+    "sourceText": "{p0}/{p1} 已完成",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "viewDetails": {
+    "message": "View details ›",
+    "description": "View details ›",
+    "sourceText": "查看详情 ›"
+  },
+  "searchNameOrScope": {
+    "message": "Search name or scope",
+    "description": "Search name or scope",
+    "sourceText": "搜索名称或范围"
+  },
+  "letJoiDecide": {
+    "message": "Let joi decide",
+    "description": "Let joi decide",
+    "sourceText": "由 joi 判断"
+  },
+  "noMatchesConfigureOnTheDesktopThenRefresh": {
+    "message": "No matches. Configure on the desktop, then refresh.",
+    "description": "No matches. Configure on the desktop, then refresh.",
+    "sourceText": "没有匹配项，请在桌面配置后刷新。"
+  },
+  "deliveryWasNotConfirmedYourInputIsPreservedRetry": {
+    "message": "Delivery was not confirmed. Your input is preserved. Retry when connected.",
+    "description": "Delivery was not confirmed. Your input is preserved. Retry when connected.",
+    "sourceText": "未确认发送成功，已保留输入。连接恢复后可重试。"
+  },
+  "offline": {
+    "message": "Offline",
+    "description": "Offline",
+    "sourceText": "离线"
+  },
+  "reconnecting": {
+    "message": "Reconnecting",
+    "description": "Reconnecting",
+    "sourceText": "重连中"
+  },
+  "direct": {
+    "message": "Direct",
+    "description": "Direct",
+    "sourceText": "直连"
+  },
+  "relay": {
+    "message": "Relay",
+    "description": "Relay",
+    "sourceText": "中继"
+  },
+  "connected": {
+    "message": "Connected",
+    "description": "Connected",
+    "sourceText": "已连接"
+  },
+  "finished": {
+    "message": "Finished",
+    "description": "Finished",
+    "sourceText": "已结束"
+  },
+  "theDesktopVersionIsOlderUpdateItToRead": {
+    "message": "The desktop version is older. Update it to read details and use card actions.",
+    "description": "The desktop version is older. Update it to read details and use card actions.",
+    "sourceText": "桌面版本较旧，升级后可阅读详情和操作卡片。"
+  },
+  "refreshFailedPreviousContentIsPreserved": {
+    "message": "Refresh failed. Previous content is preserved.",
+    "description": "Refresh failed. Previous content is preserved.",
+    "sourceText": "刷新失败，已保留上次内容。"
+  },
+  "theHomePageHasNotSyncedYetDesktopTasks": {
+    "message": "The home page has not synced yet. Desktop tasks appear after connecting.",
+    "description": "The home page has not synced yet. Desktop tasks appear after connecting.",
+    "sourceText": "尚未同步首页，连接成功后会显示电脑上的任务。"
+  },
+  "noTasksYetTellJoiWhatYouHaveIn": {
+    "message": "No tasks yet. Tell joi what you have in mind.",
+    "description": "No tasks yet. Tell joi what you have in mind.",
+    "sourceText": "暂时没有任务，和 joi 说点什么吧。"
+  },
+  "noTasksOnTheHomePageArchivedCardsAre": {
+    "message": "No tasks on the home page. Archived cards are under Archived at the top right.",
+    "description": "No tasks on the home page. Archived cards are under Archived at the top right.",
+    "sourceText": "首页没有任务了，归档的卡片在右上角「已归档」里。"
+  },
+  "saySomethingToJoi": {
+    "message": "Say something to joi…",
+    "description": "Say something to joi…",
+    "sourceText": "和 joi 说点什么…"
+  },
+  "image": {
+    "message": "[Image]",
+    "description": "[Image]",
+    "sourceText": "[图片]"
+  },
+  "couldNotOpenTheLinkCopyItToYour": {
+    "message": "Could not open the link. Copy it to your browser.",
+    "description": "Could not open the link. Copy it to your browser.",
+    "sourceText": "无法打开链接，可复制后在浏览器查看。"
+  },
+  "thisCardNoLongerNeedsAnAnswerPullDown": {
+    "message": "This card no longer needs an answer. Pull down to refresh its status.",
+    "description": "This card no longer needs an answer. Pull down to refresh its status.",
+    "sourceText": "这张卡片已经不需要回答了，下拉刷新看看最新状态。"
+  },
+  "thisTaskCannotContinueRightNowPullDownTo": {
+    "message": "This task cannot continue right now. Pull down to refresh its status.",
+    "description": "This task cannot continue right now. Pull down to refresh its status.",
+    "sourceText": "这个任务现在不能继续，下拉刷新看看最新状态。"
+  },
+  "theSelectedWorkbenchOrPartnerIsUnavailableChooseAnother": {
+    "message": "The selected workbench or partner is unavailable. Choose another.",
+    "description": "The selected workbench or partner is unavailable. Choose another.",
+    "sourceText": "你选的工作台或搭档已经不可用了，请重新选择。"
+  },
+  "thisVersionOfJoiDoesNotSupportTheAction": {
+    "message": "This version of joi does not support the action. Complete it on the desktop.",
+    "description": "This version of joi does not support the action. Complete it on the desktop.",
+    "sourceText": "这版 joi 还不支持这个操作，请在电脑端完成。"
+  },
+  "joiIsBusyTryAgainLater": {
+    "message": "joi is busy. Try again later.",
+    "description": "joi is busy. Try again later.",
+    "sourceText": "joi 正在忙，稍后重试。"
+  },
+  "joiDeclinedThisActionValuePullDownToRefresh": {
+    "message": "joi declined this action ({p0}). Pull down to refresh its status.",
+    "description": "joi declined this action ({p0}). Pull down to refresh its status.",
+    "sourceText": "joi 没有接受这个操作（{p0}）。下拉刷新看看最新状态。",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "joiDidNotRespondWithin20SecondsTryAgain": {
+    "message": "joi did not respond within 20 seconds. Try again later. Your input is preserved.",
+    "description": "joi did not respond within 20 seconds. Try again later. Your input is preserved.",
+    "sourceText": "joi 超过 20 秒没有响应，请稍后重试。输入已保留。"
+  },
+  "thePhoneAndDesktopVersionsDoNotMatchUpdate": {
+    "message": "The phone and desktop versions do not match. Update joi on the desktop, then pair again.",
+    "description": "The phone and desktop versions do not match. Update joi on the desktop, then pair again.",
+    "sourceText": "手机端和 joi 的版本不匹配，请在电脑端更新 joi 后重新配对。"
+  },
+  "noSessionWithJoiYetWaitAMomentOr": {
+    "message": "No session with joi yet. Wait a moment or scan again.",
+    "description": "No session with joi yet. Wait a moment or scan again.",
+    "sourceText": "还没和 joi 建立会话，请稍等或重新扫码。"
+  },
+  "disconnectedFromJoiAndReconnectingTryAgainLaterYour": {
+    "message": "Disconnected from joi and reconnecting. Try again later. Your input is preserved.",
+    "description": "Disconnected from joi and reconnecting. Try again later. Your input is preserved.",
+    "sourceText": "和 joi 的连接断了，正在重连，稍后重试。输入已保留。"
+  },
+  "theActionDidNotCompleteRefreshTheLatestStatus": {
+    "message": "The action did not complete. Refresh the latest status and try again. Your input is preserved.",
+    "description": "The action did not complete. Refresh the latest status and try again. Your input is preserved.",
+    "sourceText": "操作未完成，请刷新查看最新状态后重试。输入已保留。"
+  },
+  "collapseAdditionalInput": {
+    "message": "Collapse additional input",
+    "description": "Collapse additional input",
+    "sourceText": "收起补充输入框"
+  },
+  "continueConversation": {
+    "message": "Continue conversation",
+    "description": "Continue conversation",
+    "sourceText": "继续对话"
+  },
+  "removeCard": {
+    "message": "Remove card",
+    "description": "Remove card",
+    "sourceText": "移除卡片"
+  },
+  "submittingPleaseWait": {
+    "message": "Submitting. Please wait…",
+    "description": "Submitting. Please wait…",
+    "sourceText": "正在提交，请稍候…"
+  },
+  "chooseAWorkingDirectoryForThisWorkbenchOnThe": {
+    "message": "Choose a working directory for this workbench on the desktop, then continue.",
+    "description": "Choose a working directory for this workbench on the desktop, then continue.",
+    "sourceText": "请回到桌面为工作台选择工作目录，然后继续。"
+  },
+  "confirmThatHistoricalWorkHasFinishedBeforeClosingIt": {
+    "message": "Confirm that historical work has finished before closing it safely.",
+    "description": "Confirm that historical work has finished before closing it safely.",
+    "sourceText": "请确认历史工作已结束，再安全收尾。"
+  },
+  "chooseAWorkbenchToContinue": {
+    "message": "Choose a workbench to continue",
+    "description": "Choose a workbench to continue",
+    "sourceText": "选择工作台继续"
+  },
+  "choosePartner": {
+    "message": "Choose partner",
+    "description": "Choose partner",
+    "sourceText": "选择搭档"
+  },
+  "chooseAPartnerToContinue": {
+    "message": "Choose a partner to continue",
+    "description": "Choose a partner to continue",
+    "sourceText": "选择搭档继续"
+  },
+  "finishHistoricalReconciliation": {
+    "message": "Finish historical reconciliation",
+    "description": "Finish historical reconciliation",
+    "sourceText": "结束历史整理"
+  },
+  "enterYourAnswer": {
+    "message": "Enter your answer",
+    "description": "Enter your answer",
+    "sourceText": "输入回答"
+  },
+  "additionalRequirementsOptional": {
+    "message": "Additional requirements (optional)",
+    "description": "Additional requirements (optional)",
+    "sourceText": "补充要求（可留空）"
+  },
+  "submitContinuation": {
+    "message": "Submit continuation",
+    "description": "Submit continuation",
+    "sourceText": "提交继续"
+  },
+  "moreActions": {
+    "message": "More actions",
+    "description": "More actions",
+    "sourceText": "更多操作"
+  },
+  "couldNotLoadTheLatestDetailsTheTaskMay": {
+    "message": "Could not load the latest details. The task may have changed or the connection was lost.",
+    "description": "Could not load the latest details. The task may have changed or the connection was lost.",
+    "sourceText": "未能读取最新详情，任务可能已变化或连接中断。"
+  },
+  "taskDetails": {
+    "message": "Task details",
+    "description": "Task details",
+    "sourceText": "任务详情"
+  },
+  "refresh": {
+    "message": "Refresh",
+    "description": "Refresh",
+    "sourceText": "刷新"
+  },
+  "taskContent": {
+    "message": "Task content",
+    "description": "Task content",
+    "sourceText": "任务正文"
+  },
+  "finalResultViewFullText": {
+    "message": "Final result · View full text",
+    "description": "Final result · View full text",
+    "sourceText": "最终结果 · 查看全文"
+  },
+  "taskExecutionDidNotFinish": {
+    "message": "Task execution did not finish",
+    "description": "Task execution did not finish",
+    "sourceText": "任务执行未完成"
+  },
+  "taskExecutionHasNotStarted": {
+    "message": "Task execution has not started",
+    "description": "Task execution has not started",
+    "sourceText": "任务尚未开始执行"
+  },
+  "checkTheModelSourceAndConnectionSettingsOnThe": {
+    "message": "Check the model source and connection settings on the desktop.",
+    "description": "Check the model source and connection settings on the desktop.",
+    "sourceText": "请在电脑端检查模型来源与连接配置。"
+  },
+  "restartOrUpdateJoiOnTheDesktopThenTry": {
+    "message": "Restart or update joi on the desktop, then try again.",
+    "description": "Restart or update joi on the desktop, then try again.",
+    "sourceText": "请在电脑端重启或更新 joi 后重试。"
+  },
+  "continueTheConversationToRetryOrCheckDiagnosticsOn": {
+    "message": "Continue the conversation to retry, or check diagnostics on the desktop.",
+    "description": "Continue the conversation to retry, or check diagnostics on the desktop.",
+    "sourceText": "可以继续对话重试，或在电脑端查看诊断。"
+  },
+  "taskProgress": {
+    "message": "Task progress",
+    "description": "Task progress",
+    "sourceText": "任务进展"
+  },
+  "decidedValueUnconfirmedValueUnexploredValue": {
+    "message": "Decided {p0} · Unconfirmed {p1} · Unexplored {p2}",
+    "description": "Decided {p0} · Unconfirmed {p1} · Unexplored {p2}",
+    "sourceText": "已决策 {p0} · 待确认 {p1} · 待探索 {p2}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "artifactInformationOpenOnTheDesktop": {
+    "message": "Artifact information (open on the desktop)",
+    "description": "Artifact information (open on the desktop)",
+    "sourceText": "产物信息（请在电脑端打开）"
+  },
+  "valueValueBytes": {
+    "message": "{p0} · {p1} bytes",
+    "description": "{p0} · {p1} bytes",
+    "sourceText": "{p0} · {p1} 字节",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "partnerWorkHistory": {
+    "message": "Partner work history",
+    "description": "Partner work history",
+    "sourceText": "搭档工作记录"
+  },
+  "noPartnerWorkHistoryYet": {
+    "message": "No partner work history yet.",
+    "description": "No partner work history yet.",
+    "sourceText": "还没有搭档工作记录。"
+  },
+  "morePartners": {
+    "message": "More partners",
+    "description": "More partners",
+    "sourceText": "更多搭档"
+  },
+  "couldNotLoadRecordsRefreshAndTryAgain": {
+    "message": "Could not load records. Refresh and try again.",
+    "description": "Could not load records. Refresh and try again.",
+    "sourceText": "记录读取失败，请刷新重试。"
+  },
+  "partnerHistory": {
+    "message": "Partner history",
+    "description": "Partner history",
+    "sourceText": "搭档记录"
+  },
+  "noRecordsToShowYet": {
+    "message": "No records to show yet.",
+    "description": "No records to show yet.",
+    "sourceText": "暂无可展示的记录。"
+  },
+  "toolCall": {
+    "message": "Tool call",
+    "description": "Tool call",
+    "sourceText": "工具调用"
+  },
+  "noAdditionalContentToShow": {
+    "message": "No additional content to show.",
+    "description": "No additional content to show.",
+    "sourceText": "没有额外可展示的内容。"
+  },
+  "user": {
+    "message": "User",
+    "description": "User",
+    "sourceText": "用户"
+  },
+  "message": {
+    "message": "Message",
+    "description": "Message",
+    "sourceText": "消息"
+  },
+  "loadMoreRecords": {
+    "message": "Load more records",
+    "description": "Load more records",
+    "sourceText": "加载更多记录"
+  },
+  "noArchivedGoalsYetChooseArchiveUnderMoreActions": {
+    "message": "No archived goals yet. Choose Archive under More actions on a home card to move it here.",
+    "description": "No archived goals yet. Choose Archive under More actions on a home card to move it here.",
+    "sourceText": "还没有归档的目标。在首页卡片的「更多操作」里选「归档」，它就会收到这里。"
+  },
+  "scanAJoiQrCode": {
+    "message": "Scan a joi QR code",
+    "description": "Scan a joi QR code",
+    "sourceText": "扫描 Joi 二维码"
+  },
+  "qrCodesAreGeneratedOnTheJoiDesktopAnd": {
+    "message": "QR codes are generated on the joi desktop and expire in 10 minutes.",
+    "description": "QR codes are generated on the joi desktop and expire in 10 minutes.",
+    "sourceText": "二维码只在桌面 Joi 中生成，10 分钟内有效。"
+  },
+  "couldNotLoadTheFullResultGoBackAnd": {
+    "message": "Could not load the full result. Go back and try again.",
+    "description": "Could not load the full result. Go back and try again.",
+    "sourceText": "未能读取完整结果，请返回后重试。"
+  },
+  "valueFilesSavedToValue": {
+    "message": "{p0} files saved to {p1}",
+    "description": "{p0} files saved to {p1}",
+    "sourceText": "已保存 {p0} 个文件到 {p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "exportDidNotCompleteOrWasCanceledTryAgain": {
+    "message": "Export did not complete or was canceled. Try again.",
+    "description": "Export did not complete or was canceled. Try again.",
+    "sourceText": "导出未完成或已取消，请重试。"
+  },
+  "viewFullText": {
+    "message": "View full text",
+    "description": "View full text",
+    "sourceText": "查看全文"
+  },
+  "filesSavedButCouldNotBeOpenedFindThem": {
+    "message": "Files saved but could not be opened. Find them in the save directory.",
+    "description": "Files saved but could not be opened. Find them in the save directory.",
+    "sourceText": "文件已保存，但无法打开，请在保存目录查看。"
+  },
+  "enterAWorkbenchNameProjectNameAndWorkScope": {
+    "message": "Enter a workbench name, project name, and work scope.",
+    "description": "Enter a workbench name, project name, and work scope.",
+    "sourceText": "请填写工作台名称、工程名称和工作范围。"
+  },
+  "workbenchCreatedRefreshTaskStatusAndChooseItTo": {
+    "message": "Workbench created. Refresh task status and choose it to continue.",
+    "description": "Workbench created. Refresh task status and choose it to continue.",
+    "sourceText": "工作台已创建，请刷新任务状态后选择它继续。"
+  },
+  "chooseAWorkbenchForThisTaskOrCreateA": {
+    "message": "Choose a workbench for this task or create a separate work scope. joi starts planning after confirmation.",
+    "description": "Choose a workbench for this task or create a separate work scope. joi starts planning after confirmation.",
+    "sourceText": "请选择这条任务的工作台，或创建一个独立的工作范围。确认后 Joi 再开始安排。"
+  },
+  "submitting": {
+    "message": "Submitting…",
+    "description": "Submitting…",
+    "sourceText": "正在提交…"
+  },
+  "chooseTheCreatedWorkbenchToContinue": {
+    "message": "Choose the created workbench to continue",
+    "description": "Choose the created workbench to continue",
+    "sourceText": "选择已创建的工作台继续"
+  },
+  "connecting": {
+    "message": "Connecting",
+    "description": "Connecting",
+    "sourceText": "连接中"
+  },
+  "notPaired": {
+    "message": "Not paired",
+    "description": "Not paired",
+    "sourceText": "未配对"
+  },
+  "connectionDiagnosticsValue": {
+    "message": "Connection diagnostics · {p0}",
+    "description": "Connection diagnostics · {p0}",
+    "sourceText": "连接诊断 · {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "valueStatusValuePathValue": {
+    "message": "{p0}\nStatus: {p1}\nPath: {p2}",
+    "description": "{p0}\nStatus: {p1}\nPath: {p2}",
+    "sourceText": "{p0}\n状态：{p1}\n线路：{p2}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string"
+    }
+  },
+  "connectionDiagnostics": {
+    "message": "Connection diagnostics",
+    "description": "Connection diagnostics",
+    "sourceText": "连接诊断"
+  },
+  "sanitizedDiagnosticsCopied": {
+    "message": "Sanitized diagnostics copied",
+    "description": "Sanitized diagnostics copied",
+    "sourceText": "已复制脱敏诊断"
+  },
+  "copyDiagnostics": {
+    "message": "Copy diagnostics",
+    "description": "Copy diagnostics",
+    "sourceText": "复制诊断"
+  },
+  "valueAttemptValue": {
+    "message": "{p0} · Attempt {p1}",
+    "description": "{p0} · Attempt {p1}",
+    "sourceText": "{p0} · 第 {p1} 次尝试",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  },
+  "waitingToConnect": {
+    "message": "Waiting to connect",
+    "description": "Waiting to connect",
+    "sourceText": "等待连接"
+  },
+  "startingNativeConnection": {
+    "message": "Starting native connection",
+    "description": "Starting native connection",
+    "sourceText": "启动原生连接"
+  },
+  "creatingNetworkEndpoint": {
+    "message": "Creating network endpoint",
+    "description": "Creating network endpoint",
+    "sourceText": "创建网络端点"
+  },
+  "connectingToComputerDirectRelay": {
+    "message": "Connecting to computer (direct/relay)",
+    "description": "Connecting to computer (direct/relay)",
+    "sourceText": "连接电脑（直连/中继）"
+  },
+  "redialingWithTheExistingEndpoint": {
+    "message": "Redialing with the existing endpoint",
+    "description": "Redialing with the existing endpoint",
+    "sourceText": "复用网络端点重拨"
+  },
+  "waitingForRelayReadiness": {
+    "message": "Waiting for relay readiness",
+    "description": "Waiting for relay readiness",
+    "sourceText": "等待中继就绪"
+  },
+  "openingControlChannel": {
+    "message": "Opening control channel",
+    "description": "Opening control channel",
+    "sourceText": "打开控制通道"
+  },
+  "sendingTransportHandshake": {
+    "message": "Sending transport handshake",
+    "description": "Sending transport handshake",
+    "sourceText": "发送传输握手"
+  },
+  "verifyingPairingResumeHandshake": {
+    "message": "Verifying pairing/resume handshake",
+    "description": "Verifying pairing/resume handshake",
+    "sourceText": "验证配对/恢复握手"
+  },
+  "savingDeviceCredentials": {
+    "message": "Saving device credentials",
+    "description": "Saving device credentials",
+    "sourceText": "保存设备凭据"
+  },
+  "secureSessionEstablished": {
+    "message": "Secure session established",
+    "description": "Secure session established",
+    "sourceText": "安全会话已建立"
+  },
+  "loadingHomePage": {
+    "message": "Loading home page",
+    "description": "Loading home page",
+    "sourceText": "读取首页"
+  },
+  "homePageSynced": {
+    "message": "Home page synced",
+    "description": "Home page synced",
+    "sourceText": "首页已同步"
+  },
+  "joiRemoteDiag3StageValueHandshakeValueAttempts": {
+    "message": "joi remote-diag-3\nStage: {p0}\nHandshake: {p1}\nAttempts: {p2}\nLast failure: {p3}\n{p4}",
+    "description": "joi remote-diag-3\nStage: {p0}\nHandshake: {p1}\nAttempts: {p2}\nLast failure: {p3}\n{p4}",
+    "sourceText": "joi remote-diag-3\n阶段：{p0}\n握手：{p1}\n尝试：{p2}\n最近失败：{p3}\n{p4}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string",
+      "p2": "string",
+      "p3": "string",
+      "p4": "string"
+    }
+  },
+  "couldNotConnectToTheComputerMakeSureIt": {
+    "message": "Could not connect to the computer. Make sure it is online, update both apps, and generate a new QR code to retry.",
+    "description": "Could not connect to the computer. Make sure it is online, update both apps, and generate a new QR code to retry.",
+    "sourceText": "未能连接电脑。请确认电脑在线、两端已更新，并在电脑上生成新二维码重试。"
+  },
+  "couldNotRefreshPreviousContentIsPreservedPullDown": {
+    "message": "Could not refresh. Previous content is preserved. Pull down to retry.",
+    "description": "Could not refresh. Previous content is preserved. Pull down to retry.",
+    "sourceText": "未能刷新，已保留上次内容。下拉重试。"
+  },
+  "couldNotUpdateTheWorkbenchListRefreshAgain": {
+    "message": "Could not update the workbench list. Refresh again.",
+    "description": "Could not update the workbench list. Refresh again.",
+    "sourceText": "工作台列表未能更新，请重新刷新。"
+  },
+  "connectionDiagnosticsValueValue": {
+    "message": "Connection diagnostics: {p0} · {p1}",
+    "description": "Connection diagnostics: {p0} · {p1}",
+    "sourceText": "连接诊断：{p0} · {p1}",
+    "placeholders": {
+      "p0": "string",
+      "p1": "string"
+    }
+  }
+}

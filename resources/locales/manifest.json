@@ -1,0 +1,7 @@
+{
+  "source": "en",
+  "languages": [
+    { "code": "en", "name": "English", "enabled": true },
+    { "code": "zh-CN", "name": "简体中文", "enabled": true }
+  ]
+}

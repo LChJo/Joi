@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>joi Runtime Hub Architecture Diagram</title>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js" integrity="sha384-en/ztfPSRkGfME4KIm05joYXynqzUgbsG5nMrj/xEFAHXkeZfO3yMK8QQ+mP7p1/" crossorigin="anonymous"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'JetBrains Mono', 'Microsoft YaHei', 'Noto Sans SC', monospace;
+      background: #020617;
+      min-height: 100vh;
+      padding: 2rem;
+      color: white;
+    }
+    .container { max-width: 1280px; margin: 0 auto; }
+    .header { margin-bottom: 2rem; }
+    .header-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.5rem; }
+    .pulse-dot { width: 12px; height: 12px; background: #22d3ee; border-radius: 50%; animation: pulse 2s infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+    h1 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.025em; }
+    .subtitle { color: #94a3b8; font-size: 0.875rem; margin-left: 1.75rem; }
+    .diagram-container {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 1rem;
+      border: 1px solid #1e293b;
+      padding: 1.5rem;
+      overflow-x: auto;
+    }
+    svg { width: 100%; min-width: 1000px; display: block; }
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 1rem;
+      margin-top: 2rem;
+    }
+    .card {
+      background: rgba(15, 23, 42, 0.5);
+      border-radius: 0.75rem;
+      border: 1px solid #1e293b;
+      padding: 1.25rem;
+    }
+    .card-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
+    .card-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .card-dot.cyan { background: #22d3ee; }
+    .card-dot.emerald { background: #34d399; }
+    .card-dot.violet { background: #a78bfa; }
+    .card-dot.amber { background: #fbbf24; }
+    .card-dot.rose { background: #fb7185; }
+    .card h3 { font-size: 0.875rem; font-weight: 600; }
+    .card ul { list-style: none; color: #94a3b8; font-size: 0.75rem; }
+    .card li { margin-bottom: 0.375rem; }
+    .footer { text-align: center; margin-top: 1.5rem; color: #475569; font-size: 0.75rem; }
+    .toolbar { display: flex; gap: 0.5rem; margin-left: auto; flex-shrink: 0; align-items: center; }
+    .toolbar-toggle {
+      background: transparent; border: none; color: #475569; cursor: pointer;
+      font-size: 1.25rem; line-height: 1; padding: 0.25rem 0.5rem; border-radius: 0.375rem;
+      transition: color 0.2s, background 0.2s;
+    }
+    .toolbar-toggle:hover { color: #94a3b8; background: rgba(30, 41, 59, 0.5); }
+    .toolbar-actions { display: none; gap: 0.5rem; }
+    .toolbar.expanded .toolbar-actions { display: flex; }
+    .toolbar-actions button {
+      background: rgba(30, 41, 59, 0.8); border: 1px solid #334155; color: #94a3b8;
+      padding: 0.375rem 0.75rem; border-radius: 0.375rem; font-family: inherit;
+      font-size: 0.75rem; cursor: pointer; transition: all 0.2s; white-space: nowrap;
+    }
+    .toolbar-actions button:hover { background: rgba(51, 65, 85, 0.8); color: white; border-color: #475569; }
+    @media print {
+      body { background: #020617; padding: 1rem; }
+      .toolbar { display: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container" id="report-container">
+    <div class="header">
+      <div class="header-row">
+        <div class="pulse-dot"></div>
+        <h1>joi · 数字生命 Runtime Hub 架构</h1>
+        <div class="toolbar">
+          <div class="toolbar-actions">
+            <button onclick="copyAsImage(this)">📋 Copy</button>
+            <button onclick="downloadPNG(this)">🖼️ PNG</button>
+            <button onclick="downloadPDF(this)">📄 PDF</button>
+          </div>
+          <button class="toolbar-toggle" onclick="this.parentElement.classList.toggle('expanded')" title="Export options" aria-label="Export options">⋯</button>
+        </div>
+      </div>
+      <p class="subtitle">Electron 桌面常驻 · 六边形分层 · actor 树单根 tick 事件驱动内核 · 唯一 joi + Pi 推理基座 + 工作台编排（ADR 0001–0010）</p>
+    </div>
+
+    <div class="diagram-container">
+      <svg viewBox="0 0 1200 910">
+        <defs>
+          <marker id="arrowhead" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+          </marker>
+          <marker id="arrowhead-rose" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+            <polygon points="0 0, 10 3.5, 0 7" fill="#fb7185" />
+          </marker>
+          <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+            <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+          </pattern>
+        </defs>
+
+        <rect width="100%" height="100%" fill="url(#grid)" />
+
+        <!-- ============ ARROWS (drawn first, behind boxes) ============ -->
+
+        <!-- 用户 → Renderer -->
+        <line x1="140" y1="98" x2="188" y2="166" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <!-- LAN 浏览器 → Interface -->
+        <line x1="300" y1="98" x2="518" y2="166" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="360" y="128" fill="#94a3b8" font-size="8">LAN HTTP :43130（可选 RFC1918）</text>
+        <!-- Renderer → Interface 轮询 -->
+        <line x1="372" y1="222" x2="408" y2="222" stroke="#22d3ee" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="390" y="212" fill="#22d3ee" font-size="7" text-anchor="middle">/api/v1</text>
+        <!-- Preload → Interface（nonce，认证流） -->
+        <line x1="372" y1="346" x2="408" y2="346" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="5,5" marker-end="url(#arrowhead-rose)"/>
+        <text x="390" y="338" fill="#fb7185" font-size="7" text-anchor="middle">nonce</text>
+        <!-- Interface → Application -->
+        <line x1="575" y1="378" x2="575" y2="414" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <!-- Application → Domain -->
+        <line x1="300" y1="588" x2="300" y2="624" stroke="#34d399" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <!-- Application(编排) → Pi 推理运行时（走廊 x=760） -->
+        <path d="M 742 470 L 760 470 L 760 216 L 778 216" fill="none" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="756" y="330" fill="#fbbf24" font-size="7" transform="rotate(-90 756 330)" text-anchor="middle">routing / execution turn</text>
+        <!-- Outbox → A2A Gateway（走廊） -->
+        <path d="M 722 520 L 760 520 L 760 492 L 778 492" fill="none" stroke="#fb923c" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="752" y="514" fill="#fb923c" font-size="7" text-anchor="end">partner.dispatch</text>
+        <!-- Partner 引擎 → 本机 CLI -->
+        <line x1="850" y1="298" x2="744" y2="100" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="812" y="210" fill="#94a3b8" font-size="8">stdio · 用户本机认证</text>
+        <!-- Pi 运行时 → 模型源 -->
+        <line x1="932" y1="168" x2="918" y2="100" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="948" y="140" fill="#fbbf24" font-size="8">HTTPS</text>
+        <!-- A2A Gateway → LAN 搭档（右缘走廊 x=1105） -->
+        <path d="M 1092 488 L 1105 488 L 1105 120 L 1096 120 L 1096 102" fill="none" stroke="#94a3b8" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="1112" y="300" fill="#94a3b8" font-size="8" transform="rotate(90 1112 300)" text-anchor="middle">A2A v0.3 · Bearer 主进程内解密</text>
+        <!-- Infrastructure 持久化 → SQLite -->
+        <line x1="778" y1="738" x2="604" y2="764" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrowhead)"/>
+        <text x="688" y="740" fill="#a78bfa" font-size="7" text-anchor="middle">repositories · 迁移</text>
+        <!-- Infrastructure 实现 domain ports（依赖反转） -->
+        <path d="M 778 620 L 744 648" fill="none" stroke="#a78bfa" stroke-width="1" stroke-dasharray="3,3"/>
+        <text x="762" y="612" fill="#a78bfa" font-size="7" text-anchor="end">实现 ports</text>
+
+        <!-- ============ EXTERNAL ACTORS (top row) ============ -->
+
+        <rect x="60" y="34" width="140" height="64" rx="6" fill="#0f172a"/>
+        <rect x="60" y="34" width="140" height="64" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="130" y="58" fill="white" font-size="11" font-weight="600" text-anchor="middle">用户</text>
+        <text x="130" y="76" fill="#94a3b8" font-size="9" text-anchor="middle">桌面窗口 / 托盘</text>
+
+        <rect x="230" y="34" width="130" height="64" rx="6" fill="#0f172a"/>
+        <rect x="230" y="34" width="130" height="64" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="295" y="58" fill="white" font-size="11" font-weight="600" text-anchor="middle">局域网浏览器</text>
+        <text x="295" y="76" fill="#94a3b8" font-size="9" text-anchor="middle">可信私网 · 口令登录</text>
+
+        <rect x="640" y="34" width="170" height="64" rx="6" fill="#0f172a"/>
+        <rect x="640" y="34" width="170" height="64" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="725" y="58" fill="white" font-size="11" font-weight="600" text-anchor="middle">本机 CLI</text>
+        <text x="725" y="76" fill="#94a3b8" font-size="9" text-anchor="middle">Claude Code / Codex</text>
+
+        <rect x="840" y="34" width="160" height="64" rx="6" fill="#0f172a"/>
+        <rect x="840" y="34" width="160" height="64" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="920" y="58" fill="white" font-size="11" font-weight="600" text-anchor="middle">LLM 模型源</text>
+        <text x="920" y="76" fill="#94a3b8" font-size="9" text-anchor="middle">六厂商 · OpenAI/Anthropic 协议</text>
+
+        <rect x="1030" y="34" width="130" height="64" rx="6" fill="#0f172a"/>
+        <rect x="1030" y="34" width="130" height="64" rx="6" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1.5"/>
+        <text x="1095" y="58" fill="white" font-size="11" font-weight="600" text-anchor="middle">LAN A2A 搭档</text>
+        <text x="1095" y="76" fill="#94a3b8" font-size="9" text-anchor="middle">Agent Card + Token</text>
+
+        <!-- ============ ELECTRON REGION ============ -->
+
+        <rect x="40" y="130" width="1080" height="700" rx="12" fill="rgba(251, 191, 36, 0.04)" stroke="#fbbf24" stroke-width="1" stroke-dasharray="8,4"/>
+        <text x="56" y="152" fill="#fbbf24" font-size="10" font-weight="600">个人电脑 · Electron 单主进程（单实例锁 · 关窗隐藏托盘 · 崩溃恢复）</text>
+
+        <!-- Renderer -->
+        <rect x="70" y="170" width="300" height="110" rx="6" fill="#0f172a"/>
+        <rect x="70" y="170" width="300" height="110" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="220" y="192" fill="white" font-size="12" font-weight="600" text-anchor="middle">React Renderer</text>
+        <text x="220" y="211" fill="#94a3b8" font-size="9" text-anchor="middle">JoiHome 首页 · 工作台/Agent · Partner · Onboarding</text>
+        <text x="220" y="228" fill="#94a3b8" font-size="9" text-anchor="middle">仅用 shared DTO + /api/v1</text>
+        <text x="220" y="245" fill="#94a3b8" font-size="9" text-anchor="middle">纯轮询 1.5s / 2.5s</text>
+        <text x="220" y="266" fill="#22d3ee" font-size="8" text-anchor="middle">SSE 已退役（ADR 0009）</text>
+
+        <!-- Preload -->
+        <rect x="70" y="320" width="300" height="56" rx="6" fill="#0f172a"/>
+        <rect x="70" y="320" width="300" height="56" rx="6" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+        <text x="220" y="342" fill="white" font-size="11" font-weight="600" text-anchor="middle">Preload · 桌面桥（极薄）</text>
+        <text x="220" y="360" fill="#94a3b8" font-size="9" text-anchor="middle">bootstrap nonce · 窗口控制 · 目录选择</text>
+
+        <!-- Interface 层 -->
+        <rect x="410" y="170" width="330" height="206" rx="6" fill="#0f172a"/>
+        <rect x="410" y="170" width="330" height="206" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="575" y="192" fill="white" font-size="12" font-weight="600" text-anchor="middle">Interface · HTTP /api/v1</text>
+        <text x="575" y="214" fill="#94a3b8" font-size="9" text-anchor="middle">api-handler ～34 资源族 · Idempotency-Key</text>
+        <text x="575" y="232" fill="#94a3b8" font-size="9" text-anchor="middle">loopback :43130 常开 + LAN 监听可选</text>
+        <text x="575" y="250" fill="#94a3b8" font-size="9" text-anchor="middle">会话 / CSRF / Origin 校验 · 限流</text>
+        <text x="575" y="268" fill="#94a3b8" font-size="9" text-anchor="middle">静态 renderer · 只读恢复模式 handler</text>
+        <text x="575" y="294" fill="#34d399" font-size="8" text-anchor="middle">auth: bootstrap / login / sessions</text>
+        <text x="575" y="310" fill="#34d399" font-size="8" text-anchor="middle">joi · workbenches · partners · work</text>
+        <text x="575" y="326" fill="#34d399" font-size="8" text-anchor="middle">model-sources · scenarios · backups</text>
+        <text x="575" y="342" fill="#34d399" font-size="8" text-anchor="middle">diagnostics · settings · agents</text>
+        <text x="575" y="364" fill="#94a3b8" font-size="8" text-anchor="middle">业务 API 只走 HTTP，preload 不复制</text>
+
+        <!-- Application 层群组 -->
+        <rect x="70" y="416" width="670" height="170" rx="8" fill="transparent" stroke="#34d399" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="82" y="432" fill="#34d399" font-size="9" font-weight="600">Application · 编排 ports 与领域行为（不实现传输/SQL/Electron）</text>
+
+        <!-- Actor Tree -->
+        <rect x="90" y="446" width="250" height="124" rx="6" fill="#0f172a"/>
+        <rect x="90" y="446" width="250" height="124" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="215" y="468" fill="white" font-size="11" font-weight="600" text-anchor="middle">Actor Tree（ADR 0009）</text>
+        <text x="215" y="487" fill="#94a3b8" font-size="8.5" text-anchor="middle">单根 tick 2s · 重入守卫 · 串行收敛</text>
+        <text x="215" y="503" fill="#94a3b8" font-size="8.5" text-anchor="middle">joi → workbench → agent 三级遍历</text>
+        <text x="215" y="519" fill="#94a3b8" font-size="8.5" text-anchor="middle">task / harness / rhythm / agent 组件</text>
+        <text x="215" y="535" fill="#94a3b8" font-size="8.5" text-anchor="middle">无定时器 · 不互发消息 · 协调只经事实表</text>
+        <text x="215" y="556" fill="#34d399" font-size="7.5" text-anchor="middle">harness 目标地图（ADR 0010）· 单槽位推理</text>
+
+        <!-- 编排服务 -->
+        <rect x="360" y="446" width="240" height="124" rx="6" fill="#0f172a"/>
+        <rect x="360" y="446" width="240" height="124" rx="6" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1.5"/>
+        <text x="480" y="468" fill="white" font-size="11" font-weight="600" text-anchor="middle">编排服务</text>
+        <text x="480" y="488" fill="#94a3b8" font-size="8.5" text-anchor="middle">JoiCoordinator · 持久 Inbox</text>
+        <text x="480" y="504" fill="#94a3b8" font-size="8.5" text-anchor="middle">结构化澄清 · user_ask 可恢复</text>
+        <text x="480" y="520" fill="#94a3b8" font-size="8.5" text-anchor="middle">Workbench 上下文 / 工作区</text>
+        <text x="480" y="536" fill="#94a3b8" font-size="8.5" text-anchor="middle">WorkOrchestration · WorkResult</text>
+        <text x="480" y="552" fill="#94a3b8" font-size="8.5" text-anchor="middle">PartnerInstance · HomeFeed · 模型源</text>
+
+        <!-- Outbox -->
+        <rect x="616" y="446" width="106" height="124" rx="6" fill="#0f172a"/>
+        <rect x="616" y="446" width="106" height="124" rx="6" fill="rgba(251, 146, 60, 0.3)" stroke="#fb923c" stroke-width="1.5"/>
+        <text x="669" y="472" fill="white" font-size="11" font-weight="600" text-anchor="middle">Outbox</text>
+        <text x="669" y="490" fill="white" font-size="11" font-weight="600" text-anchor="middle">Dispatcher</text>
+        <text x="669" y="512" fill="#94a3b8" font-size="8" text-anchor="middle">事务性外发</text>
+        <text x="669" y="528" fill="#94a3b8" font-size="8" text-anchor="middle">稳定幂等标识</text>
+        <text x="669" y="544" fill="#94a3b8" font-size="8" text-anchor="middle">失败可重投</text>
+
+        <!-- Domain 层 -->
+        <rect x="70" y="626" width="670" height="80" rx="6" fill="#0f172a"/>
+        <rect x="70" y="626" width="670" height="80" rx="6" fill="rgba(6, 78, 59, 0.25)" stroke="#34d399" stroke-width="1.5" stroke-dasharray="2,2"/>
+        <text x="405" y="648" fill="white" font-size="12" font-weight="600" text-anchor="middle">Domain · 纯 TypeScript（无 Electron / Node / SQLite / HTTP / A2A SDK）</text>
+        <text x="405" y="670" fill="#94a3b8" font-size="9" text-anchor="middle">workbench · work · partners · events · rhythm · lives · wakes · model-sources · a2a</text>
+        <text x="405" y="690" fill="#34d399" font-size="8" text-anchor="middle">状态机 / 优先级 / 动作策略只在此定义 · Life/Wake 为只读兼容层（ADR 0003）</text>
+
+        <!-- Infrastructure 列 -->
+        <rect x="770" y="158" width="330" height="632" rx="8" fill="transparent" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,4"/>
+        <text x="782" y="152" fill="#fbbf24" font-size="9" font-weight="600">Infrastructure · 实现 ports（不重定义领域规则）</text>
+
+        <!-- Pi 推理运行时 -->
+        <rect x="780" y="170" width="310" height="90" rx="6" fill="#0f172a"/>
+        <rect x="780" y="170" width="310" height="90" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="935" y="192" fill="white" font-size="11" font-weight="600" text-anchor="middle">Pi 推理运行时（唯一主推理基座）</text>
+        <text x="935" y="212" fill="#94a3b8" font-size="8.5" text-anchor="middle">routing turn 读摘要 · execution turn 装配上下文</text>
+        <text x="935" y="228" fill="#94a3b8" font-size="8.5" text-anchor="middle">结构化工具集 · 永不持 shell / fs / 编辑</text>
+        <text x="935" y="247" fill="#fbbf24" font-size="8" text-anchor="middle">Pi SDK 禁闭于 infrastructure/pi</text>
+
+        <!-- Partner 引擎 -->
+        <rect x="780" y="300" width="310" height="110" rx="6" fill="#0f172a"/>
+        <rect x="780" y="300" width="310" height="110" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="935" y="322" fill="white" font-size="11" font-weight="600" text-anchor="middle">搭档执行引擎（ADR 0004 三值化）</text>
+        <text x="935" y="342" fill="#94a3b8" font-size="8.5" text-anchor="middle">pi-core · claude-code · codex · A2A</text>
+        <text x="935" y="358" fill="#94a3b8" font-size="8.5" text-anchor="middle">claim → prepare → ack outbox → fire 不 await</text>
+        <text x="935" y="374" fill="#94a3b8" font-size="8.5" text-anchor="middle">实例 EPHEMERAL / RESIDENT · 工作台私有</text>
+        <text x="935" y="394" fill="#fbbf24" font-size="8" text-anchor="middle">agentsdk 禁闭于 infrastructure/mana</text>
+
+        <!-- A2A Gateway -->
+        <rect x="780" y="450" width="310" height="80" rx="6" fill="#0f172a"/>
+        <rect x="780" y="450" width="310" height="80" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="935" y="472" fill="white" font-size="11" font-weight="600" text-anchor="middle">A2A Gateway · v0.3</text>
+        <text x="935" y="492" fill="#94a3b8" font-size="8.5" text-anchor="middle">出站网络策略（DNS 解析校验）· 429/503 breaker</text>
+        <text x="935" y="508" fill="#94a3b8" font-size="8.5" text-anchor="middle">stream / get / cancel / resubscribe · Artifact 下载</text>
+        <text x="935" y="523" fill="#fbbf24" font-size="8" text-anchor="middle">@a2a-js/sdk 仅限 infrastructure/a2a</text>
+
+        <!-- Security -->
+        <rect x="780" y="570" width="310" height="80" rx="6" fill="#0f172a"/>
+        <rect x="780" y="570" width="310" height="80" rx="6" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1.5"/>
+        <text x="935" y="592" fill="white" font-size="11" font-weight="600" text-anchor="middle">安全与凭据</text>
+        <text x="935" y="612" fill="#94a3b8" font-size="8.5" text-anchor="middle">Electron safeStorage 加密 · scrypt + salt</text>
+        <text x="935" y="628" fill="#94a3b8" font-size="8.5" text-anchor="middle">nonce 一次性 · 登录限流 · Bearer 不进业务表</text>
+        <text x="935" y="643" fill="#fb7185" font-size="8" text-anchor="middle">凭据永不下发浏览器 / 日志脱敏</text>
+
+        <!-- Workspace / Artifacts / Diagnostics -->
+        <rect x="780" y="690" width="310" height="90" rx="6" fill="#0f172a"/>
+        <rect x="780" y="690" width="310" height="90" rx="6" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1.5"/>
+        <text x="935" y="712" fill="white" font-size="11" font-weight="600" text-anchor="middle">工作区 · 产物 · 诊断</text>
+        <text x="935" y="732" fill="#94a3b8" font-size="8.5" text-anchor="middle">workspace provisioner + lease · 绝对路径私表</text>
+        <text x="935" y="748" fill="#94a3b8" font-size="8.5" text-anchor="middle">WorkResult 原子归档 · verifier 校验</text>
+        <text x="935" y="764" fill="#94a3b8" font-size="8.5" text-anchor="middle">JSONL 滚动诊断（仅安全字段）</text>
+
+        <!-- SQLite -->
+        <rect x="200" y="730" width="400" height="76" rx="6" fill="#0f172a"/>
+        <rect x="200" y="730" width="400" height="76" rx="6" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+        <text x="400" y="753" fill="white" font-size="12" font-weight="600" text-anchor="middle">SQLite（WAL · FTS5 · 40 次迁移）</text>
+        <text x="400" y="772" fill="#94a3b8" font-size="8.5" text-anchor="middle">事实表权威：inbox · work_items · dispatch_attempts</text>
+        <text x="400" y="788" fill="#94a3b8" font-size="8.5" text-anchor="middle">partner_instances · harness 地图 · outbox · 展示面 033+</text>
+        <text x="400" y="801" fill="#a78bfa" font-size="7.5" text-anchor="middle">runtime.sqlite · userData 版本化目录 · 备份/恢复模式</text>
+
+        <!-- ============ LEGEND ============ -->
+        <text x="60" y="856" fill="white" font-size="10" font-weight="600">图例</text>
+
+        <rect x="60" y="866" width="16" height="10" rx="2" fill="rgba(8, 51, 68, 0.4)" stroke="#22d3ee" stroke-width="1"/>
+        <text x="82" y="874" fill="#94a3b8" font-size="8">前端（Renderer / Preload）</text>
+
+        <rect x="240" y="866" width="16" height="10" rx="2" fill="rgba(6, 78, 59, 0.4)" stroke="#34d399" stroke-width="1"/>
+        <text x="262" y="874" fill="#94a3b8" font-size="8">应用 / 领域层</text>
+
+        <rect x="380" y="866" width="16" height="10" rx="2" fill="rgba(120, 53, 15, 0.3)" stroke="#fbbf24" stroke-width="1"/>
+        <text x="402" y="874" fill="#94a3b8" font-size="8">基础设施 / 引擎</text>
+
+        <rect x="530" y="866" width="16" height="10" rx="2" fill="rgba(76, 29, 149, 0.4)" stroke="#a78bfa" stroke-width="1"/>
+        <text x="552" y="874" fill="#94a3b8" font-size="8">持久化</text>
+
+        <rect x="630" y="866" width="16" height="10" rx="2" fill="rgba(136, 19, 55, 0.4)" stroke="#fb7185" stroke-width="1"/>
+        <text x="652" y="874" fill="#94a3b8" font-size="8">安全</text>
+
+        <rect x="720" y="866" width="16" height="10" rx="2" fill="rgba(251, 146, 60, 0.3)" stroke="#fb923c" stroke-width="1"/>
+        <text x="742" y="874" fill="#94a3b8" font-size="8">消息 / Outbox</text>
+
+        <rect x="850" y="866" width="16" height="10" rx="2" fill="rgba(30, 41, 59, 0.5)" stroke="#94a3b8" stroke-width="1"/>
+        <text x="872" y="874" fill="#94a3b8" font-size="8">外部角色</text>
+
+        <line x1="960" y1="871" x2="986" y2="871" stroke="#fb7185" stroke-width="1.5" stroke-dasharray="3,3"/>
+        <text x="992" y="874" fill="#94a3b8" font-size="8">认证流</text>
+
+        <rect x="1050" y="864" width="20" height="13" rx="3" fill="transparent" stroke="#fbbf24" stroke-width="1" stroke-dasharray="4,3"/>
+        <text x="1076" y="874" fill="#94a3b8" font-size="8">进程边界</text>
+      </svg>
+    </div>
+
+    <div class="cards">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot cyan"></div>
+          <h3>设计原理</h3>
+        </div>
+        <ul>
+          <li>• 唯一调度权威：全局单一 joi + Pi 唯一主推理基座，工作台只是上下文聚类，绝不成为第二个调度器（ADR 0002）</li>
+          <li>• 六边形分层：domain 纯 TS、ports 依赖反转，CI import 边界脚本强制执行允许矩阵，违规即失败</li>
+          <li>• 先持久化再行动：所有外部副作用走 transactional outbox + 稳定幂等标识，崩溃可重投</li>
+          <li>• 以遍历代替通知：actor 树 2s 单根 tick 收敛，回调/SSE 只观测不承载控制流（ADR 0009）</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot rose"></div>
+          <h3>可靠性与安全</h3>
+        </div>
+        <ul>
+          <li>• 崩溃恢复：启动首 tick 孤儿扫描（UNKNOWN 终态 / RESIDENT 续跑 / A2A recover），lease + 心跳校验</li>
+          <li>• 凭据隔离：safeStorage 加密、Bearer 只在主进程解密发送，永不下发 renderer 与日志</li>
+          <li>• 网络 fail-closed：loopback 常开保桌面可用，LAN 绑定失败不影响；出站 DNS 策略 + breaker 冷却</li>
+          <li>• 结构化澄清：user_ask 持久可恢复；连续即时失败写独立失败态停摆，绝不伪装成用户取消</li>
+        </ul>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <div class="card-dot violet"></div>
+          <h3>工程事实基线</h3>
+        </div>
+        <ul>
+          <li>• ~26.2k 行 TypeScript · 196 个源文件 · 10 份 ADR（0001–0010）</li>
+          <li>• SQLite WAL + FTS5，40 次显式迁移；展示面与运行事实分离（migration 033+）</li>
+          <li>• /api/v1 约 34 个资源族，写请求 Idempotency-Key，错误统一 code/requestId</li>
+          <li>• 155 个测试文件：unit / integration / contract / renderer / e2e 五层 + 架构边界测试</li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="footer">
+      joi · aimana/digital-life · 架构快照基于 2026-08-19 代码与 ADR 0001–0010 · Electron 43 + React 19 + SQLite + A2A v0.3
+    </p>
+  </div>
+
+  <script>
+    async function copyAsImage(btn) {
+      const orig = btn.textContent;
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const blob = await new Promise(r => canvas.toBlob(r, 'image/png'));
+        await navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        btn.textContent = '✓ Copied!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPNG(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const link = document.createElement('a');
+        link.download = 'joi-architecture.png';
+        link.href = canvas.toDataURL('image/png');
+        link.click();
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+
+    async function downloadPDF(btn) {
+      const orig = btn.textContent;
+      btn.textContent = '⏳ ...';
+      try {
+        const el = document.getElementById('report-container');
+        const r = el.getBoundingClientRect();
+        const pad = 32;
+        const canvas = await html2canvas(document.body, { backgroundColor: '#020617', scale: 2, useCORS: true, ignoreElements: (e) => e.classList && e.classList.contains('toolbar'), x: r.left + window.scrollX - pad, y: r.top + window.scrollY - pad, width: r.width + pad * 2, height: r.height + pad * 2 });
+        const imgData = canvas.toDataURL('image/png');
+        const { jsPDF } = window.jspdf;
+        const orientation = canvas.width > canvas.height ? 'landscape' : 'portrait';
+        const pdf = new jsPDF({ orientation, unit: 'px', format: [canvas.width, canvas.height], hotfixes: ['px_scaling'] });
+        pdf.addImage(imgData, 'PNG', 0, 0, canvas.width, canvas.height);
+        pdf.save('joi-architecture.pdf');
+        btn.textContent = '✓ Done!';
+      } catch (e) {
+        btn.textContent = '✗ Failed';
+      }
+      setTimeout(() => btn.textContent = orig, 2000);
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,306 @@
+{
+  "activity": {
+    "message": "Activity",
+    "description": "automation: Activity",
+    "sourceText": "运行记录"
+  },
+  "runsLast": {
+    "message": "runs · Last",
+    "description": "automation: runs · Last",
+    "sourceText": "次 · 最近"
+  },
+  "merged": {
+    "message": "· Merged",
+    "description": "automation: · Merged",
+    "sourceText": "· 合并"
+  },
+  "viewJoiGoal": {
+    "message": "View joi goal",
+    "description": "automation: View joi goal",
+    "sourceText": "查看 Joi 目标"
+  },
+  "couldNotLoadScheduledTasks": {
+    "message": "Could not load scheduled tasks.",
+    "description": "automation: Could not load scheduled tasks.",
+    "sourceText": "没能读取定时任务。"
+  },
+  "scheduledTaskSaved": {
+    "message": "Scheduled task saved.",
+    "description": "automation: Scheduled task saved.",
+    "sourceText": "定时任务已保存。"
+  },
+  "scheduledTaskCouldNotBeSaved": {
+    "message": "Scheduled task could not be saved.",
+    "description": "automation: Scheduled task could not be saved.",
+    "sourceText": "定时任务未保存。"
+  },
+  "scheduledTaskStatusCouldNotBeUpdated": {
+    "message": "Scheduled task status could not be updated.",
+    "description": "automation: Scheduled task status could not be updated.",
+    "sourceText": "定时任务状态未更新。"
+  },
+  "triggeredItWillWaitUntilTheCurrentTaskFinishes": {
+    "message": "Triggered. It will wait until the current task finishes.",
+    "description": "automation: Triggered. It will wait until the current task finishes.",
+    "sourceText": "已触发；原任务未收官时会自动等待。"
+  },
+  "addedToTheJoiGoalQueue": {
+    "message": "Added to the joi goal queue.",
+    "description": "automation: Added to the joi goal queue.",
+    "sourceText": "已加入 Joi 目标流。"
+  },
+  "scheduledTaskCouldNotBeStarted": {
+    "message": "Scheduled task could not be started.",
+    "description": "automation: Scheduled task could not be started.",
+    "sourceText": "定时任务未执行。"
+  },
+  "deletingWillNotCancelInputsAlreadyInTheJoi": {
+    "message": "Deleting will not cancel inputs already in the joi goal queue. Continue?",
+    "description": "automation: Deleting will not cancel inputs already in the joi goal queue. Continue?",
+    "sourceText": "删除后不会取消已经进入 Joi 目标流的输入。继续吗？"
+  },
+  "scheduledTaskCouldNotBeDeleted": {
+    "message": "Scheduled task could not be deleted.",
+    "description": "automation: Scheduled task could not be deleted.",
+    "sourceText": "定时任务未删除。"
+  },
+  "keepWorkMoving": {
+    "message": "Keep work moving",
+    "description": "automation: Keep work moving",
+    "sourceText": "按节奏推进"
+  },
+  "startANewTaskOnScheduleOrContinueAn": {
+    "message": "Start a new task on schedule, or continue an existing card after it finishes.",
+    "description": "automation: Start a new task on schedule, or continue an existing card after it finishes.",
+    "sourceText": "到点创建新任务，或在已有任务收官后继续同一张卡片。"
+  },
+  "newScheduledTask": {
+    "message": "New scheduled task",
+    "description": "automation: New scheduled task",
+    "sourceText": "新建定时任务"
+  },
+  "taskType": {
+    "message": "Task type",
+    "description": "automation: Task type",
+    "sourceText": "任务类型"
+  },
+  "createANewTask": {
+    "message": "Create a new task",
+    "description": "automation: Create a new task",
+    "sourceText": "创建新任务"
+  },
+  "continueAnExistingTask": {
+    "message": "Continue an existing task",
+    "description": "automation: Continue an existing task",
+    "sourceText": "继续已有任务"
+  },
+  "linkedTask": {
+    "message": "Linked task",
+    "description": "automation: Linked task",
+    "sourceText": "关联任务"
+  },
+  "chooseATaskCard": {
+    "message": "Choose a task card",
+    "description": "automation: Choose a task card",
+    "sourceText": "请选择任务卡片"
+  },
+  "runningTasksContinueAfterTheyFinishMissedTriggersAre": {
+    "message": "Running tasks continue after they finish. Missed triggers are merged into one.",
+    "description": "automation: Running tasks continue after they finish. Missed triggers are merged into one.",
+    "sourceText": "运行中的任务会等到收官后再继续，错过的触发会合并一次。"
+  },
+  "name": {
+    "message": "Name",
+    "description": "automation: Name",
+    "sourceText": "名称"
+  },
+  "continuationInstructions": {
+    "message": "Continuation instructions",
+    "description": "automation: Continuation instructions",
+    "sourceText": "续聊指令"
+  },
+  "prompt": {
+    "message": "Prompt",
+    "description": "automation: Prompt",
+    "sourceText": "提示词"
+  },
+  "whatShouldJoiDoNextWithThisTaskWhen": {
+    "message": "What should joi do next with this task when the time comes?",
+    "description": "automation: What should joi do next with this task when the time comes?",
+    "sourceText": "到点后，让 joi 接着这条任务做什么？"
+  },
+  "whatShouldThisTaskDoWhenTheTimeComes": {
+    "message": "What should this task do when the time comes?",
+    "description": "automation: What should this task do when the time comes?",
+    "sourceText": "这条定时任务到点执行什么？"
+  },
+  "leaveBlankToKeepTheSavedPrompt": {
+    "message": "Leave blank to keep the saved prompt",
+    "description": "automation: Leave blank to keep the saved prompt",
+    "sourceText": "保持空白不会改动已保存的提示词"
+  },
+  "preferredPartner": {
+    "message": "Preferred partner",
+    "description": "automation: Preferred partner",
+    "sourceText": "偏好搭档"
+  },
+  "useTheCurrentJoiPolicy": {
+    "message": "Use the current joi policy",
+    "description": "automation: Use the current joi policy",
+    "sourceText": "遵循 Joi 当前策略"
+  },
+  "frequency": {
+    "message": "Frequency",
+    "description": "automation: Frequency",
+    "sourceText": "频率"
+  },
+  "recurring": {
+    "message": "Recurring",
+    "description": "automation: Recurring",
+    "sourceText": "周期"
+  },
+  "interval": {
+    "message": "Interval",
+    "description": "automation: Interval",
+    "sourceText": "间隔"
+  },
+  "once": {
+    "message": "Once",
+    "description": "automation: Once",
+    "sourceText": "一次"
+  },
+  "recurrenceUnit": {
+    "message": "Recurrence unit",
+    "description": "automation: Recurrence unit",
+    "sourceText": "周期单位"
+  },
+  "daily": {
+    "message": "Daily",
+    "description": "automation: Daily",
+    "sourceText": "每天"
+  },
+  "weekly": {
+    "message": "Weekly",
+    "description": "automation: Weekly",
+    "sourceText": "每周"
+  },
+  "monthly": {
+    "message": "Monthly",
+    "description": "automation: Monthly",
+    "sourceText": "每月"
+  },
+  "localTime": {
+    "message": "Local time",
+    "description": "automation: Local time",
+    "sourceText": "本地时间"
+  },
+  "weekdayMondayIs0": {
+    "message": "Weekday (Monday is 0)",
+    "description": "automation: Weekday (Monday is 0)",
+    "sourceText": "星期（周一为 0）"
+  },
+  "dayOfMonth": {
+    "message": "Day of month",
+    "description": "automation: Day of month",
+    "sourceText": "月日"
+  },
+  "intervalInHours": {
+    "message": "Interval in hours",
+    "description": "automation: Interval in hours",
+    "sourceText": "间隔小时"
+  },
+  "runAt": {
+    "message": "Run at",
+    "description": "automation: Run at",
+    "sourceText": "一次时间"
+  },
+  "rruleStart": {
+    "message": "RRULE start",
+    "description": "automation: RRULE start",
+    "sourceText": "RRULE 起点"
+  },
+  "startDate": {
+    "message": "Start date",
+    "description": "automation: Start date",
+    "sourceText": "开始日期"
+  },
+  "endDate": {
+    "message": "End date",
+    "description": "automation: End date",
+    "sourceText": "结束日期"
+  },
+  "nextRunPreview": {
+    "message": "Next run preview",
+    "description": "automation: Next run preview",
+    "sourceText": "下次执行预览"
+  },
+  "theNextRunAppearsAfterSaving": {
+    "message": "The next run appears after saving",
+    "description": "automation: The next run appears after saving",
+    "sourceText": "保存后显示下次执行时间"
+  },
+  "nextRunValue": {
+    "message": "Next run: {p0}",
+    "description": "automation: Next run: {p0}",
+    "sourceText": "下次执行：{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "noScheduledTasksYet": {
+    "message": "No scheduled tasks yet.",
+    "description": "automation: No scheduled tasks yet.",
+    "sourceText": "还没有定时任务。"
+  },
+  "continueValue": {
+    "message": "Continue: {p0}",
+    "description": "automation: Continue: {p0}",
+    "sourceText": "继续：{p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "removedTask": {
+    "message": "Removed task",
+    "description": "automation: Removed task",
+    "sourceText": "已移除的任务"
+  },
+  "noNextRun": {
+    "message": "No next run",
+    "description": "automation: No next run",
+    "sourceText": "没有下次执行"
+  },
+  "nextValue": {
+    "message": "Next {p0}",
+    "description": "automation: Next {p0}",
+    "sourceText": "下次 {p0}",
+    "placeholders": {
+      "p0": "string"
+    }
+  },
+  "promptConfigured": {
+    "message": "Prompt configured",
+    "description": "automation: Prompt configured",
+    "sourceText": "提示词已配置"
+  },
+  "promptMissing": {
+    "message": "Prompt missing",
+    "description": "automation: Prompt missing",
+    "sourceText": "缺少提示词"
+  },
+  "thePromptIsNowVisibleInTheEditor": {
+    "message": "The prompt is now visible in the editor.",
+    "description": "automation: The prompt is now visible in the editor.",
+    "sourceText": "提示词已显示在编辑器中。"
+  },
+  "thePromptCouldNotBeLoaded": {
+    "message": "The prompt could not be loaded.",
+    "description": "automation: The prompt could not be loaded.",
+    "sourceText": "提示词未读取。"
+  },
+  "viewPrompt": {
+    "message": "View prompt",
+    "description": "automation: View prompt",
+    "sourceText": "查看提示词"
+  }
+}
