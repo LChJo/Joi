@@ -2,7 +2,7 @@
 
 # joi
 
-**A persistent, event-driven digital life runtime hub for personal computers.**
+**A continuously evolving, cross-platform Super Agent with multi-agent orchestration and multi-model support.**
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -14,7 +14,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6)](package.json)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-joi runs on your own computer as a long-lived runtime: a resident hub whose identity, memory and workbench outlive any single conversation. A single global **joi** orchestrator plans with the **Pi** reasoning base, keeps identity, persona, events, memory, routines, work and budgets in a local SQLite database, and dispatches execution to on-device Pi partners or LAN A2A partners inside isolated **workbench** contexts.
+joi brings multi-agent orchestration, continuous evolution, multiple model sources and desktop, web and Android access into one personal Super Agent. A single global **joi** orchestrator plans with the **Pi** reasoning base, keeps identity, persona, events, memory, routines, work and budgets in a local SQLite database, and dispatches execution to on-device Pi partners or LAN A2A partners inside isolated **workbench** contexts.
 
 - Package name, version and official description: `package.json` (`name`, `version`, `description`).
 - Product terms (joi, Pi, Workbench, Partner, Work, WorkResult, harness): `docs/00-sources-and-glossary.md` §0.

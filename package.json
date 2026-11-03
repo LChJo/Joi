@@ -2,7 +2,7 @@
   "name": "joi",
   "version": "0.1.0",
   "private": true,
-  "description": "joi is a persistent, event-driven digital life runtime hub for personal computers.",
+  "description": "joi is a continuously evolving, cross-platform Super Agent with multi-agent orchestration and multi-model support.",
   "author": "joi Contributors",
   "type": "module",
   "main": "dist/electron/main/index.js",

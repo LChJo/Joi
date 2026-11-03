@@ -2,7 +2,7 @@
 
 # joi
 
-**运行在个人电脑上的常驻、事件驱动数字生命 Runtime Hub。**
+**支持多 Agent 调度、持续进化、多模型与多平台的 Super Agent。**
 
 [English](README.md) | [简体中文](README.zh-CN.md)
 
@@ -14,7 +14,7 @@
 [![TypeScript](https://img.shields.io/badge/TypeScript-6.0.3-3178C6)](package.json)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-joi 运行在你自己的电脑上，是一个长期在线的 Runtime：常驻中枢，身份、记忆与工作台都活得比任何一次会话更久。唯一全局 **joi** 编排者使用 **Pi** 推理基座进行规划，把身份、人格、事件、记忆、作息、事务与预算保存在本地 SQLite 中，并在彼此隔离的**工作台（Workbench）**上下文里，把执行派给本机 Pi 搭档或局域网 A2A 搭档。
+joi 是面向个人用户的 Super Agent：统一调度多个 Agent，接入不同模型来源，从任务结果与反馈中持续进化，并提供桌面、Web 和 Android 使用入口。唯一全局 **joi** 编排者使用 **Pi** 推理基座进行规划，把身份、人格、事件、记忆、作息、事务与预算保存在本地 SQLite 中，并在彼此隔离的**工作台（Workbench）**上下文里，把执行派给本机 Pi 搭档或局域网 A2A 搭档。
 
 - 包名、版本与官方描述：`package.json`（`name`、`version`、`description`）。
 - 产品术语（joi、Pi、Workbench、Partner、Work、WorkResult、harness）：`docs/00-sources-and-glossary.md` §0。
