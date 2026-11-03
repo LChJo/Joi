@@ -4,16 +4,13 @@ import path from "node:path";
 
 import { WorkbenchChangeService } from "../../src/main/application/joi/workbench-change-service.js";
 import { SqliteWorkbenchChangeRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-change-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("Workbench destructive change confirmation", () => {
   it("never archives or merges before confirmation and preserves source facts after merge", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workbench-change-"));
-    const database = await openRuntimeDatabase({
-      databasePath: path.join(root, "runtime.sqlite"),
-      migrationsDirectory: path.resolve("resources/migrations"),
-    });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const now = "2026-07-15T12:00:00.000Z";
       database.transaction((connection) => {
@@ -54,7 +51,7 @@ describe("Workbench destructive change confirmation", () => {
 
   it("refuses confirmation while the source Workbench owns nonterminal work", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workbench-change-work-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const now = "2026-07-15T12:00:00.000Z";
       database.transaction((connection) => {

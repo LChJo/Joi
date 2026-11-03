@@ -6,14 +6,14 @@ import { PartnerRegistryService } from "../../src/main/application/partners/part
 import { SqlitePartnerInstanceMessageStore } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-message-store.js";
 import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("SQLite partner instances", () => {
   it("persists instances, recovers crashed ones at boot and round-trips conversation messages", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-instances-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    const database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(databasePath);
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
         (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label, memory_namespace_id, status, created_at, updated_at)

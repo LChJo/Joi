@@ -1,13 +1,13 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { openRuntimeDatabase } from '../../src/main/infrastructure/persistence/runtime-database.js';
+import { openRuntimeDatabaseFixture } from '../support/runtime-database-fixture.js';
 import { SqliteResultExports } from '../../src/main/infrastructure/persistence/sqlite-result-exports.js';
 
 it('persists a private snapshot and exactly one outbox job across reopen and rejects key reuse', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'joi-export-test-'));
-  const options = { databasePath: path.join(root, 'test.sqlite'), migrationsDirectory: path.resolve('resources/migrations') };
-  let database = await openRuntimeDatabase(options);
+  const databasePath = path.join(root, 'test.sqlite');
+  let database = await openRuntimeDatabaseFixture(databasePath);
   try {
     let jobs = new SqliteResultExports(database);
     const input = { goalId: 'goal', format: 'pdf' as const, body: '# Only final', title: 'title', digest: 'digest', idempotencyKey: 'stable' };
@@ -15,7 +15,7 @@ it('persists a private snapshot and exactly one outbox job across reopen and rej
     expect(await jobs.create(input)).toEqual(first);
     expect(JSON.stringify(first)).not.toContain('Only final');
     expect(database.transaction(c => c.prepare("SELECT count(*) AS n FROM outbox WHERE kind = 'result.export'").get())?.n).toBe(1);
-    database.close(); database = await openRuntimeDatabase(options); jobs = new SqliteResultExports(database);
+    database.close(); database = await openRuntimeDatabaseFixture(databasePath); jobs = new SqliteResultExports(database);
     expect(await jobs.create(input)).toEqual(first);
     expect(jobs.record(first.exportId)?.body).toBe(input.body);
     await expect(jobs.create({ ...input, digest: 'changed' })).rejects.toThrow('export_idempotency_conflict');
@@ -27,8 +27,8 @@ it('persists a private snapshot and exactly one outbox job across reopen and rej
 
 it('persists selected result identity across reopen and rejects idempotency reuse for another result with the same body', async () => {
   const root = await mkdtemp(path.join(tmpdir(), 'joi-history-export-test-'));
-  const options = { databasePath: path.join(root, 'test.sqlite'), migrationsDirectory: path.resolve('resources/migrations') };
-  let database = await openRuntimeDatabase(options);
+  const databasePath = path.join(root, 'test.sqlite');
+  let database = await openRuntimeDatabaseFixture(databasePath);
   try {
     let jobs = new SqliteResultExports(database);
     const common = { goalId: 'goal', format: 'png' as const, body: '# Identical delivery', title: 'Synthetic', digest: 'same-digest', idempotencyKey: 'history-stable' };
@@ -43,7 +43,7 @@ it('persists selected result identity across reopen and rejects idempotency reus
     });
     const first = await jobs.create(input);
     expect(await jobs.find(input)).toEqual(first);
-    database.close(); database = await openRuntimeDatabase(options); jobs = new SqliteResultExports(database);
+    database.close(); database = await openRuntimeDatabaseFixture(databasePath); jobs = new SqliteResultExports(database);
     expect(await jobs.create(input)).toEqual(first);
     expect(jobs.record(first.exportId)?.body).toBe(input.body);
     for (const target of [{ ...common, resultId: '2'.repeat(32) }, common]) {

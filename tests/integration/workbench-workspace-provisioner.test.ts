@@ -5,7 +5,7 @@ import path from "node:path";
 import { WorkbenchWorkspaceProvisioner } from "../../src/main/infrastructure/persistence/workbench-workspace-provisioner.js";
 import { WorkbenchRegistryService } from "../../src/main/application/joi/workbench-registry-service.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 const outboxRecord = {
   attemptCount: 0,
@@ -20,7 +20,7 @@ const outboxRecord = {
 describe("WorkbenchWorkspaceProvisioner", () => {
   it("assigns the frontend debugging environment label during Workbench creation", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workbench-naming-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       let sequence = 0;
       const workbench = await new WorkbenchRegistryService({
@@ -39,7 +39,7 @@ describe("WorkbenchWorkspaceProvisioner", () => {
 
   it("creates a managed directory idempotently, records failures, and supports retry", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workbench-workspace-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO workbenches
         (workbench_id, name, persona_revision_id, persona_summary, scope_summary, project_label,

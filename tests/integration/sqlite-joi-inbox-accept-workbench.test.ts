@@ -4,13 +4,13 @@ import path from "node:path";
 
 import { JoiInboxService } from "../../src/main/application/joi/joi-inbox-service.js";
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("sqlite joi inbox accept workbench", () => {
   it("persists a user-chosen Workbench on accept and leaves autonomous inputs unscoped", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-accept-workbench-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const repository = new SqliteJoiInboxRepository(database);
       const inbox = new JoiInboxService({ clock: new TestClock(), ids: new TestIds(), repository });

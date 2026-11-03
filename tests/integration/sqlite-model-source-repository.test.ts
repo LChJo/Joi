@@ -5,10 +5,10 @@ import path from "node:path";
 import type { ModelSourceRecord } from "../../src/main/application/ports/model-source-ports.js";
 import { createModelSource, reviseModelSource } from "../../src/main/domain/model-sources/model-source.js";
 import { SqliteModelSourceRepository } from "../../src/main/infrastructure/persistence/sqlite-model-source-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { ModelSourceService } from "../../src/main/application/model-sources/model-source-service.js";
 import { SqlitePiCredentialRepository } from "../../src/main/infrastructure/persistence/sqlite-pi-credential-repository.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 function record(sourceId: string, order: number): ModelSourceRecord {
   const createdAt = order === 0 ? "2026-07-28T10:00:00.000Z" : "2026-07-28T10:00:01.000Z";
@@ -38,7 +38,7 @@ describe("SqliteModelSourceRepository", () => {
   it("deletes a used source and its secret without changing historical turn revisions after restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-source-delete-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    let database = await openRuntimeDatabaseFixture(databasePath);
     try {
       const credentials = new SqlitePiCredentialRepository(database);
       const repository = new SqliteModelSourceRepository(database);
@@ -73,7 +73,7 @@ describe("SqliteModelSourceRepository", () => {
       })).toBe(false);
       expect(await repository.get("used")).toBeNull();
       database.close();
-      database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      database = await openRuntimeDatabaseFixture(databasePath);
       expect(await new SqliteModelSourceRepository(database).list()).toHaveLength(1);
       expect(await new SqlitePiCredentialRepository(database).read("joi-source:used")).toBeNull();
       database.transaction((connection) => {
@@ -92,7 +92,7 @@ describe("SqliteModelSourceRepository", () => {
 
   it("removes unreferenced credentials and treats repeated deletion as empty", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-credential-delete-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const credentials = new SqlitePiCredentialRepository(database);
       await credentials.write({ encryptedBlob: new Uint8Array([1]), providerId: "orphan", type: "api_key", version: 1 });
@@ -109,7 +109,7 @@ describe("SqliteModelSourceRepository", () => {
 
   it("persists the dedicated token-plan access mode", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-token-plan-source-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO model_source_credentials
         (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES (?, 'api_key', ?, 1, ?)`)
@@ -127,7 +127,7 @@ describe("SqliteModelSourceRepository", () => {
 
   it("remembers a tool capability proof for the active revision pair only", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-tool-proof-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO model_source_credentials
         (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES (?, 'api_key', ?, 1, ?)`)
@@ -157,7 +157,7 @@ describe("SqliteModelSourceRepository", () => {
   it("restores sources, health and deterministic order after a process restart", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-model-sources-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    let database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    let database = await openRuntimeDatabaseFixture(databasePath);
     try {
       database.transaction((connection) => {
         const statement = connection.prepare(`INSERT INTO model_source_credentials
@@ -178,7 +178,7 @@ describe("SqliteModelSourceRepository", () => {
       await repository.setOrder(["source-b", "source-a"]);
       database.close();
 
-      database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+      database = await openRuntimeDatabaseFixture(databasePath);
       const restored = await new SqliteModelSourceRepository(database).list();
       expect(restored).toHaveLength(2);
       expect(restored[0]?.source.sourceId).toBe("source-b");
@@ -200,7 +200,7 @@ describe("SqliteModelSourceRepository", () => {
   it("round-trips configured limits without rewriting the revision they replaced", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-source-limits-"));
     const databasePath = path.join(root, "runtime.sqlite");
-    const database = await openRuntimeDatabase({ databasePath, migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(databasePath);
     try {
       const repository = new SqliteModelSourceRepository(database);
       const sourceId = "source-limits";
@@ -259,7 +259,7 @@ describe("SqliteModelSourceRepository", () => {
 
   it("rejects health writes from an obsolete source revision", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-model-source-health-race-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO model_source_credentials
         (provider_id, credential_type, encrypted_blob, credential_version, updated_at) VALUES (?, 'api_key', ?, 1, ?)`)

@@ -6,13 +6,13 @@ import { PartnerRegistryService } from "../../src/main/application/partners/part
 import type { WorkItem } from "../../src/main/domain/work/work.js";
 import { SqliteDispatchPolicyGate } from "../../src/main/infrastructure/persistence/sqlite-dispatch-policy-gate.js";
 import { SqlitePartnerRegistryRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-registry-repository.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 
 describe("SQLite dispatch policy gate", () => {
   it("allows NONE without a lease, blocks all A2A file work, and gates local file work on the Workbench workspace", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-dispatch-policy-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       const partners = new PartnerRegistryService({ clock, ids: new TestIds(), repository: new SqlitePartnerRegistryRepository(database) });
