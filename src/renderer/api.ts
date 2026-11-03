@@ -23,6 +23,7 @@ import { connectDesktopLocale, localeVersion, t, errorNotice, translateNotice } 
 import type { EvolutionDryRunReportDto, EvolutionOverviewDto, EvolutionStatusDto } from "../shared/evolution";
 import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiRuntimeDto } from "../shared/joi";
+import type { GoalArtifactPage, GoalArtifactPageDto } from "../shared/goal-artifacts";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
 
 export class ApiError extends Error {
@@ -89,6 +90,11 @@ export class DigitalLifeApi {
     return this.request<undefined>("/api/v1/auth/password", { body: { currentPassword, newPassword }, method: "POST" });
   }
   joiSnapshot() { return this.request<JoiSnapshotDto>("/api/v1/joi"); }
+  joiGoalArtifacts(goalId: string, page: GoalArtifactPage = {}) {
+    const query = new URLSearchParams({ limit: String(page.limit ?? 20) });
+    if (page.cursor !== undefined) query.set("cursor", page.cursor);
+    return this.request<GoalArtifactPageDto>(`/api/v1/joi/goals/${encodeURIComponent(goalId)}/artifacts?${query.toString()}`);
+  }
   joiRuntime() { return this.request<JoiRuntimeDto>("/api/v1/joi/runtime"); }
   listWorkbenches() { return this.request<{ items: WorkbenchDto[] }>("/api/v1/workbenches"); }
   evolutionStatus(workbenchId: string) { return this.request<EvolutionStatusDto>(`/api/v1/workbenches/${encodeURIComponent(workbenchId)}/evolution`); }
@@ -174,7 +180,7 @@ export class DigitalLifeApi {
   }
   openWorkbenchArtifact(workbenchId: string, input: {
     artifactId: string;
-    mode: "OPEN" | "REVEAL";
+    mode: "OPEN" | "REVEAL" | "OPEN_FOLDER";
     source: "AGENT" | "GOAL";
     sourceId: string;
   }) {

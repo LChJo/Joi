@@ -8,6 +8,7 @@ import { WorkerRpc } from "../../src/main/infrastructure/runtime/worker-rpc";
 import { DomainError } from "../../src/main/domain/errors";
 import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
 import { compileWorkerFixture } from "../support/compile-worker-fixture";
+import { createGoalEvidenceFixture } from "../support/goal-evidence-fixture";
 
 describe("runtime Workers (AC-PERF-01)", () => {
   let directory: string;
@@ -21,6 +22,35 @@ describe("runtime Workers (AC-PERF-01)", () => {
     ]) as [URL, URL];
   });
   afterAll(async () => { await rm(directory, { recursive: true, force: true }); });
+
+  it("keeps cached artifact previews on their committed WAL snapshot across manifest writes", async () => {
+    const fixture = await createGoalEvidenceFixture([{}]);
+    const manifest = (name: string) => JSON.stringify([{ artifactRef: `workspace:${name}`, name, mimeType: "text/plain", size: 1 }]);
+    fixture.database.transaction(db => db.prepare("UPDATE work_results SET artifacts_json=? WHERE result_id='result-1'").run(manifest("before.txt")));
+    await fixture.inbox.completeInput(fixture.inputId, "synthesis-turn", { outcome: "RESULT_SYNTHESIZED", completionSummary: "Synthetic result", committedByTool: true });
+    const databasePath = path.join(fixture.root, "runtime.sqlite");
+    const writer = new DatabaseSync(databasePath);
+    const reader = new WorkerHomeFeedRepository(databasePath, readWorkerUrl);
+    const preview = async () => (await reader.load(new Date())).goals.find(goal => goal.goalId === "goal")?.artifacts?.[0];
+    try {
+      expect(await preview()).toMatchObject({ artifactId: "work_result_artifact:result-1:0", name: "before.txt" });
+      expect(await preview()).toMatchObject({ name: "before.txt" });
+      writer.exec("BEGIN IMMEDIATE");
+      writer.prepare("UPDATE work_results SET artifacts_json=? WHERE result_id='result-1'").run(manifest("within.txt"));
+      expect(await preview()).toMatchObject({ name: "before.txt" });
+      writer.exec("ROLLBACK");
+      writer.exec("BEGIN IMMEDIATE");
+      writer.prepare("UPDATE work_results SET artifacts_json=? WHERE result_id='result-1'").run(manifest("commit.txt"));
+      expect(await preview()).toMatchObject({ name: "before.txt" });
+      writer.exec("COMMIT");
+      expect(await preview()).toMatchObject({ artifactId: "work_result_artifact:result-1:0", name: "commit.txt" });
+      writer.prepare("UPDATE work_results SET is_authoritative=0 WHERE result_id='result-1'").run();
+      expect(await preview()).toBeUndefined();
+    } finally {
+      if (writer.isTransaction) writer.exec("ROLLBACK");
+      await reader.close(); writer.close(); await fixture.close();
+    }
+  });
 
   it("reads committed WAL snapshots while a writer holds an uncommitted transaction", async () => {
     const databasePath = path.join(directory, "wal.sqlite");
@@ -47,6 +77,9 @@ describe("runtime Workers (AC-PERF-01)", () => {
         { resultId, completedAt: "2026-10-13T00:00:00.000Z", status: "COMPLETED" },
       ]);
       expect(await reader.getGoalResult("goal", resultId)).toMatchObject({ resultId, body: "# Frozen result" });
+      expect(await reader.listGoalArtifacts("goal", {})).toEqual({ items: [] });
+      expect(await reader.listGoalArtifacts("missing", {})).toBeNull();
+      await expect(reader.listGoalArtifacts("goal", { limit: 0 })).rejects.toMatchObject({ code: "goal_artifact_page_invalid" });
       await expect(reader.listGoalResults("goal", { limit: 0 })).rejects.toMatchObject({ code: "goal_result_page_invalid" });
       const pending = reader.load(new Date());
       await reader.close();

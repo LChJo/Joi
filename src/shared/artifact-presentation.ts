@@ -1,29 +1,18 @@
 import type { WorkbenchArtifactDto } from "./joi.js";
 
-const DOC_MIME_TYPES = new Set(["text/markdown", "text/plain"]);
-const DOC_EXTENSIONS = new Set([".md", ".txt"]);
-const IMAGE_EXTENSIONS = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp"]);
-const HIDDEN_ROOT_DIRECTORIES = new Set([".git", "node_modules"]);
+const HIDDEN_DIRECTORIES = new Set(["node_modules", "__pycache__"]);
 
 /** VCS/dependency metadata is never a deliverable; hidden from every artifact surface, including persisted rows. */
 export function isHiddenWorkspaceArtifact(artifact: Pick<WorkbenchArtifactDto, "directory">): boolean {
-  if (artifact.directory === undefined) return false;
-  const [head] = artifact.directory.split("/");
-  return HIDDEN_ROOT_DIRECTORIES.has(head ?? artifact.directory);
+  return artifact.directory?.split("/").some(segment => segment.startsWith(".") || HIDDEN_DIRECTORIES.has(segment)) ?? false;
 }
 
 /** Label for the folder group holding workspace-root or directory-unknown files. */
 export const ARTIFACT_ROOT_LABEL = "（工作区根目录）";
 
-/** Documents (markdown/plain text) and images keep individual cards; everything else merges into folder rows. */
+/** Every file type can stand alone when its directory contains at most three changed files. */
 export function isIndividuallyRenderedArtifact(artifact: Pick<WorkbenchArtifactDto, "kind" | "mimeType" | "name">): boolean {
-  if (artifact.kind === "DIRECTORY") return false;
-  const [head] = artifact.mimeType.split(";");
-  const mime = (head ?? "").trim().toLowerCase();
-  if (DOC_MIME_TYPES.has(mime)) return true;
-  const dot = artifact.name.lastIndexOf(".");
-  const extension = dot === -1 ? "" : artifact.name.slice(dot).toLowerCase();
-  return DOC_EXTENSIONS.has(extension) || IMAGE_EXTENSIONS.has(extension);
+  return artifact.kind === "FILE";
 }
 
 export function artifactGroupLabel(directory: string | undefined, rootLabel = ARTIFACT_ROOT_LABEL): string {
@@ -35,40 +24,41 @@ export type ArtifactRenderGroup<T> =
   | { kind: "FOLDER"; directory: string | undefined; items: T[] };
 
 /**
- * Folds an ordered list into render groups: whitelisted artifacts stay SINGLE in place,
- * consecutive non-whitelisted FILE artifacts fold into one FOLDER row per directory, and
- * DIRECTORY artifacts whose path equals a formed group key are suppressed (the group row
- * represents them). Items whose artifactOf returns undefined pass through as SINGLE and
- * break folder runs.
+ * A directory with more than three files is one row, independent of MIME type or interleaved
+ * directory markers. Conversation messages delimit artifact blocks and keep their order.
  */
 export function groupArtifactsForDisplay<T>(items: readonly T[], artifactOf: (item: T) => WorkbenchArtifactDto | undefined): ArtifactRenderGroup<T>[] {
-  const groupedDirectories = new Set<string>();
-  for (const item of items) {
-    const artifact = artifactOf(item);
-    if (artifact === undefined || isHiddenWorkspaceArtifact(artifact)) continue;
-    if (artifact.kind !== "FILE" || isIndividuallyRenderedArtifact(artifact)) continue;
-    groupedDirectories.add(artifact.directory ?? "");
-  }
   const groups: ArtifactRenderGroup<T>[] = [];
-  let current: { directory: string; items: T[] } | undefined;
+  let block: T[] = [];
   const flush = (): void => {
-    if (current === undefined) return;
-    groups.push({ kind: "FOLDER", directory: current.directory === "" ? undefined : current.directory, items: current.items });
-    current = undefined;
+    const directories = new Map<string, T[]>();
+    for (const item of block) {
+      const artifact = artifactOf(item);
+      if (artifact?.kind !== "FILE") continue;
+      const directory = artifact.directory ?? "";
+      const files = directories.get(directory) ?? [];
+      files.push(item); directories.set(directory, files);
+    }
+    const shown = new Set<string>();
+    for (const item of block) {
+      const artifact = artifactOf(item);
+      if (artifact === undefined) continue;
+      const directory = artifact.directory ?? "";
+      const files = directories.get(directory);
+      if (artifact.kind === "DIRECTORY") {
+        if (artifact.fileCount !== undefined || artifact.directory === undefined || files === undefined) groups.push({ kind: "SINGLE", item });
+      } else if (files !== undefined && files.length > 3) {
+        if (!shown.has(directory)) groups.push({ kind: "FOLDER", directory: directory === "" ? undefined : directory, items: files });
+        shown.add(directory);
+      } else groups.push({ kind: "SINGLE", item });
+    }
+    block = [];
   };
   for (const item of items) {
     const artifact = artifactOf(item);
     if (artifact === undefined) { flush(); groups.push({ kind: "SINGLE", item }); continue; }
     if (isHiddenWorkspaceArtifact(artifact)) continue;
-    if (artifact.kind === "FILE" && !isIndividuallyRenderedArtifact(artifact)) {
-      const directory = artifact.directory ?? "";
-      if (current?.directory === directory) current.items.push(item);
-      else { flush(); current = { directory, items: [item] }; }
-      continue;
-    }
-    if (artifact.kind === "DIRECTORY" && groupedDirectories.has(artifact.directory ?? "")) continue;
-    flush();
-    groups.push({ kind: "SINGLE", item });
+    block.push(item);
   }
   flush();
   return groups;

@@ -1,4 +1,4 @@
-export type WorkbenchArtifactOpenMode = "OPEN" | "REVEAL";
+export type WorkbenchArtifactOpenMode = "OPEN" | "REVEAL" | "OPEN_FOLDER";
 export type WorkbenchArtifactSource = "AGENT" | "GOAL";
 
 export interface ResolvedWorkbenchArtifact {
@@ -15,4 +15,5 @@ export interface WorkbenchArtifactResolutionInput {
   source: WorkbenchArtifactSource;
   sourceId: string;
   workbenchId: string;
+  mode?: WorkbenchArtifactOpenMode;
 }

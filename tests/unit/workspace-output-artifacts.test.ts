@@ -16,7 +16,6 @@ describe("workspace output artifacts", () => {
 
       await expect(collectChangedWorkspaceArtifacts(root, before)).resolves.toEqual([
         { artifactRef: "workspace:existing.txt", mimeType: "text/plain", name: "existing.txt", size: 5 },
-        { artifactRef: "workspace:reports", mimeType: "inode/directory", name: "reports", size: 0 },
         { artifactRef: "workspace:reports/evidence.md", mimeType: "text/markdown", name: "evidence.md", size: 10 },
       ]);
     } finally {
@@ -37,8 +36,6 @@ describe("workspace output artifacts", () => {
       await writeFile(path.join(root, "mldesigner", "docs", "report.md"), "# Report", "utf8");
 
       await expect(collectChangedWorkspaceArtifacts(root, before)).resolves.toEqual([
-        { artifactRef: "workspace:mldesigner", mimeType: "inode/directory", name: "mldesigner", size: 0 },
-        { artifactRef: "workspace:mldesigner/docs", mimeType: "inode/directory", name: "docs", size: 0 },
         { artifactRef: "workspace:mldesigner/docs/report.md", mimeType: "text/markdown", name: "report.md", size: 8 },
       ]);
     } finally {
@@ -69,5 +66,29 @@ describe("workspace output artifacts", () => {
     const missing = path.join(os.tmpdir(), "joi-workspace-artifacts-missing");
     await expect(captureWorkspaceSnapshot(missing)).resolves.toHaveLength(0);
     await expect(collectChangedWorkspaceArtifacts(missing, new Map())).resolves.toEqual([]);
+  });
+
+  it("excludes nested dependencies and Python bytecode from changed files", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-artifacts-"));
+    try {
+      const before = await captureWorkspaceSnapshot(root);
+      for (const directory of ["__pycache__", "tools/__pycache__", "tools/node_modules/pkg"]) {
+        await mkdir(path.join(root, directory), { recursive: true });
+        await writeFile(path.join(root, directory, "cache.pyc"), "cache");
+      }
+      await writeFile(path.join(root, "report.md"), "done");
+      expect((await collectChangedWorkspaceArtifacts(root, before)).map(item => item.artifactRef)).toEqual(["workspace:report.md"]);
+    } finally { await rm(root, { force: true, recursive: true }); }
+  });
+
+  it("does not claim existing files when an unavailable baseline becomes readable", async () => {
+    const parent = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-artifacts-"));
+    const root = path.join(parent, "workspace");
+    try {
+      const before = await captureWorkspaceSnapshot(root);
+      await mkdir(root);
+      await writeFile(path.join(root, "existing.md"), "pre-existing data");
+      expect(await collectChangedWorkspaceArtifacts(root, before)).toEqual([]);
+    } finally { await rm(parent, { force: true, recursive: true }); }
   });
 });

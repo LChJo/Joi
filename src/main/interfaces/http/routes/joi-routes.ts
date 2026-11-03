@@ -97,6 +97,21 @@ export const JOI_READ_ROUTES: RouteDefinition[] = [
   },
   {
     auth: "read",
+    id: "GET /api/v1/joi/goals/:goalId/artifacts",
+    match: pattern("GET", /^\/api\/v1\/joi\/goals\/([^/]+)\/artifacts$/),
+    handle: async (ctx, match) => {
+      const service = joiHomeFeedService(ctx.dependencies);
+      if (service.listGoalArtifacts === undefined) throw new HttpError("joi_home_feed_unavailable", "Goal artifacts are unavailable.", 503);
+      const cursor = ctx.url.searchParams.get("cursor");
+      const page = await service.listGoalArtifacts(decodeURIComponent((match as RegExpExecArray)[1] ?? ""), {
+        limit: Number(ctx.url.searchParams.get("limit") ?? "20"), ...(cursor === null ? {} : { cursor }),
+      });
+      if (page === null) throw new HttpError("goal_not_found", "Goal was not found.", 404);
+      sendJson(ctx.response, 200, page);
+    },
+  },
+  {
+    auth: "read",
     id: "GET /api/v1/joi/goals/:goalId/results/:resultId",
     match: pattern("GET", /^\/api\/v1\/joi\/goals\/([^/]+)\/results\/([^/]+)$/),
     handle: async (ctx, match) => {

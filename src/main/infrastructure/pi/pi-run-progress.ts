@@ -82,8 +82,8 @@ export interface RunProgressWatch {
 }
 
 /**
- * Whether anything in the workspace moved. Deliberately the same rule the deliverable uses, so a
- * run is never told it produced nothing while its own result lists artifacts, or the reverse.
+ * Any observable workspace change counts as activity for the run watchdog.
+ * Directory updates count even when no file artifact is ready to publish.
  */
 function workspaceChanged(before: WorkspaceSnapshot, after: WorkspaceSnapshot): boolean {
   if (before.size !== after.size) return true;

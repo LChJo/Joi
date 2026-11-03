@@ -92,7 +92,7 @@ export const WORKBENCH_ROUTES: RouteDefinition[] = [
       const body = await readJson(ctx.request);
       const mode = stringField(body, "mode");
       const source = stringField(body, "source");
-      if (mode !== "OPEN" && mode !== "REVEAL") throw new HttpError("workbench_artifact_mode_invalid", "Artifact mode must be OPEN or REVEAL.", 400);
+      if (mode !== "OPEN" && mode !== "REVEAL" && mode !== "OPEN_FOLDER") throw new HttpError("workbench_artifact_mode_invalid", "Artifact mode must be OPEN, REVEAL or OPEN_FOLDER.", 400);
       if (source !== "AGENT" && source !== "GOAL") throw new HttpError("workbench_artifact_source_invalid", "Artifact source must be AGENT or GOAL.", 400);
       sendJson(ctx.response, 200, await workbenchAgentService(ctx.dependencies).openArtifact({
         artifactId: decodeURIComponent(groups[2] ?? ""),

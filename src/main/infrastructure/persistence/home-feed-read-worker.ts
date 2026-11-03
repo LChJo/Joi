@@ -4,6 +4,7 @@ import { WorkerRpc } from "../runtime/worker-rpc.js";
 import { SqliteJoiHomeFeedRepository } from "./sqlite-joi-home-feed-repository.js";
 import type { JoiGoalDetailPage } from "../../../shared/joi.js";
 import type { GoalResultPage } from "../../../shared/goal-results.js";
+import type { GoalArtifactPage } from "../../../shared/goal-artifacts.js";
 
 const input = workerData as { databasePath: string; port: MessagePort };
 const connection = new DatabaseSync(input.databasePath, { readOnly: true });
@@ -30,6 +31,10 @@ const peer = new WorkerRpc(input.port, {
   getGoalResult: argument => {
     const request = argument as { goalId: string; resultId: string };
     return repository.getGoalResult(request.goalId, request.resultId);
+  },
+  listGoalArtifacts: argument => {
+    const request = argument as { goalId: string; page: GoalArtifactPage };
+    return repository.listGoalArtifacts(request.goalId, request.page);
   },
   close: () => {
     if (!closed) { closed = true; connection.close(); }

@@ -48,7 +48,19 @@ function persistExperiment(db: DatabaseSync, value: MethodExperiment): void {
 }
 
 export class SqliteMethodLearningStore implements MethodLearningStore {
+  #factRevision: string | undefined;
+  readonly #facts = new Map<string, LearningFacts[]>();
+  #evaluationCases: LearningCase[] | undefined;
+
   constructor(private readonly database: Database) {}
+  private refreshFactRevision(db: DatabaseSync): void {
+    const row = db.prepare("SELECT revision FROM read_projection_versions WHERE projection_id='method_learning_facts'").get() as { revision: string };
+    if (row.revision !== this.#factRevision) {
+      this.#factRevision = row.revision;
+      this.#facts.clear();
+      this.#evaluationCases = undefined;
+    }
+  }
   control(): MethodLearningControl { return this.database.transaction(control); }
   configureGlobal(patch: Partial<MethodLearningControl>): MethodLearningControl {
     return this.database.transaction(db => {
@@ -105,8 +117,12 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
     return this.database.transaction(db => this.readFacts(db,limit,null,true,true));
   }
   private readFacts(db: DatabaseSync, limit: number | null, goal: string | null, changedOnly: boolean, activeOnly: boolean): LearningFacts[] {
+      this.refreshFactRevision(db);
+      const key = JSON.stringify([limit, goal, changedOnly, activeOnly]);
+      const cached = this.#facts.get(key);
+      if (cached !== undefined) return structuredClone(cached);
       const rows = db.prepare(`WITH latest AS (
-        SELECT r.*,v.status AS verification,COALESCE(run.requirements_revision,0) AS requirements_revision,run.requirement_ids_json,
+        SELECT r.result_id,r.work_id,r.workbench_id,r.status,v.status AS verification,COALESCE(run.requirements_revision,0) AS requirements_revision,run.requirement_ids_json,
           ROW_NUMBER() OVER(PARTITION BY r.work_id ORDER BY r.created_at DESC,r.rowid DESC) AS position
         FROM work_results r LEFT JOIN work_result_verifications v ON v.result_id=r.result_id
         LEFT JOIN partner_runs run ON run.run_id=r.run_id WHERE r.is_authoritative=1 AND r.is_late=0
@@ -155,10 +171,13 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
           AND NOT EXISTS(SELECT 1 FROM joi_goal_requirement_sources src WHERE src.goal_input_id=i.input_id AND src.kind<>'LEGACY' AND src.source_revision>COALESCE(q.processed_source_revision,0))
       ), stamped AS (SELECT *,json_array(requirementsRevision,resultRevision,observedAt,completed,canceled,verified,failed,unverified,requirementCount,coveredRequirementCount,foreignEvidenceCount,dependencyViolationCount,redundantReads,executionFailed,environmentFailed) AS fingerprint FROM facts)
       SELECT f.* FROM stamped f LEFT JOIN method_learning_fact_receipts p ON p.goal_id=f.goalId WHERE (?=0 OR p.fingerprint IS NULL OR p.fingerprint<>f.fingerprint) ORDER BY f.observedAt,f.goalId LIMIT ?`).all(Number(activeOnly),goal,goal,Number(changedOnly),limit===null ? -1 : Math.min(50,Math.max(1,Math.floor(limit)))) as Row[];
-      return rows.map(row => {
+      const facts = rows.map(row => {
         const sourceGroupId = createHash("sha256").update(String(row.privateSourceBody).normalize("NFC").replace(/\s+/gu," ").trim()).digest("hex");
         return {goalId:String(row.goalId),workbenchId:String(row.workbenchId),sourceGroupId,requirementsRevision:Number(row.requirementsRevision),resultRevision:Number(row.resultRevision),observedAt:String(row.observedAt),completed:row.completed===1,canceled:row.canceled===1,verified:Number(row.verified),failed:Number(row.failed),unverified:Number(row.unverified),requirementCount:Number(row.requirementCount),coveredRequirementCount:Number(row.coveredRequirementCount),foreignEvidenceCount:Number(row.foreignEvidenceCount),dependencyViolationCount:Number(row.dependencyViolationCount),redundantReads:Number(row.redundantReads),executionFailed:Number(row.executionFailed)>0,environmentFailed:Number(row.environmentFailed)>0};
       });
+      if (this.#facts.size >= 128) this.#facts.clear();
+      this.#facts.set(key, facts);
+      return structuredClone(facts);
   }
   acknowledgeFacts(facts: LearningFacts[]): void {
     this.database.transaction(db => {
@@ -211,6 +230,12 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
       && item.resultRevision===resultRevision && (caseId===undefined || item.caseId===caseId)));
   }
   private collectEvaluationCases(db: DatabaseSync, goal: string | null): LearningCase[] {
+    this.refreshFactRevision(db);
+    if (goal === null && this.#evaluationCases !== undefined) return structuredClone(this.#evaluationCases);
+    const remember = (cases: LearningCase[]) => {
+      if (goal === null) this.#evaluationCases = cases;
+      return structuredClone(cases);
+    };
     const metadata = db.prepare(`SELECT i.input_id,p.fingerprint FROM joi_inbox_messages i JOIN joi_goal_requirements q ON q.goal_input_id=i.input_id AND q.workbench_id=i.workbench_id
       JOIN joi_current_goal_outcomes o ON o.input_id=i.input_id JOIN method_learning_fact_receipts p ON p.goal_id=i.input_id
       WHERE (? IS NULL OR i.input_id=?) AND i.failed_at IS NULL
@@ -218,9 +243,9 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
         AND NOT EXISTS(SELECT 1 FROM method_learning_exposure_invalidations invalid WHERE invalid.goal_id=i.input_id)
         AND NOT EXISTS(SELECT 1 FROM joi_goal_requirement_sources src WHERE src.goal_input_id=i.input_id AND src.source_revision>q.processed_source_revision)
         AND NOT EXISTS(SELECT 1 FROM joi_goal_execution_gates gate WHERE gate.goal_input_id=i.input_id AND gate.status IN ('REVIEWING','WAITING_INPUT'))`).all(goal,goal);
-    if (metadata.length===0) return [];
+    if (metadata.length===0) return remember([]);
     const stored = db.prepare("SELECT case_id,case_json FROM method_learning_cases WHERE (? IS NULL OR json_extract(case_json,'$.goalId')=?) ORDER BY observed_at,case_id").all(goal,goal);
-    if (stored.length===0) return [];
+    if (stored.length===0) return remember([]);
     const fingerprints = new Map(metadata.map(row=>[String(row.input_id),String(row.fingerprint)]));
     const currentIds = new Set<string>();
     for (const fact of this.readFacts(db,goal===null ? null : 1,goal,false,false)) {
@@ -228,7 +253,7 @@ export class SqliteMethodLearningStore implements MethodLearningStore {
         || fingerprints.get(fact.goalId)!==factsFingerprint(fact)) continue;
       for (const item of buildLearningCases(fact)) currentIds.add(item.caseId);
     }
-    return stored.filter(row=>currentIds.has(String(row.case_id))).map(row=>required(parse<LearningCase>(row,"case_json")));
+    return remember(stored.filter(row=>currentIds.has(String(row.case_id))).map(row=>required(parse<LearningCase>(row,"case_json"))));
   }
   invalidateGoalExposure(workbench: string, goal: string): void {
     this.database.transaction(db => {

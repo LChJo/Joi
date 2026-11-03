@@ -204,5 +204,13 @@
   "inputAwaitingConfirmation": {
     "message": "Input awaiting confirmation",
     "description": "common.inputAwaitingConfirmation"
+  },
+  "previousPage": {
+    "message": "Previous page",
+    "description": "common.previousPage"
+  },
+  "nextPage": {
+    "message": "Next page",
+    "description": "common.nextPage"
   }
 }

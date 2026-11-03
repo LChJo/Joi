@@ -458,5 +458,8 @@
   "backToResultHistory": "返回历史结果",
   "historyLoadFailed": "历史结果加载失败，请重试。",
   "latestResult": "最新结果",
-  "resultAt": "完成于 {p0}"
+  "resultAt": "完成于 {p0}",
+  "artifactPageFailed": "文件加载失败，请重试。",
+  "artifactCount": "{count} 个文件",
+  "changedFiles": "本轮修改文件"
 }

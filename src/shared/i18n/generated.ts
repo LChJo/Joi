@@ -228,6 +228,8 @@ export interface MessageParameters {
   "common.scheduledTasks": undefined;
   "common.awaitingAssignment": undefined;
   "common.inputAwaitingConfirmation": undefined;
+  "common.previousPage": undefined;
+  "common.nextPage": undefined;
   "errors.modelSourceUrlProhibited": undefined;
   "errors.modelSourceKeyRequired": undefined;
   "errors.modelSourceRedirectCrossOrigin": undefined;
@@ -934,6 +936,9 @@ export interface MessageParameters {
   "home.historyLoadFailed": undefined;
   "home.latestResult": undefined;
   "home.resultAt": { "p0": string };
+  "home.artifactPageFailed": undefined;
+  "home.changedFiles": undefined;
+  "home.artifactCount": { "count": string };
   "mobile.homeSyncFailedRetrying": undefined;
   "mobile.bringTheJoiRunningOnYourComputerToYour": undefined;
   "mobile.scanAQrCodeToPairWithJoi": undefined;
@@ -1834,6 +1839,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.scheduledTasks": "Scheduled tasks",
     "common.awaitingAssignment": "Awaiting assignment",
     "common.inputAwaitingConfirmation": "Input awaiting confirmation",
+    "common.previousPage": "Previous page",
+    "common.nextPage": "Next page",
     "errors.modelSourceUrlProhibited": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
     "errors.modelSourceKeyRequired": "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.",
     "errors.modelSourceRedirectCrossOrigin": "The model URL redirects to a different origin. Enter the final Base URL directly.",
@@ -2540,6 +2547,9 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.historyLoadFailed": "Could not load result history. Try again.",
     "home.latestResult": "Latest result",
     "home.resultAt": "Completed at {p0}",
+    "home.artifactPageFailed": "Could not load files. Try again.",
+    "home.changedFiles": "Files changed this round",
+    "home.artifactCount": "{count} files",
     "mobile.homeSyncFailedRetrying": "Home sync failed. Retrying automatically; pull down to retry now.",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "Bring the joi running on your computer to your phone",
     "mobile.scanAQrCodeToPairWithJoi": "Scan a QR code to pair with joi",
@@ -3438,6 +3448,8 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.scheduledTasks": "定时任务",
     "common.awaitingAssignment": "等待归属",
     "common.inputAwaitingConfirmation": "待确认的输入",
+    "common.previousPage": "上一页",
+    "common.nextPage": "下一页",
     "errors.modelSourceUrlProhibited": "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。",
     "errors.modelSourceKeyRequired": "请填写 API Key；仅本机 localhost/127.0.0.1 可留空。",
     "errors.modelSourceRedirectCrossOrigin": "模型地址重定向到了其他来源，请直接填写最终的 Base URL。",
@@ -4144,6 +4156,9 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "home.historyLoadFailed": "历史结果加载失败，请重试。",
     "home.latestResult": "最新结果",
     "home.resultAt": "完成于 {p0}",
+    "home.artifactPageFailed": "文件加载失败，请重试。",
+    "home.changedFiles": "本轮修改文件",
+    "home.artifactCount": "{count} 个文件",
     "mobile.homeSyncFailedRetrying": "首页同步失败，将自动重试；也可下拉立即重试。",
     "mobile.bringTheJoiRunningOnYourComputerToYour": "把正在电脑上运行的 Joi 带到手机上",
     "mobile.scanAQrCodeToPairWithJoi": "扫描二维码绑定 Joi",
@@ -5250,6 +5265,10 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "等待归属": "common.awaitingAssignment",
   "Input awaiting confirmation": "common.inputAwaitingConfirmation",
   "待确认的输入": "common.inputAwaitingConfirmation",
+  "Previous page": "common.previousPage",
+  "上一页": "common.previousPage",
+  "Next page": "common.nextPage",
+  "下一页": "common.nextPage",
   "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).": "errors.modelSourceUrlProhibited",
   "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。": "errors.modelSourceUrlProhibited",
   "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.": "errors.modelSourceKeyRequired",
@@ -6514,6 +6533,10 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "历史结果加载失败，请重试。": "home.historyLoadFailed",
   "Latest result": "home.latestResult",
   "最新结果": "home.latestResult",
+  "Could not load files. Try again.": "home.artifactPageFailed",
+  "文件加载失败，请重试。": "home.artifactPageFailed",
+  "Files changed this round": "home.changedFiles",
+  "本轮修改文件": "home.changedFiles",
   "Home sync failed. Retrying automatically; pull down to retry now.": "mobile.homeSyncFailedRetrying",
   "首页同步失败，将自动重试；也可下拉立即重试。": "mobile.homeSyncFailedRetrying",
   "Bring the joi running on your computer to your phone": "mobile.bringTheJoiRunningOnYourComputerToYour",

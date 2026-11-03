@@ -12,7 +12,7 @@ import type { NormalizedAgentConversationEntry } from "../../application/partner
 import { stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
 import { TOOL_TRACE_MAX_BODY_CHARS } from "../../application/partners/tool-trace-presentation.js";
 import { DomainError } from "../../domain/errors.js";
-import { workResultArtifactId, workspaceArtifactDirectory, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
+import { workspaceArtifactDirectory, workspaceArtifactReference, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
 import { mapStoredEngine } from "./partner-engine-storage.js";
 
 interface TransactionalDatabase { transaction<T>(operation: (database: DatabaseSync) => T): T }
@@ -351,20 +351,16 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
         artifact = storedArtifact(row?.artifact_json);
         if (typeof row?.work_id === "string") workId = row.work_id;
       } else {
-        const rows = connection.prepare(`SELECT r.result_id, r.artifacts_json, r.work_id FROM work_results r
+        const identity = /^work_result_artifact:(.+):(\d+)$/u.exec(input.artifactId);
+        if (identity === null || !Number.isSafeInteger(Number(identity[2]))) return undefined;
+        const row = connection.prepare(`SELECT a.relative_path,a.name,a.mime_type,a.size,r.work_id FROM work_results r
           JOIN work_items w ON w.work_id = r.work_id
-          WHERE r.workbench_id = ? AND w.input_id = ? AND r.is_authoritative = 1 AND r.status = 'COMPLETED'
-          ORDER BY r.created_at, r.result_id`).all(input.workbenchId, input.sourceId) as Row[];
-        for (const row of rows) {
-          if (typeof row.result_id !== "string" || typeof row.artifacts_json !== "string") continue;
-          let artifacts: unknown;
-          try { artifacts = JSON.parse(row.artifacts_json); } catch { continue; }
-          if (!Array.isArray(artifacts)) continue;
-          const index = artifacts.findIndex((_candidate, artifactIndex) => workResultArtifactId(row.result_id as string, artifactIndex) === input.artifactId);
-          if (index < 0) continue;
-          artifact = storedArtifact(JSON.stringify(artifacts[index]));
-          if (typeof row.work_id === "string") workId = row.work_id;
-          break;
+          JOIN work_result_artifact_index a ON a.result_id=r.result_id
+          WHERE r.workbench_id=? AND w.input_id=? AND r.is_authoritative=1 AND r.status='COMPLETED'
+            AND a.result_id=? AND a.artifact_index=?`).get(input.workbenchId, input.sourceId, identity[1] ?? "", Number(identity[2])) as Row | undefined;
+        if (row !== undefined) {
+          artifact = { artifactRef: workspaceArtifactReference(String(row.relative_path)), name: String(row.name), mimeType: String(row.mime_type), size: Number(row.size) };
+          workId = String(row.work_id);
         }
       }
       const relativePath = workspaceArtifactRelativePath(artifact?.artifactRef);
@@ -375,19 +371,20 @@ export class SqliteWorkbenchAgentRepository implements WorkbenchAgentRepository 
         JOIN workbench_workspace_roots roots ON roots.workspace_ref = binding.workspace_ref
         WHERE binding.workbench_id = ? AND binding.status = 'READY'`).get(input.workbenchId);
       if (typeof root?.root_path !== "string") return undefined;
-      return { relativePath, rootPath: root.root_path };
+      return { relativePath: input.mode === "OPEN_FOLDER" ? workspaceArtifactDirectory(relativePath) ?? "" : relativePath, rootPath: root.root_path };
     });
     if (stored === undefined) throw new DomainError("workbench_artifact_unavailable", "This artifact is not available to open.");
     try {
       const canonicalRoot = await realpath(stored.rootPath);
       const candidate = path.resolve(canonicalRoot, ...stored.relativePath.split("/"));
       const candidateRelative = path.relative(canonicalRoot, candidate);
-      if (candidateRelative === "" || candidateRelative.startsWith("..") || path.isAbsolute(candidateRelative)) throw new Error("outside_workspace");
+      if ((candidateRelative === "" && input.mode !== "OPEN_FOLDER") || candidateRelative.startsWith("..") || path.isAbsolute(candidateRelative)) throw new Error("outside_workspace");
       const canonicalTarget = await realpath(candidate);
       const targetRelative = path.relative(canonicalRoot, canonicalTarget);
-      if (targetRelative === "" || targetRelative.startsWith("..") || path.isAbsolute(targetRelative)) throw new Error("outside_workspace");
+      if ((targetRelative === "" && input.mode !== "OPEN_FOLDER") || targetRelative.startsWith("..") || path.isAbsolute(targetRelative)) throw new Error("outside_workspace");
       const facts = await stat(canonicalTarget);
       if (!facts.isFile() && !facts.isDirectory()) throw new Error("unsupported_artifact");
+      if (input.mode === "OPEN_FOLDER" && !facts.isDirectory()) throw new Error("unsupported_artifact");
       return { kind: facts.isDirectory() ? "DIRECTORY" : "FILE", targetPath: canonicalTarget };
     } catch {
       throw new DomainError("workbench_artifact_unavailable", "This artifact is not available to open.");

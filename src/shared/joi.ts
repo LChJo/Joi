@@ -441,6 +441,8 @@ export interface JoiGoalWorkDto {
 export interface JoiGoalCardBaseDto {
   agentCount: number;
   artifacts?: WorkbenchArtifactDto[];
+  artifactCount?: number;
+  artifactNextCursor?: string;
   workbench: { workbenchId: string; name: string; projectLabel?: string };
   /**
    * Whether the user may file this card away. `canDelete` cannot stand in for it: removal also
@@ -524,6 +526,8 @@ export interface WorkbenchAgentCardDto {
 
 export interface WorkbenchArtifactDto {
   artifactId?: string;
+  /** Number of changed files represented by a folder row; its identity opens the source file's parent. */
+  fileCount?: number;
   /**
    * POSIX relative directory used for folder grouping in the renderer.
    * - FILE: dirname of the workspace-relative path; undefined for workspace-root

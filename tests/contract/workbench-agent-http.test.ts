@@ -77,6 +77,13 @@ describe("Workbench Agent HTTP API", () => {
       expect(openArtifact).toHaveBeenCalledWith({
         artifactId: "entry-artifact", mode: "OPEN", source: "AGENT", sourceId: ephemeral.instanceId, workbenchId: workbench.workbenchId,
       });
+      const folderOpened = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/artifacts/${encodeURIComponent("entry-artifact")}/open`, {
+        body: JSON.stringify({ mode: "OPEN_FOLDER", source: "AGENT", sourceId: ephemeral.instanceId }), headers: writeHeaders, method: "POST",
+      });
+      expect(folderOpened.status).toBe(200);
+      expect(openArtifact).toHaveBeenLastCalledWith({
+        artifactId: "entry-artifact", mode: "OPEN_FOLDER", source: "AGENT", sourceId: ephemeral.instanceId, workbenchId: workbench.workbenchId,
+      });
 
       const invalidMode = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/artifacts/${encodeURIComponent("entry-artifact")}/open`, {
         body: JSON.stringify({ mode: "DELETE", source: "AGENT", sourceId: ephemeral.instanceId }), headers: writeHeaders, method: "POST",
@@ -99,6 +106,12 @@ describe("Workbench Agent HTTP API", () => {
       });
       expect(lanDenied.status).toBe(403);
       expect(await lanDenied.json()).toMatchObject({ code: "desktop_required" });
+      const callsBeforeFolderAttempt = openArtifact.mock.calls.length;
+      const lanFolderDenied = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/artifacts/${encodeURIComponent("entry-artifact")}/open`, {
+        body: JSON.stringify({ mode: "OPEN_FOLDER", source: "AGENT", sourceId: ephemeral.instanceId }), headers: lanHeaders, method: "POST",
+      });
+      expect(lanFolderDenied.status).toBe(403);
+      expect(openArtifact.mock.calls).toHaveLength(callsBeforeFolderAttempt);
 
       const denied = await fetch(`${listeners.loopback.url}/api/v1/workbenches/${encodeURIComponent(workbench.workbenchId)}/agents/${encodeURIComponent(resident.instanceId)}`, { headers: writeHeaders, method: "DELETE" });
       expect(denied.status).toBe(409);

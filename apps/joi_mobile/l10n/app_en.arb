@@ -1091,6 +1091,16 @@
     "description": "common.inputAwaitingConfirmation",
     "placeholders": {}
   },
+  "commonPreviousPage": "Previous page",
+  "@commonPreviousPage": {
+    "description": "common.previousPage",
+    "placeholders": {}
+  },
+  "commonNextPage": "Next page",
+  "@commonNextPage": {
+    "description": "common.nextPage",
+    "placeholders": {}
+  },
   "errorsModelSourceUrlProhibited": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
   "@errorsModelSourceUrlProhibited": {
     "description": "Explain which custom model endpoint addresses are supported without echoing the submitted URL.",
@@ -4980,6 +4990,25 @@
     "description": "Completed result history",
     "placeholders": {
       "p0": {
+        "type": "String"
+      }
+    }
+  },
+  "homeArtifactPageFailed": "Could not load files. Try again.",
+  "@homeArtifactPageFailed": {
+    "description": "home.artifactPageFailed",
+    "placeholders": {}
+  },
+  "homeChangedFiles": "Files changed this round",
+  "@homeChangedFiles": {
+    "description": "home.changedFiles",
+    "placeholders": {}
+  },
+  "homeArtifactCount": "{count} files",
+  "@homeArtifactCount": {
+    "description": "home.artifactCount",
+    "placeholders": {
+      "count": {
         "type": "String"
       }
     }

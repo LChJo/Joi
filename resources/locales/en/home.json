@@ -2476,5 +2476,20 @@
     "placeholders": {
       "p0": "string"
     }
+  },
+  "artifactPageFailed": {
+    "message": "Could not load files. Try again.",
+    "description": "home.artifactPageFailed"
+  },
+  "changedFiles": {
+    "message": "Files changed this round",
+    "description": "home.changedFiles"
+  },
+  "artifactCount": {
+    "message": "{count} files",
+    "description": "home.artifactCount",
+    "placeholders": {
+      "count": "string"
+    }
   }
 }

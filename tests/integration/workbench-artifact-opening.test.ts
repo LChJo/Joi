@@ -112,7 +112,6 @@ describe("Workbench artifact opening", () => {
       const goal = (await fixture.joiHomeFeed.load()).goals.find((candidate) => candidate.goalId === "goal-artifact");
       expect(goal?.artifacts).toEqual([
         { artifactId: "work_result_artifact:result-artifact:0", directory: "reports", kind: "FILE", mimeType: "text/markdown", name: "report.md", size: 8 },
-        { artifactId: "work_result_artifact:result-artifact:1", directory: "reports", kind: "DIRECTORY", mimeType: "inode/directory", name: "reports", size: 0 },
       ]);
       expect(JSON.stringify(goal)).not.toContain(workspacePath);
       await expect(fixture.workbenchAgents.openArtifact({
@@ -157,6 +156,13 @@ describe("Workbench artifact opening", () => {
         await expect(fixture.workbenchAgents.openArtifact({
           artifactId: entry.artifact?.artifactId ?? entry.entryId,
           mode: "OPEN", source: "AGENT", sourceId: instance.instanceId, workbenchId: workbench.workbenchId,
+        })).rejects.toMatchObject({ code: "workbench_artifact_unavailable" });
+      }
+      for (const entry of [artifactEntries[0], artifactEntries[2]]) {
+        if (entry === undefined) throw new Error("Missing invalid folder fixture");
+        await expect(fixture.workbenchAgents.openArtifact({
+          artifactId: entry.artifact?.artifactId ?? entry.entryId,
+          mode: "OPEN_FOLDER", source: "AGENT", sourceId: instance.instanceId, workbenchId: workbench.workbenchId,
         })).rejects.toMatchObject({ code: "workbench_artifact_unavailable" });
       }
       expect(fixture.artifactOpenCalls).toEqual([]);

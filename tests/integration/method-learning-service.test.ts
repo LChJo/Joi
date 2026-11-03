@@ -38,6 +38,25 @@ describe("production method learning", () => {
       }));
     }
   }
+  it("skips monitoring facts when no method is active even while learning is paused", () => {
+    store.configureGlobal({ enabled: true, paused: true });
+    const monitor = vi.spyOn(store, "currentEvaluationCases");
+    service().scan();
+    expect(monitor).not.toHaveBeenCalled();
+  });
+  it("continues active method safety monitoring while learning is paused", () => {
+    store.configureGlobal({ enabled: true, paused: true });
+    store.saveRevision({ id: "active-method", scope: "GLOBAL", workbenchId: "a", profile: learningProfile(2),
+      status: "ACTIVE", createdAt: now, updatedAt: now, state: {
+        version: 2, evaluator: METHOD_EVALUATOR_VERSION, pin, policy: { version: 2, context: [], planning: [], completion: ["acceptance_matrix"] },
+        parentRevisionId: null, module: "completion", benefit: "quality", baselineSuccesses: 5, candidateSuccesses: 10, evaluatedRuns: 30,
+        candidateGoals: [], controlGoals: [], reason: "promoted", datasetIds: [], defect: "false_completion",
+      } });
+    const monitor = vi.spyOn(store, "currentEvaluationCases");
+    service().scan();
+    expect(monitor).toHaveBeenCalledOnce();
+    expect(store.revision("active-method")?.status).toBe("ACTIVE");
+  });
   it("does not spend calls when no mechanically reproducible case exists", () => {
     const subject = service();
     subject.configureGlobal({ enabled: true, dailyCallLimit: 150 });

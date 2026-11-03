@@ -12,18 +12,13 @@ interface WorkspaceFileState {
 }
 
 export type WorkspaceSnapshot = ReadonlyMap<string, WorkspaceFileState>;
+const snapshotCoverage = new WeakMap<WorkspaceSnapshot, { root: string | undefined; unreadable: Set<string> }>();
 
 /**
- * Reports what the run delivered, not everything it touched. Hidden directories are tooling by
- * convention, and a partner that stands up its own host, cache or profile tree materializes
- * thousands of files that say nothing about the Work's output — one such run recorded 6,195 paths,
- * and that manifest then travelled into every later prompt in the Workbench. `.git` and
- * `node_modules` are the two partners touch most, and the hidden-directory rule covers those and
- * the rest. A deliverable deliberately written inside a hidden directory is the accepted cost of
- * keeping tooling noise out of the deliverable list.
+ * Tooling and dependency trees are outside the deliverable set at every depth.
  */
 function isIgnoredDirectory(name: string): boolean {
-  return name === "node_modules" || name.startsWith(".");
+  return name === "node_modules" || name === "__pycache__" || name.startsWith(".");
 }
 
 const MIME_BY_EXTENSION: Record<string, string> = {
@@ -78,11 +73,12 @@ class WalkLimiter {
   }
 }
 
-async function walk(root: string, directory: string, files: Map<string, WorkspaceFileState>, limiter: WalkLimiter): Promise<void> {
+async function walk(root: string, directory: string, files: Map<string, WorkspaceFileState>, limiter: WalkLimiter, unreadable: Set<string>): Promise<void> {
   let entries;
   try {
     entries = await limiter.run(() => readdir(directory, { withFileTypes: true }));
   } catch {
+    unreadable.add(path.relative(root, directory).replaceAll(path.sep, "/"));
     return;
   }
   const pending: Promise<void>[] = [];
@@ -96,18 +92,20 @@ async function walk(root: string, directory: string, files: Map<string, Workspac
           const relativePath = path.relative(root, candidate).replaceAll(path.sep, "/");
           if (relativePath !== "") files.set(relativePath, { kind: "DIRECTORY", mtimeMs: facts.mtimeMs, size: 0 });
         } catch {
+          unreadable.add(path.relative(root, candidate).replaceAll(path.sep, "/"));
           return;
         }
-        await walk(root, candidate, files, limiter);
+        await walk(root, candidate, files, limiter, unreadable);
       })());
       continue;
     }
-    if (!entry.isFile()) continue;
+    if (!entry.isFile() || /\.py[co]$/iu.test(entry.name)) continue;
     pending.push((async () => {
       let facts: Stats;
       try {
         facts = await limiter.run(() => lstat(candidate));
       } catch {
+        unreadable.add(path.relative(root, candidate).replaceAll(path.sep, "/"));
         return;
       }
       if (!facts.isFile()) return;
@@ -119,17 +117,20 @@ async function walk(root: string, directory: string, files: Map<string, Workspac
 }
 
 export async function captureWorkspaceSnapshot(workspacePath: string | undefined): Promise<WorkspaceSnapshot> {
-  if (workspacePath === undefined) return new Map();
+  const files = new Map<string, WorkspaceFileState>();
+  const coverage = { root: undefined as string | undefined, unreadable: new Set<string>() };
+  snapshotCoverage.set(files, coverage);
+  if (workspacePath === undefined) return files;
   let root: string;
   try {
     root = await realpath(workspacePath);
     const facts = await stat(root);
-    if (!facts.isDirectory()) return new Map();
+    if (!facts.isDirectory()) return files;
   } catch {
-    return new Map();
+    return files;
   }
-  const files = new Map<string, WorkspaceFileState>();
-  await walk(root, root, files, new WalkLimiter(WALK_CONCURRENCY));
+  coverage.root = root;
+  await walk(root, root, files, new WalkLimiter(WALK_CONCURRENCY), coverage.unreadable);
   return files;
 }
 
@@ -146,18 +147,21 @@ export async function collectChangedWorkspaceArtifacts(
   } catch {
     return [];
   }
+  const coverage = snapshotCoverage.get(before);
+  if (coverage !== undefined && coverage.root !== root) return [];
   const after = new Map<string, WorkspaceFileState>();
-  await walk(root, root, after, new WalkLimiter(WALK_CONCURRENCY));
+  await walk(root, root, after, new WalkLimiter(WALK_CONCURRENCY), new Set());
   return [...after.entries()]
     .filter(([relativePath, state]) => {
+      if (state.kind !== "FILE") return false;
+      if (coverage !== undefined && coverage.unreadable.size > 0 && [...coverage.unreadable].some(prefix => prefix === "" || relativePath === prefix || relativePath.startsWith(`${prefix}/`))) return false;
       const previous = before.get(relativePath);
       if (previous === undefined) return true;
-      if (state.kind === "DIRECTORY") return false;
       return previous.size !== state.size || previous.mtimeMs !== state.mtimeMs;
     })
     .sort(([left], [right]) => left.localeCompare(right))
     .map(([relativePath, state]) => {
-      const type = state.kind === "DIRECTORY" ? "inode/directory" : mimeType(relativePath);
+      const type = mimeType(relativePath);
       return {
         artifactRef: workspaceArtifactReference(relativePath),
         ...(type === undefined ? {} : { mimeType: type }),

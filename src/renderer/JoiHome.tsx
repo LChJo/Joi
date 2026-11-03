@@ -13,6 +13,7 @@ import remarkGfm from "remark-gfm";
 
 import { REVIEW_RETRY_TEXT, MODEL_SOURCE_CHOICES, THINKING_EFFORTS, type AgentConversationEntryDto, type AgentConversationPageDto, type ThinkingEffort, type WorkbenchAgentCardDto, type WorkbenchAgentStatusDto, type WorkbenchArtifactDto, type WorkbenchDetailDto, type WorkbenchDto, type WorkbenchToolTraceDto, type JoiAcceptedMessageDto, type JoiAttachmentDto, type JoiGoalCardDto, type JoiHomeFeedDto, type JoiSnapshotDto, type JoiThinkingItemDto, type ModelSourceAccessModeDto, type ModelSourceKindDto, type ModelSourceProtocolDto, type PartnerDto } from "../shared/joi";
 import { artifactGroupLabel, groupArtifactsForDisplay } from "../shared/artifact-presentation";
+import { GOAL_ARTIFACT_PREVIEW_LIMIT, type GoalArtifactPageDto } from "../shared/goal-artifacts";
 import { ApiError, type DigitalLifeApi } from "./api";
 import { thinkingEffortLabel } from "./copy";
 
@@ -384,20 +385,23 @@ function ArtifactCard({ api, artifact, source, sourceId, workbenchId }: {
   useI18n();
   const [notice, setNotice] = useNotice();
   const available = api.desktop && artifact.artifactId !== undefined;
+  const label = artifact.fileCount !== undefined ? artifactGroupLabel(artifact.directory, t("catalog.workspaceRoot")) : artifact.name;
   const activate = async (mode: "OPEN" | "REVEAL") => {
     if (artifact.artifactId === undefined) return;
     setNotice(mode === "OPEN" ? noticeMessage("home.opening") : noticeMessage("home.locating"));
     try {
-      await api.openWorkbenchArtifact(workbenchId, { artifactId: artifact.artifactId, mode, source, sourceId });
+      await api.openWorkbenchArtifact(workbenchId, { artifactId: artifact.artifactId, mode: artifact.fileCount === undefined ? mode : "OPEN_FOLDER", source, sourceId });
       setNotice(mode === "OPEN" ? noticeMessage("home.sentToTheSystemToOpen") : noticeMessage("home.revealedInTheFolder"));
     } catch (error) {
       setNotice(error instanceof ApiError ? error.displayMessage : noticeMessage("home.thisArtifactCannotBeOpenedRightNow"));
     }
   };
   return <div className={`agent-artifact ${available ? "actionable" : ""}`}>
-    <span className="agent-artifact-copy"><strong>{artifact.name}</strong><span>{artifact.kind === "DIRECTORY" ? t("home.folder") : artifact.mimeType} · {String(artifact.size)} B</span></span>
+    <span className="agent-artifact-copy"><strong>{label}</strong><span>{artifact.fileCount === undefined
+      ? <>{artifact.kind === "DIRECTORY" ? t("home.folder") : artifact.mimeType} · {String(artifact.size)} B</>
+      : <>{t("home.folder")} · {t("home.artifactCount", { count: String(artifact.fileCount) })}</>}</span></span>
     {available ? <button
-      aria-label={t("home.openArtifactValue", { p0: artifact.name })}
+      aria-label={t("home.openArtifactValue", { p0: label })}
       className="button ghost agent-artifact-open"
       onClick={() => void activate("OPEN")}
       onContextMenu={(event) => { event.preventDefault(); void activate("REVEAL"); }}
@@ -418,13 +422,12 @@ function ArtifactFolder({ api, directory, items, source, sourceId, timestamp, wo
   workbenchId: string;
 }) {
   useI18n();
-  return <details className="agent-artifact-group">
-    <summary><span>{t("home.file")}</span><code>{artifactGroupLabel(directory, t("catalog.workspaceRoot"))} · {String(items.length)}  {t("home.files")}</code>{timestamp === undefined ? null : <time dateTime={timestamp}>{new Date(timestamp).toLocaleString(currentLocale())}</time>}</summary>
-    {items.map((artifact) => <ArtifactCard
-      api={api} artifact={artifact} key={artifact.artifactId ?? `${artifact.name}:${String(artifact.size)}`}
-      source={source} sourceId={sourceId} workbenchId={workbenchId}
-    />)}
-  </details>;
+  const representative = items[0];
+  if (representative === undefined) return null;
+  return <div className="agent-artifact-folder">
+    <ArtifactCard api={api} artifact={{ ...representative, ...(directory === undefined ? {} : { directory }), fileCount: items.length, kind: "DIRECTORY", mimeType: "inode/directory", size: 0 }} source={source} sourceId={sourceId} workbenchId={workbenchId} />
+    {timestamp === undefined ? null : <time dateTime={timestamp}>{new Date(timestamp).toLocaleString(currentLocale())}</time>}
+  </div>;
 }
 
 function groupAgentEntries(items: AgentConversationEntryDto[]) {
@@ -529,18 +532,47 @@ function ToolEntry({ entry, entries, running, traces, onReveal, desktop }: {
 
 function GoalArtifacts({ api, goal }: { api: DigitalLifeApi; goal: JoiGoalCardDto }) {
   useI18n();
-  if (goal.artifacts === undefined || goal.artifacts.length === 0) return null;
+  const [page, setPage] = useState<GoalArtifactPageDto>(() => ({ items: goal.artifacts ?? [], ...(goal.artifactNextCursor === undefined ? {} : { nextCursor: goal.artifactNextCursor }) }));
+  const [position, setPosition] = useState(0);
+  const [localPosition, setLocalPosition] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const running = useRef(false);
+  const alive = useRef(true);
+  const cursors = useRef<(string | undefined)[]>([undefined]);
+  const pending = useRef<{ cursor: string | undefined; position: number }>({ cursor: undefined, position: 0 });
+  useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
+  const groups = useMemo(() => groupArtifactsForDisplay(page.items, artifact => artifact), [page.items]);
+  const load = async (cursor: string | undefined, nextPosition: number) => {
+    if (running.current) return;
+    running.current = true; setBusy(true); setFailed(false);
+    pending.current = { cursor, position: nextPosition };
+    try {
+      const loaded = await api.joiGoalArtifacts(goal.goalId, { limit: GOAL_ARTIFACT_PREVIEW_LIMIT, ...(cursor === undefined ? {} : { cursor }) });
+      if (!alive.current) return;
+      setPage(loaded); setPosition(nextPosition); setLocalPosition(0); cursors.current[nextPosition] = cursor;
+    } catch { if (alive.current) setFailed(true); }
+    finally { running.current = false; if (alive.current) setBusy(false); }
+  };
+  if (page.items.length === 0 && page.nextCursor === undefined) return null;
+  const offset = localPosition * GOAL_ARTIFACT_PREVIEW_LIMIT;
+  const hasLocalNext = offset + GOAL_ARTIFACT_PREVIEW_LIMIT < groups.length;
   return <section aria-label={t("home.resultArtifact")} className="joi-goal-artifacts">
-    <h3>{t("home.artifacts")}</h3>
-    {groupArtifactsForDisplay(goal.artifacts, (artifact) => artifact).map((row, index) => row.kind === "FOLDER"
+    <h3>{t("home.changedFiles")}{goal.artifactCount === undefined ? null : <small> · {t("home.artifactCount", { count: String(goal.artifactCount) })}</small>}</h3>
+    {groups.slice(offset, offset + GOAL_ARTIFACT_PREVIEW_LIMIT).map((row, index) => row.kind === "FOLDER"
       ? <ArtifactFolder
-        api={api} directory={row.directory} items={row.items} key={`folder:${row.directory ?? ""}:${String(index)}`}
+        api={api} directory={row.directory} items={row.items} key={`folder:${String(position)}:${String(localPosition)}:${row.directory ?? ""}:${String(index)}`}
         source="GOAL" sourceId={goal.goalId} workbenchId={goal.workbench.workbenchId}
       />
       : <ArtifactCard
         api={api} artifact={row.item} key={row.item.artifactId ?? `${row.item.name}:${String(row.item.size)}`}
         source="GOAL" sourceId={goal.goalId} workbenchId={goal.workbench.workbenchId}
       />)}
+    {failed ? <p className="joi-detail-load-notice" role="alert">{t("home.artifactPageFailed")} <button className="button ghost" disabled={busy} onClick={() => void load(pending.current.cursor, pending.current.position)} type="button">{t("common.retry")}</button></p> : null}
+    {position === 0 && localPosition === 0 && !hasLocalNext && page.nextCursor === undefined ? null : <div className="joi-artifact-paging" aria-busy={busy}>
+      <button className="button ghost" disabled={busy || position === 0 && localPosition === 0} onClick={() => { if (localPosition > 0) setLocalPosition(value => value - 1); else void load(cursors.current[position - 1], position - 1); }} type="button">{t("common.previousPage")}</button>
+      <button className="button ghost" disabled={busy || !hasLocalNext && page.nextCursor === undefined} onClick={() => { if (hasLocalNext) setLocalPosition(value => value + 1); else void load(page.nextCursor, position + 1); }} type="button">{t("common.nextPage")}</button>
+    </div>}
   </section>;
 }
 
@@ -1405,6 +1437,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
 }) {
   useI18n();
   const detailState = useGoalDetail(api, goal.goalId);
+  const artifactVersion = goal.resultId ?? goal.completedAt ?? String(goal.artifactCount ?? goal.artifacts?.length ?? 0);
   const [showHistory, setShowHistory] = useState(false);
   const [agents, setAgents] = useState<WorkbenchAgentCardDto[]>([]);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
@@ -1462,7 +1495,7 @@ function GoalDetail({ api, partners, workbenches, goal, initialAgentStatus, onBa
         </article>}
         {detailState.failed && detailState.detail?.harness === undefined ? <p className="joi-detail-load-notice" role="alert">{t("home.goalDetailLoadFailed")} <button className="button ghost" disabled={detailState.busy} onClick={detailState.retry} type="button">{t("common.retry")}</button></p> : null}
         {goal.failure === undefined ? null : <GoalFailureNotice failure={goal.failure} />}
-        {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} /></article>}
+        {goal.completionSummary === undefined ? null : goal.clarification?.reasonCode === "goal_continuation_required" ? <GoalArtifacts api={api} goal={goal} key={artifactVersion} /> : <article className="joi-goal-result"><h2>{t("home.finalResult")}</h2><div className="joi-md"><Markdown>{goal.completionSummary}</Markdown></div><GoalArtifacts api={api} goal={goal} key={artifactVersion} /></article>}
         <GoalAgentWarning goal={goal} onOpen={() => setSelectedAgentId(agents.find((agent) => agent.status === "FAILED")?.agentId ?? null)} />
         {goal.clarification === undefined ? null : <ClarificationActions api={api} partners={partners} workbenchId={goal.workbench.workbenchId} workbenches={workbenches} inputId={goal.goalId} onResolved={onResolved} prompt={goal.clarification.prompt} questionId={goal.clarification.questionId} questionVersion={goal.clarification.questionVersion} reasonCode={goal.clarification.reasonCode} suggestionSeed={goal.title} continuationSummary={goal.completionSummary} />}
         {TERMINAL_GOAL_STATUSES.includes(goal.status) ? <GoalRetryPanel api={api} goal={goal} onDone={() => onRetried(goal)} /> : null}

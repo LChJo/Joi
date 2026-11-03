@@ -190,7 +190,7 @@ describe("persisted joi Turn completions", () => {
     }
   });
 
-  it("projects workspace artifact directories onto goal cards for folder grouping", async () => {
+  it("counts unique files without directory metadata and projects their workspace directories", async () => {
     const fixture = await createRuntimeFixture();
     try {
       const workbench = await fixture.workbenchRegistry.create({ name: "交付", personaSummary: "private", projectLabel: "joi", scopeSummary: "产物目录" });
@@ -240,10 +240,11 @@ describe("persisted joi Turn completions", () => {
       });
       const goal = (await new SqliteJoiHomeFeedRepository(fixture.database).load(fixture.clock.now())).goals.find((candidate) => candidate.goalId === "goal-dirs");
       expect(goal?.artifacts).toEqual([
+        { artifactId: "work_result_artifact:result-dirs:2", directory: "out", kind: "FILE", mimeType: "application/octet-stream", name: "build.zip", size: 64 },
         { artifactId: "work_result_artifact:result-dirs:0", directory: "out", kind: "FILE", mimeType: "text/csv", name: "report.csv", size: 8 },
-        { artifactId: "work_result_artifact:result-dirs:1", directory: "out", kind: "FILE", mimeType: "application/octet-stream", name: "build.zip", size: 64 },
-        { artifactId: "work_result_artifact:result-dirs:3", directory: "out", kind: "DIRECTORY", mimeType: "inode/directory", name: "out", size: 0 },
       ]);
+      expect(goal?.artifactCount).toBe(2);
+      expect(fixture.database.transaction(db => db.prepare("SELECT json_array_length(artifacts_json) AS count FROM work_results WHERE result_id='result-dirs'").get()?.count)).toBe(4);
     } finally {
       await fixture.close();
     }

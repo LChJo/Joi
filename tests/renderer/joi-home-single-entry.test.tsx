@@ -272,11 +272,10 @@ describe("Workbench context center", () => {
     expect(await screen.findByText("产物已经移动。")).toBeInTheDocument();
     expect(screen.getByText("legacy.txt")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "打开产物 legacy.txt" })).not.toBeInTheDocument();
-    const folderSummary = screen.getByText("src · 2 个文件");
-    const collapsedCode = screen.getByRole("button", { name: "打开产物 a.ts" });
-    expect(collapsedCode).not.toBeVisible();
+    expect(screen.getByRole("button", { name: "打开产物 a.ts" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "打开产物 b.ts" })).toBeVisible();
     expect(screen.queryByRole("button", { name: "打开产物 src" })).not.toBeInTheDocument();
-    fireEvent.click(folderSummary);
+    const collapsedCode = await screen.findByRole("button", { name: "打开产物 a.ts" });
     expect(collapsedCode).toBeVisible();
     fireEvent.click(collapsedCode);
     await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
@@ -1066,10 +1065,8 @@ describe("joi home single entry", () => {
     await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {
       artifactId: "goal-artifact-1", mode: "REVEAL", source: "GOAL", sourceId: "input-direct",
     }));
-    const folderSummary = within(drawer).getByText("out · 2 个文件");
-    const collapsedZip = within(drawer).getByRole("button", { name: "打开产物 build.zip" });
-    expect(collapsedZip).not.toBeVisible();
-    fireEvent.click(folderSummary);
+    expect(within(drawer).getByRole("button", { name: "打开产物 build.zip" })).toBeVisible();
+    const collapsedZip = await within(drawer).findByRole("button", { name: "打开产物 build.zip" });
     expect(collapsedZip).toBeVisible();
     fireEvent.click(collapsedZip);
     await waitFor(() => expect(openArtifact).toHaveBeenCalledWith(workbench.workbenchId, {

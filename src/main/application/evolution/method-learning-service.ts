@@ -564,6 +564,8 @@ export class MethodLearningService extends EvolutionService {
   }
   #monitor(): void {
     const store = this.#learning.store;
+    const revisions = store.revisions().filter(r => ["CANARY", "ACTIVE"].includes(r.status));
+    if (revisions.length === 0) return;
     const cases = store.currentEvaluationCases();
     const hardViolations = new Set(cases.filter(c => c.defect === "evidence_identity" || c.defect === "dependency_order").map(c => c.goalId));
     const facts = new Map<string, LearningCase>();
@@ -571,7 +573,7 @@ export class MethodLearningService extends EvolutionService {
       const prior = facts.get(c.goalId);
       if (prior === undefined || prior.observedAt < c.observedAt || (prior.defect === "healthy" && c.defect !== "healthy")) facts.set(c.goalId, c);
     }
-    for (const revision of store.revisions().filter(r => ["CANARY", "ACTIVE"].includes(r.status))) {
+    for (const revision of revisions) {
       const s = revisionState(revision);
       const pins = store.goalPins().filter(p => p.at >= revision.createdAt && (revision.scope === "GLOBAL" || p.workbenchId === revision.workbenchId));
       const compatible = pins.filter(p => { const value = JSON.parse(p.policy) as { pin?: EvolutionSourcePin; evaluatorVersion?: string; cohortRevisionId?: string | null };

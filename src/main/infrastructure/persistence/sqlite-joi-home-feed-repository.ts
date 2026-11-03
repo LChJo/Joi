@@ -3,12 +3,13 @@
 import type { DatabaseSync } from "node:sqlite";
 import { parseWorkbenchProposal } from "../../../shared/workbench-choice.js";
 
-import type { JoiGoalCardBaseDto, JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto, WorkbenchArtifactDto } from "../../../shared/joi.js";
+import type { JoiGoalCardBaseDto, JoiGoalCardDto, JoiGoalHarnessDto, JoiGoalStatusDto, JoiHomeFeedDto, JoiThinkingItemDto } from "../../../shared/joi.js";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
 import type { HarnessGoalProjection } from "../../application/ports/joi-harness.js";
 import { normalizeJoiFailureReasonCode, suggestedActionForJoiInputFailure } from "../../application/joi/joi-input-failure.js";
 import { maskSecretText, stripPathRedactions } from "../../application/partners/agent-conversation-presentation.js";
-import { workResultArtifactId, workspaceArtifactDirectory, workspaceArtifactRelativePath } from "../../domain/work/workspace-artifact-reference.js";
+import type { GoalArtifactPage, GoalArtifactPageDto } from "../../../shared/goal-artifacts.js";
+import { GoalArtifactPreviewCache, queryGoalArtifacts } from "./sqlite-goal-artifacts.js";
 import { queryHarnessGoalProjections } from "./sqlite-joi-harness-repository.js";
 import type { JoiGoalDetailDto, JoiGoalDetailPage } from "../../../shared/joi.js";
 import { goalDetailPage } from "../../application/joi/goal-detail-page.js";
@@ -217,40 +218,6 @@ function collapseThinkingByGoal(items: JoiThinkingItemDto[]): JoiThinkingItemDto
   return [...byGoal.values()];
 }
 
-function goalArtifacts(connection: DatabaseSync, goalId: string, workbenchId: string): WorkbenchArtifactDto[] {
-  const rows = connection.prepare(`SELECT r.result_id, r.artifacts_json FROM work_results r
-    JOIN work_items w ON w.work_id = r.work_id
-    WHERE r.workbench_id = ? AND w.input_id = ? AND r.is_authoritative = 1 AND r.status = 'COMPLETED'
-    ORDER BY r.created_at, r.result_id`).all(workbenchId, goalId) as Row[];
-  const result: WorkbenchArtifactDto[] = [];
-  const seen = new Set<string>();
-  for (const row of rows) {
-    if (typeof row.result_id !== "string" || typeof row.artifacts_json !== "string") continue;
-    let artifacts: unknown;
-    try { artifacts = JSON.parse(row.artifacts_json); } catch { continue; }
-    if (!Array.isArray(artifacts)) continue;
-    artifacts.forEach((candidate, index) => {
-      if (candidate === null || typeof candidate !== "object") return;
-      const artifact = candidate as Record<string, unknown>;
-      const relativePath = workspaceArtifactRelativePath(typeof artifact.artifactRef === "string" ? artifact.artifactRef : undefined);
-      if (relativePath === undefined || seen.has(relativePath) || typeof artifact.name !== "string" || typeof artifact.size !== "number") return;
-      seen.add(relativePath);
-      const mimeType = typeof artifact.mimeType === "string" ? artifact.mimeType : "application/octet-stream";
-      const isDirectory = mimeType === "inode/directory";
-      const directory = isDirectory ? relativePath : workspaceArtifactDirectory(relativePath);
-      result.push({
-        artifactId: workResultArtifactId(row.result_id as string, index),
-        ...(directory === undefined ? {} : { directory }),
-        kind: isDirectory ? "DIRECTORY" : "FILE",
-        mimeType,
-        name: artifact.name,
-        size: artifact.size,
-      });
-    });
-  }
-  return result;
-}
-
 /**
  * Failed Works a recovery chain has already superseded, per goal.
  *
@@ -279,6 +246,7 @@ function resolvedFailureCounts(connection: DatabaseSync): Map<string, number> {
 }
 
 export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
+  readonly #artifactPreviews = new GoalArtifactPreviewCache();
   constructor(private readonly database: TransactionalDatabase) {}
 
   async loadGoalDetail(goalId: string, page: JoiGoalDetailPage): Promise<JoiGoalDetailDto | null> {
@@ -292,6 +260,10 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
 
   async getGoalResult(goalId: string, resultId: string): Promise<GoalResultDto | null> {
     return this.database.transaction(connection => queryGoalResult(connection, goalId, resultId));
+  }
+
+  async listGoalArtifacts(goalId: string, page: GoalArtifactPage = {}): Promise<GoalArtifactPageDto | null> {
+    return this.database.transaction(connection => queryGoalArtifacts(connection, goalId, page));
   }
 
   async load(now: Date): Promise<JoiHomeFeedDto> {
@@ -393,6 +365,7 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
           AND NOT (i.workbench_id IS NULL AND i.status = 'CLARIFICATION_REQUIRED')
         GROUP BY i.input_id ORDER BY COALESCE(i.last_opened_at, i.created_at) DESC, i.input_id DESC`).all() as Row[];
       const harnessByGoal = new Map(queryHarnessGoalProjections(connection).map((projection) => [projection.goalInputId, projection]));
+      this.#artifactPreviews.retain(new Set(rows.map(row => text(row, "input_id"))));
       const resolvedFailures = resolvedFailureCounts(connection);
       const goals: JoiGoalCardDto[] = rows.map((row) => {
         const goalId = text(row, "input_id");
@@ -416,11 +389,11 @@ export class SqliteJoiHomeFeedRepository implements JoiHomeFeedRepository {
         const failureReasonCode = normalizeJoiFailureReasonCode(failureCode
           ?? (historicalFailure ? "joi_task_turn_failed" : undefined));
         const artifacts = typeof row.workbench_id === "string" && (finalOutcome || (number(row, "result_revision") === 0 && text(row, "inbox_status") === "CONSUMED"))
-          ? goalArtifacts(connection, goalId, row.workbench_id)
-          : [];
+          ? this.#artifactPreviews.read(connection, goalId, row.workbench_id)
+          : {};
         const base: JoiGoalCardBaseDto = {
           agentCount: number(row, "agent_count"),
-          ...(artifacts.length === 0 ? {} : { artifacts }),
+          ...artifacts,
           ...(typeof row.archived_at === "string" ? { archivedAt: row.archived_at } : {}),
           workbench: {
             workbenchId: typeof row.workbench_id === "string" ? row.workbench_id : "",

@@ -41,5 +41,7 @@
   "archived": "已归档",
   "scheduledTasks": "定时任务",
   "awaitingAssignment": "等待归属",
-  "inputAwaitingConfirmation": "待确认的输入"
+  "inputAwaitingConfirmation": "待确认的输入",
+  "previousPage": "上一页",
+  "nextPage": "下一页"
 }

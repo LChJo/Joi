@@ -7,7 +7,7 @@ import { DomainError } from "../../domain/errors.js";
 
 export class RemoteHomeQueryService implements RemoteHomeQueries {
   constructor(private readonly dependencies: {
-    homeFeed: Pick<JoiHomeFeedService, "load"> & Partial<Pick<JoiHomeFeedService, "listGoalResults" | "getGoalResult">>;
+    homeFeed: Pick<JoiHomeFeedService, "load"> & Partial<Pick<JoiHomeFeedService, "listGoalResults" | "getGoalResult" | "listGoalArtifacts">>;
     inputs: { readDisplayText(inputId: string): Promise<string | null> };
     agents: Pick<WorkbenchAgentService, "list" | "conversation">;
     workbenches: Pick<WorkbenchCatalog, "listSummaries">;
@@ -38,6 +38,12 @@ export class RemoteHomeQueryService implements RemoteHomeQueries {
 
   async results(goalId: string, cursor?: string) {
     const page = await this.dependencies.homeFeed.listGoalResults?.(goalId, cursor === undefined ? {} : { cursor });
+    if (page == null) throw new DomainError("remote_goal_unavailable", "Goal is unavailable.");
+    return page;
+  }
+
+  async artifacts(goalId: string, cursor?: string) {
+    const page = await this.dependencies.homeFeed.listGoalArtifacts?.(goalId, cursor === undefined ? {} : { cursor });
     if (page == null) throw new DomainError("remote_goal_unavailable", "Goal is unavailable.");
     return page;
   }

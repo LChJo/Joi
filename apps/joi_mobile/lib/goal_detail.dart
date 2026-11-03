@@ -1,6 +1,7 @@
 import 'i18n.dart';
 import 'result_reader.dart';
 import 'result_history.dart';
+import 'goal_artifacts.dart';
 import 'connection_diagnostics_view.dart';
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -718,21 +719,17 @@ class _GoalDetailPageState extends State<GoalDetailPage>
           if ((_facts['artifacts'] as List? ?? []).isNotEmpty) ...[
             const Divider(height: 32),
             Text(tr(Msg.mobileArtifactInformationOpenOnTheDesktop)),
-            for (final artifact
-                in (_facts['artifacts'] as List)
-                    .whereType<Map<String, dynamic>>())
-              ListTile(
-                leading: const Icon(Icons.insert_drive_file_outlined),
-                title: Text(
-                  artifact['name'] as String? ?? tr(Msg.homeArtifacts),
-                ),
-                subtitle: Text(
-                  tr(Msg.mobileValueValueBytes, {
-                    'p0': (artifact['mimeType'] ?? '').toString(),
-                    'p1': (artifact['size'] ?? 0).toString(),
-                  }),
-                ),
+            GoalArtifactList(
+              key: ValueKey(
+                'artifacts-${_goal.goalId}-${_facts['resultId'] ?? _facts['completedAt'] ?? _facts['artifactCount'] ?? 0}',
               ),
+              controller: widget.controller,
+              goalId: _goal.goalId,
+              initialItems: (_facts['artifacts'] as List)
+                  .whereType<Map<String, dynamic>>()
+                  .toList(),
+              nextCursor: _facts['artifactNextCursor'] as String?,
+            ),
           ],
           GoalActions(
             key: ValueKey(_goal.goalId),

@@ -1419,6 +1419,7 @@ body:has(.remote-joi-shell) { min-width: 0; background: radial-gradient(circle a
 .joi-skill-option small { color: var(--muted); }
 
 .joi-result-drawer > .joi-goal-drawer-body { padding-bottom: 208px; }
+.joi-artifact-paging { display: flex; align-items: center; gap: 8px; padding-block: 8px; }
 .joi-history-goal-title { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.5; }
 .joi-history-list { gap: 0; }
 .joi-history-entry { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 18px 8px; border: 0; border-bottom: 1px solid var(--line); background: transparent; color: var(--ink); text-align: left; cursor: pointer; }

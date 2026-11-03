@@ -2,6 +2,7 @@ import { MessageChannel, Worker } from "node:worker_threads";
 import type { JoiHomeFeedRepository } from "../../application/ports/joi-home-feed.js";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiHomeFeedDto } from "../../../shared/joi.js";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../../../shared/goal-results.js";
+import type { GoalArtifactPage, GoalArtifactPageDto } from "../../../shared/goal-artifacts.js";
 import { WorkerRpc } from "../runtime/worker-rpc.js";
 
 export class WorkerHomeFeedRepository implements JoiHomeFeedRepository {
@@ -29,6 +30,10 @@ export class WorkerHomeFeedRepository implements JoiHomeFeedRepository {
 
   getGoalResult(goalId: string, resultId: string): Promise<GoalResultDto | null> {
     return this.#rpc.call("getGoalResult", { goalId, resultId });
+  }
+
+  listGoalArtifacts(goalId: string, page: GoalArtifactPage): Promise<GoalArtifactPageDto | null> {
+    return this.#rpc.call("listGoalArtifacts", { goalId, page });
   }
 
   close(): Promise<void> {

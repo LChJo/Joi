@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { buildLearningCases, type LearningCase } from "../../src/main/domain/evolution/learning-case";
 import { SqliteMethodLearningStore } from "../../src/main/infrastructure/persistence/sqlite-method-learning-store";
 import { createRuntimeFixture, type RuntimeFixture } from "../support/runtime-fixture";
+import { probeSqlReads } from "../support/sql-read-probe.js";
 
 describe("production method learning persistence", () => {
   let fixture: RuntimeFixture;
@@ -36,6 +37,76 @@ describe("production method learning persistence", () => {
       db.prepare("INSERT INTO joi_goal_outcomes(input_id,result_revision,completion_summary,completed_at,updated_at,disposition,requirements_revision,synthesis_state_json) VALUES ('g',1,'PRIVATE CONCLUSION','2026-10-23','2026-10-23','COMPLETED',1,?)").run(JSON.stringify({claims:[{statement:"PRIVATE CLAIM",verification:"VERIFIED",requirementIds:["one"],resultIds:["r-one"]}]}));
     });
   }
+  it("reuses unchanged captured facts while observing verification updates", async () => {
+    await authoritativeGoal();
+    store.acknowledgeFacts(store.captureFacts());
+    const probe = probeSqlReads(fixture.database);
+    const reader = new SqliteMethodLearningStore(probe.database);
+    expect(reader.captureFacts()).toEqual([]);
+    probe.statements.length = 0;
+    expect(reader.captureFacts()).toEqual([]);
+    expect(probe.statements.filter(sql => sql.includes("WITH latest AS"))).toEqual([]);
+    fixture.database.transaction(db => db.prepare("UPDATE work_result_verifications SET status='PASSED' WHERE result_id='r-two'").run());
+    expect(reader.captureFacts()).toMatchObject([{ failed: 0, verified: 2 }]);
+    expect(probe.statements.some(sql => sql.includes("WITH latest AS"))).toBe(true);
+  });
+  it("projects learning result metadata without copying artifact manifests", async () => {
+    await authoritativeGoal();
+    const probe = probeSqlReads(fixture.database);
+    expect(new SqliteMethodLearningStore(probe.database).captureFacts()).toHaveLength(1);
+    const query = probe.statements.find(sql => sql.includes("WITH latest AS"));
+    expect(query).toBeDefined();
+    expect(query).not.toMatch(/SELECT\s+r\.\*/u);
+    expect(query).not.toContain("artifacts_json");
+  });
+  it("keeps unrelated settings and file metadata writes off the fact query", async () => {
+    await authoritativeGoal();
+    store.acknowledgeFacts(store.captureFacts());
+    const probe = probeSqlReads(fixture.database);
+    const reader = new SqliteMethodLearningStore(probe.database);
+    expect(reader.captureFacts()).toEqual([]);
+    probe.statements.length = 0;
+    store.configureGlobal({ paused: true });
+    fixture.database.transaction(db => db.prepare("UPDATE work_results SET artifacts_json='[]' WHERE result_id='r-one'").run());
+    expect(reader.captureFacts()).toEqual([]);
+    expect(probe.statements.filter(sql => sql.includes("WITH latest AS"))).toEqual([]);
+  });
+  it("isolates cached cases from callers and refreshes execution gates and exposure invalidation", async () => {
+    await authoritativeGoal();
+    const facts = store.captureFacts();
+    store.upsertCases(facts.flatMap(buildLearningCases));
+    store.acknowledgeFacts(facts);
+    const probe = probeSqlReads(fixture.database);
+    const reader = new SqliteMethodLearningStore(probe.database);
+    const cases = reader.currentEvaluationCases();
+    expect(cases.length).toBeGreaterThan(0);
+    if (cases[0] === undefined) throw new Error("Missing learning case");
+    const originalId = cases[0].caseId;
+    cases[0].caseId = "caller-mutated";
+    probe.statements.length = 0;
+    expect(reader.currentEvaluationCases()[0]?.caseId).toBe(originalId);
+    expect(probe.statements).toHaveLength(1);
+    fixture.database.transaction(db => db.prepare(`INSERT INTO joi_goal_execution_gates
+      (goal_input_id,question_id,question_version,status,reason_code,created_at,updated_at)
+      VALUES ('g','synthetic-question',1,'REVIEWING','synthetic','2026-10-23','2026-10-23')`).run());
+    expect(reader.currentEvaluationCases()).toEqual([]);
+    fixture.database.transaction(db => db.prepare("DELETE FROM joi_goal_execution_gates WHERE goal_input_id='g'").run());
+    expect(reader.currentEvaluationCases().length).toBeGreaterThan(0);
+    store.invalidateGoalExposure("a", "g");
+    expect(reader.currentEvaluationCases()).toEqual([]);
+  });
+  it("does not reuse facts from an aborted transaction for a later committed write", async () => {
+    await authoritativeGoal();
+    const projection = fixture.database.transaction(db => new SqliteMethodLearningStore({ transaction: operation => operation(db) }));
+    expect(projection.captureFacts()).toMatchObject([{ failed: 1, verified: 1 }]);
+    expect(() => fixture.database.transaction(db => {
+      db.prepare("UPDATE work_result_verifications SET status='PASSED' WHERE result_id='r-two'").run();
+      expect(projection.captureFacts()).toMatchObject([{ failed: 0, verified: 2 }]);
+      throw new Error("abort synthetic write");
+    })).toThrow("abort synthetic write");
+    fixture.database.transaction(db => db.prepare("UPDATE work_result_verifications SET status='NOT_REQUIRED' WHERE result_id='r-two'").run());
+    expect(projection.captureFacts()).toMatchObject([{ failed: 0, verified: 1 }]);
+  });
   it("uses one atomic daily budget and stable call identifiers across workbenches", () => {
     store.configureGlobal({ enabled: true, dailyCallLimit: 2 });
     for (const id of ["a", "b"]) store.configureParticipant(id, { enabled: true });
@@ -386,6 +457,10 @@ describe("production method learning persistence", () => {
         db.prepare("INSERT INTO work_result_verifications VALUES (?,'PASSED')").run(`r${String(n)}`);
         db.prepare("INSERT INTO joi_current_goal_outcomes VALUES (?,1,'2026-10-23','COMPLETED',NULL)").run(`g${String(n)}`);
       }
+      const projectionMigration = readFileSync("resources/migrations/090_read_projection_versions.sql", "utf8");
+      db.exec(projectionMigration.split("CREATE TABLE work_result_artifact_versions")[0] ?? "");
+      // Receipt and verification writes are the mutable sources in this focused fixture.
+      for (const trigger of projectionMigration.matchAll(/CREATE TRIGGER projection_learning_(?:method_learning_fact_receipts|work_result_verifications)_[\s\S]+?END;/gu)) db.exec(trigger[0]);
       const isolated = new SqliteMethodLearningStore({transaction: operation => operation(db)});
       const first = isolated.captureFacts(100);
       expect(first).toHaveLength(50);

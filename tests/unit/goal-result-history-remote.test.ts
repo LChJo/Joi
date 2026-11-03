@@ -3,6 +3,21 @@ import { RemoteHomeQueryService } from "../../src/main/application/remote/remote
 import { isRemoteCommand } from "../../src/main/infrastructure/remote/remote-access-host.js";
 
 describe("AC-37/48/57 remote result history", () => {
+  it("reads artifact pages directly and validates the additive command", async () => {
+    expect(isRemoteCommand({ kind: "goal.artifacts", requestId: "files", goalId: "g", cursor: "page" })).toBe(true);
+    expect(isRemoteCommand({ kind: "goal.artifacts", requestId: "files", goalId: "" })).toBe(false);
+    const listGoalArtifacts = vi.fn().mockResolvedValue({ items: [], nextCursor: "next" });
+    const load = vi.fn();
+    const queries = new RemoteHomeQueryService({ homeFeed: { load, listGoalArtifacts }, inputs: { readDisplayText: vi.fn() },
+      agents: { list: vi.fn(), conversation: vi.fn() }, workbenches: { listSummaries: vi.fn() }, partners: { list: vi.fn() } });
+    const remote = new RemoteCommandService({ homeFeed: { load }, inbox: { accept: vi.fn() }, queries });
+    const response = await remote.handle({ kind: "goal.artifacts", requestId: "files", goalId: "g", cursor: "page" }, "phone");
+    expect(JSON.parse((response.result as { chunk: string }).chunk)).toEqual({ items: [], nextCursor: "next" });
+    expect(listGoalArtifacts).toHaveBeenCalledWith("g", { cursor: "page" });
+    expect(load).not.toHaveBeenCalled();
+    listGoalArtifacts.mockResolvedValue(null);
+    await expect(queries.artifacts("missing")).rejects.toMatchObject({ code: "remote_goal_unavailable" });
+  });
   it("validates the narrow history commands and requires the selected record", () => {
     expect(isRemoteCommand({ kind: "goal.results", requestId: "list", goalId: "g" })).toBe(true);
     expect(isRemoteCommand({ kind: "goal.results", requestId: "list", goalId: "g", cursor: "page" })).toBe(true);

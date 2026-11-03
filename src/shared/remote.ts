@@ -50,6 +50,7 @@ export type RemoteCommand =
   | { kind: "catalog.get"; requestId: string }
   | { kind: "goal.get" | "goal.agents"; requestId: string; goalId: string; cursor?: string }
   | { kind: "goal.results"; requestId: string; goalId: string; cursor?: string }
+  | { kind: "goal.artifacts"; requestId: string; goalId: string; cursor?: string }
   | { kind: "goal.result"; requestId: string; goalId: string; resultId: string }
   | { kind: "agent.conversation"; requestId: string; goalId: string; agentId: string; cursor?: string }
   | { kind: "read.next"; requestId: string; cursor: string }

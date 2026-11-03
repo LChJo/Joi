@@ -10,6 +10,7 @@ export interface RemoteHomeQueries {
   catalog(): Promise<unknown>;
   goal(goalId: string): Promise<unknown>;
   results?(goalId: string, cursor?: string): Promise<unknown>;
+  artifacts?(goalId: string, cursor?: string): Promise<unknown>;
   result?(goalId: string, resultId: string): Promise<unknown>;
   agents(goalId: string, cursor?: string): Promise<unknown>;
   conversation(goalId: string, agentId: string, cursor?: string): Promise<unknown>;
@@ -69,6 +70,7 @@ export class RemoteCommandService {
       if (c.kind === "catalog.get" && queries !== undefined) return { ...base, result: this.#page(await queries.catalog(), scope) };
       if (c.kind === "goal.get" && queries !== undefined) return { ...base, result: this.#page(await queries.goal(c.goalId), scope) };
       if (c.kind === "goal.results" && queries?.results !== undefined) return { ...base, result: this.#page(await queries.results(c.goalId, c.cursor), scope) };
+      if (c.kind === "goal.artifacts" && queries?.artifacts !== undefined) return { ...base, result: this.#page(await queries.artifacts(c.goalId, c.cursor), scope) };
       if (c.kind === "goal.result" && queries?.result !== undefined) return { ...base, result: this.#page(await queries.result(c.goalId, c.resultId), scope) };
       if (c.kind === "goal.agents" && queries !== undefined) return { ...base, result: this.#page(await queries.agents(c.goalId, c.cursor), scope) };
       if (c.kind === "agent.conversation" && queries !== undefined) return { ...base, result: this.#page(await queries.conversation(c.goalId, c.agentId, c.cursor), scope) };
