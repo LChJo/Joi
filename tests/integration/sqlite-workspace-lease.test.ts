@@ -4,7 +4,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persistence/sqlite-workspace-lease-manager.js";
-import { openRuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 import { TestClock } from "../support/runtime-fixture.js";
 
 describe("workspace lease lifecycle", () => {
@@ -120,7 +120,7 @@ describe("workspace lease lifecycle", () => {
 
   it("shares reads, excludes writes, releases terminal work and recovers expired leases", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-workspace-lease-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       const clock = new TestClock();
       database.transaction((connection) => {

@@ -1,7 +1,7 @@
-import { copyFile, mkdtemp, realpath, rm } from "node:fs/promises";
+import { mkdtemp, realpath, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { inject } from "vitest";
+import { openRuntimeDatabaseFixture } from "./runtime-database-fixture";
 
 import { AgentService } from "../../src/main/application/agents/agent-service";
 import { AuthService } from "../../src/main/application/auth/auth-service";
@@ -20,7 +20,7 @@ import { ScenarioPackService } from "../../src/main/application/partners/scenari
 import { PartnerWorkMemoryService } from "../../src/main/application/partners/partner-work-memory-service";
 import type { SsePublisher } from "../../src/main/application/ports/runtime-store";
 import type { WorkbenchArtifactOpenMode } from "../../src/main/application/ports/workbench-artifacts";
-import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
+import type { RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database";
 import { SqlitePartnerInstanceMessageStore } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-message-store";
 import { SqlitePartnerInstanceRepository } from "../../src/main/infrastructure/persistence/sqlite-partner-instance-repository";
 import { SqlitePartnerKnowledgeStore } from "../../src/main/infrastructure/persistence/sqlite-partner-knowledge-store";
@@ -91,11 +91,7 @@ export interface RuntimeFixture {
 export async function createRuntimeFixture(): Promise<RuntimeFixture> {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "joi-runtime-")));
   const databasePath = path.join(root, "runtime.sqlite");
-  await copyFile(inject("runtimeDatabaseTemplate"), databasePath);
-  const database = await openRuntimeDatabase({
-    databasePath,
-    migrationsDirectory: path.resolve("resources/migrations"),
-  });
+  const database = await openRuntimeDatabaseFixture(databasePath);
   const clock = new TestClock();
   const ids = new TestIds();
   // SSE transport retired (ADR 0009); fixture keeps a no-op publisher for legacy service ports.

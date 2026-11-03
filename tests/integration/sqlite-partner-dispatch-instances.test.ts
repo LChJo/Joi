@@ -17,7 +17,8 @@ import { SqliteWorkResultRepository } from "../../src/main/infrastructure/persis
 import { SqliteWorkbenchManagementRepository } from "../../src/main/infrastructure/persistence/sqlite-workbench-management-repository.js";
 import { createWorkResult } from "../../src/main/domain/work/work-result.js";
 import { LegacyLifeStoreAdapter } from "../../src/main/infrastructure/persistence/legacy-life-store-adapter.js";
-import { openRuntimeDatabase, type RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import type { RuntimeDatabase } from "../../src/main/infrastructure/persistence/runtime-database.js";
+import { openRuntimeDatabaseFixture } from "../support/runtime-database-fixture.js";
 import { TestClock, TestIds } from "../support/runtime-fixture.js";
 import { wrapPartnerRunFailure } from "../../src/main/application/partners/partner-run-failure.js";
 import { SqliteJoiHomeFeedRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-home-feed-repository.js";
@@ -46,7 +47,7 @@ function seedDispatchFixture(database: RuntimeDatabase, partnerRevisionId: strin
 
 async function openWithPartner() {
   const root = await mkdtemp(path.join(os.tmpdir(), "joi-dispatch-instances-"));
-  const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+  const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
   const partners = new PartnerRegistryService({ clock: new TestClock(), ids: { next: (prefix) => `${prefix}_t${String(Math.random()).slice(2, 8)}` }, repository: new SqlitePartnerRegistryRepository(database) });
   const partner = await partners.add({ capabilities: [], displayName: "Local", kind: "local-pi", skills: [], tools: [] });
   seedDispatchFixture(database, partner.partnerRevisionId);
@@ -237,7 +238,7 @@ describe("partner dispatch instance routing", () => {
       }
       if (scenario === "restart") {
         database.close();
-        database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+        database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
         handler = makeHandler(database, { dispatch: async () => { throw new Error("unexpected_replay"); } }, [], undefined, async () => undefined,
           clock, new SqliteWorkspaceLeaseManager({ database, clock }));
         await new SqlitePartnerInstanceRepository(database).recoverCrashed(clock.now().toISOString());
@@ -1131,7 +1132,7 @@ describe("partner dispatch instance routing", () => {
   it.each(["legacy", "semantic", "invalid"])("creates an ephemeral A2A Agent card and archives %s text without raw data payloads", async mode => {
     const handoff = { version: 1, conclusion: "PRIVATE_A2A_HANDOFF", requirementIds: [], evidenceResultIds: [], artifactRefs: [], unresolved: [], conflicts: [] };
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-dispatch-a2a-agent-"));
-    const database = await openRuntimeDatabase({ databasePath: path.join(root, "runtime.sqlite"), migrationsDirectory: path.resolve("resources/migrations") });
+    const database = await openRuntimeDatabaseFixture(path.join(root, "runtime.sqlite"));
     try {
       database.transaction((connection) => connection.prepare(`INSERT INTO agent_connections
         (agent_connection_id, name, card_url, status, created_at, updated_at)
