@@ -36,14 +36,17 @@ describe("method learning recovery and exposure safeguards", () => {
       model: { pin: () => Promise.resolve(pin), call }, now: () => now, id: () => "recovery", stepsPerHandle: 1 });
   });
   afterEach(async () => fixture.close());
-  function goal(id: string, workbench = "a", failed = false): void {
-    fixture.database.transaction(db => db.prepare(`INSERT INTO joi_inbox_messages
-      (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
-      VALUES (?,?,'private','CONSUMED',?,?,?)`).run(id, id, workbench, now, now));
-    store.upsertCases(buildLearningCases({ goalId: id, workbenchId: workbench, requirementsRevision: 1, resultRevision: 1, observedAt: now,
+  function goals(ids: readonly string[], workbench = "a", failed = false): void {
+    fixture.database.transaction(db => {
+      const insert = db.prepare(`INSERT INTO joi_inbox_messages
+        (input_id,idempotency_key,body,status,workbench_id,created_at,updated_at)
+        VALUES (?,?,'private','CONSUMED',?,?,?)`);
+      for (const id of ids) insert.run(id, id, workbench, now, now);
+    });
+    store.upsertCases(ids.flatMap(id => buildLearningCases({ goalId: id, workbenchId: workbench, requirementsRevision: 1, resultRevision: 1, observedAt: now,
       completed: true, canceled: false, verified: 2, failed: failed ? 1 : 0, unverified: 0, requirementCount: 2,
       coveredRequirementCount: 2, foreignEvidenceCount: 0, dependencyViolationCount: 0, redundantReads: 0,
-      environmentFailed: false, executionFailed: false }));
+      environmentFailed: false, executionFailed: false })));
   }
   function experiment(status: MethodExperiment["status"] = "RUNNING", phase: MethodExperiment["phase"] = "PROTOCOL"): MethodExperiment {
     const trial = { scenarioId: "case-test", variant: "candidate", attempt: 0, calls: 3, modelCalls: 3, tokens: 90,
@@ -65,17 +68,20 @@ describe("method learning recovery and exposure safeguards", () => {
     const eligible = (id: string) => fixture.database.transaction(db => db.prepare("SELECT 1 FROM method_learning_exposure_invalidations WHERE goal_id=?").get(id)) === undefined;
     Object.assign(store, { goalEvaluationEligible: eligible, goalCaseMatchesCurrent: () => true,
       currentEvaluationCases: () => store.listCases().filter(item => eligible(item.goalId)) });
-    for (let i = 0; i < 60; i += 1) {
-      const id = `exposure-${String(i).padStart(2, "0")}`;
-      goal(id);
-      subject.strategyForGoal("a", id, pin, { requirementsReady: true, requirementCount: 2 });
+    // Canary monitoring requires at least five candidate goals and five independent controls.
+    const ids = Array.from({ length: 25 }, (_, i) => `exposure-${String(i).padStart(2, "0")}`);
+    goals(ids);
+    for (const id of ids) subject.strategyForGoal("a", id, pin, { requirementsReady: true, requirementCount: 2 });
+    expect(store.goalPins("method").length).toBeGreaterThanOrEqual(5);
+    if (store.revision("method")?.status === "CANARY") {
+      expect(store.goalPins().filter(item => item.revisionId === null).length).toBeGreaterThanOrEqual(5);
     }
   }
   it("refreshes held-out cases during the safety scan while scheduling is paused", () => {
     const paused = experiment("PAUSED", "EVALUATE");
     paused.state.reason = "insufficient_samples";
     store.saveExperiment(paused);
-    for (let i = 0; i < 80; i += 1) goal(`held-out-${String(i)}`);
+    goals(Array.from({ length: 80 }, (_, i) => `held-out-${String(i)}`));
     expect(store.listCases().filter(item => item.split === "sealed").length).toBeGreaterThanOrEqual(5);
     store.configureGlobal({ paused: true });
     subject.scan();
@@ -114,16 +120,16 @@ describe("method learning recovery and exposure safeguards", () => {
   it("does not expose a learned method to new goals when the global cap is zero", () => {
     revision();
     store.configureGlobal({ enabled: true, dailyCallLimit: 0 });
-    for (let i = 0; i < 25; i += 1) {
-      const id = `zero-budget-${String(i)}`;
-      goal(id);
+    const ids = Array.from({ length: 25 }, (_, i) => `zero-budget-${String(i)}`);
+    goals(ids);
+    for (const id of ids) {
       expect(subject.strategyForGoal("a", id, pin, { requirementsReady: true, requirementCount: 2 }).strategyRevisionId).toBeNull();
     }
     expect(call).not.toHaveBeenCalled();
   });
   it("preserves archived experiment history without throwing or blocking another workbench", () => {
     store.saveExperiment(experiment());
-    for (let i = 0; i < 30; i += 1) goal(`next-${String(i)}`, "b", true);
+    goals(Array.from({ length: 30 }, (_, i) => `next-${String(i)}`), "b", true);
     fixture.database.transaction(db => db.prepare("UPDATE workbenches SET status='ARCHIVED' WHERE workbench_id='a'").run());
     expect(() => subject.pending()).not.toThrow();
     expect(subject.pending()[0]?.inputId).toBe("evolution:b");
@@ -167,9 +173,9 @@ describe("method learning recovery and exposure safeguards", () => {
     const controls = subject.status("a").learning?.methods[0]?.controlGoals;
     expect(controls).toBeGreaterThanOrEqual(5);
     subject.configureParticipation("b", false);
-    for (let i = 0; i < 15; i += 1) {
-      const id = `opt-out-${String(i)}`;
-      goal(id, "b");
+    const ids = Array.from({ length: 15 }, (_, i) => `opt-out-${String(i)}`);
+    goals(ids, "b");
+    for (const id of ids) {
       expect(subject.strategyForGoal("b", id, pin, { requirementsReady: true, requirementCount: 2 }).strategyRevisionId).toBeNull();
       expect(JSON.parse(store.goalPin("b", id)?.policy ?? "{}") as unknown).toMatchObject({ cohortRevisionId: null });
     }
