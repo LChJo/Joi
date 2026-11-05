@@ -1302,6 +1302,7 @@ export class SqliteJoiHarnessRepository implements JoiHarnessScan, JoiHarnessWri
         UPDATE joi_harness_maps AS m
            SET status = 'CLEARED', cleared_at = ?, revision = revision + 1, updated_at = ?
          WHERE m.goal_input_id = ? AND m.status = 'ACTIVE'
+           AND ${REVIEW_GATE_OPEN_SQL}
            AND EXISTS (
              SELECT 1 FROM joi_turns t
              JOIN joi_inbox_messages r ON r.input_id = t.input_id
