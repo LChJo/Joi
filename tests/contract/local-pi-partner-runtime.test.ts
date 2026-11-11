@@ -200,6 +200,7 @@ describe("local Pi coding partner runtime", () => {
           : await runtime.runEphemeral(request, revision, execution);
       expect(result).toMatchObject({ status: "COMPLETED", output: { body: "Analysis complete" } });
       expect(observedInput).toContain("EXTERNAL_INPUT_EVIDENCE");
+      expect(prompts[0]).toContain("Use read to examine files instead of cat or sed.");
       expect(prompts[0]).toContain("inside or outside the workspace");
       expect(prompts[0]).toContain("reading requires no permission");
       expect(prompts[0]).toContain("Only file writes are governed");

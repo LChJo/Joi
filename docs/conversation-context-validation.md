@@ -42,3 +42,43 @@ Validated on Windows on 2026-11-11 with `CI=1`; the full Vitest commands use fou
 | `npm run i18n:check` | Passed |
 
 Separately enabled `JOI_NATIVE_WRITE_TESTS=1` and ran the two original-turn native handoff tests against installed Codex and Claude CLIs. Both passed, including complete mandatory-context delivery at the loopback provider. Seven unrelated native workspace/write smoke tests were not selected. These checks use disposable homes and credential fakes; no real provider or remote Git calls were made.
+
+## 2026-11-12 turn activity and coding guidance
+
+CHAT-27–29 add conversation-only context/thinking entries in the existing `entries_json`. The global Work entry kinds and database enums are unchanged. A turn merges observations with streamed/final output, preserves first-observed order and uses separate READ/WRITE phase identities. Final snapshots retry a failed observational write; execution failure retains interrupted phases. Restart, imported-history filtering, answer copy, archive readback and stable disclosures have synthetic regressions.
+
+Actual Pi SDK requests are checked for ALL, CUSTOM, READ, child execution, restoration and a changed model revision/tool selection. Ephemeral/resident/legacy coding paths share the host-owned guidance. These checks verify request delivery and whitelist preservation, not that every model will obey the guidance.
+
+Real SDK-shaped Pi and Claude thinking events expose only lifecycle facts; their raw reasoning/signatures are absent from the public callback. Codex's explicitly public reasoning-summary item is sanitized and limited to 2,048 UTF-16 code units with an omission flag. Missing start events produce no invented duration; native disconnects retain interruption. No extra model request generates a display summary. Official Pi capability findings and the isolated nested-hook experiment are retained in [the research report](pi-coding-harness-research.md); Codemode/MCP and browser integration remain separate candidates.
+
+### Reproducible local tool benchmark
+
+After an Electron build, run `node scripts/benchmark-pi-exploration.mjs`. It creates and removes an isolated synthetic repository containing 960 TSX files and an ignored fixture. Each case checks equal normalized records for the dedicated tool and an equivalent bash command. Path prefixes and SDK presentation padding are normalized; source values, match lines and requested read ranges must agree. Each pair has one excluded warmup and 11 measured runs with alternating order. No timing threshold is part of CI.
+
+Windows / Node 24.12.0 / Pi 1.5.2, measured before the next coverage run:
+
+| Operation | Equal records | Dedicated median | Bash median |
+| --- | ---: | ---: | ---: |
+| `grep` vs `bash` + `rg -n` | 32 | 143.34 ms | 231.18 ms |
+| `find` vs `bash` + `rg --files` | 960 | 101.09 ms | 133.43 ms |
+| `read` range vs `bash` + `sed` range | 20 | 1.61 ms | 125.78 ms |
+
+These are local tool `execute()` wall times with warm caches; the benchmark makes **zero model requests**. It does not measure provider wait, model turns, tokens, whole-task speed or answer quality, and does not establish the cause of the screenshot's 53 bash calls.
+
+### Final gates for CHAT-27–29
+
+Validated on Windows on 2026-11-12 with disposable fixtures:
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed, no warnings |
+| `npm run test -- --reporter=dot --maxWorkers=4` | 354 files / 2,895 tests passed; nine optional native tests skipped |
+| `npm run test:coverage -- --reporter=dot --maxWorkers=4` | 2,895 passed; statements 93.97%, branches 90.18%, functions 92.52%, lines 96.65% |
+| `npm run test:e2e` | 21 passed |
+| `npm run build:prod` | Passed |
+| `npm run package:verify` | Passed; 777 files verified |
+| `npm run check:boundaries` | Passed |
+| `npm run i18n:check` | Passed |
+
+The conversation renderer and Electron cases check placement, tool/metadata colors, keyboard order, disclosure details, copy isolation and mobile overflow, with light/dark screenshots inspected. A settings-layout assertion initially combined rectangles from separate frames and failed by 0.5 px; it now reads them atomically, retaining the original bounds and tolerance, and passed both its isolated run and the complete E2E suite. No production settings-layout change was made. The optional real native CLI suite was not enabled again in this increment; the native thinking regressions use SDK-shaped fake streams, not provider credentials.

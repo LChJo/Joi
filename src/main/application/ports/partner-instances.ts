@@ -4,7 +4,7 @@ import type { PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "./pa
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 import type { ToolTraceDraft } from "../partners/tool-trace-presentation.js";
 import type { NativeAgentEvent } from "./native-agent-events.js";
-import type { ConversationContextDto } from "../../../shared/conversations.js";
+import type { ConversationContextDto,ConversationThinkingDto } from "../../../shared/conversations.js";
 
 export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
 export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE" | "SUSPENDED";
@@ -88,6 +88,7 @@ export interface PartnerSessionState {
 }
 
 export interface PartnerExecutionContext {
+  onThinking?: (thinking: ConversationThinkingDto) => Promise<void>;
   onContext?: (context: ConversationContextDto) => Promise<void>;
   sessionState?: PartnerSessionState;
   saveSession?: (state: PartnerSessionState) => Promise<void>;

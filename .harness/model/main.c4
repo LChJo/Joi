@@ -26,11 +26,11 @@ metadata {
 renderer = component "Web renderer" {
 metadata {
  harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
- brief "React desktop/LAN/remote views use shared DTOs and HTTP APIs without privileged imports. Conversation history, archive tabs and workspace remain independent; tool activity uses streaming-safe collapsed summaries with latest tool, safe parameters, explicit execution state and count; expansion preserves per-call parameters and outcomes. Conversation context and child status use safe shared metadata; history pages and change cursors recover updates."
+ brief "React desktop/LAN/remote views use shared DTOs and HTTP APIs without privileged imports. Conversation history, archive tabs and workspace remain independent; tool activity uses streaming-safe collapsed summaries with latest tool, safe parameters, explicit execution state and count; expansion preserves per-call parameters and outcomes. Conversation context and child status use safe shared metadata; history pages and change cursors recover updates. Turn-owned context and thinking activity share stable tool disclosures; only explicitly public summaries and observed durations are shown. Composer subagent controls use a themed aria-pressed button before settings; answer copy omits metadata."
  source "fact"
  status "verified"
  evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "9"
+ version "10"
 }
 }
 preload = component "Desktop bridge" {
@@ -66,20 +66,20 @@ metadata {
 application = component "Application services" {
 metadata {
  harness_id "3c08dc1c-527b-456b-999b-8982b0ada159"
- brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate."
+ brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate. Conversation-only activity merges with streamed/final snapshots and is retained through terminal failures; pending projection writes drain before completion. Work event kinds remain unchanged."
  source "fact"
  status "verified"
- evidence "ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "7"
+ evidence "ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312"
+ version "8"
 }
 conversations = component "Conversation execution" {
 metadata {
  harness_id "cad6c097-c1e0-468e-9195-6e4005ccec71"
- brief "User-driven turn/session orchestration, immutable workbench ownership and durable child admission/settlement. Cancellation registration precedes admission; turn ownership is retained through final journal saves and engine cleanup."
+ brief "User-driven turn/session orchestration, immutable workbench ownership and durable child admission/settlement. Cancellation registration precedes admission; turn ownership is retained through final journal saves and engine cleanup. First-observed safe activity ordering remains stable while base output is replaced. Public summary text is sanitized and bounded; unfinished phases become interrupted without fabricating duration. READ/WRITE phase namespaces preserve resumed observations; the final snapshot retries transient display-write failures."
  source "fact"
  status "verified"
- evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "2"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312"
+ version "4"
 }
 }
 }
@@ -114,11 +114,11 @@ metadata {
 piSessions = component "Pi context and execution" {
 metadata {
  harness_id "c12f9eba-5f56-4fa1-b864-025e3193a7c3"
- brief "Pinned Pi SDK sessions and native journal transfer reuse Joi context policy; provider inputs retain requirements and tool pairings."
+ brief "Pinned Pi SDK sessions and native journal transfer reuse Joi context policy; provider inputs retain requirements and tool pairings. Host-owned guidance reaches final enabled-tool requests after restore; Pi/Claude thinking stays private and Codex explicitly public summaries use a separate conversation callback. Optional Codemode/MCP and browser capabilities remain unintegrated research candidates."
  source "fact"
  status "verified"
- evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "1"
+ evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8 dae0093b-300e-4129-8563-fa0ff2ad9f33 793588d4-9226-45ea-bcb5-58e60334355c 68c4824e-2fab-4811-8c3b-de40278beff1"
+ version "2"
 }
 }
 }
@@ -126,11 +126,11 @@ metadata {
 shared = component "Shared contracts" {
 metadata {
  harness_id "523ea4b5-9b46-4d67-be22-b9ee3d7d3cfb"
- brief "Shared UI/runtime contracts include conversation configuration snapshots, safe streamed entries and Git operation projections. Conversation summaries include archive timestamps and server-projected action availability. Tool entries carry optional started/completed/failed lifecycle facts independent of private result bodies. Conversation contracts add safe usage/activity metadata, child status, history pages and payload-free cursors."
+ brief "Shared UI/runtime contracts include conversation configuration snapshots, safe streamed entries and Git operation projections. Conversation summaries include archive timestamps and server-projected action availability. Tool entries carry optional started/completed/failed lifecycle facts independent of private result bodies. Conversation contracts add safe usage/activity metadata, child status, history pages and payload-free cursors. ConversationEntryDto adds a conversation-only ACTIVITY union for context and safe thinking lifecycle. Global AgentConversationEntryDto and Work database enums remain unchanged."
  source "fact"
  status "verified"
  evidence "67786627-f77c-4800-9ac6-386b484e5f5d b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 24499f6b-3dfd-4a50-836f-0a7b169c1ee2 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "6"
+ version "7"
 }
 }
 relay = component "Browser relay" {

@@ -1557,6 +1557,35 @@
     "description": "chat.subagents",
     "placeholders": {}
   },
+  "chatThinkingStarted": "Thinking",
+  "@chatThinkingStarted": {
+    "description": "chat.thinkingStarted",
+    "placeholders": {}
+  },
+  "chatThinkingCompleted": "Thinking complete",
+  "@chatThinkingCompleted": {
+    "description": "chat.thinkingCompleted",
+    "placeholders": {}
+  },
+  "chatThinkingInterrupted": "Thinking interrupted",
+  "@chatThinkingInterrupted": {
+    "description": "chat.thinkingInterrupted",
+    "placeholders": {}
+  },
+  "chatThinkingSummaryTruncated": "Part of the summary was omitted",
+  "@chatThinkingSummaryTruncated": {
+    "description": "chat.thinkingSummaryTruncated",
+    "placeholders": {}
+  },
+  "chatThinkingDuration": "{seconds} s",
+  "@chatThinkingDuration": {
+    "description": "chat.thinkingDuration",
+    "placeholders": {
+      "seconds": {
+        "type": "num"
+      }
+    }
+  },
   "commonLanguage": "Language",
   "@commonLanguage": {
     "description": "Language preference heading",

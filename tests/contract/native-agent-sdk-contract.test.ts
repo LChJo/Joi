@@ -6,6 +6,7 @@ import { createPartnerRevision } from "../../src/main/domain/partners/partner.js
 import { ClaudeAgentSdkPartnerEngineRuntime, type ClaudeAgentSdkSurface } from "../../src/main/infrastructure/mana/claude-agent-sdk-partner-engine-runtime.js";
 import { CodexAgentSdkPartnerEngineRuntime, nestedCodexEnvironment, type CodexAgentSdkSurface, type CodexThreadSurface } from "../../src/main/infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
 import type { PartnerSessionState } from "../../src/main/application/ports/partner-instances.js";
+import type { ConversationThinkingDto } from "../../src/shared/conversations.js";
 
 const request = { actionId: "action_native", workbenchId: "workbench", contextSnapshotId: "snapshot", taskProjection: "do work", workId: "work" };
 const execution = { loadForExecution: async () => ({ promptSection: "scope", sanitized: {}, workspacePath: "missing-test-workspace" }) };
@@ -33,6 +34,39 @@ function revision(engine: "claude-code" | "codex") {
 }
 
 describe("official native Agent SDK adapters", () => {
+  it.each((["codex","claude-code"] as const).flatMap(engine => (["complete","interrupt","no-start"] as const).map(scenario => ({ engine,scenario }))))("CHAT-29 projects safe $engine thinking during $scenario",async ({ engine,scenario }) => {
+    const thoughts: ConversationThinkingDto[] = [],events: unknown[] = [];
+    const sdkCodex: CodexAgentSdkSurface = { create: () => {
+      const thread: CodexThreadSurface = { id: "thinking-thread",runStreamed: async () => ({ events: (async function* () {
+        if (scenario !== "no-start") yield { type: "item.started",item: { type: "reasoning",id: "reasoning",text: "" } } as ThreadEvent;
+        if (scenario === "interrupt") throw new Error("Synthetic disconnect");
+        yield { type: "item.completed",item: { type: "reasoning",id: "reasoning",text: `token=synthetic-secret ${"公".repeat(2300)}` } } as ThreadEvent;
+        yield { type: "item.completed",item: { type: "agent_message",id: "answer",text: "Done" } } as ThreadEvent;
+        yield { type: "turn.completed",usage: { input_tokens: 1,output_tokens: 1,cached_input_tokens: 0 } } as ThreadEvent;
+      })() }) };return { startThread: () => thread,resumeThread: () => thread };
+    } };
+    const sdkClaude: ClaudeAgentSdkSurface = { query: () => (async function* () {
+      if (scenario === "no-start") yield { type: "assistant",message: { content: [{ type: "thinking",thinking: "RAW_REASONING_PRIVATE",signature: "RAW_SIGNATURE_PRIVATE" }] } } as SDKMessage;
+      else {
+      yield { type: "stream_event",event: { type: "content_block_start",index: 0,content_block: { type: "thinking",thinking: "RAW_REASONING_PRIVATE",signature: "RAW_SIGNATURE_PRIVATE" } } } as SDKMessage;
+      if (scenario === "interrupt") throw new Error("Synthetic disconnect");
+      yield { type: "stream_event",event: { type: "content_block_delta",index: 0,delta: { type: "thinking_delta",thinking: "RAW_REASONING_PRIVATE" } } } as SDKMessage;
+      yield { type: "stream_event",event: { type: "content_block_stop",index: 0 } } as SDKMessage;
+      }
+      yield { type: "result",subtype: "success",is_error: false,result: "Done",session_id: "thinking-session" } as SDKMessage;
+    })() };
+    const runtime = engine === "codex" ? new CodexAgentSdkPartnerEngineRuntime({ contexts: execution,prompts,resolveExecutable: resolvedCodex,sdk: sdkCodex })
+      : new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution,prompts,resolveExecutable: resolvedClaude,sdk: sdkClaude });
+    const run = runtime.runResidentTurn({ instanceId: "thinking",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision: revision(engine),restoredMessages: null,
+      onThinking: async value => { thoughts.push(value); },onEvent: async value => { events.push(value); },request: { ...request,conversationId: "chat" } });
+    if (scenario === "interrupt") await expect(run).rejects.toBeDefined();else await run;
+    expect(thoughts.map(value => value.state)).toEqual(scenario === "no-start" ? ["COMPLETED"] : ["STARTED",scenario === "interrupt" ? "INTERRUPTED" : "COMPLETED"]);
+    if (scenario === "no-start") expect(thoughts[0]?.durationMs).toBeUndefined();
+    else expect(thoughts[1]).toMatchObject({ phaseId: thoughts[0]?.phaseId,durationMs: expect.any(Number) });
+    if (engine === "codex" && scenario !== "interrupt") { expect(thoughts.at(-1)?.summary).toHaveLength(2048);expect(thoughts.at(-1)?.summaryTruncated).toBe(true); }
+    else expect(thoughts.every(value => value.summary === undefined)).toBe(true);
+    expect(JSON.stringify({ thoughts,events })).not.toMatch(/synthetic-secret|RAW_REASONING_PRIVATE|RAW_SIGNATURE_PRIVATE/u);
+  });
   it.each(["codex","claude-code"] as const)("CHAT-19 retains %s tool facts and native identity after failure for an explicit next message",async engine => {
     let snapshot: PartnerSessionState | undefined;let resumed: string | undefined;let launches = 0;
     const events: unknown[] = [];

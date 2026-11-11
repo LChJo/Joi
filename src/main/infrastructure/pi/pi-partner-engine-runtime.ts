@@ -57,6 +57,8 @@ import { createJoiSubagentTools } from "./joi-subagent-tools.js";
 import { conversationSeedMessages, conversationPrompt, pairSessionTools } from "./conversation-session.js";
 import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
+import { piCodingGuidance } from "./pi-coding-guidance.js";
+import { ConversationThinking } from "./conversation-thinking.js";
 import { createRunProgressWatch, stallNudgeMessage, type RunProgressDiagnostic, type RunProgressSignal, type RunProgressThresholds, type RunProgressWatch } from "./pi-run-progress.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
@@ -143,6 +145,7 @@ const MUTATING_TOOLS = new Set(["bash", "edit", "write"]);
  * above (AC-62).
  */
 class LiveConversationPublisher {
+  readonly #thinking: ConversationThinking;
   /**
    * `tool_execution_end` carries no arguments, so the start frame's arguments are held here
    * until that call ends. Tool execution is sequential, so this holds one entry in practice;
@@ -155,7 +158,11 @@ class LiveConversationPublisher {
     private readonly taskProjection: string,
     private readonly publish: (event: NativeAgentEvent) => Promise<void>,
     private readonly recordTrace?: (trace: ToolTraceDraft) => Promise<void>,
-  ) {}
+    onThinking?: PartnerExecutionContext["onThinking"],
+    phasePrefix = "turn",
+  ) { this.#thinking = new ConversationThinking(onThinking,phasePrefix); }
+
+  async interruptThinking(): Promise<void> { await this.#thinking.interrupt(); }
 
   async start(): Promise<void> {
     await this.#safePublish({ type: "message", role: "user", parts: [{ type: "text", text: this.taskProjection }] });
@@ -167,6 +174,7 @@ class LiveConversationPublisher {
   }
 
   async handle(event: AgentEvent): Promise<void> {
+    await this.#thinking.pi(event);
     if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
       await this.#safePublish({ type: "message", role: "agent", parts: [{ type: "text", text: event.assistantMessageEvent.delta }] });
     } else if (event.type === "tool_execution_start" && !this.#toolIds.has(`start:${event.toolCallId}`)) {
@@ -528,12 +536,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     });
     this.#installRequirementsPrompt(agent, request, configuredPrompt, execution.promptSection, context.knowledgeSection, context.skillSection,
       revision, execution.workspacePath !== undefined, budget.systemMaxChars, window);
-    const live = context.onEvent === undefined && context.onToolTrace === undefined
+    const live = context.onEvent === undefined && context.onToolTrace === undefined && context.onThinking === undefined
       ? undefined
       : new LiveConversationPublisher(
         request.taskProjection,
         context.onEvent ?? (() => Promise.resolve()),
         context.onToolTrace,
+        context.onThinking,request.actionId,
       );
     await live?.start();
     const before = await captureWorkspaceSnapshot(execution.workspacePath);
@@ -737,12 +746,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       request: input.request,
       workspacePath: execution.workspacePath,
     });
-    const live = input.onEvent === undefined && input.onToolTrace === undefined
+    const live = input.onEvent === undefined && input.onToolTrace === undefined && input.onThinking === undefined
       ? undefined
       : new LiveConversationPublisher(
         input.request.taskProjection,
         input.onEvent ?? (() => Promise.resolve()),
         input.onToolTrace,
+        input.onThinking,input.request.actionId,
       );
     await live?.start();
     const collectArtifacts = input.request.workspaceExecution === undefined || input.request.workspaceExecution.phase === "WRITE_RUNNING";
@@ -908,6 +918,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       }
     } finally {
       unsubscribe();
+      await live?.interruptThinking();
       if (timer !== undefined) clearTimeout(timer);
     }
   }
@@ -1051,6 +1062,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       `Disabled or unavailable tools: ${disabled.length === 0 ? "none" : disabled.join(", ")}.`,
       `Workspace: ${workspaceAvailable ? "available" : "unavailable; file and shell tools are disabled"}.`,
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
+      ...piCodingGuidance(enabled),
       partnerCommentDisciplineLine,
       `${WORK_HANDOFF_INSTRUCTION} Finish with partner_complete(body,handoff); this records the complete deliverable and ends the run.`,
       ...(webEnabled ? ["For public web research, use web_search first, then fetch_content for the relevant URL and get_search_content to page a long response. Web tools are read-only, bounded, and never receive cookies, authorization headers or credentials; cite the URL in your answer and label uncertainty."] : []),

@@ -23,7 +23,7 @@ export function conversationSeedMessages(request: PartnerRunRequest,state?: Part
   const messages: AgentMessage[] = [];
   for (const turn of history) {
     messages.push({ role: "user",content: `${turn.text}\n[retained attachment references: ${turn.config.attachmentIds.join(", ") || "none"}]`,timestamp: 0 });
-    messages.push(sessionAssistant([{ type: "text",text: `[joi legacy history; status=${turn.status}; private tool history is unavailable; do not infer success or replay side effects]\n${JSON.stringify(turn.entries)}` }]));
+    messages.push(sessionAssistant([{ type: "text",text: `[joi legacy history; status=${turn.status}; private tool history is unavailable; do not infer success or replay side effects]\n${JSON.stringify(turn.entries.filter(entry => entry.kind !== "ACTIVITY"))}` }]));
   }
   return messages;
 }

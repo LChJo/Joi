@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Normal conversation page retains draft selection, immutable ownership, compact history and independent resizable workspace; output delegates contiguous tool activity to a safe compact disclosure.",
+      "claim": "Turn-owned activity is displayed in output; composer config order ends with subagent toggle and settings; answer copy includes only agent markdown.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "e94ed7bf8984bf71a489476bdb0b1460812bf35fc44cd28103042ca92a237a6f",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "018f75abd761f50ea86f2a6664ca031bbd5fbed505bcc430c2cc4685bd733d85",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
       "range": {
         "startLine": 1,
-        "endLine": 266
+        "endLine": 308
       }
     },
     {
@@ -340,15 +340,15 @@
     {
       "id": "d07c943c-dd56-49b1-8fad-3ad61f4df6cc",
       "kind": "source-code",
-      "claim": "Durable user-driven conversation turns reuse partner/source/Skill policy and checkpointed tool permissions without acquiring autonomous workspace leases. Database turn exclusion, cancellation and interrupted-execution protection remain; archive state changes start no execution.",
+      "claim": "Conversation execution merges safe per-turn activity with authoritative output, drains writes before terminal state and retains interrupted facts.",
       "location": {
         "path": "src/main/application/joi/conversation-service.ts"
       },
-      "hash": "f7a87e1d2037a6a4c61ea885081b92f140fbd99e36d476ce5b51d7c149209c32",
-      "observedAt": "2026-11-11T14:46:35.446029Z",
+      "hash": "eba2b1980595c1117b43aa0810d70c5715519438883c9f6d8a14c2220610de9a",
+      "observedAt": "2026-11-11T17:55:30.488107Z",
       "range": {
         "startLine": 1,
-        "endLine": 208
+        "endLine": 227
       }
     },
     {
@@ -410,15 +410,15 @@
     {
       "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
       "kind": "source-code",
-      "claim": "Conversation/configuration/status/Git DTOs carry no absolute workspace root or executable commands. Archive timestamps and idle-action availability are shared DTO fields.",
+      "claim": "Conversation-only ACTIVITY union supports safe context and thinking; global Work conversation entry kinds remain unchanged.",
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "d4c2b3757222a1bed6173e0b0bbea270c4769f8d2a717f985c36c556b78163d2",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "21e79dcda0fcc9c0d8113102a71556bb24a00a25d63821fd8f760f2714627e5b",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
       "range": {
         "startLine": 1,
-        "endLine": 59
+        "endLine": 92
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Compact disclosures retain a single-line latest parameter preview and state; expanded parameters wrap within a bounded scroll area in narrow layouts.",
+      "claim": "Responsive conversation tool disclosures, activity details and themed accessible subagent button styles.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "bb28f400157571c72dbc2f690225c85a55bcc8bf6b900eda2f6b3add7649ac76",
-      "observedAt": "2026-11-11T16:20:32.372588Z",
+      "hash": "53f1a3addfde74eaec96e6ee9e178dc67c5de9ead3cdedc5ed559e79a4a3c5d1",
+      "observedAt": "2026-11-11T17:55:30.488107Z",
       "range": {
         "startLine": 1,
-        "endLine": 270
+        "endLine": 287
       }
     },
     {
@@ -494,15 +494,15 @@
     {
       "id": "e5438320-e3e9-41e2-abf9-b409867822e0",
       "kind": "source-code",
-      "claim": "Task/conversation tabs, archived conversation search, read-only transcript, restore and confirmed deletion.",
+      "claim": "Archived conversation prose and recorded safe activity render without exposing tool results or replaying execution.",
       "location": {
         "path": "src/renderer/ArchivePage.tsx"
       },
-      "hash": "ebeacd7984c4a9343359eff589d5b7a4c178b603d2dca34986c8f3218f374bc9",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "2a21e3c181132a360e126992b1924a17f497a65b3ce253775945edd0dc2b4ca8",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
       "range": {
         "startLine": 1,
-        "endLine": 68
+        "endLine": 83
       }
     },
     {
@@ -550,15 +550,15 @@
     {
       "id": "f1700bac-e723-4de3-b839-f99c567e6d08",
       "kind": "source-code",
-      "claim": "Tool disclosures pair call/result identities, show safe parameter summaries and explicit or legacy-compatible lifecycle state, preserve expansion during streaming and never render raw result bodies.",
+      "claim": "Conversation activity and paired tool calls share stable disclosures; public summaries and observed duration stay outside prose and private results.",
       "location": {
         "path": "src/renderer/ConversationOutput.tsx"
       },
-      "hash": "3e7b0818dbf35df8cf3c635a7f082379024672abda8bf0e7702d4ea3cbf0f99a",
-      "observedAt": "2026-11-11T12:10:46.322092Z",
+      "hash": "25ec19f4052f1721a2a351bd7aabc26b7974c084dcceb26a24cdac5f3df1100d",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
       "range": {
         "startLine": 1,
-        "endLine": 62
+        "endLine": 82
       }
     },
     {
@@ -676,15 +676,15 @@
     {
       "id": "6097810a-ce3d-4038-9a5c-f30fc8382210",
       "kind": "source-code",
-      "claim": "Safe character estimates, compression/activity states and child cancellation projection.",
+      "claim": "Context details show recorded usage, compression, last activity and child cancellation without an unknown-estimate placeholder.",
       "location": {
         "path": "src/renderer/ConversationContext.tsx"
       },
-      "hash": "8f5ba2c440b3bc12007595dfd4461a673a08d1a153773500b8d8d8b4e339e106",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "ce00b4f6dee9c8d37ad0e6e9ee9cef476be4eb3229ad6cd5c58ef5b52fa33545",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
       "range": {
         "startLine": 1,
-        "endLine": 19
+        "endLine": 18
       }
     },
     {
@@ -694,11 +694,67 @@
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "0bdd37f5954d3eb28114b711df0dc2ea920027bb6c961e183ce263eb5c7e5560",
-      "observedAt": "2026-11-11T14:52:50.046182Z",
+      "hash": "148ff590d5f3d1c07a3c44e43f7648e99fd260c25f105d46e87ff6ff0332250d",
+      "observedAt": "2026-11-11T17:56:12.803647Z",
       "range": {
         "startLine": 1,
-        "endLine": 44
+        "endLine": 84
+      }
+    },
+    {
+      "id": "b2a4acb0-0d03-490d-8118-9f905e528312",
+      "kind": "source-code",
+      "claim": "Conversation activity preserves first-observed ordering and projects sanitized, bounded public summaries independently of base output snapshots.",
+      "location": {
+        "path": "src/main/application/joi/conversation-activity.ts"
+      },
+      "hash": "c2029663d5335cf73a4f4733c3c37779c350f0bb100ab6ffec90ded27dc08ecb",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 39
+      }
+    },
+    {
+      "id": "dae0093b-300e-4129-8563-fa0ff2ad9f33",
+      "kind": "source-code",
+      "claim": "SDK lifecycle observations use stable host phase identities; raw reasoning and signatures are not accepted as public summaries.",
+      "location": {
+        "path": "src/main/infrastructure/pi/conversation-thinking.ts"
+      },
+      "hash": "105bd50ac8f9af06d46a3365d3821da2b5c2d5a2f382e19b808d9ea5dab574db",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 46
+      }
+    },
+    {
+      "id": "793588d4-9226-45ea-bcb5-58e60334355c",
+      "kind": "source-code",
+      "claim": "Host-owned coding guidance reflects enabled dedicated tools and keeps shell builds and scripts available.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-coding-guidance.ts"
+      },
+      "hash": "9a3b3428f306ad84339219e42f8e9f6232b043631f6de777165496475f4670ca",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 11
+      }
+    },
+    {
+      "id": "68c4824e-2fab-4811-8c3b-de40278beff1",
+      "kind": "document",
+      "claim": "Version-pinned official Pi research separates current host integration, optional resources, experimental harnesses and verified nested-hook constraints.",
+      "location": {
+        "path": "docs/pi-coding-harness-research.md"
+      },
+      "hash": "a939d7c7a87a294050a49062f24c4de3720747a32de32760dc3f2fccfabff4c4",
+      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 71
       }
     }
   ]

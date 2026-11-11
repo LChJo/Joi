@@ -167,5 +167,10 @@
   },
   "cancelChild": "Cancel",
   "loadEarlier": "Load earlier messages",
-  "subagents": "Subagents"
+  "subagents": "Subagents",
+  "thinkingStarted": "Thinking",
+  "thinkingCompleted": "Thinking complete",
+  "thinkingInterrupted": "Thinking interrupted",
+  "thinkingSummaryTruncated": "Part of the summary was omitted",
+  "thinkingDuration": { "message": "{seconds} s", "placeholders": { "seconds": "number" } }
 }

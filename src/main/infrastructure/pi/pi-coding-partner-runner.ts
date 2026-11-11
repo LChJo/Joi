@@ -17,6 +17,7 @@ import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import { createPiContextManager } from "./pi-context-manager.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
 import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
+import { piCodingGuidance } from "./pi-coding-guidance.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 
 export class PiCodingPartnerRunner implements PartnerAdapterRunner {
@@ -88,6 +89,7 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
           ...(tools.some(tool => ["read", "find", "grep", "ls", "bash"].includes(tool.name)) ? [workspaceReadScopeLine()] : []),
           workspaceRootBoundaryLine(execution.workspacePath),
           "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
+          ...piCodingGuidance(tools.map(tool => tool.name)),
           partnerCommentDisciplineLine,
           "File writes are confined to the assigned workspace: the write and edit tools refuse outside paths. If the task needs a write elsewhere, say so in your reply. Shell writes are not guarded by that boundary; do not use a shell command to route around a refused write. Placeholders like {baseDir} inside skill instructions refer to the skill's own directory.",
           `Workbench scope: ${request.workbenchId}`,

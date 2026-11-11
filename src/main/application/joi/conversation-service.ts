@@ -7,8 +7,9 @@ import type { PartnerRegistryRepository } from "../ports/partner-registry.js";
 import type { PartnerInstanceManager } from "../partners/partner-instance-manager.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
 import { normalizeAgentConversationEntries, sanitizeAgentConversationText, type AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
-import type { ConversationTurnDto } from "../../../shared/conversations.js";
+import type { ConversationContextDto,ConversationTurnDto } from "../../../shared/conversations.js";
 import type { ConversationSubagentPort } from "../ports/conversation-subagents.js";
+import { ConversationActivity } from "./conversation-activity.js";
 
 interface Lease { generation: number; workspaceRef: string; workId: string; }
 export interface ConversationLeasePort {
@@ -124,19 +125,32 @@ export class ConversationService {
     const completion = Promise.withResolvers<undefined>();
     this.#active.set(record.conversation.conversationId,{ controller,done: completion.promise });
     let entries: ConversationTurnDto["entries"] = [];
+    let baseEntries: ConversationTurnDto["entries"] = [];
+    const activity = new ConversationActivity(turnId,() => this.dependencies.clock.now().toISOString());
+    let acceptingActivity = true,writes = Promise.resolve();
     let artifacts: ConversationTurnDto["artifacts"] = [];
     let suspendedInstanceId: string | undefined;
     let lastFlush = 0;
-    let currentContext = record.conversation.context;
-    const progress = async (drafts: AgentConversationDraft[],force = false) => {
-      entries = normalizeAgentConversationEntries({ agentId: record.conversation.conversationId,runId: turnId,startedAt: record.turn.createdAt },drafts)
-        .filter(e => e.role !== "USER").map(({ order,runId: _runId,artifact,...entry }) => ({ ...entry,sequence: order,
-          ...(artifact === undefined ? {} : { artifact: { name: artifact.name,size: artifact.size,mimeType: artifact.mimeType,kind: "FILE" as const } }) }));
+    let currentContext: ConversationContextDto | undefined;
+    const flush = async (force = false) => {
+      entries = activity.project(baseEntries);
+      if (!acceptingActivity) return;
       if (force || this.dependencies.clock.now().getTime() - lastFlush >= 100) {
         lastFlush = this.dependencies.clock.now().getTime();
-        await this.dependencies.store.update(turnId,{ entries,artifacts,status: "RUNNING" });
-        if (currentContext !== undefined) await this.dependencies.store.context(record.conversation.conversationId,turnId,{ ...currentContext,activityAt: this.dependencies.clock.now().toISOString() });
+        if (currentContext !== undefined) { currentContext = { ...currentContext,activityAt: this.dependencies.clock.now().toISOString() };activity.context(currentContext);entries = activity.project(baseEntries); }
+        const snapshot = entries,contextSnapshot = currentContext;
+        writes = writes.catch(() => undefined).then(async () => {
+          await this.dependencies.store.update(turnId,{ entries: snapshot,artifacts,status: "RUNNING" });
+          if (contextSnapshot !== undefined) await this.dependencies.store.context(record.conversation.conversationId,turnId,contextSnapshot);
+        });
+        await writes;
       }
+    };
+    const progress = async (drafts: AgentConversationDraft[],force = false) => {
+      baseEntries = normalizeAgentConversationEntries({ agentId: record.conversation.conversationId,runId: turnId,startedAt: record.turn.createdAt },drafts)
+        .filter(e => e.role !== "USER").map(({ order,runId: _runId,artifact,...entry }) => ({ ...entry,sequence: order,
+          ...(artifact === undefined ? {} : { artifact: { name: artifact.name,size: artifact.size,mimeType: artifact.mimeType,kind: "FILE" as const } }) }));
+      await flush(force);
     };
     try {
       if (!await this.dependencies.store.begin(turnId)) return;
@@ -167,9 +181,12 @@ export class ConversationService {
           await this.dependencies.store.saveSession(record.conversation.conversationId,turnId,state,this.dependencies.clock.now().toISOString());
           session = state;
         } },
-        onContext: context => {
+        onThinking: async thinking => { if (acceptingActivity) { activity.thinking({ ...thinking,phaseId: `${phase}:${thinking.phaseId}` });await flush(true); } },
+        onContext: async context => {
+          if (!acceptingActivity) return;
           currentContext = { ...context,...(record.conversation.context?.missingHistory === true || history !== undefined && history.length > 0 ? { missingHistory: true } : {}),activityAt: this.dependencies.clock.now().toISOString() };
-          return this.dependencies.store.context(record.conversation.conversationId,turnId,currentContext);
+          activity.context(currentContext);
+          await flush(true);
         },
         ...(record.turn.config.sourceRevisionId === undefined || record.turn.config.modelRevisionId === undefined ? {} : {
           expectedSource: { sourceId: record.turn.config.networkId,sourceRevisionId: record.turn.config.sourceRevisionId,modelRevisionId: record.turn.config.modelRevisionId },
@@ -194,9 +211,11 @@ export class ConversationService {
       if (!entries.some(e => e.kind === "MARKDOWN" && e.role === "AGENT") && result.body !== "") await progress([{ kind: "MARKDOWN",role: "AGENT",text: result.body }]);
       if (result.pendingQuestion !== undefined) await progress([{ kind: "MARKDOWN",role: "AGENT",text: result.pendingQuestion }]);
       artifacts = result.artifacts.map(a => ({ name: sanitizeAgentConversationText(a.name),size: a.size,...(a.mimeType === undefined ? {} : { mimeType: a.mimeType }) }));
+      acceptingActivity = false;activity.interrupt();entries = activity.project(baseEntries);await writes.catch(() => undefined);
       await this.dependencies.store.update(turnId,{ entries,artifacts,status: result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? "COMPLETED" : "FAILED",
         ...(result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? {} : { errorCode: "conversation_execution_failed" }) });
     } catch (error) {
+      acceptingActivity = false;activity.interrupt();entries = activity.project(baseEntries);await writes.catch(() => undefined);
       await this.dependencies.store.update(turnId,{ entries,artifacts,status: controller.signal.aborted ? "STOPPED" : "FAILED",
         errorCode: controller.signal.aborted ? "conversation_stopped" : error instanceof DomainError ? error.code : "conversation_execution_failed" });
     } finally {

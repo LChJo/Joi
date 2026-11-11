@@ -25,11 +25,11 @@ test("AC-I18N desktop and browser switch independently without resetting drafts"
         for (const width of [1280, 960, 768]) {
           await page.setViewportSize({ width, height: 800 });
           expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth + 1)).toBe(true);
-          const header = await page.locator(".settings-page-header").boundingBox();
-          const heading = await page.locator(".settings-page-heading").boundingBox();
-          const language = await page.locator(".settings-page-header .language-selector").boundingBox();
-          const tabs = await page.getByRole("tablist").boundingBox();
-          if (header === null || heading === null || language === null || tabs === null) throw new Error("Settings header controls must be visible");
+          const [header,heading,language,tabs] = await page.evaluate(() => [".settings-page-header",".settings-page-heading",".settings-page-header .language-selector",'[role="tablist"]'].map(selector => {
+            const element = document.querySelector(selector);if (element === null) return null;
+            const rect = element.getBoundingClientRect();return { x: rect.x,y: rect.y,width: rect.width,height: rect.height };
+          }));
+          if (!header || !heading || !language || !tabs) throw new Error("Settings header controls must be visible");
           expect(language.x + language.width).toBeLessThanOrEqual(header.x + header.width + 1);
           expect(language.y + language.height).toBeLessThanOrEqual(tabs.y);
           if (width >= 768) expect(language.x).toBeGreaterThanOrEqual(heading.x + heading.width);

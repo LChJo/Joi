@@ -1,6 +1,15 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { pairSessionTools,sessionAssistant } from "../../src/main/infrastructure/pi/conversation-session.js";
+import { conversationSeedMessages,pairSessionTools,sessionAssistant } from "../../src/main/infrastructure/pi/conversation-session.js";
 import { withRequestPrompt } from "../../src/main/infrastructure/pi/pi-request-prompt.js";
+
+it("CHAT-29 excludes UI activity from legacy model history",() => {
+  const history = conversationSeedMessages({ actionId: "a",contextSnapshotId: "s",workbenchId: "wb",workId: "w",taskProjection: "Next",
+    conversationHistory: [{ turnId: "old",text: "Original task",status: "COMPLETED",config: { partnerId: "p",partnerName: "p",networkId: "n",networkName: "n",modelName: "m",skills: [],attachmentIds: [] },entries: [
+      { kind: "ACTIVITY",entryId: "activity",sequence: 1,createdAt: "2026-11-12",role: "SYSTEM",activity: { type: "THINKING",thinking: { phaseId: "phase",state: "COMPLETED",summary: "UI_ONLY_SUMMARY" } } },
+      { kind: "MARKDOWN",entryId: "answer",sequence: 2,createdAt: "2026-11-12",role: "AGENT",text: "Retained answer" },
+    ] }] });
+  expect(JSON.stringify(history)).toContain("Retained answer");expect(JSON.stringify(history)).not.toContain("UI_ONLY_SUMMARY");
+});
 
 it("CHAT-25 preserves parallel native calls and complete results when transferring to Pi",() => {
   const a = sessionAssistant([{ type: "toolCall",id: "a",name: "Read",arguments: { path: "a" } }]);

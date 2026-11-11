@@ -13,13 +13,29 @@ export interface ConversationConfigDto {
   attachmentIds: string[];
 }
 export type ConversationTurnStatus = "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "STOPPED" | "INTERRUPTED";
+export interface ConversationThinkingDto {
+  phaseId: string;
+  state: "STARTED" | "COMPLETED" | "INTERRUPTED";
+  startedAt?: string;
+  durationMs?: number;
+  /** Only a provider's explicitly public summary; never raw reasoning or signatures. */
+  summary?: string;
+  summaryTruncated?: boolean;
+}
+export type ConversationActivityDto = { type: "CONTEXT";context: ConversationContextDto } | { type: "THINKING";thinking: ConversationThinkingDto };
+export interface ConversationActivityEntryDto extends Omit<AgentConversationEntryDto,"kind"> {
+  kind: "ACTIVITY";
+  role: "SYSTEM";
+  activity: ConversationActivityDto;
+}
+export type ConversationEntryDto = AgentConversationEntryDto | ConversationActivityEntryDto;
 export interface ConversationTurnDto {
   turnId: string;
   text: string;
   createdAt: string;
   status: ConversationTurnStatus;
   config: ConversationConfigDto;
-  entries: AgentConversationEntryDto[];
+  entries: ConversationEntryDto[];
   artifacts: { name: string; size: number; mimeType?: string }[];
   errorCode?: string;
 }

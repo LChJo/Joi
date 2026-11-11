@@ -22,7 +22,7 @@ it.each([
   const chat: ConversationDto = { conversationId: "chat",workbenchId: "wb",title: "Title",updatedAt: "2026-11-11",turns: [],context: { kind: "CHARACTERS",state } };
   const view = render(<ConversationContext conversation={chat} onCancel={vi.fn()} />);
   expect(screen.getByRole("status")).toHaveTextContent(label);
-  expect(screen.getByRole("status")).toHaveTextContent("等待上下文估算");
+  expect(screen.getByRole("status")).not.toHaveTextContent("等待上下文估算");
   expect(view.container.querySelector("time")).toBeNull();
   view.rerender(<ConversationContext conversation={{ ...chat,context: { kind: "CHARACTERS",state,requestChars: 0 } }} onCancel={vi.fn()} />);
   expect(screen.getByRole("status")).toHaveTextContent("0 / 0");

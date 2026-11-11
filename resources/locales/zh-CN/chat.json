@@ -146,5 +146,10 @@
   },
   "cancelChild": "取消",
   "loadEarlier": "加载更早消息",
-  "subagents": "子代理"
+  "subagents": "子代理",
+  "thinkingStarted": "正在思考",
+  "thinkingCompleted": "思考完成",
+  "thinkingInterrupted": "思考已中断",
+  "thinkingSummaryTruncated": "摘要已省略部分内容",
+  "thinkingDuration": { "message": "{seconds} 秒", "placeholders": { "seconds": "number" } }
 }

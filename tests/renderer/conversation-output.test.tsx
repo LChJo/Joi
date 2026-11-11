@@ -2,6 +2,25 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { ConversationOutput } from "../../src/renderer/ConversationOutput";
 import type { AgentConversationEntryDto } from "../../src/shared/joi";
+import type { ConversationEntryDto } from "../../src/shared/conversations";
+
+it("CHAT-27 keeps thinking and context in the tool disclosure through streaming",() => {
+  const activity: ConversationEntryDto = { entryId: "phase",kind: "ACTIVITY",role: "SYSTEM",sequence: 1,createdAt: "2026-11-12",activity: { type: "THINKING",thinking: { phaseId: "phase",state: "STARTED" } } };
+  const entries = [activity,tool("read","read","TOOL_CALL","1")];
+  const view = render(<ConversationOutput entries={entries} status="RUNNING" context={{ kind: "CHARACTERS",state: "COMPACTING",requestChars: 100,budgetChars: 1000,missingHistory: true }} />);
+  const summary = view.container.querySelector("summary");if (summary === null) throw new Error("Missing activity summary");
+  expect(summary).toHaveTextContent("正在思考");expect(summary).toHaveTextContent("正在摘要历史");expect(summary).toHaveTextContent("共 1 次");
+  fireEvent.click(summary);expect(screen.getByRole("status")).toHaveTextContent("100 / 1000");
+  view.rerender(<ConversationOutput entries={[{ ...activity,activity: { type: "THINKING",thinking: { phaseId: "phase",state: "COMPLETED",durationMs: 1250,summary: "Public summary",summaryTruncated: true } } },...entries.slice(1),tool("done","read","TOOL_RESULT","1")]} status="COMPLETED" />);
+  expect(view.container.querySelector("details")).toHaveAttribute("open");expect(screen.getByText("Public summary")).toBeVisible();expect(summary).toHaveTextContent("思考完成");
+  expect(view.container).toHaveTextContent("摘要已省略部分内容");expect(view.container).not.toHaveTextContent("PRIVATE_TOOL_BODY");
+});
+
+it("CHAT-27 renders an activity-only row ahead of prose when tools have not started",() => {
+  const view = render(<ConversationOutput entries={[{ entryId: "answer",kind: "MARKDOWN",role: "AGENT",text: "Answer",sequence: 1,createdAt: "2026-11-12" }]} status="RUNNING" context={{ kind: "CHARACTERS",state: "READY" }} />);
+  expect(view.container.firstElementChild?.tagName).toBe("DETAILS");expect(view.container).not.toHaveTextContent("等待上下文估算");
+  expect(view.container.querySelector("summary")).not.toHaveTextContent("共 0 次");expect(view.container.lastElementChild).toHaveTextContent("Answer");
+});
 
 const tool = (id: string,name: string,kind: "TOOL_CALL" | "TOOL_RESULT",callId?: string): AgentConversationEntryDto => ({ entryId: id,toolName: name,kind,role: "TOOL",sequence: 1,createdAt: "2026-11-11",...(callId === undefined ? {} : { toolCallId: callId }),...(kind === "TOOL_RESULT" ? { text: "PRIVATE_TOOL_BODY" } : {}) });
 it("CHAT-16 collapses paired calls/results, shows the latest tool and expands calls in order", () => {

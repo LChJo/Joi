@@ -14,10 +14,16 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   vi.spyOn(api,"conversationGit").mockResolvedValue({ available: false,branch: "",branches: [],ahead: 0,behind: 0,files: [],history: [] });
   vi.spyOn(api,"conversationFiles").mockResolvedValue({ items: [] });
   vi.spyOn(api,"request").mockResolvedValue({ items: [{ id: "user/test",displayName: "Test Skill" }] });
-  const send = vi.spyOn(api,"sendConversation").mockImplementation(body => Promise.resolve({ conversationId: body.conversationId,workbenchId: body.workbenchId,title: "Hello",updatedAt: "2026-11-11",turns: [{ turnId: "t",text: body.text,status: "COMPLETED",createdAt: "2026-11-11",entries: [],artifacts: [],config: { partnerId: body.partnerId,partnerName: "joi",networkId: body.networkId,networkName: "设置网络",modelName: "configured",skills: body.skills,attachmentIds: [] } }] }));
+  const send = vi.spyOn(api,"sendConversation").mockImplementation(body => Promise.resolve({ conversationId: body.conversationId,workbenchId: body.workbenchId,title: "Hello",updatedAt: "2026-11-11",context: { kind: "CHARACTERS",state: "READY",requestChars: 20,budgetChars: 100 },turns: [{ turnId: "t",text: body.text,status: "COMPLETED",createdAt: "2026-11-11",entries: [],artifacts: [],config: { partnerId: body.partnerId,partnerName: "joi",networkId: body.networkId,networkName: "设置网络",modelName: "configured",skills: body.skills,attachmentIds: [] } }] }));
   const settings = vi.fn();
   const view = render(<ConversationPage api={api} onSettings={settings} />);
   await screen.findByText("今天想一起做点什么？");
+  const subagents = screen.getByRole("button",{ name: "子代理" });
+  expect(subagents).toHaveAttribute("aria-pressed","true");
+  fireEvent.click(subagents);expect(subagents).toHaveAttribute("aria-pressed","false");
+  const toolbar = view.container.querySelector(".chat-composer-toolbar");
+  expect(Array.from(toolbar?.querySelectorAll(":scope > button, :scope > .chat-picker > button") ?? []).map(button => button.getAttribute("aria-label")))
+    .toEqual(["附件","大模型网络","搭档","Skills","子代理","前往大模型网络设置","发送消息"]);
   expect(screen.queryByRole("button",{ name: "显示或收起工作区" })).not.toBeInTheDocument();
   expect(screen.queryByRole("separator",{ name: "调整工作区宽度" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button",{ name: "大模型网络" }));
@@ -30,6 +36,8 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Hello" } });
   fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));
   await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+  expect(view.container.querySelector(".chat-compose-area .chat-runtime-context")).toBeNull();
+  expect(view.container.querySelector(".chat-output .chat-runtime-context")).not.toBeNull();
   expect(send.mock.calls[0]?.[0]).toMatchObject({ workbenchId: "wb",partnerId: "joi-chat",networkId: "network",text: "Hello" });
   expect(send.mock.calls[0]?.[0]).not.toHaveProperty("modelId");
   await waitFor(() => expect(screen.queryByRole("button",{ name: "工作台" })).not.toBeInTheDocument());

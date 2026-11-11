@@ -90,6 +90,7 @@ it("CHAT-14 retries unavailable archives, opens a formatted transcript with an u
   get.mockResolvedValue({ ...chat,turns: [{ turnId: "turn",text: "Question",createdAt: chat.updatedAt,status: "COMPLETED",config: { partnerId: "joi-chat",partnerName: "joi",networkId: "net",networkName: "Network",modelName: "Model",skills: [],attachmentIds: [] },artifacts: [],entries: [
     { entryId: "answer",sequence: 1,createdAt: chat.updatedAt,kind: "MARKDOWN",role: "AGENT",text: "## Saved answer" },
     { entryId: "tool",sequence: 2,createdAt: chat.updatedAt,kind: "TOOL_CALL",role: "TOOL",toolName: "read" },
+    { entryId: "thinking",sequence: 3,createdAt: chat.updatedAt,kind: "ACTIVITY",role: "SYSTEM",activity: { type: "THINKING",thinking: { phaseId: "phase",state: "COMPLETED",summary: "Saved public summary" } } },
     { entryId: "error",sequence: 3,createdAt: chat.updatedAt,kind: "ERROR",role: "SYSTEM" },
   ] }] });
   vi.spyOn(api,"joiHomeFeed").mockReturnValue(new Promise(() => undefined));vi.spyOn(api,"joiSnapshot").mockReturnValue(new Promise(() => undefined));
@@ -98,6 +99,7 @@ it("CHAT-14 retries unavailable archives, opens a formatted transcript with an u
   await screen.findByRole("alert");fireEvent.click(screen.getByRole("button",{ name: "重试" }));
   fireEvent.click(await screen.findByRole("button",{ name: "讨论设计" }));
   const dialog = await screen.findByRole("dialog");expect(within(dialog).getByRole("heading",{ name: "Saved answer" })).toBeInTheDocument();expect(within(dialog).getByText("wb")).toBeInTheDocument();expect(within(dialog).queryByText("read")).not.toBeInTheDocument();
+  fireEvent.click(within(dialog).getByText("思考完成",{ selector: ".chat-activity-brief" }));expect(within(dialog).getByText("Saved public summary")).toBeVisible();
   fireEvent.keyDown(document,{ key: "Escape" });expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   restore.mockRejectedValueOnce(new Error("Unavailable"));fireEvent.click(screen.getByRole("button",{ name: "恢复" }));await screen.findByRole("alert");expect(screen.getByRole("button",{ name: "讨论设计" })).toBeInTheDocument();
   fireEvent.click(screen.getByRole("button",{ name: "恢复" }));await waitFor(() => expect(screen.queryByRole("button",{ name: "讨论设计" })).not.toBeInTheDocument());

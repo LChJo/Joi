@@ -9,6 +9,7 @@ import type { WorkbenchExecutionContextReader } from "../../application/ports/wo
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
+import { ConversationThinking } from "../pi/conversation-thinking.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { toolCallLabel } from "../../application/partners/tool-trace-presentation.js";
@@ -139,6 +140,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       ...(this.dependencies.evidenceDirectory === undefined ? {} : { taskDirectory: this.dependencies.evidenceDirectory }),
     });
     const journal = new NativeConversationJournal("claude-code",request,context);
+    const thinking = new ConversationThinking(context.onThinking,request.actionId);
     const history = resume === undefined ? journal.history() : "";
     const systemPrompt = await this.#systemPrompt(revision, { ...request,requiredContext: [request.requiredContext,history].filter(Boolean).join("\n\n") }, workbenchSection, context, tools, execution.workspacePath);
     const projector = new NativeAgentEventProjector();
@@ -212,7 +214,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           tools,
         }),
       });
-      consumed = await this.#consume(query, emit, () => guard?.onProgress(), usageCapture, true,journal);
+      consumed = await this.#consume(query, emit, () => guard?.onProgress(), usageCapture, true,journal,thinking);
       finishNativeUsage(usageCapture, "completed");
     } catch (error) {
       if (writeGate.suspended && checkpointSession !== undefined) {
@@ -231,6 +233,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       await emit({ type: "status", state: classifyNativeCliFailure(error) === "partner_cli_auth_required" ? "auth-required" : "failed" });
       throw error;
     } finally {
+      await thinking.interrupt();
       query?.close?.();
       guard?.dispose();
       await journal.save();
@@ -249,7 +252,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     return { conversation: projector.snapshot(), externalRunId: `native_claude:${request.actionId}`, ...(consumed.sessionId === undefined ? {} : { nativeSessionId: consumed.sessionId }), output: { artifacts, ...completion }, status: "COMPLETED" };
   }
 
-  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, structuredCompletion = false,journal?: NativeConversationJournal): Promise<{ body: string; sessionId?: string; structuredOutput?: unknown }> {
+  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, structuredCompletion = false,journal?: NativeConversationJournal,thinking?: ConversationThinking): Promise<{ body: string; sessionId?: string; structuredOutput?: unknown }> {
     let body = "";
     let completed = false;
     let sessionId: string | undefined;
@@ -258,17 +261,24 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     const toolNames = new Map<string, string>();
     const started = new Set<string>();
     const ended = new Set<string>();
+    let messageIndex = 0,finalizedMessages = 0,hasThinkingFrames = false;
+    const thinkingBlocks = new Set<number>();
     for await (const message of stream) {
       onProgress?.();
       const row = message as unknown as Record<string, unknown>;
       if (typeof row.session_id === "string") { sessionId = row.session_id;await journal?.reference(sessionId); }
       if (row.type === "stream_event" && row.event !== null && typeof row.event === "object") {
         const event = row.event as Record<string, unknown>;
+        if (event.type === "message_start") { messageIndex++;hasThinkingFrames = false; }
+        if (event.type === "content_block_stop" && typeof event.index === "number" && thinkingBlocks.delete(event.index)) await thinking?.end(`${String(messageIndex)}:${String(event.index)}`);
         if (event.type === "content_block_delta" && event.delta !== null && typeof event.delta === "object") {
           const delta = event.delta as Record<string, unknown>;
           if (delta.type === "text_delta" && typeof delta.text === "string") { streamedText = true; body += delta.text;await journal?.delta(delta.text); if (!structuredCompletion) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: delta.text }] }); }
         } else if (event.type === "content_block_start" && event.content_block !== null && typeof event.content_block === "object") {
           const block = event.content_block as Record<string, unknown>;
+          if (block.type === "thinking" && typeof event.index === "number") {
+            hasThinkingFrames = true;thinkingBlocks.add(event.index);await thinking?.start(`${String(messageIndex)}:${String(event.index)}`);
+          }
           if (block.type === "tool_use" && typeof block.name === "string" && block.name !== NATIVE_COMPLETION_TOOL_NAME && typeof block.id === "string") {
             toolNames.set(block.id, block.name);
             await journal?.tool(block.id,block.name,block.input);
@@ -280,6 +290,12 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       if ((row.type === "assistant" || row.type === "user") && row.message !== null && typeof row.message === "object") {
         const content = (row.message as Record<string, unknown>).content;
         if (Array.isArray(content)) {
+          if (row.type === "assistant") {
+            finalizedMessages++;
+            if (!hasThinkingFrames) for (const [index,candidate] of content.entries()) {
+              if ((candidate as { type?: string }).type === "thinking") await thinking?.end(`final:${String(finalizedMessages)}:${String(index)}`);
+            }
+          }
           if (row.type === "assistant") await journal?.assistant(content.flatMap(candidate => {
             const block = candidate as Record<string,unknown>;
             if (block.type === "text" && typeof block.text === "string") return [{ type: "text",text: block.text }];

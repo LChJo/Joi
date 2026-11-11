@@ -48,7 +48,8 @@ it("CHAT-02/03 selects workbench, Skills and attachments independently, creates 
   fireEvent.click(screen.getByRole("button",{ name: "新建对话" }));expect(screen.getByRole("button",{ name: "工作台" })).toBeEnabled();expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue("");
 });
 it("CHAT-02/04 keeps separate follow-up drafts when switching grouped and searched history, and copies formatted output", async () => {
-  const { api } = setup();const copy = vi.fn(() => Promise.resolve());Object.defineProperty(navigator,"clipboard",{ configurable: true,value: { writeText: copy } });
+  const { api,get } = setup();const copy = vi.fn(() => Promise.resolve());Object.defineProperty(navigator,"clipboard",{ configurable: true,value: { writeText: copy } });
+  get.mockImplementation(id => { const chat = conversation(id);chat.turns[0]?.entries.unshift({ entryId: "activity",kind: "ACTIVITY",role: "SYSTEM",sequence: 0,createdAt: chat.updatedAt,activity: { type: "THINKING",thinking: { phaseId: "phase",state: "COMPLETED",summary: "UI_ONLY_THOUGHT" } } });return Promise.resolve(chat); });
   render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
   fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await screen.findByRole("heading",{ name: "Formatted answer" });
   fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Draft one" } });fireEvent.click(screen.getByRole("button",{ name: /^设计讨论$/ }));await waitFor(() => expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue(""));
@@ -131,10 +132,11 @@ it("CHAT-22/23 keeps the subagent setting in the next turn and reports a scoped 
   const cancel = vi.spyOn(api,"cancelConversationChild").mockRejectedValueOnce(new ApiError("fixture_unavailable","Cancel unavailable",503)).mockResolvedValue({ canceled: true });
   render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
   fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await screen.findByRole("heading",{ name: "Formatted answer" });
-  fireEvent.click(screen.getByText(/子代理：/));fireEvent.click(screen.getByRole("button",{ name: "取消" }));
+  fireEvent.click(screen.getByText(/子代理：/,{ selector: ".chat-activity-brief" }));
+  fireEvent.click(screen.getByText(/子代理：/,{ selector: "summary" }));fireEvent.click(screen.getByRole("button",{ name: "取消" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("请求未完成，请重试。");
   fireEvent.click(screen.getByRole("button",{ name: "取消" }));await waitFor(() => expect(cancel).toHaveBeenCalledTimes(2));expect(cancel).toHaveBeenLastCalledWith("first","child");
-  fireEvent.click(screen.getByRole("checkbox",{ name: "子代理" }));
+  fireEvent.click(screen.getByRole("button",{ name: "子代理" }));
   fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Continue without children" } });fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));
   await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "first",subagentsEnabled: false })));
 });

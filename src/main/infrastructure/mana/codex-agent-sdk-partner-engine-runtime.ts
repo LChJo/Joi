@@ -11,6 +11,7 @@ import type { WorkbenchExecutionContextReader } from "../../application/ports/wo
 import type { NativeAgentEvent } from "../../application/ports/native-agent-events.js";
 import type { PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { PartnerEngineRuntime, PartnerExecutionContext, ResidentTurnInput, ResidentTurnResult } from "../../application/ports/partner-instances.js";
+import { ConversationThinking } from "../pi/conversation-thinking.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { toolCallLabel } from "../../application/partners/tool-trace-presentation.js";
@@ -142,6 +143,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       ...(this.dependencies.evidenceDirectory === undefined ? {} : { taskDirectory: this.dependencies.evidenceDirectory }),
     });
     const journal = new NativeConversationJournal("codex",request,context);
+    const thinking = new ConversationThinking(context.onThinking,request.actionId);
     const history = resume === undefined ? journal.history() : "";
     const systemPrompt = await this.#systemPrompt(revision, { ...request,requiredContext: [request.requiredContext,history].filter(Boolean).join("\n\n") }, workbenchSection, context, permissions, execution.workspacePath);
     const client = this.#client(resolved, systemPrompt, gated);
@@ -193,11 +195,11 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     try {
       const prompt = analysis ? `${conversationPrompt(request)}\n\n${WRITE_PROTOCOL_PROMPT}`
         : request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : conversationPrompt(request);
-      consumed = await this.#consume(thread, prompt, controller.signal, emit, () => guard?.onProgress(), usageCapture, analysis ? WRITE_PROTOCOL_SCHEMA : NATIVE_COMPLETION_SCHEMA, request.workspaceExecution !== undefined,journal);
+      consumed = await this.#consume(thread, prompt, controller.signal, emit, () => guard?.onProgress(), usageCapture, analysis ? WRITE_PROTOCOL_SCHEMA : NATIVE_COMPLETION_SCHEMA, request.workspaceExecution !== undefined,journal,thinking);
       if (analysis) {
         let protocol = parseWriteProtocol(consumed.completionText ?? consumed.body);
         if (protocol === null) {
-          consumed = await this.#consume(thread, `Correct the previous result once. ${WRITE_PROTOCOL_PROMPT}`, controller.signal, emit, () => guard?.onProgress(), usageCapture, WRITE_PROTOCOL_SCHEMA, true,journal);
+          consumed = await this.#consume(thread, `Correct the previous result once. ${WRITE_PROTOCOL_PROMPT}`, controller.signal, emit, () => guard?.onProgress(), usageCapture, WRITE_PROTOCOL_SCHEMA, true,journal,thinking);
           protocol = parseWriteProtocol(consumed.completionText ?? consumed.body);
         }
         if (protocol === null) throw new DomainError("workspace_write_protocol_invalid", "The native read-only result did not match the execution protocol.");
@@ -224,6 +226,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       await emit({ type: "status", state: classifyNativeCliFailure(error) === "partner_cli_auth_required" ? "auth-required" : "failed" });
       throw error;
     } finally {
+      await thinking.interrupt();
       guard?.dispose();
       await journal.save();
     }
@@ -234,7 +237,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     return { conversation: projector.snapshot(), externalRunId: `native_codex:${request.actionId}`, ...(sessionId === undefined ? {} : { nativeSessionId: sessionId }), output: { artifacts, ...completion }, status: "COMPLETED" };
   }
 
-  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, outputSchema?: unknown, endOnCompletion = false,journal?: NativeConversationJournal): Promise<{ body: string; completionText?: string; threadId?: string }> {
+  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, outputSchema?: unknown, endOnCompletion = false,journal?: NativeConversationJournal,thinking?: ConversationThinking): Promise<{ body: string; completionText?: string; threadId?: string }> {
     const streamed = await thread.runStreamed(prompt, { ...(signal === undefined ? {} : { signal }), ...(outputSchema === undefined ? {} : { outputSchema }) });
     let completed = false;
     let threadId: string | undefined;
@@ -261,6 +264,11 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       else if (event.type === "turn.failed" || event.type === "error") throw new Error("codex_turn_failed", { cause: event });
       else if (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed") {
         const item = event.item;
+        if (item.type === "reasoning") {
+          if (event.type === "item.started") await thinking?.start(item.id);
+          else if (event.type === "item.completed") await thinking?.end(item.id,item.text);
+          continue;
+        }
         if (item.type === "agent_message" && event.type === "item.completed") { texts.push(item.text);await journal?.final(item.text); if (outputSchema === undefined) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: item.text }] }); continue; }
         const toolName = codexToolName(item);
         if (toolName === undefined) continue;

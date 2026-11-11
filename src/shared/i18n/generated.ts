@@ -316,6 +316,11 @@ export interface MessageParameters {
   "chat.cancelChild": undefined;
   "chat.loadEarlier": undefined;
   "chat.subagents": undefined;
+  "chat.thinkingStarted": undefined;
+  "chat.thinkingCompleted": undefined;
+  "chat.thinkingInterrupted": undefined;
+  "chat.thinkingSummaryTruncated": undefined;
+  "chat.thinkingDuration": { "seconds": number };
   "common.language": undefined;
   "common.system": undefined;
   "common.languageSaveFailed": undefined;
@@ -2058,6 +2063,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.cancelChild": "Cancel",
     "chat.loadEarlier": "Load earlier messages",
     "chat.subagents": "Subagents",
+    "chat.thinkingStarted": "Thinking",
+    "chat.thinkingCompleted": "Thinking complete",
+    "chat.thinkingInterrupted": "Thinking interrupted",
+    "chat.thinkingSummaryTruncated": "Part of the summary was omitted",
+    "chat.thinkingDuration": "{seconds} s",
     "common.language": "Language",
     "common.system": "Follow system",
     "common.languageSaveFailed": "Language changed for this session, but could not be saved. Try again.",
@@ -3798,6 +3808,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.cancelChild": "取消",
     "chat.loadEarlier": "加载更早消息",
     "chat.subagents": "子代理",
+    "chat.thinkingStarted": "正在思考",
+    "chat.thinkingCompleted": "思考完成",
+    "chat.thinkingInterrupted": "思考已中断",
+    "chat.thinkingSummaryTruncated": "摘要已省略部分内容",
+    "chat.thinkingDuration": "{seconds} 秒",
     "common.language": "语言",
     "common.system": "跟随系统",
     "common.languageSaveFailed": "语言已在本次会话切换，但未能保存，请重试。",
@@ -5819,6 +5834,14 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "加载更早消息": "chat.loadEarlier",
   "Subagents": "chat.subagents",
   "子代理": "chat.subagents",
+  "Thinking": "chat.thinkingStarted",
+  "正在思考": "chat.thinkingStarted",
+  "Thinking complete": "chat.thinkingCompleted",
+  "思考完成": "chat.thinkingCompleted",
+  "Thinking interrupted": "chat.thinkingInterrupted",
+  "思考已中断": "chat.thinkingInterrupted",
+  "Part of the summary was omitted": "chat.thinkingSummaryTruncated",
+  "摘要已省略部分内容": "chat.thinkingSummaryTruncated",
   "Language": "common.language",
   "语言": "common.language",
   "Follow system": "common.system",

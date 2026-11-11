@@ -1,7 +1,7 @@
 /* Faux provider callbacks implement the asynchronous model boundary. */
 /* eslint-disable @typescript-eslint/require-await */
 import { Agent } from "@earendil-works/pi-agent-core";
-import { createModels,fauxProvider,fauxAssistantMessage,fauxText,fauxToolCall,getCurrentTools } from "@earendil-works/pi-ai";
+import { createModels,fauxProvider,fauxAssistantMessage,fauxText,fauxThinking,fauxToolCall,getCurrentTools } from "@earendil-works/pi-ai";
 import { createJoiPiSession } from "../../src/main/infrastructure/pi/joi-pi-session.js";
 import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
@@ -11,6 +11,57 @@ import { Type } from "typebox";
 import { createPiContextManager } from "../../src/main/infrastructure/pi/pi-context-manager.js";
 import { modelRequestBudget } from "../../src/main/infrastructure/pi/pi-model-budget.js";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { ConversationThinkingDto } from "../../src/shared/conversations.js";
+
+it("CHAT-29 observes actual Pi thinking phases without projecting raw reasoning or signatures",async () => {
+  const faux = fauxProvider({ provider: "safe-thinking" }),models = createModels();models.setProvider(faux.provider);
+  const updates: ConversationThinkingDto[] = [],events: unknown[] = [];
+  const runtime = new PiPartnerEngineRuntime({ contexts: { loadForExecution: async () => ({ promptSection: "",sanitized: {} }) },prompts: { read: async () => null },
+    resolver: { resolve: async () => ({ model: faux.getModel(),models,thinkingLevel: "off" }) },sources: { selectInitial: async turnId => ({ turnId,modelId: "m",modelRevisionId: "mr",sourceId: "s",sourceRevisionId: "sr" }) },tools: { names: [],create: () => [] } });
+  faux.setResponses([fauxAssistantMessage([{ ...fauxThinking("RAW_REASONING_PRIVATE"),thinkingSignature: "RAW_SIGNATURE_PRIVATE" },fauxText("Public answer")])]);
+  const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-11-12T00:00:00Z",displayName: "Helper",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: [],toolPolicyMode: "CUSTOM" });
+  try {
+    await runtime.runResidentTurn({ instanceId: "thinking",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: null,
+      onThinking: async value => { updates.push(value); },onEvent: async value => { events.push(value); },request: { actionId: "turn",workbenchId: "wb",workId: "turn",contextSnapshotId: "s",taskProjection: "Help",conversationId: "chat",subagentsEnabled: false } });
+    expect(updates.map(update => update.state)).toEqual(["STARTED","COMPLETED"]);
+    expect(updates[1]?.phaseId).toBe(updates[0]?.phaseId);expect(typeof updates[1]?.durationMs).toBe("number");
+    expect(updates.every(update => update.summary === undefined)).toBe(true);
+    expect(JSON.stringify({ updates,events })).not.toMatch(/RAW_REASONING_PRIVATE|RAW_SIGNATURE_PRIVATE/u);
+  } finally { runtime.evictFromMemory("thinking"); }
+});
+
+it.each(["ALL","CUSTOM","READ","CHILD","MODEL_SWITCH"] as const)("CHAT-28 projects enabled coding guidance into the actual %s SDK request after restore",async mode => {
+  const faux = fauxProvider({ provider: `coding-guidance-${mode}` }),models = createModels();models.setProvider(faux.provider);
+  const names = ["read","grep","find","ls","bash","write"];
+  let modelRevisionId = "mr";
+  const runtime = new PiPartnerEngineRuntime({ contexts: { loadForExecution: async () => ({ promptSection: "",sanitized: {},workspacePath: "synthetic-workspace" }) },prompts: { read: async () => null },
+    resolver: { resolve: async () => ({ model: faux.getModel(),models,thinkingLevel: "off" }) },sources: { selectInitial: async turnId => ({ turnId,modelId: "m",modelRevisionId,sourceId: "s",sourceRevisionId: "sr" }) },
+    tools: { names,create: (_cwd,selected) => selected.map(name => ({ name,label: name,description: name,parameters: Type.Object({}),execute: async () => ({ content: [{ type: "text",text: "Synthetic" }],details: {} }) })) } });
+  const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-11-12T00:00:00Z",displayName: "Helper",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: mode === "CUSTOM" ? ["read","bash"] : [],toolPolicyMode: mode === "CUSTOM" ? "CUSTOM" : "ALL" });
+  const requests: { names: string[];text: string }[] = [];
+  faux.setResponses(Array.from({ length: 2 },() => context => { requests.push({ names: getCurrentTools(context.messages).map(tool => tool.name),text: JSON.stringify(context.messages) });return fauxAssistantMessage([fauxText("Done")]); }));
+  let saved: PartnerSessionState | undefined;
+  const input = { instanceId: `guidance-${mode}`,knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: null,
+    saveSession: async (state: PartnerSessionState) => { saved = state; },request: { actionId: "first",workbenchId: "wb",workId: "first",contextSnapshotId: "snapshot",taskProjection: "Inspect",conversationId: "chat",subagentsEnabled: false,requiredContext: "CURRENT_POLICY",
+      ...(mode === "CHILD" ? { subagentChild: true } : {}),
+      ...(mode === "READ" ? { workspaceExecution: { accessCeiling: "READ" as const,phase: "READ_RUNNING" as const,generation: 1 } } : {}) } };
+  try {
+    await runtime.runResidentTurn(input);runtime.evictFromMemory(input.instanceId);
+    if (mode === "MODEL_SWITCH") modelRevisionId = "next-model-revision";
+    await runtime.runResidentTurn({ ...input,...(saved === undefined ? {} : { sessionState: saved }),...(mode === "MODEL_SWITCH" ? { revision: { ...revision,partnerRevisionId: "r2",tools: ["read"],toolPolicyMode: "CUSTOM" as const } } : {}),request: { ...input.request,actionId: "second",workId: "second" } });
+    expect(requests).toHaveLength(2);
+    for (const [index,request] of requests.entries()) {
+      const narrowed = mode === "MODEL_SWITCH" && index === 1;
+      expect(request.text).toContain("Use read to examine files instead of cat or sed.");
+      expect(request.text.includes("Use grep (ripgrep) for content searches")).toBe(mode !== "CUSTOM" && !narrowed);
+      expect(request.text.includes("Use find (fd) for file-name and glob searches")).toBe(mode !== "CUSTOM" && !narrowed);
+      expect(request.text.includes("Use ls for directory listings")).toBe(mode !== "CUSTOM" && !narrowed);
+      expect(request.text.includes("Use bash for builds, tests, scripts")).toBe(mode !== "READ" && !narrowed);
+      expect(request.names.filter(name => names.includes(name))).toEqual(narrowed ? ["read"] : mode === "CUSTOM" ? ["read","bash"] : mode === "READ" ? ["read","grep","find","ls"] : names);
+      expect(request.text).not.toContain("inspect PI_* environment variables");
+    }
+  } finally { runtime.evictFromMemory(input.instanceId); }
+});
 
 it("CHAT-21 uses an isolated SDK session, keeps restored history and disables automatic compaction",async () => {
   const faux = fauxProvider({ provider: "conversation-sdk" });const models = createModels();models.setProvider(faux.provider);

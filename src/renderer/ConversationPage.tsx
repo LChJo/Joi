@@ -6,7 +6,6 @@ import { randomUuid } from "./random-uuid";
 import { SafeMarkdown } from "./SafeMarkdown";
 import { ConversationWorkspace } from "./ConversationWorkspace";
 import { ConversationOutput } from "./ConversationOutput";
-import { ConversationContext } from "./ConversationContext";
 import { ConversationHistoryRow } from "./ConversationHistoryRow";
 import { DeleteConversationDialog } from "./ConversationDialogs";
 import type { ConversationDto, ConversationInheritanceDto, ConversationSummaryDto, ConversationTurnStatus, SendConversationInput } from "../shared/conversations";
@@ -272,7 +271,11 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
           {conversation.turns.map(turn => <article className="chat-turn" key={turn.turnId}>
           <div className="chat-user"><SafeMarkdown>{turn.text}</SafeMarkdown>{turn.config.attachmentIds.length === 0 ? null : <small><PaperclipIcon />{turn.config.attachmentIds.length}</small>}</div>
           <div className="chat-agent-heading"><span className="chat-agent-mark">j</span><strong>{turn.config.partnerName}</strong><small>{turn.config.modelName}</small></div>
-          <div className="chat-output"><ConversationOutput entries={turn.entries} status={turn.status} /></div>
+          <div className="chat-output"><ConversationOutput entries={turn.entries} status={turn.status} {...(turn.turnId !== conversation.turns.at(-1)?.turnId ? {} : {
+            ...(conversation.context === undefined || turn.entries.some(entry => entry.kind === "ACTIVITY" && entry.activity.type === "CONTEXT") ? {} : { context: conversation.context }),
+            ...(conversation.children === undefined ? {} : { children: conversation.children }),
+            onCancel: childId => void api.cancelConversationChild(conversation.conversationId,childId).catch(showError),
+          })} /></div>
           <footer className={`chat-turn-footer status-${turn.status.toLowerCase()}`}><span>{statusText(turn.status)}</span>{turn.config.skills.length > 0 ? <small>Skills · {turn.config.skills.length}</small> : null}
             <button aria-label={t("chat.copy")} className="icon-button" onClick={() => { void navigator.clipboard.writeText(turn.entries.filter(e => e.role === "AGENT" && e.kind === "MARKDOWN").map(e => e.text ?? "").join("\n\n")).then(() => setCopied(turn.turnId)).catch(showError); }} type="button">{copied === turn.turnId ? <CheckIcon /> : <CopyIcon />}</button></footer>
         </article>)}</div>}
@@ -283,7 +286,6 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
           {api.desktop ? <><button className="chat-quick-workbench" onClick={() => void quickWorkbench()} type="button"><PlusIcon />{t("chat.quickWorkbench")}</button><p>{t("chat.quickHint")}</p></> : null}</PickerButton>
           <PickerButton name={t("chat.inherited")} label={t("chat.inherited")} icon={<SparkleIcon />} open={picker === "inheritance"} onToggle={() => toggle("inheritance")}><p>{t("chat.inheritHint")}</p><p>{inheritance?.memoryCount ? `${t("chat.memory")} · ${String(inheritance.memoryCount)}` : t("chat.noMemory")}</p><p>{inheritance?.evolutionRevisionId ? `${t("chat.evolution")} · ${inheritance.evolutionRevisionId}` : t("chat.noEvolution")}</p></PickerButton>
         </div> : null}
-        {conversation === null ? null : <ConversationContext conversation={conversation} onCancel={childId => void api.cancelConversationChild(conversation.conversationId,childId).catch(showError)} />}
         <form className="chat-composer" onSubmit={e => { e.preventDefault();void send(); }}>
           {draft.attachments.length === 0 ? null : <div className="chat-attachment-chips">{draft.attachments.map(a => <span key={a.attachmentId}><PaperclipIcon />{a.filename}<button aria-label={`${t("chat.remove")} ${a.filename}`} onClick={() => patchDraft({ attachments: draft.attachments.filter(f => f.attachmentId !== a.attachmentId) })} type="button"><XIcon /></button></span>)}</div>}
           <textarea aria-label={t("chat.message")} disabled={submitting} maxLength={64000} onChange={e => patchDraft({ text: e.target.value })} onKeyDown={e => { if ((e.ctrlKey || e.metaKey) && e.key === "Enter" && !e.nativeEvent.isComposing) { e.preventDefault();void send(); } }} placeholder={t("chat.placeholder")} rows={3} value={draft.text} />
@@ -292,8 +294,8 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
             <PickerButton name={t("chat.partner")} label={selectedPartner?.displayName ?? "joi"} icon={<RobotIcon />} open={picker === "partner"} onToggle={() => toggle("partner")}><div role="listbox" aria-label={t("chat.partner")}><button aria-selected={draft.partnerId === "joi-chat"} onClick={() => { patchDraft({ partnerId: "joi-chat",skills: [] });setPicker(null); }} role="option" type="button">joi<small>Pi</small></button>{partners.map(p => <button aria-selected={draft.partnerId === p.partnerId} key={p.partnerId} onClick={() => { patchDraft({ partnerId: p.partnerId,skills: p.skills });setPicker(null); }} role="option" type="button">{p.displayName}<small>{p.engine}</small></button>)}</div></PickerButton>
             <PickerButton name={t("chat.skills")} label={<>{t("chat.skills")}{draft.skills.length > 0 ? ` · ${String(draft.skills.length)}` : ""}</>} icon={<SparkleIcon />} open={picker === "skills"} onToggle={() => toggle("skills")}>
               {skillOptions.length === 0 ? <p>{t("chat.noSkills")}</p> : skillOptions.map(s => <label key={s.id}><input checked={draft.skills.includes(s.id)} onChange={() => patchDraft({ skills: draft.skills.includes(s.id) ? draft.skills.filter(id => id !== s.id) : [...draft.skills,s.id] })} type="checkbox" />{s.displayName}</label>)}</PickerButton>
+            {native ? null : <button aria-label={t("chat.subagents")} aria-pressed={draft.subagentsEnabled ?? true} className="chat-subagent-switch" onClick={() => patchDraft({ subagentsEnabled: !(draft.subagentsEnabled ?? true) })} type="button"><NetworkIcon weight={draft.subagentsEnabled === false ? "regular" : "fill"} /><span>{t("chat.subagents")}</span></button>}
             <button aria-label={t("chat.settings")} className="chat-settings-button" onClick={onSettings} title="Ctrl / ⌘ + ," type="button"><GearSixIcon /></button>
-            {native ? null : <label className="chat-subagent-switch"><input checked={draft.subagentsEnabled ?? true} onChange={event => patchDraft({ subagentsEnabled: event.target.checked })} type="checkbox" />{t("chat.subagents")}</label>}
             {busy ? <button aria-label={t("chat.stop")} className="chat-send is-stop" onClick={() => void api.stopConversation(draft.id).then(() => api.getConversation(draft.id)).then(setConversation).catch(showError)} type="button"><StopIcon weight="fill" /></button>
               : <button aria-label={t("chat.send")} className="chat-send" disabled={submitting || restoring || uploading || draft.text.trim() === "" || draft.workbenchId === "" || (!native && selectedNetwork?.status !== "READY")} type="submit"><ArrowUpIcon weight="bold" /></button>}
           </div></form><input hidden multiple onChange={e => void upload(e.target.files)} ref={fileInput} type="file" />

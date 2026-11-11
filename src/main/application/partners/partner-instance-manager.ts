@@ -97,6 +97,7 @@ export class PartnerInstanceManager {
   async dispatch(input: {
     session?: { state?: PartnerSessionState; save: (state: PartnerSessionState) => Promise<void> };
     onContext?: PartnerExecutionContext["onContext"];
+    onThinking?: PartnerExecutionContext["onThinking"];
     expectedSource?: Pick<ModelSourceTurnPin,"sourceId" | "sourceRevisionId" | "modelRevisionId">;
     dispatchAttemptId?: string;
     instanceId?: string;
@@ -259,6 +260,8 @@ export class PartnerInstanceManager {
       }
       if (record.sessionPolicy === "EPHEMERAL" && input.request.workspaceExecution === undefined) {
         const result = await engine.runEphemeral(input.request, input.revision, {
+          ...(input.onThinking === undefined ? {} : { onThinking: input.onThinking }),
+          ...(input.onContext === undefined ? {} : { onContext: input.onContext }),
           knowledgeSection,
           ...(onEvent === undefined ? {} : { onEvent }),
           ...(input.onProgress === undefined ? {} : { onProgress: input.onProgress }),
@@ -303,6 +306,7 @@ export class PartnerInstanceManager {
         ...(input.session?.state === undefined ? {} : { sessionState: input.session.state }),
         ...(input.session === undefined ? {} : { saveSession: input.session.save }),
         ...(input.onContext === undefined ? {} : { onContext: input.onContext }),
+        ...(input.onThinking === undefined ? {} : { onThinking: input.onThinking }),
         instanceId: record.instanceId,
         knowledgeSection,
         ...(onEvent === undefined ? {} : { onEvent }),

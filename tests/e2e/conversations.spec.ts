@@ -18,15 +18,18 @@ test("normal conversation layout, independent selectors, inherited context and G
     const wb = { workbenchId: "joi",name: "Joi 产品研发",scopeSummary: "Product",updatedAt: "2026-11-11" };
     const toolParameters = 'rg -n "memory|cache|dispose|cleanup|listener" src/main/modules/cowork/runtime.ts src/main/modules/cowork/conversation/aggregator.ts';
     const chat = { conversationId: "chat",workbenchId: "joi",title: "优化首页的输入体验",updatedAt: "2026-11-11",turns: [{ turnId: "t1",text: "保留工作台选择和附件，让输入框更轻。",status: "COMPLETED",createdAt: "2026-11-11",config: { partnerId: "joi-chat",partnerName: "joi",networkId: "network",networkName: "研发网络",modelName: "Configured model",skills: ["user/design"],attachmentIds: [] },artifacts: [{ name: "ConversationPage.tsx",size: 2400 }],entries: [...["ls","bash"].flatMap((name,index) => [{ entryId: `call-${String(index)}`,toolCallId: `tool-${String(index)}`,sequence: index * 2,createdAt: "2026-11-11",kind: "TOOL_CALL",role: "TOOL",toolName: name,text: index === 0 ? "src/renderer" : toolParameters,toolState: "started" },{ entryId: `result-${String(index)}`,toolCallId: `tool-${String(index)}`,sequence: index * 2 + 1,createdAt: "2026-11-11",kind: "TOOL_RESULT",role: "TOOL",toolName: name,toolState: index === 0 ? "completed" : "failed",text: "PRIVATE_TOOL_RESULT" }]),{ entryId: "e1",sequence: 5,createdAt: "2026-11-11",kind: "MARKDOWN",role: "AGENT",text: "输入框采用更轻的结构，保留熟悉的操作。\n\n### 让常用操作留在手边\n\n- **正文优先**：输入区域与操作栏分层。\n- **上下文清晰**：工作台归属始终可见。\n\n```css\n.composer {\n  border-radius: 14px;\n}\n```\n\n| 区域 | 行为 |\n| --- | --- |\n| 工作台 | 首次发送后锁定 |\n| 模型网络 | 来自设置 |" }] }] };
+    const displayedChat = { ...chat,context: { kind: "CHARACTERS",state: "COMPACTING",requestChars: 100,budgetChars: 1000,missingHistory: true },turns: chat.turns.map(turn => ({ ...turn,entries: [
+      { entryId: "thinking",sequence: 0,createdAt: "2026-11-12",kind: "ACTIVITY",role: "SYSTEM",activity: { type: "THINKING",thinking: { phaseId: "phase",state: "COMPLETED",durationMs: 1250,summary: "已定位组件与工具调用边界。" } } },...turn.entries,
+    ] })) };
     await page.route("**/api/v1/**",async route => {
       const path = new URL(route.request().url()).pathname;
       let body: unknown;
       if (path === "/api/v1/workbenches") body = { items: [wb] };
       else if (path === "/api/v1/model-sources") body = { items: [{ sourceId: "network",displayName: "研发网络",activeModel: { id: "Configured model" },status: "READY" }] };
       else if (path === "/api/v1/partners") body = { items: [] };
-      else if (path === "/api/v1/conversations" && route.request().method() === "POST") { const input = route.request().postDataJSON() as Record<string,unknown>;sent.push(input);body = { ...chat,conversationId: input.conversationId }; }
+      else if (path === "/api/v1/conversations" && route.request().method() === "POST") { const input = route.request().postDataJSON() as Record<string,unknown>;sent.push(input);body = { ...displayedChat,conversationId: input.conversationId }; }
       else if (path === "/api/v1/conversations") body = { items: [chat] };
-      else if (path.startsWith("/api/v1/conversations/")) body = chat;
+      else if (path.startsWith("/api/v1/conversations/")) body = displayedChat;
       else if (path.includes("/skills")) body = { items: [{ id: "user/design",displayName: "design-taste" }] };
       else if (path.includes("conversation-inheritance")) body = { memoryCount: 3,evolutionRevisionId: "method-active" };
       else if (path.endsWith("/git") && path.includes("conversation-workspaces")) body = { available: true,branch: "main",branches: ["main","feature/chat"],ahead: 1,behind: 0,files: [{ path: "src/renderer/ConversationPage.tsx",index: " ",workingTree: "M" }],history: [{ hash: "b602f34",message: "Refine conversation composer",date: "2026-11-11" }] };
@@ -44,6 +47,9 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(page.locator(".chat-context-strip")).toBeVisible();
     const sendButton = page.getByRole("button",{ name: "发送消息" });
     await expect(sendButton).toBeDisabled();
+    await expect(page.getByRole("button",{ name: "子代理",exact: true })).toHaveAttribute("aria-pressed","true");
+    expect(await page.locator(".chat-composer-toolbar").evaluate(element => [...element.querySelectorAll(":scope > button, :scope > .chat-picker > button")].map(button => button.getAttribute("aria-label"))))
+      .toEqual(["附件","大模型网络","搭档","Skills","子代理","前往大模型网络设置","发送消息"]);
     const sendShape = await sendButton.evaluate(element => { const box=element.getBoundingClientRect();return { width: box.width,height: box.height,radius: parseFloat(getComputedStyle(element).borderRadius) }; });
     expect(sendShape.width).toBeGreaterThanOrEqual(32);expect(sendShape.width).toBeLessThanOrEqual(36);expect(sendShape.height).toBe(sendShape.width);expect(sendShape.radius).toBeLessThanOrEqual(8);
     const expandedWidth = await page.locator(".sidebar").evaluate(element => element.getBoundingClientRect().width);
@@ -61,10 +67,15 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(toolSummary).toContainText("bash");await expect(toolSummary).toContainText("共 2 次");
     await expect(toolSummary).toContainText(toolParameters);await expect(toolSummary).toContainText("执行失败");
     await expect(toolSummary.locator("code")).toHaveAttribute("title",toolParameters);
-    expect((await toolSummary.boundingBox())?.height).toBeLessThanOrEqual(34);
+    await expect(toolSummary).toContainText("思考完成");await expect(toolSummary).toContainText("正在摘要历史");
+    expect(await toolSummary.locator(".chat-activity-brief").evaluate(element => getComputedStyle(element).color))
+      .not.toBe(await toolSummary.evaluate(element => getComputedStyle(element).color));
+    await expect(page.locator(".chat-compose-area .chat-runtime-context")).toHaveCount(0);
+    expect((await toolSummary.boundingBox())?.height).toBeLessThanOrEqual(64);
     await expect(tools.locator("li").first()).toBeHidden();await toolSummary.focus();await page.keyboard.press("Enter");
     await expect(tools.locator("li").first()).toContainText("ls");await expect(tools.locator("li").first()).toBeVisible();
     await expect(tools.locator("li").first()).toContainText("src/renderer");await expect(tools.locator("li").first()).toContainText("已完成");
+    await expect(tools.getByRole("status")).toContainText("100 / 1000");await expect(tools.getByText("已定位组件与工具调用边界。")).toBeVisible();
     await expect(tools.locator("li").last()).toHaveAttribute("data-tool-state","failed");
     await expect(tools).not.toContainText("PRIVATE_TOOL_RESULT");await page.screenshot({ path: "test-results/conversation-tool-details.png" });
     await toolSummary.click();await page.screenshot({ path: "test-results/conversation-tools-compact.png" });

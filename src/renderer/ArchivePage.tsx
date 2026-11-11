@@ -3,7 +3,7 @@ import { ArchiveIcon, ArrowCounterClockwiseIcon, ChatsCircleIcon, FolderIcon, Tr
 import { ApiError, type DigitalLifeApi } from "./api";
 import { ArchivedGoals } from "./JoiHome";
 import { ConversationDialog, DeleteConversationDialog } from "./ConversationDialogs";
-import { SafeMarkdown } from "./SafeMarkdown";
+import { ConversationOutput } from "./ConversationOutput";
 import { currentLocale, t, useI18n } from "./i18n";
 import type { ConversationDto, ConversationSummaryDto } from "../shared/conversations";
 import type { WorkbenchDto } from "../shared/joi";
@@ -66,7 +66,7 @@ function ArchivedConversations({ api }: { api: DigitalLifeApi }) {
     {deleting === null ? null : <DeleteConversationDialog busy={busy} error={error} onCancel={() => { setDeleting(null);setError(null); }} onDelete={() => void change(deleting,true)} title={deleting.title} />}
     {opened === null ? null : <ConversationDialog onClose={() => { sequence.current++;setOpened(null); }} title={opened.title}><p className="chat-archive-hint">{workbenchName(opened)}</p><div className="chat-archive-transcript">
       {opened.historyCursor === undefined ? null : <button disabled={loadingEarlier} onClick={() => void loadEarlier()} type="button">{t("chat.loadEarlier")}</button>}
-      {opened.turns.map(turn => <article className="chat-turn" key={turn.turnId}><div className="chat-user"><p>{turn.text}</p></div><div className="chat-output">{turn.entries.filter(entry => entry.kind === "MARKDOWN" || entry.kind === "ERROR").map(entry => <SafeMarkdown key={entry.entryId}>{entry.text ?? ""}</SafeMarkdown>)}</div></article>)}</div></ConversationDialog>}
+        {opened.turns.map(turn => <article className="chat-turn" key={turn.turnId}><div className="chat-user"><p>{turn.text}</p></div><div className="chat-output"><ConversationOutput entries={turn.entries.filter(entry => entry.kind === "MARKDOWN" || entry.kind === "ERROR" || entry.kind === "ACTIVITY")} status={turn.status} /></div></article>)}</div></ConversationDialog>}
   </section>;
 }
 

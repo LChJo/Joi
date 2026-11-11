@@ -32,6 +32,55 @@ async function setup(run: PartnerInstanceManager["dispatch"]) {
 }
 
 describe("normal conversation execution", () => {
+  it("CHAT-29 retries the final projection after an observational activity write fails",async () => {
+    const { f,service,accept,store } = await setup(async p => {
+      await p.onThinking?.({ phaseId: "phase",state: "COMPLETED" }).catch(() => undefined);
+      return { actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: "COMPLETED",body: "Done",artifacts: [] };
+    });
+    vi.spyOn(store,"update").mockRejectedValueOnce(new Error("Synthetic transient projection failure"));
+    try {
+      await service.deliver((await accept()).turnId);const turn = (await service.get("chat")).turns[0];
+      expect(turn?.status).toBe("COMPLETED");expect(turn?.entries.some(entry => entry.kind === "ACTIVITY")).toBe(true);
+      expect(turn?.entries.some(entry => entry.kind === "MARKDOWN" && entry.text === "Done")).toBe(true);
+    } finally { await f.close(); }
+  });
+  it("CHAT-29 retains distinct thinking observations when a turn resumes in its WRITE phase",async () => {
+    const { f,service,accept } = await setup(async p => {
+      await p.onThinking?.({ phaseId: "same-engine-phase",state: "COMPLETED",summary: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "Read observation" : "Write observation" });
+      return { actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "SUSPENDED" : "COMPLETED",body: "Done",artifacts: [],instanceId: "checkpoint",checkpointRef: "durable" };
+    });
+    try {
+      await service.deliver((await accept()).turnId);
+      const thoughts = (await service.get("chat")).turns[0]?.entries.flatMap(entry => entry.kind === "ACTIVITY" && entry.activity.type === "THINKING" ? [entry.activity.thinking] : []) ?? [];
+      expect(thoughts.map(value => value.summary)).toEqual(["Read observation","Write observation"]);
+      expect(new Set(thoughts.map(value => value.phaseId)).size).toBe(2);
+    } finally { await f.close(); }
+  });
+  it("CHAT-29 persists safe turn activity across streamed and final snapshots and restart",async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>(async p => {
+      await p.onContext?.({ kind: "CHARACTERS",state: "COMPACTING" });
+      await p.onThinking?.({ phaseId: "phase",state: "STARTED",startedAt: "2026-11-12T00:00:00Z" });
+      await p.onConversation?.({ instanceId: "fixture",conversation: () => [{ kind: "MARKDOWN",role: "AGENT",text: "Partial" }] });
+      await p.onThinking?.({ phaseId: "phase",state: "COMPLETED",durationMs: 42,summary: `token=synthetic-secret ${"公".repeat(2400)}` });
+      return { actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: "COMPLETED",body: "Final",artifacts: [],conversation: [{ kind: "MARKDOWN",role: "AGENT",text: "Final" }] };
+    });
+    const { f,service,accept,dependencies } = await setup(run);
+    try {
+      await service.deliver((await accept()).turnId);
+      const chat = await new ConversationService(dependencies).get("chat"),entries = chat.turns[0]?.entries ?? [];
+      expect(entries.filter(entry => entry.kind === "ACTIVITY")).toHaveLength(2);
+      const thinking = entries.find(entry => entry.kind === "ACTIVITY" && entry.activity.type === "THINKING");
+      expect(thinking).toMatchObject({ activity: { type: "THINKING",thinking: { state: "COMPLETED",durationMs: 42,summaryTruncated: true } } });
+      expect(JSON.stringify(chat)).not.toContain("synthetic-secret");expect(JSON.stringify(chat)).toContain("[redacted]");
+      expect(entries.filter(entry => entry.kind === "MARKDOWN").map(entry => entry.text)).toEqual(["Final"]);
+    } finally { await f.close(); }
+  });
+
+  it("CHAT-29 retains an interrupted thinking phase when execution fails",async () => {
+    const { f,service,accept } = await setup(async p => { await p.onThinking?.({ phaseId: "phase",state: "STARTED" });throw new Error("Synthetic disconnect"); });
+    try { await service.deliver((await accept()).turnId);expect((await service.get("chat")).turns[0]).toMatchObject({ status: "FAILED",entries: [{ activity: { type: "THINKING",thinking: { state: "INTERRUPTED" } } }] }); }
+    finally { await f.close(); }
+  });
   it("CHAT-19 cancels a turn admitted concurrently with stop before invoking its engine",async () => {
     const run = vi.fn<PartnerInstanceManager["dispatch"]>(async p => ({ actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: "COMPLETED",body: "Unexpected",artifacts: [] }));
     const { f,service,store,accept } = await setup(run);
