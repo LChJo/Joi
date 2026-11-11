@@ -1,4 +1,17 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { DomainError } from "../../domain/errors.js";
+
+/** Counts refreshed prompts and tool definitions once, after all request-only transformations. */
+export function finalRequestChars(messages: readonly AgentMessage[],tools: readonly unknown[]): number {
+  const content = messages.map(message => (message as { role?: string }).role === "system"
+    ? { ...message,toolsAdded: undefined,toolsRemoved: undefined } : message);
+  return JSON.stringify(content).length + JSON.stringify(tools).length;
+}
+export function assertFinalRequestCapacity(messages: readonly AgentMessage[],tools: readonly unknown[],maximum: number): number {
+  const chars = finalRequestChars(messages,tools);
+  if (chars > maximum) throw new DomainError("goal_requirements_capacity_exceeded","Protected context and tool definitions exceed the model request capacity.");
+  return chars;
+}
 
 /**
  * Shared sizing for a request against the pinned route's window.

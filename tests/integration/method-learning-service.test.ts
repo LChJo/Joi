@@ -25,6 +25,18 @@ describe("production method learning", () => {
   afterEach(async () => fixture.close());
   const service = (legacyStore = new SqliteEvolutionStore(fixture.database)) => new MethodLearningService({ store, legacyStore,
     model: { pin: () => Promise.resolve(pin), call }, now: () => now, id: () => "method-test", stepsPerHandle: 1 });
+  it("CHAT-06 inherits only enabled compatible ACTIVE conversation methods without creating a goal or model call", () => {
+    store.configureGlobal({ enabled: true,paused: false,dailyCallLimit: 150 });
+    store.configureParticipant("a",{ enabled: true,paused: false,dailyCallLimit: 150 });
+    store.saveRevision({ id: "chat-method",workbenchId: "a",scope: "WORKBENCH",profile: learningProfile(1),status: "ACTIVE",createdAt: now,updatedAt: now,
+      state: { version: 2,evaluator: METHOD_EVALUATOR_VERSION,pin,policy: { version: 2,context: [],planning: [],completion: ["acceptance_matrix"] } } });
+    expect(service().conversationMethod("a",pin)).toMatchObject({ revisionId: "chat-method" });
+    expect(service().conversationMethod("a",{ ...pin,modelRevisionId: "changed" })).toEqual({ revisionId: null,instructions: "" });
+    store.configureParticipant("a",{ enabled: false });
+    expect(service().conversationMethod("a",pin)).toEqual({ revisionId: null,instructions: "" });
+    expect(store.goalPins()).toEqual([]);
+    expect(call).not.toHaveBeenCalled();
+  });
   function seedDefect() {
     for (let i = 0; i < 30; i += 1) {
       fixture.database.transaction(db => db.prepare(`INSERT INTO joi_inbox_messages

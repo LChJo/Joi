@@ -14,6 +14,7 @@ import { wirePartners } from "./wire-partners.js";
 import { wireWorkbenches } from "./wire-workbenches.js";
 import { wireJoi } from "./wire-joi.js";
 import { wireRuntime } from "./wire-runtime.js";
+import { wireConversations } from "./wire-conversations.js";
 import { wireOperations } from "./wire-operations.js";
 import { LifeFileDeletionService } from "../infrastructure/artifacts/life-file-deletion-service.js";
 import { applyPendingRestore, BackupService } from "../infrastructure/operations/backup-service.js";
@@ -158,8 +159,11 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       exporterFactory: (jobs) => desktop.createExporter(jobs),
       workbenchStack,
     });
+    const conversationStack = wireConversations({ clock,ids,database,persistence,partnerStack,modelSourceStack,workbenchStack,
+      evolution: joiStack.evolution,attachments: joiStack.joiAttachmentStorage,userDataDirectory });
+    await conversationStack.recover();
     exportJobs = runtimeStack.exportJobs;
-    drainRuntime = runtimeStack.drain;
+    drainRuntime = async () => { await conversationStack.close(); await runtimeStack.drain(); };
     await partnerStack.partnerInstances.recoverOnBoot();
     await runtimeStack.outboxDispatcher.dispatchOnce();
     await runtimeStack.actorTree.tick(clock.now());
@@ -213,6 +217,10 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
     const { integrity, operations } = operationsBundle;
     databaseIntegrityMonitor = integrity;
     const dependencies = {
+      conversations: conversationStack.conversations,
+      conversationWorkspace: conversationStack.workspace,
+      conversationGit: conversationStack.git,
+      quickWorkbench: conversationStack.quickWorkbench,
       a2aGateway: runtimeStack.a2aGateway,
       agentOnboarding: runtimeStack.agentOnboarding,
       automation: joiStack.automation,
@@ -255,6 +263,7 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
       work: workbenchStack.workRepository,
     };
     emergencyStopAll = async () => {
+      await conversationStack.emergencyStop();
       joiStack.evolution.emergencyStop();
       partnerStack.partnerMemory.emergencyStop();
       modelSourceStack.recovery.stop();
@@ -291,6 +300,8 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
           await runtimeStack.actorTree.tick(clock.now());
           await modelSourceStack.recovery.enqueueDue();
           runtimeStack.modelRecoveryDispatcher.startOnce();
+          conversationStack.dispatcher.startOnce();
+          conversationStack.childDispatcher.startOnce(4);
           await runtimeStack.outboxDispatcher.dispatchOnce();
           runtimeStack.memoryRefreshDispatcher.startOnce();
         })();

@@ -75,6 +75,7 @@ Whatever both loops have learned lives on disk, so closing the app does not rese
 | Area | What it does | Source |
 | --- | --- | --- |
 | Home feed | Goal cards (`ARRANGING` / `ARRANGED` / `RUNNING` / `REVIEWING` / `EXTENDING` / `FINALIZING`), "needs you" items and an archive. | `src/main/application/joi/joi-home-feed-service.ts`, `src/renderer/JoiHome.tsx` |
+| Conversations | Workbench-owned direct conversations with settings-owned model networks, partners, Skills, attachments, inherited memory/methods and a Git/file/browser workspace. | `src/renderer/ConversationPage.tsx`, [acceptance](docs/21-normal-conversations.md), [ADR 0032](docs/adr/0032-normal-conversations.md) |
 | Workbench management | Create / merge / archive / delete workbenches, bind workspaces, choose an owning workbench when a goal is ambiguous. | `src/main/application/joi/workbench-management-service.ts`, `src/renderer/WorkbenchChoiceDialog.tsx` |
 | Partner catalog and instances | Global cwd-less capability templates plus workbench-private instances (`EPHEMERAL` / `RESIDENT`) and scenario preset packs. | `src/main/application/partners/partner-registry-service.ts`, `src/renderer/PartnerPage.tsx` |
 | Work items and DAG | Work items with `READ` / `WRITE` / `NONE` access levels, leases, dependency gating and recovery. | `src/main/domain/work/`, `resources/migrations/052_work_dependency_gate.sql` |

@@ -25,6 +25,7 @@ import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiRuntimeDto } from "../shared/joi";
 import type { GoalArtifactPage, GoalArtifactPageDto } from "../shared/goal-artifacts";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
+import type { ConversationDto, ConversationSummaryDto, SendConversationInput, ConversationInheritanceDto, GitWorkspaceDto, GitCommandInput, GitCommandDto,ConversationHistoryPageDto,ConversationEventsDto } from "../shared/conversations";
 
 export class ApiError extends Error {
   get userMessage() { return errorNotice(this.code, this.message); }
@@ -73,6 +74,26 @@ export class DigitalLifeApi {
   }
 
   authStatus() { return this.request<{ configured: boolean }>("/api/v1/auth/status"); }
+  listConversations(archived = false) { return this.request<{ items: ConversationSummaryDto[] }>(`/api/v1/conversations${archived ? "?archived=true" : ""}`); }
+  archiveConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/archive`,{ method: "POST" }); }
+  restoreConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/restore`,{ method: "POST" }); }
+  deleteConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}`,{ method: "DELETE" }); }
+  getConversation(id: string) { return this.request<ConversationDto>(`/api/v1/conversations/${encodeURIComponent(id)}`); }
+  conversationHistory(id: string,cursor: string) { return this.request<ConversationHistoryPageDto>(`/api/v1/conversations/${encodeURIComponent(id)}/history?${new URLSearchParams({ cursor }).toString()}`); }
+  conversationEvents(id: string,cursor: string) { return this.request<ConversationEventsDto>(`/api/v1/conversations/${encodeURIComponent(id)}/events?${new URLSearchParams({ cursor }).toString()}`); }
+  cancelConversationChild(id: string,childId: string) { return this.request<{ canceled: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/children/${encodeURIComponent(childId)}/cancel`,{ method: "POST" }); }
+  sendConversation(body: SendConversationInput) { return this.request<ConversationDto>("/api/v1/conversations",{ body: { ...body },method: "POST",idempotencyKey: body.requestId }); }
+  stopConversation(id: string) { return this.request<{ stopped: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/stop`,{ method: "POST" }); }
+  conversationInheritance(workbenchId: string,partnerId: string,networkId: string) {
+    return this.request<ConversationInheritanceDto>(`/api/v1/conversation-inheritance/${encodeURIComponent(workbenchId)}?${new URLSearchParams({ partnerId,networkId }).toString()}`);
+  }
+  quickConversationWorkbench() { return this.request<WorkbenchDto>("/api/v1/conversation-workbenches",{ method: "POST" }); }
+  conversationGit(workbenchId: string) { return this.request<GitWorkspaceDto>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/git`); }
+  conversationDiff(workbenchId: string,path: string,staged: boolean) { return this.request<{ patch: string; truncated: boolean }>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/diff?${new URLSearchParams({ path,staged: String(staged) }).toString()}`); }
+  conversationFiles(workbenchId: string,path = "") { return this.request<{ items: { path: string; directory: boolean }[] }>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/files?${new URLSearchParams({ path }).toString()}`); }
+  conversationFile(workbenchId: string,path: string) { return this.request<{ text: string; truncated: boolean }>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/file?${new URLSearchParams({ path }).toString()}`); }
+  runConversationGit(workbenchId: string,body: GitCommandInput) { return this.request<GitCommandDto>(`/api/v1/conversation-workspaces/${encodeURIComponent(workbenchId)}/git`,{ body: { ...body },method: "POST",idempotencyKey: body.requestId }); }
+  getConversationGitCommand(id: string) { return this.request<GitCommandDto>(`/api/v1/conversation-git-commands/${encodeURIComponent(id)}`); }
   statistics(query: StatisticsQuery) {
     const parameters = new URLSearchParams({ from: query.from, to: query.to, timeZone: query.timeZone });
     if (query.workbenchId !== undefined) parameters.set("workbenchId", query.workbenchId);

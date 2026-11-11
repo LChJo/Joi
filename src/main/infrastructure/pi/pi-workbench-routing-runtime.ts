@@ -1,4 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { } from "@earendil-works/pi-ai";
 
 import type { WorkbenchRoutingRuntime } from "../../application/ports/joi-coordinator.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";

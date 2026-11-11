@@ -872,6 +872,691 @@
     "description": "As declared by each skill",
     "placeholders": {}
   },
+  "chatCollapseNavigation": "Collapse navigation",
+  "@chatCollapseNavigation": {
+    "description": "chat.collapseNavigation",
+    "placeholders": {}
+  },
+  "chatExpandNavigation": "Expand navigation",
+  "@chatExpandNavigation": {
+    "description": "chat.expandNavigation",
+    "placeholders": {}
+  },
+  "chatTitle": "Conversations",
+  "@chatTitle": {
+    "description": "chat.title",
+    "placeholders": {}
+  },
+  "chatTool": "Tool",
+  "@chatTool": {
+    "description": "chat.tool",
+    "placeholders": {}
+  },
+  "chatToolsRunning": "Using tool",
+  "@chatToolsRunning": {
+    "description": "chat.toolsRunning",
+    "placeholders": {}
+  },
+  "chatToolsCompleted": "Tool activity",
+  "@chatToolsCompleted": {
+    "description": "chat.toolsCompleted",
+    "placeholders": {}
+  },
+  "chatToolCount": "{count, plural, one {{count} call} other {{count} calls}}",
+  "@chatToolCount": {
+    "description": "chat.toolCount",
+    "placeholders": {
+      "count": {
+        "type": "num"
+      }
+    }
+  },
+  "chatToolRunning": "Running",
+  "@chatToolRunning": {
+    "description": "chat.toolRunning",
+    "placeholders": {}
+  },
+  "chatToolCompleted": "Completed",
+  "@chatToolCompleted": {
+    "description": "chat.toolCompleted",
+    "placeholders": {}
+  },
+  "chatToolFailed": "Failed",
+  "@chatToolFailed": {
+    "description": "chat.toolFailed",
+    "placeholders": {}
+  },
+  "chatToolParametersMissing": "Parameters not recorded",
+  "@chatToolParametersMissing": {
+    "description": "chat.toolParametersMissing",
+    "placeholders": {}
+  },
+  "chatToolResultMissing": "Result not recorded",
+  "@chatToolResultMissing": {
+    "description": "chat.toolResultMissing",
+    "placeholders": {}
+  },
+  "chatToolsEnded": "Tool activity ended",
+  "@chatToolsEnded": {
+    "description": "chat.toolsEnded",
+    "placeholders": {}
+  },
+  "chatSubtitle": "Think it through, together",
+  "@chatSubtitle": {
+    "description": "chat.subtitle",
+    "placeholders": {}
+  },
+  "chatNewChat": "New conversation",
+  "@chatNewChat": {
+    "description": "chat.newChat",
+    "placeholders": {}
+  },
+  "chatSearch": "Search conversations…",
+  "@chatSearch": {
+    "description": "chat.search",
+    "placeholders": {}
+  },
+  "chatEmptyTitle": "What shall we work on today?",
+  "@chatEmptyTitle": {
+    "description": "chat.emptyTitle",
+    "placeholders": {}
+  },
+  "chatEmptyHint": "Choose a workbench and start a conversation. Its memory and effective methods come with you.",
+  "@chatEmptyHint": {
+    "description": "chat.emptyHint",
+    "placeholders": {}
+  },
+  "chatMessage": "Message",
+  "@chatMessage": {
+    "description": "chat.message",
+    "placeholders": {}
+  },
+  "chatPlaceholder": "Ask a question, share an idea, or work with a partner…",
+  "@chatPlaceholder": {
+    "description": "chat.placeholder",
+    "placeholders": {}
+  },
+  "chatSend": "Send message",
+  "@chatSend": {
+    "description": "chat.send",
+    "placeholders": {}
+  },
+  "chatStop": "Stop generating",
+  "@chatStop": {
+    "description": "chat.stop",
+    "placeholders": {}
+  },
+  "chatWorkbench": "Workbench",
+  "@chatWorkbench": {
+    "description": "chat.workbench",
+    "placeholders": {}
+  },
+  "chatChooseWorkbench": "Choose a workbench",
+  "@chatChooseWorkbench": {
+    "description": "chat.chooseWorkbench",
+    "placeholders": {}
+  },
+  "chatQuickWorkbench": "Create from a working folder…",
+  "@chatQuickWorkbench": {
+    "description": "chat.quickWorkbench",
+    "placeholders": {}
+  },
+  "chatQuickHint": "Only a working folder is needed. The workbench name comes from the folder.",
+  "@chatQuickHint": {
+    "description": "chat.quickHint",
+    "placeholders": {}
+  },
+  "chatNetwork": "Model network",
+  "@chatNetwork": {
+    "description": "chat.network",
+    "placeholders": {}
+  },
+  "chatChooseNetwork": "Choose a network",
+  "@chatChooseNetwork": {
+    "description": "chat.chooseNetwork",
+    "placeholders": {}
+  },
+  "chatNetworkHint": "Models are managed in Settings. Select a configured network here.",
+  "@chatNetworkHint": {
+    "description": "chat.networkHint",
+    "placeholders": {}
+  },
+  "chatNativeNetwork": "Uses the partner's native engine configuration",
+  "@chatNativeNetwork": {
+    "description": "chat.nativeNetwork",
+    "placeholders": {}
+  },
+  "chatPartner": "Partner",
+  "@chatPartner": {
+    "description": "chat.partner",
+    "placeholders": {}
+  },
+  "chatSkills": "Skills",
+  "@chatSkills": {
+    "description": "chat.skills",
+    "placeholders": {}
+  },
+  "chatNoSkills": "No Skills available for this engine",
+  "@chatNoSkills": {
+    "description": "chat.noSkills",
+    "placeholders": {}
+  },
+  "chatAttachments": "Attachments",
+  "@chatAttachments": {
+    "description": "chat.attachments",
+    "placeholders": {}
+  },
+  "chatAddFiles": "Add files…",
+  "@chatAddFiles": {
+    "description": "chat.addFiles",
+    "placeholders": {}
+  },
+  "chatRemove": "Remove",
+  "@chatRemove": {
+    "description": "chat.remove",
+    "placeholders": {}
+  },
+  "chatSettings": "Open model network settings",
+  "@chatSettings": {
+    "description": "chat.settings",
+    "placeholders": {}
+  },
+  "chatInherited": "Workbench context inherited",
+  "@chatInherited": {
+    "description": "chat.inherited",
+    "placeholders": {}
+  },
+  "chatNoMemory": "No workbench memories yet",
+  "@chatNoMemory": {
+    "description": "chat.noMemory",
+    "placeholders": {}
+  },
+  "chatMemory": "Memory summaries",
+  "@chatMemory": {
+    "description": "chat.memory",
+    "placeholders": {}
+  },
+  "chatEvolution": "Effective method",
+  "@chatEvolution": {
+    "description": "chat.evolution",
+    "placeholders": {}
+  },
+  "chatNoEvolution": "No applicable evolution method",
+  "@chatNoEvolution": {
+    "description": "chat.noEvolution",
+    "placeholders": {}
+  },
+  "chatInheritHint": "Each turn inherits its workbench's available memory and validated methods. Chat text is not automatically saved as memory or learning evidence.",
+  "@chatInheritHint": {
+    "description": "chat.inheritHint",
+    "placeholders": {}
+  },
+  "chatLocked": "Workbench locked after the first message",
+  "@chatLocked": {
+    "description": "chat.locked",
+    "placeholders": {}
+  },
+  "chatShortcut": "Ctrl / ⌘ + Enter to send · Enter for a new line",
+  "@chatShortcut": {
+    "description": "chat.shortcut",
+    "placeholders": {}
+  },
+  "chatWorkspace": "Workspace",
+  "@chatWorkspace": {
+    "description": "chat.workspace",
+    "placeholders": {}
+  },
+  "chatChanges": "Changes",
+  "@chatChanges": {
+    "description": "chat.changes",
+    "placeholders": {}
+  },
+  "chatGit": "Git",
+  "@chatGit": {
+    "description": "chat.git",
+    "placeholders": {}
+  },
+  "chatBrowser": "Browser",
+  "@chatBrowser": {
+    "description": "chat.browser",
+    "placeholders": {}
+  },
+  "chatFiles": "Files",
+  "@chatFiles": {
+    "description": "chat.files",
+    "placeholders": {}
+  },
+  "chatShowWorkspace": "Toggle workspace",
+  "@chatShowWorkspace": {
+    "description": "chat.showWorkspace",
+    "placeholders": {}
+  },
+  "chatResizeWorkspace": "Resize workspace",
+  "@chatResizeWorkspace": {
+    "description": "chat.resizeWorkspace",
+    "placeholders": {}
+  },
+  "chatShowHistory": "Toggle conversation history",
+  "@chatShowHistory": {
+    "description": "chat.showHistory",
+    "placeholders": {}
+  },
+  "chatAttributed": "Files reported by this conversation",
+  "@chatAttributed": {
+    "description": "chat.attributed",
+    "placeholders": {}
+  },
+  "chatNoChanges": "No changed files reported by this conversation",
+  "@chatNoChanges": {
+    "description": "chat.noChanges",
+    "placeholders": {}
+  },
+  "chatRepository": "Entire workbench repository",
+  "@chatRepository": {
+    "description": "chat.repository",
+    "placeholders": {}
+  },
+  "chatGitUnavailable": "Git is unavailable or this working folder is not a repository. Check the folder and installed Git.",
+  "@chatGitUnavailable": {
+    "description": "chat.gitUnavailable",
+    "placeholders": {}
+  },
+  "chatRefresh": "Refresh",
+  "@chatRefresh": {
+    "description": "chat.refresh",
+    "placeholders": {}
+  },
+  "chatStage": "Stage",
+  "@chatStage": {
+    "description": "chat.stage",
+    "placeholders": {}
+  },
+  "chatUnstage": "Unstage",
+  "@chatUnstage": {
+    "description": "chat.unstage",
+    "placeholders": {}
+  },
+  "chatStageAll": "Stage all",
+  "@chatStageAll": {
+    "description": "chat.stageAll",
+    "placeholders": {}
+  },
+  "chatUnstageAll": "Unstage all",
+  "@chatUnstageAll": {
+    "description": "chat.unstageAll",
+    "placeholders": {}
+  },
+  "chatStaged": "Staged",
+  "@chatStaged": {
+    "description": "chat.staged",
+    "placeholders": {}
+  },
+  "chatUnstaged": "Working tree",
+  "@chatUnstaged": {
+    "description": "chat.unstaged",
+    "placeholders": {}
+  },
+  "chatCommitMessage": "Commit message",
+  "@chatCommitMessage": {
+    "description": "chat.commitMessage",
+    "placeholders": {}
+  },
+  "chatCommit": "Commit staged changes",
+  "@chatCommit": {
+    "description": "chat.commit",
+    "placeholders": {}
+  },
+  "chatBranch": "Branch",
+  "@chatBranch": {
+    "description": "chat.branch",
+    "placeholders": {}
+  },
+  "chatNewBranch": "New branch name",
+  "@chatNewBranch": {
+    "description": "chat.newBranch",
+    "placeholders": {}
+  },
+  "chatCreateBranch": "Create and switch",
+  "@chatCreateBranch": {
+    "description": "chat.createBranch",
+    "placeholders": {}
+  },
+  "chatFetch": "Fetch",
+  "@chatFetch": {
+    "description": "chat.fetch",
+    "placeholders": {}
+  },
+  "chatPull": "Pull (fast-forward only)",
+  "@chatPull": {
+    "description": "chat.pull",
+    "placeholders": {}
+  },
+  "chatPush": "Push",
+  "@chatPush": {
+    "description": "chat.push",
+    "placeholders": {}
+  },
+  "chatHistory": "Recent commits",
+  "@chatHistory": {
+    "description": "chat.history",
+    "placeholders": {}
+  },
+  "chatClean": "Working tree is clean",
+  "@chatClean": {
+    "description": "chat.clean",
+    "placeholders": {}
+  },
+  "chatQueued": "Queued",
+  "@chatQueued": {
+    "description": "chat.queued",
+    "placeholders": {}
+  },
+  "chatRunning": "Working…",
+  "@chatRunning": {
+    "description": "chat.running",
+    "placeholders": {}
+  },
+  "chatCompleted": "Completed",
+  "@chatCompleted": {
+    "description": "chat.completed",
+    "placeholders": {}
+  },
+  "chatFailed": "Could not complete",
+  "@chatFailed": {
+    "description": "chat.failed",
+    "placeholders": {}
+  },
+  "chatStopped": "Stopped",
+  "@chatStopped": {
+    "description": "chat.stopped",
+    "placeholders": {}
+  },
+  "chatInterrupted": "Interrupted. Check the workspace before trying again.",
+  "@chatInterrupted": {
+    "description": "chat.interrupted",
+    "placeholders": {}
+  },
+  "chatOperationDone": "Git operation completed",
+  "@chatOperationDone": {
+    "description": "chat.operationDone",
+    "placeholders": {}
+  },
+  "chatOperationFailed": "Git operation did not complete. Check branch state, Git identity and remote authentication.",
+  "@chatOperationFailed": {
+    "description": "chat.operationFailed",
+    "placeholders": {}
+  },
+  "chatDiff": "Diff",
+  "@chatDiff": {
+    "description": "chat.diff",
+    "placeholders": {}
+  },
+  "chatUnified": "Unified",
+  "@chatUnified": {
+    "description": "chat.unified",
+    "placeholders": {}
+  },
+  "chatSideBySide": "Side by side",
+  "@chatSideBySide": {
+    "description": "chat.sideBySide",
+    "placeholders": {}
+  },
+  "chatNoDiff": "No text diff is available for this selection",
+  "@chatNoDiff": {
+    "description": "chat.noDiff",
+    "placeholders": {}
+  },
+  "chatTruncated": "Preview was truncated",
+  "@chatTruncated": {
+    "description": "chat.truncated",
+    "placeholders": {}
+  },
+  "chatBack": "Back",
+  "@chatBack": {
+    "description": "chat.back",
+    "placeholders": {}
+  },
+  "chatRoot": "Working folder",
+  "@chatRoot": {
+    "description": "chat.root",
+    "placeholders": {}
+  },
+  "chatEmptyFiles": "This folder is empty",
+  "@chatEmptyFiles": {
+    "description": "chat.emptyFiles",
+    "placeholders": {}
+  },
+  "chatBrowserUrl": "Preview URL",
+  "@chatBrowserUrl": {
+    "description": "chat.browserUrl",
+    "placeholders": {}
+  },
+  "chatOpen": "Open preview",
+  "@chatOpen": {
+    "description": "chat.open",
+    "placeholders": {}
+  },
+  "chatBrowserHint": "Enter an HTTP(S) URL. Pages open in an isolated frame; some sites do not allow embedding.",
+  "@chatBrowserHint": {
+    "description": "chat.browserHint",
+    "placeholders": {}
+  },
+  "chatInvalidUrl": "Enter a valid HTTP(S) URL without credentials",
+  "@chatInvalidUrl": {
+    "description": "chat.invalidUrl",
+    "placeholders": {}
+  },
+  "chatDesktopOnly": "Workspace files and Git are available in the desktop app",
+  "@chatDesktopOnly": {
+    "description": "chat.desktopOnly",
+    "placeholders": {}
+  },
+  "chatError": "This action could not be completed. Please try again.",
+  "@chatError": {
+    "description": "chat.error",
+    "placeholders": {}
+  },
+  "chatCopied": "Copied",
+  "@chatCopied": {
+    "description": "chat.copied",
+    "placeholders": {}
+  },
+  "chatCopy": "Copy answer",
+  "@chatCopy": {
+    "description": "chat.copy",
+    "placeholders": {}
+  },
+  "chatHelp": "Conversation rules",
+  "@chatHelp": {
+    "description": "chat.help",
+    "placeholders": {}
+  },
+  "chatHelpText": "Conversations belong to one workbench. Networks, partners, Skills and attachments can be chosen independently. Each sent message keeps its configuration snapshot. Stop preserves partial output; interrupted actions are never replayed automatically.",
+  "@chatHelpText": {
+    "description": "chat.helpText",
+    "placeholders": {}
+  },
+  "chatEmptyHistory": "Your conversations will appear here",
+  "@chatEmptyHistory": {
+    "description": "chat.emptyHistory",
+    "placeholders": {}
+  },
+  "chatReady": "Ready to chat",
+  "@chatReady": {
+    "description": "chat.ready",
+    "placeholders": {}
+  },
+  "chatNoNetwork": "Configure a model network in Settings to begin",
+  "@chatNoNetwork": {
+    "description": "chat.noNetwork",
+    "placeholders": {}
+  },
+  "chatActions": "Conversation actions {title}",
+  "@chatActions": {
+    "description": "chat.actions",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "chatStopBeforeArchive": "Stop generation before archiving or deleting this conversation.",
+  "@chatStopBeforeArchive": {
+    "description": "chat.stopBeforeArchive",
+    "placeholders": {}
+  },
+  "chatRestoreFirst": "Restore this conversation before sending another message.",
+  "@chatRestoreFirst": {
+    "description": "chat.restoreFirst",
+    "placeholders": {}
+  },
+  "chatDeleteTitle": "Delete conversation",
+  "@chatDeleteTitle": {
+    "description": "chat.deleteTitle",
+    "placeholders": {}
+  },
+  "chatDeleteHint": "Delete “{title}”? This cannot be undone. Workspace files will be kept.",
+  "@chatDeleteHint": {
+    "description": "chat.deleteHint",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "chatTasksTab": "Tasks",
+  "@chatTasksTab": {
+    "description": "chat.tasksTab",
+    "placeholders": {}
+  },
+  "chatArchivedConversations": "Archived conversations",
+  "@chatArchivedConversations": {
+    "description": "chat.archivedConversations",
+    "placeholders": {}
+  },
+  "chatArchiveHint": "Archived conversations retain their full history. Restore one to continue chatting.",
+  "@chatArchiveHint": {
+    "description": "chat.archiveHint",
+    "placeholders": {}
+  },
+  "chatArchiveSearch": "Search archived conversations…",
+  "@chatArchiveSearch": {
+    "description": "chat.archiveSearch",
+    "placeholders": {}
+  },
+  "chatArchiveLoading": "Loading archived conversations…",
+  "@chatArchiveLoading": {
+    "description": "chat.archiveLoading",
+    "placeholders": {}
+  },
+  "chatArchiveEmpty": "No archived conversations. Archive one from the conversation list actions.",
+  "@chatArchiveEmpty": {
+    "description": "chat.archiveEmpty",
+    "placeholders": {}
+  },
+  "chatNoSearchResults": "No matching conversations",
+  "@chatNoSearchResults": {
+    "description": "chat.noSearchResults",
+    "placeholders": {}
+  },
+  "chatContextCompacting": "Summarizing history",
+  "@chatContextCompacting": {
+    "description": "chat.contextCompacting",
+    "placeholders": {}
+  },
+  "chatContextCompressed": "History summarized",
+  "@chatContextCompressed": {
+    "description": "chat.contextCompressed",
+    "placeholders": {}
+  },
+  "chatContextBackoff": "Summary retry delayed",
+  "@chatContextBackoff": {
+    "description": "chat.contextBackoff",
+    "placeholders": {}
+  },
+  "chatContextTrimmed": "Some history omitted from this request",
+  "@chatContextTrimmed": {
+    "description": "chat.contextTrimmed",
+    "placeholders": {}
+  },
+  "chatContextCapacity": "Context capacity exceeded",
+  "@chatContextCapacity": {
+    "description": "chat.contextCapacity",
+    "placeholders": {}
+  },
+  "chatContextReady": "Context ready",
+  "@chatContextReady": {
+    "description": "chat.contextReady",
+    "placeholders": {}
+  },
+  "chatContextNative": "Context managed by native engine",
+  "@chatContextNative": {
+    "description": "chat.contextNative",
+    "placeholders": {}
+  },
+  "chatContextEstimating": "Context estimate pending",
+  "@chatContextEstimating": {
+    "description": "chat.contextEstimating",
+    "placeholders": {}
+  },
+  "chatContextCharacters": "Context estimate: {used} / {budget} characters",
+  "@chatContextCharacters": {
+    "description": "chat.contextCharacters",
+    "placeholders": {
+      "used": {
+        "type": "num"
+      },
+      "budget": {
+        "type": "num"
+      }
+    }
+  },
+  "chatRecentActivity": "Last activity",
+  "@chatRecentActivity": {
+    "description": "chat.recentActivity",
+    "placeholders": {}
+  },
+  "chatLegacyHistoryMissing": "Imported history has no complete private tool transcript.",
+  "@chatLegacyHistoryMissing": {
+    "description": "chat.legacyHistoryMissing",
+    "placeholders": {}
+  },
+  "chatChildProgress": "Subagents: {running} active / {total}",
+  "@chatChildProgress": {
+    "description": "chat.childProgress",
+    "placeholders": {
+      "running": {
+        "type": "num"
+      },
+      "total": {
+        "type": "num"
+      }
+    }
+  },
+  "chatChildNumber": "Subagent {number}",
+  "@chatChildNumber": {
+    "description": "chat.childNumber",
+    "placeholders": {
+      "number": {
+        "type": "num"
+      }
+    }
+  },
+  "chatCancelChild": "Cancel",
+  "@chatCancelChild": {
+    "description": "chat.cancelChild",
+    "placeholders": {}
+  },
+  "chatLoadEarlier": "Load earlier messages",
+  "@chatLoadEarlier": {
+    "description": "chat.loadEarlier",
+    "placeholders": {}
+  },
+  "chatSubagents": "Subagents",
+  "@chatSubagents": {
+    "description": "chat.subagents",
+    "placeholders": {}
+  },
   "commonLanguage": "Language",
   "@commonLanguage": {
     "description": "Language preference heading",

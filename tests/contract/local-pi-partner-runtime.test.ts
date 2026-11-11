@@ -3,7 +3,8 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { getCurrentTools, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { getCurrentTools, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
 
 import type { ToolTraceDraft } from "../../src/main/application/partners/tool-trace-presentation.js";
@@ -318,6 +319,7 @@ describe("local Pi coding partner runtime", () => {
     }
   });
   it("clears a requirements-capacity failure before a resident turn that carries none", async () => {
+    let toolDescription = "x".repeat(17000);
     const faux = fauxProvider({ provider: "resident-requirements-leak", models: [{ id: "fake", contextWindow: 32000, maxTokens: 4096 }] });
     const requests: string[] = [];
     faux.setResponses([
@@ -328,7 +330,7 @@ describe("local Pi coding partner runtime", () => {
     const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
       resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "off" }) },
       sources: { selectInitial: async turnId => ({ turnId, modelId: "fake", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
-      tools: { names: ["read"], create: () => [{ name: "read", label: "Read", description: "x".repeat(17000), parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }] },
+      tools: { names: ["read"], create: () => [{ name: "read", label: "Read", description: toolDescription, parameters: Type.Object({}), execute: async () => ({ content: [], details: {} }) }] },
     });
     const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-10-11T00:00:00Z", displayName: "fixture", kind: "local-pi",
       partnerId: "partner", partnerRevisionId: "revision", registryRevision: 1, skills: [], tools: ["read"], toolPolicyMode: "CUSTOM" });
@@ -339,6 +341,7 @@ describe("local Pi coding partner runtime", () => {
       .rejects.toMatchObject({ code: "goal_requirements_capacity_exceeded" });
     // The next turn on that same instance carries no required context, so the earlier failure is not
     // its failure — inheriting it discards a run that has already produced its answer.
+    toolDescription = "Read";
     await expect(runtime.runResidentTurn({ instanceId: "instance_1", knowledgeSection: "KB_SECTION",
       request: { ...request, actionId: "action_2", taskProjection: "second task" }, restoredMessages: null, revision, skillEnvironmentKeys: [], skillSection: "" }))
       .resolves.toMatchObject({ status: "COMPLETED" });

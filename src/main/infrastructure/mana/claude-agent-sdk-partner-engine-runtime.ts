@@ -25,6 +25,8 @@ import { classifyNativeCliFailure, NativeCliRunError, settleNativeProbe, type Na
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
 import { beginUsage, normalizeClaudeModelUsage, type SafeUsageSession, unknownUsageObservation, usageFailureStatus } from "../usage/sdk-usage.js";
 import { boundBackgroundSections, DEFAULT_BACKGROUND_BUDGET_CHARS } from "../pi/pi-model-budget.js";
+import { NativeConversationJournal } from "../pi/native-conversation-journal.js";
+import { conversationPrompt } from "../pi/conversation-session.js";
 
 export const CLAUDE_CODE_TOOL_OPTIONS = ["Bash", "Read", "Edit", "Write", "Glob", "Grep", "WebFetch", "WebSearch", "NotebookEdit"] as const;
 const CLAUDE_WORKSPACE_TOOLS = new Set(["Bash", "Read", "Edit", "Write", "Glob", "Grep", "NotebookEdit"]);
@@ -136,11 +138,14 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       engine: "claude-code", execution, request,
       ...(this.dependencies.evidenceDirectory === undefined ? {} : { taskDirectory: this.dependencies.evidenceDirectory }),
     });
-    const systemPrompt = await this.#systemPrompt(revision, request, workbenchSection, context, tools, execution.workspacePath);
+    const journal = new NativeConversationJournal("claude-code",request,context);
+    const history = resume === undefined ? journal.history() : "";
+    const systemPrompt = await this.#systemPrompt(revision, { ...request,requiredContext: [request.requiredContext,history].filter(Boolean).join("\n\n") }, workbenchSection, context, tools, execution.workspacePath);
     const projector = new NativeAgentEventProjector();
     const emit = async (event: NativeAgentEvent): Promise<void> => {
       if (!gated && event.type === "tool_activity" && event.state === "started" && CLAUDE_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
       projector.apply(event); try { await context.onEvent?.(event); } catch { /* display projection is non-authoritative */ }
+      try { await context.onContext?.({ kind: "NATIVE",state: "READY" }); } catch { /* usage display is observational */ }
     };
     await emit({ type: "message", role: "user", parts: [{ type: "text", text: request.taskProjection }] });
     await emit({ type: "status", state: "working" });
@@ -171,11 +176,11 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     });
     let checkpointSession: string | undefined;
     let query: (AsyncIterable<SDKMessage> & { close?(): void }) | undefined;
-    // SDK hook callbacks retain their Promise contract even when the local gate is synchronous.
-    // eslint-disable-next-line @typescript-eslint/require-await
     const preToolUse: HookCallback = async hookInput => {
       if (hookInput.hook_event_name !== "PreToolUse") return {};
       checkpointSession = hookInput.session_id;
+      await journal.reference(hookInput.session_id);
+      if (hookInput.tool_name !== NATIVE_COMPLETION_TOOL_NAME) await journal.tool(hookInput.tool_use_id,hookInput.tool_name,hookInput.tool_input);
       // The intrinsic completion tool emits private metadata and performs no workspace operation.
       if (hookInput.tool_name === NATIVE_COMPLETION_TOOL_NAME) return { continue: true,
         hookSpecificOutput: { hookEventName: "PreToolUse", permissionDecision: "allow" } };
@@ -192,7 +197,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     };
     try {
       query = (await this.#sdk()).query({
-        prompt: request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : request.taskProjection,
+        prompt: request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : conversationPrompt(request),
         options: this.#options({
           ...(gated ? { preToolUse } : {}),
           controller,
@@ -207,7 +212,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
           tools,
         }),
       });
-      consumed = await this.#consume(query, emit, () => guard?.onProgress(), usageCapture, true);
+      consumed = await this.#consume(query, emit, () => guard?.onProgress(), usageCapture, true,journal);
       finishNativeUsage(usageCapture, "completed");
     } catch (error) {
       if (writeGate.suspended && checkpointSession !== undefined) {
@@ -228,6 +233,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     } finally {
       query?.close?.();
       guard?.dispose();
+      await journal.save();
     }
     if (writeGate.denied) throw new DomainError("workspace_write_forbidden", "The Work ceiling forbids this tool.");
     if (writeGate.suspended) {
@@ -243,7 +249,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     return { conversation: projector.snapshot(), externalRunId: `native_claude:${request.actionId}`, ...(consumed.sessionId === undefined ? {} : { nativeSessionId: consumed.sessionId }), output: { artifacts, ...completion }, status: "COMPLETED" };
   }
 
-  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, structuredCompletion = false): Promise<{ body: string; sessionId?: string; structuredOutput?: unknown }> {
+  async #consume(stream: AsyncIterable<SDKMessage>, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, structuredCompletion = false,journal?: NativeConversationJournal): Promise<{ body: string; sessionId?: string; structuredOutput?: unknown }> {
     let body = "";
     let completed = false;
     let sessionId: string | undefined;
@@ -255,16 +261,17 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
     for await (const message of stream) {
       onProgress?.();
       const row = message as unknown as Record<string, unknown>;
-      if (typeof row.session_id === "string") sessionId = row.session_id;
+      if (typeof row.session_id === "string") { sessionId = row.session_id;await journal?.reference(sessionId); }
       if (row.type === "stream_event" && row.event !== null && typeof row.event === "object") {
         const event = row.event as Record<string, unknown>;
         if (event.type === "content_block_delta" && event.delta !== null && typeof event.delta === "object") {
           const delta = event.delta as Record<string, unknown>;
-          if (delta.type === "text_delta" && typeof delta.text === "string") { streamedText = true; body += delta.text; if (!structuredCompletion) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: delta.text }] }); }
+          if (delta.type === "text_delta" && typeof delta.text === "string") { streamedText = true; body += delta.text;await journal?.delta(delta.text); if (!structuredCompletion) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: delta.text }] }); }
         } else if (event.type === "content_block_start" && event.content_block !== null && typeof event.content_block === "object") {
           const block = event.content_block as Record<string, unknown>;
           if (block.type === "tool_use" && typeof block.name === "string" && block.name !== NATIVE_COMPLETION_TOOL_NAME && typeof block.id === "string") {
             toolNames.set(block.id, block.name);
+            await journal?.tool(block.id,block.name,block.input);
             started.add(block.id);
             await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started", ...describedCall(block.name) });
           }
@@ -273,16 +280,24 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       if ((row.type === "assistant" || row.type === "user") && row.message !== null && typeof row.message === "object") {
         const content = (row.message as Record<string, unknown>).content;
         if (Array.isArray(content)) {
+          if (row.type === "assistant") await journal?.assistant(content.flatMap(candidate => {
+            const block = candidate as Record<string,unknown>;
+            if (block.type === "text" && typeof block.text === "string") return [{ type: "text",text: block.text }];
+            if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string") return [{ type: "toolCall",id: block.id,name: block.name,arguments: block.input }] as unknown[];
+            return [];
+          }));
           for (const candidate of content) {
             if (candidate === null || typeof candidate !== "object") continue;
             const block = candidate as Record<string, unknown>;
             if (block.type === "tool_use" && typeof block.id === "string" && typeof block.name === "string" && block.name !== NATIVE_COMPLETION_TOOL_NAME && !started.has(block.id)) {
               toolNames.set(block.id, block.name);
+              await journal?.tool(block.id,block.name,block.input);
               started.add(block.id);
               // The whole block is present here, so this path always has arguments to describe.
               await emit?.({ type: "tool_activity", toolCallId: block.id, toolName: block.name, state: "started", ...describedCall(block.name) });
             } else if (block.type === "tool_result" && typeof block.tool_use_id === "string" && !ended.has(block.tool_use_id)) {
               const name = toolNames.get(block.tool_use_id);
+              await journal?.tool(block.tool_use_id,name ?? "native_tool",{},typeof block.content === "string" ? block.content : JSON.stringify(block.content),block.is_error === true);
               if (name !== undefined) {
                 ended.add(block.tool_use_id);
                 await emit?.({ type: "tool_activity", toolCallId: block.tool_use_id, toolName: name, state: block.is_error === true ? "failed" : "completed" });
@@ -299,6 +314,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
         if (typeof row.result === "string") {
           if (!structuredCompletion && !streamedText && row.result !== "") await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: row.result }] });
           body = row.result;
+          await journal?.final(body);
         }
       }
     }
@@ -344,6 +360,7 @@ export class ClaudeAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime 
       partnerCommentDisciplineLine,
       NATIVE_COMPLETION_INSTRUCTION,
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
+      ...(request.requiredContext === undefined ? [] : [request.requiredContext]),
       workbenchSection,
       boundBackgroundSections([context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
     ].filter((part) => part !== "").join("\n");

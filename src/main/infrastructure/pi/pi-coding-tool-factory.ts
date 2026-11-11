@@ -51,13 +51,14 @@ function safeEnvironment(environment: NodeJS.ProcessEnv, requestedKeys: readonly
 export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "grep", "ls", "read", "write"] as const;
 export const PI_PARTNER_TOOL_NAMES = [...PI_CODING_TOOL_NAMES, ...PI_WEB_ACCESS_TOOL_NAMES, ...PI_FINANCIAL_RESEARCH_TOOL_NAMES] as const;
 
+// The heterogeneous list retains each concrete schema for Pi's runtime argument validation.
 const factories: Record<string, (cwd: string) => AgentTool> = {
-  edit: createEditTool,
-  find: createFindTool,
-  grep: createGrepTool,
-  ls: createLsTool,
-  read: createReadTool,
-  write: createWriteTool,
+  edit: cwd => createEditTool(cwd) as AgentTool,
+  find: cwd => createFindTool(cwd) as AgentTool,
+  grep: cwd => createGrepTool(cwd) as AgentTool,
+  ls: cwd => createLsTool(cwd) as AgentTool,
+  read: cwd => createReadTool(cwd) as AgentTool,
+  write: cwd => createWriteTool(cwd) as AgentTool,
 };
 
 /**
@@ -83,16 +84,16 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
     // Native resolution expands Windows short names to match asynchronous filesystem checks.
     const canonical = needsWorkspace ? realpathSync.native(cwd) : cwd;
     if (needsWorkspace && !statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");
-    return [...new Set(names)].map((name) => {
+    return [...new Set(names)].map((name): AgentTool => {
       if (name === "bash") return createBashTool(canonical, {
         exposeSessionEnvironment: false,
         spawnHook: (context) => ({
           ...context,
           env: safeEnvironment(context.env, options?.environmentKeys ?? []),
         }),
-      });
-      if (name === "write") return createWriteTool(canonical, { operations: guardedWriteOperations(canonical) });
-      if (name === "edit") return createEditTool(canonical, { operations: guardedEditOperations(canonical) });
+      }) as AgentTool;
+      if (name === "write") return createWriteTool(canonical, { operations: guardedWriteOperations(canonical) }) as AgentTool;
+      if (name === "edit") return createEditTool(canonical, { operations: guardedEditOperations(canonical) }) as AgentTool;
       if ((PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name)) {
         const [tool] = this.webAccess.create([name]);
         if (tool === undefined) throw new Error("partner_tool_not_allowed");

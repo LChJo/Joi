@@ -1,0 +1,27 @@
+# ADR 0033 — Durable conversation sessions and shared context policy
+
+Status: Accepted, 2026-11-11
+
+## Decision
+
+Each normal conversation owns a private execution session independently of disposable partner instances. SQLite stores engine identity, native thread reference and context checkpoint metadata separately from ordered source messages. Unchanged saves write no messages; appends write only the added messages. A running turn owns session updates. Public history remains a safe projection and never exposes the private session.
+
+Cancellation handles are registered before turn or child admission. Stop waits for admitted engines and children to settle before releasing the turn, retaining the running owner's right to persist final private facts during cleanup. Another turn cannot start during this interval.
+
+Pi conversations use the pinned Pi 1.5.2 AgentSession with in-memory SDK settings, credentials and session bookkeeping. Joi injects its configured model/auth boundary, validated tools and selected resources. SDK resource discovery, automatic compaction and retry are disabled. Joi's existing compactor shapes outgoing requests while retaining the complete available source for `context_read_history`. Checkpoint indices retain SDK system-message positions across restore; each request refreshes one policy/tool projection. Main Joi keeps its existing goal scheduling, rollback and Work dispatch.
+
+Codex and Claude keep native SDK thread/session management. Mandatory context is included in their actual SDK options. Private execution journals preserve available text, tool calls/results and native identity during failure or stop. Switching engine starts a new native session with retained reference history; switching to Pi normalizes recorded call/result pairs. Missing results are explicit unknown facts. A new user message does not authorize the host to replay unknown actions. Legacy UI-only records identify missing private tool history rather than inventing it.
+
+Shared summary helpers retain the Joi policy. A candidate is identified by source fingerprint and exact segment, previous checkpoint, model/configuration and budget. Failure or rejection backs off the same candidate for 30 seconds without blocking the main request. Cancellation is not failure. An accepted summary must shrink the serialized outgoing view, including checkpoint framing and task anchors. Rejected summaries advance no coverage. Final requests include refreshed policy, required context, notices and current tool declarations in one capacity check. Required anchors, checkpoints and the latest complete tool exchange cannot be silently clipped; protected overflow fails before provider transport. Character estimates are conservative capacity signals, not billed token measurements.
+
+Pi-subagents 0.88.0 is bundled and loaded offline through its supported external-job provider and capability-ceiling APIs. Joi supplies scoped delegation/status/cancel tools backed by its durable host provider rather than discovering third-party agent definitions or launching an independently authenticated CLI. Children inherit the parent's pinned model, immutable workbench, selected Skills and tools, and current permission ceiling/phase. A stable parent/tool-call identity commits child intent and an outbox row before execution. A separate dispatcher prevents parent/child delivery deadlock. The parent's execution boundary waits for admitted children, collects their results and propagates cancellation; stopped children settle before the parent returns. Interrupted child runs are recorded and never automatically re-executed. The per-turn selector enables this by default and can disable it. Children do not delegate recursively.
+
+Public history is paginated separately from private model history. Durable payload-free change sequences support reconnect cursors bound to one conversation. Desktop polls these cursors before refreshing projections, retains loaded older pages, and shows safe character estimates, compression state, last activity and child status. Native context usage is shown as managed by its engine rather than fabricated token/character numbers. Business endpoints remain authenticated `/api/v1` routes, with existing CSRF/origin checks for writes.
+
+## Storage and boundaries
+
+Migrations 094–096 implement private sessions/messages, child intents and checkpoints, and safe change cursors/context projections. They do not enqueue old turns or replay historical effects. The compaction improvements introduce no separate persistence framework or migration of their own. Domain tool-effect classification remains pure TypeScript; child execution, SQL, SDKs and transport stay behind application ports and infrastructure adapters.
+
+## Acceptance and limitations
+
+CHAT-18–26 in [normal conversations](../21-normal-conversations.md) map these behaviors to failing-first regressions and the repository gates. [Context validation](../conversation-context-validation.md) records verification. Provider requests in tests use real SDK surfaces with synthetic providers, disposable databases, directories and credential fakes. This is evidence for continuity, request size and recovery behavior, not a claim about long-term model memory or answer quality. Branch editing, queued follow-ups, import/export and an extension marketplace remain outside this iteration.

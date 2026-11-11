@@ -1,12 +1,7 @@
-import {
-  BACKGROUND_CONTEXT,
-  COMPACTION_SUMMARY_PREFIX,
-  COMPACTION_SUMMARY_SUFFIX,
-  generateSummary,
-  withAbortSignal,
-  type AgentMessage,
-} from "@earendil-works/pi-agent-core";
-import type { Api, Model, Models } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { generateSummary } from "@earendil-works/pi-coding-agent";
+import { createAssistantMessageEventStream, type Api, type Model, type Models,type AssistantMessage } from "@earendil-works/pi-ai";
+import { sessionAssistant } from "./conversation-session.js";
 import { createHash } from "node:crypto";
 
 /**
@@ -21,11 +16,32 @@ import { createHash } from "node:crypto";
 
 /** Marks a summary message as a checkpoint, and is how a restored transcript recognises one. */
 export const CHECKPOINT_MARKER = "[joi session checkpoint]";
+const COMPACTION_SUMMARY_PREFIX = "The conversation history before this point was compacted into the following summary:\n\n<summary>\n";
+const COMPACTION_SUMMARY_SUFFIX = "\n</summary>";
 
 export const SUMMARY_INSTRUCTIONS = "Preserve the current task, effective mandatory requirements, permissions, acceptance conditions, decisions, work status, conclusion endings, evidence references, conflicting evidence, and unresolved questions. Do not invent facts. Preserve identifiers for paginated evidence and context_read_history so omitted details remain retrievable.";
 
 export const HISTORY_SOFT_TRIGGER_CHARS = 128_000;
 export const HISTORY_SOFT_TARGET_CHARS = 64_000;
+
+/** One failed candidate is retried only after its delay; a changed candidate is independent. */
+export class SummaryRetryGuard {
+  #failure: { key: string; until: number } | undefined;
+  constructor(private readonly now: () => number = Date.now, private readonly delayMs = 30_000) {}
+  remaining(key: string): number { return this.#failure?.key === key ? Math.max(0,this.#failure.until - this.now()) : 0; }
+  failed(key: string): void { this.#failure = { key,until: this.now() + this.delayMs }; }
+  reset(): void { this.#failure = undefined; }
+}
+
+export function summaryCandidateKey(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
+/** Includes framing, anchors and checkpoint markers exactly as present in the outgoing view. */
+export function summarySavings(before: readonly AgentMessage[],after: readonly AgentMessage[]) {
+  const charsBefore = JSON.stringify(before).length,charsAfter = JSON.stringify(after).length;
+  return { charsBefore,charsAfter,savedChars: charsBefore - charsAfter };
+}
 
 /** Request prompts are refreshed independently; coverage identifies only the private transcript. */
 export function transcriptFingerprint(messages: readonly AgentMessage[], cut: number): string {
@@ -105,27 +121,36 @@ export async function summarizeSegment(input: {
   try {
     const generated = await generateSummary(
       [...input.segment],
-      input.models,
       input.model,
       input.reserveTokens,
+      undefined,
+      undefined,
+      input.signal,
       SUMMARY_INSTRUCTIONS,
       input.previousSummary,
       input.thinkingLevel,
-      // No retry policy and no callbacks: a summary that fails is reported to the caller, which is
-      // better placed to decide whether to retry the whole compaction than this call is.
+      (model,context,options) => {
+        const stream = createAssistantMessageEventStream();
+        // Joi's configured Models collection owns credentials, transport and separate summary usage.
+        void input.models.completeSimple(model,context,{ ...options,maxTokens: input.reserveTokens }).then(response => {
+          if (response.stopReason === "error" || response.stopReason === "aborted" || response.stopReason === "pending") stream.push({ type: "error",reason: response.stopReason === "aborted" ? "aborted" : "error",error: response });
+          else stream.push({ type: "done",reason: response.stopReason,message: response });
+          stream.end(response);
+        },() => {
+          const response = { ...sessionAssistant([]),stopReason: "error",errorMessage: "summary_failed" } as AssistantMessage;
+          stream.push({ type: "error",reason: "error",error: response });stream.end(response);
+        });
+        return stream;
+      },
       undefined,
-      undefined,
-      // A summary is not part of a user turn, and it must be cancellable when the run is — the
-      // signal moved out of the argument list into the context, so cancellation is derived here.
-      input.signal === undefined ? BACKGROUND_CONTEXT : withAbortSignal(input.signal, BACKGROUND_CONTEXT),
+      { enabled: false,maxRetries: 0,baseDelayMs: 0 },
     );
-    if (!generated.ok) return { ok: false, reasonCode: generated.error.code };
-    if (generated.value.trim() === "") return { ok: false, reasonCode: "summary_empty" };
-    return { ok: true, summary: generated.value };
+    if (generated.trim() === "") return { ok: false, reasonCode: "summary_empty" };
+    return { ok: true, summary: generated };
   } catch (error) {
     return {
       ok: false,
-      reasonCode: error instanceof Error && error.name !== "" ? error.name.slice(0, 60) : "summary_threw",
+      reasonCode: error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,59}$/u.test(error.name) ? error.name : "summary_threw",
     };
   }
 }

@@ -27,6 +27,8 @@ import { classifyNativeCliFailure, settleNativeProbe, type NativeCliProbePhase }
 import { RunDeadlineGuard } from "./native-run-deadlines.js";
 import { beginUsage, normalizeCodexUsage, type SafeUsageSession, unknownUsageObservation, usageFailureStatus } from "../usage/sdk-usage.js";
 import { boundBackgroundSections, DEFAULT_BACKGROUND_BUDGET_CHARS } from "../pi/pi-model-budget.js";
+import { NativeConversationJournal } from "../pi/native-conversation-journal.js";
+import { conversationPrompt } from "../pi/conversation-session.js";
 
 export interface CodexThreadSurface {
   readonly id: string | null;
@@ -139,7 +141,9 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       engine: "codex", execution, request,
       ...(this.dependencies.evidenceDirectory === undefined ? {} : { taskDirectory: this.dependencies.evidenceDirectory }),
     });
-    const systemPrompt = await this.#systemPrompt(revision, request, workbenchSection, context, permissions, execution.workspacePath);
+    const journal = new NativeConversationJournal("codex",request,context);
+    const history = resume === undefined ? journal.history() : "";
+    const systemPrompt = await this.#systemPrompt(revision, { ...request,requiredContext: [request.requiredContext,history].filter(Boolean).join("\n\n") }, workbenchSection, context, permissions, execution.workspacePath);
     const client = this.#client(resolved, systemPrompt, gated);
     const threadOptions: ThreadOptions = {
       approvalPolicy: "never",
@@ -152,10 +156,12 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       ...(execution.workspacePath === undefined ? {} : { workingDirectory: execution.workspacePath }),
     };
     const thread = resume === undefined ? client.startThread(threadOptions) : client.resumeThread(resume, threadOptions);
+    if (thread.id !== null) await journal.reference(thread.id);
     const projector = new NativeAgentEventProjector();
     const emit = async (event: NativeAgentEvent): Promise<void> => {
       if (!analysis && event.type === "tool_activity" && event.state === "started" && CODEX_MUTATING_TOOLS.has(event.toolName)) tracker.sideEffectState = "OBSERVED";
       projector.apply(event); try { await context.onEvent?.(event); } catch { /* display projection is non-authoritative */ }
+      try { await context.onContext?.({ kind: "NATIVE",state: "READY" }); } catch { /* usage display is observational */ }
     };
     await emit({ type: "message", role: "user", parts: [{ type: "text", text: request.taskProjection }] });
     await emit({ type: "status", state: "working" });
@@ -185,13 +191,13 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       ...(revision.engineModelId === undefined ? {} : { modelId: revision.engineModelId }),
     });
     try {
-      const prompt = analysis ? `${request.taskProjection}\n\n${WRITE_PROTOCOL_PROMPT}`
-        : request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : request.taskProjection;
-      consumed = await this.#consume(thread, prompt, controller.signal, emit, () => guard?.onProgress(), usageCapture, analysis ? WRITE_PROTOCOL_SCHEMA : NATIVE_COMPLETION_SCHEMA, request.workspaceExecution !== undefined);
+      const prompt = analysis ? `${conversationPrompt(request)}\n\n${WRITE_PROTOCOL_PROMPT}`
+        : request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : conversationPrompt(request);
+      consumed = await this.#consume(thread, prompt, controller.signal, emit, () => guard?.onProgress(), usageCapture, analysis ? WRITE_PROTOCOL_SCHEMA : NATIVE_COMPLETION_SCHEMA, request.workspaceExecution !== undefined,journal);
       if (analysis) {
         let protocol = parseWriteProtocol(consumed.completionText ?? consumed.body);
         if (protocol === null) {
-          consumed = await this.#consume(thread, `Correct the previous result once. ${WRITE_PROTOCOL_PROMPT}`, controller.signal, emit, () => guard?.onProgress(), usageCapture, WRITE_PROTOCOL_SCHEMA, true);
+          consumed = await this.#consume(thread, `Correct the previous result once. ${WRITE_PROTOCOL_PROMPT}`, controller.signal, emit, () => guard?.onProgress(), usageCapture, WRITE_PROTOCOL_SCHEMA, true,journal);
           protocol = parseWriteProtocol(consumed.completionText ?? consumed.body);
         }
         if (protocol === null) throw new DomainError("workspace_write_protocol_invalid", "The native read-only result did not match the execution protocol.");
@@ -219,6 +225,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       throw error;
     } finally {
       guard?.dispose();
+      await journal.save();
     }
     const artifacts = analysis ? [] : await collectChangedWorkspaceArtifacts(execution.workspacePath, before);
     for (const artifact of artifacts) await emit({ type: "artifact", artifact: { ...artifact, mimeType: artifact.mimeType ?? "application/octet-stream" } });
@@ -227,7 +234,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     return { conversation: projector.snapshot(), externalRunId: `native_codex:${request.actionId}`, ...(sessionId === undefined ? {} : { nativeSessionId: sessionId }), output: { artifacts, ...completion }, status: "COMPLETED" };
   }
 
-  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, outputSchema?: unknown, endOnCompletion = false): Promise<{ body: string; completionText?: string; threadId?: string }> {
+  async #consume(thread: CodexThreadSurface, prompt: string, signal?: AbortSignal, emit?: (event: NativeAgentEvent) => Promise<void>, onProgress?: () => void, usage?: NativeUsageCapture, outputSchema?: unknown, endOnCompletion = false,journal?: NativeConversationJournal): Promise<{ body: string; completionText?: string; threadId?: string }> {
     const streamed = await thread.runStreamed(prompt, { ...(signal === undefined ? {} : { signal }), ...(outputSchema === undefined ? {} : { outputSchema }) });
     let completed = false;
     let threadId: string | undefined;
@@ -236,7 +243,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
     const ended = new Set<string>();
     for await (const event of streamed.events) {
       onProgress?.();
-      if (event.type === "thread.started") threadId = event.thread_id;
+      if (event.type === "thread.started") { threadId = event.thread_id;await journal?.reference(threadId); }
       else if (event.type === "turn.completed") {
         completed = true;
         if (usage !== undefined) {
@@ -254,7 +261,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       else if (event.type === "turn.failed" || event.type === "error") throw new Error("codex_turn_failed", { cause: event });
       else if (event.type === "item.started" || event.type === "item.updated" || event.type === "item.completed") {
         const item = event.item;
-        if (item.type === "agent_message" && event.type === "item.completed") { texts.push(item.text); if (outputSchema === undefined) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: item.text }] }); continue; }
+        if (item.type === "agent_message" && event.type === "item.completed") { texts.push(item.text);await journal?.final(item.text); if (outputSchema === undefined) await emit?.({ type: "message", role: "agent", parts: [{ type: "text", text: item.text }] }); continue; }
         const toolName = codexToolName(item);
         if (toolName === undefined) continue;
         // A readable verb for the row. ADR 0014 keeps this call's arguments — a command, a patch —
@@ -264,6 +271,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
           await emit?.({ type: "tool_activity", toolCallId: item.id, toolName, state: "started", summary: toolCallLabel(toolName) });
         }
         const state = codexToolState(item, event.type);
+        await journal?.tool(item.id,toolName,item,event.type === "item.completed" ? JSON.stringify(item) : undefined,state === "failed");
         if (state !== undefined && !ended.has(item.id)) { ended.add(item.id); await emit?.({ type: "tool_activity", toolCallId: item.id, toolName, state }); }
       }
     }
@@ -307,6 +315,7 @@ export class CodexAgentSdkPartnerEngineRuntime implements PartnerEngineRuntime {
       NATIVE_COMPLETION_INSTRUCTION,
       ...(request.workspaceExecution?.phase === "READ_RUNNING" ? ["The read-phase output schema also requires disposition. If writing is required, return WRITE_REQUIRED with empty body and null handoff; otherwise include the complete answer and handoff with COMPLETED."] : []),
       `Workbench scope: ${request.workbenchId}`, `Work item: ${request.workId}`,
+      ...(request.requiredContext === undefined ? [] : [request.requiredContext]),
       workbenchSection,
       boundBackgroundSections([context.skillSection, context.knowledgeSection], DEFAULT_BACKGROUND_BUDGET_CHARS),
     ].filter((part) => part !== "").join("\n");

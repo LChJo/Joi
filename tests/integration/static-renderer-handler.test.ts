@@ -21,6 +21,7 @@ describe("same-origin renderer hosting", () => {
       const home = await fetch(listeners.loopback.url);
       expect(await home.text()).toContain("joi");
       expect(home.headers.get("content-security-policy")).toContain("default-src 'self'");
+      expect(home.headers.get("content-security-policy")).toContain("frame-src http: https:");
       expect((await fetch(`${listeners.loopback.url}/life/example`)).status).toBe(200);
       const asset = await fetch(`${listeners.loopback.url}/assets/app.js`);
       expect(asset.headers.get("cache-control")).toContain("immutable");

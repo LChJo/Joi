@@ -1,0 +1,705 @@
+{
+  "schemaVersion": 1,
+  "evidence": [
+    {
+      "id": "8cdafcd8-5645-4e29-a4e6-84a24465e383",
+      "kind": "document",
+      "claim": "Product scope: persistent global joi, workbenches, local and A2A partners; cross-platform clients.",
+      "location": {
+        "path": "README.md"
+      },
+      "hash": "5b953ba8331692142bc6869acc9eaa22329274a96ef338250be8858e5c305e50",
+      "observedAt": "2026-11-11T06:25:48.982Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 36
+      }
+    },
+    {
+      "id": "529363b4-ba83-4f8c-946f-579a736f0406",
+      "kind": "document",
+      "claim": "Layer responsibilities, one scheduler, durable inbox, policy-gated outbox and safe projections.",
+      "location": {
+        "path": "docs/03-system-architecture.md"
+      },
+      "hash": "cae0aec77fba64eaa7f3ccf63a99a82b0763b00a76c577ae4abd0df50aafe82b",
+      "observedAt": "2026-11-11T04:10:28.621Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 25
+      }
+    },
+    {
+      "id": "b4e0c245-401d-4f68-9009-f3ead2f2c98a",
+      "kind": "source-code",
+      "claim": "Electron lifecycle and window composition use isolated webPreferences and runtime worker client.",
+      "location": {
+        "path": "src/main/index.ts"
+      },
+      "hash": "8a83169e354b912f4ff8eb7cd78cf971c05f1a65ac35e51b3dc0522da414e518",
+      "observedAt": "2026-11-11T04:10:28.621Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 105
+      }
+    },
+    {
+      "id": "bb0959ec-71ad-48ea-824b-3aa91a15a7a1",
+      "kind": "source-code",
+      "claim": "React entry selects local or remote app, loads existing stylesheet and desktop locale.",
+      "location": {
+        "path": "src/renderer/main.tsx"
+      },
+      "hash": "bc4b99c1584e69a949be0c2b0a2de1d6e9b127fc7389d7aa98cba8542ff58718",
+      "observedAt": "2026-11-11T04:10:28.621Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 32
+      }
+    },
+    {
+      "id": "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9",
+      "kind": "source-code",
+      "claim": "Renderer requests shared DTOs over HTTP and attaches write authentication/idempotency headers. Conversation archive/list/restore/delete requests retain HTTP write protection.",
+      "location": {
+        "path": "src/renderer/api.ts"
+      },
+      "hash": "c192035b4666bf9d6907b3124539780859bada74f38b629f9d799b20ea761a72",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 536
+      }
+    },
+    {
+      "id": "cf19bd4f-253f-4a1b-b33e-81e409048150",
+      "kind": "source-code",
+      "claim": "Narrow frozen bridge exposes bootstrap nonce and runtime info only.",
+      "location": {
+        "path": "src/preload/index.cts"
+      },
+      "hash": "86cb98210a7087da6e2099fdec1428b84b8b7f80fd538e06e61a4c9487cdf2ec",
+      "observedAt": "2026-11-11T04:10:28.622Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 11
+      }
+    },
+    {
+      "id": "d8f1b579-a4c5-4ab4-a8df-51c8728fbc96",
+      "kind": "source-code",
+      "claim": "Authenticated route table maps HTTP to application dependencies with write verification.",
+      "location": {
+        "path": "src/main/interfaces/http/api-handler.ts"
+      },
+      "hash": "02ce68b67996afc56e14832243ed9c203762c4f21a4d09614c727bad82ceffd4",
+      "observedAt": "2026-11-11T04:10:28.622Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 65
+      }
+    },
+    {
+      "id": "6c84adef-da3b-49e2-8c3c-3162e41cb524",
+      "kind": "source-code",
+      "claim": "Composition wires runtime application services, transport, events, artifacts and persistence.",
+      "location": {
+        "path": "src/main/composition/wire-runtime.ts"
+      },
+      "hash": "2cea65bd0062facd627e4a85825a97bb4e6a168596012666bec3bd60966fc299",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 95
+      }
+    },
+    {
+      "id": "8d9826b0-5e9d-43c8-b4c4-5e247ac56d15",
+      "kind": "source-code",
+      "claim": "Composition wires Joi inbox/coordinator, automation, reasoning and bounded learning.",
+      "location": {
+        "path": "src/main/composition/wire-joi.ts"
+      },
+      "hash": "eb7459c34a8e69fab7bbc070398751acab52b51b5dbabcb30888bec407ef2304",
+      "observedAt": "2026-11-11T04:10:28.623Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 75
+      }
+    },
+    {
+      "id": "02183363-905c-43b4-9579-4b7dd225d966",
+      "kind": "source-code",
+      "claim": "Home feed service delegates reads to repository ports and clock.",
+      "location": {
+        "path": "src/main/application/joi/joi-home-feed-service.ts"
+      },
+      "hash": "4e56a4b7acb249a35fb55c334568dcbea6a21985b519cd3426705212ec0d2a77",
+      "observedAt": "2026-11-11T04:10:28.623Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 35
+      }
+    },
+    {
+      "id": "246218d7-0c42-468a-b979-615c8ca1525d",
+      "kind": "source-code",
+      "claim": "Pure workbench domain validates identity, profile, memory namespace and project context.",
+      "location": {
+        "path": "src/main/domain/workbench/workbench.ts"
+      },
+      "hash": "510bff420728439638b23db5ad211224ed5f8a55cf9efb55ce37b8af10c4aa2b",
+      "observedAt": "2026-11-11T04:10:28.624Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 70
+      }
+    },
+    {
+      "id": "aeb013b6-fda3-401d-88ca-e6464dcd5bba",
+      "kind": "source-code",
+      "claim": "Composition builds SQLite adapters for workbenches, goals, instances, results and usage.",
+      "location": {
+        "path": "src/main/composition/wire-persistence.ts"
+      },
+      "hash": "49a67b83cbaa4da6c4abb0e6cb654b40446f307083e56491186c39071d340417",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 65
+      }
+    },
+    {
+      "id": "67786627-f77c-4800-9ac6-386b484e5f5d",
+      "kind": "source-code",
+      "claim": "Shared Joi contracts include optional tool lifecycle state separate from private result bodies.",
+      "location": {
+        "path": "src/shared/joi.ts"
+      },
+      "hash": "0007f2941324f7a26ad9f150672f3a88514f73cdffdf9c4bcc964d49ed8f3fa2",
+      "observedAt": "2026-11-11T12:10:46.322092Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 771
+      }
+    },
+    {
+      "id": "9b307cf5-39c7-4a9b-b899-9ab2a7984987",
+      "kind": "source-code",
+      "claim": "Standalone browser relay configures its listener and static directory.",
+      "location": {
+        "path": "src/relay/index.ts"
+      },
+      "hash": "1229f5c9630c2e5c47f2d62d6bb3fb6fc48438b5d6d42ee09c651664312a1b7e",
+      "observedAt": "2026-11-11T04:10:28.624Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 25
+      }
+    },
+    {
+      "id": "9eb5b925-3b08-4116-94d5-c22547df6564",
+      "kind": "source-code",
+      "claim": "Flutter mobile app observes remote controller and displays pairing or home.",
+      "location": {
+        "path": "apps/joi_mobile/lib/app.dart"
+      },
+      "hash": "318510213b257f99a06a5aa0fcb65438d966f26de1eca556226e6dcc7938af44",
+      "observedAt": "2026-11-11T04:10:28.625Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 45
+      }
+    },
+    {
+      "id": "22b3691d-7288-433b-9218-88f8517b44dd",
+      "kind": "source-code",
+      "claim": "Native library exports authorization, FFI, network and protocol modules.",
+      "location": {
+        "path": "native/joi-remote/src/lib.rs"
+      },
+      "hash": "6e2362d6e62ea87d225ca5e7b5fbce79d5d9b60376d639ff79fb11eae9780f87",
+      "observedAt": "2026-11-11T04:10:28.625Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 4
+      }
+    },
+    {
+      "id": "283d9312-432e-469c-b75c-8bc7a6685e12",
+      "kind": "document",
+      "claim": "Existing local HTML prototype defines warm neutral, forest green and compact navigation visual language.",
+      "location": {
+        "path": "docs/design/joi-home-c-compact.html"
+      },
+      "hash": "f1972e7805464575f75179acbca348c99ce2bc61d1ecfbfa8d2fe4dfb102c2f8",
+      "observedAt": "2026-11-11T04:10:28.631Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 64
+      }
+    },
+    {
+      "id": "2bee49b0-f04c-4ce2-8f64-79516009c1e9",
+      "kind": "source-code",
+      "claim": "Architecture validator classifies production layers and rejects prohibited dependency directions.",
+      "location": {
+        "path": "scripts/architecture-boundaries.mjs"
+      },
+      "hash": "0d2a00f65e64cb46f3ae9b9fc98274fdf893497bd9ee8edcd2ff768133c0a940",
+      "observedAt": "2026-11-11T04:10:28.632Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 94
+      }
+    },
+    {
+      "id": "ab760cb9-1a2a-45a2-8d8c-e00709dd5319",
+      "kind": "document",
+      "claim": "Offline single-file conversation prototype with settings-owned immutable network models, independent partner/skill pickers, chat-first creation, path-only workbench creation, automatic workbench memory/evolution inheritance, simulated Git state and embedded licensed diff2html rendering. No production runtime integration.",
+      "location": {
+        "path": "docs/design/joi-chat-prototype.html"
+      },
+      "hash": "692d4bed900eb2473fe105e5081d5d5082e8f4a202e97e0550c8ba727ab81b1f",
+      "observedAt": "2026-11-11T05:18:03.476Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 488
+      }
+    },
+    {
+      "id": "70e2a22b-f223-48ee-ad62-781b5835ed5e",
+      "kind": "source-code",
+      "claim": "Npm scripts define typecheck, lint, tests, coverage, E2E, production build and package verification.",
+      "location": {
+        "path": "package.json"
+      },
+      "hash": "082d485d4d28a5a28e2af36091e23e7ff8e1614280d1e3e27e2805b5fb64227a",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 55
+      }
+    },
+    {
+      "id": "c8f5bf1b-28f9-4c5a-b0f4-bf99167a9f7e",
+      "kind": "source-code",
+      "claim": "Flutter entry constructs NativeRemoteController with IrohFfiTransport and runs JoiMobileApp.",
+      "location": {
+        "path": "apps/joi_mobile/lib/main.dart"
+      },
+      "hash": "1adff131fecac07ed1e926ed244dd808be19df0aa9fd1a80c6a6238fd2698f95",
+      "observedAt": "2026-11-11T04:24:27.115Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 19
+      }
+    },
+    {
+      "id": "84cb24d2-8700-4e6c-a068-49c01dd50b8e",
+      "kind": "source-code",
+      "claim": "Mobile transport declares FFI-backed remote event and connection interface.",
+      "location": {
+        "path": "apps/joi_mobile/lib/iroh_ffi_transport.dart"
+      },
+      "hash": "fdb6c76b84984bc996b73c2475719e144005fb94519481eb3d1d56b4616404b0",
+      "observedAt": "2026-11-11T04:24:27.116Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 45
+      }
+    },
+    {
+      "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
+      "kind": "source-code",
+      "claim": "Normal conversation page retains draft selection, immutable ownership, compact history and independent resizable workspace; output delegates contiguous tool activity to a safe compact disclosure.",
+      "location": {
+        "path": "src/renderer/ConversationPage.tsx"
+      },
+      "hash": "e94ed7bf8984bf71a489476bdb0b1460812bf35fc44cd28103042ca92a237a6f",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 266
+      }
+    },
+    {
+      "id": "4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30",
+      "kind": "source-code",
+      "claim": "Desktop Git controls, safe parsed diff views, bounded workspace file previews and sandboxed explicit HTTP(S) browser frames.",
+      "location": {
+        "path": "src/renderer/ConversationWorkspace.tsx"
+      },
+      "hash": "b9d6a45cb83b4159142c3ab80de18684fd7bc36fc74f3b5346a39f8b459fcbb0",
+      "observedAt": "2026-11-11T09:48:24.965159Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 117
+      }
+    },
+    {
+      "id": "d07c943c-dd56-49b1-8fad-3ad61f4df6cc",
+      "kind": "source-code",
+      "claim": "Durable user-driven conversation turns reuse partner/source/Skill policy and checkpointed tool permissions without acquiring autonomous workspace leases. Database turn exclusion, cancellation and interrupted-execution protection remain; archive state changes start no execution.",
+      "location": {
+        "path": "src/main/application/joi/conversation-service.ts"
+      },
+      "hash": "f7a87e1d2037a6a4c61ea885081b92f140fbd99e36d476ce5b51d7c149209c32",
+      "observedAt": "2026-11-11T14:46:35.446029Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 208
+      }
+    },
+    {
+      "id": "db8263f3-5e65-499b-b358-e54b40a000cd",
+      "kind": "source-code",
+      "claim": "Transactional conversation history preserves immutable workbench, request identities, single active turn, archive/deletion tombstones and interrupted-run recovery. Startup makes only pending QUEUED conversation outbox records immediately eligible; started turns are never replayed.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-conversation-store.ts"
+      },
+      "hash": "e6e2289ba0a630beab5ef62d3da79e49e7a95bd8335cc61ed0c4ca14d2d21c98",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 125
+      }
+    },
+    {
+      "id": "1cb47532-3623-40ae-88b1-bd52b81947e5",
+      "kind": "source-code",
+      "claim": "simple-git wraps installed Git with allowlisted commands and server-owned roots; path validation, staged-only commits, non-force sync and redacted text previews.",
+      "location": {
+        "path": "src/main/infrastructure/workspace/git-workspace-adapter.ts"
+      },
+      "hash": "0adc02c50190a9b5970cdf2d25f3f5e5c25e90f3336954f21ad60dae5b741a9c",
+      "observedAt": "2026-11-11T06:25:48.982Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 97
+      }
+    },
+    {
+      "id": "3a9f444d-04a7-43d1-9a57-0212eeda58ca",
+      "kind": "source-code",
+      "claim": "Authenticated conversation routes reject per-turn model/cwd overrides; local file and Git views require desktop sessions and mutations retain CSRF/origin checks. Archive, restore and deletion mutations retain authenticated CSRF/origin-protected HTTP writes.",
+      "location": {
+        "path": "src/main/interfaces/http/routes/conversation-routes.ts"
+      },
+      "hash": "17b2f826b318e55c0183514a219c981c1f55f747331d5e9a48fa67d8f3711e8f",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 76
+      }
+    },
+    {
+      "id": "0928551c-008e-4486-b324-fdd3cc15e717",
+      "kind": "source-code",
+      "claim": "Composes independent conversation execution and coordinated explicit Git operations, inherited context and attachments. Graceful close stops the dispatcher before aborting active engines, preserving unstarted queued conversation turns; emergency stop remains explicit.",
+      "location": {
+        "path": "src/main/composition/wire-conversations.ts"
+      },
+      "hash": "00ddd67ace33f7053485e59449f8a1a23185b09245f48dcc69f84b4120c491f8",
+      "observedAt": "2026-11-11T16:20:32.371697Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 88
+      }
+    },
+    {
+      "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
+      "kind": "source-code",
+      "claim": "Conversation/configuration/status/Git DTOs carry no absolute workspace root or executable commands. Archive timestamps and idle-action availability are shared DTO fields.",
+      "location": {
+        "path": "src/shared/conversations.ts"
+      },
+      "hash": "d4c2b3757222a1bed6173e0b0bbea270c4769f8d2a717f985c36c556b78163d2",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 59
+      }
+    },
+    {
+      "id": "a13847af-27a8-4200-a5ca-abad35d0456d",
+      "kind": "document",
+      "claim": "Normal conversations are user-driven and independent of autonomous directory occupancy. Tool permission phases/checkpoints remain; explicit Git mutations retain shared repository admission.",
+      "location": {
+        "path": "docs/adr/0032-normal-conversations.md"
+      },
+      "hash": "c34e461d2784fc100a44a1e9abc60b05edc0ca261e7ab53fbcfb3d55d8afd045",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 23
+      }
+    },
+    {
+      "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
+      "kind": "document",
+      "claim": "CHAT-01 through CHAT-17 define conversation ownership, configuration, archive, independent admission and compact tool parameters with truthful lifecycle state.",
+      "location": {
+        "path": "docs/21-normal-conversations.md"
+      },
+      "hash": "47b38bea10d391cb075b62e56bf97355738536d5ffa6fe2a4c3e758803bc72f0",
+      "observedAt": "2026-11-11T16:20:32.372038Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 25
+      }
+    },
+    {
+      "id": "bdb1be5c-c983-4e99-8b95-e1f0df5ed37f",
+      "kind": "source-code",
+      "claim": "Global navigation uses user-selected Heartbeat for Joi and SquaresFour for workbenches; supports glyph-only collapse/expand, icon tooltips, retained page state and a narrow overlay. Archive navigation opens task/conversation tabs.",
+      "location": {
+        "path": "src/renderer/Console.tsx"
+      },
+      "hash": "56de2be38634dce0e6aeb49a66a42eeb4dceb862a5ff9dfca66dcea7f639e223",
+      "observedAt": "2026-11-11T16:20:32.372328Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 396
+      }
+    },
+    {
+      "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
+      "kind": "source-code",
+      "claim": "Compact disclosures retain a single-line latest parameter preview and state; expanded parameters wrap within a bounded scroll area in narrow layouts.",
+      "location": {
+        "path": "src/renderer/conversations.css"
+      },
+      "hash": "bb28f400157571c72dbc2f690225c85a55bcc8bf6b900eda2f6b3add7649ac76",
+      "observedAt": "2026-11-11T16:20:32.372588Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 270
+      }
+    },
+    {
+      "id": "e17e48a7-5bdd-421e-aa56-72f72d2c410b",
+      "kind": "document",
+      "claim": "Phosphor navigation icon comparison with 19px normal/collapsed samples and interactive pair previews. User selected A Heartbeat for Joi and 1 SquaresFour for workbenches; applied in Console navigation.",
+      "location": {
+        "path": "docs/design/joi-navigation-icons.html"
+      },
+      "hash": "e8b4d7274a2724190aafd201454a40b4bb4e872ef9c5fb48d2f66ede8e3bdf9c",
+      "observedAt": "2026-11-11T09:56:14.336546Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 5
+      }
+    },
+    {
+      "id": "e5438320-e3e9-41e2-abf9-b409867822e0",
+      "kind": "source-code",
+      "claim": "Task/conversation tabs, archived conversation search, read-only transcript, restore and confirmed deletion.",
+      "location": {
+        "path": "src/renderer/ArchivePage.tsx"
+      },
+      "hash": "ebeacd7984c4a9343359eff589d5b7a4c178b603d2dca34986c8f3218f374bc9",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 68
+      }
+    },
+    {
+      "id": "ececa617-c6a3-4ea1-a324-a7feb9d2e600",
+      "kind": "source-code",
+      "claim": "Compact history row with keyboard/hover tooltip and unclipped actions menu.",
+      "location": {
+        "path": "src/renderer/ConversationHistoryRow.tsx"
+      },
+      "hash": "4be633185aec8b815fd5301b38dc8e390b66070075615a594fc4933e37526b05",
+      "observedAt": "2026-11-11T10:27:50.918704Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 36
+      }
+    },
+    {
+      "id": "8dc57d83-a63f-4aaf-9cec-21a2a3252c29",
+      "kind": "source-code",
+      "claim": "Conversation dialogs constrain keyboard focus, support Escape and confirm deletion with retry.",
+      "location": {
+        "path": "src/renderer/ConversationDialogs.tsx"
+      },
+      "hash": "316416e78cb6b1e39800b6b03f4fedf581b552921f31603ca2f25773ae5cae75",
+      "observedAt": "2026-11-11T10:23:10.642484Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 31
+      }
+    },
+    {
+      "id": "b19e6407-d990-45b3-b75e-b5ba562fd399",
+      "kind": "source-code",
+      "claim": "Nullable archive/deletion timestamps and visible-list index preserve existing conversation visibility.",
+      "location": {
+        "path": "resources/migrations/093_conversation_archive.sql"
+      },
+      "hash": "9c738f09c8dff0d5b220eca372e956adfdfa31c51a20c73cba3438f4440b6ccf",
+      "observedAt": "2026-11-11T10:23:10.642484Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 3
+      }
+    },
+    {
+      "id": "f1700bac-e723-4de3-b839-f99c567e6d08",
+      "kind": "source-code",
+      "claim": "Tool disclosures pair call/result identities, show safe parameter summaries and explicit or legacy-compatible lifecycle state, preserve expansion during streaming and never render raw result bodies.",
+      "location": {
+        "path": "src/renderer/ConversationOutput.tsx"
+      },
+      "hash": "3e7b0818dbf35df8cf3c635a7f082379024672abda8bf0e7702d4ea3cbf0f99a",
+      "observedAt": "2026-11-11T12:10:46.322092Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 62
+      }
+    },
+    {
+      "id": "ab916d87-3ab3-4619-9f69-ce1f640aae6d",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/application/partners/agent-conversation-presentation.ts"
+      },
+      "claim": "Conversation normalization preserves explicit tool lifecycle facts alongside bounded secret-masked presentation text.",
+      "hash": "4dc6058e1c7c7d535f0cfa64045731d3fc6eda530aacc296c16931b1a3f28497",
+      "observedAt": "2026-11-11T12:10:46.322092Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 207
+      }
+    },
+    {
+      "id": "a984c882-2ef4-40fc-a9a5-dca9f6ce824e",
+      "kind": "source-code",
+      "location": {
+        "path": "src/main/application/partners/native-agent-event-projector.ts"
+      },
+      "claim": "Native tool lifecycle events project safe parameter summaries and typed started/completed/failed states for conversation persistence.",
+      "hash": "9b7b76f56cbffb85e4e2b1f94cc1a1a8a2002dfa1bc1d82543e031010b20e725",
+      "observedAt": "2026-11-11T12:10:46.322092Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 61
+      }
+    },
+    {
+      "id": "313dd958-6c17-4b51-8f69-c45004e29137",
+      "kind": "source-code",
+      "claim": "Stable child intent submission, cancellation and parent settlement through application ports.",
+      "location": {
+        "path": "src/main/application/joi/conversation-subagent-service.ts"
+      },
+      "hash": "2677ae2b3bfd36b293fc8d875c343d06cad88b3c75157e1a17d7d632e4622c29",
+      "observedAt": "2026-11-11T14:46:35.446876Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 58
+      }
+    },
+    {
+      "id": "1519c446-98f9-4b5a-b873-26ea5d8e7d89",
+      "kind": "source-code",
+      "claim": "Transactional child/outbox identity and interruption records; private child checkpoints remain outside projections.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-conversation-subagent-store.ts"
+      },
+      "hash": "2992d985992ec982043030637be543143b529f8ae9d8f7766a880d0597ab6a69",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 43
+      }
+    },
+    {
+      "id": "54304c25-7793-4c5a-b601-f649f10df3f1",
+      "kind": "source-code",
+      "claim": "Request-only Joi checkpoint coverage, net savings checks, failed-candidate backoff and bounded omission notices.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-context-manager.ts"
+      },
+      "hash": "4b73407b824404bd41e1db0cf196bfd9495c3841801e2250a0defc5fd7db2995",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 357
+      }
+    },
+    {
+      "id": "629887d6-ca08-4e3b-9116-9def218c167e",
+      "kind": "source-code",
+      "claim": "Pi SDK session with no resource discovery, SDK auto-compaction or SDK retries; configured host auth and tools.",
+      "location": {
+        "path": "src/main/infrastructure/pi/joi-pi-session.ts"
+      },
+      "hash": "eb9ba6fca3e41f81a2c359547f66d7a470f50721a5e85dba581337f24fa03596",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 25
+      }
+    },
+    {
+      "id": "90a83f7c-9a38-475a-a9ec-49d540abde2d",
+      "kind": "source-code",
+      "claim": "Private normalized execution journal and native session references, independent of safe events.",
+      "location": {
+        "path": "src/main/infrastructure/pi/native-conversation-journal.ts"
+      },
+      "hash": "8d64cd2d94b190cb5eb89b57a0de839f46b9b2cc54588a100dca4d0eecc14d0a",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 74
+      }
+    },
+    {
+      "id": "c3ae40e3-2672-4b92-b011-b2ef3c6044a8",
+      "kind": "document",
+      "claim": "Accepted conversation session, shared compaction, durable child-provider and reconnect boundary.",
+      "location": {
+        "path": "docs/adr/0033-conversation-context-sessions.md"
+      },
+      "hash": "d53398d16577988bc97f74e4f32d6d92fc8121ff19f1b167f26b6b4b9f30bad7",
+      "observedAt": "2026-11-11T14:46:35.447458Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 27
+      }
+    },
+    {
+      "id": "6097810a-ce3d-4038-9a5c-f30fc8382210",
+      "kind": "source-code",
+      "claim": "Safe character estimates, compression/activity states and child cancellation projection.",
+      "location": {
+        "path": "src/renderer/ConversationContext.tsx"
+      },
+      "hash": "8f5ba2c440b3bc12007595dfd4461a673a08d1a153773500b8d8d8b4e339e106",
+      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 19
+      }
+    },
+    {
+      "id": "4ceef8ae-0316-4837-943b-ab9e9599acc3",
+      "kind": "document",
+      "claim": "Synthetic regression scenarios and verification scope; no token or memory-quality claims.",
+      "location": {
+        "path": "docs/conversation-context-validation.md"
+      },
+      "hash": "0bdd37f5954d3eb28114b711df0dc2ea920027bb6c961e183ce263eb5c7e5560",
+      "observedAt": "2026-11-11T14:52:50.046182Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 44
+      }
+    }
+  ]
+}

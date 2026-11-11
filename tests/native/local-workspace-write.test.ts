@@ -98,8 +98,12 @@ describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
   it.each(["claude-code", "codex"] as const)("%s CLI delivers a private handoff in the original model turn", async (engine) => {
     let calls = 0;
     let schemaDelivered = false;
+    const requiredContext = `MANDATORY_CONTEXT_START\n${"中文要求".repeat(2000)}\nATTACHMENT_REFERENCE_END`;
+    let mandatoryContextDelivered = false;
     const local = await fixture((body, response) => {
       calls += 1;
+      const serialized = JSON.stringify(body);
+      mandatoryContextDelivered ||= serialized.includes("MANDATORY_CONTEXT_START") && serialized.includes("中文要求".repeat(2000)) && serialized.includes("ATTACHMENT_REFERENCE_END");
       if (engine === "claude-code") {
         const tools = Array.isArray(body.tools) ? body.tools as { name?: string; input_schema?: { required?: string[] } }[] : [];
         const completion = tools.find((tool) => tool.name === "StructuredOutput");
@@ -127,9 +131,10 @@ describe.skipIf(!enabled)("AC-WR native workspace enforcement", () => {
       skills: [], tools: [], toolPolicyMode: "CUSTOM", codexPermissions: { approvalPolicy: "never", sandboxMode: "read-only", networkAccessEnabled: false, webSearchMode: "disabled" } });
     const events: unknown[] = [];
     try {
-      const result = await runtime.runResidentTurn({ ...context, request, revision, onEvent: async event => { events.push(event); } });
+      const result = await runtime.runResidentTurn({ ...context, request: { ...request,requiredContext }, revision, onEvent: async event => { events.push(event); } });
       expect(result.output).toMatchObject({ body: "Native continuation complete", handoffStatus: "PROVIDED", handoff: completionHandoff });
       expect(schemaDelivered).toBe(true);
+      expect(mandatoryContextDelivered).toBe(true);
       expect(calls).toBe(1);
       expect(JSON.stringify(events)).not.toContain("PRIVATE_NATIVE_HANDOFF");
       expect(JSON.stringify(result.conversation)).not.toContain("StructuredOutput");

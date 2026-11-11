@@ -1,4 +1,5 @@
-import { BACKGROUND_CONTEXT, generateSummary, withAbortSignal, type AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { summarizeSegment } from "./pi-compaction.js";
 
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
 import type { PartnerMemorySummarizer, PartnerWorkMemoryEntry } from "../../application/ports/partner-memory.js";
@@ -26,19 +27,9 @@ export class PiPartnerMemorySummarizer implements PartnerMemorySummarizer {
         .map((entry) => `- [${entry.outcome}] ${entry.title} (source: ${entry.sessionDataSource}, at: ${entry.createdAt})`)
         .join("\n");
       const messages: AgentMessage[] = [{ content: ledger, role: "user", timestamp: Date.now() }];
-      const generated = await generateSummary(
-        messages,
-        trackPiModels(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: input.workbenchId, partnerId: input.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
-        resolved.model,
-        512,
-        "Summarize what this partner has worked on and how reliably it completed work. Do not invent facts.",
-        input.previousSummary,
-        undefined,
-        undefined,
-        undefined,
-        input.signal === undefined ? BACKGROUND_CONTEXT : withAbortSignal(input.signal, BACKGROUND_CONTEXT),
-      );
-      return generated.ok ? generated.value : null;
+      const generated = await summarizeSegment({ segment: messages,models: trackPiModels(resolved.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: input.workbenchId, partnerId: input.partnerId, sourceId: pin.sourceId, modelId: pin.modelId })),
+        model: resolved.model,reserveTokens: 512,previousSummary: input.previousSummary,signal: input.signal,thinkingLevel: "off" });
+      return generated.ok ? generated.summary : null;
     } catch {
       return null;
     }

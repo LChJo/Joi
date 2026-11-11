@@ -236,7 +236,7 @@ export function wireRuntime(input: {
     diagnostics,
     // evolution.model rows are audit-only outbox records written by the evolution store; the
     // bounded model call itself runs inside EvolutionService, so the dispatcher must never claim them.
-    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model", PARTNER_MEMORY_REFRESH_KIND, MODEL_SOURCE_RECOVERY_KIND],
+    excludeKinds: ["partner.dispatch", "partner.continue", "evolution.model", "conversation.turn", "conversation.git", "conversation.subagent", PARTNER_MEMORY_REFRESH_KIND, MODEL_SOURCE_RECOVERY_KIND],
     handlers: {
       "result.export": record => exporter.handle(String(record.payload.exportId)),
       "a2a.send": async (record) => {

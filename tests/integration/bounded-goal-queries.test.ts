@@ -3,7 +3,8 @@ import { SqliteGoalEvidenceRepository,goalEvidenceIndex,loadGoalEvidenceCatalog 
 import { SqliteWorkPlanRepository } from "../../src/main/infrastructure/persistence/sqlite-work-plan-repository.js";
 import { SqliteGoalRequirementsRepository } from "../../src/main/infrastructure/persistence/sqlite-goal-requirements-repository.js";
 import { withGoalRequirementsTools } from "../../src/main/infrastructure/pi/joi-requirements-tools.js";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { } from "@earendil-works/pi-ai";
 
 function fixture(count = 1000) {
   const connection = new DatabaseSync(":memory:");

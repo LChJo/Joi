@@ -3,6 +3,13 @@ import { normalizeAgentConversationEntries } from "../../src/main/application/pa
 import { parseNativeAgentSessionRef, toNativeAgentSessionRef } from "../../src/main/application/partners/native-agent-session-reference.js";
 
 describe("native agent event surface", () => {
+  it("CHAT-17 carries explicit tool lifecycle states through the safe normalized conversation", () => {
+    const projector = new NativeAgentEventProjector();
+    projector.apply({ type: "tool_activity",toolCallId: "check",toolName: "bash",state: "started",summary: "npm run check" });
+    projector.apply({ type: "tool_activity",toolCallId: "check",toolName: "bash",state: "failed" });
+    const entries = normalizeAgentConversationEntries({ agentId: "chat",runId: "turn",startedAt: "2026-11-11" },projector.snapshot());
+    expect(entries).toMatchObject([{ toolState: "started",text: "npm run check" },{ toolState: "failed" }]);
+  });
   it("keeps the actual time of each event and the start time of a streaming message", () => {
     let now = new Date("2026-09-18T10:03:00.000Z");
     const projector = new NativeAgentEventProjector({ now: () => now });
@@ -36,8 +43,8 @@ describe("native agent event surface", () => {
 
     expect(projector.snapshot()).toEqual([
       { kind: "MARKDOWN", role: "USER", text: "do it" },
-      { kind: "TOOL_CALL", role: "TOOL", toolCallId: "toolu_shell", toolName: "shell" },
-      { kind: "TOOL_RESULT", role: "TOOL", text: "执行完成", toolCallId: "toolu_shell", toolName: "shell" },
+      { kind: "TOOL_CALL", role: "TOOL", toolCallId: "toolu_shell", toolName: "shell",toolState: "started" },
+      { kind: "TOOL_RESULT", role: "TOOL", text: "执行完成", toolCallId: "toolu_shell", toolName: "shell",toolState: "completed" },
       { kind: "MARKDOWN", role: "AGENT", text: "done" },
       { artifact: { mimeType: "text/plain", name: "result.txt", size: 4 }, kind: "ARTIFACT", role: "AGENT" },
     ]);
@@ -62,7 +69,7 @@ describe("native agent event surface", () => {
   it("omits the text key entirely for a call the engine cannot describe", () => {
     const projector = new NativeAgentEventProjector();
     projector.apply({ type: "tool_activity", toolCallId: "toolu_1", toolName: "read", state: "started" });
-    expect(projector.snapshot()[0]).toEqual({ kind: "TOOL_CALL", role: "TOOL", toolCallId: "toolu_1", toolName: "read" });
+    expect(projector.snapshot()[0]).toEqual({ kind: "TOOL_CALL", role: "TOOL", toolCallId: "toolu_1", toolName: "read",toolState: "started" });
   });
 
   it("handles deltas, failed tools, file parts and safe failure statuses", () => {
@@ -85,7 +92,7 @@ describe("native agent event surface", () => {
     expect(projector.snapshot()).toEqual([
       { artifact: { mimeType: "text/plain", name: "input.txt", size: 3 }, kind: "ARTIFACT", role: "USER" },
       { kind: "MARKDOWN", role: "AGENT", text: "part two" },
-      { kind: "TOOL_RESULT", role: "TOOL", text: "执行失败", toolCallId: "toolu_shell", toolName: "shell" },
+      { kind: "TOOL_RESULT", role: "TOOL", text: "执行失败", toolCallId: "toolu_shell", toolName: "shell",toolState: "failed" },
       { artifact: { mimeType: "text/plain", name: "output.txt", size: 0 }, kind: "ARTIFACT", role: "AGENT" },
       { kind: "ERROR", role: "SYSTEM", text: "搭档调用失败" },
       { kind: "ERROR", role: "SYSTEM", text: "需要完成身份验证" },

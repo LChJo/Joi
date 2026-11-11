@@ -507,6 +507,19 @@ export class MethodLearningService extends EvolutionService {
     const records = this.#learning.store.revisions().filter(r => r.status === status && (profile === undefined || r.profile === profile) && (r.scope === "GLOBAL" || r.workbenchId === workbenchId));
     return records.find(r => r.scope === "WORKBENCH") ?? records.find(r => r.scope === "GLOBAL");
   }
+  /** Normal turns inherit validated methods without joining autonomous goal evaluation. */
+  conversationMethod(workbenchId: string, pin?: EvolutionSourcePin): { revisionId: string | null; instructions: string } {
+    const empty = { revisionId: null,instructions: "" };
+    const global = this.#learning.store.control(), local = this.#learning.store.participant(workbenchId);
+    if (!global.enabled || global.paused || !local.enabled || local.paused || global.dailyCallLimit === 0 || local.dailyCallLimit === 0) return empty;
+    const revision = this.#applicable(workbenchId,"ACTIVE",learningProfile(1));
+    if (revision === undefined) return empty;
+    try {
+      const candidate = revisionState(revision);
+      if (!equalPin(pin,candidate.pin)) return empty;
+      return { revisionId: revision.id,instructions: composeMethodInstructions({ ...candidate.policy,planning: [] }) };
+    } catch { return empty; }
+  }
   override strategyForGoal(workbenchId: string, goalId: string, pin?: EvolutionSourcePin, context?: { requirementsReady: boolean; requirementCount: number }): { strategyRevisionId: string | null; instructions: string } {
     if (pin !== undefined) this.#observedPin = pin;
     const store = this.#learning.store;

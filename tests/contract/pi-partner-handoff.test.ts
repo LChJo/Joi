@@ -1,6 +1,7 @@
 /* Deterministic runtime adapters preserve asynchronous port shapes. */
 /* eslint-disable @typescript-eslint/require-await */
-import { Type, createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxToolCall } from "@earendil-works/pi-ai";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 

@@ -1,4 +1,5 @@
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Decimal } from "decimal.js";
 

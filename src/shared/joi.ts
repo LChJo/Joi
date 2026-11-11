@@ -552,6 +552,8 @@ export interface AgentConversationEntryDto {
   /** Opaque link to the private tool body; never a payload, so it stays safe on this surface. */
   toolCallId?: string;
   toolName?: string;
+  /** Safe lifecycle fact, independent of the private tool result body. */
+  toolState?: "started" | "completed" | "failed";
 }
 
 /**

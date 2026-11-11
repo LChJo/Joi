@@ -1,4 +1,6 @@
 import type { Clock } from "../application/ports/runtime-store.js";
+import { SqliteConversationStore } from "../infrastructure/persistence/sqlite-conversation-store.js";
+import { SqliteGitCommandStore } from "../infrastructure/persistence/sqlite-git-command-store.js";
 import { SqliteUsageStore } from "../infrastructure/persistence/sqlite-usage-store.js";
 import path from "node:path";
 import { WorkRunDirectoryProvisioner } from "../infrastructure/persistence/work-run-directory-provisioner.js";
@@ -13,6 +15,7 @@ import { SqliteModelSourceRepository } from "../infrastructure/persistence/sqlit
 import { SqlitePartnerInstanceMessageStore } from "../infrastructure/persistence/sqlite-partner-instance-message-store.js";
 import { SqlitePartnerInstanceRepository } from "../infrastructure/persistence/sqlite-partner-instance-repository.js";
 import { SqlitePartnerKnowledgeStore } from "../infrastructure/persistence/sqlite-partner-knowledge-store.js";
+import { SqliteConversationSubagentStore } from "../infrastructure/persistence/sqlite-conversation-subagent-store.js";
 import { SqlitePartnerPromptStore } from "../infrastructure/persistence/sqlite-partner-prompt-store.js";
 import { SqlitePartnerRegistryRepository } from "../infrastructure/persistence/sqlite-partner-registry-repository.js";
 import { SqliteScenarioPackRepository } from "../infrastructure/persistence/sqlite-scenario-pack-repository.js";
@@ -48,6 +51,9 @@ export function wirePersistence(input: {
 }) {
   const { clock, database, pid, userDataDirectory } = input;
   return {
+    conversationSubagents: new SqliteConversationSubagentStore(database),
+    conversations: new SqliteConversationStore(database),
+    gitCommands: new SqliteGitCommandStore(database),
     usageStore: new SqliteUsageStore(database, () => clock.now().toISOString()),
     runDirectories: new WorkRunDirectoryProvisioner({ database, clock, baseDirectory: input.runDirectory ?? path.join(userDataDirectory, "runs") }),
     automationStore: new SqliteAutomationStore(database),

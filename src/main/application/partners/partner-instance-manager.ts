@@ -8,6 +8,8 @@ import type {
   PartnerInstanceRecord,
   PartnerInstanceRepository,
   PartnerToolTraceProgress,
+  PartnerSessionState,
+  PartnerExecutionContext,
   SessionPolicy,
 } from "../ports/partner-instances.js";
 import type { ToolTraceDraft } from "./tool-trace-presentation.js";
@@ -93,6 +95,9 @@ export class PartnerInstanceManager {
    * (joi sees live instances through partner_list_instances and passes the id explicitly).
    */
   async dispatch(input: {
+    session?: { state?: PartnerSessionState; save: (state: PartnerSessionState) => Promise<void> };
+    onContext?: PartnerExecutionContext["onContext"];
+    expectedSource?: Pick<ModelSourceTurnPin,"sourceId" | "sourceRevisionId" | "modelRevisionId">;
     dispatchAttemptId?: string;
     instanceId?: string;
     onConversation?: (progress: PartnerConversationProgress) => Promise<void>;
@@ -122,6 +127,10 @@ export class PartnerInstanceManager {
     let preflightPin: ModelSourceTurnPin | undefined;
     try {
       preflightPin = await this.#engine(input.revision.engine).preflight?.({ revision: input.revision, turnId: input.request.actionId });
+      if (input.expectedSource !== undefined && (preflightPin?.sourceId !== input.expectedSource.sourceId
+        || preflightPin.sourceRevisionId !== input.expectedSource.sourceRevisionId || preflightPin.modelRevisionId !== input.expectedSource.modelRevisionId)) {
+        throw new DomainError("conversation_configuration_changed", "The model network changed after this message was submitted. Send a new message to use its current settings.");
+      }
       if (input.instanceId !== undefined) {
         const existing = await this.dependencies.repository.get(input.instanceId);
         if (existing === null) throw new DomainError("partner_instance_unavailable", "Partner instance is not available.");
@@ -283,13 +292,17 @@ export class PartnerInstanceManager {
           workId: input.request.workId,
         };
       }
-      const restored = await this.dependencies.messages.load(record.instanceId, input.request.workspaceExecution?.phase === "WRITE_RUNNING");
+      const restored = input.session?.state?.messages ?? await this.dependencies.messages.load(record.instanceId, input.request.workspaceExecution?.phase === "WRITE_RUNNING");
+      const externalSessionRef = input.session?.state?.engine === record.engine ? input.session.state.externalSessionRef : record.externalSessionRef;
       if (input.request.workspaceExecution?.phase === "WRITE_RUNNING"
-        && (record.engine === "pi-core" ? restored === null || restored.length === 0 : record.externalSessionRef === undefined)) {
+        && (record.engine === "pi-core" ? restored === null || restored.length === 0 : externalSessionRef === undefined)) {
         throw new DomainError("workspace_checkpoint_missing", "The suspended execution checkpoint is unavailable.");
       }
       const turn = await engine.runResidentTurn({
-        ...(record.externalSessionRef === undefined ? {} : { externalSessionRef: record.externalSessionRef }),
+        ...(externalSessionRef === undefined ? {} : { externalSessionRef }),
+        ...(input.session?.state === undefined ? {} : { sessionState: input.session.state }),
+        ...(input.session === undefined ? {} : { saveSession: input.session.save }),
+        ...(input.onContext === undefined ? {} : { onContext: input.onContext }),
         instanceId: record.instanceId,
         knowledgeSection,
         ...(onEvent === undefined ? {} : { onEvent }),
@@ -369,6 +382,12 @@ export class PartnerInstanceManager {
     if (record.status === "DISPOSED") return;
     if (record.status === "BUSY" || record.status === "SUSPENDED") throw new DomainError("partner_instance_busy", "Partner instance belongs to an active turn and cannot be disposed.");
     await this.#disposeRecord(record, input.reason);
+  }
+  /** A canceled user turn may discard its durable checkpoint once engine execution has settled. */
+  async abandonSuspended(input: { workbenchId: string; instanceId: string }): Promise<void> {
+    const record = await this.dependencies.repository.get(input.instanceId);
+    if (record?.workbenchId !== input.workbenchId || record.status !== "SUSPENDED" || record.sessionPolicy !== "EPHEMERAL") return;
+    await this.#disposeRecord(record,"conversation_stopped");
   }
 
   #emitPreflightFailure(

@@ -1,4 +1,8 @@
 import type { AgentService } from "../../application/agents/agent-service.js";
+import type { ConversationService } from "../../application/joi/conversation-service.js";
+import type { ConversationWorkspaceService } from "../../application/joi/conversation-workspace-service.js";
+import type { ConversationWorkspacePort } from "../../application/ports/conversation-workspace.js";
+import type { WorkbenchDto } from "../../../shared/joi.js";
 import type { StatisticsService } from "../../application/statistics/statistics-service.js";
 import type { EvolutionService } from "../../application/evolution/evolution-service.js";
 import type { EvolutionDryRun } from "../../application/evolution/evolution-dry-run.js";
@@ -37,6 +41,10 @@ import { csrfToken, expectedOrigin, HttpError, optionalStringField, requestAddre
 import type { IncomingMessage } from "node:http";
 
 export interface ApiDependencies {
+  conversations?: Pick<ConversationService, "list" | "get" | "send" | "stop" | "inheritance" | "archive" | "restore" | "delete"> & Partial<Pick<ConversationService,"page" | "events" | "cancelChild">>;
+  conversationWorkspace?: ConversationWorkspacePort;
+  conversationGit?: Pick<ConversationWorkspaceService, "submit" | "get">;
+  quickWorkbench?: (rootPath: string) => Promise<WorkbenchDto>;
   statistics?: Pick<StatisticsService, "query">;
   evolution?: Pick<EvolutionService, "overview" | "status" | "configure" | "configureGlobal" | "configureParticipation" | "resumeGlobal" | "resumeWorkbench" | "rollback" | "negativeFeedback" | "requestRun">;
   /** Separate from `evolution`: the dry run is its own object and never shares the live service. */

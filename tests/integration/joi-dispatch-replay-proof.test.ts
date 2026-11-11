@@ -108,8 +108,17 @@ describe("dispatch failure replay proof with real SDK and SQLite", () => {
     expect(value.finished[0]).not.toHaveProperty("replaySafeRejection");
   });
 
-  it.each(["sdk_error", "commit_failed"] as const)("retains an unproven %s without rolling back", async kind => {
-    const value = await scenario(kind);
+  it("requeues a host-proven schema rejection without recording a dispatch", async () => {
+    const value = await scenario("sdk_error");
+    expect(value.workCount).toBe(0);
+    expect(value.rollbacks).toBe(1);
+    expect(value.input).toMatchObject({ status: "PENDING" });
+    expect(value.turn).toMatchObject({ failure_replay_safe: 1 });
+    expect(value.finished[0]).toMatchObject({ isError: true, replaySafeRejection: true });
+  });
+
+  it("retains an unknown commit failure without rolling back", async () => {
+    const value = await scenario("commit_failed");
     expect(value.workCount).toBe(0);
     expect(value.rollbacks).toBe(0);
     expect(value.input).toMatchObject({ status: "CONSUMED" });

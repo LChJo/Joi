@@ -1,5 +1,7 @@
 # SQLite migrations
 
+Migrations 094–096 add conversation-owned private session metadata and incrementally stored messages, durable child intents/checkpoints, safe context projections and payload-free update cursors. Conversation/turn ownership gates every write. Interrupted executions are recorded without replay; source text remains private and pageable. These migrations implement CHAT-18–26 / ADR 0033 and do not migrate or schedule historical work.
+
 Migration 069 为进化证据增加失败归因。只有上下文整理或完成判断可归因的验收失败进入策略触发门禁；执行、环境和未知原因仍保留在审计证据中，但不会推动策略改写。存量失败标记为 unknown，避免升级后把历史噪声误当作策略缺陷。
 
 Migration 060 增加本地 Token 数值账本：调用身份、各模型累计快照、采集起点与持久缺失提示。按调用内稳定标识替换快照，不扫描历史私有会话，不触发模型请求。
@@ -78,3 +80,7 @@ Migration 089 从工作结果的既有产物清单建立可分页的元数据读
 Migration 090 为每个产物来源及学习事实读投影维护同事务不透明版本标记，供有界内存缓存识别相关写入。来源清单变化更新来源标记；学习标记只覆盖事实和资格判断依赖的数据，不受凭据、会话心跳或单独产物清单更新影响。回填仅新增元数据，原结果、文件、历史及打开ID保持不变；回滚后的后续写入不复用已中止标记。见 AC-PERF-01 / AC-EVO-01..08。
 
 Migration 091 为正在运行的 Turn、前台 Work、非终态派发尝试与 Run、未销毁实例建立部分索引，并补充 outbox 到派发尝试的反向查找。索引支持按当前活动集合及到期队列读取，保留原调度周期、依赖、门禁、恢复和原子认领语义；迁移不改写业务记录或重放任务。见 AC-PERF-01 / AC-EVO-03。
+
+Migration 092 新增普通对话、逐轮配置快照与 Git 操作队列。首次发送原子固定工作台并写入稳定 outbox 身份；每个对话最多一个活动轮次。内部 Work 只在存在同工作台的对话轮次或显式 Git 操作时才允许无目标归属，其他 Work 的原有目标门禁保持有效。迁移不派发操作，也不重放历史副作用。见 CHAT-01–10 / ADR 0032。
+
+Migration 093 为普通对话添加归档时间、删除墓碑与可见列表索引，既有记录默认保持可见。归档/恢复/删除仅更新本地状态，不产生执行 outbox；删除保留稳定对话和请求身份，禁止复用或恢复，隐藏正文读取且不删除工作区文件。见 CHAT-13/14。

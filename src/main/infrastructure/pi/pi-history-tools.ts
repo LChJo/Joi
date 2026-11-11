@@ -1,7 +1,8 @@
 /* Pi tool callbacks use the asynchronous AgentTool contract. */
 /* eslint-disable @typescript-eslint/require-await */
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { } from "@earendil-works/pi-ai";
 
 /** The closure binds one private transcript; callers cannot select another session or Work. */
 export function createContextHistoryTool(messages: () => readonly unknown[]): AgentTool {

@@ -1,4 +1,5 @@
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, } from "@earendil-works/pi-ai";
 import { DomainError } from "../../src/main/domain/errors.js";
 import { JoiCoordinator } from "../../src/main/application/joi/joi-coordinator.js";
 import { WorkOrchestrationService } from "../../src/main/application/work/work-orchestration-service.js";

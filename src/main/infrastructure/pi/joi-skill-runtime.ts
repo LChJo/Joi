@@ -1,5 +1,6 @@
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { } from "@earendil-works/pi-ai";
 
 import type { PartnerSkillCatalog } from "../../application/ports/partner-skills.js";
 import { DomainError } from "../../domain/errors.js";

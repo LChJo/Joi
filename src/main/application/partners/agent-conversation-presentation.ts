@@ -16,6 +16,7 @@ export interface AgentConversationDraft {
   /** Opaque engine call id; links the entry to its private tool body. Never a payload. */
   toolCallId?: string;
   toolName?: string;
+  toolState?: AgentConversationEntryDto["toolState"];
 }
 
 export interface NormalizedAgentConversationEntry extends Omit<AgentConversationEntryDto, "artifact" | "sequence"> {
@@ -198,6 +199,7 @@ export function normalizeAgentConversationEntries(
         ...(text === undefined ? {} : { text }),
         ...(draft.toolCallId === undefined ? {} : { toolCallId: draft.toolCallId.slice(0, 200) }),
         ...(draft.toolName === undefined ? {} : { toolName: draft.toolName.slice(0, 120) }),
+        ...(draft.toolState === undefined ? {} : { toolState: draft.toolState }),
       });
     });
   });

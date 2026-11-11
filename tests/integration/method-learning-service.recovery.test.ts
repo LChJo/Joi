@@ -11,7 +11,8 @@ import { SqliteGoalRequirementsRepository } from "../../src/main/infrastructure/
 import { SqliteJoiInboxRepository } from "../../src/main/infrastructure/persistence/sqlite-joi-inbox-repository";
 import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasoning-runtime";
 import { withGoalRequirementsTools } from "../../src/main/infrastructure/pi/joi-requirements-tools";
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, } from "@earendil-works/pi-ai";
 
 describe("method learning recovery and exposure safeguards", () => {
   let fixture: RuntimeFixture;

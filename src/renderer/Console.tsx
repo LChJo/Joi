@@ -4,6 +4,7 @@ import {
   ArrowClockwiseIcon,
   ChartBarIcon,
   ChatsCircleIcon,
+  SquaresFourIcon,
   ClockCounterClockwiseIcon,
   GearSixIcon,
   HeartbeatIcon,
@@ -21,7 +22,7 @@ import { QRCodeSVG } from "qrcode.react";
 
 import { ADMIN_PASSWORD_MIN_LENGTH } from "../shared/product";
 import { ApiError, type DigitalLifeApi } from "./api";
-import { ArchivedGoals, WorkbenchManager, JoiHome, ModelSourceManager } from "./JoiHome";
+import { WorkbenchManager, JoiHome, ModelSourceManager } from "./JoiHome";
 import { PartnerPage } from "./PartnerPage";
 import { JoiSkillSettings } from "./JoiSkillSettings";
 import { AutomationPanel } from "./AutomationPanel";
@@ -30,9 +31,11 @@ import type { DiagnosticsDto, InteractionDto } from "./types";
 import type { SystemSettingsDto } from "../shared/system-settings";
 import { StatisticsPage } from "./StatisticsPage";
 import { JoiBrand } from "./JoiBrand";
+import { ConversationPage } from "./ConversationPage";
+import { ArchivePage } from "./ArchivePage";
 import { LanguageSelector } from "./LanguageSelector";
 
-type Section = "agents" | "archived" | "automations" | "joi" | "lives" | "settings" | "statistics";
+type Section = "agents" | "archived" | "automations" | "joi" | "conversations" | "lives" | "settings" | "statistics";
 type SettingsTab = "connections" | "data" | "diagnostics" | "models" | "security" | "skills";
 
 const SESSION_DISPLAY_LIMIT = 10;
@@ -49,8 +52,9 @@ const SETTINGS_TABS = [
 ] as const satisfies readonly { key: SettingsTab; label: string }[];
 
 const NAVIGATION = [
-  { icon: ChatsCircleIcon, key: "joi", label: "joi" },
-  { icon: HeartbeatIcon, key: "lives", get label() { return t("common.workbenches"); } },
+  { icon: HeartbeatIcon, key: "joi", label: "joi" },
+  { icon: ChatsCircleIcon, key: "conversations", get label() { return t("chat.title"); } },
+  { icon: SquaresFourIcon, key: "lives", get label() { return t("common.workbenches"); } },
   { icon: RobotIcon, key: "agents", get label() { return t("common.partners"); } },
   { icon: PulseIcon, key: "automations", get label() { return t("common.scheduledTasks"); } },
   { icon: GearSixIcon, key: "settings", get label() { return t("common.settings"); } },
@@ -344,6 +348,13 @@ export function SettingsPanel({ api, diagnostics, interactions = [] }: { api: Di
 export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
   useI18n();
   const [section, setSection] = useState<Section>("joi");
+  const [navigationCollapsed, setNavigationCollapsed] = useState(() => window.innerWidth <= 980);
+  useEffect(() => {
+    let narrow = window.innerWidth <= 980;
+    const resize = () => { const next = window.innerWidth <= 980;if (next !== narrow) { narrow = next;setNavigationCollapsed(next); } };
+    window.addEventListener("resize",resize);
+    return () => window.removeEventListener("resize",resize);
+  },[]);
   const [focusedGoalId, setFocusedGoalId] = useState<string | undefined>(undefined);
   const [selectedWorkbenchId, setSelectedWorkbenchId] = useState<string | undefined>();
   const [scheduledGoalId, setScheduledGoalId] = useState<string | undefined>();
@@ -381,5 +392,5 @@ export function ConsoleApp({ api }: { api: DigitalLifeApi }) {
       ? health.recovering > 0 ? t("settings.modelsPartialRecovering") : t("settings.modelsPartialUnavailable")
       : health.recovering > 0 ? t("settings.modelsRecovering") : t("settings.modelsUnavailable");
   useEffect(() => { if (contentRef.current !== null) contentRef.current.scrollTop = 0; }, [section, selectedWorkbenchId]);
-  return <div className="app-shell"><aside className="sidebar"><JoiBrand /><nav aria-label={t("settings.mainNavigation")}>{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} onClick={() => { if (key === "lives") setSelectedWorkbenchId(undefined); if (key === "automations") setScheduledGoalId(undefined); setFocusedGoalId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><footer>{streamState === "reconnecting" ? <div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={t("settings.youCanStillUseThisPageAndRefreshStatus")}>{t("settings.statusUpdatesDisconnected")}</span></div> : null}{streamState === "reconnecting" ? <button aria-label={t("settings.reconnectStatusUpdates")} className="icon-button stream-retry" onClick={reconnectStream} title={t("settings.reconnectStatusUpdates")} type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}{streamState !== "reconnecting" && modelWarning !== undefined ? <button aria-label={modelWarning} aria-live="polite" className="model-health-status" onClick={() => setSection("settings")} title={`${modelWarning}: ${t("settings.openModelSettings")}`} type="button"><WarningCircleIcon aria-hidden /><span>{modelWarning}</span></button> : null}<button aria-label={t("settings.signOut")} className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">{t("onboarding.tryAgain")}</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} {...(focusedGoalId === undefined ? {} : { focusGoalId: focusedGoalId })} onNavigate={go} onScheduleGoal={(goalId) => { setScheduledGoalId(goalId); setSection("automations"); }} /> : section === "lives" ? <WorkbenchManager api={api} {...(selectedWorkbenchId === undefined ? {} : { initialWorkbenchId: selectedWorkbenchId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "automations" ? <AutomationPanel api={api} {...(scheduledGoalId === undefined ? {} : { initialGoalId: scheduledGoalId })} onOpenJoi={() => setSection("joi")} /> : section === "statistics" ? <StatisticsPage api={api} onOpenGoal={(goalId) => { setFocusedGoalId(goalId); setSection("joi"); }} /> : section === "archived" ? <ArchivedGoals api={api} onContinued={(goalId) => { setFocusedGoalId(goalId); setSection("joi"); }} /> : <SettingsPanel api={api} diagnostics={null} interactions={interactions} />}</main></div>;
+  return <div className={`app-shell ${navigationCollapsed ? "navigation-collapsed" : "navigation-expanded"}`}><aside className="sidebar"><JoiBrand /><nav aria-label={t("settings.mainNavigation")} id="primary-navigation">{NAVIGATION.map(({ icon: Icon, key, label }) => <button aria-current={section === key ? "page" : undefined} key={key} title={label} onClick={() => { if (key === "lives") setSelectedWorkbenchId(undefined); if (key === "automations") setScheduledGoalId(undefined); setFocusedGoalId(undefined); setSection(key); }} type="button"><Icon aria-hidden /><span>{label}</span></button>)}</nav><button aria-controls="primary-navigation" aria-expanded={!navigationCollapsed} aria-label={t(navigationCollapsed ? "chat.expandNavigation" : "chat.collapseNavigation")} className="navigation-toggle" onClick={() => setNavigationCollapsed(value => !value)} title={t(navigationCollapsed ? "chat.expandNavigation" : "chat.collapseNavigation")} type="button"><span aria-hidden>{navigationCollapsed ? ">>>" : "<<<"}</span></button><footer>{streamState === "reconnecting" ? <div className="stream-status"><span className={`stream-indicator ${streamState}`} /><span title={t("settings.youCanStillUseThisPageAndRefreshStatus")}>{t("settings.statusUpdatesDisconnected")}</span></div> : null}{streamState === "reconnecting" ? <button aria-label={t("settings.reconnectStatusUpdates")} className="icon-button stream-retry" onClick={reconnectStream} title={t("settings.reconnectStatusUpdates")} type="button"><ArrowClockwiseIcon aria-hidden /></button> : null}{streamState !== "reconnecting" && modelWarning !== undefined ? <button aria-label={modelWarning} aria-live="polite" className="model-health-status" onClick={() => setSection("settings")} title={`${modelWarning}: ${t("settings.openModelSettings")}`} type="button"><WarningCircleIcon aria-hidden /><span>{modelWarning}</span></button> : null}<button aria-label={t("settings.signOut")} className="icon-button" onClick={() => void api.logout().finally(() => window.location.reload())} type="button"><SignOutIcon /></button></footer></aside><main className="console-main" ref={contentRef}>{error === null ? null : <Notice tone="danger"><WarningCircleIcon aria-hidden />{error}<button className="button quiet" onClick={() => void load()} type="button">{t("onboarding.tryAgain")}</button></Notice>}{loading ? <LoadingPage /> : section === "joi" ? <JoiHome api={api} {...(focusedGoalId === undefined ? {} : { focusGoalId: focusedGoalId })} onNavigate={go} onScheduleGoal={(goalId) => { setScheduledGoalId(goalId); setSection("automations"); }} /> : section === "conversations" ? <ConversationPage api={api} onSettings={() => setSection("settings")} /> : section === "lives" ? <WorkbenchManager api={api} {...(selectedWorkbenchId === undefined ? {} : { initialWorkbenchId: selectedWorkbenchId })} /> : section === "agents" ? <PartnerPage api={api} onManageProviders={() => setSection("settings")} tab={partnersTab} onTabChange={setPartnersTab} /> : section === "automations" ? <AutomationPanel api={api} {...(scheduledGoalId === undefined ? {} : { initialGoalId: scheduledGoalId })} onOpenJoi={() => setSection("joi")} /> : section === "statistics" ? <StatisticsPage api={api} onOpenGoal={(goalId) => { setFocusedGoalId(goalId); setSection("joi"); }} /> : section === "archived" ? <ArchivePage api={api} onContinued={(goalId) => { setFocusedGoalId(goalId); setSection("joi"); }} /> : <SettingsPanel api={api} diagnostics={null} interactions={interactions} />}</main></div>;
 }

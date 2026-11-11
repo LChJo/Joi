@@ -1,6 +1,7 @@
 /* Provider doubles return deterministic promises. */
 /* eslint-disable @typescript-eslint/require-await */
-import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxToolCall, } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { createPiContextManager } from "../../src/main/infrastructure/pi/pi-context-manager.js";
@@ -8,6 +9,7 @@ import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasonin
 import type { JoiReasoningSessionSnapshot } from "../../src/main/application/ports/primary-reasoning-runtime.js";
 import { boundRequestByChars } from "../../src/main/infrastructure/pi/pi-model-budget.js";
 import { createContextHistoryTool } from "../../src/main/infrastructure/pi/pi-history-tools.js";
+import { transcriptFingerprint } from "../../src/main/infrastructure/pi/pi-compaction.js";
 
 function fixture(provider: string) {
   const faux = fauxProvider({ provider });
@@ -22,6 +24,69 @@ function history(): AgentMessage[] {
 }
 
 describe("AC-43/48/53/67 context soft budget", () => {
+  it("CHAT-20 re-evaluates an in-place source edit and keeps the outgoing view within budget",async () => {
+    const f = fixture("pi-mutated-history");vi.spyOn(f.models,"completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("SUMMARY")]));
+    const mutable = fauxAssistantMessage([fauxText("small")]);
+    const messages: AgentMessage[] = [{ role: "user",content: "TASK",timestamp: 0 },mutable,fauxAssistantMessage([fauxText("Latest fact")])];
+    const manager = createPiContextManager({ ...f,messagesMaxChars: 55_000,thinkingLevel: "high" });await manager.transformContext(messages);
+    mutable.content = [fauxText("SOURCE_END".padStart(70_000,"中"))];
+    expect(JSON.stringify(await manager.transformContext(messages)).length).toBeLessThanOrEqual(55_000);
+    expect(JSON.stringify(messages).includes("SOURCE_END")).toBe(true);
+  });
+  it("CHAT-20 does not count cancellation as failure and resets restored coverage after a model change",async () => {
+    const f = fixture("pi-cancel-reset"),controller = new AbortController();
+    const summary = vi.spyOn(f.models,"completeSimple").mockImplementationOnce(() => { controller.abort();return Promise.resolve(fauxAssistantMessage([fauxText("cancelled")])); })
+      .mockResolvedValue(fauxAssistantMessage([fauxText("VALID_SUMMARY")]));
+    const messages = history(),manager = createPiContextManager({ ...f,messagesMaxChars: 55_000,thinkingLevel: "high" });
+    await manager.transformContext(messages,controller.signal);expect(manager.checkpoint()).toBeUndefined();
+    await manager.transformContext(messages);expect(summary).toHaveBeenCalledTimes(2);
+    const checkpoint = manager.checkpoint();if (checkpoint === undefined) throw new Error("Missing checkpoint");
+    const changed = createPiContextManager({ ...f,model: { ...f.model,contextWindow: 1_000_000 },restored: checkpoint,messagesMaxChars: 55_000,thinkingLevel: "high" });
+    await changed.transformContext(messages);expect(changed.checkpoint()?.count).toBe(1);expect(summary).toHaveBeenCalledTimes(3);
+    messages[1] = { role: "user",content: "ROLLED_BACK_SOURCE".padEnd(4000,"x"),timestamp: 1 };
+    summary.mockRejectedValueOnce(new Error("synthetic_failure"));await changed.transformContext(messages);
+    expect(changed.checkpoint()).toBeUndefined();expect(JSON.stringify(messages)).toContain("ROLLED_BACK_SOURCE");
+  });
+  it("CHAT-20 keeps the previous checkpoint and its full source when the next summary expands history",async () => {
+    const f = fixture("pi-expansion-keeps-checkpoint");
+    vi.spyOn(f.models,"completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("summary ".repeat(3900))]));
+    const messages: AgentMessage[] = [{ role: "user",content: "INITIAL_TASK",timestamp: 0 },...Array.from({ length: 8 },() => fauxAssistantMessage([fauxText("evidence".padEnd(4000,"x"))]))];
+    const previous = { cut: 8,summary: "PREVIOUS_CHECKPOINT",count: 2,compactedMessages: 7,lastCompactedAt: "2026-11-11T00:00:00Z",messagesBefore: 9,tokensBefore: 8000,preservedIndices: [0],sourceFingerprint: transcriptFingerprint(messages,8) };
+    messages.push({ role: "user",content: "CURRENT_TASK".padEnd(24_000,"中"),timestamp: 1 },...Array.from({ length: 3 },() => fauxAssistantMessage([fauxText("new evidence".padEnd(11_000,"中"))])));
+    const original = JSON.stringify(messages);
+    const manager = createPiContextManager({ ...f,messagesMaxChars: 55_000,thinkingLevel: "high",restored: previous });
+    const request = await manager.transformContext(messages);
+    expect(manager.checkpoint()).toEqual(previous);expect(JSON.stringify(request)).toContain("PREVIOUS_CHECKPOINT");
+    expect(JSON.stringify(request).length).toBeLessThanOrEqual(55_000);expect(JSON.stringify(messages)).toBe(original);
+  });
+  it("CHAT-20 backs off the same failed candidate for 30 seconds and immediately evaluates changed source", async () => {
+    const f = fixture("pi-failure-backoff");
+    const summary = vi.spyOn(f.models, "completeSimple").mockRejectedValue(new Error("synthetic_failure"));
+    let now = 0;
+    const manager = createPiContextManager({ ...f, messagesMaxChars: 55_000, thinkingLevel: "high", now: () => now });
+    const messages = history();
+    await manager.transformContext(messages);await manager.transformContext(messages);await manager.transformContext(messages);
+    expect(summary).toHaveBeenCalledTimes(1);
+    now = 30_000;await manager.transformContext(messages);
+    expect(summary).toHaveBeenCalledTimes(2);
+    messages[1] = { role: "user",content: "CHANGED_CANDIDATE".padEnd(4000,"z"),timestamp: 1 };
+    await manager.transformContext(messages);
+    expect(summary).toHaveBeenCalledTimes(3);
+  });
+  it("CHAT-20 rejects an expanding summary and bounds the final serialized view including its notice", async () => {
+    const f = fixture("pi-expanding-summary");
+    vi.spyOn(f.models,"completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("摘要".repeat(15_900))]));
+    const messages: AgentMessage[] = [{ role: "user",content: "TASK_ANCHOR".padEnd(24_000,"中"),timestamp: 0 },
+      ...Array.from({ length: 3 },(_,i) => fauxAssistantMessage([fauxText(`EVIDENCE_${String(i)}`.padEnd(11_000,"中"))]))];
+    const original = JSON.stringify(messages);
+    const manager = createPiContextManager({ ...f,messagesMaxChars: 55_000,thinkingLevel: "high" });
+    const request = await manager.transformContext(messages);
+    expect(manager.checkpoint()).toBeUndefined();
+    expect(JSON.stringify(request).length).toBeLessThanOrEqual(55_000);
+    expect(JSON.stringify(request)).toContain("TASK_ANCHOR");
+    expect(JSON.stringify(request)).toContain("joi context notice");
+    expect(JSON.stringify(messages)).toBe(original);
+  });
   it("does not summarize a short Pi history because its fixed system context exceeds the history trigger", async () => {
     const f = fixture("pi-fixed-context");
     const summary = vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("Checkpoint")]));
@@ -98,7 +163,8 @@ describe("AC-43/48/53/67 context soft budget", () => {
     const messages: AgentMessage[] = [{ role: "user", content: "INITIAL_TASK", timestamp: 0 },
       { role: "user", content: "TASK_A", timestamp: 1 },
       ...Array.from({ length: 50 }, () => fauxAssistantMessage([fauxText("evidence".padEnd(4000, "x"))]))];
-    const manager = createPiContextManager({ ...f, messagesMaxChars: 1_000_000, thinkingLevel: "high" });
+    let now = 0;
+    const manager = createPiContextManager({ ...f, messagesMaxChars: 1_000_000, thinkingLevel: "high",now: () => now });
     await manager.transformContext(messages);
     messages.push({ role: "user", content: "TASK_B", timestamp: 2 },
       ...Array.from({ length: 50 }, () => fauxAssistantMessage([fauxText("new evidence".padEnd(4000, "y"))])));
@@ -106,6 +172,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
     const failedRequest = await manager.transformContext(messages);
     expect(JSON.stringify(failedRequest)).toContain("TASK_A");
     expect(JSON.stringify(failedRequest)).toContain("TASK_B");
+    now = 30_000;
     await manager.transformContext(messages);
     expect(JSON.stringify(summary.mock.calls.at(-1))).toContain("TASK_A");
     expect(manager.checkpoint()?.count).toBe(2);

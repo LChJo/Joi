@@ -1114,7 +1114,19 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
     --shadow-card: 0 2px 8px rgb(0 0 0 / 18%);
   }
 }
-.sidebar { position: sticky; top: 0; display: grid; grid-template-rows: auto 1fr auto; height: 100dvh; padding: 22px 12px 14px; border-right: 1px solid var(--line); background: var(--paper); }
+.sidebar { position: sticky; top: 0; display: grid; grid-template-rows: auto 1fr auto auto; height: 100dvh; padding: 22px 12px 14px; border-right: 1px solid var(--line); background: var(--paper); }
+.navigation-toggle { display:grid;place-items:center;justify-self:end;width:32px;height:28px;margin:4px 8px 8px;padding:0;border:0;border-radius:5px;background:transparent;color:var(--muted);font:12px/1 Consolas,monospace;letter-spacing:-1px;cursor:pointer; }
+.navigation-toggle:hover { background:var(--wash);color:var(--ink); }
+.navigation-toggle:focus-visible { outline:2px solid var(--forest);outline-offset:3px; }
+.app-shell.navigation-collapsed { grid-template-columns:74px minmax(0,1fr); }
+.navigation-collapsed > .sidebar { padding-inline:9px; }
+.navigation-collapsed .brand-bar { justify-content:center;padding-inline:0; }
+.navigation-collapsed .brand-bar > span:last-child,.navigation-collapsed .sidebar nav span,.navigation-collapsed .sidebar footer span:not(.stream-indicator) { position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap; }
+.navigation-collapsed .sidebar nav button,.navigation-collapsed .sidebar footer { justify-content:center; }
+.navigation-collapsed .navigation-toggle { justify-self:center;margin-inline:0; }
+.navigation-collapsed .sidebar footer { flex-wrap:wrap;padding-inline:0; }
+.navigation-collapsed .sidebar footer .icon-button { margin-left:0; }
+.navigation-collapsed .composer { left:108px; }
 .brand-bar { display: flex; align-items: center; gap: 10px; padding: 0 9px 20px; }
 .brand-bar > span:last-child { display: grid; gap: 1px; }
 .brand-bar strong { font-size: 14px; }
@@ -1330,7 +1342,8 @@ input:disabled, select:disabled { background: var(--wash); color: var(--faint); 
 
 @media (max-width: 980px) {
   .app-shell { grid-template-columns: 74px minmax(0, 1fr); }
-  .sidebar { padding-inline: 9px; }.brand-bar { justify-content: center; padding-inline: 0; }.brand-bar > span:last-child, .sidebar nav span, .sidebar footer span:not(.stream-indicator) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }.sidebar nav button { justify-content: center; }.sidebar footer { justify-content: center; }.sidebar footer .icon-button { display: none; }
+  .app-shell.navigation-expanded > .sidebar { position:fixed;left:0;width:208px;z-index:60;box-shadow:8px 0 30px rgb(20 40 28 / 12%); }
+  .app-shell.navigation-expanded > .console-main { grid-column:2;grid-row:1; }
   .console-main { padding-inline: 24px; }.composer { left: 98px; right: 24px; }.activity-layout { grid-template-columns: minmax(0, 1fr); }.activity-layout > aside { grid-row: 1; grid-template-columns: 1fr 1fr; }.life-grid { grid-template-columns: 1fr; }.empty-observatory { grid-template-columns: 120px minmax(0, 1fr); }.empty-observatory > .button, .empty-observatory > small { grid-column: 2; justify-self: start; }.memory-board { grid-template-columns: 1fr; }.memory-board section { display: grid; grid-template-columns: 160px 1fr; }.memory-board .section-heading { align-self: start; margin-right: 18px; }
 }
 

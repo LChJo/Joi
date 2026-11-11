@@ -1,4 +1,5 @@
-import { Type, type AssistantMessage } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { type AssistantMessage } from "@earendil-works/pi-ai";
 import { EvolutionModelCallError, type EvolutionModel, type EvolutionSourcePin } from "../../application/ports/evolution.js";
 import type { EvolutionModelFailure } from "../../../shared/evolution.js";
 import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.js";

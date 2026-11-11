@@ -16,7 +16,7 @@ const CONTENT_TYPES: Record<string, string> = {
 };
 
 const SECURITY_HEADERS = {
-  "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; object-src 'none'; frame-ancestors 'none'; base-uri 'none'",
+  "content-security-policy": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-src http: https:; object-src 'none'; frame-ancestors 'none'; base-uri 'none'",
   "cross-origin-opener-policy": "same-origin",
   "referrer-policy": "no-referrer",
   "x-content-type-options": "nosniff",

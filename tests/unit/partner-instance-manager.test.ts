@@ -282,6 +282,25 @@ describe("partner-instance-manager", () => {
 
     expect(engine.residentTurns[0]?.sourcePin).toEqual(engine.preflightPin);
   });
+  it("CHAT-04 rejects a settings revision changed after conversation submission before creating an instance", async () => {
+    const { engine,manager,repository } = makeManager();
+    engine.preflightPin = { sourceId: "network",sourceRevisionId: "new-source",modelId: "model",modelRevisionId: "new-model",turnId: request.actionId };
+    await expect(manager.dispatch({ request,revision,expectedSource: { sourceId: "network",sourceRevisionId: "old-source",modelRevisionId: "old-model" } }))
+      .rejects.toMatchObject({ code: "conversation_configuration_changed" });
+    expect(repository.records).toHaveLength(0);
+    expect(engine.residentTurns).toHaveLength(0);
+  });
+  it("CHAT-05 releases a stopped conversation's suspended ephemeral checkpoint without disposing an active run", async () => {
+    const { manager,repository,engine } = makeManager();
+    const record = await repository.create({ workbenchId: request.workbenchId,createdAt: "2026-11-11",engine: "pi-core",instanceId: "suspended-chat",partnerId: revision.partnerId,partnerRevisionId: revision.partnerRevisionId,sessionPolicy: "EPHEMERAL" });
+    record.status = "BUSY";
+    await manager.abandonSuspended({ workbenchId: request.workbenchId,instanceId: record.instanceId });
+    expect(record.status).toBe("BUSY");
+    record.status = "SUSPENDED";
+    await manager.abandonSuspended({ workbenchId: request.workbenchId,instanceId: record.instanceId });
+    expect(record.status).toBe("DISPOSED");
+    expect(engine.evicted).toContain(record.instanceId);
+  });
 
   it("classifies an unavailable requested instance as a safe preflight failure", async () => {
     const { diagnostics, engine, manager } = makeManager();

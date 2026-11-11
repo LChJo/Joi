@@ -5,6 +5,7 @@ import type { CodexOptions, ThreadEvent, ThreadOptions } from "@openai/codex-sdk
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { ClaudeAgentSdkPartnerEngineRuntime, type ClaudeAgentSdkSurface } from "../../src/main/infrastructure/mana/claude-agent-sdk-partner-engine-runtime.js";
 import { CodexAgentSdkPartnerEngineRuntime, nestedCodexEnvironment, type CodexAgentSdkSurface, type CodexThreadSurface } from "../../src/main/infrastructure/mana/codex-agent-sdk-partner-engine-runtime.js";
+import type { PartnerSessionState } from "../../src/main/application/ports/partner-instances.js";
 
 const request = { actionId: "action_native", workbenchId: "workbench", contextSnapshotId: "snapshot", taskProjection: "do work", workId: "work" };
 const execution = { loadForExecution: async () => ({ promptSection: "scope", sanitized: {}, workspacePath: "missing-test-workspace" }) };
@@ -32,6 +33,65 @@ function revision(engine: "claude-code" | "codex") {
 }
 
 describe("official native Agent SDK adapters", () => {
+  it.each(["codex","claude-code"] as const)("CHAT-19 retains %s tool facts and native identity after failure for an explicit next message",async engine => {
+    let snapshot: PartnerSessionState | undefined;let resumed: string | undefined;let launches = 0;
+    const events: unknown[] = [];
+    const sdkCodex: CodexAgentSdkSurface = { create: () => {
+      const thread: CodexThreadSurface = { id: "durable-thread",runStreamed: () => Promise.resolve({ events: (async function* () {
+        launches++;
+        yield { type: "thread.started",thread_id: "durable-thread" } as ThreadEvent;
+        if (launches === 1) {
+          yield { type: "item.started",item: { id: "tool",type: "command_execution",command: "read fixture",aggregated_output: "",status: "in_progress" } } as ThreadEvent;
+          yield { type: "item.completed",item: { id: "tool",type: "command_execution",command: "read fixture",aggregated_output: "PRIVATE_COMPLETE_TOOL_RESULT",exit_code: 0,status: "completed" } } as ThreadEvent;
+          yield { type: "turn.failed",error: { message: "synthetic_failure" } } as ThreadEvent;
+        } else {
+          yield { type: "item.completed",item: { id: "answer",type: "agent_message",text: "Continued" } } as ThreadEvent;
+          yield { type: "turn.completed",usage: { input_tokens: 1,output_tokens: 1,cached_input_tokens: 0 } } as ThreadEvent;
+        }
+      })() }) };
+      return { startThread: () => thread,resumeThread: id => { resumed = id;return thread; } };
+    } };
+    const sdkClaude: ClaudeAgentSdkSurface = { query: input => (async function* () {
+      resumed = input.options?.resume;launches++;
+      yield { type: "system",subtype: "init",session_id: "durable-session" } as SDKMessage;
+      if (launches === 1) {
+        yield { type: "assistant",session_id: "durable-session",message: { role: "assistant",content: [{ type: "text",text: "Checked fixture" },{ type: "tool_use",id: "tool",name: "Read",input: { path: "fixture" } }] } } as SDKMessage;
+        yield { type: "user",session_id: "durable-session",message: { role: "user",content: [{ type: "tool_result",tool_use_id: "tool",content: "PRIVATE_COMPLETE_TOOL_RESULT",is_error: false }] } } as SDKMessage;
+        yield { type: "result",subtype: "error_during_execution",is_error: true,session_id: "durable-session" } as SDKMessage;
+      } else yield { type: "result",subtype: "success",is_error: false,result: "Continued",session_id: "durable-session" } as SDKMessage;
+    })() };
+    const make = () => engine === "codex" ? new CodexAgentSdkPartnerEngineRuntime({ contexts: execution,prompts,resolveExecutable: resolvedCodex,sdk: sdkCodex })
+      : new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution,prompts,resolveExecutable: resolvedClaude,sdk: sdkClaude });
+    const input = { instanceId: "first",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision: revision(engine),restoredMessages: null,
+      saveSession: async (state: PartnerSessionState) => { snapshot = structuredClone(state); },onEvent: async (event: unknown) => { events.push(event); },
+      request: { ...request,conversationId: "chat" } };
+    await expect(make().runResidentTurn(input)).rejects.toHaveProperty("partnerRunFailure");
+    expect(JSON.stringify(snapshot?.messages).includes("PRIVATE_COMPLETE_TOOL_RESULT")).toBe(true);
+    expect(JSON.stringify(events).includes("PRIVATE_COMPLETE_TOOL_RESULT")).toBe(false);
+    const stored = snapshot;if (stored?.externalSessionRef === undefined) throw new Error("Missing native session");
+    await make().runResidentTurn({ ...input,instanceId: "second",sessionState: stored,externalSessionRef: stored.externalSessionRef,request: { ...request,actionId: "next",taskProjection: "Continue",conversationId: "chat" } });
+    expect(resumed).toBe(engine === "codex" ? "durable-thread" : "durable-session");expect(launches).toBe(2);
+  });
+  it.each(["codex", "claude-code"] as const)("CHAT-18 delivers complete mandatory context to the %s SDK", async engine => {
+    const requiredContext = `PERSONA\n${"中文历史要求".repeat(9000)}\nATTACHMENT_REFERENCE_END`;
+    let actual: unknown;
+    if (engine === "codex") {
+      const thread: CodexThreadSurface = { id: "context-thread", runStreamed: async () => ({ events: (async function* () {
+        yield { type: "item.completed", item: { id: "answer", type: "agent_message", text: "done" } } as ThreadEvent;
+        yield { type: "turn.completed", usage: { input_tokens: 1, output_tokens: 1, cached_input_tokens: 0 } } as ThreadEvent;
+      })() }) };
+      const runtime = new CodexAgentSdkPartnerEngineRuntime({ contexts: execution, prompts, resolveExecutable: resolvedCodex,
+        sdk: { create: options => { actual = options.config?.developer_instructions; return { startThread: () => thread, resumeThread: () => thread }; } } });
+      await runtime.runEphemeral({ ...request, requiredContext }, revision(engine), { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [] });
+    } else {
+      const runtime = new ClaudeAgentSdkPartnerEngineRuntime({ contexts: execution, prompts, resolveExecutable: resolvedClaude,
+        sdk: { query: input => { actual = input.options?.systemPrompt; return (async function* () {
+          yield { type: "result", subtype: "success", is_error: false, result: "done", session_id: "context-session" } as SDKMessage;
+        })(); } } });
+      await runtime.runEphemeral({ ...request, requiredContext }, revision(engine), { knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [] });
+    }
+    expect(actual).toEqual(expect.stringContaining(requiredContext));
+  });
   it.each(["corrected", "invalid", "read-ceiling"])("AC-WR-04 bounds protocol correction and honors %s", async scenario => {
     let calls = 0;
     const thread: CodexThreadSurface = { id: "protocol-thread", runStreamed: async () => ({ events: (async function* () {

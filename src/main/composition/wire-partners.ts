@@ -39,8 +39,7 @@ export function wirePartners(input: {
     repository: persistence.partnerRegistryRepository,
     skills: partnerSkillCatalog,
   });
-  const partnerEngines = new Map<string, PartnerEngineRuntime>([
-    ["pi-core", new PiPartnerEngineRuntime({
+  const piRuntime = new PiPartnerEngineRuntime({
       usage: modelSourceStack.statistics,
       diagnostics,
       contexts: persistence.workbenchContextRepository,
@@ -48,7 +47,9 @@ export function wirePartners(input: {
       resolver: modelSourceStack.configuredModelResolver,
       sources: modelSourceStack.reasoningSources,
       tools: new BuiltinPiCodingToolFactory(),
-    })],
+    });
+  const partnerEngines = new Map<string, PartnerEngineRuntime>([
+    ["pi-core", piRuntime],
     ["claude-code", new ClaudeAgentSdkPartnerEngineRuntime({
       evidenceDirectory: path.join(input.userDataDirectory, "task-inputs"),
       usage: modelSourceStack.statistics,
@@ -69,6 +70,7 @@ export function wirePartners(input: {
   const scenarioPacks = new ScenarioPackService({ clock, ids, partners, repository: persistence.scenarioPackRepository, skills: partnerSkillCatalog });
   const engineCatalog = new PartnerEngineCatalog(partnerEngines);
   return {
+    piRuntime,
     engineCatalog,
     partnerInstances: new PartnerInstanceManager({
       clock,

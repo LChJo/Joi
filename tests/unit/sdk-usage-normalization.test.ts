@@ -1,5 +1,6 @@
 import { trackPiModels } from "../../src/main/infrastructure/pi/pi-usage.js";
-import { BACKGROUND_CONTEXT, generateSummary, type AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import { summarizeSegment } from "../../src/main/infrastructure/pi/pi-compaction.js";
 import { createModels, fauxAssistantMessage, fauxProvider } from "@earendil-works/pi-ai";
 
 import type { UsageContext, UsageObservation, UsageRecorder, UsageSession } from "../../src/main/application/ports/usage.js";
@@ -104,7 +105,7 @@ describe("Pi usage model wrapper", () => {
     const tracked = trackPiModels(models, usage, () => ({ engine: "pi", purpose: "summary", workbenchId: "wb-compact" }));
     const messages: AgentMessage[] = [{ role: "user", content: "old context", timestamp: 1 }];
 
-    const result = await generateSummary(messages, tracked, faux.getModel(), 512, undefined, undefined, undefined, undefined, undefined, BACKGROUND_CONTEXT);
+    const result = await summarizeSegment({ segment: messages,models: tracked,model: faux.getModel(),reserveTokens: 512,thinkingLevel: "off" });
 
     expect(result.ok).toBe(true);
     expect(usage.sessions).toHaveLength(1);

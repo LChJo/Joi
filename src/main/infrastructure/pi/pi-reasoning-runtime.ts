@@ -5,12 +5,12 @@ import { DomainError } from "../../domain/errors.js";
 import { normalizeContext, type Api, type Context, type ImageContent, type Message, type Model, type ModelThinkingLevel, type Models } from "@earendil-works/pi-ai";
 import { clampMaxTokensToContext } from "@earendil-works/pi-ai/api/simple-options";
 
-import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, summarizeSegment, taskAnchorIndices, transcriptFingerprint } from "./pi-compaction.js";
+import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, summarizeSegment, taskAnchorIndices, transcriptFingerprint, SummaryRetryGuard, summaryCandidateKey, summarySavings } from "./pi-compaction.js";
 import { parseGoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
 import { createPiContextManager, type PiContextManager } from "./pi-context-manager.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
-import { boundBackgroundSections, boundRequestByChars, leadingSystemMessage, modelContextMaxChars, modelRequestBudget } from "./pi-model-budget.js";
+import { assertFinalRequestCapacity, boundBackgroundSections, boundRequestByChars, leadingSystemMessage, modelContextMaxChars, modelRequestBudget } from "./pi-model-budget.js";
 import type { UsageRecorder, UsageContext } from "../../application/ports/usage.js";
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import { GOAL_REQUIREMENTS_MAX_CHARS } from "../../application/ports/goal-requirements.js";
@@ -96,9 +96,12 @@ interface PiReasoningRuntimeOptions {
 }
 
 interface SessionRuntime {
+  summaryRetry: SummaryRetryGuard;
+  summaryController?: AbortController | undefined;
   cancelled: boolean;
   dispatchArgumentFailures: number;
   dispatchAcceptanceCalls: Set<string>;
+  validatedToolCalls: Set<string>;
   requirementsError: DomainError | undefined;
   agent: Agent;
   current: StartReasoningTurnInput | undefined;
@@ -305,6 +308,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     session.terminatedByTool = false;
     session.dispatchArgumentFailures = 0;
     session.dispatchAcceptanceCalls.clear();
+    session.validatedToolCalls.clear();
     session.requirementsError = undefined;
     session.metadata = {
       workbenchId: input.workbenchId,
@@ -396,6 +400,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const session = this.#sessions.get(sessionId);
     if (session !== undefined) {
       session.cancelled = true;
+      session.summaryController?.abort();
+      session.summaryRetry.reset();
       session.agent.abort();
     }
   }
@@ -448,6 +454,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // would leave the next compaction summarising a transcript that is no longer there.
     session.metadata = { ...session.metadata, archivedMessages: point.archivedMessages, compaction: point.compaction };
     session.context = undefined;
+    session.summaryRetry.reset();
     return true;
   }
 
@@ -480,9 +487,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     messages: AgentMessage[],
   ): SessionRuntime {
     const agent = new Agent({
-      beforeToolCall: async ({ toolCall }) => allowedToolNames.has(toolCall.name)
-        ? undefined
-        : { block: true, reason: "tool_not_allowed" },
+      beforeToolCall: async ({ toolCall }) => {
+        // Pi invokes this barrier after argument preparation and validation, before execute.
+        runtime.validatedToolCalls.add(toolCall.id);
+        return allowedToolNames.has(toolCall.name) ? undefined : { block: true, reason: "tool_not_allowed" };
+      },
       followUpMode: "one-at-a-time",
       initialState: {
         messages,
@@ -528,8 +537,8 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         return this.#boundRequest(messages, runtime.current, runtime.agent.state.tools);
       },
     });
-    const runtime: SessionRuntime = { agent, cancelled: false, context: undefined, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false, requirementsError: undefined,
-      dispatchArgumentFailures: 0, dispatchAcceptanceCalls: new Set() };
+    const runtime: SessionRuntime = { agent, summaryRetry: new SummaryRetryGuard(),cancelled: false, context: undefined, current: undefined, delivered: { tool: false }, metadata, rollbackPoint: undefined, terminatedByTool: false, requirementsError: undefined,
+      dispatchArgumentFailures: 0, dispatchAcceptanceCalls: new Set(), validatedToolCalls: new Set() };
     agent.subscribe(async (event) => {
       this.#emit(runtime, event);
     });
@@ -539,7 +548,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       const current = runtime.current;
       if (current === undefined) return undefined;
       if (current.refreshRequiredContext !== undefined) current.requiredContext = await current.refreshRequiredContext();
-      return { context: { ...context, messages: withRequestPrompt(context.messages, this.#requestPrompt(current, context.messages, runtime.agent.state.tools)) } };
+      return { context: { ...context, messages: withRequestPrompt(context.messages, this.#requestPrompt(current, context.messages, runtime.agent.state.tools),runtime.agent.state.tools) } };
     };
     this.#sessions.set(metadata.sessionId, runtime);
     return runtime;
@@ -552,7 +561,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     const required = input.requiredContext ?? "";
     if (required.length > (knownWindow ? 60_000 : 24_000)) this.#requirementsCapacityError(input);
     const base = required === "" ? input.systemPrompt : `${input.systemPrompt}\n\n${required}`;
-    const history = withRequestPrompt(messages, base);
+    const history = withRequestPrompt(messages, base,tools);
     const requestMessages: AgentMessage[] = pendingPrompt
       ? [...history, { role: "user", content: [
         { type: "text", text: input.prompt },
@@ -630,8 +639,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       ...(leadingSystemMessage(messages) === undefined ? [] : [0]),
       messages.findIndex(message => roleOf(message) === "user"),
       messages.findLastIndex(message => roleOf(message) === "user"),
+      ...messages.map((message,index) => isCheckpointMessage(message) ? index : -1).filter(index => index >= 0),
     ]);
-    let latestExchange = messages.length - 1;
+    let latestExchange = messages.findLastIndex(message => roleOf(message) === "toolResult");
+    if (latestExchange < 0) latestExchange = messages.length - 1;
     while (latestExchange > 0 && roleOf(messages[latestExchange]) === "toolResult") latestExchange -= 1;
     // Count retained anchors and the suffix together without serializing the whole history at each cut.
     for (let start = 1; start <= latestExchange; start += 1) {
@@ -660,12 +671,14 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
    */
   #boundRequest(messages: readonly AgentMessage[], current?: StartReasoningTurnInput, tools: NonNullable<Context["tools"]> = []): AgentMessage[] {
     const prompt = current === undefined ? undefined : this.#requestPrompt(current, messages, tools);
-    const requestMessages = prompt === undefined ? messages : withRequestPrompt(messages, prompt);
+    const requestMessages = prompt === undefined ? messages : withRequestPrompt(messages, prompt,tools);
     const usable = requestMessages.filter((message) => !isEmptyAssistantMessage(message));
     const bounded = current?.requiredContext === undefined ? boundRequestByChars(usable, modelContextMaxChars(this.#model))
       : this.#boundRequiredHistory(current, usable, tools);
     const omitted = usable.length - bounded.length;
     const finish = (request: AgentMessage[]): AgentMessage[] => {
+      try { assertFinalRequestCapacity(request,tools,this.#maxRequestChars()); }
+      catch (error) { if (current !== undefined) return this.#requirementsCapacityError(current);throw error; }
       const contextChars = JSON.stringify(request).length;
       emitRuntimeDiagnostic(this.#diagnostics, "joi.context.request", {
         runtime: "joi", contextChars,
@@ -825,6 +838,11 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         const anchors = [...new Set([tasks[0], tasks.at(-1)])].filter((message): message is AgentMessage => message !== undefined && prefix.includes(message));
         const withoutCheckpoint = prefix.filter(message => !isCheckpointMessage(message) && !anchors.includes(message));
         if (withoutCheckpoint.length === 0) return;
+        const candidateKey = summaryCandidateKey([withoutCheckpoint,previous,this.#model.id,this.#model.provider,runtime.metadata.modelRevisionId,runtime.metadata.sourceRevisionId,this.#maxRequestChars(),this.#thinkingLevel,this.#compaction]);
+        const retryAfterMs = runtime.summaryRetry.remaining(candidateKey);
+        if (retryAfterMs > 0) { emitRuntimeDiagnostic(this.#diagnostics,"joi.partner.context_summary_backoff",{ retryAfterMs });return; }
+        if (runtime.cancelled) { runtime.summaryRetry.reset();return; }
+        const summaryController = new AbortController();runtime.summaryController = summaryController;
         let generatedSummary: string | undefined;
         const startedAt = Date.now();
         if (withoutCheckpoint.length > 0) {
@@ -836,6 +854,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
               reserveTokens: Math.max(256, Math.ceil(this.#compaction.maxSummaryCharacters / 4)),
               segment: withoutCheckpoint,
               thinkingLevel: this.#thinkingLevel,
+              signal: summaryController.signal,
             });
             if (generated.ok && generated.summary.length <= this.#compaction.maxSummaryCharacters) generatedSummary = generated.summary;
             else emitRuntimeDiagnostic(this.#diagnostics, "joi.partner.context_summary_failed", {
@@ -845,10 +864,19 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
             emitRuntimeDiagnostic(this.#diagnostics, "joi.partner.context_summary_failed", { reasonCode: "summary_threw" });
           }
         }
+        runtime.summaryController = undefined;
+        if (summaryController.signal.aborted) { runtime.summaryRetry.reset();return; }
         // Failed or oversized summaries cannot establish coverage or replace the last checkpoint.
-        if (generatedSummary === undefined) return;
+        if (generatedSummary === undefined) { runtime.summaryRetry.failed(candidateKey);return; }
         const summary = generatedSummary;
         const lastCompactedAt = new Date().toISOString();
+        const replacement = [...prompt,checkpointMessage(summary,Date.parse(lastCompactedAt)),...anchors,...currentMessages.slice(firstKeptIndex)];
+        const savings = summarySavings(currentMessages,replacement);
+        if (savings.savedChars <= 0) {
+          runtime.summaryRetry.failed(candidateKey);
+          emitRuntimeDiagnostic(this.#diagnostics,"joi.partner.context_summary_rejected",{ ...savings,reasonCode: "summary_no_savings" });return;
+        }
+        runtime.summaryRetry.reset();
         runtime.metadata.archivedMessages = [...(runtime.metadata.archivedMessages ?? []), ...withoutCheckpoint];
         runtime.metadata.compaction = {
           compactedMessages: (previous?.compactedMessages ?? 0) + withoutCheckpoint.length,
@@ -860,12 +888,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
             coveredTo: runtime.metadata.archivedMessages.length, transcriptId: runtime.metadata.sessionId,
           },
         };
-        runtime.agent.state.messages = [
-          ...prompt,
-          checkpointMessage(summary, Date.parse(lastCompactedAt)),
-          ...anchors,
-          ...currentMessages.slice(firstKeptIndex),
-        ];
+        runtime.agent.state.messages = replacement;
         runtime.context = undefined;
         emitRuntimeDiagnostic(this.#diagnostics, "joi.partner.context_compacted", {
           compactedMessages: runtime.metadata.compaction.compactedMessages,
@@ -896,7 +919,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
     // been folded into a leading system message; sizing against a raw `Context` would price a
     // request shape that is never actually sent.
     const context = normalizeContext({
-      messages: (request.systemPrompt === undefined ? [...messages] : withRequestPrompt(messages, request.systemPrompt)) as Message[],
+      messages: (request.systemPrompt === undefined ? [...messages] : withRequestPrompt(messages, request.systemPrompt,request.tools)) as Message[],
       ...(request.systemPrompt === undefined ? {} : { systemPrompt: request.systemPrompt }),
       ...(request.tools === undefined ? {} : { tools: request.tools }),
     });
@@ -971,6 +994,10 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
       mapped = { type: "tool_started", toolCallId: event.toolCallId, toolName: event.toolName, turnId: active.turnId };
     } else if (event.type === "tool_execution_end") {
       const isError = event.isError || (event.result as { isError?: unknown } | undefined)?.isError === true;
+      // A known tool without executable preparation cannot execute before the validation barrier.
+      // Error text and model-provided content cannot establish this proof.
+      const rejectedBeforeExecution = isError && !runtime.validatedToolCalls.has(event.toolCallId)
+        && runtime.agent.state.tools.some(tool => tool.name === event.toolName && tool.prepareArguments === undefined);
       const reasonCode = safeToolResultReasonCode(event.result)
         ?? (isError && runtime.dispatchAcceptanceCalls.has(event.toolCallId) ? "work_acceptance_checks_required" : undefined);
       runtime.dispatchAcceptanceCalls.delete(event.toolCallId);
@@ -983,7 +1010,7 @@ export class PiReasoningRuntime implements PrimaryReasoningRuntime {
         ...(outcome === undefined ? {} : { outcome }),
         ...(synthesisState === undefined ? {} : { synthesisState }),
         ...(reasonCode === undefined && isError ? { reasonCode: "tool_execution_error" } : reasonCode === undefined ? {} : { reasonCode }),
-        ...((event.toolName === "work_dispatch" || isError && event.toolName === "goal_resume"
+        ...(rejectedBeforeExecution || (event.toolName === "work_dispatch" || isError && event.toolName === "goal_resume"
           && (reasonCode === "goal_resume_not_allowed" || reasonCode === "goal_resume_conflict"))
           && (event.result as { details?: { replaySafeRejection?: unknown } } | undefined)?.details?.replaySafeRejection === true
           ? { replaySafeRejection: true as const } : {}),

@@ -1,7 +1,7 @@
 /* Test doubles implement asynchronous Pi contracts with deterministic immediate values. */
 /* eslint-disable @typescript-eslint/require-await */
+import { Type } from "typebox";
 import {
-  Type,
   createModels,
   fauxAssistantMessage,
   fauxProvider,
@@ -30,6 +30,7 @@ import { GOAL_REQUIREMENTS_MAX_CHARS } from "../../src/main/application/ports/go
 import { createPiSourceProvider } from "../../src/main/infrastructure/pi/source-provider-factory.js";
 import { ConfiguredPiReasoningRuntime } from "../../src/main/infrastructure/pi/configured-pi-reasoning-runtime.js";
 import { JoiSkillRuntime } from "../../src/main/infrastructure/pi/joi-skill-runtime.js";
+import { createRequire } from "node:module";
 
 class MemorySessionStore implements ReasoningSessionStore {
   readonly snapshots = new Map<string, JoiReasoningSessionSnapshot>();
@@ -59,6 +60,92 @@ class MemoryCredentialStore implements CredentialStore {
 }
 
 describe("Pi reasoning runtime contract", () => {
+  it("CHAT-21 ships the verified Pi and pi-subagents compatibility versions", () => {
+    const pkg = createRequire(import.meta.url)("../../package.json") as { dependencies: Record<string,string> };
+    expect([pkg.dependencies["@earendil-works/pi-agent-core"],pkg.dependencies["@earendil-works/pi-ai"],pkg.dependencies["@earendil-works/pi-coding-agent"],pkg.dependencies["pi-subagents"]]).toEqual(["1.5.2","1.5.2","1.5.2","0.88.0"]);
+  });
+  it.each(["harness_record_decision", "work_dispatch"])("proves a schema-rejected %s never passed the execution barrier", async name => {
+    const faux = fauxProvider({ provider: `schema-rejection-${name}` });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall(name, {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Synthetic unfinished review")]),
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "Synthetic" }], details: {} }));
+    const events: PrimaryReasoningEvent[] = [];
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: new MemorySessionStore(), thinkingLevel: "off",
+      tools: [{ name, label: "Synthetic", description: "Synthetic", parameters: Type.Object({ summary: Type.String() }), execute }],
+    });
+    await runtime.startTurn({ inputId: "joi_harness_review:goal:g:r1", workbenchId: "wb", prompt: "Synthetic", sessionId: "schema-rejection",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn",
+      onEvent: event => events.push(event) });
+    expect(execute).not.toHaveBeenCalled();
+    expect(events).toContainEqual(expect.objectContaining({ type: "tool_finished", toolName: name, isError: true, replaySafeRejection: true }));
+  });
+
+  it("does not infer rejection proof from a handler's validation-looking error", async () => {
+    const faux = fauxProvider({ provider: "entered-handler-error" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("harness_record_decision", { summary: "Synthetic" })], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Synthetic unfinished review")]),
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const execute = vi.fn(async () => { throw new Error('Validation failed for tool "harness_record_decision"'); });
+    const events: PrimaryReasoningEvent[] = [];
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: new MemorySessionStore(), thinkingLevel: "off",
+      tools: [{ name: "harness_record_decision", label: "Synthetic", description: "Synthetic", parameters: Type.Object({ summary: Type.String() }), execute }],
+    });
+    await runtime.startTurn({ inputId: "joi_harness_review:goal:g:r1", workbenchId: "wb", prompt: "Synthetic", sessionId: "entered-handler",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn",
+      onEvent: event => events.push(event) });
+    expect(execute).toHaveBeenCalledOnce();
+    expect(events.find(event => event.type === "tool_finished")).not.toHaveProperty("replaySafeRejection");
+  });
+
+  it("keeps a failing executable argument-preparation hook unproven", async () => {
+    const faux = fauxProvider({ provider: "argument-preparation-error" });
+    faux.setResponses([
+      fauxAssistantMessage([fauxToolCall("harness_record_decision", {})], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Synthetic unfinished review")]),
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const prepareArguments = vi.fn(() => { throw new Error("Synthetic preparation failure"); });
+    const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "Synthetic" }], details: {} }));
+    const events: PrimaryReasoningEvent[] = [];
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: new MemorySessionStore(), thinkingLevel: "off",
+      tools: [{ name: "harness_record_decision", label: "Synthetic", description: "Synthetic", parameters: Type.Object({}), prepareArguments, execute }],
+    });
+    await runtime.startTurn({ inputId: "joi_harness_review:goal:g:r1", workbenchId: "wb", prompt: "Synthetic", sessionId: "prepare-error",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn",
+      onEvent: event => events.push(event) });
+    expect(prepareArguments).toHaveBeenCalledOnce();
+    expect(execute).not.toHaveBeenCalled();
+    expect(events.find(event => event.type === "tool_finished")).not.toHaveProperty("replaySafeRejection");
+  });
+
+  it("does not let a reused call id erase a validated handler's uncertainty", async () => {
+    const faux = fauxProvider({ provider: "reused-validation-id" });
+    const valid = { ...fauxToolCall("harness_record_decision", { summary: "Synthetic" }), id: "reused-call" };
+    const invalid = { ...fauxToolCall("harness_record_decision", {}), id: "reused-call" };
+    faux.setResponses([
+      fauxAssistantMessage([valid, invalid], { stopReason: "toolUse" }),
+      fauxAssistantMessage([fauxText("Synthetic unfinished review")]),
+    ]);
+    const models = createModels(); models.setProvider(faux.provider);
+    const execute = vi.fn(async () => { throw new Error("Synthetic unknown handler failure"); });
+    const events: PrimaryReasoningEvent[] = [];
+    const runtime = new PiReasoningRuntime({ model: faux.getModel(), models, sessionStore: new MemorySessionStore(), thinkingLevel: "off",
+      tools: [{ name: "harness_record_decision", label: "Synthetic", description: "Synthetic", parameters: Type.Object({ summary: Type.String() }), execute }],
+    });
+    await runtime.startTurn({ inputId: "joi_harness_review:goal:g:r1", workbenchId: "wb", prompt: "Synthetic", sessionId: "reused-id",
+      modelId: "fake", modelRevisionId: "fake", sourceId: "fake", sourceRevisionId: "fake", systemPrompt: "POLICY", turnId: "turn",
+      onEvent: event => events.push(event) });
+    expect(execute).toHaveBeenCalledOnce();
+    const finished = events.filter(event => event.type === "tool_finished");
+    expect(finished).toHaveLength(2);
+    for (const event of finished) expect(event).not.toHaveProperty("replaySafeRejection");
+  });
+
   it.each([true, false])("forwards dispatch rejection proof only from host details: %s", async proof => {
     const faux = fauxProvider({ provider: `dispatch-proof-${String(proof)}` });
     faux.setResponses([

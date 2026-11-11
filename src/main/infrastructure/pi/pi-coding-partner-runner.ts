@@ -1,4 +1,4 @@
-import { Agent, type AgentTool } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentTool,type AgentMessage } from "@earendil-works/pi-agent-core";
 
 import type { PartnerAdapterRunner, PartnerPromptStore, PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "../../application/ports/partner-execution.js";
 import type { WorkbenchExecutionContextReader } from "../../application/ports/workbench-context.js";
@@ -12,7 +12,7 @@ import { captureWorkspaceSnapshot, collectChangedWorkspaceArtifacts } from "../w
 import { partnerCommentDisciplineLine } from "../workspace/partner-work-discipline.js";
 import { workspaceReadScopeLine, workspaceRootBoundaryLine } from "../workspace/workspace-prompt-boundary.js";
 import type { UsageRecorder } from "../../application/ports/usage.js";
-import { boundBackgroundSections, modelContextMaxChars, modelRequestBudget } from "./pi-model-budget.js";
+import { assertFinalRequestCapacity,boundBackgroundSections, modelContextMaxChars, modelRequestBudget } from "./pi-model-budget.js";
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import { createPiContextManager } from "./pi-context-manager.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
@@ -103,7 +103,20 @@ export class PiCodingPartnerRunner implements PartnerAdapterRunner {
       toolExecution: "sequential",
       transformContext: (messages, signal) => window.transformContext(messages, signal),
     });
+    let prepared: AgentMessage[] | undefined;
+    let capacityError: Error | undefined;
+    agent.prepareRequest = async ({ context },signal) => {
+      prepared = await window.transformContext(context.messages,signal);
+      try { assertFinalRequestCapacity(prepared,tools,modelContextMaxChars(resolved.model)); }
+      catch (error) { capacityError = error instanceof Error ? error : new Error("context_capacity_exceeded");throw capacityError; }
+      return undefined;
+    };
+    agent.transformContext = (messages,signal) => {
+      const checked = prepared;prepared = undefined;
+      return checked === undefined ? window.transformContext(messages,signal) : Promise.resolve(checked);
+    };
     await agent.prompt(request.taskProjection);
+    if (capacityError !== undefined) throw capacityError;
     const failed = agent.state.messages.some((message) => message.role === "assistant" && message.stopReason === "error");
     const body = agent.state.messages.flatMap((message) => {
       if (message.role !== "assistant") return [];

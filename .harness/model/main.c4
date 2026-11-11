@@ -1,0 +1,399 @@
+specification {
+ element system
+ element component
+ relationship calls
+}
+model {
+ app = system "joi" {
+metadata {
+ harness_id "aa3360ea-59e1-4d98-8fb9-9279077683d3"
+ brief "Global Joi orchestration runtime and desktop/web/Android surfaces. Onboarding review covers module responsibilities and representative entry points; it is not a full function-level audit."
+ source "fact"
+ status "verified"
+ evidence "8cdafcd8-5645-4e29-a4e6-84a24465e383 529363b4-ba83-4f8c-946f-579a736f0406 a13847af-27a8-4200-a5ca-abad35d0456d"
+ version "3"
+}
+desktop = component "Desktop shell" {
+metadata {
+ harness_id "4677d33a-a6e5-4331-8e52-1a42de40beab"
+ brief "Electron lifecycle; sandboxed renderer window and worker-backed runtime composition."
+ source "fact"
+ status "verified"
+ evidence "b4e0c245-401d-4f68-9009-f3ead2f2c98a"
+ version "2"
+}
+}
+renderer = component "Web renderer" {
+metadata {
+ harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
+ brief "React desktop/LAN/remote views use shared DTOs and HTTP APIs without privileged imports. Conversation history, archive tabs and workspace remain independent; tool activity uses streaming-safe collapsed summaries with latest tool, safe parameters, explicit execution state and count; expansion preserves per-call parameters and outcomes. Conversation context and child status use safe shared metadata; history pages and change cursors recover updates."
+ source "fact"
+ status "verified"
+ evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "9"
+}
+}
+preload = component "Desktop bridge" {
+metadata {
+ harness_id "25af6153-5b7f-4aa4-bf33-a2320d741b72"
+ brief "Frozen nonce/runtime-info bridge; business APIs stay on HTTP."
+ source "fact"
+ status "verified"
+ evidence "cf19bd4f-253f-4a1b-b33e-81e409048150"
+ version "2"
+}
+}
+http = component "HTTP interfaces" {
+metadata {
+ harness_id "5619f950-f538-4420-a8e1-8e5dbe296c42"
+ brief "Authenticated HTTP route mapping, CSRF/origin write verification and desktop-only conversation filesystem/Git access. Conversation archive listing and lifecycle writes map shared contracts through existing authentication and CSRF/origin guards. History/event cursors are scoped to the conversation; child cancellation uses the existing write guards."
+ source "fact"
+ status "verified"
+ evidence "d8f1b579-a4c5-4ab4-a8df-51c8728fbc96 529363b4-ba83-4f8c-946f-579a736f0406 3a9f444d-04a7-43d1-9a57-0212eeda58ca c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "5"
+}
+}
+composition = component "Runtime composition" {
+metadata {
+ harness_id "e6c5c10e-00a0-463c-b414-08b647077758"
+ brief "Wires workers, services and adapters, independent conversation turns and coordinated Git delivery. Graceful shutdown closes delivery before aborting engines and preserves unstarted conversation messages; explicit emergency stop cancels them. A separate child dispatcher allows parent settlement without blocking child delivery."
+ source "fact"
+ status "verified"
+ evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 0928551c-008e-4486-b324-fdd3cc15e717 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "5"
+}
+}
+application = component "Application services" {
+metadata {
+ harness_id "3c08dc1c-527b-456b-999b-8982b0ada159"
+ brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate."
+ source "fact"
+ status "verified"
+ evidence "ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "7"
+}
+conversations = component "Conversation execution" {
+metadata {
+ harness_id "cad6c097-c1e0-468e-9195-6e4005ccec71"
+ brief "User-driven turn/session orchestration, immutable workbench ownership and durable child admission/settlement. Cancellation registration precedes admission; turn ownership is retained through final journal saves and engine cleanup."
+ source "fact"
+ status "verified"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "2"
+}
+}
+}
+domain = component "Domain policies" {
+metadata {
+ harness_id "b48eb196-1e32-4244-9cb1-070336a79f17"
+ brief "Pure TypeScript state and validation; workbench identity and context verified as a representative. Scoped subagent controls perform no direct workspace mutation; child executors retain the parent permission phase."
+ source "fact"
+ status "verified"
+ evidence "246218d7-0c42-468a-b979-615c8ca1525d 2bee49b0-f04c-4ce2-8f64-79516009c1e9 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "3"
+}
+}
+infrastructure = component "Infrastructure adapters" {
+metadata {
+ harness_id "05a7cbd5-4101-4522-a77a-16d3914b08c8"
+ brief "Implements persistence, engine, A2A, security and artifact ports. Conversation state is transactional; startup clears backoff only for unstarted queued turns, preserving interrupted-execution protection and stable identities. Explicit Git uses root-confined file adapters and repository coordination. Pinned SDK sessions, native journals and incremental conversation/child stores implement the new ports."
+ source "fact"
+ status "verified"
+ evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 529363b4-ba83-4f8c-946f-579a736f0406 db8263f3-5e65-499b-b358-e54b40a000cd 1cb47532-3623-40ae-88b1-bd52b81947e5 b19e6407-d990-45b3-b75e-b5ba562fd399 54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d 1519c446-98f9-4b5a-b873-26ea5d8e7d89"
+ version "6"
+}
+conversationStorage = component "Conversation persistence" {
+metadata {
+ harness_id "882f7b90-4074-4541-bcad-2c7a7ea4b7cb"
+ brief "Private incremental source messages and checkpoints, frozen child/outbox intents, safe history pages and update cursors."
+ source "fact"
+ status "verified"
+ evidence "db8263f3-5e65-499b-b358-e54b40a000cd 1519c446-98f9-4b5a-b873-26ea5d8e7d89 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "1"
+}
+piSessions = component "Pi context and execution" {
+metadata {
+ harness_id "c12f9eba-5f56-4fa1-b864-025e3193a7c3"
+ brief "Pinned Pi SDK sessions and native journal transfer reuse Joi context policy; provider inputs retain requirements and tool pairings."
+ source "fact"
+ status "verified"
+ evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "1"
+}
+}
+}
+}
+shared = component "Shared contracts" {
+metadata {
+ harness_id "523ea4b5-9b46-4d67-be22-b9ee3d7d3cfb"
+ brief "Shared UI/runtime contracts include conversation configuration snapshots, safe streamed entries and Git operation projections. Conversation summaries include archive timestamps and server-projected action availability. Tool entries carry optional started/completed/failed lifecycle facts independent of private result bodies. Conversation contracts add safe usage/activity metadata, child status, history pages and payload-free cursors."
+ source "fact"
+ status "verified"
+ evidence "67786627-f77c-4800-9ac6-386b484e5f5d b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 24499f6b-3dfd-4a50-836f-0a7b169c1ee2 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "6"
+}
+}
+relay = component "Browser relay" {
+metadata {
+ harness_id "e4ffd8ae-7523-4e51-8d5f-1da8c17f2b02"
+ brief "Separate Node browser relay listener with static renderer hosting."
+ source "fact"
+ status "verified"
+ evidence "9b307cf5-39c7-4a9b-b899-9ab2a7984987"
+ version "2"
+}
+}
+mobile = component "Android client" {
+metadata {
+ harness_id "9bdcf527-c117-4762-86ce-c7d2e01c6321"
+ brief "Flutter remote controller views with pairing and home. Internal remote transport not audited."
+ source "fact"
+ status "verified"
+ evidence "9eb5b925-3b08-4116-94d5-c22547df6564"
+ version "2"
+}
+}
+native = component "Native remote core" {
+metadata {
+ harness_id "42c212ad-4c7c-4cd0-9f9a-d13a89b8d1e7"
+ brief "Rust authorization/network/protocol/FFI module boundary; internals not audited."
+ source "fact"
+ status "verified"
+ evidence "22b3691d-7288-433b-9218-88f8517b44dd"
+ version "2"
+}
+}
+design = component "Design prototypes" {
+metadata {
+ harness_id "5241d3d1-1758-46a9-b7db-382ba7c72645"
+ brief "Non-production HTML design artifacts include Phosphor navigation icon comparisons with the user-selected Heartbeat/SquaresFour pair. Conversation prototype models independent network/partner/skill choices, chat-first workbench creation, inherited context and simulated Git with embedded diff2html; isolated from the production runtime."
+ source "fact"
+ status "verified"
+ evidence "283d9312-432e-469c-b75c-8bc7a6685e12 ab760cb9-1a2a-45a2-8d8c-e00709dd5319 e17e48a7-5bdd-421e-aa56-72f72d2c410b"
+ version "7"
+}
+}
+validation = component "Quality gates" {
+metadata {
+ harness_id "cfebb4bc-4ef2-4661-bd04-0d17d7f6619f"
+ brief "Boundary scanner classifies allowed imports; npm scripts define checks and packaging."
+ source "fact"
+ status "verified"
+ evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9 8cdafcd8-5645-4e29-a4e6-84a24465e383 70e2a22b-f223-48ee-ad62-781b5835ed5e ee49fdc6-1c1c-48a7-a1ee-afa121d0b174"
+ version "4"
+}
+}
+}
+app.desktop -[calls]-> app.renderer "Hosts the sandboxed UI" {
+metadata {
+ harness_id "6a341cfc-5759-45f5-95f2-3a67bff8446e"
+ brief "Hosts the sandboxed UI"
+ source "fact"
+ status "verified"
+ evidence "b4e0c245-401d-4f68-9009-f3ead2f2c98a"
+ version "2"
+}
+}
+app.desktop -[calls]-> app.preload "Installs the narrow bridge" {
+metadata {
+ harness_id "a7aecb0f-eb5f-465c-8e68-bae2cd1a2117"
+ brief "Installs the narrow bridge"
+ source "fact"
+ status "verified"
+ evidence "b4e0c245-401d-4f68-9009-f3ead2f2c98a cf19bd4f-253f-4a1b-b33e-81e409048150"
+ version "2"
+}
+}
+app.desktop -[calls]-> app.composition "Starts worker-backed runtime" {
+metadata {
+ harness_id "9f7d8483-f2ac-4ac0-aef8-ee7a7abd885b"
+ brief "Starts worker-backed runtime"
+ source "fact"
+ status "verified"
+ evidence "b4e0c245-401d-4f68-9009-f3ead2f2c98a"
+ version "2"
+}
+}
+app.renderer -[calls]-> app.http "Calls HTTP business APIs" {
+metadata {
+ harness_id "ab18da5d-d349-400e-9930-396c6229a0dc"
+ brief "Calls HTTP business APIs"
+ source "fact"
+ status "verified"
+ evidence "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9"
+ version "2"
+}
+}
+app.renderer -[calls]-> app.shared "Consumes shared DTOs" {
+metadata {
+ harness_id "cf14675a-f726-46d9-b464-bda6654329f3"
+ brief "Consumes shared DTOs"
+ source "fact"
+ status "verified"
+ evidence "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 67786627-f77c-4800-9ac6-386b484e5f5d"
+ version "2"
+}
+}
+app.preload -[calls]-> app.shared "Uses bridge contract types" {
+metadata {
+ harness_id "38c4910a-72ed-4cda-aa09-c791aace6fd6"
+ brief "Uses bridge contract types"
+ source "fact"
+ status "verified"
+ evidence "cf19bd4f-253f-4a1b-b33e-81e409048150"
+ version "2"
+}
+}
+app.http -[calls]-> app.application "Maps routes to application dependencies" {
+metadata {
+ harness_id "ee7912fb-03ee-4026-b06c-41fbc2589dd0"
+ brief "Maps routes to application dependencies"
+ source "fact"
+ status "verified"
+ evidence "d8f1b579-a4c5-4ab4-a8df-51c8728fbc96"
+ version "2"
+}
+}
+app.composition -[calls]-> app.application "Constructs application services" {
+metadata {
+ harness_id "f8a914fe-1b43-4b77-8b75-92d219cf06ad"
+ brief "Constructs application services"
+ source "fact"
+ status "verified"
+ evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15"
+ version "2"
+}
+}
+app.composition -[calls]-> app.infrastructure "Supplies concrete port adapters" {
+metadata {
+ harness_id "cf1d31ab-64fb-4011-90c2-49d836f2edd3"
+ brief "Supplies concrete port adapters"
+ source "fact"
+ status "verified"
+ evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 aeb013b6-fda3-401d-88ca-e6464dcd5bba"
+ version "2"
+}
+}
+app.application -[calls]-> app.domain "Applies domain contracts and policies" {
+metadata {
+ harness_id "ef3b3c0a-5130-4fad-b5c2-7521747fd27c"
+ brief "Applies domain contracts and policies"
+ source "fact"
+ status "verified"
+ evidence "529363b4-ba83-4f8c-946f-579a736f0406 2bee49b0-f04c-4ce2-8f64-79516009c1e9"
+ version "2"
+}
+}
+app.infrastructure -[calls]-> app.application "Implements application ports" {
+metadata {
+ harness_id "a5d45458-804e-4d19-ad5b-ae0b5e6339b8"
+ brief "Implements application ports"
+ source "fact"
+ status "verified"
+ evidence "529363b4-ba83-4f8c-946f-579a736f0406 aeb013b6-fda3-401d-88ca-e6464dcd5bba"
+ version "2"
+}
+}
+app.mobile -[calls]-> app.native "Uses native remote core per documented product architecture" {
+metadata {
+ harness_id "66fc0d0d-2fd6-497b-9cd4-f49a678d1ccb"
+ brief "Uses native remote core per documented product architecture"
+ source "fact"
+ status "verified"
+ evidence "8cdafcd8-5645-4e29-a4e6-84a24465e383 529363b4-ba83-4f8c-946f-579a736f0406 c8f5bf1b-28f9-4c5a-b0f4-bf99167a9f7e 84cb24d2-8700-4e6c-a068-49c01dd50b8e"
+ version "3"
+}
+}
+app.design -[calls]-> app.renderer "Approved visual reference for the production conversation surface" {
+metadata {
+ harness_id "3fca1f71-ec02-4ede-afe6-60e83b1fc0b7"
+ brief "Approved design reference for production conversations; the HTML prototype retains simulated data and stays isolated from runtime execution."
+ source "fact"
+ status "verified"
+ evidence "283d9312-432e-469c-b75c-8bc7a6685e12 ab760cb9-1a2a-45a2-8d8c-e00709dd5319"
+ version "6"
+}
+}
+app.validation -[calls]-> app.domain "Checks pure layer dependencies" {
+metadata {
+ harness_id "5cea23a3-08aa-4f7c-8470-8b69f9143e19"
+ brief "Checks pure layer dependencies"
+ source "fact"
+ status "verified"
+ evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9"
+ version "2"
+}
+}
+app.validation -[calls]-> app.renderer "Checks privileged import exclusions" {
+metadata {
+ harness_id "8d4d33d6-faaf-41fb-b885-339066941f04"
+ brief "Checks privileged import exclusions"
+ source "fact"
+ status "verified"
+ evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9"
+ version "2"
+}
+}
+app.http -[calls]-> app.application.conversations "Maps authenticated conversation and cursor requests" {
+metadata {
+ harness_id "72a18122-e614-4b53-b63e-6655b7c4da16"
+ brief "Maps authenticated conversation and cursor requests"
+ source "fact"
+ status "verified"
+ evidence "3a9f444d-04a7-43d1-9a57-0212eeda58ca"
+ version "1"
+}
+}
+app.application.conversations -[calls]-> app.infrastructure.conversationStorage "Persists through conversation ports" {
+metadata {
+ harness_id "d14f8032-c5a3-4432-b127-3f440ebe6840"
+ brief "Persists through conversation ports"
+ source "fact"
+ status "verified"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 1519c446-98f9-4b5a-b873-26ea5d8e7d89"
+ version "1"
+}
+}
+app.application.conversations -[calls]-> app.infrastructure.piSessions "Dispatches frozen partner requests through instance manager" {
+metadata {
+ harness_id "afe68203-1ba8-4003-92eb-1b433b2b7f39"
+ brief "Dispatches frozen partner requests through instance manager"
+ source "fact"
+ status "verified"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 629887d6-ca08-4e3b-9116-9def218c167e"
+ version "1"
+}
+}
+app.infrastructure.piSessions -[calls]-> app.application.conversations "Submits scoped child intents through the host provider" {
+metadata {
+ harness_id "7456ef98-81bc-4e22-bf65-895960644940"
+ brief "Submits scoped child intents through the host provider"
+ source "fact"
+ status "verified"
+ evidence "313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
+ version "1"
+}
+}
+app.composition -[calls]-> app.application.conversations "Wires independent turn and child outbox dispatchers" {
+metadata {
+ harness_id "cd062ecb-59d1-4911-887b-90b2118f0e9d"
+ brief "Wires independent turn and child outbox dispatchers"
+ source "fact"
+ status "verified"
+ evidence "0928551c-008e-4486-b324-fdd3cc15e717"
+ version "1"
+}
+}
+}
+views {
+ view overview { include * }
+ view layers of app { include app.* }
+ view conversation_flow {
+  include app.renderer
+  include app.http
+  include app.composition
+  include app.application.conversations
+  include app.infrastructure.conversationStorage
+  include app.infrastructure.piSessions
+ }
+}

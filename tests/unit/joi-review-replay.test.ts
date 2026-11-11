@@ -54,11 +54,13 @@ describe("settled review replay safety", () => {
     },
   );
 
-  it("accepts a trusted no-effect rejection without treating it as an external mutation", async () => {
-    const { coordinator, failTurn } = fixture([{ name: "goal_resume", isError: true, replaySafeRejection: true }]);
-    await expect(coordinator.handle(reviewInputId)).rejects.toMatchObject({ code: "joi_turn_outcome_uncommitted" });
+  it.each(["goal_resume", "harness_record_decision", "work_dispatch"])("accepts a trusted no-effect %s rejection without treating it as an external mutation", async name => {
+    const { coordinator, failTurn } = fixture([{ name, isError: true, replaySafeRejection: true }]);
+    const reasonCode = name === "work_dispatch" ? "tool_execution_error" : "joi_turn_outcome_uncommitted";
+    await expect(coordinator.handle(reviewInputId)).rejects.toMatchObject({ code: reasonCode });
     expect(failTurn).toHaveBeenCalledWith(reviewInputId, expect.any(String), {
-      reasonCode: "joi_turn_outcome_uncommitted", reviewReplaySafe: true,
+      reasonCode, reviewReplaySafe: true,
+      ...(name === "work_dispatch" ? { replaySafe: true } : {}),
     });
   });
 
@@ -79,5 +81,14 @@ describe("settled review replay safety", () => {
     expect(failTurn).toHaveBeenCalledWith(reviewInputId, expect.any(String), {
       reasonCode: "joi_turn_outcome_uncommitted", reviewReplaySafe: false,
     });
+  });
+
+  it.each([
+    { tools: [{ name: "work_dispatch" }, { name: "harness_record_decision", isError: true, replaySafeRejection: true as const }] },
+    { tools: [{ name: "harness_record_decision", finished: false }, { name: "work_dispatch", isError: true, replaySafeRejection: true as const }] },
+  ])("does not let a rejected call erase other unfinished or external effects: %j", async ({ tools }) => {
+    const { coordinator, failTurn } = fixture(tools);
+    await expect(coordinator.handle(reviewInputId)).rejects.toThrow();
+    expect(failTurn).toHaveBeenCalledWith(reviewInputId, expect.any(String), expect.objectContaining({ reviewReplaySafe: false }));
   });
 });

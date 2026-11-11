@@ -8,7 +8,8 @@ import {
   type AgentMessage,
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
-import { Type, type Api, type Model, type Models } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { type Api, type Model, type Models } from "@earendil-works/pi-ai";
 
 import { DomainError } from "../../domain/errors.js";
 import type { ReasoningSourceSelector } from "../../application/model-sources/reasoning-source-selector.js";
@@ -21,6 +22,7 @@ import type { PiConfiguredModelResolver } from "./pi-configured-model-resolver.j
 import { type PiCodingToolFactory } from "./pi-coding-tool-factory.js";
 import {
   boundBackgroundSections,
+  assertFinalRequestCapacity,
   boundModelContext,
   modelContextMaxChars,
   modelRequestBudget,
@@ -45,8 +47,14 @@ import type { NativeAgentEvent } from "../../application/ports/native-agent-even
 import { emitRuntimeDiagnostic, type RuntimeDiagnostics } from "../../application/ports/runtime-diagnostics.js";
 import type { UsageContext, UsageRecorder } from "../../application/ports/usage.js";
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
-import { createPiContextManager, type PiContextDiagnostic, type PiContextManager } from "./pi-context-manager.js";
+import { createPiContextManager, type PiContextDiagnostic, type PiContextManager,type PiContextCheckpoint } from "./pi-context-manager.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
+import { createJoiPiSession } from "./joi-pi-session.js";
+import type { AgentSession } from "@earendil-works/pi-coding-agent";
+import type { ConversationSubagentPort } from "../../application/ports/conversation-subagents.js";
+import type { ConversationContextDto } from "../../../shared/conversations.js";
+import { createJoiSubagentTools } from "./joi-subagent-tools.js";
+import { conversationSeedMessages, conversationPrompt, pairSessionTools } from "./conversation-session.js";
 import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
 import { createRunProgressWatch, stallNudgeMessage, type RunProgressDiagnostic, type RunProgressSignal, type RunProgressThresholds, type RunProgressWatch } from "./pi-run-progress.js";
@@ -99,6 +107,8 @@ interface RunTracker {
 }
 
 interface WarmAgent {
+  sdkSession?: AgentSession;
+  models: Models;
   usageContext: { current: UsageContext };
   historyWorkId: string;
   historyStart: number;
@@ -342,6 +352,11 @@ function pauseForMissingEnvironmentCredential(
  * messages after eviction or restart.
  */
 export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
+  readonly #contextStats = new WeakMap<Agent,ConversationContextDto>();
+  readonly #contextObservers = new WeakMap<Agent,NonNullable<ResidentTurnInput["onContext"]>>();
+  #subagents: ConversationSubagentPort | undefined;
+  setSubagents(port: ConversationSubagentPort): void { this.#subagents = port; }
+  readonly #sdkSessions = new WeakMap<Agent,AgentSession>();
   readonly #warm = new Map<string, WarmAgent>();
   readonly #requirementsErrors = new WeakMap<Agent, DomainError>();
 
@@ -382,6 +397,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   evictFromMemory(instanceId: string): void {
+    this.#warm.get(instanceId)?.sdkSession?.dispose();
     this.#warm.delete(instanceId);
   }
 
@@ -407,14 +423,16 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
    * compaction that replaces that, and the diagnostics below are how a route that keeps failing to
    * summarize stays visible instead of quietly reverting to the old behaviour.
    */
-  #contextManager(input: { messagesMaxChars: number; model: Model<Api>; models: Models; request: PartnerRunRequest; thinkingLevel: ModelThinkingLevel }): PiContextManager {
+  #contextManager(input: { onDiagnostic?: (event: PiContextDiagnostic) => void;restored?: PiContextCheckpoint; messagesMaxChars: number; model: Model<Api>; models: Models; request: PartnerRunRequest; thinkingLevel: ModelThinkingLevel }): PiContextManager {
     const where = { workbenchId: input.request.workbenchId, workId: input.request.workId };
     return createPiContextManager({
+      ...(input.restored === undefined ? {} : { restored: input.restored }),
       messagesMaxChars: input.messagesMaxChars,
       requiredChars: input.request.requiredContext?.length ?? 0,
       model: input.model,
       models: trackPiModels(input.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: input.request.workbenchId, workId: input.request.workId }), this.dependencies.diagnostics),
       onDiagnostic: (event: PiContextDiagnostic) => {
+        input.onDiagnostic?.(event);
         emitRuntimeDiagnostic(this.dependencies.diagnostics, event.type, { ...event, ...where });
       },
       thinkingLevel: input.thinkingLevel,
@@ -561,20 +579,23 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   async #runResidentTurn(input: ResidentTurnInput, tracker: RunTracker): Promise<ResidentTurnResult> {
+    input.signal?.throwIfAborted();
     const { revision } = input;
     if (revision.kind !== "local-pi") throw new Error("local_partner_kind_required");
     const execution = await this.dependencies.contexts.loadForExecution(input.request.contextSnapshotId,{ evidenceMode: "LAZY" });
     if (execution === null) throw new Error("workbench_context_snapshot_not_found");
     assertSkillWorkspace(revision, execution.workspacePath);
     const pin = input.sourcePin ?? await this.#selectSource(revision, `local_pi_instance:${input.instanceId}`);
+    const route = JSON.stringify([pin.sourceId,pin.sourceRevisionId,pin.modelId,pin.modelRevisionId]);
     const currentUsage: UsageContext = { engine: "pi", purpose: "partner", workbenchId: input.request.workbenchId, workId: input.request.workId, partnerId: revision.partnerId, sourceId: pin.sourceId, modelId: pin.modelId };
     let warm = this.#warm.get(input.instanceId);
+    if (warm !== undefined && input.request.conversationId !== undefined) { this.evictFromMemory(input.instanceId);warm = undefined; }
     if (warm !== undefined && (warm.partnerRevisionId !== revision.partnerRevisionId
       || warm.workspacePath !== execution.workspacePath
       || warm.sourceId !== pin.sourceId
       || warm.sourceRevisionId !== pin.sourceRevisionId
       || warm.modelRevisionId !== pin.modelRevisionId)) {
-      this.#warm.delete(input.instanceId);
+      this.evictFromMemory(input.instanceId);
       warm = undefined;
     }
     if (warm !== undefined) warm.sideEffectTracker.current = tracker;
@@ -600,6 +621,10 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       );
       const allowed = new Set(tools.map((tool) => tool.name));
       const window = this.#contextManager({
+        onDiagnostic: event => this.#contextDiagnostic(agent,event),
+        ...(input.sessionState?.engine !== "pi-core" || input.sessionState.route !== route || input.sessionState.checkpoint === undefined ? {} : {
+          restored: input.sessionState.checkpoint as PiContextCheckpoint,
+        }),
         messagesMaxChars: budget.messagesMaxChars,
         model: resolved.model,
         models: resolved.models,
@@ -613,7 +638,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
           return Promise.resolve(allowed.has(toolCall.name) ? undefined : { block: true, reason: "partner_tool_not_allowed" });
         },
         initialState: {
-          messages: (input.restoredMessages ?? []) as AgentMessage[],
+          messages: pairSessionTools(input.sessionState !== undefined ? conversationSeedMessages(input.request,input.sessionState,true)
+            : input.restoredMessages !== null ? input.restoredMessages as AgentMessage[] : conversationSeedMessages(input.request)),
           model: resolved.model,
           systemPrompt,
           thinkingLevel: resolved.thinkingLevel,
@@ -625,6 +651,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         transformContext: (messages, signal) => window.transformContext(messages, signal),
       });
       warm = {
+        models: resolved.models,
         usageContext,
         historyWorkId: input.request.workId,
         // Legacy transcripts have no Work tags; only the latest user task is safe to page on cold restore.
@@ -648,13 +675,39 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       warm.historyStart = warm.agent.state.messages.length;
     }
     const historyStart = warm.historyStart;
+    const children = this.#subagents === undefined || input.request.conversationId === undefined || input.request.subagentChild === true || input.request.subagentsEnabled === false ? undefined
+      : createJoiSubagentTools(this.#subagents,{ parentTurnId: input.request.workId,revision,request: input.request,sourcePin: pin },effectiveToolNames,input.signal);
     warm.agent.state.tools = this.#toolsWithTimeout([
       ...this.#toolsForRun(execution.workspacePath, effectiveToolNames, input.skillEnvironmentKeys), createAskUserTool(warm.sideEffectTracker), createPartnerCompleteTool(warm.sideEffectTracker),
-      createContextHistoryTool(() => activeAgent.state.messages.slice(historyStart)),
+      createContextHistoryTool(() => input.request.conversationId === undefined ? activeAgent.state.messages.slice(historyStart) : activeAgent.state.messages),
       ...createPartnerEvidenceTools(execution.evidence),
+      ...(children?.tools ?? []),
     ]);
     const writeGate = new LocalWriteGate(input.request.workspaceExecution);
     const activeAgent = warm.agent;
+    if (input.request.conversationId !== undefined) {
+      const sdkSession = await createJoiPiSession(activeAgent,warm.models,execution.workspacePath ?? process.cwd());
+      warm.sdkSession = sdkSession;this.#sdkSessions.set(activeAgent,sdkSession);
+    }
+    if (input.onContext !== undefined) this.#contextObservers.set(activeAgent,input.onContext);
+    else this.#contextObservers.delete(activeAgent);
+    if (children === undefined) delete activeAgent.finishTurn;
+    else activeAgent.finishTurn = async () => {
+      const results = await children.collect();
+      if (results.length > 0 && !input.signal?.aborted) activeAgent.steer({ role: "user",timestamp: Date.now(),content: `[joi child results; reference data, interrupted effects must not be replayed automatically]\n${JSON.stringify(results)}` });
+      return undefined;
+    };
+    let sessionWrites = Promise.resolve();
+    const saveSession = () => {
+      const state = { engine: "pi-core" as const,messages: structuredClone(activeAgent.state.messages),route,
+        ...(warm.context.checkpoint() === undefined ? {} : { checkpoint: warm.context.checkpoint() }) };
+      sessionWrites = sessionWrites.then(() => input.saveSession?.(state));
+      return sessionWrites;
+    };
+    const stopSessionPersistence = input.saveSession === undefined ? () => undefined : activeAgent.subscribe(event => {
+      if (event.type === "message_end" || event.type === "tool_execution_end") return saveSession();
+      return undefined;
+    });
     const runAllowed = new Set(activeAgent.state.tools.map(tool => tool.name));
     activeAgent.beforeToolCall = async ({ toolCall }) => {
       if (writeGate.denied) return { block: true, reason: "workspace_write_forbidden" };
@@ -673,12 +726,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     // Capacity failures and prepared request frames belong to one resident turn.
     this.#requirementsErrors.delete(warm.agent);
     warm.agent.transformContext = (messages, signal) => warm.context.transformContext(messages, signal);
-    if (input.request.requiredContext === undefined) {
-      warm.agent.prepareRequest = ({ context }) => Promise.resolve({ context: { ...context, messages: withRequestPrompt(context.messages, systemPrompt) } });
-    } else {
-      this.#installRequirementsPrompt(warm.agent, input.request, await this.#configuredPrompt(revision), execution.promptSection,
-        input.knowledgeSection, input.skillSection, revision, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars, warm.context);
-    }
+    this.#installRequirementsPrompt(warm.agent, input.request, await this.#configuredPrompt(revision), execution.promptSection,
+      input.knowledgeSection, input.skillSection, revision, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars, warm.context,systemPrompt);
     const previousMessageCount = warm.agent.state.messages.length;
     // One watch per turn, reading the tools the agent actually holds rather than the revision's
     // intent: a resident instance that was rebuilt under a narrower tool policy can no longer write,
@@ -706,13 +755,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         });
       }
     });
+    const abort = () => activeAgent.abort();
+    input.signal?.addEventListener("abort",abort,{ once: true });
     try {
-      const prompt = input.request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : input.request.taskProjection;
-      const abort = () => warm.agent.abort();
-      if (input.signal?.aborted === true) abort();
-      input.signal?.addEventListener("abort", abort, { once: true });
-      try { await this.#promptWithIdleTimeout(warm.agent, prompt, live, input.onProgress, progress); }
-      finally { input.signal?.removeEventListener("abort", abort); }
+      const prompt = input.request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : conversationPrompt(input.request);
+      input.signal?.throwIfAborted();
+      await this.#promptWithIdleTimeout(warm.agent, prompt, live, input.onProgress, progress);
+      input.signal?.throwIfAborted();
       if (writeGate.denied) throw new DomainError("workspace_write_forbidden", "The Work's execution needs conflict with its READ ceiling.");
       if (writeGate.suspended) return {
         externalRunId: `local_pi:${input.request.actionId}`, externalSessionRef: `partner_instance_messages:${input.instanceId}`,
@@ -747,7 +796,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       allowLearnedCapacityRetry(failure, learned, tracker.state);
       throw Object.assign(failure, { partialArtifacts });
     } finally {
+      input.signal?.removeEventListener("abort",abort);
       stopDeniedTool();
+      await children?.close(input.signal?.aborted === true || assistantFailureSignal(activeAgent.state.messages.slice(previousMessageCount)) !== null);
+      stopSessionPersistence();
+      if (input.saveSession !== undefined) await saveSession();
     }
   }
 
@@ -772,7 +825,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
 
   /** Allows an unbounded run while Agent lifecycle and streaming events keep making progress. */
   async #promptWithIdleTimeout(agent: Agent, text: string, live?: LiveConversationPublisher, onProgress?: () => void, progress?: RunProgressControl): Promise<void> {
-    await this.#runWithIdleTimeout(agent, () => agent.prompt(text), live, onProgress, progress);
+    const session = this.#sdkSessions.get(agent);
+    await this.#runWithIdleTimeout(agent, () => session === undefined ? agent.prompt(text) : session.prompt(text,{ expandPromptTemplates: false }), live, onProgress, progress);
   }
 
   /**
@@ -918,31 +972,35 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   #installRequirementsPrompt(agent: Agent, request: PartnerRunRequest, configured: string, workbench: string, knowledge: string, skill: string,
-    revision: PartnerRevision, workspace: boolean, systemBudget: number, manager: PiContextManager): void {
+    revision: PartnerRevision, workspace: boolean, systemBudget: number, manager: PiContextManager,initialPrompt = agent.state.systemPrompt): void {
     // A resident Agent may execute turns with different required contexts.
     this.#requirementsErrors.delete(agent);
-    if (request.requiredContext === undefined) return;
     let preparedMessages: AgentMessage[] | undefined;
     agent.prepareRequest = async ({ context }, signal) => {
       preparedMessages = undefined;
-      const currentPrompt = this.#systemPrompt(configured, request, workbench, knowledge, skill, revision,
+      const currentPrompt = request.requiredContext === undefined ? initialPrompt : this.#systemPrompt(configured, request, workbench, knowledge, skill, revision,
         agent.state.tools.map(tool => tool.name), workspace, systemBudget);
-      const messages = await manager.transformContext(withRequestPrompt(context.messages, currentPrompt), signal);
+      const messages = await manager.transformContext(withRequestPrompt(context.messages, currentPrompt,agent.state.tools), signal);
       const withoutSystem = messages.map(message => (message as { role?: string }).role === "system"
         ? { ...message, content: "", toolsAdded: undefined, toolsRemoved: undefined } : message);
       const occupied = JSON.stringify(withoutSystem).length + JSON.stringify(agent.state.tools).length;
       const available = Math.max(0, Math.min(systemBudget, modelContextMaxChars(agent.state.model) - occupied - 2));
       let prompt: string;
       try {
-        prompt = this.#systemPrompt(configured, request, workbench, knowledge, skill, revision,
+        prompt = request.requiredContext === undefined && available === systemBudget ? currentPrompt : this.#systemPrompt(configured, request, workbench, knowledge, skill, revision,
           agent.state.tools.map(tool => tool.name), workspace, available);
+        const requestChars = assertFinalRequestCapacity(withRequestPrompt(messages,prompt,agent.state.tools),agent.state.tools,modelContextMaxChars(agent.state.model));
+        const checkpoint = manager.checkpoint(),state = this.#contextStats.get(agent)?.state;
+        this.#reportContext(agent,{ requestChars,budgetChars: modelContextMaxChars(agent.state.model),
+          ...(checkpoint === undefined ? {} : { compactions: checkpoint.count,...(state === undefined || state === "READY" ? { state: "COMPRESSED" as const } : {}) }) });
       } catch (error) {
+        this.#reportContext(agent,{ state: "CAPACITY" });
         if (error instanceof DomainError && error.code === "goal_requirements_capacity_exceeded") this.#requirementsErrors.set(agent, error);
         throw error;
       }
-      preparedMessages = withRequestPrompt(messages, prompt);
+      preparedMessages = withRequestPrompt(messages, prompt,agent.state.tools);
       // Checkpoint indices address the complete loop history; only the outgoing request is compacted.
-      return { context: { ...context, messages: withRequestPrompt(context.messages, prompt) } };
+      return { context: { ...context, messages: withRequestPrompt(context.messages, prompt,agent.state.tools) } };
     };
     agent.transformContext = (messages, signal) => {
       const prepared = preparedMessages;
@@ -950,6 +1008,18 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       // Consume the checked frame once so each provider request performs at most one compaction.
       return prepared === undefined ? manager.transformContext(messages, signal) : Promise.resolve(prepared);
     };
+  }
+
+  #reportContext(agent: Agent,patch: Partial<ConversationContextDto>): void {
+    const context: ConversationContextDto = { kind: "CHARACTERS",state: "READY",...this.#contextStats.get(agent),...patch };
+    this.#contextStats.set(agent,context);
+    void this.#contextObservers.get(agent)?.(context).catch(() => undefined);
+  }
+  #contextDiagnostic(agent: Agent,event: PiContextDiagnostic): void {
+    if (event.type === "joi.partner.context_summary_started") this.#reportContext(agent,{ state: "COMPACTING" });
+    else if (event.type === "joi.partner.context_summary_backoff") this.#reportContext(agent,{ state: "BACKOFF" });
+    else if (event.type === "joi.partner.context_truncated") this.#reportContext(agent,{ state: "TRIMMED" });
+    else if (event.type === "joi.partner.context_compacted") this.#reportContext(agent,{ state: "COMPRESSED",compactions: event.count,savedChars: Math.max(0,(event.charsBefore ?? 0) - (event.charsAfter ?? 0)) });
   }
 
   #systemPrompt(
@@ -1034,7 +1104,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     while (this.#warm.size > max) {
       const oldest = this.#warm.keys().next();
       if (oldest.done) break;
-      this.#warm.delete(oldest.value);
+      this.evictFromMemory(oldest.value);
     }
   }
 }

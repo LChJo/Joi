@@ -4,6 +4,7 @@ import type { PartnerRunOutput, PartnerRunRequest, PartnerRunStatus } from "./pa
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 import type { ToolTraceDraft } from "../partners/tool-trace-presentation.js";
 import type { NativeAgentEvent } from "./native-agent-events.js";
+import type { ConversationContextDto } from "../../../shared/conversations.js";
 
 export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
 export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE" | "SUSPENDED";
@@ -54,7 +55,9 @@ export interface PartnerInstanceMessageStore {
   save(instanceId: string, messages: unknown[]): Promise<void>;
 }
 
-export interface ResidentTurnInput {
+export interface ResidentTurnInput extends PartnerExecutionContext {
+  sessionState?: PartnerSessionState;
+  saveSession?: (state: PartnerSessionState) => Promise<void>;
   /** The real session/conversation id recorded after the previous turn (engine-specific). */
   externalSessionRef?: string;
   instanceId: string;
@@ -75,7 +78,19 @@ export interface ResidentTurnInput {
   sourcePin?: ModelSourceTurnPin;
 }
 
+/** Private execution history, separate from the safe UI projection and disposable instances. */
+export interface PartnerSessionState {
+  engine: PartnerEngine;
+  messages: unknown[];
+  externalSessionRef?: string;
+  checkpoint?: unknown;
+  route?: string;
+}
+
 export interface PartnerExecutionContext {
+  onContext?: (context: ConversationContextDto) => Promise<void>;
+  sessionState?: PartnerSessionState;
+  saveSession?: (state: PartnerSessionState) => Promise<void>;
   knowledgeSection: string;
   onEvent?: (event: NativeAgentEvent) => Promise<void>;
   /** Payload-free execution activity; independent of conversation projection. */

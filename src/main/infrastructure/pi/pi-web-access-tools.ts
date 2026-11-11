@@ -1,5 +1,6 @@
 import { Readability } from "@mozilla/readability";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { } from "@earendil-works/pi-ai";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { lookup as dnsLookup } from "node:dns/promises";
 import { isIP } from "node:net";

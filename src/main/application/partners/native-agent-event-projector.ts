@@ -32,8 +32,8 @@ export class NativeAgentEventProjector {
       // A call without a summary keeps no `text` key at all, so an engine that cannot
       // describe a call renders exactly as it did before.
       this.#drafts.push(event.state === "started"
-        ? { ...this.#stamp(), kind: "TOOL_CALL", role: "TOOL", toolCallId, toolName, ...(event.summary === undefined ? {} : { text: event.summary }) }
-        : { ...this.#stamp(), kind: "TOOL_RESULT", role: "TOOL", text: event.state === "completed" ? "执行完成" : "执行失败", toolCallId, toolName });
+        ? { ...this.#stamp(), kind: "TOOL_CALL", role: "TOOL", toolCallId, toolName, toolState: event.state, ...(event.summary === undefined ? {} : { text: event.summary }) }
+        : { ...this.#stamp(), kind: "TOOL_RESULT", role: "TOOL", text: event.state === "completed" ? "执行完成" : "执行失败", toolCallId, toolName, toolState: event.state });
       return;
     }
     if (event.type === "artifact") {

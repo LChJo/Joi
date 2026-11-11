@@ -663,6 +663,9 @@ export interface RuntimeDiagnosticEventMap {
   "joi.partner.context_summary_failed": {
     reasonCode: string;
   };
+  "joi.partner.context_summary_rejected": { charsBefore: number; charsAfter: number; savedChars: number; reasonCode: "summary_no_savings" };
+  "joi.partner.context_summary_backoff": { retryAfterMs: number };
+  "joi.partner.context_summary_started": { candidateChars: number };
   /**
    * A request had to drop history outright — summary unavailable, or a summary that still left the
    * request over budget. The messages are gone from that request and the model was told so in the

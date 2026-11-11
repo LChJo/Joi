@@ -1,6 +1,7 @@
 import type { GoalRequirements, RequirementsUpdate } from "../../domain/work/goal-requirements.js";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
-import { Type } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
+import { } from "@earendil-works/pi-ai";
 import type { GoalRequirementsRepository } from "../../application/ports/goal-requirements.js";
 import type { WorkOrchestrationService } from "../../application/work/work-orchestration-service.js";
 import type { WorkExecutionNeed } from "../../domain/work/work-execution-needs.js";
