@@ -1,6 +1,6 @@
 # Pi 编码能力与 Harness 补充调研
 
-调研日期：2026-11-12。范围：官方文档、官方源码，以及官方文档直接链接的维护者技能仓库。本次补充调查并完成一项隔离工具钩子原型，不安装包、不更改生产代码、未测性能；实施范围仍待主任务结合证据确定。
+调研日期：2026-11-12。原始范围：官方文档、官方源码，以及官方文档直接链接的维护者技能仓库。原始调查包含隔离工具钩子原型；后续章节分别记录已接入的第三方能力与浏览器替代方案调查，不把文档能力或接口验证称为真实任务性能收益。
 
 ## 结论与版本边界
 
@@ -91,3 +91,21 @@ Browser Loop 使用启动 Joi 时的 `KERNEL_API_KEY`，值不进入模型上下
 OpenWiki 的 `begin` 恢复持久 run；跨执行继续时应再次 `begin`，不重放已完成页。当前核心协议不提供中途取消文件操作的信号，取消等待已发起操作收尾；已发生事实继续保存在宿主私有历史和包的持久 run。包内模块路径与 CC Safety Net 的文件工具评估接口不是通用稳定 API，因此版本锁与实际 SDK 回归是升级条件，不能直接改为 `latest`。
 
 本轮验证使用临时 Git、SQLite、用户目录、模拟模型和浏览器 API 替身；验证实际 SDK 工具清单、关闭后移除、权限收窄、危险命令/敏感读取被阻止、Wiki run 恢复及浏览器取消收尾。没有调用真实 Kernel 账户，也没有把接口通过称为浏览器任务质量提升。
+
+## Browser Loop 密钥与本机浏览器替代方案
+
+用户提供的 `https://pi.dev/packages/@onkernel/browser-loop` 正是当前接入的包。它使用 Kernel 浏览器执行服务，文档明确要求 `KERNEL_API_KEY`，与所选模型供应商的凭据分开；示例通过 Kernel SDK 创建浏览器。包开源不代表云执行无需凭据。Joi 的适配器也走这条云端创建路径，没有本机 CDP 模式或 localhost 隧道。[包的安装与执行契约](https://pi.dev/packages/@onkernel/browser-loop)、[本地适配器](../src/main/infrastructure/pi/pi-browser-loop.ts)
+
+目录中的 `153.7K/mo` 是月下载量，不能当作 GitHub 星数。查询时 Browser Loop 仓库为 14 星；`pi-agent-browser-native` 为 249 星；它使用的上游 Vercel `agent-browser` 约 49.9k 星。这些是查询时的显示值，不能据此推断 Windows 或 Joi 接入已验证。[Browser Loop 仓库](https://github.com/kernel/browser-loop)、[Pi 适配包仓库](https://github.com/fitchmultz/pi-agent-browser-native)、[上游仓库](https://github.com/vercel-labs/agent-browser)
+
+| Pi 包 | 本机模式与安装 | 前端用途与限制 |
+| --- | --- | --- |
+| `pi-agent-browser-native` 0.9.22 | 单独安装 `agent-browser` CLI 并下载 Chrome，再安装 Pi 包。本机浏览器不使用 Kernel Key；可选 Exa/Brave 搜索另需其密钥。 | 导航、交互、截图及可发现的 QA/Electron 工具。最新版明确把原生 Windows 列为尽力支持，已有会话锁与恢复后 Electron 清理测试失败，不能称为本环境开箱即用。 |
+| `pi-browser-debug` 2.0.0 | Pi 安装后，一次下载 Playwright Chromium；可启动隔离浏览器，或连接本机 loopback CDP，不依赖云浏览器凭据。 | 九项工具覆盖观察、交互、截图、页面 JS、控制台与请求失败。仓库仅 2 星，文档未给 Windows 验收矩阵；这是较小的适配候选，并非高星成熟度保证。 |
+| `browser-goblin` 0.5.1 | Node >=24，包固定 `agent-browser` 0.39.2；有 Chrome 时可使用，否则下载对应版本浏览器。 | 自带响应式 QA、控制台/网络/Web Vitals、截图产物和四个技能，符合本机前端任务。包装仓库查询时为 0 星，未找到明确 Windows 资格验证声明。 |
+
+来源：[Native 包当前文档与 Windows 限制](https://pi.dev/packages/pi-agent-browser-native)、[Debug 工具与安装](https://pi.dev/packages/pi-browser-debug)、[Debug 仓库](https://github.com/nandafirmans/pi-browser-debug)、[Goblin 工作流及后端版本](https://pi.dev/packages/browser-goblin)、[Goblin 仓库](https://github.com/sagardampba2022w/browser-goblin)。以上为文档核查，没有安装或运行这些替代包。
+
+上游 `agent-browser` 本身提供 Windows x64 原生二进制，也支持本机 Chrome。当前官方文档额外提供 React 组件树、组件状态、重渲染记录、Suspense 与 Web Vitals 检查；React 检查须在页面脚本执行前启用 DevTools hook，且各 Pi 包固定的后端版本不一定具备最新上游的全部命令。[平台与本机安装](https://agent-browser.dev/installation)、[React 能力及前置条件](https://agent-browser.dev/react)
+
+针对 Joi 的本机 React 验证，优先评估本机 `agent-browser` 后端，参考 Goblin 的 QA 工作流或 Debug 的小工具接口，这是基于上述约束的适配判断。Joi 仍关闭 Pi SDK 的任意扩展发现，不能把在 Pi CLI 中安装成功等同于已接入 Joi；正式接入需保留宿主权限、会话隔离、取消收尾及产物边界。此次仅补充调查，当前已提交的 Browser Loop 选择保持原样。[Joi 会话资源边界](../src/main/infrastructure/pi/joi-pi-session.ts)

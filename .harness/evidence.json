@@ -746,15 +746,15 @@
     {
       "id": "68c4824e-2fab-4811-8c3b-de40278beff1",
       "kind": "document",
-      "claim": "Primary-source Pi research records host-wrapped pinned Wiki/browser/safety capabilities, SDK compatibility constraints, credential requirements and unverified live-service scope.",
+      "claim": "Primary-source Pi research records pinned host adapters, cloud credentials and localhost limits, plus uninstalled local-browser alternatives with distinct upstream popularity and Windows qualification constraints.",
       "location": {
         "path": "docs/pi-coding-harness-research.md"
       },
-      "hash": "0277b5428b08bc2a88aa62e10c9d62134c0f3bec44e65f13dad053381a4d617a",
-      "observedAt": "2026-11-12T04:01:28.449Z",
+      "hash": "990edfd67f1b33a488c7b4228c04cca3ea7a611ac729902942e0e2305af0430b",
+      "observedAt": "2026-11-12T04:13:05.525Z",
       "range": {
         "startLine": 1,
-        "endLine": 93
+        "endLine": 111
       }
     },
     {
