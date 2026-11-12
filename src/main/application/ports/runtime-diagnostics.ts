@@ -1,6 +1,24 @@
 import type { RemoteDiagnosticCode } from "../../../shared/remote.js";
 import type { EvolutionModelFailure } from "../../../shared/evolution.js";
 
+export interface PiLatencyFields {
+  stage: "model_request" | "model_stream" | "tool" | "session_save" | "context_prepare" | "live_event" | "progress_check" | "turn";
+  state: "started" | "first_event" | "first_delta" | "completed" | "slow" | "summary";
+  spanId: string;
+  requestId?: string;
+  workId?: string;
+  sourceId?: string;
+  purpose?: string;
+  runId?: string;
+  toolName?: string;
+  eventType?: string;
+  durationMs?: number;
+  sdkDurationMs?: number;
+  count?: number;
+  maxMs?: number;
+  status?: "completed" | "canceled" | "failed";
+}
+
 export interface RuntimeDiagnosticEventMap {
   "joi.context.summary_boundary": {
     stage: "hard_wait" | "cleanup";
@@ -16,6 +34,7 @@ export interface RuntimeDiagnosticEventMap {
     outputTokens: number;
     maxOutputTokens: number;
   };
+  "joi.pi.latency": PiLatencyFields;
   "joi.partner.tool_permission_denied": { workId: string; actionId: string; toolName: string; reasonCode: string };
   "joi.remote.connection": {
     code: RemoteDiagnosticCode;

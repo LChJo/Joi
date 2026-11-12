@@ -4,6 +4,8 @@ import { PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-part
 import { PiReasoningRuntime } from "../../src/main/infrastructure/pi/pi-reasoning-runtime.js";
 import { createPartnerRevision } from "../../src/main/domain/partners/partner.js";
 import { vi } from "vitest";
+import { trackPiModels } from "../../src/main/infrastructure/pi/pi-usage.js";
+import { PiLatency } from "../../src/main/infrastructure/pi/pi-latency.js";
 
 function fixture() {
   const faux = fauxProvider({ provider: "usage-test" });
@@ -16,6 +18,32 @@ function fixture() {
 }
 
 describe("Pi runtime usage attribution", () => {
+  it.each(["error","aborted"] as const)("CHAT-40 preserves %s streams and records terminal timing without provider details",async stopReason => {
+    const f = fixture(),events: { event: string;fields: Record<string,unknown> }[] = [];
+    f.faux.setResponses([fauxAssistantMessage([],{ stopReason,errorMessage: "PRIVATE_PROVIDER_ERROR" })]);
+    const models = trackPiModels(f.models,undefined,() => ({ engine: "pi",purpose: "partner",workId: "work" }),
+      { emit: (event,fields) => { events.push({ event,fields }); } });
+    const stream = models.streamSimple(f.faux.getModel(),{ messages: [] });
+    const types: string[] = [];
+    for await (const event of stream) types.push(event.type);
+    expect((await stream.result()).stopReason).toBe(stopReason);
+    expect(types).toContain("error");
+    const latency = events.filter(event => event.event === "joi.pi.latency").map(event => event.fields);
+    for (const stage of ["model_request","model_stream"]) expect(latency).toContainEqual(expect.objectContaining({ stage,state: "completed",status: stopReason === "aborted" ? "canceled" : "failed" }));
+    const request = latency.find(event => event.stage === "model_request" && event.state === "started");
+    expect(latency).toContainEqual(expect.objectContaining({ stage: "model_stream",requestId: request?.spanId }));
+    expect(JSON.stringify(events)).not.toContain("PRIVATE_PROVIDER_ERROR");
+  });
+  it("CHAT-40 aggregates fast callbacks and preserves measured failures when the diagnostics sink throws",async () => {
+    const emit = vi.fn(),latency = new PiLatency({ emit },{ workId: "work" });
+    for (let index = 0;index < 100;index++) await latency.callback("live_event","message_update",() => undefined);
+    expect(emit).not.toHaveBeenCalled();
+    latency.finish("completed");
+    expect(emit).toHaveBeenCalledWith("joi.pi.latency",expect.objectContaining({ stage: "live_event",state: "summary",count: 100 }));
+    const failure = new Error("PRIVATE_FAILURE");
+    const broken = new PiLatency({ emit: () => { throw new Error("PRIVATE_SINK_FAILURE"); } },{});
+    await expect(broken.measure("session_save",() => Promise.reject(failure))).rejects.toBe(failure);
+  });
   it("refreshes work attribution when reusing a warm partner", async () => {
     const f = fixture();
     const runtime = new PiPartnerEngineRuntime({ usage: f.usage,

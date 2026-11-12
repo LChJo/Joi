@@ -60,6 +60,8 @@ import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
 import { piCodingGuidance } from "./pi-coding-guidance.js";
 import { ConversationThinking } from "./conversation-thinking.js";
+import { PiLatency } from "./pi-latency.js";
+import { randomUUID } from "node:crypto";
 import { PI_EXTENSION_TOOL_NAMES,PI_AGENT_BROWSER_TOOLS } from "../../domain/partners/pi-extension-tools.js";
 import { isPartnerToolEnabled } from "../../../shared/partner-tools.js";
 import { createConversationPiExtensions } from "./pi-conversation-extensions.js";
@@ -365,6 +367,7 @@ function pauseForMissingEnvironmentCredential(
  */
 export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   readonly #contextStats = new WeakMap<Agent,ConversationContextDto>();
+  readonly #latencies = new WeakMap<Agent,PiLatency>();
   readonly #contextObservers = new WeakMap<Agent,NonNullable<ResidentTurnInput["onContext"]>>();
   #subagents: ConversationSubagentPort | undefined;
   setSubagents(port: ConversationSubagentPort): void { this.#subagents = port; }
@@ -703,6 +706,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     ]);
     const writeGate = new LocalWriteGate(input.request.workspaceExecution);
     const activeAgent = warm.agent;
+    const latency = new PiLatency(this.dependencies.diagnostics,{ workId: input.request.workId,sourceId: pin.sourceId,runId: randomUUID() });
     if (input.request.conversationId !== undefined) {
       const sdkSession = await createJoiPiSession(activeAgent,warm.models,execution.workspacePath ?? process.cwd());
       warm.sdkSession = sdkSession;this.#sdkSessions.set(activeAgent,sdkSession);
@@ -716,18 +720,14 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       return undefined;
     };
     let sessionWrites = Promise.resolve();
-    const saveSession = () => {
+    const saveSession = (eventType = "turn_cleanup") => latency.measure("session_save",() => {
       const summaryRetry = warm.context.retryState();
       const state = { engine: "pi-core" as const,messages: structuredClone(activeAgent.state.messages),route,
         ...(summaryRetry === undefined ? {} : { summaryRetry }),
         ...(warm.context.checkpoint() === undefined ? {} : { checkpoint: warm.context.checkpoint() }) };
       sessionWrites = sessionWrites.then(() => input.saveSession?.(state));
       return sessionWrites;
-    };
-    const stopSessionPersistence = input.saveSession === undefined ? () => undefined : activeAgent.subscribe(event => {
-      if (event.type === "message_end" || event.type === "tool_execution_end") return saveSession();
-      return undefined;
-    });
+    },{ eventType });
     const runAllowed = new Set(activeAgent.state.tools.map(tool => tool.name));
     activeAgent.beforeToolCall = async ({ toolCall }) => {
       if (writeGate.denied) return { block: true, reason: "workspace_write_forbidden" };
@@ -770,6 +770,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     await live?.start();
     const collectArtifacts = input.request.workspaceExecution === undefined || input.request.workspaceExecution.phase === "WRITE_RUNNING";
     const before = await captureWorkspaceSnapshot(collectArtifacts ? execution.workspacePath : undefined);
+    const turnTiming = latency.start("turn");
+    this.#latencies.set(activeAgent,latency);
+    const stopLatency = activeAgent.subscribe(event => { latency.event(event); });
+    const stopSessionPersistence = input.saveSession === undefined ? () => undefined : activeAgent.subscribe(event => {
+      if (event.type === "message_end" || event.type === "tool_execution_end") return saveSession(event.type);
+      return undefined;
+    });
     const stopDeniedTool = activeAgent.subscribe(event => {
       if (event.type === "tool_execution_start" && !writeGate.denied && input.request.workspaceExecution?.accessCeiling === "READ" && classifyLocalToolEffect(event.toolName) === "WRITE") {
         writeGate.beforeTool(event.toolName); activeAgent.abort();
@@ -780,6 +787,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     });
     const abort = () => { warm.context.cancel(); activeAgent.abort(); };
     input.signal?.addEventListener("abort",abort,{ once: true });
+    let latencyStatus: "completed" | "canceled" | "failed" = "completed";
     try {
       const prompt = input.request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : conversationPrompt(input.request);
       input.signal?.throwIfAborted();
@@ -812,6 +820,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         status: tracker.question === undefined ? "COMPLETED" : "WAITING_INPUT",
       };
     } catch (error) {
+      latencyStatus = input.signal?.aborted === true ? "canceled" : "failed";
       const learned = this.#learnRouteLimits(warm.sourceId, warm.modelId, error);
       if (!writeGate.denied) await this.dependencies.sources.reportRunFailure?.(warm.sourceId, error).catch(() => undefined);
       const partialArtifacts = collectArtifacts ? await collectChangedWorkspaceArtifacts(execution.workspacePath, before) : [];
@@ -821,14 +830,21 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     } finally {
       input.signal?.removeEventListener("abort",abort);
       stopDeniedTool();
+      let cleanupSucceeded = false;
       try {
-        await children?.close(input.signal?.aborted === true || assistantFailureSignal(activeAgent.state.messages.slice(previousMessageCount)) !== null);
+        try {
+          await children?.close(input.signal?.aborted === true || assistantFailureSignal(activeAgent.state.messages.slice(previousMessageCount)) !== null);
+        } finally {
+          stopSessionPersistence();
+          if (!writeGate.suspended || input.signal?.aborted === true) await warm.context.close(activeAgent.state.messages, input.signal?.aborted === true);
+          else warm.context.collect(activeAgent.state.messages);
+          try { if (input.saveSession !== undefined) await saveSession(); }
+          finally { await extensions.close(); }
+        }
+        cleanupSucceeded = true;
       } finally {
-        stopSessionPersistence();
-        if (!writeGate.suspended || input.signal?.aborted === true) await warm.context.close(activeAgent.state.messages, input.signal?.aborted === true);
-        else warm.context.collect(activeAgent.state.messages);
-        try { if (input.saveSession !== undefined) await saveSession(); }
-        finally { await extensions.close(); }
+        if (!cleanupSucceeded) latencyStatus = input.signal?.aborted === true ? "canceled" : "failed";
+        stopLatency();latency.finish(latencyStatus);turnTiming.finish(latencyStatus);this.#latencies.delete(activeAgent);
       }
     }
   }
@@ -906,12 +922,15 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const unsubscribe = agent.subscribe(async (event) => {
       refreshIdleDeadline();
       onProgress?.();
-      await live?.handle(event);
+      const latency = this.#latencies.get(agent);
+      if (latency === undefined) await live?.handle(event);
+      else await latency.callback("live_event",event.type,() => live?.handle(event));
       // A run that keeps calling tools refreshes every deadline the runtime has, which is exactly
       // how the run this watches for went ten hours unremarked. The progress watch asks the one
       // question none of them ask: whether any of it produced anything.
       if (event.type === "tool_execution_start" && progress !== undefined && progress.closeOut() === undefined) {
-        const signal: RunProgressSignal = await progress.watch.observeToolCall();
+        const signal: RunProgressSignal = latency === undefined ? await progress.watch.observeToolCall()
+          : await latency.callback("progress_check",event.type,() => progress.watch.observeToolCall());
         if (signal.kind === "nudge") {
           // Correction first: the model may simply be reading a great deal, and it is the only
           // party that can tell the difference. Steering injects this into the running turn.
@@ -1004,7 +1023,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     // A resident Agent may execute turns with different required contexts.
     this.#requirementsErrors.delete(agent);
     let preparedMessages: AgentMessage[] | undefined;
-    agent.prepareRequest = async ({ context }, signal) => {
+    const prepare = async ({ context }: Parameters<NonNullable<Agent["prepareRequest"]>>[0],signal: AbortSignal | undefined) => {
       preparedMessages = undefined;
       const currentPrompt = request.requiredContext === undefined ? initialPrompt : this.#systemPrompt(configured, request, workbench, knowledge, skill, revision,
         agent.state.tools.map(tool => tool.name), workspace, systemBudget);
@@ -1029,6 +1048,10 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       preparedMessages = withRequestPrompt(messages, prompt,agent.state.tools);
       // Checkpoint indices address the complete loop history; only the outgoing request is compacted.
       return { context: { ...context, messages: withRequestPrompt(context.messages, prompt,agent.state.tools) } };
+    };
+    agent.prepareRequest = (input,signal) => {
+      const latency = this.#latencies.get(agent);
+      return latency === undefined ? prepare(input,signal) : latency.measure("context_prepare",() => prepare(input,signal));
     };
     agent.transformContext = (messages, signal) => {
       const prepared = preparedMessages;

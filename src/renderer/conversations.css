@@ -121,7 +121,8 @@ html:has(.archive-page),body:has(.archive-page) { min-width:0; }
 @media (prefers-reduced-motion:reduce) { .chat-tool-running { animation:none; }.chat-tool-chevron { transition:none; } }
 .chat-artifact { display:flex;align-items:center;gap:9px;background:#f1f5ee;border:1px solid var(--line);padding:12px;border-radius:8px; }
 .chat-turn-footer { display:flex;align-items:center;gap:12px;color:var(--muted);font-size:10px;margin-top:16px; }
-.chat-turn-footer .icon-button { margin-left:auto;width:25px;height:25px; }
+.chat-turn-footer .icon-button { margin-left:auto;width:28px;height:28px;padding:0;border-radius:6px;line-height:0; }
+.chat-turn-footer .icon-button > svg { display:block;width:16px;height:16px; }
 .chat-turn-footer.status-running > span:before,.chat-turn-footer.status-queued > span:before { content:"";width:6px;height:6px;border-radius:50%;background:var(--forest);display:inline-block;margin-right:6px;animation:chat-pulse 1.5s ease-in-out infinite; }
 .status-failed,.status-interrupted { color:var(--red); }
 .chat-compose-area { width:min(820px,100%);padding:0 34px 14px;align-self:center; }
