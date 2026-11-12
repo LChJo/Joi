@@ -59,7 +59,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
     expect(manager.checkpoint()).toEqual(previous);expect(JSON.stringify(request)).toContain("PREVIOUS_CHECKPOINT");
     expect(JSON.stringify(request).length).toBeLessThanOrEqual(55_000);expect(JSON.stringify(messages)).toBe(original);
   });
-  it("CHAT-20 backs off the same failed candidate for 30 seconds and immediately evaluates changed source", async () => {
+  it("CHAT-20/SUM-02 backs off a failed route across changed source with progressive cooldown", async () => {
     const f = fixture("pi-failure-backoff");
     const summary = vi.spyOn(f.models, "completeSimple").mockRejectedValue(new Error("synthetic_failure"));
     let now = 0;
@@ -71,6 +71,8 @@ describe("AC-43/48/53/67 context soft budget", () => {
     expect(summary).toHaveBeenCalledTimes(2);
     messages[1] = { role: "user",content: "CHANGED_CANDIDATE".padEnd(4000,"z"),timestamp: 1 };
     await manager.transformContext(messages);
+    expect(summary).toHaveBeenCalledTimes(2);
+    now = 150_000; await manager.transformContext(messages);
     expect(summary).toHaveBeenCalledTimes(3);
   });
   it("CHAT-20 rejects an expanding summary and bounds the final serialized view including its notice", async () => {
@@ -124,8 +126,10 @@ describe("AC-43/48/53/67 context soft budget", () => {
     const f = fixture("joi-midflight-soft");
     const summary = vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("Sources 0 through 5 checked; keep pending gap.")]));
     const requests: string[] = [];
+    let callsAtFinalRequest = 0;
     f.faux.setResponses(Array.from({ length: 11 }, (_, index) => context => {
       requests.push(JSON.stringify(context.messages));
+      if (index === 10) callsAtFinalRequest = summary.mock.calls.length;
       return index < 10 ? fauxAssistantMessage([fauxToolCall("work_read_result", { resultId: String(index) })], { stopReason: "toolUse" }) : fauxAssistantMessage([fauxText("done")]);
     }));
     let snapshot: JoiReasoningSessionSnapshot | undefined;
@@ -141,8 +145,8 @@ describe("AC-43/48/53/67 context soft budget", () => {
     expect(JSON.stringify(snapshot?.messages)).toContain("CURRENT_TASK");
     expect(JSON.stringify(snapshot?.messages)).toContain("PAGE_9");
     // A request checkpoint must become the durable checkpoint without a second summary call.
-    expect(summary).toHaveBeenCalledTimes(1);
-    expect(snapshot?.compaction?.count).toBe(1);
+    expect(summary).toHaveBeenCalledTimes(callsAtFinalRequest);
+    expect(snapshot?.compaction?.count).toBeGreaterThan(0);
     expect(snapshot?.compaction?.coverage).toMatchObject({ coveredFrom: 0, transcriptId: "loop" });
     expect(snapshot?.compaction?.coverage?.coveredTo).toBe(snapshot?.archivedMessages?.length);
     const originalResults = [...(snapshot?.archivedMessages ?? []), ...(snapshot?.messages ?? [])]
@@ -166,14 +170,17 @@ describe("AC-43/48/53/67 context soft budget", () => {
     let now = 0;
     const manager = createPiContextManager({ ...f, messagesMaxChars: 1_000_000, thinkingLevel: "high",now: () => now });
     await manager.transformContext(messages);
+    await new Promise<void>(resolve => { setImmediate(resolve); }); manager.collect(messages);
     messages.push({ role: "user", content: "TASK_B", timestamp: 2 },
       ...Array.from({ length: 50 }, () => fauxAssistantMessage([fauxText("new evidence".padEnd(4000, "y"))])));
     summary.mockRejectedValueOnce(new Error("summary_failed"));
     const failedRequest = await manager.transformContext(messages);
+    await new Promise<void>(resolve => { setImmediate(resolve); }); manager.collect(messages);
     expect(JSON.stringify(failedRequest)).toContain("TASK_A");
     expect(JSON.stringify(failedRequest)).toContain("TASK_B");
     now = 30_000;
     await manager.transformContext(messages);
+    await new Promise<void>(resolve => { setImmediate(resolve); }); manager.collect(messages);
     expect(JSON.stringify(summary.mock.calls.at(-1))).toContain("TASK_A");
     expect(manager.checkpoint()?.count).toBe(2);
   });
@@ -181,13 +188,16 @@ describe("AC-43/48/53/67 context soft budget", () => {
     const f = fixture("pi-coverage-identity");
     vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("foreign summary")]));
     const manager = createPiContextManager({ ...f, messagesMaxChars: 1_000_000, thinkingLevel: "high" });
-    await manager.transformContext(history());
+    const original = history();
+    await manager.transformContext(original);
+    await new Promise<void>(resolve => { setImmediate(resolve); }); manager.collect(original);
     const checkpoint = manager.checkpoint();
     expect(checkpoint).toBeDefined();
     const other = history();
     other[1] = { role: "user", content: "DIFFERENT_SOURCE", timestamp: 1 };
     const restored = createPiContextManager({ ...f, messagesMaxChars: 1_000_000, thinkingLevel: "high", ...(checkpoint === undefined ? {} : { restored: checkpoint }) });
     await restored.transformContext(other);
+    await new Promise<void>(resolve => { setImmediate(resolve); }); restored.collect(other);
     expect(restored.checkpoint()?.sourceFingerprint).not.toBe(checkpoint?.sourceFingerprint);
     expect(restored.checkpoint()?.count).toBe(1);
   });
@@ -197,7 +207,7 @@ describe("AC-43/48/53/67 context soft budget", () => {
     const manager = createPiContextManager({ ...f, messagesMaxChars: 1_000_000, thinkingLevel: "high" });
     const request = await manager.transformContext(history());
     expect(manager.checkpoint()).toBeUndefined();
-    expect(JSON.stringify(request)).toContain("joi context notice");
+    expect(JSON.stringify(request)).toBe(JSON.stringify(history()));
   });
   it("rolls back both archived and live history after a checkpointed replay-safe turn", async () => {
     const f = fixture("joi-checkpoint-rollback");
@@ -290,13 +300,17 @@ describe("AC-43/48/53/67 context soft budget", () => {
     expect(JSON.stringify(snapshot.messages)).toContain("evidence-0");
     expect(snapshot.messages.length).toBeGreaterThan(50);
   });
-  it("compacts Pi at 128K serialized characters independently of the model window toward 64K", async () => {
+  it("SUM-05/07 compacts Pi incrementally from its 128K soft trigger toward 64K", async () => {
     const f = fixture("pi-soft-budget");
-    f.faux.setResponses([fauxAssistantMessage([fauxText("checkpoint with references and unresolved gaps")])]);
+    vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("checkpoint with references and unresolved gaps")]));
     const manager = createPiContextManager({ ...f, messagesMaxChars: 1_000_000, thinkingLevel: "high" });
     const messages = history();
-    const request = await manager.transformContext(messages);
-    expect(manager.checkpoint()?.count).toBe(1);
+    let request: AgentMessage[] = [];
+    for (let index = 0; index < 6; index += 1) {
+      request = await manager.transformContext(messages);
+      await new Promise<void>(resolve => { setImmediate(resolve); }); manager.collect(messages);
+    }
+    expect(manager.checkpoint()?.count).toBeGreaterThan(1);
     expect(JSON.stringify(request).length).toBeLessThanOrEqual(64_000);
     expect(JSON.stringify(request)).toContain("MANDATORY_TASK");
     expect(messages).toHaveLength(51);
@@ -304,16 +318,16 @@ describe("AC-43/48/53/67 context soft budget", () => {
 
   it("compacts joi on the same independent budget and preserves the current requirements", async () => {
     const f = fixture("joi-soft-budget");
-    f.faux.setResponses([
-      fauxAssistantMessage([fauxText("checkpoint with references and unresolved gaps")]),
-      context => { expect(JSON.stringify(context)).toContain("REQUIRED_NOW"); return fauxAssistantMessage([fauxText("continued")]); },
-    ]);
+    vi.spyOn(f.models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("checkpoint with references and unresolved gaps")]));
+    f.faux.setResponses(Array.from({ length: 4 }, () => context => {
+      expect(JSON.stringify(context)).toContain("REQUIRED_NOW"); return fauxAssistantMessage([fauxText("continued")]);
+    }));
     let snapshot: JoiReasoningSessionSnapshot = { workbenchId: "wb", sessionId: "session", modelRevisionId: "mr", sourceRevisionId: "sr", systemPrompt: "POLICY", updatedAt: "2026-10-19T00:00:00Z", messages: history() };
     const runtime = new PiReasoningRuntime({ ...f, thinkingLevel: "high", tools: [], sessionStore: {
       load: async () => snapshot, save: async value => { snapshot = value; },
     } });
-    await runtime.startTurn({ workbenchId: "wb", sessionId: "session", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "input", turnId: "turn", prompt: "continue", requiredContext: "REQUIRED_NOW" });
-    expect(snapshot.compaction?.count).toBe(1);
+    for (let index = 0; index < 4; index += 1) await runtime.startTurn({ workbenchId: "wb", sessionId: "session", modelRevisionId: "mr", sourceRevisionId: "sr", sourceId: "s", modelId: "m", systemPrompt: "POLICY", inputId: "input", turnId: `turn-${String(index)}`, prompt: "continue", requiredContext: "REQUIRED_NOW" });
+    expect(snapshot.compaction?.count).toBeGreaterThan(1);
     expect(JSON.stringify(snapshot.messages).length).toBeLessThanOrEqual(64_000);
   });
 });

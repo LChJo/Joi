@@ -1,4 +1,5 @@
 import type { GoalSynthesisDraft } from "../../domain/work/goal-synthesis-state.js";
+import type { SummaryRetryState } from "./summary-state.js";
 
 export type JoiReasoningOutcome = "DIRECT_ANSWER" | "TEAM_READY" | "RESULT_SYNTHESIZED" | "RESULT_CONTINUE" | "RESULT_BLOCKED" | "MAP_CLEARED";
 
@@ -38,10 +39,12 @@ export interface StartReasoningTurnInput {
 }
 
 export interface JoiReasoningSessionSnapshot {
+  summaryRetry?: SummaryRetryState | undefined;
   workbenchId: string;
   /** Immutable private source messages replaced by checkpoints, available only to this session's history tool. */
   archivedMessages?: unknown[];
   compaction?: {
+    softPending?: boolean;
     compactedMessages: number;
     count: number;
     lastCompactedAt: string;

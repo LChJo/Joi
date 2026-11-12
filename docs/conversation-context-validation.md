@@ -1,16 +1,16 @@
 # Conversation context validation
 
-The acceptance source is [CHAT-18–26](21-normal-conversations.md); the implementation boundary is [ADR 0033](adr/0033-conversation-context-sessions.md).
+The acceptance source is [CHAT-18–26](21-normal-conversations.md), refined by [SUM-01–12](pi-summary-optimization-plan.md); the implementation boundaries are [ADR 0033](adr/0033-conversation-context-sessions.md) and [ADR 0034](adr/0034-background-summary-policy.md). Dated gate reports below retain their original scope; the summary-policy increment records its current checks in the SUM plan.
 
 ## Regression evidence
 
 | Scenario | Failing regression | Implemented result |
 | --- | --- | --- |
-| Same failed candidate requested three times | Three summary calls | One summary call; 30-second expiry permits another, changed candidate permits immediate evaluation |
+| Failed route receives unchanged and newly appended candidates | Candidate changes permit immediate repeated summary calls | One flight; persistent 30/120/300-second cooldown follows session and source/model revision, independently of candidate changes |
 | Expanding summary with 55,000-character message budget | Summary adopted despite expansion | Rejected; outgoing JSON including the omission notice fits the budget |
 | Expanding update after a valid checkpoint | Replacement could advance coverage | Previous checkpoint and original source remain intact |
 | In-place source change | Stale cost cache allowed 70,655 serialized characters | Candidate is re-priced and the outgoing view fits 55,000 characters |
-| Restart with SDK system projections inside the covered prefix | Same prefix summarized twice | One summary call across restore |
+| Restart with SDK system projections inside the covered prefix | Same prefix summarized twice | Accepted incremental coverage is reused across restore without generating another summary for that prefix |
 | Oversized protected Chinese tool result | Fixed SDK projection could trigger an unnecessary summary | No second provider request; explicit capacity failure; complete original result retained |
 | Codex/Claude mandatory context | Actual SDK input omitted required context | Full context reaches actual SDK options without string slicing |
 | Codex/Claude native wire input | Mandatory context had no CLI-to-provider evidence | Both installed native CLIs deliver the complete long Chinese requirement and attachment marker to a loopback provider in one call, with isolated credential fakes |

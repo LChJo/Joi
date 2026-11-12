@@ -4,10 +4,11 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Type } from "typebox";
-import { getCurrentTools, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, } from "@earendil-works/pi-ai";
+import { getCurrentTools, createModels, fauxAssistantMessage, fauxProvider, fauxText, fauxThinking, fauxToolCall, type AssistantMessage } from "@earendil-works/pi-ai";
 import { vi } from "vitest";
 
 import type { ToolTraceDraft } from "../../src/main/application/partners/tool-trace-presentation.js";
+import type { PartnerSessionState } from "../../src/main/application/ports/partner-instances.js";
 import { PiCodingPartnerRunner } from "../../src/main/infrastructure/pi/pi-coding-partner-runner.js";
 import { boundPartnerModelContext, partnerContextMaxChars, PiPartnerEngineRuntime } from "../../src/main/infrastructure/pi/pi-partner-engine-runtime.js";
 import {
@@ -43,6 +44,78 @@ function requestSystemPrompt(context: { messages?: readonly unknown[] }): string
 }
 
 describe("local Pi coding partner runtime", () => {
+  it("SUM-05/08 keeps one pending summary through a warm permission suspension and drains it on final cleanup", async () => {
+    const faux = fauxProvider({ provider: "summary-phase-flight", models: [{ id: "faux", contextWindow: 1_000_000, maxTokens: 32_768 }] });
+    const models = createModels(); models.setProvider(faux.provider);
+    let finishSummary: ((message: AssistantMessage) => void) | undefined;
+    const summary = vi.spyOn(models, "completeSimple").mockReturnValue(new Promise(resolve => { finishSummary = resolve; }));
+    faux.setResponses([fauxAssistantMessage([fauxToolCall("write", {})], { stopReason: "toolUse" }), fauxAssistantMessage([fauxText("continued")])]);
+    const execute = vi.fn(async () => ({ content: [{ type: "text" as const, text: "written" }], details: {} }));
+    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "high" as const }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: { names: ["write"], create: () => [{ name: "write", label: "write", description: "write", parameters: Type.Object({}), execute }] } });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-11-12T00:00:00Z", displayName: "Summary test", kind: "local-pi",
+      partnerId: "p", partnerRevisionId: "r", registryRevision: 1, skills: [], tools: ["write"] });
+    let state: PartnerSessionState = { engine: "pi-core", messages: [{ role: "user", content: "INITIAL_TASK", timestamp: 0 },
+      ...Array.from({ length: 50 }, () => fauxAssistantMessage([fauxText("evidence".padEnd(4000, "中"))]))] };
+    const contextStates: string[] = [];
+    const input = { instanceId: "phase-flight", revision, knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [],
+      request: { actionId: "a", workbenchId: "wb", workId: "w", contextSnapshotId: "snapshot", taskProjection: "continue" },
+      onContext: async (context: { state: string }) => { contextStates.push(context.state); },
+      saveSession: async (value: PartnerSessionState) => { state = value; } };
+    try {
+      const paused = await runtime.runResidentTurn({ ...input, restoredMessages: null, sessionState: state,
+        request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+      expect(paused.status).toBe("SUSPENDED");
+      expect(summary).toHaveBeenCalledTimes(1);
+      expect(summary.mock.calls[0]?.[2]?.signal?.aborted).toBe(false);
+      expect(contextStates.at(-1)).toBe("COMPACTING");
+      expect(execute).not.toHaveBeenCalled();
+      const resumed = await runtime.runResidentTurn({ ...input, restoredMessages: paused.messages ?? [], sessionState: state,
+        request: { ...input.request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
+      expect(resumed.status).toBe("COMPLETED");
+      expect(summary).toHaveBeenCalledTimes(1);
+      expect(summary.mock.calls[0]?.[2]?.signal?.aborted).toBe(true);
+      finishSummary?.(fauxAssistantMessage([fauxText("LATE_SUMMARY")]));
+      await new Promise<void>(resolve => { setImmediate(resolve); });
+      expect(state.checkpoint).toBeUndefined();
+      expect(state.summaryRetry).toBeUndefined();
+      expect(contextStates.at(-1)).toBe("READY");
+    } finally { runtime.evictFromMemory(input.instanceId); }
+  });
+  it("SUM-03 keeps cooldown across restored READ/WRITE turns and re-evaluates a new source revision", async () => {
+    const faux = fauxProvider({ provider: "summary-resident-cooldown", models: [{ id: "faux", contextWindow: 1_000_000, maxTokens: 32_768 }] });
+    const models = createModels(); models.setProvider(faux.provider);
+    const summary = vi.spyOn(models, "completeSimple").mockRejectedValue(new Error("synthetic_failure"));
+    faux.setResponses(Array.from({ length: 3 }, () => fauxAssistantMessage([fauxText("continued")])));
+    const runtime = new PiPartnerEngineRuntime({ contexts, prompts: { read: async () => null },
+      resolver: { resolve: async () => ({ model: faux.getModel(), models, thinkingLevel: "high" as const }) },
+      sources: { selectInitial: async turnId => ({ turnId, modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr" }) },
+      tools: { names: [], create: () => [] } });
+    const revision = createPartnerRevision({ capabilities: [], createdAt: "2026-11-12T00:00:00Z", displayName: "Summary test", kind: "local-pi",
+      partnerId: "p", partnerRevisionId: "r", registryRevision: 1, skills: [], tools: [] });
+    let state: PartnerSessionState = { engine: "pi-core", messages: [{ role: "user", content: "INITIAL_TASK", timestamp: 0 },
+      ...Array.from({ length: 50 }, () => fauxAssistantMessage([fauxText("evidence".padEnd(4000, "中"))]))] };
+    const turn = { instanceId: "cooldown", revision, knowledgeSection: "", skillSection: "", skillEnvironmentKeys: [],
+      request: { actionId: "a", workbenchId: "wb", workId: "w", contextSnapshotId: "snapshot", taskProjection: "continue" },
+      saveSession: async (value: PartnerSessionState) => { state = value; } };
+    await runtime.runResidentTurn({ ...turn, restoredMessages: null, sessionState: state,
+      request: { ...turn.request, workspaceExecution: { accessCeiling: "WRITE", generation: 1, phase: "READ_RUNNING" } } });
+    expect(summary).toHaveBeenCalledTimes(1);
+    expect(state.summaryRetry?.failures).toBe(1);
+    runtime.evictFromMemory(turn.instanceId);
+    await runtime.runResidentTurn({ ...turn, restoredMessages: state.messages, sessionState: state,
+      request: { ...turn.request, workspaceExecution: { accessCeiling: "WRITE", generation: 2, phase: "WRITE_RUNNING" } } });
+    expect(summary).toHaveBeenCalledTimes(1);
+    expect(state.summaryRetry?.failures).toBe(1);
+    runtime.evictFromMemory(turn.instanceId);
+    await runtime.runResidentTurn({ ...turn, restoredMessages: state.messages, sessionState: state,
+      sourcePin: { turnId: "t", modelId: "faux", modelRevisionId: "mr", sourceId: "source", sourceRevisionId: "sr-2" } });
+    expect(summary).toHaveBeenCalledTimes(2);
+    expect(state.summaryRetry?.failures).toBe(1);
+    runtime.evictFromMemory(turn.instanceId);
+  });
   it("AC-WR-07 terminates a hidden write attempt before probing again or asking the user", async () => {
     const faux = fauxProvider({ provider: "read-ceiling-denial" });
     const models = createModels(); models.setProvider(faux.provider);
@@ -729,7 +802,7 @@ describe("Pi partner engine runtime", () => {
 
     // Every request stayed inside the budget the route was sized to, for the whole run.
     expect(requests.length).toBeGreaterThan(20);
-    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(budget.messagesMaxChars + 2_000);
+    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(budget.messagesMaxChars + budget.systemMaxChars);
     // The task itself is never lost: it is the anchor every request opens on.
     const lastMessages = JSON.parse(requests.at(-1) ?? "[]") as { role?: string }[];
     expect(lastMessages[0]?.role).toBe("system");
@@ -795,7 +868,7 @@ describe("Pi partner engine runtime", () => {
     const last = requests.at(-1) ?? "";
     expect(last).toContain("joi context notice");
     expect(last).toContain("no other process modified your workspace");
-    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + 2_000);
+    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + modelRequestBudget({ contextWindow: 32_000 }).systemMaxChars);
   });
 
   it("keeps the summary it already paid for when a later summarization fails", async () => {
@@ -859,7 +932,7 @@ describe("Pi partner engine runtime", () => {
     // there. Dropping it would cost the run the compaction it had paid a model call for, and leave
     // the notice pointing at a message the request no longer holds.
     expect(truncated.every((request) => request.includes(SENTINEL))).toBe(true);
-    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + 2_000);
+    expect(Math.max(...requests.map((request) => request.length))).toBeLessThanOrEqual(modelRequestBudget({ contextWindow: 32_000 }).messagesMaxChars + modelRequestBudget({ contextWindow: 32_000 }).systemMaxChars);
   });
 
   it.each(["ephemeral", "resident"])("rejects %s Skill runs without a workspace before model initialization", async (mode) => {

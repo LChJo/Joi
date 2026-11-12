@@ -212,6 +212,7 @@ describe("Pi reasoning runtime contract", () => {
       },
     ]);
     const models = createModels(); models.setProvider(faux.provider);
+    vi.spyOn(models, "completeSimple").mockRejectedValue(new Error("synthetic_summary_unavailable"));
     const store = new MemorySessionStore();
     const offsets: number[] = [];
     const tools = [{ name: "goal_read_inputs", label: "Read", description: "Read a source page", parameters: Type.Object({ offset: Type.Integer() }),
@@ -395,7 +396,7 @@ describe("Pi reasoning runtime contract", () => {
       systemPrompt: "POLICY" + (state === "medium" ? "x".repeat(10_000) : ""), turnId: "adaptive_turn",
     });
     const request = requests.at(-1) ?? "";
-    const expectedEvidence = state === "empty" || state === "busy" ? "LARGE_EVIDENCE" : state === "medium" ? "MEDIUM_EVIDENCE" : "SOFT_EVIDENCE";
+    const expectedEvidence = state === "empty" ? "LARGE_EVIDENCE" : state === "medium" ? "MEDIUM_EVIDENCE" : "SOFT_EVIDENCE";
     expect(request.includes(expectedEvidence)).toBe(true);
     if (state === "busy") expect(request).toContain("HISTORY_TO_KEEP");
     expect(request).toContain("REPAIR_NOW");
@@ -927,6 +928,7 @@ describe("Pi reasoning runtime contract", () => {
     ])));
     const models = createModels();
     models.setProvider(faux.provider);
+    const summary = vi.spyOn(models, "completeSimple").mockResolvedValue(fauxAssistantMessage([fauxText("Checkpoint facts and pending references.")]));
     const store = new MemorySessionStore();
     const runtime = new PiReasoningRuntime({
       compaction: { keepRecentMessages: 2, maxMessages: 6, maxSummaryCharacters: 240 },
@@ -953,13 +955,11 @@ describe("Pi reasoning runtime contract", () => {
     }
 
     const compacted = store.snapshots.get("session_compact");
-    // The transcript leads with the prompt pi keeps inside it; the checkpoint replaces the turns
-    // that follow. The list is held at the configured cap rather than growing with the session,
-    // and the cap now counts the prompt too, because the prompt is inside the list.
+    // Checkpoint framing, initial task and the complete current exchange remain protected.
     expect(compacted?.messages[0]).toMatchObject({ role: "system" });
     expect(compacted?.messages.length).toBeLessThanOrEqual(6);
     expect(JSON.stringify(compacted?.messages[1])).toContain("joi session checkpoint");
-    expect(compacted?.compaction).toMatchObject({ count: 1 });
+    expect(compacted?.compaction?.count).toBeGreaterThan(0);
     // The prompt is preserved rather than summarized, so it is not part of this count.
     expect(compacted?.compaction?.compactedMessages).toBeGreaterThanOrEqual(4);
 
@@ -984,7 +984,9 @@ describe("Pi reasoning runtime contract", () => {
       systemPrompt: "You are joi.",
       turnId: "turn-after-restore",
     });
-    expect(store.snapshots.get("session_compact")?.compaction?.count).toBe(1);
+    expect(store.snapshots.get("session_compact")?.compaction?.count).toBeGreaterThanOrEqual(compacted?.compaction?.count ?? 0);
+    expect(JSON.stringify(summary.mock.calls.at(-1)?.[1])).toContain("previous-summary");
+    expect(JSON.stringify(summary.mock.calls.at(-1)?.[1])).not.toContain("answer-1-");
   });
 
   it("sizes a known model to the completion cap its vendor documents", () => {
@@ -1146,6 +1148,7 @@ describe("Pi reasoning runtime contract", () => {
     const models = createModels();
     models.setProvider(faux.provider);
     const store = new MemorySessionStore();
+    const diagnostics = { emit: vi.fn() };
     const flood = Array.from({ length: 24 }, (_, index) => ({
       // Keep this fixture above the SDK's estimated token window, not merely large in characters.
       content: `填充 ${String(index)} ${"上下文".repeat(1000)}`,
@@ -1162,6 +1165,7 @@ describe("Pi reasoning runtime contract", () => {
       workbenchId: "workbench_1",
     });
     const runtime = new PiReasoningRuntime({
+      diagnostics,
       model: { ...faux.getModel(), contextWindow: 16_000, maxTokens: 8_000 },
       models,
       sessionStore: store,
@@ -1181,7 +1185,14 @@ describe("Pi reasoning runtime contract", () => {
       turnId: "turn_overflow",
     });
     const saved = store.snapshots.get("session_overflow");
-    expect(saved?.messages.length).toBeLessThan(flood.length);
+    expect(diagnostics.emit.mock.calls.find(([event]) => event === "joi.context.summary_generated")?.[1]).toMatchObject({ reasonCode: "summary_generated" });
+    expect(diagnostics.emit.mock.calls.filter(([event]) => event === "joi.partner.context_summary_failed" || event === "joi.partner.context_summary_rejected")).toEqual([]);
+    expect(diagnostics.emit.mock.calls.some(([event]) => event === "joi.partner.context_compacted")).toBe(true);
+    expect(diagnostics.emit.mock.calls.some(([event]) => event === "joi.context.checkpoint_reused")).toBe(true);
+    expect(JSON.stringify(saved?.messages).length).toBeLessThan(JSON.stringify(flood).length);
+    expect(saved?.archivedMessages?.length).toBeGreaterThan(0);
+    const retained = [...(saved?.archivedMessages ?? []), ...(saved?.messages ?? [])] as { role?: string; timestamp?: number }[];
+    for (const original of flood) expect(retained.filter(message => message.role === "user" && message.timestamp === original.timestamp)).toHaveLength(1);
     expect(JSON.stringify(saved?.messages)).toContain("joi session checkpoint");
     expect(saved?.compaction).toMatchObject({ count: 1 });
   });

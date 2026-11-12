@@ -88,6 +88,7 @@ describe("Pi SQLite session restore", () => {
         "2026-07-28T10:00:00.000Z", "2026-07-28T10:00:00.000Z",
       ));
       const snapshot: JoiReasoningSessionSnapshot = {
+        summaryRetry: { routeKey: "a".repeat(64), failures: 2, until: 1_000_000 },
         workbenchId: "workbench-1",
         archivedMessages: [{ role: "user", content: "retained source evidence", timestamp: 0 }],
         compaction: {

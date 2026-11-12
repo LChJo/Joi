@@ -1,17 +1,14 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import { generateSummary } from "@earendil-works/pi-coding-agent";
-import { createAssistantMessageEventStream, type Api, type Model, type Models,type AssistantMessage } from "@earendil-works/pi-ai";
+import { createAssistantMessageEventStream, getSupportedThinkingLevels, type Api, type Model, type Models, type AssistantMessage } from "@earendil-works/pi-ai";
+import type { SummaryRetryState } from "../../application/ports/summary-state.js";
 import { sessionAssistant } from "./conversation-session.js";
 import { createHash } from "node:crypto";
+import { modelRequiresAlwaysOnThinking } from "./provider-presets.js";
 
 /**
- * The pieces both pi runtimes need to compact a conversation.
- *
- * They differ in where the compacted history lives — the reasoning runtime owns its session and
- * rewrites the transcript, while a partner run may only reshape one request — but they must agree on
- * what a checkpoint *is*. Two independently written summary calls would drift in their instructions
- * and in the shape of the message left behind, and a transcript carried between them would read
- * differently depending on which side wrote it.
+ * Both Pi runtimes share summary validation, failure protection and checkpoint framing. Their
+ * session owners retain responsibility for durable history and request-only projections.
  */
 
 /** Marks a summary message as a checkpoint, and is how a restored transcript recognises one. */
@@ -23,13 +20,23 @@ export const SUMMARY_INSTRUCTIONS = "Preserve the current task, effective mandat
 
 export const HISTORY_SOFT_TRIGGER_CHARS = 128_000;
 export const HISTORY_SOFT_TARGET_CHARS = 64_000;
+export const SUMMARY_TARGET_CHARS = 8_000;
+export const SUMMARY_TIMEOUT_MS = 60_000;
+export const SUMMARY_HARD_WAIT_MS = 5_000;
 
-/** One failed candidate is retried only after its delay; a changed candidate is independent. */
+/** Failure protection belongs to the session's pinned route, independently of appended source. */
 export class SummaryRetryGuard {
-  #failure: { key: string; until: number } | undefined;
-  constructor(private readonly now: () => number = Date.now, private readonly delayMs = 30_000) {}
-  remaining(key: string): number { return this.#failure?.key === key ? Math.max(0,this.#failure.until - this.now()) : 0; }
-  failed(key: string): void { this.#failure = { key,until: this.now() + this.delayMs }; }
+  #failure: SummaryRetryState | undefined;
+  constructor(private readonly now: () => number = Date.now, restored?: SummaryRetryState) {
+    if (restored !== undefined && typeof restored.routeKey === "string" && /^[a-f0-9]{64}$/u.test(restored.routeKey)
+      && Number.isSafeInteger(restored.failures) && restored.failures > 0 && Number.isFinite(restored.until) && restored.until >= 0) this.#failure = { ...restored };
+  }
+  remaining(routeKey: string): number { return this.#failure?.routeKey === routeKey ? Math.max(0, this.#failure.until - this.now()) : 0; }
+  failed(routeKey: string): void {
+    const failures = Math.min(3, (this.#failure?.routeKey === routeKey ? this.#failure.failures : 0) + 1);
+    this.#failure = { routeKey, failures, until: this.now() + ([30_000, 120_000, 300_000][failures - 1] ?? 300_000) };
+  }
+  snapshot(): SummaryRetryState | undefined { return this.#failure === undefined ? undefined : { ...this.#failure }; }
   reset(): void { this.#failure = undefined; }
 }
 
@@ -92,9 +99,26 @@ export function isCheckpointMessage(message: AgentMessage | undefined): boolean 
     && (block as { text: string }).text.includes(CHECKPOINT_MARKER));
 }
 
+export type SummaryFailureReason = "summary_truncated" | "summary_canceled" | "summary_incomplete" | "summary_provider_error"
+  | "summary_tool_call" | "summary_empty" | "summary_input_capacity" | "summary_timed_out" | "summary_threw";
+const RESPONSE_FAILURES: Partial<Record<AssistantMessage["stopReason"], SummaryFailureReason>> = {
+  length: "summary_truncated", aborted: "summary_canceled", pending: "summary_incomplete", deferred: "summary_incomplete",
+  error: "summary_provider_error", toolUse: "summary_tool_call",
+};
+
+export interface SummaryGenerationDiagnostic {
+  reasonCode: SummaryFailureReason | "summary_generated";
+  stopReason: AssistantMessage["stopReason"] | "unknown";
+  durationMs: number;
+  inputChars: number;
+  outputChars: number;
+  outputTokens: number;
+  maxOutputTokens: number;
+}
+
 export type SummarizeResult =
   | { ok: true; summary: string }
-  | { ok: false; reasonCode: string };
+  | { ok: false; reasonCode: SummaryFailureReason };
 
 /**
  * Summarizes one segment of a conversation, updating the previous summary when there is one.
@@ -117,52 +141,96 @@ export async function summarizeSegment(input: {
   previousSummary?: string | undefined;
   signal?: AbortSignal | undefined;
   thinkingLevel: "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+  targetChars?: number;
+  timeoutMs?: number;
+  onDiagnostic?: (event: SummaryGenerationDiagnostic) => void;
 }): Promise<SummarizeResult> {
+  const controller = new AbortController();
+  const signal = input.signal === undefined ? controller.signal : AbortSignal.any([input.signal, controller.signal]);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, input.timeoutMs ?? SUMMARY_TIMEOUT_MS);
+  timer.unref();
+  const startedAt = performance.now();
+  let reason: SummaryFailureReason | undefined;
+  const currentFailure = (): SummaryFailureReason | undefined => reason;
+  let response: AssistantMessage | undefined;
+  let inputChars = 0, maxOutputTokens = 0;
+  const supported = getSupportedThinkingLevels(input.model);
+  const requiredThinking = modelRequiresAlwaysOnThinking(input.model.baseUrl);
+  const thinking = supported.includes("off") && !requiredThinking ? "off"
+    : requiredThinking && supported.includes("low") ? "low" : supported.find(level => level !== "off") ?? "off";
+  const canceledReason = (): SummaryFailureReason => timedOut ? "summary_timed_out" : "summary_canceled";
+  const isCanceled = (): boolean => signal.aborted;
   try {
+    if (signal.aborted) return { ok: false, reasonCode: reason = canceledReason() };
     const generated = await generateSummary(
       [...input.segment],
       input.model,
       input.reserveTokens,
       undefined,
       undefined,
-      input.signal,
-      SUMMARY_INSTRUCTIONS,
+      signal,
+      `${SUMMARY_INSTRUCTIONS} Keep the summary within ${String(input.targetChars ?? SUMMARY_TARGET_CHARS)} characters.`,
       input.previousSummary,
-      input.thinkingLevel,
+      thinking,
       (model,context,options) => {
         const stream = createAssistantMessageEventStream();
-        // Joi's configured Models collection owns credentials, transport and separate summary usage.
-        void input.models.completeSimple(model,context,{ ...options,maxTokens: input.reserveTokens }).then(response => {
-          if (response.stopReason === "error" || response.stopReason === "aborted" || response.stopReason === "pending") stream.push({ type: "error",reason: response.stopReason === "aborted" ? "aborted" : "error",error: response });
-          else stream.push({ type: "done",reason: response.stopReason,message: response });
-          stream.end(response);
-        },() => {
-          const response = { ...sessionAssistant([]),stopReason: "error",errorMessage: "summary_failed" } as AssistantMessage;
-          stream.push({ type: "error",reason: "error",error: response });stream.end(response);
-        });
+        inputChars = JSON.stringify(context).length;
+        const outputCapacity = Math.max(1, Math.floor(model.maxTokens));
+        const available = model.contextWindow > 0 ? model.contextWindow - inputChars - Math.min(1024, Math.ceil(model.contextWindow * 0.05)) : outputCapacity;
+        maxOutputTokens = Math.max(0, Math.min(outputCapacity, Math.floor(available)));
+        let ended = false;
+        const finish = (value: AssistantMessage, fromProvider = false): void => {
+          if (ended) return;
+          ended = true;
+          signal.removeEventListener("abort", abort);
+          if (fromProvider) response = value;
+          if (value.stopReason === "error" || value.stopReason === "aborted" || value.stopReason === "pending") stream.push({ type: "error", reason: value.stopReason === "aborted" ? "aborted" : "error", error: value });
+          else stream.push({ type: "done", reason: value.stopReason, message: value });
+          stream.end(value);
+        };
+        const failure = (): AssistantMessage => ({ ...sessionAssistant([]), stopReason: "error", errorMessage: "summary_failed" }) as AssistantMessage;
+        const abort = (): void => { reason = canceledReason(); finish(failure()); };
+        if (maxOutputTokens < 1) { reason = "summary_input_capacity"; finish(failure()); return stream; }
+        if (signal.aborted) { abort(); return stream; }
+        signal.addEventListener("abort", abort, { once: true });
+        const requestOptions = { ...options, signal, maxTokens: maxOutputTokens };
+        if (thinking === "off") delete requestOptions.reasoning;
+        else requestOptions.reasoning = thinking;
+        const summaryModel = { ...model, maxTokens: maxOutputTokens };
+        // The configured Models boundary owns transport and credentials; no SDK discovery is used.
+        void Promise.resolve().then(() => signal.aborted ? failure() : input.models.completeSimple(summaryModel, context, requestOptions)).then(value => {
+          if (signal.aborted) { abort(); return; }
+          if (value.stopReason !== "stop") reason = RESPONSE_FAILURES[value.stopReason] ?? "summary_incomplete";
+          else if (value.content.some(block => block.type === "toolCall")) reason = "summary_tool_call";
+          finish(value, true);
+        }, () => { reason ??= signal.aborted ? canceledReason() : "summary_provider_error"; finish(failure()); });
         return stream;
       },
       undefined,
       { enabled: false,maxRetries: 0,baseDelayMs: 0 },
     );
-    if (generated.trim() === "") return { ok: false, reasonCode: "summary_empty" };
+    if (isCanceled()) reason = canceledReason();
+    const failureReason = currentFailure();
+    if (failureReason !== undefined) return { ok: false, reasonCode: failureReason };
+    if (generated.trim() === "") return { ok: false, reasonCode: reason = "summary_empty" };
     return { ok: true, summary: generated };
-  } catch (error) {
-    return {
-      ok: false,
-      reasonCode: error instanceof Error && /^[A-Za-z][A-Za-z0-9_]{0,59}$/u.test(error.name) ? error.name : "summary_threw",
-    };
+  } catch {
+    reason ??= signal.aborted ? canceledReason() : "summary_threw";
+    return { ok: false, reasonCode: reason };
+  } finally {
+    clearTimeout(timer);
+    const outputChars = response?.content.reduce((sum, block) => sum + (block.type === "text" ? block.text.length : 0), 0) ?? 0;
+    const measured = response?.usage.output ?? 0;
+    try { input.onDiagnostic?.({ reasonCode: reason ?? "summary_generated", stopReason: response?.stopReason ?? "unknown",
+      durationMs: Math.max(0, performance.now() - startedAt), inputChars, outputChars,
+      outputTokens: Number.isFinite(measured) && measured >= 0 ? measured : 0, maxOutputTokens }); } catch { /* Observers cannot change summary behavior. */ }
   }
 }
 
 /**
- * An explicit account of history a request could not hold, written to the model rather than left as
- * an absence.
- *
- * The failure this prevents was observed in a production run: a model that finds work on disk it
- * does not remember doing has no way to tell "my history was trimmed" from "another process changed
- * my files", and the second reading is the one it reached for. Naming the drop as this run's own
- * decision is what makes that inference unavailable.
+ * Omitted history remains retrievable and establishes no summary coverage or permission to replay
+ * actions. The request names that gap explicitly rather than implying external workspace changes.
  */
 export function omissionNotice(omittedMessages: number, omittedChars: number): AgentMessage {
   return {

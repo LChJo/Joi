@@ -14,14 +14,17 @@ describe("json-line runtime diagnostics", () => {
     const emit = diagnostics.emit.bind(diagnostics) as (event: string, fields: Record<string, unknown>) => void;
     emit("joi.partner.context_compacted", { compactedMessages: 12, count: 2, tokensBefore: 32000 });
     emit("joi.partner.context_truncated", { omittedChars: 8000, omittedMessages: 4 });
-    expect(lines).toHaveLength(2);
+    emit("joi.context.summary_generated", { reasonCode: "summary_truncated", stopReason: "length", durationMs: 12, inputChars: 64000, outputChars: 200, outputTokens: 12, maxOutputTokens: 32768 });
+    expect(lines).toHaveLength(3);
     for (const fields of [
       { compactedMessages: "PRIVATE" }, { tokensBefore: Infinity }, { tokensBefore: -1 },
       { compactedMessages: { content: "PRIVATE" } }, { messageBody: 12 }, { path: 12 },
     ]) emit("joi.partner.context_compacted", fields);
     emit("joi.outbox.claimed", { compactedMessages: 12 });
     emit("joi.partner.context_truncated", { omittedMessages: "C:\\private\\history" });
-    expect(lines).toHaveLength(2);
+    for (const fields of [{ outputTokens: "PRIVATE" }, { maxOutputTokens: Infinity }, { outputTokens: -1 }, { outputTokens: { content: "PRIVATE" } }, { token: 123 }, { path: "C:\\private\\history" }]) emit("joi.context.summary_generated", fields);
+    emit("joi.outbox.claimed", { maxOutputTokens: 32 });
+    expect(lines).toHaveLength(3);
   });
   it("persists a bounded rolling JSONL trail and drops unsafe fields", async () => {
     const root = await mkdtemp(path.join(os.tmpdir(), "joi-runtime-diagnostics-"));

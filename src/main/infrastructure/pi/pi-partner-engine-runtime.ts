@@ -9,6 +9,7 @@ import {
   type AgentTool,
 } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
+import type { SummaryRetryState } from "../../application/ports/summary-state.js";
 import { type Api, type Model, type Models } from "@earendil-works/pi-ai";
 
 import { DomainError } from "../../domain/errors.js";
@@ -26,6 +27,7 @@ import {
   boundModelContext,
   modelContextMaxChars,
   modelRequestBudget,
+  finalRequestChars,
   parseContextWindowFromError,
   parseMaxOutputTokensFromError,
   rememberObservedContextWindow,
@@ -33,7 +35,6 @@ import {
   type ModelRequestBudget,
 } from "./pi-model-budget.js";
 import { PI_WEB_ACCESS_TOOL_NAMES } from "./pi-web-access-tools.js";
-import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
 import { draftAgentConversation, type AgentConversationDraft } from "../../application/partners/agent-conversation-presentation.js";
 import { toolCallCommand, toolCallResultBody, toolCallSummary, type ToolTraceDraft } from "../../application/partners/tool-trace-presentation.js";
 import { classifyPartnerRunFailure, wrapPartnerRunFailure, type PartnerRunSideEffectState } from "../../application/partners/partner-run-failure.js";
@@ -407,6 +408,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   evictFromMemory(instanceId: string): void {
+    this.#warm.get(instanceId)?.context.cancel();
     this.#warm.get(instanceId)?.sdkSession?.dispose();
     this.#warm.delete(instanceId);
   }
@@ -424,20 +426,17 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     }
   }
 
-  /**
-   * Builds the request-time context manager for one run.
-   *
-   * A partner run is a single `agent.prompt()` that then works for as long as the task takes, so
-   * nothing inside pi ever reaches a Turn boundary and no compaction would otherwise run: the run
-   * would keep every request inside the window by forgetting its own history, silently. This is the
-   * compaction that replaces that, and the diagnostics below are how a route that keeps failing to
-   * summarize stays visible instead of quietly reverting to the old behaviour.
-   */
-  #contextManager(input: { onDiagnostic?: (event: PiContextDiagnostic) => void;restored?: PiContextCheckpoint; messagesMaxChars: number; model: Model<Api>; models: Models; request: PartnerRunRequest; thinkingLevel: ModelThinkingLevel }): PiContextManager {
+  /** One session-owned manager shares the pinned route, configured transport and safe diagnostics. */
+  #contextManager(input: { onDiagnostic?: (event: PiContextDiagnostic) => void; restored?: PiContextCheckpoint; retryState?: SummaryRetryState;
+    routeRevision: string; tools: () => readonly AgentTool[]; model: Model<Api>; models: Models; request: PartnerRunRequest }): PiContextManager {
     const where = { workbenchId: input.request.workbenchId, workId: input.request.workId };
     return createPiContextManager({
       ...(input.restored === undefined ? {} : { restored: input.restored }),
-      messagesMaxChars: input.messagesMaxChars,
+      ...(input.retryState === undefined ? {} : { retryState: input.retryState }),
+      routeRevision: input.routeRevision,
+      backgroundSignal: null,
+      messagesMaxChars: modelContextMaxChars(input.model),
+      fitsRequest: messages => finalRequestChars(messages, input.tools()) <= modelContextMaxChars(input.model),
       requiredChars: input.request.requiredContext?.length ?? 0,
       model: input.model,
       models: trackPiModels(input.models, this.dependencies.usage, () => ({ engine: "pi", purpose: "summary", workbenchId: input.request.workbenchId, workId: input.request.workId }), this.dependencies.diagnostics),
@@ -445,7 +444,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         input.onDiagnostic?.(event);
         emitRuntimeDiagnostic(this.dependencies.diagnostics, event.type, { ...event, ...where });
       },
-      thinkingLevel: input.thinkingLevel,
+      thinkingLevel: "off",
     });
   }
 
@@ -512,11 +511,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       workspacePath: execution.workspacePath,
     });
     const window = this.#contextManager({
-      messagesMaxChars: budget.messagesMaxChars,
+      routeRevision: JSON.stringify([pin.sourceId, pin.sourceRevisionId, pin.modelId, pin.modelRevisionId]),
+      tools: () => agent.state.tools,
       model: resolved.model,
       models: resolved.models,
       request,
-      thinkingLevel: resolved.thinkingLevel,
     });
     const agent = new Agent({
       afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(trackerRef, context)),
@@ -575,6 +574,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       const failure = wrapPartnerRunFailure(error, { phase: "MODEL", sideEffectState: tracker.state });
       allowLearnedCapacityRetry(failure, learned, tracker.state);
       throw Object.assign(failure, { partialArtifacts });
+    } finally {
+      await window.close(agent.state.messages);
     }
   }
 
@@ -635,15 +636,16 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       );
       const allowed = new Set(tools.map((tool) => tool.name));
       const window = this.#contextManager({
+        routeRevision: route,
+        tools: () => agent.state.tools,
         onDiagnostic: event => this.#contextDiagnostic(agent,event),
+        ...(input.sessionState?.engine !== "pi-core" || input.sessionState.summaryRetry === undefined ? {} : { retryState: input.sessionState.summaryRetry }),
         ...(input.sessionState?.engine !== "pi-core" || input.sessionState.route !== route || input.sessionState.checkpoint === undefined ? {} : {
           restored: input.sessionState.checkpoint as PiContextCheckpoint,
         }),
-        messagesMaxChars: budget.messagesMaxChars,
         model: resolved.model,
         models: resolved.models,
         request: input.request,
-        thinkingLevel: resolved.thinkingLevel,
       });
       const agent = new Agent({
         afterToolCall: (context) => Promise.resolve(pauseForMissingEnvironmentCredential(sideEffectTracker, context)),
@@ -714,7 +716,9 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     };
     let sessionWrites = Promise.resolve();
     const saveSession = () => {
+      const summaryRetry = warm.context.retryState();
       const state = { engine: "pi-core" as const,messages: structuredClone(activeAgent.state.messages),route,
+        ...(summaryRetry === undefined ? {} : { summaryRetry }),
         ...(warm.context.checkpoint() === undefined ? {} : { checkpoint: warm.context.checkpoint() }) };
       sessionWrites = sessionWrites.then(() => input.saveSession?.(state));
       return sessionWrites;
@@ -773,7 +777,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         });
       }
     });
-    const abort = () => activeAgent.abort();
+    const abort = () => { warm.context.cancel(); activeAgent.abort(); };
     input.signal?.addEventListener("abort",abort,{ once: true });
     try {
       const prompt = input.request.workspaceExecution?.phase === "WRITE_RUNNING" ? WORKSPACE_WRITE_CONTINUATION : conversationPrompt(input.request);
@@ -820,6 +824,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         await children?.close(input.signal?.aborted === true || assistantFailureSignal(activeAgent.state.messages.slice(previousMessageCount)) !== null);
       } finally {
         stopSessionPersistence();
+        if (!writeGate.suspended || input.signal?.aborted === true) await warm.context.close(activeAgent.state.messages, input.signal?.aborted === true);
+        else warm.context.collect(activeAgent.state.messages);
         try { if (input.saveSession !== undefined) await saveSession(); }
         finally { await extensions.close(); }
       }
@@ -1041,6 +1047,10 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     else if (event.type === "joi.partner.context_summary_backoff") this.#reportContext(agent,{ state: "BACKOFF" });
     else if (event.type === "joi.partner.context_truncated") this.#reportContext(agent,{ state: "TRIMMED" });
     else if (event.type === "joi.partner.context_compacted") this.#reportContext(agent,{ state: "COMPRESSED",compactions: event.count,savedChars: Math.max(0,(event.charsBefore ?? 0) - (event.charsAfter ?? 0)) });
+    else if ((event.type === "joi.partner.context_summary_failed" && event.reasonCode === "summary_canceled")
+      || (event.type === "joi.context.summary_boundary" && event.stage === "cleanup")) {
+      if (this.#contextStats.get(agent)?.state === "COMPACTING") this.#reportContext(agent,{ state: (this.#contextStats.get(agent)?.compactions ?? 0) > 0 ? "COMPRESSED" : "READY" });
+    } else if (event.type === "joi.partner.context_summary_failed" || event.type === "joi.partner.context_summary_rejected") this.#reportContext(agent,{ state: "BACKOFF" });
   }
 
   #systemPrompt(
