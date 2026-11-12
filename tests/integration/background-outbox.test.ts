@@ -8,6 +8,27 @@ function deferred() {
 }
 
 describe("AC-43/48 background memory delivery",() => {
+  it("drains every independent delivery when a later batch finishes before an earlier batch",async () => {
+    const fixture = await createRuntimeFixture(),first = deferred(),second = deferred();
+    const entered: string[] = [];
+    const dispatcher = new OutboxDispatcher({ clock: fixture.clock,owner: "concurrent",store: fixture.database.store,concurrent: true,
+      handlers: { "test.concurrent": async record => { entered.push(record.outboxId);await (record.outboxId === "first" ? first.promise : second.promise); } } });
+    try {
+      await fixture.database.store.enqueueOutbox({ outboxId: "first",kind: "test.concurrent",payload: {},availableAt: fixture.clock.now().toISOString() });
+      dispatcher.startOnce();await vi.waitFor(() => expect(entered).toEqual(["first"]));
+      await fixture.database.store.enqueueOutbox({ outboxId: "second",kind: "test.concurrent",payload: {},availableAt: fixture.clock.now().toISOString() });
+      dispatcher.startOnce();await vi.waitFor(() => expect(entered).toEqual(["first","second"]));
+      second.resolve();
+      await vi.waitFor(() => expect(fixture.database.transaction(db => db.prepare("SELECT status FROM outbox WHERE outbox_id='second'").get()?.status)).toBe("DONE"));
+      expect(dispatcher.isRunning).toBe(true);
+      let closed = false;const closing = dispatcher.close().then(() => { closed = true; });
+      await Promise.resolve();expect(closed).toBe(false);expect(dispatcher.startOnce()).toBe(false);
+      first.resolve();await closing;
+      expect(dispatcher.isRunning).toBe(false);
+      expect(fixture.database.transaction(db => db.prepare("SELECT status FROM outbox WHERE outbox_id='first'").get()?.status)).toBe("DONE");
+    } finally { first.resolve();second.resolve();await dispatcher.close();await fixture.close(); }
+  });
+
   it("does not renew a lease for handlers that finish before the first heartbeat",async () => {
     const fixture = await createRuntimeFixture();
     try {

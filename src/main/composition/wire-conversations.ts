@@ -91,15 +91,17 @@ export function wireConversations(input: {
   });
   const git = new ConversationWorkspaceService({ clock,ids,store: persistence.gitCommands,workspace,leases: persistence.workspaceLeases,workspaces: persistence.workbenchWorkspaceRepository });
   const dispatcher = new OutboxDispatcher({ clock,store: database.store,owner: `conversations_${String(process.pid)}`,
-    includeKinds: ["conversation.turn","conversation.git"],handlers: {
+    concurrent: true,
+    includeKinds: ["conversation.turn"],handlers: {
       "conversation.turn": record => conversations.deliver(String(record.payload.turnId)),
-      "conversation.git": record => git.deliver(String(record.payload.commandId)),
     } });
-  return { conversations,git,workspace,dispatcher,childDispatcher,subagents,
+  const gitDispatcher = new OutboxDispatcher({ clock,store: database.store,owner: `conversation_git_${String(process.pid)}`,
+    includeKinds: ["conversation.git"],handlers: { "conversation.git": record => git.deliver(String(record.payload.commandId)) } });
+  return { conversations,git,workspace,dispatcher,gitDispatcher,childDispatcher,subagents,
     recover: async () => { await persistence.conversations.recoverInterrupted(clock.now().toISOString()); await persistence.gitCommands.recoverInterrupted();await persistence.conversationSubagents.recover(); },
     emergencyStop: async () => { await conversations.emergencyStop();await subagents.close();await git.emergencyStop(); },
     close: async () => {
-      const drain = dispatcher.close();
+      const drain = Promise.all([dispatcher.close(),gitDispatcher.close()]);
       conversations.close();
       await subagents.close();
       await Promise.all([git.emergencyStop(),drain,childDispatcher.close()]);

@@ -438,6 +438,7 @@ test("Electron completes setup, native workbench creation, and responsive joi-co
     for (const width of [480, 768, 1280]) {
       await window.setViewportSize({ height: 900, width });
       await window.locator(".joi-goal-drawer-body").evaluate(element => { element.scrollTop = 0; });
+      await window.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
       const overview = await map.boundingBox();
       expect(overview?.height).toBeLessThan(240);
       expect((overview?.x ?? 0) + (overview?.width ?? 0)).toBeLessThanOrEqual(width);

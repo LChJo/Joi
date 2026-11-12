@@ -56,11 +56,11 @@ metadata {
 composition = component "Runtime composition" {
 metadata {
  harness_id "e6c5c10e-00a0-463c-b414-08b647077758"
- brief "Wires workers, services and adapters, independent conversation turns and coordinated Git delivery. Graceful shutdown closes delivery before aborting engines and preserves unstarted conversation messages; explicit emergency stop cancels them. A separate child dispatcher allows parent settlement without blocking child delivery."
+ brief "Wires workers, services and adapters. Conversation turns use concurrent outbox delivery; explicit Git operations use a separate serial dispatcher with repository leases. Graceful shutdown closes turn and Git admission before aborting engines and preserves unstarted conversation messages; emergency stop cancels them. A separate child dispatcher allows parent settlement without blocking child delivery."
  source "fact"
  status "verified"
- evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 0928551c-008e-4486-b324-fdd3cc15e717 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "5"
+ evidence "6c84adef-da3b-49e2-8c3c-3162e41cb524 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 aeb013b6-fda3-401d-88ca-e6464dcd5bba 0928551c-008e-4486-b324-fdd3cc15e717 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 e17342c4-7a41-4245-bbe9-b02def3930fc"
+ version "6"
 }
 }
 application = component "Application services" {
@@ -75,11 +75,11 @@ metadata {
 conversations = component "Conversation execution" {
 metadata {
  harness_id "cad6c097-c1e0-468e-9195-6e4005ccec71"
- brief "User-driven turn/session orchestration preserves workbench ownership, private history, safe activity and durable children. Static extension selections are validated, normalized into retry identity, stored in turn JSON and forwarded across READ/WRITE admission; native partner requests reject Pi extensions."
+ brief "User-driven turn/session orchestration preserves workbench ownership, private history, safe activity and durable children. Independent conversation outbox deliveries overlap across claim batches without a workbench, partner or global active-turn cap; each claim renews until completion and close drains all batches. Same-conversation turn exclusion remains authoritative. Explicit Git operations use a separate serial dispatcher and repository leases. Static extension selections are validated and forwarded across READ/WRITE admission; native partners reject Pi extensions."
  source "fact"
  status "verified"
- evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312"
- version "5"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 a5c69e17-9313-458e-952d-24dbb17852ef"
+ version "6"
 }
 }
 }
@@ -374,14 +374,14 @@ metadata {
  version "1"
 }
 }
-app.composition -[calls]-> app.application.conversations "Wires independent turn and child outbox dispatchers" {
+app.composition -[calls]-> app.application.conversations "Wires concurrent turns, serial Git and child outbox delivery" {
 metadata {
  harness_id "cd062ecb-59d1-4911-887b-90b2118f0e9d"
- brief "Wires independent turn and child outbox dispatchers"
+ brief "Wires concurrent turns, serial Git and child outbox delivery; polling batch size controls claim throughput rather than active conversation count."
  source "fact"
  status "verified"
  evidence "0928551c-008e-4486-b324-fdd3cc15e717"
- version "1"
+ version "2"
 }
 }
 }

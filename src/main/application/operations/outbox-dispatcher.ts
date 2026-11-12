@@ -9,6 +9,8 @@ export type OutboxHandler = (record: OutboxRecord) => Promise<void>;
 
 export class OutboxDispatcher {
   #inFlight: Promise<number> | null = null;
+  readonly #passes = new Set<Promise<number>>();
+  #claiming = false;
   #closed = false;
   #backgroundError: Error | undefined;
   readonly #leaseDurationMs: number;
@@ -21,6 +23,8 @@ export class OutboxDispatcher {
     excludeKinds?: string[];
     includeKinds?: string[];
     canStart?: () => boolean;
+    /** Independent deliveries retain their claims while later batches may start. */
+    concurrent?: boolean;
     leaseDurationMs?: number;
     renewIntervalMs?: number;
     handlers: Record<string, OutboxHandler>;
@@ -35,10 +39,10 @@ export class OutboxDispatcher {
       || this.#renewIntervalMs <= 0 || this.#renewIntervalMs >= this.#leaseDurationMs) throw new Error("outbox_lease_interval_invalid");
   }
 
-  get isRunning(): boolean { return this.#inFlight !== null; }
+  get isRunning(): boolean { return this.#passes.size > 0; }
 
   startOnce(limit = 1): boolean {
-    if (this.#closed || this.#inFlight !== null || this.dependencies.canStart?.() === false) return false;
+    if (this.#closed || this.#claiming || (this.dependencies.concurrent !== true && this.isRunning) || this.dependencies.canStart?.() === false) return false;
     void this.#begin(limit).catch((error: unknown) => {
       this.#backgroundError = error instanceof Error ? error : new Error("outbox_background_failed");
       try { this.dependencies.onBackgroundError?.(error); } catch { /* The delivery failure remains observable through drain. */ }
@@ -47,7 +51,12 @@ export class OutboxDispatcher {
   }
 
   async drain(): Promise<void> {
-    try { await this.#inFlight; } catch (error) { this.#backgroundError = undefined; throw error; }
+    let failure: PromiseRejectedResult | undefined;
+    while (this.#passes.size > 0) {
+      const results = await Promise.allSettled([...this.#passes]);
+      failure ??= results.find(result => result.status === "rejected");
+    }
+    if (failure !== undefined) { this.#backgroundError = undefined;throw failure.reason; }
     if (this.#backgroundError !== undefined) {
       const error = this.#backgroundError;
       this.#backgroundError = undefined;
@@ -58,15 +67,18 @@ export class OutboxDispatcher {
   async close(): Promise<void> { this.#closed = true; await this.drain(); }
 
   async dispatchOnce(limit = 20): Promise<number> {
-    if (this.#inFlight !== null) return this.#inFlight;
+    if (this.#claiming || (this.dependencies.concurrent !== true && this.isRunning)) return this.#inFlight ?? 0;
     if (this.#closed || this.dependencies.canStart?.() === false) return 0;
     return this.#begin(limit);
   }
 
   #begin(limit: number): Promise<number> {
+    if (!this.isRunning) this.#backgroundError = undefined;
+    this.#claiming = true;
     const pass = Promise.resolve().then(() => this.#dispatchOnce(limit));
     this.#inFlight = pass;
-    const clear = () => { if (this.#inFlight === pass) this.#inFlight = null; };
+    this.#passes.add(pass);
+    const clear = () => { this.#passes.delete(pass);if (this.#inFlight === pass) this.#inFlight = null; };
     void pass.then(clear,clear);
     return pass;
   }
@@ -95,29 +107,35 @@ export class OutboxDispatcher {
     return { ensure,stop: async () => { stopped = true; clearTimeout(timer); await pending; } };
   }
 
+  async #claim(limit: number): Promise<OutboxRecord[]> {
+    try {
+      if (!this.#canDeliver()) return [];
+      const now = this.dependencies.clock.now();
+      return await this.dependencies.store.claimOutbox({
+        claimUntil: new Date(now.getTime() + this.#leaseDurationMs).toISOString(),
+        ...(this.dependencies.excludeKinds === undefined ? {} : { excludeKinds: this.dependencies.excludeKinds }),
+        ...(this.dependencies.includeKinds === undefined ? {} : { includeKinds: this.dependencies.includeKinds }),
+        limit,
+        now: now.toISOString(),
+        owner: this.dependencies.owner,
+      });
+    } finally { this.#claiming = false; }
+  }
+
   async #dispatchOnce(limit: number): Promise<number> {
-    if (!this.#canDeliver()) return 0;
-    const now = this.dependencies.clock.now();
-    const records = await this.dependencies.store.claimOutbox({
-      claimUntil: new Date(now.getTime() + this.#leaseDurationMs).toISOString(),
-      ...(this.dependencies.excludeKinds === undefined ? {} : { excludeKinds: this.dependencies.excludeKinds }),
-      ...(this.dependencies.includeKinds === undefined ? {} : { includeKinds: this.dependencies.includeKinds }),
-      limit,
-      now: now.toISOString(),
-      owner: this.dependencies.owner,
-    });
+    const records = await this.#claim(limit);
     if (records.length > 0) {
       emitRuntimeDiagnostic(this.dependencies.diagnostics, "joi.outbox.claimed", { limit, recordCount: records.length });
     }
     const deliveries = records.map(record => ({ record,keeper: this.#keepClaim(record) }));
     let delivered = 0;
     try {
-      for (const { record,keeper } of deliveries) {
+      const deliver = async ({ record,keeper }: (typeof deliveries)[number]) => {
         if (!this.#canDeliver()) {
           await keeper.stop();
           await this.dependencies.store.releaseOutbox({ outboxId: record.outboxId,owner: this.dependencies.owner,
             availableAt: this.dependencies.clock.now().toISOString(),preserveAttemptCount: true });
-          continue;
+          return;
         }
         delivered++;
         const handler = this.dependencies.handlers[record.kind];
@@ -156,8 +174,14 @@ export class OutboxDispatcher {
           });
           this.dependencies.onError?.(error, record);
         }
+      };
+      if (this.dependencies.concurrent === true) {
+        const results = await Promise.allSettled(deliveries.map(deliver));
+        const rejected = results.find(result => result.status === "rejected");
+        if (rejected !== undefined) throw rejected.reason;
+      } else {
+        for (const delivery of deliveries) await deliver(delivery);
       }
-      this.#backgroundError = undefined;
       return delivered;
     } finally { await Promise.all(deliveries.map(({ keeper }) => keeper.stop())); }
   }

@@ -161,3 +161,31 @@ Final Windows gate results for this increment, 2026-11-12:
 | `npm run i18n:check` | Passed |
 
 The initial lint run rejected unnecessary null checks in the added test; the corrected test, focused renderer suite and complete lint check passed. Production builds retain the existing bundle-size advisory. No new native integration was introduced, so optional native tests were not enabled in this increment. Test logs and screenshots are excluded from Git.
+
+## CHAT-15: concurrent conversation delivery
+
+The composition-level reproduction held one synthetic engine call open, submitted another conversation in the same workbench, and observed `QUEUED` instead of `RUNNING` through the actual outbox wiring. The shared dispatcher waited for an entire batch and delivered its records serially; removing workspace admission alone could not remove that barrier. Service-level lease tests did not exercise this composition path.
+
+Conversation turn delivery now opts into concurrent outbox batches. Claim acquisition remains serialized, but each delivery maintains its own acknowledgement and heartbeat and later polling can claim more work while previous engines remain active. Polling claims up to 20 records per pass; this is a throughput batch size, not an active-conversation cap. Explicit Git operations use their own serial dispatcher and retain repository leases. Default background dispatch behavior remains serial.
+
+The regression keeps 25 conversations in one workbench plus another conversation in a different workbench sharing the same synthetic root active together. It verifies progress across claim batches, same-conversation exclusion, and completion of ordered Git operations while all conversations remain running. A separate dispatcher regression completes a later batch first and verifies that close still waits for the earlier delivery. Existing checkpoint, lease, cancellation and interrupted-execution regressions remain applicable. Tests use disposable SQLite/user directories, held engine replacements and synthetic Git commands; no real Electron userData or provider credentials are read.
+
+Final Windows gate results for this increment, 2026-11-12:
+
+| Command | Observed result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed; final backend and E2E test edits also passed focused lint |
+| `npm run test -- --reporter=dot --maxWorkers=4` | 356 files / 2,919 tests passed; ten optional native tests skipped |
+| `npm run test:coverage -- --reporter=dot --maxWorkers=4` | 2,919 passed; statements 93.99%, branches 90.22%, functions 92.55%, lines 96.67% |
+| `npm run test:e2e` | 21 passed |
+| `npm run build:prod` | Passed |
+| `npm run package:verify` | Passed; 787 files verified |
+| `npm run check:boundaries` | Passed |
+| `npm run i18n:check` | Passed |
+
+Initial inherited-Git-configuration runs exceeded the existing five-second limit in the unchanged real Git workspace example. With `GIT_CONFIG_GLOBAL` pointing to a temporary empty file and `GIT_CONFIG_NOSYSTEM=1`, the isolated example and full test, coverage and E2E gates passed without changing test timeouts. The temporary configuration is removed after each command; production Git behavior is unchanged.
+
+Two initial E2E runs lost the title menu immediately after resizing and resetting drawer scroll position. The menu intentionally dismisses on resize/scroll. The test now waits for layout frames before opening it, preserving all visibility, viewport bounds and hit-target assertions. The isolated full-home case and complete E2E suite then passed; no production title-menu code changed. Existing bundle-size advisories remain. Test logs, screenshots and commit-preparation artifacts are excluded from Git.
+
+An existing short-message bubble style update arrived during validation. A final focused conversation Electron run passed against the final production build, and its collapsed/expanded screenshots were inspected; short text remains right-aligned at its content width. The existing UI updates are retained in a separate local commit from the backend concurrency fix.

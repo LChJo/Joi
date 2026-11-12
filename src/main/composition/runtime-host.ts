@@ -300,7 +300,8 @@ export async function createRuntimeHost(configuration: DesktopRuntimeConfigurati
           await runtimeStack.actorTree.tick(clock.now());
           await modelSourceStack.recovery.enqueueDue();
           runtimeStack.modelRecoveryDispatcher.startOnce();
-          conversationStack.dispatcher.startOnce();
+          conversationStack.dispatcher.startOnce(20);
+          conversationStack.gitDispatcher.startOnce();
           conversationStack.childDispatcher.startOnce(4);
           await runtimeStack.outboxDispatcher.dispatchOnce();
           runtimeStack.memoryRefreshDispatcher.startOnce();

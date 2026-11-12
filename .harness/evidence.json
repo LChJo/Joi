@@ -396,15 +396,15 @@
     {
       "id": "0928551c-008e-4486-b324-fdd3cc15e717",
       "kind": "source-code",
-      "claim": "Composes independent conversation execution and coordinated explicit Git operations, inherited context and attachments. Graceful close stops the dispatcher before aborting active engines, preserving unstarted queued conversation turns; emergency stop remains explicit.",
+      "claim": "Wires concurrent conversation turns independently of serial explicit Git operations and child delivery; shutdown stops claim admission and drains all started batches.",
       "location": {
         "path": "src/main/composition/wire-conversations.ts"
       },
-      "hash": "00ddd67ace33f7053485e59449f8a1a23185b09245f48dcc69f84b4120c491f8",
-      "observedAt": "2026-11-11T16:20:32.371697Z",
+      "hash": "8a23941f012a9556da7092f975802fb3ececfab7260036cd1547b8208205c3fb",
+      "observedAt": "2026-11-12T07:00:19.609Z",
       "range": {
         "startLine": 1,
-        "endLine": 88
+        "endLine": 119
       }
     },
     {
@@ -424,15 +424,15 @@
     {
       "id": "a13847af-27a8-4200-a5ca-abad35d0456d",
       "kind": "document",
-      "claim": "Normal conversations are user-driven and independent of autonomous directory occupancy. Tool permission phases/checkpoints remain; explicit Git mutations retain shared repository admission.",
+      "claim": "Independent conversations have no per-workbench, partner or global active-turn cap. Outbox batches renew per-delivery claims and drain on close; explicit Git remains serial and repository-coordinated.",
       "location": {
         "path": "docs/adr/0032-normal-conversations.md"
       },
-      "hash": "c34e461d2784fc100a44a1e9abc60b05edc0ca261e7ab53fbcfb3d55d8afd045",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "657e860014787d67bcddd4b445a759cdfbad0f93061a33c7c1c1e1700d210beb",
+      "observedAt": "2026-11-12T07:00:19.611Z",
       "range": {
         "startLine": 1,
-        "endLine": 23
+        "endLine": 27
       }
     },
     {
@@ -694,11 +694,11 @@
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "c13ecd0e587470b8eeef874bf26f989ac5d366ac9170d86881b62318cf8d16eb",
-      "observedAt": "2026-11-12T06:34:23.939Z",
+      "hash": "ff164c1439c246744ac6c2501386c289ad83b83821c383c47f9807126a11cbae",
+      "observedAt": "2026-11-12T07:29:24.974Z",
       "range": {
         "startLine": 1,
-        "endLine": 163
+        "endLine": 191
       }
     },
     {
@@ -881,6 +881,34 @@
       "range": {
         "startLine": 1,
         "endLine": 64
+      }
+    },
+    {
+      "id": "a5c69e17-9313-458e-952d-24dbb17852ef",
+      "kind": "source-code",
+      "claim": "Explicit concurrent mode overlaps deliveries and later claim batches while tracking every active pass, heartbeat, error and close drain; default dispatch remains serial.",
+      "location": {
+        "path": "src/main/application/operations/outbox-dispatcher.ts"
+      },
+      "hash": "65cd94653284c2b5db7275163f4fd290cc573156cbecf087e0a9456fb955bffc",
+      "observedAt": "2026-11-12T07:00:19.612Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 190
+      }
+    },
+    {
+      "id": "e17342c4-7a41-4245-bbe9-b02def3930fc",
+      "kind": "source-code",
+      "claim": "Runtime polling starts concurrent conversation claim batches independently of serial Git and child dispatch.",
+      "location": {
+        "path": "src/main/composition/runtime-host.ts"
+      },
+      "hash": "6fe4153b59d207e69cf96efe3373dd9b8cac9b377fb7ab5d51155e130fbe56a0",
+      "observedAt": "2026-11-12T07:00:19.612Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 365
       }
     }
   ]
