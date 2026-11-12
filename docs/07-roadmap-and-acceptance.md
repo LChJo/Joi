@@ -646,3 +646,8 @@ MVP 发布后仍明确不包含多用户、云同步、外部消息渠道、Agen
 
 - CI-01：Node 24 的 Windows/macOS 质量门禁必须使用同一份完整锁文件通过 `npm ci`，包含可选 WASM 包的 peer 依赖。修复缺项时保留已有依赖版本、平台包和完整性校验值；不以现有 `node_modules` 或旧版 npm 的成功代替干净安装证据。
 - [首轮 CI](https://github.com/LChJo/Joi/actions/runs/43278104017) 在两端均报告缺少 `@emnapi/runtime@1.11.3`。仅复制 `package.json` 与 `package-lock.json` 到临时空目录，以 npm 11.19.1 执行 `npm ci --ignore-scripts --dry-run --no-audit --no-fund` 可复现；补全生成的缺失条目后，同一命令退出码为 0。该检查不运行安装脚本，完整安装、桌面构建、测试与打包继续由双平台 CI 验证。
+
+## 2026-11-13 Unix 浏览器 IPC（CI-02、CHAT-35）
+
+- CI-02：浏览器 daemon 与每条命令共享本次执行的私有 cwd，Unix socket 使用相对该目录的短名称。长或含 UTF-8 字符的临时目录必须能够启动；成功关闭和启动失败均清理拥有的目录与进程，配置、profile、PID 校验和取消语义沿用当前隔离边界。
+- [第二轮 macOS CI](https://github.com/LChJo/Joi/actions/runs/43279775215) 的六项浏览器契约在启动阶段失败。Node 24.22.2 的 Unix 隔离复现中，短目录通过、197 字节的绝对 socket 路径失败；相对私有 cwd 后两者均通过，Windows 浏览器契约 10 项通过。回归使用合成 daemon 验证真实 IPC 与清理；真实 Chrome 验收仍使用独立原生冒烟流程。依据：[Node IPC 字节长度限制](https://nodejs.org/docs/latest-v24.x/api/net.html#identifying-paths-for-ipc-connections)、[Agent Browser 0.42.0 socket 目录解析](https://github.com/vercel-labs/agent-browser/blob/v0.42.0/cli/src/connection.rs#L107)。

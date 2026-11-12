@@ -53,9 +53,10 @@ async function browserExecutable(explicit?: string) {
 function privateEnvironment(directory: string,session: string,config: string) {
   const systemKeys = new Set(["systemroot","windir","path","comspec","programfiles","programfiles(x86)","programw6432","systemdrive"]);
   const environment = Object.fromEntries(Object.entries(process.env).filter(([key,value]) => systemKeys.has(key.toLowerCase()) && value !== undefined));
+  // Unix IPC names resolve against the private cwd shared by the daemon and every command.
   return { ...environment,HOME: directory,USERPROFILE: directory,APPDATA: directory,LOCALAPPDATA: directory,TEMP: directory,TMP: directory,TMPDIR: directory,
     XDG_CONFIG_HOME: directory,XDG_CACHE_HOME: directory,XDG_STATE_HOME: directory,XDG_DATA_HOME: directory,
-    AGENT_BROWSER_CONFIG: config,AGENT_BROWSER_SESSION: session,AGENT_BROWSER_SOCKET_DIR: directory,
+    AGENT_BROWSER_CONFIG: config,AGENT_BROWSER_SESSION: session,AGENT_BROWSER_SOCKET_DIR: process.platform === "win32" ? directory : ".",
     AGENT_BROWSER_NO_VERSION_CHECK: "1",AGENT_BROWSER_DEFAULT_TIMEOUT: "10000",AGENT_BROWSER_IDLE_TIMEOUT_MS: String(BROWSER_IDLE_MS),AGENT_BROWSER_NO_WEBMCP: "1",AGENT_BROWSER_ENABLE: "react-devtools" };
 }
 

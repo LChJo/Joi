@@ -1,4 +1,4 @@
-import { mkdtemp,readdir,readFile,rm } from "node:fs/promises";
+import { access,mkdir,mkdtemp,readdir,readFile,rm,stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -6,6 +6,29 @@ import { createAgentBrowserSession } from "../../src/main/infrastructure/pi/agen
 import { createAgentBrowserTools } from "../../src/main/infrastructure/pi/pi-agent-browser.js";
 
 afterEach(() => { vi.unstubAllEnvs(); });
+
+it.each(["ready","failed-start"] as const)("CHAT-35 keeps long UTF-8 temporary roots isolated and cleans %s state",async mode => {
+  const root = await mkdtemp(path.join(tmpdir(),"joi-browser-ipc-")),nested = path.join(root,`nested-${"临时".repeat(16)}${"x".repeat(30)}`);
+  await mkdir(nested);
+  let browser: Awaited<ReturnType<typeof createAgentBrowserSession>> | undefined;
+  try {
+    const pending = createAgentBrowserSession({ temporaryRoot: nested,executable: { file: process.execPath,
+      args: [fileURLToPath(new URL("../fixtures/agent-browser-cli.mjs",import.meta.url)),"--fixture-state",...(mode === "failed-start" ? ["--fixture-start-failure"] : [])] } });
+    if (mode === "failed-start") await expect(pending).rejects.toMatchObject({ code: "agent_browser_start_failed" });
+    else {
+      browser = await pending;
+      expect(JSON.parse((await browser.run(["snapshot"])).content[0]?.text ?? "{}")).toMatchObject({ privateConfig: true,secretInherited: false });
+    }
+    const state = JSON.parse(await readFile(path.join(nested,"fixture-state.json"),"utf8")) as { socketDirectory: string;socketPathBytes: number };
+    if (mode === "ready" && process.platform !== "win32") {
+      expect(state.socketPathBytes).toBeLessThanOrEqual(103);
+      expect((await stat(state.socketDirectory)).mode & 0o777).toBe(0o700);
+    }
+    await browser?.close();
+    await expect(access(state.socketDirectory)).rejects.toMatchObject({ code: "ENOENT" });
+    expect(await readdir(nested)).toEqual(["fixture-state.json"]);
+  } finally { await browser?.close();await rm(root,{ recursive: true,force: true }); }
+},15_000);
 
 it("CHAT-34 runs the pinned local browser behind an isolated configuration without inherited credentials",async () => {
   const root = await mkdtemp(path.join(tmpdir(),"joi-browser-contract-"));

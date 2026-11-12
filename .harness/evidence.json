@@ -834,11 +834,11 @@
       "location": {
         "path": "tests/contract/conversation-agent-browser.test.ts"
       },
-      "hash": "15beb3d9f58985b682e08c1aa9b7a0e84bfa959b4974227b351129efc8b26285",
-      "observedAt": "2026-11-12T05:19:21.322Z",
+      "hash": "0b201f61892a7a572572cd4d98676e228f285918e57c868b937df63f45c7135b",
+      "observedAt": "2026-11-12T19:02:09.605Z",
       "range": {
         "startLine": 1,
-        "endLine": 96
+        "endLine": 119
       }
     },
     {
@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "20511e24f2caf4cf06edf38a3383c186231855dee32b01049e0ec77685b32551",
-      "observedAt": "2026-11-12T18:25:25.654Z",
+      "hash": "0aa5f77a3dcc8c6d87cf7438402103a864ba70ca0e1d86c6e8db73013cc8593c",
+      "observedAt": "2026-11-12T19:02:09.605Z",
       "range": {
         "startLine": 1,
-        "endLine": 648
+        "endLine": 653
       }
     },
     {
@@ -862,11 +862,11 @@
       "location": {
         "path": "src/main/infrastructure/pi/agent-browser-process.ts"
       },
-      "hash": "1757c83d3a3b9d1a0374b6a6ff54f621270b89680722002e96d96f640491f40e",
-      "observedAt": "2026-11-12T05:19:21.323Z",
+      "hash": "c781d7821395f8f861e47876257b727cdfc45926b8746d99b7aec3b80d9fa2ca",
+      "observedAt": "2026-11-12T19:02:09.603Z",
       "range": {
         "startLine": 1,
-        "endLine": 150
+        "endLine": 151
       }
     },
     {
@@ -1385,6 +1385,20 @@
       "range": {
         "startLine": 1,
         "endLine": 14188
+      }
+    },
+    {
+      "id": "4530c2e6-62fc-4aba-9fa2-554b0e23a136",
+      "kind": "source-code",
+      "claim": "Synthetic daemon fixture and browser contract exercise owned IPC state and cleanup without real user data.",
+      "location": {
+        "path": "tests/fixtures/agent-browser-cli.mjs"
+      },
+      "hash": "2997b391a3194d27f1c6e508fd23a3278093b2ac74bfbe44e65dd4b97775d680",
+      "observedAt": "2026-11-12T19:02:09.604Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 40
       }
     }
   ]

@@ -6,7 +6,10 @@ import { Buffer } from "node:buffer";
 const root = process.env.AGENT_BROWSER_SOCKET_DIR;
 const session = process.env.AGENT_BROWSER_SESSION;
 if (!root || !session) process.exit(2);
+const socketDirectory = path.resolve(root);
 if (process.env.AGENT_BROWSER_DAEMON === "1") {
+  if (process.argv.includes("--fixture-state")) fs.writeFileSync(path.join(path.dirname(socketDirectory),"fixture-state.json"),JSON.stringify({ socketDirectory,socketPathBytes: Buffer.byteLength(path.join(root,session + ".sock")) }));
+  if (process.argv.includes("--fixture-start-failure")) process.exit(1);
   const server = net.createServer(socket => {
     let request = "";
     socket.on("data", chunk => {
@@ -14,7 +17,7 @@ if (process.env.AGENT_BROWSER_DAEMON === "1") {
       if (!request.includes("\n")) return;
       const args = JSON.parse(request.trim());
       if (args.includes("fixture-hang")) return;
-      if (args.at(-1) === "close" && path.basename(path.dirname(root)).startsWith("joi-browser-close-")) fs.writeFileSync(path.join(path.dirname(root),"closed.json"),"true");
+      if (args.at(-1) === "close" && path.basename(path.dirname(socketDirectory)).startsWith("joi-browser-close-")) fs.writeFileSync(path.join(path.dirname(socketDirectory),"closed.json"),"true");
       if (args.includes("fixture-unknown")) { socket.end(JSON.stringify({ success: false,code: "outcome_unknown",error: "synthetic-secret-details" }) + "\n");return; }
       if (args.includes("fixture-large")) { socket.end(JSON.stringify({ success: true,data: "x".repeat(600_000) }) + "\n");return; }
       if (args.includes("fixture-long")) { socket.end(JSON.stringify({ success: true,data: { text: "x".repeat(25_000),authorization: "synthetic-secret-details" } }) + "\n");return; }
