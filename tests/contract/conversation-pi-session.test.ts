@@ -86,8 +86,14 @@ it("CHAT-19/20 reuses a restored checkpoint whose prefix contains SDK system pro
   const messages: AgentMessage[] = [{ role: "system",content: "POLICY",timestamp: 0 },{ role: "user",content: "ORIGINAL_TASK",timestamp: 1 },
     ...Array.from({ length: 50 },() => fauxAssistantMessage([fauxText("source".padEnd(4000,"中"))]))];
   messages.splice(8,0,{ role: "system",content: "SDK_PROJECTION",timestamp: 2 });
-  const manager = createPiContextManager({ model,models,messagesMaxChars: modelRequestBudget(model).messagesMaxChars,thinkingLevel: "off" });
-  await manager.transformContext(messages);const checkpoint = manager.checkpoint();if (checkpoint === undefined) throw new Error("Missing checkpoint");
+  const manager = createPiContextManager({ model,models,messagesMaxChars: modelRequestBudget(model).messagesMaxChars,thinkingLevel: "off",routeRevision: JSON.stringify(["s","sr","m","mr"]) });
+  for (let index = 0; index < 6; index += 1) {
+    await manager.transformContext(messages);
+    await new Promise<void>(resolve => { setImmediate(resolve); }); manager.collect(messages);
+  }
+  await manager.close(messages);
+  const checkpoint = manager.checkpoint();if (checkpoint === undefined) throw new Error("Missing checkpoint");
+  const summaryCallsBeforeRestore = summary.mock.calls.length;
   const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-11-11T00:00:00Z",displayName: "Helper",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: [],toolPolicyMode: "CUSTOM" });
   const runtime = new PiPartnerEngineRuntime({ contexts: { loadForExecution: () => Promise.resolve({ promptSection: "",sanitized: {} }) },prompts: { read: () => Promise.resolve(null) },
     resolver: { resolve: () => Promise.resolve({ model,models,thinkingLevel: "off" }) },sources: { selectInitial: turnId => Promise.resolve({ turnId,modelId: "m",modelRevisionId: "mr",sourceId: "s",sourceRevisionId: "sr" }) },tools: { names: [],create: () => [] } });
@@ -95,7 +101,7 @@ it("CHAT-19/20 reuses a restored checkpoint whose prefix contains SDK system pro
   await runtime.runResidentTurn({ instanceId: "restored-checkpoint",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: null,
     sessionState: { engine: "pi-core",messages,checkpoint,route: JSON.stringify(["s","sr","m","mr"]) },
     request: { actionId: "next",workbenchId: "wb",workId: "next",contextSnapshotId: "snapshot",taskProjection: "Continue",conversationId: "chat",requiredContext: "CURRENT_POLICY" } });
-  expect(summary).toHaveBeenCalledTimes(1);runtime.evictFromMemory("restored-checkpoint");
+  expect(summary).toHaveBeenCalledTimes(summaryCallsBeforeRestore);runtime.evictFromMemory("restored-checkpoint");
 });
 
 it("CHAT-25 rejects a protected oversized tool exchange before a second provider request and retains its source",async () => {

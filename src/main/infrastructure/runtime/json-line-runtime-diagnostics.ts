@@ -85,6 +85,7 @@ const ABSOLUTE_PATH = /(?:[A-Za-z]:[\\/]|\\\\[^\\\s]+\\|(?:^|\s)\/(?:Users|home|
 const SECRET_VALUE = /(?:\bBearer\s+[A-Za-z0-9._~+/=-]{8,}|\b(?:api[_-]?key|csrf|token|cookie|password|secret)\s*[:=])/iu;
 
 const NUMERIC_FIELDS: Partial<Record<RuntimeDiagnosticName, readonly string[]>> = {
+  "joi.context.summary_generated": ["outputTokens", "maxOutputTokens"],
   "joi.partner.context_compacted": ["compactedMessages", "tokensBefore"],
   "joi.partner.context_truncated": ["omittedMessages"],
   "joi.context.request": ["contextChars"],

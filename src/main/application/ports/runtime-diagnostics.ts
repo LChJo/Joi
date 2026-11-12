@@ -2,6 +2,20 @@ import type { RemoteDiagnosticCode } from "../../../shared/remote.js";
 import type { EvolutionModelFailure } from "../../../shared/evolution.js";
 
 export interface RuntimeDiagnosticEventMap {
+  "joi.context.summary_boundary": {
+    stage: "hard_wait" | "cleanup";
+    durationMs: number;
+    outcome: "ready" | "deadline" | "canceled" | "idle";
+  };
+  "joi.context.summary_generated": {
+    reasonCode: string;
+    stopReason: string;
+    durationMs: number;
+    inputChars: number;
+    outputChars: number;
+    outputTokens: number;
+    maxOutputTokens: number;
+  };
   "joi.partner.tool_permission_denied": { workId: string; actionId: string; toolName: string; reasonCode: string };
   "joi.remote.connection": {
     code: RemoteDiagnosticCode;

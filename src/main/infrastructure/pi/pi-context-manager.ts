@@ -1,23 +1,16 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import { DEFAULT_COMPACTION_SETTINGS, estimateTokens, shouldCompact } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_COMPACTION_SETTINGS, estimateTokens } from "@earendil-works/pi-coding-agent";
 import type { Api, Model, Models } from "@earendil-works/pi-ai";
 
-import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, summarizeSegment, taskAnchorIndices, transcriptFingerprint, SummaryRetryGuard, summaryCandidateKey, summarySavings } from "./pi-compaction.js";
+import { checkpointMessage, HISTORY_SOFT_TARGET_CHARS, HISTORY_SOFT_TRIGGER_CHARS, isCheckpointMessage, omissionNotice, summarizeSegment, taskAnchorIndices, transcriptFingerprint, SummaryRetryGuard, summaryCandidateKey, summarySavings, SUMMARY_TARGET_CHARS, SUMMARY_HARD_WAIT_MS, type SummarizeResult, type SummaryGenerationDiagnostic } from "./pi-compaction.js";
 import { compactionReserveTokens, leadingSystemMessage } from "./pi-model-budget.js";
+import type { SummaryRetryState } from "../../application/ports/summary-state.js";
 
 /**
- * A partner run makes a single `agent.prompt()` call and then works for as long as the task takes,
- * issuing thousands of tool calls. pi applies `transformContext` to every provider request, and
- * that hook may only reshape the *request*: writing back to `agent.state.messages` would cost the
- * run its own transcript, which is where the final body and the entire UI timeline are read from.
- * The compacted history therefore has to live beside the agent rather than inside it, which is what
- * this module owns.
- *
- * What it replaces: a window that kept the newest 32 messages and silently dropped everything
- * older, with no marker and no summary. A long run had roughly sixteen tool calls of memory,
- * anchored to its original task description — so when it found files on disk that it could not
- * remember writing, it concluded another process had been editing its workspace and set out to
- * investigate. The disk was never touched; the history was.
+ * Request checkpoints and one background job belong to the execution session. Transforming a
+ * request never rewrites the Agent's canonical source transcript; final bodies, UI history and
+ * context_read_history continue to read that complete source. Only the session owner collects a
+ * result after validating its frozen prefix, parent checkpoint and execution epoch.
  */
 
 /** How much of the tail survives a compaction, in pi's own token estimate. */
@@ -27,6 +20,8 @@ const KEEP_RECENT_TOKENS = DEFAULT_COMPACTION_SETTINGS.keepRecentTokens;
 const TAIL_SHARE = 0.5;
 
 export type PiContextDiagnostic =
+  | (SummaryGenerationDiagnostic & { type: "joi.context.summary_generated" })
+  | { type: "joi.context.summary_boundary"; stage: "hard_wait" | "cleanup"; durationMs: number; outcome: "ready" | "deadline" | "canceled" | "idle" }
   | { candidateChars: number;type: "joi.partner.context_summary_started" }
   | { charsBefore: number; charsAfter: number; savedChars: number; reasonCode: "summary_no_savings"; type: "joi.partner.context_summary_rejected" }
   | { retryAfterMs: number; type: "joi.partner.context_summary_backoff" }
@@ -38,6 +33,7 @@ export type PiContextDiagnostic =
 /** The compacted prefix of a run's transcript, and the summary that stands in for it. */
 export interface PiContextCheckpoint {
   routeKey?: string;
+  softPending?: boolean;
   /** `messages.slice(cut)` is the retained tail; everything before it is covered by `summary`. */
   cut: number;
   summary: string;
@@ -63,8 +59,21 @@ export interface PiContextManagerOptions {
   onDiagnostic?: (event: PiContextDiagnostic) => void;
   requiredChars?: number;
   backgroundChars?: number;
-  /** Reserved for the summary call and its output. */
+  /** Input planning headroom, independent of the model's summary output allowance. */
   reserveTokens?: number;
+  /** Source/model revisions form the retry identity; permission phases do not. */
+  routeRevision?: string;
+  retryGuard?: SummaryRetryGuard;
+  retryState?: SummaryRetryState;
+  maxSummaryCharacters?: number;
+  maxMessages?: number;
+  keepRecentMessages?: number;
+  summaryTimeoutMs?: number;
+  hardWaitMs?: number;
+  /** Checks refreshed policy, required context, tool declarations and output headroom together. */
+  fitsRequest?: (messages: readonly AgentMessage[]) => boolean;
+  /** An execution owner can keep background work across an SDK permission-phase abort. */
+  backgroundSignal?: AbortSignal | null;
   /**
    * A checkpoint restored from a previous turn of the same resident instance. `cut` indexes the
    * transcript it was taken against, so a caller handing back a different transcript must drop it
@@ -78,6 +87,12 @@ export interface PiContextManager {
   transformContext: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
   /** The checkpoint as it stands, for a caller that carries it across resident turns. */
   checkpoint: () => PiContextCheckpoint | undefined;
+  retryState: () => SummaryRetryState | undefined;
+  /** Collect already completed work; the session owner alone may commit coverage. */
+  collect: (messages: readonly AgentMessage[]) => void;
+  cancel: () => void;
+  /** Finish the owned job before persisting or releasing its execution boundary. */
+  close: (messages: readonly AgentMessage[], canceled?: boolean) => Promise<void>;
 }
 
 /**
@@ -111,8 +126,22 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     reserveTokens: compactionReserveTokens(options.model, options.reserveTokens ?? DEFAULT_COMPACTION_SETTINGS.reserveTokens),
   };
   let checkpoint = options.restored;
-  const retry = new SummaryRetryGuard(options.now);
-  const routeKey = summaryCandidateKey([options.model.provider,options.model.id,options.model.contextWindow,options.thinkingLevel,options.messagesMaxChars,settings.reserveTokens]);
+  const retry = options.retryGuard ?? new SummaryRetryGuard(options.now, options.retryState);
+  const routeKey = summaryCandidateKey([options.routeRevision, options.model.provider, options.model.id, options.model.contextWindow, options.model.maxTokens]);
+  const summaryMaxChars = options.maxSummaryCharacters ?? SUMMARY_TARGET_CHARS;
+  let softCampaign = options.restored?.softPending === true;
+  let epoch = 0;
+  interface Candidate {
+    cut: number;
+    segment: AgentMessage[];
+    anchors: number[];
+    fingerprint: string;
+    parent: PiContextCheckpoint | undefined;
+    tokensBefore: number;
+    messagesBefore: number;
+  }
+  let flight: { candidate: Candidate; controller: AbortController; promise: Promise<void>; result: SummarizeResult | undefined; epoch: number; startedAt: number } | undefined;
+  const report = (event: PiContextDiagnostic): void => { try { options.onDiagnostic?.(event); } catch { /* Diagnostics cannot affect request preparation. */ } };
   // Prefix sums of per-message cost, addressed by message index and extended as the transcript
   // grows. Without them every request would re-price the run's entire history, which over thousands
   // of requests is quadratic in the number of tool calls a run makes.
@@ -160,6 +189,9 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     while (index > floor
       && tokensIn(index - 1, messages.length) < KEEP_RECENT_TOKENS
       && charsIn(index - 1, messages.length) < charBudget) index -= 1;
+    if (messages.length > (options.maxMessages ?? Number.POSITIVE_INFINITY) && options.keepRecentMessages !== undefined) {
+      index = Math.max(index, messages.length - options.keepRecentMessages);
+    }
     // The latest tool exchange is indivisible even when it exceeds the soft target.
     const lastResult = messages.findLastIndex(message => message.role === "toolResult");
     if (lastResult >= floor) {
@@ -181,10 +213,6 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
     ? []
     : [checkpointMessage(checkpoint.summary, Date.parse(checkpoint.lastCompactedAt))];
 
-  /** What the summary costs the request's budget, measured as it is actually sent. */
-  const summaryChars = (): number => summaryMessages()
-    .reduce((total, message) => total + JSON.stringify(message).length, 0);
-
   const anchorsBefore = (messages: readonly AgentMessage[], cut: number): AgentMessage[] => [...new Set([
     ...taskAnchorIndices(messages), ...(checkpoint?.preservedIndices ?? []),
   ])].sort((left, right) => left - right)
@@ -202,21 +230,19 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
    * so the token estimate on its own fires late. The character budget is the independent trigger
    * that covers the gap, and it is the same budget the request was assembled against.
    */
-  const overBudget = (messages: readonly AgentMessage[], cut: number, floor: number, standing: number): boolean => {
-    const anchorChars = anchorsBefore(messages, cut).reduce((sum, message) => sum + JSON.stringify(message).length, 0);
-    const chars = charsIn(0, floor) + standing + anchorChars + charsIn(cut, messages.length);
-    const fixedChars = leadingSystemMessage(messages) === undefined ? 0 : charsIn(0, 1);
-    // Summaries only reduce history; fixed policy, requirements and tools still count toward capacity.
-    if (chars >= options.messagesMaxChars || chars - fixedChars >= HISTORY_SOFT_TRIGGER_CHARS) return true;
-    if (options.model.contextWindow <= 0) return false;
-    const standingTokens = [...anchorsBefore(messages, cut), ...summaryMessages()].reduce((sum, message) => sum + estimateTokens(message), 0);
-    return shouldCompact(tokensIn(0, floor) + standingTokens + tokensIn(cut, messages.length), options.model.contextWindow, settings);
+  const hardOverflow = (request: readonly AgentMessage[]): boolean => JSON.stringify(request).length > options.messagesMaxChars || options.fitsRequest?.(request) === false;
+  const historyChars = (request: readonly AgentMessage[]): number => request.filter(message => message.role !== "system")
+    .reduce((sum, message) => sum + JSON.stringify(message).length, 0);
+  const softOverflow = (request: readonly AgentMessage[]): boolean => {
+    const chars = historyChars(request);
+    if (chars >= HISTORY_SOFT_TRIGGER_CHARS) softCampaign = true;
+    if (chars <= HISTORY_SOFT_TARGET_CHARS) softCampaign = false;
+    return softCampaign || request.length > (options.maxMessages ?? Number.POSITIVE_INFINITY);
   };
 
   /**
-   * Last resort when a summary could not be produced: keep inside the window by dropping the oldest
-   * messages, but say so. Never silent — an unexplained gap in its own history is what made a run
-   * decide that something outside it had been rewriting the workspace.
+   * A hard-capacity fallback omits older uncovered history with an explicit notice and preserves
+   * required anchors and the latest complete tool exchange.
    *
    * A checkpoint that already exists still travels with the request. The summary stands in for the
    * messages it covers, so only what it does not cover is a loss, and only that is announced as
@@ -238,84 +264,132 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
       omittedChars = source.reduce((sum,message) => sum + JSON.stringify(message).length,0);
       request = [...messages.slice(0,floor),...anchors,...summaryMessages(),
         ...(omitted === 0 ? [] : [omissionNotice(omitted,omittedChars)]),...messages.slice(start)];
-      if (JSON.stringify(request).length <= options.messagesMaxChars) break;
+      if (!hardOverflow(request)) break;
     }
-    if (omitted > 0) options.onDiagnostic?.({ omittedChars,omittedMessages: omitted,type: "joi.partner.context_truncated" });
+    if (omitted > 0) report({ omittedChars,omittedMessages: omitted,type: "joi.partner.context_truncated" });
     return request;
   };
 
-  const compact = async (messages: readonly AgentMessage[], floor: number, signal: AbortSignal | undefined): Promise<boolean> => {
+  const candidateFor = (messages: readonly AgentMessage[], floor: number): Candidate | undefined => {
     const from = checkpoint === undefined ? floor : Math.max(floor, checkpoint.cut);
     const target = Math.max(from, targetCut(messages, floor));
-    const cut = cutAt(messages, target, floor + 1);
-    // Nothing safe to cut, or nothing new since the last compaction.
-    if (cut === undefined || cut <= from) return false;
+    const end = cutAt(messages, target, floor + 1);
+    if (end === undefined || end <= from) return undefined;
     const anchors = taskAnchorIndices(messages);
     const released = (checkpoint?.preservedIndices ?? []).filter(index => index < from && !anchors.includes(index))
       .map(index => messages[index]).filter((message): message is AgentMessage => message !== undefined);
-    const segment = [...released, ...messages.slice(from, cut).filter((message, index) => message.role !== "system" && !isCheckpointMessage(message) && !anchors.includes(from + index))];
-    if (segment.length === 0) return false;
-    const key = summaryCandidateKey([transcriptFingerprint(messages,cut),segment,checkpoint,routeKey]);
-    if (signal?.aborted) { retry.reset();return false; }
-    const retryAfterMs = retry.remaining(key);
-    if (retryAfterMs > 0) { options.onDiagnostic?.({ retryAfterMs,type: "joi.partner.context_summary_backoff" });return false; }
-    const startedAt = Date.now();
-    options.onDiagnostic?.({ candidateChars: JSON.stringify(segment).length,type: "joi.partner.context_summary_started" });
-    const generated = await summarizeSegment({
-      model: options.model,
-      models: options.models,
-      previousSummary: checkpoint?.summary,
-      reserveTokens: Math.min(settings.reserveTokens, Math.floor(HISTORY_SOFT_TARGET_CHARS / 8)),
-      segment,
-      signal,
-      thinkingLevel: options.thinkingLevel,
-    });
-    if (signal?.aborted) { retry.reset();return false; }
-    if (!generated.ok || generated.summary.length > HISTORY_SOFT_TARGET_CHARS / 2) {
-      options.onDiagnostic?.({ reasonCode: generated.ok ? "summary_exceeds_capacity" : generated.reasonCode, type: "joi.partner.context_summary_failed" });
-      retry.failed(key);
-      return false;
+    const capacity = options.model.contextWindow > 0 ? Math.max(1, options.model.contextWindow - (checkpoint?.summary.length ?? 0) - settings.reserveTokens - 4096) : HISTORY_SOFT_TARGET_CHARS;
+    const batchChars = Math.min(HISTORY_SOFT_TARGET_CHARS, capacity);
+    let cut = from;
+    for (let next = from + 1; next <= end; next += 1) {
+      if (messages[next]?.role !== "user" && messages[next]?.role !== "assistant") continue;
+      const portion = [...released, ...messages.slice(from, next).filter((message, index) => message.role !== "system" && !isCheckpointMessage(message) && !anchors.includes(from + index))];
+      if (JSON.stringify(portion).length > batchChars && cut > from) break;
+      cut = next;
+      if (JSON.stringify(portion).length >= batchChars) break;
     }
-    const now = new Date().toISOString();
+    if (cut <= from) return undefined;
+    const segment = [...released, ...messages.slice(from, cut).filter((message, index) => message.role !== "system" && !isCheckpointMessage(message) && !anchors.includes(from + index))];
+    if (segment.length === 0) return undefined;
+    return { cut, segment: structuredClone(segment), anchors, fingerprint: transcriptFingerprint(messages, cut), parent: checkpoint,
+      messagesBefore: messages.length, tokensBefore: tokensIn(0, messages.length) };
+  };
+
+  const cancel = (): void => { epoch += 1; flight?.controller.abort(); };
+  const collect = (messages: readonly AgentMessage[]): void => {
+    const done = flight;
+    if (done?.result === undefined) return;
+    flight = undefined;
+    const { candidate, result } = done;
+    if (done.epoch !== epoch || done.controller.signal.aborted || checkpoint !== candidate.parent
+      || candidate.cut > messages.length || candidate.fingerprint !== transcriptFingerprint(messages, candidate.cut)) return;
+    if (!result.ok || result.summary.length > summaryMaxChars) {
+      const reasonCode = result.ok ? "summary_exceeds_capacity" : result.reasonCode;
+      report({ reasonCode, type: "joi.partner.context_summary_failed" });
+      if (reasonCode !== "summary_canceled") retry.failed(routeKey);
+      return;
+    }
     const previous = checkpoint;
-    const before = assemble(messages,checkpoint?.cut ?? floor);
+    const before = assemble(messages, checkpoint?.cut ?? anchorEnd(messages));
     checkpoint = {
       routeKey,
-      compactedMessages: (checkpoint?.compactedMessages ?? 0) + segment.length,
+      compactedMessages: (checkpoint?.compactedMessages ?? 0) + candidate.segment.length,
       count: (checkpoint?.count ?? 0) + 1,
-      cut,
-      lastCompactedAt: now,
-      messagesBefore: messages.length,
-      summary: generated.summary,
-      tokensBefore: tokensIn(0, messages.length),
-      sourceFingerprint: transcriptFingerprint(messages, cut),
-      preservedIndices: anchors.filter(index => index < cut),
+      cut: candidate.cut,
+      lastCompactedAt: new Date(options.now?.() ?? Date.now()).toISOString(),
+      messagesBefore: candidate.messagesBefore,
+      summary: result.summary,
+      tokensBefore: candidate.tokensBefore,
+      sourceFingerprint: candidate.fingerprint,
+      preservedIndices: candidate.anchors.filter(index => index < candidate.cut),
     };
-    const savings = summarySavings(before,assemble(messages,cut));
+    checkpoint.softPending = softCampaign && historyChars(assemble(messages, candidate.cut)) > HISTORY_SOFT_TARGET_CHARS;
+    const savings = summarySavings(before,assemble(messages,candidate.cut));
     if (savings.savedChars <= 0) {
-      checkpoint = previous;retry.failed(key);
-      options.onDiagnostic?.({ ...savings,reasonCode: "summary_no_savings",type: "joi.partner.context_summary_rejected" });
-      return false;
+      checkpoint = previous;retry.failed(routeKey);
+      report({ ...savings,reasonCode: "summary_no_savings",type: "joi.partner.context_summary_rejected" });
+      return;
     }
     retry.reset();
-    options.onDiagnostic?.({
+    report({
       compactedMessages: checkpoint.compactedMessages,
       count: checkpoint.count,
       tokensBefore: checkpoint.tokensBefore,
-      charsBefore: charsIn(0, messages.length),
-      charsAfter: JSON.stringify(assemble(messages, cut)).length,
-      durationMs: Math.max(0, Date.now() - startedAt),
+      charsBefore: savings.charsBefore,
+      charsAfter: savings.charsAfter,
+      durationMs: Math.max(0, performance.now() - done.startedAt),
       runtime: "pi",
       type: "joi.partner.context_compacted",
     });
-    return true;
+  };
+
+  const start = (messages: readonly AgentMessage[], floor: number, signal: AbortSignal | undefined): void => {
+    if (flight !== undefined || signal?.aborted) return;
+    const retryAfterMs = retry.remaining(routeKey);
+    if (retryAfterMs > 0) { report({ retryAfterMs, type: "joi.partner.context_summary_backoff" }); return; }
+    const candidate = candidateFor(messages, floor);
+    if (candidate === undefined) return;
+    const controller = new AbortController();
+    const job = { candidate, controller, epoch, startedAt: performance.now(), promise: Promise.resolve(), result: undefined as SummarizeResult | undefined };
+    flight = job;
+    report({ candidateChars: JSON.stringify(candidate.segment).length, type: "joi.partner.context_summary_started" });
+    const parentSignal = options.backgroundSignal === undefined ? signal : options.backgroundSignal;
+    job.promise = summarizeSegment({ model: options.model, models: options.models, segment: candidate.segment,
+      previousSummary: candidate.parent?.summary, reserveTokens: settings.reserveTokens, thinkingLevel: "off",
+      targetChars: summaryMaxChars, ...(options.summaryTimeoutMs === undefined ? {} : { timeoutMs: options.summaryTimeoutMs }),
+      signal: parentSignal == null ? controller.signal : AbortSignal.any([parentSignal, controller.signal]),
+      onDiagnostic: diagnostic => report({ ...diagnostic, type: "joi.context.summary_generated" }),
+    }).then(result => { job.result = result; });
+  };
+
+  const wait = async (promise: Promise<void>): Promise<void> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = performance.now();
+    let outcome: "ready" | "deadline" = "ready";
+    try { outcome = await Promise.race([promise.then(() => "ready" as const), new Promise<"deadline">(resolve => { timer = setTimeout(() => { resolve("deadline"); }, options.hardWaitMs ?? SUMMARY_HARD_WAIT_MS); })]); }
+    finally {
+      if (timer !== undefined) clearTimeout(timer);
+      report({ type: "joi.context.summary_boundary", stage: "hard_wait", durationMs: Math.max(0, performance.now() - startedAt), outcome });
+    }
   };
 
   return {
     checkpoint: () => checkpoint,
+    retryState: () => retry.snapshot(),
+    collect,
+    cancel,
+    close: async (messages, canceled = false) => {
+      const startedAt = performance.now();
+      if (!canceled) collect(messages);
+      const pending = flight;
+      cancel();
+      await pending?.promise;
+      collect(messages);
+      report({ type: "joi.context.summary_boundary", stage: "cleanup", durationMs: Math.max(0, performance.now() - startedAt), outcome: pending === undefined ? "idle" : "canceled" });
+    },
     transformContext: async (messages, signal) => {
       const finish = (request: AgentMessage[]): AgentMessage[] => {
-        options.onDiagnostic?.({
+        report({
           type: "joi.context.request", runtime: "pi", contextChars: JSON.stringify(request).length,
           historyChars: request.filter(message => message.role !== "system").reduce((sum, message) => sum + JSON.stringify(message).length, 0),
           requiredChars: options.requiredChars ?? 0, backgroundChars: options.backgroundChars ?? 0,
@@ -329,23 +403,24 @@ export function createPiContextManager(options: PiContextManagerOptions): PiCont
         // is checked once; branching or rollback callers replace the manager with their transcript.
         if (checkpoint !== undefined && (!Number.isSafeInteger(checkpoint.cut) || checkpoint.cut > messages.length || checkpoint.cut < 0 || checkpoint.summary.trim() === ""
           || (checkpoint.routeKey !== undefined && checkpoint.routeKey !== routeKey)
-          || checkpoint.sourceFingerprint !== transcriptFingerprint(messages, checkpoint.cut))) { checkpoint = undefined;retry.reset(); }
+          || checkpoint.sourceFingerprint !== transcriptFingerprint(messages, checkpoint.cut))) { cancel(); checkpoint = undefined; }
+        collect(messages);
         const floor = anchorEnd(messages);
         // No checkpoint means nothing has been summarized yet, so the whole transcript after the
         // anchors is the tail and the request is the transcript unchanged.
-        let cut = checkpoint === undefined ? floor : Math.max(floor, checkpoint.cut);
-        const standing = summaryChars();
-        if (!overBudget(messages, cut, floor, standing)) return finish(assemble(messages, cut));
-        if (await compact(messages, floor, signal)) {
-          cut = Math.max(floor, checkpoint?.cut ?? floor);
-          if (!overBudget(messages, cut, floor, summaryChars())) return finish(assemble(messages, cut));
-        }
-        return finish(trimWithNotice(messages, floor));
+        let request = assemble(messages, checkpoint === undefined ? floor : Math.max(floor, checkpoint.cut));
+        if (!softOverflow(request) && !hardOverflow(request)) return finish(request);
+        start(messages, floor, signal);
+        if (!hardOverflow(request)) return finish(request);
+        if (flight !== undefined) await wait(flight.promise);
+        collect(messages);
+        request = assemble(messages, checkpoint === undefined ? floor : Math.max(floor, checkpoint.cut));
+        return finish(hardOverflow(request) ? trimWithNotice(messages, floor) : request);
       } catch {
         // pi's contract for this hook is that it must not throw or reject: throwing interrupts the
         // agent loop without a normal event sequence. A request that is merely too large is
         // recoverable; a broken loop is not, so the fallback is the bounded one.
-        options.onDiagnostic?.({ reasonCode: "compaction_threw", type: "joi.partner.context_summary_failed" });
+        report({ reasonCode: "compaction_threw", type: "joi.partner.context_summary_failed" });
         try {
           return finish(trimWithNotice(messages, anchorEnd(messages)));
         } catch {

@@ -9,6 +9,7 @@ interface TransactionalDatabase {
 }
 
 interface StoredMetadata {
+  summaryRetry?: JoiReasoningSessionSnapshot["summaryRetry"];
   archivedMessages?: unknown[];
   archivedMessageCount?: number;
   compaction?: JoiReasoningSessionSnapshot["compaction"];
@@ -38,6 +39,15 @@ function validCoverage(value: unknown): NonNullable<JoiReasoningSessionSnapshot[
 function metadata(value: unknown): StoredMetadata {
   if (value === null || Array.isArray(value) || typeof value !== "object") throw new Error("pi_session_record_invalid");
   const record = value as Record<string, unknown>;
+  let summaryRetry: JoiReasoningSessionSnapshot["summaryRetry"];
+  if (record.summaryRetry !== undefined) {
+    const state = record.summaryRetry;
+    if (state === null || typeof state !== "object" || Array.isArray(state)
+      || !("routeKey" in state) || typeof state.routeKey !== "string" || !/^[a-f0-9]{64}$/u.test(state.routeKey)
+      || !("failures" in state) || typeof state.failures !== "number" || !Number.isSafeInteger(state.failures) || state.failures < 1
+      || !("until" in state) || typeof state.until !== "number" || !Number.isFinite(state.until) || state.until < 0) throw new Error("pi_session_record_invalid");
+    summaryRetry = { routeKey: state.routeKey, failures: state.failures, until: state.until };
+  }
   if (typeof record.modelRevisionId !== "string" || typeof record.sourceRevisionId !== "string"
     || typeof record.systemPrompt !== "string" || typeof record.updatedAt !== "string") throw new Error("pi_session_record_invalid");
   let compaction: JoiReasoningSessionSnapshot["compaction"];
@@ -52,6 +62,7 @@ function metadata(value: unknown): StoredMetadata {
     }
     const coverage = validCoverage(storedCompaction.coverage);
     compaction = {
+      ...(storedCompaction.softPending === true ? { softPending: true } : {}),
       compactedMessages: storedCompaction.compactedMessages,
       count: storedCompaction.count,
       lastCompactedAt: storedCompaction.lastCompactedAt,
@@ -63,6 +74,7 @@ function metadata(value: unknown): StoredMetadata {
     throw new Error("pi_session_record_invalid");
   }
   return {
+    ...(summaryRetry === undefined ? {} : { summaryRetry }),
     ...(Array.isArray(record.archivedMessages) ? { archivedMessages: record.archivedMessages } : {}),
     ...(record.archivedMessageCount === undefined ? {} : { archivedMessageCount: record.archivedMessageCount as number }),
     compaction,
@@ -109,6 +121,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
         return row.message_json;
       });
       const snapshot: JoiReasoningSessionSnapshot = {
+        ...(stored.summaryRetry === undefined ? {} : { summaryRetry: stored.summaryRetry }),
         workbenchId: first.workbench_id,
         ...(stored.archivedMessageCount === undefined && stored.archivedMessages === undefined ? {} : { archivedMessages: archiveValues }),
         compaction: stored.compaction,
@@ -131,6 +144,7 @@ export class SqlitePiReasoningSessionStore implements ReasoningSessionStore {
       const coverage = validCoverage(snapshot.compaction?.coverage);
       if (coverage !== undefined && (coverage.transcriptId !== snapshot.sessionId || coverage.coveredTo !== archiveValues.length)) throw new Error("pi_session_record_invalid");
       const metadataJson = JSON.stringify({
+          summaryRetry: snapshot.summaryRetry,
           ...(snapshot.archivedMessages === undefined ? {} : { archivedMessageCount: archiveValues.length }),
           compaction: snapshot.compaction,
           modelRevisionId: snapshot.modelRevisionId,

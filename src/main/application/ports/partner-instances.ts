@@ -5,6 +5,7 @@ import type { AgentConversationDraft } from "../partners/agent-conversation-pres
 import type { ToolTraceDraft } from "../partners/tool-trace-presentation.js";
 import type { NativeAgentEvent } from "./native-agent-events.js";
 import type { ConversationContextDto,ConversationThinkingDto } from "../../../shared/conversations.js";
+import type { SummaryRetryState } from "./summary-state.js";
 
 export type SessionPolicy = "EPHEMERAL" | "RESIDENT";
 export type PartnerInstanceStatus = "BUSY" | "DISPOSED" | "IDLE" | "SUSPENDED";
@@ -80,6 +81,7 @@ export interface ResidentTurnInput extends PartnerExecutionContext {
 
 /** Private execution history, separate from the safe UI projection and disposable instances. */
 export interface PartnerSessionState {
+  summaryRetry?: SummaryRetryState;
   engine: PartnerEngine;
   messages: unknown[];
   externalSessionRef?: string;

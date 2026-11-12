@@ -275,10 +275,10 @@
         "path": "package.json"
       },
       "hash": "c5c23843eeab5cf525eb51f52eedc10675c3e95433d3cf32c02bdb3d2d74933d",
-      "observedAt": "2026-11-12T10:25:42.321Z",
+      "observedAt": "2026-11-12T17:41:22.221Z",
       "range": {
         "startLine": 1,
-        "endLine": 163
+        "endLine": 162
       }
     },
     {
@@ -317,10 +317,10 @@
         "path": "src/renderer/ConversationPage.tsx"
       },
       "hash": "6a1940e2e346486415f8bb38bfc9978d4de5959f75dd58fc5b056c1a0363ca33",
-      "observedAt": "2026-11-12T10:15:37.220Z",
+      "observedAt": "2026-11-12T17:41:22.223Z",
       "range": {
         "startLine": 1,
-        "endLine": 315
+        "endLine": 314
       }
     },
     {
@@ -415,10 +415,10 @@
         "path": "src/shared/conversations.ts"
       },
       "hash": "684e03328cda4a05318244d86fa7a38d599bfcaa6e61539dc5d955586460ff1a",
-      "observedAt": "2026-11-12T10:15:37.220Z",
+      "observedAt": "2026-11-12T17:41:22.223Z",
       "range": {
         "startLine": 1,
-        "endLine": 105
+        "endLine": 104
       }
     },
     {
@@ -442,8 +442,8 @@
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "11c649a46f8aa5b4bc48c0eacd99c90995fdb97322e9f1a8ca666e3c5cb233f9",
-      "observedAt": "2026-11-12T06:52:38.674162Z",
+      "hash": "569cd4f64bbd017b085c46b05d68e81a20152154fe8f57dc1c7b686b4d66e35b",
+      "observedAt": "2026-11-12T17:41:22.224Z",
       "range": {
         "startLine": 1,
         "endLine": 39
@@ -620,15 +620,15 @@
     {
       "id": "54304c25-7793-4c5a-b601-f649f10df3f1",
       "kind": "source-code",
-      "claim": "Request-only Joi checkpoint coverage, net savings checks, failed-candidate backoff and bounded omission notices.",
+      "claim": "Session-owned single-flight background batches validate frozen coverage; route-scoped backoff survives candidate changes; hard waits and cleanup are bounded and observable.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-context-manager.ts"
       },
-      "hash": "4b73407b824404bd41e1db0cf196bfd9495c3841801e2250a0defc5fd7db2995",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "518ab4c83562ff79f80b4156b2c002ea7cc6d42e1aece02eea7e3d27c15f5b05",
+      "observedAt": "2026-11-12T17:41:22.225Z",
       "range": {
         "startLine": 1,
-        "endLine": 357
+        "endLine": 432
       }
     },
     {
@@ -666,8 +666,8 @@
       "location": {
         "path": "docs/adr/0033-conversation-context-sessions.md"
       },
-      "hash": "d53398d16577988bc97f74e4f32d6d92fc8121ff19f1b167f26b6b4b9f30bad7",
-      "observedAt": "2026-11-11T14:46:35.447458Z",
+      "hash": "91850b87831517de4ad5603a44ac4ab2f9d4e08e5589cccb4e30325946a15422",
+      "observedAt": "2026-11-12T17:41:22.226Z",
       "range": {
         "startLine": 1,
         "endLine": 27
@@ -694,11 +694,11 @@
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "ba5ff7f0331c426379830fc8b31cba34ac293540331d501cfd94e6c4cca6cdf5",
-      "observedAt": "2026-11-12T10:15:37.220Z",
+      "hash": "89024ded19537f8a39515cd21b9da981d98475724bc3589db22c6c7cd8bf7dd2",
+      "observedAt": "2026-11-12T17:41:22.227Z",
       "range": {
         "startLine": 1,
-        "endLine": 191
+        "endLine": 190
       }
     },
     {
@@ -751,10 +751,10 @@
         "path": "docs/pi-coding-harness-research.md"
       },
       "hash": "6e087744ccf59de70da4037cb9fac234c04f6c4cfed142a35e56863b35c7c8b8",
-      "observedAt": "2026-11-12T10:15:37.220Z",
+      "observedAt": "2026-11-12T17:41:22.227Z",
       "range": {
         "startLine": 1,
-        "endLine": 137
+        "endLine": 136
       }
     },
     {
@@ -765,10 +765,10 @@
         "path": "src/main/infrastructure/pi/pi-conversation-extensions.ts"
       },
       "hash": "89af5a30aa25a3ed53a7ab1be128e62d21a5e9caaa261372e78995ed515c1cde",
-      "observedAt": "2026-11-12T10:15:37.220Z",
+      "observedAt": "2026-11-12T17:41:22.227Z",
       "range": {
         "startLine": 1,
-        "endLine": 15
+        "endLine": 14
       }
     },
     {
@@ -807,10 +807,10 @@
         "path": "src/main/domain/partners/pi-extension-tools.ts"
       },
       "hash": "4d7ef4f8d8d2333811cf648baf8bc474abe762f77d531f57bbe2424b58fbfd8c",
-      "observedAt": "2026-11-12T10:15:37.220Z",
+      "observedAt": "2026-11-12T17:41:22.228Z",
       "range": {
         "startLine": 1,
-        "endLine": 4
+        "endLine": 3
       }
     },
     {
@@ -821,10 +821,10 @@
         "path": "tests/contract/conversation-pi-extensions.test.ts"
       },
       "hash": "5ce6410ea93b101791a0891328830148f2949435c0d2f5414346b7e17abe9307",
-      "observedAt": "2026-11-12T10:15:37.220Z",
+      "observedAt": "2026-11-12T17:41:22.228Z",
       "range": {
         "startLine": 1,
-        "endLine": 150
+        "endLine": 149
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch.",
+      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "bdcb5882eac9dccce35d863a52dc45c9ea7ccffee46b1ceac945fa927ef5d7dc",
-      "observedAt": "2026-11-12T14:18:17.959Z",
+      "hash": "3938e294654ca1d86d0a09b3d0955b0694469ce7c9f292339eb6fe6837285e72",
+      "observedAt": "2026-11-12T17:41:22.229Z",
       "range": {
         "startLine": 1,
-        "endLine": 630
+        "endLine": 635
       }
     },
     {
@@ -919,10 +919,10 @@
         "path": "src/shared/partner-tools.ts"
       },
       "hash": "028ea6b52b93058887c66941d20afb71774e59cf444f6eebf2b20dca19f144ed",
-      "observedAt": "2026-11-12T14:18:17.959Z",
+      "observedAt": "2026-11-12T17:41:22.230Z",
       "range": {
         "startLine": 1,
-        "endLine": 9
+        "endLine": 8
       }
     },
     {
@@ -933,10 +933,10 @@
         "path": "src/renderer/PartnerPage.tsx"
       },
       "hash": "86d616d3f6562c9af435c51ed55fd28fb401ab0d7c51e7d6118d32e04fe5e03b",
-      "observedAt": "2026-11-12T14:18:17.959Z",
+      "observedAt": "2026-11-12T17:41:22.230Z",
       "range": {
         "startLine": 1,
-        "endLine": 596
+        "endLine": 595
       }
     },
     {
@@ -946,11 +946,11 @@
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "f985d22d29317043c45db2fa13ec37dcb6b3732c8519c77252c1af1febbc8541",
-      "observedAt": "2026-11-12T14:18:17.959Z",
+      "hash": "f8faba7731cbf7a7956f4143fca95fd98f26ad0b55c6e158baac33b58e2b530a",
+      "observedAt": "2026-11-12T17:41:22.230Z",
       "range": {
         "startLine": 1,
-        "endLine": 1598
+        "endLine": 1597
       }
     },
     {
@@ -961,10 +961,10 @@
         "path": "tests/e2e/partner-installation.spec.ts"
       },
       "hash": "738b0f4774cc85095bf9e17bc67d13e20594d7a8c44d13990d296bf4444eab15",
-      "observedAt": "2026-11-12T14:25:25.280Z",
+      "observedAt": "2026-11-12T17:41:22.231Z",
       "range": {
         "startLine": 1,
-        "endLine": 110
+        "endLine": 109
       }
     },
     {
@@ -975,10 +975,276 @@
         "path": "tests/renderer/partner-page.test.tsx"
       },
       "hash": "594fbbceae4c638edc5a59538b4912def74adc05bb0632f9f58b267bb05e21b5",
-      "observedAt": "2026-11-12T14:18:17.959Z",
+      "observedAt": "2026-11-12T17:41:22.231Z",
       "range": {
         "startLine": 1,
-        "endLine": 873
+        "endLine": 872
+      }
+    },
+    {
+      "id": "38b09d5f-50f2-43a2-b6f7-2a4e31675e77",
+      "kind": "source-code",
+      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "location": {
+        "path": "src/main/application/ports/partner-instances.ts"
+      },
+      "hash": "736f16f4ce53a8dd9c9fec5abcce7214819acfdcad4034e4f668cd4e8374abea",
+      "observedAt": "2026-11-12T17:41:22.232Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 136
+      }
+    },
+    {
+      "id": "60fe6b4d-06e2-46f5-8e7f-e680ff854cf9",
+      "kind": "source-code",
+      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "location": {
+        "path": "src/main/application/ports/primary-reasoning-runtime.ts"
+      },
+      "hash": "b607de1a802557ff6dd7b091e6707b504edecd7bb70a8502df802e9190da5bd1",
+      "observedAt": "2026-11-12T17:41:22.233Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 87
+      }
+    },
+    {
+      "id": "16802d66-5c1a-4e9f-8db6-af5647932e94",
+      "kind": "source-code",
+      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "location": {
+        "path": "src/main/application/ports/runtime-diagnostics.ts"
+      },
+      "hash": "0d1f1a4f10e6817b1fe2b4186a4d81ef9f31f5e4e8c4a750580eadb19b69fc65",
+      "observedAt": "2026-11-12T17:41:22.234Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 863
+      }
+    },
+    {
+      "id": "b3dad04a-df5c-45cd-a2da-86f7e73d273e",
+      "kind": "source-code",
+      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-pi-reasoning-session-store.ts"
+      },
+      "hash": "4d2aebcb5a90c63d5643ef77395b4c533c5ef776a05a68107cfa3f5d4ec1de74",
+      "observedAt": "2026-11-12T17:41:22.235Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 177
+      }
+    },
+    {
+      "id": "040ebe4f-d281-4996-8db8-54d727c6e716",
+      "kind": "source-code",
+      "claim": "Pinned SDK summary responses are strictly classified; full-request output geometry and required thinking capabilities determine generation allowance independently of context reserve.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-compaction.ts"
+      },
+      "hash": "e1d12d6f40713a10e4cd68a6aaffe438ada39691b09a6a94fd42b39ff5e85ab8",
+      "observedAt": "2026-11-12T17:41:22.235Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 248
+      }
+    },
+    {
+      "id": "c0fbdf81-21b8-46b1-9b34-73d31b228a96",
+      "kind": "source-code",
+      "claim": "Partner owners restore route cooldown, retain one summary through warm permission suspension, and cancel and drain pending work on final cleanup.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-partner-engine-runtime.ts"
+      },
+      "hash": "ad957bfe9c7d3745fbf3fab74b6a1a3d948c7afe7e8d207e68f05d02f87b42fb",
+      "observedAt": "2026-11-12T17:41:22.236Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1241
+      }
+    },
+    {
+      "id": "a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6",
+      "kind": "source-code",
+      "claim": "Primary Joi shares request compaction while retaining canonical archive, rollback, safe final capacity and private retry persistence.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-reasoning-runtime.ts"
+      },
+      "hash": "01c86d228a4cc4c2896e71d660b3273fe537cf5f63c127b388acd20ab09314da",
+      "observedAt": "2026-11-12T17:41:22.237Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 892
+      }
+    },
+    {
+      "id": "f81d9008-9635-480d-b5bd-d88dcf7fd971",
+      "kind": "source-code",
+      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "location": {
+        "path": "src/main/infrastructure/runtime/json-line-runtime-diagnostics.ts"
+      },
+      "hash": "97c905e267c19f3794ab15591743fcd6cb41e09efdc3d7392bac8ad4610549ee",
+      "observedAt": "2026-11-12T17:41:22.238Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 105
+      }
+    },
+    {
+      "id": "2f34eed3-5d77-426a-b98b-b96e7eb41ebc",
+      "kind": "source-code",
+      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "location": {
+        "path": "tests/contract/local-pi-partner-runtime.test.ts"
+      },
+      "hash": "bfb16f6e19c331f3f27cf2154e1e703779a5be09df164a4aa7f50bdb914114b8",
+      "observedAt": "2026-11-12T17:41:22.238Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1825
+      }
+    },
+    {
+      "id": "64c24ebe-09b2-47ab-9204-f66893cf8d48",
+      "kind": "source-code",
+      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "location": {
+        "path": "tests/contract/pi-runtime-contract.test.ts"
+      },
+      "hash": "490a9c521b0f651ee60715e226ffd8f010d8b94f2ff871d89cd7f2ed71177113",
+      "observedAt": "2026-11-12T17:41:22.239Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1406
+      }
+    },
+    {
+      "id": "92db4a86-9834-4071-bf2c-9fd0724b43c3",
+      "kind": "source-code",
+      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "location": {
+        "path": "tests/integration/sqlite-pi-session-store.test.ts"
+      },
+      "hash": "ba4431e994c14b3d1210e1aed22ee3135018f0ac0fb856bc00badab7e438b629",
+      "observedAt": "2026-11-12T17:41:22.240Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 118
+      }
+    },
+    {
+      "id": "096dc7d1-eb93-4975-8fea-5f99776e5150",
+      "kind": "source-code",
+      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "location": {
+        "path": "tests/unit/json-line-runtime-diagnostics.test.ts"
+      },
+      "hash": "6f1f365fe49cc17c5cf7b8f377575ba95a2308b56cf7556c876d3cb8aab2ee81",
+      "observedAt": "2026-11-12T17:41:22.241Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 153
+      }
+    },
+    {
+      "id": "cd436d72-ed57-4452-880d-27cbabeb27fa",
+      "kind": "source-code",
+      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "location": {
+        "path": "tests/unit/pi-history-budget.test.ts"
+      },
+      "hash": "097020f1ac61cf71f262e8a98a67526a6f56915e16e04867e8dc385caf6dabb6",
+      "observedAt": "2026-11-12T17:41:22.242Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 333
+      }
+    },
+    {
+      "id": "dd47d686-75af-4f9e-a3be-93a47f07280c",
+      "kind": "document",
+      "claim": "Retained summary policy, acceptance criteria and implementation evidence; real-provider latency and answer-quality replay remain unverified.",
+      "location": {
+        "path": "docs/adr/0034-background-summary-policy.md"
+      },
+      "hash": "cb461b1da11bc8cbf7bd89725a9c92921c7c27eb95bb80aaf1690d8d348374aa",
+      "observedAt": "2026-11-12T17:41:22.243Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 13
+      }
+    },
+    {
+      "id": "9b7ef723-ee6b-4710-b18a-84c606f6a1a0",
+      "kind": "document",
+      "claim": "Retained summary policy, acceptance criteria and implementation evidence; real-provider latency and answer-quality replay remain unverified.",
+      "location": {
+        "path": "docs/pi-summary-optimization-plan.md"
+      },
+      "hash": "96150c55ef75082268ccd5bb9a4937dd858fb7630758b704dc906b37467359a2",
+      "observedAt": "2026-11-12T17:41:22.244Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 149
+      }
+    },
+    {
+      "id": "29fe20fc-d1a8-4b43-ac2a-ea1bad8e11fa",
+      "kind": "source-code",
+      "claim": "Shared private summary metadata and safe diagnostics support the implemented session-owned summary policy.",
+      "location": {
+        "path": "src/main/application/ports/summary-state.ts"
+      },
+      "hash": "9416e7e2b673f41a95dbe7570fec797abfd969545ccec27a479120feec954dbc",
+      "observedAt": "2026-11-12T17:41:22.244Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 6
+      }
+    },
+    {
+      "id": "0b163e7c-4f25-4d8c-81dc-5a583b1d3959",
+      "kind": "source-code",
+      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "location": {
+        "path": "tests/contract/pi-summary-wire.test.ts"
+      },
+      "hash": "0ba2ef45bc804d304a415108eb8348525f19caae64625289e4de56050941e23b",
+      "observedAt": "2026-11-12T17:41:22.245Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 57
+      }
+    },
+    {
+      "id": "2b73ef5d-3fce-408e-92e7-ffb22945406f",
+      "kind": "source-code",
+      "claim": "Synthetic summary-policy regression covers completion, budgets, scoped cooldown, incremental coverage, recovery or cleanup without real credentials or user data.",
+      "location": {
+        "path": "tests/unit/pi-summary-optimization.test.ts"
+      },
+      "hash": "3b13a4bf2ddb4c9ad2a508558cf7620286ce3926b89d70289cbdc036d4661378",
+      "observedAt": "2026-11-12T17:41:22.246Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 255
+      }
+    },
+    {
+      "id": "d3ce4801-6708-4041-a84e-7a5fa383272a",
+      "kind": "source-code",
+      "claim": "Regression verifies session-owned summary behavior with synthetic data and isolated resources.",
+      "location": {
+        "path": "tests/contract/conversation-pi-session.test.ts"
+      },
+      "hash": "669ea0b6d290d938e635ed182441205be0d04badc91da7438a2166d171f35cd6",
+      "observedAt": "2026-11-12T17:41:22.246Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 165
       }
     }
   ]
