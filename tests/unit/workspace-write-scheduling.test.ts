@@ -5,13 +5,13 @@ import { createPartnerRevision,minimumLocalWorkAccess } from "../../src/main/dom
 import { localExecutionCapabilities } from "../../src/main/domain/work/work-execution-needs.js";
 
 describe("AC-WR-01/03 workspace admission", () => {
-  it("CHAT-31 reserves WRITE admission for cloud browsers and wiki mutations while keeping wiki retrieval read-only",() => {
-    for (const [tool,access] of [["browser_snapshot","WRITE"],["browser_click","WRITE"],["openwiki_begin","WRITE"],["openwiki_submit_page","WRITE"],["openwiki_search","READ"],["openwiki_read","READ"]] as const) {
+  it("CHAT-31 reserves WRITE admission for local browser operations",() => {
+    for (const [tool,access] of [["browser_snapshot","WRITE"],["browser_click","WRITE"]] as const) {
       const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-11-12",displayName: "Fixture",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: [tool],toolPolicyMode: "CUSTOM" });
       expect(minimumLocalWorkAccess(revision)).toBe(access);expect(classifyLocalToolEffect(tool)).toBe(access);
-      expect(localExecutionCapabilities(revision)?.fileWrites).toBe(tool === "openwiki_begin" || tool === "openwiki_submit_page");
+      expect(localExecutionCapabilities(revision)?.fileWrites).toBe(false);
     }
-    expect(classifyLocalToolEffect("browser_unreviewed")).toBe("DENY");expect(classifyLocalToolEffect("openwiki_unreviewed")).toBe("DENY");
+    for (const name of ["browser_unreviewed","openwiki_begin","openwiki_read"]) expect(classifyLocalToolEffect(name)).toBe("DENY");
   });
   it("keeps review and requirements maintenance in the resource queue", () => {
     for (const code of ["goal_execution_paused", "goal_requirements_pending", "goal_requirements_stale"]) expect(isWriteResumeWait(new DomainError(code, "fixture"))).toBe(true);

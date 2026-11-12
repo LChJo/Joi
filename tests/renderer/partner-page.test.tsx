@@ -24,6 +24,64 @@ function mockCatalog(api: DigitalLifeApi, partners: PartnerDto[]) {
 }
 
 describe("partner page", () => {
+  it.each(["new","existing"])("CHAT-43 groups browser permissions in one default-off switch for a %s partner",async mode => {
+    const api = new DigitalLifeApi("");
+    const partner = { ...coder,skills: [],toolPolicyMode: "ALL" as const,tools: [] };
+    mockCatalog(api,mode === "new" ? [] : [partner]);
+    vi.spyOn(api,"engineCatalog").mockResolvedValue({ items: [{ available: true,id: "pi-core",tools: ["read","edit","browser_snapshot","browser_click"] }] });
+    const create = vi.spyOn(api,"createPartner").mockResolvedValue(coder);
+    const update = vi.spyOn(api,"updatePartner").mockResolvedValue(coder);
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button",{ name: mode === "new" ? "添加搭档" : "编辑" }));
+    if (mode === "new") fireEvent.change(screen.getByLabelText("名称"),{ target: { value: "Browser helper" } });
+    fireEvent.click(screen.getByRole("tab",{ name: "高级" }));
+    const tools = await screen.findByRole("group",{ name: "工具白名单" });
+    expect(within(tools).getByRole("checkbox",{ name: "read" })).toBeChecked();
+    const browser = within(tools).getByRole("switch",{ name: "Agent Browser" });
+    expect(browser).not.toBeChecked();
+    expect(within(tools).getAllByRole("switch")).toHaveLength(1);
+    expect(within(tools).queryByRole("checkbox",{ name: /^browser_/ })).not.toBeInTheDocument();
+    fireEvent.click(browser);
+    expect(within(tools).getByRole("checkbox",{ name: "read" })).toBeChecked();
+    expect(browser).toBeChecked();
+    expect(screen.getByText("自定义权限：已开启 3 项。")).toBeInTheDocument();
+    fireEvent.click(browser);expect(browser).not.toBeChecked();
+    expect(within(tools).getByRole("checkbox",{ name: "read" })).toBeChecked();
+    fireEvent.click(browser);expect(browser).toBeChecked();
+    fireEvent.click(screen.getByRole("button",{ name: mode === "new" ? "保存搭档" : "保存修改" }));
+    await waitFor(() => expect(mode === "new" ? create : update).toHaveBeenCalled());
+    expect(mode === "new" ? create.mock.calls[0]?.[0] : update.mock.calls[0]?.[1]).toMatchObject({ toolPolicyMode: "CUSTOM",tools: ["read","edit","browser_snapshot","browser_click"] });
+  });
+
+  it.each(["off","partial","on"])("CHAT-43 restores the browser family %s without widening saved permissions",async selection => {
+    const api = new DigitalLifeApi("");
+    const tools = ["read",...(selection === "off" ? [] : selection === "partial" ? ["browser_snapshot"] : ["browser_snapshot","browser_click"])];
+    const partner = { ...coder,skills: [],toolPolicyMode: "CUSTOM" as const,tools };
+    mockCatalog(api,[partner]);
+    vi.spyOn(api,"engineCatalog").mockResolvedValue({ items: [{ available: true,id: "pi-core",tools: ["read","edit","browser_snapshot","browser_click"] }] });
+    const update = vi.spyOn(api,"updatePartner").mockResolvedValue(partner);
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button",{ name: "编辑" }));
+    fireEvent.click(screen.getByRole("tab",{ name: "高级" }));
+    const browser = await screen.findByRole("switch",{ name: "Agent Browser" });
+    expect(browser).toHaveProperty("checked",selection === "on");
+    if (selection === "on") fireEvent.click(browser);
+    fireEvent.click(screen.getByRole("button",{ name: "保存修改" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1",expect.objectContaining({ tools: ["read"] })));
+  });
+
+  it.each([true,false])("CHAT-41 filters retired tool selections only when the current catalog is known (%s)",async catalogAvailable => {
+    const api = new DigitalLifeApi("");
+    const partner = { ...coder,skills: [],toolPolicyMode: "CUSTOM" as const,tools: ["read","openwiki_search"] };
+    mockCatalog(api,[partner]);
+    if (!catalogAvailable) vi.spyOn(api,"engineCatalog").mockRejectedValue(new Error("Synthetic catalog unavailable"));
+    const update = vi.spyOn(api,"updatePartner").mockResolvedValue(partner);
+    render(<PartnerPage api={api} />);
+    fireEvent.click(await screen.findByRole("button",{ name: "编辑" }));
+    fireEvent.click(screen.getByRole("button",{ name: "保存修改" }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith("partner-1",expect.objectContaining({ tools: catalogAvailable ? ["read"] : partner.tools })));
+  });
+
   it("renders partner cards with description, engine badge and a badge for joi-created partners", async () => {
     const api = new DigitalLifeApi("");
     mockCatalog(api, [coder, { ...coder, createdBy: "joi", description: "joi 自己登记的搭档", displayName: "Joi Made", partnerId: "partner-2", partnerRevisionId: "revision-2" }, { ...coder, description: "带知识库的搭档", displayName: "Doced", knowledgeDocCount: 2, partnerId: "partner-3", partnerRevisionId: "revision-3" }]);

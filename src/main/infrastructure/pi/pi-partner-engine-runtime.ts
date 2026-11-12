@@ -59,7 +59,8 @@ import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
 import { piCodingGuidance } from "./pi-coding-guidance.js";
 import { ConversationThinking } from "./conversation-thinking.js";
-import { PI_EXTENSION_TOOL_NAMES,PI_OPENWIKI_WRITE_TOOLS,PI_AGENT_BROWSER_TOOLS } from "../../domain/partners/pi-extension-tools.js";
+import { PI_EXTENSION_TOOL_NAMES,PI_AGENT_BROWSER_TOOLS } from "../../domain/partners/pi-extension-tools.js";
+import { isPartnerToolEnabled } from "../../../shared/partner-tools.js";
 import { createConversationPiExtensions } from "./pi-conversation-extensions.js";
 import { createRunProgressWatch, stallNudgeMessage, type RunProgressDiagnostic, type RunProgressSignal, type RunProgressThresholds, type RunProgressWatch } from "./pi-run-progress.js";
 
@@ -135,7 +136,7 @@ interface WarmAgent {
   workspacePath?: string;
 }
 
-const MUTATING_TOOLS = new Set(["bash", "edit", "write",...PI_OPENWIKI_WRITE_TOOLS,...PI_AGENT_BROWSER_TOOLS]);
+const MUTATING_TOOLS = new Set(["bash", "edit", "write",...PI_AGENT_BROWSER_TOOLS]);
 
 /**
  * Builds a user-facing run snapshot from safe lifecycle facts only. Text deltas
@@ -969,7 +970,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   #effectiveToolNames(revision: PartnerRevision): string[] {
-    if ((revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM")) === "ALL") return [...this.toolOptions()];
+    if ((revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM")) === "ALL") return this.toolOptions().filter(name => isPartnerToolEnabled(name,"ALL",revision.tools));
     const known = new Set(this.toolOptions());
     return revision.tools.filter((name) => known.has(name));
   }

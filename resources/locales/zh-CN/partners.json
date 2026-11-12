@@ -1,4 +1,5 @@
 {
+  "defaultToolsEnabledBrowserOptIn": "基础工具已开启，Agent Browser 开关统一控制全部浏览器工具。",
   "partialInstallationPreserved": "已保留成功安装的搭档，可重试补齐。",
   "modelConfigurationUnverified": "模型配置状态暂不可核验，请重试。",
   "engineConfigurationUnverified": "搭档引擎状态暂不可核验，请重试。",

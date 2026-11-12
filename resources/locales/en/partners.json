@@ -1,4 +1,8 @@
 {
+  "defaultToolsEnabledBrowserOptIn": {
+    "message": "Core tools are enabled. The Agent Browser switch turns all browser tools on or off together.",
+    "description": "Explains core tool defaults and the single optional browser switch."
+  },
   "partialInstallationPreserved": {
     "message": "Successfully installed partners have been kept. Retry to install any missing roles.",
     "description": "partners: Explains recovery after an interrupted scenario installation.",

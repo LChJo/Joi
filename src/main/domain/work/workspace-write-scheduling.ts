@@ -1,4 +1,4 @@
-import { PI_OPENWIKI_READ_TOOLS,PI_OPENWIKI_WRITE_TOOLS,PI_AGENT_BROWSER_TOOLS } from "../partners/pi-extension-tools.js";
+import { PI_AGENT_BROWSER_TOOLS } from "../partners/pi-extension-tools.js";
 
 export type LocalExecutionPhase = "READ_QUEUED" | "READ_RUNNING" | "WRITE_QUEUED" | "WRITE_RUNNING";
 export type LocalToolEffect = "READ" | "WRITE" | "DENY";
@@ -9,8 +9,7 @@ export function decideWorkspaceAdmission(input: { access: "READ" | "WRITE"; othe
 }
 
 export function classifyLocalToolEffect(name: string): LocalToolEffect {
-  if (([...PI_OPENWIKI_WRITE_TOOLS,...PI_AGENT_BROWSER_TOOLS] as readonly string[]).includes(name)) return "WRITE";
-  if ((PI_OPENWIKI_READ_TOOLS as readonly string[]).includes(name)) return "READ";
+  if ((PI_AGENT_BROWSER_TOOLS as readonly string[]).includes(name)) return "WRITE";
   if (["bash", "shell", "edit", "write", "apply_patch", "multiedit", "notebookedit"].includes(name.toLowerCase())) return "WRITE";
   if (["context_read_history", "work_read_evidence", "work_read_result", "read", "find", "grep", "glob", "ls", "webfetch", "websearch", "web_search", "fetch_content", "get_search_content", "ask_user", "partner_complete", "financial_calculate", "research_audit", "subagent", "subagent_status", "subagent_cancel"].includes(name.toLowerCase())) return "READ";
   return "DENY";

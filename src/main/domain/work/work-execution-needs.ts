@@ -1,7 +1,6 @@
 import { DomainError } from "../errors.js";
 import type { PartnerEngine, PartnerRevision } from "../partners/partner.js";
 import type { WorkAccessMode } from "./work.js";
-import { PI_OPENWIKI_WRITE_TOOLS } from "../partners/pi-extension-tools.js";
 
 export type WorkExecutionNeed = "SHELL" | "FILE_WRITE";
 export interface LocalExecutionCapabilities { engine: PartnerEngine; shell: boolean; fileWrites: boolean }
@@ -12,7 +11,7 @@ export function localExecutionCapabilities(revision: PartnerRevision): LocalExec
   const all = (revision.toolPolicyMode ?? (names.length === 0 ? "ALL" : "CUSTOM")) === "ALL";
   return { engine: revision.engine,
     shell: revision.engine === "codex" || all || names.includes("bash"),
-    fileWrites: revision.engine === "codex" ? revision.codexPermissions?.sandboxMode !== "read-only" : all || names.some(name => ["bash", "write", "edit", "multiedit", "notebookedit",...PI_OPENWIKI_WRITE_TOOLS].includes(name)),
+    fileWrites: revision.engine === "codex" ? revision.codexPermissions?.sandboxMode !== "read-only" : all || names.some(name => ["bash", "write", "edit", "multiedit", "notebookedit"].includes(name)),
   };
 }
 

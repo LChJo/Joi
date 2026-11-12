@@ -274,11 +274,11 @@
       "location": {
         "path": "package.json"
       },
-      "hash": "c196fde5ec0988307fa930a656a7b355135153b6a487f20bea88aec4382204f6",
-      "observedAt": "2026-11-12T04:53:59.503Z",
+      "hash": "c5c23843eeab5cf525eb51f52eedc10675c3e95433d3cf32c02bdb3d2d74933d",
+      "observedAt": "2026-11-12T10:25:42.321Z",
       "range": {
         "startLine": 1,
-        "endLine": 164
+        "endLine": 163
       }
     },
     {
@@ -316,11 +316,11 @@
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "998e6310a09ad705921785a14d47c436117abaf5021a8e4af175c258976dc2cc",
-      "observedAt": "2026-11-12T06:52:38.673617Z",
+      "hash": "6a1940e2e346486415f8bb38bfc9978d4de5959f75dd58fc5b056c1a0363ca33",
+      "observedAt": "2026-11-12T10:15:37.220Z",
       "range": {
         "startLine": 1,
-        "endLine": 314
+        "endLine": 315
       }
     },
     {
@@ -414,11 +414,11 @@
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "2d73d8b4949524ac7423cb4a65d9bb9a64b4fb551ea7297a1c59939750866919",
-      "observedAt": "2026-11-12T04:53:59.506Z",
+      "hash": "684e03328cda4a05318244d86fa7a38d599bfcaa6e61539dc5d955586460ff1a",
+      "observedAt": "2026-11-12T10:15:37.220Z",
       "range": {
         "startLine": 1,
-        "endLine": 104
+        "endLine": 105
       }
     },
     {
@@ -694,8 +694,8 @@
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "ff164c1439c246744ac6c2501386c289ad83b83821c383c47f9807126a11cbae",
-      "observedAt": "2026-11-12T07:29:24.974Z",
+      "hash": "ba5ff7f0331c426379830fc8b31cba34ac293540331d501cfd94e6c4cca6cdf5",
+      "observedAt": "2026-11-12T10:15:37.220Z",
       "range": {
         "startLine": 1,
         "endLine": 191
@@ -750,8 +750,8 @@
       "location": {
         "path": "docs/pi-coding-harness-research.md"
       },
-      "hash": "51f342bd7bdc5c86cb7dc1772723bf8ef28108d56fccebb263e1fff70d06acb3",
-      "observedAt": "2026-11-12T04:53:59.506Z",
+      "hash": "6e087744ccf59de70da4037cb9fac234c04f6c4cfed142a35e56863b35c7c8b8",
+      "observedAt": "2026-11-12T10:15:37.220Z",
       "range": {
         "startLine": 1,
         "endLine": 137
@@ -760,15 +760,15 @@
     {
       "id": "5841bbad-682d-467a-95f9-8acd70e76c32",
       "kind": "source-code",
-      "claim": "Selected policy-allowed Wiki and local browser tools join conversations; host roots and safety evaluation remain bounded.",
+      "claim": "Only selected policy-allowed local browser tools join conversations; workspace-bound safety evaluation and awaited browser cleanup remain bounded.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-conversation-extensions.ts"
       },
-      "hash": "3318a9b6cf38ad53e916641b4ddb2487572c15abdbfde469571c6f9045ad2ae5",
-      "observedAt": "2026-11-12T04:53:59.506Z",
+      "hash": "89af5a30aa25a3ed53a7ab1be128e62d21a5e9caaa261372e78995ed515c1cde",
+      "observedAt": "2026-11-12T10:15:37.220Z",
       "range": {
         "startLine": 1,
-        "endLine": 53
+        "endLine": 15
       }
     },
     {
@@ -802,15 +802,15 @@
     {
       "id": "d6797abc-d945-4aa6-bc1a-49d0558529bc",
       "kind": "source-code",
-      "claim": "Exact Wiki and local browser tool names define capability admission; local browser processes require WRITE and unknown names are denied.",
+      "claim": "Twenty-one distinct local browser operation names define capability admission; process and page-script effects require WRITE and unsupported names are denied.",
       "location": {
         "path": "src/main/domain/partners/pi-extension-tools.ts"
       },
-      "hash": "2925a3a9158fafe89a6a6b60ecd2eff9ee8a87a10090ad6c1788948cdb8278be",
-      "observedAt": "2026-11-12T04:53:59.508Z",
+      "hash": "4d7ef4f8d8d2333811cf648baf8bc474abe762f77d531f57bbe2424b58fbfd8c",
+      "observedAt": "2026-11-12T10:15:37.220Z",
       "range": {
         "startLine": 1,
-        "endLine": 5
+        "endLine": 4
       }
     },
     {
@@ -820,11 +820,11 @@
       "location": {
         "path": "tests/contract/conversation-pi-extensions.test.ts"
       },
-      "hash": "d0a9d078e87630b57065f6e244ba3865a4e684e8afffddcfaa705c78d9857c3a",
-      "observedAt": "2026-11-12T04:53:59.508Z",
+      "hash": "5ce6410ea93b101791a0891328830148f2949435c0d2f5414346b7e17abe9307",
+      "observedAt": "2026-11-12T10:15:37.220Z",
       "range": {
         "startLine": 1,
-        "endLine": 140
+        "endLine": 150
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 define extension switches, native browser isolation, cancellation, latest-only bounded thinking disclosure, helper-copy removal, fixed switch geometry and content-sized user message bubbles.",
+      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "1bb4260d93d795c3ce1ca1d760f6926303e040f5cae72ba7ed95a34b2c80efca",
-      "observedAt": "2026-11-12T07:24:39.768258Z",
+      "hash": "bdcb5882eac9dccce35d863a52dc45c9ea7ccffee46b1ceac945fa927ef5d7dc",
+      "observedAt": "2026-11-12T14:18:17.959Z",
       "range": {
         "startLine": 1,
-        "endLine": 620
+        "endLine": 630
       }
     },
     {
@@ -909,6 +909,76 @@
       "range": {
         "startLine": 1,
         "endLine": 365
+      }
+    },
+    {
+      "id": "2a3aff22-8581-424c-af0a-c4182b77742f",
+      "kind": "source-code",
+      "claim": "Shared browser-name classification and explicit default-off tool selection support the grouped editor and the runtime permission ceiling.",
+      "location": {
+        "path": "src/shared/partner-tools.ts"
+      },
+      "hash": "028ea6b52b93058887c66941d20afb71774e59cf444f6eebf2b20dca19f144ed",
+      "observedAt": "2026-11-12T14:18:17.959Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 9
+      }
+    },
+    {
+      "id": "8b99a8d3-c9b5-4f56-aca5-67d33579c709",
+      "kind": "source-code",
+      "claim": "One default-off Agent Browser switch selects or clears all available browser operations while preserving independent core tools. Legacy partial selections save as off without widening; unavailable catalogs preserve prior configuration. The family counts once.",
+      "location": {
+        "path": "src/renderer/PartnerPage.tsx"
+      },
+      "hash": "86d616d3f6562c9af435c51ed55fd28fb401ab0d7c51e7d6118d32e04fe5e03b",
+      "observedAt": "2026-11-12T14:18:17.959Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 596
+      }
+    },
+    {
+      "id": "9b9178f5-d29c-46e3-be65-8f7760ea0055",
+      "kind": "source-code",
+      "claim": "Tool permission cards wrap names and the binary browser switch uses a 32 by 18 track with keyboard focus, theme colors and responsive layout.",
+      "location": {
+        "path": "src/renderer/styles.css"
+      },
+      "hash": "f985d22d29317043c45db2fa13ec37dcb6b3732c8519c77252c1af1febbc8541",
+      "observedAt": "2026-11-12T14:18:17.959Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1598
+      }
+    },
+    {
+      "id": "c4daa482-036e-467b-849b-5c3041e5d812",
+      "kind": "source-code",
+      "claim": "Disposable Electron regression checks a single default-off browser switch, all-or-none saved tool names, enable-all/disable-all, keyboard input, narrow layout and theme behavior.",
+      "location": {
+        "path": "tests/e2e/partner-installation.spec.ts"
+      },
+      "hash": "738b0f4774cc85095bf9e17bc67d13e20594d7a8c44d13990d296bf4444eab15",
+      "observedAt": "2026-11-12T14:25:25.280Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 110
+      }
+    },
+    {
+      "id": "a8d58319-cdbe-4c6d-ab62-1d334fa3b766",
+      "kind": "source-code",
+      "claim": "Renderer regressions cover one browser-family switch, new and existing defaults, complete and partial stored selections, preserved core controls, grouped counts and catalog-failure preservation.",
+      "location": {
+        "path": "tests/renderer/partner-page.test.tsx"
+      },
+      "hash": "594fbbceae4c638edc5a59538b4912def74adc05bb0632f9f58b267bb05e21b5",
+      "observedAt": "2026-11-12T14:18:17.959Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 873
       }
     }
   ]

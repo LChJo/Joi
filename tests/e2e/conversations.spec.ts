@@ -4,7 +4,7 @@ import { mkdir } from "node:fs/promises";
 
 async function expectExtensionSwitches(page: Page) {
   const switches = page.getByRole("dialog",{ name: "扩展" }).getByRole("switch");
-  await expect(switches).toHaveCount(4);
+  await expect(switches).toHaveCount(3);
   for (const control of await switches.all()) {
     const shape = await control.evaluate(element => {
       const box = element.getBoundingClientRect(),style = getComputedStyle(element),thumb = getComputedStyle(element,"::before");
@@ -64,8 +64,9 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(sendButton).toBeDisabled();
     await page.getByRole("button",{ name: "扩展",exact: true }).click();
     await expect(page.getByRole("switch",{ name: "子代理",exact: true })).toBeChecked();
-    for (const name of ["OpenWiki","Agent Browser","CC Safety Net"]) await expect(page.getByRole("switch",{ name,exact: true })).not.toBeChecked();
-    await page.getByRole("switch",{ name: "OpenWiki",exact: true }).check();
+    await expect(page.getByRole("switch",{ name: "OpenWiki",exact: true })).toHaveCount(0);
+    for (const name of ["Agent Browser","CC Safety Net"]) await expect(page.getByRole("switch",{ name,exact: true })).not.toBeChecked();
+    await page.getByRole("switch",{ name: "Agent Browser",exact: true }).check();
     await page.getByRole("switch",{ name: "CC Safety Net",exact: true }).check();
     await expectExtensionSwitches(page);
     await page.screenshot({ path: "test-results/conversation-extensions.png" });
@@ -83,7 +84,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     await page.getByRole("option",{ name: /研发网络/ }).click();
     await page.locator(".chat-composer").getByRole("button",{ name: "搭档",exact: true }).click();await page.getByRole("option",{ name: /joi/ }).click();
     await page.getByRole("textbox",{ name: "消息" }).fill("让输入框更轻");await page.getByRole("button",{ name: "发送消息" }).click();
-    await expect(page.locator(".chat-context-strip")).toHaveCount(0);expect(sent).toHaveLength(1);expect(sent[0]).not.toHaveProperty("modelId");expect(sent[0]?.piExtensions).toEqual(["openwiki","cc-safety-net"]);
+    await expect(page.locator(".chat-context-strip")).toHaveCount(0);expect(sent).toHaveLength(1);expect(sent[0]).not.toHaveProperty("modelId");expect(sent[0]?.piExtensions).toEqual(["agent-browser","cc-safety-net"]);
     await expect(page.locator(".chat-output table")).toBeVisible();
     const tools = page.locator(".chat-tool-group"),toolSummary = tools.locator("summary");
     await expect(toolSummary).toContainText("bash");await expect(toolSummary).toContainText("共 2 次");

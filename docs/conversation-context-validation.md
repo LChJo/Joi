@@ -85,13 +85,12 @@ The conversation renderer and Electron cases check placement, tool/metadata colo
 
 ## CHAT-30–32: initial bundled extensions (historical)
 
-The composer now has one extension list for Subagents, OpenWiki, Browser Loop and CC Safety Net. Subagents retains its enabled default; the three additional packages default to off. The selection is validated against fixed IDs, normalized for request idempotency and stored in the existing turn configuration JSON. Native partners receive no Pi extensions. No database migration or runtime package installation is required.
+The composer has one extension list for Subagents, Agent Browser and CC Safety Net. Subagents retains its enabled default; the two additional packages default to off. The selection is validated against fixed IDs, normalized for request idempotency and stored in the existing turn configuration JSON. Native partners receive no Pi extensions. No database migration or runtime package installation is required.
 
-Pinned dependencies are OpenWiki 0.9.0, `@onkernel/browser-loop` 0.12.1 and CC Safety Net 2.7.11; host Pi remains 1.5.2. OpenWiki raises the minimum Node version to 22.22.0. The package integration and limitations are recorded in [the research notes](pi-coding-harness-research.md#已接入的对话扩展列表2026-11-12).
+Pinned dependencies are Agent Browser 0.42.0 and CC Safety Net 2.7.11; host Pi remains 1.5.2. The package integration and limitations are recorded in [the research notes](pi-coding-harness-research.md#首次接入的对话扩展列表历史阶段2026-11-12).
 
-- Renderer and HTTP regressions cover the four independent switches, Escape/focus, toolbar order, per-conversation restoration, native partner changes, malformed IDs and retry identity conflicts.
-- Actual faux-provider SDK requests verify enabled and disabled tools, ALL/CUSTOM and READ ceilings, removal on a later turn, safe guard guidance and retrieval-only Wiki guidance. Ambient SDK discovery remains disabled; these adapters expose ordinary host-guarded tools without nested SDK extension execution.
-- A disposable Git repository exercises the published OpenWiki lifecycle, workbench root enforcement and durable run restoration. Wiki retrieval is READ; lifecycle operations that can update run state require WRITE.
+- Renderer and HTTP regressions cover the three independent switches, Escape/focus, toolbar order, per-conversation restoration, native partner changes, malformed IDs and retry identity conflicts.
+- Actual faux-provider SDK requests verify enabled and disabled tools, ALL/CUSTOM and READ ceilings, removal on a later turn and safe guard guidance. Ambient SDK discovery remains disabled; these adapters expose ordinary host-guarded tools without nested SDK extension execution.
 - The actual CC Safety Net evaluator blocks destructive Git commands and secret reads before the synthetic executor runs. Guard failures block execution, and only a fixed explanation reaches tool results; the CLI audit/evidence writer is not used.
 - Browser API replacements verify lazy provisioning, one resource per execution, cancellation during provisioning, cleanup when child settlement fails, and suppression of repeated creation after an unknown failure. Browser tools require WRITE admission even for screenshots because they may create a cloud resource. Missing Kernel credentials are reported without creating a browser.
 
@@ -111,7 +110,7 @@ Final fixed-gate results on Windows, 2026-11-12:
 | `npm run check:boundaries` | Passed |
 | `npm run i18n:check` | Passed |
 
-An additional headless Electron Node-mode smoke loaded the compiled extension adapters with a disposable home/workspace, observed all 27 Wiki/browser tools and blocked a synthetic destructive command; it made zero external requests. Repository coverage thresholds retain their configured domain/application/shared/renderer scope; they do not measure the third-party packages or infrastructure adapters. The optional real native CLI tests were not enabled in this increment.
+An additional headless Electron Node-mode smoke loaded the compiled extension adapters with a disposable home/workspace, observed the selected browser tools and blocked a synthetic destructive command; it made zero external requests. Repository coverage thresholds retain their configured domain/application/shared/renderer scope; they do not measure the third-party packages or infrastructure adapters. The optional real native CLI tests were not enabled in this increment.
 
 ## CHAT-33–35: local Agent Browser replacement
 

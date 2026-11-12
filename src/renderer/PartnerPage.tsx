@@ -3,6 +3,7 @@ import { type ChangeEvent, type SyntheticEvent, useCallback, useEffect, useRef, 
 
 import type { CodexPermissionsDto, ModelSourceDto, PartnerDto, PartnerEngineDto, PartnerKnowledgeDocDto, PartnerModelTestDto, ScenarioPackDto, ScenarioPackRoleStateDto, ToolPolicyModeDto } from "../shared/joi";
 import { ApiError, type DigitalLifeApi } from "./api";
+import { isBrowserTool, isPartnerToolEnabled } from "../shared/partner-tools";
 
 type PartnerView = { mode: "grid" } | { mode: "editor"; partner: PartnerDto | null };
 interface EngineStatus { available: boolean; reason?: string; tools: string[]; }
@@ -155,6 +156,13 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
   const [promptTouched, setPromptTouched] = useState(false);
   const [promptRevealState, setPromptRevealState] = useState<"failed" | "hidden" | "loading" | "visible">("hidden");
   const [revealedPrompt, setRevealedPrompt] = useState<string | null>(null);
+  const engineStatus = engineStatuses[engine];
+  const toolOptions = engineStatus?.tools ?? [];
+  const browserTools = toolOptions.filter(isBrowserTool);
+  const browserToolsEnabled = browserTools.length > 0 && browserTools.every(tool => isPartnerToolEnabled(tool,toolPolicyMode,selectedTools));
+  const enabledTools = toolOptions.filter(tool => isPartnerToolEnabled(tool,toolPolicyMode,selectedTools) && (!isBrowserTool(tool) || browserToolsEnabled));
+  const configuredTools = engineStatus === undefined ? selectedTools : selectedTools.filter(tool => enabledTools.includes(tool));
+  const enabledToolCount = engineStatus === undefined ? selectedTools.length : enabledTools.filter(tool => !isBrowserTool(tool)).length + Number(browserToolsEnabled);
 
   useEffect(() => {
     if (kind !== "local-pi") return;
@@ -210,7 +218,7 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
       engine,
       skills: selectedSkills,
       ...(engine === "codex" ? {} : { toolPolicyMode }),
-      tools: selectedTools,
+      tools: configuredTools,
       ...(engine === "codex" ? { codexPermissions } : {}),
       ...(description === undefined ? {} : { description }),
       ...(prompt === undefined ? {} : { prompt }),
@@ -253,7 +261,6 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
     } catch (error) { setNotice(failureMessage(error, t("partners.remotePartnerCouldNotBeRegistered"))); }
   };
 
-  const engineStatus = engineStatuses[engine];
   const availableSkillIds = new Set(skills.map((skill) => skill.id));
   const skillsLoading = kind === "local-pi" && loadedSkillCatalogKey !== `${kind}:${engine}`;
   const invalidSelectedSkills = kind !== "local-pi" || skillsLoading ? [] : selectedSkills.filter((skill) => !availableSkillIds.has(skill));
@@ -360,14 +367,18 @@ function PartnerEditor({ api, engineStatuses, onDone, onManageProviders, partner
           <label className="tool-choice"><input checked={codexPermissions.networkAccessEnabled} onChange={(event) => setCodexPermissions((current) => ({ ...current, networkAccessEnabled: event.target.checked }))} type="checkbox" /><span>{t("partners.allowNetworkAccess")}</span></label>
           <small className="field-hint">{t("partners.approvalPolicyIsFixedToNeverUnrestrictedAccessIs")}</small>
         </div> : <div className="tool-field"><span className="kb-field-label">{t("partners.toolPermissions")}</span>
-          <div className="button-row"><button className="button ghost" onClick={() => { setToolPolicyMode("ALL"); setSelectedTools([]); }} type="button">{t("partners.enableAll")}</button><button className="button ghost" onClick={() => { setToolPolicyMode("CUSTOM"); setSelectedTools([]); }} type="button">{t("partners.disableAll")}</button></div>
-          {(engineStatus?.tools.length ?? 0) === 0 ? <small className="field-hint">{t("partners.noSelectableToolsForThisEngine")}</small> : <div aria-label={t("partners.allowedTools")} className="tool-choice-grid" role="group">{(engineStatus?.tools ?? []).map((tool) => <label className="tool-choice" key={tool}><input checked={toolPolicyMode === "ALL" || selectedTools.includes(tool)} onChange={() => {
-            if (toolPolicyMode === "ALL") {
+          <div className="button-row"><button className="button ghost" onClick={() => { setToolPolicyMode("ALL"); setSelectedTools(engineStatus?.tools ?? []); }} type="button">{t("partners.enableAll")}</button><button className="button ghost" onClick={() => { setToolPolicyMode("CUSTOM"); setSelectedTools([]); }} type="button">{t("partners.disableAll")}</button></div>
+          {toolOptions.length === 0 ? <small className="field-hint">{t("partners.noSelectableToolsForThisEngine")}</small> : <div aria-label={t("partners.allowedTools")} className="tool-choice-grid" role="group">
+            {toolOptions.filter(tool => !isBrowserTool(tool)).map((tool) => <label className="tool-choice" key={tool} title={tool}><input checked={isPartnerToolEnabled(tool,toolPolicyMode,selectedTools)} onChange={() => {
               setToolPolicyMode("CUSTOM");
-              setSelectedTools((engineStatus?.tools ?? []).filter((candidate) => candidate !== tool));
-            } else setSelectedTools((current) => toggle(current, tool));
-          }} type="checkbox" /><span>{tool}</span></label>)}</div>}
-          <small className="field-hint">{toolPolicyMode === "ALL" ? t("partners.allToolsAreEnabledDisablingAnyToolSwitchesTo") : t("partners.customPermissionsValueEnabled", { p0: String(selectedTools.length) })}</small>
+              setSelectedTools(toggle(enabledTools,tool));
+            }} type="checkbox" /><span>{tool}</span></label>)}
+            {browserTools.length === 0 ? null : <label className="tool-choice" title="browser_*"><input checked={browserToolsEnabled} onChange={event => {
+              setToolPolicyMode("CUSTOM");
+              setSelectedTools([...enabledTools.filter(tool => !isBrowserTool(tool)),...(event.target.checked ? browserTools : [])]);
+            }} role="switch" type="checkbox" /><span>Agent Browser</span></label>}
+          </div>}
+          <small className="field-hint">{toolPolicyMode === "ALL" ? (browserTools.length > 0 ? t("partners.defaultToolsEnabledBrowserOptIn") : t("partners.allToolsAreEnabledDisablingAnyToolSwitchesTo")) : t("partners.customPermissionsValueEnabled", { p0: String(enabledToolCount) })}</small>
         </div>}
         {missingReadForSkills ? <p className="inline-notice warning" role="alert">{t("partners.skillsAreSelectedWithRestrictedToolsEnableReadBefore")}</p> : null}
         <button className="button primary" disabled={cannotSave} type="submit">{partner === null ? t("partners.savePartner") : t("home.saveChanges")}</button>

@@ -1046,11 +1046,6 @@
     "description": "chat.subagentsHint",
     "placeholders": {}
   },
-  "chatOpenwikiHint": "Search, generate and maintain a code wiki",
-  "@chatOpenwikiHint": {
-    "description": "chat.openwikiHint",
-    "placeholders": {}
-  },
   "chatAgentBrowserHint": "Use an isolated local browser to test pages; no extra API key",
   "@chatAgentBrowserHint": {
     "description": "chat.agentBrowserHint",
@@ -6658,6 +6653,11 @@
   "onboardingSkipForNow": "Skip for now",
   "@onboardingSkipForNow": {
     "description": "onboarding: Skip for now",
+    "placeholders": {}
+  },
+  "partnersDefaultToolsEnabledBrowserOptIn": "Core tools are enabled. The Agent Browser switch turns all browser tools on or off together.",
+  "@partnersDefaultToolsEnabledBrowserOptIn": {
+    "description": "Explains core tool defaults and the single optional browser switch.",
     "placeholders": {}
   },
   "partnersPartialInstallationPreserved": "Successfully installed partners have been kept. Retry to install any missing roles.",

@@ -33,7 +33,6 @@
   "skills": "Skills",
   "extensions": "扩展",
   "subagentsHint": "委派并行子任务，沿用当前搭档与权限",
-  "openwikiHint": "检索、生成并维护代码 Wiki",
   "agentBrowserHint": "使用独立本机浏览器验证页面，无需额外 API Key",
   "safetyNetHint": "拦截破坏性命令和敏感文件访问",
   "noSkills": "此引擎暂无可选 Skills",

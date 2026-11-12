@@ -146,18 +146,18 @@ it("CHAT-30 restores independent extension switches from history and keeps them 
   const { api,get,send } = setup();
   get.mockImplementation(id => {
     const item = conversation(id),turn = item.turns[0];
-    if (id === "first" && turn !== undefined) turn.config = { ...turn.config,subagentsEnabled: false,piExtensions: ["openwiki"] };
+    if (id === "first" && turn !== undefined) turn.config = { ...turn.config,subagentsEnabled: false,piExtensions: ["cc-safety-net"] };
     return Promise.resolve(item);
   });
   render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
   fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await screen.findByRole("heading",{ name: "Formatted answer" });
   fireEvent.click(screen.getByRole("button",{ name: "扩展" }));
-  expect(screen.getByRole("switch",{ name: "子代理" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "OpenWiki" })).toBeChecked();
+  expect(screen.getByRole("switch",{ name: "子代理" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "CC Safety Net" })).toBeChecked();
   fireEvent.click(screen.getByRole("switch",{ name: "Agent Browser" }));
   await act(async () => { fireEvent.click(screen.getByRole("button",{ name: /^设计讨论$/ }));await Promise.resolve(); });
   await waitFor(() => expect(get).toHaveBeenLastCalledWith("second"));
   fireEvent.click(screen.getByRole("button",{ name: "扩展" }));
-  expect(screen.getByRole("switch",{ name: "OpenWiki" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "子代理" })).toBeChecked();
+  expect(screen.getByRole("switch",{ name: "CC Safety Net" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "子代理" })).toBeChecked();
   await act(async () => { fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await Promise.resolve(); });await waitFor(() => expect(get).toHaveBeenLastCalledWith("first"));
   fireEvent.click(screen.getByRole("button",{ name: "扩展" }));expect(screen.getByRole("switch",{ name: "Agent Browser" })).toBeChecked();
   fireEvent.click(screen.getByRole("button",{ name: "搭档" }));
@@ -168,20 +168,21 @@ it("CHAT-30 restores independent extension switches from history and keeps them 
   await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ partnerId: "native",piExtensions: [] })));
   fireEvent.click(screen.getByRole("button",{ name: "搭档" }));
   await act(async () => { fireEvent.click(screen.getByRole("option",{ name: /joi/ }));await Promise.resolve(); });
-  fireEvent.click(screen.getByRole("button",{ name: "扩展" }));expect(screen.getByRole("switch",{ name: "OpenWiki" })).toBeChecked();expect(screen.getByRole("switch",{ name: "Agent Browser" })).toBeChecked();
+  fireEvent.click(screen.getByRole("button",{ name: "扩展" }));expect(screen.getByRole("switch",{ name: "CC Safety Net" })).toBeChecked();expect(screen.getByRole("switch",{ name: "Agent Browser" })).toBeChecked();
 });
 
-it("CHAT-33 reads old Browser Loop history without enabling its local replacement or replaying a turn",async () => {
+it.each(["browser-loop","openwiki"])("CHAT-33/41 reads retired %s history without enabling tools or replaying a turn",async retired => {
   const { api,get,send } = setup();
   get.mockImplementation(id => {
     const item = conversation(id),turn = item.turns[0];
-    if (turn !== undefined) turn.config = { ...turn.config,piExtensions: ["browser-loop"] as never };
+    if (turn !== undefined) turn.config = { ...turn.config,piExtensions: [retired] as never };
     return Promise.resolve(item);
   });
   render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
   fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await screen.findByRole("heading",{ name: "Formatted answer" });
   fireEvent.click(screen.getByRole("button",{ name: "扩展" }));
   expect(screen.getByRole("switch",{ name: "Agent Browser" })).not.toBeChecked();expect(screen.queryByRole("switch",{ name: "Browser Loop" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("switch",{ name: "OpenWiki" })).not.toBeInTheDocument();
   expect(screen.getByRole("button",{ name: "扩展" })).toHaveTextContent("扩展 · 1");expect(send).not.toHaveBeenCalled();
   fireEvent.keyDown(document,{ key: "Escape" });
   fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Continue after checking" } });fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));

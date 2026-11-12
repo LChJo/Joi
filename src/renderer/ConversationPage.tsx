@@ -14,7 +14,7 @@ import "./conversations.css";
 
 type Picker = "workbench" | "network" | "partner" | "skills" | "extensions" | "attachments" | "inheritance" | "help" | null;
 interface Draft { id: string; workbenchId: string; text: string; partnerId: string; networkId: string; skills: string[]; attachments: JoiAttachmentDto[]; started?: boolean;subagentsEnabled?: boolean;piExtensions?: ConversationPiExtension[]; }
-const extensionLabels = { openwiki: "OpenWiki","agent-browser": "Agent Browser","cc-safety-net": "CC Safety Net" };
+const extensionLabels = { "agent-browser": "Agent Browser","cc-safety-net": "CC Safety Net" };
 const drafts = new WeakMap<DigitalLifeApi, Map<string,Draft>>();
 function statusText(status: ConversationTurnStatus) {
   return status === "QUEUED" ? t("chat.queued") : status === "RUNNING" ? t("chat.running") : status === "FAILED" ? t("chat.failed") : status === "STOPPED" ? t("chat.stopped") : status === "INTERRUPTED" ? t("chat.interrupted") : t("chat.completed");

@@ -20,12 +20,13 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   await screen.findByText("今天想一起做点什么？");
   const extensions = screen.getByRole("button",{ name: "扩展" });
   fireEvent.click(extensions);
-  expect(screen.getByRole("dialog",{ name: "扩展" }).textContent).toBe("扩展子代理OpenWikiAgent BrowserCC Safety Net");
+  expect(screen.getByRole("dialog",{ name: "扩展" }).textContent).toBe("扩展子代理Agent BrowserCC Safety Net");
+  expect(screen.queryByRole("switch",{ name: "OpenWiki" })).not.toBeInTheDocument();
   const subagents = screen.getByRole("switch",{ name: "子代理" });
   expect(subagents).toBeChecked();
   fireEvent.click(subagents);expect(subagents).not.toBeChecked();
-  for (const name of ["OpenWiki","Agent Browser","CC Safety Net"]) expect(screen.getByRole("switch",{ name })).not.toBeChecked();
-  fireEvent.click(screen.getByRole("switch",{ name: "OpenWiki" }));
+  for (const name of ["Agent Browser","CC Safety Net"]) expect(screen.getByRole("switch",{ name })).not.toBeChecked();
+  fireEvent.click(screen.getByRole("switch",{ name: "Agent Browser" }));
   fireEvent.click(screen.getByRole("switch",{ name: "CC Safety Net" }));
   expect(extensions).toHaveTextContent("扩展 · 2");
   fireEvent.keyDown(document,{ key: "Escape" });
@@ -48,7 +49,7 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   await waitFor(() => expect(send).toHaveBeenCalledTimes(1));
   expect(view.container.querySelector(".chat-compose-area .chat-runtime-context")).toBeNull();
   expect(view.container.querySelector(".chat-output .chat-runtime-context")).not.toBeNull();
-  expect(send.mock.calls[0]?.[0]).toMatchObject({ workbenchId: "wb",partnerId: "joi-chat",networkId: "network",text: "Hello",subagentsEnabled: false,piExtensions: ["openwiki","cc-safety-net"] });
+  expect(send.mock.calls[0]?.[0]).toMatchObject({ workbenchId: "wb",partnerId: "joi-chat",networkId: "network",text: "Hello",subagentsEnabled: false,piExtensions: ["agent-browser","cc-safety-net"] });
   expect(send.mock.calls[0]?.[0]).not.toHaveProperty("modelId");
   await waitFor(() => expect(screen.queryByRole("button",{ name: "工作台" })).not.toBeInTheDocument());
   expect(screen.queryByRole("button",{ name: "记忆与进化 · 已继承" })).not.toBeInTheDocument();

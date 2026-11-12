@@ -219,7 +219,6 @@ export interface MessageParameters {
   "chat.skills": undefined;
   "chat.extensions": undefined;
   "chat.subagentsHint": undefined;
-  "chat.openwikiHint": undefined;
   "chat.agentBrowserHint": undefined;
   "chat.safetyNetHint": undefined;
   "chat.noSkills": undefined;
@@ -1245,6 +1244,7 @@ export interface MessageParameters {
   "onboarding.useThisComputerOnly": undefined;
   "onboarding.enterJoi": undefined;
   "onboarding.skipForNow": undefined;
+  "partners.defaultToolsEnabledBrowserOptIn": undefined;
   "partners.partialInstallationPreserved": undefined;
   "partners.modelConfigurationUnverified": undefined;
   "partners.engineConfigurationUnverified": undefined;
@@ -1971,7 +1971,6 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.skills": "Skills",
     "chat.extensions": "Extensions",
     "chat.subagentsHint": "Delegate tasks with the current partner and permissions",
-    "chat.openwikiHint": "Search, generate and maintain a code wiki",
     "chat.agentBrowserHint": "Use an isolated local browser to test pages; no extra API key",
     "chat.safetyNetHint": "Block destructive commands and sensitive file access",
     "chat.noSkills": "No Skills available for this engine",
@@ -2997,6 +2996,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "onboarding.useThisComputerOnly": "Use this computer only",
     "onboarding.enterJoi": "Enter joi",
     "onboarding.skipForNow": "Skip for now",
+    "partners.defaultToolsEnabledBrowserOptIn": "Core tools are enabled. The Agent Browser switch turns all browser tools on or off together.",
     "partners.partialInstallationPreserved": "Successfully installed partners have been kept. Retry to install any missing roles.",
     "partners.modelConfigurationUnverified": "Model configuration could not be checked. Retry to refresh its status.",
     "partners.engineConfigurationUnverified": "Partner engine status could not be checked. Retry to refresh its status.",
@@ -3721,7 +3721,6 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.skills": "Skills",
     "chat.extensions": "扩展",
     "chat.subagentsHint": "委派并行子任务，沿用当前搭档与权限",
-    "chat.openwikiHint": "检索、生成并维护代码 Wiki",
     "chat.agentBrowserHint": "使用独立本机浏览器验证页面，无需额外 API Key",
     "chat.safetyNetHint": "拦截破坏性命令和敏感文件访问",
     "chat.noSkills": "此引擎暂无可选 Skills",
@@ -4747,6 +4746,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "onboarding.useThisComputerOnly": "先只用本机",
     "onboarding.enterJoi": "进入 joi",
     "onboarding.skipForNow": "暂时跳过",
+    "partners.defaultToolsEnabledBrowserOptIn": "基础工具已开启，Agent Browser 开关统一控制全部浏览器工具。",
     "partners.partialInstallationPreserved": "已保留成功安装的搭档，可重试补齐。",
     "partners.modelConfigurationUnverified": "模型配置状态暂不可核验，请重试。",
     "partners.engineConfigurationUnverified": "搭档引擎状态暂不可核验，请重试。",
@@ -5669,8 +5669,6 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "扩展": "chat.extensions",
   "Delegate tasks with the current partner and permissions": "chat.subagentsHint",
   "委派并行子任务，沿用当前搭档与权限": "chat.subagentsHint",
-  "Search, generate and maintain a code wiki": "chat.openwikiHint",
-  "检索、生成并维护代码 Wiki": "chat.openwikiHint",
   "Use an isolated local browser to test pages; no extra API key": "chat.agentBrowserHint",
   "使用独立本机浏览器验证页面，无需额外 API Key": "chat.agentBrowserHint",
   "Block destructive commands and sensitive file access": "chat.safetyNetHint",
@@ -7492,6 +7490,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "进入 joi": "onboarding.enterJoi",
   "Skip for now": "onboarding.skipForNow",
   "暂时跳过": "onboarding.skipForNow",
+  "Core tools are enabled. The Agent Browser switch turns all browser tools on or off together.": "partners.defaultToolsEnabledBrowserOptIn",
+  "基础工具已开启，Agent Browser 开关统一控制全部浏览器工具。": "partners.defaultToolsEnabledBrowserOptIn",
   "Successfully installed partners have been kept. Retry to install any missing roles.": "partners.partialInstallationPreserved",
   "已保留成功安装的搭档，可重试补齐。": "partners.partialInstallationPreserved",
   "Model configuration could not be checked. Retry to refresh its status.": "partners.modelConfigurationUnverified",

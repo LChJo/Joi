@@ -942,12 +942,17 @@ html:has(.joi-drawer-backdrop) { min-width: 0; }
 .chip-group { display: flex; flex-wrap: wrap; gap: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 1px solid var(--line-strong); border-radius: 999px; background: var(--paper-strong); color: var(--ink); font-size: 13px; cursor: pointer; }
 .chip input { width: auto; }
-.tool-choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr)); gap: 8px; }
+.tool-choice-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 168px), 1fr)); gap: 8px; }
 .tool-choice { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; min-height: 42px; padding: 9px 11px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--paper-strong); color: var(--ink); cursor: pointer; }
 .tool-choice:hover { border-color: var(--forest); }
 .tool-choice:has(input:checked) { border-color: var(--forest); background: color-mix(in srgb, var(--forest) 8%, var(--paper-strong)); }
 .tool-choice input { width: 15px; height: 15px; accent-color: var(--forest); }
-.tool-choice span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool-choice span { min-width: 0; overflow-wrap: anywhere; }
+.tool-choice input[role="switch"] { appearance: none; box-sizing: border-box; width: 32px; height: 18px; min-height: 18px; padding: 0; margin: 0; border: 1px solid var(--line-strong); border-radius: 9px; background: var(--wash); position: relative; cursor: pointer; }
+.tool-choice input[role="switch"]::before { content: ""; position: absolute; left: 2px; top: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--muted); }
+.tool-choice input[role="switch"]:checked { background: var(--forest); border-color: var(--forest); }
+.tool-choice input[role="switch"]:checked::before { transform: translateX(14px); background: var(--paper-strong); }
+.tool-choice input[role="switch"]:focus-visible { outline: 2px solid var(--forest); outline-offset: 3px; }
 .kb-doc-list { display: grid; gap: 7px; }
 .kb-doc-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 11px; border: 1px solid var(--line); background: var(--paper-strong); }
 .kb-upload { display: grid; gap: 6px; color: var(--muted); font-size: 13px; }

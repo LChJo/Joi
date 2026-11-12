@@ -38,25 +38,25 @@ describe("normal conversation execution", () => {
       const revision = await dependencies.revisions.getActive(input.partnerId);
       if (revision === null) throw new Error("Missing fixture partner");
       vi.spyOn(dependencies.revisions,"getActive").mockResolvedValue({ ...revision,engine: "codex" });
-      await expect(service.send({ ...input,networkId: "native",piExtensions: ["openwiki"] })).rejects.toMatchObject({ code: "conversation_selection_invalid" });
+      await expect(service.send({ ...input,networkId: "native",piExtensions: ["agent-browser"] })).rejects.toMatchObject({ code: "conversation_selection_invalid" });
       expect((await service.send({ ...input,networkId: "native",piExtensions: [] })).turns[0]?.config.piExtensions).toEqual([]);
     } finally { await f.close(); }
   });
   it("CHAT-30/31 persists the selected Pi extensions, forwards them across write admission and rejects changed request identities",async () => {
     const run = vi.fn<PartnerInstanceManager["dispatch"]>(async p => ({ actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "SUSPENDED" : "COMPLETED",body: "Done",artifacts: [],instanceId: "checkpoint",checkpointRef: "durable" }));
     const { f,service,input,dependencies } = await setup(run);
-    const selected = { ...input,piExtensions: ["cc-safety-net","openwiki"] as const };
+    const selected = { ...input,piExtensions: ["cc-safety-net","agent-browser"] as const };
     try {
       const accepted = await service.send({ ...selected,piExtensions: [...selected.piExtensions] });
-      expect(accepted.turns[0]?.config.piExtensions).toEqual(["openwiki","cc-safety-net"]);
-      await expect(service.send({ ...input,piExtensions: ["openwiki","cc-safety-net"] })).resolves.toMatchObject({ conversationId: "chat" });
+      expect(accepted.turns[0]?.config.piExtensions).toEqual(["agent-browser","cc-safety-net"]);
+      await expect(service.send({ ...input,piExtensions: ["agent-browser","cc-safety-net"] })).resolves.toMatchObject({ conversationId: "chat" });
       await expect(service.send({ ...input,piExtensions: [] })).rejects.toMatchObject({ code: "conversation_request_conflict" });
       await service.deliver(accepted.turns[0]?.turnId ?? "missing");
       expect(run).toHaveBeenCalledTimes(2);
-      for (const [call] of run.mock.calls) expect(call.request.piExtensions).toEqual(["openwiki","cc-safety-net"]);
+      for (const [call] of run.mock.calls) expect(call.request.piExtensions).toEqual(["agent-browser","cc-safety-net"]);
       const restored = new ConversationService(dependencies);
-      expect((await restored.get("chat")).turns[0]?.config.piExtensions).toEqual(["openwiki","cc-safety-net"]);
-      for (const piExtensions of ["openwiki",["unknown"],["openwiki","openwiki"],null]) {
+      expect((await restored.get("chat")).turns[0]?.config.piExtensions).toEqual(["agent-browser","cc-safety-net"]);
+      for (const piExtensions of ["agent-browser",["unknown"],["openwiki"],["agent-browser","agent-browser"],null]) {
         await expect(service.send({ ...input,requestId: "invalid",piExtensions } as never)).rejects.toMatchObject({ code: "conversation_selection_invalid" });
       }
       await restored.send({ ...input,conversationId: "other",requestId: "other" });
