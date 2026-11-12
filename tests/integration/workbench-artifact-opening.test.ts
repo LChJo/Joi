@@ -126,7 +126,7 @@ describe("Workbench artifact opening", () => {
     } finally {
       await fixture.close();
     }
-  });
+  }, process.env.CI ? 60_000 : 5_000);
 
   it("rejects traversal and missing workspace artifacts before calling the desktop opener", async () => {
     const fixture = await createRuntimeFixture();

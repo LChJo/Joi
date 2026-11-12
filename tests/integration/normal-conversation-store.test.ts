@@ -102,5 +102,5 @@ describe("normal conversation persistence", () => {
       }
       expect((await store.get("chat-fixture"))?.turns.at(-1)?.text).toBe("Message 500");
     } finally { await f.close(); }
-  },20_000);
+  }, process.env.CI ? 60_000 : 20_000);
 });

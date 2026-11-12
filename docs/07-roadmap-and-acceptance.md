@@ -651,3 +651,8 @@ MVP 发布后仍明确不包含多用户、云同步、外部消息渠道、Agen
 
 - CI-02：浏览器 daemon 与每条命令共享本次执行的私有 cwd，Unix socket 使用相对该目录的短名称。长或含 UTF-8 字符的临时目录必须能够启动；成功关闭和启动失败均清理拥有的目录与进程，配置、profile、PID 校验和取消语义沿用当前隔离边界。
 - [第二轮 macOS CI](https://github.com/LChJo/Joi/actions/runs/43279775215) 的六项浏览器契约在启动阶段失败。Node 24.22.2 的 Unix 隔离复现中，短目录通过、197 字节的绝对 socket 路径失败；相对私有 cwd 后两者均通过，Windows 浏览器契约 10 项通过。回归使用合成 daemon 验证真实 IPC 与清理；真实 Chrome 验收仍使用独立原生冒烟流程。依据：[Node IPC 字节长度限制](https://nodejs.org/docs/latest-v24.x/api/net.html#identifying-paths-for-ipc-connections)、[Agent Browser 0.42.0 socket 目录解析](https://github.com/vercel-labs/agent-browser/blob/v0.42.0/cli/src/connection.rs#L107)。
+
+## 2026-11-13 持久化集成测试预算（CI-03）
+
+- CI-03：普通对话的 501 轮持久化回归与工作台产物打开回归在 CI 中使用 60 秒的单例上限，容纳共享 runner 的磁盘调度延迟；本地及其他用例保留现有上限。事务数量、落盘策略、隔离目录、业务及隐私断言和 90% 覆盖率门槛保持有效。
+- [第三轮 Windows CI](https://github.com/LChJo/Joi/actions/runs/43286757654) 的两项回归仅因 20 秒及 15 秒上限失败，记录耗时均约 22 秒；同轮 macOS 全部门禁通过。临时诊断在创建一次性 fixture 前注入 21 秒延迟，原预算下两项均稳定超时；该探针仅验证有限等待预算，不作为生产性能证据。最终结果以修订后的双平台完整 CI 为准。

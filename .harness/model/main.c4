@@ -176,11 +176,11 @@ metadata {
 validation = component "Quality gates" {
 metadata {
  harness_id "cfebb4bc-4ef2-4661-bd04-0d17d7f6619f"
- brief "Boundary scanner classifies allowed imports; npm scripts define checks and packaging. The Node 24 Windows/macOS quality matrix requires a complete shared lock graph, including optional WASM peer dependencies, before builds and tests. Isolated npm 11.19.1 lock validation supplements installed-tree checks."
+ brief "Boundary scanner classifies allowed imports; npm scripts define checks and packaging. The Node 24 Windows/macOS quality matrix requires a complete shared lock graph, including optional WASM peer dependencies, before builds and tests. Isolated npm 11.19.1 lock validation supplements installed-tree checks. Two real-disk persistence scenarios have explicit bounded CI wait budgets; local budgets, transaction counts, privacy assertions and coverage gates remain enforced."
  source "fact"
  status "verified"
- evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9 8cdafcd8-5645-4e29-a4e6-84a24465e383 70e2a22b-f223-48ee-ad62-781b5835ed5e ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 fee6a674-0e8e-490e-940d-0f2ea5ae7f8e 5bc37929-aa0f-458c-98ae-57aa0ea8090e"
- version "5"
+ evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9 8cdafcd8-5645-4e29-a4e6-84a24465e383 70e2a22b-f223-48ee-ad62-781b5835ed5e ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 fee6a674-0e8e-490e-940d-0f2ea5ae7f8e 5bc37929-aa0f-458c-98ae-57aa0ea8090e ac69fa43-cea7-401a-a580-5f894151a348 2f959b06-4ad5-42b6-9fe0-f927d20e3e3f"
+ version "6"
 }
 }
 }

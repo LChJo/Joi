@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "0aa5f77a3dcc8c6d87cf7438402103a864ba70ca0e1d86c6e8db73013cc8593c",
-      "observedAt": "2026-11-12T19:02:09.605Z",
+      "hash": "347a67a5beffa0f3146c593732652494111194decbe1bc60f011d23c41f88a09",
+      "observedAt": "2026-11-12T19:41:47.656Z",
       "range": {
         "startLine": 1,
-        "endLine": 653
+        "endLine": 658
       }
     },
     {
@@ -1399,6 +1399,34 @@
       "range": {
         "startLine": 1,
         "endLine": 40
+      }
+    },
+    {
+      "id": "ac69fa43-cea7-401a-a580-5f894151a348",
+      "kind": "source-code",
+      "claim": "Real SQLite conversation integration retains 501 individually persisted turns and all atomicity assertions, with a bounded 60-second CI-only budget and the existing local budget.",
+      "location": {
+        "path": "tests/integration/normal-conversation-store.test.ts"
+      },
+      "hash": "dae00fc734f3522a412f1443f44bfd73b81e777b6c4ed7a22e1ba47c3e7b6d57",
+      "observedAt": "2026-11-12T19:41:47.655Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 106
+      }
+    },
+    {
+      "id": "2f959b06-4ad5-42b6-9fe0-f927d20e3e3f",
+      "kind": "source-code",
+      "claim": "Disposable workspace artifact integration retains projection privacy and opener assertions, with a bounded 60-second CI-only budget for the full opening scenario and the existing local budget.",
+      "location": {
+        "path": "tests/integration/workbench-artifact-opening.test.ts"
+      },
+      "hash": "501f46c4cc7111bfe4fe0a17d3af79d846aea2bbe66cd44b5c870e7d4e582677",
+      "observedAt": "2026-11-12T19:41:47.656Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 173
       }
     }
   ]
