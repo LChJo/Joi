@@ -641,3 +641,8 @@ MVP 发布后仍明确不包含多用户、云同步、外部消息渠道、Agen
 - [优化方案](pi-summary-optimization-plan.md) 定义 SUM-01–12；[ADR 0034](adr/0034-background-summary-policy.md) 记录单一摘要拥有者、后台软摘要、有界硬等待和持久化冷却的取舍。
 - 共享 helper 严格校验完成状态，输出额度由模型能力与完整摘要请求余量决定，移除固定 8000 tokens 上限；8000 字符只作为摘要压缩目标。安全指标区分生成、接受、等待及取消收尾。
 - 主 Joi 与 Partner 复用会话内单飞、30/120/300 秒冷却及增量前缀覆盖；软触发继续完整历史，硬容量最多等待 5 秒，失败保留原文、旧检查点、当前任务及最新完整工具交换，不重放业务动作。固定质量门禁和真实对话复测的证据分别记录。
+
+## 2026-11-13 跨平台锁文件校验（CI-01）
+
+- CI-01：Node 24 的 Windows/macOS 质量门禁必须使用同一份完整锁文件通过 `npm ci`，包含可选 WASM 包的 peer 依赖。修复缺项时保留已有依赖版本、平台包和完整性校验值；不以现有 `node_modules` 或旧版 npm 的成功代替干净安装证据。
+- [首轮 CI](https://github.com/LChJo/Joi/actions/runs/43278104017) 在两端均报告缺少 `@emnapi/runtime@1.11.3`。仅复制 `package.json` 与 `package-lock.json` 到临时空目录，以 npm 11.19.1 执行 `npm ci --ignore-scripts --dry-run --no-audit --no-fund` 可复现；补全生成的缺失条目后，同一命令退出码为 0。该检查不运行安装脚本，完整安装、桌面构建、测试与打包继续由双平台 CI 验证。

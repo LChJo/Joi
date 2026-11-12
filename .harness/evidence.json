@@ -848,11 +848,11 @@
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "b3f16e557caaeda6be89f697102d5bfc0ee28915d2dd6079e4c76162cd8027e9",
-      "observedAt": "2026-11-12T17:43:19.463Z",
+      "hash": "20511e24f2caf4cf06edf38a3383c186231855dee32b01049e0ec77685b32551",
+      "observedAt": "2026-11-12T18:25:25.654Z",
       "range": {
         "startLine": 1,
-        "endLine": 643
+        "endLine": 648
       }
     },
     {
@@ -1371,6 +1371,20 @@
       "range": {
         "startLine": 1,
         "endLine": 149
+      }
+    },
+    {
+      "id": "fee6a674-0e8e-490e-940d-0f2ea5ae7f8e",
+      "kind": "source-code",
+      "claim": "Complete npm v3 lock graph retains the optional WASM peer runtime required by npm 11.19.1 clean installs without changing existing resolved versions.",
+      "location": {
+        "path": "package-lock.json"
+      },
+      "hash": "395965fe1b05c7428565a0dbef1408f25bd2e5400d0d4cac8523fb0d9a290691",
+      "observedAt": "2026-11-12T18:25:25.650Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 14188
       }
     }
   ]
