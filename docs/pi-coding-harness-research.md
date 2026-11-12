@@ -109,3 +109,13 @@ OpenWiki 的 `begin` 恢复持久 run；跨执行继续时应再次 `begin`，�
 上游 `agent-browser` 本身提供 Windows x64 原生二进制，也支持本机 Chrome。当前官方文档额外提供 React 组件树、组件状态、重渲染记录、Suspense 与 Web Vitals 检查；React 检查须在页面脚本执行前启用 DevTools hook，且各 Pi 包固定的后端版本不一定具备最新上游的全部命令。[平台与本机安装](https://agent-browser.dev/installation)、[React 能力及前置条件](https://agent-browser.dev/react)
 
 针对 Joi 的本机 React 验证，优先评估本机 `agent-browser` 后端，参考 Goblin 的 QA 工作流或 Debug 的小工具接口，这是基于上述约束的适配判断。Joi 仍关闭 Pi SDK 的任意扩展发现，不能把在 Pi CLI 中安装成功等同于已接入 Joi；正式接入需保留宿主权限、会话隔离、取消收尾及产物边界。此次仅补充调查，当前已提交的 Browser Loop 选择保持原样。[Joi 会话资源边界](../src/main/infrastructure/pi/joi-pi-session.ts)
+
+## GlimpseUI：面向用户的交互界面
+
+`glimpseui` 0.8.1 是本机微型 UI 运行器，Pi 清单仅声明 `skills`，没有声明工具扩展。它把 HTML 放进原生 WebView，以 JSON Lines 与 Node 双向通信；用途包括表单、图表、选择界面和悬浮状态显示。当前仓库查询时为 987 星。[包清单源码](https://raw.githubusercontent.com/HazAT/glimpse/main/package.json)、[项目与平台说明](https://github.com/HazAT/glimpse)、[技能说明](https://raw.githubusercontent.com/HazAT/glimpse/main/skills/glimpse/SKILL.md)
+
+本地窗口路径不使用 Kernel 云浏览器或额外模型 Key。Windows 后端为 .NET 8 + WebView2，安装时的 postinstall 需要编译原生程序；没有工具链时只警告并跳过编译，npm 安装成功不代表能够打开窗口。当前机器只读检查发现 .NET SDK 8.0.202 和 10.0.301；本次没有核验 WebView2、安装包、编译或打开 Glimpse 窗口。不能将 README 在 Apple Silicon 测得的启动数据当作 Windows 实测。[Pi 目录与构建要求](https://pi.dev/packages/glimpseui)、[原生主机解析与缺失检查](https://raw.githubusercontent.com/HazAT/glimpse/main/src/glimpse.mjs)
+
+从已核对的接口看，`open`、`setHTML`、`loadFile`、`send` 与用户消息适合展示和收集交互；没有配套的导航、元素引用、截图、控制台/网络诊断工具集。Windows `eval` 路径执行页面 JS 后不自动返回结果，需要页面主动通过消息桥回传。由此判断：可在 WebView 中运行合适的前端内容，但不会因此获得 React 组件检查或真实开发站点的自动验收能力；自行补齐后才可能承担这类任务。[Windows 命令与消息桥源码](https://raw.githubusercontent.com/HazAT/glimpse/main/native/windows/Program.cs)
+
+对已有 Electron/React 界面的 Joi，更适合借鉴其“Agent 生成交互内容”的工作流，通过现有 renderer 和受控桥接实现；如确需独立悬浮窗口，可再评估可选 Skill/工具适配。这是维护成本与能力匹配的判断，本次不将 GlimpseUI 作为浏览器自动化的替代项，也未加入扩展列表。

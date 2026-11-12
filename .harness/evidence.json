@@ -746,15 +746,15 @@
     {
       "id": "68c4824e-2fab-4811-8c3b-de40278beff1",
       "kind": "document",
-      "claim": "Primary-source Pi research records pinned host adapters, cloud credentials and localhost limits, plus uninstalled local-browser alternatives with distinct upstream popularity and Windows qualification constraints.",
+      "claim": "Primary-source Pi research records pinned host adapters, cloud credentials, local-browser alternatives and Windows constraints; GlimpseUI is an uninstalled interactive-UI skill candidate, not an integrated browser automation toolset.",
       "location": {
         "path": "docs/pi-coding-harness-research.md"
       },
-      "hash": "990edfd67f1b33a488c7b4228c04cca3ea7a611ac729902942e0e2305af0430b",
-      "observedAt": "2026-11-12T04:13:05.525Z",
+      "hash": "99929b733b859cc7bd2b2a0fdba78389a0bc01d96daa77cf9de8094de0f3cc13",
+      "observedAt": "2026-11-12T04:14:43.472Z",
       "range": {
         "startLine": 1,
-        "endLine": 111
+        "endLine": 121
       }
     },
     {
