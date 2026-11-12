@@ -550,15 +550,15 @@
     {
       "id": "f1700bac-e723-4de3-b839-f99c567e6d08",
       "kind": "source-code",
-      "claim": "Conversation activity and paired tool calls share stable disclosures; public summaries and observed duration stay outside prose and private results.",
+      "claim": "Each turn displays only its latest thinking phase in stable tool disclosures, with expandable public summaries capped at 1200 Unicode code points; full history and tool pairing remain intact.",
       "location": {
         "path": "src/renderer/ConversationOutput.tsx"
       },
-      "hash": "25ec19f4052f1721a2a351bd7aabc26b7974c084dcceb26a24cdac5f3df1100d",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "beb6bd68d423b22c76b412c6d27eaf71392412bbb187da312f84412a273f84a8",
+      "observedAt": "2026-11-12T06:21:45.368Z",
       "range": {
         "startLine": 1,
-        "endLine": 82
+        "endLine": 87
       }
     },
     {
@@ -694,11 +694,11 @@
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "c7c31697de48c8e52c49bb0529f60b6f53db563fdb2864bd2413067646953709",
-      "observedAt": "2026-11-12T05:19:21.321Z",
+      "hash": "c13ecd0e587470b8eeef874bf26f989ac5d366ac9170d86881b62318cf8d16eb",
+      "observedAt": "2026-11-12T06:34:23.939Z",
       "range": {
         "startLine": 1,
-        "endLine": 141
+        "endLine": 163
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-35 define extension switches, native local browser replacement, host admission, isolation and cancellation acceptance.",
+      "claim": "CHAT-30 through CHAT-36 define extension switches, native browser isolation, cancellation and latest-only bounded thinking disclosure acceptance.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "a00bd28c42c14f0955123abc2095f92820798c0e3a15256222447a2377417b16",
-      "observedAt": "2026-11-12T04:53:59.508Z",
+      "hash": "880967f4204c0cd4e0c2cf4543e826e2db91e73054f615e0c7cf96f94c30f85b",
+      "observedAt": "2026-11-12T06:21:45.370Z",
       "range": {
         "startLine": 1,
-        "endLine": 608
+        "endLine": 612
       }
     },
     {

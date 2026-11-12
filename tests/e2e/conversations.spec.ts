@@ -19,6 +19,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     const toolParameters = 'rg -n "memory|cache|dispose|cleanup|listener" src/main/modules/cowork/runtime.ts src/main/modules/cowork/conversation/aggregator.ts';
     const chat = { conversationId: "chat",workbenchId: "joi",title: "优化首页的输入体验",updatedAt: "2026-11-11",turns: [{ turnId: "t1",text: "保留工作台选择和附件，让输入框更轻。",status: "COMPLETED",createdAt: "2026-11-11",config: { partnerId: "joi-chat",partnerName: "joi",networkId: "network",networkName: "研发网络",modelName: "Configured model",skills: ["user/design"],attachmentIds: [] },artifacts: [{ name: "ConversationPage.tsx",size: 2400 }],entries: [...["ls","bash"].flatMap((name,index) => [{ entryId: `call-${String(index)}`,toolCallId: `tool-${String(index)}`,sequence: index * 2,createdAt: "2026-11-11",kind: "TOOL_CALL",role: "TOOL",toolName: name,text: index === 0 ? "src/renderer" : toolParameters,toolState: "started" },{ entryId: `result-${String(index)}`,toolCallId: `tool-${String(index)}`,sequence: index * 2 + 1,createdAt: "2026-11-11",kind: "TOOL_RESULT",role: "TOOL",toolName: name,toolState: index === 0 ? "completed" : "failed",text: "PRIVATE_TOOL_RESULT" }]),{ entryId: "e1",sequence: 5,createdAt: "2026-11-11",kind: "MARKDOWN",role: "AGENT",text: "输入框采用更轻的结构，保留熟悉的操作。\n\n### 让常用操作留在手边\n\n- **正文优先**：输入区域与操作栏分层。\n- **上下文清晰**：工作台归属始终可见。\n\n```css\n.composer {\n  border-radius: 14px;\n}\n```\n\n| 区域 | 行为 |\n| --- | --- |\n| 工作台 | 首次发送后锁定 |\n| 模型网络 | 来自设置 |" }] }] };
     const displayedChat = { ...chat,context: { kind: "CHARACTERS",state: "COMPACTING",requestChars: 100,budgetChars: 1000,missingHistory: true },turns: chat.turns.map(turn => ({ ...turn,entries: [
+      { entryId: "older-thinking",sequence: 0,createdAt: "2026-11-12",kind: "ACTIVITY",role: "SYSTEM",activity: { type: "THINKING",thinking: { phaseId: "older-phase",state: "COMPLETED",durationMs: 80,summary: "Earlier thinking must stay hidden" } } },
       { entryId: "thinking",sequence: 0,createdAt: "2026-11-12",kind: "ACTIVITY",role: "SYSTEM",activity: { type: "THINKING",thinking: { phaseId: "phase",state: "COMPLETED",durationMs: 1250,summary: "已定位组件与工具调用边界。" } } },...turn.entries,
     ] })) };
     await page.route("**/api/v1/**",async route => {
@@ -74,6 +75,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(toolSummary).toContainText(toolParameters);await expect(toolSummary).toContainText("执行失败");
     await expect(toolSummary.locator("code")).toHaveAttribute("title",toolParameters);
     await expect(toolSummary).toContainText("思考完成");await expect(toolSummary).toContainText("正在摘要历史");
+    await expect(page.getByText(/思考完成/)).toHaveCount(1);await expect(page.getByText("Earlier thinking must stay hidden")).toHaveCount(0);
     expect(await toolSummary.locator(".chat-activity-brief").evaluate(element => getComputedStyle(element).color))
       .not.toBe(await toolSummary.evaluate(element => getComputedStyle(element).color));
     await expect(page.locator(".chat-compose-area .chat-runtime-context")).toHaveCount(0);

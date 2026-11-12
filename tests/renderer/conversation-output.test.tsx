@@ -4,6 +4,32 @@ import { ConversationOutput } from "../../src/renderer/ConversationOutput";
 import type { AgentConversationEntryDto } from "../../src/shared/joi";
 import type { ConversationEntryDto } from "../../src/shared/conversations";
 
+const thinking = (id: string,summary?: string): ConversationEntryDto => ({ entryId: id,kind: "ACTIVITY",role: "SYSTEM",sequence: 1,createdAt: "2026-11-12",activity: { type: "THINKING",thinking: { phaseId: id,state: "COMPLETED",durationMs: 1250,...(summary === undefined ? {} : { summary }) } } });
+
+it("CHAT-36 shows only the last thinking phase across prose and tool groups, with expandable details",() => {
+  const entries: ConversationEntryDto[] = [thinking("old","Earlier summary"),tool("read","read","TOOL_CALL","1"),tool("done","read","TOOL_RESULT","1"),{ entryId: "answer",kind: "MARKDOWN",role: "AGENT",text: "Progress answer",sequence: 2,createdAt: "2026-11-12" },thinking("latest","Latest public summary")];
+  const view = render(<ConversationOutput entries={entries} status="RUNNING" />);
+  expect(view.container).not.toHaveTextContent("Earlier summary");
+  expect(screen.getAllByText(/思考完成/)).toHaveLength(1);
+  expect(screen.getByText("Progress answer")).toBeVisible();expect(screen.getAllByText("read").length).toBeGreaterThan(0);
+  const summary = screen.getByText(/思考完成/).closest("summary");if (summary === null) throw new Error("Missing thinking disclosure");
+  expect(screen.getByText("Latest public summary")).not.toBeVisible();fireEvent.click(summary);
+  expect(screen.getByText("Latest public summary")).toBeVisible();
+  view.rerender(<ConversationOutput entries={[...entries,thinking("new","Newest public summary")]} status="COMPLETED" />);
+  expect(screen.queryByText("Latest public summary")).not.toBeInTheDocument();expect(screen.getAllByText(/思考完成/)).toHaveLength(1);
+  expect(screen.getByText("Newest public summary")).toBeVisible();
+});
+
+it("CHAT-36 bounds expanded thinking details by Unicode length and omits empty details",() => {
+  const view = render(<ConversationOutput entries={[thinking("latest","想🙂".repeat(700) + "OMITTED_END")]} status="COMPLETED" />);
+  const summary = screen.getByText(/思考完成/).closest("summary");if (summary === null) throw new Error("Missing thinking disclosure");fireEvent.click(summary);
+  const details = screen.getByText(/^想🙂/);
+  expect(details).toBeVisible();expect(Array.from(details.textContent)).toHaveLength(1201);expect(details.textContent.endsWith("🙂…")).toBe(true);
+  expect(view.container).not.toHaveTextContent("OMITTED_END");expect(screen.getByText("摘要已省略部分内容")).toBeVisible();
+  view.rerender(<ConversationOutput entries={[thinking("latest")]} status="COMPLETED" />);
+  expect(screen.getAllByText(/思考完成/)).toHaveLength(1);expect(screen.queryByText("摘要已省略部分内容")).not.toBeInTheDocument();
+});
+
 it("CHAT-27 keeps thinking and context in the tool disclosure through streaming",() => {
   const activity: ConversationEntryDto = { entryId: "phase",kind: "ACTIVITY",role: "SYSTEM",sequence: 1,createdAt: "2026-11-12",activity: { type: "THINKING",thinking: { phaseId: "phase",state: "STARTED" } } };
   const entries = [activity,tool("read","read","TOOL_CALL","1")];

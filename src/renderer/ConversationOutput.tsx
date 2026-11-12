@@ -31,7 +31,9 @@ function thinkingDuration(thinking: ConversationThinkingDto): string {
 function ToolGroup({ entries,status,context: fallbackContext,children = [],onCancel }: OutputProps) {
   const activities = entries.flatMap(entry => entry.kind === "ACTIVITY" ? [entry.activity] : []);
   const context = activities.findLast(activity => activity.type === "CONTEXT")?.context ?? fallbackContext;
-  const thoughts = activities.flatMap(activity => activity.type === "THINKING" ? [activity.thinking] : []),thought = thoughts.at(-1);
+  const thought = activities.findLast(activity => activity.type === "THINKING")?.thinking;
+  const summaryChars = Array.from(thought?.summary ?? ""),summaryTruncated = summaryChars.length > 1200 || thought?.summaryTruncated === true;
+  const thinkingSummary = summaryChars.slice(0,1200).join("") + (summaryChars.length > 1200 ? "…" : "");
   const brief = [thought === undefined ? "" : [thinkingLabel(thought),thinkingDuration(thought)].filter(Boolean).join(" · "),context === undefined ? "" : contextStateLabel(context),
     children.length === 0 ? "" : t("chat.childProgress",{ total: children.length,running: children.filter(child => child.status === "RUNNING" || child.status === "QUEUED").length })].filter(Boolean).join(" · ");
   const tools: ToolActivity[] = [];
@@ -60,20 +62,23 @@ function ToolGroup({ entries,status,context: fallbackContext,children = [],onCan
   return <details className="chat-tool-group"><summary data-tool-state={latestState}>{latest === undefined || latestState === undefined ? <BrainIcon /> : <><ToolStateIcon state={latestState} /><span className="chat-tool-summary-main"><strong>{latest.name}</strong><ToolParameters parameters={latest.parameters} /></span><span className="chat-tool-state">{t(stateLabels[latestState])}</span><small>{t("chat.toolCount",{ count: tools.length })}</small></>}{brief === "" ? null : <span className="chat-activity-brief">{brief}</span>}<CaretDownIcon className="chat-tool-chevron" /></summary>
     {tools.length === 0 ? null : <ol>{tools.map(tool => { const state = toolState(tool,status);return <li data-tool-state={state} key={tool.id}><ToolStateIcon state={state} /><div className="chat-tool-details"><div><strong>{tool.name}</strong><span className="chat-tool-state">{t(stateLabels[state])}</span></div><ToolParameters parameters={tool.parameters} /></div></li>; })}</ol>}
     <ConversationContext conversation={{ ...(context === undefined ? {} : { context }),children }} {...(onCancel === undefined ? {} : { onCancel })} />
-    {thoughts.map(thinking => <div className="chat-thinking" key={thinking.phaseId}><span>{thinkingLabel(thinking)} {thinkingDuration(thinking)}</span>{thinking.summary === undefined ? null : <p>{thinking.summary}</p>}{thinking.summaryTruncated === true ? <small>{t("chat.thinkingSummaryTruncated")}</small> : null}</div>)}
+    {thinkingSummary === "" ? null : <div className="chat-thinking"><p>{thinkingSummary}</p>{summaryTruncated ? <small>{t("chat.thinkingSummaryTruncated")}</small> : null}</div>}
   </details>;
 }
 
 export function ConversationOutput({ entries,status,context,children,onCancel }: OutputProps) {
   const output: ReactNode[] = [];
+  const lastThinking = entries.findLast(entry => entry.kind === "ACTIVITY" && entry.activity.type === "THINKING");
   const lastActivity = entries.findLast(entry => entry.kind === "ACTIVITY" || entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT");
   const fallback = { ...(context === undefined ? {} : { context }),...(children === undefined ? {} : { children }),...(onCancel === undefined ? {} : { onCancel }) };
-  let tools: ConversationEntryDto[] = [],groups = 0;
+  let tools: ConversationEntryDto[] = [],groupKey = "first-activity";
   if (lastActivity === undefined && (context !== undefined || (children?.length ?? 0) > 0)) output.push(<ToolGroup entries={[]} key="first-activity" status={status} {...fallback} />);
-  const flush = () => { if (tools.length > 0) { output.push(<ToolGroup entries={tools} key={groups++ === 0 ? "first-activity" : tools[0]?.entryId} status={status} {...(tools.at(-1) === lastActivity ? fallback : {})} />);tools = []; } };
+  const flush = () => { if (tools.length > 0) { output.push(<ToolGroup entries={tools} key={groupKey} status={status} {...(tools.at(-1) === lastActivity ? fallback : {})} />);tools = []; } };
   for (const entry of entries) {
+    if (entry.kind === "ACTIVITY" && entry.activity.type === "THINKING" && entry !== lastThinking) continue;
     if (entry.kind === "TOOL_CALL" || entry.kind === "TOOL_RESULT" || entry.kind === "ACTIVITY") { tools.push(entry);continue; }
     flush();
+    groupKey = `activity-after-${entry.entryId}`;
     output.push(entry.kind === "MARKDOWN" ? <div className="markdown-body" key={entry.entryId}><SafeMarkdown>{entry.text ?? ""}</SafeMarkdown></div>
       : entry.kind === "ARTIFACT" ? <div className="chat-artifact" key={entry.entryId}><FolderIcon />{entry.artifact?.name}</div> : <p key={entry.entryId}>{entry.text}</p>);
   }

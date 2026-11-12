@@ -139,3 +139,25 @@ Final Windows gate results for this replacement, 2026-11-12:
 | Explicit `tests/native/local-browser.test.ts` | Passed, including the reasoning pause and real cancellation cleanup |
 
 The first concurrent gate run encountered unrelated Git integration and evolution E2E timeouts; the fixed gates passed when rerun sequentially without changing their timeouts. Coverage retains the configured domain/application/shared/renderer scope and does not claim infrastructure or third-party coverage. Windows qualification applies to the tested browser/version pair; arbitrary sites, existing login sessions, macOS/Linux native launch, and an installed NSIS package were not exercised. Native binaries are explicitly declared for ASAR unpacking, and the browser download/setup command is documented separately. Temporary build, browser evaluation and screenshot artifacts are excluded from Git.
+
+## CHAT-36: latest thinking disclosure
+
+The renderer projects only the last thinking activity in each turn, including phases separated by prose or tool groups. The disclosure header shows its status and observed duration once; expanding shows the available public summary. Details are capped at 1200 Unicode code points with an omission notice, preserving surrogate pairs. A missing summary adds no empty detail row. The stored execution entries, paired tools, answer order and private reasoning boundary are unchanged.
+
+Failing-first renderer regressions reproduced repeated historical phases, loss of the open disclosure after a newer phase, and oversized details. All nine conversation-output cases pass after the change. Electron regression data includes multiple completed phases and checks one remaining status plus expandable summary using synthetic HTTP responses and disposable application data.
+
+Final Windows gate results for this increment, 2026-11-12:
+
+| Command | Observed result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed, no warnings |
+| `npm run test -- --reporter=dot --maxWorkers=4` | 356 files / 2,917 tests passed; ten optional native tests skipped |
+| `npm run test:coverage -- --reporter=dot --maxWorkers=4` | 2,917 passed; statements 93.98%, branches 90.21%, functions 92.54%, lines 96.66% |
+| `npm run test:e2e` | 21 passed; collapsed and expanded conversation screenshots inspected |
+| `npm run build:prod` | Passed |
+| `npm run package:verify` | Passed; 787 files verified |
+| `npm run check:boundaries` | Passed |
+| `npm run i18n:check` | Passed |
+
+The initial lint run rejected unnecessary null checks in the added test; the corrected test, focused renderer suite and complete lint check passed. Production builds retain the existing bundle-size advisory. No new native integration was introduced, so optional native tests were not enabled in this increment. Test logs and screenshots are excluded from Git.
