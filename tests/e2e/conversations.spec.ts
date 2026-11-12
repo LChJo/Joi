@@ -1,6 +1,20 @@
-import { _electron as electron,expect,test } from "@playwright/test";
+import { _electron as electron,expect,test,type Page } from "@playwright/test";
 import { setDesktopTestLocale } from "./locale";
 import { mkdir } from "node:fs/promises";
+
+async function expectExtensionSwitches(page: Page) {
+  const switches = page.getByRole("dialog",{ name: "扩展" }).getByRole("switch");
+  await expect(switches).toHaveCount(4);
+  for (const control of await switches.all()) {
+    const shape = await control.evaluate(element => {
+      const box = element.getBoundingClientRect(),style = getComputedStyle(element),thumb = getComputedStyle(element,"::before");
+      return { width: box.width,height: box.height,padding: style.padding,margin: style.margin,thumbWidth: thumb.width,thumbHeight: thumb.height,thumbTop: thumb.top,thumbLeft: thumb.left,transform: thumb.transform,checked: (element as HTMLInputElement).checked };
+    });
+    expect(shape).toMatchObject({ width: 32,height: 18,padding: "0px",margin: "0px",thumbWidth: "12px",thumbHeight: "12px",thumbTop: "2px",thumbLeft: "2px" });
+    expect(shape.transform).toBe(shape.checked ? "matrix(1, 0, 0, 1, 14, 0)" : "none");
+  }
+  await expect(page.locator(".chat-extension-list small")).toHaveCount(0);
+}
 
 function colorContrast(colors: { foreground: string;background: string }) {
   const luminance = (color: string) => { const rgb=(color.match(/\d+/g) ?? []).slice(0,3).map(Number).map(v => { const s=v/255;return s<=.04045 ? s/12.92 : ((s+.055)/1.055)**2.4; });return .2126*(rgb[0] ?? 0)+.7152*(rgb[1] ?? 0)+.0722*(rgb[2] ?? 0); };
@@ -53,6 +67,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     for (const name of ["OpenWiki","Agent Browser","CC Safety Net"]) await expect(page.getByRole("switch",{ name,exact: true })).not.toBeChecked();
     await page.getByRole("switch",{ name: "OpenWiki",exact: true }).check();
     await page.getByRole("switch",{ name: "CC Safety Net",exact: true }).check();
+    await expectExtensionSwitches(page);
     await page.screenshot({ path: "test-results/conversation-extensions.png" });
     await page.keyboard.press("Escape");await expect(page.getByRole("button",{ name: "扩展",exact: true })).toBeFocused();
     expect(await page.locator(".chat-composer-toolbar").evaluate(element => [...element.querySelectorAll(":scope > button, :scope > .chat-picker > button")].map(button => button.getAttribute("aria-label"))))
@@ -84,6 +99,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(tools.locator("li").first()).toContainText("ls");await expect(tools.locator("li").first()).toBeVisible();
     await expect(tools.locator("li").first()).toContainText("src/renderer");await expect(tools.locator("li").first()).toContainText("已完成");
     await expect(tools.getByRole("status")).toContainText("100 / 1000");await expect(tools.getByText("已定位组件与工具调用边界。")).toBeVisible();
+    await expect(page.getByText("导入历史不含完整的私有工具记录。")).toHaveCount(0);
     await expect(tools.locator("li").last()).toHaveAttribute("data-tool-state","failed");
     await expect(tools).not.toContainText("PRIVATE_TOOL_RESULT");await page.screenshot({ path: "test-results/conversation-tool-details.png" });
     await toolSummary.click();await page.screenshot({ path: "test-results/conversation-tools-compact.png" });
@@ -103,7 +119,7 @@ test("normal conversation layout, independent selectors, inherited context and G
       const style=getComputedStyle(element),a=luminance(style.color),b=luminance(style.backgroundColor);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
     });
     expect(contrast).toBeGreaterThanOrEqual(4.5);await page.screenshot({ path: "test-results/conversation-production-dark.png" });
-    await page.getByRole("button",{ name: "扩展",exact: true }).click();await page.screenshot({ path: "test-results/conversation-extensions-dark.png" });await page.keyboard.press("Escape");await page.emulateMedia({ colorScheme: "light" });
+    await page.getByRole("button",{ name: "扩展",exact: true }).click();await expectExtensionSwitches(page);await page.screenshot({ path: "test-results/conversation-extensions-dark.png" });await page.keyboard.press("Escape");await page.emulateMedia({ colorScheme: "light" });
     for (const colorScheme of ["light","dark"] as const) {
       await page.emulateMedia({ colorScheme });
       await expect(sendButton).toBeDisabled();
@@ -124,6 +140,7 @@ test("normal conversation layout, independent selectors, inherited context and G
       await expect(page.getByRole("textbox",{ name: "消息" })).toBeVisible();
       if (size.width === 390) {
         await page.getByRole("button",{ name: "扩展",exact: true }).click();
+        await expectExtensionSwitches(page);
         const extensionBounds = await page.getByRole("dialog",{ name: "扩展" }).boundingBox();
         expect(extensionBounds?.x).toBeGreaterThanOrEqual(0);expect((extensionBounds?.x ?? 0) + (extensionBounds?.width ?? 0)).toBeLessThanOrEqual(390);
         await page.screenshot({ path: "test-results/conversation-extensions-mobile.png" });await page.keyboard.press("Escape");

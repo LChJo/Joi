@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Turn activity shares output disclosures; the accessible extension list preserves independent per-conversation switches and keeps settings last. Native partners receive no Pi extensions.",
+      "claim": "Turn activity shares output disclosures; the accessible extension list shows names and switches without helper copy, preserves independent per-conversation selections and keeps settings last. Native partners receive no Pi extensions.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "e707b3021834070f4bcab89c80f2c39a56921a1d297928edbb5e121671c692ac",
-      "observedAt": "2026-11-12T04:53:59.505Z",
+      "hash": "998e6310a09ad705921785a14d47c436117abaf5021a8e4af175c258976dc2cc",
+      "observedAt": "2026-11-12T06:52:38.673617Z",
       "range": {
         "startLine": 1,
-        "endLine": 315
+        "endLine": 314
       }
     },
     {
@@ -438,15 +438,15 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "CHAT-01 through CHAT-17 define conversation ownership, configuration, archive, independent admission and compact tool parameters with truthful lifecycle state.",
+      "claim": "Conversation acceptance defines ownership, configuration, archive, independent admission, safe context and child progress; imported missing-private-history markers remain internal under CHAT-37.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "47b38bea10d391cb075b62e56bf97355738536d5ffa6fe2a4c3e758803bc72f0",
-      "observedAt": "2026-11-11T16:20:32.372038Z",
+      "hash": "11c649a46f8aa5b4bc48c0eacd99c90995fdb97322e9f1a8ca666e3c5cb233f9",
+      "observedAt": "2026-11-12T06:52:38.674162Z",
       "range": {
         "startLine": 1,
-        "endLine": 25
+        "endLine": 39
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored accessible extension switches fit the existing composer popover.",
+      "claim": "Responsive tool disclosures and theme-colored accessible extension switches fit the existing composer popover. Switch tracks are 32x18 with centered 12px thumbs and reset input padding and margins. User message bubbles fit their content and stay right-aligned within responsive maximum widths.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "6434d70df5ed1a131e4247d7c780fc70c995a41ae9728bae544aadbd08c8c844",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "c94e4a3399bcc7e5cec7a46ea7a408ace9289e58cb06671389a2ffcbbc379a80",
+      "observedAt": "2026-11-12T07:24:39.767685Z",
       "range": {
         "startLine": 1,
-        "endLine": 291
+        "endLine": 289
       }
     },
     {
@@ -676,15 +676,15 @@
     {
       "id": "6097810a-ce3d-4038-9a5c-f30fc8382210",
       "kind": "source-code",
-      "claim": "Context details show recorded usage, compression, last activity and child cancellation without an unknown-estimate placeholder.",
+      "claim": "Context details show recorded usage, compression, last activity and child cancellation without an unknown-estimate placeholder or explanatory missing-private-history text.",
       "location": {
         "path": "src/renderer/ConversationContext.tsx"
       },
-      "hash": "ce00b4f6dee9c8d37ad0e6e9ee9cef476be4eb3229ad6cd5c58ef5b52fa33545",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "791a32cd77a2c7a72ea371a05e455e624b1f4758abf7dcfb4ab3dd1f3cadf653",
+      "observedAt": "2026-11-12T06:56:12.897523Z",
       "range": {
         "startLine": 1,
-        "endLine": 18
+        "endLine": 17
       }
     },
     {
@@ -844,15 +844,15 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-36 define extension switches, native browser isolation, cancellation and latest-only bounded thinking disclosure acceptance.",
+      "claim": "CHAT-30 through CHAT-38 define extension switches, native browser isolation, cancellation, latest-only bounded thinking disclosure, helper-copy removal, fixed switch geometry and content-sized user message bubbles.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "880967f4204c0cd4e0c2cf4543e826e2db91e73054f615e0c7cf96f94c30f85b",
-      "observedAt": "2026-11-12T06:21:45.370Z",
+      "hash": "1bb4260d93d795c3ce1ca1d760f6926303e040f5cae72ba7ed95a34b2c80efca",
+      "observedAt": "2026-11-12T07:24:39.768258Z",
       "range": {
         "startLine": 1,
-        "endLine": 612
+        "endLine": 620
       }
     },
     {

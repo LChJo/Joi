@@ -26,11 +26,11 @@ metadata {
 renderer = component "Web renderer" {
 metadata {
  harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
- brief "React views use shared DTOs and HTTP. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list controls Subagents, OpenWiki, local Agent Browser and Safety Net. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last."
+ brief "React views use shared DTOs and HTTP. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list shows names and fixed-size switches for Subagents, OpenWiki, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last."
  source "fact"
  status "verified"
  evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e"
- version "13"
+ version "15"
 }
 }
 preload = component "Desktop bridge" {

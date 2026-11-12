@@ -15,7 +15,6 @@ import "./conversations.css";
 type Picker = "workbench" | "network" | "partner" | "skills" | "extensions" | "attachments" | "inheritance" | "help" | null;
 interface Draft { id: string; workbenchId: string; text: string; partnerId: string; networkId: string; skills: string[]; attachments: JoiAttachmentDto[]; started?: boolean;subagentsEnabled?: boolean;piExtensions?: ConversationPiExtension[]; }
 const extensionLabels = { openwiki: "OpenWiki","agent-browser": "Agent Browser","cc-safety-net": "CC Safety Net" };
-const extensionHints = { openwiki: "chat.openwikiHint","agent-browser": "chat.agentBrowserHint","cc-safety-net": "chat.safetyNetHint" } as const;
 const drafts = new WeakMap<DigitalLifeApi, Map<string,Draft>>();
 function statusText(status: ConversationTurnStatus) {
   return status === "QUEUED" ? t("chat.queued") : status === "RUNNING" ? t("chat.running") : status === "FAILED" ? t("chat.failed") : status === "STOPPED" ? t("chat.stopped") : status === "INTERRUPTED" ? t("chat.interrupted") : t("chat.completed");
@@ -298,8 +297,8 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
               {skillOptions.length === 0 ? <p>{t("chat.noSkills")}</p> : skillOptions.map(s => <label key={s.id}><input checked={draft.skills.includes(s.id)} onChange={() => patchDraft({ skills: draft.skills.includes(s.id) ? draft.skills.filter(id => id !== s.id) : [...draft.skills,s.id] })} type="checkbox" />{s.displayName}</label>)}</PickerButton>
             {native ? null : <PickerButton name={t("chat.extensions")} label={`${t("chat.extensions")} · ${String((draft.subagentsEnabled === false ? 0 : 1) + (draft.piExtensions?.length ?? 0))}`} icon={<NetworkIcon />} open={picker === "extensions"} onToggle={() => toggle("extensions")}>
               <div className="chat-extension-list">
-                <label><span>{t("chat.subagents")}<small>{t("chat.subagentsHint")}</small></span><input aria-label={t("chat.subagents")} checked={draft.subagentsEnabled ?? true} onChange={() => patchDraft({ subagentsEnabled: !(draft.subagentsEnabled ?? true) })} role="switch" type="checkbox" /></label>
-                {CONVERSATION_PI_EXTENSIONS.map(id => <label key={id}><span>{extensionLabels[id]}<small>{t(extensionHints[id])}</small></span><input aria-label={extensionLabels[id]} checked={draft.piExtensions?.includes(id) ?? false} onChange={() => patchDraft({ piExtensions: CONVERSATION_PI_EXTENSIONS.filter(value => value === id ? !draft.piExtensions?.includes(id) : draft.piExtensions?.includes(value)) })} role="switch" type="checkbox" /></label>)}
+                <label><span>{t("chat.subagents")}</span><input aria-label={t("chat.subagents")} checked={draft.subagentsEnabled ?? true} onChange={() => patchDraft({ subagentsEnabled: !(draft.subagentsEnabled ?? true) })} role="switch" type="checkbox" /></label>
+                {CONVERSATION_PI_EXTENSIONS.map(id => <label key={id}><span>{extensionLabels[id]}</span><input aria-label={extensionLabels[id]} checked={draft.piExtensions?.includes(id) ?? false} onChange={() => patchDraft({ piExtensions: CONVERSATION_PI_EXTENSIONS.filter(value => value === id ? !draft.piExtensions?.includes(id) : draft.piExtensions?.includes(value)) })} role="switch" type="checkbox" /></label>)}
               </div>
             </PickerButton>}
             <button aria-label={t("chat.settings")} className="chat-settings-button" onClick={onSettings} title="Ctrl / ⌘ + ," type="button"><GearSixIcon /></button>

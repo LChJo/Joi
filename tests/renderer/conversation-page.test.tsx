@@ -20,6 +20,7 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   await screen.findByText("今天想一起做点什么？");
   const extensions = screen.getByRole("button",{ name: "扩展" });
   fireEvent.click(extensions);
+  expect(screen.getByRole("dialog",{ name: "扩展" }).textContent).toBe("扩展子代理OpenWikiAgent BrowserCC Safety Net");
   const subagents = screen.getByRole("switch",{ name: "子代理" });
   expect(subagents).toBeChecked();
   fireEvent.click(subagents);expect(subagents).not.toBeChecked();

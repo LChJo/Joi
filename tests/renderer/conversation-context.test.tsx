@@ -9,7 +9,7 @@ it("CHAT-23 shows character estimates, safe compression and child state with can
     children: [{ childId: "child",status: "RUNNING" }] };
   const cancel = vi.fn();const view = render(<ConversationContext conversation={chat} onCancel={cancel} />);
   expect(screen.getByRole("status")).toHaveTextContent("51060 / 55000");expect(screen.getByRole("status")).toHaveTextContent("摘要稍后重试");
-  expect(screen.getByRole("status")).toHaveTextContent("导入历史不含完整的私有工具记录");
+  expect(screen.queryByText("导入历史不含完整的私有工具记录。")).not.toBeInTheDocument();
   fireEvent.click(screen.getByText(/子代理：/));fireEvent.click(screen.getByRole("button",{ name: "取消" }));expect(cancel).toHaveBeenCalledWith("child");
   view.rerender(<ConversationContext conversation={{ ...chat,context: { kind: "NATIVE",state: "READY" },children: [] }} onCancel={cancel} />);
   expect(screen.getByRole("status")).toHaveTextContent("上下文由原生引擎管理");expect(screen.queryByText(/51060/)).not.toBeInTheDocument();
