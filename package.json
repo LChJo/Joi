@@ -13,6 +13,7 @@
     "prebuild:prod": "npm run i18n:check",
     "dev": "npm run build:electron && concurrently -k -s first \"vite --host 127.0.0.1\" \"tsc -p tsconfig.electron.json --watch --preserveWatchOutput\" \"wait-on tcp:43715 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:43715 electron .\"",
     "start": "npm run dev",
+    "browser:install": "node node_modules/agent-browser/bin/agent-browser.js install",
     "app:run": "npm run build:prod && electron .",
     "assets:icons": "electron scripts/render-app-icon.cjs",
     "clean": "node scripts/clean-artifacts.mjs",
@@ -48,11 +49,10 @@
     "@earendil-works/pi-coding-agent": "1.5.2",
     "@formatjs/icu-messageformat-parser": "3.5.21",
     "@mozilla/readability": "^0.6.0",
-    "@onkernel/browser-loop": "0.12.1",
-    "@onkernel/sdk": "0.147.0",
     "@openai/codex-sdk": "0.151.0",
     "@phosphor-icons/react": "2.1.10",
     "@radix-ui/themes": "3.3.0",
+    "agent-browser": "0.42.0",
     "cc-safety-net": "2.7.11",
     "decimal.js": "^10.6.0",
     "diff2html": "3.4.56",
@@ -132,6 +132,7 @@
       "!node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/**",
       "package.json"
     ],
+    "asarUnpack": ["node_modules/agent-browser/bin/**"],
     "extraResources": [
       {
         "from": "resources",

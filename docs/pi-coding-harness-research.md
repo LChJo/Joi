@@ -2,6 +2,8 @@
 
 调研日期：2026-11-12。原始范围：官方文档、官方源码，以及官方文档直接链接的维护者技能仓库。原始调查包含隔离工具钩子原型；后续章节分别记录已接入的第三方能力与浏览器替代方案调查，不把文档能力或接口验证称为真实任务性能收益。
 
+当前实施结果：已用固定版本的本机 `agent-browser` 替换 Browser Loop，见末节。首次接入与候选比较保留为有时间边界的调查记录。
+
 ## 结论与版本边界
 
 Pi 的编码能力不只在 `pi-agent-core`：官方 `pi-coding-agent` SDK 已提供会话、资源加载、技能、项目指令、扩展钩子，以及可选 Codemode/MCP。官方将 Pi 定位为可扩展的最小 Harness，并把一些工作流留给扩展和包。[官方定位](https://github.com/earendil-works/pi/blob/v1.5.2/README.md#pi)、[SDK](https://github.com/earendil-works/pi/blob/v1.5.2/packages/coding-agent/docs/sdk.md)
@@ -70,7 +72,7 @@ Durable 若以后单独评估，需要注意：官方也明确外部副作用的
 
 尚未完成：真实任务 A/B、浏览器技能的 Windows 适配验证、嵌套调用 gate 的集成测试，以及默认资源发现与 Joi 自管上下文的去重/优先级设计。本次对 React 专项资源的否定结论仅限已检查的官方文档与示例索引，不代表整个生态不存在相关包。
 
-## 已接入的对话扩展列表（2026-11-12）
+## 首次接入的对话扩展列表（历史阶段，2026-11-12）
 
 包目录中的 `brower-loop` 对应 `@onkernel/browser-loop`。目录收录不代表 Pi 官方维护这三个第三方包；本轮核对发布包源码后，固定 OpenWiki 0.9.0、Browser Loop 0.12.1、CC Safety Net 2.7.11，并保留宿主 Pi 1.5.2。[Pi 包目录](https://pi.dev/packages)
 
@@ -94,7 +96,7 @@ OpenWiki 的 `begin` 恢复持久 run；跨执行继续时应再次 `begin`，�
 
 ## Browser Loop 密钥与本机浏览器替代方案
 
-用户提供的 `https://pi.dev/packages/@onkernel/browser-loop` 正是当前接入的包。它使用 Kernel 浏览器执行服务，文档明确要求 `KERNEL_API_KEY`，与所选模型供应商的凭据分开；示例通过 Kernel SDK 创建浏览器。包开源不代表云执行无需凭据。Joi 的适配器也走这条云端创建路径，没有本机 CDP 模式或 localhost 隧道。[包的安装与执行契约](https://pi.dev/packages/@onkernel/browser-loop)、[本地适配器](../src/main/infrastructure/pi/pi-browser-loop.ts)
+用户提供的 `https://pi.dev/packages/@onkernel/browser-loop` 正是首次接入的包。它使用 Kernel 浏览器执行服务，文档明确要求 `KERNEL_API_KEY`，与所选模型供应商的凭据分开；示例通过 Kernel SDK 创建浏览器。包开源不代表云执行无需凭据。首次适配也走这条云端创建路径，没有本机 CDP 模式或 localhost 隧道；该适配器保存在历史提交 `58f98a2`，已由末节的本机实现替换。[包的安装与执行契约](https://pi.dev/packages/@onkernel/browser-loop)
 
 目录中的 `153.7K/mo` 是月下载量，不能当作 GitHub 星数。查询时 Browser Loop 仓库为 14 星；`pi-agent-browser-native` 为 249 星；它使用的上游 Vercel `agent-browser` 约 49.9k 星。这些是查询时的显示值，不能据此推断 Windows 或 Joi 接入已验证。[Browser Loop 仓库](https://github.com/kernel/browser-loop)、[Pi 适配包仓库](https://github.com/fitchmultz/pi-agent-browser-native)、[上游仓库](https://github.com/vercel-labs/agent-browser)
 
@@ -108,7 +110,7 @@ OpenWiki 的 `begin` 恢复持久 run；跨执行继续时应再次 `begin`，�
 
 上游 `agent-browser` 本身提供 Windows x64 原生二进制，也支持本机 Chrome。当前官方文档额外提供 React 组件树、组件状态、重渲染记录、Suspense 与 Web Vitals 检查；React 检查须在页面脚本执行前启用 DevTools hook，且各 Pi 包固定的后端版本不一定具备最新上游的全部命令。[平台与本机安装](https://agent-browser.dev/installation)、[React 能力及前置条件](https://agent-browser.dev/react)
 
-针对 Joi 的本机 React 验证，优先评估本机 `agent-browser` 后端，参考 Goblin 的 QA 工作流或 Debug 的小工具接口，这是基于上述约束的适配判断。Joi 仍关闭 Pi SDK 的任意扩展发现，不能把在 Pi CLI 中安装成功等同于已接入 Joi；正式接入需保留宿主权限、会话隔离、取消收尾及产物边界。此次仅补充调查，当前已提交的 Browser Loop 选择保持原样。[Joi 会话资源边界](../src/main/infrastructure/pi/joi-pi-session.ts)
+该候选调查建议优先评估本机 `agent-browser` 后端，参考 Goblin 的 QA 工作流或 Debug 的小工具接口。Joi 仍关闭 Pi SDK 的任意扩展发现，不能把在 Pi CLI 中安装成功等同于已接入 Joi；正式接入需保留宿主权限、会话隔离、取消收尾及产物边界。此调查阶段没有替换实现；后续用户已授权替换，结果见末节。[Joi 会话资源边界](../src/main/infrastructure/pi/joi-pi-session.ts)
 
 ## GlimpseUI：面向用户的交互界面
 
@@ -119,3 +121,17 @@ OpenWiki 的 `begin` 恢复持久 run；跨执行继续时应再次 `begin`，�
 从已核对的接口看，`open`、`setHTML`、`loadFile`、`send` 与用户消息适合展示和收集交互；没有配套的导航、元素引用、截图、控制台/网络诊断工具集。Windows `eval` 路径执行页面 JS 后不自动返回结果，需要页面主动通过消息桥回传。由此判断：可在 WebView 中运行合适的前端内容，但不会因此获得 React 组件检查或真实开发站点的自动验收能力；自行补齐后才可能承担这类任务。[Windows 命令与消息桥源码](https://raw.githubusercontent.com/HazAT/glimpse/main/native/windows/Program.cs)
 
 对已有 Electron/React 界面的 Joi，更适合借鉴其“Agent 生成交互内容”的工作流，通过现有 renderer 和受控桥接实现；如确需独立悬浮窗口，可再评估可选 Skill/工具适配。这是维护成本与能力匹配的判断，本次不将 GlimpseUI 作为浏览器自动化的替代项，也未加入扩展列表。
+
+## Agent Browser 已验证并替换云浏览器
+
+固定上游 `agent-browser` 0.42.0，直接使用发布包的原生执行器，不加载未通过 Windows 资格验证的 Pi 包装扩展。移除 `@onkernel/browser-loop` 和 `@onkernel/sdk` 两项依赖。扩展 ID 为 `agent-browser`，沿用列表开关与每轮持久配置；历史中的 `browser-loop` 不自动授予本机浏览器能力，新请求拒绝该旧 ID，历史正文与工具事实保留。[当前工具适配](../src/main/infrastructure/pi/pi-agent-browser.ts)、[共享选择契约](../src/shared/conversations.ts)
+
+宿主暴露 21 项明确工具，包含导航、快照、表单与点击、截图、页面 JavaScript、控制台、错误、网络、React 组件树和 Web Vitals。全部须取得 WRITE 租约，并符合搭档 CUSTOM 白名单；SDK 自动扩展发现仍关闭。不向模型开放任意 CLI 参数、会话名、profile、文件路径或 CDP 连接。参数使用 schema 校验，拒绝额外字段、NUL 与 option 形状的值，导航入口只接受无内嵌凭据的 HTTP(S) URL。[宿主白名单](../src/main/domain/partners/pi-extension-tools.ts)、[工具定义](../src/main/infrastructure/pi/pi-agent-browser.ts)
+
+原生执行器随依赖预置；浏览器程序优先使用 `JOI_AGENT_BROWSER_EXECUTABLE`，随后只在标准 `~/.agent-browser/browsers` 安装缓存中查找程序，最后尝试系统 Chrome/Edge。缓存只用于程序发现，不读取扩展配置或个人 profile。`npm run browser:install` 可下载 Chrome for Testing；程序与页面资产均本地可用时不需浏览器服务 Key。Windows 此次资格验证组合是 agent-browser 0.42.0 与 Chrome for Testing 157.0.8103.78；初次系统浏览器路径出现响应超时，不能把它称为所有系统浏览器通用通过。[官方安装说明](https://agent-browser.dev/installation)、[上游缓存布局源码](https://github.com/vercel-labs/agent-browser/blob/main/cli/src/install.rs)
+
+每次获准执行建立随机身份、临时用户目录、显式空配置和受控环境，不继承供应商密钥或自动 CDP/云连接设置。宿主直接持有后台进程句柄，在执行结束、取消、超时和清理异常时关闭自有进程；状态未知或输出失控后该执行不再分派动作。上游 daemon 启动环境与配置标记属于固定版本的适配接口，升级时须重新跑原生资格验证。[进程适配器](../src/main/infrastructure/pi/agent-browser-process.ts)、[上游启动及未知结果契约](https://github.com/vercel-labs/agent-browser/blob/main/cli/src/connection.rs)
+
+工具输出限制为 512 KiB 传输与 20,000 字符文本，截断带提示；敏感字段遮蔽，原生 stderr 与错误原文不进入工具结果。截图限 8 MiB PNG，在宿主私有临时路径生成后以内联图片回传。普通回归使用进程边界替身；显式原生测试运行真实执行器与独立浏览器，使用临时构建的 localhost React 页面，已验证中文输入、计数按钮状态变化、React 组件树、截图、控制台、请求观察，以及取消后清理 profile。测试后自有浏览器进程数为零，没有访问个人 profile、真实 Electron userData、模型账户或 Kernel 账户。[正式原生回归](../tests/native/local-browser.test.ts)、[上游 React 前置条件](https://agent-browser.dev/react)
+
+本接入每次执行结束关闭浏览器，tab/ref 与登录状态不跨执行恢复。当前 React 工具公开组件树，未开放上游全部调试命令；压缩构建的组件名受构建命名影响。此次没有测任意公网网站、真实登录流程、跨平台原生运行或性能收益。

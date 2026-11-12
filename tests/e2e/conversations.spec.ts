@@ -49,7 +49,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(sendButton).toBeDisabled();
     await page.getByRole("button",{ name: "扩展",exact: true }).click();
     await expect(page.getByRole("switch",{ name: "子代理",exact: true })).toBeChecked();
-    for (const name of ["OpenWiki","Browser Loop","CC Safety Net"]) await expect(page.getByRole("switch",{ name,exact: true })).not.toBeChecked();
+    for (const name of ["OpenWiki","Agent Browser","CC Safety Net"]) await expect(page.getByRole("switch",{ name,exact: true })).not.toBeChecked();
     await page.getByRole("switch",{ name: "OpenWiki",exact: true }).check();
     await page.getByRole("switch",{ name: "CC Safety Net",exact: true }).check();
     await page.screenshot({ path: "test-results/conversation-extensions.png" });

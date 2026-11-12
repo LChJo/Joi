@@ -43,6 +43,17 @@ npm run check:boundaries
 
 ## 原生远程与 Android
 
+本机浏览器的独立验收使用合成 localhost React 页面、临时用户目录和指定的浏览器程序，不读取个人 profile 或真实 Electron userData。普通测试默认跳过此项：
+
+```powershell
+$env:JOI_BROWSER_SMOKE = "1"
+$env:JOI_BROWSER_SMOKE_EXECUTABLE = "<Chrome for Testing 程序的绝对路径>"
+npx vitest run tests/native/local-browser.test.ts
+Remove-Item Env:JOI_BROWSER_SMOKE,Env:JOI_BROWSER_SMOKE_EXECUTABLE
+```
+
+该项验证中文输入、点击状态变化、React 组件树、截图、控制台和网络观察，以及取消后自有进程与临时 profile 收尾；它不验证任意生产网站或个人登录会话。
+
 本地按需写入的原生引擎测试使用临时工作区、独立原生 CLI 配置目录和本机回环模型替身，不需要真实供应商凭据：
 
 ```powershell

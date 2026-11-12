@@ -207,7 +207,7 @@
   "chatExtensions": "扩展",
   "chatSubagentsHint": "委派并行子任务，沿用当前搭档与权限",
   "chatOpenwikiHint": "检索、生成并维护代码 Wiki",
-  "chatBrowserLoopHint": "操作 Kernel 云浏览器，需配置 API Key",
+  "chatAgentBrowserHint": "使用独立本机浏览器验证页面，无需额外 API Key",
   "chatSafetyNetHint": "拦截破坏性命令和敏感文件访问",
   "chatNoSkills": "此引擎暂无可选 Skills",
   "chatAttachments": "附件",

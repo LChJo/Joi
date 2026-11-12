@@ -1,7 +1,10 @@
 import type { AgentConversationEntryDto } from "./joi.js";
 
-export const CONVERSATION_PI_EXTENSIONS = ["openwiki","browser-loop","cc-safety-net"] as const;
+export const CONVERSATION_PI_EXTENSIONS = ["openwiki","agent-browser","cc-safety-net"] as const;
 export type ConversationPiExtension = typeof CONVERSATION_PI_EXTENSIONS[number];
+export function currentConversationPiExtensions(value: unknown): ConversationPiExtension[] {
+  return CONVERSATION_PI_EXTENSIONS.filter(id => Array.isArray(value) && value.includes(id));
+}
 export function isConversationPiExtensions(value: unknown): value is ConversationPiExtension[] {
   return Array.isArray(value) && value.length <= CONVERSATION_PI_EXTENSIONS.length
     && value.every(id => CONVERSATION_PI_EXTENSIONS.includes(id as ConversationPiExtension)) && new Set(value).size === value.length;

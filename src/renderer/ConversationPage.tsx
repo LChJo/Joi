@@ -8,14 +8,14 @@ import { ConversationWorkspace } from "./ConversationWorkspace";
 import { ConversationOutput } from "./ConversationOutput";
 import { ConversationHistoryRow } from "./ConversationHistoryRow";
 import { DeleteConversationDialog } from "./ConversationDialogs";
-import { CONVERSATION_PI_EXTENSIONS,type ConversationDto,type ConversationInheritanceDto,type ConversationPiExtension,type ConversationSummaryDto,type ConversationTurnStatus,type SendConversationInput } from "../shared/conversations";
+import { CONVERSATION_PI_EXTENSIONS,currentConversationPiExtensions,type ConversationDto,type ConversationInheritanceDto,type ConversationPiExtension,type ConversationSummaryDto,type ConversationTurnStatus,type SendConversationInput } from "../shared/conversations";
 import type { JoiAttachmentDto, ModelSourceDto, PartnerDto, WorkbenchDto } from "../shared/joi";
 import "./conversations.css";
 
 type Picker = "workbench" | "network" | "partner" | "skills" | "extensions" | "attachments" | "inheritance" | "help" | null;
 interface Draft { id: string; workbenchId: string; text: string; partnerId: string; networkId: string; skills: string[]; attachments: JoiAttachmentDto[]; started?: boolean;subagentsEnabled?: boolean;piExtensions?: ConversationPiExtension[]; }
-const extensionLabels = { openwiki: "OpenWiki","browser-loop": "Browser Loop","cc-safety-net": "CC Safety Net" };
-const extensionHints = { openwiki: "chat.openwikiHint","browser-loop": "chat.browserLoopHint","cc-safety-net": "chat.safetyNetHint" } as const;
+const extensionLabels = { openwiki: "OpenWiki","agent-browser": "Agent Browser","cc-safety-net": "CC Safety Net" };
+const extensionHints = { openwiki: "chat.openwikiHint","agent-browser": "chat.agentBrowserHint","cc-safety-net": "chat.safetyNetHint" } as const;
 const drafts = new WeakMap<DigitalLifeApi, Map<string,Draft>>();
 function statusText(status: ConversationTurnStatus) {
   return status === "QUEUED" ? t("chat.queued") : status === "RUNNING" ? t("chat.running") : status === "FAILED" ? t("chat.failed") : status === "STOPPED" ? t("chat.stopped") : status === "INTERRUPTED" ? t("chat.interrupted") : t("chat.completed");
@@ -197,7 +197,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
       const latest = next.turns.at(-1);
       const saved = drafts.get(api)?.get(id);
       activeId.current = id;setConversation(next);setPicker(null);setNotice(null);nearBottom.current = true;
-      setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: latest?.config.partnerId ?? "joi-chat",networkId: latest?.config.networkId ?? draft.networkId,skills: latest?.config.skills ?? [],attachments: [],started: true,subagentsEnabled: latest?.config.subagentsEnabled ?? true,piExtensions: latest?.config.piExtensions ?? [] });
+      setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: latest?.config.partnerId ?? "joi-chat",networkId: latest?.config.networkId ?? draft.networkId,skills: latest?.config.skills ?? [],attachments: [],started: true,subagentsEnabled: latest?.config.subagentsEnabled ?? true,piExtensions: currentConversationPiExtensions(latest?.config.piExtensions) });
     } catch (error) { showError(error); }
   };
   const newChat = () => {

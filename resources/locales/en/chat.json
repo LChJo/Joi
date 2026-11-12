@@ -39,7 +39,7 @@
   "extensions": "Extensions",
   "subagentsHint": "Delegate tasks with the current partner and permissions",
   "openwikiHint": "Search, generate and maintain a code wiki",
-  "browserLoopHint": "Control a Kernel cloud browser; API key required",
+  "agentBrowserHint": "Use an isolated local browser to test pages; no extra API key",
   "safetyNetHint": "Block destructive commands and sensitive file access",
   "noSkills": "No Skills available for this engine",
   "attachments": "Attachments",

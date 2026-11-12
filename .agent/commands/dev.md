@@ -30,6 +30,16 @@ npm run dev
 npm start
 ```
 
+## 本机浏览器
+
+对话扩展中的 Agent Browser 预置固定版本的原生执行器。首次需要浏览器且没有合适 Chrome 时执行：
+
+```powershell
+npm run browser:install
+```
+
+它使用上游安装器下载 Chrome for Testing 到独立的 `~/.agent-browser/browsers` 安装缓存。Joi 只在该缓存中查找浏览器程序，不加载用户的扩展配置或个人浏览器 profile。安装后可离线启动，访问网站仍取决于网站连接。本机 Chromium/Chrome 也可通过 `JOI_AGENT_BROWSER_EXECUTABLE` 的绝对路径指定；不需要 Kernel API Key。每次对话执行的浏览器数据都使用另一个临时目录，结束后关闭并清理。
+
 ## 运行本地生产形态
 
 ```powershell

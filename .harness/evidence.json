@@ -270,15 +270,15 @@
     {
       "id": "70e2a22b-f223-48ee-ad62-781b5835ed5e",
       "kind": "source-code",
-      "claim": "Npm quality gates, Node >=22.22.0, host Pi 1.5.2 and exact bundled extension dependencies.",
+      "claim": "Pinned Pi and Agent Browser native dependency, no Kernel packages, explicit browser setup and native executable ASAR unpacking.",
       "location": {
         "path": "package.json"
       },
-      "hash": "6949abcbc3a5c5081883d8dbefbb019136029dcfa90440817a06508571fd0323",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "c196fde5ec0988307fa930a656a7b355135153b6a487f20bea88aec4382204f6",
+      "observedAt": "2026-11-12T04:53:59.503Z",
       "range": {
         "startLine": 1,
-        "endLine": 163
+        "endLine": 164
       }
     },
     {
@@ -316,8 +316,8 @@
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "2538a7a042271c4d945e47fb583c66a5ca65803320850977077aba32f4c5aed5",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "e707b3021834070f4bcab89c80f2c39a56921a1d297928edbb5e121671c692ac",
+      "observedAt": "2026-11-12T04:53:59.505Z",
       "range": {
         "startLine": 1,
         "endLine": 315
@@ -410,15 +410,15 @@
     {
       "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
       "kind": "source-code",
-      "claim": "Conversation-only activity and static Pi extension selection contracts retain compatibility with existing optional turn JSON fields.",
+      "claim": "Static Pi extension IDs select local Agent Browser; restoration filters removed IDs without implicitly granting the replacement.",
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "b6084a77076664c249030234bc60fd730698f385f54e070d7a11130cf49ed995",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "2d73d8b4949524ac7423cb4a65d9bb9a64b4fb551ea7297a1c59939750866919",
+      "observedAt": "2026-11-12T04:53:59.506Z",
       "range": {
         "startLine": 1,
-        "endLine": 101
+        "endLine": 104
       }
     },
     {
@@ -694,11 +694,11 @@
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "aeb1bb8a700664ee7ce1e374a8a2211a4f46bd1bfd18507f3a1d28f00f5b5cdf",
-      "observedAt": "2026-11-12T04:01:28.452Z",
+      "hash": "c7c31697de48c8e52c49bb0529f60b6f53db563fdb2864bd2413067646953709",
+      "observedAt": "2026-11-12T05:19:21.321Z",
       "range": {
         "startLine": 1,
-        "endLine": 114
+        "endLine": 141
       }
     },
     {
@@ -746,26 +746,26 @@
     {
       "id": "68c4824e-2fab-4811-8c3b-de40278beff1",
       "kind": "document",
-      "claim": "Primary-source Pi research records pinned host adapters, cloud credentials, local-browser alternatives and Windows constraints; GlimpseUI is an uninstalled interactive-UI skill candidate, not an integrated browser automation toolset.",
+      "claim": "Primary-source browser evaluation records the local native replacement, Windows Chrome for Testing qualification, isolated profiles, closed old selection and unimplemented third-party candidates.",
       "location": {
         "path": "docs/pi-coding-harness-research.md"
       },
-      "hash": "99929b733b859cc7bd2b2a0fdba78389a0bc01d96daa77cf9de8094de0f3cc13",
-      "observedAt": "2026-11-12T04:14:43.472Z",
+      "hash": "51f342bd7bdc5c86cb7dc1772723bf8ef28108d56fccebb263e1fff70d06acb3",
+      "observedAt": "2026-11-12T04:53:59.506Z",
       "range": {
         "startLine": 1,
-        "endLine": 121
+        "endLine": 137
       }
     },
     {
       "id": "5841bbad-682d-467a-95f9-8acd70e76c32",
       "kind": "source-code",
-      "claim": "Only selected, policy-allowed pinned Wiki and browser tools join conversations; the Wiki root is host-bound and guidance follows actual grants.",
+      "claim": "Selected policy-allowed Wiki and local browser tools join conversations; host roots and safety evaluation remain bounded.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-conversation-extensions.ts"
       },
-      "hash": "1bcb4ed836c97539bbcac59b6ea47aa0834951f4a55ecfea408b74a29a664b95",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "3318a9b6cf38ad53e916641b4ddb2487572c15abdbfde469571c6f9045ad2ae5",
+      "observedAt": "2026-11-12T04:53:59.506Z",
       "range": {
         "startLine": 1,
         "endLine": 53
@@ -774,15 +774,15 @@
     {
       "id": "e06f4768-44ed-4bb9-8347-bba17ca19cbd",
       "kind": "source-code",
-      "claim": "Browser tools use the published package over a lazy per-execution cloud resource, disable creation retry and logs, and settle cleanup before closing.",
+      "claim": "Selected host tools validate schemas and CLI values, reject credential URLs and arbitrary configuration, and wait for startup/cleanup without dispatching after close.",
       "location": {
-        "path": "src/main/infrastructure/pi/pi-browser-loop.ts"
+        "path": "src/main/infrastructure/pi/pi-agent-browser.ts"
       },
-      "hash": "b92465ff5f0392e9feefa28ef8d68f36d8e07c40ef61b7397d997fc8b4310c18",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "4b5d3e33d4e5c5860916bd35a865975742163fe9280079c185392a371dcacbb6",
+      "observedAt": "2026-11-12T04:53:59.507Z",
       "range": {
         "startLine": 1,
-        "endLine": 39
+        "endLine": 63
       }
     },
     {
@@ -802,12 +802,12 @@
     {
       "id": "d6797abc-d945-4aa6-bc1a-49d0558529bc",
       "kind": "source-code",
-      "claim": "Reviewed exact Wiki/browser tool names define READ versus side-effecting capability admission; unknown names are not admitted by prefix.",
+      "claim": "Exact Wiki and local browser tool names define capability admission; local browser processes require WRITE and unknown names are denied.",
       "location": {
         "path": "src/main/domain/partners/pi-extension-tools.ts"
       },
-      "hash": "cdb08ac67efa36e1a1a11724ea16de36a87cbcd76bfa8a237b25cf1db4c8a026",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "2925a3a9158fafe89a6a6b60ecd2eff9ee8a87a10090ad6c1788948cdb8278be",
+      "observedAt": "2026-11-12T04:53:59.508Z",
       "range": {
         "startLine": 1,
         "endLine": 5
@@ -816,43 +816,71 @@
     {
       "id": "2554deb1-dde9-4858-bb55-e867f1d4d116",
       "kind": "source-code",
-      "claim": "Actual SDK requests test selection, disabled tools, safety checks, scope ceilings, missing browser credentials and real disposable Wiki run restoration.",
+      "claim": "Actual SDK requests verify static local selection, READ/CUSTOM ceilings, no process before WRITE admission, no cloud credentials and cleanup after child settlement failure.",
       "location": {
         "path": "tests/contract/conversation-pi-extensions.test.ts"
       },
-      "hash": "4d5612e97e922e5198619124930db56365f336d143f2d4bbb377ff4d90848b9d",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "d0a9d078e87630b57065f6e244ba3865a4e684e8afffddcfaa705c78d9857c3a",
+      "observedAt": "2026-11-12T04:53:59.508Z",
       "range": {
         "startLine": 1,
-        "endLine": 112
+        "endLine": 140
       }
     },
     {
       "id": "8c586b5a-6dfe-43c0-9e0f-8cd885e73a12",
       "kind": "source-code",
-      "claim": "External browser API replacements test lazy ownership, cancellation during provisioning, unknown creation suppression and cleanup failures.",
+      "claim": "Process-boundary fixtures verify credential/config isolation, invalid options, execution separation, bounded outputs, screenshots, unknown outcome suppression and closing races.",
       "location": {
-        "path": "tests/contract/conversation-browser-loop.test.ts"
+        "path": "tests/contract/conversation-agent-browser.test.ts"
       },
-      "hash": "7a3c4585c3ca6d15ca8da476ad148a5228fe623766fd0f6245c18277fbd02307",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "15beb3d9f58985b682e08c1aa9b7a0e84bfa959b4974227b351129efc8b26285",
+      "observedAt": "2026-11-12T05:19:21.322Z",
       "range": {
         "startLine": 1,
-        "endLine": 78
+        "endLine": 96
       }
     },
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-32 define the requested conversation extension list and capability/permission acceptance scope.",
+      "claim": "CHAT-30 through CHAT-35 define extension switches, native local browser replacement, host admission, isolation and cancellation acceptance.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "d369681976c95a0d2fa01f5b25d5804048d5632e0cd44a6eacdccfe7db670c44",
-      "observedAt": "2026-11-12T03:52:07.331Z",
+      "hash": "a00bd28c42c14f0955123abc2095f92820798c0e3a15256222447a2377417b16",
+      "observedAt": "2026-11-12T04:53:59.508Z",
       "range": {
         "startLine": 1,
-        "endLine": 602
+        "endLine": 608
+      }
+    },
+    {
+      "id": "96e31e28-7dec-40fc-be38-c2bae54a9468",
+      "kind": "source-code",
+      "claim": "Owned pinned daemon and process handles, fixed configuration and temporary profiles, local browser binary discovery, bounded private output and awaited shutdown.",
+      "location": {
+        "path": "src/main/infrastructure/pi/agent-browser-process.ts"
+      },
+      "hash": "1757c83d3a3b9d1a0374b6a6ff54f621270b89680722002e96d96f640491f40e",
+      "observedAt": "2026-11-12T05:19:21.323Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 150
+      }
+    },
+    {
+      "id": "5a86001a-4742-4d7a-abf0-5983142f9cb6",
+      "kind": "source-code",
+      "claim": "Opt-in real native acceptance uses disposable localhost React, Chinese input, snapshots, component tree, images and request observations; state survives a reasoning pause before cancellation/profile cleanup.",
+      "location": {
+        "path": "tests/native/local-browser.test.ts"
+      },
+      "hash": "f1e8d8daaabf262667a36d872161e4560f8ad2e80bf1f9f268b0dfa5cd74caa4",
+      "observedAt": "2026-11-12T05:19:21.323Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 64
       }
     }
   ]

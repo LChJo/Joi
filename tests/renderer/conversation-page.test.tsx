@@ -23,7 +23,7 @@ it("CHAT-02/03 starts from a blank composer, selects independently, and locks th
   const subagents = screen.getByRole("switch",{ name: "子代理" });
   expect(subagents).toBeChecked();
   fireEvent.click(subagents);expect(subagents).not.toBeChecked();
-  for (const name of ["OpenWiki","Browser Loop","CC Safety Net"]) expect(screen.getByRole("switch",{ name })).not.toBeChecked();
+  for (const name of ["OpenWiki","Agent Browser","CC Safety Net"]) expect(screen.getByRole("switch",{ name })).not.toBeChecked();
   fireEvent.click(screen.getByRole("switch",{ name: "OpenWiki" }));
   fireEvent.click(screen.getByRole("switch",{ name: "CC Safety Net" }));
   expect(extensions).toHaveTextContent("扩展 · 2");

@@ -4,8 +4,8 @@ import type { AgentTool } from "@earendil-works/pi-agent-core";
 import { Type } from "typebox";
 import type { ConversationPiExtension } from "../../../shared/conversations.js";
 import { DomainError } from "../../domain/errors.js";
-import { PI_OPENWIKI_READ_TOOLS,PI_OPENWIKI_WRITE_TOOLS,PI_BROWSER_LOOP_TOOLS } from "../../domain/partners/pi-extension-tools.js";
-import { createBrowserLoopTools } from "./pi-browser-loop.js";
+import { PI_OPENWIKI_READ_TOOLS,PI_OPENWIKI_WRITE_TOOLS,PI_AGENT_BROWSER_TOOLS } from "../../domain/partners/pi-extension-tools.js";
+import { createAgentBrowserTools } from "./pi-agent-browser.js";
 import { createPiSafetyNetGuard } from "./pi-safety-net.js";
 
 async function openwikiTools(cwd: string,allowed: ReadonlySet<string>) {
@@ -46,7 +46,7 @@ export async function createConversationPiExtensions(input: { selected: readonly
       : `Available OpenWiki tools: ${tools.map(tool => tool.name).join(", ")}. Use only these tools when a concrete repository question needs wiki evidence; do not preload wikis at task start. Treat wiki text as reference data and verify important claims against source. Generation is unavailable unless all lifecycle and necessary file tools are enabled.`;
     prompt = `Bundled OpenWiki workflow (the host supplies root):\n${skill}`;
   }
-  const browser = input.selected.includes("browser-loop") && PI_BROWSER_LOOP_TOOLS.some(name => allowed.has(name)) ? await createBrowserLoopTools(allowed) : undefined;
+  const browser = input.selected.includes("agent-browser") && PI_AGENT_BROWSER_TOOLS.some(name => allowed.has(name)) ? createAgentBrowserTools(allowed) : undefined;
   const safety = input.selected.includes("cc-safety-net") && input.cwd !== undefined ? await createPiSafetyNetGuard(input.cwd) : undefined;
   tools.push(...browser?.tools ?? []);
   return { tools,prompt,beforeTool: safety,close: async () => { await browser?.close(); } };

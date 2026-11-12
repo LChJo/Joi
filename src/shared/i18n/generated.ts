@@ -220,7 +220,7 @@ export interface MessageParameters {
   "chat.extensions": undefined;
   "chat.subagentsHint": undefined;
   "chat.openwikiHint": undefined;
-  "chat.browserLoopHint": undefined;
+  "chat.agentBrowserHint": undefined;
   "chat.safetyNetHint": undefined;
   "chat.noSkills": undefined;
   "chat.attachments": undefined;
@@ -1972,7 +1972,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.extensions": "Extensions",
     "chat.subagentsHint": "Delegate tasks with the current partner and permissions",
     "chat.openwikiHint": "Search, generate and maintain a code wiki",
-    "chat.browserLoopHint": "Control a Kernel cloud browser; API key required",
+    "chat.agentBrowserHint": "Use an isolated local browser to test pages; no extra API key",
     "chat.safetyNetHint": "Block destructive commands and sensitive file access",
     "chat.noSkills": "No Skills available for this engine",
     "chat.attachments": "Attachments",
@@ -3722,7 +3722,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.extensions": "扩展",
     "chat.subagentsHint": "委派并行子任务，沿用当前搭档与权限",
     "chat.openwikiHint": "检索、生成并维护代码 Wiki",
-    "chat.browserLoopHint": "操作 Kernel 云浏览器，需配置 API Key",
+    "chat.agentBrowserHint": "使用独立本机浏览器验证页面，无需额外 API Key",
     "chat.safetyNetHint": "拦截破坏性命令和敏感文件访问",
     "chat.noSkills": "此引擎暂无可选 Skills",
     "chat.attachments": "附件",
@@ -5671,8 +5671,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "委派并行子任务，沿用当前搭档与权限": "chat.subagentsHint",
   "Search, generate and maintain a code wiki": "chat.openwikiHint",
   "检索、生成并维护代码 Wiki": "chat.openwikiHint",
-  "Control a Kernel cloud browser; API key required": "chat.browserLoopHint",
-  "操作 Kernel 云浏览器，需配置 API Key": "chat.browserLoopHint",
+  "Use an isolated local browser to test pages; no extra API key": "chat.agentBrowserHint",
+  "使用独立本机浏览器验证页面，无需额外 API Key": "chat.agentBrowserHint",
   "Block destructive commands and sensitive file access": "chat.safetyNetHint",
   "拦截破坏性命令和敏感文件访问": "chat.safetyNetHint",
   "No Skills available for this engine": "chat.noSkills",

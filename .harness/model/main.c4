@@ -26,11 +26,11 @@ metadata {
 renderer = component "Web renderer" {
 metadata {
  harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
- brief "React desktop/LAN views use shared DTOs and HTTP without privileged imports. Stable tool/activity disclosures retain safe context and public thinking summaries. A themed accessible extension list controls Subagents, OpenWiki, Browser Loop and Safety Net; per-conversation drafts and turn snapshots restore selection, native partners omit Pi extensions, and settings stays last."
+ brief "React views use shared DTOs and HTTP. The accessible extension list controls Subagents, OpenWiki, local Agent Browser and Safety Net. Per-conversation drafts restore current selections; removed cloud IDs do not enable the local replacement. Native partners omit Pi extensions and settings stays last."
  source "fact"
  status "verified"
  evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e"
- version "11"
+ version "12"
 }
 }
 preload = component "Desktop bridge" {
@@ -86,11 +86,11 @@ metadata {
 domain = component "Domain policies" {
 metadata {
  harness_id "b48eb196-1e32-4244-9cb1-070336a79f17"
- brief "Pure TypeScript admission and validation. Explicit Wiki retrieval is READ; Wiki run mutations and every potentially provisioning cloud browser tool require WRITE. Unknown extension tool names remain denied; custom partner minimum access reflects those effects."
+ brief "Pure TypeScript admission and validation. Wiki retrieval is READ; Wiki mutations and local browser tools that launch processes or execute page scripts require WRITE. Unknown names stay denied and custom partner minimum access reflects these effects."
  source "fact"
  status "verified"
  evidence "246218d7-0c42-468a-b979-615c8ca1525d 2bee49b0-f04c-4ce2-8f64-79516009c1e9 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 d6797abc-d945-4aa6-bc1a-49d0558529bc"
- version "4"
+ version "5"
 }
 }
 infrastructure = component "Infrastructure adapters" {
@@ -114,11 +114,11 @@ metadata {
 piSessions = component "Pi context and execution" {
 metadata {
  harness_id "c12f9eba-5f56-4fa1-b864-025e3193a7c3"
- brief "Pinned Pi 1.5.2 sessions reuse Joi context, journals and permission gates. Optional host adapters expose OpenWiki 0.9.0 protocol tools, Browser Loop 0.12.1 function tools and Safety Net 2.7.11 evaluation; ambient SDK discovery and nested extension execution stay disabled. Wiki roots bind to workbenches; billable browsers require WRITE and settle cleanup even after child or journal failure. Codemode/MCP remain research candidates."
+ brief "Pinned Pi 1.5.2 sessions reuse Joi context, journals and permission gates. Host adapters expose OpenWiki 0.9.0, Agent Browser 0.42.0 local tools and Safety Net 2.7.11. Owned daemon handles and isolated profiles replace Kernel cloud execution; schema/argument limits, bounded images/text and awaited failure/cancellation cleanup remain inside this component. Ambient SDK resource discovery and nested extension execution stay disabled. Codemode/MCP remain research candidates."
  source "fact"
  status "verified"
- evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8 dae0093b-300e-4129-8563-fa0ff2ad9f33 793588d4-9226-45ea-bcb5-58e60334355c 68c4824e-2fab-4811-8c3b-de40278beff1 5841bbad-682d-467a-95f9-8acd70e76c32 e06f4768-44ed-4bb9-8347-bba17ca19cbd 217abdfa-12d5-417d-8e0b-7e55f72917f6 d6797abc-d945-4aa6-bc1a-49d0558529bc 2554deb1-dde9-4858-bb55-e867f1d4d116 8c586b5a-6dfe-43c0-9e0f-8cd885e73a12 5bc37929-aa0f-458c-98ae-57aa0ea8090e"
- version "3"
+ evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8 dae0093b-300e-4129-8563-fa0ff2ad9f33 793588d4-9226-45ea-bcb5-58e60334355c 68c4824e-2fab-4811-8c3b-de40278beff1 5841bbad-682d-467a-95f9-8acd70e76c32 e06f4768-44ed-4bb9-8347-bba17ca19cbd 217abdfa-12d5-417d-8e0b-7e55f72917f6 d6797abc-d945-4aa6-bc1a-49d0558529bc 2554deb1-dde9-4858-bb55-e867f1d4d116 8c586b5a-6dfe-43c0-9e0f-8cd885e73a12 5bc37929-aa0f-458c-98ae-57aa0ea8090e 96e31e28-7dec-40fc-be38-c2bae54a9468 5a86001a-4742-4d7a-abf0-5983142f9cb6 4ceef8ae-0316-4837-943b-ab9e9599acc3"
+ version "4"
 }
 }
 }
@@ -126,11 +126,11 @@ metadata {
 shared = component "Shared contracts" {
 metadata {
  harness_id "523ea4b5-9b46-4d67-be22-b9ee3d7d3cfb"
- brief "Shared contracts carry safe conversation activity, history pages and scoped child/cursor metadata. Optional static Pi extension ID arrays remain compatible with existing turn JSON and are validated at application and HTTP boundaries; global Work entry enums stay unchanged."
+ brief "Shared contracts carry safe conversation activity, scoped child/cursor metadata and static Pi extension IDs. Current restoration filters removed IDs without granting replacements; application and HTTP validate new requests. Existing JSON snapshots and global Work enums need no migration."
  source "fact"
  status "verified"
  evidence "67786627-f77c-4800-9ac6-386b484e5f5d b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 24499f6b-3dfd-4a50-836f-0a7b169c1ee2 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "8"
+ version "9"
 }
 }
 relay = component "Browser relay" {

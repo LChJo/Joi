@@ -1,6 +1,6 @@
 import { DomainError } from "../errors.js";
 import type { WorkAccessMode } from "../work/work.js";
-import { PI_OPENWIKI_WRITE_TOOLS,PI_BROWSER_LOOP_TOOLS } from "./pi-extension-tools.js";
+import { PI_OPENWIKI_WRITE_TOOLS,PI_AGENT_BROWSER_TOOLS } from "./pi-extension-tools.js";
 
 export type PartnerKind = "local-pi" | "a2a";
 export type PartnerStatus = "ACTIVE" | "DISABLED" | "DELETED";
@@ -80,7 +80,7 @@ export function minimumLocalWorkAccess(revision: PartnerRevision): WorkAccessMod
   if (revision.kind !== "local-pi") return "NONE";
   if (revision.engine === "codex") return revision.codexPermissions?.sandboxMode === "read-only" ? "READ" : "WRITE";
   if ((revision.toolPolicyMode ?? legacyToolPolicyMode(revision.tools)) === "ALL") return "WRITE";
-  return revision.tools.some((name) => ["bash", "edit", "write", "multiedit", "notebookedit",...PI_OPENWIKI_WRITE_TOOLS,...PI_BROWSER_LOOP_TOOLS].includes(name.toLowerCase())) ? "WRITE" : "READ";
+  return revision.tools.some((name) => ["bash", "edit", "write", "multiedit", "notebookedit",...PI_OPENWIKI_WRITE_TOOLS,...PI_AGENT_BROWSER_TOOLS].includes(name.toLowerCase())) ? "WRITE" : "READ";
 }
 
 export function normalizeToolPolicyMode(value: unknown, tools: readonly string[]): ToolPolicyMode {

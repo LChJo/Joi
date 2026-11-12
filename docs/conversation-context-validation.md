@@ -83,7 +83,7 @@ Validated on Windows on 2026-11-12 with disposable fixtures:
 
 The conversation renderer and Electron cases check placement, tool/metadata colors, keyboard order, disclosure details, copy isolation and mobile overflow, with light/dark screenshots inspected. A settings-layout assertion initially combined rectangles from separate frames and failed by 0.5 px; it now reads them atomically, retaining the original bounds and tolerance, and passed both its isolated run and the complete E2E suite. No production settings-layout change was made. The optional real native CLI suite was not enabled again in this increment; the native thinking regressions use SDK-shaped fake streams, not provider credentials.
 
-## CHAT-30–32: bundled conversation extensions
+## CHAT-30–32: initial bundled extensions (historical)
 
 The composer now has one extension list for Subagents, OpenWiki, Browser Loop and CC Safety Net. Subagents retains its enabled default; the three additional packages default to off. The selection is validated against fixed IDs, normalized for request idempotency and stored in the existing turn configuration JSON. Native partners receive no Pi extensions. No database migration or runtime package installation is required.
 
@@ -112,3 +112,30 @@ Final fixed-gate results on Windows, 2026-11-12:
 | `npm run i18n:check` | Passed |
 
 An additional headless Electron Node-mode smoke loaded the compiled extension adapters with a disposable home/workspace, observed all 27 Wiki/browser tools and blocked a synthetic destructive command; it made zero external requests. Repository coverage thresholds retain their configured domain/application/shared/renderer scope; they do not measure the third-party packages or infrastructure adapters. The optional real native CLI tests were not enabled in this increment.
+
+## CHAT-33–35: local Agent Browser replacement
+
+Agent Browser 0.42.0 replaces the Kernel adapter and its dependencies. The extension list and real SDK request use the static `agent-browser` selection; removed cloud IDs remain historical facts and do not enable a new local capability. All 21 browser tools retain CUSTOM filtering and WRITE admission. Ordinary regression tests use disposable directories, faux models and a synthetic native-process boundary; no actual browser starts before admission.
+
+Failing-first regressions cover the missing SDK selection, isolated native execution, option-shaped/extra arguments, graceful shutdown, and closing while startup is pending. The closing-race regression verifies that no queued action starts after shutdown and concurrent callers await the same cleanup. Unknown outcomes and output overflow poison the execution, preventing further dispatch or automatic replay. Text transport is capped at 512 KiB, model-visible text at 20,000 characters with an omission notice, and PNG screenshots at 8 MiB.
+
+An explicit native run uses the published Windows binary and Chrome for Testing 157.0.8103.78 against a disposable, locally built React fixture. It verifies localhost navigation, Chinese form input, click state, React component tree, inline screenshot, console/request observations, and cancellation cleanup. A 31.5-second reasoning pause first reproduced the daemon's premature idle exit; the resource idle limit now permits normal reasoning while the existing host tool execution limit stays unchanged. After that pause the component state remains available, and aborting a wait closes the browser and deletes its temporary profile. No fixture browser processes remained after the run.
+
+The native run is separate from the default suite. It is enabled with `JOI_BROWSER_SMOKE=1` and an explicit `JOI_BROWSER_SMOKE_EXECUTABLE`; setup is in [.agent/commands/verify.md](../.agent/commands/verify.md). An additional headless Electron Node-mode smoke loaded the compiled adapter and successfully read a synthetic localhost snapshot and returned a PNG. These runs did not read personal browser profiles, real Electron userData, provider credentials or Kernel accounts.
+
+Final Windows gate results for this replacement, 2026-11-12:
+
+| Command | Observed result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed, no warnings |
+| `npm run test -- --reporter=dot --maxWorkers=4` | 356 files / 2,915 tests passed; ten optional native tests skipped |
+| `npm run test:coverage -- --reporter=dot --maxWorkers=4` | 2,915 passed; statements 93.98%, branches 90.20%, functions 92.54%, lines 96.66% |
+| `npm run test:e2e` | 21 passed; light/dark and narrow extension list screenshots inspected |
+| `npm run build:prod` | Passed |
+| `npm run package:verify` | Passed; 787 files verified |
+| `npm run check:boundaries` | Passed |
+| `npm run i18n:check` | Passed |
+| Explicit `tests/native/local-browser.test.ts` | Passed, including the reasoning pause and real cancellation cleanup |
+
+The first concurrent gate run encountered unrelated Git integration and evolution E2E timeouts; the fixed gates passed when rerun sequentially without changing their timeouts. Coverage retains the configured domain/application/shared/renderer scope and does not claim infrastructure or third-party coverage. Windows qualification applies to the tested browser/version pair; arbitrary sites, existing login sessions, macOS/Linux native launch, and an installed NSIS package were not exercised. Native binaries are explicitly declared for ASAR unpacking, and the browser download/setup command is documented separately. Temporary build, browser evaluation and screenshot artifacts are excluded from Git.

@@ -1051,9 +1051,9 @@
     "description": "chat.openwikiHint",
     "placeholders": {}
   },
-  "chatBrowserLoopHint": "Control a Kernel cloud browser; API key required",
-  "@chatBrowserLoopHint": {
-    "description": "chat.browserLoopHint",
+  "chatAgentBrowserHint": "Use an isolated local browser to test pages; no extra API key",
+  "@chatAgentBrowserHint": {
+    "description": "chat.agentBrowserHint",
     "placeholders": {}
   },
   "chatSafetyNetHint": "Block destructive commands and sensitive file access",
