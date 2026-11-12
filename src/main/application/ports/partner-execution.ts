@@ -1,7 +1,7 @@
 import type { PartnerRevision } from "../../domain/partners/partner.js";
 import type { AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
 import type { WorkHandoff, WorkHandoffStatus } from "../../domain/work/work-handoff.js";
-import type { ConversationTurnDto } from "../../../shared/conversations.js";
+import type { ConversationPiExtension,ConversationTurnDto } from "../../../shared/conversations.js";
 
 export type PartnerRunStatus = "COMPLETED" | "FAILED" | "WAITING_INPUT" | "WAITING_AUTH" | "UNKNOWN";
 
@@ -9,6 +9,7 @@ export interface PartnerRunRequest {
   conversationAttachmentContext?: string;
   subagentChild?: boolean;
   subagentsEnabled?: boolean;
+  piExtensions?: ConversationPiExtension[];
   conversationId?: string;
   /** Legacy private import; incomplete tool bodies are identified explicitly by adapters. */
   conversationHistory?: Pick<ConversationTurnDto, "turnId" | "text" | "entries" | "status" | "config">[];

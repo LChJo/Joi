@@ -69,3 +69,25 @@ Pi 的编码能力不只在 `pi-agent-core`：官方 `pi-coding-agent` SDK 已�
 Durable 若以后单独评估，需要注意：官方也明确外部副作用的可重放工具仍需自身幂等，持久化执行不能替代 Joi 的副作用契约。[Durable 嵌套与重放](https://github.com/earendil-works/pi/blob/v1.5.2/packages/durable/README.md#calling-tools-from-tools)
 
 尚未完成：真实任务 A/B、浏览器技能的 Windows 适配验证、嵌套调用 gate 的集成测试，以及默认资源发现与 Joi 自管上下文的去重/优先级设计。本次对 React 专项资源的否定结论仅限已检查的官方文档与示例索引，不代表整个生态不存在相关包。
+
+## 已接入的对话扩展列表（2026-11-12）
+
+包目录中的 `brower-loop` 对应 `@onkernel/browser-loop`。目录收录不代表 Pi 官方维护这三个第三方包；本轮核对发布包源码后，固定 OpenWiki 0.9.0、Browser Loop 0.12.1、CC Safety Net 2.7.11，并保留宿主 Pi 1.5.2。[Pi 包目录](https://pi.dev/packages)
+
+| 包 | 发布包的接口与约束 | Joi 接入 |
+| --- | --- | --- |
+| OpenWiki | 提供 Pi 工具和工作流 Skill，宿主编写文档的流程不需要另一组模型凭据。0.9.0 要求 Node >=22.22.0。 | 适配 `HostSessionManager` 的十项协议工具，使用当前模型执行工作流，不启动独立 CLI/MCP 子进程。仓库根目录固定为工作台，工作台必须绑定 Git 根目录。 |
+| Browser Loop | 正确包名是 `@onkernel/browser-loop`，云浏览器执行需要 Kernel API Key。0.12.1 的 Pi 绑定依赖 Pi 0.83.0。 | 使用普通函数工具声明与 `LoopExecutionResources`，不加载它的会话/供应商绑定，不更换 Joi 模型或流接口。Kernel SDK 固定 0.147.0，采用 17 项浏览器工具。 |
+| CC Safety Net | Pi 集成在 `tool_call` 前分析命令和文件工具；该防护不是 OS 沙箱。 | 复用 2.7.11 的同一核心评估器，在宿主 gate 内执行检查；返回固定阻止说明，省去 CLI 审计文件和原始证据格式化。异常时阻止执行。 |
+
+来源：[OpenWiki 发布包适配器](https://cdn.jsdelivr.net/npm/openwiki@0.9.0/dist/integrations/pi/openwiki.js)、[OpenWiki 包清单](https://cdn.jsdelivr.net/npm/openwiki@0.9.0/package.json)、[Browser Loop 包文档](https://pi.dev/packages/@onkernel/browser-loop)、[Browser Loop 包清单](https://cdn.jsdelivr.net/npm/@onkernel/browser-loop@0.12.1/package.json)、[CC Safety Net Pi 接口](https://cdn.jsdelivr.net/npm/cc-safety-net@2.7.11/dist/pi/index.js)、[防护能力说明](https://ccsafetynet.com/docs).
+
+子代理与三项扩展放在同一列表，三项新扩展默认关闭。选择作为每轮配置保存在现有 JSON 快照中，不需要数据库迁移；仅通过白名单 ID 选择预置依赖，不接受 npm 地址或本地扩展路径。所有工具仍受搭档 ALL/CUSTOM 策略和工作台权限约束。原生搭档不接入这些 Pi 工具，子代理只能继承父执行显式选择的宿主工具，SDK 的任意扩展发现仍关闭。
+
+Browser Loop 使用启动 Joi 时的 `KERNEL_API_KEY`，值不进入模型上下文、对话配置或诊断。首次执行浏览器工具才创建云会话，截图/读页面也先取得 WRITE 租约；未配置 Key 时返回明确错误。每次执行使用新浏览器，结束/取消时等待创建收尾并删除自有资源，历史 tab/ref 不跨执行重用。创建请求关闭 SDK 自动重试，同次执行保留失败的创建 Promise，避免连接结果未知时自动重复创建。真实云端创建结果未知时无法保证服务端已经清理，浏览器自身设有 600 秒超时。
+
+云浏览器与桌面工作区的本机预览独立。本接入没有创建本机开发服务隧道，云端不能直接访问这台电脑的 `localhost`；前端验证需要提供云端可访问的测试地址。
+
+OpenWiki 的 `begin` 恢复持久 run；跨执行继续时应再次 `begin`，不重放已完成页。当前核心协议不提供中途取消文件操作的信号，取消等待已发起操作收尾；已发生事实继续保存在宿主私有历史和包的持久 run。包内模块路径与 CC Safety Net 的文件工具评估接口不是通用稳定 API，因此版本锁与实际 SDK 回归是升级条件，不能直接改为 `latest`。
+
+本轮验证使用临时 Git、SQLite、用户目录、模拟模型和浏览器 API 替身；验证实际 SDK 工具清单、关闭后移除、权限收窄、危险命令/敏感读取被阻止、Wiki run 恢复及浏览器取消收尾。没有调用真实 Kernel 账户，也没有把接口通过称为浏览器任务质量提升。

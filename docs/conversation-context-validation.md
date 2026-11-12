@@ -82,3 +82,33 @@ Validated on Windows on 2026-11-12 with disposable fixtures:
 | `npm run i18n:check` | Passed |
 
 The conversation renderer and Electron cases check placement, tool/metadata colors, keyboard order, disclosure details, copy isolation and mobile overflow, with light/dark screenshots inspected. A settings-layout assertion initially combined rectangles from separate frames and failed by 0.5 px; it now reads them atomically, retaining the original bounds and tolerance, and passed both its isolated run and the complete E2E suite. No production settings-layout change was made. The optional real native CLI suite was not enabled again in this increment; the native thinking regressions use SDK-shaped fake streams, not provider credentials.
+
+## CHAT-30–32: bundled conversation extensions
+
+The composer now has one extension list for Subagents, OpenWiki, Browser Loop and CC Safety Net. Subagents retains its enabled default; the three additional packages default to off. The selection is validated against fixed IDs, normalized for request idempotency and stored in the existing turn configuration JSON. Native partners receive no Pi extensions. No database migration or runtime package installation is required.
+
+Pinned dependencies are OpenWiki 0.9.0, `@onkernel/browser-loop` 0.12.1 and CC Safety Net 2.7.11; host Pi remains 1.5.2. OpenWiki raises the minimum Node version to 22.22.0. The package integration and limitations are recorded in [the research notes](pi-coding-harness-research.md#已接入的对话扩展列表2026-11-12).
+
+- Renderer and HTTP regressions cover the four independent switches, Escape/focus, toolbar order, per-conversation restoration, native partner changes, malformed IDs and retry identity conflicts.
+- Actual faux-provider SDK requests verify enabled and disabled tools, ALL/CUSTOM and READ ceilings, removal on a later turn, safe guard guidance and retrieval-only Wiki guidance. Ambient SDK discovery remains disabled; these adapters expose ordinary host-guarded tools without nested SDK extension execution.
+- A disposable Git repository exercises the published OpenWiki lifecycle, workbench root enforcement and durable run restoration. Wiki retrieval is READ; lifecycle operations that can update run state require WRITE.
+- The actual CC Safety Net evaluator blocks destructive Git commands and secret reads before the synthetic executor runs. Guard failures block execution, and only a fixed explanation reaches tool results; the CLI audit/evidence writer is not used.
+- Browser API replacements verify lazy provisioning, one resource per execution, cancellation during provisioning, cleanup when child settlement fails, and suppression of repeated creation after an unknown failure. Browser tools require WRITE admission even for screenshots because they may create a cloud resource. Missing Kernel credentials are reported without creating a browser.
+
+The tests use disposable database/user directories and credential replacements. No real Kernel account, personal browser profile or production Electron userData is accessed. Live browser task success and cloud-side cleanup after an unknown creation response remain outside this verification. Source modeling keeps these adapters within the existing Pi execution component; third-party package internals and external service internals are not modeled as Joi-owned modules.
+
+Final fixed-gate results on Windows, 2026-11-12:
+
+| Command | Result |
+| --- | --- |
+| `npm run typecheck` | Passed |
+| `npm run lint` | Passed, no warnings |
+| `npm run test -- --reporter=dot --maxWorkers=4` | 356 files / 2,909 tests passed; nine optional native tests skipped |
+| `npm run test:coverage -- --reporter=dot --maxWorkers=4` | 2,909 passed; statements 93.98%, branches 90.20%, functions 92.54%, lines 96.66% |
+| `npm run test:e2e` | 21 passed; extension list checked in light/dark themes and a 390px viewport |
+| `npm run build:prod` | Passed |
+| `npm run package:verify` | Passed; 785 files verified |
+| `npm run check:boundaries` | Passed |
+| `npm run i18n:check` | Passed |
+
+An additional headless Electron Node-mode smoke loaded the compiled extension adapters with a disposable home/workspace, observed all 27 Wiki/browser tools and blocked a synthetic destructive command; it made zero external requests. Repository coverage thresholds retain their configured domain/application/shared/renderer scope; they do not measure the third-party packages or infrastructure adapters. The optional real native CLI tests were not enabled in this increment.

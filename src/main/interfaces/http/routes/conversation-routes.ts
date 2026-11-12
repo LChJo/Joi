@@ -2,6 +2,7 @@ import { AuthError } from "../../../application/auth/auth-service.js";
 import { HttpError, readJson, sendJson, sessionToken, stringField } from "../http-core.js";
 import { exact, pattern, type RouteContext, type RouteDefinition } from "../route-types.js";
 import type { GitCommandInput } from "../../../../shared/conversations.js";
+import { isConversationPiExtensions } from "../../../../shared/conversations.js";
 
 function service(ctx: RouteContext) {
   if (ctx.dependencies.conversations === undefined) throw new HttpError("conversation_unavailable", "Conversations are unavailable.",503);
@@ -24,10 +25,12 @@ export const CONVERSATION_ROUTES: RouteDefinition[] = [
   { auth: "write",id: "POST /api/v1/conversations",match: exact("POST","/api/v1/conversations"),handle: async ctx => {
     const body = await readJson(ctx.request);
     if (body.subagentsEnabled !== undefined && typeof body.subagentsEnabled !== "boolean") throw new HttpError("conversation_selection_invalid","Subagents must be enabled or disabled.",400);
+    if (body.piExtensions !== undefined && !isConversationPiExtensions(body.piExtensions)) throw new HttpError("conversation_selection_invalid","Pi extension selection is invalid.",400);
     for (const key of ["modelId","modelIdOverride","cwd","workspaceRef","revision"]) if (body[key] !== undefined) throw new HttpError("conversation_override_forbidden","Conversation configuration must use Settings and the bound workbench.",400);
     sendJson(ctx.response,202,await service(ctx).send({ conversationId: stringField(body,"conversationId"),workbenchId: stringField(body,"workbenchId"),
       requestId: stringField(body,"requestId"),text: stringField(body,"text"),partnerId: stringField(body,"partnerId"),networkId: stringField(body,"networkId"),
       ...(body.subagentsEnabled === undefined ? {} : { subagentsEnabled: body.subagentsEnabled }),
+      ...(body.piExtensions === undefined ? {} : { piExtensions: body.piExtensions }),
       skills: strings(body,"skills"),attachmentIds: strings(body,"attachmentIds") }));
   } },
   { auth: "read",id: "GET /api/v1/conversations/:id",match: pattern("GET",/^\/api\/v1\/conversations\/([^/]+)$/),handle: async (ctx,match) => sendJson(ctx.response,200,await service(ctx).get(decodeURIComponent(((match as RegExpExecArray)[1] ?? "")))) },

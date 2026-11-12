@@ -47,9 +47,15 @@ test("normal conversation layout, independent selectors, inherited context and G
     await expect(page.locator(".chat-context-strip")).toBeVisible();
     const sendButton = page.getByRole("button",{ name: "发送消息" });
     await expect(sendButton).toBeDisabled();
-    await expect(page.getByRole("button",{ name: "子代理",exact: true })).toHaveAttribute("aria-pressed","true");
+    await page.getByRole("button",{ name: "扩展",exact: true }).click();
+    await expect(page.getByRole("switch",{ name: "子代理",exact: true })).toBeChecked();
+    for (const name of ["OpenWiki","Browser Loop","CC Safety Net"]) await expect(page.getByRole("switch",{ name,exact: true })).not.toBeChecked();
+    await page.getByRole("switch",{ name: "OpenWiki",exact: true }).check();
+    await page.getByRole("switch",{ name: "CC Safety Net",exact: true }).check();
+    await page.screenshot({ path: "test-results/conversation-extensions.png" });
+    await page.keyboard.press("Escape");await expect(page.getByRole("button",{ name: "扩展",exact: true })).toBeFocused();
     expect(await page.locator(".chat-composer-toolbar").evaluate(element => [...element.querySelectorAll(":scope > button, :scope > .chat-picker > button")].map(button => button.getAttribute("aria-label"))))
-      .toEqual(["附件","大模型网络","搭档","Skills","子代理","前往大模型网络设置","发送消息"]);
+      .toEqual(["附件","大模型网络","搭档","Skills","扩展","前往大模型网络设置","发送消息"]);
     const sendShape = await sendButton.evaluate(element => { const box=element.getBoundingClientRect();return { width: box.width,height: box.height,radius: parseFloat(getComputedStyle(element).borderRadius) }; });
     expect(sendShape.width).toBeGreaterThanOrEqual(32);expect(sendShape.width).toBeLessThanOrEqual(36);expect(sendShape.height).toBe(sendShape.width);expect(sendShape.radius).toBeLessThanOrEqual(8);
     const expandedWidth = await page.locator(".sidebar").evaluate(element => element.getBoundingClientRect().width);
@@ -61,7 +67,7 @@ test("normal conversation layout, independent selectors, inherited context and G
     await page.getByRole("option",{ name: /研发网络/ }).click();
     await page.locator(".chat-composer").getByRole("button",{ name: "搭档",exact: true }).click();await page.getByRole("option",{ name: /joi/ }).click();
     await page.getByRole("textbox",{ name: "消息" }).fill("让输入框更轻");await page.getByRole("button",{ name: "发送消息" }).click();
-    await expect(page.locator(".chat-context-strip")).toHaveCount(0);expect(sent).toHaveLength(1);expect(sent[0]).not.toHaveProperty("modelId");
+    await expect(page.locator(".chat-context-strip")).toHaveCount(0);expect(sent).toHaveLength(1);expect(sent[0]).not.toHaveProperty("modelId");expect(sent[0]?.piExtensions).toEqual(["openwiki","cc-safety-net"]);
     await expect(page.locator(".chat-output table")).toBeVisible();
     const tools = page.locator(".chat-tool-group"),toolSummary = tools.locator("summary");
     await expect(toolSummary).toContainText("bash");await expect(toolSummary).toContainText("共 2 次");
@@ -94,7 +100,8 @@ test("normal conversation layout, independent selectors, inherited context and G
       const luminance = (color: string) => { const rgb = (color.match(/\d+/g) ?? []).slice(0,3).map(Number).map(v => { const s=v/255;return s<=0.04045 ? s/12.92 : ((s+0.055)/1.055)**2.4; });return 0.2126*(rgb[0] ?? 0)+0.7152*(rgb[1] ?? 0)+0.0722*(rgb[2] ?? 0); };
       const style=getComputedStyle(element),a=luminance(style.color),b=luminance(style.backgroundColor);return (Math.max(a,b)+0.05)/(Math.min(a,b)+0.05);
     });
-    expect(contrast).toBeGreaterThanOrEqual(4.5);await page.screenshot({ path: "test-results/conversation-production-dark.png" });await page.emulateMedia({ colorScheme: "light" });
+    expect(contrast).toBeGreaterThanOrEqual(4.5);await page.screenshot({ path: "test-results/conversation-production-dark.png" });
+    await page.getByRole("button",{ name: "扩展",exact: true }).click();await page.screenshot({ path: "test-results/conversation-extensions-dark.png" });await page.keyboard.press("Escape");await page.emulateMedia({ colorScheme: "light" });
     for (const colorScheme of ["light","dark"] as const) {
       await page.emulateMedia({ colorScheme });
       await expect(sendButton).toBeDisabled();
@@ -114,6 +121,10 @@ test("normal conversation layout, independent selectors, inherited context and G
       expect(dimensions.width,JSON.stringify(dimensions)).toBeLessThanOrEqual(dimensions.viewport);
       await expect(page.getByRole("textbox",{ name: "消息" })).toBeVisible();
       if (size.width === 390) {
+        await page.getByRole("button",{ name: "扩展",exact: true }).click();
+        const extensionBounds = await page.getByRole("dialog",{ name: "扩展" }).boundingBox();
+        expect(extensionBounds?.x).toBeGreaterThanOrEqual(0);expect((extensionBounds?.x ?? 0) + (extensionBounds?.width ?? 0)).toBeLessThanOrEqual(390);
+        await page.screenshot({ path: "test-results/conversation-extensions-mobile.png" });await page.keyboard.press("Escape");
         await toolSummary.click();await expect(tools.locator("li").last().locator("code")).toHaveText(toolParameters);
         const toolWidth = await tools.locator("li").last().evaluate(element => ({ width: element.clientWidth,scrollWidth: element.scrollWidth }));
         expect(toolWidth.scrollWidth).toBeLessThanOrEqual(toolWidth.width);

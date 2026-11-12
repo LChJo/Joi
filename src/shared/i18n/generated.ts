@@ -217,6 +217,11 @@ export interface MessageParameters {
   "chat.nativeNetwork": undefined;
   "chat.partner": undefined;
   "chat.skills": undefined;
+  "chat.extensions": undefined;
+  "chat.subagentsHint": undefined;
+  "chat.openwikiHint": undefined;
+  "chat.browserLoopHint": undefined;
+  "chat.safetyNetHint": undefined;
   "chat.noSkills": undefined;
   "chat.attachments": undefined;
   "chat.addFiles": undefined;
@@ -1964,6 +1969,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.nativeNetwork": "Uses the partner's native engine configuration",
     "chat.partner": "Partner",
     "chat.skills": "Skills",
+    "chat.extensions": "Extensions",
+    "chat.subagentsHint": "Delegate tasks with the current partner and permissions",
+    "chat.openwikiHint": "Search, generate and maintain a code wiki",
+    "chat.browserLoopHint": "Control a Kernel cloud browser; API key required",
+    "chat.safetyNetHint": "Block destructive commands and sensitive file access",
     "chat.noSkills": "No Skills available for this engine",
     "chat.attachments": "Attachments",
     "chat.addFiles": "Add files…",
@@ -3709,6 +3719,11 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.nativeNetwork": "使用搭档原生引擎的配置",
     "chat.partner": "搭档",
     "chat.skills": "Skills",
+    "chat.extensions": "扩展",
+    "chat.subagentsHint": "委派并行子任务，沿用当前搭档与权限",
+    "chat.openwikiHint": "检索、生成并维护代码 Wiki",
+    "chat.browserLoopHint": "操作 Kernel 云浏览器，需配置 API Key",
+    "chat.safetyNetHint": "拦截破坏性命令和敏感文件访问",
     "chat.noSkills": "此引擎暂无可选 Skills",
     "chat.attachments": "附件",
     "chat.addFiles": "添加文件…",
@@ -5650,6 +5665,16 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "Partner": "chat.partner",
   "搭档": "common.partners",
   "Skills": "settings.skills",
+  "Extensions": "chat.extensions",
+  "扩展": "chat.extensions",
+  "Delegate tasks with the current partner and permissions": "chat.subagentsHint",
+  "委派并行子任务，沿用当前搭档与权限": "chat.subagentsHint",
+  "Search, generate and maintain a code wiki": "chat.openwikiHint",
+  "检索、生成并维护代码 Wiki": "chat.openwikiHint",
+  "Control a Kernel cloud browser; API key required": "chat.browserLoopHint",
+  "操作 Kernel 云浏览器，需配置 API Key": "chat.browserLoopHint",
+  "Block destructive commands and sensitive file access": "chat.safetyNetHint",
+  "拦截破坏性命令和敏感文件访问": "chat.safetyNetHint",
   "No Skills available for this engine": "chat.noSkills",
   "此引擎暂无可选 Skills": "chat.noSkills",
   "Attachments": "chat.attachments",

@@ -1,5 +1,5 @@
 import { DomainError } from "../../domain/errors.js";
-import type { SendConversationInput, ConversationDto, ConversationInheritanceDto } from "../../../shared/conversations.js";
+import { CONVERSATION_PI_EXTENSIONS,isConversationPiExtensions,type SendConversationInput,type ConversationDto,type ConversationInheritanceDto } from "../../../shared/conversations.js";
 import type { ConversationStore } from "../ports/conversations.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type { WorkbenchCatalog, WorkbenchContextSnapshotStore, WorkbenchWorkspaceRepository } from "../ports/workbench-context.js";
@@ -71,11 +71,14 @@ export class ConversationService {
     if (!Array.isArray(input.skills) || !Array.isArray(input.attachmentIds) || input.skills.length > 64 || input.attachmentIds.length > 16
       || [...input.skills,...input.attachmentIds].some(s => typeof s !== "string" || s.length > 240)) throw new DomainError("conversation_selection_invalid", "Conversation selections are invalid.");
     if (input.subagentsEnabled !== undefined && typeof input.subagentsEnabled !== "boolean") throw new DomainError("conversation_selection_invalid","Child agent selection is invalid.");
+    if (input.piExtensions !== undefined && !isConversationPiExtensions(input.piExtensions)) throw new DomainError("conversation_selection_invalid","Pi extension selection is invalid.");
+    const piExtensions = CONVERSATION_PI_EXTENSIONS.filter(id => input.piExtensions?.includes(id));
     const prior = await this.dependencies.store.request(input.requestId);
     if (prior !== null) {
       if (prior.conversation.conversationId !== input.conversationId || prior.conversation.workbenchId !== input.workbenchId || prior.text !== input.text.trim()
         || prior.turn.config.partnerId !== input.partnerId || prior.turn.config.networkId !== input.networkId
         || (prior.turn.config.subagentsEnabled ?? true) !== (input.subagentsEnabled ?? true)
+        || JSON.stringify(CONVERSATION_PI_EXTENSIONS.filter(id => prior.turn.config.piExtensions?.includes(id))) !== JSON.stringify(piExtensions)
         || JSON.stringify(prior.turn.config.skills) !== JSON.stringify(input.skills) || JSON.stringify(prior.turn.config.attachmentIds) !== JSON.stringify(input.attachmentIds)) throw new DomainError("conversation_request_conflict", "Request identity is already in use.");
       return prior.conversation;
     }
@@ -84,6 +87,7 @@ export class ConversationService {
     if (existing !== null && existing.workbenchId !== input.workbenchId) throw new DomainError("conversation_workbench_locked", "The conversation workbench cannot be changed.");
     const revision = await this.dependencies.revisions.getActive(input.partnerId);
     if (revision?.status !== "ACTIVE" || revision.kind !== "local-pi") throw new DomainError("conversation_partner_unavailable", "Select an active local partner.");
+    if (revision.engine !== "pi-core" && piExtensions.length > 0) throw new DomainError("conversation_selection_invalid","Pi extensions require a Pi partner.");
     const network = (await this.dependencies.networks.list()).find(n => n.sourceId === input.networkId);
     if (revision.engine === "pi-core" && network?.status !== "READY") throw new DomainError("model_source_not_ready", "Select a ready model network from Settings.");
     this.dependencies.skills.validateRefs(revision.engine,input.skills);
@@ -103,7 +107,7 @@ export class ConversationService {
         networkId: revision.engine === "pi-core" ? input.networkId : "native",networkName: revision.engine === "pi-core" ? network?.displayName ?? "" : revision.engine,
         modelName: revision.engine === "pi-core" ? network?.activeModel.id ?? "" : revision.engineModelId ?? revision.engine,
         ...(revision.engine !== "pi-core" || network?.activeSourceRevisionId === undefined || network.activeModel.revisionId === undefined ? {} : { sourceRevisionId: network.activeSourceRevisionId,modelRevisionId: network.activeModel.revisionId }),
-        subagentsEnabled: input.subagentsEnabled ?? true,skills: [...input.skills],attachmentIds: [...input.attachmentIds] } });
+        subagentsEnabled: input.subagentsEnabled ?? true,piExtensions,skills: [...input.skills],attachmentIds: [...input.attachmentIds] } });
   }
   async stop(id: string) {
     await this.get(id);
@@ -195,6 +199,7 @@ export class ConversationService {
           conversationId: record.conversation.conversationId,...(history === undefined ? {} : { conversationHistory: history }),
           conversationAttachmentContext: attachmentSection,
           subagentsEnabled: record.turn.config.subagentsEnabled ?? true,
+          piExtensions: record.turn.config.piExtensions ?? [],
           workspaceExecution: { accessCeiling: "WRITE",generation: phase === "READ_RUNNING" ? 1 : 2,phase } },
         onConversation: p => progress(p.conversation()),
       }); };

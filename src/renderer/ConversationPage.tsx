@@ -8,12 +8,14 @@ import { ConversationWorkspace } from "./ConversationWorkspace";
 import { ConversationOutput } from "./ConversationOutput";
 import { ConversationHistoryRow } from "./ConversationHistoryRow";
 import { DeleteConversationDialog } from "./ConversationDialogs";
-import type { ConversationDto, ConversationInheritanceDto, ConversationSummaryDto, ConversationTurnStatus, SendConversationInput } from "../shared/conversations";
+import { CONVERSATION_PI_EXTENSIONS,type ConversationDto,type ConversationInheritanceDto,type ConversationPiExtension,type ConversationSummaryDto,type ConversationTurnStatus,type SendConversationInput } from "../shared/conversations";
 import type { JoiAttachmentDto, ModelSourceDto, PartnerDto, WorkbenchDto } from "../shared/joi";
 import "./conversations.css";
 
-type Picker = "workbench" | "network" | "partner" | "skills" | "attachments" | "inheritance" | "help" | null;
-interface Draft { id: string; workbenchId: string; text: string; partnerId: string; networkId: string; skills: string[]; attachments: JoiAttachmentDto[]; started?: boolean;subagentsEnabled?: boolean; }
+type Picker = "workbench" | "network" | "partner" | "skills" | "extensions" | "attachments" | "inheritance" | "help" | null;
+interface Draft { id: string; workbenchId: string; text: string; partnerId: string; networkId: string; skills: string[]; attachments: JoiAttachmentDto[]; started?: boolean;subagentsEnabled?: boolean;piExtensions?: ConversationPiExtension[]; }
+const extensionLabels = { openwiki: "OpenWiki","browser-loop": "Browser Loop","cc-safety-net": "CC Safety Net" };
+const extensionHints = { openwiki: "chat.openwikiHint","browser-loop": "chat.browserLoopHint","cc-safety-net": "chat.safetyNetHint" } as const;
 const drafts = new WeakMap<DigitalLifeApi, Map<string,Draft>>();
 function statusText(status: ConversationTurnStatus) {
   return status === "QUEUED" ? t("chat.queued") : status === "RUNNING" ? t("chat.running") : status === "FAILED" ? t("chat.failed") : status === "STOPPED" ? t("chat.stopped") : status === "INTERRUPTED" ? t("chat.interrupted") : t("chat.completed");
@@ -195,7 +197,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
       const latest = next.turns.at(-1);
       const saved = drafts.get(api)?.get(id);
       activeId.current = id;setConversation(next);setPicker(null);setNotice(null);nearBottom.current = true;
-      setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: latest?.config.partnerId ?? "joi-chat",networkId: latest?.config.networkId ?? draft.networkId,skills: latest?.config.skills ?? [],attachments: [],started: true,subagentsEnabled: latest?.config.subagentsEnabled ?? true });
+      setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: latest?.config.partnerId ?? "joi-chat",networkId: latest?.config.networkId ?? draft.networkId,skills: latest?.config.skills ?? [],attachments: [],started: true,subagentsEnabled: latest?.config.subagentsEnabled ?? true,piExtensions: latest?.config.piExtensions ?? [] });
     } catch (error) { showError(error); }
   };
   const newChat = () => {
@@ -231,7 +233,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     if (busy || submitting || uploading || restoring || draft.text.trim() === "" || draft.workbenchId === "") return;
     setSubmitting(true);setNotice(null);setPicker(null);
     pendingRequest.current ??= { conversationId: draft.id,workbenchId: draft.workbenchId,text: draft.text,partnerId: draft.partnerId,networkId: native ? "native" : draft.networkId,
-      subagentsEnabled: draft.subagentsEnabled ?? true,skills: draft.skills,attachmentIds: draft.attachments.map(a => a.attachmentId),requestId: randomUuid() };
+      subagentsEnabled: draft.subagentsEnabled ?? true,piExtensions: native ? [] : draft.piExtensions ?? [],skills: draft.skills,attachmentIds: draft.attachments.map(a => a.attachmentId),requestId: randomUuid() };
     try { const next = await api.sendConversation(pendingRequest.current);if (activeId.current === next.conversationId) { setConversation(next);setDraft(d => ({ ...d,text: "",attachments: [],started: true }));nearBottom.current = true; } pendingRequest.current = null;await loadHistory(); }
     catch (error) { showError(error); } finally { setSubmitting(false); }
   };
@@ -294,7 +296,12 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
             <PickerButton name={t("chat.partner")} label={selectedPartner?.displayName ?? "joi"} icon={<RobotIcon />} open={picker === "partner"} onToggle={() => toggle("partner")}><div role="listbox" aria-label={t("chat.partner")}><button aria-selected={draft.partnerId === "joi-chat"} onClick={() => { patchDraft({ partnerId: "joi-chat",skills: [] });setPicker(null); }} role="option" type="button">joi<small>Pi</small></button>{partners.map(p => <button aria-selected={draft.partnerId === p.partnerId} key={p.partnerId} onClick={() => { patchDraft({ partnerId: p.partnerId,skills: p.skills });setPicker(null); }} role="option" type="button">{p.displayName}<small>{p.engine}</small></button>)}</div></PickerButton>
             <PickerButton name={t("chat.skills")} label={<>{t("chat.skills")}{draft.skills.length > 0 ? ` · ${String(draft.skills.length)}` : ""}</>} icon={<SparkleIcon />} open={picker === "skills"} onToggle={() => toggle("skills")}>
               {skillOptions.length === 0 ? <p>{t("chat.noSkills")}</p> : skillOptions.map(s => <label key={s.id}><input checked={draft.skills.includes(s.id)} onChange={() => patchDraft({ skills: draft.skills.includes(s.id) ? draft.skills.filter(id => id !== s.id) : [...draft.skills,s.id] })} type="checkbox" />{s.displayName}</label>)}</PickerButton>
-            {native ? null : <button aria-label={t("chat.subagents")} aria-pressed={draft.subagentsEnabled ?? true} className="chat-subagent-switch" onClick={() => patchDraft({ subagentsEnabled: !(draft.subagentsEnabled ?? true) })} type="button"><NetworkIcon weight={draft.subagentsEnabled === false ? "regular" : "fill"} /><span>{t("chat.subagents")}</span></button>}
+            {native ? null : <PickerButton name={t("chat.extensions")} label={`${t("chat.extensions")} · ${String((draft.subagentsEnabled === false ? 0 : 1) + (draft.piExtensions?.length ?? 0))}`} icon={<NetworkIcon />} open={picker === "extensions"} onToggle={() => toggle("extensions")}>
+              <div className="chat-extension-list">
+                <label><span>{t("chat.subagents")}<small>{t("chat.subagentsHint")}</small></span><input aria-label={t("chat.subagents")} checked={draft.subagentsEnabled ?? true} onChange={() => patchDraft({ subagentsEnabled: !(draft.subagentsEnabled ?? true) })} role="switch" type="checkbox" /></label>
+                {CONVERSATION_PI_EXTENSIONS.map(id => <label key={id}><span>{extensionLabels[id]}<small>{t(extensionHints[id])}</small></span><input aria-label={extensionLabels[id]} checked={draft.piExtensions?.includes(id) ?? false} onChange={() => patchDraft({ piExtensions: CONVERSATION_PI_EXTENSIONS.filter(value => value === id ? !draft.piExtensions?.includes(id) : draft.piExtensions?.includes(value)) })} role="switch" type="checkbox" /></label>)}
+              </div>
+            </PickerButton>}
             <button aria-label={t("chat.settings")} className="chat-settings-button" onClick={onSettings} title="Ctrl / ⌘ + ," type="button"><GearSixIcon /></button>
             {busy ? <button aria-label={t("chat.stop")} className="chat-send is-stop" onClick={() => void api.stopConversation(draft.id).then(() => api.getConversation(draft.id)).then(setConversation).catch(showError)} type="button"><StopIcon weight="fill" /></button>
               : <button aria-label={t("chat.send")} className="chat-send" disabled={submitting || restoring || uploading || draft.text.trim() === "" || draft.workbenchId === "" || (!native && selectedNetwork?.status !== "READY")} type="submit"><ArrowUpIcon weight="bold" /></button>}

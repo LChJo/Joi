@@ -136,7 +136,37 @@ it("CHAT-22/23 keeps the subagent setting in the next turn and reports a scoped 
   fireEvent.click(screen.getByText(/子代理：/,{ selector: "summary" }));fireEvent.click(screen.getByRole("button",{ name: "取消" }));
   expect(await screen.findByRole("alert")).toHaveTextContent("请求未完成，请重试。");
   fireEvent.click(screen.getByRole("button",{ name: "取消" }));await waitFor(() => expect(cancel).toHaveBeenCalledTimes(2));expect(cancel).toHaveBeenLastCalledWith("first","child");
-  fireEvent.click(screen.getByRole("button",{ name: "子代理" }));
+  fireEvent.click(screen.getByRole("button",{ name: "扩展" }));
+  fireEvent.click(screen.getByRole("switch",{ name: "子代理" }));
   fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Continue without children" } });fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));
   await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ conversationId: "first",subagentsEnabled: false })));
+});
+
+it("CHAT-30 restores independent extension switches from history and keeps them while changing partners",async () => {
+  const { api,get,send } = setup();
+  get.mockImplementation(id => {
+    const item = conversation(id),turn = item.turns[0];
+    if (id === "first" && turn !== undefined) turn.config = { ...turn.config,subagentsEnabled: false,piExtensions: ["openwiki"] };
+    return Promise.resolve(item);
+  });
+  render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
+  fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await screen.findByRole("heading",{ name: "Formatted answer" });
+  fireEvent.click(screen.getByRole("button",{ name: "扩展" }));
+  expect(screen.getByRole("switch",{ name: "子代理" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "OpenWiki" })).toBeChecked();
+  fireEvent.click(screen.getByRole("switch",{ name: "Browser Loop" }));
+  await act(async () => { fireEvent.click(screen.getByRole("button",{ name: /^设计讨论$/ }));await Promise.resolve(); });
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith("second"));
+  fireEvent.click(screen.getByRole("button",{ name: "扩展" }));
+  expect(screen.getByRole("switch",{ name: "OpenWiki" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "子代理" })).toBeChecked();
+  await act(async () => { fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await Promise.resolve(); });await waitFor(() => expect(get).toHaveBeenLastCalledWith("first"));
+  fireEvent.click(screen.getByRole("button",{ name: "扩展" }));expect(screen.getByRole("switch",{ name: "Browser Loop" })).toBeChecked();
+  fireEvent.click(screen.getByRole("button",{ name: "搭档" }));
+  await act(async () => { fireEvent.click(screen.getByRole("option",{ name: /Native partner/ }));await Promise.resolve(); });
+  expect(screen.queryByRole("button",{ name: "扩展" })).not.toBeInTheDocument();
+  fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "Native continuation" } });
+  await act(async () => { fireEvent.click(screen.getByRole("button",{ name: "发送消息" }));await Promise.resolve(); });
+  await waitFor(() => expect(send).toHaveBeenCalledWith(expect.objectContaining({ partnerId: "native",piExtensions: [] })));
+  fireEvent.click(screen.getByRole("button",{ name: "搭档" }));
+  await act(async () => { fireEvent.click(screen.getByRole("option",{ name: /joi/ }));await Promise.resolve(); });
+  fireEvent.click(screen.getByRole("button",{ name: "扩展" }));expect(screen.getByRole("switch",{ name: "OpenWiki" })).toBeChecked();expect(screen.getByRole("switch",{ name: "Browser Loop" })).toBeChecked();
 });

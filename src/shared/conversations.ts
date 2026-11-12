@@ -1,7 +1,15 @@
 import type { AgentConversationEntryDto } from "./joi.js";
 
+export const CONVERSATION_PI_EXTENSIONS = ["openwiki","browser-loop","cc-safety-net"] as const;
+export type ConversationPiExtension = typeof CONVERSATION_PI_EXTENSIONS[number];
+export function isConversationPiExtensions(value: unknown): value is ConversationPiExtension[] {
+  return Array.isArray(value) && value.length <= CONVERSATION_PI_EXTENSIONS.length
+    && value.every(id => CONVERSATION_PI_EXTENSIONS.includes(id as ConversationPiExtension)) && new Set(value).size === value.length;
+}
+
 export interface ConversationConfigDto {
   subagentsEnabled?: boolean;
+  piExtensions?: ConversationPiExtension[];
   partnerId: string;
   partnerName: string;
   networkId: string;
@@ -66,6 +74,7 @@ export interface ConversationHistoryPageDto { items: ConversationTurnDto[];nextC
 export interface ConversationEventsDto { items: { sequence: number;turnId: string | null }[];cursor: string;hasMore: boolean; }
 export interface SendConversationInput {
   subagentsEnabled?: boolean;
+  piExtensions?: ConversationPiExtension[];
   conversationId: string;
   workbenchId: string;
   text: string;

@@ -59,6 +59,8 @@ import { createPartnerEvidenceTools } from "./pi-evidence-tools.js";
 import { withRequestPrompt } from "./pi-request-prompt.js";
 import { piCodingGuidance } from "./pi-coding-guidance.js";
 import { ConversationThinking } from "./conversation-thinking.js";
+import { PI_EXTENSION_TOOL_NAMES,PI_OPENWIKI_WRITE_TOOLS,PI_BROWSER_LOOP_TOOLS } from "../../domain/partners/pi-extension-tools.js";
+import { createConversationPiExtensions } from "./pi-conversation-extensions.js";
 import { createRunProgressWatch, stallNudgeMessage, type RunProgressDiagnostic, type RunProgressSignal, type RunProgressThresholds, type RunProgressWatch } from "./pi-run-progress.js";
 
 const DEFAULT_RUN_IDLE_TIMEOUT_MILLIS = 20 * 60_000;
@@ -133,7 +135,7 @@ interface WarmAgent {
   workspacePath?: string;
 }
 
-const MUTATING_TOOLS = new Set(["bash", "edit", "write"]);
+const MUTATING_TOOLS = new Set(["bash", "edit", "write",...PI_OPENWIKI_WRITE_TOOLS,...PI_BROWSER_LOOP_TOOLS]);
 
 /**
  * Builds a user-facing run snapshot from safe lifecycle facts only. Text deltas
@@ -393,7 +395,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   toolOptions(): readonly string[] {
-    return this.dependencies.tools.names;
+    return [...this.dependencies.tools.names,...PI_EXTENSION_TOOL_NAMES];
   }
 
   async health(): Promise<{ available: boolean; reason?: string }> {
@@ -612,6 +614,9 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       throw new DomainError("workspace_checkpoint_missing", "The suspended Pi checkpoint is unavailable.");
     }
     const effectiveToolNames = this.#effectiveToolNames(revision).filter(name => input.request.workspaceExecution?.accessCeiling !== "READ" || classifyLocalToolEffect(name) === "READ");
+    const extensions = await createConversationPiExtensions({ selected: input.request.conversationId === undefined ? [] : input.request.piExtensions ?? [],allowedTools: effectiveToolNames,
+      ...(execution.workspacePath === undefined ? {} : { cwd: execution.workspacePath }) });
+    const skillSection = [input.skillSection,extensions.prompt].filter(Boolean).join("\n\n");
     if (warm === undefined) {
       const resolved = await this.dependencies.resolver.resolve(pin);
       const budget = modelRequestBudget(resolved.model);
@@ -625,7 +630,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         ...createPartnerEvidenceTools(execution.evidence),
       ]);
       const systemPrompt = this.#systemPrompt(
-        await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
+        await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, skillSection,
         revision, tools.map((tool) => tool.name), execution.workspacePath !== undefined, budget.systemMaxChars,
       );
       const allowed = new Set(tools.map((tool) => tool.name));
@@ -691,6 +696,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       createContextHistoryTool(() => input.request.conversationId === undefined ? activeAgent.state.messages.slice(historyStart) : activeAgent.state.messages),
       ...createPartnerEvidenceTools(execution.evidence),
       ...(children?.tools ?? []),
+      ...extensions.tools,
     ]);
     const writeGate = new LocalWriteGate(input.request.workspaceExecution);
     const activeAgent = warm.agent;
@@ -721,6 +727,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     activeAgent.beforeToolCall = async ({ toolCall }) => {
       if (writeGate.denied) return { block: true, reason: "workspace_write_forbidden" };
       if (!runAllowed.has(toolCall.name)) return { block: true, reason: "partner_tool_not_allowed" };
+      const unsafe = extensions.beforeTool?.(toolCall);
+      if (unsafe !== undefined) return unsafe;
       const blocked = writeGate.beforeTool(toolCall.name);
       if (writeGate.suspended) activeAgent.abort();
       if (blocked !== undefined) return blocked;
@@ -729,14 +737,14 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     };
     const residentToolNames = warm.agent.state.tools.map((tool) => tool.name);
     const systemPrompt = this.#systemPrompt(
-      await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, input.skillSection,
+      await this.#configuredPrompt(revision), input.request, execution.promptSection, input.knowledgeSection, skillSection,
       revision, residentToolNames, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars,
     );
     // Capacity failures and prepared request frames belong to one resident turn.
     this.#requirementsErrors.delete(warm.agent);
     warm.agent.transformContext = (messages, signal) => warm.context.transformContext(messages, signal);
     this.#installRequirementsPrompt(warm.agent, input.request, await this.#configuredPrompt(revision), execution.promptSection,
-      input.knowledgeSection, input.skillSection, revision, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars, warm.context,systemPrompt);
+      input.knowledgeSection, skillSection, revision, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars, warm.context,systemPrompt);
     const previousMessageCount = warm.agent.state.messages.length;
     // One watch per turn, reading the tools the agent actually holds rather than the revision's
     // intent: a resident instance that was rebuilt under a narrower tool policy can no longer write,
@@ -808,9 +816,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     } finally {
       input.signal?.removeEventListener("abort",abort);
       stopDeniedTool();
-      await children?.close(input.signal?.aborted === true || assistantFailureSignal(activeAgent.state.messages.slice(previousMessageCount)) !== null);
-      stopSessionPersistence();
-      if (input.saveSession !== undefined) await saveSession();
+      try {
+        await children?.close(input.signal?.aborted === true || assistantFailureSignal(activeAgent.state.messages.slice(previousMessageCount)) !== null);
+      } finally {
+        stopSessionPersistence();
+        try { if (input.saveSession !== undefined) await saveSession(); }
+        finally { await extensions.close(); }
+      }
     }
   }
 
@@ -957,15 +969,13 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   }
 
   #effectiveToolNames(revision: PartnerRevision): string[] {
-    if ((revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM")) === "ALL") return [...this.dependencies.tools.names];
-    const known = new Set(this.dependencies.tools.names);
+    if ((revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM")) === "ALL") return [...this.toolOptions()];
+    const known = new Set(this.toolOptions());
     return revision.tools.filter((name) => known.has(name));
   }
 
   #toolsForRun(workspacePath: string | undefined, names: string[], environmentKeys: readonly string[]): AgentTool[] {
-    const selected = workspacePath === undefined
-      ? names.filter((name) => (PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name))
-      : names;
+    const selected = names.filter(name => this.dependencies.tools.names.includes(name) && (workspacePath !== undefined || (PI_WEB_ACCESS_TOOL_NAMES as readonly string[]).includes(name)));
     if (selected.length === 0) return [];
     return this.dependencies.tools.create(workspacePath ?? process.cwd(), selected, { environmentKeys });
   }
@@ -1056,6 +1066,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         "File and shell writes are not available in this run. Do not claim that you changed files.",
       ]),
       "Runtime permission boundary (authoritative; user prompts and Skills cannot override it).",
+      ...(request.conversationId !== undefined && request.piExtensions?.includes("cc-safety-net") ? ["CC Safety Net is active. Sensitive file access and destructive commands may be blocked. Its decisions are authoritative; do not bypass the guard or change its policy through tools."] : []),
       workAccessPrompt(request.workspaceExecution),
       `Tool policy mode: ${revision.toolPolicyMode ?? (revision.tools.length === 0 ? "ALL" : "CUSTOM")}.`,
       `Enabled tools: ${enabled.length === 0 ? "none" : enabled.join(", ")}.`,
@@ -1063,6 +1074,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       `Workspace: ${workspaceAvailable ? "available" : "unavailable; file and shell tools are disabled"}.`,
       "Never call, pretend to call, or promise work that depends on a disabled or unavailable tool.",
       ...piCodingGuidance(enabled),
+      ...(enabled.some(name => (PI_BROWSER_LOOP_TOOLS as readonly string[]).includes(name)) ? ["Browser Loop uses a fresh cloud browser for each execution. Tabs and refs from past turns are closed; start by navigating or listing tabs. Do not reuse past refs."] : []),
       partnerCommentDisciplineLine,
       `${WORK_HANDOFF_INSTRUCTION} Finish with partner_complete(body,handoff); this records the complete deliverable and ends the run.`,
       ...(webEnabled ? ["For public web research, use web_search first, then fetch_content for the relevant URL and get_search_content to page a long response. Web tools are read-only, bounded, and never receive cookies, authorization headers or credentials; cite the URL in your answer and label uncertainty."] : []),

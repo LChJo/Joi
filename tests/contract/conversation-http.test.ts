@@ -28,6 +28,13 @@ it("CHAT-09 protects conversation mutations, rejects model overrides and confine
     expect(send).not.toHaveBeenCalled();
     expect((await fetch(`${base}/api/v1/conversations`,{ method: "POST",headers,body: JSON.stringify(body) })).status).toBe(202);
     expect(send).toHaveBeenCalledWith(body);
+    const withExtensions = { ...body,piExtensions: ["openwiki","browser-loop","cc-safety-net"] };
+    expect((await fetch(`${base}/api/v1/conversations`,{ method: "POST",headers,body: JSON.stringify(withExtensions) })).status).toBe(202);
+    expect(send).toHaveBeenLastCalledWith(withExtensions);
+    for (const piExtensions of [["arbitrary-package"],"openwiki",["openwiki","openwiki"],null]) {
+      expect((await fetch(`${base}/api/v1/conversations`,{ method: "POST",headers,body: JSON.stringify({ ...body,piExtensions }) })).status).toBe(400);
+    }
+    expect(send).toHaveBeenCalledTimes(2);
     expect((await fetch(`${base}/api/v1/conversations?archived=true`,{ headers })).status).toBe(200);
     expect(list).toHaveBeenLastCalledWith(true);
     for (const [method,path,action] of [["POST","archive",archive],["POST","restore",restore],["DELETE","",remove]] as const) {

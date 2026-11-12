@@ -32,6 +32,37 @@ async function setup(run: PartnerInstanceManager["dispatch"]) {
 }
 
 describe("normal conversation execution", () => {
+  it("CHAT-31 rejects Pi extension selections for a native partner",async () => {
+    const { f,service,input,dependencies } = await setup(async () => { throw new Error("No execution expected"); });
+    try {
+      const revision = await dependencies.revisions.getActive(input.partnerId);
+      if (revision === null) throw new Error("Missing fixture partner");
+      vi.spyOn(dependencies.revisions,"getActive").mockResolvedValue({ ...revision,engine: "codex" });
+      await expect(service.send({ ...input,networkId: "native",piExtensions: ["openwiki"] })).rejects.toMatchObject({ code: "conversation_selection_invalid" });
+      expect((await service.send({ ...input,networkId: "native",piExtensions: [] })).turns[0]?.config.piExtensions).toEqual([]);
+    } finally { await f.close(); }
+  });
+  it("CHAT-30/31 persists the selected Pi extensions, forwards them across write admission and rejects changed request identities",async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>(async p => ({ actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: p.request.workspaceExecution?.phase === "READ_RUNNING" ? "SUSPENDED" : "COMPLETED",body: "Done",artifacts: [],instanceId: "checkpoint",checkpointRef: "durable" }));
+    const { f,service,input,dependencies } = await setup(run);
+    const selected = { ...input,piExtensions: ["cc-safety-net","openwiki"] as const };
+    try {
+      const accepted = await service.send({ ...selected,piExtensions: [...selected.piExtensions] });
+      expect(accepted.turns[0]?.config.piExtensions).toEqual(["openwiki","cc-safety-net"]);
+      await expect(service.send({ ...input,piExtensions: ["openwiki","cc-safety-net"] })).resolves.toMatchObject({ conversationId: "chat" });
+      await expect(service.send({ ...input,piExtensions: [] })).rejects.toMatchObject({ code: "conversation_request_conflict" });
+      await service.deliver(accepted.turns[0]?.turnId ?? "missing");
+      expect(run).toHaveBeenCalledTimes(2);
+      for (const [call] of run.mock.calls) expect(call.request.piExtensions).toEqual(["openwiki","cc-safety-net"]);
+      const restored = new ConversationService(dependencies);
+      expect((await restored.get("chat")).turns[0]?.config.piExtensions).toEqual(["openwiki","cc-safety-net"]);
+      for (const piExtensions of ["openwiki",["unknown"],["openwiki","openwiki"],null]) {
+        await expect(service.send({ ...input,requestId: "invalid",piExtensions } as never)).rejects.toMatchObject({ code: "conversation_selection_invalid" });
+      }
+      await restored.send({ ...input,conversationId: "other",requestId: "other" });
+      expect((await restored.get("other")).turns[0]?.config.piExtensions).toEqual([]);
+    } finally { await f.close(); }
+  });
   it("CHAT-29 retries the final projection after an observational activity write fails",async () => {
     const { f,service,accept,store } = await setup(async p => {
       await p.onThinking?.({ phaseId: "phase",state: "COMPLETED" }).catch(() => undefined);

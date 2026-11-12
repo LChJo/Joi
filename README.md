@@ -7,7 +7,7 @@
 [English](README.md) | [简体中文](README.zh-CN.md)
 
 [![CI](https://img.shields.io/badge/CI-quality-blue)](.github/workflows/ci.yml)
-[![Node](https://img.shields.io/badge/node-%3E%3D22.19.0-informational)](package.json)
+[![Node](https://img.shields.io/badge/node-%3E%3D22.22.0-informational)](package.json)
 [![npm](https://img.shields.io/badge/npm-%3E%3D11.0.0-informational)](package.json)
 [![Electron](https://img.shields.io/badge/Electron-43.1.1-47848F)](package.json)
 [![React](https://img.shields.io/badge/React-19.2.7-61DAFB)](package.json)
@@ -182,7 +182,7 @@ User messages, user authorization and system recovery do not consume the autonom
 
 ### Prerequisites
 
-- **Node.js** `>=22.19.0` and **npm** `>=11.0.0` — declared in `package.json#engines` and enforced by `engine-strict=true` in [`.npmrc`](.npmrc).
+- **Node.js** `>=22.22.0` and **npm** `>=11.0.0` — declared in `package.json#engines` and enforced by `engine-strict=true` in [`.npmrc`](.npmrc).
 - A graphical desktop session for the Electron window.
 - Optional, only for the corresponding builds: a Rust toolchain (`npm run build:native:desktop`), and the Flutter SDK plus Android NDK (`npm run build:mobile:android`).
 

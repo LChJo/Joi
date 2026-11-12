@@ -8,11 +8,11 @@
       "location": {
         "path": "README.md"
       },
-      "hash": "5b953ba8331692142bc6869acc9eaa22329274a96ef338250be8858e5c305e50",
-      "observedAt": "2026-11-11T06:25:48.982Z",
+      "hash": "6389b06dcb338735ec26fc9c69c666ff7ced6d6ba1b50508f9031d7686d3a0f3",
+      "observedAt": "2026-11-12T03:52:07.331Z",
       "range": {
         "startLine": 1,
-        "endLine": 36
+        "endLine": 491
       }
     },
     {
@@ -270,15 +270,15 @@
     {
       "id": "70e2a22b-f223-48ee-ad62-781b5835ed5e",
       "kind": "source-code",
-      "claim": "Npm scripts define typecheck, lint, tests, coverage, E2E, production build and package verification.",
+      "claim": "Npm quality gates, Node >=22.22.0, host Pi 1.5.2 and exact bundled extension dependencies.",
       "location": {
         "path": "package.json"
       },
-      "hash": "082d485d4d28a5a28e2af36091e23e7ff8e1614280d1e3e27e2805b5fb64227a",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "6949abcbc3a5c5081883d8dbefbb019136029dcfa90440817a06508571fd0323",
+      "observedAt": "2026-11-12T03:52:07.331Z",
       "range": {
         "startLine": 1,
-        "endLine": 55
+        "endLine": 163
       }
     },
     {
@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Turn-owned activity is displayed in output; composer config order ends with subagent toggle and settings; answer copy includes only agent markdown.",
+      "claim": "Turn activity shares output disclosures; the accessible extension list preserves independent per-conversation switches and keeps settings last. Native partners receive no Pi extensions.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "018f75abd761f50ea86f2a6664ca031bbd5fbed505bcc430c2cc4685bd733d85",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "2538a7a042271c4d945e47fb583c66a5ca65803320850977077aba32f4c5aed5",
+      "observedAt": "2026-11-12T03:52:07.331Z",
       "range": {
         "startLine": 1,
-        "endLine": 308
+        "endLine": 315
       }
     },
     {
@@ -340,15 +340,15 @@
     {
       "id": "d07c943c-dd56-49b1-8fad-3ad61f4df6cc",
       "kind": "source-code",
-      "claim": "Conversation execution merges safe per-turn activity with authoritative output, drains writes before terminal state and retains interrupted facts.",
+      "claim": "Conversation configuration validates and canonically persists pinned extension selections, includes them in retry identity checks and forwards them across READ/WRITE admission.",
       "location": {
         "path": "src/main/application/joi/conversation-service.ts"
       },
-      "hash": "eba2b1980595c1117b43aa0810d70c5715519438883c9f6d8a14c2220610de9a",
-      "observedAt": "2026-11-11T17:55:30.488107Z",
+      "hash": "7e26ac3b43b619fb4a79782fb41a1f402fffd1bb1a10beff9ab0bbb95517a64f",
+      "observedAt": "2026-11-12T03:52:07.331Z",
       "range": {
         "startLine": 1,
-        "endLine": 227
+        "endLine": 232
       }
     },
     {
@@ -382,15 +382,15 @@
     {
       "id": "3a9f444d-04a7-43d1-9a57-0212eeda58ca",
       "kind": "source-code",
-      "claim": "Authenticated conversation routes reject per-turn model/cwd overrides; local file and Git views require desktop sessions and mutations retain CSRF/origin checks. Archive, restore and deletion mutations retain authenticated CSRF/origin-protected HTTP writes.",
+      "claim": "Authenticated CSRF-protected conversation routes accept only fixed unique Pi extension IDs and reject model/workspace overrides.",
       "location": {
         "path": "src/main/interfaces/http/routes/conversation-routes.ts"
       },
-      "hash": "17b2f826b318e55c0183514a219c981c1f55f747331d5e9a48fa67d8f3711e8f",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "c3aefce969b4fb9f3f9e1558ae8d9768a551c76334f2a7b5bb154685266c3213",
+      "observedAt": "2026-11-12T03:52:07.331Z",
       "range": {
         "startLine": 1,
-        "endLine": 76
+        "endLine": 93
       }
     },
     {
@@ -410,15 +410,15 @@
     {
       "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
       "kind": "source-code",
-      "claim": "Conversation-only ACTIVITY union supports safe context and thinking; global Work conversation entry kinds remain unchanged.",
+      "claim": "Conversation-only activity and static Pi extension selection contracts retain compatibility with existing optional turn JSON fields.",
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "21e79dcda0fcc9c0d8113102a71556bb24a00a25d63821fd8f760f2714627e5b",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "b6084a77076664c249030234bc60fd730698f385f54e070d7a11130cf49ed995",
+      "observedAt": "2026-11-12T03:52:07.331Z",
       "range": {
         "startLine": 1,
-        "endLine": 92
+        "endLine": 101
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive conversation tool disclosures, activity details and themed accessible subagent button styles.",
+      "claim": "Responsive tool disclosures and theme-colored accessible extension switches fit the existing composer popover.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "53f1a3addfde74eaec96e6ee9e178dc67c5de9ead3cdedc5ed559e79a4a3c5d1",
-      "observedAt": "2026-11-11T17:55:30.488107Z",
+      "hash": "6434d70df5ed1a131e4247d7c780fc70c995a41ae9728bae544aadbd08c8c844",
+      "observedAt": "2026-11-12T03:52:07.331Z",
       "range": {
         "startLine": 1,
-        "endLine": 287
+        "endLine": 291
       }
     },
     {
@@ -694,11 +694,11 @@
       "location": {
         "path": "docs/conversation-context-validation.md"
       },
-      "hash": "148ff590d5f3d1c07a3c44e43f7648e99fd260c25f105d46e87ff6ff0332250d",
-      "observedAt": "2026-11-11T17:56:12.803647Z",
+      "hash": "aeb1bb8a700664ee7ce1e374a8a2211a4f46bd1bfd18507f3a1d28f00f5b5cdf",
+      "observedAt": "2026-11-12T04:01:28.452Z",
       "range": {
         "startLine": 1,
-        "endLine": 84
+        "endLine": 114
       }
     },
     {
@@ -746,15 +746,113 @@
     {
       "id": "68c4824e-2fab-4811-8c3b-de40278beff1",
       "kind": "document",
-      "claim": "Version-pinned official Pi research separates current host integration, optional resources, experimental harnesses and verified nested-hook constraints.",
+      "claim": "Primary-source Pi research records host-wrapped pinned Wiki/browser/safety capabilities, SDK compatibility constraints, credential requirements and unverified live-service scope.",
       "location": {
         "path": "docs/pi-coding-harness-research.md"
       },
-      "hash": "a939d7c7a87a294050a49062f24c4de3720747a32de32760dc3f2fccfabff4c4",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "0277b5428b08bc2a88aa62e10c9d62134c0f3bec44e65f13dad053381a4d617a",
+      "observedAt": "2026-11-12T04:01:28.449Z",
       "range": {
         "startLine": 1,
-        "endLine": 71
+        "endLine": 93
+      }
+    },
+    {
+      "id": "5841bbad-682d-467a-95f9-8acd70e76c32",
+      "kind": "source-code",
+      "claim": "Only selected, policy-allowed pinned Wiki and browser tools join conversations; the Wiki root is host-bound and guidance follows actual grants.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-conversation-extensions.ts"
+      },
+      "hash": "1bcb4ed836c97539bbcac59b6ea47aa0834951f4a55ecfea408b74a29a664b95",
+      "observedAt": "2026-11-12T03:52:07.331Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 53
+      }
+    },
+    {
+      "id": "e06f4768-44ed-4bb9-8347-bba17ca19cbd",
+      "kind": "source-code",
+      "claim": "Browser tools use the published package over a lazy per-execution cloud resource, disable creation retry and logs, and settle cleanup before closing.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-browser-loop.ts"
+      },
+      "hash": "b92465ff5f0392e9feefa28ef8d68f36d8e07c40ef61b7397d997fc8b4310c18",
+      "observedAt": "2026-11-12T03:52:07.331Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 39
+      }
+    },
+    {
+      "id": "217abdfa-12d5-417d-8e0b-7e55f72917f6",
+      "kind": "source-code",
+      "claim": "The pinned Safety Net evaluator checks commands and file tools before execution, omits raw CLI evidence/audit output, and fails closed.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-safety-net.ts"
+      },
+      "hash": "a70aa925d27d30b4b9af8672a5b906b9e0e0be20c247922db0119f11d547d3de",
+      "observedAt": "2026-11-12T03:52:07.331Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 28
+      }
+    },
+    {
+      "id": "d6797abc-d945-4aa6-bc1a-49d0558529bc",
+      "kind": "source-code",
+      "claim": "Reviewed exact Wiki/browser tool names define READ versus side-effecting capability admission; unknown names are not admitted by prefix.",
+      "location": {
+        "path": "src/main/domain/partners/pi-extension-tools.ts"
+      },
+      "hash": "cdb08ac67efa36e1a1a11724ea16de36a87cbcd76bfa8a237b25cf1db4c8a026",
+      "observedAt": "2026-11-12T03:52:07.331Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 5
+      }
+    },
+    {
+      "id": "2554deb1-dde9-4858-bb55-e867f1d4d116",
+      "kind": "source-code",
+      "claim": "Actual SDK requests test selection, disabled tools, safety checks, scope ceilings, missing browser credentials and real disposable Wiki run restoration.",
+      "location": {
+        "path": "tests/contract/conversation-pi-extensions.test.ts"
+      },
+      "hash": "4d5612e97e922e5198619124930db56365f336d143f2d4bbb377ff4d90848b9d",
+      "observedAt": "2026-11-12T03:52:07.331Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 112
+      }
+    },
+    {
+      "id": "8c586b5a-6dfe-43c0-9e0f-8cd885e73a12",
+      "kind": "source-code",
+      "claim": "External browser API replacements test lazy ownership, cancellation during provisioning, unknown creation suppression and cleanup failures.",
+      "location": {
+        "path": "tests/contract/conversation-browser-loop.test.ts"
+      },
+      "hash": "7a3c4585c3ca6d15ca8da476ad148a5228fe623766fd0f6245c18277fbd02307",
+      "observedAt": "2026-11-12T03:52:07.331Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 78
+      }
+    },
+    {
+      "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
+      "kind": "document",
+      "claim": "CHAT-30 through CHAT-32 define the requested conversation extension list and capability/permission acceptance scope.",
+      "location": {
+        "path": "docs/07-roadmap-and-acceptance.md"
+      },
+      "hash": "d369681976c95a0d2fa01f5b25d5804048d5632e0cd44a6eacdccfe7db670c44",
+      "observedAt": "2026-11-12T03:52:07.331Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 602
       }
     }
   ]

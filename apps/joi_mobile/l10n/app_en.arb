@@ -1036,6 +1036,31 @@
     "description": "chat.skills",
     "placeholders": {}
   },
+  "chatExtensions": "Extensions",
+  "@chatExtensions": {
+    "description": "chat.extensions",
+    "placeholders": {}
+  },
+  "chatSubagentsHint": "Delegate tasks with the current partner and permissions",
+  "@chatSubagentsHint": {
+    "description": "chat.subagentsHint",
+    "placeholders": {}
+  },
+  "chatOpenwikiHint": "Search, generate and maintain a code wiki",
+  "@chatOpenwikiHint": {
+    "description": "chat.openwikiHint",
+    "placeholders": {}
+  },
+  "chatBrowserLoopHint": "Control a Kernel cloud browser; API key required",
+  "@chatBrowserLoopHint": {
+    "description": "chat.browserLoopHint",
+    "placeholders": {}
+  },
+  "chatSafetyNetHint": "Block destructive commands and sensitive file access",
+  "@chatSafetyNetHint": {
+    "description": "chat.safetyNetHint",
+    "placeholders": {}
+  },
   "chatNoSkills": "No Skills available for this engine",
   "@chatNoSkills": {
     "description": "chat.noSkills",

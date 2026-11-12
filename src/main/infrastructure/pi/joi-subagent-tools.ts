@@ -53,8 +53,10 @@ export function createJoiSubagentTools(port: ConversationSubagentPort,input: Omi
       delivered.add(child.childId);return { childId: child.childId,status: child.status,...(child.body === undefined ? {} : { body: child.body }) };
     }),
     close: async (cancel: boolean) => {
-      if (cancel) await port.cancel(parent);
-      await port.settle(parent);signal?.removeEventListener("abort",abort);unregister();ceiling.dispose();
+      try {
+        try { if (cancel) await port.cancel(parent); }
+        finally { await port.settle(parent); }
+      } finally { signal?.removeEventListener("abort",abort);unregister();ceiling.dispose(); }
     },
   };
 }
