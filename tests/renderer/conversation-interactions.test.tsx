@@ -30,6 +30,44 @@ function setup() {
   return { api,history,get,send,stop,upload,quick };
 }
 async function ready() { await waitFor(() => expect(screen.getByRole("button",{ name: "大模型网络" })).toHaveTextContent("Network")); }
+
+it("CHAT-45 immediately displays pushed prefixes and ignores an older in-flight refresh",async () => {
+  vi.useFakeTimers();
+  try {
+    const { api,get } = setup(),active = conversation("first","RUNNING"),turn = active.turns[0];if (turn === undefined) throw new Error("Missing turn");
+    get.mockResolvedValue(active);
+    let push: Parameters<DigitalLifeApi["watchConversation"]>[1] | undefined;
+    let disconnect: (() => void) | undefined;
+    const dispose = vi.fn();vi.spyOn(api,"watchConversation").mockImplementation((_id,onUpdate,onError) => { push = onUpdate;disconnect = onError;return dispose; });
+    const view = render(<ConversationPage api={api} onSettings={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5); });fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await act(async () => { await Promise.resolve(); });
+    const stale = Promise.withResolvers<ConversationDto>();get.mockReturnValueOnce(stale.promise);
+    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    const next = { ...turn,entries: [{ entryId: "stream-answer",sequence: 1,createdAt: active.updatedAt,kind: "MARKDOWN" as const,role: "AGENT" as const,text: "Immediate prefix" }] };
+    act(() => { push?.({ conversationId: "first",turn: next }); });
+    expect(screen.getByText("Immediate prefix")).toBeVisible();
+    await act(async () => { stale.resolve(active);await Promise.resolve(); });expect(screen.getByText("Immediate prefix")).toBeVisible();
+    get.mockResolvedValue({ ...active,turns: [{ ...next,entries: next.entries.map(entry => ({ ...entry,text: "Recovered prefix" })) }] });
+    await act(async () => { disconnect?.();await vi.advanceTimersByTimeAsync(100); });expect(screen.getByText("Recovered prefix")).toBeVisible();
+    view.unmount();expect(dispose).toHaveBeenCalledTimes(1);
+  } finally { vi.useRealTimers(); }
+});
+it("CHAT-04 displays partial output before a short streamed answer finishes",async () => {
+  vi.useFakeTimers();
+  try {
+    const { api,get } = setup();
+    const active = conversation("first","RUNNING"),turn = active.turns[0];if (turn === undefined) throw new Error("Missing conversation turn");
+    get.mockResolvedValue({ ...active,turns: [{ ...turn,entries: [] }] });
+    render(<ConversationPage api={api} onSettings={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5); });
+    fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(50); });
+    get.mockResolvedValue({ ...active,turns: [{ ...turn,entries: [{ entryId: "stream-answer",sequence: 1,createdAt: active.updatedAt,kind: "MARKDOWN",role: "AGENT",text: "First words" }] }] });
+    await act(async () => { await vi.advanceTimersByTimeAsync(500); });
+    expect(screen.getByText("First words")).toBeVisible();
+    expect(screen.getByText("正在处理…")).toBeInTheDocument();
+  } finally { vi.useRealTimers(); }
+});
 it("CHAT-02/03 selects workbench, Skills and attachments independently, creates from a folder and retries the same message identity", async () => {
   const { api,send,upload,quick } = setup();send.mockRejectedValueOnce(new ApiError("fixture_failed","Retry this request",503));
   const { container } = render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
@@ -74,7 +112,7 @@ it("CHAT-04 progressively polls an active conversation and preserves its output 
   try {
     const { api,get,stop } = setup();get.mockResolvedValueOnce(conversation("first","QUEUED")).mockResolvedValueOnce(conversation("first","RUNNING")).mockResolvedValue(conversation("first","STOPPED"));
     render(<ConversationPage api={api} onSettings={vi.fn()} />);await act(async () => { await vi.advanceTimersByTimeAsync(5); });fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await act(async () => { await Promise.resolve(); });
-    expect(screen.getByText("等待执行")).toBeInTheDocument();await act(async () => { await vi.advanceTimersByTimeAsync(800); });expect(screen.getByText("正在处理…")).toBeInTheDocument();
+    expect(screen.getByText("等待执行")).toBeInTheDocument();await act(async () => { await vi.advanceTimersByTimeAsync(100); });expect(screen.getByText("正在处理…")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button",{ name: "停止生成" }));await act(async () => { await Promise.resolve(); });expect(stop).toHaveBeenCalledWith("first");expect(screen.getByText("已停止")).toBeInTheDocument();expect(screen.getByRole("heading",{ name: "Formatted answer" })).toBeInTheDocument();
   } finally { vi.useRealTimers(); }
 });
@@ -106,21 +144,21 @@ it("CHAT-24 retries an unacknowledged update and retains loaded history across p
     expect(screen.getByRole("alert")).toHaveTextContent("请求未完成，请重试。");
     fireEvent.click(screen.getByRole("button",{ name: "加载更早消息" }));await act(async () => { await Promise.resolve(); });
     expect(screen.getByText("Old original message")).toBeInTheDocument();expect(screen.getAllByText("Question")).toHaveLength(1);
-    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     expect(get).toHaveBeenCalledTimes(1);expect(events).toHaveBeenLastCalledWith("first","events:first:1");
     get.mockRejectedValueOnce(new ApiError("fixture_unavailable","Update unavailable",503));
-    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     expect(screen.getByRole("alert")).toHaveTextContent("请求未完成，请重试。");
     expect(events).toHaveBeenLastCalledWith("first","events:first:2");
     get.mockResolvedValue({ ...active,eventCursor: "events:first:3" });
-    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     expect(events).toHaveBeenLastCalledWith("first","events:first:2");
     expect(screen.getByText("Old original message")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button",{ name: "加载更早消息" }));await act(async () => { await Promise.resolve(); });
     expect(page).toHaveBeenLastCalledWith("first","history:first:20");
     expect(screen.getByText("Oldest original message")).toBeInTheDocument();expect(screen.queryByRole("button",{ name: "加载更早消息" })).not.toBeInTheDocument();
     get.mockResolvedValue({ ...active,eventCursor: "events:first:4" });
-    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
     expect(screen.getByText("Oldest original message")).toBeInTheDocument();expect(screen.queryByRole("button",{ name: "加载更早消息" })).not.toBeInTheDocument();
     view.unmount();
   } finally { vi.useRealTimers(); }

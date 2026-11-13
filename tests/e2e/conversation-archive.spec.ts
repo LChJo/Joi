@@ -2,7 +2,7 @@ import { _electron as electron,expect,test } from "@playwright/test";
 import { mkdir } from "node:fs/promises";
 import { setDesktopTestLocale } from "./locale";
 
-test("CHAT-13/14 compact history, tooltip, archive tabs, restore and confirmed deletion", async () => {
+test("CHAT-13/14/44 compact history, rename, archive tabs, restore and confirmed deletion", async () => {
   test.setTimeout(60_000);
   const app = await electron.launch({ args: ["."],env: { ...process.env,JOI_TEST: "1" } });
   try {
@@ -20,6 +20,7 @@ test("CHAT-13/14 compact history, tooltip, archive tabs, restore and confirmed d
       else if (path === "/api/v1/conversations") body = { items: deleted || archived !== (url.searchParams.get("archived") === "true") ? [] : [{ ...chat,...(archived ? { archivedAt: chat.updatedAt } : {}) }] };
       else if (path.endsWith("/chat/archive")) { archived = true;body = { changed: true }; }
       else if (path.endsWith("/chat/restore")) { archived = false;body = { changed: true }; }
+      else if (path.endsWith("/chat/title") && method === "PUT") { chat.title = (route.request().postDataJSON() as { title: string }).title;body = chat; }
       else if (path.endsWith("/chat") && method === "DELETE") { deleted = true;body = { changed: true }; }
       else if (path.endsWith("/chat")) body = chat;
       else if (path === "/api/v1/joi/runtime") body = {};
@@ -30,12 +31,25 @@ test("CHAT-13/14 compact history, tooltip, archive tabs, restore and confirmed d
     await page.setViewportSize({ width: 1440,height: 900 });
     const nav = page.getByRole("navigation",{ name: "主导航" });
     await nav.getByRole("button",{ name: "对话",exact: true }).click();
-    const row = page.getByRole("button",{ name: chat.title,exact: true });await expect(row).toBeVisible();
+    let row = page.getByRole("button",{ name: chat.title,exact: true });await expect(row).toBeVisible();
     await expect(page.getByText("和 AI 一起，把事情做好")).toHaveCount(0);
     expect((await row.boundingBox())?.height).toBeLessThanOrEqual(38);
     await row.hover();await expect(page.getByRole("tooltip")).toContainText(wb.name);await expect(page.getByRole("tooltip")).toContainText("2026");
     const tooltipBox = await page.getByRole("tooltip").boundingBox();expect(tooltipBox?.x).toBeGreaterThan(200);
     await mkdir("test-results",{ recursive: true });await page.screenshot({ path: "test-results/conversation-history-compact.png" });
+    await row.click();await page.getByRole("button",{ name: `对话操作 ${chat.title}` }).click();
+    await page.getByRole("menuitem",{ name: "重命名" }).click();
+    const rename = page.getByRole("dialog",{ name: "重命名对话" }),title = rename.getByRole("textbox",{ name: "对话标题" });
+    await expect(title).toBeFocused();await expect(title).toHaveValue(chat.title);
+    await title.fill("   ");await expect(rename.getByRole("button",{ name: "保存",exact: true })).toBeDisabled();
+    await title.fill("重新命名的对话");await page.screenshot({ path: "test-results/conversation-rename.png" });
+    await page.emulateMedia({ colorScheme: "dark" });await page.screenshot({ path: "test-results/conversation-rename-dark.png",animations: "disabled" });
+    await page.emulateMedia({ colorScheme: "light" });await page.setViewportSize({ width: 390,height: 844 });
+    expect((await rename.boundingBox())?.width).toBeLessThanOrEqual(358);
+    await page.screenshot({ path: "test-results/conversation-rename-mobile.png" });
+    await title.press("Enter");await expect(rename).toHaveCount(0);await page.setViewportSize({ width: 1440,height: 900 });
+    row = page.getByRole("button",{ name: "重新命名的对话",exact: true });await expect(row).toBeVisible();
+    await expect(page.locator(".conversation-topbar strong")).toHaveText("重新命名的对话");
     await page.getByRole("button",{ name: `对话操作 ${chat.title}` }).click();await page.getByRole("menuitem",{ name: "归档" }).click();
     await expect(row).toHaveCount(0);
     await nav.getByRole("button",{ name: "已归档",exact: true }).click();await page.getByRole("tab",{ name: "对话",exact: true }).click();

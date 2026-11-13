@@ -7,7 +7,7 @@ import { SafeMarkdown } from "./SafeMarkdown";
 import { ConversationWorkspace } from "./ConversationWorkspace";
 import { ConversationOutput } from "./ConversationOutput";
 import { ConversationHistoryRow } from "./ConversationHistoryRow";
-import { DeleteConversationDialog } from "./ConversationDialogs";
+import { DeleteConversationDialog, RenameConversationDialog } from "./ConversationDialogs";
 import { CONVERSATION_PI_EXTENSIONS,currentConversationPiExtensions,type ConversationDto,type ConversationInheritanceDto,type ConversationPiExtension,type ConversationSummaryDto,type ConversationTurnStatus,type SendConversationInput } from "../shared/conversations";
 import type { JoiAttachmentDto, ModelSourceDto, PartnerDto, WorkbenchDto } from "../shared/joi";
 import "./conversations.css";
@@ -86,6 +86,8 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   const [inheritance,setInheritance] = useState<ConversationInheritanceDto | null>(null);
   const [search,setSearch] = useState("");
   const [deleting,setDeleting] = useState<ConversationSummaryDto | null>(null);
+  const [renaming,setRenaming] = useState<ConversationSummaryDto | null>(null);
+  const [renameError,setRenameError] = useState<string | null>(null);
   const [changing,setChanging] = useState(false);
   const [deleteError,setDeleteError] = useState<string | null>(null);
   const [notice,setNotice] = useState<string | null>(null);
@@ -158,23 +160,26 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
     return () => { current = false; };
   },[api,draft.workbenchId,draft.partnerId,draft.networkId,native,conversation?.turns.length]);
   useEffect(() => {
+    if (conversation?.eventCursor !== undefined && updateCursor.current?.id !== conversationId) updateCursor.current = { id: conversation.conversationId,cursor: conversation.eventCursor };
+  },[conversationId,conversation?.eventCursor,conversation?.conversationId]);
+  useEffect(() => {
     if (conversationId === undefined || !busy) return;
-    let current = true,fetching = false;
-    const timer = setInterval(() => {
-      if (fetching) return;
-      fetching = true;
+    let current = true,fetching = false,streamRevision = 0,pollDelay = 700;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const poll = () => {
+      timer = undefined;if (!current || fetching) return;fetching = true;
+      const revision = streamRevision;
       const refresh = async () => {
-        const cursor = updateCursor.current?.id === conversationId ? updateCursor.current.cursor : conversation.eventCursor;
+        const cursor = updateCursor.current?.id === conversationId ? updateCursor.current.cursor : undefined;
         if (cursor !== undefined && typeof api.conversationEvents === "function") {
           const events = await api.conversationEvents(conversationId,cursor);
-          if (events.items.length === 0) { if (current) updateCursor.current = { id: conversationId,cursor: events.cursor };return null; }
+          if (events.items.length === 0) { if (current && revision === streamRevision) updateCursor.current = { id: conversationId,cursor: events.cursor };return null; }
         }
-        const next = await api.getConversation(conversationId);
-        if (current && next.eventCursor !== undefined) updateCursor.current = { id: conversationId,cursor: next.eventCursor };
-        return next;
+        return api.getConversation(conversationId);
       };
       void refresh().then(next => {
-        if (next !== null && current && activeId.current === next.conversationId) {
+        if (next !== null && current && revision === streamRevision && activeId.current === next.conversationId) {
+          if (next.eventCursor !== undefined) updateCursor.current = { id: conversationId,cursor: next.eventCursor };
           setConversation(previous => {
             if (previous?.conversationId !== next.conversationId) return next;
             const value = { ...next };delete value.historyCursor;
@@ -183,10 +188,23 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
           });
           if (!next.turns.some(turn => turn.status === "QUEUED" || turn.status === "RUNNING")) void loadHistory().catch(showError);
         }
-      }).catch(showError).finally(() => { fetching = false; });
-    },700);
-    return () => { current = false;clearInterval(timer); };
-  },[api,conversationId,busy,conversation?.eventCursor,loadHistory,showError]);
+      }).catch((error: unknown) => { if (current) showError(error); }).finally(() => { fetching = false;if (current) timer = setTimeout(poll,pollDelay); });
+    };
+    const dispose = api.watchConversation(conversationId,update => {
+      if (!current || activeId.current !== update.conversationId) return;
+      streamRevision++;
+      setConversation(previous => {
+        if (previous?.conversationId !== update.conversationId) return previous;
+        const exists = previous.turns.some(turn => turn.turnId === update.turn.turnId);
+        return { ...previous,...(update.context === undefined ? {} : { context: update.context }),
+          turns: exists ? previous.turns.map(turn => turn.turnId === update.turn.turnId ? update.turn : turn) : [...previous.turns,update.turn] };
+      });
+      if (update.turn.status !== "QUEUED" && update.turn.status !== "RUNNING") void loadHistory().catch(showError);
+    },() => { pollDelay = 100;if (timer !== undefined) { clearTimeout(timer);timer = setTimeout(poll,pollDelay); } });
+    if (dispose === undefined) pollDelay = 100;
+    timer = setTimeout(poll,pollDelay);
+    return () => { current = false;clearTimeout(timer);dispose?.(); };
+  },[api,conversationId,busy,loadHistory,showError]);
   useEffect(() => { if (nearBottom.current && stream.current !== null) stream.current.scrollTop = stream.current.scrollHeight; },[conversation]);
   const selectConversation = async (id: string) => {
     const request = ++selection.current;
@@ -215,6 +233,17 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
       setHistory(items => items.filter(value => value.conversationId !== item.conversationId));setDeleting(null);
       await loadHistory();
     } catch (error) { if (remove) setDeleteError(error instanceof ApiError ? error.displayMessage : t("chat.error"));else showError(error); }
+    finally { setChanging(false); }
+  };
+  const renameConversation = async (title: string) => {
+    if (renaming === null || changing) return;
+    setChanging(true);setRenameError(null);
+    try {
+      const renamed = await api.renameConversation(renaming.conversationId,title);
+      setHistory(items => items.map(item => item.conversationId === renamed.conversationId ? { ...item,...renamed } : item));
+      setConversation(current => current?.conversationId === renamed.conversationId ? { ...current,title: renamed.title,updatedAt: renamed.updatedAt } : current);
+      setRenaming(null);
+    } catch (error) { setRenameError(error instanceof ApiError ? error.displayMessage : t("chat.error")); }
     finally { setChanging(false); }
   };
   const quickWorkbench = async () => {
@@ -253,12 +282,13 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   };
   return <div className={`conversation-layout ${workspaceVisible ? "" : "workspace-hidden"} ${historyOpen ? "" : "history-hidden"}`} ref={layout}>
     {deleting === null ? null : <DeleteConversationDialog busy={changing} error={deleteError} onCancel={() => setDeleting(null)} onDelete={() => void changeConversation(deleting,true)} title={deleting.title} />}
+    {renaming === null ? null : <RenameConversationDialog busy={changing} error={renameError} key={renaming.conversationId} onCancel={() => setRenaming(null)} onSave={title => void renameConversation(title)} title={renaming.title} />}
     <aside className="conversation-history"><header><h1>{t("chat.title")}</h1></header>
       <button className="chat-new" onClick={newChat} type="button"><PlusIcon />{t("chat.newChat")}</button>
       <input aria-label={t("chat.search")} className="chat-search" onChange={e => setSearch(e.target.value)} placeholder={t("chat.search")} value={search} />
       <div className="chat-history-groups">{workbenches.map(wb => {
         const items = history.filter(item => item.workbenchId === wb.workbenchId && item.title.toLocaleLowerCase().includes(search.toLocaleLowerCase()));
-        return items.length === 0 ? null : <details key={wb.workbenchId} open><summary><FolderIcon /><span>{wb.name}</span><small>{items.length}</small></summary>{items.map(item => <ConversationHistoryRow disabled={changing || submitting} item={{ ...item,...(item.conversationId === conversationId && busy ? { canArchive: false } : {}) }} key={item.conversationId} onArchive={() => void changeConversation(item,false)} onDelete={() => { setDeleteError(null);setDeleting(item); }} onSelect={() => void selectConversation(item.conversationId)} selected={draft.id === item.conversationId} workbench={wb.name} />)}</details>;
+        return items.length === 0 ? null : <details key={wb.workbenchId} open><summary><FolderIcon /><span>{wb.name}</span><small>{items.length}</small></summary>{items.map(item => <ConversationHistoryRow disabled={changing || submitting} item={{ ...item,...(item.conversationId === conversationId && busy ? { canArchive: false } : {}) }} key={item.conversationId} onArchive={() => void changeConversation(item,false)} onDelete={() => { setDeleteError(null);setDeleting(item); }} onRename={() => { setRenameError(null);setRenaming(item); }} onSelect={() => void selectConversation(item.conversationId)} selected={draft.id === item.conversationId} workbench={wb.name} />)}</details>;
       })}{history.length === 0 ? <p className="chat-empty-note">{t("chat.emptyHistory")}</p> : null}</div>
       <footer><LockSimpleIcon />{t("chat.locked")}</footer>
     </aside>

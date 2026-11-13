@@ -15,12 +15,73 @@ function setup() {
   vi.spyOn(api,"listPartners").mockResolvedValue({ items: [] });
   vi.spyOn(api,"listModelSources").mockResolvedValue({ items: [] });
   vi.spyOn(api,"conversationInheritance").mockResolvedValue({ memoryCount: 0,evolutionRevisionId: null });
-  vi.spyOn(api,"request").mockResolvedValue({ items: [] });
+  const request = vi.spyOn(api,"request").mockResolvedValue({ items: [] });
   const archive = vi.spyOn(api,"archiveConversation").mockResolvedValue({ changed: true });
   const restore = vi.spyOn(api,"restoreConversation").mockResolvedValue({ changed: true });
   const remove = vi.spyOn(api,"deleteConversation").mockResolvedValue({ changed: true });
-  return { api,list,get,archive,restore,remove };
+  return { api,list,get,request,archive,restore,remove };
 }
+
+it("CHAT-44 renames selected history, updates search and restores the title without losing the draft",async () => {
+  const { api,list,get,request } = setup();
+  const renamed = { ...chat,title: "新的项目讨论" };
+  const view = render(<ConversationPage api={api} onSettings={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button",{ name: "讨论设计" }));
+  await screen.findByText("设计项目 · 对话");
+  fireEvent.change(screen.getByRole("textbox",{ name: "消息" }),{ target: { value: "未发送的草稿" } });
+  fireEvent.click(screen.getByRole("button",{ name: "对话操作 讨论设计" }));
+  fireEvent.click(screen.getByRole("menuitem",{ name: "重命名" }));
+  const dialog = screen.getByRole("dialog",{ name: "重命名对话" });
+  const title = within(dialog).getByRole("textbox",{ name: "对话标题" });
+  expect(title).toHaveFocus();expect(title).toHaveValue("讨论设计");
+  expect((title as HTMLInputElement).selectionEnd).toBe(4);
+  fireEvent.change(title,{ target: { value: "  新的项目讨论  " } });
+  request.mockResolvedValueOnce(renamed);list.mockResolvedValue({ items: [renamed] });get.mockResolvedValue(renamed);
+  const form = title.closest("form");if (form === null) throw new Error("Missing rename form");
+  fireEvent.submit(form);
+  await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+  expect(request).toHaveBeenCalledWith("/api/v1/conversations/chat/title",{ method: "PUT",body: { title: "新的项目讨论" } });
+  expect(screen.getByRole("button",{ name: "新的项目讨论" })).toBeInTheDocument();
+  expect(screen.getByText("新的项目讨论",{ selector: ".conversation-topbar strong" })).toBeInTheDocument();
+  expect(screen.getByRole("textbox",{ name: "消息" })).toHaveValue("未发送的草稿");
+  fireEvent.change(screen.getByRole("textbox",{ name: "搜索对话…" }),{ target: { value: "新的项目" } });
+  expect(screen.getByRole("button",{ name: "新的项目讨论" })).toBeInTheDocument();
+  view.unmount();render(<ConversationPage api={api} onSettings={vi.fn()} />);
+  await screen.findByText("新的项目讨论",{ selector: ".conversation-topbar strong" });
+});
+
+it("CHAT-44 validates titles and cancels with restored focus without saving",async () => {
+  const { api,request } = setup();render(<ConversationPage api={api} onSettings={vi.fn()} />);
+  const trigger = await screen.findByRole("button",{ name: "对话操作 讨论设计" });
+  fireEvent.click(trigger);fireEvent.click(screen.getByRole("menuitem",{ name: "重命名" }));
+  const dialog = screen.getByRole("dialog"),title = within(dialog).getByRole("textbox",{ name: "对话标题" }),save = within(dialog).getByRole("button",{ name: "保存" });
+  const form = title.closest("form");if (form === null) throw new Error("Missing rename form");
+  expect(title).toHaveAttribute("maxlength","80");
+  for (const value of ["   ","a".repeat(81)]) {
+    fireEvent.change(title,{ target: { value } });expect(save).toBeDisabled();expect(within(dialog).getByRole("alert")).toBeInTheDocument();
+    fireEvent.submit(form);
+  }
+  fireEvent.keyDown(document,{ key: "Escape" });expect(screen.queryByRole("dialog")).not.toBeInTheDocument();expect(trigger).toHaveFocus();
+  fireEvent.click(trigger);fireEvent.click(screen.getByRole("menuitem",{ name: "重命名" }));
+  expect(screen.getByRole("textbox",{ name: "对话标题" })).toHaveValue("讨论设计");
+  fireEvent.click(screen.getByRole("button",{ name: "取消" }));
+  expect(request.mock.calls.some(([path]) => path.endsWith("/title"))).toBe(false);
+});
+
+it("CHAT-44 keeps an edited title after failure and blocks dismissal while retrying",async () => {
+  const { api,request } = setup();render(<ConversationPage api={api} onSettings={vi.fn()} />);
+  fireEvent.click(await screen.findByRole("button",{ name: "对话操作 讨论设计" }));fireEvent.click(screen.getByRole("menuitem",{ name: "重命名" }));
+  const dialog = screen.getByRole("dialog"),title = within(dialog).getByRole("textbox",{ name: "对话标题" }),save = within(dialog).getByRole("button",{ name: "保存" });
+  fireEvent.change(title,{ target: { value: "保留的标题" } });
+  request.mockRejectedValueOnce(new ApiError("fixture_failed","Unavailable",503));fireEvent.click(save);
+  await within(dialog).findByRole("alert");expect(title).toHaveValue("保留的标题");expect(screen.getByRole("button",{ name: "讨论设计" })).toBeInTheDocument();
+  let complete: ((value: ConversationDto) => void) | undefined;
+  request.mockImplementationOnce(() => new Promise(resolve => { complete = resolve; }));fireEvent.click(save);
+  expect(save).toBeDisabled();expect(title).toBeDisabled();fireEvent.keyDown(document,{ key: "Escape" });expect(dialog).toBeInTheDocument();
+  await act(async () => { complete?.({ ...chat,title: "保留的标题" });await Promise.resolve(); });
+  await screen.findByRole("button",{ name: "保留的标题" });expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(screen.getByText("新建对话",{ selector: ".conversation-topbar strong" })).toBeInTheDocument();
+});
 
 it("CHAT-13 shows compact titles and a focus tooltip, archives the selected conversation and clears its composer", async () => {
   const { api,list,archive } = setup();
@@ -78,6 +139,7 @@ it("CHAT-13 disables archive/delete while a conversation is active", async () =>
   render(<ConversationPage api={api} onSettings={vi.fn()} />);
   fireEvent.click(await screen.findByRole("button",{ name: "对话操作 讨论设计" }));
   expect(screen.getByRole("menuitem",{ name: "归档" })).toBeDisabled();expect(screen.getByRole("menuitem",{ name: "删除" })).toBeDisabled();
+  expect(screen.getByRole("menuitem",{ name: "重命名" })).toBeEnabled();
   fireEvent.keyDown(document,{ key: "Escape" });
   expect(screen.queryByRole("menu")).not.toBeInTheDocument();expect(screen.getByRole("button",{ name: "对话操作 讨论设计" })).toHaveFocus();
   expect(remove).not.toHaveBeenCalled();
@@ -108,12 +170,12 @@ it("CHAT-14 retries unavailable archives, opens a formatted transcript with an u
 
 it("CHAT-13 supports keyboard menu navigation and dismisses transient metadata when scrolling or clicking outside", () => {
   const archive = vi.fn(),remove = vi.fn(),select = vi.fn();
-  render(<ConversationHistoryRow disabled={false} item={chat} onArchive={archive} onDelete={remove} onSelect={select} selected workbench="设计项目" />);
+  render(<ConversationHistoryRow disabled={false} item={chat} onArchive={archive} onDelete={remove} onRename={vi.fn()} onSelect={select} selected workbench="设计项目" />);
   const row = screen.getByRole("button",{ name: "讨论设计" }),trigger = screen.getByRole("button",{ name: "对话操作 讨论设计" });
   fireEvent.mouseEnter(row);expect(screen.getByRole("tooltip")).toBeInTheDocument();fireEvent.mouseLeave(row);expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
   fireEvent.focus(row);fireEvent.scroll(window);expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();fireEvent.focus(row);fireEvent.resize(window);expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
-  fireEvent.click(trigger);expect(screen.getByRole("menuitem",{ name: "归档" })).toHaveFocus();
-  const menu = screen.getByRole("menu");fireEvent.keyDown(menu,{ key: "ArrowDown" });expect(screen.getByRole("menuitem",{ name: "删除" })).toHaveFocus();fireEvent.keyDown(menu,{ key: "ArrowUp" });expect(screen.getByRole("menuitem",{ name: "归档" })).toHaveFocus();fireEvent.keyDown(menu,{ key: "End" });expect(screen.getByRole("menuitem",{ name: "删除" })).toHaveFocus();fireEvent.keyDown(menu,{ key: "Home" });expect(screen.getByRole("menuitem",{ name: "归档" })).toHaveFocus();
+  fireEvent.click(trigger);expect(screen.getByRole("menuitem",{ name: "重命名" })).toHaveFocus();
+  const menu = screen.getByRole("menu");fireEvent.keyDown(menu,{ key: "ArrowDown" });expect(screen.getByRole("menuitem",{ name: "归档" })).toHaveFocus();fireEvent.keyDown(menu,{ key: "ArrowUp" });expect(screen.getByRole("menuitem",{ name: "重命名" })).toHaveFocus();fireEvent.keyDown(menu,{ key: "End" });expect(screen.getByRole("menuitem",{ name: "删除" })).toHaveFocus();fireEvent.keyDown(menu,{ key: "Home" });expect(screen.getByRole("menuitem",{ name: "重命名" })).toHaveFocus();
   fireEvent.keyDown(menu,{ key: "Tab" });expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   fireEvent.click(trigger);fireEvent.pointerDown(document.body);expect(screen.queryByRole("menu")).not.toBeInTheDocument();
   fireEvent.click(trigger);fireEvent.click(screen.getByRole("menuitem",{ name: "删除" }));expect(remove).toHaveBeenCalledOnce();

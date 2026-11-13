@@ -162,6 +162,15 @@ export class SqliteConversationStore implements ConversationStore {
       else db.prepare("UPDATE conversations SET archived_at=NULL WHERE conversation_id=?").run(id);
     });
   }
+  async rename(id: string,title: string,at: string) {
+    return this.database.transaction(db => {
+      const row = db.prepare("SELECT * FROM conversations WHERE conversation_id=? AND deleted_at IS NULL").get(id);
+      if (row === undefined) throw new DomainError("conversation_not_found", "Conversation was not found.");
+      if (row.title === title) return summary(row);
+      db.prepare("UPDATE conversations SET title=?,updated_at=? WHERE conversation_id=?").run(title,at,id);
+      return summary({ ...row,title,updated_at: at });
+    });
+  }
   async get(id: string) { return this.database.transaction(db => read(db,id)); }
   async request(id: string) { return this.database.transaction(db => {
     const row = db.prepare("SELECT * FROM conversation_turns WHERE request_id=?").get(id);

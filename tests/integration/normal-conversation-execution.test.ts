@@ -32,6 +32,83 @@ async function setup(run: PartnerInstanceManager["dispatch"]) {
 }
 
 describe("normal conversation execution", () => {
+  it("CHAT-04/45 publishes safe committed prefixes and completion without coupling execution to observers",async () => {
+    const paused = Promise.withResolvers<undefined>(),finish = Promise.withResolvers<PartnerRunResult>();
+    const { f,service,accept } = await setup(async input => {
+      await input.onConversation?.({ instanceId: "instance",conversation: () => [{ kind: "MARKDOWN",role: "AGENT",text: "First token=synthetic-secret" }] });
+      paused.resolve(undefined);return finish.promise;
+    });
+    let delivery: Promise<void> | undefined;
+    const receive = vi.fn();
+    try {
+      const turn = await accept();
+      const unsubscribe = service.subscribe("chat",receive);
+      service.subscribe("chat",() => { throw new Error("Synthetic observer failure"); });
+      delivery = service.deliver(turn.turnId);await paused.promise;
+      expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ conversationId: "chat",turn: expect.objectContaining({ status: "RUNNING",entries: [expect.objectContaining({ text: "First token=[redacted]" })] }) as unknown }));
+      expect(JSON.stringify(receive.mock.calls)).not.toContain("synthetic-secret");
+      finish.resolve({ actionId: "turn",workId: "turn",externalRunId: "run",status: "COMPLETED",body: "First",artifacts: [] });await delivery;
+      expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ turn: expect.objectContaining({ status: "COMPLETED" }) as unknown }));
+      unsubscribe();const count = receive.mock.calls.length;await service.stop("chat");expect(receive).toHaveBeenCalledTimes(count);
+    } finally {
+      finish.resolve({ actionId: "turn",workId: "turn",externalRunId: "run",status: "COMPLETED",body: "First",artifacts: [] });
+      await delivery;service.close();await f.close();
+    }
+  });
+  it("CHAT-04 flushes the last buffered prefix while generation is paused",async () => {
+    const paused = Promise.withResolvers<undefined>(),finish = Promise.withResolvers<PartnerRunResult>();
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>(async input => {
+      await input.onConversation?.({ instanceId: "instance",conversation: () => [{ kind: "MARKDOWN",role: "AGENT",text: "First" }] });
+      f.clock.advance(20);
+      await input.onConversation?.({ instanceId: "instance",conversation: () => [{ kind: "MARKDOWN",role: "AGENT",text: "First and buffered tail" }] });
+      paused.resolve(undefined);
+      return finish.promise;
+    });
+    const { f,service,accept } = await setup(run);
+    let delivery: Promise<void> | undefined;
+    try {
+      const turn = await accept();vi.useFakeTimers();delivery = service.deliver(turn.turnId);await paused.promise;
+      await vi.advanceTimersByTimeAsync(150);
+      expect((await service.get("chat")).turns[0]).toMatchObject({ status: "RUNNING",entries: [expect.objectContaining({ text: "First and buffered tail" })] });
+    } finally {
+      finish.resolve({ actionId: "turn",workId: "turn",externalRunId: "run",status: "COMPLETED",body: "First and buffered tail",artifacts: [] });
+      await delivery;vi.useRealTimers();service.close();await f.close();
+    }
+  });
+  it("CHAT-44 rejects invalid titles and identities without changing history",async () => {
+    const { f,service,store,accept } = await setup(vi.fn());
+    try {
+      await accept();const original = await service.get("chat");
+      for (const title of ["","  ","a".repeat(81),"one\ntwo","bad\u0000title",null,42]) {
+        await expect(service.rename("chat",title as string)).rejects.toMatchObject({ code: "conversation_title_invalid" });
+      }
+      expect(await service.get("chat")).toEqual(original);
+      await expect(service.rename("../chat","Title")).rejects.toMatchObject({ code: "conversation_identity_invalid" });
+      await expect(service.rename("missing","Title")).rejects.toMatchObject({ code: "conversation_not_found" });
+      await store.stop("chat");await service.archive("chat");
+      await expect(service.rename("chat","a".repeat(80))).resolves.toMatchObject({ title: "a".repeat(80),archivedAt: f.clock.now().toISOString() });
+      await service.delete("chat");
+      await expect(service.rename("chat","Title")).rejects.toMatchObject({ code: "conversation_not_found" });
+    } finally { await f.close(); }
+  });
+  it("CHAT-44 persists a renamed title during generation and keeps it across restoration and later turns",async () => {
+    const run = vi.fn<PartnerInstanceManager["dispatch"]>();
+    const { f,service,store,input,accept,dependencies } = await setup(run);
+    try {
+      const turn = await accept();
+      const original = await service.get("chat");
+      const renamed = await service.rename("chat","  项目讨论  ");
+      expect(renamed).toMatchObject({ conversationId: "chat",title: "项目讨论" });
+      expect((await service.list()).items[0]?.title).toBe("项目讨论");
+      expect((await new ConversationService(dependencies).get("chat")).turns).toEqual(original.turns);
+      expect((await new SqliteConversationStore(f.database).get("chat"))?.title).toBe("项目讨论");
+      f.clock.advance(1000);
+      expect(await service.rename("chat","项目讨论")).toEqual(renamed);
+      await store.begin(turn.turnId);await store.update(turn.turnId,{ status: "COMPLETED",entries: [],artifacts: [] });
+      expect((await service.send({ ...input,requestId: "follow-up",text: "Next question" })).title).toBe("项目讨论");
+      expect(run).not.toHaveBeenCalled();
+    } finally { await f.close(); }
+  });
   it("CHAT-31 rejects Pi extension selections for a native partner",async () => {
     const { f,service,input,dependencies } = await setup(async () => { throw new Error("No execution expected"); });
     try {

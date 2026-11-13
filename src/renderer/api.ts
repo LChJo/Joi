@@ -25,7 +25,7 @@ import type { StatisticsDto, StatisticsQuery } from "../shared/statistics";
 import type { JoiGoalDetailDto, JoiGoalDetailPage, JoiRuntimeDto } from "../shared/joi";
 import type { GoalArtifactPage, GoalArtifactPageDto } from "../shared/goal-artifacts";
 import type { GoalResultDto, GoalResultPage, GoalResultPageDto } from "../shared/goal-results";
-import type { ConversationDto, ConversationSummaryDto, SendConversationInput, ConversationInheritanceDto, GitWorkspaceDto, GitCommandInput, GitCommandDto,ConversationHistoryPageDto,ConversationEventsDto } from "../shared/conversations";
+import type { ConversationDto, ConversationSummaryDto, SendConversationInput, ConversationInheritanceDto, GitWorkspaceDto, GitCommandInput, GitCommandDto,ConversationHistoryPageDto,ConversationEventsDto,ConversationUpdateDto } from "../shared/conversations";
 
 export class ApiError extends Error {
   get userMessage() { return errorNotice(this.code, this.message); }
@@ -75,10 +75,33 @@ export class DigitalLifeApi {
 
   authStatus() { return this.request<{ configured: boolean }>("/api/v1/auth/status"); }
   listConversations(archived = false) { return this.request<{ items: ConversationSummaryDto[] }>(`/api/v1/conversations${archived ? "?archived=true" : ""}`); }
+  renameConversation(id: string,title: string) { return this.request<ConversationSummaryDto>(`/api/v1/conversations/${encodeURIComponent(id)}/title`,{ method: "PUT",body: { title } }); }
   archiveConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/archive`,{ method: "POST" }); }
   restoreConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/restore`,{ method: "POST" }); }
   deleteConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}`,{ method: "DELETE" }); }
   getConversation(id: string) { return this.request<ConversationDto>(`/api/v1/conversations/${encodeURIComponent(id)}`); }
+  watchConversation(id: string,onUpdate: (update: ConversationUpdateDto) => void,onError: () => void): (() => void) | undefined {
+    if (typeof EventSource === "undefined") return undefined;
+    let source: EventSource;
+    try { source = new EventSource(`${this.origin}/api/v1/conversations/${encodeURIComponent(id)}/stream`,{ withCredentials: true }); }
+    catch { return undefined; }
+    let closed = false;
+    const dispose = () => {
+      if (closed) return;
+      closed = true;source.removeEventListener("conversation",receive);source.removeEventListener("error",fail);source.close();
+    };
+    const fail = () => { if (!closed) { dispose();onError(); } };
+    const receive = (event: MessageEvent<string>) => {
+      if (closed) return;
+      try {
+        const update = JSON.parse(event.data) as ConversationUpdateDto;
+        if (update.conversationId !== id || typeof update.turn.turnId !== "string" || !Array.isArray(update.turn.entries)) { fail();return; }
+        onUpdate(update);
+      } catch { fail(); }
+    };
+    source.addEventListener("conversation",receive);source.addEventListener("error",fail);
+    return dispose;
+  }
   conversationHistory(id: string,cursor: string) { return this.request<ConversationHistoryPageDto>(`/api/v1/conversations/${encodeURIComponent(id)}/history?${new URLSearchParams({ cursor }).toString()}`); }
   conversationEvents(id: string,cursor: string) { return this.request<ConversationEventsDto>(`/api/v1/conversations/${encodeURIComponent(id)}/events?${new URLSearchParams({ cursor }).toString()}`); }
   cancelConversationChild(id: string,childId: string) { return this.request<{ canceled: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/children/${encodeURIComponent(childId)}/cancel`,{ method: "POST" }); }

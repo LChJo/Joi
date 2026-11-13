@@ -1,5 +1,5 @@
 import { DomainError } from "../../domain/errors.js";
-import { CONVERSATION_PI_EXTENSIONS,isConversationPiExtensions,type SendConversationInput,type ConversationDto,type ConversationInheritanceDto } from "../../../shared/conversations.js";
+import { CONVERSATION_PI_EXTENSIONS,CONVERSATION_TITLE_MAX_LENGTH,isConversationPiExtensions,type SendConversationInput,type ConversationDto,type ConversationInheritanceDto } from "../../../shared/conversations.js";
 import type { ConversationStore } from "../ports/conversations.js";
 import type { Clock, IdGenerator } from "../ports/runtime-store.js";
 import type { WorkbenchCatalog, WorkbenchContextSnapshotStore, WorkbenchWorkspaceRepository } from "../ports/workbench-context.js";
@@ -7,7 +7,7 @@ import type { PartnerRegistryRepository } from "../ports/partner-registry.js";
 import type { PartnerInstanceManager } from "../partners/partner-instance-manager.js";
 import type { PartnerSkillCatalog } from "../ports/partner-skills.js";
 import { normalizeAgentConversationEntries, sanitizeAgentConversationText, type AgentConversationDraft } from "../partners/agent-conversation-presentation.js";
-import type { ConversationContextDto,ConversationTurnDto } from "../../../shared/conversations.js";
+import type { ConversationContextDto,ConversationTurnDto,ConversationUpdateDto } from "../../../shared/conversations.js";
 import type { ConversationSubagentPort } from "../ports/conversation-subagents.js";
 import { ConversationActivity } from "./conversation-activity.js";
 
@@ -30,6 +30,7 @@ function identity(value: string): void {
 
 export class ConversationService {
   readonly #active = new Map<string,{ controller: AbortController;done: Promise<undefined> }>();
+  readonly #listeners = new Map<string,Set<(update: ConversationUpdateDto) => void>>();
   #closed = false;
   constructor(private readonly dependencies: {
     clock: Clock; ids: IdGenerator; store: ConversationStore;
@@ -45,6 +46,24 @@ export class ConversationService {
     subagents?: Pick<ConversationSubagentPort,"list" | "cancel">;
   }) {}
   list(archived = false) { return this.dependencies.store.list(archived); }
+  subscribe(id: string,listener: (update: ConversationUpdateDto) => void): () => void {
+    identity(id);
+    const listeners = this.#listeners.get(id) ?? new Set();
+    listeners.add(listener);this.#listeners.set(id,listeners);
+    return () => { listeners.delete(listener);if (listeners.size === 0) this.#listeners.delete(id); };
+  }
+  #publish(update: ConversationUpdateDto): void {
+    for (const listener of this.#listeners.get(update.conversationId) ?? []) {
+      try { listener(update); } catch { /* Observers cannot interrupt conversation execution. */ }
+    }
+  }
+  async rename(id: string,title: string) {
+    identity(id);
+    if (typeof title !== "string" || title.trim() === "" || title.trim().length > CONVERSATION_TITLE_MAX_LENGTH || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(title)) {
+      throw new DomainError("conversation_title_invalid","Enter a title of 1 to 80 characters on one line.");
+    }
+    return this.dependencies.store.rename(id,sanitizeAgentConversationText(title.trim()),this.dependencies.clock.now().toISOString());
+  }
   page(id: string,cursor?: string,limit?: number) { return this.dependencies.store.page(id,cursor,limit); }
   events(id: string,cursor?: string) { return this.dependencies.store.events(id,cursor); }
   async cancelChild(id: string,childId: string) {
@@ -115,6 +134,8 @@ export class ConversationService {
     active?.controller.abort();
     await active?.done;
     await this.dependencies.store.stop(id);
+    const conversation = await this.get(id),turn = conversation.turns.at(-1);
+    if (turn !== undefined) this.#publish({ conversationId: id,turn,...(conversation.context === undefined ? {} : { context: conversation.context }) });
   }
   close(): void { this.#closed = true; for (const active of this.#active.values()) active.controller.abort(); }
   async emergencyStop(): Promise<void> { this.close();await Promise.all([...this.#active.values()].map(active => active.done));await this.dependencies.store.stopAll(); }
@@ -135,20 +156,30 @@ export class ConversationService {
     let artifacts: ConversationTurnDto["artifacts"] = [];
     let suspendedInstanceId: string | undefined;
     let lastFlush = 0;
+    let pendingFlush: ReturnType<typeof setTimeout> | undefined;
     let currentContext: ConversationContextDto | undefined;
-    const flush = async (force = false) => {
+    const publish = (update: Pick<ConversationTurnDto,"entries" | "artifacts" | "status" | "errorCode">,context = currentContext) => {
+      this.#publish({ conversationId: record.conversation.conversationId,turn: { ...record.turn,...update },...(context === undefined ? {} : { context }) });
+    };
+    const flush = async (force = false): Promise<void> => {
       entries = activity.project(baseEntries);
       if (!acceptingActivity) return;
-      if (force || this.dependencies.clock.now().getTime() - lastFlush >= 100) {
-        lastFlush = this.dependencies.clock.now().getTime();
-        if (currentContext !== undefined) { currentContext = { ...currentContext,activityAt: this.dependencies.clock.now().toISOString() };activity.context(currentContext);entries = activity.project(baseEntries); }
-        const snapshot = entries,contextSnapshot = currentContext;
-        writes = writes.catch(() => undefined).then(async () => {
-          await this.dependencies.store.update(turnId,{ entries: snapshot,artifacts,status: "RUNNING" });
-          if (contextSnapshot !== undefined) await this.dependencies.store.context(record.conversation.conversationId,turnId,contextSnapshot);
-        });
-        await writes;
+      const elapsed = this.dependencies.clock.now().getTime() - lastFlush;
+      if (!force && elapsed < 100) {
+        pendingFlush ??= setTimeout(() => { pendingFlush = undefined;void flush(true).catch(() => undefined); },100 - elapsed);
+        return;
       }
+      if (pendingFlush !== undefined) { clearTimeout(pendingFlush);pendingFlush = undefined; }
+      lastFlush = this.dependencies.clock.now().getTime();
+      if (currentContext !== undefined) { currentContext = { ...currentContext,activityAt: this.dependencies.clock.now().toISOString() };activity.context(currentContext);entries = activity.project(baseEntries); }
+      const snapshot = entries,contextSnapshot = currentContext;
+      writes = writes.catch(() => undefined).then(async () => {
+        const update = { entries: snapshot,artifacts,status: "RUNNING" as const };
+        await this.dependencies.store.update(turnId,update);
+        if (contextSnapshot !== undefined) await this.dependencies.store.context(record.conversation.conversationId,turnId,contextSnapshot);
+        publish(update,contextSnapshot);
+      });
+      await writes;
     };
     const progress = async (drafts: AgentConversationDraft[],force = false) => {
       baseEntries = normalizeAgentConversationEntries({ agentId: record.conversation.conversationId,runId: turnId,startedAt: record.turn.createdAt },drafts)
@@ -158,6 +189,7 @@ export class ConversationService {
     };
     try {
       if (!await this.dependencies.store.begin(turnId)) return;
+      publish({ entries,artifacts,status: "RUNNING" });
       controller.signal.throwIfAborted();
       if (record.revision === null) throw new DomainError("conversation_revision_missing", "Conversation configuration is unavailable.");
       const revision = record.revision;
@@ -217,13 +249,16 @@ export class ConversationService {
       if (result.pendingQuestion !== undefined) await progress([{ kind: "MARKDOWN",role: "AGENT",text: result.pendingQuestion }]);
       artifacts = result.artifacts.map(a => ({ name: sanitizeAgentConversationText(a.name),size: a.size,...(a.mimeType === undefined ? {} : { mimeType: a.mimeType }) }));
       acceptingActivity = false;activity.interrupt();entries = activity.project(baseEntries);await writes.catch(() => undefined);
-      await this.dependencies.store.update(turnId,{ entries,artifacts,status: result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? "COMPLETED" : "FAILED",
-        ...(result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? {} : { errorCode: "conversation_execution_failed" }) });
+      const update = { entries,artifacts,status: result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? "COMPLETED" as const : "FAILED" as const,
+        ...(result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? {} : { errorCode: "conversation_execution_failed" }) };
+      await this.dependencies.store.update(turnId,update);publish(update);
     } catch (error) {
       acceptingActivity = false;activity.interrupt();entries = activity.project(baseEntries);await writes.catch(() => undefined);
-      await this.dependencies.store.update(turnId,{ entries,artifacts,status: controller.signal.aborted ? "STOPPED" : "FAILED",
-        errorCode: controller.signal.aborted ? "conversation_stopped" : error instanceof DomainError ? error.code : "conversation_execution_failed" });
+      const update = { entries,artifacts,status: controller.signal.aborted ? "STOPPED" as const : "FAILED" as const,
+        errorCode: controller.signal.aborted ? "conversation_stopped" : error instanceof DomainError ? error.code : "conversation_execution_failed" };
+      await this.dependencies.store.update(turnId,update);publish(update);
     } finally {
+      if (pendingFlush !== undefined) clearTimeout(pendingFlush);
       try {
         if (suspendedInstanceId !== undefined) await this.dependencies.instances.abandonSuspended?.({ workbenchId: record.conversation.workbenchId,instanceId: suspendedInstanceId });
       } finally { this.#active.delete(record.conversation.conversationId);completion.resolve(undefined); }

@@ -1,4 +1,9 @@
 {
+  "conversationTitleInvalid": {
+    "message": "Enter a title of 1 to 80 characters on one line.",
+    "description": "Conversation titles must contain text within the title length limit and cannot contain control characters or line breaks.",
+    "errorCode": "conversation_title_invalid"
+  },
   "modelSourceUrlProhibited": {
     "message": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
     "description": "Explain which custom model endpoint addresses are supported without echoing the submitted URL.",

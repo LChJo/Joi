@@ -2,6 +2,7 @@ specification {
  element system
  element component
  relationship calls
+ relationship publishes
 }
 model {
  app = system "joi" {
@@ -26,11 +27,11 @@ metadata {
 renderer = component "Web renderer" {
 metadata {
  harness_id "2d1c904d-2d74-4f20-9d7b-e4675d617cdf"
- brief "React views use shared DTOs and HTTP. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts."
+ brief "React views use shared DTOs and HTTP. User message bubbles fit their content, stay right-aligned and wrap within responsive maximum widths. Reply copy controls center both copy and success glyphs within explicit button dimensions. Each turn projects only its last thinking phase into stable tool disclosures; expanding reveals a bounded public summary while complete execution history stays intact. The accessible extension list uses a distinct puzzle glyph and shows names and fixed-size switches for Subagents, local Agent Browser and Safety Net, without helper copy. Missing private history remains an internal marker without explanatory UI text. Drafts restore current selections; removed cloud IDs do not enable the replacement. Native partners omit Pi extensions and settings stays last. Partner tool cards use one default-off Agent Browser switch to select or clear the complete browser family while retaining independent core choices. Complete saved selections restore as on; legacy partial selections save as off without widening. Counts treat the family once, catalog failures preserve permissions, and switch geometry supports keyboard input, themes and narrow layouts. History actions offer title editing with selected input, keyboard save/cancel, pending guards and retry; saved titles update history, search and the selected header without resetting drafts. Safe current-turn SSE updates preserve loaded history, drafts and titles; generation counters reject stale refreshes, and disconnected streams fall back to 100 ms cursors."
  source "fact"
  status "verified"
- evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e 2a3aff22-8581-424c-af0a-c4182b77742f 8b99a8d3-c9b5-4f56-aca5-67d33579c709 9b9178f5-d29c-46e3-be65-8f7760ea0055 c4daa482-036e-467b-849b-5c3041e5d812 a8d58319-cdbe-4c6d-ab62-1d334fa3b766"
- version "19"
+ evidence "bb0959ec-71ad-48ea-824b-3aa91a15a7a1 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 2bee49b0-f04c-4ce2-8f64-79516009c1e9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0 4533c5a3-4aba-4fcb-bc4c-7c1f7d7d5c30 bdb1be5c-c983-4e99-8b95-e1f0df5ed37f 08e91490-c42a-42e1-a0c5-4a40c1e2fe0e e5438320-e3e9-41e2-abf9-b409867822e0 ececa617-c6a3-4ea1-a324-a7feb9d2e600 8dc57d83-a63f-4aaf-9cec-21a2a3252c29 f1700bac-e723-4de3-b839-f99c567e6d08 6097810a-ce3d-4038-9a5c-f30fc8382210 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 5bc37929-aa0f-458c-98ae-57aa0ea8090e 2a3aff22-8581-424c-af0a-c4182b77742f 8b99a8d3-c9b5-4f56-aca5-67d33579c709 9b9178f5-d29c-46e3-be65-8f7760ea0055 c4daa482-036e-467b-849b-5c3041e5d812 a8d58319-cdbe-4c6d-ab62-1d334fa3b766 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd"
+ version "21"
 }
 }
 preload = component "Desktop bridge" {
@@ -46,11 +47,11 @@ metadata {
 http = component "HTTP interfaces" {
 metadata {
  harness_id "5619f950-f538-4420-a8e1-8e5dbe296c42"
- brief "Authenticated HTTP route mapping, CSRF/origin write verification and desktop-only conversation filesystem/Git access. Conversation archive listing and lifecycle writes map shared contracts through existing authentication and CSRF/origin guards. History/event cursors are scoped to the conversation; child cancellation uses the existing write guards."
+ brief "Authenticated HTTP route mapping, CSRF/origin write verification and desktop-only conversation filesystem/Git access. Conversation archive listing and lifecycle writes map shared contracts through existing authentication and CSRF/origin guards. History/event cursors are scoped to the conversation; child cancellation uses the existing write guards. PUT conversation title maps authenticated CSRF/origin-protected writes to the application rename operation and shared summary response. Conversation SSE maps application observations to credentialed live reads with latest-only backpressure, heartbeat session checks and connection-scoped cleanup."
  source "fact"
  status "verified"
- evidence "d8f1b579-a4c5-4ab4-a8df-51c8728fbc96 529363b4-ba83-4f8c-946f-579a736f0406 3a9f444d-04a7-43d1-9a57-0212eeda58ca c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "5"
+ evidence "d8f1b579-a4c5-4ab4-a8df-51c8728fbc96 529363b4-ba83-4f8c-946f-579a736f0406 3a9f444d-04a7-43d1-9a57-0212eeda58ca c3ae40e3-2672-4b92-b011-b2ef3c6044a8 85510374-7cb2-43c6-a869-078374bb0c88 886b35a7-9f5d-47fb-b555-4a774d237d50 2cf215ea-bf39-4ead-a1d5-70c2133ae170 25d2574d-1c15-4d09-85d8-982d6df10500"
+ version "7"
 }
 }
 composition = component "Runtime composition" {
@@ -66,20 +67,20 @@ metadata {
 application = component "Application services" {
 metadata {
  harness_id "3c08dc1c-527b-456b-999b-8982b0ada159"
- brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate. Conversation-only activity merges with streamed/final snapshots and is retained through terminal failures; pending projection writes drain before completion. Work event kinds remain unchanged. Typed Pi latency diagnostic contracts expose safe scalar lifecycle facts."
+ brief "Orchestrates inbox, goals, work, automation and learning. User-driven conversations retain single-turn exclusion and checkpointed tool permissions but acquire no autonomous workspace lease. Conversation lifecycle actions start no execution; explicit Git mutations retain repository admission. Safe native-tool lifecycle facts survive normalization into conversation entries. Conversation execution also owns canonical private sessions and child lifecycle; autonomous scheduling remains separate. Conversation-only activity merges with streamed/final snapshots and is retained through terminal failures; pending projection writes drain before completion. Work event kinds remain unchanged. Typed Pi latency diagnostic contracts expose safe scalar lifecycle facts. Conversation observations publish only committed safe projections and keep transport concerns outside the application."
  source "fact"
  status "verified"
- evidence "70cfe0d8-8277-4d50-a38e-99188dc3d467 ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312"
- version "9"
+ evidence "70cfe0d8-8277-4d50-a38e-99188dc3d467 ab916d87-3ab3-4619-9f69-ce1f640aae6d a984c882-2ef4-40fc-a9a5-dca9f6ce824e 02183363-905c-43b4-9579-4b7dd225d966 8d9826b0-5e9d-43c8-b4c4-5e247ac56d15 529363b4-ba83-4f8c-946f-579a736f0406 d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 44b4de62-537a-42f1-8a5c-40d72900430b"
+ version "10"
 }
 conversations = component "Conversation execution" {
 metadata {
  harness_id "cad6c097-c1e0-468e-9195-6e4005ccec71"
- brief "User-driven turn/session orchestration preserves workbench ownership, private history, safe activity and durable children. Independent conversation outbox deliveries overlap across claim batches without a workbench, partner or global active-turn cap; each claim renews until completion and close drains all batches. Same-conversation turn exclusion remains authoritative. Explicit Git operations use a separate serial dispatcher and repository leases. Static extension selections are validated and forwarded across READ/WRITE admission; native partners reject Pi extensions."
+ brief "User-driven turn/session orchestration preserves workbench ownership, private history, safe activity and durable children. Independent conversation outbox deliveries overlap across claim batches without a workbench, partner or global active-turn cap; each claim renews until completion and close drains all batches. Same-conversation turn exclusion remains authoritative. Explicit Git operations use a separate serial dispatcher and repository leases. Static extension selections are validated and forwarded across READ/WRITE admission; native partners reject Pi extensions. Title renaming validates bounded single-line text, sanitizes the public projection and uses a metadata-only store port even during generation. Per-conversation observers receive committed safe turn and terminal snapshots; the 100 ms trailing timer drains paused output and is canceled on settlement."
  source "fact"
  status "verified"
- evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 a5c69e17-9313-458e-952d-24dbb17852ef"
- version "6"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 313dd958-6c17-4b51-8f69-c45004e29137 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 b2a4acb0-0d03-490d-8118-9f905e528312 a5c69e17-9313-458e-952d-24dbb17852ef 44b4de62-537a-42f1-8a5c-40d72900430b ee49fdc6-1c1c-48a7-a1ee-afa121d0b174"
+ version "8"
 }
 }
 }
@@ -105,20 +106,20 @@ metadata {
 conversationStorage = component "Conversation persistence" {
 metadata {
  harness_id "882f7b90-4074-4541-bcad-2c7a7ea4b7cb"
- brief "Private incremental source messages and checkpoints, frozen child/outbox intents, safe history pages and update cursors."
+ brief "Private incremental source messages and checkpoints, frozen child/outbox intents, safe history pages and update cursors. Idempotent title transactions preserve turns, configuration, lifecycle and outbox state; deleted identities stay hidden and later submissions retain the saved title. Successive active-turn projections remain readable through durable change cursors."
  source "fact"
  status "verified"
- evidence "db8263f3-5e65-499b-b358-e54b40a000cd 1519c446-98f9-4b5a-b873-26ea5d8e7d89 c3ae40e3-2672-4b92-b011-b2ef3c6044a8"
- version "1"
+ evidence "db8263f3-5e65-499b-b358-e54b40a000cd 1519c446-98f9-4b5a-b873-26ea5d8e7d89 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 ac69fa43-cea7-401a-a580-5f894151a348"
+ version "3"
 }
 piSessions = component "Pi context and execution" {
 metadata {
  harness_id "c12f9eba-5f56-4fa1-b864-025e3193a7c3"
- brief "Pinned Pi 1.5.2 sessions reuse Joi context, journals and permission gates. Host adapters expose Agent Browser 0.42.0 local tools and Safety Net 2.7.11. Browser operations require an explicit partner tool selection even under ALL and an enabled conversation extension. Owned daemon handles and isolated profiles replace Kernel cloud execution; schema/argument limits, bounded images/text and awaited failure/cancellation cleanup remain inside this component. Ambient SDK resource discovery and nested extension execution stay disabled. Codemode/MCP remain research candidates. Shared session-owned background summaries use complete-response validation, model-derived output allowances, frozen incremental coverage and persisted route-scoped cooldown. Primary Joi and Partner retain their persistence and permission ownership; final cleanup drains cancellation. Live-provider performance is unverified. SDK-added thinking shares the request-local total output ceiling, and context status settles after summary cancellation or completion. Monotonic latency diagnostics separate model request/consumption, SDK tool execution, context preparation, session saves and awaited callbacks. Fast stream callbacks aggregate; slow callbacks are individually observable. Pinned research and synthetic baselines do not establish a production bottleneck. Unix browser IPC names resolve relative to the daemon and command processes' shared private cwd, so long UTF-8 temporary roots retain bounded socket addresses and owned cleanup."
+ brief "Pinned Pi 1.5.2 sessions reuse Joi context, journals and permission gates. Host adapters expose Agent Browser 0.42.0 local tools and Safety Net 2.7.11. Browser operations require an explicit partner tool selection even under ALL and an enabled conversation extension. Owned daemon handles and isolated profiles replace Kernel cloud execution; schema/argument limits, bounded images/text and awaited failure/cancellation cleanup remain inside this component. Ambient SDK resource discovery and nested extension execution stay disabled. Codemode/MCP remain research candidates. Shared session-owned background summaries use complete-response validation, model-derived output allowances, frozen incremental coverage and persisted route-scoped cooldown. Primary Joi and Partner retain their persistence and permission ownership; final cleanup drains cancellation. Live-provider performance is unverified. SDK-added thinking shares the request-local total output ceiling, and context status settles after summary cancellation or completion. Monotonic latency diagnostics separate model request/consumption, SDK tool execution, context preparation, session saves and awaited callbacks. Fast stream callbacks aggregate; slow callbacks are individually observable. Pinned research and synthetic baselines do not establish a production bottleneck. Unix browser IPC names resolve relative to the daemon and command processes' shared private cwd, so long UTF-8 temporary roots retain bounded socket addresses and owned cleanup. Pinned SDK synthetic-provider tests observe answer prefixes before completion; this establishes the local event boundary rather than production gateway timing."
  source "fact"
  status "verified"
  evidence "54304c25-7793-4c5a-b601-f649f10df3f1 629887d6-ca08-4e3b-9116-9def218c167e 90a83f7c-9a38-475a-a9ec-49d540abde2d c3ae40e3-2672-4b92-b011-b2ef3c6044a8 dae0093b-300e-4129-8563-fa0ff2ad9f33 793588d4-9226-45ea-bcb5-58e60334355c 68c4824e-2fab-4811-8c3b-de40278beff1 5841bbad-682d-467a-95f9-8acd70e76c32 e06f4768-44ed-4bb9-8347-bba17ca19cbd 217abdfa-12d5-417d-8e0b-7e55f72917f6 d6797abc-d945-4aa6-bc1a-49d0558529bc 2554deb1-dde9-4858-bb55-e867f1d4d116 8c586b5a-6dfe-43c0-9e0f-8cd885e73a12 5bc37929-aa0f-458c-98ae-57aa0ea8090e 96e31e28-7dec-40fc-be38-c2bae54a9468 5a86001a-4742-4d7a-abf0-5983142f9cb6 4ceef8ae-0316-4837-943b-ab9e9599acc3 2a3aff22-8581-424c-af0a-c4182b77742f ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 38b09d5f-50f2-43a2-b6f7-2a4e31675e77 60fe6b4d-06e2-46f5-8e7f-e680ff854cf9 16802d66-5c1a-4e9f-8db6-af5647932e94 b3dad04a-df5c-45cd-a2da-86f7e73d273e 040ebe4f-d281-4996-8db8-54d727c6e716 c0fbdf81-21b8-46b1-9b34-73d31b228a96 a0e8bc2b-c6f8-4a52-91aa-5b70f6be44a6 f81d9008-9635-480d-b5bd-d88dcf7fd971 2f34eed3-5d77-426a-b98b-b96e7eb41ebc 64c24ebe-09b2-47ab-9204-f66893cf8d48 92db4a86-9834-4071-bf2c-9fd0724b43c3 096dc7d1-eb93-4975-8fea-5f99776e5150 cd436d72-ed57-4452-880d-27cbabeb27fa dd47d686-75af-4f9e-a3be-93a47f07280c 9b7ef723-ee6b-4710-b18a-84c606f6a1a0 29fe20fc-d1a8-4b43-ac2a-ea1bad8e11fa 0b163e7c-4f25-4d8c-81dc-5a583b1d3959 2b73ef5d-3fce-408e-92e7-ffb22945406f d3ce4801-6708-4041-a84e-7a5fa383272a 825e4057-6213-455e-8530-d1efa5bfd42e 1e9f0795-e80d-4799-8df1-4bf42e2be753 c05ed56d-9d11-427e-8a4a-ea69f25d0fb6 70712ab8-9239-417e-ae73-bc61ce09c371 d6750325-b5ac-4ba2-9f0b-b4aa31532e73 d3e5a5bf-cf8a-4b5f-8b48-5f680226b435 e8d71829-fe79-4f80-972e-fbfa312dce20 3d43debc-4cd6-4517-b729-fa6a549d0937 4530c2e6-62fc-4aba-9fa2-554b0e23a136"
- version "10"
+ version "11"
 }
 }
 }
@@ -126,11 +127,11 @@ metadata {
 shared = component "Shared contracts" {
 metadata {
  harness_id "523ea4b5-9b46-4d67-be22-b9ee3d7d3cfb"
- brief "Shared contracts carry safe conversation activity, scoped child/cursor metadata and static Pi extension IDs. Current restoration filters removed IDs without granting replacements; application and HTTP validate new requests. Shared tool policy keeps browser operations opt-in across UI and runtime; shared name classification lets the editor group browser operations while execution still checks individual saved tool names. Existing JSON snapshots and global Work enums need no migration."
+ brief "Shared contracts carry safe conversation activity, scoped child/cursor metadata and static Pi extension IDs. Current restoration filters removed IDs without granting replacements; application and HTTP validate new requests. Shared tool policy keeps browser operations opt-in across UI and runtime; shared name classification lets the editor group browser operations while execution still checks individual saved tool names. Existing JSON snapshots and global Work enums need no migration. Conversation title editing shares an 80-character bound and uses the existing conversation summary contract. Conversation live updates carry one safe turn and optional context without title, private session or raw model payload."
  source "fact"
  status "verified"
  evidence "67786627-f77c-4800-9ac6-386b484e5f5d b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 24499f6b-3dfd-4a50-836f-0a7b169c1ee2 c3ae40e3-2672-4b92-b011-b2ef3c6044a8 2a3aff22-8581-424c-af0a-c4182b77742f"
- version "11"
+ version "13"
 }
 }
 relay = component "Browser relay" {
@@ -176,11 +177,11 @@ metadata {
 validation = component "Quality gates" {
 metadata {
  harness_id "cfebb4bc-4ef2-4661-bd04-0d17d7f6619f"
- brief "Boundary scanner classifies allowed imports; npm scripts define checks and packaging. The Node 24 Windows/macOS quality matrix requires a complete shared lock graph, including optional WASM peer dependencies, before builds and tests. Isolated npm 11.19.1 lock validation supplements installed-tree checks. Two real-disk persistence scenarios have explicit bounded CI wait budgets; local budgets, transaction counts, privacy assertions and coverage gates remain enforced."
+ brief "Boundary scanner classifies allowed imports; npm scripts define checks and packaging. The Node 24 Windows/macOS quality matrix requires a complete shared lock graph, including optional WASM peer dependencies, before builds and tests. Isolated npm 11.19.1 lock validation supplements installed-tree checks. Two real-disk persistence scenarios have explicit bounded CI wait budgets; local budgets, transaction counts, privacy assertions and coverage gates remain enforced. Streaming regressions cover synthetic Pi callbacks, committed projections, transport cleanup, short-answer display, stale reads and an isolated Electron event stream."
  source "fact"
  status "verified"
- evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9 8cdafcd8-5645-4e29-a4e6-84a24465e383 70e2a22b-f223-48ee-ad62-781b5835ed5e ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 fee6a674-0e8e-490e-940d-0f2ea5ae7f8e 5bc37929-aa0f-458c-98ae-57aa0ea8090e ac69fa43-cea7-401a-a580-5f894151a348 2f959b06-4ad5-42b6-9fe0-f927d20e3e3f"
- version "6"
+ evidence "2bee49b0-f04c-4ce2-8f64-79516009c1e9 8cdafcd8-5645-4e29-a4e6-84a24465e383 70e2a22b-f223-48ee-ad62-781b5835ed5e ee49fdc6-1c1c-48a7-a1ee-afa121d0b174 fee6a674-0e8e-490e-940d-0f2ea5ae7f8e 5bc37929-aa0f-458c-98ae-57aa0ea8090e ac69fa43-cea7-401a-a580-5f894151a348 2f959b06-4ad5-42b6-9fe0-f927d20e3e3f d3ce4801-6708-4041-a84e-7a5fa383272a 44b4de62-537a-42f1-8a5c-40d72900430b 2cf215ea-bf39-4ead-a1d5-70c2133ae170 924fa695-204b-44c7-a782-358227365952 bf6ad363-5fc0-4a19-9332-de2c603b9e8c 85794627-0653-4404-bc02-7c4deb5225cd"
+ version "7"
 }
 }
 }
@@ -217,11 +218,11 @@ metadata {
 app.renderer -[calls]-> app.http "Calls HTTP business APIs" {
 metadata {
  harness_id "ab18da5d-d349-400e-9930-396c6229a0dc"
- brief "Calls HTTP business APIs"
+ brief "Calls HTTP business APIs Credentialed SSE supplies current-turn updates with refresh fallback."
  source "fact"
  status "verified"
  evidence "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9"
- version "2"
+ version "3"
 }
 }
 app.renderer -[calls]-> app.shared "Consumes shared DTOs" {
@@ -337,11 +338,11 @@ metadata {
 app.http -[calls]-> app.application.conversations "Maps authenticated conversation and cursor requests" {
 metadata {
  harness_id "72a18122-e614-4b53-b63e-6655b7c4da16"
- brief "Maps authenticated conversation and cursor requests"
+ brief "Maps authenticated conversation and cursor requests Registers safe live-turn observers for authenticated SSE reads."
  source "fact"
  status "verified"
- evidence "3a9f444d-04a7-43d1-9a57-0212eeda58ca"
- version "1"
+ evidence "3a9f444d-04a7-43d1-9a57-0212eeda58ca 85510374-7cb2-43c6-a869-078374bb0c88"
+ version "2"
 }
 }
 app.application.conversations -[calls]-> app.infrastructure.conversationStorage "Persists through conversation ports" {
@@ -382,6 +383,26 @@ metadata {
  status "verified"
  evidence "0928551c-008e-4486-b324-fdd3cc15e717"
  version "2"
+}
+}
+app.application.conversations -[publishes]-> app.http "Publishes committed safe turn observations" {
+metadata {
+ harness_id "0ef58aed-6804-4bf2-9d2c-29522e06adbe"
+ brief "Optional observation callbacks expose committed safe snapshots without an application transport dependency."
+ source "fact"
+ status "verified"
+ evidence "d07c943c-dd56-49b1-8fad-3ad61f4df6cc 85510374-7cb2-43c6-a869-078374bb0c88"
+ version "1"
+}
+}
+app.http -[publishes]-> app.renderer "Streams safe conversation updates over SSE" {
+metadata {
+ harness_id "70aabd59-b8c9-4824-8d9f-ba2e5b15271d"
+ brief "Authenticated event streams deliver current-turn snapshots; cursor requests retain durable reconnect recovery."
+ source "fact"
+ status "verified"
+ evidence "85510374-7cb2-43c6-a869-078374bb0c88 b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9 e5ed42e2-c606-4dd6-8d01-a16986fe9ba0"
+ version "1"
 }
 }
 }

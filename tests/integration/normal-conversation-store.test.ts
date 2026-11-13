@@ -2,6 +2,24 @@ import { createRuntimeFixture } from "../support/runtime-fixture";
 import { SqliteConversationStore } from "../../src/main/infrastructure/persistence/sqlite-conversation-store";
 
 describe("normal conversation persistence", () => {
+  it("CHAT-04/24 exposes successive partial answers through update cursors before the turn finishes",async () => {
+    const f = await createRuntimeFixture();
+    try {
+      const wb = await f.workbenchRegistry.create({ name: "Streaming",personaSummary: "Help",projectLabel: "Streaming",scopeSummary: "Help" });
+      const store = new SqliteConversationStore(f.database);
+      await store.submit({ conversationId: "stream",turnId: "stream-turn",requestId: "stream-request",workbenchId: wb.workbenchId,text: "Question",at: f.clock.now().toISOString(),
+        config: { partnerId: "joi-chat",partnerName: "joi",networkId: "network",networkName: "Network",modelName: "Model",skills: [],attachmentIds: [] } });
+      await store.begin("stream-turn");
+      let cursor = (await store.get("stream"))?.eventCursor;
+      for (const text of ["First words","First words and more words"]) {
+        await store.update("stream-turn",{ status: "RUNNING",artifacts: [],entries: [{ entryId: "answer",sequence: 1,createdAt: f.clock.now().toISOString(),kind: "MARKDOWN",role: "AGENT",text }] });
+        const events = await store.events("stream",cursor);
+        expect(events.items.length).toBeGreaterThan(0);
+        expect((await store.get("stream"))?.turns[0]).toMatchObject({ status: "RUNNING",entries: [{ text }] });
+        cursor = events.cursor;
+      }
+    } finally { await f.close(); }
+  });
   it("CHAT-24 pages every retained turn and resumes payload-free events with a conversation-bound cursor",async () => {
     const f = await createRuntimeFixture();
     try {

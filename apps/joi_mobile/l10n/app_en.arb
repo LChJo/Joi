@@ -887,6 +887,21 @@
     "description": "chat.title",
     "placeholders": {}
   },
+  "chatRename": "Rename",
+  "@chatRename": {
+    "description": "chat.rename",
+    "placeholders": {}
+  },
+  "chatRenameTitle": "Rename conversation",
+  "@chatRenameTitle": {
+    "description": "chat.renameTitle",
+    "placeholders": {}
+  },
+  "chatTitleLabel": "Conversation title",
+  "@chatTitleLabel": {
+    "description": "chat.titleLabel",
+    "placeholders": {}
+  },
   "chatTool": "Tool",
   "@chatTool": {
     "description": "chat.tool",
@@ -1833,6 +1848,11 @@
   "commonNextPage": "Next page",
   "@commonNextPage": {
     "description": "common.nextPage",
+    "placeholders": {}
+  },
+  "errorsConversationTitleInvalid": "Enter a title of 1 to 80 characters on one line.",
+  "@errorsConversationTitleInvalid": {
+    "description": "Conversation titles must contain text within the title length limit and cannot contain control characters or line breaks.",
     "placeholders": {}
   },
   "errorsModelSourceUrlProhibited": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",

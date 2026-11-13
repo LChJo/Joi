@@ -3,6 +3,7 @@ import { HttpError, readJson, sendJson, sessionToken, stringField } from "../htt
 import { exact, pattern, type RouteContext, type RouteDefinition } from "../route-types.js";
 import type { GitCommandInput } from "../../../../shared/conversations.js";
 import { isConversationPiExtensions } from "../../../../shared/conversations.js";
+import { streamConversation } from "../conversation-stream.js";
 
 function service(ctx: RouteContext) {
   if (ctx.dependencies.conversations === undefined) throw new HttpError("conversation_unavailable", "Conversations are unavailable.",503);
@@ -34,6 +35,11 @@ export const CONVERSATION_ROUTES: RouteDefinition[] = [
       skills: strings(body,"skills"),attachmentIds: strings(body,"attachmentIds") }));
   } },
   { auth: "read",id: "GET /api/v1/conversations/:id",match: pattern("GET",/^\/api\/v1\/conversations\/([^/]+)$/),handle: async (ctx,match) => sendJson(ctx.response,200,await service(ctx).get(decodeURIComponent(((match as RegExpExecArray)[1] ?? "")))) },
+  { auth: "read",id: "GET /api/v1/conversations/:id/stream",match: pattern("GET",/^\/api\/v1\/conversations\/([^/]+)\/stream$/),handle: (ctx,match) => streamConversation(ctx,decodeURIComponent(((match as RegExpExecArray)[1] ?? ""))) },
+  { auth: "write",id: "PUT /api/v1/conversations/:id/title",match: pattern("PUT",/^\/api\/v1\/conversations\/([^/]+)\/title$/),handle: async (ctx,match) => {
+    const body = await readJson(ctx.request);
+    sendJson(ctx.response,200,await service(ctx).rename(decodeURIComponent(((match as RegExpExecArray)[1] ?? "")),stringField(body,"title")));
+  } },
   { auth: "read",id: "GET /api/v1/conversations/:id/history",match: pattern("GET",/^\/api\/v1\/conversations\/([^/]+)\/history$/),handle: async (ctx,match) => {
     const page = service(ctx).page;if (page === undefined) throw new HttpError("conversation_unavailable","History pagination is unavailable.",503);
     sendJson(ctx.response,200,await page.call(service(ctx),decodeURIComponent(((match as RegExpExecArray)[1] ?? "")),ctx.url.searchParams.get("cursor") ?? undefined,Number(ctx.url.searchParams.get("limit") ?? 50)));

@@ -13,6 +13,24 @@ import { modelRequestBudget } from "../../src/main/infrastructure/pi/pi-model-bu
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import type { ConversationThinkingDto } from "../../src/shared/conversations.js";
 
+it("CHAT-04 publishes Pi answer prefixes while the model is still streaming",async () => {
+  const faux = fauxProvider({ provider: "conversation-stream",tokenSize: { min: 1,max: 1 },tokensPerSecond: 100 }),models = createModels();models.setProvider(faux.provider);
+  const answer = "Streaming words arrive progressively.";
+  faux.setResponses([fauxAssistantMessage([fauxText(answer)])]);
+  const runtime = new PiPartnerEngineRuntime({ contexts: { loadForExecution: async () => ({ promptSection: "",sanitized: {} }) },prompts: { read: async () => null },
+    resolver: { resolve: async () => ({ model: faux.getModel(),models,thinkingLevel: "off" }) },sources: { selectInitial: async turnId => ({ turnId,modelId: "m",modelRevisionId: "mr",sourceId: "s",sourceRevisionId: "sr" }) },tools: { names: [],create: () => [] } });
+  const revision = createPartnerRevision({ capabilities: [],createdAt: "2026-11-13T00:00:00Z",displayName: "Helper",kind: "local-pi",partnerId: "p",partnerRevisionId: "r",registryRevision: 1,skills: [],tools: [],toolPolicyMode: "CUSTOM" });
+  const parts: { text: string;at: number }[] = [];
+  try {
+    await runtime.runResidentTurn({ instanceId: "streaming",knowledgeSection: "",skillSection: "",skillEnvironmentKeys: [],revision,restoredMessages: null,
+      onEvent: async event => { if (event.type === "message" && event.role === "agent") for (const part of event.parts) if (part.type === "text") parts.push({ text: part.text,at: performance.now() }); },
+      request: { actionId: "turn",workbenchId: "wb",workId: "turn",contextSnapshotId: "s",taskProjection: "Help",conversationId: "chat",subagentsEnabled: false } });
+    expect(parts.length).toBeGreaterThan(3);
+    expect(parts[0]?.text.length).toBeLessThan(answer.length);
+    expect(performance.now() - (parts[0]?.at ?? performance.now())).toBeGreaterThan(80);
+  } finally { runtime.evictFromMemory("streaming"); }
+});
+
 it("CHAT-29 observes actual Pi thinking phases without projecting raw reasoning or signatures",async () => {
   const faux = fauxProvider({ provider: "safe-thinking" }),models = createModels();models.setProvider(faux.provider);
   const updates: ConversationThinkingDto[] = [],events: unknown[] = [];

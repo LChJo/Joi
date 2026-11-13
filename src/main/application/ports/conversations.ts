@@ -16,6 +16,7 @@ export interface ConversationStore {
   saveSession(id: string, turnId: string, state: PartnerSessionState, at: string): Promise<void>;
   submit(input: ConversationSubmission): Promise<ConversationDto>;
   list(archived?: boolean): Promise<{ items: ConversationSummaryDto[] }>;
+  rename(id: string,title: string,at: string): Promise<ConversationSummaryDto>;
   setState(id: string, state: ConversationState, at: string): Promise<void>;
   get(id: string): Promise<ConversationDto | null>;
   request(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string } | null>;

@@ -188,6 +188,9 @@ export interface MessageParameters {
   "chat.collapseNavigation": undefined;
   "chat.expandNavigation": undefined;
   "chat.title": undefined;
+  "chat.rename": undefined;
+  "chat.renameTitle": undefined;
+  "chat.titleLabel": undefined;
   "chat.tool": undefined;
   "chat.toolsRunning": undefined;
   "chat.toolsCompleted": undefined;
@@ -370,6 +373,7 @@ export interface MessageParameters {
   "common.inputAwaitingConfirmation": undefined;
   "common.previousPage": undefined;
   "common.nextPage": undefined;
+  "errors.conversationTitleInvalid": undefined;
   "errors.modelSourceUrlProhibited": undefined;
   "errors.modelSourceKeyRequired": undefined;
   "errors.modelSourceRedirectCrossOrigin": undefined;
@@ -1940,6 +1944,9 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.collapseNavigation": "Collapse navigation",
     "chat.expandNavigation": "Expand navigation",
     "chat.title": "Conversations",
+    "chat.rename": "Rename",
+    "chat.renameTitle": "Rename conversation",
+    "chat.titleLabel": "Conversation title",
     "chat.tool": "Tool",
     "chat.toolsRunning": "Using tool",
     "chat.toolsCompleted": "Tool activity",
@@ -2122,6 +2129,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.inputAwaitingConfirmation": "Input awaiting confirmation",
     "common.previousPage": "Previous page",
     "common.nextPage": "Next page",
+    "errors.conversationTitleInvalid": "Enter a title of 1 to 80 characters on one line.",
     "errors.modelSourceUrlProhibited": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
     "errors.modelSourceKeyRequired": "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.",
     "errors.modelSourceRedirectCrossOrigin": "The model URL redirects to a different origin. Enter the final Base URL directly.",
@@ -3690,6 +3698,9 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "chat.collapseNavigation": "收起主导航",
     "chat.expandNavigation": "展开主导航",
     "chat.title": "对话",
+    "chat.rename": "重命名",
+    "chat.renameTitle": "重命名对话",
+    "chat.titleLabel": "对话标题",
     "chat.tool": "工具",
     "chat.toolsRunning": "正在使用工具",
     "chat.toolsCompleted": "已完成工具",
@@ -3872,6 +3883,7 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.inputAwaitingConfirmation": "待确认的输入",
     "common.previousPage": "上一页",
     "common.nextPage": "下一页",
+    "errors.conversationTitleInvalid": "请输入1到80个字符的单行标题。",
     "errors.modelSourceUrlProhibited": "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。",
     "errors.modelSourceKeyRequired": "请填写 API Key；仅本机 localhost/127.0.0.1 可留空。",
     "errors.modelSourceRedirectCrossOrigin": "模型地址重定向到了其他来源，请直接填写最终的 Base URL。",
@@ -5610,6 +5622,12 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "展开主导航": "chat.expandNavigation",
   "Conversations": "chat.title",
   "对话": "chat.title",
+  "Rename": "chat.rename",
+  "重命名": "chat.rename",
+  "Rename conversation": "chat.renameTitle",
+  "重命名对话": "chat.renameTitle",
+  "Conversation title": "chat.titleLabel",
+  "对话标题": "chat.titleLabel",
   "Tool": "home.tool",
   "工具": "home.tool",
   "Using tool": "chat.toolsRunning",
@@ -5945,6 +5963,8 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "上一页": "common.previousPage",
   "Next page": "common.nextPage",
   "下一页": "common.nextPage",
+  "Enter a title of 1 to 80 characters on one line.": "errors.conversationTitleInvalid",
+  "请输入1到80个字符的单行标题。": "errors.conversationTitleInvalid",
   "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).": "errors.modelSourceUrlProhibited",
   "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。": "errors.modelSourceUrlProhibited",
   "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.": "errors.modelSourceKeyRequired",
@@ -8440,6 +8460,7 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
 export const errorKeys: Readonly<Record<string, MessageKey>> = {
   "conversation_busy": "chat.stopBeforeArchive",
   "conversation_archived": "chat.restoreFirst",
+  "conversation_title_invalid": "errors.conversationTitleInvalid",
   "model_source_url_prohibited": "errors.modelSourceUrlProhibited",
   "model_source_key_required": "errors.modelSourceKeyRequired",
   "model_source_redirect_cross_origin": "errors.modelSourceRedirectCrossOrigin",

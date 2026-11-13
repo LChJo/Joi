@@ -41,6 +41,11 @@
 .chat-dialog h2 { margin:0;font-size:18px;overflow-wrap:anywhere; }
 .chat-dialog > p { overflow-wrap:anywhere; }
 .chat-dialog > footer { justify-content:flex-end;margin-top:18px; }
+.chat-dialog:has(.chat-rename-form) { width:min(420px,calc(100vw - 32px)); }
+.chat-rename-form label { display:grid;gap:8px;margin-top:18px; }
+.chat-rename-form input { width:100%;min-width:0; }
+.chat-rename-form p { color:var(--red);font-size:12px; }
+.chat-rename-form footer { display:flex;justify-content:flex-end;gap:8px;margin-top:20px; }
 .chat-archive-transcript { min-height:0;overflow:auto;margin-top:20px; }
 .archive-page { padding:32px;max-width:1200px;margin:0 auto; }
 html:has(.archive-page),body:has(.archive-page) { min-width:0; }

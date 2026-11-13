@@ -1,4 +1,5 @@
 {
+  "conversationTitleInvalid": "请输入1到80个字符的单行标题。",
   "modelSourceUrlProhibited": "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。",
   "modelSourceKeyRequired": "请填写 API Key；仅本机 localhost/127.0.0.1 可留空。",
   "modelSourceRedirectCrossOrigin": "模型地址重定向到了其他来源，请直接填写最终的 Base URL。",

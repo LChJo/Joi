@@ -1,5 +1,7 @@
 import type { AgentConversationEntryDto } from "./joi.js";
 
+export const CONVERSATION_TITLE_MAX_LENGTH = 80;
+
 export const CONVERSATION_PI_EXTENSIONS = ["agent-browser","cc-safety-net"] as const;
 export type ConversationPiExtension = typeof CONVERSATION_PI_EXTENSIONS[number];
 export function currentConversationPiExtensions(value: unknown): ConversationPiExtension[] {
@@ -72,6 +74,11 @@ export interface ConversationContextDto {
 export interface ConversationDto extends ConversationSummaryDto {
   turns: ConversationTurnDto[];historyCursor?: string;eventCursor?: string;context?: ConversationContextDto;
   children?: { childId: string;status: "QUEUED" | "RUNNING" | "COMPLETED" | "FAILED" | "CANCELED" | "INTERRUPTED" }[];
+}
+export interface ConversationUpdateDto {
+  conversationId: string;
+  turn: ConversationTurnDto;
+  context?: ConversationContextDto;
 }
 export interface ConversationHistoryPageDto { items: ConversationTurnDto[];nextCursor: string | null; }
 export interface ConversationEventsDto { items: { sequence: number;turnId: string | null }[];cursor: string;hasMore: boolean; }

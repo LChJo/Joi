@@ -1,5 +1,9 @@
 # 路线图与验收
 
+2026-11-13 对话正文实时增量映射 CHAT-04/24/45：默认 joi（Pi）的安全轮次投影通过认证 SSE 直接推送，生成暂停时在100ms限流窗口内补刷尾段。每次仅发送当前轮次和安全上下文；界面保留已加载历史、草稿和编辑后的标题，拒绝旧刷新覆盖新片段。连接可用时700ms游标刷新补齐元数据，断线或无SSE时降级100ms刷新；完成、停止和切换对话释放订阅，传输背压合并为最新待发送快照，心跳复核会话。回归见 `conversation-pi-session.test.ts`、`normal-conversation-execution.test.ts`、`conversation-http.test.ts`、`conversation-stream.test.ts` 与 `conversation-interactions.test.tsx`。
+
+2026-11-13 对话标题编辑映射 CHAT-44：历史行操作提供“重命名”，编辑框聚焦并选中原标题，支持保存/Enter、取消/Escape、空白与80字符上限校验及失败重试。生成中仍可修改标题；保存后同步列表、搜索与当前标题，重启及后续轮次保留。受认证、CSRF和来源保护的标题写入采用幂等本地事务，不改动轮次、配置或执行状态，不派发任务，拒绝已删除身份。回归见 `normal-conversation-execution.test.ts`、`conversation-http.test.ts`、`conversation-archive.test.tsx` 与 `conversation-archive.spec.ts`。
+
 2026-11-11 工具参数与状态增量映射 CHAT-17：对话工具组默认折叠，摘要展示最新工具、安全参数摘要、执行状态与调用数；展开逐条显示参数和状态。工具失败以明确状态字段贯穿投影、归一化和对话持久化，旧记录兼容失败标记；未完成调用按轮次区分执行中、停止、中断及结果未记录。参数沿用脱敏和路径缩写，长参数收起时省略、展开后换行，缺失参数明确标识；不改变工具执行限制。回归见 `native-agent-events.test.ts`、`normal-conversation-execution.test.ts`、`conversation-output.test.tsx` 与 `conversations.spec.ts`。
 
 2026-11-11 对话并行执行与工具流增量映射 CHAT-15/16：普通对话不申请 Joi 的工作目录读写租约，避免双方因工作台占用互相等待；保留同一对话单轮执行、工具权限阶段、持久检查点、停止及中断不重放，显式 Git 仍协调仓库变更。连续工具记录默认折叠，仅展示最新工具与调用次数，调用和结果配对计数，展开仅显示安全工具名，流式追加保持展开状态。见 `normal-conversation-execution.test.ts`、`conversation-output.test.tsx` 与 `conversations.spec.ts`。
