@@ -10,6 +10,20 @@ import { normalizeAgentConversationEntries, sanitizeAgentConversationText, type 
 import type { ConversationContextDto,ConversationTurnDto,ConversationUpdateDto } from "../../../shared/conversations.js";
 import type { ConversationSubagentPort } from "../ports/conversation-subagents.js";
 import { ConversationActivity } from "./conversation-activity.js";
+import { partnerRunFailureFromError,partnerRunArtifactsFromError,wrapPartnerRunFailure } from "../partners/partner-run-failure.js";
+
+const PUBLIC_FAILURE_CODES = new Set(["timeout","connection_error","connect","rate_limited","server_error","auth_forbidden","invalid_api_key","http_401","http_403","model_access_forbidden","region_forbidden",
+  "invalid_model","unsupported_parameter","invalid_request","model_refused","context_too_large","model_context_budget_exhausted","partner_run_timed_out","partner_run_idle_timed_out",
+  "partner_tool_timed_out","partner_run_stalled","workspace_write_forbidden","partner_tool_not_allowed","conversation_session_invalid","conversation_persistence_failed",
+  "conversation_revision_missing","workbench_not_found","conversation_interrupted","conversation_cleanup_timed_out","partner_worker_exited","partner_worker_unavailable"]);
+
+function conversationFailure(error: unknown) {
+  const failure = partnerRunFailureFromError(error);
+  const reasonCode = failure.reasonCode === "http_408" ? "timeout" : failure.reasonCode === "http_429" ? "rate_limited"
+    : /^http_5\d\d$/u.test(failure.reasonCode) ? "server_error" : PUBLIC_FAILURE_CODES.has(failure.reasonCode) ? failure.reasonCode
+    : /^(?:E(?:CONN|NET|HOST|AI_|TIMEDOUT|NOTFOUND)|UND_ERR_)/u.test(failure.reasonCode) ? "connection_error" : "conversation_execution_failed";
+  return { phase: failure.phase,reasonCode,retryable: reasonCode !== "conversation_execution_failed" && failure.retryable,sideEffectState: failure.sideEffectState };
+}
 
 interface Lease { generation: number; workspaceRef: string; workId: string; }
 export interface ConversationLeasePort {
@@ -158,7 +172,7 @@ export class ConversationService {
     let lastFlush = 0;
     let pendingFlush: ReturnType<typeof setTimeout> | undefined;
     let currentContext: ConversationContextDto | undefined;
-    const publish = (update: Pick<ConversationTurnDto,"entries" | "artifacts" | "status" | "errorCode">,context = currentContext) => {
+    const publish = (update: Pick<ConversationTurnDto,"entries" | "artifacts" | "status" | "errorCode" | "failure">,context = currentContext) => {
       this.#publish({ conversationId: record.conversation.conversationId,turn: { ...record.turn,...update },...(context === undefined ? {} : { context }) });
     };
     const flush = async (force = false): Promise<void> => {
@@ -186,6 +200,11 @@ export class ConversationService {
         .filter(e => e.role !== "USER").map(({ order,runId: _runId,artifact,...entry }) => ({ ...entry,sequence: order,
           ...(artifact === undefined ? {} : { artifact: { name: artifact.name,size: artifact.size,mimeType: artifact.mimeType,kind: "FILE" as const } }) }));
       await flush(force);
+    };
+    const settle = async (patch: Parameters<ConversationStore["update"]>[1]) => {
+      try { await this.dependencies.store.update(turnId,patch); }
+      catch { throw wrapPartnerRunFailure({ code: "conversation_persistence_failed" },{ phase: "RECOVERY",sideEffectState: "UNKNOWN" }); }
+      publish(patch);
     };
     try {
       if (!await this.dependencies.store.begin(turnId)) return;
@@ -249,14 +268,16 @@ export class ConversationService {
       if (result.pendingQuestion !== undefined) await progress([{ kind: "MARKDOWN",role: "AGENT",text: result.pendingQuestion }]);
       artifacts = result.artifacts.map(a => ({ name: sanitizeAgentConversationText(a.name),size: a.size,...(a.mimeType === undefined ? {} : { mimeType: a.mimeType }) }));
       acceptingActivity = false;activity.interrupt();entries = activity.project(baseEntries);await writes.catch(() => undefined);
-      const update = { entries,artifacts,status: result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? "COMPLETED" as const : "FAILED" as const,
-        ...(result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? {} : { errorCode: "conversation_execution_failed" }) };
-      await this.dependencies.store.update(turnId,update);publish(update);
+      await settle({ entries,artifacts,status: result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? "COMPLETED" : "FAILED",
+        ...(result.status === "COMPLETED" || result.status === "WAITING_INPUT" ? {} : { errorCode: "conversation_execution_failed" }) });
     } catch (error) {
       acceptingActivity = false;activity.interrupt();entries = activity.project(baseEntries);await writes.catch(() => undefined);
-      const update = { entries,artifacts,status: controller.signal.aborted ? "STOPPED" as const : "FAILED" as const,
-        errorCode: controller.signal.aborted ? "conversation_stopped" : error instanceof DomainError ? error.code : "conversation_execution_failed" };
-      await this.dependencies.store.update(turnId,update);publish(update);
+      const failure = conversationFailure(error);
+      const retainFailure = !controller.signal.aborted || failure.reasonCode === "conversation_cleanup_timed_out" || failure.reasonCode === "conversation_persistence_failed";
+      const partial = partnerRunArtifactsFromError(error).map(a => ({ name: sanitizeAgentConversationText(a.name),size: a.size,...(a.mimeType === undefined ? {} : { mimeType: a.mimeType }) }));
+      artifacts = [...artifacts,...partial.filter(item => !artifacts.some(existing => existing.name === item.name))];
+      await settle({ entries,artifacts,status: controller.signal.aborted ? "STOPPED" : "FAILED",
+        errorCode: retainFailure ? failure.reasonCode : "conversation_stopped",...(retainFailure ? { failure } : {}) });
     } finally {
       if (pendingFlush !== undefined) clearTimeout(pendingFlush);
       try {

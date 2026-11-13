@@ -81,6 +81,8 @@ export interface ResidentTurnInput extends PartnerExecutionContext {
 
 /** Private execution history, separate from the safe UI projection and disposable instances. */
 export interface PartnerSessionState {
+  modelRetry?: { turnId: string;attempts: number };
+  piSession?: { version: 1;header: unknown;entries: unknown[];leafId: string | null };
   summaryRetry?: SummaryRetryState;
   engine: PartnerEngine;
   messages: unknown[];

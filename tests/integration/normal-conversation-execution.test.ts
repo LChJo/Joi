@@ -10,6 +10,7 @@ import { SqliteWorkspaceLeaseManager } from "../../src/main/infrastructure/persi
 import type { PartnerInstanceManager } from "../../src/main/application/partners/partner-instance-manager";
 import type { PartnerRunResult } from "../../src/main/application/ports/partner-execution";
 import { DomainError } from "../../src/main/domain/errors";
+import { wrapPartnerRunFailure } from "../../src/main/application/partners/partner-run-failure";
 
 async function setup(run: PartnerInstanceManager["dispatch"]) {
   const f = await createRuntimeFixture();
@@ -107,6 +108,51 @@ describe("normal conversation execution", () => {
       await store.begin(turn.turnId);await store.update(turn.turnId,{ status: "COMPLETED",entries: [],artifacts: [] });
       expect((await service.send({ ...input,requestId: "follow-up",text: "Next question" })).title).toBe("项目讨论");
       expect(run).not.toHaveBeenCalled();
+    } finally { await f.close(); }
+  });
+  it.each([[408,"timeout"],[429,"rate_limited"],[503,"server_error"]] as const)("REL-05 retains a safe category for provider HTTP %s",async (status,reasonCode) => {
+    const { f,service,accept } = await setup(async () => { throw wrapPartnerRunFailure({ status },{ phase: "MODEL",sideEffectState: "NONE" }); });
+    try {
+      await service.deliver((await accept()).turnId);
+      expect((await service.get("chat")).turns[0]).toMatchObject({ status: "FAILED",errorCode: reasonCode,failure: { reasonCode,phase: "MODEL" } });
+    } finally { await f.close(); }
+  });
+  it("REL-10 reports a failed terminal write as persistence failure without claiming completion",async () => {
+    const { f,service,store,accept } = await setup(async p => ({ actionId: p.request.actionId,workId: p.request.workId,externalRunId: "fixture",status: "COMPLETED",body: "Retained answer",artifacts: [] }));
+    const update = store.update.bind(store);
+    vi.spyOn(store,"update").mockImplementation(async (id,patch) => {
+      if (patch.status === "COMPLETED") throw new Error("PRIVATE_STORAGE_SENTINEL");
+      await update(id,patch);
+    });
+    try {
+      await service.deliver((await accept()).turnId);
+      const turn = (await service.get("chat")).turns[0];
+      expect(turn).toMatchObject({ status: "FAILED",errorCode: "conversation_persistence_failed",failure: { phase: "RECOVERY",sideEffectState: "UNKNOWN",retryable: false } });
+      expect(turn?.entries.some(entry => entry.kind === "MARKDOWN" && entry.text === "Retained answer")).toBe(true);
+      expect(JSON.stringify(turn)).not.toContain("PRIVATE_STORAGE_SENTINEL");
+    } finally { await f.close(); }
+  });
+  it("REL-09 preserves unknown cleanup facts when a user stop reaches its settlement deadline",async () => {
+    const started = Promise.withResolvers<undefined>();
+    const { f,service,accept } = await setup(async p => {
+      started.resolve(undefined);return new Promise<never>((_resolve,reject) => p.signal?.addEventListener("abort",() => reject(wrapPartnerRunFailure({ code: "conversation_cleanup_timed_out" },{ phase: "RECOVERY",sideEffectState: "UNKNOWN" })),{ once: true }));
+    });
+    try {
+      const delivery = service.deliver((await accept()).turnId);await started.promise;await service.stop("chat");await delivery;
+      expect((await service.get("chat")).turns[0]).toMatchObject({ status: "STOPPED",errorCode: "conversation_cleanup_timed_out",failure: { phase: "RECOVERY",sideEffectState: "UNKNOWN",retryable: false } });
+    } finally { await f.close(); }
+  });
+  it("REL-05 preserves safe model failure facts and partial artifacts across a cold read",async () => {
+    const { f,service,accept,dependencies } = await setup(async () => {
+      throw wrapPartnerRunFailure(Object.assign(new Error("PRIVATE_PROVIDER_SENTINEL"),{ code: "timeout",partialArtifacts: [{ name: "partial.md",size: 12 }] }),{ phase: "MODEL",sideEffectState: "OBSERVED" });
+    });
+    const receive = vi.fn();service.subscribe("chat",receive);
+    try {
+      await service.deliver((await accept()).turnId);
+      const chat = await new ConversationService(dependencies).get("chat");
+      expect(chat.turns[0]).toMatchObject({ status: "FAILED",errorCode: "timeout",failure: { phase: "MODEL",reasonCode: "timeout",retryable: false,sideEffectState: "OBSERVED" },artifacts: [{ name: "partial.md",size: 12 }] });
+      expect(JSON.stringify(chat)).not.toContain("PRIVATE_PROVIDER_SENTINEL");
+      expect(receive).toHaveBeenLastCalledWith(expect.objectContaining({ turn: expect.objectContaining({ status: "FAILED",failure: { phase: "MODEL",reasonCode: "timeout",retryable: false,sideEffectState: "OBSERVED" },artifacts: [{ name: "partial.md",size: 12 }] }) as unknown }));
     } finally { await f.close(); }
   });
   it("CHAT-31 rejects Pi extension selections for a native partner",async () => {

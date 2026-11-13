@@ -42,6 +42,12 @@ export interface ConversationActivityEntryDto extends Omit<AgentConversationEntr
   activity: ConversationActivityDto;
 }
 export type ConversationEntryDto = AgentConversationEntryDto | ConversationActivityEntryDto;
+export interface ConversationFailureDto {
+  phase: "CONFIGURATION" | "ENGINE" | "EXECUTION" | "MODEL" | "RECOVERY";
+  reasonCode: string;
+  retryable: boolean;
+  sideEffectState: "NONE" | "OBSERVED" | "UNKNOWN";
+}
 export interface ConversationTurnDto {
   turnId: string;
   text: string;
@@ -51,6 +57,7 @@ export interface ConversationTurnDto {
   entries: ConversationEntryDto[];
   artifacts: { name: string; size: number; mimeType?: string }[];
   errorCode?: string;
+  failure?: ConversationFailureDto;
 }
 export interface ConversationSummaryDto {
   conversationId: string;
@@ -62,6 +69,7 @@ export interface ConversationSummaryDto {
 }
 export type ConversationState = "ACTIVE" | "ARCHIVED" | "DELETED";
 export interface ConversationContextDto {
+  recovery?: { state: "RETRYING" | "RECOVERED" | "EXHAUSTED" | "CANCELED";attempt: number;maxAttempts: number;nextRetryAt?: string;reasonCode?: string };
   kind: "CHARACTERS" | "NATIVE";
   state: "READY" | "COMPACTING" | "COMPRESSED" | "BACKOFF" | "TRIMMED" | "CAPACITY";
   requestChars?: number;

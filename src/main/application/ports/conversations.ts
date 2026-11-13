@@ -22,7 +22,7 @@ export interface ConversationStore {
   request(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string } | null>;
   turn(id: string): Promise<{ conversation: ConversationDto; turn: ConversationTurnDto; text: string; revision: PartnerRevision | null } | null>;
   begin(turnId: string): Promise<boolean>;
-  update(turnId: string, patch: Pick<ConversationTurnDto, "entries" | "artifacts" | "status"> & { errorCode?: string }): Promise<void>;
+  update(turnId: string, patch: Pick<ConversationTurnDto, "entries" | "artifacts" | "status"> & Pick<ConversationTurnDto,"errorCode" | "failure">): Promise<void>;
   stop(conversationId: string): Promise<void>;
   stopAll(): Promise<void>;
   recoverInterrupted(at: string): Promise<void>;

@@ -40,6 +40,7 @@ interface RequestOptions {
   body?: Record<string, unknown>;
   idempotencyKey?: string;
   method?: "DELETE" | "GET" | "PATCH" | "POST" | "PUT";
+  signal?: AbortSignal;
 }
 
 export class DigitalLifeApi {
@@ -57,20 +58,47 @@ export class DigitalLifeApi {
     if (options.body !== undefined) headers["content-type"] = "application/json";
     if (options.idempotencyKey !== undefined) headers["idempotency-key"] = options.idempotencyKey;
     if (method !== "GET" && this.csrfToken !== null) headers["x-csrf-token"] = this.csrfToken;
-    const response = await fetch(`${this.origin}${path}`, {
-      ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      credentials: "include",
-      headers,
-      method,
+    const controller = new AbortController();
+    const abort = () => controller.abort();
+    options.signal?.addEventListener("abort",abort,{ once: true });
+    if (options.signal?.aborted === true) abort();
+    const timer = method === "GET" ? setTimeout(() => { controller.abort(new ApiError("read_timed_out",t("common.theRequestFailed"),0)); },10_000) : undefined;
+    let rejectAborted: (() => void) | undefined;
+    const canceled = new Promise<never>((_resolve,reject) => {
+      rejectAborted = () => reject(new DOMException("Request canceled","AbortError"));
+      controller.signal.addEventListener("abort",rejectAborted,{ once: true });
+      if (controller.signal.aborted) rejectAborted();
     });
-    if (!response.ok) {
-      const failure = await response.json().catch(() => ({ code: "request_failed", message: t("common.theRequestFailed") })) as {
-        code?: string; message?: string;
-      };
-      throw new ApiError(failure.code ?? "request_failed", failure.message ?? t("common.theRequestFailed"), response.status);
+    try {
+      return await Promise.race([canceled,(async () => {
+        const response = await fetch(`${this.origin}${path}`, {
+          ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
+          credentials: "include",
+          headers,
+          method,
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          const failure: unknown = await response.json().catch(() => null);
+          const value = failure !== null && typeof failure === "object" ? failure as {
+            code?: string; message?: string;
+          } : {};
+          const code = response.status === 401 ? "authentication_required" : response.status === 403 ? "request_forbidden"
+            : response.status === 429 ? "request_rate_limited" : response.status === 502 || response.status === 503 || response.status === 504 ? "connection_unavailable"
+            : response.status >= 500 ? "backend_unavailable" : "request_failed";
+          throw new ApiError(typeof value.code === "string" ? value.code : code,typeof value.message === "string" ? value.message : t("common.theRequestFailed"),response.status);
+        }
+        if (response.status === 204) return undefined as T;
+        return response.json() as Promise<T>;
+      })()]);
+    } catch (error) {
+      if (controller.signal.reason instanceof ApiError) throw controller.signal.reason;
+      if (error instanceof ApiError || controller.signal.aborted) throw error;
+      throw new ApiError("connection_unavailable",t("common.theRequestFailed"),0);
+    } finally {
+      clearTimeout(timer);options.signal?.removeEventListener("abort",abort);
+      if (rejectAborted !== undefined) controller.signal.removeEventListener("abort",rejectAborted);
     }
-    if (response.status === 204) return undefined as T;
-    return response.json() as Promise<T>;
   }
 
   authStatus() { return this.request<{ configured: boolean }>("/api/v1/auth/status"); }
@@ -79,7 +107,7 @@ export class DigitalLifeApi {
   archiveConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/archive`,{ method: "POST" }); }
   restoreConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/restore`,{ method: "POST" }); }
   deleteConversation(id: string) { return this.request<{ changed: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}`,{ method: "DELETE" }); }
-  getConversation(id: string) { return this.request<ConversationDto>(`/api/v1/conversations/${encodeURIComponent(id)}`); }
+  getConversation(id: string,options: Pick<RequestOptions,"signal"> = {}) { return this.request<ConversationDto>(`/api/v1/conversations/${encodeURIComponent(id)}`,options); }
   watchConversation(id: string,onUpdate: (update: ConversationUpdateDto) => void,onError: () => void): (() => void) | undefined {
     if (typeof EventSource === "undefined") return undefined;
     let source: EventSource;
@@ -103,7 +131,7 @@ export class DigitalLifeApi {
     return dispose;
   }
   conversationHistory(id: string,cursor: string) { return this.request<ConversationHistoryPageDto>(`/api/v1/conversations/${encodeURIComponent(id)}/history?${new URLSearchParams({ cursor }).toString()}`); }
-  conversationEvents(id: string,cursor: string) { return this.request<ConversationEventsDto>(`/api/v1/conversations/${encodeURIComponent(id)}/events?${new URLSearchParams({ cursor }).toString()}`); }
+  conversationEvents(id: string,cursor: string,options: Pick<RequestOptions,"signal"> = {}) { return this.request<ConversationEventsDto>(`/api/v1/conversations/${encodeURIComponent(id)}/events?${new URLSearchParams({ cursor }).toString()}`,options); }
   cancelConversationChild(id: string,childId: string) { return this.request<{ canceled: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/children/${encodeURIComponent(childId)}/cancel`,{ method: "POST" }); }
   sendConversation(body: SendConversationInput) { return this.request<ConversationDto>("/api/v1/conversations",{ body: { ...body },method: "POST",idempotencyKey: body.requestId }); }
   stopConversation(id: string) { return this.request<{ stopped: boolean }>(`/api/v1/conversations/${encodeURIComponent(id)}/stop`,{ method: "POST" }); }

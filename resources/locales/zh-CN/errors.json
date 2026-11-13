@@ -1,5 +1,11 @@
 {
   "conversationTitleInvalid": "请输入1到80个字符的单行标题。",
+  "connectionUnavailable": "连接暂时中断，请稍后重试。",
+  "readTimedOut": "请求读取超时，请稍后重试。",
+  "authenticationRequired": "请重新登录。",
+  "requestForbidden": "当前没有执行此操作的权限。",
+  "requestRateLimited": "请求过于频繁，请稍后重试。",
+  "backendUnavailable": "服务暂时不可用，请稍后重试。",
   "modelSourceUrlProhibited": "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。",
   "modelSourceKeyRequired": "请填写 API Key；仅本机 localhost/127.0.0.1 可留空。",
   "modelSourceRedirectCrossOrigin": "模型地址重定向到了其他来源，请直接填写最终的 Base URL。",

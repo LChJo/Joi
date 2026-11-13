@@ -293,3 +293,5 @@ html:has(.conversation-layout),body:has(.conversation-layout) { min-width:0; }
 .chat-extension-list input[role="switch"]:checked { background:var(--forest);border-color:var(--forest); }
 .chat-extension-list input[role="switch"]:checked::before { transform:translateX(14px);background:var(--paper-strong); }
 .chat-extension-list input[role="switch"]:focus-visible { outline:2px solid var(--forest);outline-offset:3px; }
+.chat-turn-failure { color: var(--text-secondary); font-size: 13px; margin: 12px 0; }
+.chat-turn-failure p { margin: 4px 0; }

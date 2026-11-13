@@ -185,6 +185,21 @@ export interface MessageParameters {
   "catalog.builtinSkillsEmpty": undefined;
   "catalog.builtinSkillsDescription": undefined;
   "catalog.skillLicense": undefined;
+  "chat.readRecovering": undefined;
+  "chat.failureCleanup": undefined;
+  "chat.modelRecovering": { "attempt": number; "max": number };
+  "chat.modelRecovered": undefined;
+  "chat.modelRecoveryExhausted": undefined;
+  "chat.modelRecoveryCanceled": undefined;
+  "chat.failureTimeout": undefined;
+  "chat.failureNetwork": undefined;
+  "chat.failureAuthentication": undefined;
+  "chat.failureCapacity": undefined;
+  "chat.failureConfiguration": undefined;
+  "chat.failureTool": undefined;
+  "chat.failureStorage": undefined;
+  "chat.failureInterrupted": undefined;
+  "chat.verifyEffects": undefined;
   "chat.collapseNavigation": undefined;
   "chat.expandNavigation": undefined;
   "chat.title": undefined;
@@ -374,6 +389,12 @@ export interface MessageParameters {
   "common.previousPage": undefined;
   "common.nextPage": undefined;
   "errors.conversationTitleInvalid": undefined;
+  "errors.connectionUnavailable": undefined;
+  "errors.readTimedOut": undefined;
+  "errors.authenticationRequired": undefined;
+  "errors.requestForbidden": undefined;
+  "errors.requestRateLimited": undefined;
+  "errors.backendUnavailable": undefined;
   "errors.modelSourceUrlProhibited": undefined;
   "errors.modelSourceKeyRequired": undefined;
   "errors.modelSourceRedirectCrossOrigin": undefined;
@@ -1941,6 +1962,21 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "catalog.builtinSkillsEmpty": "Automatically collects the 6 most recent local Pi core skills. No installable skills have been found yet.",
     "catalog.builtinSkillsDescription": "Build capability partners from the 6 most recent local Pi core skills, individually or as a full pack.",
     "catalog.skillLicense": "As declared by each skill",
+    "chat.readRecovering": "Progress will refresh automatically.",
+    "chat.failureCleanup": "Stop was requested, but some execution could not be confirmed as settled.",
+    "chat.modelRecovering": "Recovering model connection ({attempt}/{max})",
+    "chat.modelRecovered": "Model connection recovered",
+    "chat.modelRecoveryExhausted": "Model recovery attempts exhausted",
+    "chat.modelRecoveryCanceled": "Model recovery stopped",
+    "chat.failureTimeout": "The model request timed out. Your existing output is retained.",
+    "chat.failureNetwork": "The model connection failed after recovery attempts.",
+    "chat.failureAuthentication": "The selected model's credentials or access need attention.",
+    "chat.failureCapacity": "The model context is full. Continue with a smaller request.",
+    "chat.failureConfiguration": "The model or tool configuration needs attention.",
+    "chat.failureTool": "A tool could not finish. Check its recorded results.",
+    "chat.failureStorage": "Execution stopped because its history could not be saved.",
+    "chat.failureInterrupted": "Execution was interrupted. Check its recorded results before continuing.",
+    "chat.verifyEffects": "Check any completed changes before asking to continue.",
     "chat.collapseNavigation": "Collapse navigation",
     "chat.expandNavigation": "Expand navigation",
     "chat.title": "Conversations",
@@ -2130,6 +2166,12 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.previousPage": "Previous page",
     "common.nextPage": "Next page",
     "errors.conversationTitleInvalid": "Enter a title of 1 to 80 characters on one line.",
+    "errors.connectionUnavailable": "Connection interrupted. Please try again.",
+    "errors.readTimedOut": "The request timed out. Please try again.",
+    "errors.authenticationRequired": "Please sign in again.",
+    "errors.requestForbidden": "You do not have permission to perform this operation.",
+    "errors.requestRateLimited": "Too many requests. Please try again shortly.",
+    "errors.backendUnavailable": "The service is temporarily unavailable. Please try again.",
     "errors.modelSourceUrlProhibited": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
     "errors.modelSourceKeyRequired": "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.",
     "errors.modelSourceRedirectCrossOrigin": "The model URL redirects to a different origin. Enter the final Base URL directly.",
@@ -3695,6 +3737,21 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "catalog.builtinSkillsEmpty": "自动收纳 Pi core 可用的最近 6 个本机 Skill；当前尚未发现可安装项。",
     "catalog.builtinSkillsDescription": "把 Pi core 当前可用的最近 6 个本机 Skill 组装为可单独或整套安装的能力搭档。",
     "catalog.skillLicense": "依各 Skill 声明",
+    "chat.readRecovering": "正在自动重新读取进度。",
+    "chat.failureCleanup": "已请求停止，部分执行尚未确认结束，请检查已有结果。",
+    "chat.modelRecovering": "正在恢复模型连接（{attempt}/{max}）",
+    "chat.modelRecovered": "模型连接已恢复",
+    "chat.modelRecoveryExhausted": "模型恢复次数已用尽",
+    "chat.modelRecoveryCanceled": "模型恢复已停止",
+    "chat.failureTimeout": "模型请求超时，已有输出已保留。",
+    "chat.failureNetwork": "模型连接恢复失败，已有输出已保留。",
+    "chat.failureAuthentication": "所选模型的凭据或访问权限需要处理。",
+    "chat.failureCapacity": "模型上下文容量不足，请缩小请求后继续。",
+    "chat.failureConfiguration": "模型或工具配置需要处理。",
+    "chat.failureTool": "工具未能完成，请检查已记录的结果。",
+    "chat.failureStorage": "执行历史未能保存，已停止后续执行。",
+    "chat.failureInterrupted": "执行已中断，请检查已有结果后继续。",
+    "chat.verifyEffects": "继续前请检查已完成的修改。",
     "chat.collapseNavigation": "收起主导航",
     "chat.expandNavigation": "展开主导航",
     "chat.title": "对话",
@@ -3884,6 +3941,12 @@ export const catalogs: Record<LocaleCode, Record<MessageKey, string>> = {
     "common.previousPage": "上一页",
     "common.nextPage": "下一页",
     "errors.conversationTitleInvalid": "请输入1到80个字符的单行标题。",
+    "errors.connectionUnavailable": "连接暂时中断，请稍后重试。",
+    "errors.readTimedOut": "请求读取超时，请稍后重试。",
+    "errors.authenticationRequired": "请重新登录。",
+    "errors.requestForbidden": "当前没有执行此操作的权限。",
+    "errors.requestRateLimited": "请求过于频繁，请稍后重试。",
+    "errors.backendUnavailable": "服务暂时不可用，请稍后重试。",
     "errors.modelSourceUrlProhibited": "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。",
     "errors.modelSourceKeyRequired": "请填写 API Key；仅本机 localhost/127.0.0.1 可留空。",
     "errors.modelSourceRedirectCrossOrigin": "模型地址重定向到了其他来源，请直接填写最终的 Base URL。",
@@ -5616,6 +5679,34 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "把 Pi core 当前可用的最近 6 个本机 Skill 组装为可单独或整套安装的能力搭档。": "catalog.builtinSkillsDescription",
   "As declared by each skill": "catalog.skillLicense",
   "依各 Skill 声明": "catalog.skillLicense",
+  "Progress will refresh automatically.": "chat.readRecovering",
+  "正在自动重新读取进度。": "chat.readRecovering",
+  "Stop was requested, but some execution could not be confirmed as settled.": "chat.failureCleanup",
+  "已请求停止，部分执行尚未确认结束，请检查已有结果。": "chat.failureCleanup",
+  "Model connection recovered": "chat.modelRecovered",
+  "模型连接已恢复": "chat.modelRecovered",
+  "Model recovery attempts exhausted": "chat.modelRecoveryExhausted",
+  "模型恢复次数已用尽": "chat.modelRecoveryExhausted",
+  "Model recovery stopped": "chat.modelRecoveryCanceled",
+  "模型恢复已停止": "chat.modelRecoveryCanceled",
+  "The model request timed out. Your existing output is retained.": "chat.failureTimeout",
+  "模型请求超时，已有输出已保留。": "chat.failureTimeout",
+  "The model connection failed after recovery attempts.": "chat.failureNetwork",
+  "模型连接恢复失败，已有输出已保留。": "chat.failureNetwork",
+  "The selected model's credentials or access need attention.": "chat.failureAuthentication",
+  "所选模型的凭据或访问权限需要处理。": "chat.failureAuthentication",
+  "The model context is full. Continue with a smaller request.": "chat.failureCapacity",
+  "模型上下文容量不足，请缩小请求后继续。": "chat.failureCapacity",
+  "The model or tool configuration needs attention.": "chat.failureConfiguration",
+  "模型或工具配置需要处理。": "chat.failureConfiguration",
+  "A tool could not finish. Check its recorded results.": "chat.failureTool",
+  "工具未能完成，请检查已记录的结果。": "chat.failureTool",
+  "Execution stopped because its history could not be saved.": "chat.failureStorage",
+  "执行历史未能保存，已停止后续执行。": "chat.failureStorage",
+  "Execution was interrupted. Check its recorded results before continuing.": "chat.failureInterrupted",
+  "执行已中断，请检查已有结果后继续。": "chat.failureInterrupted",
+  "Check any completed changes before asking to continue.": "chat.verifyEffects",
+  "继续前请检查已完成的修改。": "chat.verifyEffects",
   "Collapse navigation": "chat.collapseNavigation",
   "收起主导航": "chat.collapseNavigation",
   "Expand navigation": "chat.expandNavigation",
@@ -5965,6 +6056,18 @@ export const sourceKeys: Readonly<Record<string, MessageKey>> = {
   "下一页": "common.nextPage",
   "Enter a title of 1 to 80 characters on one line.": "errors.conversationTitleInvalid",
   "请输入1到80个字符的单行标题。": "errors.conversationTitleInvalid",
+  "Connection interrupted. Please try again.": "errors.connectionUnavailable",
+  "连接暂时中断，请稍后重试。": "errors.connectionUnavailable",
+  "The request timed out. Please try again.": "errors.readTimedOut",
+  "请求读取超时，请稍后重试。": "errors.readTimedOut",
+  "Please sign in again.": "errors.authenticationRequired",
+  "请重新登录。": "errors.authenticationRequired",
+  "You do not have permission to perform this operation.": "errors.requestForbidden",
+  "当前没有执行此操作的权限。": "errors.requestForbidden",
+  "Too many requests. Please try again shortly.": "errors.requestRateLimited",
+  "请求过于频繁，请稍后重试。": "errors.requestRateLimited",
+  "The service is temporarily unavailable. Please try again.": "errors.backendUnavailable",
+  "服务暂时不可用，请稍后重试。": "errors.backendUnavailable",
   "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).": "errors.modelSourceUrlProhibited",
   "模型地址不受支持。请使用公网 HTTPS、本机 localhost/127.0.0.1，或明确的局域网 IPv4 地址（10.x、172.16–31.x、192.168.x）。": "errors.modelSourceUrlProhibited",
   "Enter an API Key. Only localhost/127.0.0.1 connections may leave it blank.": "errors.modelSourceKeyRequired",
@@ -8461,6 +8564,12 @@ export const errorKeys: Readonly<Record<string, MessageKey>> = {
   "conversation_busy": "chat.stopBeforeArchive",
   "conversation_archived": "chat.restoreFirst",
   "conversation_title_invalid": "errors.conversationTitleInvalid",
+  "connection_unavailable": "errors.connectionUnavailable",
+  "read_timed_out": "errors.readTimedOut",
+  "authentication_required": "errors.authenticationRequired",
+  "request_forbidden": "errors.requestForbidden",
+  "request_rate_limited": "errors.requestRateLimited",
+  "backend_unavailable": "errors.backendUnavailable",
   "model_source_url_prohibited": "errors.modelSourceUrlProhibited",
   "model_source_key_required": "errors.modelSourceKeyRequired",
   "model_source_redirect_cross_origin": "errors.modelSourceRedirectCrossOrigin",

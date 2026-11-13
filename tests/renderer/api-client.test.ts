@@ -10,6 +10,36 @@ function response(body: unknown, status = 200) {
 }
 
 describe("renderer API client", () => {
+  it.each([
+    [403,"request_forbidden","权限"],[429,"request_rate_limited","请求过于频繁"],[503,"connection_unavailable","连接暂时中断"],
+  ])("REL-03 safely classifies a non-JSON HTTP %s without exposing its response",async (status,code,label) => {
+    const fetchMock = vi.spyOn(globalThis,"fetch").mockResolvedValueOnce(new Response("PRIVATE_UPSTREAM_SENTINEL",{ status }));
+    try {
+      const failure: unknown = await new DigitalLifeApi("").getConversation("first").catch((error: unknown) => error);
+      expect(failure).toBeInstanceOf(ApiError);
+      expect(failure).toMatchObject({ code,status });
+      expect((failure as ApiError).displayMessage).toContain(label);
+      expect(JSON.stringify(failure)).not.toContain("PRIVATE_UPSTREAM_SENTINEL");
+    } finally { fetchMock.mockRestore(); }
+  });
+  it("REL-02/03 bounds stalled reads and classifies empty proxy and authentication failures",async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.spyOn(globalThis,"fetch");
+    try {
+      fetchMock.mockResolvedValueOnce(new Response("PRIVATE_PROXY_BODY",{ status: 502 }));
+      await expect(new DigitalLifeApi("").getConversation("first")).rejects.toMatchObject({ code: "connection_unavailable",status: 502 });
+      fetchMock.mockImplementationOnce(() => response({},401));
+      await expect(new DigitalLifeApi("").getConversation("first")).rejects.toMatchObject({ code: "authentication_required",status: 401 });
+      let aborted = false;
+      fetchMock.mockImplementationOnce((_url,options) => new Promise((_resolve,reject) => {
+        options?.signal?.addEventListener("abort",() => { aborted = true;reject(new DOMException("aborted","AbortError")); });
+      }));
+      const read = new DigitalLifeApi("").getConversation("first");
+      const assertion = expect(read).rejects.toMatchObject({ code: "read_timed_out",status: 0 });
+      await vi.advanceTimersByTimeAsync(10_000);await assertion;
+      expect(aborted).toBe(true);
+    } finally { fetchMock.mockRestore();vi.useRealTimers(); }
+  });
   it("adds JSON, idempotency and CSRF semantics across the public client methods", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() => response({ items: [], csrfToken: "csrf" }));
     const api = new DigitalLifeApi("http://127.0.0.1:43130");
@@ -123,7 +153,7 @@ describe("renderer API client", () => {
     fetchMock.mockImplementationOnce(() => response({ code: "bad", message: "失败" }, 400));
     await expect(new DigitalLifeApi("").request("/bad")).rejects.toEqual(new ApiError("bad", "失败", 400));
     fetchMock.mockImplementationOnce(() => Promise.resolve({ json: () => Promise.reject(new Error("bad")), ok: false, status: 500 } as Response));
-    await expect(new DigitalLifeApi("").request("/bad-json")).rejects.toMatchObject({ code: "request_failed" });
+    await expect(new DigitalLifeApi("").request("/bad-json")).rejects.toMatchObject({ code: "backend_unavailable" });
     fetchMock.mockImplementationOnce(() => response({}, 400));
     await expect(new DigitalLifeApi("").request("/empty-error")).rejects.toMatchObject({ code: "request_failed", message: "请求没成功。" });
 
