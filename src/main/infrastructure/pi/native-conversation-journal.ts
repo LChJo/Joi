@@ -22,6 +22,7 @@ export class NativeConversationJournal {
   }
   async save(): Promise<void> {
     await this.context.saveSession?.({ engine: this.engine,messages: this.messages,
+      ...(this.context.sessionState?.piSession === undefined ? {} : { piSession: this.context.sessionState.piSession }),
       ...(this.#reference === undefined ? {} : { externalSessionRef: this.#reference }) });
   }
   async delta(text: string): Promise<void> {

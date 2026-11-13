@@ -50,7 +50,7 @@ import type { UsageContext, UsageRecorder } from "../../application/ports/usage.
 import { trackPiModels, trackPiStream } from "./pi-usage.js";
 import { createPiContextManager, type PiContextDiagnostic, type PiContextManager,type PiContextCheckpoint } from "./pi-context-manager.js";
 import { createContextHistoryTool } from "./pi-history-tools.js";
-import { createJoiPiSession } from "./joi-pi-session.js";
+import { createJoiPiSession,snapshotJoiPiSession } from "./joi-pi-session.js";
 import type { AgentSession } from "@earendil-works/pi-coding-agent";
 import type { ConversationSubagentPort } from "../../application/ports/conversation-subagents.js";
 import type { ConversationContextDto } from "../../../shared/conversations.js";
@@ -372,6 +372,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   #subagents: ConversationSubagentPort | undefined;
   setSubagents(port: ConversationSubagentPort): void { this.#subagents = port; }
   readonly #sdkSessions = new WeakMap<Agent,AgentSession>();
+  readonly #executionSignals = new WeakMap<Agent,AbortSignal>();
   readonly #warm = new Map<string, WarmAgent>();
   readonly #requirementsErrors = new WeakMap<Agent, DomainError>();
 
@@ -706,9 +707,15 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     ]);
     const writeGate = new LocalWriteGate(input.request.workspaceExecution);
     const activeAgent = warm.agent;
+    if (input.signal !== undefined) this.#executionSignals.set(activeAgent,input.signal);
+    const modelRetry = input.sessionState?.modelRetry?.turnId === input.request.workId
+      ? { ...input.sessionState.modelRetry } : { turnId: input.request.workId,attempts: 0 };
     const latency = new PiLatency(this.dependencies.diagnostics,{ workId: input.request.workId,sourceId: pin.sourceId,runId: randomUUID() });
     if (input.request.conversationId !== undefined) {
-      const sdkSession = await createJoiPiSession(activeAgent,warm.models,execution.workspacePath ?? process.cwd());
+      const sdkSession = await createJoiPiSession(activeAgent,warm.models,execution.workspacePath ?? process.cwd(),
+        { retryAttempts: Math.max(0,3 - modelRetry.attempts),
+          ...(input.sessionState?.piSession === undefined ? {} : { snapshot: input.sessionState.piSession,
+            ...(input.sessionState.engine === "pi-core" ? {} : { importedMessages: input.sessionState.messages }) }) });
       warm.sdkSession = sdkSession;this.#sdkSessions.set(activeAgent,sdkSession);
     }
     if (input.onContext !== undefined) this.#contextObservers.set(activeAgent,input.onContext);
@@ -723,11 +730,27 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const saveSession = (eventType = "turn_cleanup") => latency.measure("session_save",() => {
       const summaryRetry = warm.context.retryState();
       const state = { engine: "pi-core" as const,messages: structuredClone(activeAgent.state.messages),route,
+        ...(warm.sdkSession === undefined ? {} : { modelRetry: { ...modelRetry } }),
+        ...(warm.sdkSession === undefined ? {} : { piSession: snapshotJoiPiSession(warm.sdkSession) }),
         ...(summaryRetry === undefined ? {} : { summaryRetry }),
         ...(warm.context.checkpoint() === undefined ? {} : { checkpoint: warm.context.checkpoint() }) };
-      sessionWrites = sessionWrites.then(() => input.saveSession?.(state));
+      sessionWrites = sessionWrites.then(() => input.saveSession?.(state)).catch(() => {
+        warm.sdkSession?.setAutoRetryEnabled(false);warm.sdkSession?.abortRetry();activeAgent.abort();
+        throw wrapPartnerRunFailure({ code: "conversation_persistence_failed" },{ phase: "RECOVERY",sideEffectState: "UNKNOWN" });
+      });
+      void sessionWrites.catch(() => undefined);
       return sessionWrites;
     },{ eventType });
+    const stopRecovery = warm.sdkSession?.subscribe(event => {
+      if (event.type === "auto_retry_start") {
+        modelRetry.attempts++;
+        this.#reportContext(activeAgent,{ recovery: { state: "RETRYING",attempt: modelRetry.attempts,maxAttempts: 3,nextRetryAt: new Date(Date.now() + event.delayMs).toISOString(),reasonCode: "transient_model_error" } });
+        if (modelRetry.attempts >= 3) warm.sdkSession?.setAutoRetryEnabled(false);
+      } else if (event.type === "auto_retry_end") {
+        this.#reportContext(activeAgent,{ recovery: { state: input.signal?.aborted === true ? "CANCELED" : event.success ? "RECOVERED" : "EXHAUSTED",attempt: modelRetry.attempts,maxAttempts: 3 } });
+      }
+      if (event.type === "entry_appended" || event.type === "auto_retry_end") void saveSession(event.type).catch(() => undefined);
+    });
     const runAllowed = new Set(activeAgent.state.tools.map(tool => tool.name));
     activeAgent.beforeToolCall = async ({ toolCall }) => {
       if (writeGate.denied) return { block: true, reason: "workspace_write_forbidden" };
@@ -738,6 +761,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       if (writeGate.suspended) activeAgent.abort();
       if (blocked !== undefined) return blocked;
       if (MUTATING_TOOLS.has(toolCall.name)) tracker.state = "OBSERVED";
+      if (input.saveSession !== undefined) await saveSession("tool_intent");
       return undefined;
     };
     const residentToolNames = warm.agent.state.tools.map((tool) => tool.name);
@@ -750,6 +774,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     warm.agent.transformContext = (messages, signal) => warm.context.transformContext(messages, signal);
     this.#installRequirementsPrompt(warm.agent, input.request, await this.#configuredPrompt(revision), execution.promptSection,
       input.knowledgeSection, skillSection, revision, execution.workspacePath !== undefined, warm.requestBudget.systemMaxChars, warm.context,systemPrompt);
+    const prepareRequest = activeAgent.prepareRequest;
+    if (input.saveSession !== undefined) activeAgent.prepareRequest = async (request,signal) => {
+      await saveSession("request_start");
+      return (await prepareRequest?.(request,signal)) ?? undefined;
+    };
     const previousMessageCount = warm.agent.state.messages.length;
     // One watch per turn, reading the tools the agent actually holds rather than the revision's
     // intent: a resident instance that was rebuilt under a narrower tool policy can no longer write,
@@ -777,6 +806,12 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       if (event.type === "message_end" || event.type === "tool_execution_end") return saveSession(event.type);
       return undefined;
     });
+    const stopRetryPolicy = activeAgent.subscribe(event => {
+      if (warm.sdkSession === undefined || event.type !== "message_end" || event.message.role !== "assistant") return;
+      const failure = assistantFailureSignal([event.message]);
+      const transient = failure === null || classifyPartnerRunFailure(failure,{ phase: "MODEL",sideEffectState: "NONE" }).retryable;
+      warm.sdkSession.setAutoRetryEnabled(transient && modelRetry.attempts < 3);
+    });
     const stopDeniedTool = activeAgent.subscribe(event => {
       if (event.type === "tool_execution_start" && !writeGate.denied && input.request.workspaceExecution?.accessCeiling === "READ" && classifyLocalToolEffect(event.toolName) === "WRITE") {
         writeGate.beforeTool(event.toolName); activeAgent.abort();
@@ -785,7 +820,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         });
       }
     });
-    const abort = () => { warm.context.cancel(); activeAgent.abort(); };
+    const abort = () => { warm.context.cancel();warm.sdkSession?.abortRetry();activeAgent.abort(); };
     input.signal?.addEventListener("abort",abort,{ once: true });
     let latencyStatus: "completed" | "canceled" | "failed" = "completed";
     try {
@@ -799,7 +834,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         messages: [...warm.agent.state.messages], output: { artifacts: [], body: "" }, status: "SUSPENDED",
       };
       if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
-      if (tracker.state === "OBSERVED") {
+      if (tracker.state === "OBSERVED" && warm.sdkSession === undefined) {
         await this.#continueAfterTransientFailure(warm.agent, previousMessageCount, live, input.onProgress, progress);
         if (progress.closeOut() !== undefined) throw this.#stalledRunFailure(progress, tracker);
       }
@@ -829,7 +864,7 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
       throw Object.assign(failure, { partialArtifacts });
     } finally {
       input.signal?.removeEventListener("abort",abort);
-      stopDeniedTool();
+      stopDeniedTool();stopRetryPolicy();stopRecovery?.();
       let cleanupSucceeded = false;
       try {
         try {
@@ -844,6 +879,8 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         cleanupSucceeded = true;
       } finally {
         if (!cleanupSucceeded) latencyStatus = input.signal?.aborted === true ? "canceled" : "failed";
+        this.#executionSignals.delete(activeAgent);this.#contextObservers.delete(activeAgent);
+        warm.sdkSession?.dispose();this.#sdkSessions.delete(activeAgent);
         stopLatency();latency.finish(latencyStatus);turnTiming.finish(latencyStatus);this.#latencies.delete(activeAgent);
       }
     }
@@ -872,6 +909,19 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
   async #promptWithIdleTimeout(agent: Agent, text: string, live?: LiveConversationPublisher, onProgress?: () => void, progress?: RunProgressControl): Promise<void> {
     const session = this.#sdkSessions.get(agent);
     await this.#runWithIdleTimeout(agent, () => session === undefined ? agent.prompt(text) : session.prompt(text,{ expandPromptTemplates: false }), live, onProgress, progress);
+    await session?.waitForIdle();
+  }
+
+  async #abortSession(agent: Agent): Promise<void> {
+    const session = this.#sdkSessions.get(agent);
+    session?.abortRetry();agent.abort();
+    if (session === undefined) return;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([session.abort(),new Promise<never>((_resolve,reject) => {
+        timer = setTimeout(() => reject(wrapPartnerRunFailure({ code: "conversation_cleanup_timed_out" },{ phase: "RECOVERY",sideEffectState: "UNKNOWN" })),5000);
+      })]);
+    } finally { clearTimeout(timer); }
   }
 
   /**
@@ -912,6 +962,11 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
     const idle = new Promise<"idle">((resolve) => {
       signalIdle = () => resolve("idle");
     });
+    const signal = this.#executionSignals.get(agent);
+    let cancel: () => void = () => undefined;
+    const canceled = new Promise<"canceled">(resolve => { cancel = () => resolve("canceled"); });
+    signal?.addEventListener("abort",cancel,{ once: true });
+    if (signal?.aborted === true) cancel();
     const refreshIdleDeadline = (): void => {
       if (timer !== undefined) clearTimeout(timer);
       timer = setTimeout(
@@ -945,17 +1000,21 @@ export class PiPartnerEngineRuntime implements PartnerEngineRuntime {
         }
       }
     });
+    const stopRetryWait = this.#sdkSessions.get(agent)?.subscribe(event => {
+      if (event.type === "auto_retry_start" && timer !== undefined) { clearTimeout(timer);timer = undefined; }
+    });
     refreshIdleDeadline();
     try {
-      const winner = await Promise.race([run().then(() => "done" as const), idle]);
+      const winner = await Promise.race([run().then(() => "done" as const),idle,canceled]);
       const requirementsError = this.#requirementsErrors.get(agent);
       if (requirementsError !== undefined) throw requirementsError;
-      if (winner === "idle") {
-        agent.abort();
+      if (winner !== "done") {
+        await this.#abortSession(agent);
+        if (winner === "canceled") signal?.throwIfAborted();
         throw new DomainError("partner_run_idle_timed_out", "The partner run made no progress before its idle deadline and was aborted.");
       }
     } finally {
-      unsubscribe();
+      unsubscribe();stopRetryWait?.();signal?.removeEventListener("abort",cancel);
       await live?.interruptThinking();
       if (timer !== undefined) clearTimeout(timer);
     }
@@ -1202,9 +1261,8 @@ function trailingAssistantText(messages: readonly unknown[]): string {
 const ERROR_DETAIL_CHARS = 240;
 
 /**
- * Derives a stable classifier signal from a failed assistant message. Raw provider
- * text never reaches the work result; only a truncated detail travels with local
- * diagnostics so failures like this stay debuggable without leaking full payloads.
+ * Raw provider detail stays inside failure classification and route-capacity learning.
+ * Only the stable classifier signal reaches public failure projections or diagnostics.
  */
 function assistantFailureSignal(messages: readonly unknown[]): Error | null {
   for (const candidate of messages) {
@@ -1214,16 +1272,19 @@ function assistantFailureSignal(messages: readonly unknown[]): Error | null {
     const raw = typeof message.errorMessage === "string" ? message.errorMessage : undefined;
     if (raw === undefined) return codedProviderError("assistant_error");
     const detail = raw.slice(0, ERROR_DETAIL_CHARS);
+    const statusText = /\b(?:HTTP|status)(?:\s+code)?\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(raw)?.[1] ?? /^\s*([1-5]\d{2})\b/u.exec(raw)?.[1];
+    const status = statusText === undefined ? undefined : Number(statusText);
+    if (status === 401 || status === 403) return Object.assign(new Error("partner_provider_failed"),{ detail,status });
+    if (/\b(?:prompt is too long|context length|maximum context|too many tokens)\b/iu.test(raw)) return codedProviderError("context_too_large", detail);
+    if (status !== undefined && status >= 400 && status < 500 && status !== 408 && status !== 429) return Object.assign(new Error("partner_provider_failed"),{ detail,status });
+    if (/\b(?:invalid[ _-]?api[ _-]?key|authentication|unauthorized)\b/iu.test(raw)) return codedProviderError("invalid_api_key",detail);
     const knownCode = /\b(?:ECONNREFUSED|ECONNRESET|ENETUNREACH|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|UND_ERR_CONNECT_TIMEOUT)\b/iu.exec(raw)?.[0];
     if (knownCode !== undefined) return codedProviderError(knownCode.toUpperCase(), detail);
-    if (/\b(?:prompt is too long|context length|maximum context|too many tokens)\b/iu.test(raw)) return codedProviderError("context_too_large", detail);
     if (/\brefused to complete\b/iu.test(raw)) return codedProviderError("model_refused", detail);
     if (/\boverloaded/iu.test(raw)) return codedProviderError("server_error", detail);
     if (/\b(?:connection error|connection failed|network error|fetch failed|socket hang up)\b/iu.test(raw)) return codedProviderError("connection_error", detail);
     if (/\brate[ -]?limit(?:ed|ing)?\b/iu.test(raw)) return codedProviderError("rate_limited", detail);
     if (/\b(?:timed?\s*out|timeout)\b/iu.test(raw)) return codedProviderError("timeout", detail);
-    if (/\b(?:invalid[ _-]?api[ _-]?key|authentication|unauthorized)\b/iu.test(raw)) return codedProviderError("invalid_api_key", detail);
-    const statusText = /\b(?:HTTP|status)(?:\s+code)?\s*[:=]?\s*([1-5]\d{2})\b/iu.exec(raw)?.[1] ?? /^\s*([1-5]\d{2})\b/u.exec(raw)?.[1];
     if (statusText !== undefined) return Object.assign(new Error("partner_provider_failed"), { detail, status: Number(statusText) });
     return codedProviderError("assistant_error", detail);
   }

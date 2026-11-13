@@ -125,4 +125,16 @@ describe("runtime Workers (AC-PERF-01)", () => {
       await expect(client.call("constructor")).rejects.toThrow("runtime_worker_command_failed");
     } finally { client.close(); server.close(); }
   });
+
+  it("REL-11 bounds a hung control request and ignores its late reply without corrupting later calls",async () => {
+    const { port1,port2 } = new MessageChannel();let release: ((value: string) => void) | undefined;
+    const client = new WorkerRpc(port1),server = new WorkerRpc(port2,{
+      hang: () => new Promise<string>(resolve => { release = resolve; }),echo: value => value,
+    });
+    try {
+      await expect(client.callWithTimeout("hang",25)).rejects.toMatchObject({ code: "runtime_worker_timed_out" });
+      await vi.waitFor(() => expect(release).toBeDefined());release?.("PRIVATE_LATE_RESULT");
+      await expect(client.call("echo","current")).resolves.toBe("current");
+    } finally { client.close();server.close(); }
+  });
 });

@@ -4,6 +4,12 @@
     "description": "Conversation titles must contain text within the title length limit and cannot contain control characters or line breaks.",
     "errorCode": "conversation_title_invalid"
   },
+  "connectionUnavailable": { "message": "Connection interrupted. Please try again.", "description": "Transport failure, without claiming that a write will be retried.", "errorCode": "connection_unavailable" },
+  "readTimedOut": { "message": "The request timed out. Please try again.", "description": "A timed out read does not determine task status.", "errorCode": "read_timed_out" },
+  "authenticationRequired": { "message": "Please sign in again.", "description": "Automatic reads stop when authentication is required.", "errorCode": "authentication_required" },
+  "requestForbidden": { "message": "You do not have permission to perform this operation.", "description": "Automatic reads stop when access is forbidden.", "errorCode": "request_forbidden" },
+  "requestRateLimited": { "message": "Too many requests. Please try again shortly.", "description": "Reads back off when the backend rate limits requests.", "errorCode": "request_rate_limited" },
+  "backendUnavailable": { "message": "The service is temporarily unavailable. Please try again.", "description": "A backend failure does not imply that execution failed.", "errorCode": "backend_unavailable" },
   "modelSourceUrlProhibited": {
     "message": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
     "description": "Explain which custom model endpoint addresses are supported without echoing the submitted URL.",

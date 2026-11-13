@@ -31,6 +31,47 @@ it("CHAT-04 publishes Pi answer prefixes while the model is still streaming",asy
   } finally { runtime.evictFromMemory("streaming"); }
 });
 
+it("REL-07 restores canonical entries and an omission edit without losing the raw failure or its stable identity",async () => {
+  const faux = fauxProvider({ provider: "canonical-restore" }),models = createModels();models.setProvider(faux.provider);
+  const makeAgent = () => new Agent({ initialState: { model: faux.getModel(),systemPrompt: "POLICY",tools: [] },streamFn: (model,context,options) => models.streamSimple(model,context,options) });
+  faux.setResponses([fauxAssistantMessage([fauxText("RAW_FAILED_ATTEMPT")],{ stopReason: "error",errorMessage: "synthetic_failure" })]);
+  const first = await createJoiPiSession(makeAgent(),models,"synthetic-workspace");
+  await first.prompt("ORIGINAL_TASK",{ expandPromptTemplates: false });
+  const failed = first.sessionManager.getEntries().find(entry => entry.type === "message" && entry.message.role === "assistant");
+  if (failed === undefined) throw new Error("Missing failed entry");
+  first.sessionManager.appendContextEdit(failed.id,null);
+  const snapshot = { version: 1 as const,header: first.sessionManager.getHeader(),entries: first.sessionManager.getEntries(),leafId: first.sessionManager.getLeafId() };
+  first.dispose();
+  const restoredAgent = makeAgent();
+  const restored = await createJoiPiSession(restoredAgent,models,"synthetic-workspace",{ snapshot });
+  try {
+    expect(restored.sessionManager.getEntries()).toEqual(snapshot.entries);
+    expect(restored.sessionManager.getLeafId()).toBe(snapshot.leafId);
+    expect(restoredAgent.state.messages).toEqual(restored.sessionManager.buildSessionContext().messages);
+    expect(JSON.stringify(restoredAgent.state.messages)).toContain("ORIGINAL_TASK");
+    expect(JSON.stringify(restoredAgent.state.messages)).not.toContain("RAW_FAILED_ATTEMPT");
+    expect(JSON.stringify(restored.sessionManager.getEntry(failed.id))).toContain("RAW_FAILED_ATTEMPT");
+  } finally { restored.dispose(); }
+});
+
+it("REL-10 imports an unrecorded tool effect as reference history without replaying the call",async () => {
+  const faux = fauxProvider({ provider: "unknown-effect" }),models = createModels();models.setProvider(faux.provider);
+  const call = fauxAssistantMessage([fauxToolCall("write",{},{ id: "unrecorded-call" })],{ stopReason: "toolUse" });
+  const entries = [{ type: "message",id: "user",parentId: null,timestamp: "2026-11-13T00:00:00Z",message: { role: "user",content: "Original task",timestamp: 0 } },
+    { type: "message",id: "intent",parentId: "user",timestamp: "2026-11-13T00:00:00Z",message: call }];
+  const tool = vi.fn(async () => ({ content: [{ type: "text" as const,text: "Must not execute" }],details: {} }));
+  const agent = new Agent({ initialState: { model: faux.getModel(),tools: [{ name: "write",label: "Write",description: "Synthetic",parameters: Type.Object({}),execute: tool }] },streamFn: (model,context,options) => models.streamSimple(model,context,options) });
+  const session = await createJoiPiSession(agent,models,"synthetic-workspace",{ snapshot: { version: 1,header: { type: "session",id: "private",version: 3,cwd: "synthetic",timestamp: "2026-11-13T00:00:00Z" },entries,leafId: "intent" } });
+  try {
+    expect(JSON.stringify(agent.state.messages)).toContain("effect unknown");
+    expect(agent.state.messages.some(message => message.role === "assistant" && message.content.some(block => block.type === "toolCall"))).toBe(false);
+    expect(session.sessionManager.getEntries().slice(0,2)).toEqual(entries);
+    expect(agent.state.messages).toEqual(session.sessionManager.buildSessionContext().messages);
+    faux.setResponses([fauxAssistantMessage([fauxText("Inspect current state before continuing")])]);
+    await session.prompt("What happened?",{ expandPromptTemplates: false });expect(tool).not.toHaveBeenCalled();
+  } finally { session.dispose(); }
+});
+
 it("CHAT-29 observes actual Pi thinking phases without projecting raw reasoning or signatures",async () => {
   const faux = fauxProvider({ provider: "safe-thinking" }),models = createModels();models.setProvider(faux.provider);
   const updates: ConversationThinkingDto[] = [],events: unknown[] = [];

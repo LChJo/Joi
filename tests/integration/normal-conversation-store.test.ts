@@ -20,6 +20,30 @@ describe("normal conversation persistence", () => {
       }
     } finally { await f.close(); }
   });
+  it("REL-07/10 retains append-only canonical identities and rejects a rewritten source atomically",async () => {
+    const f = await createRuntimeFixture();
+    try {
+      const wb = await f.workbenchRegistry.create({ name: "Canonical",personaSummary: "Help",projectLabel: "Chat",scopeSummary: "Help" });
+      const store = new SqliteConversationStore(f.database),at = f.clock.now().toISOString();
+      await store.submit({ conversationId: "canonical",turnId: "turn",requestId: "request",workbenchId: wb.workbenchId,text: "Question",at,
+        config: { partnerId: "p",partnerName: "P",networkId: "s",networkName: "S",modelName: "M",skills: [],attachmentIds: [] } });
+      await store.begin("turn");
+      const entry = { id: "stable-user",parentId: null,type: "message",timestamp: at,message: { role: "user",content: "PRIVATE_RAW_TASK" } };
+      const state = { engine: "pi-core" as const,messages: [],piSession: { version: 1 as const,header: { type: "session",version: 3,id: "private",timestamp: at,cwd: "synthetic" },entries: [entry],leafId: entry.id } };
+      await store.saveSession("canonical","turn",state,at);
+      const edit = { id: "stable-edit",parentId: entry.id,type: "context_edit",timestamp: at,targetId: entry.id,replacement: null };
+      const next = { ...state,piSession: { ...state.piSession,entries: [entry,edit],leafId: edit.id } };
+      await store.saveSession("canonical","turn",next,at);
+      const cold = new SqliteConversationStore(f.database);
+      expect(await cold.session("canonical")).toEqual(next);
+      await expect(cold.saveSession("canonical","turn",{ ...state,piSession: { ...state.piSession,entries: [{ ...entry,message: { role: "user",content: "REWRITTEN" } }] } },at)).rejects.toMatchObject({ code: "conversation_session_invalid" });
+      expect(await cold.session("canonical")).toEqual(next);
+      expect(JSON.stringify(await cold.get("canonical"))).not.toContain("PRIVATE_RAW_TASK");
+      await cold.update("turn",{ status: "COMPLETED",entries: [],artifacts: [] });
+      await cold.saveSession("canonical","turn",state,at);
+      expect(await cold.session("canonical")).toEqual(next);
+    } finally { await f.close(); }
+  });
   it("CHAT-24 pages every retained turn and resumes payload-free events with a conversation-bound cursor",async () => {
     const f = await createRuntimeFixture();
     try {

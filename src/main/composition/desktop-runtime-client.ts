@@ -46,16 +46,16 @@ export async function startDesktopRuntime(configuration: DesktopRuntimeConfigura
   worker.on("error", fail);
   worker.on("exit", fail);
   try {
-    const apiOrigin = await rpc.call<string>("start", configuration);
+    const apiOrigin = await rpc.callWithTimeout<string>("start",60_000,configuration);
     ready = true;
     return {
       apiOrigin,
       issueDesktopBootstrap: () => rpc.call<DesktopBootstrapNonce>("bootstrap"),
-      emergencyStop: async (): Promise<void> => { await rpc.call("emergencyStop"); },
+      emergencyStop: async (): Promise<void> => { await rpc.callWithTimeout("emergencyStop",15_000); },
       close: () => {
         closePromise ??= (async () => {
           closing = true;
-          try { await rpc.call("close"); }
+          try { await rpc.callWithTimeout("close",15_000); }
           finally { rpc.close(); await worker.terminate(); }
         })();
         return closePromise;

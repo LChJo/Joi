@@ -18,13 +18,25 @@ export class WorkerRpc {
   }
 
   call<T>(method: string, ...args: unknown[]): Promise<T> {
+    return this.#call(method,args);
+  }
+
+  callWithTimeout<T>(method: string,timeoutMs: number,...args: unknown[]): Promise<T> {
+    if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) return Promise.reject(new DomainError("runtime_worker_timeout_invalid","Runtime control deadline is invalid."));
+    return this.#call(method,args,timeoutMs);
+  }
+
+  #call<T>(method: string,args: unknown[],timeoutMs?: number): Promise<T> {
     if (this.#closed) return Promise.reject(new Error("runtime_worker_closed"));
     if (this.#pending.size >= 256) return Promise.reject(new Error("runtime_worker_overloaded"));
     const id = ++this.#sequence;
     return new Promise<T>((resolve, reject) => {
-      this.#pending.set(id, { resolve: (value) => resolve(value as T), reject });
+      const timer = timeoutMs === undefined ? undefined : setTimeout(() => {
+        this.#pending.delete(id);reject(new DomainError("runtime_worker_timed_out","Runtime control request timed out."));
+      },timeoutMs);
+      this.#pending.set(id, { resolve: (value) => { clearTimeout(timer);resolve(value as T); },reject: error => { clearTimeout(timer);reject(error); } });
       try { this.port.postMessage({ kind: "request", id, method, args } satisfies Request); }
-      catch { this.#pending.delete(id); reject(new Error("runtime_worker_request_invalid")); }
+      catch { clearTimeout(timer);this.#pending.delete(id);reject(new Error("runtime_worker_request_invalid")); }
     });
   }
 

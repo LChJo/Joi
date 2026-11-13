@@ -3,6 +3,15 @@ import { fireEvent,render,screen,within } from "@testing-library/react";
 import { ConversationContext } from "../../src/renderer/ConversationContext.js";
 import type { ConversationDto } from "../../src/shared/conversations.js";
 
+it("REL-04 shows bounded model recovery separately from context compaction",() => {
+  const context = { kind: "CHARACTERS" as const,state: "BACKOFF" as const,recovery: { state: "RETRYING" as const,attempt: 2,maxAttempts: 3,nextRetryAt: "2026-11-13T00:00:02Z" } };
+  const view = render(<ConversationContext conversation={{ context }} />);
+  expect(screen.getByRole("status")).toHaveTextContent("正在恢复模型连接（2/3）");
+  expect(screen.getByRole("status")).toHaveTextContent("摘要稍后重试");
+  view.rerender(<ConversationContext conversation={{ context: { ...context,recovery: { state: "RECOVERED",attempt: 2,maxAttempts: 3 } } }} />);
+  expect(screen.getByRole("status")).toHaveTextContent("模型连接已恢复");
+});
+
 it("CHAT-23 shows character estimates, safe compression and child state with cancellation",() => {
   const chat: ConversationDto = { conversationId: "chat",workbenchId: "wb",title: "Title",updatedAt: "2026-11-11",turns: [],
     context: { kind: "CHARACTERS",state: "BACKOFF",requestChars: 51060,budgetChars: 55000,activityAt: "2026-11-11T00:00:00Z",missingHistory: true },

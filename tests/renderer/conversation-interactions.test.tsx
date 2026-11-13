@@ -52,6 +52,27 @@ it("CHAT-45 immediately displays pushed prefixes and ignores an older in-flight 
     view.unmount();expect(dispose).toHaveBeenCalledTimes(1);
   } finally { vi.useRealTimers(); }
 });
+it("REL-01/02 and CHAT-45 clear a read failure on pushed progress and ignore a superseded rejection",async () => {
+  vi.useFakeTimers();
+  try {
+    const { api,get,send } = setup(),active = conversation("first","RUNNING"),turn = active.turns[0];if (turn === undefined) throw new Error("Missing turn");
+    get.mockResolvedValue(active);
+    let push: Parameters<DigitalLifeApi["watchConversation"]>[1] | undefined;
+    const dispose = vi.fn();vi.spyOn(api,"watchConversation").mockImplementation((_id,onUpdate) => { push = onUpdate;return dispose; });
+    const view = render(<ConversationPage api={api} onSettings={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5); });fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await act(async () => { await Promise.resolve(); });
+    get.mockRejectedValueOnce(new ApiError("connection_unavailable","PRIVATE_READ_FAILURE",503));
+    await act(async () => { await vi.advanceTimersByTimeAsync(700); });expect(screen.getByRole("alert")).toHaveTextContent("正在自动重新读取进度。");
+    const stale = Promise.withResolvers<ConversationDto>();get.mockReturnValueOnce(stale.promise);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200); });
+    const next = { ...turn,entries: [{ entryId: "live",sequence: 1,createdAt: active.updatedAt,kind: "MARKDOWN" as const,role: "AGENT" as const,text: "Recovered live output" }] };
+    act(() => { push?.({ conversationId: "first",turn: next }); });expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await act(async () => { stale.reject(new ApiError("authentication_required","PRIVATE_STALE_AUTH",401));await Promise.resolve(); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();expect(screen.getByText("Recovered live output")).toBeVisible();
+    expect(dispose).not.toHaveBeenCalled();expect(send).not.toHaveBeenCalled();
+    view.unmount();expect(dispose).toHaveBeenCalledTimes(1);
+  } finally { vi.useRealTimers(); }
+});
 it("CHAT-04 displays partial output before a short streamed answer finishes",async () => {
   vi.useFakeTimers();
   try {
@@ -145,14 +166,16 @@ it("CHAT-24 retries an unacknowledged update and retains loaded history across p
     fireEvent.click(screen.getByRole("button",{ name: "加载更早消息" }));await act(async () => { await Promise.resolve(); });
     expect(screen.getByText("Old original message")).toBeInTheDocument();expect(screen.getAllByText("Question")).toHaveLength(1);
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(get).toHaveBeenCalledTimes(1);expect(events).toHaveBeenLastCalledWith("first","events:first:1");
+    expect(get).toHaveBeenCalledTimes(1);expect(events).toHaveBeenLastCalledWith("first","events:first:1",expect.anything());
     get.mockRejectedValueOnce(new ApiError("fixture_unavailable","Update unavailable",503));
     await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(screen.getByRole("alert")).toHaveTextContent("请求未完成，请重试。");
-    expect(events).toHaveBeenLastCalledWith("first","events:first:2");
+    expect(screen.getAllByRole("alert")).toHaveLength(2);
+    expect(events).toHaveBeenLastCalledWith("first","events:first:2",expect.anything());
     get.mockResolvedValue({ ...active,eventCursor: "events:first:3" });
-    await act(async () => { await vi.advanceTimersByTimeAsync(100); });
-    expect(events).toHaveBeenLastCalledWith("first","events:first:2");
+    await act(async () => { await vi.advanceTimersByTimeAsync(1200); });
+    expect(events.mock.calls[2]).toEqual(["first","events:first:2",expect.anything()]);
+    expect(events).toHaveBeenLastCalledWith("first","events:first:3",expect.anything());
+    expect(screen.getByRole("alert")).toHaveTextContent("请求未完成，请重试。");
     expect(screen.getByText("Old original message")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button",{ name: "加载更早消息" }));await act(async () => { await Promise.resolve(); });
     expect(page).toHaveBeenLastCalledWith("first","history:first:20");
@@ -162,6 +185,107 @@ it("CHAT-24 retries an unacknowledged update and retains loaded history across p
     expect(screen.getByText("Oldest original message")).toBeInTheDocument();expect(screen.queryByRole("button",{ name: "加载更早消息" })).not.toBeInTheDocument();
     view.unmount();
   } finally { vi.useRealTimers(); }
+});
+
+it("REL-01 recovers a failed progress read and clears only its connection notice without resubmitting",async () => {
+  vi.useFakeTimers();
+  try {
+    const { api,get,send } = setup();
+    get.mockResolvedValue(conversation("first","RUNNING"));
+    const view = render(<ConversationPage api={api} onSettings={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5); });
+    fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));
+    await act(async () => { await Promise.resolve(); });
+    get.mockRejectedValueOnce(new ApiError("request_failed","请求没成功。",502));
+    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    expect(screen.getByRole("alert")).toHaveTextContent("正在自动重新读取进度。");
+    get.mockResolvedValue(conversation("first","COMPLETED"));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("已完成",{ selector: ".chat-turn-footer > span" })).toBeInTheDocument();
+    expect(send).not.toHaveBeenCalled();
+    view.unmount();
+  } finally { vi.useRealTimers(); }
+});
+
+it("REL-03 stops automatic progress reads when sign-in is required",async () => {
+  vi.useFakeTimers();
+  try {
+    const { api,get,send } = setup();get.mockResolvedValueOnce(conversation("first","RUNNING"))
+      .mockRejectedValue(new ApiError("authentication_required","PRIVATE_AUTH_BODY",401));
+    const view = render(<ConversationPage api={api} onSettings={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5); });
+    fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    expect(screen.getByRole("alert")).toHaveTextContent("请重新登录");
+    expect(screen.getByRole("alert")).not.toHaveTextContent("正在自动重新读取进度。");
+    await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+    expect(get).toHaveBeenCalledTimes(2);expect(send).not.toHaveBeenCalled();view.unmount();
+  } finally { vi.useRealTimers(); }
+});
+
+it("REL-02 retires a progress read on conversation switch and ignores its late failure",async () => {
+  vi.useFakeTimers();
+  try {
+    const { api,get } = setup();let rejectRead: (error: Error) => void = () => undefined;
+    get.mockResolvedValueOnce(conversation("first","RUNNING"))
+      .mockImplementationOnce(() => new Promise((_resolve,reject) => { rejectRead = reject; }))
+      .mockResolvedValue(conversation("second"));
+    const view = render(<ConversationPage api={api} onSettings={vi.fn()} />);
+    await act(async () => { await vi.advanceTimersByTimeAsync(5); });
+    fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await act(async () => { await Promise.resolve(); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(700); });
+    const pendingSignal = get.mock.calls[1]?.[1]?.signal;
+    fireEvent.click(screen.getByRole("button",{ name: /^设计讨论$/ }));await act(async () => { await Promise.resolve(); });
+    expect(pendingSignal?.aborted).toBe(true);
+    await act(async () => { rejectRead(new ApiError("request_failed","PRIVATE_OLD_ERROR",502));await Promise.resolve(); });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByText("已完成",{ selector: ".chat-turn-footer > span" })).toBeInTheDocument();view.unmount();
+  } finally { vi.useRealTimers(); }
+});
+
+it("REL-05 presents a safe terminal timeout and warns about completed effects",async () => {
+  const { api,get,send } = setup();
+  const failed = conversation("first","FAILED"),turn = failed.turns[0];
+  if (turn === undefined) throw new Error("Missing turn");
+  turn.errorCode = "timeout";turn.failure = { phase: "MODEL",reasonCode: "timeout",retryable: false,sideEffectState: "OBSERVED" };
+  get.mockResolvedValue(failed);render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
+  fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));
+  expect(await screen.findByText("模型请求超时，已有输出已保留。")).toBeInTheDocument();
+  expect(screen.getByText("继续前请检查已完成的修改。")).toBeInTheDocument();
+  expect(send).not.toHaveBeenCalled();
+});
+
+it.each([
+  ["invalid_api_key","所选模型的凭据或访问权限需要处理。"],
+  ["connection_error","模型连接恢复失败，已有输出已保留。"],
+  ["context_too_large","模型上下文容量不足，请缩小请求后继续。"],
+  ["invalid_model","模型或工具配置需要处理。"],
+  ["partner_tool_timed_out","工具未能完成，请检查已记录的结果。"],
+  ["conversation_persistence_failed","执行历史未能保存，已停止后续执行。"],
+  ["conversation_cleanup_timed_out","已请求停止，部分执行尚未确认结束，请检查已有结果。"],
+  ["conversation_interrupted","执行已中断，请检查已有结果后继续。"],
+  ["conversation_execution_failed","操作未完成，请稍后重试。"],
+])("REL-05/06 distinguishes terminal %s failures without starting recovery work",async (reasonCode,label) => {
+  const { api,get,send } = setup(),failed = conversation("first","FAILED"),turn = failed.turns[0];
+  if (turn === undefined) throw new Error("Missing turn");
+  turn.failure = { phase: "MODEL",reasonCode,retryable: false,sideEffectState: "NONE" };
+  get.mockResolvedValue(failed);render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
+  fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));
+  expect(await screen.findByText(label)).toBeInTheDocument();
+  expect(screen.queryByText("继续前请检查已完成的修改。")).not.toBeInTheDocument();expect(send).not.toHaveBeenCalled();
+});
+
+it("REL-02 ignores a late stop refresh after another conversation is selected",async () => {
+  const { api,get,stop } = setup();let finishStop: (() => void) | undefined;
+  get.mockImplementation(id => Promise.resolve(conversation(id,id === "first" ? "RUNNING" : "COMPLETED")));
+  stop.mockImplementationOnce(() => new Promise(resolve => { finishStop = () => resolve({ stopped: true }); }));
+  render(<ConversationPage api={api} onSettings={vi.fn()} />);await ready();
+  fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await screen.findByRole("button",{ name: "停止生成" });
+  fireEvent.click(screen.getByRole("button",{ name: "停止生成" }));
+  fireEvent.click(screen.getByRole("button",{ name: /^设计讨论$/ }));await screen.findByText("已完成",{ selector: ".chat-turn-footer > span" });
+  await act(async () => { finishStop?.();await Promise.resolve(); });
+  expect(screen.getByText("已完成",{ selector: ".chat-turn-footer > span" })).toBeInTheDocument();
 });
 
 it("CHAT-22/23 keeps the subagent setting in the next turn and reports a scoped cancel failure",async () => {
@@ -193,10 +317,10 @@ it("CHAT-30 restores independent extension switches from history and keeps them 
   expect(screen.getByRole("switch",{ name: "子代理" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "CC Safety Net" })).toBeChecked();
   fireEvent.click(screen.getByRole("switch",{ name: "Agent Browser" }));
   await act(async () => { fireEvent.click(screen.getByRole("button",{ name: /^设计讨论$/ }));await Promise.resolve(); });
-  await waitFor(() => expect(get).toHaveBeenLastCalledWith("second"));
+  await waitFor(() => expect(get).toHaveBeenLastCalledWith("second",expect.anything()));
   fireEvent.click(screen.getByRole("button",{ name: "扩展" }));
   expect(screen.getByRole("switch",{ name: "CC Safety Net" })).not.toBeChecked();expect(screen.getByRole("switch",{ name: "子代理" })).toBeChecked();
-  await act(async () => { fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await Promise.resolve(); });await waitFor(() => expect(get).toHaveBeenLastCalledWith("first"));
+  await act(async () => { fireEvent.click(screen.getByRole("button",{ name: /^项目说明$/ }));await Promise.resolve(); });await waitFor(() => expect(get).toHaveBeenLastCalledWith("first",expect.anything()));
   fireEvent.click(screen.getByRole("button",{ name: "扩展" }));expect(screen.getByRole("switch",{ name: "Agent Browser" })).toBeChecked();
   fireEvent.click(screen.getByRole("button",{ name: "搭档" }));
   await act(async () => { fireEvent.click(screen.getByRole("option",{ name: /Native partner/ }));await Promise.resolve(); });

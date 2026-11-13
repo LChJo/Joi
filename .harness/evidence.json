@@ -60,15 +60,15 @@
     {
       "id": "b4fa28c9-1351-4ac0-aa75-af6c6f4e48a9",
       "kind": "source-code",
-      "claim": "Renderer requests shared DTOs over HTTP and attaches write authentication/idempotency headers. Conversation archive/list/restore/delete requests retain HTTP write protection. Idempotent title-only PUT requests use the same authenticated HTTP client and shared summary DTO. Credentialed EventSource reads safe conversation updates, removes handlers on cleanup and signals refresh fallback on disconnect or malformed frames.",
+      "claim": "Renderer shared DTO requests retain authentication, CSRF and stable write identities, including title renaming. GET reads have deadlines and cancellation; credentialed conversation SSE subscriptions release listeners on disposal or failure.",
       "location": {
         "path": "src/renderer/api.ts"
       },
-      "hash": "3c18c09781b2d8ae50fcb0d1e525db98efb0534f51bb4716d41fc2ac24802843",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "c4d27986a15daba4862fdd2b04c3e3db3a680808211d2619d54bafbc32cd39e9",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 562
+        "endLine": 590
       }
     },
     {
@@ -312,15 +312,15 @@
     {
       "id": "e5ed42e2-c606-4dd6-8d01-a16986fe9ba0",
       "kind": "source-code",
-      "claim": "Turn activity shares output disclosures; the accessible extension list shows names and switches without helper copy, preserves independent per-conversation selections and keeps settings last. Native partners receive no Pi extensions. Rename saves update the history row and selected title while preserving the draft and transcript; failures keep the editor open for retry. Live turn snapshots preserve other loaded turns, title and draft; a stream generation counter rejects stale refreshes. Connected recovery uses 700 ms cursors and unavailable streams use 100 ms refresh.",
+      "claim": "Conversation UI retains selectors, title editing, history pages and drafts. Scoped progress reads back off and cancel; reads and accepted SSE snapshots clear only their connection notice. Selection epochs and stream revisions reject stale success and failure callbacks. Safe execution failures remain distinct.",
       "location": {
         "path": "src/renderer/ConversationPage.tsx"
       },
-      "hash": "8e92c78b5c3fa18de29bc7291dd3fa86726247bbe775a3c4e0ff0bc98acc26c9",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "0e386b19caeedeafd7f89d983397bc36c31737e9bd18d1ce778146849a154544",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 344
+        "endLine": 400
       }
     },
     {
@@ -340,29 +340,29 @@
     {
       "id": "d07c943c-dd56-49b1-8fad-3ad61f4df6cc",
       "kind": "source-code",
-      "claim": "Conversation configuration validates and canonically persists pinned extension selections, includes them in retry identity checks and forwards them across READ/WRITE admission. Metadata-only renaming validates nonempty single-line titles within the shared bound and sanitizes the public title projection. Transport-independent observers receive committed safe turn snapshots. A trailing 100 ms flush persists buffered prefixes during pauses; completion, failure and stop publish final state, while observer failures cannot fail execution.",
+      "claim": "Conversation service retains frozen configuration, READ/WRITE admission and metadata-only title edits. Observers receive committed safe prefixes and terminal snapshots, including whitelisted failure facts, partial artifacts and unknown cleanup outcomes. Provider exceptions remain private.",
       "location": {
         "path": "src/main/application/joi/conversation-service.ts"
       },
-      "hash": "663f3f27d303eb2414cb334aaa27ff579dccae8d422080bd1dad2407ae200891",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "7e763bf2dd619fa39843965a51fa63dab79b592442076198ac41338d2de97310",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 267
+        "endLine": 288
       }
     },
     {
       "id": "db8263f3-5e65-499b-b358-e54b40a000cd",
       "kind": "source-code",
-      "claim": "Transactional conversation history preserves immutable workbench, request identities, single active turn, archive/deletion tombstones and interrupted-run recovery. Startup makes only pending QUEUED conversation outbox records immediately eligible; started turns are never replayed. Idempotent title updates change only title/update metadata, preserve execution and reject deleted/missing identities; later turns retain saved titles.",
+      "claim": "Transactional conversations preserve stable requests, workbench ownership, tombstones and non-replayed interrupted runs. Title edits preserve turn and execution state. Canonical SDK entries append behind RUNNING ownership; immutable prefixes and safe terminal failure facts remain durable.",
       "location": {
         "path": "src/main/infrastructure/persistence/sqlite-conversation-store.ts"
       },
-      "hash": "0ec973b102e7d81c5ffe65c0bb8c1bb261f73a36797f4e665c44da9f9aa53648",
-      "observedAt": "2026-11-13T07:30:39.324Z",
+      "hash": "9a0d951d868cfb2cd675e44a0a74d34ba1afbeac474e756196fbeb899635197a",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 218
+        "endLine": 249
       }
     },
     {
@@ -410,15 +410,15 @@
     {
       "id": "24499f6b-3dfd-4a50-836f-0a7b169c1ee2",
       "kind": "source-code",
-      "claim": "Static Pi extension IDs select local Agent Browser; restoration filters removed IDs without implicitly granting the replacement. The existing conversation summary DTO and shared 80-character title bound serve title editing. ConversationUpdateDto carries only conversation identity, one safe turn and optional context.",
+      "claim": "Shared conversation DTOs expose bounded model recovery, safe failure facts and committed turn updates independently of execution status, retaining extension selections, history pages, title summaries and cursor contracts.",
       "location": {
         "path": "src/shared/conversations.ts"
       },
-      "hash": "13e44dcaae591e258943bb4e2e97d2dc92ed57725876e7444a9ae44cb86e911f",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "1bb6dbc62f49b9444ff0bf135c4042175a68cd1b0d77431645db8eca6489d0b5",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 111
+        "endLine": 119
       }
     },
     {
@@ -438,15 +438,15 @@
     {
       "id": "ee49fdc6-1c1c-48a7-a1ee-afa121d0b174",
       "kind": "document",
-      "claim": "Conversation acceptance defines ownership, configuration, archive, independent admission, safe context and child progress; imported missing-private-history markers remain internal under CHAT-37. CHAT-44 defines title editing, validation, durable persistence and execution-independent writes. CHAT-45 defines committed SSE prefixes, trailing flush, bounded transport, stale-refresh protection and disconnect recovery.",
+      "claim": "Conversation acceptance defines ownership, configuration, archive, independent admission, safe context and child progress; imported missing-private-history markers remain internal under CHAT-37.",
       "location": {
         "path": "docs/21-normal-conversations.md"
       },
-      "hash": "49de926301726e03767f4bb8cbc597e54ee968cf5d4470bc9575be71141ef920",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "e9c176769da261d0205b639e84580621de0b8a1830fd3431a6254cd39f9ba42c",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 41
+        "endLine": 45
       }
     },
     {
@@ -466,15 +466,15 @@
     {
       "id": "08e91490-c42a-42e1-a0c5-4a40c1e2fe0e",
       "kind": "source-code",
-      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons. Title editing uses a bounded responsive dialog and inherited theme variables.",
+      "claim": "Responsive tool disclosures and theme-colored extension switches fit the composer popover. Switch tracks are 32x18 with centered 12px thumbs. User bubbles fit content within responsive limits. Reply copy controls reset padding and center 16px copy/success glyphs within 28px buttons.",
       "location": {
         "path": "src/renderer/conversations.css"
       },
-      "hash": "f3ad6504c5c2cb90d747b2ecbeba026e70b39b7a08e2cbdc4ffb07d9ca10a994",
-      "observedAt": "2026-11-13T07:30:39.325Z",
+      "hash": "14772934110981080edcd26d3bf5172f057c18c4772576fd24f0728314a1ec58",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 295
+        "endLine": 297
       }
     },
     {
@@ -634,15 +634,15 @@
     {
       "id": "629887d6-ca08-4e3b-9116-9def218c167e",
       "kind": "source-code",
-      "claim": "Pi SDK session with no resource discovery, SDK auto-compaction or SDK retries; configured host auth and tools.",
+      "claim": "Pi SDK session restores versioned canonical entries and context edits through public SessionManager APIs. Incomplete effects become reference data. Resource discovery and SDK compaction remain disabled; configurable agent retries have zero provider retries.",
       "location": {
         "path": "src/main/infrastructure/pi/joi-pi-session.ts"
       },
-      "hash": "eb9ba6fca3e41f81a2c359547f66d7a470f50721a5e85dba581337f24fa03596",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "9d702f0eebbe35e141bea8a93316608d2343675f4ed34649f36ffae42ecbb3c6",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 25
+        "endLine": 84
       }
     },
     {
@@ -652,25 +652,25 @@
       "location": {
         "path": "src/main/infrastructure/pi/native-conversation-journal.ts"
       },
-      "hash": "8d64cd2d94b190cb5eb89b57a0de839f46b9b2cc54588a100dca4d0eecc14d0a",
-      "observedAt": "2026-11-11T14:21:38.796920Z",
+      "hash": "38f4af3a1d3e802d299a56ac8cc6add7c1e33d28c70b789794a1471b4c038b58",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 74
+        "endLine": 75
       }
     },
     {
       "id": "c3ae40e3-2672-4b92-b011-b2ef3c6044a8",
       "kind": "document",
-      "claim": "Accepted conversation session, shared compaction, durable child-provider and reconnect boundary. Safe committed turn subscriptions feed authenticated bounded SSE while durable cursors recover metadata and disconnects; private sessions stay outside the transport.",
+      "claim": "Accepted conversation session, shared compaction, durable child-provider and reconnect boundary.",
       "location": {
         "path": "docs/adr/0033-conversation-context-sessions.md"
       },
-      "hash": "3d7eca50cb38172a63190b1c9b41a3f43ca072dc5adcfac2b59fb35ae3212cf6",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "27e0e7923dad868219da1239e3bca86a44e08fa9a07b65c85fd85e85ad2aee35",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 27
+        "endLine": 33
       }
     },
     {
@@ -680,11 +680,11 @@
       "location": {
         "path": "src/renderer/ConversationContext.tsx"
       },
-      "hash": "791a32cd77a2c7a72ea371a05e455e624b1f4758abf7dcfb4ab3dd1f3cadf653",
-      "observedAt": "2026-11-12T06:56:12.897523Z",
+      "hash": "0c2559b9ed00765f95184c88917acc27fbf42e82e90d452e593ecabbeac99bf5",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 17
+        "endLine": 19
       }
     },
     {
@@ -946,8 +946,8 @@
       "location": {
         "path": "src/renderer/styles.css"
       },
-      "hash": "f8faba7731cbf7a7956f4143fca95fd98f26ad0b55c6e158baac33b58e2b530a",
-      "observedAt": "2026-11-12T17:43:19.464Z",
+      "hash": "f985d22d29317043c45db2fa13ec37dcb6b3732c8519c77252c1af1febbc8541",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
         "endLine": 1597
@@ -988,11 +988,11 @@
       "location": {
         "path": "src/main/application/ports/partner-instances.ts"
       },
-      "hash": "736f16f4ce53a8dd9c9fec5abcce7214819acfdcad4034e4f668cd4e8374abea",
-      "observedAt": "2026-11-12T17:43:19.466Z",
+      "hash": "0db1c041ebf5d12620b9546fb3ae9eb2d0224b5d3cf33d21a2199d94d831458e",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 136
+        "endLine": 138
       }
     },
     {
@@ -1054,15 +1054,15 @@
     {
       "id": "c0fbdf81-21b8-46b1-9b34-73d31b228a96",
       "kind": "source-code",
-      "claim": "Partner owners restore route cooldown, retain one summary through warm permission suspension, and cancel and drain pending work on final cleanup.",
+      "claim": "Partner runtime owns frozen permissions and shared summaries while AgentSession owns normal conversation continuation. One persisted three-retry budget, durable tool/request barriers, independent retry/idle waits and bounded abort precede final cleanup.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-partner-engine-runtime.ts"
       },
-      "hash": "e910dcd735ef5c71a02d24d5d85c1484d3c5bd979fdde8e7411a3f554f7848e8",
-      "observedAt": "2026-11-12T17:43:19.469Z",
+      "hash": "a55f64443ef78cdf920d67aa780d86ab9e15fec41f3fd4293a207c99c5d9642d",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 1264
+        "endLine": 1325
       }
     },
     {
@@ -1236,15 +1236,15 @@
     {
       "id": "d3ce4801-6708-4041-a84e-7a5fa383272a",
       "kind": "source-code",
-      "claim": "Regression verifies session-owned summary behavior with synthetic data and isolated resources. Pinned Pi SDK callbacks expose successive answer prefixes before a synthetic streaming provider finishes; live gateway behavior is not established.",
+      "claim": "Regression verifies session-owned summary behavior with synthetic data and isolated resources.",
       "location": {
         "path": "tests/contract/conversation-pi-session.test.ts"
       },
-      "hash": "79e50240d19936b0acc5aadbf985eb7eeab9cd25109456d520839ccf0772a74a",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "c8a795907dd1dadb2698a239e24651de4b4af04c0341dabdf6abde2b9acd4721",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 183
+        "endLine": 224
       }
     },
     {
@@ -1296,11 +1296,11 @@
       "location": {
         "path": "src/main/infrastructure/pi/pi-partner-engine-runtime.ts"
       },
-      "hash": "e910dcd735ef5c71a02d24d5d85c1484d3c5bd979fdde8e7411a3f554f7848e8",
-      "observedAt": "2026-11-12T17:43:19.482Z",
+      "hash": "a55f64443ef78cdf920d67aa780d86ab9e15fec41f3fd4293a207c99c5d9642d",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 1264
+        "endLine": 1325
       }
     },
     {
@@ -1404,15 +1404,15 @@
     {
       "id": "ac69fa43-cea7-401a-a580-5f894151a348",
       "kind": "source-code",
-      "claim": "Real SQLite conversation integration retains 501 individually persisted turns and all atomicity assertions, with a bounded 60-second CI-only budget and the existing local budget. Successive RUNNING prefixes are readable through durable event cursors before completion.",
+      "claim": "Real SQLite conversation integration retains 501 individually persisted turns and all atomicity assertions, with a bounded 60-second CI-only budget and the existing local budget.",
       "location": {
         "path": "tests/integration/normal-conversation-store.test.ts"
       },
-      "hash": "cbc8fb99314cceabbced95b6611748ac0b9cb178805496a3045e91570f768858",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "5c4945b03f4f8198f17a865ec05b2ac32df939dc9ea6e5e4a2c0d1a2831cebb0",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 124
+        "endLine": 148
       }
     },
     {
@@ -1460,15 +1460,15 @@
     {
       "id": "44b4de62-537a-42f1-8a5c-40d72900430b",
       "kind": "source-code",
-      "claim": "Failing-first regressions cover paused trailing-prefix flush, safe committed publications, observer failure isolation and terminal notifications.",
+      "claim": "Failing-first regressions cover paused prefix flush, observer failure isolation and committed terminal notifications. Safe failure facts and partial artifacts agree between live observers and cold reads, including terminal persistence and cleanup failures.",
       "location": {
         "path": "tests/integration/normal-conversation-execution.test.ts"
       },
-      "hash": "875b5f5e0c8e58fbd266daa062ca4a9fcbb336ffae73db7cca28f60f70d8106d",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "934e20ba90499dc0628eae514b3a0b189c0242fb311ec24f942ae0e8e78cdd9a",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 486
+        "endLine": 532
       }
     },
     {
@@ -1502,15 +1502,15 @@
     {
       "id": "924fa695-204b-44c7-a782-358227365952",
       "kind": "source-code",
-      "claim": "Failing-first renderer regressions cover immediate pushed prefixes, stale in-flight reads, 100 ms disconnected recovery, short answers and retained paged history.",
+      "claim": "Renderer regressions cover pushed prefixes, stale in-flight success and failure, recovery notice clearing, backoff, 100 ms healthy disconnected recovery and retained paged history. New stream progress supersedes a late authentication rejection without resubmission.",
       "location": {
         "path": "tests/renderer/conversation-interactions.test.tsx"
       },
-      "hash": "2d1eb2b012f879772cac38f150653eddf0f2549d281792f4aa55e0c909cd26de",
-      "observedAt": "2026-11-13T08:27:43.446Z",
+      "hash": "05d0d7e359b6feac8e17c73787d85152d9462548ba85850b1dab5cb6ba82551d",
+      "observedAt": "2026-11-13T10:32:13.886Z",
       "range": {
         "startLine": 1,
-        "endLine": 228
+        "endLine": 352
       }
     },
     {
@@ -1539,6 +1539,76 @@
       "range": {
         "startLine": 1,
         "endLine": 59
+      }
+    },
+    {
+      "id": "16e763de-7d1e-4378-bd91-b3d8bc924d05",
+      "kind": "document",
+      "claim": "Implemented conversation reliability and REL-01-16 acceptance, pinned research, SDK-owned continuation, canonical private entries, scoped reconnect and bounded cancellation. Fixed gates pass, with synthetic-provider and real-provider evidence limits documented.",
+      "location": {
+        "path": "docs/pi-conversation-reliability-plan.md"
+      },
+      "hash": "24349147636bbde288e5a991f09b9eb6d4769b16625e97ae96d6851144355523",
+      "observedAt": "2026-11-13T10:32:13.886Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 171
+      }
+    },
+    {
+      "id": "ef2d4aee-7a09-4ed9-a51b-768a2d911a92",
+      "kind": "source-code",
+      "claim": "Control requests can expire without retaining pending promises; close and exit reject pending calls, and late replies cannot resolve newer identities.",
+      "location": {
+        "path": "src/main/infrastructure/runtime/worker-rpc.ts"
+      },
+      "hash": "1bd5f7459d903bde3e0d2b2c4386956fbd174dbd7c3504a0da24519c19566f23",
+      "observedAt": "2026-11-13T10:32:13.886Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 85
+      }
+    },
+    {
+      "id": "3ed7ea76-20a9-424b-b16f-32b73d6dfded",
+      "kind": "source-code",
+      "claim": "Worker start has a 60-second deadline and emergency stop/close have 15-second deadlines; terminal close terminates the owned worker and starts no retry loop.",
+      "location": {
+        "path": "src/main/composition/desktop-runtime-client.ts"
+      },
+      "hash": "05512caeb775f4a6cabeb6dc1bdc5fff8f71593e88cce4420be19530e18bf713",
+      "observedAt": "2026-11-13T10:32:13.886Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 65
+      }
+    },
+    {
+      "id": "0de54a1c-29ec-47aa-b79b-17f9b4842974",
+      "kind": "source-code",
+      "claim": "Real SDK synthetic-provider regressions exercise two timeouts after one stable tool call, single retry budget, provider retry zero, abort, idle separation, persistence failure, native history and unresponsive-provider isolation.",
+      "location": {
+        "path": "tests/contract/conversation-reliability.test.ts"
+      },
+      "hash": "448c3434d47cb90dade29e54f34f5a717091a54a316888f0a8139c1fe839e843",
+      "observedAt": "2026-11-13T10:32:13.886Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 150
+      }
+    },
+    {
+      "id": "12189162-690a-45b7-9b0a-4d57e8601c4f",
+      "kind": "source-code",
+      "claim": "Private canonical entries have ordered sequence, stable identity, parent and kind columns without changing execution intents.",
+      "location": {
+        "path": "resources/migrations/098_conversation_pi_entries.sql"
+      },
+      "hash": "d9279a17955e7fa837f8d198a52c328c4f42066c284cbe6fbee46984a601caff",
+      "observedAt": "2026-11-13T10:32:13.886Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 10
       }
     }
   ]

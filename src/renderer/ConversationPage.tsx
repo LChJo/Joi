@@ -19,6 +19,18 @@ const drafts = new WeakMap<DigitalLifeApi, Map<string,Draft>>();
 function statusText(status: ConversationTurnStatus) {
   return status === "QUEUED" ? t("chat.queued") : status === "RUNNING" ? t("chat.running") : status === "FAILED" ? t("chat.failed") : status === "STOPPED" ? t("chat.stopped") : status === "INTERRUPTED" ? t("chat.interrupted") : t("chat.completed");
 }
+function failureText(code: string) {
+  if (code === "conversation_cleanup_timed_out") return t("chat.failureCleanup");
+  if (code === "partner_tool_timed_out" || code === "partner_tool_not_allowed") return t("chat.failureTool");
+  if (code.includes("timed_out") || code === "timeout") return t("chat.failureTimeout");
+  if (code === "connection_error" || code === "connect" || code === "rate_limited" || code === "server_error") return t("chat.failureNetwork");
+  if (["auth_forbidden","invalid_api_key","http_401","http_403","model_access_forbidden","region_forbidden"].includes(code)) return t("chat.failureAuthentication");
+  if (code === "context_too_large" || code === "model_context_budget_exhausted") return t("chat.failureCapacity");
+  if (code === "conversation_persistence_failed" || code === "conversation_session_invalid") return t("chat.failureStorage");
+  if (code === "conversation_interrupted" || code.startsWith("partner_worker_")) return t("chat.failureInterrupted");
+  if (["invalid_model","invalid_request","unsupported_parameter","workspace_write_forbidden"].includes(code)) return t("chat.failureConfiguration");
+  return t("chat.error");
+}
 function PickerButton({ name,label,children,icon,open,onToggle,disabled = false }: {
   name: string;label: ReactNode;children: ReactNode;icon: ReactNode;open: boolean;onToggle: () => void;disabled?: boolean;
 }) {
@@ -91,6 +103,8 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   const [changing,setChanging] = useState(false);
   const [deleteError,setDeleteError] = useState<string | null>(null);
   const [notice,setNotice] = useState<string | null>(null);
+  const [connectionNotice,setConnectionNotice] = useState<{ id: string;message: string } | null>(null);
+  const [readEpoch,setReadEpoch] = useState(0);
   const [submitting,setSubmitting] = useState(false);
   const [uploading,setUploading] = useState(false);
   const [loadingHistory,setLoadingHistory] = useState(false);
@@ -104,6 +118,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   const pendingRequest = useRef<SendConversationInput | null>(null);
   const activeId = useRef(draft.id);
   const selection = useRef(0);
+  const selectedRead = useRef<AbortController | null>(null);
   const updateCursor = useRef<{ id: string;cursor: string } | null>(null);
   const selectedPartner = partners.find(p => p.partnerId === draft.partnerId);
   const engine = selectedPartner?.engine ?? "pi-core";
@@ -164,63 +179,102 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
   },[conversationId,conversation?.eventCursor,conversation?.conversationId]);
   useEffect(() => {
     if (conversationId === undefined || !busy) return;
-    let current = true,fetching = false,streamRevision = 0,pollDelay = 700;
+    let current = true,fetching = false,streamRevision = 0,pollDelay = 700,failures = 0,pollingStopped = false;
+    const epoch = selection.current,controller = new AbortController();
+    const accepted = () => current && selection.current === epoch && activeId.current === conversationId;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const poll = () => {
-      timer = undefined;if (!current || fetching) return;fetching = true;
+      timer = undefined;if (!accepted() || fetching || pollingStopped) return;fetching = true;
       const revision = streamRevision;
+      let delay: number | undefined = pollDelay;
       const refresh = async () => {
         const cursor = updateCursor.current?.id === conversationId ? updateCursor.current.cursor : undefined;
         if (cursor !== undefined && typeof api.conversationEvents === "function") {
-          const events = await api.conversationEvents(conversationId,cursor);
-          if (events.items.length === 0) { if (current && revision === streamRevision) updateCursor.current = { id: conversationId,cursor: events.cursor };return null; }
+          const events = await api.conversationEvents(conversationId,cursor,{ signal: controller.signal });
+          if (!accepted() || revision !== streamRevision) return null;
+          if (events.items.length === 0) { updateCursor.current = { id: conversationId,cursor: events.cursor };return null; }
         }
-        return api.getConversation(conversationId);
+        const next = await api.getConversation(conversationId,{ signal: controller.signal });
+        if (accepted() && revision === streamRevision && next.eventCursor !== undefined) updateCursor.current = { id: conversationId,cursor: next.eventCursor };
+        return next;
       };
       void refresh().then(next => {
-        if (next !== null && current && revision === streamRevision && activeId.current === next.conversationId) {
-          if (next.eventCursor !== undefined) updateCursor.current = { id: conversationId,cursor: next.eventCursor };
+        if (!accepted() || revision !== streamRevision) return;
+        failures = 0;
+        setConnectionNotice(previous => previous?.id === conversationId ? null : previous);
+        if (next !== null) {
           setConversation(previous => {
             if (previous?.conversationId !== next.conversationId) return next;
             const value = { ...next };delete value.historyCursor;
             return { ...value,...(previous.historyCursor === undefined ? {} : { historyCursor: previous.historyCursor }),
               turns: [...previous.turns.filter(turn => !next.turns.some(value => value.turnId === turn.turnId)),...next.turns] };
           });
-          if (!next.turns.some(turn => turn.status === "QUEUED" || turn.status === "RUNNING")) void loadHistory().catch(showError);
+          if (!next.turns.some(turn => turn.status === "QUEUED" || turn.status === "RUNNING")) {
+            delay = undefined;
+            void loadHistory().catch((error: unknown) => { if (accepted()) showError(error); });
+          }
         }
-      }).catch((error: unknown) => { if (current) showError(error); }).finally(() => { fetching = false;if (current) timer = setTimeout(poll,pollDelay); });
+      }).catch((error: unknown) => {
+        if (!accepted() || revision !== streamRevision) return;
+        failures++;
+        delay = error instanceof ApiError && (error.status === 401 || error.status === 403) ? undefined
+          : Math.min(15_000,1000 * 2 ** Math.min(failures - 1,4)) * (1 + Math.random() * 0.1);
+        if (delay === undefined) { pollingStopped = true;dispose?.(); }
+        const message = error instanceof ApiError ? error.displayMessage : t("chat.error");
+        setConnectionNotice({ id: conversationId,message: delay === undefined ? message : message + " " + t("chat.readRecovering") });
+      }).finally(() => { fetching = false;if (accepted() && !pollingStopped && delay !== undefined) timer = setTimeout(poll,failures === 0 ? pollDelay : delay); });
     };
     const dispose = api.watchConversation(conversationId,update => {
-      if (!current || activeId.current !== update.conversationId) return;
-      streamRevision++;
+      if (!accepted() || update.conversationId !== conversationId) return;
+      streamRevision++;failures = 0;
+      setConnectionNotice(previous => previous?.id === conversationId ? null : previous);
       setConversation(previous => {
         if (previous?.conversationId !== update.conversationId) return previous;
         const exists = previous.turns.some(turn => turn.turnId === update.turn.turnId);
         return { ...previous,...(update.context === undefined ? {} : { context: update.context }),
           turns: exists ? previous.turns.map(turn => turn.turnId === update.turn.turnId ? update.turn : turn) : [...previous.turns,update.turn] };
       });
-      if (update.turn.status !== "QUEUED" && update.turn.status !== "RUNNING") void loadHistory().catch(showError);
-    },() => { pollDelay = 100;if (timer !== undefined) { clearTimeout(timer);timer = setTimeout(poll,pollDelay); } });
+      if (update.turn.status !== "QUEUED" && update.turn.status !== "RUNNING") {
+        pollingStopped = true;clearTimeout(timer);
+        void loadHistory().catch((error: unknown) => { if (accepted()) showError(error); });
+      }
+    },() => { pollDelay = 100;if (accepted() && !pollingStopped && failures === 0 && timer !== undefined) { clearTimeout(timer);timer = setTimeout(poll,pollDelay); } });
     if (dispose === undefined) pollDelay = 100;
     timer = setTimeout(poll,pollDelay);
-    return () => { current = false;clearTimeout(timer);dispose?.(); };
-  },[api,conversationId,busy,loadHistory,showError]);
+    return () => { current = false;clearTimeout(timer);controller.abort();dispose?.(); };
+  },[api,conversationId,busy,readEpoch,loadHistory,showError]);
   useEffect(() => { if (nearBottom.current && stream.current !== null) stream.current.scrollTop = stream.current.scrollHeight; },[conversation]);
   const selectConversation = async (id: string) => {
     const request = ++selection.current;
+    setReadEpoch(value => value + 1);
+    selectedRead.current?.abort();
+    const controller = new AbortController();selectedRead.current = controller;
     try {
-      const next = await api.getConversation(id);
+      const next = await api.getConversation(id,{ signal: controller.signal });
       if (request !== selection.current) return;
       const latest = next.turns.at(-1);
       const saved = drafts.get(api)?.get(id);
-      activeId.current = id;setConversation(next);setPicker(null);setNotice(null);nearBottom.current = true;
+      activeId.current = id;setConversation(next);setPicker(null);setNotice(null);setConnectionNotice(null);nearBottom.current = true;
       setDraft(saved ?? { id,workbenchId: next.workbenchId,text: "",partnerId: latest?.config.partnerId ?? "joi-chat",networkId: latest?.config.networkId ?? draft.networkId,skills: latest?.config.skills ?? [],attachments: [],started: true,subagentsEnabled: latest?.config.subagentsEnabled ?? true,piExtensions: currentConversationPiExtensions(latest?.config.piExtensions) });
-    } catch (error) { showError(error); }
+    } catch (error) { if (request === selection.current) showError(error); }
   };
   const newChat = () => {
     selection.current++;
+    selectedRead.current?.abort();
     const id = randomUuid();activeId.current = id;setConversation(null);setWorkspaceOpen(false);setPicker(null);setNotice(null);pendingRequest.current = null;
     setDraft({ ...draft,id,text: "",attachments: [],started: false });setRestoring(false);nearBottom.current = true;
+  };
+  useEffect(() => () => { selectedRead.current?.abort(); },[]);
+  const stop = async () => {
+    const id = draft.id,epoch = selection.current;
+    const controller = new AbortController();selectedRead.current?.abort();selectedRead.current = controller;
+    const accepted = () => !controller.signal.aborted && activeId.current === id && selection.current === epoch;
+    try {
+      await api.stopConversation(id);
+      if (!accepted()) return;
+      const next = await api.getConversation(id,{ signal: controller.signal });
+      if (accepted()) setConversation(next);
+    } catch (error) { if (accepted()) showError(error); }
   };
   const changeConversation = async (item: ConversationSummaryDto,remove: boolean) => {
     if (changing) return;
@@ -278,7 +332,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
         return { ...value,turns: [...page.items.filter(turn => !previous.turns.some(value => value.turnId === turn.turnId)),...previous.turns],
           ...(page.nextCursor === null ? {} : { historyCursor: page.nextCursor }) };
       });
-    } catch (error) { showError(error); } finally { setLoadingHistory(false); }
+    } catch (error) { if (activeId.current === id) showError(error); } finally { setLoadingHistory(false); }
   };
   return <div className={`conversation-layout ${workspaceVisible ? "" : "workspace-hidden"} ${historyOpen ? "" : "history-hidden"}`} ref={layout}>
     {deleting === null ? null : <DeleteConversationDialog busy={changing} error={deleteError} onCancel={() => setDeleting(null)} onDelete={() => void changeConversation(deleting,true)} title={deleting.title} />}
@@ -307,11 +361,13 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
             ...(conversation.children === undefined ? {} : { children: conversation.children }),
             onCancel: childId => void api.cancelConversationChild(conversation.conversationId,childId).catch(showError),
           })} /></div>
+          {turn.failure === undefined ? null : <div className="chat-turn-failure" role="alert"><p>{failureText(turn.failure.reasonCode)}</p>{turn.failure.sideEffectState === "NONE" ? null : <p>{t("chat.verifyEffects")}</p>}</div>}
           <footer className={`chat-turn-footer status-${turn.status.toLowerCase()}`}><span>{statusText(turn.status)}</span>{turn.config.skills.length > 0 ? <small>Skills · {turn.config.skills.length}</small> : null}
             <button aria-label={t("chat.copy")} className="icon-button" onClick={() => { void navigator.clipboard.writeText(turn.entries.filter(e => e.role === "AGENT" && e.kind === "MARKDOWN").map(e => e.text ?? "").join("\n\n")).then(() => setCopied(turn.turnId)).catch(showError); }} type="button">{copied === turn.turnId ? <CheckIcon /> : <CopyIcon />}</button></footer>
         </article>)}</div>}
       </div>
       <div className="chat-compose-area">{notice === null ? null : <div className="chat-notice" role="alert">{notice}<button aria-label={t("chat.remove")} onClick={() => setNotice(null)} type="button"><XIcon /></button></div>}
+        {connectionNotice !== null && connectionNotice.id === conversationId ? <div className="chat-notice" role="alert">{connectionNotice.message}<button aria-label={t("chat.remove")} onClick={() => setConnectionNotice(null)} type="button"><XIcon /></button></div> : null}
         {conversation === null && !draft.started ? <div className="chat-context-strip"><PickerButton name={t("chat.workbench")} label={selectedWorkbench?.name ?? t("chat.chooseWorkbench")} icon={<FolderIcon />} disabled={submitting || restoring} open={picker === "workbench"} onToggle={() => toggle("workbench")}>
           <div role="listbox" aria-label={t("chat.workbench")}>{workbenches.map(w => <button aria-selected={draft.workbenchId === w.workbenchId} key={w.workbenchId} onClick={() => { patchDraft({ workbenchId: w.workbenchId });setPicker(null); }} role="option" type="button"><FolderIcon />{w.name}</button>)}</div>
           {api.desktop ? <><button className="chat-quick-workbench" onClick={() => void quickWorkbench()} type="button"><PlusIcon />{t("chat.quickWorkbench")}</button><p>{t("chat.quickHint")}</p></> : null}</PickerButton>
@@ -332,7 +388,7 @@ export function ConversationPage({ api,onSettings }: { api: DigitalLifeApi; onSe
               </div>
             </PickerButton>}
             <button aria-label={t("chat.settings")} className="chat-settings-button" onClick={onSettings} title="Ctrl / ⌘ + ," type="button"><GearSixIcon /></button>
-            {busy ? <button aria-label={t("chat.stop")} className="chat-send is-stop" onClick={() => void api.stopConversation(draft.id).then(() => api.getConversation(draft.id)).then(setConversation).catch(showError)} type="button"><StopIcon weight="fill" /></button>
+            {busy ? <button aria-label={t("chat.stop")} className="chat-send is-stop" onClick={() => void stop()} type="button"><StopIcon weight="fill" /></button>
               : <button aria-label={t("chat.send")} className="chat-send" disabled={submitting || restoring || uploading || draft.text.trim() === "" || draft.workbenchId === "" || (!native && selectedNetwork?.status !== "READY")} type="submit"><ArrowUpIcon weight="bold" /></button>}
           </div></form><input hidden multiple onChange={e => void upload(e.target.files)} ref={fileInput} type="file" />
         <div className="chat-composer-footnote"><span>{t("chat.shortcut")}</span><span>{native ? t("chat.nativeNetwork") : networks.length === 0 ? t("chat.noNetwork") : t("chat.locked")}</span></div>

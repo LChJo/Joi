@@ -18,7 +18,8 @@ function turn(row: Row): ConversationTurnDto {
   return { turnId: String(row.turn_id), text: sanitizeAgentConversationText(String(row.body)), createdAt: String(row.created_at),
     status: row.status as ConversationTurnDto["status"], config: JSON.parse(String(row.config_json)) as ConversationTurnDto["config"],
     entries: JSON.parse(String(row.entries_json)) as ConversationTurnDto["entries"], artifacts: JSON.parse(String(row.artifacts_json)) as ConversationTurnDto["artifacts"],
-    ...(typeof row.error_code === "string" ? { errorCode: row.error_code } : {}) };
+    ...(typeof row.error_code === "string" ? { errorCode: row.error_code } : {}),
+    ...(typeof row.failure_json === "string" ? { failure: JSON.parse(row.failure_json) as NonNullable<ConversationTurnDto["failure"]> } : {}) };
 }
 function read(db: DatabaseSync, id: string): ConversationDto | null {
   const row = db.prepare("SELECT * FROM conversations WHERE conversation_id=? AND deleted_at IS NULL").get(id);
@@ -57,6 +58,7 @@ function requireConversation(db: DatabaseSync,id: string): ConversationDto {
 
 export class SqliteConversationStore implements ConversationStore {
   readonly #sessionMessages = new Map<string,string[]>();
+  readonly #sessionEntries = new Map<string,string[]>();
   constructor(private readonly database: Database) {}
   async page(id: string,cursor?: string,limit = 50) { return this.database.transaction(db => { requireConversation(db,id);return historyPage(db,id,cursor,limit); }); }
   async events(id: string,cursor?: string) { return this.database.transaction(db => {
@@ -89,7 +91,16 @@ export class SqliteConversationStore implements ConversationStore {
         return String(message.message_json);
       });
       this.#rememberSession(id,messages);
-      return { ...JSON.parse(String(row.state_json)) as PartnerSessionState,messages: messages.map(message => JSON.parse(message) as unknown) };
+      const state = JSON.parse(String(row.state_json)) as PartnerSessionState;
+      if (state.piSession !== undefined) {
+        const entries = db.prepare("SELECT sequence,entry_json FROM conversation_pi_entries WHERE conversation_id=? ORDER BY sequence").all(id).map((entry,index) => {
+          if (entry.sequence !== index) throw new DomainError("conversation_session_invalid","Private session history is incomplete.");
+          return String(entry.entry_json);
+        });
+        this.#remember(this.#sessionEntries,id,entries);
+        state.piSession = { ...state.piSession,entries: entries.map(entry => JSON.parse(entry) as unknown) };
+      }
+      return { ...state,messages: messages.map(message => JSON.parse(message) as unknown) };
     });
   }
   async saveSession(id: string,turnId: string,state: PartnerSessionState,at: string) {
@@ -97,23 +108,42 @@ export class SqliteConversationStore implements ConversationStore {
       requireConversation(db,id);
       // Only the currently executing owner may advance a private session.
       if (!db.prepare("SELECT 1 FROM conversation_turns WHERE conversation_id=? AND turn_id=? AND status='RUNNING'").get(id,turnId)) return;
+      const entries = state.piSession?.entries.map(entry => JSON.stringify(entry));
+      if (entries !== undefined) {
+        const previousEntries = this.#sessionEntries.get(id) ?? db.prepare("SELECT entry_json FROM conversation_pi_entries WHERE conversation_id=? ORDER BY sequence").all(id).map(row => String(row.entry_json));
+        if (previousEntries.length > entries.length || previousEntries.some((entry,index) => entry !== entries[index])) throw new DomainError("conversation_session_invalid","Private session entries are immutable.");
+        const known = new Set(previousEntries.map(entry => (JSON.parse(entry) as { id: string }).id));
+        const insertEntry = db.prepare("INSERT INTO conversation_pi_entries(conversation_id,sequence,entry_id,parent_id,entry_type,entry_json) VALUES (?,?,?,?,?,?)");
+        for (let index = previousEntries.length;index < entries.length;index++) {
+          const raw = entries[index] ?? "null",entry = JSON.parse(raw) as { id?: unknown;parentId?: unknown;type?: unknown } | null;
+          if (entry === null || typeof entry.id !== "string" || known.has(entry.id) || typeof entry.type !== "string"
+            || entry.parentId !== null && (typeof entry.parentId !== "string" || !known.has(entry.parentId))) throw new DomainError("conversation_session_invalid","Private session entries are invalid.");
+          insertEntry.run(id,index,entry.id,entry.parentId,entry.type,raw);known.add(entry.id);
+        }
+      }
       const messages = state.messages.map(message => JSON.stringify(message));
       const previous = this.#sessionMessages.get(id) ?? db.prepare("SELECT message_json FROM conversation_execution_messages WHERE conversation_id=? ORDER BY sequence").all(id).map(row => String(row.message_json));
       let common = 0;while (common < messages.length && messages[common] === previous[common]) common++;
       if (common < previous.length) db.prepare("DELETE FROM conversation_execution_messages WHERE conversation_id=? AND sequence>=?").run(id,common);
       const insert = db.prepare("INSERT INTO conversation_execution_messages(conversation_id,sequence,message_json) VALUES (?,?,?)");
       for (let index = common;index < messages.length;index++) insert.run(id,index,messages[index] ?? "null");
-      const metadata = JSON.stringify({ ...state,messages: [] });
+      const metadata = JSON.stringify({ ...state,messages: [],...(state.piSession === undefined ? {} : { piSession: { ...state.piSession,entries: [] } }) });
       db.prepare(`INSERT INTO conversation_execution_sessions(conversation_id,state_json,updated_at) VALUES (?,?,?)
         ON CONFLICT(conversation_id) DO UPDATE SET state_json=excluded.state_json,updated_at=excluded.updated_at
         WHERE conversation_execution_sessions.state_json<>excluded.state_json`).run(id,metadata,at);
-      return messages;
+      return { messages,entries };
     });
-    if (saved !== undefined) this.#rememberSession(id,saved);
+    if (saved !== undefined) {
+      this.#rememberSession(id,saved.messages);
+      if (saved.entries !== undefined) this.#remember(this.#sessionEntries,id,saved.entries);
+    }
   }
   #rememberSession(id: string,messages: string[]): void {
-    this.#sessionMessages.delete(id);this.#sessionMessages.set(id,messages);
-    while (this.#sessionMessages.size > 16) { const oldest = this.#sessionMessages.keys().next();if (oldest.done) break;this.#sessionMessages.delete(oldest.value); }
+    this.#remember(this.#sessionMessages,id,messages);
+  }
+  #remember(cache: Map<string,string[]>,id: string,items: string[]): void {
+    cache.delete(id);cache.set(id,items);
+    while (cache.size > 16) { const oldest = cache.keys().next();if (oldest.done) break;cache.delete(oldest.value); }
   }
   async submit(input: ConversationSubmission): Promise<ConversationDto> {
     return this.database.transaction(db => {
@@ -193,8 +223,9 @@ export class SqliteConversationStore implements ConversationStore {
   }); }
   async update(id: string, patch: Parameters<ConversationStore["update"]>[1]) {
     this.database.transaction(db => {
-      db.prepare("UPDATE conversation_turns SET entries_json=?,artifacts_json=?,status=?,error_code=? WHERE turn_id=? AND status='RUNNING'")
-        .run(JSON.stringify(patch.entries),JSON.stringify(patch.artifacts),patch.status,patch.errorCode ?? null,id);
+      const changed = db.prepare("UPDATE conversation_turns SET entries_json=?,artifacts_json=?,status=?,error_code=?,failure_json=? WHERE turn_id=? AND status='RUNNING'")
+        .run(JSON.stringify(patch.entries),JSON.stringify(patch.artifacts),patch.status,patch.errorCode ?? null,patch.failure === undefined ? null : JSON.stringify(patch.failure),id);
+      if (changed.changes === 0) return;
       if (patch.status !== "RUNNING") db.prepare("UPDATE work_items SET status=? WHERE work_id=?")
         .run(patch.status === "COMPLETED" ? "COMPLETED" : patch.status === "STOPPED" ? "CANCELED" : "FAILED",id);
     });

@@ -872,6 +872,88 @@
     "description": "As declared by each skill",
     "placeholders": {}
   },
+  "chatReadRecovering": "Progress will refresh automatically.",
+  "@chatReadRecovering": {
+    "description": "chat.readRecovering",
+    "placeholders": {}
+  },
+  "chatFailureCleanup": "Stop was requested, but some execution could not be confirmed as settled.",
+  "@chatFailureCleanup": {
+    "description": "chat.failureCleanup",
+    "placeholders": {}
+  },
+  "chatModelRecovering": "Recovering model connection ({attempt}/{max})",
+  "@chatModelRecovering": {
+    "description": "Bounded model retry progress, separate from summary state.",
+    "placeholders": {
+      "attempt": {
+        "type": "num"
+      },
+      "max": {
+        "type": "num"
+      }
+    }
+  },
+  "chatModelRecovered": "Model connection recovered",
+  "@chatModelRecovered": {
+    "description": "chat.modelRecovered",
+    "placeholders": {}
+  },
+  "chatModelRecoveryExhausted": "Model recovery attempts exhausted",
+  "@chatModelRecoveryExhausted": {
+    "description": "chat.modelRecoveryExhausted",
+    "placeholders": {}
+  },
+  "chatModelRecoveryCanceled": "Model recovery stopped",
+  "@chatModelRecoveryCanceled": {
+    "description": "chat.modelRecoveryCanceled",
+    "placeholders": {}
+  },
+  "chatFailureTimeout": "The model request timed out. Your existing output is retained.",
+  "@chatFailureTimeout": {
+    "description": "chat.failureTimeout",
+    "placeholders": {}
+  },
+  "chatFailureNetwork": "The model connection failed after recovery attempts.",
+  "@chatFailureNetwork": {
+    "description": "chat.failureNetwork",
+    "placeholders": {}
+  },
+  "chatFailureAuthentication": "The selected model's credentials or access need attention.",
+  "@chatFailureAuthentication": {
+    "description": "chat.failureAuthentication",
+    "placeholders": {}
+  },
+  "chatFailureCapacity": "The model context is full. Continue with a smaller request.",
+  "@chatFailureCapacity": {
+    "description": "chat.failureCapacity",
+    "placeholders": {}
+  },
+  "chatFailureConfiguration": "The model or tool configuration needs attention.",
+  "@chatFailureConfiguration": {
+    "description": "chat.failureConfiguration",
+    "placeholders": {}
+  },
+  "chatFailureTool": "A tool could not finish. Check its recorded results.",
+  "@chatFailureTool": {
+    "description": "chat.failureTool",
+    "placeholders": {}
+  },
+  "chatFailureStorage": "Execution stopped because its history could not be saved.",
+  "@chatFailureStorage": {
+    "description": "chat.failureStorage",
+    "placeholders": {}
+  },
+  "chatFailureInterrupted": "Execution was interrupted. Check its recorded results before continuing.",
+  "@chatFailureInterrupted": {
+    "description": "chat.failureInterrupted",
+    "placeholders": {}
+  },
+  "chatVerifyEffects": "Check any completed changes before asking to continue.",
+  "@chatVerifyEffects": {
+    "description": "chat.verifyEffects",
+    "placeholders": {}
+  },
   "chatCollapseNavigation": "Collapse navigation",
   "@chatCollapseNavigation": {
     "description": "chat.collapseNavigation",
@@ -1853,6 +1935,36 @@
   "errorsConversationTitleInvalid": "Enter a title of 1 to 80 characters on one line.",
   "@errorsConversationTitleInvalid": {
     "description": "Conversation titles must contain text within the title length limit and cannot contain control characters or line breaks.",
+    "placeholders": {}
+  },
+  "errorsConnectionUnavailable": "Connection interrupted. Please try again.",
+  "@errorsConnectionUnavailable": {
+    "description": "Transport failure, without claiming that a write will be retried.",
+    "placeholders": {}
+  },
+  "errorsReadTimedOut": "The request timed out. Please try again.",
+  "@errorsReadTimedOut": {
+    "description": "A timed out read does not determine task status.",
+    "placeholders": {}
+  },
+  "errorsAuthenticationRequired": "Please sign in again.",
+  "@errorsAuthenticationRequired": {
+    "description": "Automatic reads stop when authentication is required.",
+    "placeholders": {}
+  },
+  "errorsRequestForbidden": "You do not have permission to perform this operation.",
+  "@errorsRequestForbidden": {
+    "description": "Automatic reads stop when access is forbidden.",
+    "placeholders": {}
+  },
+  "errorsRequestRateLimited": "Too many requests. Please try again shortly.",
+  "@errorsRequestRateLimited": {
+    "description": "Reads back off when the backend rate limits requests.",
+    "placeholders": {}
+  },
+  "errorsBackendUnavailable": "The service is temporarily unavailable. Please try again.",
+  "@errorsBackendUnavailable": {
+    "description": "A backend failure does not imply that execution failed.",
     "placeholders": {}
   },
   "errorsModelSourceUrlProhibited": "Unsupported model URL. Use public HTTPS, localhost/127.0.0.1, or an explicit LAN IPv4 address (10.x, 172.16–31.x, 192.168.x).",
