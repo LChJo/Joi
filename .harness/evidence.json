@@ -732,15 +732,15 @@
     {
       "id": "793588d4-9226-45ea-bcb5-58e60334355c",
       "kind": "source-code",
-      "claim": "Host-owned coding guidance reflects enabled dedicated tools and keeps shell builds and scripts available.",
+      "claim": "Dedicated reads precede necessary file writes and shell commands.",
       "location": {
         "path": "src/main/infrastructure/pi/pi-coding-guidance.ts"
       },
-      "hash": "9a3b3428f306ad84339219e42f8e9f6232b043631f6de777165496475f4670ca",
-      "observedAt": "2026-11-11T17:37:10.784738Z",
+      "hash": "e5b4d7dde021d6aa35d0aa66c04acf7be918eff5704c31a9f58a5c4ce167dfeb",
+      "observedAt": "2026-11-14T13:17:53.040Z",
       "range": {
         "startLine": 1,
-        "endLine": 11
+        "endLine": 12
       }
     },
     {
@@ -844,12 +844,12 @@
     {
       "id": "5bc37929-aa0f-458c-98ae-57aa0ea8090e",
       "kind": "document",
-      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations.",
+      "claim": "CHAT-30 through CHAT-38 and CHAT-41 through CHAT-43 define conversation controls, isolated browser lifecycle, retired extension removal and the default-off grouped browser permission switch. SUM-01 through SUM-12 define the session-owned background summary policy and validation. CHAT-44 maps conversation title editing to renderer, HTTP, persistence and desktop regressions. CHAT-04/24/45 map incremental display and recovery to synthetic Pi, store, application, HTTP, renderer and Electron regressions. AC-24/55/65 specify expanded model limit tiers, 1M/128K creation defaults and preservation of existing configurations. AC-WR-08 defines bounded Git reads, visible resource waits, guarded cancellation and same-identity automatic continuation.",
       "location": {
         "path": "docs/07-roadmap-and-acceptance.md"
       },
-      "hash": "be8c1968a91f5e04407b78555f447506f07742ae26fb7cc52ebfd1c22363937c",
-      "observedAt": "2026-11-14T11:23:51.962Z",
+      "hash": "2358458b1ef03503932539125d3197007080c9ef5354d01b51b8f87b9c48e85a",
+      "observedAt": "2026-11-14T13:17:53.040Z",
       "range": {
         "startLine": 1,
         "endLine": 672
@@ -1973,6 +1973,188 @@
       "range": {
         "startLine": 1,
         "endLine": 93
+      }
+    },
+    {
+      "id": "d163a01d-2706-4679-8bea-de546e1ead3a",
+      "kind": "source-code",
+      "claim": "The foreman prefers reads and dependencies and preserves automatically resumed resource waits.",
+      "location": {
+        "path": "src/main/application/joi/joi-system-prompt.ts"
+      },
+      "hash": "56e0713cb2929684399be33c331a4584f510af6dceca6bb28e359b654b12bfa0",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 65
+      }
+    },
+    {
+      "id": "d350b327-9a09-447e-9b5e-005388a94107",
+      "kind": "source-code",
+      "claim": "Goal Work queries expose execution phases and resource-wait reasons.",
+      "location": {
+        "path": "src/main/application/ports/work-orchestration.ts"
+      },
+      "hash": "a0d0b4d641143fd7841a3b2a99152e8b5c18e7c0f16f0dc069ceba23aa8638ec",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 156
+      }
+    },
+    {
+      "id": "3e39b216-1a95-41a5-a236-1dfece37d9f8",
+      "kind": "source-code",
+      "claim": "Pure policies classify dedicated Git reads separately from unrestricted shell writes and require explicit resource-wait cancellation intent.",
+      "location": {
+        "path": "src/main/domain/work/workspace-write-scheduling.ts"
+      },
+      "hash": "cf47902dc5de10a822cde30074eeb5fbfcf428ba6992c56c509fdc7a4f56e193",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 22
+      }
+    },
+    {
+      "id": "5c497ce2-7941-4294-b79d-d9cb08f9adf1",
+      "kind": "source-code",
+      "claim": "Full and paged goal Work queries expose executionPhase and waitReason without private checkpoints.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-work-plan-repository.ts"
+      },
+      "hash": "3ab7f8ffee07c3bf51a645497193e59825f4b1c01ecea87bf3227bdf91d2f24a",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 641
+      }
+    },
+    {
+      "id": "19c76272-7569-42d8-b53e-756b6d33cf7e",
+      "kind": "source-code",
+      "claim": "Goal-scoped canceled Work overrides compatible run failure markers in agent status.",
+      "location": {
+        "path": "src/main/infrastructure/persistence/sqlite-workbench-agent-repository.ts"
+      },
+      "hash": "795c01241ce3629d40491be41c24016fc34119adf9557d6d324b442f5d3a8154",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 407
+      }
+    },
+    {
+      "id": "5d1b8b6b-3f17-4d34-ba8c-ec22deab32c6",
+      "kind": "source-code",
+      "claim": "Fixed Git status/diff/log/show disable shell execution, optional index writes, fsmonitor, external diff/textconv and lazy fetch.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-git-read-tool.ts"
+      },
+      "hash": "16a495bf6600cf769a61cce5f4e7553428d1fe294adf70f61ecebc1d8dfac3d3",
+      "observedAt": "2026-11-14T13:23:08.221Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 45
+      }
+    },
+    {
+      "id": "4491a2e3-577b-4501-8471-6f2d31fb48ce",
+      "kind": "source-code",
+      "claim": "The tool catalog exposes the bounded Git reader with a filtered child environment.",
+      "location": {
+        "path": "src/main/infrastructure/pi/pi-coding-tool-factory.ts"
+      },
+      "hash": "0070d06204f40709d4ffdcc49444f1e745a0b730c11e11bbd39715d99352ab59",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 114
+      }
+    },
+    {
+      "id": "0423a1b2-bacf-4268-aacc-a5b27b920a66",
+      "kind": "source-code",
+      "claim": "Cancellation intent is explicit for resource waits and the tool catalog advertises git_read.",
+      "location": {
+        "path": "src/main/infrastructure/pi/joi-reasoning-tools.ts"
+      },
+      "hash": "77666364ebdfee0c420960125a1b221ddb6ac503e7d3abbdcec831d464c4bcdb",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1086
+      }
+    },
+    {
+      "id": "e972cca1-c44b-4131-9605-12f6ecc99a06",
+      "kind": "source-code",
+      "claim": "Scoped cancellation returns WAITING with automaticResume for a resource wait without an explicit cancellation intent.",
+      "location": {
+        "path": "src/main/infrastructure/pi/joi-requirements-tools.ts"
+      },
+      "hash": "b6583ccbe6143b71b7f7d6ce8bc6c4ea9a33cfe0dd4f4c59345a6bf01ba1c565",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 125
+      }
+    },
+    {
+      "id": "576c8091-c165-4774-b79f-eb346bc5c9bb",
+      "kind": "source-code",
+      "claim": "A real disposable Git repository verifies READ admission, index preservation and disabled external diff/fsmonitor commands.",
+      "location": {
+        "path": "tests/unit/pi-git-read.test.ts"
+      },
+      "hash": "380893031e7397da430d853e96b778b8a74b1f3ddfc60a3c77c5a93c9f000a3e",
+      "observedAt": "2026-11-14T13:23:08.221Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 51
+      }
+    },
+    {
+      "id": "54924ed6-1441-4f5d-a175-47b16eae6fbc",
+      "kind": "source-code",
+      "claim": "The production reasoning tool factory preserves resource waits and allows explicit user cancellation.",
+      "location": {
+        "path": "tests/unit/joi-reasoning-tools.test.ts"
+      },
+      "hash": "cc4431f2269e5f87f66da3112604bcdb89887c38ac51b7c65954af77ea53e6d4",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1055
+      }
+    },
+    {
+      "id": "55d157d7-c373-46ea-a1c5-27bcacf3421c",
+      "kind": "source-code",
+      "claim": "Disposable SQLite exercises wait visibility, continuation identity, resumed completion and canceled agent cards.",
+      "location": {
+        "path": "tests/integration/sqlite-partner-dispatch-instances.test.ts"
+      },
+      "hash": "c085fea6da1a79dd8591de6a3f2c68a2982230b560d504f571081f4bff2683a7",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 1239
+      }
+    },
+    {
+      "id": "4556eda4-7897-4b69-a74e-21bb633756c1",
+      "kind": "source-code",
+      "claim": "Bounded Work metadata queries retain pagination and exclude old attempts resource-wait state.",
+      "location": {
+        "path": "tests/integration/bounded-goal-queries.test.ts"
+      },
+      "hash": "e83c42e16c7e688f4198d0726f4597e457d018e67badf463c2ca060ee1fbb142",
+      "observedAt": "2026-11-14T13:17:53.040Z",
+      "range": {
+        "startLine": 1,
+        "endLine": 226
       }
     }
   ]

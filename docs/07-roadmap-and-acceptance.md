@@ -68,6 +68,7 @@
 - AC-WR-05：同 run/attempt/instance 通过代次幂等 continuation 恢复；暂停不验收、不完成、不计等待超时。取消、重启、重复事件和旧回调安全收敛，缺检查点失败，可能写入的崩溃不重放。
 - AC-WR-06：附件与辅助文件不写共享工作区；WRITE 后重建基线且锁释放前收集与验收；纯分析不认领共享差异。DTO 只暴露阶段、等待原因和执行/等待数，私有检查点及协议不进入日志或公开结果。已启动旧策略及 A2A 保持兼容。
 - AC-WR-07：新本地 Work 声明 SHELL/FILE_WRITE 执行需求；派发前校验权限和固定搭档能力，冲突不得部分提交。READ 上限的 Pi/Claude 工具及提示词不暴露写/编辑/普通 Shell；WRITE 上限保留自动 READ→WRITE 升级。恢复/更新不得静默提升原 READ，失败缺口使用有界、事务幂等的补充 Work，保留验收和已有副作用证据。旧 brief 缺声明视为未知，不批量迁移或重放。
+- AC-WR-08：检查优先使用专用读取工具；Pi 的 git_read 仅提供本地 status/diff/log/show，以固定参数禁用可选索引写入、外部 diff/textconv、fsmonitor 与按需抓取，不使用 Shell、不申请 WRITE；普通 Shell、构建、测试及文件交付仍按需申请排他租约。主调度的分页和完整 Work 列表均提供安全的 executionPhase/waitReason；资源等待保留原任务并自动恢复，不因其他 Work 失败而取消或重派。对资源等待的 work_cancel 缺少明确取消意图时返回 WAITING/automaticResume，显式用户取消、需求变更或任务取代仍可取消。目标内搭档卡片以 Work 的 CANCELED 事实覆盖兼容 run 的 FAILED 标记。临时 SQLite 回归覆盖等待投影、原身份恢复运行及完成、取消与旧回调；Git 回归覆盖只读上限和外部命令不执行。
 
 2026-09-17 AC-57 增量：PC/Android 对最终结果提供快照阅读、原始 Markdown 复制、A4 PDF 和 1080px 分段 PNG 导出，默认下载/Joi。PC 使用 desktop-only API、正文摘要校验和持久 outbox；Android 本地离线排版与 MediaStore/SAF 保存。Android 各页右上角统一当前状态 i 诊断入口。规格与真机待验项目见 [全文导出验收](19-result-export-acceptance.md)。
 

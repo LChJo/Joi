@@ -10,7 +10,8 @@ function fixture(count = 1000) {
   const connection = new DatabaseSync(":memory:");
   connection.exec(`
     CREATE TABLE work_items(work_id TEXT,input_id TEXT,workbench_id TEXT,title TEXT,intent_json TEXT,status TEXT,created_at TEXT);
-    CREATE TABLE dispatch_attempts(work_id TEXT,action_id TEXT,created_at TEXT);
+    CREATE TABLE dispatch_attempts(work_id TEXT,action_id TEXT,created_at TEXT,dispatch_attempt_id TEXT);
+    CREATE TABLE local_work_execution(dispatch_attempt_id TEXT,phase TEXT,wait_reason TEXT);
     CREATE TABLE work_results(result_id TEXT,work_id TEXT,workbench_id TEXT,body_ref TEXT,status TEXT,is_late INTEGER,is_authoritative INTEGER,created_at TEXT,action_id TEXT,artifacts_json TEXT);
     CREATE TABLE work_result_bodies(body_ref TEXT,body TEXT);
     CREATE TABLE work_result_verifications(result_id TEXT,status TEXT);
@@ -26,7 +27,7 @@ function fixture(count = 1000) {
     const id = String(n).padStart(4,"0");
     connection.prepare("INSERT INTO work_items VALUES (?,?,?,'Work',?,?,?)").run(`w${id}`,"goal","bench",JSON.stringify({ requirementsRevision: n % 2 + 1 }),n % 2 ? "READY" : "COMPLETED",id);
     connection.prepare("INSERT INTO work_results VALUES (?,?,?,?,?,0,1,?,?,'[]')").run(`r${id}`,`w${id}`,"bench",`b${id}`,"COMPLETED",id,`a${id}`);
-    connection.prepare("INSERT INTO dispatch_attempts VALUES (?,?,?)").run(`w${id}`,`a${id}`,id);
+    connection.prepare("INSERT INTO dispatch_attempts VALUES (?,?,?,?)").run(`w${id}`,`a${id}`,id,`attempt${id}`);
     connection.prepare("INSERT INTO work_result_bodies VALUES (?,?)").run(`b${id}`,body);
   }
   const queries: string[] = [];
@@ -52,6 +53,20 @@ function fixture(count = 1000) {
 }
 
 describe("AC-43/48/53/67 bounded goal queries",() => {
+  it("does not project an old attempt's resource wait onto a replacement", async () => {
+    const f = fixture(0);
+    try {
+      f.connection.exec(`INSERT INTO work_items VALUES ('replacement','goal','bench','Task','{}','READY','0');
+        INSERT INTO dispatch_attempts VALUES ('replacement','old','0','old'), ('replacement','new','1','new');
+        INSERT INTO local_work_execution VALUES ('old','WRITE_QUEUED','WORKSPACE_WRITE');`);
+      const repository = new SqliteWorkPlanRepository(f.database);
+      for (const items of [await repository.listForGoal("goal", "bench"),
+        (await repository.listGoalPage({ goalInputId: "goal", workbenchId: "bench" })).items]) {
+        expect(items[0]).not.toHaveProperty("executionPhase");
+        expect(items[0]).not.toHaveProperty("waitReason");
+      }
+    } finally { f.connection.close(); }
+  });
   it("keeps scoped guarded tools and stale-brief checks bounded while excluding only a reassigned target",async () => {
     const f = fixture(0);
     try {

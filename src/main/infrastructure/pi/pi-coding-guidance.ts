@@ -5,6 +5,7 @@ export function piCodingGuidance(toolNames: readonly string[]): string[] {
   if (enabled.has("find")) lines.push("Use find (fd) for file-name and glob searches; start with the smallest relevant directory.");
   if (enabled.has("ls")) lines.push("Use ls for directory listings instead of recursive shell traversal.");
   if (enabled.has("read")) lines.push("Use read to examine files instead of cat or sed. Request relevant ranges with offset and limit.");
+  if (enabled.has("git_read")) lines.push("Use git_read for Git status, diff, log and commit inspection instead of bash; it keeps this Work in the concurrent READ phase. Finish investigation with dedicated read tools before the first necessary file write or shell command.");
   if (enabled.has("bash")) lines.push("Use bash for builds, tests, scripts and necessary complex pipelines. For exploration, prefer the enabled dedicated tools; use permitted shell alternatives when a dedicated capability is unavailable.");
   if (lines.length > 0) lines.push("Group independent exploration queries in the same model turn. Keep dependent queries ordered; report unavailable capabilities honestly and do not substitute a disabled tool.");
   return lines;

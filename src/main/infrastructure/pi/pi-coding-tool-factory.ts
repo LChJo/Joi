@@ -12,6 +12,7 @@ import { realpathSync, statSync } from "node:fs";
 import { guardedEditOperations, guardedWriteOperations } from "./pi-filesystem-boundary.js";
 import { PI_WEB_ACCESS_TOOL_NAMES, PiWebAccessToolFactory } from "./pi-web-access-tools.js";
 import { PI_FINANCIAL_RESEARCH_TOOL_NAMES, PiFinancialResearchToolFactory } from "./pi-financial-research-tools.js";
+import { createGitReadTool } from "./pi-git-read-tool.js";
 
 export interface PiCodingToolFactory {
   create(cwd: string, names: string[], options?: { environmentKeys?: readonly string[] }): AgentTool[];
@@ -48,7 +49,7 @@ function safeEnvironment(environment: NodeJS.ProcessEnv, requestedKeys: readonly
   }));
 }
 
-export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "grep", "ls", "read", "write"] as const;
+export const PI_CODING_TOOL_NAMES = ["bash", "edit", "find", "git_read", "grep", "ls", "read", "write"] as const;
 export const PI_PARTNER_TOOL_NAMES = [...PI_CODING_TOOL_NAMES, ...PI_WEB_ACCESS_TOOL_NAMES, ...PI_FINANCIAL_RESEARCH_TOOL_NAMES] as const;
 
 // The heterogeneous list retains each concrete schema for Pi's runtime argument validation.
@@ -85,6 +86,7 @@ export class BuiltinPiCodingToolFactory implements PiCodingToolFactory {
     const canonical = needsWorkspace ? realpathSync.native(cwd) : cwd;
     if (needsWorkspace && !statSync(canonical).isDirectory()) throw new Error("partner_workspace_not_directory");
     return [...new Set(names)].map((name): AgentTool => {
+      if (name === "git_read") return createGitReadTool(canonical, safeEnvironment(process.env, [])) as AgentTool;
       if (name === "bash") return createBashTool(canonical, {
         exposeSessionEnvironment: false,
         spawnHook: (context) => ({

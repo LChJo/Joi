@@ -62,6 +62,7 @@ function required(row: Row, key: string): string {
 }
 
 function mapStatus(row: Row): WorkbenchAgentStatusDto {
+  if (row.goal_execution_status === "CANCELED") return "CANCELED";
   if (row.execution_phase === "WRITE_QUEUED") return "WAITING";
   if (row.goal_execution_status === "RUNNING") return "RUNNING";
   if (row.goal_execution_status === "WAITING_INPUT" || row.goal_execution_status === "WAITING_AUTH") return "WAITING";
@@ -153,7 +154,7 @@ function cardSelect(goalScoped: boolean): string {
   (SELECT MAX(lr.updated_at) FROM partner_runs lr
     JOIN dispatch_attempts la ON la.dispatch_attempt_id = lr.dispatch_attempt_id
     WHERE s.backing_kind = 'LOCAL_INSTANCE' AND la.instance_id = s.backing_id) AS execution_updated_at,
-  ${goalScoped ? `(SELECT gr.status FROM partner_runs gr
+  ${goalScoped ? `(SELECT CASE WHEN gw.status = 'CANCELED' THEN 'CANCELED' ELSE gr.status END FROM partner_runs gr
     JOIN dispatch_attempts ga ON ga.dispatch_attempt_id = gr.dispatch_attempt_id
     JOIN work_items gw ON gw.work_id = gr.work_id
     WHERE gw.input_id = ? AND (

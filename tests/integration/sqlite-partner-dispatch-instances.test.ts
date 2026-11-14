@@ -228,12 +228,20 @@ describe("partner dispatch instance routing", () => {
       expect((await new SqliteWorkbenchManagementRepository(database).getDetail("workbench_1"))?.activeWork[0]).toMatchObject({ executionPhase: "WRITE_QUEUED", waitReason: "WORKSPACE_WRITE" });
       const agents = await new SqliteWorkbenchAgentRepository(database).listAgents({ workbenchId: "workbench_1", goalId: "input_1", limit: 10 });
       expect(agents.items[0]).toMatchObject({ status: "WAITING", executionPhase: "WRITE_QUEUED", waitReason: "WORKSPACE_WRITE", canDelete: false });
+      const work = new SqliteWorkPlanRepository(database);
+      for (const items of [await work.listForGoal("input_1", "workbench_1"),
+        (await work.listGoalPage({ goalInputId: "input_1", workbenchId: "workbench_1" })).items]) {
+        expect(items.find(item => item.workId === "work_1")).toMatchObject({ status: "RUNNING", executionPhase: "WRITE_QUEUED", waitReason: "WORKSPACE_WRITE" });
+        expect(JSON.stringify(items)).not.toContain("partner_instance_messages:");
+      }
       expect(JSON.stringify({ agents, feed })).not.toContain("checkpoint_ref");
       expect(JSON.stringify({ agents, feed })).not.toContain("partner_instance_messages:");
       if (scenario === "cancel") {
         expect(await new SqliteWorkPlanRepository(database).cancel("work_1", clock.now().toISOString())).toMatchObject({ canceled: true });
         expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM workspace_write_waiters").get())).toEqual({ n: 0 });
         expect(database.transaction(db => db.prepare("SELECT status FROM partner_instances WHERE instance_id = 'instance_9'").get())).toEqual({ status: "DISPOSED" });
+        expect((await new SqliteWorkbenchAgentRepository(database).listAgents({ workbenchId: "workbench_1", goalId: "input_1", limit: 10 })).items[0])
+          .toMatchObject({ status: "CANCELED" });
         return;
       }
       if (scenario === "restart") {
@@ -262,12 +270,27 @@ describe("partner dispatch instance routing", () => {
         return;
       }
       const continued = await handler.prepare(continuation);
+      if (continued === "skipped_terminal") throw new Error("continuation did not resume");
       expect(continued).toMatchObject({ actionId: prepared.actionId, dispatchAttemptId: prepared.dispatchAttemptId, instanceId: "instance_9", executionGeneration: 2 });
       expect(requests[0]).toMatchObject({ request: { workspaceExecution: { phase: "READ_RUNNING" } } });
       await handler.complete({ prepared, output: { kind: "terminal", artifacts: [], body: "obsolete", status: "COMPLETED" } });
       expect(database.transaction(db => db.prepare("SELECT COUNT(*) AS n FROM work_results").get())).toEqual({ n: 0 });
       expect(database.transaction(db => db.prepare("SELECT access_mode FROM workspace_leases").get())).toEqual({ access_mode: "WRITE" });
       expect(await handler.prepare(continuation)).toBe("skipped_terminal");
+      if (scenario === "resume") {
+        const agentRepository = new SqliteWorkbenchAgentRepository(database);
+        expect((await agentRepository.listAgents({ workbenchId: "workbench_1", goalId: "input_1", limit: 10 })).items[0])
+          .toMatchObject({ status: "RUNNING", executionPhase: "WRITE_RUNNING" });
+        const output = await handler.run(continued);
+        expect(output).toMatchObject({ kind: "terminal", status: "COMPLETED", body: "complete" });
+        if (output.kind !== "terminal") throw new Error("resumed Work did not complete");
+        await handler.complete({ prepared: continued, output });
+        expect((await agentRepository.listAgents({ workbenchId: "workbench_1", goalId: "input_1", limit: 10 })).items[0])
+          .toMatchObject({ status: "COMPLETED" });
+        const listed = (await work.listGoalPage({ goalInputId: "input_1", workbenchId: "workbench_1" })).items.find(item => item.workId === "work_1");
+        expect(listed).toMatchObject({ status: "COMPLETED" });
+        expect(listed?.waitReason).toBeUndefined();
+      }
     } finally { database.close(); await rm(root, { recursive: true, force: true }); }
   });
   it.each([undefined, 2])("delivers only independent instructions for a scoped Work with brief version %s", async (briefVersion) => {

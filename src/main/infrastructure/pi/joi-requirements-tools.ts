@@ -7,6 +7,7 @@ import type { WorkOrchestrationService } from "../../application/work/work-orche
 import type { WorkExecutionNeed } from "../../domain/work/work-execution-needs.js";
 import type { GoalWorkListQuery } from "../../application/ports/work-orchestration.js";
 import { DomainError } from "../../domain/errors.js";
+import { requiresResourceWaitCancellationIntent } from "../../domain/work/workspace-write-scheduling.js";
 
 function projectContract(contract: GoalRequirements | null) {
   if (contract === null) return null;
@@ -31,13 +32,14 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
 }): AgentTool[] {
   const store = input.requirements;
   if (store === undefined) return tools;
-  const hasWork = async (query: Omit<GoalWorkListQuery,"goalInputId" | "workbenchId" | "cursor" | "limit">) => {
-    if (input.work.listGoalPage !== undefined) return (await input.work.listGoalPage({ ...query,goalInputId: input.goalInputId,workbenchId: input.workbenchId,limit: 1 })).items.length > 0;
+  const matchingWork = async (query: Omit<GoalWorkListQuery,"goalInputId" | "workbenchId" | "cursor" | "limit">) => {
+    if (input.work.listGoalPage !== undefined) return (await input.work.listGoalPage({ ...query,goalInputId: input.goalInputId,workbenchId: input.workbenchId,limit: 1 })).items;
     const rows = await input.work.listForGoal(input.goalInputId,input.workbenchId);
-    return rows.some(work => (query.workId === undefined || query.workId === work.workId) && work.workId !== query.excludeWorkId
+    return rows.filter(work => (query.workId === undefined || query.workId === work.workId) && work.workId !== query.excludeWorkId
       && (query.statuses === undefined || query.statuses.includes(work.status))
       && (query.requirementsRevisionNot === undefined || work.requirementsRevision !== (query.requirementsRevisionNot ?? undefined)));
   };
+  const hasWork = async (query: Parameters<typeof matchingWork>[0]) => (await matchingWork(query)).length > 0;
   const source = Type.Object({ sourceRevision: Type.Integer({ minimum: 1 }), quote: Type.Optional(Type.String({ minLength: 1, maxLength: 1000 })),
     start: Type.Optional(Type.Integer({ minimum: 0 })), end: Type.Optional(Type.Integer({ minimum: 1 })) });
   const readParameters = Type.Object({ sourceRevision: Type.Integer({ minimum: 1 }), offset: Type.Optional(Type.Integer({ minimum: 0 })) });
@@ -62,7 +64,7 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
         };
         return result(projectContract(await store.update({ ...args, upserts: await Promise.all(args.upserts.map(resolve)), retirements: await Promise.all(args.retirements.map(resolve)), goalInputId: input.goalInputId, workbenchId: input.workbenchId })));
       } },
-    { name: "work_list_goal", label: "List goal work", description: "Page this goal's Work identifiers, status and pinned requirements revision. Follow nextCursor. Filter statuses and requirementsRevision/requirementsRevisionNot to find queued outdated Work without rereading completed history. Refresh queued outdated Work before executing or finishing.",
+    { name: "work_list_goal", label: "List goal work", description: "Page this goal's Work identifiers, status, executionPhase, waitReason and pinned requirements revision. READ_QUEUED/WRITE_QUEUED and CAPACITY/WORKSPACE_READ/WORKSPACE_WRITE mean internal resource waits, even when status is RUNNING; they resume automatically, require no work_resume and are not failures. Follow nextCursor. Filter statuses and requirementsRevision/requirementsRevisionNot to find queued outdated Work without rereading completed history. Refresh queued outdated Work before executing or finishing.",
       parameters: Type.Object({ statuses: Type.Optional(Type.Array(Type.Union(["PLANNED","READY","RUNNING","WAITING","COMPLETED","FAILED","CANCELED"].map(value => Type.Literal(value))),{ uniqueItems: true })),
         requirementsRevision: Type.Optional(Type.Integer({ minimum: 0 })),requirementsRevisionNot: Type.Optional(Type.Integer({ minimum: 0 })),
         limit: Type.Optional(Type.Integer({ minimum: 1,maximum: 50 })),cursor: Type.Optional(Type.String()) }),
@@ -89,10 +91,15 @@ export function withGoalRequirementsTools(tools: AgentTool[], input: {
         try {
           const revision = (args as { requirementsRevision?: number }).requirementsRevision;
           if (versioned) await store.assertReady(input.goalInputId, revision);
-          const argsRecord = args as { workId?: string; sourceWorkId?: string };
+          const argsRecord = args as { workId?: string; sourceWorkId?: string; reason?: string };
           const targetId = argsRecord.workId ?? argsRecord.sourceWorkId;
           if (targetId !== undefined && tool.name.startsWith("work_")) {
-            if (!await hasWork({ workId: targetId })) throw new DomainError("goal_requirements_scope_invalid", "This Work belongs to another goal.");
+            const target = (await matchingWork({ workId: targetId }))[0];
+            if (target === undefined) throw new DomainError("goal_requirements_scope_invalid", "This Work belongs to another goal.");
+            if (tool.name === "work_cancel" && requiresResourceWaitCancellationIntent(target, argsRecord.reason)) {
+              return result({ status: "WAITING", workId: targetId, executionPhase: target.executionPhase, waitReason: target.waitReason,
+                automaticResume: true, hint: "Keep this Work: the runtime resumes it automatically when resources are available. End this turn without polling or replacement dispatch. Cancel only for an actual user request, changed requirements or superseded work, stating the corresponding reason." });
+            }
           }
           if (versioned && tool.name !== "goal_resume" && tool.name !== "work_update_brief") {
             if (await hasWork({ statuses: ["PLANNED","READY"],requirementsRevisionNot: revision ?? null,

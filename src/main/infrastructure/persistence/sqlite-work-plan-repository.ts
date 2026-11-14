@@ -7,6 +7,7 @@ import type {
   CommittedWorkPlan,
   GoalWorkListQuery,
   GoalWorkListPage,
+  GoalWorkListItem,
   PlannedDispatchAttempt,
   ReassignedWorkPlan,
   WorkAcceptanceCheck,
@@ -30,6 +31,21 @@ import { consumeSatisfiedRequirementsReviews } from "./sqlite-goal-requirements-
 
 interface TransactionalDatabase {
   transaction<T>(operation: (database: DatabaseSync) => T): T;
+}
+
+const workExecutionColumns = `
+  (SELECT e.phase FROM local_work_execution e WHERE e.dispatch_attempt_id = (
+    SELECT a.dispatch_attempt_id FROM dispatch_attempts a WHERE a.work_id = work_items.work_id
+      ORDER BY a.created_at DESC, a.dispatch_attempt_id DESC LIMIT 1)) AS execution_phase,
+  (SELECT e.wait_reason FROM local_work_execution e WHERE e.dispatch_attempt_id = (
+    SELECT a.dispatch_attempt_id FROM dispatch_attempts a WHERE a.work_id = work_items.work_id
+      ORDER BY a.created_at DESC, a.dispatch_attempt_id DESC LIMIT 1)) AS wait_reason`;
+
+function workExecution(row: { execution_phase: unknown; wait_reason: unknown }): Pick<GoalWorkListItem, "executionPhase" | "waitReason"> {
+  return {
+    ...(typeof row.execution_phase === "string" ? { executionPhase: row.execution_phase as GoalWorkListItem["executionPhase"] } : {}),
+    ...(typeof row.wait_reason === "string" ? { waitReason: row.wait_reason as GoalWorkListItem["waitReason"] } : {}),
+  };
 }
 
 function goalPausedError(): Error & { code: string } {
@@ -291,10 +307,10 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
   }
 
   async listForGoal(goalInputId: string, workbenchId: string) {
-    return this.database.transaction(db => (db.prepare("SELECT work_id, title, status, intent_json FROM work_items WHERE input_id = ? AND workbench_id = ? ORDER BY created_at, work_id")
-      .all(goalInputId, workbenchId) as { work_id: string; title: string; status: string; intent_json: string }[]).map(row => {
+    return this.database.transaction(db => (db.prepare(`SELECT work_id, title, status, intent_json, ${workExecutionColumns} FROM work_items WHERE input_id = ? AND workbench_id = ? ORDER BY created_at, work_id`)
+      .all(goalInputId, workbenchId) as { work_id: string; title: string; status: string; intent_json: string; execution_phase: unknown; wait_reason: unknown }[]).map(row => {
         const brief = JSON.parse(row.intent_json) as { requirementsRevision?: number };
-        return { workId: row.work_id, title: row.title, status: row.status, ...(brief.requirementsRevision === undefined ? {} : { requirementsRevision: brief.requirementsRevision }) };
+        return { workId: row.work_id, title: row.title, status: row.status, ...workExecution(row), ...(brief.requirementsRevision === undefined ? {} : { requirementsRevision: brief.requirementsRevision }) };
       }));
   }
 
@@ -332,11 +348,11 @@ export class SqliteWorkPlanRepository implements WorkPlanRepository, WorkQuery, 
       if (input.workId !== undefined) { clauses.push("work_id=?"); parameters.push(input.workId); }
       if (input.excludeWorkId !== undefined) { clauses.push("work_id<>?"); parameters.push(input.excludeWorkId); }
       if (after !== undefined) { clauses.push("(created_at,work_id)>(?,?)"); parameters.push(...after); }
-      const rows = db.prepare(`SELECT work_id,title,status,created_at,${revision} AS requirements_revision FROM work_items
-        WHERE ${clauses.join(" AND ")} ORDER BY created_at,work_id LIMIT ?`).all(...parameters,limit + 1) as { work_id: string; title: string; status: string; created_at: string; requirements_revision: number | null }[];
+      const rows = db.prepare(`SELECT work_id,title,status,created_at,${revision} AS requirements_revision,${workExecutionColumns} FROM work_items
+        WHERE ${clauses.join(" AND ")} ORDER BY created_at,work_id LIMIT ?`).all(...parameters,limit + 1) as { work_id: string; title: string; status: string; created_at: string; requirements_revision: number | null; execution_phase: unknown; wait_reason: unknown }[];
       const selected = rows.slice(0,limit);
       const last = selected.at(-1);
-      return { items: selected.map(row => ({ workId: row.work_id,title: row.title,status: row.status,
+      return { items: selected.map(row => ({ workId: row.work_id,title: row.title,status: row.status,...workExecution(row),
         ...(row.requirements_revision === null ? {} : { requirementsRevision: row.requirements_revision }) })),
         ...(rows.length > limit && last !== undefined ? { nextCursor: `w1:${Buffer.from(JSON.stringify({ binding,snapshot,after: [last.created_at,last.work_id] })).toString("base64url")}` } : {}) };
     });

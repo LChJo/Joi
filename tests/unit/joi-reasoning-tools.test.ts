@@ -64,6 +64,7 @@ function makeTools(options: {
   workspacePicker?: () => Promise<string | null>;
   workspaceBlocked?: boolean;
   workResumeCalls?: Record<string, unknown>[];
+  workCancelCalls?: string[];
   recordEvidenceRead?: (receipt: MethodEvidenceRead) => void;
   resultReadError?: Error;
   evidenceReadError?: Error;
@@ -201,7 +202,7 @@ function makeTools(options: {
           workId: input.workId,
         };
       },
-      cancel: async (input) => ({ workId: input.workId }),
+      cancel: async (input) => { options.workCancelCalls?.push(input.workId); return { workId: input.workId }; },
       supplement: async (input) => {
         if (options.briefError !== undefined && input.instructions === undefined) throw options.briefError;
         return { attemptNo: 1, dispatchPlanId: "plan_recovery", evidenceResultIds: ["result_1"], waves: [[input.sourceWorkId]] };
@@ -236,6 +237,20 @@ function makeTools(options: {
 }
 
 describe("joi reasoning tools", () => {
+  it("AC-WR-08 preserves resource-waiting Work unless cancellation has an explicit intent", async () => {
+    const requirements = { load: async () => null } as unknown as GoalRequirementsRepository;
+    const canceled: string[] = [];
+    const harness = makeTools({ requirements, workCancelCalls: canceled, workPage: async () => ({ items: [
+      { workId: "waiting", title: "Waiting", status: "RUNNING", executionPhase: "WRITE_QUEUED", waitReason: "WORKSPACE_WRITE" },
+    ] }) });
+    await expect(harness.call("work_cancel", { workId: "waiting" })).resolves.toMatchObject({
+      status: "WAITING", workId: "waiting", waitReason: "WORKSPACE_WRITE", automaticResume: true,
+    });
+    expect(canceled).toEqual([]);
+    await harness.validate("work_cancel", { workId: "waiting", reason: "USER_REQUEST" });
+    await expect(harness.call("work_cancel", { workId: "waiting", reason: "USER_REQUEST" })).resolves.toMatchObject({ workId: "waiting" });
+    expect(canceled).toEqual(["waiting"]);
+  });
   it("wires paged goal Work lookups through the production tool factory and guarded cancellation",async () => {
     const requirements: GoalRequirementsRepository = {
       ensure: () => Promise.reject(new Error("unused")),load: () => Promise.resolve(null),readSource: () => Promise.reject(new Error("unused")),
